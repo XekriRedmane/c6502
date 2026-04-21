@@ -1,0 +1,10 @@
+services:
+  c6502:
+    build: .
+    image: c6502
+    volumes:
+      - .:/project/c6502
+    environment:
+      - ANTHROPIC_API_KEY
+    stdin_open: true
+    tty: true

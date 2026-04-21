@@ -1,0 +1,7 @@
+[project]
+name = "c6502"
+version = "0.1.0"
+description = "A C99 compiler written in Python and why not"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []

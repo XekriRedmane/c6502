@@ -1,0 +1,44 @@
+-- Reference documentation. The lexer implementation is in c99.lark.
+
+character-constant:
+    "'" c-char-sequence "'"
+    | "L'" c-char-sequence "'"
+    ;
+
+c-char-sequence:
+    c-char+ ;
+
+c-char:
+    <any member of the source character set except
+     the single-quote ('), backslash (\), or new-line character>
+    | escape-sequence
+    ;
+
+escape-sequence:
+    simple-escape-sequence
+    | octal-escape-sequence
+    | hexadecimal-escape-sequence
+    | universal-character-name
+    ;
+
+simple-escape-sequence:
+    "\'" | '\"' | "\?" | "\\"
+    | "\a" | "\b" | "\f" | "\n" | "\r" | "\t" | "\v" ;
+
+octal-escape-sequence:
+    '\' octal-digit
+    | '\' octal-digit octal-digit
+    | '\' octal-digit octal-digit octal-digit
+    ;
+
+hexadecimal-escape-sequence:
+    "\x" hexadecimal-digit+ ;
+
+universal-character-name:
+    "\u" hex-quad
+    | "\U" hex-quad hex-quad
+    ;
+
+hex-quad:
+    hexadecimal-digit hexadecimal-digit hexadecimal-digit hexadecimal-digit
+    ;

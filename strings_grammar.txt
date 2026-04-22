@@ -1,0 +1,19 @@
+-- Reference documentation. The lexer implementation is in c99.lark.
+
+string-literal:
+    '"' s-char-sequence? '"'
+    | 'L"' s-char-sequence? '"'
+    ;
+
+s-char-sequence:
+    s-char+ ;
+
+s-char:
+    <any member of the source character set except
+     the double-quote ("), backslash (\), or new-line character>
+    | escape-sequence
+    ;
+
+escape-sequence:
+    <the same as in chars_grammar.txt>
+    ;

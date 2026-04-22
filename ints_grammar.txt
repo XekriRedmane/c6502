@@ -1,0 +1,43 @@
+-- Reference documentation. The lexer implementation is in c99.lark.
+
+integer-constant:
+    decimal-constant integer-suffix?
+    | octal-constant integer-suffix?
+    | hexadecimal-constant integer-suffix?
+    ;
+
+decimal-constant:
+    nonzero-digit digit* ;
+
+octal-constant:
+    '0' octal-digit* ;
+
+hexadecimal-constant:
+    hexadecimal-prefix hexadecimal-digit+ ;
+
+hexadecimal-prefix:
+    '0x' | '0X' ;
+
+nonzero-digit:
+    [123456789] ;
+
+octal-digit:
+    [01234567] ;
+
+hexadecimal-digit:
+    [0123456789abcdefABCDEF] ;
+
+integer-suffix:
+    unsigned-suffix long-suffix?
+    | unsigned-suffix long-long-suffix
+    | long-suffix unsigned-suffix?
+    | long-long-suffix unsigned-suffix?
+
+unsigned-suffix:
+    [uU] ;
+
+long-suffix:
+    [lL] ;
+
+long-long-suffix:
+    'll' | 'LL' ;

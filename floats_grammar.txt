@@ -1,0 +1,50 @@
+-- Reference documentation. The lexer implementation is in c99.lark.
+
+floating-constant:
+    decimal-floating-constant
+    | hexadecimal-floating-constant
+    ;
+
+decimal-floating-constant:
+    fractional-constant exponent-part? floating-suffix?
+    | digit-sequence exponent-part floating-suffix?
+    ;
+
+hexadecimal-floating-constant:
+    | hexadecimal-prefix hexadecimal-fractional-constant
+      binary-exponent-part floating-suffix?
+    | hexadecimal-prefix hexadecimal-digit-sequence
+      binary-exponent-part floating-suffix?
+    ;
+
+fractional-constant:
+    digit-sequence? '.' digit-sequence
+    | digit-sequence '.'
+    ;
+
+exponent-part:
+    'e' sign? digit-sequence
+    | 'E' sign? digit-sequence
+    ;
+
+sign:
+    [+-] ;
+
+digit-sequence:
+    digit+ ;
+
+hexadecimal-fractional-constant:
+    hexadecimal-digit-sequence? '.' hexadecimal-digit-sequence
+    | hexadecimal-digit-sequence '.'?
+    ;
+
+binary-exponent-part:
+    'p' sign? digit-sequence
+    | 'P' sign? digit-sequence
+    ;
+
+hexadecimal-digit-sequence:
+    hexadecimal-digit+ ;
+
+floating-suffix:
+    [flFL] ;

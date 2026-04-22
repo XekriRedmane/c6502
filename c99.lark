@@ -1,0 +1,82 @@
+// C99 lexer grammar (Lark).
+// Translates the hand-written grammar files:
+//   ints_grammar.txt, floats_grammar.txt,
+//   chars_grammar.txt, strings_grammar.txt
+//
+// Keyword classification is done in the wrapper (lexer.py): the KEYWORDS set
+// is applied to IDENTIFIER tokens after tokenization.
+
+// -- Integer constant (ints_grammar.txt) --
+_INT_L: /[lL]/
+_INT_LL: /ll|LL/
+_INT_U: /[uU]/
+_INT_SUFFIX: _INT_U (_INT_LL | _INT_L)? | (_INT_LL | _INT_L) _INT_U?
+_HEX_INT: /0[xX][0-9a-fA-F]+/
+_DECIMAL_INT: /[1-9][0-9]*/
+_OCTAL_INT: /0[0-7]*/
+INTEGER_CONSTANT: (_HEX_INT | _DECIMAL_INT | _OCTAL_INT) _INT_SUFFIX?
+
+// -- Floating constant (floats_grammar.txt) --
+// NOTE: fractions use an explicit (?:...) group. Without it, the top-level `|`
+// leaks out when these are concatenated into the enclosing terminal.
+_FLOAT_SUFFIX: /[flFL]/
+_DEC_EXP: /[eE][+-]?[0-9]+/
+_BIN_EXP: /[pP][+-]?[0-9]+/
+_DEC_FRAC: /(?:[0-9]*\.[0-9]+|[0-9]+\.)/
+_HEX_FRAC: /(?:[0-9a-fA-F]*\.[0-9a-fA-F]+|[0-9a-fA-F]+\.?)/
+_DEC_FLOAT: _DEC_FRAC _DEC_EXP? | /[0-9]+/ _DEC_EXP
+_HEX_FLOAT: /0[xX]/ _HEX_FRAC _BIN_EXP
+FLOATING_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT) _FLOAT_SUFFIX?
+
+// -- Escape sequences (chars_grammar.txt) --
+_SIMPLE_ESC: /\\['"?\\abfnrtv]/
+_OCT_ESC: /\\[0-7]{1,3}/
+_HEX_ESC: /\\x[0-9a-fA-F]+/
+_U_ESC: /\\u[0-9a-fA-F]{4}/
+_BIG_U_ESC: /\\U[0-9a-fA-F]{8}/
+_ESCAPE: _SIMPLE_ESC | _OCT_ESC | _HEX_ESC | _U_ESC | _BIG_U_ESC
+
+// -- Character constant (chars_grammar.txt) --
+// Printable ASCII minus ' (0x27) and \ (0x5C). Using \] (instead of \x5D)
+// because Lark translates \x5D to a bare ], which would close the class early.
+_C_CHAR: /[\x20-\x26\x28-\x5B\]-\x7E]/ | _ESCAPE
+CHARACTER_CONSTANT: /L?'/ _C_CHAR+ /'/
+
+// -- String literal (strings_grammar.txt) --
+// Printable ASCII minus " (0x22) and \ (0x5C). Same \] trick as _C_CHAR.
+_S_CHAR: /[\x20\x21\x23-\x5B\]-\x7E]/ | _ESCAPE
+STRING_LITERAL: /L?"/ _S_CHAR* /"/
+
+// -- Error-catching terminals for malformed numerics.
+// Each matches a pattern that our strict grammar rejects but that a naive
+// tokenizer would otherwise split into pieces (e.g. "0x" + "g"). The wrapper
+// (lexer.py) raises LexError when it sees an INVALID_NUMBER.
+// NOTE: *+ (possessive) prevents the regex from backtracking into a shorter
+// match when the lookahead later fails — otherwise e.g. "0x.FFp0" would
+// produce a spurious "0x.F" BAD match by shrinking the second digit run.
+_BAD_HEX_PREFIX: /0[xX](?![0-9a-fA-F\.])/
+_BAD_HEX_DOT: /0[xX]\.(?![0-9a-fA-F])/
+_BAD_HEX_NO_EXP: /0[xX][0-9a-fA-F]*+\.[0-9a-fA-F]*+(?![pP])/
+_BAD_HEX_EXP: /0[xX][0-9a-fA-F]*+\.?[0-9a-fA-F]*+[pP](?![+-]?[0-9])/
+_BAD_DEC_EXP: /(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)[eE](?![+-]?[0-9])/
+INVALID_NUMBER: _BAD_HEX_PREFIX | _BAD_HEX_DOT | _BAD_HEX_NO_EXP | _BAD_HEX_EXP | _BAD_DEC_EXP
+
+// -- Identifier (placeholder alphabet, pending a grammar) --
+IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
+
+// -- Symbol (C99 punctuators) --
+SYMBOL: "..." | "<<=" | ">>="
+      | "->" | "++" | "--" | "<<" | ">>" | "<=" | ">="
+      | "==" | "!=" | "&&" | "||"
+      | "*=" | "/=" | "%=" | "+=" | "-=" | "&=" | "^=" | "|="
+      | "##"
+      | "[" | "]" | "(" | ")" | "{" | "}" | "." | "&" | "*"
+      | "+" | "-" | "~" | "!" | "/" | "%" | "<" | ">" | "^"
+      | "|" | "?" | ":" | ";" | "=" | "," | "#"
+
+// -- Whitespace (ignored) --
+WS: /[ \t\n\f]+/
+%ignore WS
+
+// -- Trivial start rule; we use Lark only for lexing. --
+start: (INTEGER_CONSTANT | FLOATING_CONSTANT | CHARACTER_CONSTANT | STRING_LITERAL | IDENTIFIER | SYMBOL | INVALID_NUMBER)*

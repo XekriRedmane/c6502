@@ -21,14 +21,61 @@ KEYWORDS = frozenset({
     "_Bool", "_Complex", "_Imaginary",
 })
 
+# Punctuator string → Lark terminal name in c99.lark. Keep in sync with
+# the per-symbol terminal definitions in the grammar.
+_SYMBOL_TERMINAL = {
+    "...": "ELLIPSIS",
+    "<<=": "LSHIFT_ASSIGN",
+    ">>=": "RSHIFT_ASSIGN",
+    "->": "ARROW",
+    "++": "PLUSPLUS",
+    "--": "MINUSMINUS",
+    "<<": "LSHIFT",
+    ">>": "RSHIFT",
+    "<=": "LE",
+    ">=": "GE",
+    "==": "EQ",
+    "!=": "NE",
+    "&&": "ANDAND",
+    "||": "OROR",
+    "*=": "STAR_ASSIGN",
+    "/=": "SLASH_ASSIGN",
+    "%=": "PERCENT_ASSIGN",
+    "+=": "PLUS_ASSIGN",
+    "-=": "MINUS_ASSIGN",
+    "&=": "AMP_ASSIGN",
+    "^=": "CARET_ASSIGN",
+    "|=": "PIPE_ASSIGN",
+    "##": "HASHHASH",
+    "[": "LBRACKET",
+    "]": "RBRACKET",
+    "(": "LPAREN",
+    ")": "RPAREN",
+    "{": "LBRACE",
+    "}": "RBRACE",
+    ".": "DOT",
+    "&": "AMP",
+    "*": "STAR",
+    "+": "PLUS",
+    "-": "MINUS",
+    "~": "TILDE",
+    "!": "BANG",
+    "/": "SLASH",
+    "%": "PERCENT",
+    "<": "LT",
+    ">": "GT",
+    "^": "CARET",
+    "|": "PIPE",
+    "?": "QUESTION",
+    ":": "COLON",
+    ";": "SEMICOLON",
+    "=": "ASSIGN",
+    ",": "COMMA",
+    "#": "HASH",
+}
+
 # Ordered longest-first for backwards compatibility with earlier tests.
-SYMBOLS = (
-    "...", "<<=", ">>=",
-    "->", "++", "--", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||",
-    "*=", "/=", "%=", "+=", "-=", "&=", "^=", "|=", "##",
-    "[", "]", "(", ")", "{", "}", ".", "&", "*", "+", "-", "~", "!",
-    "/", "%", "<", ">", "^", "|", "?", ":", ";", "=", ",", "#",
-)
+SYMBOLS = tuple(_SYMBOL_TERMINAL.keys())
 
 
 class TokenKind(Enum):
@@ -55,16 +102,34 @@ class LexError(Exception):
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
-_LARK = Lark.open(str(_GRAMMAR_PATH), parser="lalr", lexer="basic", start="start")
+_LARK = Lark.open(
+    str(_GRAMMAR_PATH),
+    parser="lalr",
+    lexer="basic",
+    # `lex_only` is a secondary start that references every terminal, so
+    # Lark doesn't drop unused ones while the real parser rules are still
+    # partial. `.lex()` then sees the full terminal set.
+    start=["start", "lex_only"],
+)
 
 
-_TERMINAL_TO_KIND = {
+# Each keyword has its own terminal in c99.lark. Terminal names are the
+# keyword uppercased with any leading underscore stripped (e.g. `_Bool` →
+# `BOOL`). Derived here so changes to KEYWORDS flow through automatically;
+# c99.lark still has to be edited by hand to match.
+def _keyword_terminal(kw: str) -> str:
+    return kw.lstrip("_").upper()
+
+
+_TERMINAL_TO_KIND = {_keyword_terminal(kw): TokenKind.KEYWORD for kw in KEYWORDS}
+_TERMINAL_TO_KIND.update({name: TokenKind.SYMBOL for name in _SYMBOL_TERMINAL.values()})
+_TERMINAL_TO_KIND.update({
+    "IDENTIFIER": TokenKind.IDENTIFIER,
     "INTEGER_CONSTANT": TokenKind.CONSTANT,
     "FLOATING_CONSTANT": TokenKind.CONSTANT,
     "CHARACTER_CONSTANT": TokenKind.CONSTANT,
     "STRING_LITERAL": TokenKind.STRING_LITERAL,
-    "SYMBOL": TokenKind.SYMBOL,
-}
+})
 
 
 def tokenize(source: str) -> Iterator[Token]:
@@ -75,16 +140,12 @@ def tokenize(source: str) -> Iterator[Token]:
                     f"malformed numeric token {str(lt)!r}",
                     lt.line, lt.column,
                 )
-            if lt.type == "IDENTIFIER":
-                kind = (TokenKind.KEYWORD if str(lt) in KEYWORDS
-                        else TokenKind.IDENTIFIER)
-            else:
-                kind = _TERMINAL_TO_KIND.get(lt.type)
-                if kind is None:
-                    raise LexError(
-                        f"unrecognized token type {lt.type}",
-                        lt.line, lt.column,
-                    )
+            kind = _TERMINAL_TO_KIND.get(lt.type)
+            if kind is None:
+                raise LexError(
+                    f"unrecognized token type {lt.type}",
+                    lt.line, lt.column,
+                )
             yield Token(kind=kind, value=str(lt), line=lt.line, col=lt.column)
     except UnexpectedCharacters as e:
         ch = source[e.pos_in_stream] if e.pos_in_stream < len(source) else ""

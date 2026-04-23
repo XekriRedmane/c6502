@@ -61,6 +61,56 @@ pretty-printer in `pretty.py` works on any `@dataclass` tree and emits
 valid Python, so round-tripping through `eval()` with the AST classes in
 scope reconstructs the node.
 
+## Translating a C99 AST to an asm AST
+
+`asm_translator.py` walks a `c99_ast` tree and produces an `asm_ast` tree
+(the tiny assembly IR declared in `asm.asdl`). Each `translate_*`
+function handles one source-AST kind via a `match` statement:
+
+| c99_ast node          | asm_ast result                                         |
+| --------------------- | ------------------------------------------------------ |
+| `Program(fn)`         | `Program(translate_function(fn))`                      |
+| `Function(name,body)` | `Function(name, translate_statement(body))`            |
+| `Return(exp)`         | `[Mov(translate_exp(exp), Register()), Ret()]`         |
+| `Constant(value)`     | `Imm(value)`                                           |
+
+Unknown variants raise `TypeError` so missing `case` clauses fail loudly.
+
+CLI (runs parse then translate then pretty-prints the asm AST):
+
+```sh
+uv run python asm_translator.py <source.c>    # read from a file
+uv run python asm_translator.py -              # read from stdin
+```
+
+## Emitting 6502 assembly
+
+`asm_emit.py` takes an `asm_ast.Program` and produces 6502 assembly
+text. Formatting rules:
+
+- labels start in **column 1**
+- opcodes (uppercase) and directives start in **column 4**
+- operands start in **column 10**
+- each function emits `<name>:` on one line, the `SUBROUTINE`
+  directive on the next, then a blank line, then the instructions
+- `Mov(src, Register())` → `LDA <src>`
+- `Ret()` → `RTS`
+- `Imm(value)` → `#$<02X>`; values outside 0..255 raise `ValueError`
+
+The CLI chains the whole pipeline (parse → translate → emit):
+
+```sh
+uv run python asm_emit.py <source.c>              # stdout
+uv run python asm_emit.py - -o out.asm            # stdin → file
+```
+
+If `-o` is supplied the filename must end in `.asm`. Piping through
+pcpp first strips comments:
+
+```sh
+pcpp source.c --line-directive | uv run python asm_emit.py - -o source.asm
+```
+
 ## Stripping comments with pcpp
 
 The lexer treats comments as lex errors (we expect a preprocessor to have

@@ -2,13 +2,14 @@
 
 A C99 compiler written in Python.
 
-## Regenerating `c99_ast.py` from `c99.asdl`
+## Regenerating AST modules from `.asdl` sources
 
-`c99_ast.py` is the AST module, generated from `c99.asdl` by `asdl.py`. After
-editing `c99.asdl`, regenerate with:
+Each `*_ast.py` module is generated from its matching `*.asdl` source by
+`asdl.py`. After editing any ASDL file, regenerate:
 
 ```sh
 uv run python asdl.py c99.asdl c99_ast.py
+uv run python asdl.py asm.asdl asm_ast.py
 ```
 
 The generator emits one `@dataclass` per type. Sum-type bases are named

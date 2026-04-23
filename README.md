@@ -19,6 +19,37 @@ constructor classes keep their ASDL names. Fields use `int`, `str`, `list[...]`,
 `T | None` depending on the primitive / optional / sequence markers in the
 ASDL source.
 
+## Top-level driver: `compile.py`
+
+`compile.py` chains the whole pipeline. It pipes the input through pcpp
+to strip comments, then runs to the stage requested by exactly one
+mutually-exclusive flag:
+
+| flag        | output                                                        |
+| ----------- | ------------------------------------------------------------- |
+| `--lex`     | one `line:col<TAB>kind<TAB>value` line per token              |
+| `--parse`   | `pretty(c99_ast)` — the parsed AST                            |
+| `--tac`     | `pretty(tac_ast)` — three-address-code IR                     |
+| `--codegen` | 6502 assembly text                                            |
+
+```sh
+uv run python compile.py <source.c> --codegen              # to stdout
+uv run python compile.py <source.c> --codegen -o out.asm   # to file
+uv run python compile.py - --tac < source.c                # stdin
+```
+
+Notes:
+- `-` as the input filename reads from stdin.
+- With `--codegen`, the `-o` filename must end in `.asm`.
+- The other stages (`--lex`, `--parse`, `--tac`) accept any output
+  filename, or default to stdout.
+- pcpp must be on `PATH`; the comment-stripping step shells out to it.
+
+The per-stage tools (`lexer.py`, `parser.py`, `tac_translator.py`,
+`asm_translator.py`, `asm_emit.py`) below are the same building blocks,
+exposed as standalone scripts and Python modules for debugging and
+reuse.
+
 ## Using the lexer
 
 `lexer.py` tokenizes C99 source using the Lark grammar in `c99.lark`. The

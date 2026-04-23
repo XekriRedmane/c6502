@@ -9,6 +9,7 @@ Each `*_ast.py` module is generated from its matching `*.asdl` source by
 
 ```sh
 uv run python asdl.py c99.asdl c99_ast.py
+uv run python asdl.py tac.asdl tac_ast.py
 uv run python asdl.py asm.asdl asm_ast.py
 ```
 

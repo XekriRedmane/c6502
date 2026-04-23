@@ -65,9 +65,13 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
 def emit_function(fn: asm_ast.Type_function_definition) -> list[str]:
     match fn:
         case asm_ast.Function(name=name, instructions=instrs):
-            lines = [f"{name}:"]
-            for instr in instrs:
-                lines.extend(emit_instruction(instr))
+            # Label in col 1; SUBROUTINE directive in col 4 (same column as
+            # opcodes); blank line before instructions.
+            lines = [f"{name}:", _instr_line("SUBROUTINE")]
+            if instrs:
+                lines.append("")
+                for instr in instrs:
+                    lines.extend(emit_instruction(instr))
             return lines
     raise TypeError(f"unexpected function: {fn!r}")
 

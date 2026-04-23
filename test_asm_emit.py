@@ -51,19 +51,25 @@ class TestEmitInstruction(unittest.TestCase):
 
 
 class TestEmitFunction(unittest.TestCase):
-    def test_label_and_instructions(self):
+    def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=asm_ast.Register()),
             asm_ast.Ret(),
         ])
         self.assertEqual(
             emit_function(fn),
-            ["main:", "   LDA   #$00", "   RTS"],
+            [
+                "main:",
+                "   SUBROUTINE",
+                "",
+                "   LDA   #$00",
+                "   RTS",
+            ],
         )
 
-    def test_empty_instructions_just_label(self):
+    def test_empty_instructions_label_and_subroutine_only(self):
         fn = asm_ast.Function(name="main", instructions=[])
-        self.assertEqual(emit_function(fn), ["main:"])
+        self.assertEqual(emit_function(fn), ["main:", "   SUBROUTINE"])
 
 
 class TestEmitProgram(unittest.TestCase):
@@ -74,12 +80,12 @@ class TestEmitProgram(unittest.TestCase):
         )
         self.assertEqual(
             emit_program(prog),
-            "main:\n   LDA   #$2A\n   RTS\n",
+            "main:\n   SUBROUTINE\n\n   LDA   #$2A\n   RTS\n",
         )
 
 
 class TestColumnAlignment(unittest.TestCase):
-    """Column 1 labels, column 4 opcodes, column 10 operands."""
+    """Column 1 labels, column 4 opcodes / directives, column 10 operands."""
 
     def test_columns(self):
         prog = _prog(
@@ -89,13 +95,18 @@ class TestColumnAlignment(unittest.TestCase):
         lines = emit_program(prog).splitlines()
         # Label at column 1 (index 0).
         self.assertTrue(lines[0].startswith("main:"))
-        # Opcode at column 4 (index 3), operand at column 10 (index 9).
+        # SUBROUTINE directive at column 4.
         self.assertEqual(lines[1][:3], "   ")
-        self.assertEqual(lines[1][3:6], "LDA")
-        self.assertEqual(lines[1][6:9], "   ")
-        self.assertEqual(lines[1][9:], "#$2A")
+        self.assertEqual(lines[1][3:], "SUBROUTINE")
+        # Blank line separating directive from instructions.
+        self.assertEqual(lines[2], "")
+        # Opcode at column 4 (index 3), operand at column 10 (index 9).
+        self.assertEqual(lines[3][:3], "   ")
+        self.assertEqual(lines[3][3:6], "LDA")
+        self.assertEqual(lines[3][6:9], "   ")
+        self.assertEqual(lines[3][9:], "#$2A")
         # RTS has no operand.
-        self.assertEqual(lines[2], "   RTS")
+        self.assertEqual(lines[4], "   RTS")
 
 
 class TestMainCLI(unittest.TestCase):
@@ -105,7 +116,10 @@ class TestMainCLI(unittest.TestCase):
              patch("sys.stdout", new_callable=io.StringIO) as out:
             rc = main(["asm_emit.py", "-"])
         self.assertEqual(rc, 0)
-        self.assertEqual(out.getvalue(), "main:\n   LDA   #$2A\n   RTS\n")
+        self.assertEqual(
+            out.getvalue(),
+            "main:\n   SUBROUTINE\n\n   LDA   #$2A\n   RTS\n",
+        )
 
     def test_output_file_must_end_in_asm(self):
         with patch("sys.stdin", io.StringIO("int main(void) { return 0; }")), \
@@ -122,7 +136,7 @@ class TestMainCLI(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(
                 out_path.read_text(),
-                "main:\n   LDA   #$07\n   RTS\n",
+                "main:\n   SUBROUTINE\n\n   LDA   #$07\n   RTS\n",
             )
 
 

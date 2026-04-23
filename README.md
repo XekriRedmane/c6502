@@ -89,3 +89,20 @@ Notes:
 ```sh
 uv run python -m unittest
 ```
+
+The `tests/` subdirectories hold sample programs from
+[nlsandler/writing-a-c-compiler-tests](https://github.com/nlsandler/writing-a-c-compiler-tests)
+(chapter 1), checked in verbatim:
+
+- `tests/invalid_lex/` — sources that must fail at lex time (bad
+  characters, malformed pp-numbers, …). Exercised by
+  `TestInvalidLex` in `test_lexer.py`.
+- `tests/invalid_parse/` — sources that lex cleanly but must fail at
+  parse time (missing tokens, wrong keyword case, extra junk, …).
+  Exercised by `TestInvalidParseFiles` in `test_parser.py`.
+- `tests/valid/` — sources that must parse into `int main(void) {
+  return N; }`. Exercised by `TestValidFiles` in `test_parser.py`.
+
+Each file is run through `pcpp` (to strip comments) before being fed
+to the lexer or parser; the file-based test classes are skipped if
+`pcpp` isn't on `PATH`.

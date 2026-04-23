@@ -25,6 +25,7 @@ from lark import Lark, Transformer
 from lark.visitors import v_args
 
 import c99_ast
+from pretty import pretty
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
@@ -68,7 +69,7 @@ def main(argv: list[str]) -> int:
         return 2
     with open(argv[1], "r", encoding="utf-8") as f:
         source = f.read()
-    print(parse(source))
+    print(pretty(parse(source)))
     return 0
 
 

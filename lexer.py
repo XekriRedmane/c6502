@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -181,25 +180,3 @@ class Lexer:
 
     def tokens(self) -> Iterator[Token]:
         return tokenize(self.source)
-
-
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: lexer.py <file>|-", file=sys.stderr)
-        return 2
-    if argv[1] == "-":
-        source = sys.stdin.read()
-    else:
-        with open(argv[1], "r", encoding="utf-8") as f:
-            source = f.read()
-    try:
-        for tok in tokenize(source):
-            print(f"{tok.line}:{tok.col}\t{tok.kind.value}\t{tok.value}")
-    except LexError as e:
-        print(e, file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))

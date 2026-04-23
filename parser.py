@@ -18,14 +18,12 @@ punctuator terminals) are conventionally prefixed with `_`.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from lark import Lark, Transformer
 from lark.visitors import v_args
 
 import c99_ast
-from pretty import pretty
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
@@ -79,20 +77,3 @@ _BUILDER = _ASTBuilder()
 def parse(source: str) -> c99_ast.Type_program:
     tree = _LARK.parse(source, start="start")
     return _BUILDER.transform(tree)
-
-
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: parser.py <file>|-", file=sys.stderr)
-        return 2
-    if argv[1] == "-":
-        source = sys.stdin.read()
-    else:
-        with open(argv[1], "r", encoding="utf-8") as f:
-            source = f.read()
-    print(pretty(parse(source)))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))

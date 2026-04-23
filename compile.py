@@ -48,7 +48,7 @@ def _run_stage(stage: str, source: str) -> str:
     if stage == "tac":
         return pretty(translate_to_tac(parse(source))) + "\n"
     if stage == "codegen":
-        return emit_program(translate_to_asm(parse(source)))
+        return emit_program(translate_to_asm(translate_to_tac(parse(source))))
     raise AssertionError(f"unknown stage: {stage!r}")
 
 

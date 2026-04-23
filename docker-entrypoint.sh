@@ -1,6 +1,9 @@
 #!/bin/bash
 # Docker startup script
 
+git config --global user.name "Xekri Redmane"
+git config --global user.email "robert.c.baruch@gmail.com"
+
 CLAUDE_JSON="$HOME/.claude.json"
 PROJECT_PATH="/project/c6502"
 

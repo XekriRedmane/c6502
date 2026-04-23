@@ -6,8 +6,9 @@ Formatting rules:
   - operands start in column 10
 
 CLI: `asm_emit.py <input.c>|- [-o output.asm]`. The full pipeline goes
-C source → parse → translate → emit. If -o is given the filename must
-have a .asm suffix; otherwise output goes to stdout.
+C source -> parse -> tac translate -> asm translate -> emit. If -o is
+given the filename must have a .asm suffix; otherwise output goes to
+stdout.
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ import argparse
 import sys
 
 import asm_ast
-from asm_translator import translate_program
+from asm_translator import translate_program as translate_to_asm
 from parser import parse
+from tac_translator import translate_program as translate_to_tac
 
 
 # 0-indexed column positions (column 1 = index 0).
@@ -33,30 +35,40 @@ def _instr_line(opcode: str, operand: str = "") -> str:
     return line
 
 
-def emit_operand(op: asm_ast.Type_operand) -> str:
-    match op:
-        case asm_ast.Imm(value=v):
+def _reg_letter(r: asm_ast.Type_reg) -> str:
+    match r:
+        case asm_ast.A():
+            return "A"
+        case asm_ast.X():
+            return "X"
+        case asm_ast.Y():
+            return "Y"
+    raise TypeError(f"unexpected reg: {r!r}")
+
+
+def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> str:
+    match src, dst:
+        case asm_ast.Imm(value=v), asm_ast.Reg(reg=r):
             if not 0 <= v <= 255:
                 raise ValueError(
                     f"immediate {v} out of range for 6502 (expected 0..255)"
                 )
-            return f"#${v:02X}"
-        case asm_ast.Register():
-            return "A"
-    raise TypeError(f"unexpected operand: {op!r}")
-
-
-def _mov_opcode(dst: asm_ast.Type_operand) -> str:
-    match dst:
-        case asm_ast.Register():
-            return "LDA"
-    raise TypeError(f"unsupported mov destination: {dst!r}")
+            return _instr_line(f"LD{_reg_letter(r)}", f"#${v:02X}")
+        case asm_ast.Reg(reg=asm_ast.X()), asm_ast.Reg(reg=asm_ast.A()):
+            return _instr_line("TXA")
+        case asm_ast.Reg(reg=asm_ast.Y()), asm_ast.Reg(reg=asm_ast.A()):
+            return _instr_line("TYA")
+        case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Reg(reg=asm_ast.X()):
+            return _instr_line("TAX")
+        case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Reg(reg=asm_ast.Y()):
+            return _instr_line("TAY")
+    raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
 
 
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
-            return [_instr_line(_mov_opcode(dst), emit_operand(src))]
+            return [_emit_mov(src, dst)]
         case asm_ast.Ret():
             return [_instr_line("RTS")]
     raise TypeError(f"unexpected instruction: {instr!r}")
@@ -103,7 +115,7 @@ def main(argv: list[str]) -> int:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
 
-    text = emit_program(translate_program(parse(source)))
+    text = emit_program(translate_to_asm(translate_to_tac(parse(source))))
 
     if args.output is not None:
         with open(args.output, "w", encoding="utf-8") as f:

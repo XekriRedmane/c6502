@@ -1,6 +1,14 @@
 module ASM {
     program = Program(function_definition)
     function_definition = Function(identifier name, instruction* instructions)
-    instruction = Mov(operand src, operand dst) | Ret
-    operand = Imm(int value) | Register
+
+    instruction =
+        Mov(operand src, operand dst)
+        | Ret
+        | AllocateStack(int amt)
+        | Unary(unary_operator op, operand src_dst)
+
+    operand = Imm(int value) | Reg(reg) | Pseudo(identifier name) | Stack(int offset)
+    unary_operator = Neg | Not
+    reg = A | X | Y
 }

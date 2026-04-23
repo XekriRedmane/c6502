@@ -8,10 +8,18 @@ import asm_ast
 from asm_emit import (
     emit_function,
     emit_instruction,
-    emit_operand,
     emit_program,
     main,
 )
+
+
+def _reg(r):
+    return asm_ast.Reg(reg=r)
+
+
+_A = asm_ast.A()
+_X = asm_ast.X()
+_Y = asm_ast.Y()
 
 
 def _prog(*instrs, name="main") -> asm_ast.Type_program:
@@ -20,40 +28,103 @@ def _prog(*instrs, name="main") -> asm_ast.Type_program:
     ))
 
 
-class TestEmitOperand(unittest.TestCase):
-    def test_imm_hex(self):
+class TestEmitMov(unittest.TestCase):
+    def test_imm_to_a_emits_lda(self):
         for v, expected in [(0, "#$00"), (1, "#$01"), (0x2A, "#$2A"),
                             (0xFF, "#$FF"), (10, "#$0A")]:
             with self.subTest(v=v):
-                self.assertEqual(emit_operand(asm_ast.Imm(value=v)), expected)
+                self.assertEqual(
+                    emit_instruction(
+                        asm_ast.Mov(src=asm_ast.Imm(value=v), dst=_reg(_A))
+                    ),
+                    [f"   LDA   {expected}"],
+                )
+
+    def test_imm_to_x_emits_ldx(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_X))
+            ),
+            ["   LDX   #$2A"],
+        )
+
+    def test_imm_to_y_emits_ldy(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_Y))
+            ),
+            ["   LDY   #$2A"],
+        )
 
     def test_imm_out_of_range_raises(self):
         for v in [-1, 256, 1000, -100]:
             with self.subTest(v=v):
                 with self.assertRaises(ValueError):
-                    emit_operand(asm_ast.Imm(value=v))
+                    emit_instruction(
+                        asm_ast.Mov(src=asm_ast.Imm(value=v), dst=_reg(_A))
+                    )
 
-    def test_register_emits_a(self):
-        self.assertEqual(emit_operand(asm_ast.Register()), "A")
+    def test_x_to_a_emits_txa(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(src=_reg(_X), dst=_reg(_A))),
+            ["   TXA"],
+        )
+
+    def test_y_to_a_emits_tya(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(src=_reg(_Y), dst=_reg(_A))),
+            ["   TYA"],
+        )
+
+    def test_a_to_x_emits_tax(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(src=_reg(_A), dst=_reg(_X))),
+            ["   TAX"],
+        )
+
+    def test_a_to_y_emits_tay(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(src=_reg(_A), dst=_reg(_Y))),
+            ["   TAY"],
+        )
+
+    def test_unsupported_mov_combinations_raise(self):
+        unsupported = [
+            # No 6502 instruction for register-to-register among same reg or
+            # the X<->Y pair.
+            asm_ast.Mov(src=_reg(_A), dst=_reg(_A)),
+            asm_ast.Mov(src=_reg(_X), dst=_reg(_X)),
+            asm_ast.Mov(src=_reg(_Y), dst=_reg(_Y)),
+            asm_ast.Mov(src=_reg(_X), dst=_reg(_Y)),
+            asm_ast.Mov(src=_reg(_Y), dst=_reg(_X)),
+            # Pseudo and Stack must have been resolved by an earlier pass.
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t")),
+            asm_ast.Mov(src=asm_ast.Pseudo(name="t"), dst=_reg(_A)),
+            asm_ast.Mov(src=asm_ast.Stack(offset=2), dst=_reg(_A)),
+            asm_ast.Mov(src=_reg(_A), dst=asm_ast.Stack(offset=2)),
+            # Imm cannot be a destination.
+            asm_ast.Mov(src=_reg(_A), dst=asm_ast.Imm(value=0)),
+        ]
+        for instr in unsupported:
+            with self.subTest(instr=instr):
+                with self.assertRaises(ValueError):
+                    emit_instruction(instr)
 
 
 class TestEmitInstruction(unittest.TestCase):
     def test_ret_emits_rts(self):
         self.assertEqual(emit_instruction(asm_ast.Ret()), ["   RTS"])
 
-    def test_mov_imm_to_register_emits_lda(self):
-        self.assertEqual(
-            emit_instruction(
-                asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=asm_ast.Register())
-            ),
-            ["   LDA   #$2A"],
-        )
+    def test_unknown_instruction_raises(self):
+        stub = type("Stub", (asm_ast.Type_instruction,), {})
+        with self.assertRaises(TypeError):
+            emit_instruction(stub())
 
 
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", instructions=[
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=asm_ast.Register()),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
             asm_ast.Ret(),
         ])
         self.assertEqual(
@@ -75,7 +146,7 @@ class TestEmitFunction(unittest.TestCase):
 class TestEmitProgram(unittest.TestCase):
     def test_full(self):
         prog = _prog(
-            asm_ast.Mov(src=asm_ast.Imm(value=42), dst=asm_ast.Register()),
+            asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
             asm_ast.Ret(),
         )
         self.assertEqual(
@@ -89,7 +160,7 @@ class TestColumnAlignment(unittest.TestCase):
 
     def test_columns(self):
         prog = _prog(
-            asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=asm_ast.Register()),
+            asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
             asm_ast.Ret(),
         )
         lines = emit_program(prog).splitlines()

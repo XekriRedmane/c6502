@@ -47,6 +47,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 USER robertbaruch
 
+# Trust the bind-mounted project repo so git works inside the container
+# (otherwise host/container UID mismatch trips git's dubious-ownership check).
+RUN git config --global --add safe.directory /project/c6502
+
 WORKDIR /project
 
 ENTRYPOINT ["docker-entrypoint.sh"]

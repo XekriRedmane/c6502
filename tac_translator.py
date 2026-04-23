@@ -22,12 +22,8 @@ Mapping:
 
 from __future__ import annotations
 
-import sys
-
 import c99_ast
 import tac_ast
-from parser import parse
-from pretty import pretty
 
 
 class Translator:
@@ -102,20 +98,3 @@ def translate_program(prog: c99_ast.Type_program) -> tac_ast.Type_program:
     """Convenience wrapper: builds a fresh Translator per call (so the
     temporary counter starts at 0 every time)."""
     return Translator().translate_program(prog)
-
-
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: tac_translator.py <file>|-", file=sys.stderr)
-        return 2
-    if argv[1] == "-":
-        source = sys.stdin.read()
-    else:
-        with open(argv[1], "r", encoding="utf-8") as f:
-            source = f.read()
-    print(pretty(translate_program(parse(source))))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))

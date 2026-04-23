@@ -43,7 +43,8 @@ Notes:
 - With `--codegen`, the `-o` filename must end in `.asm`.
 - The other stages (`--lex`, `--parse`, `--tac`) accept any output
   filename, or default to stdout.
-- pcpp must be on `PATH`; the comment-stripping step shells out to it.
+- The comment-stripping step uses pcpp via the Python API (see
+  `preprocessor.py`); pcpp is a project dependency, no shelling out.
 
 The per-stage tools (`lexer.py`, `parser.py`, `tac_translator.py`,
 `asm_translator.py`, `asm_emit.py`) below are the same building blocks,

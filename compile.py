@@ -1,7 +1,8 @@
 """Top-level c6502 compiler driver.
 
-Pipes the input through pcpp (to strip comments) and then runs the
-pipeline up to the stage requested by exactly one of:
+Runs the preprocessor (preprocessor.preprocess, our small wrapper around
+the pcpp library), then continues the pipeline up to the stage requested
+by exactly one of:
 
   --lex      stop after tokenization; one `line:col<tab>kind<tab>value`
              line per token
@@ -16,22 +17,15 @@ Output goes to stdout by default, or to the file named by `-o`. With
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 
 from asm_emit import emit_program
 from asm_translator import translate_program as translate_to_asm
 from lexer import tokenize
 from parser import parse
+from preprocessor import preprocess
 from pretty import pretty
 from tac_translator import translate_program as translate_to_tac
-
-
-def _preprocess(src: str) -> str:
-    return subprocess.run(
-        ["pcpp", "-", "--line-directive"],
-        input=src, capture_output=True, text=True, check=True,
-    ).stdout
 
 
 def _format_tokens(source: str) -> str:
@@ -84,7 +78,7 @@ def main(argv: list[str]) -> int:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
 
-    text = _run_stage(args.stage, _preprocess(source))
+    text = _run_stage(args.stage, preprocess(source))
 
     if args.output is not None:
         with open(args.output, "w", encoding="utf-8") as f:

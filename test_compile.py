@@ -1,5 +1,4 @@
 import io
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,7 +7,6 @@ from unittest.mock import patch
 from compile import main
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestCompileDriver(unittest.TestCase):
     SOURCE = "int main(void) { return 42; }"
 

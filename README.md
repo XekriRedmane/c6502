@@ -26,7 +26,8 @@ ASDL source.
 As a script:
 
 ```sh
-uv run python lexer.py <source.c>
+uv run python lexer.py <source.c>    # read from a file
+uv run python lexer.py -              # read from stdin
 ```
 
 prints one token per line as `line:col  kind  value`.
@@ -44,6 +45,44 @@ for tok in tokenize(source):
 `STRING_LITERAL`. Malformed numeric tokens (e.g. `0x` with no digits, `3e`
 with no exponent body) raise `LexError` at lex time rather than being split
 into pieces.
+
+## Using the parser
+
+`parser.py` parses C99 source into a `c99_ast` tree and pretty-prints it:
+
+```sh
+uv run python parser.py <source.c>    # read from a file
+uv run python parser.py -              # read from stdin
+```
+
+As an API, `parse(source)` returns a `c99_ast` dataclass tree. The
+pretty-printer in `pretty.py` works on any `@dataclass` tree and emits
+valid Python, so round-tripping through `eval()` with the AST classes in
+scope reconstructs the node.
+
+## Stripping comments with pcpp
+
+The lexer treats comments as lex errors (we expect a preprocessor to have
+handled them already). [pcpp](https://github.com/ned14/pcpp) is installed
+in the dev environment as a uv tool; use it to strip comments before
+lexing or parsing:
+
+```sh
+pcpp input.c --line-directive | uv run python lexer.py -
+pcpp input.c --line-directive | uv run python parser.py -
+```
+
+Notes:
+- `-` as the input to `lexer.py` / `parser.py` reads from stdin.
+- `--line-directive` with no form argument (trailing flag, or
+  `--line-directive=`) suppresses the `#line N "file"` markers pcpp
+  emits by default.
+- pcpp replaces each block comment with a single space (C99 translation
+  phase 3), not an empty string — harmless since our lexer ignores
+  whitespace.
+- Add `-D NAME=VAL` / `-U NAME` / `-I path` as needed for macro and
+  include control. `--passthru-comments` keeps comments if you ever
+  need the opposite behavior.
 
 ## Tests
 

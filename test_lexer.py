@@ -1,4 +1,7 @@
+import shutil
+import subprocess
 import unittest
+from pathlib import Path
 
 from lexer import KEYWORDS, SYMBOLS, LexError, TokenKind, tokenize
 
@@ -100,21 +103,18 @@ class TestIntegerConstants(unittest.TestCase):
                     self.assertEqual(kinds_vals(s), [(TokenKind.CONSTANT, s)])
 
     def test_long_long_is_case_strict(self):
-        # long-long-suffix is exactly 'll' or 'LL', not mixed.
-        self.assertEqual(kinds_vals("42lL"), [
-            (TokenKind.CONSTANT, "42l"),
-            (TokenKind.IDENTIFIER, "L"),
-        ])
-        self.assertEqual(kinds_vals("42Ll"), [
-            (TokenKind.CONSTANT, "42L"),
-            (TokenKind.IDENTIFIER, "l"),
-        ])
+        # long-long-suffix is exactly 'll' or 'LL'; mixed `lL` / `Ll` doesn't
+        # form a valid suffix and the adjacency check rejects the whole thing.
+        for s in ["42lL", "42Ll"]:
+            with self.subTest(s=s):
+                with self.assertRaises(LexError):
+                    list(tokenize(s))
 
-    def test_suffix_then_identifier(self):
-        self.assertEqual(kinds_vals("42ua"), [
-            (TokenKind.CONSTANT, "42u"),
-            (TokenKind.IDENTIFIER, "a"),
-        ])
+    def test_suffix_then_identifier_rejected(self):
+        # `42ua` isn't a valid int + separate identifier — it's a malformed
+        # pp-number. Must be rejected (strict C99).
+        with self.assertRaises(LexError):
+            list(tokenize("42ua"))
 
     def test_octal_stops_at_nonoctal_digit(self):
         # '8' and '9' are not octal digits, so they break off.
@@ -195,16 +195,12 @@ class TestFloatingConstants(unittest.TestCase):
         self.assertEqual(kinds_vals("3l"), [(TokenKind.CONSTANT, "3l")])
         # 'l' on a float is float-long.
         self.assertEqual(kinds_vals("3.l"), [(TokenKind.CONSTANT, "3.l")])
-        # 'f' is not a valid int suffix, so it splits off.
-        self.assertEqual(kinds_vals("3f"), [
-            (TokenKind.CONSTANT, "3"),
-            (TokenKind.IDENTIFIER, "f"),
-        ])
-        # 'u' is not a valid float suffix, so it splits off.
-        self.assertEqual(kinds_vals("3.u"), [
-            (TokenKind.CONSTANT, "3."),
-            (TokenKind.IDENTIFIER, "u"),
-        ])
+        # 'f' is not a valid int suffix, so `3f` is an invalid pp-number.
+        with self.assertRaises(LexError):
+            list(tokenize("3f"))
+        # 'u' is not a valid float suffix, so `3.u` is an invalid pp-number.
+        with self.assertRaises(LexError):
+            list(tokenize("3.u"))
 
     def test_lone_dot_is_symbol(self):
         # A dot not followed by a digit stays a symbol.
@@ -221,12 +217,10 @@ class TestFloatingConstants(unittest.TestCase):
             (TokenKind.CONSTANT, ".5"),
         ])
 
-    def test_exponent_followed_by_more(self):
-        # "1e2e3" -> float "1e2" then identifier "e3".
-        self.assertEqual(kinds_vals("1e2e3"), [
-            (TokenKind.CONSTANT, "1e2"),
-            (TokenKind.IDENTIFIER, "e3"),
-        ])
+    def test_exponent_followed_by_more_rejected(self):
+        # `1e2e3` is an invalid pp-number (numeric + abutting identifier).
+        with self.assertRaises(LexError):
+            list(tokenize("1e2e3"))
 
 
 class TestCharacterConstants(unittest.TestCase):
@@ -518,6 +512,37 @@ class TestSampleProgram(unittest.TestCase):
             (TokenKind.SYMBOL, ";"),
             (TokenKind.SYMBOL, "}"),
         ])
+
+
+_INVALID_LEX_DIR = Path(__file__).parent / "tests" / "invalid_lex"
+
+
+def _preprocess(src: str) -> str:
+    """Strip comments via pcpp (needed because the lexer treats comments
+    as invalid characters — the preprocessor is the upstream stage)."""
+    result = subprocess.run(
+        ["pcpp", "-", "--line-directive"],
+        input=src, capture_output=True, text=True, check=True,
+    )
+    return result.stdout
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+class TestInvalidLex(unittest.TestCase):
+    """Negative-lex test cases from nlsandler/writing-a-c-compiler-tests.
+
+    Each .c file is passed through pcpp (to strip comments) and then
+    tokenized; the lexer must raise LexError somewhere in the stream.
+    """
+
+    def test_invalid_lex_files(self):
+        paths = sorted(_INVALID_LEX_DIR.glob("*.c"))
+        self.assertGreater(len(paths), 0, f"no .c files in {_INVALID_LEX_DIR}")
+        for path in paths:
+            with self.subTest(file=path.name):
+                src = _preprocess(path.read_text())
+                with self.assertRaises(LexError):
+                    list(tokenize(src))
 
 
 if __name__ == "__main__":

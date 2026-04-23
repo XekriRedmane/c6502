@@ -133,6 +133,7 @@ _TERMINAL_TO_KIND.update({
 
 
 def tokenize(source: str) -> Iterator[Token]:
+    prev: Token | None = None
     try:
         for lt in _LARK.lex(source):
             if lt.type == "INVALID_NUMBER":
@@ -146,7 +147,23 @@ def tokenize(source: str) -> Iterator[Token]:
                     f"unrecognized token type {lt.type}",
                     lt.line, lt.column,
                 )
-            yield Token(kind=kind, value=str(lt), line=lt.line, col=lt.column)
+            tok = Token(kind=kind, value=str(lt), line=lt.line, col=lt.column)
+            # C99 pp-numbers are greedy: a numeric constant can't abut an
+            # identifier (e.g. `1foo`, `42ua`, `1e2e3`). If it does, the whole
+            # thing would be a single invalid pp-number at phase 7. We detect
+            # the split tokens and reject.
+            if (prev is not None
+                    and prev.kind == TokenKind.CONSTANT
+                    and tok.kind == TokenKind.IDENTIFIER
+                    and prev.line == tok.line
+                    and prev.col + len(prev.value) == tok.col):
+                raise LexError(
+                    f"invalid pp-number: {prev.value}{tok.value!r} "
+                    "(numeric constant may not abut an identifier)",
+                    prev.line, prev.col,
+                )
+            yield tok
+            prev = tok
     except UnexpectedCharacters as e:
         ch = source[e.pos_in_stream] if e.pos_in_stream < len(source) else ""
         raise LexError(f"unexpected character {ch!r}", e.line, e.column) from None
@@ -168,10 +185,13 @@ class Lexer:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: lexer.py <file>", file=sys.stderr)
+        print("usage: lexer.py <file>|-", file=sys.stderr)
         return 2
-    with open(argv[1], "r", encoding="utf-8") as f:
-        source = f.read()
+    if argv[1] == "-":
+        source = sys.stdin.read()
+    else:
+        with open(argv[1], "r", encoding="utf-8") as f:
+            source = f.read()
     try:
         for tok in tokenize(source):
             print(f"{tok.line}:{tok.col}\t{tok.kind.value}\t{tok.value}")

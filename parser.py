@@ -65,10 +65,13 @@ def parse(source: str) -> c99_ast.Type_program:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: parser.py <file>", file=sys.stderr)
+        print("usage: parser.py <file>|-", file=sys.stderr)
         return 2
-    with open(argv[1], "r", encoding="utf-8") as f:
-        source = f.read()
+    if argv[1] == "-":
+        source = sys.stdin.read()
+    else:
+        with open(argv[1], "r", encoding="utf-8") as f:
+            source = f.read()
     print(pretty(parse(source)))
     return 0
 

@@ -45,6 +45,15 @@ Notes:
   filename, or default to stdout.
 - The comment-stripping step uses pcpp via the Python API (see
   `preprocessor.py`); pcpp is a project dependency, no shelling out.
+- Any flag `compile.py` doesn't recognize is forwarded to the
+  preprocessor — the full pcpp surface (`-D`, `-U`, `-N`, `-I`,
+  `--passthru-*`, `--line-directive`, etc.) works the same as the
+  `pcpp` CLI. pcpp's own `-o` is not forwarded; `compile.py`'s `-o`
+  is the only output flag.
+
+```sh
+uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
+```
 
 The per-stage tools (`lexer.py`, `parser.py`, `tac_translator.py`,
 `asm_translator.py`, `asm_emit.py`) below are the same building blocks,

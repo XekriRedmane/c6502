@@ -106,6 +106,46 @@ class TestCompileDriver(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertIn("LDA   #$2A", out)
 
+    def test_dash_d_macro_is_forwarded_to_preprocessor(self):
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen", "-D", "MAX=42"],
+            stdin="int main(void) { return MAX; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("LDA   #$2A", out)
+
+    def test_dash_d_without_value_defaults_to_one(self):
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen", "-D", "FOO"],
+            stdin="int main(void) { return FOO; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("LDA   #$01", out)
+
+    def test_pcpp_version_macro_is_predefined(self):
+        # __PCPP_VERSION__ holds pcpp's version string ("1.30"), which
+        # the parser would reject as a numeric expression. So we only
+        # check that the macro is defined, via #ifdef.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin=("#ifdef __PCPP_VERSION__\n"
+                   "int main(void) { return 99; }\n"
+                   "#else\n"
+                   "int main(void) { return 0; }\n"
+                   "#endif\n"),
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("LDA   #$63", out)
+
+    def test_unknown_pcpp_flag_is_ignored(self):
+        rc, _, err = self._run(
+            ["compile.py", "-", "--codegen", "--no-such-pcpp-flag"],
+            stdin=self.SOURCE,
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("--no-such-pcpp-flag", err)
+        self.assertIn("not known", err)
+
 
 if __name__ == "__main__":
     unittest.main()

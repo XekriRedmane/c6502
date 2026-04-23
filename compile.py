@@ -1,8 +1,8 @@
 """Top-level c6502 compiler driver.
 
-Runs the preprocessor (preprocessor.preprocess, our small wrapper around
-the pcpp library), then continues the pipeline up to the stage requested
-by exactly one of:
+Runs the preprocessor (preprocessor.preprocess, our wrapper around the
+pcpp library), then continues the pipeline up to the stage requested by
+exactly one of:
 
   --lex      stop after tokenization; one `line:col<tab>kind<tab>value`
              line per token
@@ -12,6 +12,11 @@ by exactly one of:
 
 Output goes to stdout by default, or to the file named by `-o`. With
 `--codegen`, the output file (if any) must have a `.asm` suffix.
+
+Any flag not recognized by this driver is forwarded to the preprocessor.
+That includes the full pcpp command-line surface (`-D`, `-U`, `-N`, `-I`,
+`--passthru-*`, `--line-directive`, etc.) — see `preprocessor.py`. pcpp's
+own `-o` is not forwarded; this driver's `-o` is for the final output.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ from tac_translator import translate_program as translate_to_tac
 
 
 def _format_tokens(source: str) -> str:
-    out = []
+    out: list[str] = []
     for tok in tokenize(source):
         out.append(f"{tok.line}:{tok.col}\t{tok.kind.value}\t{tok.value}\n")
     return "".join(out)
@@ -61,7 +66,7 @@ def main(argv: list[str]) -> int:
                         const="tac", help="stop after TAC translation")
     stages.add_argument("--codegen", dest="stage", action="store_const",
                         const="codegen", help="emit 6502 assembly")
-    args = ap.parse_args(argv[1:])
+    args, pcpp_args = ap.parse_known_args(argv[1:])
 
     if (args.stage == "codegen"
             and args.output is not None
@@ -78,7 +83,7 @@ def main(argv: list[str]) -> int:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
 
-    text = _run_stage(args.stage, preprocess(source))
+    text = _run_stage(args.stage, preprocess(source, pcpp_args))
 
     if args.output is not None:
         with open(args.output, "w", encoding="utf-8") as f:

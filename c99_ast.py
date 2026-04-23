@@ -43,3 +43,24 @@ class Type_exp:
 @dataclass
 class Constant(Type_exp):
     value: int
+
+
+@dataclass
+class Unary(Type_exp):
+    unary_operator: Type_unary_operator
+    exp: Type_exp
+
+
+@dataclass
+class Type_unary_operator:
+    pass
+
+
+@dataclass
+class Complement(Type_unary_operator):
+    pass
+
+
+@dataclass
+class Negate(Type_unary_operator):
+    pass

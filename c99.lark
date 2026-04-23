@@ -169,7 +169,11 @@ start: function
 
 function: INT IDENTIFIER LPAREN VOID RPAREN LBRACE statement RBRACE
 statement: RETURN exp SEMICOLON
-exp: INTEGER_CONSTANT
+exp: INTEGER_CONSTANT    -> constant
+   | unop exp             -> unary
+   | LPAREN exp RPAREN    -> paren
+unop: MINUS               -> negate
+    | TILDE               -> complement
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as

@@ -54,6 +54,59 @@ class TestParser(unittest.TestCase):
                 ast = parse(f"int {name}(void) {{ return 0; }}")
                 self.assertEqual(ast.function_definition.name, name)
 
+    def test_unary_negate(self):
+        ast = parse("int main(void) { return -42; }")
+        self.assertEqual(
+            ast.function_definition.body,
+            c99_ast.Return(exp=c99_ast.Unary(
+                unary_operator=c99_ast.Negate(),
+                exp=c99_ast.Constant(value=42),
+            )),
+        )
+
+    def test_unary_complement(self):
+        ast = parse("int main(void) { return ~10; }")
+        self.assertEqual(
+            ast.function_definition.body,
+            c99_ast.Return(exp=c99_ast.Unary(
+                unary_operator=c99_ast.Complement(),
+                exp=c99_ast.Constant(value=10),
+            )),
+        )
+
+    def test_parens_do_not_appear_in_ast(self):
+        ast = parse("int main(void) { return (42); }")
+        self.assertEqual(
+            ast.function_definition.body,
+            c99_ast.Return(exp=c99_ast.Constant(value=42)),
+        )
+
+    def test_nested_unary(self):
+        ast = parse("int main(void) { return -(-42); }")
+        self.assertEqual(
+            ast.function_definition.body.exp,
+            c99_ast.Unary(
+                unary_operator=c99_ast.Negate(),
+                exp=c99_ast.Unary(
+                    unary_operator=c99_ast.Negate(),
+                    exp=c99_ast.Constant(value=42),
+                ),
+            ),
+        )
+
+    def test_mixed_unary_with_parens(self):
+        ast = parse("int main(void) { return ~(-5); }")
+        self.assertEqual(
+            ast.function_definition.body.exp,
+            c99_ast.Unary(
+                unary_operator=c99_ast.Complement(),
+                exp=c99_ast.Unary(
+                    unary_operator=c99_ast.Negate(),
+                    exp=c99_ast.Constant(value=5),
+                ),
+            ),
+        )
+
     def test_returned_ast_types(self):
         ast = parse("int main(void) { return 0; }")
         self.assertIsInstance(ast, c99_ast.Type_program)

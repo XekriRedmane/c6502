@@ -50,9 +50,27 @@ class _ASTBuilder(Transformer):
     def statement(self, _return, exp, _semi):
         return c99_ast.Return(exp=exp)
 
+    # Alternatives of `exp` — each named in c99.lark.
     @v_args(inline=True)
-    def exp(self, constant_token):
-        return c99_ast.Constant(value=int(str(constant_token)))
+    def constant(self, token):
+        return c99_ast.Constant(value=int(str(token)))
+
+    @v_args(inline=True)
+    def unary(self, op, inner):
+        return c99_ast.Unary(unary_operator=op, exp=inner)
+
+    @v_args(inline=True)
+    def paren(self, _lp, inner, _rp):
+        return inner
+
+    # Alternatives of `unop` — tokens discarded, just produce the AST op.
+    @v_args(inline=True)
+    def negate(self, _minus):
+        return c99_ast.Negate()
+
+    @v_args(inline=True)
+    def complement(self, _tilde):
+        return c99_ast.Complement()
 
 
 _BUILDER = _ASTBuilder()

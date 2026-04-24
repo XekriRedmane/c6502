@@ -13,4 +13,5 @@ module C99 {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
+        | LogicalAnd | LogicalOr
 }

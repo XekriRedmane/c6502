@@ -174,7 +174,11 @@ statement: RETURN exp SEMICOLON
 // associativity) and right into the next-tighter level. Lark's `?`
 // rule prefix inlines a level when it has a single child, so the
 // AST sees no extra wrapping for "passes through to next level".
-?exp: or_exp
+?exp: logical_or_exp
+?logical_or_exp: logical_or_exp OROR logical_and_exp  -> logical_or
+               | logical_and_exp
+?logical_and_exp: logical_and_exp ANDAND or_exp       -> logical_and
+                | or_exp
 ?or_exp: or_exp PIPE xor_exp        -> bitwise_or
        | xor_exp
 ?xor_exp: xor_exp CARET and_exp     -> bitwise_xor

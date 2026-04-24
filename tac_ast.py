@@ -51,6 +51,34 @@ class Binary(Type_instruction):
 
 
 @dataclass
+class Copy(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class Jump(Type_instruction):
+    target: str
+
+
+@dataclass
+class JumpIfTrue(Type_instruction):
+    condition: Type_val
+    target: str
+
+
+@dataclass
+class JumpIfFalse(Type_instruction):
+    condition: Type_val
+    target: str
+
+
+@dataclass
+class Label(Type_instruction):
+    name: str
+
+
+@dataclass
 class Type_val:
     pass
 

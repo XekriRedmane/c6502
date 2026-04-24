@@ -126,6 +126,14 @@ class _ASTBuilder(Transformer):
     def greater_or_equal(self, left, _ge, right):
         return c99_ast.Binary(op=c99_ast.GreaterOrEqual(), left=left, right=right)
 
+    @v_args(inline=True)
+    def logical_and(self, left, _andand, right):
+        return c99_ast.Binary(op=c99_ast.LogicalAnd(), left=left, right=right)
+
+    @v_args(inline=True)
+    def logical_or(self, left, _oror, right):
+        return c99_ast.Binary(op=c99_ast.LogicalOr(), left=left, right=right)
+
     # Alternatives of `unop` — tokens discarded, just produce the AST op.
     @v_args(inline=True)
     def negate(self, _minus):

@@ -77,6 +77,14 @@ Atomic arithmetic / flag instructions:
     that from the target label — emit just writes the symbolic name.
   - `Label(name)` -> `<name>:` at column 1. No opcode column. Lets a
     `Jump`/`Branch` resolve to a position inside the same function.
+  - `Compare(left, right)` -> `CMP`/`CPX`/`CPY` depending on whether
+    `left` is `Reg(A)`/`Reg(X)`/`Reg(Y)`. `right` is `Imm`/`Stack`/`Frame`
+    for CMP (Stack/Frame go through LDY indirect-Y like Add/Sub); for
+    CPX and CPY `right` must be `Imm` because the 6502's CPX/CPY lack an
+    indirect-Y addressing mode, so soft-stack operands can't be compared
+    against X or Y directly (load to A and use CMP instead). Sets the
+    same N/Z/C flags an `SBC left - right` would, without writing the
+    result anywhere.
 
 (`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
@@ -517,6 +525,46 @@ def _emit_xor(
             )
 
 
+def _emit_compare(
+    left: asm_ast.Type_operand, right: asm_ast.Type_operand,
+) -> list[str]:
+    """Compare(left, right) -> CMP/CPX/CPY. The register on the left picks
+    the opcode; the right side carries the addressing mode. CPX/CPY have
+    no indirect-Y mode, so Stack/Frame are only legal when left is A."""
+    _reject_pseudo(left)
+    _reject_pseudo(right)
+    if not isinstance(left, asm_ast.Reg):
+        raise ValueError(f"Compare left must be a register, got {left!r}")
+    match left.reg:
+        case asm_ast.A():
+            opcode = "CMP"
+        case asm_ast.X():
+            opcode = "CPX"
+        case asm_ast.Y():
+            opcode = "CPY"
+        case _:
+            raise TypeError(f"unexpected reg: {left.reg!r}")
+    match right:
+        case asm_ast.Imm(value=v):
+            _check_byte("immediate", v)
+            return [_instr_line(opcode, f"#${v:02X}")]
+        case asm_ast.Stack() | asm_ast.Frame():
+            if opcode != "CMP":
+                raise ValueError(
+                    f"Compare with left={left!r} requires Imm right "
+                    "(CPX/CPY have no indirect-Y addressing mode); "
+                    f"got {right!r}"
+                )
+            return [
+                _emit_load_y(right.offset),
+                _instr_line(opcode, _indirect_addr(right)),
+            ]
+        case _:
+            raise ValueError(
+                f"cannot emit Compare(left={left!r}, right={right!r})"
+            )
+
+
 def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
     if arg_bytes + local_bytes == 0:
         return []
@@ -601,6 +649,8 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return [_instr_line(f"B{_cond_suffix(cond)}", target)]
         case asm_ast.Label(name=name):
             return [f"{name}:"]
+        case asm_ast.Compare(left=left, right=right):
+            return _emit_compare(left, right)
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 

@@ -25,6 +25,7 @@ module ASM {
         | Label(identifier name)
         | Jump(identifier target)
         | Branch(condition cond, identifier target)
+        | Compare(operand left, operand right)
 
     operand = Imm(int value) | Reg(reg) | Pseudo(identifier name)
             | Stack(int offset) | Frame(int offset)

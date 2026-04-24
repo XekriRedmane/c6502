@@ -161,3 +161,13 @@ class LessOrEqual(Type_binary_operator):
 @dataclass
 class GreaterOrEqual(Type_binary_operator):
     pass
+
+
+@dataclass
+class LogicalAnd(Type_binary_operator):
+    pass
+
+
+@dataclass
+class LogicalOr(Type_binary_operator):
+    pass

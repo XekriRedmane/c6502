@@ -6,7 +6,9 @@ flattened: nested operators materialize their intermediate results into
 fresh Var-typed temporaries and emit the corresponding TAC instruction.
 
 State:
-  - Translator owns the temporary-name counter (`%0`, `%1`, ...).
+  - Translator owns the temporary-name counter (`%0`, `%1`, ...) and a
+    separate label counter (`and_false_0`, `and_end_0`, ...) for the
+    short-circuit lowerings.
   - The per-function instruction list is passed down explicitly as an
     argument so there's no implicit "current function" on the instance.
 
@@ -32,6 +34,22 @@ Mapping:
     Equal / NotEqual /           GreaterOrEqual
     LessThan / GreaterThan /
     LessOrEqual / GreaterOrEqual
+
+Short-circuit lowerings (no corresponding TAC binary op — the control
+flow *is* the semantics):
+  C99 Binary(LogicalAnd, L, R):
+      <eval L -> src1>
+      JumpIfFalse(src1, and_false_N)
+      <eval R -> src2>
+      JumpIfFalse(src2, and_false_N)
+      Copy(Constant(1), result)
+      Jump(and_end_N)
+      Label(and_false_N)
+      Copy(Constant(0), result)
+      Label(and_end_N)
+  C99 Binary(LogicalOr, L, R): symmetric, with JumpIfTrue / or_true_N /
+      or_end_N and the 0/1 constants swapped. Each use of && or || gets
+      a fresh N so nested short-circuits don't collide.
 """
 
 from __future__ import annotations
@@ -43,10 +61,16 @@ import tac_ast
 class Translator:
     def __init__(self) -> None:
         self._temp_counter = 0
+        self._label_counter = 0
 
     def make_temporary_variable_name(self) -> str:
         name = f"%{self._temp_counter}"
         self._temp_counter += 1
+        return name
+
+    def make_label(self, prefix: str) -> str:
+        name = f"{prefix}_{self._label_counter}"
+        self._label_counter += 1
         return name
 
     def translate_program(self, prog: c99_ast.Type_program) -> tac_ast.Type_program:
@@ -95,6 +119,16 @@ class Translator:
                     dst=dst,
                 ))
                 return dst
+            case c99_ast.Binary(op=c99_ast.LogicalAnd(), left=left, right=right):
+                return self.translate_short_circuit(
+                    left, right, instrs,
+                    short_circuit_on_true=False,
+                )
+            case c99_ast.Binary(op=c99_ast.LogicalOr(), left=left, right=right):
+                return self.translate_short_circuit(
+                    left, right, instrs,
+                    short_circuit_on_true=True,
+                )
             case c99_ast.Binary(op=op, left=left, right=right):
                 # Translate left first so its temps get the lower
                 # numbers — matches a left-to-right evaluation order
@@ -110,6 +144,47 @@ class Translator:
                 ))
                 return dst
         raise TypeError(f"unexpected exp: {exp!r}")
+
+    def translate_short_circuit(
+        self,
+        left: c99_ast.Type_exp,
+        right: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+        short_circuit_on_true: bool,
+    ) -> tac_ast.Type_val:
+        # && short-circuits to 0 on the first false operand; || to 1
+        # on the first true operand. Otherwise the two lowerings are
+        # mirror images, so we parametrize:
+        #   - which conditional-jump opcode short-circuits the chain
+        #   - which constant the short-circuit branch writes (the
+        #     short-circuit outcome), vs. the fallthrough branch (the
+        #     opposite outcome)
+        if short_circuit_on_true:
+            branch_prefix, end_prefix = "or_true", "or_end"
+            short_circuit_jump = tac_ast.JumpIfTrue
+            short_circuit_value, fallthrough_value = 1, 0
+        else:
+            branch_prefix, end_prefix = "and_false", "and_end"
+            short_circuit_jump = tac_ast.JumpIfFalse
+            short_circuit_value, fallthrough_value = 0, 1
+        branch_label = self.make_label(branch_prefix)
+        end_label = self.make_label(end_prefix)
+        dst = tac_ast.Var(name=self.make_temporary_variable_name())
+
+        src1 = self.translate_exp(left, instrs)
+        instrs.append(short_circuit_jump(condition=src1, target=branch_label))
+        src2 = self.translate_exp(right, instrs)
+        instrs.append(short_circuit_jump(condition=src2, target=branch_label))
+        instrs.append(tac_ast.Copy(
+            src=tac_ast.Constant(value=fallthrough_value), dst=dst,
+        ))
+        instrs.append(tac_ast.Jump(target=end_label))
+        instrs.append(tac_ast.Label(name=branch_label))
+        instrs.append(tac_ast.Copy(
+            src=tac_ast.Constant(value=short_circuit_value), dst=dst,
+        ))
+        instrs.append(tac_ast.Label(name=end_label))
+        return dst
 
     def translate_unop(
         self, op: c99_ast.Type_unary_operator,

@@ -151,6 +151,12 @@ class Branch(Type_instruction):
 
 
 @dataclass
+class Compare(Type_instruction):
+    left: Type_operand
+    right: Type_operand
+
+
+@dataclass
 class Type_operand:
     pass
 

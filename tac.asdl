@@ -5,6 +5,11 @@ module TAC {
         Ret(val)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
+        | Copy(val src, val dst)
+        | Jump(identifier target)
+        | JumpIfTrue(val condition, identifier target)
+        | JumpIfFalse(val condition, identifier target)
+        | Label(identifier name)
     val = Constant(int value) | Var(identifier name)
     unary_operator = Complement | Negate | LogicalNot
     binary_operator =

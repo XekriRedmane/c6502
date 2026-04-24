@@ -97,9 +97,6 @@ class TestEmitMov(unittest.TestCase):
             asm_ast.Mov(src=_reg(_Y), dst=_reg(_Y)),
             asm_ast.Mov(src=_reg(_X), dst=_reg(_Y)),
             asm_ast.Mov(src=_reg(_Y), dst=_reg(_X)),
-            # Pseudo must have been resolved by an earlier pass.
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t")),
-            asm_ast.Mov(src=asm_ast.Pseudo(name="t"), dst=_reg(_A)),
             # X/Y <-> Stack not handled (would clobber A); codegen must go
             # via A explicitly.
             asm_ast.Mov(src=_reg(_X), dst=asm_ast.Stack(offset=2)),
@@ -173,7 +170,6 @@ class TestEmitUnary(unittest.TestCase):
         unsupported = [
             _reg(_X),
             _reg(_Y),
-            asm_ast.Pseudo(name="t"),
             asm_ast.Imm(value=0),
         ]
         for sd in unsupported:
@@ -191,7 +187,6 @@ class TestEmitUnary(unittest.TestCase):
         unsupported = [
             _reg(_X),
             _reg(_Y),
-            asm_ast.Pseudo(name="t"),
             asm_ast.Imm(value=0),
         ]
         for sd in unsupported:
@@ -225,6 +220,40 @@ class TestEmitUnary(unittest.TestCase):
                 "   ADC   #$01",
                 "   STA   (SSP),Y",
             ],
+        )
+
+
+class TestEmitRejectsPseudo(unittest.TestCase):
+    """Pseudo operands must be eliminated before emit; reaching the
+    emitter with one indicates the pseudo->stack pass didn't run."""
+
+    def _assert_pseudo_error(self, instr):
+        with self.assertRaises(ValueError) as cm:
+            emit_instruction(instr)
+        self.assertIn("Pseudo", str(cm.exception))
+
+    def test_mov_with_pseudo_src(self):
+        self._assert_pseudo_error(
+            asm_ast.Mov(src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
+        )
+
+    def test_mov_with_pseudo_dst(self):
+        self._assert_pseudo_error(
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t"))
+        )
+
+    def test_mov_with_pseudo_on_both_sides(self):
+        self._assert_pseudo_error(
+            asm_ast.Mov(src=asm_ast.Pseudo(name="a"),
+                        dst=asm_ast.Pseudo(name="b"))
+        )
+
+    def test_unary_with_pseudo(self):
+        self._assert_pseudo_error(
+            asm_ast.Unary(op=asm_ast.Not(), src_dst=asm_ast.Pseudo(name="t"))
+        )
+        self._assert_pseudo_error(
+            asm_ast.Unary(op=asm_ast.Neg(), src_dst=asm_ast.Pseudo(name="t"))
         )
 
 

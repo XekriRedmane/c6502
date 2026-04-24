@@ -59,6 +59,17 @@ def _check_amt(amt: int) -> None:
         raise ValueError(f"stack adjust {amt} out of range (expected 0..65535)")
 
 
+def _reject_pseudo(op: asm_ast.Type_operand) -> None:
+    """Pseudo operands must be eliminated before emit; the pseudo->stack
+    replacement pass owns that. Reaching emit with one is a contract
+    violation in an earlier pass, not a user-facing condition."""
+    if isinstance(op, asm_ast.Pseudo):
+        raise ValueError(
+            f"Pseudo({op.name!r}) reached asm_emit; "
+            "the pseudo->stack replacement pass must run first"
+        )
+
+
 def _reg_letter(r: asm_ast.Type_reg) -> str:
     match r:
         case asm_ast.A():
@@ -115,6 +126,8 @@ def _emit_load_y(off: int) -> str:
 
 
 def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
+    _reject_pseudo(src)
+    _reject_pseudo(dst)
     match src, dst:
         case asm_ast.Imm(value=v), asm_ast.Reg(reg=r):
             _check_byte("immediate", v)
@@ -158,6 +171,7 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
 def _emit_unary(
     op: asm_ast.Type_unary_operator, src_dst: asm_ast.Type_operand,
 ) -> list[str]:
+    _reject_pseudo(src_dst)
     match op, src_dst:
         case asm_ast.Not(), asm_ast.Reg(reg=asm_ast.A()):
             return [_instr_line("EOR", "#$FF")]

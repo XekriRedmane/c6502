@@ -224,21 +224,32 @@ local storage:
    `SSP+1` … `SSP+N`.
 2. **Caller** issues `JSR target`. The hardware stack receives the
    2-byte return address; the soft stack is unchanged.
-3. **Callee prelude:**
-   1. Push the caller's `FP` onto the soft stack (2 bytes; `SSP -= 2`).
-   2. Subtract `M` from `SSP`, allocating local storage.
+3. **Callee prelude** (only when `N+M > 0`):
+   1. Subtract `M+2` from `SSP`, allocating the saved-FP slot plus
+      `M` bytes of locals in one step.
+   2. Write the caller's `FP` into the slot at `SSP+M+1` (low) and
+      `SSP+M+2` (high) via `LDY #(M+1); STA (SSP),Y; INY; …`.
    3. Set `FP = SSP`. From here on, `Frame(off)` accesses resolve
       against this fixed `FP`.
 4. … function body runs (may push/pop on the soft stack freely; only
    `SSP` moves, `FP` stays put) …
-5. **Callee epilogue:**
-   1. `SSP = FP` (rewinds any intra-body pushes).
-   2. Add `M` to `SSP`, deallocating locals; `SSP` now points just
-      below the saved old `FP`.
-   3. Pop the saved old `FP` back into the `FP` register (2 bytes;
-      `SSP += 2`).
-   4. Add `N` to `SSP`, deallocating the caller's arguments.
+5. **Callee epilogue** (only when `N+M > 0`):
+   1. `PHA` the return value (the SSP/FP arithmetic clobbers `A`).
+   2. `SSP = FP + (M + N + 2)` — a single 16-bit add restores `SSP`
+      to the value it had before the caller pushed args, simultaneously
+      tearing down locals + the saved-FP slot + the caller's args.
+   3. Read the saved FP via `LDA (FP),Y` with `Y = M+1` (low) and
+      `Y = M+2` (high). The `FP` register is still pointing at our
+      own frame at this point, so `(FP),Y` resolves correctly. Stash
+      the low byte in `X` across the high read — writing to `FP`
+      between the two reads would corrupt the indirect base.
+   4. `STA FP+1` (high byte) and `STX FP` (low byte). `FP` now holds
+      the caller's value.
+   5. `PLA` to restore the return value.
 6. **Callee** issues `RTS`.
+
+When `N+M == 0` (no locals, no args) the prelude and epilogue collapse
+to nothing and `RTS` respectively — there's no FP setup to do.
 
 After the return, `SSP` and `FP` are both back to where they were
 before the caller pushed arguments — the caller does no per-call
@@ -277,6 +288,77 @@ caller-pushed args, it's why arg `j` is at offset `M + 3 + j`, not
 
 The hardware stack, meanwhile, just holds the return address pushed by
 `JSR`, plus anything the function `PHA`s during execution.
+
+### Sample emitted prologue / epilogue
+
+For a function with `M = 2` locals and `N = 0` args (e.g. what
+`int main(void) { return ~~5; }` produces — two unary ops, two
+TAC temporaries), the emitter produces:
+
+**Prologue** (`FunctionPrologue(arg_bytes=0, local_bytes=2)`):
+
+```
+   ; SSP -= (M + 2) = 4   — alloc the saved-FP slot + 2 locals
+   SEC
+   LDA   SSP
+   SBC   #$04
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   ; write caller FP into the slot at SSP+M+1=3 (low) / SSP+M+2=4 (high)
+   LDY   #$03
+   LDA   FP
+   STA   (SSP),Y
+   INY
+   LDA   FP+1
+   STA   (SSP),Y
+   ; FP = SSP   — the local slots are now FP+1 and FP+2
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+```
+
+**Epilogue** (`Ret(arg_bytes=0, local_bytes=2)`):
+
+```
+   PHA                          ; preserve return value (in A)
+   ; SSP = FP + (M + N + 2) = FP + 4
+   ; — undoes the prelude's SSP -= 4 in one shot, getting SSP back
+   ;   to the value it had at function entry (= caller_SSP since N=0)
+   CLC
+   LDA   FP
+   ADC   #$04
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   ; restore caller FP from FP+M+1=3 (low) / FP+M+2=4 (high) via
+   ; (FP),Y. The FP register still points at our frame here, so
+   ; (FP),Y reads the right bytes. We can't STA FP between the
+   ; two LDAs because that would corrupt the indirect base — so the
+   ; low byte goes through X.
+   LDY   #$03
+   LDA   (FP),Y                 ; A = saved FP low
+   TAX                          ; X holds saved low byte
+   INY                          ; Y = $04
+   LDA   (FP),Y                 ; A = saved FP high
+   STA   FP+1                   ; commit high byte (FP now half-restored)
+   STX   FP                     ; commit low byte (FP fully restored)
+   PLA                          ; restore return value
+   RTS
+```
+
+Costs (M=2, N=0): 17 instructions of prologue, 17 of epilogue. The
+prologue's SSP-subtract scales 16-bit-arithmetic-flat with M (two
+3-cycle ADC pairs regardless of M's value), the FP write is a fixed
+6 instructions, and the FP=SSP copy is a fixed 4 — so the prologue
+is 17 instructions for any `M ≤ 253`. Same shape on the epilogue.
+
+For functions with neither locals nor args (`M = N = 0`) the prologue
+emits nothing and the epilogue collapses to a single `RTS` — see e.g.
+`int main(void) { return 42; }`.
 
 ## Stripping comments with pcpp
 

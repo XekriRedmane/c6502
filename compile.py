@@ -24,15 +24,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-from allocate_stack import allocate_program as allocate_stack
+from passes.allocate_stack import allocate_program as allocate_stack
 from asm_emit import emit_program
 from tac_to_asm import translate_program as translate_to_asm
 from lexer import tokenize
 from parser import parse
 from preprocessor import preprocess
 from pretty import pretty
-from replace_pseudoregisters import replace_program as replace_pseudoregs
-from tac_translator import translate_program as translate_to_tac
+from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
+from c99_to_tac import translate_program as translate_to_tac
 
 
 def _format_tokens(source: str) -> str:

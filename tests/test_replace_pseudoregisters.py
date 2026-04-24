@@ -1,7 +1,7 @@
 import unittest
 
 import asm_ast
-from replace_pseudoregisters import (
+from passes.replace_pseudoregisters import (
     Replacer,
     replace_function,
     replace_program,

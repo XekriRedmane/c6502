@@ -514,7 +514,7 @@ class TestSampleProgram(unittest.TestCase):
         ])
 
 
-_INVALID_LEX_DIR = Path(__file__).parent / "tests" / "invalid_lex"
+_INVALID_LEX_DIR = Path(__file__).parent / "invalid_lex"
 
 
 def _preprocess(src: str) -> str:

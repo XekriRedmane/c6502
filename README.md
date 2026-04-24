@@ -73,8 +73,8 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
 `compile.py` is the only CLI; every other module (`lexer.py`,
-`parser.py`, `tac_translator.py`, `tac_to_asm.py`,
-`replace_pseudoregisters.py`, `allocate_stack.py`, `asm_emit.py`) is
+`parser.py`, `c99_to_tac.py`, `tac_to_asm.py`,
+`passes/replace_pseudoregisters.py`, `passes/allocate_stack.py`, `asm_emit.py`) is
 library-only and used as an import.
 
 ## Compiler pipeline
@@ -90,7 +90,7 @@ that takes an AST and returns an AST (or text, for emit):
    precedence is encoded by a precedence-climbing rule layout
    (`exp → add_exp → mul_exp → unary_exp → atom`).
 
-2. **`tac_translator.translate_program`** (`tac_translator.py`) —
+2. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
    `c99_ast` → `tac_ast` (three-address code). Compound expressions
    flatten into a sequence of ops, materializing each intermediate
    into a fresh `Var(%n)` temporary. `Binary(op, src1, src2, dst)`
@@ -103,14 +103,14 @@ that takes an AST and returns an AST (or text, for emit):
    passes — this pass produces correct but redundant output (every
    intermediate is materialized through a `Frame` slot).
 
-4. **`replace_pseudoregisters.replace_program`** — assigns each
+4. **`passes.replace_pseudoregisters.replace_program`** — assigns each
    `Pseudo(name)` a `Frame(offset)` slot. Per-function: walks
    instructions in order, mints offsets `args_bytes+1`,
    `args_bytes+2`, … for each new pseudo name; reuses the same
    offset for repeated names. `args_bytes` is `0` for now (no
    function arguments yet).
 
-5. **`allocate_stack.allocate_program`** — finds each function's
+5. **`passes.allocate_stack.allocate_program`** — finds each function's
    `M` (the highest `Frame` offset = its local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites
    every `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
@@ -138,7 +138,7 @@ dataclass tree. The pretty-printer in `pretty.py` works on any
 `@dataclass` tree and emits valid Python, so round-tripping through
 `eval()` with the AST classes in scope reconstructs the node.
 
-The `*_grammar.txt` files are reference documentation for the spec
+The `docs/*_grammar.txt` files are reference documentation for the spec
 grammars that `c99.lark` implements — they're not parsed by any
 tool.
 

@@ -3,7 +3,7 @@ import unittest
 import c99_ast
 import tac_ast
 from parser import parse
-from tac_translator import Translator, translate_program
+from c99_to_tac import Translator, translate_program
 
 
 class TestTranslateExp(unittest.TestCase):
@@ -231,7 +231,7 @@ class TestTranslateProgram(unittest.TestCase):
 
     def test_end_to_end_binary_precedence(self):
         # 1 + 2 * 3 — the parser puts Multiply on the right of Add.
-        # tac_translator translates left first, so the constant 1 is
+        # c99_to_tac translates left first, so the constant 1 is
         # the first operand to flow through; then the multiply (which
         # allocates %0); then the add (allocating %1).
         tac = translate_program(parse("int main(void) { return 1 + 2 * 3; }"))

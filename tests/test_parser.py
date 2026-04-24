@@ -10,7 +10,7 @@ from lexer import LexError
 from parser import parse
 
 
-_TESTS_DIR = Path(__file__).parent / "tests"
+_TESTS_DIR = Path(__file__).parent
 
 
 def _preprocess(src: str) -> str:

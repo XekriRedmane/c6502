@@ -14,8 +14,8 @@ and may lag.
 ```sh
 uv sync                                         # create/update the project venv
 uv run python -m unittest                       # run all tests
-uv run python -m unittest test_asm_emit         # run one module
-uv run python -m unittest test_parser.TestValidFiles.test_return_2   # run one test
+uv run python -m unittest tests.test_asm_emit   # run one module
+uv run python -m unittest tests.test_parser.TestValidFiles.test_return_2   # run one test
 
 uv run python compile.py <source.c> --codegen              # C → 6502 asm to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
@@ -56,7 +56,7 @@ AST and returns another (or text for emit):
    covers integer constants, unary `-`/`~`, binary `+`/`-`/`*`/`/`/`%`, and
    parentheses. Precedence is encoded by rule layering
    (`exp → add_exp → mul_exp → unary_exp → atom`).
-2. `tac_translator.translate_program` — `c99_ast` → `tac_ast` (three-address
+2. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
    code). Compound expressions flatten into ops, materializing each intermediate
    into a fresh `Var(%n)`. `Binary(op, src1, src2, dst)` evaluates `src1` first
    so its temps get lower numbers.
@@ -65,11 +65,11 @@ AST and returns another (or text for emit):
    on `A`, carry setup if needed). Output is correct but redundant — every
    intermediate is materialized through a `Frame` slot. Optimization is
    deferred to TAC-level passes.
-4. `replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
+4. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
    `Frame(offset)` slot. Per function: walks instructions in order, mints
    offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
    the same offset for repeated names. `args_bytes` is `0` currently.
-5. `allocate_stack.allocate_program` — finds each function's `M` (highest
+5. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
    `Frame` offset = local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites every
    `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
@@ -180,7 +180,7 @@ a uv tool, used via its Python API, no shelling out). Malformed numeric
 tokens (`0x` with no digits, `3e` with no exponent body) raise `LexError`
 rather than being split.
 
-`*_grammar.txt` files are reference documentation for the spec grammars that
+`docs/*_grammar.txt` files are reference documentation for the spec grammars that
 `c99.lark` implements — they aren't parsed by any tool.
 
 ## Tests

@@ -1,7 +1,7 @@
 import unittest
 
 import asm_ast
-from allocate_stack import (
+from passes.allocate_stack import (
     allocate_function,
     allocate_program,
 )

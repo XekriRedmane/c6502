@@ -4,11 +4,12 @@ module ASM {
 
     instruction =
         Mov(operand src, operand dst)
-        | Ret(int amt)
-        | AllocateStack(int amt)
+        | Ret(int arg_bytes, int local_bytes)
+        | FunctionPrologue(int arg_bytes, int local_bytes)
         | Unary(unary_operator op, operand src_dst)
 
-    operand = Imm(int value) | Reg(reg) | Pseudo(identifier name) | Stack(int offset)
+    operand = Imm(int value) | Reg(reg) | Pseudo(identifier name)
+            | Stack(int offset) | Frame(int offset)
     unary_operator = Neg | Not
     reg = A | X | Y
 }

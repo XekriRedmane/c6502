@@ -8,12 +8,29 @@ Formatting rules:
 Soft-stack convention (see README "Function stack frame layout"):
   - the soft stack pointer is the symbol `SSP`, a 16-bit ZP value
     (low byte at `SSP`, high byte at `SSP+1`)
-  - `Stack(off)` operands are the byte at `SSP+off`; emitted as
-    `LDY #off` then `LDA (SSP),Y` / `STA (SSP),Y`
-  - any soft-stack access clobbers Y
-  - `AllocateStack(amt)` emits a 16-bit `SSP -= amt`; clobbers A
-  - `Ret(amt)` adds `amt` back to SSP then RTS; the A-clobbering add
-    is wrapped in PHA/PLA so the return value in A is preserved
+  - the frame pointer is the symbol `FP`, also a 16-bit ZP value
+    (low byte at `FP`, high byte at `FP+1`); FP is captured once at
+    function entry and stays put even when SSP moves during the body
+  - `Stack(off)` operands are the byte at `SSP+off` (SSP-relative);
+    `Frame(off)` operands are the byte at `FP+off` (FP-relative).
+    Both emit as `LDY #off` then `LDA (PTR),Y` / `STA (PTR),Y`
+  - any indirect access clobbers Y
+  - `FunctionPrologue(arg_bytes=N, local_bytes=M)` for `N+M > 0`:
+    allocates `M+2` bytes (locals + saved-FP slot), writes the caller's
+    FP into the slot at `SSP+M+1` (low) and `SSP+M+2` (high), then
+    sets `FP = SSP`. Clobbers A and Y. For `N+M == 0` it emits nothing
+    (no FP setup needed when the function has no locals or args).
+    Bounded `M <= 253` so `LDY #(M+2)` fits in a byte. Args
+    themselves were pushed by the caller before JSR; the prologue
+    doesn't allocate them.
+  - `Ret(arg_bytes=N, local_bytes=M)` for `N+M > 0`: PHA, then
+    `SSP = FP + (N + M + 2)` in one shot (the +2 is the saved-FP
+    slot; the result is the caller's pre-arg-push SSP, so the caller
+    needs no per-call cleanup). Then read the saved FP via `(FP),Y`
+    with `Y=M+1` (low) and `Y=M+2` (high), stashing the low byte in
+    X across the high read so we don't corrupt the FP register's
+    role as the indirect base mid-read. Then PLA, RTS. For `N+M ==
+    0` it just emits `RTS`.
 
 CLI: `asm_emit.py <input.c>|- [-o output.asm]`. The full pipeline goes
 C source -> parse -> tac translate -> asm translate -> emit. If -o is
@@ -27,8 +44,10 @@ import argparse
 import sys
 
 import asm_ast
+from allocate_stack import allocate_program as allocate_stack
 from asm_translator import translate_program as translate_to_asm
 from parser import parse
+from replace_pseudoregisters import replace_program as replace_pseudoregs
 from tac_translator import translate_program as translate_to_tac
 
 
@@ -36,9 +55,10 @@ from tac_translator import translate_program as translate_to_tac
 _OPCODE_COL = 3    # "column 4"
 _OPERAND_COL = 9   # "column 10"
 
-# Symbol for the soft stack pointer; the runtime header `equ`s this
-# to its zero-page address.
+# Symbols for the soft stack pointer and frame pointer; the runtime
+# header `equ`s each to its zero-page address.
 _SSP = "SSP"
+_FP = "FP"
 
 
 def _instr_line(opcode: str, operand: str = "") -> str:
@@ -116,13 +136,34 @@ def _emit_ssp_add(amt: int) -> list[str]:
     ]
 
 
-def _stack_operand() -> str:
-    return f"({_SSP}),Y"
+def _indirect_addr(op: asm_ast.Type_operand) -> str:
+    """ZP indirect-Y addressing string for a Stack or Frame operand."""
+    if isinstance(op, asm_ast.Stack):
+        return f"({_SSP}),Y"
+    if isinstance(op, asm_ast.Frame):
+        return f"({_FP}),Y"
+    raise TypeError(f"not an indirect operand: {op!r}")
 
 
 def _emit_load_y(off: int) -> str:
-    _check_byte("stack offset", off)
+    _check_byte("offset", off)
     return _instr_line("LDY", f"#${off:02X}")
+
+
+def _emit_indirect_load(off: int, addr_op: asm_ast.Type_operand) -> list[str]:
+    """Read the byte at the indirect Stack/Frame position into A."""
+    return [
+        _emit_load_y(off),
+        _instr_line("LDA", _indirect_addr(addr_op)),
+    ]
+
+
+def _emit_indirect_store(off: int, addr_op: asm_ast.Type_operand) -> list[str]:
+    """Store A into the byte at the indirect Stack/Frame position."""
+    return [
+        _emit_load_y(off),
+        _instr_line("STA", _indirect_addr(addr_op)),
+    ]
 
 
 def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
@@ -140,30 +181,31 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             return [_instr_line("TAX")]
         case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("TAY")]
-        case asm_ast.Imm(value=v), asm_ast.Stack(offset=off):
+        case asm_ast.Imm(value=v), (
+            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
+        ) as dst_addr:
             _check_byte("immediate", v)
-            return [
-                _instr_line("LDA", f"#${v:02X}"),
-                _emit_load_y(off),
-                _instr_line("STA", _stack_operand()),
-            ]
-        case asm_ast.Stack(offset=off), asm_ast.Reg(reg=asm_ast.A()):
-            return [
-                _emit_load_y(off),
-                _instr_line("LDA", _stack_operand()),
-            ]
-        case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Stack(offset=off):
-            return [
-                _emit_load_y(off),
-                _instr_line("STA", _stack_operand()),
-            ]
-        case asm_ast.Stack(offset=src_off), asm_ast.Stack(offset=dst_off):
-            return [
-                _emit_load_y(src_off),
-                _instr_line("LDA", _stack_operand()),
-                _emit_load_y(dst_off),
-                _instr_line("STA", _stack_operand()),
-            ]
+            return (
+                [_instr_line("LDA", f"#${v:02X}")]
+                + _emit_indirect_store(off, dst_addr)
+            )
+        case (
+            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
+        ) as src_addr, asm_ast.Reg(reg=asm_ast.A()):
+            return _emit_indirect_load(off, src_addr)
+        case asm_ast.Reg(reg=asm_ast.A()), (
+            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
+        ) as dst_addr:
+            return _emit_indirect_store(off, dst_addr)
+        case (
+            asm_ast.Stack(offset=src_off) | asm_ast.Frame(offset=src_off)
+        ) as src_addr, (
+            asm_ast.Stack(offset=dst_off) | asm_ast.Frame(offset=dst_off)
+        ) as dst_addr:
+            return (
+                _emit_indirect_load(src_off, src_addr)
+                + _emit_indirect_store(dst_off, dst_addr)
+            )
         case _:
             raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
 
@@ -182,21 +224,29 @@ def _emit_unary(
                 _instr_line("CLC"),
                 _instr_line("ADC", "#$01"),
             ]
-        case asm_ast.Not(), asm_ast.Stack(offset=off):
+        case asm_ast.Not(), (
+            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
+        ) as sd:
+            # Y is preserved across EOR, so a single LDY suffices.
+            addr = _indirect_addr(sd)
             return [
                 _emit_load_y(off),
-                _instr_line("LDA", _stack_operand()),
+                _instr_line("LDA", addr),
                 _instr_line("EOR", "#$FF"),
-                _instr_line("STA", _stack_operand()),
+                _instr_line("STA", addr),
             ]
-        case asm_ast.Neg(), asm_ast.Stack(offset=off):
+        case asm_ast.Neg(), (
+            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
+        ) as sd:
+            # Y is preserved across EOR/CLC/ADC, so a single LDY suffices.
+            addr = _indirect_addr(sd)
             return [
                 _emit_load_y(off),
-                _instr_line("LDA", _stack_operand()),
+                _instr_line("LDA", addr),
                 _instr_line("EOR", "#$FF"),
                 _instr_line("CLC"),
                 _instr_line("ADC", "#$01"),
-                _instr_line("STA", _stack_operand()),
+                _instr_line("STA", addr),
             ]
         case _:
             raise ValueError(
@@ -204,13 +254,102 @@ def _emit_unary(
             )
 
 
-def _emit_ret(amt: int) -> list[str]:
+def _check_local_bytes(m: int) -> None:
+    if not 0 <= m <= 253:
+        raise ValueError(
+            f"local_bytes {m} out of range (expected 0..253; "
+            "limited by LDY immediate for FP-slot addressing)"
+        )
+
+
+def _emit_set_fp_to_ssp() -> list[str]:
+    """`FP = SSP`. Clobbers A."""
+    return [
+        _instr_line("LDA", _SSP),
+        _instr_line("STA", _FP),
+        _instr_line("LDA", f"{_SSP}+1"),
+        _instr_line("STA", f"{_FP}+1"),
+    ]
+
+
+def _emit_set_ssp_to_fp_plus(amt: int) -> list[str]:
+    """`SSP = FP + amt`. Clobbers A."""
+    _check_amt(amt)
     if amt == 0:
+        return [
+            _instr_line("LDA", _FP),
+            _instr_line("STA", _SSP),
+            _instr_line("LDA", f"{_FP}+1"),
+            _instr_line("STA", f"{_SSP}+1"),
+        ]
+    lo, hi = amt & 0xFF, (amt >> 8) & 0xFF
+    return [
+        _instr_line("CLC"),
+        _instr_line("LDA", _FP),
+        _instr_line("ADC", f"#${lo:02X}"),
+        _instr_line("STA", _SSP),
+        _instr_line("LDA", f"{_FP}+1"),
+        _instr_line("ADC", f"#${hi:02X}"),
+        _instr_line("STA", f"{_SSP}+1"),
+    ]
+
+
+def _emit_save_fp_into_slot(m: int) -> list[str]:
+    """Write the current FP into the slot at `SSP+M+1` (low) /
+    `SSP+M+2` (high). Clobbers A and Y. Requires `M <= 253`."""
+    _check_local_bytes(m)
+    return [
+        _instr_line("LDY", f"#${m + 1:02X}"),
+        _instr_line("LDA", _FP),
+        _instr_line("STA", f"({_SSP}),Y"),
+        _instr_line("INY"),
+        _instr_line("LDA", f"{_FP}+1"),
+        _instr_line("STA", f"({_SSP}),Y"),
+    ]
+
+
+def _emit_restore_fp_from_slot(m: int) -> list[str]:
+    """Read the 2 bytes at `FP+M+1` / `FP+M+2` back into the FP
+    register. Uses X as a 1-byte scratch for the low byte: we can't
+    write to FP between the two reads because `(FP),Y` uses both
+    bytes of FP as the indirect base. Clobbers A, X, Y. Requires
+    `M <= 253`."""
+    _check_local_bytes(m)
+    return [
+        _instr_line("LDY", f"#${m + 1:02X}"),
+        _instr_line("LDA", f"({_FP}),Y"),
+        _instr_line("TAX"),
+        _instr_line("INY"),
+        _instr_line("LDA", f"({_FP}),Y"),
+        _instr_line("STA", f"{_FP}+1"),
+        _instr_line("STX", _FP),
+    ]
+
+
+def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
+    if arg_bytes + local_bytes == 0:
+        return []
+    # Allocate locals + saved-FP slot (args were caller-pushed and
+    # don't need allocation). Save the caller's FP into the slot
+    # just above the locals, then capture SSP into FP.
+    return (
+        _emit_ssp_sub(local_bytes + 2)
+        + _emit_save_fp_into_slot(local_bytes)
+        + _emit_set_fp_to_ssp()
+    )
+
+
+def _emit_ret(arg_bytes: int, local_bytes: int) -> list[str]:
+    if arg_bytes + local_bytes == 0:
         return [_instr_line("RTS")]
-    # Preserve A across the SSP add (A holds the return value).
+    # Compute the new SSP directly from FP (one 16-bit add), restore
+    # FP from its slot via (FP),Y, then RTS. The whole thing is
+    # PHA/PLA-wrapped so the return value in A survives.
+    rewind = arg_bytes + local_bytes + 2
     return (
         [_instr_line("PHA")]
-        + _emit_ssp_add(amt)
+        + _emit_set_ssp_to_fp_plus(rewind)
+        + _emit_restore_fp_from_slot(local_bytes)
         + [_instr_line("PLA"), _instr_line("RTS")]
     )
 
@@ -221,10 +360,10 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_mov(src, dst)
         case asm_ast.Unary(op=op, src_dst=src_dst):
             return _emit_unary(op, src_dst)
-        case asm_ast.AllocateStack(amt=amt):
-            return _emit_ssp_sub(amt)
-        case asm_ast.Ret(amt=amt):
-            return _emit_ret(amt)
+        case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
+            return _emit_function_prologue(ab, lb)
+        case asm_ast.Ret(arg_bytes=ab, local_bytes=lb):
+            return _emit_ret(ab, lb)
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 
@@ -272,7 +411,9 @@ def main(argv: list[str]) -> int:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
 
-    text = emit_program(translate_to_asm(translate_to_tac(parse(source))))
+    text = emit_program(allocate_stack(replace_pseudoregs(
+        translate_to_asm(translate_to_tac(parse(source)))
+    )))
 
     if args.output is not None:
         with open(args.output, "w", encoding="utf-8") as f:

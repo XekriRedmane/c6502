@@ -38,12 +38,14 @@ class Mov(Type_instruction):
 
 @dataclass
 class Ret(Type_instruction):
-    amt: int
+    arg_bytes: int
+    local_bytes: int
 
 
 @dataclass
-class AllocateStack(Type_instruction):
-    amt: int
+class FunctionPrologue(Type_instruction):
+    arg_bytes: int
+    local_bytes: int
 
 
 @dataclass
@@ -74,6 +76,11 @@ class Pseudo(Type_operand):
 
 @dataclass
 class Stack(Type_operand):
+    offset: int
+
+
+@dataclass
+class Frame(Type_operand):
     offset: int
 
 

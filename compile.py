@@ -24,12 +24,14 @@ from __future__ import annotations
 import argparse
 import sys
 
+from allocate_stack import allocate_program as allocate_stack
 from asm_emit import emit_program
 from asm_translator import translate_program as translate_to_asm
 from lexer import tokenize
 from parser import parse
 from preprocessor import preprocess
 from pretty import pretty
+from replace_pseudoregisters import replace_program as replace_pseudoregs
 from tac_translator import translate_program as translate_to_tac
 
 
@@ -48,7 +50,9 @@ def _run_stage(stage: str, source: str) -> str:
     if stage == "tac":
         return pretty(translate_to_tac(parse(source))) + "\n"
     if stage == "codegen":
-        return emit_program(translate_to_asm(translate_to_tac(parse(source))))
+        return emit_program(allocate_stack(replace_pseudoregs(
+            translate_to_asm(translate_to_tac(parse(source)))
+        )))
     raise AssertionError(f"unknown stage: {stage!r}")
 
 

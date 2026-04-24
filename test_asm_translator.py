@@ -39,7 +39,7 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(tac_ast.Ret(val=tac_ast.Constant(value=7))),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=7), dst=asm_ast.Reg(reg=asm_ast.A())),
-                asm_ast.Ret(amt=0),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0),
             ],
         )
 
@@ -51,7 +51,7 @@ class TestTranslateInstruction(unittest.TestCase):
                     src=asm_ast.Pseudo(name="%3"),
                     dst=asm_ast.Reg(reg=asm_ast.A()),
                 ),
-                asm_ast.Ret(amt=0),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0),
             ],
         )
 
@@ -117,7 +117,7 @@ class TestTranslateFunction(unittest.TestCase):
                         src=asm_ast.Pseudo(name="%0"),
                         dst=asm_ast.Reg(reg=asm_ast.A()),
                     ),
-                    asm_ast.Ret(amt=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             ),
         )
@@ -146,7 +146,7 @@ class TestTranslateProgram(unittest.TestCase):
                         src=asm_ast.Imm(value=42),
                         dst=asm_ast.Reg(reg=asm_ast.A()),
                     ),
-                    asm_ast.Ret(amt=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             ),
         )

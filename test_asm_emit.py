@@ -159,6 +159,88 @@ class TestEmitMovStack(unittest.TestCase):
                     )
 
 
+class TestEmitMovFrame(unittest.TestCase):
+    def test_imm_to_frame(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Imm(value=0x2A),
+                            dst=asm_ast.Frame(offset=3))
+            ),
+            ["   LDA   #$2A", "   LDY   #$03", "   STA   (FP),Y"],
+        )
+
+    def test_frame_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Frame(offset=5), dst=_reg(_A))
+            ),
+            ["   LDY   #$05", "   LDA   (FP),Y"],
+        )
+
+    def test_a_to_frame(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=_reg(_A), dst=asm_ast.Frame(offset=7))
+            ),
+            ["   LDY   #$07", "   STA   (FP),Y"],
+        )
+
+    def test_frame_to_frame(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Frame(offset=1),
+                            dst=asm_ast.Frame(offset=4))
+            ),
+            [
+                "   LDY   #$01",
+                "   LDA   (FP),Y",
+                "   LDY   #$04",
+                "   STA   (FP),Y",
+            ],
+        )
+
+    def test_frame_offset_out_of_range_raises(self):
+        for off in [-1, 256, 1000]:
+            with self.subTest(off=off):
+                with self.assertRaises(ValueError):
+                    emit_instruction(
+                        asm_ast.Mov(src=_reg(_A), dst=asm_ast.Frame(offset=off))
+                    )
+
+
+class TestEmitMovMixed(unittest.TestCase):
+    """Stack and Frame can appear together in a single Mov; each side
+    resolves through its own pointer."""
+
+    def test_stack_to_frame(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Stack(offset=2),
+                            dst=asm_ast.Frame(offset=3))
+            ),
+            [
+                "   LDY   #$02",
+                "   LDA   (SSP),Y",
+                "   LDY   #$03",
+                "   STA   (FP),Y",
+            ],
+        )
+
+    def test_frame_to_stack(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Frame(offset=2),
+                            dst=asm_ast.Stack(offset=3))
+            ),
+            [
+                "   LDY   #$02",
+                "   LDA   (FP),Y",
+                "   LDY   #$03",
+                "   STA   (SSP),Y",
+            ],
+        )
+
+
 class TestEmitUnary(unittest.TestCase):
     def test_not_on_a_emits_eor_ff(self):
         self.assertEqual(
@@ -222,6 +304,34 @@ class TestEmitUnary(unittest.TestCase):
             ],
         )
 
+    def test_not_on_frame(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Unary(op=asm_ast.Not(), src_dst=asm_ast.Frame(offset=3))
+            ),
+            [
+                "   LDY   #$03",
+                "   LDA   (FP),Y",
+                "   EOR   #$FF",
+                "   STA   (FP),Y",
+            ],
+        )
+
+    def test_neg_on_frame(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Unary(op=asm_ast.Neg(), src_dst=asm_ast.Frame(offset=2))
+            ),
+            [
+                "   LDY   #$02",
+                "   LDA   (FP),Y",
+                "   EOR   #$FF",
+                "   CLC",
+                "   ADC   #$01",
+                "   STA   (FP),Y",
+            ],
+        )
+
 
 class TestEmitRejectsPseudo(unittest.TestCase):
     """Pseudo operands must be eliminated before emit; reaching the
@@ -264,97 +374,136 @@ class TestEmitInstruction(unittest.TestCase):
             emit_instruction(stub())
 
 
-class TestEmitAllocateStack(unittest.TestCase):
+class TestEmitFunctionPrologue(unittest.TestCase):
     def test_zero_emits_nothing(self):
-        self.assertEqual(emit_instruction(asm_ast.AllocateStack(amt=0)), [])
+        # No locals (and no args yet) means no FP setup is needed.
+        self.assertEqual(emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=0)), [])
 
-    def test_small_amt_subtracts_from_ssp(self):
-        # 16-bit subtract on SSP, low then high; high byte is #$00.
+    def test_amt_one_emits_full_prologue(self):
+        # SSP -= (M+2) = 3, then write FP into the slot at SSP+2/+3,
+        # then FP = SSP.
         self.assertEqual(
-            emit_instruction(asm_ast.AllocateStack(amt=4)),
+            emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1)),
             [
+                # SSP -= 3
                 "   SEC",
                 "   LDA   SSP",
-                "   SBC   #$04",
+                "   SBC   #$03",
                 "   STA   SSP",
                 "   LDA   SSP+1",
                 "   SBC   #$00",
                 "   STA   SSP+1",
-            ],
-        )
-
-    def test_two_byte_amt_propagates_to_high(self):
-        # amt = 0x0123: low = $23, high = $01.
-        self.assertEqual(
-            emit_instruction(asm_ast.AllocateStack(amt=0x0123)),
-            [
-                "   SEC",
+                # save caller FP into slot at SSP+2 (low) / SSP+3 (high)
+                "   LDY   #$02",
+                "   LDA   FP",
+                "   STA   (SSP),Y",
+                "   INY",
+                "   LDA   FP+1",
+                "   STA   (SSP),Y",
+                # FP = SSP
                 "   LDA   SSP",
-                "   SBC   #$23",
-                "   STA   SSP",
+                "   STA   FP",
                 "   LDA   SSP+1",
-                "   SBC   #$01",
-                "   STA   SSP+1",
+                "   STA   FP+1",
             ],
         )
 
-    def test_amt_out_of_range_raises(self):
-        for amt in [-1, 0x10000, 100000]:
-            with self.subTest(amt=amt):
+    def test_max_amt_253_uses_max_ldy(self):
+        # M=253 -> save-FP at SSP+254 (low) and SSP+255 (high) — the
+        # largest offsets LDY #imm + INY can address.
+        out = emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=253))
+        # First line of the SSP-= sub is the only one whose immediate
+        # depends on M+2 = 255.
+        self.assertIn("   SBC   #$FF", out)
+        # The save-FP block uses LDY #$FE then INY (-> $FF).
+        self.assertIn("   LDY   #$FE", out)
+
+    def test_amt_too_large_for_ldy_raises(self):
+        # M = 254 would need LDY #$FF then INY -> $00, which would
+        # overwrite the wrong byte. Pass should reject.
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=254))
+
+    def test_local_bytes_out_of_range_raises(self):
+        for lb in [-1, 0x10000, 100000]:
+            with self.subTest(local_bytes=lb):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.AllocateStack(amt=amt))
+                    emit_instruction(
+                        asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=lb)
+                    )
 
 
 class TestEmitRet(unittest.TestCase):
-    def test_zero_amt_just_rts(self):
-        self.assertEqual(emit_instruction(asm_ast.Ret(amt=0)), ["   RTS"])
-
-    def test_nonzero_amt_pha_add_pla_rts(self):
+    def test_zero_dimensions_just_rts(self):
+        # No args and no locals — nothing to dealloc, no FP to restore.
         self.assertEqual(
-            emit_instruction(asm_ast.Ret(amt=3)),
+            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0)),
+            ["   RTS"],
+        )
+
+    def test_locals_only_full_epilogue(self):
+        # M=3, N=0: SSP = FP + (M+N+2) = FP + 5; saved FP at FP+M+1=4
+        # (low) / FP+M+2=5 (high), read via (FP),Y with X as scratch.
+        self.assertEqual(
+            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3)),
             [
                 "   PHA",
+                # SSP = FP + 5
                 "   CLC",
-                "   LDA   SSP",
-                "   ADC   #$03",
+                "   LDA   FP",
+                "   ADC   #$05",
                 "   STA   SSP",
-                "   LDA   SSP+1",
+                "   LDA   FP+1",
                 "   ADC   #$00",
                 "   STA   SSP+1",
+                # restore caller FP from FP+4 (low) / FP+5 (high)
+                "   LDY   #$04",
+                "   LDA   (FP),Y",
+                "   TAX",
+                "   INY",
+                "   LDA   (FP),Y",
+                "   STA   FP+1",
+                "   STX   FP",
                 "   PLA",
                 "   RTS",
             ],
         )
 
-    def test_two_byte_amt_propagates_to_high(self):
-        self.assertEqual(
-            emit_instruction(asm_ast.Ret(amt=0x0102)),
-            [
-                "   PHA",
-                "   CLC",
-                "   LDA   SSP",
-                "   ADC   #$02",
-                "   STA   SSP",
-                "   LDA   SSP+1",
-                "   ADC   #$01",
-                "   STA   SSP+1",
-                "   PLA",
-                "   RTS",
-            ],
-        )
+    def test_args_shift_ssp_rewind_not_fp_slot(self):
+        # M=2, N=4: SSP rewind is FP + (4+2+2) = FP + 8, but the
+        # saved-FP slot is still at FP+M+1=3 / FP+M+2=4 — args don't
+        # shift the slot location.
+        out = emit_instruction(asm_ast.Ret(arg_bytes=4, local_bytes=2))
+        # SSP rewind low byte = M+N+2 = 8
+        self.assertIn("   ADC   #$08", out)
+        # FP-slot read uses LDY #(M+1) = #$03
+        self.assertIn("   LDY   #$03", out)
 
-    def test_amt_out_of_range_raises(self):
-        for amt in [-1, 0x10000]:
-            with self.subTest(amt=amt):
+    def test_two_byte_rewind_propagates_to_high(self):
+        # The SSP-rewind ADC pair carries between low and high. With
+        # a 9-bit-ish total (e.g. N=0x100, M=0), low byte = $02
+        # (= 0x100+0+2 low byte), high byte = $01.
+        out = emit_instruction(asm_ast.Ret(arg_bytes=0x100, local_bytes=0))
+        self.assertIn("   ADC   #$02", out)
+        self.assertIn("   ADC   #$01", out)
+
+    def test_local_bytes_out_of_range_raises(self):
+        for lb in [-1, 254, 1000]:
+            with self.subTest(local_bytes=lb):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Ret(amt=amt))
+                    emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=lb))
+
+    def test_total_out_of_range_raises(self):
+        # M+N+2 > 0xFFFF can't fit in a 16-bit SSP arithmetic.
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.Ret(arg_bytes=0xFFFE, local_bytes=0))
 
 
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
-            asm_ast.Ret(amt=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0),
         ])
         self.assertEqual(
             emit_function(fn),
@@ -376,7 +525,7 @@ class TestEmitProgram(unittest.TestCase):
     def test_full(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
-            asm_ast.Ret(amt=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0),
         )
         self.assertEqual(
             emit_program(prog),
@@ -390,7 +539,7 @@ class TestColumnAlignment(unittest.TestCase):
     def test_columns(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
-            asm_ast.Ret(amt=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0),
         )
         lines = emit_program(prog).splitlines()
         # Label at column 1 (index 0).

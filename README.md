@@ -181,9 +181,10 @@ when a function tears down its frame.
 
 ### Reserved zero-page locations
 
-| address     | name | purpose                            |
-| ----------- | ---- | ---------------------------------- |
-| `$00`/`$01` | SSP  | soft stack pointer (low / high byte) |
+| address     | name | purpose                                      |
+| ----------- | ---- | -------------------------------------------- |
+| `$00`/`$01` | SSP  | soft stack pointer (low / high byte)         |
+| `$02`/`$03` | FP   | frame pointer (low / high byte)              |
 
 ### Soft stack convention
 
@@ -196,6 +197,24 @@ when a function tears down its frame.
   to read, `STA (SSP),Y` to write. **Y is therefore scratch** for any
   soft-stack access — codegen reloads it as needed.
 
+### Frame pointer
+
+`SSP` is unstable inside a function: any intra-function push (e.g.
+arguments for a nested call) shifts it, which would invalidate
+SSP-relative offsets to locals and args. To dodge that, every function
+captures a **frame pointer** (`FP`) once in its prelude that doesn't
+move until the epilogue, and addresses locals/args via `FP` instead of
+`SSP`.
+
+- `FP` is set so it coincides with `SSP` immediately after the prelude
+  finishes — same "points-at-next-free-byte" convention as `SSP`. So
+  the smallest valid `FP` offset is also `1`.
+- The caller's `FP` value is saved on the soft stack as part of the
+  callee's prelude and restored by the epilogue, so nested calls
+  correctly chain frames.
+- Codegen produces `Frame(off)` operands for locals/args; emit lowers
+  them to `LDY #off; LDA (FP),Y` etc.
+
 ### Calling convention
 
 For a function that takes `N` bytes of arguments and uses `M` bytes of
@@ -205,39 +224,56 @@ local storage:
    `SSP+1` … `SSP+N`.
 2. **Caller** issues `JSR target`. The hardware stack receives the
    2-byte return address; the soft stack is unchanged.
-3. **Callee prelude** subtracts `M` from `SSP`, allocating local storage.
-4. … function body runs …
-5. **Callee epilogue** adds `M+N` back to `SSP`, tearing down both
-   locals *and* the caller-supplied args in a single step.
+3. **Callee prelude:**
+   1. Push the caller's `FP` onto the soft stack (2 bytes; `SSP -= 2`).
+   2. Subtract `M` from `SSP`, allocating local storage.
+   3. Set `FP = SSP`. From here on, `Frame(off)` accesses resolve
+      against this fixed `FP`.
+4. … function body runs (may push/pop on the soft stack freely; only
+   `SSP` moves, `FP` stays put) …
+5. **Callee epilogue:**
+   1. `SSP = FP` (rewinds any intra-body pushes).
+   2. Add `M` to `SSP`, deallocating locals; `SSP` now points just
+      below the saved old `FP`.
+   3. Pop the saved old `FP` back into the `FP` register (2 bytes;
+      `SSP += 2`).
+   4. Add `N` to `SSP`, deallocating the caller's arguments.
 6. **Callee** issues `RTS`.
 
-After the return, `SSP` is back to where it was before the caller pushed
-arguments — the caller does no per-call cleanup.
+After the return, `SSP` and `FP` are both back to where they were
+before the caller pushed arguments — the caller does no per-call
+cleanup.
 
 ### Frame diagram
 
-After the prelude (`SSP -= M`) the soft-stack frame for a call with
+Immediately after the prelude (`FP = SSP`) the frame for a call with
 `N` argument bytes and `M` local bytes looks like this (high addresses
 at top):
 
 ```
               higher addresses
           +-------------------------+
-  SSP+M+N |        arg N-1          |
+ FP+M+N+2 |        arg N-1          |
           |          ...            |
-  SSP+M+1 |        arg 0            |
+ FP+M+3   |        arg 0            |
           +-------------------------+
-  SSP+M   |       local M-1         |
+ FP+M+2   |  saved caller FP (high) |
+ FP+M+1   |  saved caller FP (low)  |
+          +-------------------------+
+ FP+M     |       local M-1         |
           |          ...            |
-  SSP+1   |       local 0           |
+ FP+1     |       local 0           |
           +-------------------------+
-  SSP     |   (next free byte)      |
+ FP       |   (next free byte)      |   <- FP, and SSP just after prelude
           +-------------------------+
               lower addresses
 ```
 
-`local 0` / `arg 0` are the bytes nearest the SSP end of their
-respective regions — i.e., the most-recently-allocated.
+`local 0` / `arg 0` are the bytes nearest the FP end of their
+respective regions — i.e., the most-recently-allocated. The 2-byte
+saved-FP slot sits between locals and args; together with the
+caller-pushed args, it's why arg `j` is at offset `M + 3 + j`, not
+`M + 1 + j`.
 
 The hardware stack, meanwhile, just holds the return address pushed by
 `JSR`, plus anything the function `PHA`s during execution.

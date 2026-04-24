@@ -46,9 +46,11 @@ def translate_instruction(
 ) -> list[asm_ast.Type_instruction]:
     match instr:
         case tac_ast.Ret(val=val):
+            # amt=0 here; the future pseudo->stack pass rewrites Ret to
+            # carry the actual locals+args byte count for this function.
             return [
                 asm_ast.Mov(src=translate_val(val), dst=asm_ast.Reg(reg=asm_ast.A())),
-                asm_ast.Ret(),
+                asm_ast.Ret(amt=0),
             ]
         case tac_ast.Unary(op=op, src=src, dst=dst):
             dst_op = translate_val(dst)

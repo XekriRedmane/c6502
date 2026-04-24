@@ -38,7 +38,7 @@ class Mov(Type_instruction):
 
 @dataclass
 class Ret(Type_instruction):
-    pass
+    amt: int
 
 
 @dataclass

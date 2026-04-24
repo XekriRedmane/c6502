@@ -97,11 +97,13 @@ class TestEmitMov(unittest.TestCase):
             asm_ast.Mov(src=_reg(_Y), dst=_reg(_Y)),
             asm_ast.Mov(src=_reg(_X), dst=_reg(_Y)),
             asm_ast.Mov(src=_reg(_Y), dst=_reg(_X)),
-            # Pseudo and Stack must have been resolved by an earlier pass.
+            # Pseudo must have been resolved by an earlier pass.
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t")),
             asm_ast.Mov(src=asm_ast.Pseudo(name="t"), dst=_reg(_A)),
-            asm_ast.Mov(src=asm_ast.Stack(offset=2), dst=_reg(_A)),
-            asm_ast.Mov(src=_reg(_A), dst=asm_ast.Stack(offset=2)),
+            # X/Y <-> Stack not handled (would clobber A); codegen must go
+            # via A explicitly.
+            asm_ast.Mov(src=_reg(_X), dst=asm_ast.Stack(offset=2)),
+            asm_ast.Mov(src=asm_ast.Stack(offset=2), dst=_reg(_X)),
             # Imm cannot be a destination.
             asm_ast.Mov(src=_reg(_A), dst=asm_ast.Imm(value=0)),
         ]
@@ -109,6 +111,55 @@ class TestEmitMov(unittest.TestCase):
             with self.subTest(instr=instr):
                 with self.assertRaises(ValueError):
                     emit_instruction(instr)
+
+
+class TestEmitMovStack(unittest.TestCase):
+    def test_imm_to_stack(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Imm(value=0x2A),
+                            dst=asm_ast.Stack(offset=3))
+            ),
+            ["   LDA   #$2A", "   LDY   #$03", "   STA   (SSP),Y"],
+        )
+
+    def test_stack_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Stack(offset=5), dst=_reg(_A))
+            ),
+            ["   LDY   #$05", "   LDA   (SSP),Y"],
+        )
+
+    def test_a_to_stack(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=_reg(_A), dst=asm_ast.Stack(offset=7))
+            ),
+            ["   LDY   #$07", "   STA   (SSP),Y"],
+        )
+
+    def test_stack_to_stack(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Mov(src=asm_ast.Stack(offset=1),
+                            dst=asm_ast.Stack(offset=4))
+            ),
+            [
+                "   LDY   #$01",
+                "   LDA   (SSP),Y",
+                "   LDY   #$04",
+                "   STA   (SSP),Y",
+            ],
+        )
+
+    def test_stack_offset_out_of_range_raises(self):
+        for off in [-1, 256, 1000]:
+            with self.subTest(off=off):
+                with self.assertRaises(ValueError):
+                    emit_instruction(
+                        asm_ast.Mov(src=_reg(_A), dst=asm_ast.Stack(offset=off))
+                    )
 
 
 class TestEmitUnary(unittest.TestCase):
@@ -123,7 +174,6 @@ class TestEmitUnary(unittest.TestCase):
             _reg(_X),
             _reg(_Y),
             asm_ast.Pseudo(name="t"),
-            asm_ast.Stack(offset=2),
             asm_ast.Imm(value=0),
         ]
         for sd in unsupported:
@@ -142,7 +192,6 @@ class TestEmitUnary(unittest.TestCase):
             _reg(_X),
             _reg(_Y),
             asm_ast.Pseudo(name="t"),
-            asm_ast.Stack(offset=2),
             asm_ast.Imm(value=0),
         ]
         for sd in unsupported:
@@ -150,22 +199,133 @@ class TestEmitUnary(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     emit_instruction(asm_ast.Unary(op=asm_ast.Neg(), src_dst=sd))
 
+    def test_not_on_stack(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Unary(op=asm_ast.Not(), src_dst=asm_ast.Stack(offset=3))
+            ),
+            [
+                "   LDY   #$03",
+                "   LDA   (SSP),Y",
+                "   EOR   #$FF",
+                "   STA   (SSP),Y",
+            ],
+        )
+
+    def test_neg_on_stack(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Unary(op=asm_ast.Neg(), src_dst=asm_ast.Stack(offset=2))
+            ),
+            [
+                "   LDY   #$02",
+                "   LDA   (SSP),Y",
+                "   EOR   #$FF",
+                "   CLC",
+                "   ADC   #$01",
+                "   STA   (SSP),Y",
+            ],
+        )
+
 
 class TestEmitInstruction(unittest.TestCase):
-    def test_ret_emits_rts(self):
-        self.assertEqual(emit_instruction(asm_ast.Ret()), ["   RTS"])
-
     def test_unknown_instruction_raises(self):
         stub = type("Stub", (asm_ast.Type_instruction,), {})
         with self.assertRaises(TypeError):
             emit_instruction(stub())
 
 
+class TestEmitAllocateStack(unittest.TestCase):
+    def test_zero_emits_nothing(self):
+        self.assertEqual(emit_instruction(asm_ast.AllocateStack(amt=0)), [])
+
+    def test_small_amt_subtracts_from_ssp(self):
+        # 16-bit subtract on SSP, low then high; high byte is #$00.
+        self.assertEqual(
+            emit_instruction(asm_ast.AllocateStack(amt=4)),
+            [
+                "   SEC",
+                "   LDA   SSP",
+                "   SBC   #$04",
+                "   STA   SSP",
+                "   LDA   SSP+1",
+                "   SBC   #$00",
+                "   STA   SSP+1",
+            ],
+        )
+
+    def test_two_byte_amt_propagates_to_high(self):
+        # amt = 0x0123: low = $23, high = $01.
+        self.assertEqual(
+            emit_instruction(asm_ast.AllocateStack(amt=0x0123)),
+            [
+                "   SEC",
+                "   LDA   SSP",
+                "   SBC   #$23",
+                "   STA   SSP",
+                "   LDA   SSP+1",
+                "   SBC   #$01",
+                "   STA   SSP+1",
+            ],
+        )
+
+    def test_amt_out_of_range_raises(self):
+        for amt in [-1, 0x10000, 100000]:
+            with self.subTest(amt=amt):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.AllocateStack(amt=amt))
+
+
+class TestEmitRet(unittest.TestCase):
+    def test_zero_amt_just_rts(self):
+        self.assertEqual(emit_instruction(asm_ast.Ret(amt=0)), ["   RTS"])
+
+    def test_nonzero_amt_pha_add_pla_rts(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Ret(amt=3)),
+            [
+                "   PHA",
+                "   CLC",
+                "   LDA   SSP",
+                "   ADC   #$03",
+                "   STA   SSP",
+                "   LDA   SSP+1",
+                "   ADC   #$00",
+                "   STA   SSP+1",
+                "   PLA",
+                "   RTS",
+            ],
+        )
+
+    def test_two_byte_amt_propagates_to_high(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Ret(amt=0x0102)),
+            [
+                "   PHA",
+                "   CLC",
+                "   LDA   SSP",
+                "   ADC   #$02",
+                "   STA   SSP",
+                "   LDA   SSP+1",
+                "   ADC   #$01",
+                "   STA   SSP+1",
+                "   PLA",
+                "   RTS",
+            ],
+        )
+
+    def test_amt_out_of_range_raises(self):
+        for amt in [-1, 0x10000]:
+            with self.subTest(amt=amt):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Ret(amt=amt))
+
+
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
-            asm_ast.Ret(),
+            asm_ast.Ret(amt=0),
         ])
         self.assertEqual(
             emit_function(fn),
@@ -187,7 +347,7 @@ class TestEmitProgram(unittest.TestCase):
     def test_full(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
-            asm_ast.Ret(),
+            asm_ast.Ret(amt=0),
         )
         self.assertEqual(
             emit_program(prog),
@@ -201,7 +361,7 @@ class TestColumnAlignment(unittest.TestCase):
     def test_columns(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
-            asm_ast.Ret(),
+            asm_ast.Ret(amt=0),
         )
         lines = emit_program(prog).splitlines()
         # Label at column 1 (index 0).

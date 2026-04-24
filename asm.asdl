@@ -4,7 +4,7 @@ module ASM {
 
     instruction =
         Mov(operand src, operand dst)
-        | Ret
+        | Ret(int amt)
         | AllocateStack(int amt)
         | Unary(unary_operator op, operand src_dst)
 

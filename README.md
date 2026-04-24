@@ -170,6 +170,78 @@ pcpp first strips comments:
 pcpp source.c --line-directive | uv run python asm_emit.py - -o source.asm
 ```
 
+## Function stack frame layout
+
+c6502 uses a **soft data stack** in main RAM, separate from the 6502's
+hardware stack at `$0100`–`$01FF`. The hardware stack is reserved for
+return addresses (and any short-lived `PHA` / `PHP` a function does
+internally); arguments and locals live on the soft stack. This sidesteps
+the 256-byte page-1 limit and keeps the return address out of the way
+when a function tears down its frame.
+
+### Reserved zero-page locations
+
+| address     | name | purpose                            |
+| ----------- | ---- | ---------------------------------- |
+| `$00`/`$01` | SSP  | soft stack pointer (low / high byte) |
+
+### Soft stack convention
+
+- Grows **downward** toward lower addresses (mirrors the hardware stack).
+- `SSP` always points at the **next-free byte** — so the most recently
+  pushed byte is at `SSP+1`, the one before it at `SSP+2`, etc.
+- The runtime header initializes `SSP` to a high address (`$7FFF` by
+  default) before jumping to `main`.
+- All accesses use indirect-indexed addressing: `LDY #off; LDA (SSP),Y`
+  to read, `STA (SSP),Y` to write. **Y is therefore scratch** for any
+  soft-stack access — codegen reloads it as needed.
+
+### Calling convention
+
+For a function that takes `N` bytes of arguments and uses `M` bytes of
+local storage:
+
+1. **Caller** subtracts `N` from `SSP`, then writes the arguments into
+   `SSP+1` … `SSP+N`.
+2. **Caller** issues `JSR target`. The hardware stack receives the
+   2-byte return address; the soft stack is unchanged.
+3. **Callee prelude** subtracts `M` from `SSP`, allocating local storage.
+4. … function body runs …
+5. **Callee epilogue** adds `M+N` back to `SSP`, tearing down both
+   locals *and* the caller-supplied args in a single step.
+6. **Callee** issues `RTS`.
+
+After the return, `SSP` is back to where it was before the caller pushed
+arguments — the caller does no per-call cleanup.
+
+### Frame diagram
+
+After the prelude (`SSP -= M`) the soft-stack frame for a call with
+`N` argument bytes and `M` local bytes looks like this (high addresses
+at top):
+
+```
+              higher addresses
+          +-------------------------+
+  SSP+M+N |        arg N-1          |
+          |          ...            |
+  SSP+M+1 |        arg 0            |
+          +-------------------------+
+  SSP+M   |       local M-1         |
+          |          ...            |
+  SSP+1   |       local 0           |
+          +-------------------------+
+  SSP     |   (next free byte)      |
+          +-------------------------+
+              lower addresses
+```
+
+`local 0` / `arg 0` are the bytes nearest the SSP end of their
+respective regions — i.e., the most-recently-allocated.
+
+The hardware stack, meanwhile, just holds the return address pushed by
+`JSR`, plus anything the function `PHA`s during execution.
+
 ## Stripping comments with pcpp
 
 The lexer treats comments as lex errors (we expect a preprocessor to have

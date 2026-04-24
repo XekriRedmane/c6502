@@ -49,9 +49,70 @@ class FunctionPrologue(Type_instruction):
 
 
 @dataclass
-class Unary(Type_instruction):
-    op: Type_unary_operator
-    src_dst: Type_operand
+class Add(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class Sub(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class Mul(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class Div(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class Mod(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class ClearCarry(Type_instruction):
+    pass
+
+
+@dataclass
+class SetCarry(Type_instruction):
+    pass
+
+
+@dataclass
+class Inc(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
+class Dec(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
+class Push(Type_instruction):
+    src: Type_operand
+
+
+@dataclass
+class Pop(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
+class Xor(Type_instruction):
+    src1: Type_operand
+    src2: Type_operand
+    dst: Type_operand
 
 
 @dataclass
@@ -82,21 +143,6 @@ class Stack(Type_operand):
 @dataclass
 class Frame(Type_operand):
     offset: int
-
-
-@dataclass
-class Type_unary_operator:
-    pass
-
-
-@dataclass
-class Neg(Type_unary_operator):
-    pass
-
-
-@dataclass
-class Not(Type_unary_operator):
-    pass
 
 
 @dataclass

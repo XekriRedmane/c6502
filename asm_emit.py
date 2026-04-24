@@ -32,6 +32,34 @@ Soft-stack convention (see README "Function stack frame layout"):
     role as the indirect base mid-read. Then PLA, RTS. For `N+M ==
     0` it just emits `RTS`.
 
+One-instruction-per-node rule. With the exceptions of `Ret` and
+`FunctionPrologue` (the multi-step compound nodes documented above),
+every emit-stage instruction maps to exactly one 6502 opcode. Any
+higher-level operation (e.g. `Unary(Not, A)` -> EOR/CLC/ADC sequence)
+must be lowered into atoms by an earlier pass before reaching emit.
+
+Atomic arithmetic / flag instructions:
+  - `ClearCarry` -> `CLC`; `SetCarry` -> `SEC`.
+  - `Inc(dst)` / `Dec(dst)`: `dst` must be `Reg(X)` or `Reg(Y)` ->
+    `INX`/`INY`/`DEX`/`DEY`. (Plain 6502 has no INA/DEA.)
+  - `Push(src)` -> `PHA` (src must be `Reg(A)`).
+  - `Pop(dst)`  -> `PLA` (dst must be `Reg(A)`).
+  - `Xor(src1, src2, dst)` -> `EOR #imm`. dst must be `Reg(A)`; one
+    of src1/src2 must be `Reg(A)`, the other an `Imm`.
+  - `Add(src, dst)` -> `ADC <src>` (src is `Imm`/`Stack`/`Frame`, dst
+    `Reg(A)`). Carry must already be set up by a preceding `ClearCarry`.
+    Stack/Frame sources emit an LDY pair plus the ADC (the LDY is
+    addressing-mode setup, not a separate logical step).
+  - `Sub(src, dst)` -> `SBC <src>` (same; preceded by `SetCarry`).
+
+Compound instructions invalid at emit (must be lowered earlier):
+  - `Mul`, `Div`, `Mod` — will be lowered to `Call mul8` / `Call
+    div8` once `Call` exists.
+
+(`Unary` no longer exists at the asm AST level — `asm_translator`
+lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
+atoms.)
+
 CLI: `asm_emit.py <input.c>|- [-o output.asm]`. The full pipeline goes
 C source -> parse -> tac translate -> asm translate -> emit. If -o is
 given the filename must have a .asm suffix; otherwise output goes to
@@ -210,50 +238,6 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
 
 
-def _emit_unary(
-    op: asm_ast.Type_unary_operator, src_dst: asm_ast.Type_operand,
-) -> list[str]:
-    _reject_pseudo(src_dst)
-    match op, src_dst:
-        case asm_ast.Not(), asm_ast.Reg(reg=asm_ast.A()):
-            return [_instr_line("EOR", "#$FF")]
-        case asm_ast.Neg(), asm_ast.Reg(reg=asm_ast.A()):
-            # Two's complement: invert, then +1 with a known-clear carry.
-            return [
-                _instr_line("EOR", "#$FF"),
-                _instr_line("CLC"),
-                _instr_line("ADC", "#$01"),
-            ]
-        case asm_ast.Not(), (
-            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
-        ) as sd:
-            # Y is preserved across EOR, so a single LDY suffices.
-            addr = _indirect_addr(sd)
-            return [
-                _emit_load_y(off),
-                _instr_line("LDA", addr),
-                _instr_line("EOR", "#$FF"),
-                _instr_line("STA", addr),
-            ]
-        case asm_ast.Neg(), (
-            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
-        ) as sd:
-            # Y is preserved across EOR/CLC/ADC, so a single LDY suffices.
-            addr = _indirect_addr(sd)
-            return [
-                _emit_load_y(off),
-                _instr_line("LDA", addr),
-                _instr_line("EOR", "#$FF"),
-                _instr_line("CLC"),
-                _instr_line("ADC", "#$01"),
-                _instr_line("STA", addr),
-            ]
-        case _:
-            raise ValueError(
-                f"cannot emit Unary(op={op!r}, src_dst={src_dst!r})"
-            )
-
-
 def _check_local_bytes(m: int) -> None:
     if not 0 <= m <= 253:
         raise ValueError(
@@ -326,6 +310,120 @@ def _emit_restore_fp_from_slot(m: int) -> list[str]:
     ]
 
 
+def _check_dst_is_a(dst: asm_ast.Type_operand, op_name: str) -> None:
+    """Many ops can only land their result in the accumulator."""
+    if not (isinstance(dst, asm_ast.Reg) and isinstance(dst.reg, asm_ast.A)):
+        raise ValueError(f"{op_name} dst must be Reg(A), got {dst!r}")
+
+
+def _is_reg_a(op: asm_ast.Type_operand) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
+
+
+def _emit_add(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
+    """At emit, Add is the single ADC instruction (with addressing-mode
+    setup for indirect-Y sources). Carry is the caller's job — a
+    preceding ClearCarry."""
+    _reject_pseudo(src)
+    _reject_pseudo(dst)
+    _check_dst_is_a(dst, "Add")
+    match src:
+        case asm_ast.Imm(value=v):
+            _check_byte("immediate", v)
+            return [_instr_line("ADC", f"#${v:02X}")]
+        case asm_ast.Stack() | asm_ast.Frame():
+            return [
+                _emit_load_y(src.offset),
+                _instr_line("ADC", _indirect_addr(src)),
+            ]
+        case _:
+            raise ValueError(f"cannot emit Add(src={src!r}, dst={dst!r})")
+
+
+def _emit_sub(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
+    """At emit, Sub is the single SBC instruction. Carry must be set
+    by a preceding SetCarry (SBC subtracts an extra 1 if carry is clear)."""
+    _reject_pseudo(src)
+    _reject_pseudo(dst)
+    _check_dst_is_a(dst, "Sub")
+    match src:
+        case asm_ast.Imm(value=v):
+            _check_byte("immediate", v)
+            return [_instr_line("SBC", f"#${v:02X}")]
+        case asm_ast.Stack() | asm_ast.Frame():
+            return [
+                _emit_load_y(src.offset),
+                _instr_line("SBC", _indirect_addr(src)),
+            ]
+        case _:
+            raise ValueError(f"cannot emit Sub(src={src!r}, dst={dst!r})")
+
+
+def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
+    _reject_pseudo(dst)
+    match dst:
+        case asm_ast.Reg(reg=asm_ast.X()):
+            return [_instr_line("INX")]
+        case asm_ast.Reg(reg=asm_ast.Y()):
+            return [_instr_line("INY")]
+        case _:
+            raise ValueError(
+                f"Inc dst must be Reg(X) or Reg(Y), got {dst!r}"
+            )
+
+
+def _emit_dec(dst: asm_ast.Type_operand) -> list[str]:
+    _reject_pseudo(dst)
+    match dst:
+        case asm_ast.Reg(reg=asm_ast.X()):
+            return [_instr_line("DEX")]
+        case asm_ast.Reg(reg=asm_ast.Y()):
+            return [_instr_line("DEY")]
+        case _:
+            raise ValueError(
+                f"Dec dst must be Reg(X) or Reg(Y), got {dst!r}"
+            )
+
+
+def _emit_push(src: asm_ast.Type_operand) -> list[str]:
+    _reject_pseudo(src)
+    if not _is_reg_a(src):
+        raise ValueError(f"Push src must be Reg(A), got {src!r}")
+    return [_instr_line("PHA")]
+
+
+def _emit_pop(dst: asm_ast.Type_operand) -> list[str]:
+    _reject_pseudo(dst)
+    if not _is_reg_a(dst):
+        raise ValueError(f"Pop dst must be Reg(A), got {dst!r}")
+    return [_instr_line("PLA")]
+
+
+def _emit_xor(
+    src1: asm_ast.Type_operand,
+    src2: asm_ast.Type_operand,
+    dst: asm_ast.Type_operand,
+) -> list[str]:
+    _reject_pseudo(src1)
+    _reject_pseudo(src2)
+    _reject_pseudo(dst)
+    _check_dst_is_a(dst, "Xor")
+    # 6502 EOR is "A = A XOR <imm-or-mem>"; at emit we accept only
+    # the immediate form, which means one src must be Reg(A) and the
+    # other an Imm. Order doesn't matter (XOR is commutative).
+    if _is_reg_a(src1) and isinstance(src2, asm_ast.Imm):
+        v = src2.value
+    elif _is_reg_a(src2) and isinstance(src1, asm_ast.Imm):
+        v = src1.value
+    else:
+        raise ValueError(
+            "Xor srcs must be Reg(A) and Imm in some order, "
+            f"got src1={src1!r}, src2={src2!r}"
+        )
+    _check_byte("immediate", v)
+    return [_instr_line("EOR", f"#${v:02X}")]
+
+
 def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
     if arg_bytes + local_bytes == 0:
         return []
@@ -358,12 +456,33 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             return _emit_mov(src, dst)
-        case asm_ast.Unary(op=op, src_dst=src_dst):
-            return _emit_unary(op, src_dst)
         case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
             return _emit_function_prologue(ab, lb)
         case asm_ast.Ret(arg_bytes=ab, local_bytes=lb):
             return _emit_ret(ab, lb)
+        case asm_ast.Add(src=src, dst=dst):
+            return _emit_add(src, dst)
+        case asm_ast.Sub(src=src, dst=dst):
+            return _emit_sub(src, dst)
+        case asm_ast.ClearCarry():
+            return [_instr_line("CLC")]
+        case asm_ast.SetCarry():
+            return [_instr_line("SEC")]
+        case asm_ast.Inc(dst=dst):
+            return _emit_inc(dst)
+        case asm_ast.Dec(dst=dst):
+            return _emit_dec(dst)
+        case asm_ast.Push(src=src):
+            return _emit_push(src)
+        case asm_ast.Pop(dst=dst):
+            return _emit_pop(dst)
+        case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
+            return _emit_xor(s1, s2, dst)
+        case asm_ast.Mul() | asm_ast.Div() | asm_ast.Mod():
+            raise ValueError(
+                "Mul/Div/Mod are not valid at emit; will be lowered to "
+                f"a Call (mul8/div8) by an earlier pass. Got {instr!r}"
+            )
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 

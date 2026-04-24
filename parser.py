@@ -55,11 +55,32 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def unary(self, op, inner):
-        return c99_ast.Unary(unary_operator=op, exp=inner)
+        return c99_ast.Unary(op=op, exp=inner)
 
     @v_args(inline=True)
     def paren(self, _lp, inner, _rp):
         return inner
+
+    # Binary alternatives of `exp` — tokens discarded, build a Binary node.
+    @v_args(inline=True)
+    def multiply(self, left, _star, right):
+        return c99_ast.Binary(op=c99_ast.Multiply(), left=left, right=right)
+
+    @v_args(inline=True)
+    def divide(self, left, _slash, right):
+        return c99_ast.Binary(op=c99_ast.Divide(), left=left, right=right)
+
+    @v_args(inline=True)
+    def modulo(self, left, _percent, right):
+        return c99_ast.Binary(op=c99_ast.Modulo(), left=left, right=right)
+
+    @v_args(inline=True)
+    def add(self, left, _plus, right):
+        return c99_ast.Binary(op=c99_ast.Add(), left=left, right=right)
+
+    @v_args(inline=True)
+    def subtract(self, left, _minus, right):
+        return c99_ast.Binary(op=c99_ast.Subtract(), left=left, right=right)
 
     # Alternatives of `unop` — tokens discarded, just produce the AST op.
     @v_args(inline=True)

@@ -59,7 +59,7 @@ class TestParser(unittest.TestCase):
         self.assertEqual(
             ast.function_definition.body,
             c99_ast.Return(exp=c99_ast.Unary(
-                unary_operator=c99_ast.Negate(),
+                op=c99_ast.Negate(),
                 exp=c99_ast.Constant(value=42),
             )),
         )
@@ -69,7 +69,7 @@ class TestParser(unittest.TestCase):
         self.assertEqual(
             ast.function_definition.body,
             c99_ast.Return(exp=c99_ast.Unary(
-                unary_operator=c99_ast.Complement(),
+                op=c99_ast.Complement(),
                 exp=c99_ast.Constant(value=10),
             )),
         )
@@ -86,9 +86,9 @@ class TestParser(unittest.TestCase):
         self.assertEqual(
             ast.function_definition.body.exp,
             c99_ast.Unary(
-                unary_operator=c99_ast.Negate(),
+                op=c99_ast.Negate(),
                 exp=c99_ast.Unary(
-                    unary_operator=c99_ast.Negate(),
+                    op=c99_ast.Negate(),
                     exp=c99_ast.Constant(value=42),
                 ),
             ),
@@ -99,9 +99,9 @@ class TestParser(unittest.TestCase):
         self.assertEqual(
             ast.function_definition.body.exp,
             c99_ast.Unary(
-                unary_operator=c99_ast.Complement(),
+                op=c99_ast.Complement(),
                 exp=c99_ast.Unary(
-                    unary_operator=c99_ast.Negate(),
+                    op=c99_ast.Negate(),
                     exp=c99_ast.Constant(value=5),
                 ),
             ),
@@ -117,6 +117,134 @@ class TestParser(unittest.TestCase):
         self.assertIsInstance(ast.function_definition.body, c99_ast.Return)
         self.assertIsInstance(ast.function_definition.body.exp, c99_ast.Type_exp)
         self.assertIsInstance(ast.function_definition.body.exp, c99_ast.Constant)
+
+
+def _exp_of(src: str) -> c99_ast.Type_exp:
+    return parse(f"int main(void) {{ return {src}; }}").function_definition.body.exp
+
+
+class TestBinaryPrecedence(unittest.TestCase):
+    def test_add_then_multiply_groups_multiply(self):
+        # 1 + 2 * 3  ->  +(1, *(2, 3))
+        # The * has two int children; the + has int left + Binary right.
+        self.assertEqual(
+            _exp_of("1 + 2 * 3"),
+            c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.Multiply(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_multiply_then_add_groups_multiply(self):
+        # 1 * 2 + 3  ->  +(*(1, 2), 3)
+        # The * has two int children; the + has Binary left + int right.
+        self.assertEqual(
+            _exp_of("1 * 2 + 3"),
+            c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Binary(
+                    op=c99_ast.Multiply(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_multiply_add_multiply(self):
+        # 1 * 2 + 3 * 4  ->  +(*(1, 2), *(3, 4))
+        # Both * nodes have two int children; the + has Binary on
+        # both sides.
+        self.assertEqual(
+            _exp_of("1 * 2 + 3 * 4"),
+            c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Binary(
+                    op=c99_ast.Multiply(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Binary(
+                    op=c99_ast.Multiply(),
+                    left=c99_ast.Constant(value=3),
+                    right=c99_ast.Constant(value=4),
+                ),
+            ),
+        )
+
+    def test_left_associative_subtract(self):
+        # 1 - 2 - 3  ->  -(-(1, 2), 3)
+        self.assertEqual(
+            _exp_of("1 - 2 - 3"),
+            c99_ast.Binary(
+                op=c99_ast.Subtract(),
+                left=c99_ast.Binary(
+                    op=c99_ast.Subtract(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_left_associative_divide(self):
+        # 1 / 2 / 3  ->  /(/(1, 2), 3)
+        self.assertEqual(
+            _exp_of("1 / 2 / 3"),
+            c99_ast.Binary(
+                op=c99_ast.Divide(),
+                left=c99_ast.Binary(
+                    op=c99_ast.Divide(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_parens_override_precedence(self):
+        # (1 + 2) * 3  ->  *(+(1, 2), 3)
+        self.assertEqual(
+            _exp_of("(1 + 2) * 3"),
+            c99_ast.Binary(
+                op=c99_ast.Multiply(),
+                left=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_unary_binds_tighter_than_multiply(self):
+        # -1 * 2  ->  *(-1, 2)
+        self.assertEqual(
+            _exp_of("-1 * 2"),
+            c99_ast.Binary(
+                op=c99_ast.Multiply(),
+                left=c99_ast.Unary(
+                    op=c99_ast.Negate(), exp=c99_ast.Constant(value=1),
+                ),
+                right=c99_ast.Constant(value=2),
+            ),
+        )
+
+    def test_modulo(self):
+        # 10 % 3  ->  %(10, 3)
+        self.assertEqual(
+            _exp_of("10 % 3"),
+            c99_ast.Binary(
+                op=c99_ast.Modulo(),
+                left=c99_ast.Constant(value=10),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

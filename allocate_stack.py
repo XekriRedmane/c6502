@@ -30,8 +30,6 @@ def _operands(instr: asm_ast.Type_instruction):
         case asm_ast.Mov(src=src, dst=dst):
             yield src
             yield dst
-        case asm_ast.Unary(src_dst=sd):
-            yield sd
 
 
 def _local_bytes(instrs: list[asm_ast.Type_instruction]) -> int:

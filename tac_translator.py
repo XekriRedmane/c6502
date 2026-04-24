@@ -11,13 +11,21 @@ State:
     argument so there's no implicit "current function" on the instance.
 
 Mapping:
-  C99 Program(fn)          -> TAC Program(translate_function(fn))
-  C99 Function(name, body) -> TAC Function(name, <instrs built from body>)
-  C99 Return(exp)          -> emit Ret(translate_exp(exp))
-  C99 Constant(v)          -> TAC Constant(v)
-  C99 Unary(op, inner)     -> emit Unary(op', translate(inner), Var(t))
-                              and return Var(t), where t is a fresh temp
-  C99 Negate / Complement  -> TAC Negate / Complement
+  C99 Program(fn)             -> TAC Program(translate_function(fn))
+  C99 Function(name, body)    -> TAC Function(name, <instrs built from body>)
+  C99 Return(exp)             -> emit Ret(translate_exp(exp))
+  C99 Constant(v)             -> TAC Constant(v)
+  C99 Unary(op, inner)        -> emit Unary(op', translate(inner), Var(t))
+                                 and return Var(t), where t is a fresh temp
+  C99 Binary(op, left, right) -> emit Binary(op', translate(left),
+                                 translate(right), Var(t))
+                                 and return Var(t); left is translated
+                                 before right so any temps it needs are
+                                 numbered first.
+  C99 Negate / Complement     -> TAC Negate / Complement
+  C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
+    Multiply / Divide /          / Modulo
+    Modulo
 """
 
 from __future__ import annotations
@@ -72,12 +80,26 @@ class Translator:
         match exp:
             case c99_ast.Constant(value=v):
                 return tac_ast.Constant(value=v)
-            case c99_ast.Unary(unary_operator=op, exp=inner):
+            case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
                 dst = tac_ast.Var(name=self.make_temporary_variable_name())
                 instrs.append(tac_ast.Unary(
                     op=self.translate_unop(op),
                     src=src,
+                    dst=dst,
+                ))
+                return dst
+            case c99_ast.Binary(op=op, left=left, right=right):
+                # Translate left first so its temps get the lower
+                # numbers — matches a left-to-right evaluation order
+                # readers will expect.
+                src1 = self.translate_exp(left, instrs)
+                src2 = self.translate_exp(right, instrs)
+                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                instrs.append(tac_ast.Binary(
+                    op=self.translate_binop(op),
+                    src1=src1,
+                    src2=src2,
                     dst=dst,
                 ))
                 return dst
@@ -92,6 +114,22 @@ class Translator:
             case c99_ast.Negate():
                 return tac_ast.Negate()
         raise TypeError(f"unexpected unop: {op!r}")
+
+    def translate_binop(
+        self, op: c99_ast.Type_binary_operator,
+    ) -> tac_ast.Type_binary_operator:
+        match op:
+            case c99_ast.Add():
+                return tac_ast.Add()
+            case c99_ast.Subtract():
+                return tac_ast.Subtract()
+            case c99_ast.Multiply():
+                return tac_ast.Multiply()
+            case c99_ast.Divide():
+                return tac_ast.Divide()
+            case c99_ast.Modulo():
+                return tac_ast.Modulo()
+        raise TypeError(f"unexpected binop: {op!r}")
 
 
 def translate_program(prog: c99_ast.Type_program) -> tac_ast.Type_program:

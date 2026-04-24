@@ -1,4 +1,4 @@
-# Generated from /project/c6502/c99.asdl. Do not edit.
+# Generated from c99.asdl. Do not edit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -47,8 +47,15 @@ class Constant(Type_exp):
 
 @dataclass
 class Unary(Type_exp):
-    unary_operator: Type_unary_operator
+    op: Type_unary_operator
     exp: Type_exp
+
+
+@dataclass
+class Binary(Type_exp):
+    op: Type_binary_operator
+    left: Type_exp
+    right: Type_exp
 
 
 @dataclass
@@ -63,4 +70,34 @@ class Complement(Type_unary_operator):
 
 @dataclass
 class Negate(Type_unary_operator):
+    pass
+
+
+@dataclass
+class Type_binary_operator:
+    pass
+
+
+@dataclass
+class Add(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Subtract(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Multiply(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Divide(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Modulo(Type_binary_operator):
     pass

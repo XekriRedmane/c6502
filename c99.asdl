@@ -2,6 +2,10 @@ module C99 {
     program = Program(function_definition)
     function_definition = Function(identifier name, statement body)
     statement = Return(exp)
-    exp = Constant(int value) | Unary(unary_operator, exp)
+    exp =
+        Constant(int value)
+        | Unary(unary_operator op, exp)
+        | Binary(binary_operator op, exp left, exp right)
     unary_operator = Complement | Negate
+    binary_operator = Add | Subtract | Multiply | Divide | Modulo
 }

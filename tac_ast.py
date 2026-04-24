@@ -1,4 +1,4 @@
-# Generated from /project/c6502/tac.asdl. Do not edit.
+# Generated from tac.asdl. Do not edit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -43,6 +43,14 @@ class Unary(Type_instruction):
 
 
 @dataclass
+class Binary(Type_instruction):
+    op: Type_binary_operator
+    src1: Type_val
+    src2: Type_val
+    dst: Type_val
+
+
+@dataclass
 class Type_val:
     pass
 
@@ -69,4 +77,34 @@ class Complement(Type_unary_operator):
 
 @dataclass
 class Negate(Type_unary_operator):
+    pass
+
+
+@dataclass
+class Type_binary_operator:
+    pass
+
+
+@dataclass
+class Add(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Subtract(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Multiply(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Divide(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Modulo(Type_binary_operator):
     pass

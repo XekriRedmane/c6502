@@ -49,10 +49,13 @@ class TestAllocateFunction(unittest.TestCase):
         self.assertEqual(out.instructions[0],
                          asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=3))
 
-    def test_frame_in_unary_src_dst_is_counted(self):
+    def test_frame_in_mov_src_is_counted(self):
+        # Mov is the only instruction whose operands the pass walks
+        # for Frame offsets — atomic ops like Add/Xor never carry
+        # Frame operands at this stage (asm_translator emits them
+        # only with Reg(A)/Imm).
         fn = asm_ast.Function(name="main", instructions=[
-            asm_ast.Unary(op=asm_ast.Neg(),
-                          src_dst=asm_ast.Frame(offset=5)),
+            asm_ast.Mov(src=asm_ast.Frame(offset=5), dst=_reg_a()),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         ])
         out = allocate_function(fn)
@@ -72,12 +75,11 @@ class TestAllocateFunction(unittest.TestCase):
 
     def test_existing_instructions_preserved_with_ret_rewritten(self):
         # Non-Ret instructions are passed through verbatim; each Ret
-        # has its amt updated to M.
+        # has its arg/local bytes updated.
         fn = asm_ast.Function(name="main", instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=1),
                         dst=asm_ast.Frame(offset=1)),
-            asm_ast.Unary(op=asm_ast.Not(),
-                          src_dst=asm_ast.Frame(offset=1)),
+            asm_ast.Mov(src=asm_ast.Frame(offset=1), dst=_reg_a()),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         ])
         out = allocate_function(fn)
@@ -85,8 +87,7 @@ class TestAllocateFunction(unittest.TestCase):
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
             asm_ast.Mov(src=asm_ast.Imm(value=1),
                         dst=asm_ast.Frame(offset=1)),
-            asm_ast.Unary(op=asm_ast.Not(),
-                          src_dst=asm_ast.Frame(offset=1)),
+            asm_ast.Mov(src=asm_ast.Frame(offset=1), dst=_reg_a()),
             asm_ast.Ret(arg_bytes=0, local_bytes=1),
         ]))
 

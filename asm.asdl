@@ -6,10 +6,20 @@ module ASM {
         Mov(operand src, operand dst)
         | Ret(int arg_bytes, int local_bytes)
         | FunctionPrologue(int arg_bytes, int local_bytes)
-        | Unary(unary_operator op, operand src_dst)
+        | Add(operand src, operand dst)
+        | Sub(operand src, operand dst)
+        | Mul(operand src, operand dst)
+        | Div(operand src, operand dst)
+        | Mod(operand src, operand dst)
+        | ClearCarry
+        | SetCarry
+        | Inc(operand dst)
+        | Dec(operand dst)
+        | Push(operand src)
+        | Pop(operand dst)
+        | Xor(operand src1, operand src2, operand dst)
 
     operand = Imm(int value) | Reg(reg) | Pseudo(identifier name)
             | Stack(int offset) | Frame(int offset)
-    unary_operator = Neg | Not
     reg = A | X | Y
 }

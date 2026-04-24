@@ -100,17 +100,6 @@ class TestReplaceInstruction(unittest.TestCase):
             dst=asm_ast.Frame(offset=1),
         ))
 
-    def test_unary_rewrites_src_dst(self):
-        r = Replacer()
-        out = r.replace_instruction(asm_ast.Unary(
-            op=asm_ast.Neg(),
-            src_dst=asm_ast.Pseudo(name="t"),
-        ))
-        self.assertEqual(out, asm_ast.Unary(
-            op=asm_ast.Neg(),
-            src_dst=asm_ast.Frame(offset=1),
-        ))
-
     def test_other_instructions_pass_through(self):
         r = Replacer()
         for instr in [
@@ -179,8 +168,6 @@ class TestReplaceProgram(unittest.TestCase):
             function_definition=asm_ast.Function(name="main", instructions=[
                 asm_ast.Mov(src=asm_ast.Imm(value=5),
                             dst=asm_ast.Pseudo(name="t")),
-                asm_ast.Unary(op=asm_ast.Neg(),
-                              src_dst=asm_ast.Pseudo(name="t")),
                 asm_ast.Mov(src=asm_ast.Pseudo(name="t"), dst=_reg_a()),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0),
             ]),
@@ -189,8 +176,6 @@ class TestReplaceProgram(unittest.TestCase):
             function_definition=asm_ast.Function(name="main", instructions=[
                 asm_ast.Mov(src=asm_ast.Imm(value=5),
                             dst=asm_ast.Frame(offset=1)),
-                asm_ast.Unary(op=asm_ast.Neg(),
-                              src_dst=asm_ast.Frame(offset=1)),
                 asm_ast.Mov(src=asm_ast.Frame(offset=1), dst=_reg_a()),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0),
             ]),

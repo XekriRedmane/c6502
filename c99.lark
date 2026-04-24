@@ -169,11 +169,25 @@ start: function
 
 function: INT IDENTIFIER LPAREN VOID RPAREN LBRACE statement RBRACE
 statement: RETURN exp SEMICOLON
-exp: INTEGER_CONSTANT    -> constant
-   | unop exp             -> unary
-   | LPAREN exp RPAREN    -> paren
-unop: MINUS               -> negate
-    | TILDE               -> complement
+// Expression precedence (low to high) via the standard precedence-
+// climbing layout: each level recurses left into itself (for left
+// associativity) and right into the next-tighter level. Lark's `?`
+// rule prefix inlines a level when it has a single child, so the
+// AST sees no extra wrapping for "passes through to next level".
+?exp: add_exp
+?add_exp: add_exp PLUS mul_exp      -> add
+        | add_exp MINUS mul_exp     -> subtract
+        | mul_exp
+?mul_exp: mul_exp STAR unary_exp    -> multiply
+        | mul_exp SLASH unary_exp   -> divide
+        | mul_exp PERCENT unary_exp -> modulo
+        | unary_exp
+?unary_exp: unop unary_exp          -> unary
+          | atom
+?atom: INTEGER_CONSTANT             -> constant
+     | LPAREN exp RPAREN            -> paren
+unop: MINUS                         -> negate
+    | TILDE                         -> complement
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as

@@ -241,96 +241,19 @@ class TestEmitMovMixed(unittest.TestCase):
         )
 
 
-class TestEmitUnary(unittest.TestCase):
-    def test_not_on_a_emits_eor_ff(self):
-        self.assertEqual(
-            emit_instruction(asm_ast.Unary(op=asm_ast.Not(), src_dst=_reg(_A))),
-            ["   EOR   #$FF"],
-        )
+class TestEmitRejectsCompoundOps(unittest.TestCase):
+    """Mul, Div, Mod are not valid at the final emit stage — an
+    earlier pass is required to lower them into the atomic
+    instruction set (a Call instruction, once it exists)."""
 
-    def test_not_on_other_operands_raise(self):
-        unsupported = [
-            _reg(_X),
-            _reg(_Y),
-            asm_ast.Imm(value=0),
-        ]
-        for sd in unsupported:
-            with self.subTest(src_dst=sd):
-                with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Unary(op=asm_ast.Not(), src_dst=sd))
-
-    def test_neg_on_a_emits_twos_complement_sequence(self):
-        self.assertEqual(
-            emit_instruction(asm_ast.Unary(op=asm_ast.Neg(), src_dst=_reg(_A))),
-            ["   EOR   #$FF", "   CLC", "   ADC   #$01"],
-        )
-
-    def test_neg_on_other_operands_raise(self):
-        unsupported = [
-            _reg(_X),
-            _reg(_Y),
-            asm_ast.Imm(value=0),
-        ]
-        for sd in unsupported:
-            with self.subTest(src_dst=sd):
-                with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Unary(op=asm_ast.Neg(), src_dst=sd))
-
-    def test_not_on_stack(self):
-        self.assertEqual(
-            emit_instruction(
-                asm_ast.Unary(op=asm_ast.Not(), src_dst=asm_ast.Stack(offset=3))
-            ),
-            [
-                "   LDY   #$03",
-                "   LDA   (SSP),Y",
-                "   EOR   #$FF",
-                "   STA   (SSP),Y",
-            ],
-        )
-
-    def test_neg_on_stack(self):
-        self.assertEqual(
-            emit_instruction(
-                asm_ast.Unary(op=asm_ast.Neg(), src_dst=asm_ast.Stack(offset=2))
-            ),
-            [
-                "   LDY   #$02",
-                "   LDA   (SSP),Y",
-                "   EOR   #$FF",
-                "   CLC",
-                "   ADC   #$01",
-                "   STA   (SSP),Y",
-            ],
-        )
-
-    def test_not_on_frame(self):
-        self.assertEqual(
-            emit_instruction(
-                asm_ast.Unary(op=asm_ast.Not(), src_dst=asm_ast.Frame(offset=3))
-            ),
-            [
-                "   LDY   #$03",
-                "   LDA   (FP),Y",
-                "   EOR   #$FF",
-                "   STA   (FP),Y",
-            ],
-        )
-
-    def test_neg_on_frame(self):
-        self.assertEqual(
-            emit_instruction(
-                asm_ast.Unary(op=asm_ast.Neg(), src_dst=asm_ast.Frame(offset=2))
-            ),
-            [
-                "   LDY   #$02",
-                "   LDA   (FP),Y",
-                "   EOR   #$FF",
-                "   CLC",
-                "   ADC   #$01",
-                "   STA   (FP),Y",
-            ],
-        )
+    def test_mul_div_mod_raise(self):
+        for ctor in [asm_ast.Mul, asm_ast.Div, asm_ast.Mod]:
+            with self.subTest(op=ctor.__name__):
+                with self.assertRaises(ValueError) as cm:
+                    emit_instruction(
+                        ctor(src=asm_ast.Imm(value=1), dst=_reg(_A))
+                    )
+                self.assertIn("Mul/Div/Mod", str(cm.exception))
 
 
 class TestEmitRejectsPseudo(unittest.TestCase):
@@ -356,14 +279,6 @@ class TestEmitRejectsPseudo(unittest.TestCase):
         self._assert_pseudo_error(
             asm_ast.Mov(src=asm_ast.Pseudo(name="a"),
                         dst=asm_ast.Pseudo(name="b"))
-        )
-
-    def test_unary_with_pseudo(self):
-        self._assert_pseudo_error(
-            asm_ast.Unary(op=asm_ast.Not(), src_dst=asm_ast.Pseudo(name="t"))
-        )
-        self._assert_pseudo_error(
-            asm_ast.Unary(op=asm_ast.Neg(), src_dst=asm_ast.Pseudo(name="t"))
         )
 
 
@@ -556,6 +471,243 @@ class TestColumnAlignment(unittest.TestCase):
         self.assertEqual(lines[3][9:], "#$2A")
         # RTS has no operand.
         self.assertEqual(lines[4], "   RTS")
+
+
+class TestEmitAdd(unittest.TestCase):
+    """Add at emit is a single ADC (with addressing-mode setup for
+    indirect-Y sources). Carry must be set up by an earlier ClearCarry;
+    dst must be Reg(A); src can be Imm/Stack/Frame."""
+
+    def test_imm_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Add(src=asm_ast.Imm(value=0x2A), dst=_reg(_A))
+            ),
+            ["   ADC   #$2A"],
+        )
+
+    def test_stack_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Add(src=asm_ast.Stack(offset=3), dst=_reg(_A))
+            ),
+            ["   LDY   #$03", "   ADC   (SSP),Y"],
+        )
+
+    def test_frame_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Add(src=asm_ast.Frame(offset=2), dst=_reg(_A))
+            ),
+            ["   LDY   #$02", "   ADC   (FP),Y"],
+        )
+
+    def test_imm_out_of_range_raises(self):
+        for v in [-1, 256, 1000]:
+            with self.subTest(v=v):
+                with self.assertRaises(ValueError):
+                    emit_instruction(
+                        asm_ast.Add(src=asm_ast.Imm(value=v), dst=_reg(_A))
+                    )
+
+    def test_dst_must_be_a(self):
+        for dst in [_reg(_X), _reg(_Y), asm_ast.Stack(offset=1),
+                    asm_ast.Frame(offset=1), asm_ast.Imm(value=0)]:
+            with self.subTest(dst=dst):
+                with self.assertRaises(ValueError):
+                    emit_instruction(
+                        asm_ast.Add(src=asm_ast.Imm(value=1), dst=dst)
+                    )
+
+    def test_register_src_raises(self):
+        # Reg(X)/Reg(Y)/Reg(A) — ADC has no register-direct source.
+        for src in [_reg(_X), _reg(_Y), _reg(_A)]:
+            with self.subTest(src=src):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Add(src=src, dst=_reg(_A)))
+
+    def test_pseudo_src_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            emit_instruction(
+                asm_ast.Add(src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
+            )
+        self.assertIn("Pseudo", str(cm.exception))
+
+
+class TestEmitSub(unittest.TestCase):
+    """Sub at emit is a single SBC (with addressing-mode setup for
+    indirect-Y sources); same operand constraints as Add. Carry must
+    be set by a preceding SetCarry."""
+
+    def test_imm_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Sub(src=asm_ast.Imm(value=0x2A), dst=_reg(_A))
+            ),
+            ["   SBC   #$2A"],
+        )
+
+    def test_stack_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Sub(src=asm_ast.Stack(offset=3), dst=_reg(_A))
+            ),
+            ["   LDY   #$03", "   SBC   (SSP),Y"],
+        )
+
+    def test_frame_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Sub(src=asm_ast.Frame(offset=2), dst=_reg(_A))
+            ),
+            ["   LDY   #$02", "   SBC   (FP),Y"],
+        )
+
+    def test_dst_must_be_a(self):
+        with self.assertRaises(ValueError):
+            emit_instruction(
+                asm_ast.Sub(src=asm_ast.Imm(value=1), dst=_reg(_X))
+            )
+
+    def test_register_src_raises(self):
+        for src in [_reg(_X), _reg(_Y), _reg(_A)]:
+            with self.subTest(src=src):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Sub(src=src, dst=_reg(_A)))
+
+
+class TestEmitClearSetCarry(unittest.TestCase):
+    def test_clear_carry(self):
+        self.assertEqual(emit_instruction(asm_ast.ClearCarry()), ["   CLC"])
+
+    def test_set_carry(self):
+        self.assertEqual(emit_instruction(asm_ast.SetCarry()), ["   SEC"])
+
+
+class TestEmitInc(unittest.TestCase):
+    def test_inc_x(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Inc(dst=_reg(_X))),
+            ["   INX"],
+        )
+
+    def test_inc_y(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Inc(dst=_reg(_Y))),
+            ["   INY"],
+        )
+
+    def test_inc_a_raises(self):
+        # Plain 6502 has no INA.
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.Inc(dst=_reg(_A)))
+
+    def test_inc_other_raises(self):
+        for dst in [asm_ast.Imm(value=1), asm_ast.Stack(offset=1),
+                    asm_ast.Frame(offset=1)]:
+            with self.subTest(dst=dst):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Inc(dst=dst))
+
+
+class TestEmitDec(unittest.TestCase):
+    def test_dec_x(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Dec(dst=_reg(_X))),
+            ["   DEX"],
+        )
+
+    def test_dec_y(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Dec(dst=_reg(_Y))),
+            ["   DEY"],
+        )
+
+    def test_dec_a_raises(self):
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.Dec(dst=_reg(_A)))
+
+
+class TestEmitPushPop(unittest.TestCase):
+    def test_push_a(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Push(src=_reg(_A))),
+            ["   PHA"],
+        )
+
+    def test_pop_a(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Pop(dst=_reg(_A))),
+            ["   PLA"],
+        )
+
+    def test_push_non_a_raises(self):
+        for src in [_reg(_X), _reg(_Y),
+                    asm_ast.Imm(value=1), asm_ast.Stack(offset=1)]:
+            with self.subTest(src=src):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Push(src=src))
+
+    def test_pop_non_a_raises(self):
+        for dst in [_reg(_X), _reg(_Y), asm_ast.Stack(offset=1)]:
+            with self.subTest(dst=dst):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Pop(dst=dst))
+
+
+class TestEmitXor(unittest.TestCase):
+    def test_a_imm(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Xor(
+                src1=_reg(_A),
+                src2=asm_ast.Imm(value=0xFF),
+                dst=_reg(_A),
+            )),
+            ["   EOR   #$FF"],
+        )
+
+    def test_imm_a_other_order(self):
+        # XOR is commutative; emit accepts either ordering of the
+        # (Reg(A), Imm) pair.
+        self.assertEqual(
+            emit_instruction(asm_ast.Xor(
+                src1=asm_ast.Imm(value=0x0A),
+                src2=_reg(_A),
+                dst=_reg(_A),
+            )),
+            ["   EOR   #$0A"],
+        )
+
+    def test_dst_must_be_a(self):
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.Xor(
+                src1=_reg(_A),
+                src2=asm_ast.Imm(value=1),
+                dst=_reg(_X),
+            ))
+
+    def test_srcs_must_be_a_and_imm(self):
+        bad = [
+            (asm_ast.Imm(value=1), asm_ast.Imm(value=2)),     # both Imm
+            (_reg(_A), _reg(_A)),                              # both A
+            (_reg(_X), asm_ast.Imm(value=1)),                  # X not A
+            (asm_ast.Stack(offset=1), asm_ast.Imm(value=1)),   # Stack not A
+            (_reg(_A), asm_ast.Stack(offset=1)),               # Stack not Imm
+        ]
+        for s1, s2 in bad:
+            with self.subTest(src1=s1, src2=s2):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Xor(
+                        src1=s1, src2=s2, dst=_reg(_A),
+                    ))
+
+    def test_imm_out_of_range_raises(self):
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.Xor(
+                src1=_reg(_A),
+                src2=asm_ast.Imm(value=256),
+                dst=_reg(_A),
+            ))
 
 
 class TestMainCLI(unittest.TestCase):

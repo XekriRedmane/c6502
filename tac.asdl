@@ -1,7 +1,11 @@
 module TAC {
     program = Program(function_definition)
     function_definition = Function(identifier name, instruction* instructions)
-    instruction = Ret(val) | Unary(unary_operator op, val src, val dst)
+    instruction =
+        Ret(val)
+        | Unary(unary_operator op, val src, val dst)
+        | Binary(binary_operator op, val src1, val src2, val dst)
     val = Constant(int value) | Var(identifier name)
     unary_operator = Complement | Negate
+    binary_operator = Add | Subtract | Multiply | Divide | Modulo
 }

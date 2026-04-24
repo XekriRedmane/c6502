@@ -55,8 +55,6 @@ class Replacer:
                     src=self.replace_operand(src),
                     dst=self.replace_operand(dst),
                 )
-            case asm_ast.Unary(op=op, src_dst=sd):
-                return asm_ast.Unary(op=op, src_dst=self.replace_operand(sd))
             case _:
                 return instr
 

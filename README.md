@@ -193,10 +193,13 @@ Notes:
   addressing-mode setup, not a separate logical step).
 - `Pseudo` operands at emit are an error — they should have been
   resolved by `replace_pseudoregisters`.
-- `Mul`, `Div`, `Mod` are not asm IR nodes — `tac_to_asm` lowers them
-  to a `Call` of the runtime helpers `mul8` / `divmod8` (see the
-  "`Call` and runtime helpers" note below). The asm IR contains no
-  multiply/divide primitives; every node maps 1:1 to a 6502 opcode.
+- `Mul`/`Div`/`Mod`, the shifts (`LeftShift`/`RightShift`), the six
+  comparisons (`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/
+  `LessOrEqual`/`GreaterOrEqual`), and unary `LogicalNot` are TAC-only
+  concepts — `tac_to_asm` lowers them to `Call`s of runtime helpers
+  (see the "`Call` and runtime helpers" note below). The asm IR
+  contains no multiply/divide/shift/compare/lnot primitives; every
+  node maps 1:1 to a 6502 opcode.
 - Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`,
   `Reg(A) → Reg(A)`) raise — there's no direct transfer instruction.
 - `ArithmeticShiftLeft` / `LogicalShiftRight` / `RotateLeft` /
@@ -210,8 +213,9 @@ Notes:
 
 ### `Call` and runtime helpers
 
-`tac_to_asm` lowers TAC `Binary(Multiply|Divide|Modulo, ...)` into a
-short sequence around a `Call`:
+`tac_to_asm` lowers TAC binary ops that don't have a direct 6502
+encoding (`Multiply` / `Divide` / `Modulo` / `LeftShift` / `RightShift`
+plus the six comparisons) into a short sequence around a `Call`:
 
 ```
 Mov(src2, A)     ; stage src2 through A (emitter has no direct
@@ -228,6 +232,15 @@ The helpers are part of the runtime header (not in this repo yet):
 - `divmod8` — `A := A / X`, quotient in `A`, remainder in `X`. Divide
   stores `A`; Modulo adds `Mov(Reg(X), Reg(A))` before the final
   store so it commits the remainder instead.
+- `shl8` — `A := A << X` (logical). `asr8` — `A := A >> X`
+  (arithmetic, sign-preserving). c6502 currently treats integers as
+  signed, so `>>` always goes through `asr8`.
+- `cmp_eq8` / `cmp_ne8` / `cmp_lt8` / `cmp_gt8` / `cmp_le8` /
+  `cmp_ge8` — return `A := 1` if `A <op> X` holds, else `A := 0`.
+  The four ordering helpers are signed.
+- `lnot8` — used by the unary `!` lowering (it's `Mov(src, A); Call
+  lnot8; Mov(A, dst)`, no X-staging). Returns `A := 1` if `A == 0`
+  else `A := 0`.
 
 ## Function stack frame layout
 
@@ -448,11 +461,18 @@ runnable-shape 6502 assembly):
 
 - `int main(void)` returning a single integer expression
 - integer constants
-- unary `-` (negate) and `~` (complement)
+- unary `-` (negate), `~` (complement), and `!` (logical not — emits
+  `JSR lnot8`)
 - binary `+`, `-`, `*`, `/`, `%` (with TAC-level precedence).
   Multiply/divide/modulo emit `JSR mul8` / `JSR divmod8` against the
   runtime helpers described in "`Call` and runtime helpers" above —
   the helpers themselves aren't in this repo yet.
+- binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
+- binary `<<` (logical) and `>>` (arithmetic — c6502 currently treats
+  integers as signed); emit `JSR shl8` / `JSR asr8`.
+- binary `==`, `!=`, `<`, `>`, `<=`, `>=` (emit `JSR cmp_eq8` /
+  `cmp_ne8` / `cmp_lt8` / `cmp_gt8` / `cmp_le8` / `cmp_ge8`; the four
+  ordering helpers are signed)
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:

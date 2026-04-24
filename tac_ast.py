@@ -81,6 +81,11 @@ class Negate(Type_unary_operator):
 
 
 @dataclass
+class LogicalNot(Type_unary_operator):
+    pass
+
+
+@dataclass
 class Type_binary_operator:
     pass
 
@@ -132,4 +137,34 @@ class LeftShift(Type_binary_operator):
 
 @dataclass
 class RightShift(Type_binary_operator):
+    pass
+
+
+@dataclass
+class Equal(Type_binary_operator):
+    pass
+
+
+@dataclass
+class NotEqual(Type_binary_operator):
+    pass
+
+
+@dataclass
+class LessThan(Type_binary_operator):
+    pass
+
+
+@dataclass
+class GreaterThan(Type_binary_operator):
+    pass
+
+
+@dataclass
+class LessOrEqual(Type_binary_operator):
+    pass
+
+
+@dataclass
+class GreaterOrEqual(Type_binary_operator):
     pass

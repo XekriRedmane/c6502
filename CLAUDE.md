@@ -78,14 +78,19 @@ AST and returns another (or text for emit):
    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
-step 4. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are TAC-only concepts;
-`tac_to_asm` lowers each to a `Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence
-targeting one of the runtime helpers `mul8` / `divmod8` / `shl8` / `asr8`.
-All four take operands in `A` and `X`: `mul8` returns low/high in A/X,
-`divmod8` returns quotient/remainder in A/X, `shl8` returns `A << X`
-(logical) in A, `asr8` returns `A >> X` (arithmetic, sign-preserving)
-in A. Right shift goes through `asr8` because c6502 currently treats
-all integers as signed. The asm IR itself has no multiply/divide/shift
+step 4. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` plus the comparisons
+(`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/`LessOrEqual`/`GreaterOrEqual`)
+are TAC-only concepts; `tac_to_asm` lowers each to a
+`Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence targeting one of the runtime helpers
+`mul8` / `divmod8` / `shl8` / `asr8` / `cmp_eq8` / `cmp_ne8` / `cmp_lt8` /
+`cmp_gt8` / `cmp_le8` / `cmp_ge8`. All take operands in `A` and `X`: `mul8`
+returns low/high in A/X, `divmod8` returns quotient/remainder in A/X, `shl8`
+returns `A << X` (logical) in A, `asr8` returns `A >> X` (arithmetic,
+sign-preserving) in A, and the `cmp_*8` helpers return A=1 if the relation
+holds, else A=0. Right shift and the ordering comparisons go through the
+signed helpers because c6502 currently treats all integers as signed. The
+unary `LogicalNot` lowers to a single `Call lnot8` (returns A=1 if A==0,
+else 0). The asm IR itself has no multiply/divide/shift/compare/lnot
 primitives — every non-prologue/ret node is 1:1 with a 6502 opcode.
 
 ## Function stack frame (soft stack)
@@ -181,13 +186,16 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 
 - `int main(void)` returning a single integer expression
 - integer constants
-- unary `-` and `~`
+- unary `-`, `~`, and `!` (`!` emits `JSR lnot8`)
 - binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops emit `JSR mul8` /
   `JSR divmod8` against the runtime helpers — see below)
 - binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
 - binary `<<` (logical) and `>>` (arithmetic; c6502 assumes signed
   integers right now). Both emit `JSR shl8` / `JSR asr8` against the
   runtime helpers
+- binary `==`, `!=`, `<`, `>`, `<=`, `>=` (emit `JSR cmp_eq8` /
+  `cmp_ne8` / `cmp_lt8` / `cmp_gt8` / `cmp_le8` / `cmp_ge8`; ordering
+  helpers are signed)
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
@@ -196,4 +204,5 @@ multiple functions, user-defined calls, control flow, variable declarations,
 types other than `int` (so unsigned right shift is not yet distinguishable),
 and the runtime header that defines `SSP`/`FP`,
 initializes `SSP`, sets the reset vector, and provides `mul8`/`divmod8`/
-`shl8`/`asr8`.
+`shl8`/`asr8`/`cmp_eq8`/`cmp_ne8`/`cmp_lt8`/`cmp_gt8`/`cmp_le8`/`cmp_ge8`/
+`lnot8`.

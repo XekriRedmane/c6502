@@ -6,9 +6,11 @@ module C99 {
         Constant(int value)
         | Unary(unary_operator op, exp)
         | Binary(binary_operator op, exp left, exp right)
-    unary_operator = Complement | Negate
+    unary_operator = Complement | Negate | LogicalNot
     binary_operator =
         Add | Subtract | Multiply | Divide | Modulo
         | BitwiseAnd | BitwiseOr | BitwiseXor
         | LeftShift | RightShift
+        | Equal | NotEqual
+        | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
 }

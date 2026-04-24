@@ -85,16 +85,22 @@ class TestTranslateExp(unittest.TestCase):
 
     def test_each_binary_op_translates(self):
         cases = [
-            (c99_ast.Add(),        tac_ast.Add()),
-            (c99_ast.Subtract(),   tac_ast.Subtract()),
-            (c99_ast.Multiply(),   tac_ast.Multiply()),
-            (c99_ast.Divide(),     tac_ast.Divide()),
-            (c99_ast.Modulo(),     tac_ast.Modulo()),
-            (c99_ast.BitwiseAnd(), tac_ast.BitwiseAnd()),
-            (c99_ast.BitwiseOr(),  tac_ast.BitwiseOr()),
-            (c99_ast.BitwiseXor(), tac_ast.BitwiseXor()),
-            (c99_ast.LeftShift(),  tac_ast.LeftShift()),
-            (c99_ast.RightShift(), tac_ast.RightShift()),
+            (c99_ast.Add(),            tac_ast.Add()),
+            (c99_ast.Subtract(),       tac_ast.Subtract()),
+            (c99_ast.Multiply(),       tac_ast.Multiply()),
+            (c99_ast.Divide(),         tac_ast.Divide()),
+            (c99_ast.Modulo(),         tac_ast.Modulo()),
+            (c99_ast.BitwiseAnd(),     tac_ast.BitwiseAnd()),
+            (c99_ast.BitwiseOr(),      tac_ast.BitwiseOr()),
+            (c99_ast.BitwiseXor(),     tac_ast.BitwiseXor()),
+            (c99_ast.LeftShift(),      tac_ast.LeftShift()),
+            (c99_ast.RightShift(),     tac_ast.RightShift()),
+            (c99_ast.Equal(),          tac_ast.Equal()),
+            (c99_ast.NotEqual(),       tac_ast.NotEqual()),
+            (c99_ast.LessThan(),       tac_ast.LessThan()),
+            (c99_ast.GreaterThan(),    tac_ast.GreaterThan()),
+            (c99_ast.LessOrEqual(),    tac_ast.LessOrEqual()),
+            (c99_ast.GreaterOrEqual(), tac_ast.GreaterOrEqual()),
         ]
         for c99_op, tac_op in cases:
             with self.subTest(op=type(c99_op).__name__):
@@ -106,6 +112,22 @@ class TestTranslateExp(unittest.TestCase):
                         left=c99_ast.Constant(value=1),
                         right=c99_ast.Constant(value=2),
                     ),
+                    instrs,
+                )
+                self.assertEqual(instrs[0].op, tac_op)
+
+    def test_each_unary_op_translates(self):
+        cases = [
+            (c99_ast.Negate(),     tac_ast.Negate()),
+            (c99_ast.Complement(), tac_ast.Complement()),
+            (c99_ast.LogicalNot(), tac_ast.LogicalNot()),
+        ]
+        for c99_op, tac_op in cases:
+            with self.subTest(op=type(c99_op).__name__):
+                t = Translator()
+                instrs: list = []
+                t.translate_exp(
+                    c99_ast.Unary(op=c99_op, exp=c99_ast.Constant(value=1)),
                     instrs,
                 )
                 self.assertEqual(instrs[0].op, tac_op)

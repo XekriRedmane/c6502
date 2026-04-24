@@ -51,6 +51,13 @@ class TestTranslateUnopAtoms(unittest.TestCase):
             ],
         )
 
+    def test_logical_not_emits_lnot8_call(self):
+        # !A -> JSR lnot8 (helper takes A, returns 1 if A==0 else 0).
+        self.assertEqual(
+            translate_unop_atoms(tac_ast.LogicalNot()),
+            [asm_ast.Call(name="lnot8")],
+        )
+
 
 class TestTranslateInstruction(unittest.TestCase):
     def test_ret_emits_mov_to_a_then_ret(self):
@@ -302,6 +309,42 @@ class TestTranslateInstruction(unittest.TestCase):
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
             ],
         )
+
+
+class TestTranslateComparisons(unittest.TestCase):
+    """Each of ==, !=, <, >, <=, >= lowers to the same AX-call shape
+    as Multiply/Divide: stage src2 through A into X, then src1 into A,
+    then JSR <helper>. The helper returns 0/1 in A; result_in_x is
+    False (we want A directly, not the X-byte fetch that Modulo uses)."""
+
+    _CASES = [
+        (tac_ast.Equal(),          "cmp_eq8"),
+        (tac_ast.NotEqual(),       "cmp_ne8"),
+        (tac_ast.LessThan(),       "cmp_lt8"),
+        (tac_ast.GreaterThan(),    "cmp_gt8"),
+        (tac_ast.LessOrEqual(),    "cmp_le8"),
+        (tac_ast.GreaterOrEqual(), "cmp_ge8"),
+    ]
+
+    def test_each_helper(self):
+        for tac_op, helper in self._CASES:
+            with self.subTest(op=type(tac_op).__name__):
+                instr = tac_ast.Binary(
+                    op=tac_op,
+                    src1=tac_ast.Var(name="%0"),
+                    src2=tac_ast.Constant(value=5),
+                    dst=tac_ast.Var(name="%1"),
+                )
+                self.assertEqual(
+                    translate_instruction(instr),
+                    [
+                        asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
+                        asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                        asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                        asm_ast.Call(name=helper),
+                        asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                    ],
+                )
 
 
 class TestTranslateFunction(unittest.TestCase):

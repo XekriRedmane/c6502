@@ -363,6 +363,147 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
         )
 
 
+class TestComparisonOps(unittest.TestCase):
+    """Equality (==, !=) and relational (<, >, <=, >=) operators.
+    Per C99 §6.5: relational binds tighter than equality, both bind
+    looser than shift but tighter than bitwise AND. Each is left-
+    associative."""
+
+    def test_each_op_builds_a_binary(self):
+        cases = [
+            ("==", c99_ast.Equal()),
+            ("!=", c99_ast.NotEqual()),
+            ("<",  c99_ast.LessThan()),
+            (">",  c99_ast.GreaterThan()),
+            ("<=", c99_ast.LessOrEqual()),
+            (">=", c99_ast.GreaterOrEqual()),
+        ]
+        for sym, op in cases:
+            with self.subTest(sym=sym):
+                self.assertEqual(
+                    _exp_of(f"5 {sym} 3"),
+                    c99_ast.Binary(
+                        op=op,
+                        left=c99_ast.Constant(value=5),
+                        right=c99_ast.Constant(value=3),
+                    ),
+                )
+
+    def test_relational_binds_tighter_than_equality(self):
+        # 1 == 2 < 3 -> ==(1, <(2, 3))
+        self.assertEqual(
+            _exp_of("1 == 2 < 3"),
+            c99_ast.Binary(
+                op=c99_ast.Equal(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.LessThan(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_shift_binds_tighter_than_relational(self):
+        # 1 < 2 << 3 -> <(1, <<(2, 3))
+        self.assertEqual(
+            _exp_of("1 < 2 << 3"),
+            c99_ast.Binary(
+                op=c99_ast.LessThan(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.LeftShift(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_equality_binds_tighter_than_bitwise_and(self):
+        # 1 & 2 == 3 -> &(1, ==(2, 3))
+        self.assertEqual(
+            _exp_of("1 & 2 == 3"),
+            c99_ast.Binary(
+                op=c99_ast.BitwiseAnd(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.Equal(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_left_associative_equal(self):
+        # 1 == 2 == 3 -> ==(==(1, 2), 3) — well-formed C, parses
+        # left-to-right; semantics aren't useful but the AST shape
+        # should reflect left-associativity.
+        self.assertEqual(
+            _exp_of("1 == 2 == 3"),
+            c99_ast.Binary(
+                op=c99_ast.Equal(),
+                left=c99_ast.Binary(
+                    op=c99_ast.Equal(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+
+class TestLogicalNotUnary(unittest.TestCase):
+    """! shares unary precedence with - and ~ (right-to-left)."""
+
+    def test_basic(self):
+        self.assertEqual(
+            _exp_of("!5"),
+            c99_ast.Unary(
+                op=c99_ast.LogicalNot(),
+                exp=c99_ast.Constant(value=5),
+            ),
+        )
+
+    def test_double_not(self):
+        # !!x -> !(!x); right-to-left associativity for unary prefix.
+        self.assertEqual(
+            _exp_of("!!5"),
+            c99_ast.Unary(
+                op=c99_ast.LogicalNot(),
+                exp=c99_ast.Unary(
+                    op=c99_ast.LogicalNot(),
+                    exp=c99_ast.Constant(value=5),
+                ),
+            ),
+        )
+
+    def test_binds_tighter_than_multiply(self):
+        # !1 * 2  ->  *(!1, 2)
+        self.assertEqual(
+            _exp_of("!1 * 2"),
+            c99_ast.Binary(
+                op=c99_ast.Multiply(),
+                left=c99_ast.Unary(
+                    op=c99_ast.LogicalNot(), exp=c99_ast.Constant(value=1),
+                ),
+                right=c99_ast.Constant(value=2),
+            ),
+        )
+
+    def test_mixes_with_other_unaries(self):
+        # !-5  ->  !(-5)
+        self.assertEqual(
+            _exp_of("!-5"),
+            c99_ast.Unary(
+                op=c99_ast.LogicalNot(),
+                exp=c99_ast.Unary(
+                    op=c99_ast.Negate(),
+                    exp=c99_ast.Constant(value=5),
+                ),
+            ),
+        )
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

@@ -18,6 +18,9 @@ Mapping:
                                 Negate     -> Xor(A, Imm($FF), A);
                                               ClearCarry;
                                               Add(Imm(1), A)
+                                LogicalNot -> Call(lnot8) (helper
+                                              returns A=1 if A==0 else
+                                              A=0)
                               asm_ast has no Unary node anymore — it's
                               strictly a TAC concept.
   Binary(op, src1, src2, dst) -> for Add and Subtract:
@@ -35,7 +38,10 @@ Mapping:
                                  ternary shape so the unary-Complement
                                  lowering stays unchanged.
                                  for Multiply / Divide / Modulo /
-                                     LeftShift / RightShift:
+                                     LeftShift / RightShift /
+                                     Equal / NotEqual / LessThan /
+                                     GreaterThan / LessOrEqual /
+                                     GreaterOrEqual:
                                    [Mov(src2, Reg(A)),
                                     Mov(Reg(A), Reg(X)),
                                     Mov(src1, Reg(A)),
@@ -50,8 +56,16 @@ Mapping:
                                    shl8     — A << X (logical), in A.
                                    asr8     — A >> X (arithmetic /
                                               sign-preserving), in A.
+                                   cmp_eq8 / cmp_ne8 / cmp_lt8 /
+                                   cmp_gt8 / cmp_le8 / cmp_ge8 —
+                                              return A=1 if the
+                                              relation A <op> X holds,
+                                              else A=0. Ordering
+                                              helpers are signed.
                                  Right shift uses asr8 because c6502
-                                 currently treats integers as signed.
+                                 currently treats integers as signed
+                                 (same applies to the < / > / <= / >=
+                                 helpers).
                                  src2 is staged through A into X
                                  because the emitter has no direct
                                  Stack/Frame -> X mov. Multiply and
@@ -71,17 +85,26 @@ import tac_ast
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
 
-# Runtime helper names for the multi-instruction arithmetic ops. All
-# take their operands in A and X; the runtime header (not in this
-# repo yet) defines these labels. mul8 / divmod8 return both halves
-# of the result (A, X); shl8 / asr8 take a value in A and a shift
-# count in X and return the shifted value in A. Right shift is
-# arithmetic (sign-preserving) — c6502 currently treats every
-# integer as signed.
+# Runtime helper names for the multi-instruction arithmetic, shift,
+# comparison, and logical-NOT ops. All take their operands in A (and
+# X for the binary ones); the runtime header (not in this repo yet)
+# defines these labels. mul8 / divmod8 return both halves of the
+# result (A, X); shl8 / asr8 take a value in A and a shift count in
+# X and return the shifted value in A; the cmp_*8 helpers take A and
+# X and return 1 in A if the comparison holds (signed for the
+# ordering ones — c6502 currently treats every integer as signed),
+# 0 otherwise; lnot8 takes A and returns 1 if A==0, else 0.
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _SHL8 = "shl8"
 _ASR8 = "asr8"
+_CMP_EQ8 = "cmp_eq8"
+_CMP_NE8 = "cmp_ne8"
+_CMP_LT8 = "cmp_lt8"
+_CMP_GT8 = "cmp_gt8"
+_CMP_LE8 = "cmp_le8"
+_CMP_GE8 = "cmp_ge8"
+_LNOT8 = "lnot8"
 
 
 def translate_program(prog: tac_ast.Type_program) -> asm_ast.Type_program:
@@ -186,6 +209,24 @@ def translate_binary(
         case tac_ast.RightShift():
             return _translate_ax_call(src1_op, src2_op, dst_op, _ASR8,
                                       result_in_x=False)
+        case tac_ast.Equal():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _CMP_EQ8,
+                                      result_in_x=False)
+        case tac_ast.NotEqual():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _CMP_NE8,
+                                      result_in_x=False)
+        case tac_ast.LessThan():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _CMP_LT8,
+                                      result_in_x=False)
+        case tac_ast.GreaterThan():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _CMP_GT8,
+                                      result_in_x=False)
+        case tac_ast.LessOrEqual():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _CMP_LE8,
+                                      result_in_x=False)
+        case tac_ast.GreaterOrEqual():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _CMP_GE8,
+                                      result_in_x=False)
     raise TypeError(f"unexpected binary operator: {op!r}")
 
 
@@ -243,4 +284,9 @@ def translate_unop_atoms(
                 asm_ast.ClearCarry(),
                 asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
             ]
+        case tac_ast.LogicalNot():
+            # !A := 1 if A == 0 else 0. Through the runtime helper
+            # lnot8 (takes A, returns A) — same shape as the binary
+            # comparison helpers.
+            return [asm_ast.Call(name=_LNOT8)]
     raise TypeError(f"unexpected unary operator: {op!r}")

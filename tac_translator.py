@@ -22,12 +22,16 @@ Mapping:
                                  and return Var(t); left is translated
                                  before right so any temps it needs are
                                  numbered first.
-  C99 Negate / Complement     -> TAC Negate / Complement
+  C99 Negate / Complement /   -> TAC Negate / Complement / LogicalNot
+    LogicalNot
   C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
     Multiply / Divide /          / Modulo / BitwiseAnd / BitwiseOr /
-    Modulo / BitwiseAnd /        BitwiseXor / LeftShift / RightShift
-    BitwiseOr / BitwiseXor /
-    LeftShift / RightShift
+    Modulo / BitwiseAnd /        BitwiseXor / LeftShift / RightShift /
+    BitwiseOr / BitwiseXor /     Equal / NotEqual / LessThan /
+    LeftShift / RightShift /     GreaterThan / LessOrEqual /
+    Equal / NotEqual /           GreaterOrEqual
+    LessThan / GreaterThan /
+    LessOrEqual / GreaterOrEqual
 """
 
 from __future__ import annotations
@@ -115,6 +119,8 @@ class Translator:
                 return tac_ast.Complement()
             case c99_ast.Negate():
                 return tac_ast.Negate()
+            case c99_ast.LogicalNot():
+                return tac_ast.LogicalNot()
         raise TypeError(f"unexpected unop: {op!r}")
 
     def translate_binop(
@@ -141,6 +147,18 @@ class Translator:
                 return tac_ast.LeftShift()
             case c99_ast.RightShift():
                 return tac_ast.RightShift()
+            case c99_ast.Equal():
+                return tac_ast.Equal()
+            case c99_ast.NotEqual():
+                return tac_ast.NotEqual()
+            case c99_ast.LessThan():
+                return tac_ast.LessThan()
+            case c99_ast.GreaterThan():
+                return tac_ast.GreaterThan()
+            case c99_ast.LessOrEqual():
+                return tac_ast.LessOrEqual()
+            case c99_ast.GreaterOrEqual():
+                return tac_ast.GreaterOrEqual()
         raise TypeError(f"unexpected binop: {op!r}")
 
 

@@ -179,8 +179,16 @@ statement: RETURN exp SEMICOLON
        | xor_exp
 ?xor_exp: xor_exp CARET and_exp     -> bitwise_xor
         | and_exp
-?and_exp: and_exp AMP shift_exp     -> bitwise_and
-        | shift_exp
+?and_exp: and_exp AMP equality_exp  -> bitwise_and
+        | equality_exp
+?equality_exp: equality_exp EQ relational_exp  -> equal
+             | equality_exp NE relational_exp  -> not_equal
+             | relational_exp
+?relational_exp: relational_exp LT shift_exp   -> less_than
+               | relational_exp GT shift_exp   -> greater_than
+               | relational_exp LE shift_exp   -> less_or_equal
+               | relational_exp GE shift_exp   -> greater_or_equal
+               | shift_exp
 ?shift_exp: shift_exp LSHIFT add_exp -> left_shift
           | shift_exp RSHIFT add_exp -> right_shift
           | add_exp
@@ -197,6 +205,7 @@ statement: RETURN exp SEMICOLON
      | LPAREN exp RPAREN            -> paren
 unop: MINUS                         -> negate
     | TILDE                         -> complement
+    | BANG                          -> logical_not
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as

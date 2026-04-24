@@ -102,6 +102,30 @@ class _ASTBuilder(Transformer):
     def right_shift(self, left, _rshift, right):
         return c99_ast.Binary(op=c99_ast.RightShift(), left=left, right=right)
 
+    @v_args(inline=True)
+    def equal(self, left, _eq, right):
+        return c99_ast.Binary(op=c99_ast.Equal(), left=left, right=right)
+
+    @v_args(inline=True)
+    def not_equal(self, left, _ne, right):
+        return c99_ast.Binary(op=c99_ast.NotEqual(), left=left, right=right)
+
+    @v_args(inline=True)
+    def less_than(self, left, _lt, right):
+        return c99_ast.Binary(op=c99_ast.LessThan(), left=left, right=right)
+
+    @v_args(inline=True)
+    def greater_than(self, left, _gt, right):
+        return c99_ast.Binary(op=c99_ast.GreaterThan(), left=left, right=right)
+
+    @v_args(inline=True)
+    def less_or_equal(self, left, _le, right):
+        return c99_ast.Binary(op=c99_ast.LessOrEqual(), left=left, right=right)
+
+    @v_args(inline=True)
+    def greater_or_equal(self, left, _ge, right):
+        return c99_ast.Binary(op=c99_ast.GreaterOrEqual(), left=left, right=right)
+
     # Alternatives of `unop` — tokens discarded, just produce the AST op.
     @v_args(inline=True)
     def negate(self, _minus):
@@ -110,6 +134,10 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def complement(self, _tilde):
         return c99_ast.Complement()
+
+    @v_args(inline=True)
+    def logical_not(self, _bang):
+        return c99_ast.LogicalNot()
 
 
 _BUILDER = _ASTBuilder()

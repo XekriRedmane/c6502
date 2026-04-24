@@ -193,12 +193,12 @@ Notes:
   addressing-mode setup, not a separate logical step).
 - `Pseudo` operands at emit are an error — they should have been
   resolved by `replace_pseudoregisters`.
-- `Mul`/`Div`/`Mod`, the shifts (`LeftShift`/`RightShift`), and unary
-  `LogicalNot` are TAC-only concepts — `tac_to_asm` lowers them to
-  `Call`s of runtime helpers (see the "`Call` and runtime helpers"
-  note below). The six comparisons (`Equal`/`NotEqual`/`LessThan`/
-  `GreaterThan`/`LessOrEqual`/`GreaterOrEqual`) are also TAC-only but
-  are lowered inline (Compare/Sub + Branch + 0/1-select labels) rather
+- `Mul`/`Div`/`Mod` and the shifts (`LeftShift`/`RightShift`) are
+  TAC-only concepts — `tac_to_asm` lowers them to `Call`s of runtime
+  helpers (see the "`Call` and runtime helpers" note below). The six
+  comparisons (`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/
+  `LessOrEqual`/`GreaterOrEqual`) and unary `LogicalNot` are also
+  TAC-only but are lowered inline (Branch + 0/1-select labels) rather
   than through a helper — see "Comparison lowering" below. The asm IR
   contains no multiply/divide/shift/lnot primitives; every non-
   `Ret`/`FunctionPrologue` node maps 1:1 to a 6502 opcode.
@@ -237,9 +237,9 @@ The helpers are part of the runtime header (not in this repo yet):
 - `shl8` — `A := A << X` (logical). `asr8` — `A := A >> X`
   (arithmetic, sign-preserving). c6502 currently treats integers as
   signed, so `>>` always goes through `asr8`.
-- `lnot8` — used by the unary `!` lowering (it's `Mov(src, A); Call
-  lnot8; Mov(A, dst)`, no X-staging). Returns `A := 1` if `A == 0`
-  else `A := 0`.
+
+Unary `!` used to go through a `lnot8` helper but now lowers inline —
+see "Unary `!` lowering" below.
 
 ### Comparison lowering
 
@@ -290,6 +290,55 @@ sequence but swap the operands: `src1 > src2` becomes `src2 < src1`
 PL). The swap is because `Z` is unreliable after the `EOR #$80`
 correction — testing "not-less-than AND not-equal" directly would need
 a second compare, and swapping is cheaper.
+
+### Short-circuit lowering (`&&` / `||`)
+
+`&&` / `||` never become a TAC `Binary` — `c99_to_tac` emits the
+control flow directly using `JumpIfFalse` / `JumpIfTrue`, `Jump`,
+`Label`, and `Copy`. `tac_to_asm` then lowers those five TAC atoms:
+
+| TAC instruction                | asm lowering                                     |
+| ------------------------------ | ------------------------------------------------ |
+| `Copy(src, dst)`               | `Mov(src, dst)` (emitter handles all shapes)     |
+| `Jump(target)`                 | `Jump(target)` (atom-for-atom)                   |
+| `Label(name)`                  | `Label(name)` (atom-for-atom)                    |
+| `JumpIfTrue(cond, target)`     | `Mov(cond, A); Branch(NE, target)`               |
+| `JumpIfFalse(cond, target)`    | `Mov(cond, A); Branch(EQ, target)`               |
+
+The conditional jumps work because LDA (both immediate and indirect-Y)
+sets `Z` based on the loaded byte — BEQ therefore fires iff the value
+is zero (C's falsy), and BNE iff it's non-zero (truthy). No runtime
+helper, no extra compare.
+
+Label prefixes are disjoint between `c99_to_tac` (`and_false_N` /
+`and_end_N` / `or_true_N` / `or_end_N`) and the inline lowerings in
+`tac_to_asm` (`cmp_true_N` / `cmp_end_N` / `cmp_novf_N` for
+comparisons, `lnot_true_N` / `lnot_end_N` for `!`), so the two label
+counters can overlap without collision.
+
+### Unary `!` lowering
+
+`!x` is the 8-bit "is-zero" predicate. The framing `Mov(src, A)` that
+sits around every unary-op lowering already emits `LDA`, which sets
+`Z` based on the loaded byte — so `tac_to_asm` can branch on that
+directly and skip the `Compare`:
+
+```
+Mov(src, A)                   ; LDA sets Z=1 iff src == 0
+Branch(EQ, lnot_true_N)
+Mov(Imm(0), A)
+Jump(lnot_end_M)
+Label(lnot_true_N)
+Mov(Imm(1), A)
+Label(lnot_end_M)
+Mov(A, dst)
+```
+
+Earlier versions of c6502 went through a `lnot8` runtime helper; the
+inline form is cheaper and drops one helper from the runtime header.
+The labels come from the same `Translator` counter that the
+comparison lowerings use, so `!` and `==`/`<`/etc. in the same
+program get globally unique label numbers.
 
 ## Function stack frame layout
 
@@ -510,8 +559,8 @@ runnable-shape 6502 assembly):
 
 - `int main(void)` returning a single integer expression
 - integer constants
-- unary `-` (negate), `~` (complement), and `!` (logical not — emits
-  `JSR lnot8`)
+- unary `-` (negate), `~` (complement), and `!` (logical not —
+  lowers inline to `Branch(EQ) + 0/1 select`, no runtime helper)
 - binary `+`, `-`, `*`, `/`, `%` (with TAC-level precedence).
   Multiply/divide/modulo emit `JSR mul8` / `JSR divmod8` against the
   runtime helpers described in "`Call` and runtime helpers" above —
@@ -527,9 +576,13 @@ runnable-shape 6502 assembly):
   semantics. `>` and `<=` swap their operands to reuse the same
   MI/PL branch paths — the EOR correction makes `Z` unreliable, so
   swapping is cheaper than a second compare)
-- binary `&&` and `||` (short-circuit; the TAC translator lowers them
-  with `JumpIfFalse`/`JumpIfTrue` + labels + `Copy` — no runtime
-  helper and no TAC binop, the control flow *is* the semantics)
+- binary `&&` and `||` (short-circuit; `c99_to_tac` lowers them to
+  `JumpIfFalse`/`JumpIfTrue` + `Jump`/`Label`/`Copy`, then `tac_to_asm`
+  lowers the conditional jumps to `Mov(cond, A); Branch(EQ|NE, target)`
+  — LDA sets Z based on the loaded byte, so BEQ/BNE drive off C's
+  truthy/falsy directly. `Copy` becomes a single `Mov`; TAC `Jump`
+  and `Label` are atom-for-atom. No runtime helper, no TAC binop —
+  the control flow *is* the semantics)
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:
@@ -543,9 +596,9 @@ Not yet anywhere in the pipeline:
   distinguishable yet).
 - a runtime header that defines `SSP`/`FP` at their ZP addresses,
   initializes `SSP` to top-of-RAM, sets the reset vector to a stub
-  that calls `main`, and provides `mul8`/`divmod8`/`shl8`/`asr8`/
-  `lnot8`. The emitted assembly references these symbols but the
-  header that supplies them isn't in this repo yet.
+  that calls `main`, and provides `mul8`/`divmod8`/`shl8`/`asr8`.
+  The emitted assembly references these symbols but the header that
+  supplies them isn't in this repo yet.
 
 ## Tests
 

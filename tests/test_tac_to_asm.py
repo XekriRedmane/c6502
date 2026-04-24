@@ -51,12 +51,37 @@ class TestTranslateUnopAtoms(unittest.TestCase):
             ],
         )
 
-    def test_logical_not_emits_lnot8_call(self):
-        # !A -> JSR lnot8 (helper takes A, returns 1 if A==0 else 0).
+    def test_logical_not_lowers_inline_with_beq_and_0_1_select(self):
+        # !A := 1 if A == 0 else 0. The framing Mov(src, A) around
+        # this atom sequence already sets Z, so we branch on EQ
+        # directly (no extra Compare). Module-level wrapper builds a
+        # fresh Translator, so labels start at _0 / _1.
         self.assertEqual(
             translate_unop_atoms(tac_ast.LogicalNot()),
-            [asm_ast.Call(name="lnot8")],
+            [
+                asm_ast.Branch(cond=asm_ast.EQ(), target="lnot_true_0"),
+                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Jump(target="lnot_end_1"),
+                asm_ast.Label(name="lnot_true_0"),
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Label(name="lnot_end_1"),
+            ],
         )
+
+    def test_logical_not_labels_are_unique_across_uses(self):
+        # Reusing a Translator (as happens within a program) keeps
+        # the counter advancing so two ! uses don't collide.
+        from tac_to_asm import Translator
+        t = Translator()
+        first = t.translate_unop_atoms(tac_ast.LogicalNot())
+        second = t.translate_unop_atoms(tac_ast.LogicalNot())
+        first_labels = {
+            i.name for i in first if isinstance(i, asm_ast.Label)
+        }
+        second_labels = {
+            i.name for i in second if isinstance(i, asm_ast.Label)
+        }
+        self.assertTrue(first_labels.isdisjoint(second_labels))
 
 
 class TestTranslateInstruction(unittest.TestCase):
@@ -114,6 +139,29 @@ class TestTranslateInstruction(unittest.TestCase):
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                 ),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%2")),
+            ],
+        )
+
+    def test_unary_logical_not_lowered_inline(self):
+        # Mov(src, A) -> Branch(EQ, true) -> Mov(0, A) -> Jump(end)
+        # -> Label(true) -> Mov(1, A) -> Label(end) -> Mov(A, dst).
+        # No Compare — LDA already set Z.
+        instr = tac_ast.Unary(
+            op=tac_ast.LogicalNot(),
+            src=tac_ast.Var(name="%0"),
+            dst=tac_ast.Var(name="%1"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Branch(cond=asm_ast.EQ(), target="lnot_true_0"),
+                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Jump(target="lnot_end_1"),
+                asm_ast.Label(name="lnot_true_0"),
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Label(name="lnot_end_1"),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -308,6 +356,161 @@ class TestTranslateInstruction(unittest.TestCase):
                 asm_ast.Mov(src=_REG_X, dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
             ],
+        )
+
+
+class TestTranslateShortCircuitAtoms(unittest.TestCase):
+    """Copy/Jump/Label/JumpIfTrue/JumpIfFalse are the TAC atoms that
+    c99_to_tac emits for `&&` and `||`. Copy becomes a single Mov (the
+    emitter already handles every legal operand shape). Jump and Label
+    are atom-for-atom. Conditional jumps stage the value through A so
+    the LDA's Z flag drives a BEQ/BNE to the target."""
+
+    def test_copy_constant_to_var_becomes_single_mov(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.Copy(
+                src=tac_ast.Constant(value=0),
+                dst=tac_ast.Var(name="%0"),
+            )),
+            [asm_ast.Mov(
+                src=asm_ast.Imm(value=0), dst=asm_ast.Pseudo(name="%0"),
+            )],
+        )
+
+    def test_copy_var_to_var_becomes_single_mov(self):
+        # Emit handles Frame->Frame via an internal load-then-store
+        # pair, so tac_to_asm doesn't need to split it here.
+        self.assertEqual(
+            translate_instruction(tac_ast.Copy(
+                src=tac_ast.Var(name="%a"),
+                dst=tac_ast.Var(name="%b"),
+            )),
+            [asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%a"),
+                dst=asm_ast.Pseudo(name="%b"),
+            )],
+        )
+
+    def test_jump_is_atom_for_atom(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.Jump(target="and_end_0")),
+            [asm_ast.Jump(target="and_end_0")],
+        )
+
+    def test_label_is_atom_for_atom(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.Label(name="or_true_3")),
+            [asm_ast.Label(name="or_true_3")],
+        )
+
+    def test_jump_if_true_constant_stages_through_a_then_bne(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.JumpIfTrue(
+                condition=tac_ast.Constant(value=1),
+                target="or_true_0",
+            )),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Branch(cond=asm_ast.NE(), target="or_true_0"),
+            ],
+        )
+
+    def test_jump_if_true_var_stages_through_a_then_bne(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.JumpIfTrue(
+                condition=tac_ast.Var(name="%0"),
+                target="or_true_0",
+            )),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Branch(cond=asm_ast.NE(), target="or_true_0"),
+            ],
+        )
+
+    def test_jump_if_false_constant_stages_through_a_then_beq(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=0),
+                target="and_false_0",
+            )),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Branch(cond=asm_ast.EQ(), target="and_false_0"),
+            ],
+        )
+
+    def test_jump_if_false_var_stages_through_a_then_beq(self):
+        self.assertEqual(
+            translate_instruction(tac_ast.JumpIfFalse(
+                condition=tac_ast.Var(name="%2"),
+                target="and_false_0",
+            )),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%2"), dst=_REG_A),
+                asm_ast.Branch(cond=asm_ast.EQ(), target="and_false_0"),
+            ],
+        )
+
+    def test_full_logical_and_lowering(self):
+        # What c99_to_tac emits for `1 && 2`, lowered instruction by
+        # instruction through translate_function. Verifies that the
+        # five short-circuit atoms compose with the existing Ret
+        # lowering into a coherent asm sequence.
+        fn = tac_ast.Function(
+            name="main",
+            instructions=[
+                tac_ast.JumpIfFalse(
+                    condition=tac_ast.Constant(value=1),
+                    target="and_false_0",
+                ),
+                tac_ast.JumpIfFalse(
+                    condition=tac_ast.Constant(value=2),
+                    target="and_false_0",
+                ),
+                tac_ast.Copy(
+                    src=tac_ast.Constant(value=1),
+                    dst=tac_ast.Var(name="%0"),
+                ),
+                tac_ast.Jump(target="and_end_1"),
+                tac_ast.Label(name="and_false_0"),
+                tac_ast.Copy(
+                    src=tac_ast.Constant(value=0),
+                    dst=tac_ast.Var(name="%0"),
+                ),
+                tac_ast.Label(name="and_end_1"),
+                tac_ast.Ret(val=tac_ast.Var(name="%0")),
+            ],
+        )
+        self.assertEqual(
+            translate_function(fn),
+            asm_ast.Function(
+                name="main",
+                instructions=[
+                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                    asm_ast.Branch(
+                        cond=asm_ast.EQ(), target="and_false_0",
+                    ),
+                    asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
+                    asm_ast.Branch(
+                        cond=asm_ast.EQ(), target="and_false_0",
+                    ),
+                    asm_ast.Mov(
+                        src=asm_ast.Imm(value=1),
+                        dst=asm_ast.Pseudo(name="%0"),
+                    ),
+                    asm_ast.Jump(target="and_end_1"),
+                    asm_ast.Label(name="and_false_0"),
+                    asm_ast.Mov(
+                        src=asm_ast.Imm(value=0),
+                        dst=asm_ast.Pseudo(name="%0"),
+                    ),
+                    asm_ast.Label(name="and_end_1"),
+                    asm_ast.Mov(
+                        src=asm_ast.Pseudo(name="%0"), dst=_REG_A,
+                    ),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                ],
+            ),
         )
 
 

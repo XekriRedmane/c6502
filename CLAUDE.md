@@ -85,8 +85,10 @@ All take operands in `A` and `X`: `mul8` returns low/high in A/X, `divmod8`
 returns quotient/remainder in A/X, `shl8` returns `A << X` (logical) in A,
 `asr8` returns `A >> X` (arithmetic, sign-preserving) in A. Right shift
 goes through the signed helper because c6502 currently treats all integers
-as signed. The unary `LogicalNot` lowers to a single `Call lnot8` (returns
-A=1 if A==0, else 0).
+as signed. The unary `LogicalNot` is lowered inline (no runtime helper):
+`Mov src→A; Branch(EQ, true); Mov 0→A; Jump end; true: Mov 1→A; end:
+Mov A→dst`. The framing `Mov(src, A)` already sets Z via `LDA`, so no
+`Compare` is needed before the branch.
 
 The six comparison ops
 (`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/`LessOrEqual`/`GreaterOrEqual`)
@@ -166,8 +168,10 @@ annotated sample prologue/epilogue.
   as the function name); `Jump` is `JMP <target>`; `Branch` is one of
   `BCC`/`BCS`/`BEQ`/`BMI`/`BNE`/`BPL`/`BVC`/`BVS` per its `condition`.
   All branches/jumps are symbolic — emit doesn't compute displacements,
-  the assembler does. Present in the IR; `tac_to_asm` doesn't emit
-  them yet (waiting on TAC-level `if`/`while`/labels).
+  the assembler does. `tac_to_asm` emits them for the inline comparison
+  lowerings and for the short-circuit lowerings of `&&` / `||`
+  (`JumpIfFalse` → `Mov(cond, A); Branch(EQ, target)`, `JumpIfTrue` →
+  `Branch(NE, …)`; TAC `Jump`/`Label` are atom-for-atom).
 - Output formatting: labels at column 1, opcodes at column 4, operands at
   column 10. Each function emits `<name>:`, then `SUBROUTINE`, blank line,
   then instructions.
@@ -202,7 +206,8 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 
 - `int main(void)` returning a single integer expression
 - integer constants
-- unary `-`, `~`, and `!` (`!` emits `JSR lnot8`)
+- unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`
+  — no runtime helper; the framing `LDA` already sets Z)
 - binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops emit `JSR mul8` /
   `JSR divmod8` against the runtime helpers — see below)
 - binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
@@ -216,9 +221,13 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   select. `>` and `<=` swap their operands so the same MI/PL branches
   work. c6502 assumes signed integers right now, so this matches C's
   relational semantics for `int`)
-- binary `&&` and `||` (short-circuit; the TAC translator lowers them
-  with `JumpIfFalse`/`JumpIfTrue` + labels + `Copy` — no runtime helper
-  and no TAC binop, the control flow *is* the semantics)
+- binary `&&` and `||` (short-circuit; `c99_to_tac` lowers them to
+  `JumpIfFalse`/`JumpIfTrue` + `Jump`/`Label`/`Copy`, then `tac_to_asm`
+  lowers the conditional jumps to `Mov(cond, A); Branch(EQ|NE, target)`
+  — LDA sets Z based on the loaded byte, so BEQ/BNE drives off C's
+  falsy/truthy directly. Copy becomes a single `Mov`; Jump and Label
+  are atom-for-atom. No runtime helper and no TAC binop — the control
+  flow *is* the semantics)
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
@@ -227,4 +236,4 @@ multiple functions, user-defined calls, control flow statements,
 variable declarations, types other than `int` (so unsigned right shift
 and unsigned ordering aren't distinguishable yet), and the runtime header
 that defines `SSP`/`FP`, initializes `SSP`, sets the reset vector, and
-provides `mul8`/`divmod8`/`shl8`/`asr8`/`lnot8`.
+provides `mul8`/`divmod8`/`shl8`/`asr8`.

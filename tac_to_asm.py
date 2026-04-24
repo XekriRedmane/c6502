@@ -1,11 +1,10 @@
 """Translate a tac_ast tree into an asm_ast tree.
 
 The Translator class holds a label counter so it can mint unique
-labels for the inline comparison lowerings (each `== != < > <= >=`
-expands into a Compare/Sub + Branch + 0/1-select sequence). Module-
-level `translate_*` functions construct a fresh Translator per call;
-use the class directly when you want the counter to persist across
-calls.
+labels for the inline lowerings that need them: the six comparisons
+(`== != < > <= >=`) and unary `!`. Module-level `translate_*`
+functions construct a fresh Translator per call; use the class
+directly when you want the counter to persist across calls.
 
 Mapping:
   Program(fn)              -> Program(translate_function(fn))
@@ -21,12 +20,26 @@ Mapping:
                                 Negate     -> Xor(A, Imm($FF), A);
                                               ClearCarry;
                                               Add(Imm(1), A)
-                                LogicalNot -> Call(lnot8) (helper
-                                              returns A=1 if A==0 else
-                                              A=0)
+                                LogicalNot -> Branch(EQ, true);
+                                              Mov(0,A); Jump(end);
+                                              true: Mov(1,A); end:
+                                              (no extra Compare — the
+                                              framing Mov(src,A)'s LDA
+                                              already set Z.)
                               asm_ast has no Unary node anymore — it's
                               strictly a TAC concept.
   Binary(op, src1, src2, dst) -> see translate_binary below.
+  Copy(src, dst)           -> [Mov(src, dst)]. The emitter's Mov
+                              handles every legal operand shape so
+                              there's nothing to expand here.
+  Jump(target)             -> [Jump(target)]   (atom-for-atom)
+  Label(name)              -> [Label(name)]    (atom-for-atom)
+  JumpIfTrue(cond, target) -> [Mov(cond, A), Branch(NE, target)].
+                              LDA sets Z based on the loaded byte, so
+                              BNE fires exactly when cond is non-zero
+                              (C's truthiness).
+  JumpIfFalse(cond, target) -> [Mov(cond, A), Branch(EQ, target)]
+                              (mirror of JumpIfTrue).
 
 Binary lowerings:
   Add / Subtract                 [Mov(src1, A), ClearCarry|SetCarry,
@@ -97,19 +110,18 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 # take operands in A (and X for the binary ones). mul8 / divmod8
 # return both halves of the result (A, X). shl8 / asr8 take a value
 # in A and a shift count in X and return the shifted value in A.
-# lnot8 takes A and returns 1 if A==0 else 0. (The comparison helpers
-# cmp_*8 are gone — the translator lowers comparisons inline now.)
+# (The comparison helpers cmp_*8 and the unary-not helper lnot8 are
+# gone — the translator lowers those inline now.)
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _SHL8 = "shl8"
 _ASR8 = "asr8"
-_LNOT8 = "lnot8"
 
 
 class Translator:
-    """Holds the label counter so inline comparison lowerings in the
-    same program get unique labels. One Translator per program; each
-    `make_label` call bumps the counter."""
+    """Holds the label counter so inline lowerings in the same program
+    (comparisons and unary `!`) get unique labels. One Translator per
+    program; each `make_label` call bumps the counter."""
 
     def __init__(self) -> None:
         self._label_counter = 0
@@ -155,11 +167,35 @@ class Translator:
             case tac_ast.Unary(op=op, src=src, dst=dst):
                 return (
                     [asm_ast.Mov(src=translate_val(src), dst=_REG_A)]
-                    + translate_unop_atoms(op)
+                    + self.translate_unop_atoms(op)
                     + [asm_ast.Mov(src=_REG_A, dst=translate_val(dst))]
                 )
             case tac_ast.Binary(op=op, src1=src1, src2=src2, dst=dst):
                 return self.translate_binary(op, src1, src2, dst)
+            case tac_ast.Copy(src=src, dst=dst):
+                # A single Mov — the emitter already handles every
+                # legal operand shape (Imm→Frame routes through A
+                # internally; Frame→Frame emits load-then-store).
+                return [asm_ast.Mov(
+                    src=translate_val(src), dst=translate_val(dst),
+                )]
+            case tac_ast.Jump(target=target):
+                return [asm_ast.Jump(target=target)]
+            case tac_ast.Label(name=name):
+                return [asm_ast.Label(name=name)]
+            case tac_ast.JumpIfTrue(condition=cond, target=target):
+                # LDA (immediate or indirect-Y) sets Z based on the
+                # loaded byte, so after the Mov, BNE branches exactly
+                # when the condition is non-zero (C's truthiness).
+                return [
+                    asm_ast.Mov(src=translate_val(cond), dst=_REG_A),
+                    asm_ast.Branch(cond=asm_ast.NE(), target=target),
+                ]
+            case tac_ast.JumpIfFalse(condition=cond, target=target):
+                return [
+                    asm_ast.Mov(src=translate_val(cond), dst=_REG_A),
+                    asm_ast.Branch(cond=asm_ast.EQ(), target=target),
+                ]
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     def translate_binary(
@@ -319,6 +355,46 @@ class Translator:
             asm_ast.Mov(src=_REG_A, dst=dst_op),
         ]
 
+    def translate_unop_atoms(
+        self, op: tac_ast.Type_unary_operator,
+    ) -> list[asm_ast.Type_instruction]:
+        """Atomic asm instructions implementing the unary op on A.
+        Result is left in A. LogicalNot lowers inline (no runtime
+        helper) and mints two labels per use, so this lives on the
+        Translator to share the label counter with the comparison
+        lowerings."""
+        match op:
+            case tac_ast.Complement():
+                # ~A = A XOR $FF
+                return [asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
+                )]
+            case tac_ast.Negate():
+                # -A = (~A) + 1, two's complement
+                return [
+                    asm_ast.Xor(
+                        src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
+                    ),
+                    asm_ast.ClearCarry(),
+                    asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
+                ]
+            case tac_ast.LogicalNot():
+                # !A := 1 if A == 0 else 0. The framing Mov(src, A)
+                # around this atom already emits LDA, which sets Z
+                # based on the loaded byte — so we can branch on EQ
+                # directly without an extra Compare.
+                true_label = self.make_label("lnot_true")
+                end_label = self.make_label("lnot_end")
+                return [
+                    asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
+                    asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                    asm_ast.Jump(target=end_label),
+                    asm_ast.Label(name=true_label),
+                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                    asm_ast.Label(name=end_label),
+                ]
+        raise TypeError(f"unexpected unary operator: {op!r}")
+
 
 def _translate_ax_call(
     src1_op: asm_ast.Type_operand,
@@ -357,28 +433,7 @@ def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
 def translate_unop_atoms(
     op: tac_ast.Type_unary_operator,
 ) -> list[asm_ast.Type_instruction]:
-    """Atomic asm instructions implementing the unary op on A.
-    Result is left in A."""
-    match op:
-        case tac_ast.Complement():
-            # ~A = A XOR $FF
-            return [asm_ast.Xor(
-                src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
-            )]
-        case tac_ast.Negate():
-            # -A = (~A) + 1, two's complement
-            return [
-                asm_ast.Xor(
-                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
-                ),
-                asm_ast.ClearCarry(),
-                asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
-            ]
-        case tac_ast.LogicalNot():
-            # !A := 1 if A == 0 else 0. Through the runtime helper
-            # lnot8 (takes A, returns A).
-            return [asm_ast.Call(name=_LNOT8)]
-    raise TypeError(f"unexpected unary operator: {op!r}")
+    return Translator().translate_unop_atoms(op)
 
 
 # Module-level wrappers: each call builds a fresh Translator (so the

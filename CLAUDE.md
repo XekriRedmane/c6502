@@ -1,0 +1,175 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project overview
+
+c6502 is a C99 compiler written in Python that targets the MOS 6502. Dependencies
+are managed with `uv`; `pyproject.toml` is the source of truth and `uv.lock` the
+resolved set. `requirements.txt` is a hand-maintained `pip`-compatible fallback
+and may lag.
+
+## Common commands
+
+```sh
+uv sync                                         # create/update the project venv
+uv run python -m unittest                       # run all tests
+uv run python -m unittest test_asm_emit         # run one module
+uv run python -m unittest test_parser.TestValidFiles.test_return_2   # run one test
+
+uv run python compile.py <source.c> --codegen              # C → 6502 asm to stdout
+uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
+uv run python compile.py - --tac < source.c                # read stdin, stop after TAC
+```
+
+`compile.py` is the only CLI; every other module is library-only. Flags it doesn't
+recognize are forwarded to the preprocessor (pcpp), so `-D`, `-U`, `-I`,
+`--passthru-*`, `--line-directive` etc. work the same as the `pcpp` CLI. pcpp's
+own `-o` is not forwarded.
+
+Stage-selection flags (mutually exclusive, one required with `compile.py`):
+`--lex`, `--parse`, `--tac`, `--codegen`.
+
+## Regenerating AST modules
+
+Each `*_ast.py` module is generated from its matching `*.asdl` by `asdl.py`.
+After editing an ASDL file, regenerate:
+
+```sh
+uv run python asdl.py c99.asdl c99_ast.py
+uv run python asdl.py tac.asdl tac_ast.py
+uv run python asdl.py asm.asdl asm_ast.py
+```
+
+The generator emits one `@dataclass` per type. Sum-type bases are named
+`Type_<name>` (to avoid colliding with Python builtins like `int`);
+constructor classes keep their ASDL names. Fields become `int`, `str`,
+`list[...]`, or `T | None` depending on the primitive / `*` / `?` markers.
+
+## Compiler pipeline
+
+`compile.py --codegen` chains six passes, each a separate module that takes one
+AST and returns another (or text for emit):
+
+1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar lives
+   in `c99.lark`. Only `int main(void) { return <exp>; }` is accepted; `<exp>`
+   covers integer constants, unary `-`/`~`, binary `+`/`-`/`*`/`/`/`%`, and
+   parentheses. Precedence is encoded by rule layering
+   (`exp → add_exp → mul_exp → unary_exp → atom`).
+2. `tac_translator.translate_program` — `c99_ast` → `tac_ast` (three-address
+   code). Compound expressions flatten into ops, materializing each intermediate
+   into a fresh `Var(%n)`. `Binary(op, src1, src2, dst)` evaluates `src1` first
+   so its temps get lower numbers.
+3. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
+   instruction lowers into a sequence of atoms (`Mov` to/from `A`, atomic ops
+   on `A`, carry setup if needed). Output is correct but redundant — every
+   intermediate is materialized through a `Frame` slot. Optimization is
+   deferred to TAC-level passes.
+4. `replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
+   `Frame(offset)` slot. Per function: walks instructions in order, mints
+   offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
+   the same offset for repeated names. `args_bytes` is `0` currently.
+5. `allocate_stack.allocate_program` — finds each function's `M` (highest
+   `Frame` offset = local-byte count), prepends
+   `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites every
+   `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
+6. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
+   every node maps to one 6502 instruction, except `Ret` and
+   `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
+
+`Pseudo` operands at emit time are an error — they must have been resolved by
+step 4. `Mul`/`Div`/`Mod` are TAC-only concepts; `tac_to_asm` lowers them to a
+`Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence targeting the runtime helpers `mul8`
+and `divmod8` (both take `A` and `X`; `mul8` returns low/high in A/X,
+`divmod8` returns quotient/remainder in A/X). The asm IR itself has no
+multiply/divide primitives — every non-prologue/ret node is 1:1 with a 6502
+opcode.
+
+## Function stack frame (soft stack)
+
+Arguments and locals live on a **soft data stack** in main RAM, separate from
+the 6502's hardware stack at `$0100`–`$01FF` (which is reserved for return
+addresses and short-lived `PHA`/`PHP`). This dodges the 256-byte page-1 limit
+and keeps return addresses out of the way during frame teardown.
+
+Reserved zero-page: `$00`/`$01` = `SSP` (soft stack pointer, low/high),
+`$02`/`$03` = `FP` (frame pointer). Both point at the **next-free byte** and
+grow downward. Access is always indirect-indexed: `LDY #off; LDA (SSP),Y` or
+`LDA (FP),Y`, so `Y` is scratch for any soft-stack access.
+
+Inside a function `SSP` is unstable (any intra-function push shifts it). So
+every function captures `FP` once in its prelude and addresses args/locals
+via `FP` — codegen emits `Frame(off)` for those and the emitter lowers to
+`LDY #off; LDA (FP),Y`. For `N` arg-bytes and `M` local-bytes:
+
+- Caller subtracts `N` from `SSP`, writes args at `SSP+1…SSP+N`, `JSR`s.
+- Callee prelude (skipped when `N+M == 0`): subtract `M+2` from `SSP`
+  (locals + saved-FP slot), write caller `FP` into `SSP+M+1`/`SSP+M+2`,
+  then `FP = SSP`. Smallest valid `FP` offset is `1` (same convention
+  as `SSP`).
+- Callee epilogue: `PHA` return value, `SSP = FP + M + N + 2` in one 16-bit
+  add, reload caller `FP` via `(FP),Y` (with low byte routed through `X`
+  so we don't corrupt the indirect base between the two reads), `PLA`, `RTS`.
+- When `N+M == 0` the prelude emits nothing and the epilogue collapses to
+  `RTS`.
+
+Arg `j` is at offset `M + 3 + j` (not `M + 1 + j`) because the saved-FP slot
+sits between locals and args. The README has a frame diagram and a fully
+annotated sample prologue/epilogue.
+
+## Emit atomicity conventions
+
+- `Add`/`Sub` do **not** emit `CLC`/`SEC` themselves — the caller emits
+  `ClearCarry`/`SetCarry` first. This keeps each atomic node 1:1 with a
+  6502 opcode.
+- The `LDY` that sets up an indirect-Y source counts as addressing-mode
+  setup, not a separate logical step, so a single `Mov(Frame, Reg(A))`
+  still emits `LDY #o; LDA (PTR),Y`.
+- `PTR` is `SSP` for `Stack` operands, `FP` for `Frame` operands.
+  Stack/Frame offsets and immediates are `0..255` (single byte).
+- Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`, `Reg(A) → Reg(A)`)
+  raise — there's no direct transfer instruction.
+- Output formatting: labels at column 1, opcodes at column 4, operands at
+  column 10. Each function emits `<name>:`, then `SUBROUTINE`, blank line,
+  then instructions.
+
+## Lexer & preprocessor
+
+The lexer treats comments as lex errors — it assumes a preprocessor has
+already stripped them. `preprocessor.preprocess` wraps `pcpp` (installed as
+a uv tool, used via its Python API, no shelling out). Malformed numeric
+tokens (`0x` with no digits, `3e` with no exponent body) raise `LexError`
+rather than being split.
+
+`*_grammar.txt` files are reference documentation for the spec grammars that
+`c99.lark` implements — they aren't parsed by any tool.
+
+## Tests
+
+```sh
+uv run python -m unittest
+```
+
+`tests/` holds sample programs from nlsandler/writing-a-c-compiler-tests
+(chapter 1), checked in verbatim:
+
+- `tests/invalid_lex/` — must fail at lex time (exercised by `TestInvalidLex` in `test_lexer.py`).
+- `tests/invalid_parse/` — must lex cleanly but fail at parse time (`TestInvalidParseFiles` in `test_parser.py`).
+- `tests/valid/` — must parse into `int main(void) { return N; }` (`TestValidFiles` in `test_parser.py`).
+
+The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
+
+## Status (what works end-to-end through `--codegen`)
+
+- `int main(void)` returning a single integer expression
+- integer constants
+- unary `-` and `~`
+- binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops emit `JSR mul8` /
+  `JSR divmod8` against the runtime helpers — see below)
+- arbitrary parenthesisation
+
+Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
+everywhere but parser only accepts `(void)` and translator hardcodes 0),
+multiple functions, user-defined calls, control flow, variable declarations,
+types other than `int`, and the runtime header that defines `SSP`/`FP`,
+initializes `SSP`, sets the reset vector, and provides `mul8`/`divmod8`.

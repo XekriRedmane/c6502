@@ -16,21 +16,26 @@ Soft-stack convention (see README "Function stack frame layout"):
     Both emit as `LDY #off` then `LDA (PTR),Y` / `STA (PTR),Y`
   - any indirect access clobbers Y
   - `FunctionPrologue(arg_bytes=N, local_bytes=M)` for `N+M > 0`:
-    allocates `M+2` bytes (locals + saved-FP slot), writes the caller's
-    FP into the slot at `SSP+M+1` (low) and `SSP+M+2` (high), then
-    sets `FP = SSP`. Clobbers A and Y. For `N+M == 0` it emits nothing
-    (no FP setup needed when the function has no locals or args).
-    Bounded `M <= 253` so `LDY #(M+2)` fits in a byte. Args
-    themselves were pushed by the caller before JSR; the prologue
-    doesn't allocate them.
-  - `Ret(arg_bytes=N, local_bytes=M)` for `N+M > 0`: PHA, then
-    `SSP = FP + (N + M + 2)` in one shot (the +2 is the saved-FP
-    slot; the result is the caller's pre-arg-push SSP, so the caller
-    needs no per-call cleanup). Then read the saved FP via `(FP),Y`
-    with `Y=M+1` (low) and `Y=M+2` (high), stashing the low byte in
-    X across the high read so we don't corrupt the FP register's
-    role as the indirect base mid-read. Then PLA, RTS. For `N+M ==
-    0` it just emits `RTS`.
+    emits a leading `; prologue: N arg bytes, M local bytes` comment
+    so the boilerplate region is easy to pick out, allocates `M+2`
+    bytes (locals + saved-FP slot), writes the caller's FP into the
+    slot at `SSP+M+1` (low) and `SSP+M+2` (high), sets `FP = SSP`,
+    and trails with a blank line that separates the prologue from the
+    body. Clobbers A and Y. For `N+M == 0` it emits nothing (no FP
+    setup needed when the function has no locals or args). Bounded
+    `M <= 253` so `LDY #(M+2)` fits in a byte. Args themselves were
+    pushed by the caller before JSR; the prologue doesn't allocate
+    them.
+  - `Ret(arg_bytes=N, local_bytes=M)` for `N+M > 0`: leads with a
+    blank line and `; epilogue` comment to mark the boilerplate
+    region, PHAs the return value, then `SSP = FP + (N + M + 2)` in
+    one shot (the +2 is the saved-FP slot; the result is the
+    caller's pre-arg-push SSP, so the caller needs no per-call
+    cleanup). Then reads the saved FP via `(FP),Y` with `Y=M+1` (low)
+    and `Y=M+2` (high), stashing the low byte in X across the high
+    read so we don't corrupt the FP register's role as the indirect
+    base mid-read. Then PLA, RTS. For `N+M == 0` it just emits
+    `RTS`.
 
 One-instruction-per-node rule. With the exceptions of `Ret` and
 `FunctionPrologue` (the multi-step compound nodes documented above),
@@ -51,14 +56,12 @@ Atomic arithmetic / flag instructions:
     Stack/Frame sources emit an LDY pair plus the ADC (the LDY is
     addressing-mode setup, not a separate logical step).
   - `Sub(src, dst)` -> `SBC <src>` (same; preceded by `SetCarry`).
-
-Compound instructions invalid at emit (must be lowered earlier):
-  - `Mul`, `Div`, `Mod` — will be lowered to `Call mul8` / `Call
-    div8` once `Call` exists.
+  - `Call(name)` -> `JSR <name>`.
 
 (`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
-atoms.)
+atoms. Likewise `Mul`/`Div`/`Mod` are TAC-only concepts; `tac_to_asm`
+lowers them to `Call mul8` / `Call divmod8` plus register shuffles.)
 """
 
 from __future__ import annotations
@@ -82,6 +85,12 @@ def _instr_line(opcode: str, operand: str = "") -> str:
         pad = max(1, _OPERAND_COL - len(line))
         line += " " * pad + operand
     return line
+
+
+def _comment_line(text: str) -> str:
+    """Block-level comment at opcode column. Used by the prologue and
+    epilogue to mark the boilerplate regions of a function."""
+    return " " * _OPCODE_COL + "; " + text
 
 
 def _check_byte(label: str, v: int) -> None:
@@ -416,11 +425,18 @@ def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
         return []
     # Allocate locals + saved-FP slot (args were caller-pushed and
     # don't need allocation). Save the caller's FP into the slot
-    # just above the locals, then capture SSP into FP.
+    # just above the locals, then capture SSP into FP. The leading
+    # comment + trailing blank line mark the prologue's boilerplate
+    # region so the body is easy to pick out visually.
+    header = _comment_line(
+        f"prologue: {arg_bytes} arg bytes, {local_bytes} local bytes"
+    )
     return (
-        _emit_ssp_sub(local_bytes + 2)
+        [header]
+        + _emit_ssp_sub(local_bytes + 2)
         + _emit_save_fp_into_slot(local_bytes)
         + _emit_set_fp_to_ssp()
+        + [""]
     )
 
 
@@ -429,10 +445,13 @@ def _emit_ret(arg_bytes: int, local_bytes: int) -> list[str]:
         return [_instr_line("RTS")]
     # Compute the new SSP directly from FP (one 16-bit add), restore
     # FP from its slot via (FP),Y, then RTS. The whole thing is
-    # PHA/PLA-wrapped so the return value in A survives.
+    # PHA/PLA-wrapped so the return value in A survives. Leading
+    # blank + `; epilogue` comment separate the boilerplate from the
+    # body above.
     rewind = arg_bytes + local_bytes + 2
     return (
-        [_instr_line("PHA")]
+        ["", _comment_line("epilogue")]
+        + [_instr_line("PHA")]
         + _emit_set_ssp_to_fp_plus(rewind)
         + _emit_restore_fp_from_slot(local_bytes)
         + [_instr_line("PLA"), _instr_line("RTS")]
@@ -465,11 +484,8 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_pop(dst)
         case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
             return _emit_xor(s1, s2, dst)
-        case asm_ast.Mul() | asm_ast.Div() | asm_ast.Mod():
-            raise ValueError(
-                "Mul/Div/Mod are not valid at emit; will be lowered to "
-                f"a Call (mul8/div8) by an earlier pass. Got {instr!r}"
-            )
+        case asm_ast.Call(name=name):
+            return [_instr_line("JSR", name)]
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 
@@ -478,12 +494,18 @@ def emit_function(fn: asm_ast.Type_function_definition) -> list[str]:
     match fn:
         case asm_ast.Function(name=name, instructions=instrs):
             # Label in col 1; SUBROUTINE directive in col 4 (same column as
-            # opcodes); blank line before instructions.
+            # opcodes); blank line before instructions. Consecutive blank
+            # lines are collapsed — the prologue's trailing blank and
+            # the epilogue's leading blank otherwise pile up when a
+            # function has no body between them.
             lines = [f"{name}:", _instr_line("SUBROUTINE")]
             if instrs:
                 lines.append("")
                 for instr in instrs:
-                    lines.extend(emit_instruction(instr))
+                    for line in emit_instruction(instr):
+                        if line == "" and lines and lines[-1] == "":
+                            continue
+                        lines.append(line)
             return lines
         case _:
             raise TypeError(f"unexpected function: {fn!r}")

@@ -236,19 +236,27 @@ class TestEmitMovMixed(unittest.TestCase):
         )
 
 
-class TestEmitRejectsCompoundOps(unittest.TestCase):
-    """Mul, Div, Mod are not valid at the final emit stage — an
-    earlier pass is required to lower them into the atomic
-    instruction set (a Call instruction, once it exists)."""
+class TestEmitCall(unittest.TestCase):
+    """Call(name) maps to a single JSR <name>. The runtime helpers
+    mul8 / divmod8 are the two call targets tac_to_asm emits today."""
 
-    def test_mul_div_mod_raise(self):
-        for ctor in [asm_ast.Mul, asm_ast.Div, asm_ast.Mod]:
-            with self.subTest(op=ctor.__name__):
-                with self.assertRaises(ValueError) as cm:
-                    emit_instruction(
-                        ctor(src=asm_ast.Imm(value=1), dst=_reg(_A))
-                    )
-                self.assertIn("Mul/Div/Mod", str(cm.exception))
+    def test_call_mul8(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Call(name="mul8")),
+            ["   JSR   mul8"],
+        )
+
+    def test_call_divmod8(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Call(name="divmod8")),
+            ["   JSR   divmod8"],
+        )
+
+    def test_call_arbitrary_name(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Call(name="my_fn")),
+            ["   JSR   my_fn"],
+        )
 
 
 class TestEmitRejectsPseudo(unittest.TestCase):
@@ -291,10 +299,12 @@ class TestEmitFunctionPrologue(unittest.TestCase):
 
     def test_amt_one_emits_full_prologue(self):
         # SSP -= (M+2) = 3, then write FP into the slot at SSP+2/+3,
-        # then FP = SSP.
+        # then FP = SSP. A leading `; prologue: ...` comment and
+        # trailing blank line mark the boilerplate region.
         self.assertEqual(
             emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1)),
             [
+                "   ; prologue: 0 arg bytes, 1 local bytes",
                 # SSP -= 3
                 "   SEC",
                 "   LDA   SSP",
@@ -315,8 +325,21 @@ class TestEmitFunctionPrologue(unittest.TestCase):
                 "   STA   FP",
                 "   LDA   SSP+1",
                 "   STA   FP+1",
+                "",
             ],
         )
+
+    def test_prologue_header_reports_arg_and_local_bytes(self):
+        # The header text embeds both field values so a reader can
+        # see the frame shape without inspecting the asm below.
+        out = emit_instruction(
+            asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=2)
+        )
+        self.assertEqual(
+            out[0], "   ; prologue: 4 arg bytes, 2 local bytes",
+        )
+        # And the trailing blank separator is always the last element.
+        self.assertEqual(out[-1], "")
 
     def test_max_amt_253_uses_max_ldy(self):
         # M=253 -> save-FP at SSP+254 (low) and SSP+255 (high) — the
@@ -354,9 +377,13 @@ class TestEmitRet(unittest.TestCase):
     def test_locals_only_full_epilogue(self):
         # M=3, N=0: SSP = FP + (M+N+2) = FP + 5; saved FP at FP+M+1=4
         # (low) / FP+M+2=5 (high), read via (FP),Y with X as scratch.
+        # A leading blank line + `; epilogue` comment mark where the
+        # boilerplate starts.
         self.assertEqual(
             emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3)),
             [
+                "",
+                "   ; epilogue",
                 "   PHA",
                 # SSP = FP + 5
                 "   CLC",
@@ -429,6 +456,53 @@ class TestEmitFunction(unittest.TestCase):
     def test_empty_instructions_label_and_subroutine_only(self):
         fn = asm_ast.Function(name="main", instructions=[])
         self.assertEqual(emit_function(fn), ["main:", "   SUBROUTINE"])
+
+    def test_prologue_body_epilogue_section_markers(self):
+        # With a non-trivial frame, the output should have `; prologue: ...`
+        # before the prologue asm, a blank line + body asm, a blank line,
+        # then `; epilogue` before the epilogue asm. This is the visual
+        # separator between boilerplate and actual content.
+        fn = asm_ast.Function(name="main", instructions=[
+            asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
+            asm_ast.Mov(src=asm_ast.Imm(value=7),
+                        dst=asm_ast.Frame(offset=1)),
+            asm_ast.Mov(src=asm_ast.Frame(offset=1),
+                        dst=asm_ast.Reg(reg=asm_ast.A())),
+            asm_ast.Ret(arg_bytes=0, local_bytes=1),
+        ])
+        out = emit_function(fn)
+        self.assertIn("   ; prologue: 0 arg bytes, 1 local bytes", out)
+        self.assertIn("   ; epilogue", out)
+        # Prologue comment precedes any of the body's Frame accesses.
+        prologue_idx = out.index(
+            "   ; prologue: 0 arg bytes, 1 local bytes"
+        )
+        body_idx = out.index("   LDA   #$07")
+        epilogue_idx = out.index("   ; epilogue")
+        self.assertLess(prologue_idx, body_idx)
+        self.assertLess(body_idx, epilogue_idx)
+        # Blank line immediately before the epilogue comment, and
+        # immediately after the last prologue line (via the trailing
+        # blank emitted by the prologue).
+        self.assertEqual(out[epilogue_idx - 1], "")
+        self.assertEqual(out[body_idx - 1], "")
+
+    def test_empty_body_collapses_consecutive_blanks(self):
+        # Prologue trails with a blank; Ret leads with a blank. In a
+        # function with no body between them, emit_function collapses
+        # the two blanks into one so we don't get a double-blank gap.
+        fn = asm_ast.Function(name="main", instructions=[
+            asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
+            asm_ast.Ret(arg_bytes=0, local_bytes=1),
+        ])
+        out = emit_function(fn)
+        # No two adjacent blank lines anywhere.
+        for i in range(len(out) - 1):
+            with self.subTest(i=i):
+                self.assertFalse(
+                    out[i] == "" and out[i + 1] == "",
+                    f"double blank at lines {i}..{i+1}",
+                )
 
 
 class TestEmitProgram(unittest.TestCase):

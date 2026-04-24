@@ -61,21 +61,8 @@ class Sub(Type_instruction):
 
 
 @dataclass
-class Mul(Type_instruction):
-    src: Type_operand
-    dst: Type_operand
-
-
-@dataclass
-class Div(Type_instruction):
-    src: Type_operand
-    dst: Type_operand
-
-
-@dataclass
-class Mod(Type_instruction):
-    src: Type_operand
-    dst: Type_operand
+class Call(Type_instruction):
+    name: str
 
 
 @dataclass

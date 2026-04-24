@@ -20,16 +20,29 @@ Mapping:
                                               Add(Imm(1), A)
                               asm_ast has no Unary node anymore — it's
                               strictly a TAC concept.
-  Binary(op, src1, src2, dst) -> [Mov(src1, Reg(A)),
-                                  <carry setup>,
-                                  Add|Sub(src2, Reg(A)),
-                                  Mov(Reg(A), dst)]
-                              for Add and Subtract:
-                                Add      -> ClearCarry + Add(...)
-                                Subtract -> SetCarry + Sub(...)
-                              Multiply/Divide/Modulo are not yet
-                              translated (deferred until a Call
-                              instruction lands).
+  Binary(op, src1, src2, dst) -> for Add and Subtract:
+                                   [Mov(src1, Reg(A)),
+                                    ClearCarry | SetCarry,
+                                    Add|Sub(src2, Reg(A)),
+                                    Mov(Reg(A), dst)]
+                                 for Multiply / Divide / Modulo:
+                                   [Mov(src2, Reg(A)),
+                                    Mov(Reg(A), Reg(X)),
+                                    Mov(src1, Reg(A)),
+                                    Call(mul8|divmod8),
+                                    <result fetch>,
+                                    Mov(Reg(A), dst)]
+                                 The runtime helpers take A and X:
+                                   mul8     — A *= X, low byte in A,
+                                              high byte in X.
+                                   divmod8  — A /= X, quotient in A,
+                                              remainder in X.
+                                 src2 is staged through A into X
+                                 because the emitter has no direct
+                                 Stack/Frame -> X mov. Multiply and
+                                 Divide keep A as the result; Modulo
+                                 pulls the remainder out of X via
+                                 Mov(Reg(X), Reg(A)) before storing.
   Constant(v)              -> Imm(v)
   Var(name)                -> Pseudo(name)
 """
@@ -41,6 +54,13 @@ import tac_ast
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
+_REG_X = asm_ast.Reg(reg=asm_ast.X())
+
+# Runtime helper names for the multi-instruction arithmetic ops. Both
+# take their operands in A and X; the runtime header (not in this
+# repo yet) defines these labels.
+_MUL8 = "mul8"
+_DIVMOD8 = "divmod8"
 
 
 def translate_program(prog: tac_ast.Type_program) -> asm_ast.Type_program:
@@ -112,13 +132,41 @@ def translate_binary(
                 asm_ast.Sub(src=src2_op, dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=dst_op),
             ]
-        case tac_ast.Multiply() | tac_ast.Divide() | tac_ast.Modulo():
-            raise NotImplementedError(
-                f"binary op {type(op).__name__} not yet handled by "
-                "tac_to_asm (will be lowered via Call mul8/div8 once "
-                "the Call instruction exists)"
-            )
+        case tac_ast.Multiply():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _MUL8,
+                                      result_in_x=False)
+        case tac_ast.Divide():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _DIVMOD8,
+                                      result_in_x=False)
+        case tac_ast.Modulo():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _DIVMOD8,
+                                      result_in_x=True)
     raise TypeError(f"unexpected binary operator: {op!r}")
+
+
+def _translate_ax_call(
+    src1_op: asm_ast.Type_operand,
+    src2_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    helper: str,
+    result_in_x: bool,
+) -> list[asm_ast.Type_instruction]:
+    """Lower a TAC op that delegates to a runtime helper taking A and X.
+    src2 is staged through A (the only register the emitter can load
+    from a Frame/Stack/Imm uniformly) into X, then src1 is loaded into
+    A last so A holds the primary operand at the call. If the
+    helper's result comes back in X (Modulo), transfer it to A before
+    storing to dst."""
+    out: list[asm_ast.Type_instruction] = [
+        asm_ast.Mov(src=src2_op, dst=_REG_A),
+        asm_ast.Mov(src=_REG_A, dst=_REG_X),
+        asm_ast.Mov(src=src1_op, dst=_REG_A),
+        asm_ast.Call(name=helper),
+    ]
+    if result_in_x:
+        out.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+    out.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+    return out
 
 
 def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:

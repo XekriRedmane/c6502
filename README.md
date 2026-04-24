@@ -171,6 +171,7 @@ at column 10. Each function emits `<name>:` on one line, the
 | `ClearCarry` / `SetCarry`         | `CLC` / `SEC`                          |
 | `Inc(Reg(X/Y))` / `Dec(Reg(X/Y))` | `INX/INY` / `DEX/DEY`                  |
 | `Push(Reg(A))` / `Pop(Reg(A))`    | `PHA` / `PLA`                          |
+| `Call(name)`                      | `JSR <name>`                           |
 | `FunctionPrologue(N, M)`          | multi-instruction; see frame docs      |
 | `Ret(N, M)`                       | multi-instruction; see frame docs      |
 
@@ -185,10 +186,33 @@ Notes:
   addressing-mode setup, not a separate logical step).
 - `Pseudo` operands at emit are an error — they should have been
   resolved by `replace_pseudoregisters`.
-- `Mul`, `Div`, `Mod` raise `ValueError` at emit; they'll be lowered
-  to a `Call` instruction (e.g. `JSR mul8`) once `Call` exists.
+- `Mul`, `Div`, `Mod` are not asm IR nodes — `tac_to_asm` lowers them
+  to a `Call` of the runtime helpers `mul8` / `divmod8` (see the
+  "`Call` and runtime helpers" note below). The asm IR contains no
+  multiply/divide primitives; every node maps 1:1 to a 6502 opcode.
 - Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`,
   `Reg(A) → Reg(A)`) raise — there's no direct transfer instruction.
+
+### `Call` and runtime helpers
+
+`tac_to_asm` lowers TAC `Binary(Multiply|Divide|Modulo, ...)` into a
+short sequence around a `Call`:
+
+```
+Mov(src2, A)     ; stage src2 through A (emitter has no direct
+Mov(A, X)        ;   Stack/Frame -> X mov, so src2 rides via A)
+Mov(src1, A)     ; src1 into A last, so A holds the primary operand
+Call mul8        ;   at the call site
+Mov(A, dst)
+```
+
+The helpers are part of the runtime header (not in this repo yet):
+
+- `mul8` — `A := A * X`, low byte in `A`, high byte in `X`. Since the
+  only type today is 8-bit, only `A` is stored back into `dst`.
+- `divmod8` — `A := A / X`, quotient in `A`, remainder in `X`. Divide
+  stores `A`; Modulo adds `Mov(Reg(X), Reg(A))` before the final
+  store so it commits the remainder instead.
 
 ## Function stack frame layout
 
@@ -315,57 +339,55 @@ For a function with `M = 2` locals and `N = 0` args (e.g. what
 `int main(void) { return ~~5; }` produces — two unary ops, two
 TAC temporaries), the emitter produces:
 
+The emitter marks each boilerplate region with a block-level comment
+(`; prologue: N arg bytes, M local bytes` and `; epilogue`) plus a
+blank-line separator, so the body stands out between them.
+
 **Prologue** (`FunctionPrologue(arg_bytes=0, local_bytes=2)`):
 
 ```
-   ; SSP -= (M + 2) = 4   — alloc the saved-FP slot + 2 locals
-   SEC
+   ; prologue: 0 arg bytes, 2 local bytes
+   SEC                          ; SSP -= (M + 2) = 4 — alloc saved-FP slot + 2 locals
    LDA   SSP
    SBC   #$04
    STA   SSP
    LDA   SSP+1
    SBC   #$00
    STA   SSP+1
-   ; write caller FP into the slot at SSP+M+1=3 (low) / SSP+M+2=4 (high)
-   LDY   #$03
+   LDY   #$03                   ; write caller FP into the slot at SSP+3 (low) / SSP+4 (high)
    LDA   FP
    STA   (SSP),Y
    INY
    LDA   FP+1
    STA   (SSP),Y
-   ; FP = SSP   — the local slots are now FP+1 and FP+2
-   LDA   SSP
+   LDA   SSP                    ; FP = SSP — the local slots are now FP+1 and FP+2
    STA   FP
    LDA   SSP+1
    STA   FP+1
 ```
 
+(The blank line immediately after the prologue separates it from the
+body that follows.)
+
 **Epilogue** (`Ret(arg_bytes=0, local_bytes=2)`):
 
 ```
+   ; epilogue
    PHA                          ; preserve return value (in A)
-   ; SSP = FP + (M + N + 2) = FP + 4
-   ; — undoes the prelude's SSP -= 4 in one shot, getting SSP back
-   ;   to the value it had at function entry (= caller_SSP since N=0)
-   CLC
-   LDA   FP
+   CLC                          ; SSP = FP + (M + N + 2) = FP + 4 — undoes the prelude's
+   LDA   FP                     ; SSP -= 4 in one shot, restoring the caller's pre-arg-push SSP
    ADC   #$04
    STA   SSP
    LDA   FP+1
    ADC   #$00
    STA   SSP+1
-   ; restore caller FP from FP+M+1=3 (low) / FP+M+2=4 (high) via
-   ; (FP),Y. The FP register still points at our frame here, so
-   ; (FP),Y reads the right bytes. We can't STA FP between the
-   ; two LDAs because that would corrupt the indirect base — so the
-   ; low byte goes through X.
-   LDY   #$03
-   LDA   (FP),Y                 ; A = saved FP low
-   TAX                          ; X holds saved low byte
-   INY                          ; Y = $04
-   LDA   (FP),Y                 ; A = saved FP high
-   STA   FP+1                   ; commit high byte (FP now half-restored)
-   STX   FP                     ; commit low byte (FP fully restored)
+   LDY   #$03                   ; restore caller FP from FP+3 (low) / FP+4 (high).
+   LDA   (FP),Y                 ; FP still points at our frame here, so (FP),Y reads the
+   TAX                          ; right bytes. Stash the low byte in X across the high
+   INY                          ; read; writing FP between the two LDAs would corrupt
+   LDA   (FP),Y                 ; the indirect base.
+   STA   FP+1
+   STX   FP
    PLA                          ; restore return value
    RTS
 ```
@@ -412,15 +434,11 @@ runnable-shape 6502 assembly):
 - `int main(void)` returning a single integer expression
 - integer constants
 - unary `-` (negate) and `~` (complement)
-- binary `+` and `-` (with TAC-level precedence)
+- binary `+`, `-`, `*`, `/`, `%` (with TAC-level precedence).
+  Multiply/divide/modulo emit `JSR mul8` / `JSR divmod8` against the
+  runtime helpers described in "`Call` and runtime helpers" above —
+  the helpers themselves aren't in this repo yet.
 - arbitrary parenthesisation
-
-Works in the parser/TAC but not yet through asm:
-
-- binary `*`, `/`, `%` — `tac_to_asm` raises
-  `NotImplementedError`. They lower to `JSR mul8` / `JSR div8`,
-  which need a `Call` instruction in the asm IR (and a runtime to
-  jump to). Both are pending.
 
 Not yet anywhere in the pipeline:
 
@@ -431,7 +449,7 @@ Not yet anywhere in the pipeline:
   variable declarations, types other than `int`.
 - a runtime header that defines `SSP`/`FP` at their ZP addresses,
   initializes `SSP` to top-of-RAM, sets the reset vector to a stub
-  that calls `main`, and provides `mul8`/`div8`. The emitted
+  that calls `main`, and provides `mul8`/`divmod8`. The emitted
   assembly references these symbols but the header that supplies
   them isn't in this repo yet.
 

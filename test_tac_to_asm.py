@@ -13,6 +13,7 @@ from tac_to_asm import (
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
+_REG_X = asm_ast.Reg(reg=asm_ast.X())
 
 
 class TestTranslateVal(unittest.TestCase):
@@ -145,16 +146,66 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
-    def test_binary_mul_div_mod_not_yet_implemented(self):
-        for op in [tac_ast.Multiply(), tac_ast.Divide(), tac_ast.Modulo()]:
-            with self.subTest(op=type(op).__name__):
-                with self.assertRaises(NotImplementedError):
-                    translate_binary(
-                        op,
-                        tac_ast.Constant(value=1),
-                        tac_ast.Constant(value=2),
-                        tac_ast.Var(name="%0"),
-                    )
+    def test_binary_multiply_lowered_to_mul8_call(self):
+        # mul8 takes A * X; staged as: src2 -> A -> X, src1 -> A,
+        # Call mul8, Mov A -> dst. Result low byte is in A.
+        instr = tac_ast.Binary(
+            op=tac_ast.Multiply(),
+            src1=tac_ast.Constant(value=3),
+            src2=tac_ast.Var(name="%0"),
+            dst=tac_ast.Var(name="%1"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=asm_ast.Imm(value=3), dst=_REG_A),
+                asm_ast.Call(name="mul8"),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+            ],
+        )
+
+    def test_binary_divide_lowered_to_divmod8_call(self):
+        # divmod8 takes A (dividend) / X (divisor) -> A=quot, X=rem.
+        # Divide wants the quotient, which is already in A.
+        instr = tac_ast.Binary(
+            op=tac_ast.Divide(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(value=5),
+            dst=tac_ast.Var(name="%1"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Call(name="divmod8"),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+            ],
+        )
+
+    def test_binary_modulo_lowered_to_divmod8_call_with_x_to_a(self):
+        # Modulo wants the remainder from divmod8, which comes back in
+        # X — we shuffle X to A before storing.
+        instr = tac_ast.Binary(
+            op=tac_ast.Modulo(),
+            src1=tac_ast.Constant(value=17),
+            src2=tac_ast.Constant(value=5),
+            dst=tac_ast.Var(name="%0"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=asm_ast.Imm(value=17), dst=_REG_A),
+                asm_ast.Call(name="divmod8"),
+                asm_ast.Mov(src=_REG_X, dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
+            ],
+        )
 
 
 class TestTranslateFunction(unittest.TestCase):

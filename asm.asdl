@@ -8,9 +8,7 @@ module ASM {
         | FunctionPrologue(int arg_bytes, int local_bytes)
         | Add(operand src, operand dst)
         | Sub(operand src, operand dst)
-        | Mul(operand src, operand dst)
-        | Div(operand src, operand dst)
-        | Mod(operand src, operand dst)
+        | Call(identifier name)
         | ClearCarry
         | SetCarry
         | Inc(operand dst)

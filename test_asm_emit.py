@@ -1,15 +1,10 @@
-import io
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
 
 import asm_ast
 from asm_emit import (
     emit_function,
     emit_instruction,
     emit_program,
-    main,
 )
 
 
@@ -708,37 +703,6 @@ class TestEmitXor(unittest.TestCase):
                 src2=asm_ast.Imm(value=256),
                 dst=_reg(_A),
             ))
-
-
-class TestMainCLI(unittest.TestCase):
-    def test_stdout_output(self):
-        src = "int main(void) { return 42; }"
-        with patch("sys.stdin", io.StringIO(src)), \
-             patch("sys.stdout", new_callable=io.StringIO) as out:
-            rc = main(["asm_emit.py", "-"])
-        self.assertEqual(rc, 0)
-        self.assertEqual(
-            out.getvalue(),
-            "main:\n   SUBROUTINE\n\n   LDA   #$2A\n   RTS\n",
-        )
-
-    def test_output_file_must_end_in_asm(self):
-        with patch("sys.stdin", io.StringIO("int main(void) { return 0; }")), \
-             patch("sys.stderr", new_callable=io.StringIO) as err:
-            rc = main(["asm_emit.py", "-", "-o", "out.txt"])
-        self.assertNotEqual(rc, 0)
-        self.assertIn(".asm suffix", err.getvalue())
-
-    def test_file_output_writes_asm(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out_path = Path(tmp) / "hello.asm"
-            with patch("sys.stdin", io.StringIO("int main(void) { return 7; }")):
-                rc = main(["asm_emit.py", "-", "-o", str(out_path)])
-            self.assertEqual(rc, 0)
-            self.assertEqual(
-                out_path.read_text(),
-                "main:\n   SUBROUTINE\n\n   LDA   #$07\n   RTS\n",
-            )
 
 
 if __name__ == "__main__":

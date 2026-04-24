@@ -59,24 +59,11 @@ Compound instructions invalid at emit (must be lowered earlier):
 (`Unary` no longer exists at the asm AST level — `asm_translator`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
 atoms.)
-
-CLI: `asm_emit.py <input.c>|- [-o output.asm]`. The full pipeline goes
-C source -> parse -> tac translate -> asm translate -> emit. If -o is
-given the filename must have a .asm suffix; otherwise output goes to
-stdout.
 """
 
 from __future__ import annotations
 
-import argparse
-import sys
-
 import asm_ast
-from allocate_stack import allocate_program as allocate_stack
-from asm_translator import translate_program as translate_to_asm
-from parser import parse
-from replace_pseudoregisters import replace_program as replace_pseudoregs
-from tac_translator import translate_program as translate_to_tac
 
 
 # 0-indexed column positions (column 1 = index 0).
@@ -510,37 +497,3 @@ def emit_program(prog: asm_ast.Type_program) -> str:
             raise TypeError(f"unexpected program: {prog!r}")
 
 
-def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="asm_emit.py")
-    ap.add_argument("input", help="C source file, or - for stdin")
-    ap.add_argument("-o", dest="output",
-                    help="output file (must have .asm suffix)")
-    args = ap.parse_args(argv[1:])
-
-    if args.output is not None and not args.output.endswith(".asm"):
-        print(
-            f"asm_emit.py: output file must have .asm suffix: {args.output}",
-            file=sys.stderr,
-        )
-        return 2
-
-    if args.input == "-":
-        source = sys.stdin.read()
-    else:
-        with open(args.input, "r", encoding="utf-8") as f:
-            source = f.read()
-
-    text = emit_program(allocate_stack(replace_pseudoregs(
-        translate_to_asm(translate_to_tac(parse(source)))
-    )))
-
-    if args.output is not None:
-        with open(args.output, "w", encoding="utf-8") as f:
-            f.write(text)
-    else:
-        sys.stdout.write(text)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))

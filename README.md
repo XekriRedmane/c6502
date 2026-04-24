@@ -72,103 +72,123 @@ Notes:
 uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
-The per-stage tools (`lexer.py`, `parser.py`, `tac_translator.py`,
-`asm_translator.py`, `asm_emit.py`) below are the same building blocks,
-exposed as standalone scripts and Python modules for debugging and
-reuse.
+`compile.py` is the only CLI; every other module (`lexer.py`,
+`parser.py`, `tac_translator.py`, `asm_translator.py`,
+`replace_pseudoregisters.py`, `allocate_stack.py`, `asm_emit.py`) is
+library-only and used as an import.
 
-## Using the lexer
+## Compiler pipeline
 
-`lexer.py` tokenizes C99 source using the Lark grammar in `c99.lark`. The
-`*_grammar.txt` files are reference documentation for the spec grammars that
-`c99.lark` implements — they are not parsed by any tool.
+`compile.py --codegen` chains six passes. Each is a separate module
+that takes an AST and returns an AST (or text, for emit):
 
-As a script:
+1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
+   Lark/LALR parser using the grammar in `c99.lark`. Currently
+   handles `int main(void) { return <exp>; }` where `<exp>` is built
+   from integer constants, the unary operators `-` and `~`, the
+   binary operators `+`/`-`/`*`/`/`/`%`, and parentheses. Operator
+   precedence is encoded by a precedence-climbing rule layout
+   (`exp → add_exp → mul_exp → unary_exp → atom`).
 
-```sh
-uv run python lexer.py <source.c>    # read from a file
-uv run python lexer.py -              # read from stdin
-```
+2. **`tac_translator.translate_program`** (`tac_translator.py`) —
+   `c99_ast` → `tac_ast` (three-address code). Compound expressions
+   flatten into a sequence of ops, materializing each intermediate
+   into a fresh `Var(%n)` temporary. `Binary(op, src1, src2, dst)`
+   evaluates `src1` first so its temps get the lower numbers.
 
-prints one token per line as `line:col  kind  value`.
+3. **`asm_translator.translate_program`** (`asm_translator.py`) —
+   `tac_ast` → `asm_ast`. Each TAC instruction lowers into a
+   sequence of asm atoms (`Mov` to/from `A`, atomic ops on `A`,
+   carry setup if needed). Optimization is deferred to TAC-level
+   passes — this pass produces correct but redundant output (every
+   intermediate is materialized through a `Frame` slot).
 
-As an API:
+4. **`replace_pseudoregisters.replace_program`** — assigns each
+   `Pseudo(name)` a `Frame(offset)` slot. Per-function: walks
+   instructions in order, mints offsets `args_bytes+1`,
+   `args_bytes+2`, … for each new pseudo name; reuses the same
+   offset for repeated names. `args_bytes` is `0` for now (no
+   function arguments yet).
 
-```python
-from lexer import tokenize, TokenKind
+5. **`allocate_stack.allocate_program`** — finds each function's
+   `M` (the highest `Frame` offset = its local-byte count), prepends
+   `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites
+   every `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
+   The emit phase uses these to generate the prelude/epilogue.
 
-for tok in tokenize(source):
-    print(tok.kind, tok.value)
-```
+6. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
+   assembly text. **Atomic IR**: every node maps to one 6502
+   instruction, with the exceptions of `Ret` and `FunctionPrologue`
+   (the multi-instruction prelude/epilogue — see "Function stack
+   frame layout" below).
 
-`TokenKind` is one of `KEYWORD`, `IDENTIFIER`, `SYMBOL`, `CONSTANT`,
-`STRING_LITERAL`. Malformed numeric tokens (e.g. `0x` with no digits, `3e`
-with no exponent body) raise `LexError` at lex time rather than being split
-into pieces.
+The intermediate stages are inspectable via `compile.py`'s
+`--lex`, `--parse`, `--tac`, `--codegen` flags.
 
-## Using the parser
+## Lexer and parser as APIs
 
-`parser.py` parses C99 source into a `c99_ast` tree and pretty-prints it:
+`lexer.py` provides `tokenize(source)`, which yields `Token`s with
+`kind: TokenKind` (one of `KEYWORD`, `IDENTIFIER`, `SYMBOL`,
+`CONSTANT`, `STRING_LITERAL`) and `value`. Malformed numeric tokens
+(e.g. `0x` with no digits, `3e` with no exponent body) raise
+`LexError` rather than being split into pieces.
 
-```sh
-uv run python parser.py <source.c>    # read from a file
-uv run python parser.py -              # read from stdin
-```
+`parser.py` provides `parse(source)`, returning a `c99_ast`
+dataclass tree. The pretty-printer in `pretty.py` works on any
+`@dataclass` tree and emits valid Python, so round-tripping through
+`eval()` with the AST classes in scope reconstructs the node.
 
-As an API, `parse(source)` returns a `c99_ast` dataclass tree. The
-pretty-printer in `pretty.py` works on any `@dataclass` tree and emits
-valid Python, so round-tripping through `eval()` with the AST classes in
-scope reconstructs the node.
+The `*_grammar.txt` files are reference documentation for the spec
+grammars that `c99.lark` implements — they're not parsed by any
+tool.
 
-## Translating a C99 AST to an asm AST
+## asm IR and the atomic emit
 
-`asm_translator.py` walks a `c99_ast` tree and produces an `asm_ast` tree
-(the tiny assembly IR declared in `asm.asdl`). Each `translate_*`
-function handles one source-AST kind via a `match` statement:
+The asm IR (declared in `asm.asdl`) is one node per 6502 instruction,
+with `Ret` and `FunctionPrologue` as the only multi-instruction
+exceptions. Compound concepts like `Unary` (no longer in the asm AST
+at all — it's strictly a TAC node) are lowered into atoms by
+`asm_translator`.
 
-| c99_ast node          | asm_ast result                                         |
-| --------------------- | ------------------------------------------------------ |
-| `Program(fn)`         | `Program(translate_function(fn))`                      |
-| `Function(name,body)` | `Function(name, translate_statement(body))`            |
-| `Return(exp)`         | `[Mov(translate_exp(exp), Register()), Ret()]`         |
-| `Constant(value)`     | `Imm(value)`                                           |
+Output formatting: labels at column 1, opcodes at column 4, operands
+at column 10. Each function emits `<name>:` on one line, the
+`SUBROUTINE` directive on the next, a blank line, then instructions.
 
-Unknown variants raise `TypeError` so missing `case` clauses fail loudly.
+| asm node                          | 6502 emission                          |
+| --------------------------------- | -------------------------------------- |
+| `Mov(Imm(v), Reg(A/X/Y))`         | `LDA/LDX/LDY #$v`                      |
+| `Mov(Reg(X/Y), Reg(A))`           | `TXA` / `TYA`                          |
+| `Mov(Reg(A), Reg(X/Y))`           | `TAX` / `TAY`                          |
+| `Mov(Imm(v), Stack/Frame(o))`     | `LDA #$v; LDY #o; STA (PTR),Y`         |
+| `Mov(Stack/Frame(o), Reg(A))`     | `LDY #o; LDA (PTR),Y`                  |
+| `Mov(Reg(A), Stack/Frame(o))`     | `LDY #o; STA (PTR),Y`                  |
+| `Mov(Stack/Frame, Stack/Frame)`   | indirect-Y load + indirect-Y store via A |
+| `Add(Imm(v), Reg(A))`             | `ADC #$v`                              |
+| `Add(Stack/Frame(o), Reg(A))`     | `LDY #o; ADC (PTR),Y`                  |
+| `Sub(Imm(v), Reg(A))`             | `SBC #$v`                              |
+| `Sub(Stack/Frame(o), Reg(A))`     | `LDY #o; SBC (PTR),Y`                  |
+| `Xor(Reg(A), Imm(v), Reg(A))` (or reverse) | `EOR #$v`                     |
+| `ClearCarry` / `SetCarry`         | `CLC` / `SEC`                          |
+| `Inc(Reg(X/Y))` / `Dec(Reg(X/Y))` | `INX/INY` / `DEX/DEY`                  |
+| `Push(Reg(A))` / `Pop(Reg(A))`    | `PHA` / `PLA`                          |
+| `FunctionPrologue(N, M)`          | multi-instruction; see frame docs      |
+| `Ret(N, M)`                       | multi-instruction; see frame docs      |
 
-CLI (runs parse then translate then pretty-prints the asm AST):
+`PTR` is the symbol `SSP` for `Stack` operands, `FP` for `Frame`
+operands. Stack/Frame offsets are 0..255 (one-byte `LDY` index).
+Immediates are 0..255 (single byte).
 
-```sh
-uv run python asm_translator.py <source.c>    # read from a file
-uv run python asm_translator.py -              # read from stdin
-```
-
-## Emitting 6502 assembly
-
-`asm_emit.py` takes an `asm_ast.Program` and produces 6502 assembly
-text. Formatting rules:
-
-- labels start in **column 1**
-- opcodes (uppercase) and directives start in **column 4**
-- operands start in **column 10**
-- each function emits `<name>:` on one line, the `SUBROUTINE`
-  directive on the next, then a blank line, then the instructions
-- `Mov(src, Register())` → `LDA <src>`
-- `Ret()` → `RTS`
-- `Imm(value)` → `#$<02X>`; values outside 0..255 raise `ValueError`
-
-The CLI chains the whole pipeline (parse → translate → emit):
-
-```sh
-uv run python asm_emit.py <source.c>              # stdout
-uv run python asm_emit.py - -o out.asm            # stdin → file
-```
-
-If `-o` is supplied the filename must end in `.asm`. Piping through
-pcpp first strips comments:
-
-```sh
-pcpp source.c --line-directive | uv run python asm_emit.py - -o source.asm
-```
+Notes:
+- `Add`/`Sub` don't emit `CLC`/`SEC` themselves — the caller emits
+  `ClearCarry` or `SetCarry` first. This keeps each atomic node 1:1
+  with a 6502 opcode (the `LDY` for an indirect-Y source counts as
+  addressing-mode setup, not a separate logical step).
+- `Pseudo` operands at emit are an error — they should have been
+  resolved by `replace_pseudoregisters`.
+- `Mul`, `Div`, `Mod` raise `ValueError` at emit; they'll be lowered
+  to a `Call` instruction (e.g. `JSR mul8`) once `Call` exists.
+- Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`,
+  `Reg(A) → Reg(A)`) raise — there's no direct transfer instruction.
 
 ## Function stack frame layout
 
@@ -383,6 +403,37 @@ Notes:
 - Add `-D NAME=VAL` / `-U NAME` / `-I path` as needed for macro and
   include control. `--passthru-comments` keeps comments if you ever
   need the opposite behavior.
+
+## Status
+
+Currently end-to-end (C source through `compile.py --codegen` to
+runnable-shape 6502 assembly):
+
+- `int main(void)` returning a single integer expression
+- integer constants
+- unary `-` (negate) and `~` (complement)
+- binary `+` and `-` (with TAC-level precedence)
+- arbitrary parenthesisation
+
+Works in the parser/TAC but not yet through asm:
+
+- binary `*`, `/`, `%` — `asm_translator` raises
+  `NotImplementedError`. They lower to `JSR mul8` / `JSR div8`,
+  which need a `Call` instruction in the asm IR (and a runtime to
+  jump to). Both are pending.
+
+Not yet anywhere in the pipeline:
+
+- function arguments (`int f(int x)` etc.). The IR threads
+  `arg_bytes` through everywhere, but the parser only accepts
+  `(void)` and the translator hardcodes `arg_bytes = 0`.
+- multiple functions, function calls, control flow (`if`, `while`),
+  variable declarations, types other than `int`.
+- a runtime header that defines `SSP`/`FP` at their ZP addresses,
+  initializes `SSP` to top-of-RAM, sets the reset vector to a stub
+  that calls `main`, and provides `mul8`/`div8`. The emitted
+  assembly references these symbols but the header that supplies
+  them isn't in this repo yet.
 
 ## Tests
 

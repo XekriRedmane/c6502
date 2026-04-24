@@ -176,6 +176,9 @@ at column 10. Each function emits `<name>:` on one line, the
 | `RotateRight(Reg(A))`             | `ROR A`                                |
 | `Push(Reg(A))` / `Pop(Reg(A))`    | `PHA` / `PLA`                          |
 | `Call(name)`                      | `JSR <name>`                           |
+| `Jump(target)`                    | `JMP <target>`                         |
+| `Branch(cond, target)`            | `B<cond> <target>` (cond ∈ CC/CS/EQ/MI/NE/PL/VC/VS) |
+| `Label(name)`                     | `<name>:` at column 1                  |
 | `FunctionPrologue(N, M)`          | multi-instruction; see frame docs      |
 | `Ret(N, M)`                       | multi-instruction; see frame docs      |
 

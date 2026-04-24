@@ -135,6 +135,22 @@ class RotateRight(Type_instruction):
 
 
 @dataclass
+class Label(Type_instruction):
+    name: str
+
+
+@dataclass
+class Jump(Type_instruction):
+    target: str
+
+
+@dataclass
+class Branch(Type_instruction):
+    cond: Type_condition
+    target: str
+
+
+@dataclass
 class Type_operand:
     pass
 
@@ -181,4 +197,49 @@ class X(Type_reg):
 
 @dataclass
 class Y(Type_reg):
+    pass
+
+
+@dataclass
+class Type_condition:
+    pass
+
+
+@dataclass
+class CC(Type_condition):
+    pass
+
+
+@dataclass
+class CS(Type_condition):
+    pass
+
+
+@dataclass
+class EQ(Type_condition):
+    pass
+
+
+@dataclass
+class MI(Type_condition):
+    pass
+
+
+@dataclass
+class NE(Type_condition):
+    pass
+
+
+@dataclass
+class PL(Type_condition):
+    pass
+
+
+@dataclass
+class VC(Type_condition):
+    pass
+
+
+@dataclass
+class VS(Type_condition):
     pass

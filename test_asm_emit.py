@@ -259,6 +259,103 @@ class TestEmitCall(unittest.TestCase):
         )
 
 
+class TestEmitLabel(unittest.TestCase):
+    def test_label_at_column_1(self):
+        # Labels share column 1 with the function name, distinguishing
+        # them from indented opcodes. No operand column.
+        self.assertEqual(
+            emit_instruction(asm_ast.Label(name="loop")),
+            ["loop:"],
+        )
+
+    def test_label_arbitrary_name(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Label(name="L_then_42")),
+            ["L_then_42:"],
+        )
+
+
+class TestEmitJump(unittest.TestCase):
+    def test_jump_emits_jmp_with_target(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Jump(target="exit")),
+            ["   JMP   exit"],
+        )
+
+
+class TestEmitBranch(unittest.TestCase):
+    """Each Branch(cond, target) maps to its 6502 Bxx opcode. The
+    assembler resolves the PC-relative displacement; emit just writes
+    the symbolic target."""
+
+    _CASES = [
+        (asm_ast.CC(), "BCC"),
+        (asm_ast.CS(), "BCS"),
+        (asm_ast.EQ(), "BEQ"),
+        (asm_ast.MI(), "BMI"),
+        (asm_ast.NE(), "BNE"),
+        (asm_ast.PL(), "BPL"),
+        (asm_ast.VC(), "BVC"),
+        (asm_ast.VS(), "BVS"),
+    ]
+
+    def test_each_condition(self):
+        for cond, opcode in self._CASES:
+            with self.subTest(cond=type(cond).__name__):
+                self.assertEqual(
+                    emit_instruction(
+                        asm_ast.Branch(cond=cond, target="L_then")
+                    ),
+                    [f"   {opcode}   L_then"],
+                )
+
+    def test_unknown_condition_raises(self):
+        stub = type("Stub", (asm_ast.Type_condition,), {})
+        with self.assertRaises(TypeError):
+            emit_instruction(asm_ast.Branch(cond=stub(), target="X"))
+
+
+class TestEmitFunctionWithLabels(unittest.TestCase):
+    """Labels are interleaved with indented opcodes inside a function;
+    a typical lowering of `if` would be Branch -> body -> Label."""
+
+    def test_branch_then_label_layout(self):
+        fn = asm_ast.Function(name="main", instructions=[
+            asm_ast.Branch(cond=asm_ast.NE(), target="L_skip"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
+            asm_ast.Label(name="L_skip"),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+        ])
+        self.assertEqual(
+            emit_function(fn),
+            [
+                "main:",
+                "   SUBROUTINE",
+                "",
+                "   BNE   L_skip",
+                "   LDA   #$01",
+                "L_skip:",
+                "   RTS",
+            ],
+        )
+
+    def test_jump_back_to_top(self):
+        fn = asm_ast.Function(name="main", instructions=[
+            asm_ast.Label(name="L_top"),
+            asm_ast.Jump(target="L_top"),
+        ])
+        self.assertEqual(
+            emit_function(fn),
+            [
+                "main:",
+                "   SUBROUTINE",
+                "",
+                "L_top:",
+                "   JMP   L_top",
+            ],
+        )
+
+
 class TestEmitRejectsPseudo(unittest.TestCase):
     """Pseudo operands must be eliminated before emit; reaching the
     emitter with one indicates the pseudo->stack pass didn't run."""

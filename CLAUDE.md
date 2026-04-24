@@ -140,6 +140,13 @@ annotated sample prologue/epilogue.
   IR but `tac_to_asm` doesn't emit them yet (`<<`/`>>` go through the
   `shl8` / `asr8` runtime helpers); they'll be useful once 16-bit
   shifts land.
+- `Label(name)`, `Jump(target)`, and `Branch(cond, target)` are the
+  control-flow atoms. `Label` emits `<name>:` at column 1 (same column
+  as the function name); `Jump` is `JMP <target>`; `Branch` is one of
+  `BCC`/`BCS`/`BEQ`/`BMI`/`BNE`/`BPL`/`BVC`/`BVS` per its `condition`.
+  All branches/jumps are symbolic — emit doesn't compute displacements,
+  the assembler does. Present in the IR; `tac_to_asm` doesn't emit
+  them yet (waiting on TAC-level `if`/`while`/labels).
 - Output formatting: labels at column 1, opcodes at column 4, operands at
   column 10. Each function emits `<name>:`, then `SUBROUTINE`, blank line,
   then instructions.

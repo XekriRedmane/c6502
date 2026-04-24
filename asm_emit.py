@@ -70,6 +70,13 @@ Atomic arithmetic / flag instructions:
     addressing-mode setup, not a separate logical step).
   - `Sub(src, dst)` -> `SBC <src>` (same; preceded by `SetCarry`).
   - `Call(name)` -> `JSR <name>`.
+  - `Jump(target)` -> `JMP <target>`.
+  - `Branch(cond, target)` -> `B<cond> <target>` where `cond` is one of
+    `CC`/`CS`/`EQ`/`MI`/`NE`/`PL`/`VC`/`VS`. The 6502's branches are
+    PC-relative (signed 8-bit displacement), but the assembler resolves
+    that from the target label — emit just writes the symbolic name.
+  - `Label(name)` -> `<name>:` at column 1. No opcode column. Lets a
+    `Jump`/`Branch` resolve to a position inside the same function.
 
 (`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
@@ -137,6 +144,31 @@ def _reg_letter(r: asm_ast.Type_reg) -> str:
             return "Y"
         case _:
             raise TypeError(f"unexpected reg: {r!r}")
+
+
+def _cond_suffix(c: asm_ast.Type_condition) -> str:
+    """Two-letter suffix for a 6502 branch opcode (`CC` -> `BCC` etc.).
+    Matches the constructor name in the asm IR exactly so adding a
+    new condition is just adding a new ASDL constructor."""
+    match c:
+        case asm_ast.CC():
+            return "CC"
+        case asm_ast.CS():
+            return "CS"
+        case asm_ast.EQ():
+            return "EQ"
+        case asm_ast.MI():
+            return "MI"
+        case asm_ast.NE():
+            return "NE"
+        case asm_ast.PL():
+            return "PL"
+        case asm_ast.VC():
+            return "VC"
+        case asm_ast.VS():
+            return "VS"
+        case _:
+            raise TypeError(f"unexpected condition: {c!r}")
 
 
 def _emit_ssp_sub(amt: int) -> list[str]:
@@ -563,6 +595,12 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_acc_shift("ROR", "RotateRight", dst)
         case asm_ast.Call(name=name):
             return [_instr_line("JSR", name)]
+        case asm_ast.Jump(target=target):
+            return [_instr_line("JMP", target)]
+        case asm_ast.Branch(cond=cond, target=target):
+            return [_instr_line(f"B{_cond_suffix(cond)}", target)]
+        case asm_ast.Label(name=name):
+            return [f"{name}:"]
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 

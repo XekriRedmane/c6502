@@ -186,6 +186,102 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
+    def test_binary_bitwise_and_lowered(self):
+        # Mov(src1, A) -> And(src2, A) -> Mov(A, dst). No carry setup
+        # because AND doesn't touch carry.
+        instr = tac_ast.Binary(
+            op=tac_ast.BitwiseAnd(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(value=0x0F),
+            dst=tac_ast.Var(name="%1"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.And(src=asm_ast.Imm(value=0x0F), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+            ],
+        )
+
+    def test_binary_bitwise_or_lowered(self):
+        instr = tac_ast.Binary(
+            op=tac_ast.BitwiseOr(),
+            src1=tac_ast.Constant(value=0xF0),
+            src2=tac_ast.Var(name="%0"),
+            dst=tac_ast.Var(name="%1"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=0xF0), dst=_REG_A),
+                asm_ast.Or(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+            ],
+        )
+
+    def test_binary_bitwise_xor_lowered(self):
+        # Reuses the existing ternary Xor shape. The src1 of the asm
+        # Xor is Reg(A); the src2 carries the addressing mode.
+        instr = tac_ast.Binary(
+            op=tac_ast.BitwiseXor(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%2"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Xor(
+                    src1=_REG_A,
+                    src2=asm_ast.Pseudo(name="%1"),
+                    dst=_REG_A,
+                ),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%2")),
+            ],
+        )
+
+    def test_binary_left_shift_lowered_to_shl8_call(self):
+        # shl8 takes A << X (logical), result in A.
+        instr = tac_ast.Binary(
+            op=tac_ast.LeftShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(value=2),
+            dst=tac_ast.Var(name="%1"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Call(name="shl8"),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+            ],
+        )
+
+    def test_binary_right_shift_lowered_to_asr8_call(self):
+        # Right shift is arithmetic — c6502 currently treats integers
+        # as signed, so >> goes through asr8 (sign-preserving) rather
+        # than a logical shift helper.
+        instr = tac_ast.Binary(
+            op=tac_ast.RightShift(),
+            src1=tac_ast.Constant(value=0x80),
+            src2=tac_ast.Constant(value=1),
+            dst=tac_ast.Var(name="%0"),
+        )
+        self.assertEqual(
+            translate_instruction(instr),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=asm_ast.Imm(value=0x80), dst=_REG_A),
+                asm_ast.Call(name="asr8"),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
+            ],
+        )
+
     def test_binary_modulo_lowered_to_divmod8_call_with_x_to_a(self):
         # Modulo wants the remainder from divmod8, which comes back in
         # X — we shuffle X to A before storing.

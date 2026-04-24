@@ -101,3 +101,28 @@ class Divide(Type_binary_operator):
 @dataclass
 class Modulo(Type_binary_operator):
     pass
+
+
+@dataclass
+class BitwiseAnd(Type_binary_operator):
+    pass
+
+
+@dataclass
+class BitwiseOr(Type_binary_operator):
+    pass
+
+
+@dataclass
+class BitwiseXor(Type_binary_operator):
+    pass
+
+
+@dataclass
+class LeftShift(Type_binary_operator):
+    pass
+
+
+@dataclass
+class RightShift(Type_binary_operator):
+    pass

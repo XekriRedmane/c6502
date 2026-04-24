@@ -78,12 +78,15 @@ AST and returns another (or text for emit):
    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
-step 4. `Mul`/`Div`/`Mod` are TAC-only concepts; `tac_to_asm` lowers them to a
-`Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence targeting the runtime helpers `mul8`
-and `divmod8` (both take `A` and `X`; `mul8` returns low/high in A/X,
-`divmod8` returns quotient/remainder in A/X). The asm IR itself has no
-multiply/divide primitives — every non-prologue/ret node is 1:1 with a 6502
-opcode.
+step 4. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are TAC-only concepts;
+`tac_to_asm` lowers each to a `Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence
+targeting one of the runtime helpers `mul8` / `divmod8` / `shl8` / `asr8`.
+All four take operands in `A` and `X`: `mul8` returns low/high in A/X,
+`divmod8` returns quotient/remainder in A/X, `shl8` returns `A << X`
+(logical) in A, `asr8` returns `A >> X` (arithmetic, sign-preserving)
+in A. Right shift goes through `asr8` because c6502 currently treats
+all integers as signed. The asm IR itself has no multiply/divide/shift
+primitives — every non-prologue/ret node is 1:1 with a 6502 opcode.
 
 ## Function stack frame (soft stack)
 
@@ -129,6 +132,14 @@ annotated sample prologue/epilogue.
   Stack/Frame offsets and immediates are `0..255` (single byte).
 - Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`, `Reg(A) → Reg(A)`)
   raise — there's no direct transfer instruction.
+- `ArithmeticShiftLeft` (ASL), `LogicalShiftRight` (LSR), `RotateLeft`
+  (ROL), and `RotateRight` (ROR) currently only accept `Reg(A)` as `dst`.
+  The 6502's shift/rotate family has accumulator and absolute/zero-page
+  modes but no indirect-Y, so soft-stack values can't be shifted in
+  place — load to A, shift, store back. These atoms are present in the
+  IR but `tac_to_asm` doesn't emit them yet (`<<`/`>>` go through the
+  `shl8` / `asr8` runtime helpers); they'll be useful once 16-bit
+  shifts land.
 - Output formatting: labels at column 1, opcodes at column 4, operands at
   column 10. Each function emits `<name>:`, then `SUBROUTINE`, blank line,
   then instructions.
@@ -166,10 +177,16 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 - unary `-` and `~`
 - binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops emit `JSR mul8` /
   `JSR divmod8` against the runtime helpers — see below)
+- binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
+- binary `<<` (logical) and `>>` (arithmetic; c6502 assumes signed
+  integers right now). Both emit `JSR shl8` / `JSR asr8` against the
+  runtime helpers
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
 everywhere but parser only accepts `(void)` and translator hardcodes 0),
 multiple functions, user-defined calls, control flow, variable declarations,
-types other than `int`, and the runtime header that defines `SSP`/`FP`,
-initializes `SSP`, sets the reset vector, and provides `mul8`/`divmod8`.
+types other than `int` (so unsigned right shift is not yet distinguishable),
+and the runtime header that defines `SSP`/`FP`,
+initializes `SSP`, sets the reset vector, and provides `mul8`/`divmod8`/
+`shl8`/`asr8`.

@@ -25,10 +25,44 @@ import asm_ast
 
 
 def _operands(instr: asm_ast.Type_instruction):
-    """Yield each operand-typed field of an instruction."""
+    """Yield each operand-typed field of an instruction. Instructions
+    with no operands (Ret, FunctionPrologue, ClearCarry, SetCarry,
+    Call) yield nothing."""
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             yield src
+            yield dst
+        case asm_ast.Add(src=src, dst=dst):
+            yield src
+            yield dst
+        case asm_ast.Sub(src=src, dst=dst):
+            yield src
+            yield dst
+        case asm_ast.And(src=src, dst=dst):
+            yield src
+            yield dst
+        case asm_ast.Or(src=src, dst=dst):
+            yield src
+            yield dst
+        case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
+            yield s1
+            yield s2
+            yield dst
+        case asm_ast.Inc(dst=dst):
+            yield dst
+        case asm_ast.Dec(dst=dst):
+            yield dst
+        case asm_ast.ArithmeticShiftLeft(dst=dst):
+            yield dst
+        case asm_ast.LogicalShiftRight(dst=dst):
+            yield dst
+        case asm_ast.RotateLeft(dst=dst):
+            yield dst
+        case asm_ast.RotateRight(dst=dst):
+            yield dst
+        case asm_ast.Push(src=src):
+            yield src
+        case asm_ast.Pop(dst=dst):
             yield dst
 
 

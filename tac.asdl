@@ -7,5 +7,8 @@ module TAC {
         | Binary(binary_operator op, val src1, val src2, val dst)
     val = Constant(int value) | Var(identifier name)
     unary_operator = Complement | Negate
-    binary_operator = Add | Subtract | Multiply | Divide | Modulo
+    binary_operator =
+        Add | Subtract | Multiply | Divide | Modulo
+        | BitwiseAnd | BitwiseOr | BitwiseXor
+        | LeftShift | RightShift
 }

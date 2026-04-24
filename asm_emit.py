@@ -49,8 +49,21 @@ Atomic arithmetic / flag instructions:
     `INX`/`INY`/`DEX`/`DEY`. (Plain 6502 has no INA/DEA.)
   - `Push(src)` -> `PHA` (src must be `Reg(A)`).
   - `Pop(dst)`  -> `PLA` (dst must be `Reg(A)`).
-  - `Xor(src1, src2, dst)` -> `EOR #imm`. dst must be `Reg(A)`; one
-    of src1/src2 must be `Reg(A)`, the other an `Imm`.
+  - `Xor(src1, src2, dst)` -> `EOR <src>`. dst must be `Reg(A)`; one
+    of src1/src2 must be `Reg(A)`, the other an `Imm`/`Stack`/`Frame`.
+    The non-A operand picks the addressing mode; Stack/Frame go through
+    LDY indirect-Y like Add/Sub. Carry / sign flags are not affected.
+  - `And(src, dst)` -> `AND <src>`; same operand shape as `Add`.
+  - `Or(src, dst)`  -> `ORA <src>`; same operand shape as `Add`.
+  - `ArithmeticShiftLeft(dst)` -> `ASL A`. dst must be `Reg(A)`.
+  - `LogicalShiftRight(dst)`   -> `LSR A`. dst must be `Reg(A)`.
+  - `RotateLeft(dst)`          -> `ROL A`. dst must be `Reg(A)`.
+  - `RotateRight(dst)`         -> `ROR A`. dst must be `Reg(A)`.
+    The 6502 has accumulator and memory addressing modes for these,
+    but no indirect-Y mode — so soft-stack values can't be shifted in
+    place; codegen has to load to A, shift, then store. Memory dst
+    support could be added later for in-place shifts of zero-page
+    locations (useful for 16-bit shift sequences with carry).
   - `Add(src, dst)` -> `ADC <src>` (src is `Imm`/`Stack`/`Frame`, dst
     `Reg(A)`). Carry must already be set up by a preceding `ClearCarry`.
     Stack/Frame sources emit an LDY pair plus the ADC (the LDY is
@@ -355,6 +368,46 @@ def _emit_sub(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             raise ValueError(f"cannot emit Sub(src={src!r}, dst={dst!r})")
 
 
+def _emit_acc_logic(
+    opcode: str,
+    op_name: str,
+    src: asm_ast.Type_operand,
+    dst: asm_ast.Type_operand,
+) -> list[str]:
+    """Common emit for AND/ORA — both implicitly use A as one operand
+    and as the destination. Same operand shape as Add/Sub but no carry
+    setup is needed (these don't touch C)."""
+    _reject_pseudo(src)
+    _reject_pseudo(dst)
+    _check_dst_is_a(dst, op_name)
+    match src:
+        case asm_ast.Imm(value=v):
+            _check_byte("immediate", v)
+            return [_instr_line(opcode, f"#${v:02X}")]
+        case asm_ast.Stack() | asm_ast.Frame():
+            return [
+                _emit_load_y(src.offset),
+                _instr_line(opcode, _indirect_addr(src)),
+            ]
+        case _:
+            raise ValueError(
+                f"cannot emit {op_name}(src={src!r}, dst={dst!r})"
+            )
+
+
+def _emit_acc_shift(
+    opcode: str, op_name: str, dst: asm_ast.Type_operand,
+) -> list[str]:
+    """Common emit for ASL/LSR/ROL/ROR. The 6502 supports both
+    accumulator and memory addressing for these, but soft-stack
+    operands live behind indirect-Y which isn't a supported mode for
+    the shift family — so today the only legal dst is Reg(A)."""
+    _reject_pseudo(dst)
+    if not _is_reg_a(dst):
+        raise ValueError(f"{op_name} dst must be Reg(A), got {dst!r}")
+    return [_instr_line(opcode, "A")]
+
+
 def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
     _reject_pseudo(dst)
     match dst:
@@ -404,20 +457,32 @@ def _emit_xor(
     _reject_pseudo(src2)
     _reject_pseudo(dst)
     _check_dst_is_a(dst, "Xor")
-    # 6502 EOR is "A = A XOR <imm-or-mem>"; at emit we accept only
-    # the immediate form, which means one src must be Reg(A) and the
-    # other an Imm. Order doesn't matter (XOR is commutative).
-    if _is_reg_a(src1) and isinstance(src2, asm_ast.Imm):
-        v = src2.value
-    elif _is_reg_a(src2) and isinstance(src1, asm_ast.Imm):
-        v = src1.value
+    # 6502 EOR is "A = A XOR <imm-or-mem>". One src must be Reg(A);
+    # the other carries the addressing mode (Imm direct, or Stack/
+    # Frame indirect-Y). Order doesn't matter (XOR is commutative).
+    if _is_reg_a(src1):
+        other = src2
+    elif _is_reg_a(src2):
+        other = src1
     else:
         raise ValueError(
-            "Xor srcs must be Reg(A) and Imm in some order, "
+            "Xor srcs must include Reg(A); "
             f"got src1={src1!r}, src2={src2!r}"
         )
-    _check_byte("immediate", v)
-    return [_instr_line("EOR", f"#${v:02X}")]
+    match other:
+        case asm_ast.Imm(value=v):
+            _check_byte("immediate", v)
+            return [_instr_line("EOR", f"#${v:02X}")]
+        case asm_ast.Stack() | asm_ast.Frame():
+            return [
+                _emit_load_y(other.offset),
+                _instr_line("EOR", _indirect_addr(other)),
+            ]
+        case _:
+            raise ValueError(
+                "Xor non-A operand must be Imm/Stack/Frame, "
+                f"got {other!r}"
+            )
 
 
 def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
@@ -484,6 +549,18 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_pop(dst)
         case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
             return _emit_xor(s1, s2, dst)
+        case asm_ast.And(src=src, dst=dst):
+            return _emit_acc_logic("AND", "And", src, dst)
+        case asm_ast.Or(src=src, dst=dst):
+            return _emit_acc_logic("ORA", "Or", src, dst)
+        case asm_ast.ArithmeticShiftLeft(dst=dst):
+            return _emit_acc_shift("ASL", "ArithmeticShiftLeft", dst)
+        case asm_ast.LogicalShiftRight(dst=dst):
+            return _emit_acc_shift("LSR", "LogicalShiftRight", dst)
+        case asm_ast.RotateLeft(dst=dst):
+            return _emit_acc_shift("ROL", "RotateLeft", dst)
+        case asm_ast.RotateRight(dst=dst):
+            return _emit_acc_shift("ROR", "RotateRight", dst)
         case asm_ast.Call(name=name):
             return [_instr_line("JSR", name)]
         case _:

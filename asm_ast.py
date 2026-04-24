@@ -103,6 +103,38 @@ class Xor(Type_instruction):
 
 
 @dataclass
+class And(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class Or(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class ArithmeticShiftLeft(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
+class LogicalShiftRight(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
+class RotateLeft(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
+class RotateRight(Type_instruction):
+    dst: Type_operand
+
+
+@dataclass
 class Type_operand:
     pass
 

@@ -55,6 +55,52 @@ class Replacer:
                     src=self.replace_operand(src),
                     dst=self.replace_operand(dst),
                 )
+            case asm_ast.Add(src=src, dst=dst):
+                return asm_ast.Add(
+                    src=self.replace_operand(src),
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.Sub(src=src, dst=dst):
+                return asm_ast.Sub(
+                    src=self.replace_operand(src),
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.And(src=src, dst=dst):
+                return asm_ast.And(
+                    src=self.replace_operand(src),
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.Or(src=src, dst=dst):
+                return asm_ast.Or(
+                    src=self.replace_operand(src),
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
+                return asm_ast.Xor(
+                    src1=self.replace_operand(s1),
+                    src2=self.replace_operand(s2),
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.Inc(dst=dst):
+                return asm_ast.Inc(dst=self.replace_operand(dst))
+            case asm_ast.Dec(dst=dst):
+                return asm_ast.Dec(dst=self.replace_operand(dst))
+            case asm_ast.ArithmeticShiftLeft(dst=dst):
+                return asm_ast.ArithmeticShiftLeft(
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.LogicalShiftRight(dst=dst):
+                return asm_ast.LogicalShiftRight(
+                    dst=self.replace_operand(dst),
+                )
+            case asm_ast.RotateLeft(dst=dst):
+                return asm_ast.RotateLeft(dst=self.replace_operand(dst))
+            case asm_ast.RotateRight(dst=dst):
+                return asm_ast.RotateRight(dst=self.replace_operand(dst))
+            case asm_ast.Push(src=src):
+                return asm_ast.Push(src=self.replace_operand(src))
+            case asm_ast.Pop(dst=dst):
+                return asm_ast.Pop(dst=self.replace_operand(dst))
             case _:
                 return instr
 

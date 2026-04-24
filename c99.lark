@@ -174,7 +174,16 @@ statement: RETURN exp SEMICOLON
 // associativity) and right into the next-tighter level. Lark's `?`
 // rule prefix inlines a level when it has a single child, so the
 // AST sees no extra wrapping for "passes through to next level".
-?exp: add_exp
+?exp: or_exp
+?or_exp: or_exp PIPE xor_exp        -> bitwise_or
+       | xor_exp
+?xor_exp: xor_exp CARET and_exp     -> bitwise_xor
+        | and_exp
+?and_exp: and_exp AMP shift_exp     -> bitwise_and
+        | shift_exp
+?shift_exp: shift_exp LSHIFT add_exp -> left_shift
+          | shift_exp RSHIFT add_exp -> right_shift
+          | add_exp
 ?add_exp: add_exp PLUS mul_exp      -> add
         | add_exp MINUS mul_exp     -> subtract
         | mul_exp

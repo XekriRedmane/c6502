@@ -50,10 +50,6 @@ class TestAllocateFunction(unittest.TestCase):
                          asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=3))
 
     def test_frame_in_mov_src_is_counted(self):
-        # Mov is the only instruction whose operands the pass walks
-        # for Frame offsets — atomic ops like Add/Xor never carry
-        # Frame operands at this stage (tac_to_asm emits them
-        # only with Reg(A)/Imm).
         fn = asm_ast.Function(name="main", instructions=[
             asm_ast.Mov(src=asm_ast.Frame(offset=5), dst=_reg_a()),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
@@ -61,6 +57,26 @@ class TestAllocateFunction(unittest.TestCase):
         out = allocate_function(fn)
         self.assertEqual(out.instructions[0],
                          asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=5))
+
+    def test_frame_in_arith_op_is_counted(self):
+        # Add/Sub/And/Or/Xor can all carry Frame operands once
+        # replace_pseudoregisters has resolved the pseudos that
+        # tac_to_asm threaded into them. The pass must scan their
+        # operands too, or it would understate M and the prologue
+        # wouldn't reserve the slot.
+        fn = asm_ast.Function(name="main", instructions=[
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg_a()),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Frame(offset=4), dst=_reg_a()),
+            asm_ast.Or(src=asm_ast.Frame(offset=6), dst=_reg_a()),
+            asm_ast.Xor(src1=_reg_a(),
+                        src2=asm_ast.Frame(offset=7),
+                        dst=_reg_a()),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+        ])
+        out = allocate_function(fn)
+        self.assertEqual(out.instructions[0],
+                         asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=7))
 
     def test_non_frame_operands_dont_inflate_size(self):
         # Imm, Reg, Stack all present but no Frame -> M = 0.

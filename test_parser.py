@@ -247,6 +247,122 @@ class TestBinaryPrecedence(unittest.TestCase):
         )
 
 
+class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
+    """Bitwise (&, |, ^) and shift (<<, >>) operators. Precedence
+    relative to each other and to the arithmetic operators follows
+    C99 §6.5: shifts bind tighter than bitwise, and within bitwise
+    the order tightest-to-loosest is &, ^, |."""
+
+    def test_each_op_builds_a_binary(self):
+        cases = [
+            ("&",  c99_ast.BitwiseAnd()),
+            ("|",  c99_ast.BitwiseOr()),
+            ("^",  c99_ast.BitwiseXor()),
+            ("<<", c99_ast.LeftShift()),
+            (">>", c99_ast.RightShift()),
+        ]
+        for sym, op in cases:
+            with self.subTest(sym=sym):
+                self.assertEqual(
+                    _exp_of(f"5 {sym} 3"),
+                    c99_ast.Binary(
+                        op=op,
+                        left=c99_ast.Constant(value=5),
+                        right=c99_ast.Constant(value=3),
+                    ),
+                )
+
+    def test_shift_binds_tighter_than_bitwise_and(self):
+        # 1 & 2 << 3 -> &(1, <<(2, 3))
+        self.assertEqual(
+            _exp_of("1 & 2 << 3"),
+            c99_ast.Binary(
+                op=c99_ast.BitwiseAnd(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.LeftShift(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_add_binds_tighter_than_shift(self):
+        # 1 << 2 + 3 -> <<(1, +(2, 3))
+        self.assertEqual(
+            _exp_of("1 << 2 + 3"),
+            c99_ast.Binary(
+                op=c99_ast.LeftShift(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_and_binds_tighter_than_xor(self):
+        # 1 ^ 2 & 3 -> ^(1, &(2, 3))
+        self.assertEqual(
+            _exp_of("1 ^ 2 & 3"),
+            c99_ast.Binary(
+                op=c99_ast.BitwiseXor(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.BitwiseAnd(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_xor_binds_tighter_than_or(self):
+        # 1 | 2 ^ 3 -> |(1, ^(2, 3))
+        self.assertEqual(
+            _exp_of("1 | 2 ^ 3"),
+            c99_ast.Binary(
+                op=c99_ast.BitwiseOr(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Binary(
+                    op=c99_ast.BitwiseXor(),
+                    left=c99_ast.Constant(value=2),
+                    right=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_left_associative_shift(self):
+        # 1 << 2 << 3 -> <<(<<(1, 2), 3)
+        self.assertEqual(
+            _exp_of("1 << 2 << 3"),
+            c99_ast.Binary(
+                op=c99_ast.LeftShift(),
+                left=c99_ast.Binary(
+                    op=c99_ast.LeftShift(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_left_associative_or(self):
+        # 1 | 2 | 3 -> |(|(1, 2), 3)
+        self.assertEqual(
+            _exp_of("1 | 2 | 3"),
+            c99_ast.Binary(
+                op=c99_ast.BitwiseOr(),
+                left=c99_ast.Binary(
+                    op=c99_ast.BitwiseOr(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+                right=c99_ast.Constant(value=3),
+            ),
+        )
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

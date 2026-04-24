@@ -16,6 +16,12 @@ module ASM {
         | Push(operand src)
         | Pop(operand dst)
         | Xor(operand src1, operand src2, operand dst)
+        | And(operand src, operand dst)
+        | Or(operand src, operand dst)
+        | ArithmeticShiftLeft(operand dst)
+        | LogicalShiftRight(operand dst)
+        | RotateLeft(operand dst)
+        | RotateRight(operand dst)
 
     operand = Imm(int value) | Reg(reg) | Pseudo(identifier name)
             | Stack(int offset) | Frame(int offset)

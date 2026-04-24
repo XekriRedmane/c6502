@@ -82,6 +82,26 @@ class _ASTBuilder(Transformer):
     def subtract(self, left, _minus, right):
         return c99_ast.Binary(op=c99_ast.Subtract(), left=left, right=right)
 
+    @v_args(inline=True)
+    def bitwise_and(self, left, _amp, right):
+        return c99_ast.Binary(op=c99_ast.BitwiseAnd(), left=left, right=right)
+
+    @v_args(inline=True)
+    def bitwise_or(self, left, _pipe, right):
+        return c99_ast.Binary(op=c99_ast.BitwiseOr(), left=left, right=right)
+
+    @v_args(inline=True)
+    def bitwise_xor(self, left, _caret, right):
+        return c99_ast.Binary(op=c99_ast.BitwiseXor(), left=left, right=right)
+
+    @v_args(inline=True)
+    def left_shift(self, left, _lshift, right):
+        return c99_ast.Binary(op=c99_ast.LeftShift(), left=left, right=right)
+
+    @v_args(inline=True)
+    def right_shift(self, left, _rshift, right):
+        return c99_ast.Binary(op=c99_ast.RightShift(), left=left, right=right)
+
     # Alternatives of `unop` — tokens discarded, just produce the AST op.
     @v_args(inline=True)
     def negate(self, _minus):

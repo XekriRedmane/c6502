@@ -24,8 +24,10 @@ Mapping:
                                  numbered first.
   C99 Negate / Complement     -> TAC Negate / Complement
   C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
-    Multiply / Divide /          / Modulo
-    Modulo
+    Multiply / Divide /          / Modulo / BitwiseAnd / BitwiseOr /
+    Modulo / BitwiseAnd /        BitwiseXor / LeftShift / RightShift
+    BitwiseOr / BitwiseXor /
+    LeftShift / RightShift
 """
 
 from __future__ import annotations
@@ -129,6 +131,16 @@ class Translator:
                 return tac_ast.Divide()
             case c99_ast.Modulo():
                 return tac_ast.Modulo()
+            case c99_ast.BitwiseAnd():
+                return tac_ast.BitwiseAnd()
+            case c99_ast.BitwiseOr():
+                return tac_ast.BitwiseOr()
+            case c99_ast.BitwiseXor():
+                return tac_ast.BitwiseXor()
+            case c99_ast.LeftShift():
+                return tac_ast.LeftShift()
+            case c99_ast.RightShift():
+                return tac_ast.RightShift()
         raise TypeError(f"unexpected binop: {op!r}")
 
 

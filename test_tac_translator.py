@@ -85,11 +85,16 @@ class TestTranslateExp(unittest.TestCase):
 
     def test_each_binary_op_translates(self):
         cases = [
-            (c99_ast.Add(),      tac_ast.Add()),
-            (c99_ast.Subtract(), tac_ast.Subtract()),
-            (c99_ast.Multiply(), tac_ast.Multiply()),
-            (c99_ast.Divide(),   tac_ast.Divide()),
-            (c99_ast.Modulo(),   tac_ast.Modulo()),
+            (c99_ast.Add(),        tac_ast.Add()),
+            (c99_ast.Subtract(),   tac_ast.Subtract()),
+            (c99_ast.Multiply(),   tac_ast.Multiply()),
+            (c99_ast.Divide(),     tac_ast.Divide()),
+            (c99_ast.Modulo(),     tac_ast.Modulo()),
+            (c99_ast.BitwiseAnd(), tac_ast.BitwiseAnd()),
+            (c99_ast.BitwiseOr(),  tac_ast.BitwiseOr()),
+            (c99_ast.BitwiseXor(), tac_ast.BitwiseXor()),
+            (c99_ast.LeftShift(),  tac_ast.LeftShift()),
+            (c99_ast.RightShift(), tac_ast.RightShift()),
         ]
         for c99_op, tac_op in cases:
             with self.subTest(op=type(c99_op).__name__):

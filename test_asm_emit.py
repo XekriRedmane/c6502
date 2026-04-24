@@ -755,13 +755,15 @@ class TestEmitXor(unittest.TestCase):
                 dst=_reg(_X),
             ))
 
-    def test_srcs_must_be_a_and_imm(self):
+    def test_one_src_must_be_a(self):
+        # One src must be Reg(A); the other carries the addressing mode.
+        # Neither side being A is rejected. Two Reg(A) is also rejected
+        # because the non-A side then fails the Imm/Stack/Frame check.
         bad = [
             (asm_ast.Imm(value=1), asm_ast.Imm(value=2)),     # both Imm
             (_reg(_A), _reg(_A)),                              # both A
             (_reg(_X), asm_ast.Imm(value=1)),                  # X not A
             (asm_ast.Stack(offset=1), asm_ast.Imm(value=1)),   # Stack not A
-            (_reg(_A), asm_ast.Stack(offset=1)),               # Stack not Imm
         ]
         for s1, s2 in bad:
             with self.subTest(src1=s1, src2=s2):
@@ -770,6 +772,38 @@ class TestEmitXor(unittest.TestCase):
                         src1=s1, src2=s2, dst=_reg(_A),
                     ))
 
+    def test_a_stack(self):
+        # A XOR <byte at SSP+off> — reads via indirect-Y, then EOR.
+        self.assertEqual(
+            emit_instruction(asm_ast.Xor(
+                src1=_reg(_A),
+                src2=asm_ast.Stack(offset=3),
+                dst=_reg(_A),
+            )),
+            ["   LDY   #$03", "   EOR   (SSP),Y"],
+        )
+
+    def test_a_frame_either_order(self):
+        # XOR is commutative; the non-A operand picks the addressing
+        # mode regardless of which slot it sits in.
+        expected = ["   LDY   #$02", "   EOR   (FP),Y"]
+        self.assertEqual(
+            emit_instruction(asm_ast.Xor(
+                src1=_reg(_A),
+                src2=asm_ast.Frame(offset=2),
+                dst=_reg(_A),
+            )),
+            expected,
+        )
+        self.assertEqual(
+            emit_instruction(asm_ast.Xor(
+                src1=asm_ast.Frame(offset=2),
+                src2=_reg(_A),
+                dst=_reg(_A),
+            )),
+            expected,
+        )
+
     def test_imm_out_of_range_raises(self):
         with self.assertRaises(ValueError):
             emit_instruction(asm_ast.Xor(
@@ -777,6 +811,134 @@ class TestEmitXor(unittest.TestCase):
                 src2=asm_ast.Imm(value=256),
                 dst=_reg(_A),
             ))
+
+
+class TestEmitShiftRotateAcc(unittest.TestCase):
+    """ASL/LSR/ROL/ROR all currently target the accumulator only —
+    soft-stack values can't be addressed by these opcodes (no
+    indirect-Y mode). Reg(A) emits `<OP> A`; anything else raises."""
+
+    _CASES = [
+        (asm_ast.ArithmeticShiftLeft, "ASL"),
+        (asm_ast.LogicalShiftRight,   "LSR"),
+        (asm_ast.RotateLeft,          "ROL"),
+        (asm_ast.RotateRight,         "ROR"),
+    ]
+
+    def test_acc_emit(self):
+        for cls, opcode in self._CASES:
+            with self.subTest(op=opcode):
+                self.assertEqual(
+                    emit_instruction(cls(dst=_reg(_A))),
+                    [f"   {opcode}   A"],
+                )
+
+    def test_non_acc_dst_raises(self):
+        for cls, _ in self._CASES:
+            for dst in [_reg(_X), _reg(_Y),
+                        asm_ast.Imm(value=1),
+                        asm_ast.Stack(offset=1),
+                        asm_ast.Frame(offset=1)]:
+                with self.subTest(op=cls.__name__, dst=dst):
+                    with self.assertRaises(ValueError):
+                        emit_instruction(cls(dst=dst))
+
+    def test_pseudo_dst_rejected(self):
+        for cls, _ in self._CASES:
+            with self.subTest(op=cls.__name__):
+                with self.assertRaises(ValueError) as cm:
+                    emit_instruction(cls(dst=asm_ast.Pseudo(name="t")))
+                self.assertIn("Pseudo", str(cm.exception))
+
+
+class TestEmitAnd(unittest.TestCase):
+    """And at emit is a single AND instruction (with addressing-mode
+    setup for indirect-Y sources). dst must be Reg(A); src can be
+    Imm/Stack/Frame. AND/ORA do not affect carry, so no carry setup
+    is required."""
+
+    def test_imm_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.And(src=asm_ast.Imm(value=0x0F), dst=_reg(_A))
+            ),
+            ["   AND   #$0F"],
+        )
+
+    def test_stack_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.And(src=asm_ast.Stack(offset=3), dst=_reg(_A))
+            ),
+            ["   LDY   #$03", "   AND   (SSP),Y"],
+        )
+
+    def test_frame_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.And(src=asm_ast.Frame(offset=2), dst=_reg(_A))
+            ),
+            ["   LDY   #$02", "   AND   (FP),Y"],
+        )
+
+    def test_dst_must_be_a(self):
+        with self.assertRaises(ValueError):
+            emit_instruction(
+                asm_ast.And(src=asm_ast.Imm(value=1), dst=_reg(_X))
+            )
+
+    def test_register_src_raises(self):
+        for src in [_reg(_X), _reg(_Y), _reg(_A)]:
+            with self.subTest(src=src):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.And(src=src, dst=_reg(_A)))
+
+    def test_pseudo_src_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            emit_instruction(
+                asm_ast.And(src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
+            )
+        self.assertIn("Pseudo", str(cm.exception))
+
+
+class TestEmitOr(unittest.TestCase):
+    """Or at emit is a single ORA instruction; same operand shape as And."""
+
+    def test_imm_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Or(src=asm_ast.Imm(value=0xF0), dst=_reg(_A))
+            ),
+            ["   ORA   #$F0"],
+        )
+
+    def test_stack_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Or(src=asm_ast.Stack(offset=3), dst=_reg(_A))
+            ),
+            ["   LDY   #$03", "   ORA   (SSP),Y"],
+        )
+
+    def test_frame_to_a(self):
+        self.assertEqual(
+            emit_instruction(
+                asm_ast.Or(src=asm_ast.Frame(offset=2), dst=_reg(_A))
+            ),
+            ["   LDY   #$02", "   ORA   (FP),Y"],
+        )
+
+    def test_dst_must_be_a(self):
+        with self.assertRaises(ValueError):
+            emit_instruction(
+                asm_ast.Or(src=asm_ast.Imm(value=1), dst=_reg(_X))
+            )
+
+    def test_register_src_raises(self):
+        for src in [_reg(_X), _reg(_Y), _reg(_A)]:
+            with self.subTest(src=src):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Or(src=src, dst=_reg(_A)))
 
 
 if __name__ == "__main__":

@@ -170,6 +170,10 @@ at column 10. Each function emits `<name>:` on one line, the
 | `Xor(Reg(A), Imm(v), Reg(A))` (or reverse) | `EOR #$v`                     |
 | `ClearCarry` / `SetCarry`         | `CLC` / `SEC`                          |
 | `Inc(Reg(X/Y))` / `Dec(Reg(X/Y))` | `INX/INY` / `DEX/DEY`                  |
+| `ArithmeticShiftLeft(Reg(A))`     | `ASL A`                                |
+| `LogicalShiftRight(Reg(A))`       | `LSR A`                                |
+| `RotateLeft(Reg(A))`              | `ROL A`                                |
+| `RotateRight(Reg(A))`             | `ROR A`                                |
 | `Push(Reg(A))` / `Pop(Reg(A))`    | `PHA` / `PLA`                          |
 | `Call(name)`                      | `JSR <name>`                           |
 | `FunctionPrologue(N, M)`          | multi-instruction; see frame docs      |
@@ -192,6 +196,14 @@ Notes:
   multiply/divide primitives; every node maps 1:1 to a 6502 opcode.
 - Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`,
   `Reg(A) → Reg(A)`) raise — there's no direct transfer instruction.
+- `ArithmeticShiftLeft` / `LogicalShiftRight` / `RotateLeft` /
+  `RotateRight` currently only accept `Reg(A)` as `dst` — the 6502's
+  shift/rotate family supports accumulator and absolute/zero-page
+  addressing but not indirect-Y, so soft-stack values can't be shifted
+  in place; codegen has to load to A, shift, then store. Memory-dst
+  support could be added later for in-place shifts of zero-page bytes
+  (the typical 16-bit shift sequence: `ASL low_byte` then `ROL A`
+  for the high byte, with carry threading).
 
 ### `Call` and runtime helpers
 

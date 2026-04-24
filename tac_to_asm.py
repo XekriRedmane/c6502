@@ -25,11 +25,21 @@ Mapping:
                                     ClearCarry | SetCarry,
                                     Add|Sub(src2, Reg(A)),
                                     Mov(Reg(A), dst)]
-                                 for Multiply / Divide / Modulo:
+                                 for BitwiseAnd / BitwiseOr / BitwiseXor:
+                                   [Mov(src1, Reg(A)),
+                                    And|Or(src2, Reg(A))
+                                      | Xor(Reg(A), src2, Reg(A)),
+                                    Mov(Reg(A), dst)]
+                                 (no carry setup; AND/ORA/EOR don't
+                                 touch carry). Xor keeps the older
+                                 ternary shape so the unary-Complement
+                                 lowering stays unchanged.
+                                 for Multiply / Divide / Modulo /
+                                     LeftShift / RightShift:
                                    [Mov(src2, Reg(A)),
                                     Mov(Reg(A), Reg(X)),
                                     Mov(src1, Reg(A)),
-                                    Call(mul8|divmod8),
+                                    Call(<helper>),
                                     <result fetch>,
                                     Mov(Reg(A), dst)]
                                  The runtime helpers take A and X:
@@ -37,6 +47,11 @@ Mapping:
                                               high byte in X.
                                    divmod8  — A /= X, quotient in A,
                                               remainder in X.
+                                   shl8     — A << X (logical), in A.
+                                   asr8     — A >> X (arithmetic /
+                                              sign-preserving), in A.
+                                 Right shift uses asr8 because c6502
+                                 currently treats integers as signed.
                                  src2 is staged through A into X
                                  because the emitter has no direct
                                  Stack/Frame -> X mov. Multiply and
@@ -56,11 +71,17 @@ import tac_ast
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
 
-# Runtime helper names for the multi-instruction arithmetic ops. Both
+# Runtime helper names for the multi-instruction arithmetic ops. All
 # take their operands in A and X; the runtime header (not in this
-# repo yet) defines these labels.
+# repo yet) defines these labels. mul8 / divmod8 return both halves
+# of the result (A, X); shl8 / asr8 take a value in A and a shift
+# count in X and return the shifted value in A. Right shift is
+# arithmetic (sign-preserving) — c6502 currently treats every
+# integer as signed.
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
+_SHL8 = "shl8"
+_ASR8 = "asr8"
 
 
 def translate_program(prog: tac_ast.Type_program) -> asm_ast.Type_program:
@@ -141,6 +162,30 @@ def translate_binary(
         case tac_ast.Modulo():
             return _translate_ax_call(src1_op, src2_op, dst_op, _DIVMOD8,
                                       result_in_x=True)
+        case tac_ast.BitwiseAnd():
+            return [
+                asm_ast.Mov(src=src1_op, dst=_REG_A),
+                asm_ast.And(src=src2_op, dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=dst_op),
+            ]
+        case tac_ast.BitwiseOr():
+            return [
+                asm_ast.Mov(src=src1_op, dst=_REG_A),
+                asm_ast.Or(src=src2_op, dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=dst_op),
+            ]
+        case tac_ast.BitwiseXor():
+            return [
+                asm_ast.Mov(src=src1_op, dst=_REG_A),
+                asm_ast.Xor(src1=_REG_A, src2=src2_op, dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=dst_op),
+            ]
+        case tac_ast.LeftShift():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _SHL8,
+                                      result_in_x=False)
+        case tac_ast.RightShift():
+            return _translate_ax_call(src1_op, src2_op, dst_op, _ASR8,
+                                      result_in_x=False)
     raise TypeError(f"unexpected binary operator: {op!r}")
 
 

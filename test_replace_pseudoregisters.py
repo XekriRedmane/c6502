@@ -106,10 +106,57 @@ class TestReplaceInstruction(unittest.TestCase):
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
             asm_ast.Ret(arg_bytes=0, local_bytes=5),
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=3),
+            asm_ast.ClearCarry(),
+            asm_ast.SetCarry(),
+            asm_ast.Call(name="mul8"),
         ]:
             with self.subTest(instr=instr):
                 self.assertEqual(r.replace_instruction(instr), instr)
         self.assertEqual(r.sp, 1)
+
+    def test_arith_instructions_rewrite_pseudo_operands(self):
+        # All the operand-bearing ops (Add/Sub/And/Or/Xor/Inc/Dec/
+        # Push/Pop) must rewrite Pseudo operands to Frame slots, or
+        # they'd surface as a Pseudo at emit time. Mov is covered
+        # separately above.
+        cases = [
+            (
+                asm_ast.Add(src=asm_ast.Pseudo(name="t"),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+                asm_ast.Add(src=asm_ast.Frame(offset=1),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+            ),
+            (
+                asm_ast.Sub(src=asm_ast.Pseudo(name="t"),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+                asm_ast.Sub(src=asm_ast.Frame(offset=1),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+            ),
+            (
+                asm_ast.And(src=asm_ast.Pseudo(name="t"),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+                asm_ast.And(src=asm_ast.Frame(offset=1),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+            ),
+            (
+                asm_ast.Or(src=asm_ast.Pseudo(name="t"),
+                           dst=asm_ast.Reg(reg=asm_ast.A())),
+                asm_ast.Or(src=asm_ast.Frame(offset=1),
+                           dst=asm_ast.Reg(reg=asm_ast.A())),
+            ),
+            (
+                asm_ast.Xor(src1=asm_ast.Reg(reg=asm_ast.A()),
+                            src2=asm_ast.Pseudo(name="t"),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+                asm_ast.Xor(src1=asm_ast.Reg(reg=asm_ast.A()),
+                            src2=asm_ast.Frame(offset=1),
+                            dst=asm_ast.Reg(reg=asm_ast.A())),
+            ),
+        ]
+        for src, expected in cases:
+            with self.subTest(src=src):
+                r = Replacer()
+                self.assertEqual(r.replace_instruction(src), expected)
 
 
 class TestReplaceFunction(unittest.TestCase):

@@ -312,39 +312,142 @@ class TestTranslateInstruction(unittest.TestCase):
 
 
 class TestTranslateComparisons(unittest.TestCase):
-    """Each of ==, !=, <, >, <=, >= lowers to the same AX-call shape
-    as Multiply/Divide: stage src2 through A into X, then src1 into A,
-    then JSR <helper>. The helper returns 0/1 in A; result_in_x is
-    False (we want A directly, not the X-byte fetch that Modulo uses)."""
+    """== / != lower to Compare + Branch(EQ|NE) + 0/1 select. The four
+    signed ordering operators lower to SBC with a V-flag correction
+    (BVC skip; EOR #$80; skip:) and then Branch(MI|PL) + 0/1 select.
+    `>` and `<=` swap operands rather than branching on a combined
+    NE & PL (the EOR correction makes the Z flag unreliable)."""
 
-    _CASES = [
-        (tac_ast.Equal(),          "cmp_eq8"),
-        (tac_ast.NotEqual(),       "cmp_ne8"),
-        (tac_ast.LessThan(),       "cmp_lt8"),
-        (tac_ast.GreaterThan(),    "cmp_gt8"),
-        (tac_ast.LessOrEqual(),    "cmp_le8"),
-        (tac_ast.GreaterOrEqual(), "cmp_ge8"),
-    ]
+    @staticmethod
+    def _src1():
+        return tac_ast.Var(name="%0")
 
-    def test_each_helper(self):
-        for tac_op, helper in self._CASES:
-            with self.subTest(op=type(tac_op).__name__):
-                instr = tac_ast.Binary(
-                    op=tac_op,
-                    src1=tac_ast.Var(name="%0"),
-                    src2=tac_ast.Constant(value=5),
-                    dst=tac_ast.Var(name="%1"),
-                )
-                self.assertEqual(
-                    translate_instruction(instr),
-                    [
-                        asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
-                        asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                        asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                        asm_ast.Call(name=helper),
-                        asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
-                    ],
-                )
+    @staticmethod
+    def _src2():
+        return tac_ast.Constant(value=5)
+
+    @staticmethod
+    def _dst():
+        return tac_ast.Var(name="%1")
+
+    @staticmethod
+    def _src1_op():
+        return asm_ast.Pseudo(name="%0")
+
+    @staticmethod
+    def _src2_op():
+        return asm_ast.Imm(value=5)
+
+    @staticmethod
+    def _dst_op():
+        return asm_ast.Pseudo(name="%1")
+
+    def _instr(self, op):
+        return tac_ast.Binary(
+            op=op, src1=self._src1(), src2=self._src2(), dst=self._dst(),
+        )
+
+    def _equality_expected(self, cond):
+        return [
+            asm_ast.Mov(src=self._src1_op(), dst=_REG_A),
+            asm_ast.Compare(left=_REG_A, right=self._src2_op()),
+            asm_ast.Branch(cond=cond, target="cmp_true_0"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Jump(target="cmp_end_1"),
+            asm_ast.Label(name="cmp_true_0"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Label(name="cmp_end_1"),
+            asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
+        ]
+
+    def _signed_ordering_expected(self, left_op, right_op, cond):
+        return [
+            asm_ast.Mov(src=left_op, dst=_REG_A),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=right_op, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.VC(), target="cmp_novf_0"),
+            asm_ast.Xor(
+                src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
+            ),
+            asm_ast.Label(name="cmp_novf_0"),
+            asm_ast.Branch(cond=cond, target="cmp_true_1"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Jump(target="cmp_end_2"),
+            asm_ast.Label(name="cmp_true_1"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Label(name="cmp_end_2"),
+            asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
+        ]
+
+    def test_equal_uses_compare_and_beq(self):
+        self.assertEqual(
+            translate_instruction(self._instr(tac_ast.Equal())),
+            self._equality_expected(asm_ast.EQ()),
+        )
+
+    def test_not_equal_uses_compare_and_bne(self):
+        self.assertEqual(
+            translate_instruction(self._instr(tac_ast.NotEqual())),
+            self._equality_expected(asm_ast.NE()),
+        )
+
+    def test_less_than_uses_sbc_and_bmi_no_swap(self):
+        # src1 < src2 signed: compute src1 - src2, branch on MI.
+        self.assertEqual(
+            translate_instruction(self._instr(tac_ast.LessThan())),
+            self._signed_ordering_expected(
+                self._src1_op(), self._src2_op(), asm_ast.MI(),
+            ),
+        )
+
+    def test_greater_or_equal_uses_sbc_and_bpl_no_swap(self):
+        # src1 >= src2 signed: compute src1 - src2, branch on PL.
+        self.assertEqual(
+            translate_instruction(self._instr(tac_ast.GreaterOrEqual())),
+            self._signed_ordering_expected(
+                self._src1_op(), self._src2_op(), asm_ast.PL(),
+            ),
+        )
+
+    def test_greater_than_swaps_and_uses_bmi(self):
+        # src1 > src2 signed <=> src2 < src1 signed. Swap so left=src2,
+        # right=src1, then branch on MI.
+        self.assertEqual(
+            translate_instruction(self._instr(tac_ast.GreaterThan())),
+            self._signed_ordering_expected(
+                self._src2_op(), self._src1_op(), asm_ast.MI(),
+            ),
+        )
+
+    def test_less_or_equal_swaps_and_uses_bpl(self):
+        # src1 <= src2 signed <=> src2 >= src1 signed. Swap so left=src2,
+        # right=src1, then branch on PL.
+        self.assertEqual(
+            translate_instruction(self._instr(tac_ast.LessOrEqual())),
+            self._signed_ordering_expected(
+                self._src2_op(), self._src1_op(), asm_ast.PL(),
+            ),
+        )
+
+    def test_labels_are_unique_across_compares_in_one_translator(self):
+        # When the Translator is reused (as it is within a program), the
+        # label counter keeps advancing so two compares get disjoint
+        # labels instead of colliding.
+        from tac_to_asm import Translator
+        t = Translator()
+        first = t.translate_binary(
+            tac_ast.Equal(), self._src1(), self._src2(), self._dst(),
+        )
+        second = t.translate_binary(
+            tac_ast.Equal(), self._src1(), self._src2(), self._dst(),
+        )
+        first_labels = {
+            i.name for i in first if isinstance(i, asm_ast.Label)
+        }
+        second_labels = {
+            i.name for i in second if isinstance(i, asm_ast.Label)
+        }
+        self.assertTrue(first_labels.isdisjoint(second_labels))
 
 
 class TestTranslateFunction(unittest.TestCase):

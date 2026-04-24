@@ -193,13 +193,15 @@ Notes:
   addressing-mode setup, not a separate logical step).
 - `Pseudo` operands at emit are an error — they should have been
   resolved by `replace_pseudoregisters`.
-- `Mul`/`Div`/`Mod`, the shifts (`LeftShift`/`RightShift`), the six
-  comparisons (`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/
-  `LessOrEqual`/`GreaterOrEqual`), and unary `LogicalNot` are TAC-only
-  concepts — `tac_to_asm` lowers them to `Call`s of runtime helpers
-  (see the "`Call` and runtime helpers" note below). The asm IR
-  contains no multiply/divide/shift/compare/lnot primitives; every
-  node maps 1:1 to a 6502 opcode.
+- `Mul`/`Div`/`Mod`, the shifts (`LeftShift`/`RightShift`), and unary
+  `LogicalNot` are TAC-only concepts — `tac_to_asm` lowers them to
+  `Call`s of runtime helpers (see the "`Call` and runtime helpers"
+  note below). The six comparisons (`Equal`/`NotEqual`/`LessThan`/
+  `GreaterThan`/`LessOrEqual`/`GreaterOrEqual`) are also TAC-only but
+  are lowered inline (Compare/Sub + Branch + 0/1-select labels) rather
+  than through a helper — see "Comparison lowering" below. The asm IR
+  contains no multiply/divide/shift/lnot primitives; every non-
+  `Ret`/`FunctionPrologue` node maps 1:1 to a 6502 opcode.
 - Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`,
   `Reg(A) → Reg(A)`) raise — there's no direct transfer instruction.
 - `ArithmeticShiftLeft` / `LogicalShiftRight` / `RotateLeft` /
@@ -214,8 +216,8 @@ Notes:
 ### `Call` and runtime helpers
 
 `tac_to_asm` lowers TAC binary ops that don't have a direct 6502
-encoding (`Multiply` / `Divide` / `Modulo` / `LeftShift` / `RightShift`
-plus the six comparisons) into a short sequence around a `Call`:
+encoding (`Multiply` / `Divide` / `Modulo` / `LeftShift` / `RightShift`)
+into a short sequence around a `Call`:
 
 ```
 Mov(src2, A)     ; stage src2 through A (emitter has no direct
@@ -235,12 +237,59 @@ The helpers are part of the runtime header (not in this repo yet):
 - `shl8` — `A := A << X` (logical). `asr8` — `A := A >> X`
   (arithmetic, sign-preserving). c6502 currently treats integers as
   signed, so `>>` always goes through `asr8`.
-- `cmp_eq8` / `cmp_ne8` / `cmp_lt8` / `cmp_gt8` / `cmp_le8` /
-  `cmp_ge8` — return `A := 1` if `A <op> X` holds, else `A := 0`.
-  The four ordering helpers are signed.
 - `lnot8` — used by the unary `!` lowering (it's `Mov(src, A); Call
   lnot8; Mov(A, dst)`, no X-staging). Returns `A := 1` if `A == 0`
   else `A := 0`.
+
+### Comparison lowering
+
+The six TAC comparisons don't go through runtime helpers. They lower
+inline to `Compare`/`Sub` + `Branch` + a 0/1-select built from two
+fresh labels per use (`tac_to_asm` is class-based so the label counter
+persists across the program).
+
+`Equal` / `NotEqual` use `CMP` + `BEQ`/`BNE`:
+
+```
+Mov(src1, A)
+Compare(A, src2)              ; CMP — sets Z=1 iff src1 == src2
+Branch(EQ|NE, cmp_true_N)
+Mov(Imm(0), A)
+Jump(cmp_end_M)
+Label(cmp_true_N)
+Mov(Imm(1), A)
+Label(cmp_end_M)
+Mov(A, dst)
+```
+
+`CMP` leaves `V` unchanged, but `Z` is reliable unconditionally, so
+this works for both signed and unsigned.
+
+`LessThan` / `GreaterOrEqual` use `SBC` with a V-flag correction, then
+`BMI`/`BPL`:
+
+```
+Mov(src1, A)
+SetCarry
+Sub(src2, A)                  ; SBC — sets N, Z, C, V
+Branch(VC, cmp_novf_N)        ; skip correction if no overflow
+Xor(A, Imm($80), A)           ; EOR #$80 — flip N when overflow made it lie
+Label(cmp_novf_N)
+Branch(MI|PL, cmp_true_M)     ; MI for <, PL for >=
+... 0/1 select ...
+```
+
+`CMP` can't be used for signed ordering on the 6502 because it doesn't
+touch `V`, and the `N` flag it produces is wrong whenever the signed
+subtraction overflows (e.g. `+1 < −128` would mis-compile). The
+`BVC novf; EOR #$80` pair corrects `N` in the overflow case.
+
+`GreaterThan` / `LessOrEqual` reuse the same SBC-with-V-correction
+sequence but swap the operands: `src1 > src2` becomes `src2 < src1`
+(branch on MI), and `src1 <= src2` becomes `src2 >= src1` (branch on
+PL). The swap is because `Z` is unreliable after the `EOR #$80`
+correction — testing "not-less-than AND not-equal" directly would need
+a second compare, and swapping is cheaper.
 
 ## Function stack frame layout
 
@@ -470,9 +519,17 @@ runnable-shape 6502 assembly):
 - binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
 - binary `<<` (logical) and `>>` (arithmetic — c6502 currently treats
   integers as signed); emit `JSR shl8` / `JSR asr8`.
-- binary `==`, `!=`, `<`, `>`, `<=`, `>=` (emit `JSR cmp_eq8` /
-  `cmp_ne8` / `cmp_lt8` / `cmp_gt8` / `cmp_le8` / `cmp_ge8`; the four
-  ordering helpers are signed)
+- binary `==` and `!=` (lower inline to `CMP` + `BEQ`/`BNE` + a 0/1
+  select — see "Comparison lowering" above; no runtime helper)
+- binary `<`, `>`, `<=`, `>=` (signed; lower inline to `SBC` with a
+  V-flag correction and then `BMI`/`BPL` + 0/1 select. c6502 assumes
+  signed integers today, so this matches C's `int` relational
+  semantics. `>` and `<=` swap their operands to reuse the same
+  MI/PL branch paths — the EOR correction makes `Z` unreliable, so
+  swapping is cheaper than a second compare)
+- binary `&&` and `||` (short-circuit; the TAC translator lowers them
+  with `JumpIfFalse`/`JumpIfTrue` + labels + `Copy` — no runtime
+  helper and no TAC binop, the control flow *is* the semantics)
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:
@@ -480,13 +537,15 @@ Not yet anywhere in the pipeline:
 - function arguments (`int f(int x)` etc.). The IR threads
   `arg_bytes` through everywhere, but the parser only accepts
   `(void)` and the translator hardcodes `arg_bytes = 0`.
-- multiple functions, function calls, control flow (`if`, `while`),
-  variable declarations, types other than `int`.
+- multiple functions, function calls, control flow statements
+  (`if`, `while`), variable declarations, types other than `int`
+  (so unsigned right shift and unsigned ordering aren't
+  distinguishable yet).
 - a runtime header that defines `SSP`/`FP` at their ZP addresses,
   initializes `SSP` to top-of-RAM, sets the reset vector to a stub
-  that calls `main`, and provides `mul8`/`divmod8`. The emitted
-  assembly references these symbols but the header that supplies
-  them isn't in this repo yet.
+  that calls `main`, and provides `mul8`/`divmod8`/`shl8`/`asr8`/
+  `lnot8`. The emitted assembly references these symbols but the
+  header that supplies them isn't in this repo yet.
 
 ## Tests
 

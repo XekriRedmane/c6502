@@ -78,20 +78,36 @@ AST and returns another (or text for emit):
    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
-step 4. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` plus the comparisons
+step 4. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are TAC-only concepts;
+`tac_to_asm` lowers each to a `Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence
+targeting one of the runtime helpers `mul8` / `divmod8` / `shl8` / `asr8`.
+All take operands in `A` and `X`: `mul8` returns low/high in A/X, `divmod8`
+returns quotient/remainder in A/X, `shl8` returns `A << X` (logical) in A,
+`asr8` returns `A >> X` (arithmetic, sign-preserving) in A. Right shift
+goes through the signed helper because c6502 currently treats all integers
+as signed. The unary `LogicalNot` lowers to a single `Call lnot8` (returns
+A=1 if A==0, else 0).
+
+The six comparison ops
 (`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/`LessOrEqual`/`GreaterOrEqual`)
-are TAC-only concepts; `tac_to_asm` lowers each to a
-`Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence targeting one of the runtime helpers
-`mul8` / `divmod8` / `shl8` / `asr8` / `cmp_eq8` / `cmp_ne8` / `cmp_lt8` /
-`cmp_gt8` / `cmp_le8` / `cmp_ge8`. All take operands in `A` and `X`: `mul8`
-returns low/high in A/X, `divmod8` returns quotient/remainder in A/X, `shl8`
-returns `A << X` (logical) in A, `asr8` returns `A >> X` (arithmetic,
-sign-preserving) in A, and the `cmp_*8` helpers return A=1 if the relation
-holds, else A=0. Right shift and the ordering comparisons go through the
-signed helpers because c6502 currently treats all integers as signed. The
-unary `LogicalNot` lowers to a single `Call lnot8` (returns A=1 if A==0,
-else 0). The asm IR itself has no multiply/divide/shift/compare/lnot
-primitives — every non-prologue/ret node is 1:1 with a 6502 opcode.
+are also TAC-only but are lowered inline with `Compare`/`Sub` + `Branch`
+atoms (no runtime helper). `Equal`/`NotEqual` emit `Mov src1→A; Compare(A,
+src2); Branch(EQ|NE, true); LDA #0; Jump end; true: LDA #1; end: Mov A→dst`.
+`LessThan`/`GreaterOrEqual` use `Mov src1→A; SEC; Sub(src2, A); BVC novf;
+EOR #$80; novf:; Branch(MI|PL, true); … 0/1 select …`. CMP can't be used
+for signed ordering because it leaves V alone, and the N flag lies when the
+signed subtraction overflows — the `BVC novf; EOR #$80` pair corrects N.
+`GreaterThan`/`LessOrEqual` reuse the same sequence with operands swapped
+(`>` → `src2 < src1`, `<=` → `src2 >= src1`) because `Z` is unreliable after
+the EOR correction, so asking for "not-less-than AND not-equal" directly
+would need a second compare; swapping is cheaper. The asm IR itself has no
+multiply/divide/shift/lnot primitives — every non-prologue/ret node is 1:1
+with a 6502 opcode.
+
+`tac_to_asm` is class-based (`Translator`) because the inline comparison
+lowerings mint fresh labels per use and need a counter that persists across
+the whole program. Module-level wrappers (`translate_program`, etc.) each
+construct a fresh `Translator`.
 
 ## Function stack frame (soft stack)
 
@@ -193,16 +209,22 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 - binary `<<` (logical) and `>>` (arithmetic; c6502 assumes signed
   integers right now). Both emit `JSR shl8` / `JSR asr8` against the
   runtime helpers
-- binary `==`, `!=`, `<`, `>`, `<=`, `>=` (emit `JSR cmp_eq8` /
-  `cmp_ne8` / `cmp_lt8` / `cmp_gt8` / `cmp_le8` / `cmp_ge8`; ordering
-  helpers are signed)
+- binary `==` and `!=` (lower inline to `CMP` + `BEQ`/`BNE` + a 0/1
+  select — no runtime helper)
+- binary `<`, `>`, `<=`, `>=` (signed; lower inline to `SBC` with a
+  V-flag correction `BVC novf; EOR #$80` and then `BMI`/`BPL` + a 0/1
+  select. `>` and `<=` swap their operands so the same MI/PL branches
+  work. c6502 assumes signed integers right now, so this matches C's
+  relational semantics for `int`)
+- binary `&&` and `||` (short-circuit; the TAC translator lowers them
+  with `JumpIfFalse`/`JumpIfTrue` + labels + `Copy` — no runtime helper
+  and no TAC binop, the control flow *is* the semantics)
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
 everywhere but parser only accepts `(void)` and translator hardcodes 0),
-multiple functions, user-defined calls, control flow, variable declarations,
-types other than `int` (so unsigned right shift is not yet distinguishable),
-and the runtime header that defines `SSP`/`FP`,
-initializes `SSP`, sets the reset vector, and provides `mul8`/`divmod8`/
-`shl8`/`asr8`/`cmp_eq8`/`cmp_ne8`/`cmp_lt8`/`cmp_gt8`/`cmp_le8`/`cmp_ge8`/
-`lnot8`.
+multiple functions, user-defined calls, control flow statements,
+variable declarations, types other than `int` (so unsigned right shift
+and unsigned ordering aren't distinguishable yet), and the runtime header
+that defines `SSP`/`FP`, initializes `SSP`, sets the reset vector, and
+provides `mul8`/`divmod8`/`shl8`/`asr8`/`lnot8`.

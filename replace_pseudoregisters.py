@@ -101,6 +101,11 @@ class Replacer:
                 return asm_ast.Push(src=self.replace_operand(src))
             case asm_ast.Pop(dst=dst):
                 return asm_ast.Pop(dst=self.replace_operand(dst))
+            case asm_ast.Compare(left=left, right=right):
+                return asm_ast.Compare(
+                    left=self.replace_operand(left),
+                    right=self.replace_operand(right),
+                )
             case _:
                 return instr
 

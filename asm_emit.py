@@ -65,10 +65,28 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> str:
     raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
 
 
+def _emit_unary(
+    op: asm_ast.Type_unary_operator, src_dst: asm_ast.Type_operand,
+) -> list[str]:
+    match op, src_dst:
+        case asm_ast.Not(), asm_ast.Reg(reg=asm_ast.A()):
+            return [_instr_line("EOR", "#$FF")]
+        case asm_ast.Neg(), asm_ast.Reg(reg=asm_ast.A()):
+            # Two's complement: invert, then +1 with a known-clear carry.
+            return [
+                _instr_line("EOR", "#$FF"),
+                _instr_line("CLC"),
+                _instr_line("ADC", "#$01"),
+            ]
+    raise ValueError(f"cannot emit Unary(op={op!r}, src_dst={src_dst!r})")
+
+
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             return [_emit_mov(src, dst)]
+        case asm_ast.Unary(op=op, src_dst=src_dst):
+            return _emit_unary(op, src_dst)
         case asm_ast.Ret():
             return [_instr_line("RTS")]
     raise TypeError(f"unexpected instruction: {instr!r}")

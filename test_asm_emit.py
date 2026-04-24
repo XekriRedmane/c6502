@@ -111,6 +111,46 @@ class TestEmitMov(unittest.TestCase):
                     emit_instruction(instr)
 
 
+class TestEmitUnary(unittest.TestCase):
+    def test_not_on_a_emits_eor_ff(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Unary(op=asm_ast.Not(), src_dst=_reg(_A))),
+            ["   EOR   #$FF"],
+        )
+
+    def test_not_on_other_operands_raise(self):
+        unsupported = [
+            _reg(_X),
+            _reg(_Y),
+            asm_ast.Pseudo(name="t"),
+            asm_ast.Stack(offset=2),
+            asm_ast.Imm(value=0),
+        ]
+        for sd in unsupported:
+            with self.subTest(src_dst=sd):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Unary(op=asm_ast.Not(), src_dst=sd))
+
+    def test_neg_on_a_emits_twos_complement_sequence(self):
+        self.assertEqual(
+            emit_instruction(asm_ast.Unary(op=asm_ast.Neg(), src_dst=_reg(_A))),
+            ["   EOR   #$FF", "   CLC", "   ADC   #$01"],
+        )
+
+    def test_neg_on_other_operands_raise(self):
+        unsupported = [
+            _reg(_X),
+            _reg(_Y),
+            asm_ast.Pseudo(name="t"),
+            asm_ast.Stack(offset=2),
+            asm_ast.Imm(value=0),
+        ]
+        for sd in unsupported:
+            with self.subTest(src_dst=sd):
+                with self.assertRaises(ValueError):
+                    emit_instruction(asm_ast.Unary(op=asm_ast.Neg(), src_dst=sd))
+
+
 class TestEmitInstruction(unittest.TestCase):
     def test_ret_emits_rts(self):
         self.assertEqual(emit_instruction(asm_ast.Ret()), ["   RTS"])

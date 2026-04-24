@@ -52,7 +52,7 @@ class TestAllocateFunction(unittest.TestCase):
     def test_frame_in_mov_src_is_counted(self):
         # Mov is the only instruction whose operands the pass walks
         # for Frame offsets — atomic ops like Add/Xor never carry
-        # Frame operands at this stage (asm_translator emits them
+        # Frame operands at this stage (tac_to_asm emits them
         # only with Reg(A)/Imm).
         fn = asm_ast.Function(name="main", instructions=[
             asm_ast.Mov(src=asm_ast.Frame(offset=5), dst=_reg_a()),

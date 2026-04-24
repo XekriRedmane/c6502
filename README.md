@@ -73,7 +73,7 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
 `compile.py` is the only CLI; every other module (`lexer.py`,
-`parser.py`, `tac_translator.py`, `asm_translator.py`,
+`parser.py`, `tac_translator.py`, `tac_to_asm.py`,
 `replace_pseudoregisters.py`, `allocate_stack.py`, `asm_emit.py`) is
 library-only and used as an import.
 
@@ -96,7 +96,7 @@ that takes an AST and returns an AST (or text, for emit):
    into a fresh `Var(%n)` temporary. `Binary(op, src1, src2, dst)`
    evaluates `src1` first so its temps get the lower numbers.
 
-3. **`asm_translator.translate_program`** (`asm_translator.py`) —
+3. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
    `tac_ast` → `asm_ast`. Each TAC instruction lowers into a
    sequence of asm atoms (`Mov` to/from `A`, atomic ops on `A`,
    carry setup if needed). Optimization is deferred to TAC-level
@@ -148,7 +148,7 @@ The asm IR (declared in `asm.asdl`) is one node per 6502 instruction,
 with `Ret` and `FunctionPrologue` as the only multi-instruction
 exceptions. Compound concepts like `Unary` (no longer in the asm AST
 at all — it's strictly a TAC node) are lowered into atoms by
-`asm_translator`.
+`tac_to_asm`.
 
 Output formatting: labels at column 1, opcodes at column 4, operands
 at column 10. Each function emits `<name>:` on one line, the
@@ -417,7 +417,7 @@ runnable-shape 6502 assembly):
 
 Works in the parser/TAC but not yet through asm:
 
-- binary `*`, `/`, `%` — `asm_translator` raises
+- binary `*`, `/`, `%` — `tac_to_asm` raises
   `NotImplementedError`. They lower to `JSR mul8` / `JSR div8`,
   which need a `Call` instruction in the asm IR (and a runtime to
   jump to). Both are pending.

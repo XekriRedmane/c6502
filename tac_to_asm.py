@@ -115,7 +115,7 @@ def translate_binary(
         case tac_ast.Multiply() | tac_ast.Divide() | tac_ast.Modulo():
             raise NotImplementedError(
                 f"binary op {type(op).__name__} not yet handled by "
-                "asm_translator (will be lowered via Call mul8/div8 once "
+                "tac_to_asm (will be lowered via Call mul8/div8 once "
                 "the Call instruction exists)"
             )
     raise TypeError(f"unexpected binary operator: {op!r}")

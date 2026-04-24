@@ -56,7 +56,7 @@ Compound instructions invalid at emit (must be lowered earlier):
   - `Mul`, `Div`, `Mod` — will be lowered to `Call mul8` / `Call
     div8` once `Call` exists.
 
-(`Unary` no longer exists at the asm AST level — `asm_translator`
+(`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
 atoms.)
 """

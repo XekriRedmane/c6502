@@ -26,7 +26,7 @@ import sys
 
 from allocate_stack import allocate_program as allocate_stack
 from asm_emit import emit_program
-from asm_translator import translate_program as translate_to_asm
+from tac_to_asm import translate_program as translate_to_asm
 from lexer import tokenize
 from parser import parse
 from preprocessor import preprocess

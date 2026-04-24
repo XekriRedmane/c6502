@@ -2,7 +2,7 @@ import unittest
 
 import asm_ast
 import tac_ast
-from asm_translator import (
+from tac_to_asm import (
     translate_binary,
     translate_function,
     translate_instruction,

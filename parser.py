@@ -104,6 +104,14 @@ class _ASTBuilder(Transformer):
         )
 
     @v_args(inline=True)
+    def goto_stmt(self, _goto, identifier, _semi):
+        return c99_ast.Goto(label=str(identifier))
+
+    @v_args(inline=True)
+    def labeled_stmt(self, identifier, _colon, stmt):
+        return c99_ast.LabeledStmt(label=str(identifier), statement=stmt)
+
+    @v_args(inline=True)
     def null_stmt(self, _semi):
         return c99_ast.Null()
 

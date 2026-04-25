@@ -442,10 +442,10 @@ class TestTranslateIfStatement(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
                 condition=tac_ast.Constant(value=1),
-                target="if_end_0",
+                target=".if_end_0",
             ),
             tac_ast.Ret(val=tac_ast.Constant(value=2)),
-            tac_ast.Label(name="if_end_0"),
+            tac_ast.Label(name=".if_end_0"),
         ])
 
     def test_if_with_else_emits_split_branches(self):
@@ -468,13 +468,13 @@ class TestTranslateIfStatement(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
                 condition=tac_ast.Constant(value=1),
-                target="if_else_1",
+                target=".if_else_1",
             ),
             tac_ast.Ret(val=tac_ast.Constant(value=2)),
-            tac_ast.Jump(target="if_end_0"),
-            tac_ast.Label(name="if_else_1"),
+            tac_ast.Jump(target=".if_end_0"),
+            tac_ast.Label(name=".if_else_1"),
             tac_ast.Ret(val=tac_ast.Constant(value=3)),
-            tac_ast.Label(name="if_end_0"),
+            tac_ast.Label(name=".if_end_0"),
         ])
 
     def test_nested_if_each_gets_unique_labels(self):
@@ -499,15 +499,15 @@ class TestTranslateIfStatement(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
                 condition=tac_ast.Constant(value=1),
-                target="if_end_0",
+                target=".if_end_0",
             ),
             tac_ast.JumpIfFalse(
                 condition=tac_ast.Constant(value=2),
-                target="if_end_1",
+                target=".if_end_1",
             ),
             tac_ast.Ret(val=tac_ast.Constant(value=3)),
-            tac_ast.Label(name="if_end_1"),
-            tac_ast.Label(name="if_end_0"),
+            tac_ast.Label(name=".if_end_1"),
+            tac_ast.Label(name=".if_end_0"),
         ])
 
     def test_if_with_var_condition_evaluates_first(self):
@@ -527,10 +527,86 @@ class TestTranslateIfStatement(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
                 condition=tac_ast.Var(name="a"),
-                target="if_end_0",
+                target=".if_end_0",
             ),
-            tac_ast.Label(name="if_end_0"),
+            tac_ast.Label(name=".if_end_0"),
         ])
+
+
+class TestTranslateGotoAndLabeled(unittest.TestCase):
+    """`goto label;` lowers to a TAC `Jump(label)`. `label: stmt`
+    emits a TAC `Label(label)` then lowers the inner statement.
+    Label names come in pre-mangled by label_resolution
+    (`.<funcname>@<orig>`); the translator just passes them through."""
+
+    def test_goto_emits_jump(self):
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(c99_ast.Goto(label=".main@foo"), instrs)
+        self.assertEqual(instrs, [tac_ast.Jump(target=".main@foo")])
+
+    def test_labeled_statement_emits_label_then_inner(self):
+        # `foo: return 0;` -> Label(".main@foo"); Ret(0).
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.LabeledStmt(
+                label=".main@foo",
+                statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.Label(name=".main@foo"),
+            tac_ast.Ret(val=tac_ast.Constant(value=0)),
+        ])
+
+    def test_labeled_null_statement_emits_just_the_label(self):
+        # `foo: ;` -> Label(".main@foo") and nothing else, since Null
+        # itself emits nothing.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
+            instrs,
+        )
+        self.assertEqual(instrs, [tac_ast.Label(name=".main@foo")])
+
+    def test_nested_labeled_statements(self):
+        # `a: b: ;` -> Label("@main.a"); Label("@main.b").
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.LabeledStmt(
+                label="@main.a",
+                statement=c99_ast.LabeledStmt(
+                    label="@main.b", statement=c99_ast.Null(),
+                ),
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.Label(name="@main.a"),
+            tac_ast.Label(name="@main.b"),
+        ])
+
+    def test_goto_in_function_body(self):
+        # End-to-end through translate_function: `int main(void) {
+        # foo: goto foo; }` -> Label, Jump, then implicit Ret(0).
+        fn = c99_ast.Function(name="main", body=[
+            c99_ast.S(statement=c99_ast.LabeledStmt(
+                label=".main@foo",
+                statement=c99_ast.Goto(label=".main@foo"),
+            )),
+        ])
+        self.assertEqual(
+            Translator().translate_function(fn).instructions,
+            [
+                tac_ast.Label(name=".main@foo"),
+                tac_ast.Jump(target=".main@foo"),
+                tac_ast.Ret(val=tac_ast.Constant(value=0)),
+            ],
+        )
 
 
 class TestTranslateConditional(unittest.TestCase):
@@ -558,19 +634,19 @@ class TestTranslateConditional(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
                 condition=tac_ast.Constant(value=1),
-                target="cond_else_0",
+                target=".cond_else_0",
             ),
             tac_ast.Copy(
                 src=tac_ast.Constant(value=2),
                 dst=tac_ast.Var(name="%0"),
             ),
-            tac_ast.Jump(target="cond_end_1"),
-            tac_ast.Label(name="cond_else_0"),
+            tac_ast.Jump(target=".cond_end_1"),
+            tac_ast.Label(name=".cond_else_0"),
             tac_ast.Copy(
                 src=tac_ast.Constant(value=3),
                 dst=tac_ast.Var(name="%0"),
             ),
-            tac_ast.Label(name="cond_end_1"),
+            tac_ast.Label(name=".cond_end_1"),
         ])
 
     def test_nested_conditional_gets_unique_labels(self):
@@ -595,7 +671,7 @@ class TestTranslateConditional(unittest.TestCase):
         })
         self.assertEqual(
             labels,
-            ["cond_else_0", "cond_else_2", "cond_end_1", "cond_end_3"],
+            [".cond_else_0", ".cond_else_2", ".cond_end_1", ".cond_end_3"],
         )
 
 

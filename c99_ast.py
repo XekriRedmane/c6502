@@ -63,6 +63,17 @@ class IfStmt(Type_statement):
 
 
 @dataclass
+class Goto(Type_statement):
+    label: str
+
+
+@dataclass
+class LabeledStmt(Type_statement):
+    label: str
+    statement: Type_statement
+
+
+@dataclass
 class Null(Type_statement):
     pass
 

@@ -40,6 +40,18 @@ Mapping:
                                  Jump+Label pair when there is). All
                                  labels come from the shared label
                                  counter (`if_end_N`, `if_else_N`).
+  C99 Goto(label)             -> tac Jump(label). The label name is
+                                 the unique `.<funcname>@<label>`
+                                 minted by label_resolution — a
+                                 dasm-style local label, scoped to
+                                 the SUBROUTINE the asm emits. The
+                                 `@` separator (illegal in C
+                                 identifiers) keeps it disjoint
+                                 from translator-minted labels
+                                 (`.<prefix>_<N>`).
+  C99 LabeledStmt(label, stmt) -> emit tac Label(label), then lower
+                                 the inner statement. Label name is
+                                 already unique (see Goto).
   C99 Null                    -> emit nothing
   C99 Constant(v)             -> TAC Constant(v)
   C99 Unary(op, inner)        -> emit Unary(op', translate(inner), Var(t))
@@ -130,7 +142,13 @@ class Translator:
         return name
 
     def make_label(self, prefix: str) -> str:
-        name = f"{prefix}_{self._label_counter}"
+        # Leading `.` makes this a dasm-style local label — scoped to
+        # the enclosing SUBROUTINE, so labels in different functions
+        # don't collide in the global asm namespace. The single
+        # underscore between the prefix and counter keeps these
+        # disjoint from user-mangled labels (`.<funcname>__<orig>`),
+        # which use a double underscore.
+        name = f".{prefix}_{self._label_counter}"
         self._label_counter += 1
         return name
 
@@ -247,6 +265,24 @@ class Translator:
                     instrs.append(tac_ast.Label(name=else_label))
                     self.translate_statement(else_stmt, instrs)
                     instrs.append(tac_ast.Label(name=end_label))
+                return
+            case c99_ast.Goto(label=label):
+                # `goto label;` lowers to an unconditional Jump. The
+                # target name is the unique `.<funcname>@<label>`
+                # minted by label_resolution — a dasm local label
+                # (leading dot scopes it to the enclosing SUBROUTINE).
+                # The `@` separator (illegal in a C identifier) keeps
+                # user labels disjoint from translator-minted ones
+                # like `.if_end_N`.
+                instrs.append(tac_ast.Jump(target=label))
+                return
+            case c99_ast.LabeledStmt(label=label, statement=inner):
+                # `label: stmt` lowers to a TAC Label followed by the
+                # inner statement's own lowering. The label name is
+                # already the unique `.<funcname>@<label>` from
+                # label_resolution.
+                instrs.append(tac_ast.Label(name=label))
+                self.translate_statement(inner, instrs)
                 return
             case c99_ast.Null():
                 # No-op statement. Nothing to emit.

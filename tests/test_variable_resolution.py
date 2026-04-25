@@ -406,6 +406,38 @@ class TestConditionalResolution(unittest.TestCase):
         self.assertIn("invalid lvalue", str(ctx.exception))
 
 
+class TestLabeledAndGotoPassthrough(unittest.TestCase):
+    """Labels live in their own namespace — variable resolution
+    shouldn't touch the label string, but it must descend into a
+    LabeledStmt's body so any Var references inside still get
+    resolved."""
+
+    def test_goto_passes_through_unchanged(self):
+        prog = parse("int main(void) { goto foo; }")
+        resolved = resolve_program(prog)
+        body = resolved.function_definition.body
+        self.assertEqual(body[0].statement, c99_ast.Goto(label="foo"))
+
+    def test_labeled_statement_label_unchanged_body_resolved(self):
+        # `foo: return a;` — the Return inside the labeled stmt has a
+        # Var reference that must be resolved to the unique name.
+        prog = parse("int main(void) { int a; foo: return a; }")
+        resolved = resolve_program(prog)
+        body = resolved.function_definition.body
+        self.assertEqual(
+            body[1].statement,
+            c99_ast.LabeledStmt(
+                label="foo",
+                statement=c99_ast.Return(exp=c99_ast.Var(name="@0.a")),
+            ),
+        )
+
+    def test_undeclared_var_inside_labeled_stmt_raises(self):
+        prog = parse("int main(void) { foo: return a; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+
 class TestStatementPassthrough(unittest.TestCase):
     def test_null_statement_is_preserved(self):
         fn = _function(_null())

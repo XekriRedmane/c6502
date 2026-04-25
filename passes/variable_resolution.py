@@ -146,6 +146,16 @@ class Resolver:
                         if else_stmt is not None else None
                     ),
                 )
+            case c99_ast.Goto(label=label):
+                # Labels live in their own namespace — variable
+                # resolution doesn't touch them. label_resolution
+                # owns the validity / uniqueness check.
+                return c99_ast.Goto(label=label)
+            case c99_ast.LabeledStmt(label=label, statement=inner):
+                return c99_ast.LabeledStmt(
+                    label=label,
+                    statement=self.resolve_statement(inner, scope),
+                )
             case c99_ast.Null():
                 return c99_ast.Null()
         raise TypeError(f"unexpected statement: {stmt!r}")

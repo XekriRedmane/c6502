@@ -54,17 +54,29 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_codegen_if_else(self):
         # `if (a) return 1; else return 2;` should produce a BEQ to
-        # an `if_else_*` label and a JMP to an `if_end_*` label.
+        # an `.if_else_*` local label and a JMP to an `.if_end_*`
+        # local label (leading dot is dasm's local-label marker).
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="int main(void) { int a = 0; "
                   "if (a) return 1; else return 2; }",
         )
         self.assertEqual(rc, 0)
-        self.assertIn("BEQ   if_else_", out)
-        self.assertIn("JMP   if_end_", out)
-        self.assertIn("if_else_", out)
-        self.assertIn("if_end_", out)
+        self.assertIn("BEQ   .if_else_", out)
+        self.assertIn("JMP   .if_end_", out)
+        self.assertIn(".if_else_", out)
+        self.assertIn(".if_end_", out)
+
+    def test_codegen_goto_and_label(self):
+        # `goto foo; foo: return 0;` should emit a JMP to the
+        # function-prefixed label and the matching label definition.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { goto foo; foo: return 0; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("JMP   .main@foo", out)
+        self.assertIn(".main@foo:", out)
 
     def test_codegen_postfix_increment(self):
         # `a++` generates: load a into A, store into the saved-old

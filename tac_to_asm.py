@@ -127,7 +127,10 @@ class Translator:
         self._label_counter = 0
 
     def make_label(self, prefix: str) -> str:
-        name = f"{prefix}_{self._label_counter}"
+        # Leading `.` makes this a dasm-style local label, scoped to
+        # the enclosing SUBROUTINE. See c99_to_tac.Translator.make_label
+        # for the same convention.
+        name = f".{prefix}_{self._label_counter}"
         self._label_counter += 1
         return name
 

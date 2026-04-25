@@ -994,6 +994,107 @@ class TestIfStatement(unittest.TestCase):
         )
 
 
+class TestLabeledStmtAndGoto(unittest.TestCase):
+    """C99 §6.8.1 labeled statements (`label: stmt`) and §6.8.6 `goto
+    label;`. The grammar's labeled_stmt rule (`IDENTIFIER COLON
+    statement`) introduces a shift-reduce conflict at statement-start
+    on COLON lookahead — Lark's LALR(1) backend resolves it by
+    shifting, picking the labeled-statement branch."""
+
+    def _stmt_of(self, src):
+        body = parse(f"int main(void) {{ {src} }}").function_definition.body
+        assert len(body) == 1, body
+        item = body[0]
+        assert isinstance(item, c99_ast.S), item
+        return item.statement
+
+    def test_goto_basic(self):
+        self.assertEqual(
+            self._stmt_of("goto foo;"),
+            c99_ast.Goto(label="foo"),
+        )
+
+    def test_labeled_statement_basic(self):
+        # `foo: return 0;` — the labeled stmt's body is the Return.
+        self.assertEqual(
+            self._stmt_of("foo: return 0;"),
+            c99_ast.LabeledStmt(
+                label="foo",
+                statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+            ),
+        )
+
+    def test_labeled_null_statement(self):
+        # `foo: ;` — the body is a Null statement.
+        self.assertEqual(
+            self._stmt_of("foo: ;"),
+            c99_ast.LabeledStmt(label="foo", statement=c99_ast.Null()),
+        )
+
+    def test_nested_labeled_statements(self):
+        # `a: b: ;` — the outer label's body is the inner labeled stmt,
+        # whose body is Null.
+        self.assertEqual(
+            self._stmt_of("a: b: ;"),
+            c99_ast.LabeledStmt(
+                label="a",
+                statement=c99_ast.LabeledStmt(
+                    label="b",
+                    statement=c99_ast.Null(),
+                ),
+            ),
+        )
+
+    def test_label_inside_if_then(self):
+        # Labels can appear inside an if-then or if-else (the branch
+        # is a single statement, which can be a labeled statement).
+        body = parse(
+            "int main(void) { if (1) foo: return 0; }"
+        ).function_definition.body
+        self.assertEqual(
+            body[0].statement,
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.LabeledStmt(
+                    label="foo",
+                    statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+                ),
+                else_clause=None,
+            ),
+        )
+
+    def test_ternary_still_parses(self):
+        # The labeled_stmt rule shouldn't disturb the ternary's COLON
+        # — `a ? b : c` inside an expression context is still a
+        # Conditional, not a goto-target. (LALR state at "after
+        # IDENTIFIER inside a conditional_exp" doesn't include the
+        # labeled_stmt option, so no conflict.)
+        body = parse(
+            "int main(void) { return a ? b : c; }"
+        ).function_definition.body
+        self.assertEqual(
+            body[0].statement,
+            c99_ast.Return(exp=c99_ast.Conditional(
+                condition=c99_ast.Var(name="a"),
+                true_clause=c99_ast.Var(name="b"),
+                false_clause=c99_ast.Var(name="c"),
+            )),
+        )
+
+    def test_goto_then_label_in_program(self):
+        # End-to-end: `int main(void) { goto end; end: return 0; }`.
+        prog = parse("int main(void) { goto end; end: return 0; }")
+        body = prog.function_definition.body
+        self.assertEqual(body[0].statement, c99_ast.Goto(label="end"))
+        self.assertEqual(
+            body[1].statement,
+            c99_ast.LabeledStmt(
+                label="end",
+                statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+            ),
+        )
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

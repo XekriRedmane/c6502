@@ -6,6 +6,8 @@ module C99 {
         Return(exp)
         | Expression(exp)
         | IfStmt(exp condition, statement then_clause, statement? else_clause)
+        | Goto(identifier label)
+        | LabeledStmt(identifier label, statement statement)
         | Null
     declaration = Declaration(identifier name, exp? init)
     exp =

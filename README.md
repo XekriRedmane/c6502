@@ -46,8 +46,9 @@ mutually-exclusive flag:
 | ----------- | ------------------------------------------------------------- |
 | `--lex`     | one `line:col<TAB>kind<TAB>value` line per token              |
 | `--parse`   | `pretty(c99_ast)` — the parsed AST                            |
-| `--resolve` | `pretty(c99_ast)` after variable resolution (user names →     |
-|             | `@N.orig`)                                                    |
+| `--resolve` | `pretty(c99_ast)` after variable + label resolution (user     |
+|             | variables → `@N.orig`; labels → `.<funcname>@<orig>`,        |
+|             | dasm local labels)                                            |
 | `--tac`     | `pretty(tac_ast)` — three-address-code IR                     |
 | `--codegen` | 6502 assembly text                                            |
 
@@ -75,22 +76,22 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
 `compile.py` is the only CLI; every other module (`lexer.py`,
-`parser.py`, `passes/variable_resolution.py`, `c99_to_tac.py`,
-`tac_to_asm.py`, `passes/replace_pseudoregisters.py`,
-`passes/allocate_stack.py`, `asm_emit.py`) is library-only and used
-as an import.
+`parser.py`, `passes/variable_resolution.py`,
+`passes/label_resolution.py`, `c99_to_tac.py`, `tac_to_asm.py`,
+`passes/replace_pseudoregisters.py`, `passes/allocate_stack.py`,
+`asm_emit.py`) is library-only and used as an import.
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains seven passes. Each is a separate module
+`compile.py --codegen` chains eight passes. Each is a separate module
 that takes an AST and returns an AST (or text, for emit):
 
 1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
    Lark/LALR parser using the grammar in `c99.lark`. Accepts
    `int main(void) { <block_item>* }`, where a block item is a
    declaration (`int x;` or `int x = exp;`) or a statement
-   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`, or a
-   null `;`). The dangling-else ambiguity is resolved by Lark's
+   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`,
+   `goto label;`, `label: stmt`, or a null `;`). The dangling-else ambiguity is resolved by Lark's
    LALR(1) backend preferring shift over reduce on `else`, which
    binds the `else` to the nearest preceding unmatched `if` —
    the C99 §6.8.4.1 rule. `<exp>` is built from
@@ -125,35 +126,59 @@ that takes an AST and returns an AST (or text, for emit):
    checks its lval is a `Var` (c6502 doesn't have richer lvalues
    yet) and raises "invalid lvalue" for `1+2=3`, `-a=5`,
    `(a=b)=c`, etc. Scope is flat per function for now (no nested
-   blocks yet).
+   blocks yet). Labels and gotos pass through unchanged — they
+   live in a separate namespace and are owned by the next pass.
 
-3. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
+3. **`passes.label_resolution.resolve_program`** — `c99_ast` →
+   `c99_ast`. Validates and rewrites `LabeledStmt` (C99 §6.8.1) and
+   `Goto` (§6.8.6). Two walks per function: (a) collect every
+   declared label, mint a unique name `.<funcname>@<orig>`, and
+   raise `LabelResolutionError` on duplicates; (b) rewrite the AST,
+   replacing each label and matching goto target with the unique
+   name and raising on a goto whose target wasn't declared in the
+   same function. Labels are visible across the whole function so
+   forward gotos resolve. The leading `.` makes them dasm **local
+   labels** (scoped to the SUBROUTINE the asm emits), which
+   automatically isolates same-named labels across different
+   functions. The `@` separator is illegal in a C identifier, so a
+   user-mangled label can never collide with a translator-minted
+   label (`.if_end_N`, `.cond_else_N`, `.and_false_N`, …, all
+   `[a-zA-Z0-9_]`) or with any user-written identifier embedded
+   in the name. The C99 §6.8.6 prohibition on jumping into a
+   variably-modified-type identifier's scope is vacuously satisfied
+   (c6502 has no VLAs).
+
+4. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
    `c99_ast` → `tac_ast` (three-address code). Compound expressions
    flatten into a sequence of ops, materializing each intermediate
    into a fresh `Var(%n)` temporary. `Binary(op, src1, src2, dst)`
    evaluates `src1` first so its temps get the lower numbers.
+   `Goto(label)` lowers to a TAC `Jump(label)`; `LabeledStmt(label,
+   stmt)` lowers to a TAC `Label(label)` followed by the inner
+   statement's lowering. Label names arrive pre-mangled by
+   label_resolution and pass through unchanged.
 
-4. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
+5. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
    `tac_ast` → `asm_ast`. Each TAC instruction lowers into a
    sequence of asm atoms (`Mov` to/from `A`, atomic ops on `A`,
    carry setup if needed). Optimization is deferred to TAC-level
    passes — this pass produces correct but redundant output (every
    intermediate is materialized through a `Frame` slot).
 
-5. **`passes.replace_pseudoregisters.replace_program`** — assigns each
+6. **`passes.replace_pseudoregisters.replace_program`** — assigns each
    `Pseudo(name)` a `Frame(offset)` slot. Per-function: walks
    instructions in order, mints offsets `args_bytes+1`,
    `args_bytes+2`, … for each new pseudo name; reuses the same
    offset for repeated names. `args_bytes` is `0` for now (no
    function arguments yet).
 
-6. **`passes.allocate_stack.allocate_program`** — finds each function's
+7. **`passes.allocate_stack.allocate_program`** — finds each function's
    `M` (the highest `Frame` offset = its local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites
    every `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
    The emit phase uses these to generate the prelude/epilogue.
 
-7. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
+8. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
    assembly text. **Atomic IR**: every node maps to one 6502
    instruction, with the exceptions of `Ret` and `FunctionPrologue`
    (the multi-instruction prelude/epilogue — see "Function stack
@@ -669,6 +694,19 @@ runnable-shape 6502 assembly):
   lower precedence than all binaries: `a || b ? 1 : 2` is
   `(a||b) ? 1 : 2`, `1 ? 2 : 3 || 4` is `1 ? 2 : (3||4)`, and
   `a ? 1 : b ? 2 : 3` is `a ? 1 : (b ? 2 : 3)`
+- labeled statements `label: stmt` (C99 §6.8.1) and `goto label;`
+  (§6.8.6). `passes.label_resolution` ensures labels are unique within
+  a function and that every goto target is declared somewhere in the
+  enclosing function, then rewrites each declared label and matching
+  goto target to `.<funcname>@<orig>` — dasm local labels (leading
+  dot, scoped to the SUBROUTINE) with `@` as the separator (illegal
+  in a C identifier, so user labels stay disjoint from translator-
+  minted ones like `.if_end_N`). `c99_to_tac` lowers `Goto(L)` to TAC
+  `Jump(L)` and `LabeledStmt(L, s)` to `Label(L)` followed by `s`'s
+  own lowering. Labels are visible across the entire function, so
+  forward gotos work. The §6.8.6 constraint about jumping past a
+  variably-modified-type declaration's scope is vacuous (c6502 has
+  no VLAs)
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:
@@ -677,7 +715,7 @@ Not yet anywhere in the pipeline:
   `arg_bytes` through everywhere, but the parser only accepts
   `(void)` and the translator hardcodes `arg_bytes = 0`.
 - multiple functions, function calls, control flow statements
-  (`if`, `while`, `for`, `do`, `switch`), nested compound statements
+  (`while`, `for`, `do`, `switch`), nested compound statements
   (variable resolution treats each function body as a single flat
   scope today), types other than `int` (so unsigned right shift and
   unsigned ordering aren't distinguishable yet).

@@ -372,6 +372,41 @@ class TestIntegrationWithParser(unittest.TestCase):
             resolve_program(prog)
         self.assertIn("invalid lvalue", str(ctx.exception))
 
+    def test_postfix_rejects_non_var_operand(self):
+        # `1++` parses to `Postfix(Increment, Constant(1))`. Postfix
+        # is mutating, so its operand has to name a storage location.
+        prog = parse("int main(void) { 1++; return 0; }")
+        with self.assertRaises(VariableResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("invalid lvalue in postfix", str(ctx.exception))
+
+    def test_postfix_resolves_operand_to_unique_name(self):
+        # `a++;` desugars to `Postfix(Increment, Var(a))` — the
+        # operand should be rewritten to its unique resolved name.
+        prog = parse("int main(void) { int a; a++; return a; }")
+        resolved = resolve_program(prog)
+        expected = c99_ast.Program(
+            function_definition=_function(
+                _decl("@0.a"),
+                _expr(c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="@0.a"),
+                )),
+                _ret(c99_ast.Var(name="@0.a")),
+            ),
+        )
+        self.assertEqual(resolved, expected)
+
+    def test_prefix_rejects_non_var_operand_via_assignment_check(self):
+        # `++1` desugars to `Assignment(Constant(1), Binary(Add,
+        # Constant(1), Constant(1)))`. The Assignment lvalue check
+        # catches it; the error message reflects the assignment
+        # branch, not a separate "prefix" branch.
+        prog = parse("int main(void) { ++1; return 0; }")
+        with self.assertRaises(VariableResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("invalid lvalue in assignment", str(ctx.exception))
+
     def test_compound_assignment_resolves_var_on_both_sides(self):
         # `a += 1` desugars to `a = a + 1` — both occurrences of `a`
         # must resolve to the same unique name.

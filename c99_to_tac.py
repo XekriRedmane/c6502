@@ -55,6 +55,18 @@ Mapping:
                                  must be a Var (variable_resolution
                                  enforces this; we double-check at
                                  runtime).
+  C99 Postfix(op, Var(v))     -> emit Copy(Var(v), %old) to capture
+                                 the operand's value before mutation,
+                                 then Binary(Add/Subtract, Var(v),
+                                 Constant(1), %new) to compute the
+                                 updated value, then Copy(%new,
+                                 Var(v)) to store it back. Returns
+                                 Var(%old) so callers see the *old*
+                                 value (postfix semantics) — distinct
+                                 from prefix `++a`/`--a`, which the
+                                 parser desugars to `a = a ± 1` and
+                                 returns the *new* value via the
+                                 Assignment branch.
   C99 Negate / Complement /   -> TAC Negate / Complement / LogicalNot
     LogicalNot
   C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
@@ -248,6 +260,34 @@ class Translator:
                 # `b = a = 5` -> inner returns Var(@0.a), outer copies
                 # that into @1.b and returns Var(@1.b).
                 return dst
+            case c99_ast.Postfix(op=op, operand=operand):
+                # `a++` (resp. `a--`) returns the *old* value of `a`
+                # while incrementing (decrementing) it. Capture the
+                # old value into a temp first; only then update `a`.
+                # Returning the temp means later uses of the result
+                # see the old value even after `a` has been mutated.
+                #
+                # Same defense-in-depth lvalue check as Assignment:
+                # variable_resolution should have already rejected
+                # non-Var operands.
+                if not isinstance(operand, c99_ast.Var):
+                    raise TypeError(
+                        f"postfix operand must be Var (variable_"
+                        f"resolution should have enforced this); "
+                        f"got {operand!r}"
+                    )
+                var = tac_ast.Var(name=operand.name)
+                old = tac_ast.Var(name=self.make_temporary_variable_name())
+                instrs.append(tac_ast.Copy(src=var, dst=old))
+                new = tac_ast.Var(name=self.make_temporary_variable_name())
+                instrs.append(tac_ast.Binary(
+                    op=self.translate_incdec(op),
+                    src1=var,
+                    src2=tac_ast.Constant(value=1),
+                    dst=new,
+                ))
+                instrs.append(tac_ast.Copy(src=new, dst=var))
+                return old
         raise TypeError(f"unexpected exp: {exp!r}")
 
     def translate_short_circuit(
@@ -302,6 +342,17 @@ class Translator:
             case c99_ast.LogicalNot():
                 return tac_ast.LogicalNot()
         raise TypeError(f"unexpected unop: {op!r}")
+
+    def translate_incdec(
+        self, op: c99_ast.Type_incdec_op,
+    ) -> tac_ast.Type_binary_operator:
+        # Postfix ++/-- lower to a Binary(Add/Subtract, operand, 1).
+        match op:
+            case c99_ast.Increment():
+                return tac_ast.Add()
+            case c99_ast.Decrement():
+                return tac_ast.Subtract()
+        raise TypeError(f"unexpected incdec op: {op!r}")
 
     def translate_binop(
         self, op: c99_ast.Type_binary_operator,

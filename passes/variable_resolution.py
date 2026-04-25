@@ -175,6 +175,20 @@ class Resolver:
                     lval=self.resolve_exp(lval, scope),
                     rval=self.resolve_exp(rval, scope),
                 )
+            case c99_ast.Postfix(op=op, operand=operand):
+                # Same lvalue rule as Assignment: postfix `a++` /
+                # `a--` mutates its operand, so the operand has to
+                # name a storage location. Prefix `++a` / `--a` is
+                # already desugared to an Assignment by the parser,
+                # so the Assignment branch above catches its lvalue
+                # check.
+                if not isinstance(operand, c99_ast.Var):
+                    raise VariableResolutionError(
+                        f"invalid lvalue in postfix: {operand!r}"
+                    )
+                return c99_ast.Postfix(
+                    op=op, operand=self.resolve_exp(operand, scope),
+                )
         raise TypeError(f"unexpected exp: {exp!r}")
 
 

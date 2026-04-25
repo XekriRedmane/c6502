@@ -52,6 +52,28 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("LDA   #$2A", out)
         self.assertIn("RTS", out)
 
+    def test_codegen_postfix_increment(self):
+        # `a++` generates: load a into A, store into the saved-old
+        # frame slot, then ADC #$01 against a, store back. We just
+        # check both the ADC #$01 (the +=1 step) and that the asm
+        # compiled cleanly.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { int a = 0; a++; return a; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("ADC   #$01", out)
+
+    def test_codegen_prefix_decrement(self):
+        # Prefix `--a` desugars to `a = a - 1`, which lowers to SBC
+        # #$01 against a's frame slot.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { int a = 5; --a; return a; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("SBC   #$01", out)
+
     def test_codegen_compound_assignment(self):
         # `a += 3` desugars at parse time to `a = a + 3`, which lowers
         # to Binary(Add) + Copy in TAC and then to load-A from the

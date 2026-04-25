@@ -92,13 +92,18 @@ that takes an AST and returns an AST (or text, for emit):
    (`return exp;`, `exp;`, or a null `;`). `<exp>` is built from
    integer constants, identifiers, the unary ops (`-`/`~`/`!`),
    binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
-   parentheses, and right-associative `=` plus the ten compound
+   parentheses, right-associative `=` plus the ten compound
    assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-   `<<=`, `>>=`). Compound assignments desugar at parse time to
-   `Assignment(lval, Binary(OP, lval, rval))` so no downstream pass
-   needs to know about them. Operator precedence is encoded by a
-   precedence-climbing rule layout (`exp → assignment_exp →
-   logical_or_exp → … → unary_exp → atom`).
+   `<<=`, `>>=`), and the four increment/decrement operators in
+   both prefix (`++a` / `--a`) and postfix (`a++` / `a--`) form.
+   Compound assignments desugar at parse time to
+   `Assignment(lval, Binary(OP, lval, rval))`; prefix `++a` / `--a`
+   desugar the same way to `a = a ± 1`. Postfix keeps its own
+   `Postfix(incdec_op, exp)` AST node because it must evaluate to
+   the operand's *old* value while mutating it. Operator precedence
+   is encoded by a precedence-climbing rule layout (`exp →
+   assignment_exp → logical_or_exp → … → unary_exp → postfix_exp →
+   atom`).
 
 2. **`passes.variable_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Rewrites every user-written identifier to a
@@ -624,6 +629,15 @@ runnable-shape 6502 assembly):
   is `a += (b += 1)`. The lval is duplicated as a tree reference, which
   is safe today because the only legal lval is a `Var`; richer lvalues
   in future will need to materialize the address into a temp first)
+- prefix `++a` / `--a` (parse-time desugaring to `a = a ± 1` — same
+  shape as a compound assignment; returns the operand's *new* value)
+- postfix `a++` / `a--` (its own `Postfix(incdec_op, exp)` AST node
+  because postfix has to evaluate to the operand's *old* value. The
+  TAC lowering is `Copy(a, %old); Binary(Add/Sub, a, 1, %new);
+  Copy(%new, a)` and the result val is `%old`, so callers see the
+  pre-mutation value. Postfix is one precedence level tighter than
+  unary, so `-a++` parses as `-(a++)` and `a+++b` lexes via max-munch
+  as `a++ + b`)
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:

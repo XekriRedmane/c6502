@@ -570,6 +570,129 @@ class TestTranslateProgram(unittest.TestCase):
             ],
         )
 
+    def test_postfix_increment_captures_old_value_then_updates(self):
+        # `a++` lowers to: Copy(a, %old) — capture before mutation;
+        # Binary(Add, a, 1, %new) — compute updated value;
+        # Copy(%new, a) — store back. Returns Var(%old) so callers
+        # see the *old* value (postfix semantics).
+        t = Translator()
+        instrs: list = []
+        result = t.translate_exp(
+            c99_ast.Postfix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Var(name="a"),
+            ),
+            instrs,
+        )
+        self.assertEqual(result, tac_ast.Var(name="%0"))
+        self.assertEqual(instrs, [
+            tac_ast.Copy(
+                src=tac_ast.Var(name="a"),
+                dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=tac_ast.Var(name="a"),
+                src2=tac_ast.Constant(value=1),
+                dst=tac_ast.Var(name="%1"),
+            ),
+            tac_ast.Copy(
+                src=tac_ast.Var(name="%1"),
+                dst=tac_ast.Var(name="a"),
+            ),
+        ])
+
+    def test_postfix_decrement_uses_subtract(self):
+        t = Translator()
+        instrs: list = []
+        t.translate_exp(
+            c99_ast.Postfix(
+                op=c99_ast.Decrement(),
+                operand=c99_ast.Var(name="a"),
+            ),
+            instrs,
+        )
+        # Just check the binary op chosen is Subtract; the surrounding
+        # shape is the same as Increment.
+        self.assertEqual(instrs[1].op, tac_ast.Subtract())
+
+    def test_postfix_in_assignment_returns_old_value(self):
+        # `b = a++` — the inner Postfix returns Var(%0) (the captured
+        # old value), which the outer Assignment Copies into b. So `b`
+        # ends up with the value `a` had *before* the increment.
+        t = Translator()
+        instrs: list = []
+        t.translate_exp(
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="b"),
+                rval=c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="a"),
+                ),
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.Copy(
+                src=tac_ast.Var(name="a"),
+                dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=tac_ast.Var(name="a"),
+                src2=tac_ast.Constant(value=1),
+                dst=tac_ast.Var(name="%1"),
+            ),
+            tac_ast.Copy(
+                src=tac_ast.Var(name="%1"),
+                dst=tac_ast.Var(name="a"),
+            ),
+            tac_ast.Copy(
+                src=tac_ast.Var(name="%0"),
+                dst=tac_ast.Var(name="b"),
+            ),
+        ])
+
+    def test_postfix_non_var_operand_raises_type_error(self):
+        # variable_resolution should have rejected this; the runtime
+        # check is defense-in-depth.
+        t = Translator()
+        with self.assertRaises(TypeError) as ctx:
+            t.translate_exp(
+                c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Constant(value=1),
+                ),
+                [],
+            )
+        self.assertIn("Var", str(ctx.exception))
+
+    def test_prefix_lowers_via_assignment_branch(self):
+        # `++a` is desugared by the parser to `a = a + 1`, which is
+        # an Assignment. The TAC therefore has just the Binary +
+        # Copy — no extra "%old" capture, because prefix returns the
+        # *new* value, not the old one. End-to-end through parse +
+        # translate to confirm the sequence.
+        tac = translate_program(parse(
+            "int main(void) { int a; ++a; }"
+        ))
+        self.assertEqual(
+            tac.function_definition.instructions,
+            [
+                tac_ast.Binary(
+                    op=tac_ast.Add(),
+                    src1=tac_ast.Var(name="a"),
+                    src2=tac_ast.Constant(value=1),
+                    dst=tac_ast.Var(name="%0"),
+                ),
+                tac_ast.Copy(
+                    src=tac_ast.Var(name="%0"),
+                    dst=tac_ast.Var(name="a"),
+                ),
+                tac_ast.Ret(val=tac_ast.Constant(value=0)),
+            ],
+        )
+
     def test_compound_assignment_lowers_like_desugared_form(self):
         # `a += 1` is desugared by the parser to `a = a + 1`. The TAC
         # is therefore: read `a` and `1` into a Binary(Add) producing

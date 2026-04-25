@@ -66,6 +66,13 @@ one AST and returns another (or text for emit):
    today because the only legal lval is a `Var` (no side effect when re-
    evaluated); when richer lvalues land (`*p`, `a[i]`, `s.f`), the rewrite
    has to materialize the address into a temp so it's evaluated once.
+   Prefix `++a` / `--a` desugar the same way to `a = a ± 1`. Postfix
+   `a++` / `a--` keep their own `Postfix(incdec_op, exp)` AST node
+   because they evaluate to the *old* value of the operand while
+   mutating it — a semantic that can't be expressed by reusing
+   `Assignment` / `Binary` alone. Postfix sits at its own grammar
+   level (`postfix_exp`) one tighter than `unary_exp`, so `-a++`
+   parses as `-(a++)` and `++a++` as `++(a++)`.
 2. `passes.variable_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Rewrites every user-written variable name to a program-unique
    `@<N>.<orig>` (illegal in a C identifier, so it can't collide with user
@@ -73,6 +80,8 @@ one AST and returns another (or text for emit):
    unique name, and records `name → unique` in the per-function scope;
    declaring the same name twice raises `VariableResolutionError`. A
    `Var(name)` in any expression is rewritten to its mapped unique name;
+   the same lvalue check that gates `Assignment.lval` also gates
+   `Postfix.operand`, so `1++` raises just like `1 = 2`.
    referencing an undeclared name raises. An `Assignment` additionally
    checks its lval is a `Var` (not a `Binary`, `Constant`, `Unary`, or
    nested `Assignment`) and raises "invalid lvalue" otherwise —
@@ -261,6 +270,12 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   `<<=`, `>>=` (desugared by the parser to `lval = lval OP rval`, so
   they reuse the same TAC/asm lowerings as their underlying binary op
   followed by a Copy back into the lval)
+- prefix `++a` / `--a` (desugared by the parser to `a = a ± 1`, same
+  shape as a compound assignment — returns the new value)
+- postfix `a++` / `a--` (its own `Postfix(incdec_op, exp)` AST node;
+  `c99_to_tac` lowers it to `Copy(a, %old); Binary(Add/Sub, a, 1, %new);
+  Copy(%new, a)` and returns `%old` so the result is the operand's
+  value *before* the mutation)
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`

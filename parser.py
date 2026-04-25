@@ -127,6 +127,39 @@ class _ASTBuilder(Transformer):
     def unary(self, op, inner):
         return c99_ast.Unary(op=op, exp=inner)
 
+    # Prefix `++a` / `--a` desugar to `a = a ± 1` (same shape as
+    # `a += 1` / `a -= 1`). The lval node is duplicated by reference
+    # — safe today because the only legal lval is a `Var`, which has
+    # no side effect when re-evaluated. Future richer lvalues need a
+    # rewrite that materializes the address into a temp first.
+    @v_args(inline=True)
+    def pre_increment(self, _op, operand):
+        return self._prefix_incdec(c99_ast.Add(), operand)
+
+    @v_args(inline=True)
+    def pre_decrement(self, _op, operand):
+        return self._prefix_incdec(c99_ast.Subtract(), operand)
+
+    def _prefix_incdec(self, op, operand):
+        return c99_ast.Assignment(
+            lval=operand,
+            rval=c99_ast.Binary(
+                op=op, left=operand, right=c99_ast.Constant(value=1),
+            ),
+        )
+
+    # Postfix `a++` / `a--` keep their own AST node because they have
+    # to return the *old* value of the operand while also mutating
+    # it. The lvalue check (operand must be a `Var`) lives in
+    # variable_resolution alongside the Assignment check.
+    @v_args(inline=True)
+    def post_increment(self, operand, _op):
+        return c99_ast.Postfix(op=c99_ast.Increment(), operand=operand)
+
+    @v_args(inline=True)
+    def post_decrement(self, operand, _op):
+        return c99_ast.Postfix(op=c99_ast.Decrement(), operand=operand)
+
     @v_args(inline=True)
     def paren(self, _lp, inner, _rp):
         return inner

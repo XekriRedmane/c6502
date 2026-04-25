@@ -644,6 +644,144 @@ class TestAssignment(unittest.TestCase):
         )
 
 
+class TestIncrementDecrement(unittest.TestCase):
+    """Prefix `++a` / `--a` desugar at parse time to `a = a ± 1`
+    (same shape as compound assignment). Postfix `a++` / `a--` keep
+    their own AST node because they evaluate to the *old* value of
+    the operand. Postfix binds tighter than prefix and tighter than
+    other unary ops."""
+
+    def test_pre_increment_desugars_to_assignment(self):
+        self.assertEqual(
+            _exp_of("++a"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Var(name="a"),
+                    right=c99_ast.Constant(value=1),
+                ),
+            ),
+        )
+
+    def test_pre_decrement_desugars_to_assignment(self):
+        self.assertEqual(
+            _exp_of("--a"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Binary(
+                    op=c99_ast.Subtract(),
+                    left=c99_ast.Var(name="a"),
+                    right=c99_ast.Constant(value=1),
+                ),
+            ),
+        )
+
+    def test_post_increment_builds_postfix_node(self):
+        self.assertEqual(
+            _exp_of("a++"),
+            c99_ast.Postfix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Var(name="a"),
+            ),
+        )
+
+    def test_post_decrement_builds_postfix_node(self):
+        self.assertEqual(
+            _exp_of("a--"),
+            c99_ast.Postfix(
+                op=c99_ast.Decrement(),
+                operand=c99_ast.Var(name="a"),
+            ),
+        )
+
+    def test_postfix_binds_tighter_than_unary_minus(self):
+        # `-a++` parses as `-(a++)`, NOT `(-a)++`. Postfix is at the
+        # postfix-precedence level (one step inside unary).
+        self.assertEqual(
+            _exp_of("-a++"),
+            c99_ast.Unary(
+                op=c99_ast.Negate(),
+                exp=c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="a"),
+                ),
+            ),
+        )
+
+    def test_postfix_binds_tighter_than_prefix(self):
+        # `++a++` parses as `++(a++)` — desugared, the prefix becomes
+        # an Assignment whose lval is the Postfix node. (Semantically
+        # invalid C — `a++` isn't an lvalue — but the grammar accepts
+        # it and variable_resolution will catch it.)
+        post = c99_ast.Postfix(
+            op=c99_ast.Increment(), operand=c99_ast.Var(name="a"),
+        )
+        self.assertEqual(
+            _exp_of("++a++"),
+            c99_ast.Assignment(
+                lval=post,
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=post,
+                    right=c99_ast.Constant(value=1),
+                ),
+            ),
+        )
+
+    def test_plus_plus_plus_lexes_as_two_tokens(self):
+        # `a+++b` is `a++ + b` (max-munch; `++` wins over `+ +`), so
+        # the AST is Add(Postfix(Increment, a), b).
+        self.assertEqual(
+            _exp_of("a+++b"),
+            c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="a"),
+                ),
+                right=c99_ast.Var(name="b"),
+            ),
+        )
+
+    def test_double_postfix_is_left_associative(self):
+        # `a++--` parses as `(a++)--` — postfix_exp is left-recursive.
+        # Semantically nonsense (a++ isn't an lvalue) but the grammar
+        # accepts it.
+        self.assertEqual(
+            _exp_of("a++--"),
+            c99_ast.Postfix(
+                op=c99_ast.Decrement(),
+                operand=c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="a"),
+                ),
+            ),
+        )
+
+    def test_double_prefix_is_right_associative(self):
+        # `++++a` is `++(++a)` — prefix is right-recursive.
+        inner = c99_ast.Assignment(
+            lval=c99_ast.Var(name="a"),
+            rval=c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Var(name="a"),
+                right=c99_ast.Constant(value=1),
+            ),
+        )
+        self.assertEqual(
+            _exp_of("++++a"),
+            c99_ast.Assignment(
+                lval=inner,
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=inner,
+                    right=c99_ast.Constant(value=1),
+                ),
+            ),
+        )
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

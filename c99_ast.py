@@ -106,6 +106,12 @@ class Assignment(Type_exp):
 
 
 @dataclass
+class Postfix(Type_exp):
+    op: Type_incdec_op
+    operand: Type_exp
+
+
+@dataclass
 class Type_unary_operator:
     pass
 
@@ -122,6 +128,21 @@ class Negate(Type_unary_operator):
 
 @dataclass
 class LogicalNot(Type_unary_operator):
+    pass
+
+
+@dataclass
+class Type_incdec_op:
+    pass
+
+
+@dataclass
+class Increment(Type_incdec_op):
+    pass
+
+
+@dataclass
+class Decrement(Type_incdec_op):
     pass
 
 

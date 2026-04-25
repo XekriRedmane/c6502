@@ -58,12 +58,11 @@ one AST and returns another (or text for emit):
    `Block(block_item*)` so a function body is `Function(name,
    Block([...]))`). A block item is a declaration (`int x;` / `int x =
    exp;`) or a statement (`return exp;`, `exp;`, `if (exp) stmt (else
-   stmt)?`, `goto label;`, `label: stmt`, or a null `;`). The ASDL also
-   declares `Compound(block)` as a statement variant so `{ ... }` can
-   appear as a nested statement, but the grammar doesn't yet have a
-   `compound_stmt` alternative — the AST type is plumbed everywhere
-   (passes descend into the inner block) but no source can produce one
-   yet. The `IDENTIFIER COLON statement` rule
+   stmt)?`, `goto label;`, `label: stmt`, a `<block>` (compound
+   statement, `Compound(block)`), or a null `;`). The compound-
+   statement rule reuses the same `block` rule the function body uses
+   — the only difference is the transformer wraps the resulting
+   `Block` in a `Compound`. The `IDENTIFIER COLON statement` rule
    for labeled statements introduces a shift-reduce conflict at
    statement-start on COLON lookahead — Lark's LALR(1) backend resolves
    it by shifting (same mechanism that handles dangling-else), which
@@ -301,10 +300,14 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 
 - `int main(void) { <block_item>* }`, where a block item is a
   declaration (`int x;` or `int x = exp;`) or a statement (`return
-  exp;`, `exp;`, `goto label;`, `label: stmt`, or a null `;`). If the
-  body has no `return`, the TAC translator appends an implicit
-  `Ret(Constant(0))` (C99 §5.1.2.2.3 for `main`; applied generally so
-  every function terminates).
+  exp;`, `exp;`, `goto label;`, `label: stmt`, a nested `{ ... }`
+  block, or a null `;`). If the body has no `return`, the TAC
+  translator appends an implicit `Ret(Constant(0))` (C99
+  §5.1.2.2.3 for `main`; applied generally so every function
+  terminates). Nested blocks open a new variable-resolution scope
+  (per-block clone with outer-vs-inner flagging — see pass 2);
+  shadowing across blocks is legal, redeclaration in the same
+  block is not.
 - `int main(void)` returning a single integer expression
 - integer constants
 - unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`
@@ -373,8 +376,7 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
 everywhere but parser only accepts `(void)` and translator hardcodes 0),
 multiple functions, user-defined calls, loop / switch statements,
-compound statements (no nested blocks — variable resolution treats
-each function body as a single flat scope), types other than `int`
-(so unsigned right shift and unsigned ordering aren't distinguishable
-yet), and the runtime header that defines `SSP`/`FP`, initializes `SSP`,
-sets the reset vector, and provides `mul8`/`divmod8`/`shl8`/`asr8`.
+types other than `int` (so unsigned right shift and unsigned ordering
+aren't distinguishable yet), and the runtime header that defines
+`SSP`/`FP`, initializes `SSP`, sets the reset vector, and provides
+`mul8`/`divmod8`/`shl8`/`asr8`.

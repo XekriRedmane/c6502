@@ -67,6 +67,20 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn(".if_else_", out)
         self.assertIn(".if_end_", out)
 
+    def test_codegen_block_shadowing(self):
+        # `int a = 1; { int a = 2; } return a;` — the inner block
+        # shadows the outer `a`. Variable resolution gives them
+        # distinct unique names; codegen lays them out in distinct
+        # frame slots, so both immediate writes (LDA #$01 and
+        # LDA #$02) appear in the asm.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { int a = 1; { int a = 2; } return a; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("LDA   #$01", out)
+        self.assertIn("LDA   #$02", out)
+
     def test_codegen_goto_and_label(self):
         # `goto foo; foo: return 0;` should emit a JMP to the
         # function-prefixed label and the matching label definition.

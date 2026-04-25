@@ -198,6 +198,7 @@ statement: RETURN exp SEMICOLON                            -> return_stmt
          | IF LPAREN exp RPAREN statement (ELSE statement)? -> if_stmt
          | GOTO IDENTIFIER SEMICOLON                       -> goto_stmt
          | IDENTIFIER COLON statement                      -> labeled_stmt
+         | block                                           -> compound_stmt
          | SEMICOLON                                       -> null_stmt
 
 // Expression precedence (low to high) via the standard precedence-

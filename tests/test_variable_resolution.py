@@ -703,6 +703,38 @@ class TestIntegrationWithParser(unittest.TestCase):
         with self.assertRaises(VariableResolutionError):
             resolve_program(prog)
 
+    def test_inner_block_shadows_outer_from_source(self):
+        # Source-level test of the per-block scope rule. Inside the
+        # inner block, `a` rebinds to a fresh unique name; after the
+        # block exits, the outer `a` is intact and `return a` reads
+        # the outer binding.
+        prog = parse(
+            "int main(void) { int a = 1; { int a = 2; } return a; }"
+        )
+        resolved = resolve_program(prog)
+        body = resolved.function_definition.body.block_item
+        # Outer decl: @0.a = 1.
+        self.assertEqual(body[0].declaration.name, "@0.a")
+        # Inner Compound's decl: @1.a = 2 (distinct unique name).
+        inner_decl = (
+            body[1].statement.block.block_item[0].declaration
+        )
+        self.assertEqual(inner_decl.name, "@1.a")
+        # Return reads the outer @0.a, not the (now-discarded) @1.a.
+        self.assertEqual(
+            body[2].statement,
+            c99_ast.Return(exp=c99_ast.Var(name="@0.a")),
+        )
+
+    def test_same_block_redeclaration_from_source(self):
+        # `{ int a; int a; }` — both decls in the same inner block
+        # collide.
+        prog = parse(
+            "int main(void) { { int a; int a; } return 0; }"
+        )
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
     def test_compound_assignment_rejects_non_var_lhs(self):
         # `1 += 2` desugars to `Assignment(Constant(1), Binary(Add,
         # Constant(1), Constant(2)))` at parse time. The lval-is-Var

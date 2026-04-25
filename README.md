@@ -93,11 +93,10 @@ that takes an AST and returns an AST (or text, for emit):
    `Function(name, Block([...]))`. A block item is a declaration
    (`int x;` or `int x = exp;`) or a statement (`return exp;`,
    `exp;`, `if (exp) stmt (else stmt)?`, `goto label;`,
-   `label: stmt`, or a null `;`). The ASDL also has a
-   `Compound(block)` statement variant for `{ ... }` as a nested
-   statement; the type is wired through every pass but the
-   grammar has no `compound_stmt` rule yet, so it isn't reachable
-   from source. The dangling-else ambiguity is resolved by Lark's
+   `label: stmt`, a nested `<block>` (compound statement,
+   `Compound(block)`), or a null `;`). The compound-statement
+   rule reuses the same `block` rule the function body uses; the
+   transformer just wraps the resulting `Block` in a `Compound`. The dangling-else ambiguity is resolved by Lark's
    LALR(1) backend preferring shift over reduce on `else`, which
    binds the `else` to the nearest preceding unmatched `if` —
    the C99 §6.8.4.1 rule. `<exp>` is built from
@@ -721,6 +720,13 @@ runnable-shape 6502 assembly):
   forward gotos work. The §6.8.6 constraint about jumping past a
   variably-modified-type declaration's scope is vacuous (c6502 has
   no VLAs)
+- compound statements (`{ ... }` as a nested statement, C99 §6.8.3).
+  Each compound statement opens a new variable-resolution scope —
+  shadowing across blocks is legal (`int a = 1; { int a = 2; }` is
+  fine), redeclaration in the same block is not. At the TAC level
+  blocks dissolve: TAC has no scope, so `Compound(block)` lowers
+  to its block items in order with no extra structure (names are
+  already globally unique by the time they reach TAC).
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:
@@ -729,10 +735,9 @@ Not yet anywhere in the pipeline:
   `arg_bytes` through everywhere, but the parser only accepts
   `(void)` and the translator hardcodes `arg_bytes = 0`.
 - multiple functions, function calls, control flow statements
-  (`while`, `for`, `do`, `switch`), nested compound statements
-  (variable resolution treats each function body as a single flat
-  scope today), types other than `int` (so unsigned right shift and
-  unsigned ordering aren't distinguishable yet).
+  (`while`, `for`, `do`, `switch`), types other than `int` (so
+  unsigned right shift and unsigned ordering aren't
+  distinguishable yet).
 - a runtime header that defines `SSP`/`FP` at their ZP addresses,
   initializes `SSP` to top-of-RAM, sets the reset vector to a stub
   that calls `main`, and provides `mul8`/`divmod8`/`shl8`/`asr8`.

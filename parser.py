@@ -115,6 +115,13 @@ class _ASTBuilder(Transformer):
         return c99_ast.LabeledStmt(label=str(identifier), statement=stmt)
 
     @v_args(inline=True)
+    def compound_stmt(self, block):
+        # `{ ... }` as a statement. `block` has already been built
+        # into a `Block` by the `block` transformer; wrap it in a
+        # `Compound` so it fits the `statement` sum.
+        return c99_ast.Compound(block=block)
+
+    @v_args(inline=True)
     def null_stmt(self, _semi):
         return c99_ast.Null()
 

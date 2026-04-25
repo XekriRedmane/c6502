@@ -999,6 +999,79 @@ class TestIfStatement(unittest.TestCase):
         )
 
 
+class TestCompoundStatement(unittest.TestCase):
+    """`{ ... }` as a statement (C99 §6.8.3 compound statement). The
+    grammar rule `statement: block -> compound_stmt` reuses the same
+    `block` rule the function body uses; the only difference is the
+    transformer wraps the resulting `Block` in a `Compound`."""
+
+    def _stmt_of(self, src):
+        items = parse(f"int main(void) {{ {src} }}").function_definition.body.block_item
+        assert len(items) == 1, items
+        item = items[0]
+        assert isinstance(item, c99_ast.S), item
+        return item.statement
+
+    def test_empty_block_as_statement(self):
+        # `{ }` — a Compound wrapping a Block with no items.
+        self.assertEqual(
+            self._stmt_of("{ }"),
+            c99_ast.Compound(block=c99_ast.Block(block_item=[])),
+        )
+
+    def test_single_statement_block(self):
+        # `{ return 0; }`.
+        self.assertEqual(
+            self._stmt_of("{ return 0; }"),
+            c99_ast.Compound(block=c99_ast.Block(block_item=[
+                c99_ast.S(statement=c99_ast.Return(
+                    exp=c99_ast.Constant(value=0),
+                )),
+            ])),
+        )
+
+    def test_block_with_declaration_and_statement(self):
+        # `{ int a = 1; return a; }` — both kinds of block_item.
+        self.assertEqual(
+            self._stmt_of("{ int a = 1; return a; }"),
+            c99_ast.Compound(block=c99_ast.Block(block_item=[
+                c99_ast.D(declaration=c99_ast.Declaration(
+                    name="a", init=c99_ast.Constant(value=1),
+                )),
+                c99_ast.S(statement=c99_ast.Return(exp=c99_ast.Var(name="a"))),
+            ])),
+        )
+
+    def test_nested_blocks(self):
+        # `{ { ; } }` — outer Compound's block contains an inner
+        # Compound, whose block contains a Null.
+        self.assertEqual(
+            self._stmt_of("{ { ; } }"),
+            c99_ast.Compound(block=c99_ast.Block(block_item=[
+                c99_ast.S(statement=c99_ast.Compound(
+                    block=c99_ast.Block(block_item=[
+                        c99_ast.S(statement=c99_ast.Null()),
+                    ]),
+                )),
+            ])),
+        )
+
+    def test_block_as_if_branch(self):
+        # `if (1) { return 2; }` — the then-clause is a Compound.
+        self.assertEqual(
+            self._stmt_of("if (1) { return 2; }"),
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Compound(block=c99_ast.Block(block_item=[
+                    c99_ast.S(statement=c99_ast.Return(
+                        exp=c99_ast.Constant(value=2),
+                    )),
+                ])),
+                else_clause=None,
+            ),
+        )
+
+
 class TestLabeledStmtAndGoto(unittest.TestCase):
     """C99 §6.8.1 labeled statements (`label: stmt`) and §6.8.6 `goto
     label;`. The grammar's labeled_stmt rule (`IDENTIFIER COLON

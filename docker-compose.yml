@@ -4,6 +4,8 @@ services:
     image: c6502
     volumes:
       - .:/project/c6502
+      - ~/c6502-claude-container-state:/host-state
+      - ~/.ssh:/mnt/host-ssh:ro
     environment:
       - ANTHROPIC_API_KEY
     stdin_open: true

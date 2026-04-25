@@ -26,7 +26,10 @@ RUN git clone https://github.com/dasm-assembler/dasm.git /tmp/dasm \
     && cp /tmp/dasm/bin/dasm /usr/local/bin/dasm \
     && rm -rf /tmp/dasm
 
-# Install Claude Code CLI
+# Install Claude Code CLI. ADD of the npm registry's "latest" metadata
+# invalidates this layer whenever a new version of claude-code is published,
+# so the install below always picks up the newest release.
+ADD https://registry.npmjs.org/@anthropic-ai/claude-code/latest /tmp/claude-code-latest.json
 RUN npm install -g @anthropic-ai/claude-code
 
 # Install uv (Python package manager)

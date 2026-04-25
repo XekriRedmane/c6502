@@ -177,7 +177,7 @@ class TestTranslateExp(unittest.TestCase):
 class TestTranslateVarAndAssignment(unittest.TestCase):
     """`Var` passes through verbatim; `Assignment` evaluates rval, then
     Copies the result into the lval Var. The translator runs after
-    variable_resolution, so all `Var.name`s coming in are the unique
+    identifier_resolution, so all `Var.name`s coming in are the unique
     `@N.orig` strings, which TAC accepts as-is."""
 
     def test_var_passthrough_emits_no_instructions(self):
@@ -291,7 +291,7 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
         )
 
     def test_non_var_lval_raises_type_error(self):
-        # variable_resolution should have rejected this; the runtime
+        # identifier_resolution should have rejected this; the runtime
         # check is defense-in-depth.
         t = Translator()
         with self.assertRaises(TypeError) as ctx:
@@ -316,7 +316,24 @@ class TestTranslateBlockItems(unittest.TestCase):
         t = Translator()
         instrs: list = []
         t.translate_declaration(
-            c99_ast.Declaration(name="@0.x", init=None), instrs,
+            c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
+                name="@0.x", init=None,
+            )),
+            instrs,
+        )
+        self.assertEqual(instrs, [])
+
+    def test_function_decl_emits_nothing(self):
+        # A FunctionDecl block-item is a name-binding artifact for
+        # identifier_resolution. By the time TAC translation runs it
+        # has no runtime effect; the lowering emits zero instructions.
+        t = Translator()
+        instrs: list = []
+        t.translate_declaration(
+            c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
+                name="foo", params=[], body=None,
+            )),
+            instrs,
         )
         self.assertEqual(instrs, [])
 
@@ -325,9 +342,9 @@ class TestTranslateBlockItems(unittest.TestCase):
         t = Translator()
         instrs: list = []
         t.translate_declaration(
-            c99_ast.Declaration(
+            c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
                 name="@0.x", init=c99_ast.Constant(value=5),
-            ),
+            )),
             instrs,
         )
         self.assertEqual(
@@ -343,14 +360,14 @@ class TestTranslateBlockItems(unittest.TestCase):
         t = Translator()
         instrs: list = []
         t.translate_declaration(
-            c99_ast.Declaration(
+            c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
                 name="@0.x",
                 init=c99_ast.Binary(
                     op=c99_ast.Add(),
                     left=c99_ast.Constant(value=1),
                     right=c99_ast.Constant(value=2),
                 ),
-            ),
+            )),
             instrs,
         )
         self.assertEqual(
@@ -407,8 +424,10 @@ class TestTranslateBlockItems(unittest.TestCase):
         t = Translator()
         instrs: list = []
         t.translate_block_item(
-            c99_ast.D(declaration=c99_ast.Declaration(
-                name="@0.x", init=c99_ast.Constant(value=7),
+            c99_ast.D(declaration=c99_ast.VarDecl(
+                var_decl=c99_ast.Type_var_decl(
+                    name="@0.x", init=c99_ast.Constant(value=7),
+                ),
             )),
             instrs,
         )
@@ -613,7 +632,7 @@ class TestTranslateCompound(unittest.TestCase):
     """`Compound(block)` lowers as if its block items were inlined
     into the surrounding instruction stream — TAC is flat, so block
     boundaries don't survive into the IR. Variable names arrive
-    pre-resolved (variable_resolution has already given each
+    pre-resolved (identifier_resolution has already given each
     declaration its globally-unique `@N.orig` form), so there's
     nothing scope-related left to express."""
 
@@ -624,8 +643,10 @@ class TestTranslateCompound(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.Compound(block=c99_ast.Block(block_item=[
-                c99_ast.D(declaration=c99_ast.Declaration(
-                    name="@0.x", init=c99_ast.Constant(value=1),
+                c99_ast.D(declaration=c99_ast.VarDecl(
+                    var_decl=c99_ast.Type_var_decl(
+                        name="@0.x", init=c99_ast.Constant(value=1),
+                    ),
                 )),
                 c99_ast.S(statement=c99_ast.Return(
                     exp=c99_ast.Var(name="@0.x"),
@@ -692,7 +713,7 @@ class TestTranslateCompound(unittest.TestCase):
 
     def test_compound_with_distinct_shadowed_decls(self):
         # The two `x` decls have already been given distinct unique
-        # names by variable_resolution (@0.x outer, @1.x inner), so
+        # names by identifier_resolution (@0.x outer, @1.x inner), so
         # the TAC has two separate Copy targets — there's no
         # collision and no scope concept needed at this stage.
         # Source equivalent: `int x = 1; { int x = 2; }`.
@@ -700,8 +721,10 @@ class TestTranslateCompound(unittest.TestCase):
         instrs: list = []
         t.translate_statement(c99_ast.Compound(
             block=c99_ast.Block(block_item=[
-                c99_ast.D(declaration=c99_ast.Declaration(
-                    name="@1.x", init=c99_ast.Constant(value=2),
+                c99_ast.D(declaration=c99_ast.VarDecl(
+                    var_decl=c99_ast.Type_var_decl(
+                        name="@1.x", init=c99_ast.Constant(value=2),
+                    ),
                 )),
             ]),
         ), instrs)
@@ -828,8 +851,10 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
 
     def test_body_without_return_gets_implicit_return_zero(self):
         fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
-            c99_ast.D(declaration=c99_ast.Declaration(
-                name="@0.x", init=c99_ast.Constant(value=5),
+            c99_ast.D(declaration=c99_ast.VarDecl(
+                var_decl=c99_ast.Type_var_decl(
+                    name="@0.x", init=c99_ast.Constant(value=5),
+                ),
             )),
         ]))
         self.assertEqual(
@@ -876,11 +901,15 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
     def test_block_items_processed_in_order(self):
         # Two declarations, then a return.
         fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
-            c99_ast.D(declaration=c99_ast.Declaration(
-                name="@0.a", init=c99_ast.Constant(value=1),
+            c99_ast.D(declaration=c99_ast.VarDecl(
+                var_decl=c99_ast.Type_var_decl(
+                    name="@0.a", init=c99_ast.Constant(value=1),
+                ),
             )),
-            c99_ast.D(declaration=c99_ast.Declaration(
-                name="@1.b", init=c99_ast.Constant(value=2),
+            c99_ast.D(declaration=c99_ast.VarDecl(
+                var_decl=c99_ast.Type_var_decl(
+                    name="@1.b", init=c99_ast.Constant(value=2),
+                ),
             )),
             c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Var(name="@1.b"),
@@ -904,12 +933,16 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
 
 class TestTranslateProgram(unittest.TestCase):
     def test_return_constant(self):
-        prog = c99_ast.Program(function_definition=c99_ast.Function(
+        # c99 Program.function_definition is a list of Functions; TAC
+        # Program.function_definition is still a single Function (the
+        # tac.asdl change for multi-function support is gated on
+        # FunctionCall lowering landing).
+        prog = c99_ast.Program(function_definition=[c99_ast.Function(
             name="main",
             body=c99_ast.Block(block_item=[c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Constant(value=42),
             ))]),
-        ))
+        )])
         self.assertEqual(
             translate_program(prog),
             tac_ast.Program(function_definition=tac_ast.Function(
@@ -920,7 +953,7 @@ class TestTranslateProgram(unittest.TestCase):
 
     def test_return_unary(self):
         tac = translate_program(c99_ast.Program(
-            function_definition=c99_ast.Function(
+            function_definition=[c99_ast.Function(
                 name="main",
                 body=c99_ast.Block(block_item=[c99_ast.S(
                     statement=c99_ast.Return(exp=c99_ast.Unary(
@@ -928,7 +961,7 @@ class TestTranslateProgram(unittest.TestCase):
                         exp=c99_ast.Constant(value=5),
                     )),
                 )]),
-            ),
+            )],
         ))
         self.assertEqual(
             tac.function_definition.instructions,
@@ -1045,7 +1078,7 @@ class TestTranslateProgram(unittest.TestCase):
         ])
 
     def test_postfix_non_var_operand_raises_type_error(self):
-        # variable_resolution should have rejected this; the runtime
+        # identifier_resolution should have rejected this; the runtime
         # check is defense-in-depth.
         t = Translator()
         with self.assertRaises(TypeError) as ctx:
@@ -1088,7 +1121,7 @@ class TestTranslateProgram(unittest.TestCase):
         # `a += 1` is desugared by the parser to `a = a + 1`. The TAC
         # is therefore: read `a` and `1` into a Binary(Add) producing
         # %0, then Copy %0 back into a. The implicit `Ret(0)` from
-        # translate_function tails it. (No variable_resolution here, so
+        # translate_function tails it. (No identifier_resolution here, so
         # the name stays as user-written `a` rather than `@0.a`.)
         tac = translate_program(parse(
             "int main(void) { int a; a += 1; }"
@@ -1337,13 +1370,13 @@ class TestTranslateLoops(unittest.TestCase):
         ])
 
     def test_for_init_decl(self):
-        # for (int i = 0; ;) ;  — init is a Declaration, lowers like
+        # for (int i = 0; ;) ;  — init is a var_decl, lowers like
         # `int i = 0;` (Copy of 0 into i).
         t = Translator()
         instrs: list = []
         t.translate_statement(
             c99_ast.ForStmt(
-                init=c99_ast.InitDecl(declaration=c99_ast.Declaration(
+                init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
                     name="i", init=c99_ast.Constant(value=0),
                 )),
                 condition=None,
@@ -1372,7 +1405,7 @@ class TestTranslateLoops(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.ForStmt(
-                init=c99_ast.InitDecl(declaration=c99_ast.Declaration(
+                init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
                     name="i", init=None,
                 )),
                 condition=None,
@@ -1543,7 +1576,7 @@ class TestTranslateNestedLoops(unittest.TestCase):
 
 
 class TestEndToEndLoops(unittest.TestCase):
-    """Pipe through parse + variable_resolution + label_resolution +
+    """Pipe through parse + identifier_resolution + label_resolution +
     loop_labeling + c99_to_tac. Spot-check that the loop labels in
     the emitted TAC match the loop_labeling pass's `.loop@<N>` scheme
     and that break/continue jump to the right sub-labels."""
@@ -1551,11 +1584,11 @@ class TestEndToEndLoops(unittest.TestCase):
     def _translate(self, src):
         from passes.label_resolution import resolve_program as resolve_labels
         from passes.loop_labeling import label_program as label_loops
-        from passes.variable_resolution import (
-            resolve_program as resolve_variables,
+        from passes.identifier_resolution import (
+            resolve_program as resolve_identifiers,
         )
         return translate_program(label_loops(
-            resolve_labels(resolve_variables(parse(src)))
+            resolve_labels(resolve_identifiers(parse(src)))
         ))
 
     def test_while_with_break_jumps_to_break_label(self):

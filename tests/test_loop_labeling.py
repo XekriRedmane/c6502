@@ -372,9 +372,9 @@ class TestPassthrough(unittest.TestCase):
 class TestLabelProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
         fn = _function(_while(c99_ast.Constant(value=1), c99_ast.BreakStmt(label="")))
-        prog = c99_ast.Program(function_definition=fn)
+        prog = c99_ast.Program(function_definition=[fn])
         labeled = label_program(prog)
-        labeled_while = labeled.function_definition.body.block_item[0].statement
+        labeled_while = labeled.function_definition[0].body.block_item[0].statement
         self.assertEqual(labeled_while.label, ".loop@0")
         self.assertEqual(labeled_while.body,
                          c99_ast.BreakStmt(label=".loop@0"))
@@ -383,13 +383,13 @@ class TestLabelProgram(unittest.TestCase):
 class TestIntegrationWithParser(unittest.TestCase):
     """End-to-end from source through parse + label_program, so the
     tests stay pinned to the AST shapes the parser actually produces.
-    These bypass variable_resolution / label_resolution because
+    These bypass identifier_resolution / label_resolution because
     loop_labeling doesn't depend on either pass having run."""
 
     def test_while_with_break_from_source(self):
         prog = parse("int main(void) { while (1) break; return 0; }")
         labeled = label_program(prog)
-        items = labeled.function_definition.body.block_item
+        items = labeled.function_definition[0].body.block_item
         while_stmt = items[0].statement
         self.assertEqual(while_stmt.label, ".loop@0")
         self.assertEqual(while_stmt.body, c99_ast.BreakStmt(label=".loop@0"))
@@ -399,7 +399,7 @@ class TestIntegrationWithParser(unittest.TestCase):
             "int main(void) { for (;;) continue; return 0; }"
         )
         labeled = label_program(prog)
-        for_stmt = labeled.function_definition.body.block_item[0].statement
+        for_stmt = labeled.function_definition[0].body.block_item[0].statement
         self.assertEqual(for_stmt.label, ".loop@0")
         self.assertEqual(for_stmt.body, c99_ast.ContinueStmt(label=".loop@0"))
 
@@ -411,7 +411,7 @@ class TestIntegrationWithParser(unittest.TestCase):
             "return 0; }"
         )
         labeled = label_program(prog)
-        outer = labeled.function_definition.body.block_item[0].statement
+        outer = labeled.function_definition[0].body.block_item[0].statement
         outer_items = outer.body.block.block_item
         for_stmt = outer_items[0].statement
         for_items = for_stmt.body.block.block_item

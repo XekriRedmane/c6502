@@ -40,8 +40,8 @@ Errors (`LabelResolutionError`):
   - declaring the same label twice in the same function
   - `goto` to a label that wasn't declared in the same function
 
-Like variable_resolution, this pass builds a new AST rather than
-mutating in place. The pass runs after variable_resolution; both order
+Like identifier_resolution, this pass builds a new AST rather than
+mutating in place. The pass runs after identifier_resolution; both order
 and isolation are fine because labels and variables share no namespace.
 """
 
@@ -59,10 +59,15 @@ class LabelResolver:
         self, prog: c99_ast.Type_program,
     ) -> c99_ast.Type_program:
         match prog:
-            case c99_ast.Program(function_definition=fn):
-                return c99_ast.Program(
-                    function_definition=self.resolve_function(fn),
-                )
+            case c99_ast.Program(function_definition=fns):
+                # Each top-level function gets its own per-function
+                # label scope — labels never escape their enclosing
+                # function (C99 §6.8.6.1). The same `LabelResolver`
+                # instance can handle every function because it
+                # carries no per-function state itself.
+                return c99_ast.Program(function_definition=[
+                    self.resolve_function(fn) for fn in fns
+                ])
         raise TypeError(f"unexpected program: {prog!r}")
 
     def resolve_function(

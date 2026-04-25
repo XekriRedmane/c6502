@@ -11,7 +11,7 @@ class Type_program:
 
 @dataclass
 class Program(Type_program):
-    function_definition: Type_function_definition
+    function_definition: list[Type_function_definition] = field(default_factory=list)
 
 
 @dataclass
@@ -19,9 +19,10 @@ class Type_function_definition:
     pass
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Function(Type_function_definition):
     name: str
+    params: list[str] = field(default_factory=list)
     body: Type_block
 
 
@@ -132,9 +133,26 @@ class Type_declaration:
 
 
 @dataclass
-class Declaration(Type_declaration):
+class FunctionDecl(Type_declaration):
+    function_decl: Type_function_decl
+
+
+@dataclass
+class VarDecl(Type_declaration):
+    var_decl: Type_var_decl
+
+
+@dataclass
+class Type_var_decl:
     name: str
     init: Type_exp | None = None
+
+
+@dataclass
+class Type_function_decl:
+    name: str
+    params: list[str] = field(default_factory=list)
+    body: Type_block | None = None
 
 
 @dataclass
@@ -144,7 +162,7 @@ class Type_for_init:
 
 @dataclass
 class InitDecl(Type_for_init):
-    declaration: Type_declaration
+    var_decl: Type_var_decl
 
 
 @dataclass
@@ -197,6 +215,12 @@ class Conditional(Type_exp):
     condition: Type_exp
     true_clause: Type_exp
     false_clause: Type_exp
+
+
+@dataclass
+class FunctionCall(Type_exp):
+    name: str
+    args: list[Type_exp] = field(default_factory=list)
 
 
 @dataclass

@@ -2,9 +2,10 @@ import unittest
 
 import c99_ast
 from parser import parse
-from passes.variable_resolution import (
+from passes.identifier_resolution import (
+    IdentifierResolutionError,
+    Linkage,
     Resolver,
-    VariableResolutionError,
     resolve_function,
     resolve_program,
 )
@@ -18,9 +19,13 @@ def _function(*body_items) -> c99_ast.Type_function_definition:
 
 
 def _decl(name, init=None) -> c99_ast.Type_block_item:
-    return c99_ast.D(
-        declaration=c99_ast.Declaration(name=name, init=init),
-    )
+    # Build a `D(VarDecl(Type_var_decl(...)))` block-item for tests.
+    # The triple-wrap is the price of having `declaration` be a sum
+    # type with `VarDecl(var_decl)` and `var_decl` itself a product —
+    # the helper hides that so tests stay readable.
+    return c99_ast.D(declaration=c99_ast.VarDecl(
+        var_decl=c99_ast.Type_var_decl(name=name, init=init),
+    ))
 
 
 def _expr(exp) -> c99_ast.Type_block_item:
@@ -80,7 +85,7 @@ class TestDeclarations(unittest.TestCase):
 
     def test_duplicate_declaration_raises(self):
         fn = _function(_decl("a"), _decl("a"))
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
         self.assertIn("'a'", str(ctx.exception))
 
@@ -89,7 +94,7 @@ class TestDeclarations(unittest.TestCase):
         # should be rejected even though `@0.a` isn't in the map
         # under that key — we check the *original* name.
         fn = _function(_decl("a"), _decl("a"))
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_function(fn)
 
     def test_self_initialization_resolves_to_new_binding(self):
@@ -105,7 +110,7 @@ class TestDeclarations(unittest.TestCase):
 
     def test_initializer_using_undeclared_name_raises(self):
         fn = _function(_decl("a", init=c99_ast.Var(name="b")))
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
         self.assertIn("'b'", str(ctx.exception))
 
@@ -127,7 +132,7 @@ class TestExpressionResolution(unittest.TestCase):
 
     def test_undeclared_var_reference_raises(self):
         fn = _function(_ret(c99_ast.Var(name="x")))
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
         self.assertIn("'x'", str(ctx.exception))
 
@@ -240,7 +245,7 @@ class TestExpressionResolution(unittest.TestCase):
             ),
             rval=c99_ast.Constant(value=3),
         )))
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
         self.assertIn("invalid lvalue", str(ctx.exception))
 
@@ -249,7 +254,7 @@ class TestExpressionResolution(unittest.TestCase):
             lval=c99_ast.Constant(value=5),
             rval=c99_ast.Constant(value=3),
         )))
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_function(fn)
 
     def test_unary_on_left_is_rejected(self):
@@ -263,7 +268,7 @@ class TestExpressionResolution(unittest.TestCase):
                 rval=c99_ast.Constant(value=5),
             )),
         )
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_function(fn)
 
     def test_assignment_on_left_is_rejected(self):
@@ -283,7 +288,7 @@ class TestExpressionResolution(unittest.TestCase):
                 rval=c99_ast.Var(name="c"),
             )),
         )
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_function(fn)
 
     def test_chained_assignment_with_var_lvals_still_works(self):
@@ -351,17 +356,17 @@ class TestIfStatementResolution(unittest.TestCase):
 
     def test_if_undeclared_in_condition_raises(self):
         prog = parse("int main(void) { if (a) return 0; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_if_undeclared_in_then_branch_raises(self):
         prog = parse("int main(void) { if (1) return a; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_if_undeclared_in_else_branch_raises(self):
         prog = parse("int main(void) { if (1) return 0; else return a; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
 
@@ -392,17 +397,17 @@ class TestConditionalResolution(unittest.TestCase):
 
     def test_undeclared_in_condition_raises(self):
         prog = parse("int main(void) { return a ? 1 : 2; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_undeclared_in_true_clause_raises(self):
         prog = parse("int main(void) { return 1 ? a : 2; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_undeclared_in_false_clause_raises(self):
         prog = parse("int main(void) { return 1 ? 2 : a; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_conditional_as_lvalue_is_rejected(self):
@@ -410,13 +415,13 @@ class TestConditionalResolution(unittest.TestCase):
         # `Assignment(Conditional(...), 5)`. The lvalue check rejects
         # a non-Var LHS.
         prog = parse("int main(void) { int a; 1 ? 2 : a = 5; return 0; }")
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_program(prog)
         self.assertIn("invalid lvalue", str(ctx.exception))
 
 
 class TestLabeledAndGotoPassthrough(unittest.TestCase):
-    """Labels live in their own namespace — variable resolution
+    """Labels live in their own namespace — identifier resolution
     shouldn't touch the label string, but it must descend into a
     LabeledStmt's body so any Var references inside still get
     resolved."""
@@ -424,7 +429,7 @@ class TestLabeledAndGotoPassthrough(unittest.TestCase):
     def test_goto_passes_through_unchanged(self):
         prog = parse("int main(void) { goto foo; }")
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
+        items = resolved.function_definition[0].body.block_item
         self.assertEqual(items[0].statement, c99_ast.Goto(label="foo"))
 
     def test_labeled_statement_label_unchanged_body_resolved(self):
@@ -432,7 +437,7 @@ class TestLabeledAndGotoPassthrough(unittest.TestCase):
         # Var reference that must be resolved to the unique name.
         prog = parse("int main(void) { int a; foo: return a; }")
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
+        items = resolved.function_definition[0].body.block_item
         self.assertEqual(
             items[1].statement,
             c99_ast.LabeledStmt(
@@ -443,7 +448,7 @@ class TestLabeledAndGotoPassthrough(unittest.TestCase):
 
     def test_undeclared_var_inside_labeled_stmt_raises(self):
         prog = parse("int main(void) { foo: return a; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
 
@@ -499,13 +504,16 @@ class TestNestedScopes(unittest.TestCase):
             ),
         )
         resolved = resolve_function(fn)
-        # Outer decl: @0.a (the outer block's first decl).
-        outer_decl = resolved.body.block_item[0].declaration
+        # Outer decl: @0.a (the outer block's first decl). The path
+        # is D -> VarDecl -> Type_var_decl, since `declaration` is a
+        # sum type with `VarDecl(var_decl)` and the actual name
+        # field lives on the inner product.
+        outer_decl = resolved.body.block_item[0].declaration.var_decl
         self.assertEqual(outer_decl.name, "@0.a")
         # Inner Compound -> Block -> first item -> declaration. The
         # unique name is fresh (@1.a), distinct from @0.a.
         inner_block = resolved.body.block_item[1].statement.block
-        inner_decl = inner_block.block_item[0].declaration
+        inner_decl = inner_block.block_item[0].declaration.var_decl
         self.assertEqual(inner_decl.name, "@1.a")
 
     def test_inner_block_sees_outer_name_when_not_shadowed(self):
@@ -541,8 +549,11 @@ class TestNestedScopes(unittest.TestCase):
         resolved = resolve_function(fn)
         inner_block = resolved.body.block_item[1].statement.block
         inner_decl = inner_block.block_item[0].declaration
-        self.assertEqual(inner_decl, c99_ast.Declaration(
-            name="@1.a", init=c99_ast.Var(name="@1.a"),
+        # inner_decl is a VarDecl(var_decl=Type_var_decl(...)).
+        self.assertEqual(inner_decl, c99_ast.VarDecl(
+            var_decl=c99_ast.Type_var_decl(
+                name="@1.a", init=c99_ast.Var(name="@1.a"),
+            ),
         ))
 
     def test_outer_name_intact_after_inner_block_exits(self):
@@ -571,7 +582,7 @@ class TestNestedScopes(unittest.TestCase):
                 _decl("a"),
             ),
         )
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
         self.assertIn("'a'", str(ctx.exception))
 
@@ -584,7 +595,7 @@ class TestNestedScopes(unittest.TestCase):
             _compound(_decl("a")),
             _decl("a"),
         )
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_function(fn)
 
     def test_two_inner_blocks_can_each_redeclare(self):
@@ -598,12 +609,14 @@ class TestNestedScopes(unittest.TestCase):
             _compound(_decl("a")),
         )
         resolved = resolve_function(fn)
-        outer = resolved.body.block_item[0].declaration
+        outer = resolved.body.block_item[0].declaration.var_decl
         first_inner = (
-            resolved.body.block_item[1].statement.block.block_item[0].declaration
+            resolved.body.block_item[1].statement.block
+            .block_item[0].declaration.var_decl
         )
         second_inner = (
-            resolved.body.block_item[2].statement.block.block_item[0].declaration
+            resolved.body.block_item[2].statement.block
+            .block_item[0].declaration.var_decl
         )
         # Three distinct unique names.
         self.assertEqual(
@@ -660,7 +673,7 @@ class TestNestedScopes(unittest.TestCase):
                 _ret(c99_ast.Var(name="b")),
             ),
         )
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
         self.assertIn("'b'", str(ctx.exception))
 
@@ -674,7 +687,7 @@ class TestLoopResolution(unittest.TestCase):
     condition / post / body all resolve in that header scope."""
 
     def test_break_continue_pass_through(self):
-        # Loop labels are minted by loop_labeling — variable_resolution
+        # Loop labels are minted by loop_labeling — identifier_resolution
         # leaves break/continue alone.
         prog = parse(
             "int main(void) { while (1) { break; continue; } return 0; }"
@@ -682,7 +695,7 @@ class TestLoopResolution(unittest.TestCase):
         resolved = resolve_program(prog)
         # while -> body is a Compound -> block -> block_item.
         compound_body = (
-            resolved.function_definition.body.block_item[0]
+            resolved.function_definition[0].body.block_item[0]
             .statement.body
         )
         body_items = compound_body.block.block_item
@@ -694,7 +707,7 @@ class TestLoopResolution(unittest.TestCase):
     def test_while_body_resolves_outer_var(self):
         prog = parse("int main(void) { int a; while (a) a = a + 1; return 0; }")
         resolved = resolve_program(prog)
-        while_stmt = resolved.function_definition.body.block_item[1].statement
+        while_stmt = resolved.function_definition[0].body.block_item[1].statement
         self.assertEqual(while_stmt.condition, c99_ast.Var(name="@0.a"))
         # Body is `a = a + 1` — both Vars resolve to @0.a.
         body = while_stmt.body
@@ -704,19 +717,19 @@ class TestLoopResolution(unittest.TestCase):
 
     def test_while_undeclared_in_condition_raises(self):
         prog = parse("int main(void) { while (a) ; return 0; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_do_while_body_resolves_outer_var(self):
         prog = parse("int main(void) { int a; do a = 1; while (a); return 0; }")
         resolved = resolve_program(prog)
-        do_stmt = resolved.function_definition.body.block_item[1].statement
+        do_stmt = resolved.function_definition[0].body.block_item[1].statement
         self.assertEqual(do_stmt.condition, c99_ast.Var(name="@0.a"))
         self.assertEqual(do_stmt.body.exp.lval, c99_ast.Var(name="@0.a"))
 
     def test_do_while_undeclared_in_body_raises(self):
         prog = parse("int main(void) { do a = 1; while (1); return 0; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_for_init_decl_binds_in_header_and_body(self):
@@ -726,8 +739,8 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { for (int i = 0; i < 10; i++) i; return 0; }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition.body.block_item[0].statement
-        decl = for_stmt.init.declaration
+        for_stmt = resolved.function_definition[0].body.block_item[0].statement
+        decl = for_stmt.init.var_decl
         self.assertEqual(decl.name, "@0.i")
         self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@0.i"))
         self.assertEqual(for_stmt.post_clause.operand, c99_ast.Var(name="@0.i"))
@@ -744,12 +757,12 @@ class TestLoopResolution(unittest.TestCase):
             "return a; }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
-        outer_decl = items[0].declaration
+        items = resolved.function_definition[0].body.block_item
+        outer_decl = items[0].declaration.var_decl
         self.assertEqual(outer_decl.name, "@0.a")
         for_stmt = items[1].statement
         # for-header's `a` is a fresh unique name.
-        self.assertEqual(for_stmt.init.declaration.name, "@1.a")
+        self.assertEqual(for_stmt.init.var_decl.name, "@1.a")
         # Condition / post / body all see @1.a.
         self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@1.a"))
         self.assertEqual(for_stmt.post_clause.lval, c99_ast.Var(name="@1.a"))
@@ -769,7 +782,7 @@ class TestLoopResolution(unittest.TestCase):
             "for (i = 0; i < 5; i++) i; return 0; }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition.body.block_item[1].statement
+        for_stmt = resolved.function_definition[0].body.block_item[1].statement
         # Init is the assignment `i = 0`; both Vars resolve to @0.i.
         self.assertEqual(for_stmt.init.exp.lval, c99_ast.Var(name="@0.i"))
         self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
@@ -781,19 +794,19 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { int i; for (;;) i; }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition.body.block_item[1].statement
+        for_stmt = resolved.function_definition[0].body.block_item[1].statement
         self.assertEqual(for_stmt.init, c99_ast.InitExp(exp=None))
         self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
 
     def test_for_undeclared_in_condition_raises(self):
         # `for (;a<10;) ;` with no `a` in scope.
         prog = parse("int main(void) { for (; a < 10;) ; return 0; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_for_undeclared_in_post_raises(self):
         prog = parse("int main(void) { for (;;a++) ; return 0; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_for_init_decl_visible_to_compound_body(self):
@@ -804,7 +817,7 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { for (int i = 0; ; ) { i; break; } }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition.body.block_item[0].statement
+        for_stmt = resolved.function_definition[0].body.block_item[0].statement
         body_block = for_stmt.body.block
         first_item = body_block.block_item[0].statement
         self.assertEqual(first_item.exp, c99_ast.Var(name="@0.i"))
@@ -816,9 +829,9 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { for (int i = 0;;) { int i = 5; break; } }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition.body.block_item[0].statement
-        self.assertEqual(for_stmt.init.declaration.name, "@0.i")
-        body_decl = for_stmt.body.block.block_item[0].declaration
+        for_stmt = resolved.function_definition[0].body.block_item[0].statement
+        self.assertEqual(for_stmt.init.var_decl.name, "@0.i")
+        body_decl = for_stmt.body.block.block_item[0].declaration.var_decl
         self.assertEqual(body_decl.name, "@1.i")
 
     def test_for_init_duplicate_with_for_scope_decl_in_body_is_legal(self):
@@ -836,14 +849,16 @@ class TestLoopResolution(unittest.TestCase):
 
 class TestResolveProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
+        # Program.function_definition is a list now; the helper builds
+        # a single Function and we wrap it in a one-element list.
         fn = _function(_decl("x"), _ret(c99_ast.Var(name="x")))
-        prog = c99_ast.Program(function_definition=fn)
+        prog = c99_ast.Program(function_definition=[fn])
         self.assertEqual(
             resolve_program(prog),
-            c99_ast.Program(function_definition=_function(
+            c99_ast.Program(function_definition=[_function(
                 _decl("@0.x"),
                 _ret(c99_ast.Var(name="@0.x")),
-            )),
+            )]),
         )
 
 
@@ -855,21 +870,21 @@ class TestIntegrationWithParser(unittest.TestCase):
         prog = parse("int main(void) { int a = 5; return a; }")
         resolved = resolve_program(prog)
         expected = c99_ast.Program(
-            function_definition=_function(
+            function_definition=[_function(
                 _decl("@0.a", init=c99_ast.Constant(value=5)),
                 _ret(c99_ast.Var(name="@0.a")),
-            ),
+            )],
         )
         self.assertEqual(resolved, expected)
 
     def test_duplicate_decl_from_source(self):
         prog = parse("int main(void) { int a; int a; return 0; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_undeclared_use_from_source(self):
         prog = parse("int main(void) { return a; }")
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_inner_block_shadows_outer_from_source(self):
@@ -881,12 +896,12 @@ class TestIntegrationWithParser(unittest.TestCase):
             "int main(void) { int a = 1; { int a = 2; } return a; }"
         )
         resolved = resolve_program(prog)
-        body = resolved.function_definition.body.block_item
+        body = resolved.function_definition[0].body.block_item
         # Outer decl: @0.a = 1.
-        self.assertEqual(body[0].declaration.name, "@0.a")
+        self.assertEqual(body[0].declaration.var_decl.name, "@0.a")
         # Inner Compound's decl: @1.a = 2 (distinct unique name).
         inner_decl = (
-            body[1].statement.block.block_item[0].declaration
+            body[1].statement.block.block_item[0].declaration.var_decl
         )
         self.assertEqual(inner_decl.name, "@1.a")
         # Return reads the outer @0.a, not the (now-discarded) @1.a.
@@ -901,7 +916,7 @@ class TestIntegrationWithParser(unittest.TestCase):
         prog = parse(
             "int main(void) { { int a; int a; } return 0; }"
         )
-        with self.assertRaises(VariableResolutionError):
+        with self.assertRaises(IdentifierResolutionError):
             resolve_program(prog)
 
     def test_compound_assignment_rejects_non_var_lhs(self):
@@ -909,7 +924,7 @@ class TestIntegrationWithParser(unittest.TestCase):
         # Constant(1), Constant(2)))` at parse time. The lval-is-Var
         # check in resolution then rejects it just like plain `1 = 2`.
         prog = parse("int main(void) { 1 += 2; return 0; }")
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_program(prog)
         self.assertIn("invalid lvalue", str(ctx.exception))
 
@@ -917,7 +932,7 @@ class TestIntegrationWithParser(unittest.TestCase):
         # `1++` parses to `Postfix(Increment, Constant(1))`. Postfix
         # is mutating, so its operand has to name a storage location.
         prog = parse("int main(void) { 1++; return 0; }")
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_program(prog)
         self.assertIn("invalid lvalue in postfix", str(ctx.exception))
 
@@ -927,14 +942,14 @@ class TestIntegrationWithParser(unittest.TestCase):
         prog = parse("int main(void) { int a; a++; return a; }")
         resolved = resolve_program(prog)
         expected = c99_ast.Program(
-            function_definition=_function(
+            function_definition=[_function(
                 _decl("@0.a"),
                 _expr(c99_ast.Postfix(
                     op=c99_ast.Increment(),
                     operand=c99_ast.Var(name="@0.a"),
                 )),
                 _ret(c99_ast.Var(name="@0.a")),
-            ),
+            )],
         )
         self.assertEqual(resolved, expected)
 
@@ -944,7 +959,7 @@ class TestIntegrationWithParser(unittest.TestCase):
         # catches it; the error message reflects the assignment
         # branch, not a separate "prefix" branch.
         prog = parse("int main(void) { ++1; return 0; }")
-        with self.assertRaises(VariableResolutionError) as ctx:
+        with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_program(prog)
         self.assertIn("invalid lvalue in assignment", str(ctx.exception))
 
@@ -954,7 +969,7 @@ class TestIntegrationWithParser(unittest.TestCase):
         prog = parse("int main(void) { int a; a += 1; return a; }")
         resolved = resolve_program(prog)
         expected = c99_ast.Program(
-            function_definition=_function(
+            function_definition=[_function(
                 _decl("@0.a"),
                 _expr(c99_ast.Assignment(
                     lval=c99_ast.Var(name="@0.a"),
@@ -965,9 +980,314 @@ class TestIntegrationWithParser(unittest.TestCase):
                     ),
                 )),
                 _ret(c99_ast.Var(name="@0.a")),
-            ),
+            )],
         )
         self.assertEqual(resolved, expected)
+
+
+class TestFunctionLinkage(unittest.TestCase):
+    """Function names have external linkage (C99 §6.2.2): they pass
+    through resolution untouched, multiple declarations of the same
+    name all refer to the same external symbol, and a `FunctionCall`
+    must reference some declared name."""
+
+    def test_function_decl_name_is_not_renamed(self):
+        # `int foo(void); foo();` — the FunctionDecl registers `foo`,
+        # the FunctionCall references it, neither name gets `@N.`-
+        # prefixed.
+        prog = parse(
+            "int main(void) { int foo(void); foo(); return 0; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.function_definition[0].body.block_item
+        decl = items[0].declaration
+        self.assertIsInstance(decl, c99_ast.FunctionDecl)
+        self.assertEqual(decl.function_decl.name, "foo")
+        call = items[1].statement.exp
+        self.assertEqual(call, c99_ast.FunctionCall(name="foo", args=[]))
+
+    def test_duplicate_function_decl_is_legal(self):
+        # Multiple declarations of the same function refer to the
+        # same external symbol and are explicitly permitted (C99
+        # §6.2.2 / §6.7). The pass shouldn't raise.
+        prog = parse(
+            "int main(void) { int foo(void); int foo(void); "
+            "return foo(); }"
+        )
+        # Should not raise.
+        resolve_program(prog)
+
+    def test_call_to_undeclared_function_raises(self):
+        # No declaration of `foo` anywhere — the call has no target
+        # to bind to.
+        prog = parse("int main(void) { return foo(); }")
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("'foo'", str(ctx.exception))
+
+    def test_call_args_are_resolved(self):
+        # The args list is recursed into like any expression — Var
+        # references inside must resolve to their unique names.
+        # `int f(int x);` renames its param to `@0.x` (param scope is
+        # discarded after the decl, but the unique-counter has been
+        # bumped), so the next NONE-linkage decl `int a;` lands at
+        # `@1.a`.
+        prog = parse(
+            "int main(void) { int f(int x); int a; return f(a); }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.function_definition[0].body.block_item
+        ret = items[2].statement
+        self.assertEqual(
+            ret.exp,
+            c99_ast.FunctionCall(
+                name="f", args=[c99_ast.Var(name="@1.a")],
+            ),
+        )
+
+    def test_top_level_function_is_visible_for_self_call(self):
+        # `int main(void) { return main(); }` — the program's own
+        # name is registered before its body is walked, so the
+        # recursive call resolves.
+        prog = parse("int main(void) { return main(); }")
+        resolved = resolve_program(prog)
+        ret = resolved.function_definition[0].body.block_item[0].statement
+        self.assertEqual(
+            ret.exp, c99_ast.FunctionCall(name="main", args=[]),
+        )
+
+    def test_call_to_top_level_function_from_another(self):
+        prog = parse(
+            "int foo(void) { return 1; } "
+            "int main(void) { return foo(); }"
+        )
+        resolved = resolve_program(prog)
+        ret = (
+            resolved.function_definition[1].body.block_item[0].statement
+        )
+        self.assertEqual(
+            ret.exp, c99_ast.FunctionCall(name="foo", args=[]),
+        )
+
+    def test_var_resolution_of_arg_inside_call(self):
+        # `int f(int x); int a = 5; f(a + 1);` — the `a` arg expr
+        # resolves to the local `@N.a`; the call name stays `f`.
+        # `f`'s param `x` consumes `@0`, so the var `a` is `@1.a`.
+        prog = parse(
+            "int main(void) { int f(int x); int a = 5; f(a + 1); "
+            "return 0; }"
+        )
+        resolved = resolve_program(prog)
+        call = (
+            resolved.function_definition[0].body.block_item[2]
+            .statement.exp
+        )
+        self.assertEqual(call.name, "f")
+        self.assertEqual(
+            call.args,
+            [c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Var(name="@1.a"),
+                right=c99_ast.Constant(value=1),
+            )],
+        )
+
+
+class TestParameterResolution(unittest.TestCase):
+    """Function parameters get the same treatment as block-scope
+    variable declarations: validated for uniqueness within the
+    parameter list and renamed to fresh `@<N>.<orig>` strings. The
+    *param scope* this builds is independent of the surrounding block
+    scope (so `int a; int foo(int a);` is legal — the param `a`
+    doesn't conflict with the outer variable `a`). For function
+    *definitions*, the param scope IS the body's outermost scope per
+    C99 §6.9.1.7, so a body decl that reuses a param name raises."""
+
+    def test_function_decl_renames_params(self):
+        prog = parse(
+            "int main(void) { int foo(int x, int y); return 0; }"
+        )
+        resolved = resolve_program(prog)
+        decl = (
+            resolved.function_definition[0].body.block_item[0]
+            .declaration.function_decl
+        )
+        self.assertEqual(decl.name, "foo")
+        self.assertEqual(decl.params, ["@0.x", "@1.y"])
+
+    def test_function_decl_duplicate_param_raises(self):
+        # `int foo(int a, int a);` — two params named `a` is a
+        # duplicate within the param list.
+        prog = parse("int main(void) { int foo(int a, int a); return 0; }")
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("'a'", str(ctx.exception))
+
+    def test_function_decl_param_does_not_conflict_with_outer_var(self):
+        # `int a; int foo(int a);` — the param `a` lives in its own
+        # param scope, separate from the block scope holding the
+        # outer `int a;`. Both should resolve cleanly to fresh names.
+        prog = parse(
+            "int main(void) { int a; int foo(int a); return a; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.function_definition[0].body.block_item
+        # Outer variable: NONE-linkage → renamed.
+        outer_a = items[0].declaration.var_decl
+        self.assertEqual(outer_a.name, "@0.a")
+        # Param of foo: also NONE-linkage → renamed, but to a
+        # different unique name.
+        foo_decl = items[1].declaration.function_decl
+        self.assertEqual(foo_decl.params, ["@1.a"])
+        # `return a;` references the OUTER `a` (the param scope died
+        # at the end of the foo declaration).
+        ret = items[2].statement
+        self.assertEqual(ret.exp, c99_ast.Var(name="@0.a"))
+
+    def test_function_definition_renames_params(self):
+        prog = parse("int main(int x, int y) { return x + y; }")
+        resolved = resolve_program(prog)
+        fn = resolved.function_definition[0]
+        self.assertEqual(fn.params, ["@0.x", "@1.y"])
+        # Body sees the renamed params.
+        ret = fn.body.block_item[0].statement
+        self.assertEqual(
+            ret.exp,
+            c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Var(name="@0.x"),
+                right=c99_ast.Var(name="@1.y"),
+            ),
+        )
+
+    def test_function_definition_duplicate_param_raises(self):
+        prog = parse("int main(int a, int a) { return a; }")
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("'a'", str(ctx.exception))
+
+    def test_function_body_decl_collides_with_param(self):
+        # C99 §6.9.1.7: parameters and the function's outermost
+        # locals share one scope. `int foo(int a) { int a = 3; ...}`
+        # is a duplicate-decl error, not a legal shadow.
+        prog = parse("int foo(int a) { int a = 3; return a; }")
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("'a'", str(ctx.exception))
+
+    def test_function_body_inner_block_can_shadow_param(self):
+        # The collision is only with the body's *outermost* scope.
+        # An inner compound opens a fresh scope and may legally
+        # shadow the param.
+        prog = parse(
+            "int foo(int a) { { int a = 3; return a; } return a; }"
+        )
+        resolved = resolve_program(prog)
+        fn = resolved.function_definition[0]
+        # Param: @0.a.
+        self.assertEqual(fn.params, ["@0.a"])
+        # Inner compound's `int a = 3;` rebinds to a fresh @1.a.
+        inner_block = fn.body.block_item[0].statement.block
+        inner_decl = inner_block.block_item[0].declaration.var_decl
+        self.assertEqual(inner_decl.name, "@1.a")
+        # The trailing `return a;` (in the body's outer scope) reads
+        # the param.
+        outer_ret = fn.body.block_item[1].statement
+        self.assertEqual(outer_ret.exp, c99_ast.Var(name="@0.a"))
+
+    def test_function_body_can_reference_param(self):
+        prog = parse("int foo(int x) { return x + 1; }")
+        resolved = resolve_program(prog)
+        fn = resolved.function_definition[0]
+        ret = fn.body.block_item[0].statement
+        self.assertEqual(
+            ret.exp,
+            c99_ast.Binary(
+                op=c99_ast.Add(),
+                left=c99_ast.Var(name="@0.x"),
+                right=c99_ast.Constant(value=1),
+            ),
+        )
+
+    def test_function_decl_param_scope_dies_after_decl(self):
+        # `int foo(int x); int x;` — the FunctionDecl's param `x`
+        # lives in its own scope, dying at the end of the decl. So
+        # `int x;` afterward is the *first* declaration of `x` in
+        # the surrounding block — no duplicate-decl error.
+        prog = parse(
+            "int main(void) { int foo(int x); int x; return x; }"
+        )
+        # Should not raise.
+        resolved = resolve_program(prog)
+        items = resolved.function_definition[0].body.block_item
+        # The outer `x` gets `@1.x` (`@0.x` was minted for the param,
+        # then the param scope was discarded).
+        self.assertEqual(items[1].declaration.var_decl.name, "@1.x")
+        ret = items[2].statement
+        self.assertEqual(ret.exp, c99_ast.Var(name="@1.x"))
+
+
+class TestLinkageTracking(unittest.TestCase):
+    """The resolver tags every visible identifier with its C99 §6.2.2
+    linkage kind. Today: function declarations and definitions are
+    EXTERNAL; block-scope variable declarations are NONE. The pass
+    uses linkage to decide whether to rename (NONE → fresh `@<N>.<orig>`,
+    INTERNAL/EXTERNAL → keep source spelling), so reading the resolver's
+    internal tables is the cleanest way to assert linkage is being
+    recorded — until the type-checking pass lands and consumes it
+    via a public surface."""
+
+    def test_function_decl_recorded_as_external(self):
+        prog = parse("int main(void) { int foo(void); return foo(); }")
+        r = Resolver()
+        r.resolve_program(prog)
+        # `main` (definition) and `foo` (decl) both EXTERNAL.
+        self.assertEqual(r._functions["main"], Linkage.EXTERNAL)
+        self.assertEqual(r._functions["foo"], Linkage.EXTERNAL)
+
+    def test_top_level_function_definition_recorded_as_external(self):
+        # `int foo(void) { ... } int main(void) { ... }` — both
+        # registered before any body is walked, both EXTERNAL.
+        prog = parse(
+            "int foo(void) { return 1; } "
+            "int main(void) { return 0; }"
+        )
+        r = Resolver()
+        r.resolve_program(prog)
+        self.assertEqual(r._functions, {
+            "foo": Linkage.EXTERNAL, "main": Linkage.EXTERNAL,
+        })
+
+    def test_block_scope_variable_recorded_as_none_linkage(self):
+        # `int a;` at block scope — NONE linkage, gets renamed.
+        # The scope dict goes out of scope when resolve_block returns,
+        # so we exercise resolve_var_decl directly to inspect the
+        # tagged entry.
+        r = Resolver()
+        scope: dict = {}
+        r.resolve_var_decl(
+            c99_ast.Type_var_decl(name="a", init=None),
+            scope,
+            Linkage.NONE,
+        )
+        self.assertEqual(scope["a"], ("@0.a", True, Linkage.NONE))
+
+    def test_external_linkage_var_keeps_source_spelling(self):
+        # Forcing a synthetic EXTERNAL var-decl through the resolver
+        # exercises the future-extern path: the unique-counter is
+        # NOT bumped, and the resolved name equals the source name.
+        r = Resolver()
+        scope: dict = {}
+        result = r.resolve_var_decl(
+            c99_ast.Type_var_decl(name="g", init=None),
+            scope,
+            Linkage.EXTERNAL,
+        )
+        self.assertEqual(result.name, "g")
+        self.assertEqual(scope["g"], ("g", True, Linkage.EXTERNAL))
+        # Counter untouched — the next NONE-linkage var still gets
+        # `@0.<name>`, not `@1.<name>`.
+        self.assertEqual(r.make_unique("x"), "@0.x")
 
 
 class TestErrors(unittest.TestCase):

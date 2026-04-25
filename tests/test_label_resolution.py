@@ -202,7 +202,7 @@ class TestLabelsInLoops(unittest.TestCase):
         # is reachable from outside the loop.
         prog = parse("int main(void) { while (1) foo: ; goto foo; return 0; }")
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
+        items = resolved.function_definition[0].body.block_item
         self.assertEqual(
             items[0].statement.body,
             c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
@@ -214,7 +214,7 @@ class TestLabelsInLoops(unittest.TestCase):
             "int main(void) { do foo: ; while (1); goto foo; return 0; }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
+        items = resolved.function_definition[0].body.block_item
         self.assertEqual(
             items[0].statement.body,
             c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
@@ -226,7 +226,7 @@ class TestLabelsInLoops(unittest.TestCase):
             "int main(void) { for (;;) foo: ; goto foo; return 0; }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
+        items = resolved.function_definition[0].body.block_item
         self.assertEqual(
             items[0].statement.body,
             c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
@@ -247,7 +247,7 @@ class TestLabelsInLoops(unittest.TestCase):
             "int main(void) { foo: ; while (1) goto foo; return 0; }"
         )
         resolved = resolve_program(prog)
-        while_stmt = resolved.function_definition.body.block_item[1].statement
+        while_stmt = resolved.function_definition[0].body.block_item[1].statement
         self.assertEqual(while_stmt.body, c99_ast.Goto(label=".main@foo"))
 
     def test_undefined_goto_inside_for_body_raises(self):
@@ -301,7 +301,7 @@ class TestLabelsInLoops(unittest.TestCase):
 class TestPassthrough(unittest.TestCase):
     """Statements without labels or gotos should pass through
     unchanged (modulo the new AST allocations the pass makes for
-    consistency with variable_resolution)."""
+    consistency with identifier_resolution)."""
 
     def test_function_without_labels_or_gotos(self):
         fn = _function(
@@ -321,9 +321,12 @@ class TestPassthrough(unittest.TestCase):
 
     def test_declarations_pass_through(self):
         # Declarations don't introduce labels and shouldn't be
-        # touched by this pass.
-        decl = c99_ast.D(declaration=c99_ast.Declaration(
-            name="x", init=c99_ast.Constant(value=5),
+        # touched by this pass. The wrap is `D(VarDecl(Type_var_decl
+        # (...)))` — the same shape identifier_resolution produces.
+        decl = c99_ast.D(declaration=c99_ast.VarDecl(
+            var_decl=c99_ast.Type_var_decl(
+                name="x", init=c99_ast.Constant(value=5),
+            ),
         ))
         fn = _function(decl, _ret(c99_ast.Var(name="x")))
         resolved = resolve_function(fn)
@@ -337,14 +340,14 @@ class TestResolveProgram(unittest.TestCase):
             _labeled("foo", c99_ast.Null()),
             _goto("foo"),
         )
-        prog = c99_ast.Program(function_definition=fn)
+        prog = c99_ast.Program(function_definition=[fn])
         resolved = resolve_program(prog)
         self.assertEqual(
             resolved,
-            c99_ast.Program(function_definition=_function(
+            c99_ast.Program(function_definition=[_function(
                 _labeled(".main@foo", c99_ast.Null()),
                 _goto(".main@foo"),
-            )),
+            )]),
         )
 
 
@@ -355,7 +358,7 @@ class TestIntegrationWithParser(unittest.TestCase):
     def test_basic_program(self):
         prog = parse("int main(void) { foo: goto foo; return 0; }")
         resolved = resolve_program(prog)
-        items = resolved.function_definition.body.block_item
+        items = resolved.function_definition[0].body.block_item
         self.assertEqual(
             items[0].statement,
             c99_ast.LabeledStmt(

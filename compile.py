@@ -7,12 +7,17 @@ exactly one of:
   --lex      stop after tokenization; one `line:col<tab>kind<tab>value`
              line per token
   --parse    stop after parsing; pretty-print the c99_ast tree
-  --resolve  stop after name resolution (variable resolution, label
+  --resolve  stop after name resolution (identifier resolution, label
              resolution, then loop labeling); pretty-print the
              rewritten c99_ast (user variables -> `@N.orig`, labels ->
-             `@<funcname>.<orig>`, loops -> `.loop@N`)
-  --tac      stop after TAC translation; pretty-print the tac_ast tree
-  --codegen  go all the way to 6502 assembly text
+             `@<funcname>.<orig>`, loops -> `.loop@N`). Type checking
+             is *not* run for this stage so the rewritten AST surfaces
+             cleanly even when the program would later be rejected by
+             the type checker.
+  --tac      stop after TAC translation; pretty-print the tac_ast tree.
+             Type checking runs first.
+  --codegen  go all the way to 6502 assembly text. Type checking
+             runs first.
 
 Output goes to stdout by default, or to the file named by `-o`. With
 `--codegen`, the output file (if any) must have a `.asm` suffix.
@@ -38,8 +43,20 @@ from pretty import pretty
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
-from passes.variable_resolution import resolve_program as resolve_variables
+from passes.identifier_resolution import resolve_program as resolve_identifiers
+from passes.type_checking import check_program as type_check_program
 from c99_to_tac import translate_program as translate_to_tac
+
+
+def _type_check(prog):
+    """Pipeline-friendly wrapper: type-check the program, drop the
+    returned symbol table (no later pass in the pipeline consumes it
+    today), and return the unchanged AST so the chained `translate_*`
+    calls keep working as before. When a downstream pass needs the
+    symbol table, this wrapper goes away in favor of threading the
+    `(prog, symbols)` tuple through."""
+    prog, _symbols = type_check_program(prog)
+    return prog
 
 
 def _format_tokens(source: str) -> str:
@@ -56,17 +73,17 @@ def _run_stage(stage: str, source: str) -> str:
         return pretty(parse(source)) + "\n"
     if stage == "resolve":
         return pretty(label_loops(
-            resolve_labels(resolve_variables(parse(source)))
+            resolve_labels(resolve_identifiers(parse(source)))
         )) + "\n"
     if stage == "tac":
-        return pretty(translate_to_tac(label_loops(
-            resolve_labels(resolve_variables(parse(source)))
-        ))) + "\n"
+        return pretty(translate_to_tac(_type_check(label_loops(
+            resolve_labels(resolve_identifiers(parse(source)))
+        )))) + "\n"
     if stage == "codegen":
         return emit_program(allocate_stack(replace_pseudoregs(
-            translate_to_asm(translate_to_tac(label_loops(
-                resolve_labels(resolve_variables(parse(source)))
-            )))
+            translate_to_asm(translate_to_tac(_type_check(label_loops(
+                resolve_labels(resolve_identifiers(parse(source)))
+            ))))
         )))
     raise AssertionError(f"unknown stage: {stage!r}")
 

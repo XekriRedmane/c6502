@@ -103,7 +103,7 @@ Mapping:
                                  numbered first.
   C99 Var(name)               -> TAC Var(name) — passthrough. The name
                                  is the unique `@N.orig` minted by
-                                 variable_resolution; it shares a
+                                 identifier_resolution; it shares a
                                  namespace with TAC temps `%n` but
                                  can't collide because `@` and `%` are
                                  both illegal in C identifiers.
@@ -111,7 +111,7 @@ Mapping:
                                  then Copy(rval_val, Var(v)); return
                                  Var(v) so chained assignments
                                  (`b = a = 5`) compose correctly. lval
-                                 must be a Var (variable_resolution
+                                 must be a Var (identifier_resolution
                                  enforces this; we double-check at
                                  runtime).
   C99 Postfix(op, Var(v))     -> emit Copy(Var(v), %old) to capture
@@ -216,10 +216,21 @@ class Translator:
         return name
 
     def translate_program(self, prog: c99_ast.Type_program) -> tac_ast.Type_program:
+        # tac.asdl still has a single function_definition slot — multi-
+        # function TAC is on the same TODO list as `FunctionCall`
+        # lowering, since you can't usefully have one without the
+        # other. For now the c99 program must contain exactly one
+        # function definition (`int main(void) { ... }`); when call
+        # lowering lands, both AST and this dispatcher will widen.
         match prog:
-            case c99_ast.Program(function_definition=fn):
+            case c99_ast.Program(function_definition=fns):
+                if len(fns) != 1:
+                    raise NotImplementedError(
+                        "c99_to_tac currently supports a single function "
+                        f"definition; got {len(fns)}",
+                    )
                 return tac_ast.Program(
-                    function_definition=self.translate_function(fn),
+                    function_definition=self.translate_function(fns[0]),
                 )
         raise TypeError(f"unexpected program: {prog!r}")
 
@@ -276,13 +287,18 @@ class Translator:
         # by their first appearance. So a bare `int x;` lowers to
         # nothing, and `int x = e;` lowers exactly like the assignment
         # `x = e`: evaluate the initializer, then Copy into the var.
+        # A FunctionDecl is purely a name-binding artifact (consumed
+        # by identifier_resolution to validate calls); it has no
+        # runtime effect, so it lowers to nothing.
         match decl:
-            case c99_ast.Declaration(name=name, init=init):
-                if init is not None:
-                    init_val = self.translate_exp(init, instrs)
+            case c99_ast.VarDecl(var_decl=vd):
+                if vd.init is not None:
+                    init_val = self.translate_exp(vd.init, instrs)
                     instrs.append(tac_ast.Copy(
-                        src=init_val, dst=tac_ast.Var(name=name),
+                        src=init_val, dst=tac_ast.Var(name=vd.name),
                     ))
+                return
+            case c99_ast.FunctionDecl():
                 return
         raise TypeError(f"unexpected declaration: {decl!r}")
 
@@ -343,7 +359,7 @@ class Translator:
             case c99_ast.Compound(block=block):
                 # `{ ... }` — TAC is flat, so a compound statement
                 # is just its block items lowered in order. Scope is
-                # already gone by this point (variable_resolution
+                # already gone by this point (identifier_resolution
                 # rewrote every name to its globally-unique form), so
                 # there's nothing left for `{ ... }` to mean at the
                 # IR level. The grammar doesn't yet have a
@@ -483,8 +499,16 @@ class Translator:
         # the result thrown away. An empty `for (;;)` lowers to no
         # init instructions.
         match init:
-            case c99_ast.InitDecl(declaration=decl):
-                self.translate_declaration(decl, instrs)
+            case c99_ast.InitDecl(var_decl=vd):
+                # for-init is restricted to variable declarations
+                # (C99 §6.8.5), so we lower the var_decl directly
+                # rather than going through the wider declaration
+                # dispatcher.
+                if vd.init is not None:
+                    init_val = self.translate_exp(vd.init, instrs)
+                    instrs.append(tac_ast.Copy(
+                        src=init_val, dst=tac_ast.Var(name=vd.name),
+                    ))
                 return
             case c99_ast.InitExp(exp=exp):
                 if exp is not None:
@@ -534,13 +558,13 @@ class Translator:
                 ))
                 return dst
             case c99_ast.Var(name=name):
-                # Resolved name from variable_resolution (e.g. `@0.x`)
+                # Resolved name from identifier_resolution (e.g. `@0.x`)
                 # passes straight through into TAC's Var namespace —
                 # `@` and TAC's `%` are both illegal in C identifiers,
                 # so user vars and translator temps can't collide.
                 return tac_ast.Var(name=name)
             case c99_ast.Assignment(lval=lval, rval=rval):
-                # variable_resolution already enforces lval-is-Var;
+                # identifier_resolution already enforces lval-is-Var;
                 # the runtime check here is belt-and-braces in case a
                 # later refactor lets a non-Var slip through.
                 if not isinstance(lval, c99_ast.Var):
@@ -591,6 +615,16 @@ class Translator:
                 instrs.append(tac_ast.Copy(src=f_val, dst=dst))
                 instrs.append(tac_ast.Label(name=end_label))
                 return dst
+            case c99_ast.FunctionCall():
+                # TODO: lower function calls. Needs both a TAC
+                # representation for calls (not in tac.asdl yet) and
+                # a calling convention that hands args through the
+                # soft stack and reads the return value back. Until
+                # then, parsing+resolution accept calls but the IR
+                # has no way to express them.
+                raise NotImplementedError(
+                    "FunctionCall lowering is not yet implemented",
+                )
             case c99_ast.Postfix(op=op, operand=operand):
                 # `a++` (resp. `a--`) returns the *old* value of `a`
                 # while incrementing (decrementing) it. Capture the
@@ -599,7 +633,7 @@ class Translator:
                 # see the old value even after `a` has been mutated.
                 #
                 # Same defense-in-depth lvalue check as Assignment:
-                # variable_resolution should have already rejected
+                # identifier_resolution should have already rejected
                 # non-Var operands.
                 if not isinstance(operand, c99_ast.Var):
                     raise TypeError(

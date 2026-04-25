@@ -165,14 +165,37 @@ HASH: "#"
 WS: /[ \t\n\f]+/
 %ignore WS
 
-start: function
+// Top-level: a translation unit is a list of function *definitions*
+// (each carries a body). Forward declarations at file scope aren't
+// modeled in the AST yet — the c99.asdl `program = Program(function_
+// definition*)` intentionally only stores definitions. Block-scope
+// `function_decl` is a different rule (no body) so the LALR(1)
+// parser doesn't get a shift-reduce conflict at LPAREN-vs-block.
+start: function_definition*
 
-function: INT IDENTIFIER LPAREN VOID RPAREN block
+function_definition: INT IDENTIFIER LPAREN param_list RPAREN block
+
+// Block-scope declaration: either a variable declaration or a
+// function declaration (no body — C99 forbids nested function
+// definitions). The matching AST sum is `declaration = FunctionDecl
+// (function_decl) | VarDecl(var_decl)`.
+declaration: function_decl | var_decl
+var_decl: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
+function_decl: INT IDENTIFIER LPAREN param_list RPAREN SEMICOLON
+
+// `(void)` is the empty-parameter idiom; otherwise a comma-separated
+// list of `int IDENTIFIER`. Parameter names aren't kept on
+// function_definitions today (the AST's Function only carries name
+// and body), but they are kept on function_decl for the future
+// type-checking pass.
+param_list: VOID | INT IDENTIFIER (COMMA INT IDENTIFIER)*
+
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
           | declaration  -> decl_item
-declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
-for_init: declaration | exp? SEMICOLON
+// for-init permits a variable declaration or an expression-or-empty,
+// per C99 §6.8.5: function declarations aren't legal here.
+for_init: var_decl | exp? SEMICOLON
 
 // `if (exp) statement (else statement)?` — the optional else is the
 // classic dangling-else ambiguity. Lark's LALR(1) backend resolves
@@ -287,13 +310,27 @@ statement: RETURN exp SEMICOLON                                     -> return_st
 ?postfix_exp: postfix_exp PLUSPLUS   -> post_increment
             | postfix_exp MINUSMINUS -> post_decrement
             | atom
-?atom: INTEGER_CONSTANT             -> constant
-     | LPAREN exp RPAREN            -> paren
-     | IDENTIFIER                   -> identifier
+// Function call sits at atom level (one form of primary expression
+// per C99 §6.5.2). The IDENTIFIER LPAREN form is shift/reduce-
+// distinguishable from the bare-identifier form on LPAREN lookahead:
+// after IDENTIFIER, LALR(1) sees LPAREN and shifts (function_call);
+// any other lookahead reduces to identifier→atom. The AST node
+// FunctionCall(name, args) takes the callee as a string identifier
+// (not a general expression), so the LHS is restricted to
+// IDENTIFIER directly — no `(p)(args)` form yet.
+?atom: INTEGER_CONSTANT                       -> constant
+     | LPAREN exp RPAREN                      -> paren
+     | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
+     | IDENTIFIER                             -> identifier
 
 unop: MINUS                         -> negate
     | TILDE                         -> complement
     | BANG                          -> logical_not
+
+// Argument-list nodes: each arg is a full `exp` (assignment-level
+// expression — comma operator isn't supported, so this matches C's
+// argument-expression-list grammar).
+arg_list: exp (COMMA exp)*
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as

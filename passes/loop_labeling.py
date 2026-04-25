@@ -72,10 +72,14 @@ class LoopLabeler:
         self, prog: c99_ast.Type_program,
     ) -> c99_ast.Type_program:
         match prog:
-            case c99_ast.Program(function_definition=fn):
-                return c99_ast.Program(
-                    function_definition=self.label_function(fn),
-                )
+            case c99_ast.Program(function_definition=fns):
+                # Each top-level function gets walked in turn; the
+                # per-program counter keeps loop labels globally
+                # unique even across functions (so `.loop@0` belongs
+                # to whichever loop appears first in the program).
+                return c99_ast.Program(function_definition=[
+                    self.label_function(fn) for fn in fns
+                ])
         raise TypeError(f"unexpected program: {prog!r}")
 
     def label_function(
@@ -217,7 +221,7 @@ class LoopLabeler:
                 # No nested statements that could contain break /
                 # continue; nothing to label. We return the input
                 # unchanged — these nodes are immutable for our
-                # purposes (label_resolution / variable_resolution
+                # purposes (label_resolution / identifier_resolution
                 # have already rewritten any name fields they needed
                 # to touch).
                 return stmt

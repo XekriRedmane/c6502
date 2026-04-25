@@ -1,6 +1,6 @@
 module C99 {
-    program = Program(function_definition)
-    function_definition = Function(identifier name, block body)
+    program = Program(function_definition*)
+    function_definition = Function(identifier name, identifier* params, block body)
     block = Block(block_item*)
     block_item = S(statement) | D(declaration)
     statement =
@@ -18,8 +18,10 @@ module C99 {
         | Goto(identifier label)
         | LabeledStmt(identifier label, statement statement)
         | Null
-    declaration = Declaration(identifier name, exp? init)
-    for_init = InitDecl(declaration) | InitExp(exp?)
+    declaration = FunctionDecl(function_decl) | VarDecl(var_decl)
+    var_decl = (identifier name, exp? init)
+    function_decl = (identifier name, identifier* params, block? body)
+    for_init = InitDecl(var_decl) | InitExp(exp?)
     exp =
         Constant(int value)
         | Var(identifier name)
@@ -28,6 +30,7 @@ module C99 {
         | Assignment(exp lval, exp rval)
         | Postfix(incdec_op op, exp operand)
         | Conditional(exp condition, exp true_clause, exp false_clause)
+        | FunctionCall(identifier name, exp* args)
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement
     binary_operator =

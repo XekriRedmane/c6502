@@ -29,7 +29,7 @@ own `-o` is not forwarded.
 
 Stage-selection flags (mutually exclusive, one required with `compile.py`):
 `--lex`, `--parse`, `--resolve`, `--tac`, `--codegen`. `--resolve` runs
-the three name-resolution passes (variable resolution, label resolution,
+the three name-resolution passes (identifier resolution, label resolution,
 loop labeling) in that order.
 
 ## Regenerating AST modules
@@ -50,21 +50,38 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains nine passes, each a separate module that takes
-one AST and returns another (or text for emit):
+`compile.py --codegen` chains ten passes, each a separate module that
+takes one AST and returns another (or text for emit):
 
-1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar lives
-   in `c99.lark`. The grammar accepts `int main(void) <block>`, where a
-   `<block>` is `{ <block_item>* }` (its own AST product type
+1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar
+   lives in `c99.lark`. The top-level production is `function_definition*`:
+   a translation unit is one or more `int NAME(<param_list>) <block>` forms.
+   Every entry has a body, so the AST stores them as `Program(function_
+   definition: list[Function])`. Forward declarations at file scope aren't
+   accepted yet (`int foo(void);` only parses at *block* scope, not file
+   scope). A `<param_list>` is `void` (empty params) or comma-separated
+   `int IDENT` pairs. Parameter names are stored on the Function AST
+   node (`Function(name, params, body)`) so identifier_resolution can
+   rename them and the planned type-checking pass can validate calls
+   against them. Block-scope `function_decl` records carry their own
+   params on `Type_function_decl(name, params, body)`.
+   A `<block>` is `{ <block_item>* }` (its own AST product type
    `Block(block_item*)` so a function body is `Function(name,
-   Block([...]))`). A block item is a declaration (`int x;` / `int x =
-   exp;`) or a statement (`return exp;`, `exp;`, `if (exp) stmt (else
-   stmt)?`, `goto label;`, `label: stmt`, a `<block>` (compound
-   statement, `Compound(block)`), `break;`, `continue;`,
+   Block([...]))`). A block item is a declaration (`var_decl` or
+   `function_decl`) or a statement (`return exp;`, `exp;`, `if (exp)
+   stmt (else stmt)?`, `goto label;`, `label: stmt`, a `<block>`
+   (compound statement, `Compound(block)`), `break;`, `continue;`,
    `while (exp) stmt`, `do stmt while (exp);`,
-   `for (<for_init> exp? ; exp?) stmt`, or a null `;`). Iteration
-   statements introduce a `for_init` rule covering a declaration or
-   `exp? ;`. The loop AST nodes (`WhileStmt`, `DoWhileStmt`, `ForStmt`,
+   `for (<for_init> exp? ; exp?) stmt`, or a null `;`). The two
+   declaration alternatives map to the AST sum
+   `declaration = FunctionDecl(function_decl) | VarDecl(var_decl)`:
+   `var_decl` is `int IDENT (= exp)? ;` and produces
+   `Type_var_decl(name, init?)`; `function_decl` is `int IDENT
+   (param_list) ;` (no body — C99 forbids nested function definitions
+   at block scope) and produces `Type_function_decl(name, params,
+   body=None)`. Iteration statements introduce a `for_init` rule
+   covering a `var_decl` or `exp? ;` (function declarations aren't
+   legal in for-init per C99 §6.8.5). The loop AST nodes (`WhileStmt`, `DoWhileStmt`, `ForStmt`,
    `BreakStmt`, `ContinueStmt`) carry an `identifier label` field that
    the parser leaves as the empty string — the loop_labeling pass
    fills it in later. The compound-
@@ -85,7 +102,7 @@ one AST and returns another (or text for emit):
    comparison/`&&`/`||`, parentheses, right-associative `=`, and the
    ternary `cond ? t : f`. The assignment LHS is loosened from C99's
    `unary-expression` to `conditional_exp`, so `1+2=3+4` and
-   `(1?2:a)=5` both parse — variable resolution rejects the non-lvalue
+   `(1?2:a)=5` both parse — identifier resolution rejects the non-lvalue
    forms. The ternary sits at its own `conditional_exp` level between
    assignment and logical-or (C99 §6.5.15): condition is
    `logical_or_exp`, true-clause is full `exp`, false-clause is
@@ -108,32 +125,94 @@ one AST and returns another (or text for emit):
    `Assignment` / `Binary` alone. Postfix sits at its own grammar
    level (`postfix_exp`) one tighter than `unary_exp`, so `-a++`
    parses as `-(a++)` and `++a++` as `++(a++)`.
-2. `passes.variable_resolution.resolve_program` — `c99_ast` → `c99_ast`.
-   Rewrites every user-written variable name to a program-unique
-   `@<N>.<orig>` (illegal in a C identifier, so it can't collide with user
-   names). A `Declaration(name)` bumps a global counter, mints a new
-   unique name, and records `name → unique` in the per-function scope;
-   declaring the same name twice raises `VariableResolutionError`. A
-   `Var(name)` in any expression is rewritten to its mapped unique name;
-   the same lvalue check that gates `Assignment.lval` also gates
-   `Postfix.operand`, so `1++` raises just like `1 = 2`.
-   referencing an undeclared name raises. An `Assignment` additionally
-   checks its lval is a `Var` (not a `Binary`, `Constant`, `Unary`, or
-   nested `Assignment`) and raises "invalid lvalue" otherwise —
-   `1+2=3`, `-a=5`, `(a=b)=c` all fail here. When richer lvalues
-   (`*p`, `a[i]`, `s.f`) land, this check widens to an "is-lvalue"
-   predicate. Scope is per-block: each `Block` owns a `dict[str,
-   tuple[str, bool]]` mapping each visible user name to
-   `(unique_name, inner)`, where `inner` is True iff the name was
-   declared in *this* block. Entering a nested block clones the
-   parent's map and flips every entry's `inner` flag to False — so
-   the inner block sees the outer's variables but knows they
-   weren't declared in it. A duplicate-decl error fires only when
-   an already-inner-scoped entry would be overwritten; declaring a
-   name that's currently outer-scoped legally shadows it (overwrite
-   with a fresh unique name flagged as inner). Exiting the inner
-   block discards its dict — Python GC handles this since we cloned
-   the parent's map rather than aliasing it. While/do-while bodies
+   Function calls `f(arg, ...)` sit at the atom level alongside
+   constants, parenthesised expressions, and bare identifiers. The
+   grammar uses `IDENTIFIER LPAREN arg_list? RPAREN -> function_call`
+   (and `IDENTIFIER -> identifier` as a separate atom alternative);
+   LALR(1) shifts on LPAREN to disambiguate between the two — bare
+   `f` reduces to `Var("f")`, `f(x)` reduces to
+   `FunctionCall(name="f", args=[...])`. The callee is a literal
+   identifier, not an expression, because the AST node carries the
+   name as a string (`FunctionCall(name, args)`) — no
+   pointer-to-function call form yet. Arg expressions are full `exp`
+   (assignment-level), separated by commas.
+2. `passes.identifier_resolution.resolve_program` — `c99_ast` → `c99_ast`.
+   Resolves every user-written identifier — variables and functions
+   both — and tags it with its C99 §6.2.2 **linkage kind**, stored
+   alongside the resolved name in the resolver's tables. Renaming
+   is gated on linkage:
+   - **`Linkage.NONE`** (block-scope automatic variables today —
+     every `int x;` we accept) → mint a program-unique
+     `@<N>.<orig>` (illegal in a C identifier, so it can't collide
+     with user names) and record it in the per-block scope.
+   - **`Linkage.EXTERNAL`** (every function declaration / definition
+     today; later: `extern int x;` at file scope) → keep the source
+     spelling, because the linker resolves these by name across
+     translation units.
+   - **`Linkage.INTERNAL`** (later: `static int x;` / `static int
+     foo(void);` at file scope) → keep the source spelling, because
+     later TU-local passes resolve these by name. Not produced
+     today.
+   The "rename only NONE-linkage names" rule replaces the older
+   "rename variables, leave functions alone" heuristic — same
+   behavior right now (every variable is NONE, every function is
+   EXTERNAL), but the linkage-driven version slots in cleanly when
+   `extern`/`static` land. A `VarDecl(Type_var_decl(name))` runs
+   through `resolve_var_decl(... , linkage=Linkage.NONE)` today,
+   which bumps the unique-name counter, mints `@<N>.<orig>`, and
+   records `(resolved, inner=True, linkage=NONE)` in the per-block
+   scope. Declaring the same variable name twice in the same block
+   raises `IdentifierResolutionError`. A `FunctionDecl(Type_
+   function_decl(name))` registers the name in a per-program
+   `_functions: dict[str, Linkage]` (today always
+   `Linkage.EXTERNAL`) without renaming — multiple declarations of
+   the same function are legal and idempotent under dict-overwrite
+   semantics. Top-level `Function(name, body)` definitions are
+   pre-registered in the same dict before any body is walked, so a
+   `FunctionCall` inside one function can resolve a target defined
+   later in the file or be self-recursive. A `Var(name)` in any
+   expression is rewritten to its mapped resolved name; referencing
+   an undeclared variable raises (a function name on its own
+   doesn't satisfy a `Var` lookup — c6502 has no function-pointer
+   expressions yet). A `FunctionCall(name, args)` validates that
+   `name` is in `_functions` (raises "call to undeclared function"
+   if not), recursively resolves the args, and leaves `name` itself
+   unchanged. The same lvalue check that gates `Assignment.lval`
+   also gates `Postfix.operand`, so `1++` raises just like
+   `1 = 2`. An `Assignment` additionally checks its lval is a `Var`
+   (not a `Binary`, `Constant`, `Unary`, or nested `Assignment`)
+   and raises "invalid lvalue" otherwise — `1+2=3`, `-a=5`,
+   `(a=b)=c` all fail here. When richer lvalues (`*p`, `a[i]`,
+   `s.f`) land, this check widens to an "is-lvalue" predicate.
+   **Parameters** are resolved exactly like NONE-linkage local
+   variables: `_resolve_params` walks the parameter list, validating
+   uniqueness within the list and minting a fresh `@<N>.<orig>` for
+   each (the param scope built up is independent of the surrounding
+   block scope, so `int a; int foo(int a);` is legal — the param
+   `a` doesn't conflict with the outer variable `a`). For a
+   `FunctionDecl` (no body), the renamed names are stored on the
+   returned `Type_function_decl.params` and the param scope is
+   discarded. For a function *definition* the param scope IS the
+   body's outermost scope (C99 §6.9.1.7: "the parameters and the
+   local variables of the function have the same scope"), so the
+   body's block items resolve directly into it without the usual
+   clone-flip — `int foo(int a) { int a = 3; ... }` raises
+   duplicate-decl on the body's `int a`, while a nested
+   `int foo(int a) { { int a = 3; ... } ... }` legally shadows via
+   the inner Compound's own scope.
+   Scope is per-block: each `Block` owns a `dict[str, tuple[str,
+   bool, Linkage]]` mapping each visible user name to
+   `(resolved_name, inner, linkage)`, where `inner` is True iff
+   the name was declared in *this* block. Entering a nested block
+   clones the parent's map and flips every entry's `inner` flag to
+   False — linkage rides along unchanged, since linkage is fixed at
+   the declaration site. A duplicate-decl error fires only when an
+   already-inner-scoped entry would be overwritten; declaring a
+   name that's currently outer-scoped legally shadows it
+   (overwrite with a fresh entry, mint or reuse the spelling per
+   the new entry's linkage, flag as inner). Exiting the inner
+   block discards its dict — Python GC handles this since we
+   cloned the parent's map rather than aliasing it. While/do-while bodies
    resolve in the parent scope (they don't introduce a scope of
    their own; a Compound body opens its own scope as usual). The
    for-header (`for (<init> ...) body`) opens a fresh scope per
@@ -182,47 +261,104 @@ one AST and returns another (or text for emit):
    after `@` is digits, so the two forms can't ever match. Codegen
    derives concrete control-flow targets by appending suffixes
    (`_start`, `_continue`, `_break`) to the loop's base label.
-5. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
-   code). Compound expressions flatten into ops, materializing each intermediate
-   into a fresh `Var(%n)`. `Binary(op, src1, src2, dst)` evaluates `src1` first
-   so its temps get lower numbers. `Goto(label)` lowers to a TAC
-   `Jump(label)`; `LabeledStmt(label, stmt)` lowers to a TAC
-   `Label(label)` followed by the inner statement's lowering. Label
-   names arrive pre-mangled by label_resolution and pass through
-   unchanged. Iteration statements derive concrete control-flow
-   targets from the base label set by loop_labeling, by suffix:
-   `<base>_start` (top of loop), `<base>_continue` (continue
-   target), `<base>_break` (break target). `BreakStmt(label)` →
-   `Jump(<label>_break)`, `ContinueStmt(label)` →
-   `Jump(<label>_continue)`. The three loop kinds lower to fixed
-   sequences: `while` is `Label(_continue); <eval cond>;
-   JumpIfFalse(_break); <body>; Jump(_continue); Label(_break)`;
-   `do-while` is `Label(_start); <body>; Label(_continue);
-   <eval cond>; JumpIfTrue(_start); Label(_break)`; `for` is
-   `<init>; Label(_start); [<eval cond>; JumpIfFalse(_break);]
-   <body>; Label(_continue); [<post>;] Jump(_start);
-   Label(_break)`, with the bracketed sections omitted when the
-   condition or post-clause slot is empty (a missing condition is
-   treated as unconditionally true).
-6. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
+5. `passes.type_checking.check_program` — `(c99_ast, SymbolTable)`.
+   Walks the AST once and produces a `SymbolTable` (a `dict[str,
+   Symbol]` keyed by resolved identifier name). Each `Symbol` has a
+   `type` (`Int()` for variables and parameters today; `FunType
+   (params: tuple[Type,...], ret: Type)` for functions, always
+   `Int -> Int -> ... -> Int` right now) and a `defined` flag (True
+   iff a function definition has been seen — irrelevant for
+   variables today, will become meaningful for `extern` objects).
+   Both `Type` subclasses are frozen dataclasses, so equality is
+   structural and arity differences distinguish function types.
+   The pass does NOT modify the AST; it returns the input program
+   as-is alongside the populated symbol table, which `compile.py`
+   currently discards (no later pipeline pass consumes it yet, but
+   the API is built for future codegen passes that will).
+   Errors raised (`TypeCheckError`):
+   - **Function used as a variable**: `int foo(void); int x = foo;`
+     — `Var(name)` lookup yields a `FunType`. Reachable because
+     identifier_resolution's loosened cross-namespace lookup lets
+     `Var(foo)` through when `foo` is in the function table; the
+     type checker is what gives the precise diagnostic.
+   - **Variable called as a function**: `int x; x();` — symmetric
+     case, where `FunctionCall(name)` resolves to a non-`FunType`
+     symbol via the variable-namespace fallback.
+   - **Wrong arity**: `int foo(int a, int b); foo(1);` — argument
+     count doesn't match `FunType.params` length.
+   - **Argument type mismatch**: trivial today (every argument and
+     every parameter is `Int`), nontrivial once richer types land.
+   - **Incompatible redeclaration**: `int foo(int a); int foo(int
+     a, int b);` — two declarations with different signatures.
+     `SymbolTable.add_function` does the structural-equality check.
+   - **Redefinition**: `int foo(void) { ... } int foo(void) { ... }`
+     — second function definition for a name whose `defined` flag
+     is already True.
+   - **Initializer type mismatch**: `int x = some_func;` — exercises
+     the var-init type-check path; today only fires when the
+     initializer expression resolves to a `FunType` value.
+   The function-name table from identifier_resolution and the
+   variable-scope table both feed into the symbol table here:
+   variable names arrive already unique (`@<N>.<orig>`) so a flat
+   `dict` is enough — no nested scopes. Functions are pre-registered
+   from their definitions before each body is checked, so a body
+   can self-recurse without a forward declaration.
+6. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
+   code). The c99 program has a list of function definitions
+   (`Program(function_definition: list[Function])`), but the TAC
+   side is still singular (`Program(function_definition: Function)`)
+   because multi-function TAC is gated on `FunctionCall` lowering
+   landing — we add both at once. Today the dispatcher asserts
+   exactly one definition and translates that. `FunctionCall` itself
+   is a **TODO** in `translate_exp` — the case raises
+   `NotImplementedError`, since neither the TAC IR nor the soft-
+   stack calling convention has a representation for calls yet
+   (TAC needs a `Call(name, args, dst)` instruction; the runtime
+   needs to thread args through the soft stack and read a return
+   value). The whole pipeline accepts and validates calls up to and
+   including this pass; only this final lowering step is missing.
+   `FunctionDecl` block items lower to nothing — they're a name-
+   binding artifact for `identifier_resolution`, not runtime state.
+   Compound expressions flatten into ops, materializing each
+   intermediate into a fresh `Var(%n)`. `Binary(op, src1, src2,
+   dst)` evaluates `src1` first so its temps get lower numbers.
+   `Goto(label)` lowers to a TAC `Jump(label)`; `LabeledStmt(label,
+   stmt)` lowers to a TAC `Label(label)` followed by the inner
+   statement's lowering. Label names arrive pre-mangled by
+   label_resolution and pass through unchanged. Iteration statements
+   derive concrete control-flow targets from the base label set by
+   loop_labeling, by suffix: `<base>_start` (top of loop),
+   `<base>_continue` (continue target), `<base>_break` (break
+   target). `BreakStmt(label)` → `Jump(<label>_break)`,
+   `ContinueStmt(label)` → `Jump(<label>_continue)`. The three loop
+   kinds lower to fixed sequences: `while` is `Label(_continue);
+   <eval cond>; JumpIfFalse(_break); <body>; Jump(_continue);
+   Label(_break)`; `do-while` is `Label(_start); <body>;
+   Label(_continue); <eval cond>; JumpIfTrue(_start); Label(_break)`;
+   `for` is `<init>; Label(_start); [<eval cond>;
+   JumpIfFalse(_break);] <body>; Label(_continue); [<post>;]
+   Jump(_start); Label(_break)`, with the bracketed sections omitted
+   when the condition or post-clause slot is empty (a missing
+   condition is treated as unconditionally true).
+7. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
    instruction lowers into a sequence of atoms (`Mov` to/from `A`, atomic ops
    on `A`, carry setup if needed). Output is correct but redundant — every
    intermediate is materialized through a `Frame` slot. Optimization is
    deferred to TAC-level passes.
-7. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
+8. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
    `Frame(offset)` slot. Per function: walks instructions in order, mints
    offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
    the same offset for repeated names. `args_bytes` is `0` currently.
-8. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
+9. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
    `Frame` offset = local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites every
    `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
-9. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
-   every node maps to one 6502 instruction, except `Ret` and
-   `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
+10. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
+    every node maps to one 6502 instruction, except `Ret` and
+    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
-step 7 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
+step 8 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
 are TAC-only concepts;
 `tac_to_asm` lowers each to a `Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence
 targeting one of the runtime helpers `mul8` / `divmod8` / `shl8` / `asr8`.
@@ -434,7 +570,7 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   `break` or `continue` outside any loop raises
   `LoopLabelingError`. `c99_to_tac` derives `_start` / `_continue`
   / `_break` sub-labels from the base by suffix and lays out the
-  three loop kinds as documented in pass 5 above. The for-header
+  three loop kinds as documented in pass 6 above. The for-header
   opens its own variable scope (C99 §6.8.5.3), so
   `int a; for (int a = 1; ...) ...` legally shadows the outer
   `a` for the duration of the loop. A missing `for` condition is
@@ -442,12 +578,36 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   `JumpIfFalse` drop out of the lowered TAC entirely
 - arbitrary parenthesisation
 
-Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
-everywhere but parser only accepts `(void)` and translator hardcodes 0),
-multiple functions, user-defined calls, `switch` statements (the
-loop-labeling pass is sole owner of break-targets right now; once
-switch lands its lowering will track its own break-target separately),
-types other than `int` (so unsigned right shift and unsigned ordering
-aren't distinguishable yet), and the runtime header that defines
-`SSP`/`FP`, initializes `SSP`, sets the reset vector, and provides
-`mul8`/`divmod8`/`shl8`/`asr8`.
+Parsed and resolved but **not yet lowered to TAC** (everything up to
+loop labeling accepts them; `c99_to_tac.translate_exp` raises
+`NotImplementedError` for `FunctionCall` and the dispatcher rejects
+multi-function programs):
+- Function declarations at block scope: `int foo(void);` /
+  `int foo(int a, int b);`. `identifier_resolution` registers the
+  name in a per-program function-name set, leaves it unrenamed
+  (external linkage — C99 §6.2.2), and accepts duplicate
+  declarations of the same function as same-symbol redeclarations.
+  Top-level function definitions are pre-registered in the same
+  set before any body is walked, so calls can be forward / self-
+  recursive.
+- Function calls: `f()`, `f(a, b + 1)`. `FunctionCall(name, args)`
+  passes the callee name through unchanged and resolves each arg
+  expression. A call to a name nothing has declared raises
+  `IdentifierResolutionError`.
+- Multiple top-level function definitions (`int foo(void) { ... }
+  int main(void) { ... }`). `Program.function_definition` is now a
+  `list`; the c99→TAC dispatcher accepts only programs with
+  exactly one definition until call lowering lands.
+
+Not yet in the pipeline at all: file-scope (forward) declarations,
+calling-convention support that actually consumes parameters in
+codegen (the IR threads `arg_bytes` everywhere but the asm
+translator hardcodes 0 and `Function` definitions hand their param
+names to identifier resolution / type checking only — codegen still
+ignores them), `switch` statements (the loop-labeling pass is sole
+owner of break-targets right now; once switch lands its lowering
+will track its own break-target separately), types other than `int`
+(so unsigned right shift and unsigned ordering aren't distinguishable
+yet), and the runtime header that defines `SSP`/`FP`, initializes
+`SSP`, sets the reset vector, and provides `mul8`/`divmod8`/`shl8`/
+`asr8`.

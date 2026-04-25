@@ -53,15 +53,30 @@ _COMPOUND_ASSIGN_OPS = {
 
 
 class _ASTBuilder(Transformer):
-    @v_args(inline=True)
-    def start(self, function):
-        return c99_ast.Program(function_definition=function)
+    def start(self, items):
+        # `start: function_definition*` — items is the list of
+        # Function nodes already built by `function_definition`.
+        return c99_ast.Program(function_definition=list(items))
 
-    @v_args(inline=True)
-    def function(self, _int, name, _lp, _void, _rp, body):
-        # The grammar's `function: INT IDENTIFIER LPAREN VOID RPAREN
-        # block` rule hands us a fully-built Block as the body.
-        return c99_ast.Function(name=str(name), body=body)
+    def function_definition(self, items):
+        # `function_definition: INT IDENTIFIER LPAREN param_list
+        # RPAREN block`. Parameter names ride along on the Function
+        # AST node so identifier_resolution can rename them and
+        # the type-checking pass can validate calls against them.
+        # Non-inline because param_list returns a list.
+        name = items[1]
+        params = items[3]
+        body = items[5]
+        return c99_ast.Function(name=str(name), params=params, body=body)
+
+    def param_list(self, items):
+        # `(void)` -> empty parameter list. Otherwise `int IDENT (,
+        # int IDENT)*`, which arrives as INT, IDENT, COMMA, INT,
+        # IDENT, ...; we keep just the IDENT tokens and return their
+        # names.
+        if len(items) == 1 and getattr(items[0], "type", None) == "VOID":
+            return []
+        return [str(items[i]) for i in range(1, len(items), 3)]
 
     def block(self, items):
         # `block: LBRACE block_item* RBRACE`. Non-inline because
@@ -77,13 +92,31 @@ class _ASTBuilder(Transformer):
     def decl_item(self, declaration):
         return c99_ast.D(declaration=declaration)
 
-    # `declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON`. The optional
-    # initializer makes the children variable-length (5 tokens with init,
-    # 3 without), so non-inline again.
-    def declaration(self, items):
+    @v_args(inline=True)
+    def declaration(self, child):
+        # `declaration: function_decl | var_decl`. Each branch
+        # returns its product type (`Type_function_decl` or
+        # `Type_var_decl`); wrap into the matching declaration sum
+        # constructor here.
+        if isinstance(child, c99_ast.Type_var_decl):
+            return c99_ast.VarDecl(var_decl=child)
+        return c99_ast.FunctionDecl(function_decl=child)
+
+    def var_decl(self, items):
+        # `var_decl: INT IDENTIFIER (ASSIGN exp)? SEMICOLON`. With
+        # initializer, items has 5 elements; without, 3.
         name = items[1]
         init = items[3] if len(items) == 5 else None
-        return c99_ast.Declaration(name=str(name), init=init)
+        return c99_ast.Type_var_decl(name=str(name), init=init)
+
+    def function_decl(self, items):
+        # `function_decl: INT IDENTIFIER LPAREN param_list RPAREN
+        # SEMICOLON`. No body in the block-scope form.
+        name = items[1]
+        params = items[3]
+        return c99_ast.Type_function_decl(
+            name=str(name), params=params, body=None,
+        )
 
     # Alternatives of `statement` — each named in c99.lark.
     @v_args(inline=True)
@@ -126,7 +159,7 @@ class _ASTBuilder(Transformer):
         return c99_ast.Null()
 
     # Loop and jump statements. Loop labels are minted by the
-    # loop_labeling pass that runs after variable_resolution; the
+    # loop_labeling pass that runs after identifier_resolution; the
     # parser leaves them as empty strings.
     @v_args(inline=True)
     def break_stmt(self, _break, _semi):
@@ -144,15 +177,16 @@ class _ASTBuilder(Transformer):
     def do_stmt(self, _do, body, _while, _lp, cond, _rp, _semi):
         return c99_ast.DoWhileStmt(body=body, condition=cond, label="")
 
-    # `for_init: declaration | exp? SEMICOLON`. The declaration alternative
-    # already consumes its own SEMICOLON, so a declaration arrives as the
-    # only child. The exp-or-empty alternative carries an explicit
-    # SEMICOLON token: zero or one preceding exp child, then SEMICOLON.
+    # `for_init: var_decl | exp? SEMICOLON`. The var_decl alternative
+    # already consumes its own SEMICOLON, so it arrives as the only
+    # child (a `Type_var_decl`). The exp-or-empty alternative carries
+    # an explicit SEMICOLON token: zero or one preceding exp child,
+    # then SEMICOLON.
     def for_init(self, items):
         if len(items) == 1:
             child = items[0]
-            if isinstance(child, c99_ast.Declaration):
-                return c99_ast.InitDecl(declaration=child)
+            if isinstance(child, c99_ast.Type_var_decl):
+                return c99_ast.InitDecl(var_decl=child)
             # Bare SEMICOLON — empty for-init clause.
             return c99_ast.InitExp(exp=None)
         # exp + SEMICOLON.
@@ -241,7 +275,7 @@ class _ASTBuilder(Transformer):
     # Postfix `a++` / `a--` keep their own AST node because they have
     # to return the *old* value of the operand while also mutating
     # it. The lvalue check (operand must be a `Var`) lives in
-    # variable_resolution alongside the Assignment check.
+    # identifier_resolution alongside the Assignment check.
     @v_args(inline=True)
     def post_increment(self, operand, _op):
         return c99_ast.Postfix(op=c99_ast.Increment(), operand=operand)
@@ -253,6 +287,19 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def paren(self, _lp, inner, _rp):
         return inner
+
+    # `IDENTIFIER LPAREN arg_list? RPAREN` — a function call. With
+    # no arguments, items is [IDENT, LPAREN, RPAREN] (3); with an
+    # arg_list, items is [IDENT, LPAREN, [arg, ...], RPAREN] (4).
+    def function_call(self, items):
+        name = str(items[0])
+        args = items[2] if len(items) == 4 else []
+        return c99_ast.FunctionCall(name=name, args=args)
+
+    # `arg_list: exp (COMMA exp)*` — every other child is an exp;
+    # the COMMA tokens are interleaved.
+    def arg_list(self, items):
+        return [items[i] for i in range(0, len(items), 2)]
 
     @v_args(inline=True)
     def conditional(self, condition, _q, true_clause, _c, false_clause):

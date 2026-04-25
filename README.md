@@ -76,7 +76,7 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
 `compile.py` is the only CLI; every other module (`lexer.py`,
-`parser.py`, `passes/variable_resolution.py`,
+`parser.py`, `passes/identifier_resolution.py`,
 `passes/label_resolution.py`, `passes/loop_labeling.py`,
 `c99_to_tac.py`, `tac_to_asm.py`,
 `passes/replace_pseudoregisters.py`, `passes/allocate_stack.py`,
@@ -128,12 +128,12 @@ that takes an AST and returns an AST (or text, for emit):
    (`exp → assignment_exp → conditional_exp → logical_or_exp → …
    → unary_exp → postfix_exp → atom`).
 
-2. **`passes.variable_resolution.resolve_program`** — `c99_ast` →
+2. **`passes.identifier_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Rewrites every user-written identifier to a
    program-unique `@<N>.<orig>` (illegal as a C identifier, so it
    can't collide with user names). A `Declaration` mints a fresh
    unique name; a second declaration of the same original name
-   raises `VariableResolutionError`. Every `Var` reference in an
+   raises `IdentifierResolutionError`. Every `Var` reference in an
    expression is rewritten to its mapped unique name; referencing
    an undeclared name also raises. An `Assignment` additionally
    checks its lval is a `Var` (c6502 doesn't have richer lvalues

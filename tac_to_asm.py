@@ -138,10 +138,22 @@ class Translator:
     def translate_program(
         self, prog: tac_ast.Type_program,
     ) -> asm_ast.Type_program:
+        # tac.asdl now stores `function_definition*`, but asm.asdl is
+        # still singular. Bridging the gap is gated on extending the
+        # asm side (and the calling-convention work that goes with
+        # it). For now we accept exactly one TAC function and lower
+        # it; multi-function programs error out cleanly here rather
+        # than producing a half-formed asm tree.
         match prog:
-            case tac_ast.Program(function_definition=fn):
+            case tac_ast.Program(function_definition=fns):
+                if len(fns) != 1:
+                    raise NotImplementedError(
+                        "tac_to_asm currently supports a single "
+                        f"function definition; got {len(fns)} "
+                        "(asm.asdl needs to widen first)"
+                    )
                 return asm_ast.Program(
-                    function_definition=self.translate_function(fn),
+                    function_definition=self.translate_function(fns[0]),
                 )
         raise TypeError(f"unexpected program node: {prog!r}")
 
@@ -150,6 +162,9 @@ class Translator:
     ) -> asm_ast.Type_function_definition:
         match fn:
             case tac_ast.Function(name=name, instructions=instrs):
+                # Parameters on the TAC Function go unused here —
+                # they're informational until the calling convention
+                # is wired up.
                 out: list[asm_ast.Type_instruction] = []
                 for instr in instrs:
                     out.extend(self.translate_instruction(instr))
@@ -200,6 +215,22 @@ class Translator:
                     asm_ast.Mov(src=translate_val(cond), dst=_REG_A),
                     asm_ast.Branch(cond=asm_ast.EQ(), target=target),
                 ]
+            case tac_ast.FunctionCall():
+                # User-function calls land here once tac.asdl has
+                # them, but the 6502 calling convention for them
+                # isn't designed yet (the soft-stack frame layout
+                # works only for the runtime helpers `mul8` /
+                # `divmod8` / `shl8` / `asr8`, which the binary-op
+                # lowerings emit as raw `Call`s — they don't go
+                # through TAC FunctionCall). The translator must
+                # eventually push args onto the soft stack, emit
+                # `Call`, and copy the return value out of A into
+                # `dst`. Until that's wired up, refuse cleanly.
+                raise NotImplementedError(
+                    "tac_to_asm: user-function FunctionCall lowering "
+                    "is not yet implemented (6502 calling convention "
+                    "is still TODO)"
+                )
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     def translate_binary(

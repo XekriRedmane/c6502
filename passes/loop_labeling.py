@@ -86,13 +86,15 @@ class LoopLabeler:
         self, fn: c99_ast.Type_function_definition,
     ) -> c99_ast.Type_function_definition:
         match fn:
-            case c99_ast.Function(name=name, body=body):
+            case c99_ast.Function(name=name, params=params, body=body):
                 # Function bodies start outside any loop: a top-level
                 # `break;` / `continue;` is an error. The counter
                 # keeps running across functions so labels stay
-                # globally unique.
+                # globally unique. Params don't host loops or
+                # break/continue — they pass through verbatim.
                 return c99_ast.Function(
                     name=name,
+                    params=list(params),
                     body=self.label_block(body, current_loop=None),
                 )
         raise TypeError(f"unexpected function: {fn!r}")

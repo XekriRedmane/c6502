@@ -11,7 +11,7 @@ class Type_program:
 
 @dataclass
 class Program(Type_program):
-    function_definition: Type_function_definition
+    function_definition: list[Type_function_definition] = field(default_factory=list)
 
 
 @dataclass
@@ -22,6 +22,7 @@ class Type_function_definition:
 @dataclass
 class Function(Type_function_definition):
     name: str
+    params: list[str] = field(default_factory=list)
     instructions: list[Type_instruction] = field(default_factory=list)
 
 
@@ -76,6 +77,13 @@ class JumpIfFalse(Type_instruction):
 @dataclass
 class Label(Type_instruction):
     name: str
+
+
+@dataclass(kw_only=True)
+class FunctionCall(Type_instruction):
+    name: str
+    args: list[Type_val] = field(default_factory=list)
+    dst: Type_val
 
 
 @dataclass

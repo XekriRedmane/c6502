@@ -216,40 +216,44 @@ class Translator:
         return name
 
     def translate_program(self, prog: c99_ast.Type_program) -> tac_ast.Type_program:
-        # tac.asdl still has a single function_definition slot — multi-
-        # function TAC is on the same TODO list as `FunctionCall`
-        # lowering, since you can't usefully have one without the
-        # other. For now the c99 program must contain exactly one
-        # function definition (`int main(void) { ... }`); when call
-        # lowering lands, both AST and this dispatcher will widen.
+        # Process each top-level function definition in source order.
+        # Today the c99 AST's top level only ever contains
+        # `function_definition` entries (forward declarations at file
+        # scope aren't accepted yet); if and when block-style
+        # `FunctionDecl` declarations land at the top level, those
+        # would be discarded here — only definitions emit TAC.
         match prog:
             case c99_ast.Program(function_definition=fns):
-                if len(fns) != 1:
-                    raise NotImplementedError(
-                        "c99_to_tac currently supports a single function "
-                        f"definition; got {len(fns)}",
-                    )
-                return tac_ast.Program(
-                    function_definition=self.translate_function(fns[0]),
-                )
+                return tac_ast.Program(function_definition=[
+                    self.translate_function(fn) for fn in fns
+                ])
         raise TypeError(f"unexpected program: {prog!r}")
 
     def translate_function(
         self, fn: c99_ast.Type_function_definition,
     ) -> tac_ast.Type_function_definition:
         match fn:
-            case c99_ast.Function(name=name, body=body):
+            case c99_ast.Function(name=name, params=params, body=body):
                 instrs: list[tac_ast.Type_instruction] = []
                 self.translate_block(body, instrs)
                 # If the body didn't end in a Return, fall off the end
                 # with an implicit `return 0`. C99 §5.1.2.2.3 specifies
                 # this for `main`; we apply it generally so every TAC
-                # function is guaranteed to terminate with a Ret. If a
-                # Ret is already there, skip — adding a second would
-                # be unreachable dead code.
+                # function is guaranteed to terminate with a Ret —
+                # control falling off the end of any TAC function
+                # would be undefined, and the implicit zero-return
+                # papers over execution paths that forgot a `return`.
+                # If a Ret is already the last instruction, skip —
+                # adding a second would be unreachable dead code.
                 if not instrs or not isinstance(instrs[-1], tac_ast.Ret):
                     instrs.append(tac_ast.Ret(val=tac_ast.Constant(value=0)))
-                return tac_ast.Function(name=name, instructions=instrs)
+                # Parameter names ride through to TAC verbatim — they
+                # were already renamed to `@<N>.<orig>` by identifier
+                # resolution, and TAC `Var(@<N>.<orig>)` references
+                # in the body see the same names.
+                return tac_ast.Function(
+                    name=name, params=list(params), instructions=instrs,
+                )
         raise TypeError(f"unexpected function: {fn!r}")
 
     def translate_block(
@@ -615,16 +619,23 @@ class Translator:
                 instrs.append(tac_ast.Copy(src=f_val, dst=dst))
                 instrs.append(tac_ast.Label(name=end_label))
                 return dst
-            case c99_ast.FunctionCall():
-                # TODO: lower function calls. Needs both a TAC
-                # representation for calls (not in tac.asdl yet) and
-                # a calling convention that hands args through the
-                # soft stack and reads the return value back. Until
-                # then, parsing+resolution accept calls but the IR
-                # has no way to express them.
-                raise NotImplementedError(
-                    "FunctionCall lowering is not yet implemented",
-                )
+            case c99_ast.FunctionCall(name=name, args=args):
+                # `f(arg1, arg2, ...)` lowers to: evaluate each arg
+                # in source order (so its temporaries get the lower
+                # numbers), collect the resulting TAC vals, mint a
+                # fresh dst temp for the return value, and emit a
+                # single `FunctionCall(name, args, dst)` instruction.
+                # Returns dst so the caller can thread the value
+                # through into a later instruction (Copy, Binary,
+                # Ret, ...).
+                arg_vals = [
+                    self.translate_exp(a, instrs) for a in args
+                ]
+                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                instrs.append(tac_ast.FunctionCall(
+                    name=name, args=arg_vals, dst=dst,
+                ))
+                return dst
             case c99_ast.Postfix(op=op, operand=operand):
                 # `a++` (resp. `a--`) returns the *old* value of `a`
                 # while incrementing (decrementing) it. Capture the

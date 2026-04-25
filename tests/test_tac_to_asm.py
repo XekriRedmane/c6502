@@ -694,11 +694,14 @@ class TestTranslateFunction(unittest.TestCase):
 
 class TestTranslateProgram(unittest.TestCase):
     def test_full_tree(self):
+        # tac.asdl is plural now, asm.asdl is still singular —
+        # tac_to_asm bridges by accepting one TAC function.
         prog = tac_ast.Program(
-            function_definition=tac_ast.Function(
+            function_definition=[tac_ast.Function(
                 name="main",
+                params=[],
                 instructions=[tac_ast.Ret(val=tac_ast.Constant(value=42))],
-            ),
+            )],
         )
         expected = asm_ast.Program(
             function_definition=asm_ast.Function(

@@ -933,10 +933,8 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
 
 class TestTranslateProgram(unittest.TestCase):
     def test_return_constant(self):
-        # c99 Program.function_definition is a list of Functions; TAC
-        # Program.function_definition is still a single Function (the
-        # tac.asdl change for multi-function support is gated on
-        # FunctionCall lowering landing).
+        # Both c99 and TAC programs are lists of Functions now, so
+        # the `[Function(...)]` wrapping mirrors on both sides.
         prog = c99_ast.Program(function_definition=[c99_ast.Function(
             name="main",
             body=c99_ast.Block(block_item=[c99_ast.S(statement=c99_ast.Return(
@@ -945,10 +943,11 @@ class TestTranslateProgram(unittest.TestCase):
         )])
         self.assertEqual(
             translate_program(prog),
-            tac_ast.Program(function_definition=tac_ast.Function(
+            tac_ast.Program(function_definition=[tac_ast.Function(
                 name="main",
+                params=[],
                 instructions=[tac_ast.Ret(val=tac_ast.Constant(value=42))],
-            )),
+            )]),
         )
 
     def test_return_unary(self):
@@ -964,7 +963,7 @@ class TestTranslateProgram(unittest.TestCase):
             )],
         ))
         self.assertEqual(
-            tac.function_definition.instructions,
+            tac.function_definition[0].instructions,
             [
                 tac_ast.Unary(
                     op=tac_ast.Negate(),
@@ -978,7 +977,7 @@ class TestTranslateProgram(unittest.TestCase):
     def test_end_to_end_nested_from_source(self):
         tac = translate_program(parse("int main(void) { return -(~5); }"))
         self.assertEqual(
-            tac.function_definition.instructions,
+            tac.function_definition[0].instructions,
             [
                 tac_ast.Unary(
                     op=tac_ast.Complement(),
@@ -1101,7 +1100,7 @@ class TestTranslateProgram(unittest.TestCase):
             "int main(void) { int a; ++a; }"
         ))
         self.assertEqual(
-            tac.function_definition.instructions,
+            tac.function_definition[0].instructions,
             [
                 tac_ast.Binary(
                     op=tac_ast.Add(),
@@ -1127,7 +1126,7 @@ class TestTranslateProgram(unittest.TestCase):
             "int main(void) { int a; a += 1; }"
         ))
         self.assertEqual(
-            tac.function_definition.instructions,
+            tac.function_definition[0].instructions,
             [
                 tac_ast.Binary(
                     op=tac_ast.Add(),
@@ -1150,7 +1149,7 @@ class TestTranslateProgram(unittest.TestCase):
         # allocates %0); then the add (allocating %1).
         tac = translate_program(parse("int main(void) { return 1 + 2 * 3; }"))
         self.assertEqual(
-            tac.function_definition.instructions,
+            tac.function_definition[0].instructions,
             [
                 tac_ast.Binary(
                     op=tac_ast.Multiply(),
@@ -1174,9 +1173,9 @@ class TestTranslateProgram(unittest.TestCase):
         src = "int main(void) { return -5; }"
         a = translate_program(parse(src))
         b = translate_program(parse(src))
-        self.assertEqual(a.function_definition.instructions[0].dst,
+        self.assertEqual(a.function_definition[0].instructions[0].dst,
                          tac_ast.Var(name="%0"))
-        self.assertEqual(b.function_definition.instructions[0].dst,
+        self.assertEqual(b.function_definition[0].instructions[0].dst,
                          tac_ast.Var(name="%0"))
 
 
@@ -1595,7 +1594,7 @@ class TestEndToEndLoops(unittest.TestCase):
         prog = self._translate(
             "int main(void) { while (1) break; return 0; }"
         )
-        instrs = prog.function_definition.instructions
+        instrs = prog.function_definition[0].instructions
         self.assertEqual(instrs[0], tac_ast.Label(name=".loop@0_continue"))
         self.assertEqual(
             instrs[2], tac_ast.Jump(target=".loop@0_break"),
@@ -1605,7 +1604,7 @@ class TestEndToEndLoops(unittest.TestCase):
         prog = self._translate(
             "int main(void) { for (;;) continue; return 0; }"
         )
-        instrs = prog.function_definition.instructions
+        instrs = prog.function_definition[0].instructions
         # No condition → no JumpIfFalse anywhere.
         self.assertFalse(any(
             isinstance(i, tac_ast.JumpIfFalse) for i in instrs
@@ -1621,7 +1620,7 @@ class TestEndToEndLoops(unittest.TestCase):
             "return 0; }"
         )
         targets = {
-            i.target for i in prog.function_definition.instructions
+            i.target for i in prog.function_definition[0].instructions
             if isinstance(i, tac_ast.Jump)
         }
         # Both outer (.loop@0_*) and inner (.loop@1_*) sub-labels
@@ -1630,6 +1629,245 @@ class TestEndToEndLoops(unittest.TestCase):
         self.assertIn(".loop@0_continue", targets)
         self.assertIn(".loop@1_break", targets)
         self.assertIn(".loop@1_continue", targets)
+
+
+class TestTranslateFunctionCall(unittest.TestCase):
+    """`f(a, b, ...)` lowers to: evaluate each arg in source order
+    (so its temporaries get the lower numbers), collect the resulting
+    TAC vals, mint a fresh dst temp for the return value, emit
+    `FunctionCall(name, [args], dst)`, and return dst so the caller
+    can thread the value through into a later instruction."""
+
+    def test_no_args_emits_single_call(self):
+        # `f()` — args list empty; the only emitted instruction is
+        # the FunctionCall itself, with a fresh dst.
+        t = Translator()
+        instrs: list = []
+        result = t.translate_exp(
+            c99_ast.FunctionCall(name="f", args=[]), instrs,
+        )
+        self.assertEqual(result, tac_ast.Var(name="%0"))
+        self.assertEqual(instrs, [
+            tac_ast.FunctionCall(
+                name="f", args=[], dst=tac_ast.Var(name="%0"),
+            ),
+        ])
+
+    def test_constant_args_pass_through_as_constants(self):
+        # `f(1, 2)` — each Constant arg is its own TAC val (no
+        # temporary materialization needed), so the FunctionCall
+        # carries Constants directly.
+        t = Translator()
+        instrs: list = []
+        result = t.translate_exp(
+            c99_ast.FunctionCall(
+                name="f",
+                args=[c99_ast.Constant(value=1), c99_ast.Constant(value=2)],
+            ),
+            instrs,
+        )
+        self.assertEqual(result, tac_ast.Var(name="%0"))
+        self.assertEqual(instrs, [
+            tac_ast.FunctionCall(
+                name="f",
+                args=[
+                    tac_ast.Constant(value=1),
+                    tac_ast.Constant(value=2),
+                ],
+                dst=tac_ast.Var(name="%0"),
+            ),
+        ])
+
+    def test_compound_arg_evaluated_first(self):
+        # `f(1 + 2)` — the arg expression is evaluated into %0
+        # *before* the FunctionCall instruction is emitted; the
+        # call uses the captured Var(%0) and writes its return
+        # value to a fresh %1.
+        t = Translator()
+        instrs: list = []
+        t.translate_exp(
+            c99_ast.FunctionCall(
+                name="f",
+                args=[c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                )],
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=tac_ast.Constant(value=1),
+                src2=tac_ast.Constant(value=2),
+                dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.FunctionCall(
+                name="f",
+                args=[tac_ast.Var(name="%0")],
+                dst=tac_ast.Var(name="%1"),
+            ),
+        ])
+
+    def test_args_evaluated_left_to_right(self):
+        # `f(g(1), g(2))` — `g(1)` evaluates first (its dst is %0),
+        # then `g(2)` (dst %1), then the outer `f` call (dst %2).
+        # Reading the temp numbers gives the source-order trace.
+        t = Translator()
+        instrs: list = []
+        t.translate_exp(
+            c99_ast.FunctionCall(
+                name="f",
+                args=[
+                    c99_ast.FunctionCall(
+                        name="g",
+                        args=[c99_ast.Constant(value=1)],
+                    ),
+                    c99_ast.FunctionCall(
+                        name="g",
+                        args=[c99_ast.Constant(value=2)],
+                    ),
+                ],
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.FunctionCall(
+                name="g",
+                args=[tac_ast.Constant(value=1)],
+                dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.FunctionCall(
+                name="g",
+                args=[tac_ast.Constant(value=2)],
+                dst=tac_ast.Var(name="%1"),
+            ),
+            tac_ast.FunctionCall(
+                name="f",
+                args=[
+                    tac_ast.Var(name="%0"),
+                    tac_ast.Var(name="%1"),
+                ],
+                dst=tac_ast.Var(name="%2"),
+            ),
+        ])
+
+    def test_call_in_return_position_passes_value(self):
+        # `return f();` — the FunctionCall is lowered, and its dst
+        # temp is what the Ret references. End-to-end via the
+        # statement translator.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.Return(exp=c99_ast.FunctionCall(name="f", args=[])),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.FunctionCall(
+                name="f", args=[], dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.Ret(val=tac_ast.Var(name="%0")),
+        ])
+
+    def test_call_via_full_pipeline(self):
+        # Through parse + identifier_resolution: `int foo(int a) {
+        # return a; } int main(void) { return foo(42); }`. Two
+        # functions in the c99 program; two functions in the TAC
+        # program. The call lowers to a single FunctionCall with
+        # `args=[Constant(42)]` and a fresh dst.
+        from passes.identifier_resolution import (
+            resolve_program as resolve_identifiers,
+        )
+        prog = parse(
+            "int foo(int a) { return a; } "
+            "int main(void) { return foo(42); }"
+        )
+        prog = resolve_identifiers(prog)
+        tac = translate_program(prog)
+        self.assertEqual(len(tac.function_definition), 2)
+        foo_fn, main_fn = tac.function_definition
+        self.assertEqual(foo_fn.name, "foo")
+        self.assertEqual(foo_fn.params, ["@0.a"])
+        # `foo`'s body lowered: Ret(Var(@0.a)).
+        self.assertEqual(
+            foo_fn.instructions,
+            [tac_ast.Ret(val=tac_ast.Var(name="@0.a"))],
+        )
+        # `main`'s body lowered: FunctionCall(foo, [42], %N) then
+        # Ret(%N). The temp counter is shared with `foo`'s body
+        # (the Translator is one-per-program), so the dst index
+        # depends on whatever foo's translation consumed.
+        self.assertEqual(main_fn.name, "main")
+        self.assertEqual(main_fn.params, [])
+        # Two instructions: the call and the return.
+        self.assertEqual(len(main_fn.instructions), 2)
+        call, ret = main_fn.instructions
+        self.assertIsInstance(call, tac_ast.FunctionCall)
+        self.assertEqual(call.name, "foo")
+        self.assertEqual(call.args, [tac_ast.Constant(value=42)])
+        self.assertEqual(ret, tac_ast.Ret(val=call.dst))
+
+
+class TestTranslateMultipleFunctions(unittest.TestCase):
+    """Top-level c99 functions go through one at a time, each
+    yielding a TAC function_definition. The order of TAC functions
+    matches the source order. Each function gets its own implicit
+    Ret(0) safety net at the end if the body falls off without
+    returning."""
+
+    def test_two_functions_appear_in_source_order(self):
+        from passes.identifier_resolution import (
+            resolve_program as resolve_identifiers,
+        )
+        prog = parse(
+            "int foo(void) { return 1; } "
+            "int bar(void) { return 2; } "
+            "int main(void) { return 0; }"
+        )
+        prog = resolve_identifiers(prog)
+        tac = translate_program(prog)
+        names = [fn.name for fn in tac.function_definition]
+        self.assertEqual(names, ["foo", "bar", "main"])
+
+    def test_each_function_gets_its_own_implicit_ret_zero(self):
+        # Both bodies fall off without an explicit return; each
+        # should pick up a `Ret(Constant(0))` at the end of its
+        # own instruction list.
+        from passes.identifier_resolution import (
+            resolve_program as resolve_identifiers,
+        )
+        prog = parse(
+            "int foo(void) { } "
+            "int main(void) { }"
+        )
+        prog = resolve_identifiers(prog)
+        tac = translate_program(prog)
+        for fn in tac.function_definition:
+            self.assertEqual(
+                fn.instructions,
+                [tac_ast.Ret(val=tac_ast.Constant(value=0))],
+            )
+
+    def test_function_params_pass_through_to_tac(self):
+        # `int foo(int a, int b) { ... }` — the TAC function
+        # carries the same renamed param names as the c99 Function
+        # node. Body refs to the params resolve to those same
+        # names because the body has been through identifier
+        # resolution already.
+        from passes.identifier_resolution import (
+            resolve_program as resolve_identifiers,
+        )
+        prog = parse("int foo(int a, int b) { return a + b; }")
+        prog = resolve_identifiers(prog)
+        tac = translate_program(prog)
+        fn = tac.function_definition[0]
+        self.assertEqual(fn.params, ["@0.a", "@1.b"])
+        # Body sees Var("@0.a") and Var("@1.b") in the Add.
+        binary = fn.instructions[0]
+        self.assertIsInstance(binary, tac_ast.Binary)
+        self.assertEqual(binary.src1, tac_ast.Var(name="@0.a"))
+        self.assertEqual(binary.src2, tac_ast.Var(name="@1.b"))
 
 
 class TestMakeTemporaryVariableName(unittest.TestCase):

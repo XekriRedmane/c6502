@@ -304,21 +304,25 @@ takes one AST and returns another (or text for emit):
    from their definitions before each body is checked, so a body
    can self-recurse without a forward declaration.
 6. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
-   code). The c99 program has a list of function definitions
-   (`Program(function_definition: list[Function])`), but the TAC
-   side is still singular (`Program(function_definition: Function)`)
-   because multi-function TAC is gated on `FunctionCall` lowering
-   landing — we add both at once. Today the dispatcher asserts
-   exactly one definition and translates that. `FunctionCall` itself
-   is a **TODO** in `translate_exp` — the case raises
-   `NotImplementedError`, since neither the TAC IR nor the soft-
-   stack calling convention has a representation for calls yet
-   (TAC needs a `Call(name, args, dst)` instruction; the runtime
-   needs to thread args through the soft stack and read a return
-   value). The whole pipeline accepts and validates calls up to and
-   including this pass; only this final lowering step is missing.
-   `FunctionDecl` block items lower to nothing — they're a name-
-   binding artifact for `identifier_resolution`, not runtime state.
+   code). Both the c99 and TAC programs are now lists of function
+   definitions (`Program(function_definition: list[Function])` on
+   both sides); top-level c99 entries are walked in source order,
+   each yielding one TAC `Function(name, params, instructions)`.
+   Parameter names ride through unchanged — they were renamed to
+   `@<N>.<orig>` by identifier_resolution and TAC `Var(@<N>.<orig>)`
+   references in the body see the same names. Each TAC function
+   gets an implicit `Ret(Constant(0))` appended if its body falls
+   off without an explicit return (C99 §5.1.2.2.3 mandates this for
+   `main`; we apply it generally so every TAC function terminates,
+   even when some execution paths forgot a return). `FunctionDecl`
+   block items lower to nothing — they're a name-binding artifact
+   for `identifier_resolution`, not runtime state. `FunctionCall(
+   name, args)` lowers to: evaluate each arg in source order
+   (left-most temp first), collect the resulting TAC vals, mint a
+   fresh dst temp, and emit a single `FunctionCall(name, args,
+   dst)` TAC instruction. The dst temp is what the call expression
+   returns, so chained uses (`x = f(); y = f() + 1`) thread cleanly
+   through `Copy` / `Binary` / `Ret` etc.
    Compound expressions flatten into ops, materializing each
    intermediate into a fresh `Var(%n)`. `Binary(op, src1, src2,
    dst)` evaluates `src1` first so its temps get lower numbers.
@@ -344,7 +348,16 @@ takes one AST and returns another (or text for emit):
    instruction lowers into a sequence of atoms (`Mov` to/from `A`, atomic ops
    on `A`, carry setup if needed). Output is correct but redundant — every
    intermediate is materialized through a `Frame` slot. Optimization is
-   deferred to TAC-level passes.
+   deferred to TAC-level passes. **Asymmetry:** tac.asdl is now plural
+   (`Program(function_definition*)`) but asm.asdl is still singular,
+   so this pass currently asserts exactly one TAC function and
+   translates it. Multi-function asm is gated on the calling-
+   convention work that also enables lowering TAC `FunctionCall`
+   instructions — until both land, the user-call form raises
+   `NotImplementedError` here. The runtime helper calls (`mul8` /
+   `divmod8` / `shl8` / `asr8`) emitted by the binary-op lowerings
+   bypass TAC `FunctionCall` entirely; they go straight to
+   `asm_ast.Call`, so they keep working.
 8. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
    `Frame(offset)` slot. Per function: walks instructions in order, mints
    offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
@@ -578,26 +591,24 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   `JumpIfFalse` drop out of the lowered TAC entirely
 - arbitrary parenthesisation
 
-Parsed and resolved but **not yet lowered to TAC** (everything up to
-loop labeling accepts them; `c99_to_tac.translate_exp` raises
-`NotImplementedError` for `FunctionCall` and the dispatcher rejects
-multi-function programs):
+Lowered all the way through TAC (but **not yet to asm** — `tac_to_asm`
+asserts a single TAC function and refuses TAC `FunctionCall` until
+the calling convention is wired up):
 - Function declarations at block scope: `int foo(void);` /
   `int foo(int a, int b);`. `identifier_resolution` registers the
   name in a per-program function-name set, leaves it unrenamed
   (external linkage — C99 §6.2.2), and accepts duplicate
   declarations of the same function as same-symbol redeclarations.
-  Top-level function definitions are pre-registered in the same
-  set before any body is walked, so calls can be forward / self-
-  recursive.
-- Function calls: `f()`, `f(a, b + 1)`. `FunctionCall(name, args)`
-  passes the callee name through unchanged and resolves each arg
-  expression. A call to a name nothing has declared raises
-  `IdentifierResolutionError`.
+  `c99_to_tac` discards `FunctionDecl` block items (they're a
+  name-binding artifact for earlier passes, not runtime state).
+- Function calls: `f()`, `f(a, b + 1)`. Lowered to a single TAC
+  `FunctionCall(name, args, dst)` instruction after evaluating
+  each arg in source order. The dst temp is the call's value; the
+  caller threads it through into `Copy` / `Binary` / `Ret`.
 - Multiple top-level function definitions (`int foo(void) { ... }
-  int main(void) { ... }`). `Program.function_definition` is now a
-  `list`; the c99→TAC dispatcher accepts only programs with
-  exactly one definition until call lowering lands.
+  int main(void) { ... }`). `Program.function_definition` is a
+  list on both c99 and TAC sides now; each c99 function yields one
+  TAC function in source order.
 
 Not yet in the pipeline at all: file-scope (forward) declarations,
 calling-convention support that actually consumes parameters in

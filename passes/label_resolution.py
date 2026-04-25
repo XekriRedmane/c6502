@@ -74,7 +74,7 @@ class LabelResolver:
         self, fn: c99_ast.Type_function_definition,
     ) -> c99_ast.Type_function_definition:
         match fn:
-            case c99_ast.Function(name=name, body=body):
+            case c99_ast.Function(name=name, params=params, body=body):
                 # Pass 1: collect every labeled statement, minting
                 # unique names and rejecting duplicates. Walk the
                 # whole function body, descending into nested
@@ -83,9 +83,12 @@ class LabelResolver:
                 labels: dict[str, str] = {}
                 self._collect_block(body, name, labels)
                 # Pass 2: rewrite the AST, validating each Goto's
-                # target along the way.
+                # target along the way. Params don't host labels —
+                # they pass through verbatim.
                 return c99_ast.Function(
-                    name=name, body=self._rewrite_block(body, labels),
+                    name=name,
+                    params=list(params),
+                    body=self._rewrite_block(body, labels),
                 )
         raise TypeError(f"unexpected function: {fn!r}")
 

@@ -52,6 +52,20 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("LDA   #$2A", out)
         self.assertIn("RTS", out)
 
+    def test_codegen_compound_assignment(self):
+        # `a += 3` desugars at parse time to `a = a + 3`, which lowers
+        # to Binary(Add) + Copy in TAC and then to load-A from the
+        # frame slot, ADC the constant, store back. We don't run the
+        # result here (no runtime header yet); we just check the
+        # immediate ADC and the initializer LDA both made it through.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { int a = 5; a += 3; return a; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("LDA   #$05", out)
+        self.assertIn("ADC   #$03", out)
+
     def test_pcpp_strips_comments(self):
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],

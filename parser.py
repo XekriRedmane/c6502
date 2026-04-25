@@ -35,6 +35,23 @@ _LARK = Lark.open(
 )
 
 
+# Compound-assignment operator tokens → AST binary-operator class. The
+# parser desugars `lval OP= rval` into `lval = lval OP rval`, so each
+# compound operator just needs to name the binary op it expands to.
+_COMPOUND_ASSIGN_OPS = {
+    "PLUS_ASSIGN":    c99_ast.Add,
+    "MINUS_ASSIGN":   c99_ast.Subtract,
+    "STAR_ASSIGN":    c99_ast.Multiply,
+    "SLASH_ASSIGN":   c99_ast.Divide,
+    "PERCENT_ASSIGN": c99_ast.Modulo,
+    "AMP_ASSIGN":     c99_ast.BitwiseAnd,
+    "PIPE_ASSIGN":    c99_ast.BitwiseOr,
+    "CARET_ASSIGN":   c99_ast.BitwiseXor,
+    "LSHIFT_ASSIGN":  c99_ast.LeftShift,
+    "RSHIFT_ASSIGN":  c99_ast.RightShift,
+}
+
+
 class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def start(self, function):
@@ -90,6 +107,21 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def assignment(self, lval, _assign, rval):
         return c99_ast.Assignment(lval=lval, rval=rval)
+
+    @v_args(inline=True)
+    def compound_assign(self, lval, op_token, rval):
+        # `lval OP= rval` desugars at parse time to `lval = lval OP rval`.
+        # The lval node is duplicated as a tree reference (Assignment.lval
+        # and Binary.left point at the same Python object). That's safe
+        # today because the only legal lval is a `Var`, which has no
+        # side effect when re-evaluated. When richer lvalues (`*p`,
+        # `a[i]`, `s.f`) land, this rewrite has to materialize the
+        # address into a temp instead so the lval is evaluated once.
+        op_cls = _COMPOUND_ASSIGN_OPS[op_token.type]
+        return c99_ast.Assignment(
+            lval=lval,
+            rval=c99_ast.Binary(op=op_cls(), left=lval, right=rval),
+        )
 
     @v_args(inline=True)
     def unary(self, op, inner):

@@ -363,6 +363,36 @@ class TestIntegrationWithParser(unittest.TestCase):
         with self.assertRaises(VariableResolutionError):
             resolve_program(prog)
 
+    def test_compound_assignment_rejects_non_var_lhs(self):
+        # `1 += 2` desugars to `Assignment(Constant(1), Binary(Add,
+        # Constant(1), Constant(2)))` at parse time. The lval-is-Var
+        # check in resolution then rejects it just like plain `1 = 2`.
+        prog = parse("int main(void) { 1 += 2; return 0; }")
+        with self.assertRaises(VariableResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("invalid lvalue", str(ctx.exception))
+
+    def test_compound_assignment_resolves_var_on_both_sides(self):
+        # `a += 1` desugars to `a = a + 1` — both occurrences of `a`
+        # must resolve to the same unique name.
+        prog = parse("int main(void) { int a; a += 1; return a; }")
+        resolved = resolve_program(prog)
+        expected = c99_ast.Program(
+            function_definition=_function(
+                _decl("@0.a"),
+                _expr(c99_ast.Assignment(
+                    lval=c99_ast.Var(name="@0.a"),
+                    rval=c99_ast.Binary(
+                        op=c99_ast.Add(),
+                        left=c99_ast.Var(name="@0.a"),
+                        right=c99_ast.Constant(value=1),
+                    ),
+                )),
+                _ret(c99_ast.Var(name="@0.a")),
+            ),
+        )
+        self.assertEqual(resolved, expected)
+
 
 class TestErrors(unittest.TestCase):
     def test_unknown_exp_raises_type_error(self):

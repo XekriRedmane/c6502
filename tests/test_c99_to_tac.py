@@ -570,6 +570,32 @@ class TestTranslateProgram(unittest.TestCase):
             ],
         )
 
+    def test_compound_assignment_lowers_like_desugared_form(self):
+        # `a += 1` is desugared by the parser to `a = a + 1`. The TAC
+        # is therefore: read `a` and `1` into a Binary(Add) producing
+        # %0, then Copy %0 back into a. The implicit `Ret(0)` from
+        # translate_function tails it. (No variable_resolution here, so
+        # the name stays as user-written `a` rather than `@0.a`.)
+        tac = translate_program(parse(
+            "int main(void) { int a; a += 1; }"
+        ))
+        self.assertEqual(
+            tac.function_definition.instructions,
+            [
+                tac_ast.Binary(
+                    op=tac_ast.Add(),
+                    src1=tac_ast.Var(name="a"),
+                    src2=tac_ast.Constant(value=1),
+                    dst=tac_ast.Var(name="%0"),
+                ),
+                tac_ast.Copy(
+                    src=tac_ast.Var(name="%0"),
+                    dst=tac_ast.Var(name="a"),
+                ),
+                tac_ast.Ret(val=tac_ast.Constant(value=0)),
+            ],
+        )
+
     def test_end_to_end_binary_precedence(self):
         # 1 + 2 * 3 — the parser puts Multiply on the right of Add.
         # c99_to_tac translates left first, so the constant 1 is

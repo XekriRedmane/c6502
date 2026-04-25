@@ -59,6 +59,13 @@ one AST and returns another (or text for emit):
    comparison/`&&`/`||`, parentheses, and right-associative `=` (the LHS is
    loosened from C99's `unary-expression` to `logical_or_exp`, so e.g.
    `1+2=3+4` parses — variable resolution / semantic analysis rejects it).
+   The ten compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`,
+   `^=`, `<<=`, `>>=`) share a single `compound_assign` builder that
+   desugars `lval OP= rval` to `Assignment(lval, Binary(OP, lval, rval))`
+   at parse time. The lval node is duplicated by reference, which is safe
+   today because the only legal lval is a `Var` (no side effect when re-
+   evaluated); when richer lvalues land (`*p`, `a[i]`, `s.f`), the rewrite
+   has to materialize the address into a temp so it's evaluated once.
 2. `passes.variable_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Rewrites every user-written variable name to a program-unique
    `@<N>.<orig>` (illegal in a C identifier, so it can't collide with user
@@ -250,6 +257,10 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   falsy/truthy directly. Copy becomes a single `Mov`; Jump and Label
   are atom-for-atom. No runtime helper and no TAC binop — the control
   flow *is* the semantics)
+- compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
+  `<<=`, `>>=` (desugared by the parser to `lval = lval OP rval`, so
+  they reuse the same TAC/asm lowerings as their underlying binary op
+  followed by a Copy back into the lval)
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`

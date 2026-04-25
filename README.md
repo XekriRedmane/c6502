@@ -92,9 +92,13 @@ that takes an AST and returns an AST (or text, for emit):
    (`return exp;`, `exp;`, or a null `;`). `<exp>` is built from
    integer constants, identifiers, the unary ops (`-`/`~`/`!`),
    binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
-   parentheses, and right-associative `=`. Operator precedence is
-   encoded by a precedence-climbing rule layout (`exp →
-   assignment_exp → logical_or_exp → … → unary_exp → atom`).
+   parentheses, and right-associative `=` plus the ten compound
+   assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
+   `<<=`, `>>=`). Compound assignments desugar at parse time to
+   `Assignment(lval, Binary(OP, lval, rval))` so no downstream pass
+   needs to know about them. Operator precedence is encoded by a
+   precedence-climbing rule layout (`exp → assignment_exp →
+   logical_or_exp → … → unary_exp → atom`).
 
 2. **`passes.variable_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Rewrites every user-written identifier to a
@@ -612,6 +616,14 @@ runnable-shape 6502 assembly):
   truthy/falsy directly. `Copy` becomes a single `Mov`; TAC `Jump`
   and `Label` are atom-for-atom. No runtime helper, no TAC binop —
   the control flow *is* the semantics)
+- compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
+  `<<=`, `>>=` (the parser desugars `lval OP= rval` to `lval = lval OP
+  rval`, so the lowering is exactly the underlying binary op followed
+  by a `Copy` back into the lval — no AST/IR additions, no extra cases
+  in any later pass. Right-associative like plain `=`, so `a += b += 1`
+  is `a += (b += 1)`. The lval is duplicated as a tree reference, which
+  is safe today because the only legal lval is a `Var`; richer lvalues
+  in future will need to materialize the address into a temp first)
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:

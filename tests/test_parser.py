@@ -524,6 +524,126 @@ class TestLogicalNotUnary(unittest.TestCase):
         )
 
 
+class TestAssignment(unittest.TestCase):
+    """Plain `=` and the ten compound assignments. The grammar's LHS is
+    `logical_or_exp` rather than C99's `unary_exp`, so things like
+    `1+2 = 3` parse here — variable_resolution rejects them later.
+    Compound `OP=` desugars at parse time to `lval = lval OP rval`,
+    sharing the `lval` node by reference (safe today because the only
+    legal lval is a `Var`, which has no side effect when re-evaluated)."""
+
+    def test_plain_assignment(self):
+        self.assertEqual(
+            _exp_of("a = 1"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Constant(value=1),
+            ),
+        )
+
+    def test_assignment_is_right_associative(self):
+        # `a = b = 1` parses as `a = (b = 1)`.
+        self.assertEqual(
+            _exp_of("a = b = 1"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Assignment(
+                    lval=c99_ast.Var(name="b"),
+                    rval=c99_ast.Constant(value=1),
+                ),
+            ),
+        )
+
+    def test_each_compound_op_desugars(self):
+        # Every `a OP= 1` rewrites to `Assignment(a, Binary(OP, a, 1))`.
+        cases = [
+            ("+=",  c99_ast.Add()),
+            ("-=",  c99_ast.Subtract()),
+            ("*=",  c99_ast.Multiply()),
+            ("/=",  c99_ast.Divide()),
+            ("%=",  c99_ast.Modulo()),
+            ("&=",  c99_ast.BitwiseAnd()),
+            ("|=",  c99_ast.BitwiseOr()),
+            ("^=",  c99_ast.BitwiseXor()),
+            ("<<=", c99_ast.LeftShift()),
+            (">>=", c99_ast.RightShift()),
+        ]
+        for sym, op in cases:
+            with self.subTest(sym=sym):
+                self.assertEqual(
+                    _exp_of(f"a {sym} 1"),
+                    c99_ast.Assignment(
+                        lval=c99_ast.Var(name="a"),
+                        rval=c99_ast.Binary(
+                            op=op,
+                            left=c99_ast.Var(name="a"),
+                            right=c99_ast.Constant(value=1),
+                        ),
+                    ),
+                )
+
+    def test_compound_assign_is_right_associative(self):
+        # `a += b += 1` parses as `a += (b += 1)`, then desugars to
+        # `a = a + (b = b + 1)`. The inner Assignment is the rval-side
+        # operand of the outer Add.
+        self.assertEqual(
+            _exp_of("a += b += 1"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Var(name="a"),
+                    right=c99_ast.Assignment(
+                        lval=c99_ast.Var(name="b"),
+                        rval=c99_ast.Binary(
+                            op=c99_ast.Add(),
+                            left=c99_ast.Var(name="b"),
+                            right=c99_ast.Constant(value=1),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    def test_compound_assign_rhs_is_full_expression(self):
+        # The rval slot is `assignment_exp`, which means a full binary
+        # expression goes in unparenthesized — `a += 1 + 2` desugars
+        # to `a = a + (1 + 2)`, NOT `(a + 1) + 2`. Right-recursion at
+        # the assignment level keeps the rval intact.
+        self.assertEqual(
+            _exp_of("a += 1 + 2"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Var(name="a"),
+                    right=c99_ast.Binary(
+                        op=c99_ast.Add(),
+                        left=c99_ast.Constant(value=1),
+                        right=c99_ast.Constant(value=2),
+                    ),
+                ),
+            ),
+        )
+
+    def test_compound_assign_invalid_lhs_still_parses(self):
+        # `1 += 2` parses (LHS is `logical_or_exp`, which Constant
+        # satisfies) — variable_resolution is what rejects it. The
+        # desugared AST is `Assignment(Constant(1), Binary(Add,
+        # Constant(1), Constant(2)))`.
+        self.assertEqual(
+            _exp_of("1 += 2"),
+            c99_ast.Assignment(
+                lval=c99_ast.Constant(value=1),
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(value=2),
+                ),
+            ),
+        )
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

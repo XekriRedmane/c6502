@@ -176,6 +176,14 @@ class _ASTBuilder(Transformer):
     def paren(self, _lp, inner, _rp):
         return inner
 
+    @v_args(inline=True)
+    def conditional(self, condition, _q, true_clause, _c, false_clause):
+        return c99_ast.Conditional(
+            condition=condition,
+            true_clause=true_clause,
+            false_clause=false_clause,
+        )
+
     # Binary alternatives of `exp` — tokens discarded, build a Binary node.
     @v_args(inline=True)
     def multiply(self, left, _star, right):

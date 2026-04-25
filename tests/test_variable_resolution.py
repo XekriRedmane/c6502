@@ -356,6 +356,56 @@ class TestIfStatementResolution(unittest.TestCase):
             resolve_program(prog)
 
 
+class TestConditionalResolution(unittest.TestCase):
+    """Ternary `cond ? t : f` — all three sub-expressions share the
+    same flat scope (same story as if/else) and each gets resolved."""
+
+    def test_all_three_subexpressions_resolve(self):
+        fn = _function(
+            _decl("a"),
+            _decl("b"),
+            _decl("c"),
+            _ret(c99_ast.Conditional(
+                condition=c99_ast.Var(name="a"),
+                true_clause=c99_ast.Var(name="b"),
+                false_clause=c99_ast.Var(name="c"),
+            )),
+        )
+        resolved = resolve_function(fn)
+        self.assertEqual(
+            resolved.body[3],
+            _ret(c99_ast.Conditional(
+                condition=c99_ast.Var(name="@0.a"),
+                true_clause=c99_ast.Var(name="@1.b"),
+                false_clause=c99_ast.Var(name="@2.c"),
+            )),
+        )
+
+    def test_undeclared_in_condition_raises(self):
+        prog = parse("int main(void) { return a ? 1 : 2; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_undeclared_in_true_clause_raises(self):
+        prog = parse("int main(void) { return 1 ? a : 2; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_undeclared_in_false_clause_raises(self):
+        prog = parse("int main(void) { return 1 ? 2 : a; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_conditional_as_lvalue_is_rejected(self):
+        # `1 ? 2 : a = 5` parses (via the loosened assignment LHS) as
+        # `Assignment(Conditional(...), 5)`. The lvalue check rejects
+        # a non-Var LHS.
+        prog = parse("int main(void) { int a; 1 ? 2 : a = 5; return 0; }")
+        with self.assertRaises(VariableResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("invalid lvalue", str(ctx.exception))
+
+
 class TestStatementPassthrough(unittest.TestCase):
     def test_null_statement_is_preserved(self):
         fn = _function(_null())

@@ -59,9 +59,18 @@ one AST and returns another (or text for emit):
    preferring shift, which binds `else` to the nearest preceding
    unmatched `if` (the C99 §6.8.4.1 rule). `<exp>` covers integer constants,
    identifiers, unary `-`/`~`/`!`, binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/
-   comparison/`&&`/`||`, parentheses, and right-associative `=` (the LHS is
-   loosened from C99's `unary-expression` to `logical_or_exp`, so e.g.
-   `1+2=3+4` parses — variable resolution / semantic analysis rejects it).
+   comparison/`&&`/`||`, parentheses, right-associative `=`, and the
+   ternary `cond ? t : f`. The assignment LHS is loosened from C99's
+   `unary-expression` to `conditional_exp`, so `1+2=3+4` and
+   `(1?2:a)=5` both parse — variable resolution rejects the non-lvalue
+   forms. The ternary sits at its own `conditional_exp` level between
+   assignment and logical-or (C99 §6.5.15): condition is
+   `logical_or_exp`, true-clause is full `exp`, false-clause is
+   `conditional_exp`. The right-recursion makes `?:` right-
+   associative (`a ? 1 : b ? 2 : 3` is `a ? 1 : (b ? 2 : 3)`) and
+   keeps assignments out of the false-clause slot, so
+   `1 ? 2 : a = 5` parses as `(1 ? 2 : a) = 5` via the outer
+   assignment rule (and then fails the lvalue check).
    The ten compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`,
    `^=`, `<<=`, `>>=`) share a single `compound_assign` builder that
    desugars `lval OP= rval` to `Assignment(lval, Binary(OP, lval, rval))`
@@ -286,6 +295,14 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   share the Translator's label counter (`if_end_N`/`if_else_N`) with
   the short-circuit and inline-comparison lowerings, so each `if` gets
   globally unique numbers
+- ternary `cond ? t : f` — `c99_to_tac` lowers it like an if/else
+  that also produces a value: `<eval cond>; JumpIfFalse(cond,
+  cond_else_N); <eval t>; Copy(t, dst); Jump(cond_end_N);
+  Label(cond_else_N); <eval f>; Copy(f, dst); Label(cond_end_N)`
+  and the Conditional expression returns `dst`. Labels
+  (`cond_else_N` / `cond_end_N`) share the same Translator counter as
+  the `if` / short-circuit / inline-comparison lowerings, so numbering
+  stays globally unique across the program
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`

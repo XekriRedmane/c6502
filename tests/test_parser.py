@@ -782,6 +782,136 @@ class TestIncrementDecrement(unittest.TestCase):
         )
 
 
+class TestConditional(unittest.TestCase):
+    """Ternary `cond ? t : f`. Grammar: condition is `logical_or_exp`,
+    true-clause is full `exp` (so assignments go in unparenthesised),
+    false-clause is `conditional_exp` (right-associative, excludes
+    assignments from the slot — so `1 ? 2 : a = 5` parses as
+    `(1 ? 2 : a) = 5` via the outer assignment rule)."""
+
+    def test_basic(self):
+        self.assertEqual(
+            _exp_of("1 ? 2 : 3"),
+            c99_ast.Conditional(
+                condition=c99_ast.Constant(value=1),
+                true_clause=c99_ast.Constant(value=2),
+                false_clause=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_assignment_binds_looser_than_ternary(self):
+        # `a = 1 ? 2 : 3` parses as `a = (1 ? 2 : 3)`, not `(a = 1) ? 2 : 3`.
+        self.assertEqual(
+            _exp_of("a = 1 ? 2 : 3"),
+            c99_ast.Assignment(
+                lval=c99_ast.Var(name="a"),
+                rval=c99_ast.Conditional(
+                    condition=c99_ast.Constant(value=1),
+                    true_clause=c99_ast.Constant(value=2),
+                    false_clause=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+    def test_logical_or_binds_tighter_than_ternary_in_cond(self):
+        # `a || b ? 2 : 3` parses as `(a || b) ? 2 : 3`.
+        self.assertEqual(
+            _exp_of("a || b ? 2 : 3"),
+            c99_ast.Conditional(
+                condition=c99_ast.Binary(
+                    op=c99_ast.LogicalOr(),
+                    left=c99_ast.Var(name="a"),
+                    right=c99_ast.Var(name="b"),
+                ),
+                true_clause=c99_ast.Constant(value=2),
+                false_clause=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_logical_or_binds_tighter_than_ternary_in_false_clause(self):
+        # `1 ? 2 : 3 || 4` parses as `1 ? 2 : (3 || 4)`.
+        self.assertEqual(
+            _exp_of("1 ? 2 : 3 || 4"),
+            c99_ast.Conditional(
+                condition=c99_ast.Constant(value=1),
+                true_clause=c99_ast.Constant(value=2),
+                false_clause=c99_ast.Binary(
+                    op=c99_ast.LogicalOr(),
+                    left=c99_ast.Constant(value=3),
+                    right=c99_ast.Constant(value=4),
+                ),
+            ),
+        )
+
+    def test_false_clause_excludes_assignment(self):
+        # The false-clause slot is `conditional_exp`, which doesn't
+        # include assignment. So `1 ? 2 : a = 5` can't parse as
+        # `1 ? 2 : (a = 5)`; instead the outer assignment rule takes
+        # the whole `1 ? 2 : a` as its LHS, giving `(1 ? 2 : a) = 5`.
+        # (Semantic analysis rejects the conditional-as-lvalue later.)
+        self.assertEqual(
+            _exp_of("1 ? 2 : a = 5"),
+            c99_ast.Assignment(
+                lval=c99_ast.Conditional(
+                    condition=c99_ast.Constant(value=1),
+                    true_clause=c99_ast.Constant(value=2),
+                    false_clause=c99_ast.Var(name="a"),
+                ),
+                rval=c99_ast.Constant(value=5),
+            ),
+        )
+
+    def test_true_clause_is_full_expression(self):
+        # The true-clause slot is `exp`, so an unparenthesised
+        # assignment parses inside it: `x ? x = 1 : 2` is
+        # `x ? (x = 1) : 2`.
+        self.assertEqual(
+            _exp_of("x ? x = 1 : 2"),
+            c99_ast.Conditional(
+                condition=c99_ast.Var(name="x"),
+                true_clause=c99_ast.Assignment(
+                    lval=c99_ast.Var(name="x"),
+                    rval=c99_ast.Constant(value=1),
+                ),
+                false_clause=c99_ast.Constant(value=2),
+            ),
+        )
+
+    def test_nested_ternary_in_true_clause(self):
+        # `a ? b ? 1 : 2 : 3` parses as `a ? (b ? 1 : 2) : 3`. The
+        # true-clause slot is `exp`, which reaches conditional_exp,
+        # so an inner ternary lives there without parens.
+        self.assertEqual(
+            _exp_of("a ? b ? 1 : 2 : 3"),
+            c99_ast.Conditional(
+                condition=c99_ast.Var(name="a"),
+                true_clause=c99_ast.Conditional(
+                    condition=c99_ast.Var(name="b"),
+                    true_clause=c99_ast.Constant(value=1),
+                    false_clause=c99_ast.Constant(value=2),
+                ),
+                false_clause=c99_ast.Constant(value=3),
+            ),
+        )
+
+    def test_ternary_is_right_associative(self):
+        # `a ? 1 : b ? 2 : 3` parses as `a ? 1 : (b ? 2 : 3)` — the
+        # false-clause slot is `conditional_exp`, so the rule is
+        # right-recursive and ternary chains nest to the right.
+        self.assertEqual(
+            _exp_of("a ? 1 : b ? 2 : 3"),
+            c99_ast.Conditional(
+                condition=c99_ast.Var(name="a"),
+                true_clause=c99_ast.Constant(value=1),
+                false_clause=c99_ast.Conditional(
+                    condition=c99_ast.Var(name="b"),
+                    true_clause=c99_ast.Constant(value=2),
+                    false_clause=c99_ast.Constant(value=3),
+                ),
+            ),
+        )
+
+
 class TestIfStatement(unittest.TestCase):
     """`if (exp) stmt` with an optional `else stmt`. Dangling else
     binds to the nearest preceding unmatched `if` (C99 §6.8.4.1) —

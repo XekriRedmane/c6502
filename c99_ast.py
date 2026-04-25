@@ -119,6 +119,13 @@ class Postfix(Type_exp):
 
 
 @dataclass
+class Conditional(Type_exp):
+    condition: Type_exp
+    true_clause: Type_exp
+    false_clause: Type_exp
+
+
+@dataclass
 class Type_unary_operator:
     pass
 

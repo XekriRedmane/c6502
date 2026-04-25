@@ -533,6 +533,72 @@ class TestTranslateIfStatement(unittest.TestCase):
         ])
 
 
+class TestTranslateConditional(unittest.TestCase):
+    """Ternary `cond ? t : f` lowers to an if/else-shaped sequence
+    that also produces a value: both arms Copy into a shared dst
+    temp, and the Conditional expression returns that Var. Labels
+    share the Translator's counter with `if`/short-circuit/inline-
+    comparison lowerings, so numbering stays globally unique."""
+
+    def test_basic_lowers_to_jump_copy_copy(self):
+        t = Translator()
+        instrs: list = []
+        val = t.translate_exp(
+            c99_ast.Conditional(
+                condition=c99_ast.Constant(value=1),
+                true_clause=c99_ast.Constant(value=2),
+                false_clause=c99_ast.Constant(value=3),
+            ),
+            instrs,
+        )
+        # Labels mint first (cond_else_0, cond_end_1), then the dst
+        # temp (%0). Both arms Copy into %0; the outer expression
+        # returns %0 so chained uses see the chosen value.
+        self.assertEqual(val, tac_ast.Var(name="%0"))
+        self.assertEqual(instrs, [
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=1),
+                target="cond_else_0",
+            ),
+            tac_ast.Copy(
+                src=tac_ast.Constant(value=2),
+                dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.Jump(target="cond_end_1"),
+            tac_ast.Label(name="cond_else_0"),
+            tac_ast.Copy(
+                src=tac_ast.Constant(value=3),
+                dst=tac_ast.Var(name="%0"),
+            ),
+            tac_ast.Label(name="cond_end_1"),
+        ])
+
+    def test_nested_conditional_gets_unique_labels(self):
+        # Each ?: mints its own pair of labels — outer and inner
+        # don't collide.
+        t = Translator()
+        instrs: list = []
+        t.translate_exp(
+            c99_ast.Conditional(
+                condition=c99_ast.Constant(value=1),
+                true_clause=c99_ast.Conditional(
+                    condition=c99_ast.Constant(value=2),
+                    true_clause=c99_ast.Constant(value=3),
+                    false_clause=c99_ast.Constant(value=4),
+                ),
+                false_clause=c99_ast.Constant(value=5),
+            ),
+            instrs,
+        )
+        labels = sorted({
+            i.name for i in instrs if isinstance(i, tac_ast.Label)
+        })
+        self.assertEqual(
+            labels,
+            ["cond_else_0", "cond_else_2", "cond_end_1", "cond_end_3"],
+        )
+
+
 class TestTranslateFunctionFallThrough(unittest.TestCase):
     """translate_function appends an implicit `Ret(Constant(0))` if
     the body doesn't already end in a Ret. C99 §5.1.2.2.3 specifies

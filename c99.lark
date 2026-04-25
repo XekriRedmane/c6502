@@ -189,24 +189,34 @@ statement: RETURN exp SEMICOLON                            -> return_stmt
 // AST sees no extra wrapping for "passes through to next level".
 ?exp: assignment_exp
 // Right-recursive so `=` is right-associative: `a = b = c` parses as
-// `a = (b = c)`. The LHS is only one level tighter (`logical_or_exp`)
-// rather than C99's `unary_exp`, which means the grammar accepts things
-// like `1+2=3+4` — semantic analysis will reject those later by
-// checking for modifiable lvalues. The compound-assignment alternatives
-// share the `compound_assign` builder, which dispatches on the operator
+// `a = (b = c)`. The LHS is `conditional_exp` (one level tighter than
+// assignment, same as C99's §6.5.16 but looser than C99's `unary_exp`),
+// which means the grammar accepts things like `1+2=3+4` and
+// `(1?2:a)=5` — semantic analysis will reject the first by checking
+// for modifiable lvalues. The compound-assignment alternatives share
+// the `compound_assign` builder, which dispatches on the operator
 // token's type and emits the desugared `lval = lval OP rval`.
-?assignment_exp: logical_or_exp ASSIGN assignment_exp         -> assignment
-               | logical_or_exp PLUS_ASSIGN assignment_exp    -> compound_assign
-               | logical_or_exp MINUS_ASSIGN assignment_exp   -> compound_assign
-               | logical_or_exp STAR_ASSIGN assignment_exp    -> compound_assign
-               | logical_or_exp SLASH_ASSIGN assignment_exp   -> compound_assign
-               | logical_or_exp PERCENT_ASSIGN assignment_exp -> compound_assign
-               | logical_or_exp AMP_ASSIGN assignment_exp     -> compound_assign
-               | logical_or_exp PIPE_ASSIGN assignment_exp    -> compound_assign
-               | logical_or_exp CARET_ASSIGN assignment_exp   -> compound_assign
-               | logical_or_exp LSHIFT_ASSIGN assignment_exp  -> compound_assign
-               | logical_or_exp RSHIFT_ASSIGN assignment_exp  -> compound_assign
-               | logical_or_exp
+?assignment_exp: conditional_exp ASSIGN assignment_exp         -> assignment
+               | conditional_exp PLUS_ASSIGN assignment_exp    -> compound_assign
+               | conditional_exp MINUS_ASSIGN assignment_exp   -> compound_assign
+               | conditional_exp STAR_ASSIGN assignment_exp    -> compound_assign
+               | conditional_exp SLASH_ASSIGN assignment_exp   -> compound_assign
+               | conditional_exp PERCENT_ASSIGN assignment_exp -> compound_assign
+               | conditional_exp AMP_ASSIGN assignment_exp     -> compound_assign
+               | conditional_exp PIPE_ASSIGN assignment_exp    -> compound_assign
+               | conditional_exp CARET_ASSIGN assignment_exp   -> compound_assign
+               | conditional_exp LSHIFT_ASSIGN assignment_exp  -> compound_assign
+               | conditional_exp RSHIFT_ASSIGN assignment_exp  -> compound_assign
+               | conditional_exp
+// Ternary `cond ? then : else`. The condition is `logical_or_exp`, so
+// `||` binds tighter than `?:`. The true-clause is a full `exp` (so
+// `x ? x = 1 : 2` parses as `x ? (x = 1) : 2`). The false-clause is
+// `conditional_exp`, which gives `?:` right-associativity (`a ? 1 : b ?
+// 2 : 3` parses as `a ? 1 : (b ? 2 : 3)`) and keeps assignments out of
+// the false-clause slot — so `1 ? 2 : a = 5` parses as `(1 ? 2 : a) = 5`
+// via the outer assignment rule, not `1 ? 2 : (a = 5)`.
+?conditional_exp: logical_or_exp QUESTION exp COLON conditional_exp -> conditional
+                | logical_or_exp
 ?logical_or_exp: logical_or_exp OROR logical_and_exp  -> logical_or
                | logical_and_exp
 ?logical_and_exp: logical_and_exp ANDAND or_exp       -> logical_and

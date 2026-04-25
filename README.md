@@ -98,16 +98,21 @@ that takes an AST and returns an AST (or text, for emit):
    binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
    parentheses, right-associative `=` plus the ten compound
    assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-   `<<=`, `>>=`), and the four increment/decrement operators in
-   both prefix (`++a` / `--a`) and postfix (`a++` / `a--`) form.
-   Compound assignments desugar at parse time to
-   `Assignment(lval, Binary(OP, lval, rval))`; prefix `++a` / `--a`
-   desugar the same way to `a = a ± 1`. Postfix keeps its own
-   `Postfix(incdec_op, exp)` AST node because it must evaluate to
-   the operand's *old* value while mutating it. Operator precedence
-   is encoded by a precedence-climbing rule layout (`exp →
-   assignment_exp → logical_or_exp → … → unary_exp → postfix_exp →
-   atom`).
+   `<<=`, `>>=`), the four increment/decrement operators in
+   both prefix (`++a` / `--a`) and postfix (`a++` / `a--`) form,
+   and the ternary `cond ? t : f`. Compound assignments desugar
+   at parse time to `Assignment(lval, Binary(OP, lval, rval))`;
+   prefix `++a` / `--a` desugar the same way to `a = a ± 1`.
+   Postfix keeps its own `Postfix(incdec_op, exp)` AST node
+   because it must evaluate to the operand's *old* value while
+   mutating it. The ternary is its own `Conditional(condition,
+   true_clause, false_clause)` node; grammatically it sits
+   between assignment and logical-or, with the false-clause slot
+   restricted to `conditional_exp` (so `?:` is right-associative
+   and `1 ? 2 : a = 5` parses as `(1 ? 2 : a) = 5`). Operator
+   precedence is encoded by a precedence-climbing rule layout
+   (`exp → assignment_exp → conditional_exp → logical_or_exp → …
+   → unary_exp → postfix_exp → atom`).
 
 2. **`passes.variable_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Rewrites every user-written identifier to a
@@ -652,6 +657,18 @@ runnable-shape 6502 assembly):
   nearest `if` per C99 §6.8.4.1 — Lark's LALR(1) backend resolves the
   shift-reduce conflict in favor of shifting, which gives that binding
   for free
+- ternary `cond ? t : f`. `c99_to_tac` lowers it like an if/else that
+  also produces a value: evaluate `cond`, `JumpIfFalse` to
+  `cond_else_N`, evaluate the true-clause and `Copy` into a shared
+  `dst` temp, `Jump(cond_end_N)`, `Label(cond_else_N)`, evaluate the
+  false-clause and `Copy` into the same `dst`, `Label(cond_end_N)` —
+  the Conditional expression returns `dst`. Labels share the same
+  Translator counter as `if` / short-circuit / inline-comparison
+  lowerings, so each ternary gets globally unique
+  `cond_else_N` / `cond_end_N` numbers. Right-associative and has
+  lower precedence than all binaries: `a || b ? 1 : 2` is
+  `(a||b) ? 1 : 2`, `1 ? 2 : 3 || 4` is `1 ? 2 : (3||4)`, and
+  `a ? 1 : b ? 2 : 3` is `a ? 1 : (b ? 2 : 3)`
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:

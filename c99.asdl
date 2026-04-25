@@ -15,6 +15,7 @@ module C99 {
         | Binary(binary_operator op, exp left, exp right)
         | Assignment(exp lval, exp rval)
         | Postfix(incdec_op op, exp operand)
+        | Conditional(exp condition, exp true_clause, exp false_clause)
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement
     binary_operator =

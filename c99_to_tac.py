@@ -306,6 +306,41 @@ class Translator:
                 # `b = a = 5` -> inner returns Var(@0.a), outer copies
                 # that into @1.b and returns Var(@1.b).
                 return dst
+            case c99_ast.Conditional(
+                condition=cond,
+                true_clause=true_clause,
+                false_clause=false_clause,
+            ):
+                # `cond ? t : f` lowers like an if/else that also
+                # produces a value: both arms Copy into a shared dst
+                # temp so the result is a single Var the caller can
+                # thread into later instructions. Labels come from the
+                # same counter as `if`/short-circuit, so numbering stays
+                # globally unique.
+                #   <eval cond -> cond_val>
+                #   JumpIfFalse(cond_val, cond_else_N)
+                #   <eval true -> t_val>
+                #   Copy(t_val, dst)
+                #   Jump(cond_end_N)
+                #   Label(cond_else_N)
+                #   <eval false -> f_val>
+                #   Copy(f_val, dst)
+                #   Label(cond_end_N)
+                cond_val = self.translate_exp(cond, instrs)
+                else_label = self.make_label("cond_else")
+                end_label = self.make_label("cond_end")
+                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                instrs.append(tac_ast.JumpIfFalse(
+                    condition=cond_val, target=else_label,
+                ))
+                t_val = self.translate_exp(true_clause, instrs)
+                instrs.append(tac_ast.Copy(src=t_val, dst=dst))
+                instrs.append(tac_ast.Jump(target=end_label))
+                instrs.append(tac_ast.Label(name=else_label))
+                f_val = self.translate_exp(false_clause, instrs)
+                instrs.append(tac_ast.Copy(src=f_val, dst=dst))
+                instrs.append(tac_ast.Label(name=end_label))
+                return dst
             case c99_ast.Postfix(op=op, operand=operand):
                 # `a++` (resp. `a--`) returns the *old* value of `a`
                 # while incrementing (decrementing) it. Capture the

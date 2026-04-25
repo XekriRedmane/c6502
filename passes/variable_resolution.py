@@ -189,6 +189,16 @@ class Resolver:
                     lval=self.resolve_exp(lval, scope),
                     rval=self.resolve_exp(rval, scope),
                 )
+            case c99_ast.Conditional(
+                condition=cond,
+                true_clause=true_clause,
+                false_clause=false_clause,
+            ):
+                return c99_ast.Conditional(
+                    condition=self.resolve_exp(cond, scope),
+                    true_clause=self.resolve_exp(true_clause, scope),
+                    false_clause=self.resolve_exp(false_clause, scope),
+                )
             case c99_ast.Postfix(op=op, operand=operand):
                 # Same lvalue rule as Assignment: postfix `a++` /
                 # `a--` mutates its operand, so the operand has to

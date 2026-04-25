@@ -22,7 +22,22 @@ class Type_function_definition:
 @dataclass
 class Function(Type_function_definition):
     name: str
-    body: Type_statement
+    body: list[Type_block_item] = field(default_factory=list)
+
+
+@dataclass
+class Type_block_item:
+    pass
+
+
+@dataclass
+class S(Type_block_item):
+    statement: Type_statement
+
+
+@dataclass
+class D(Type_block_item):
+    declaration: Type_declaration
 
 
 @dataclass
@@ -36,6 +51,27 @@ class Return(Type_statement):
 
 
 @dataclass
+class Expression(Type_statement):
+    exp: Type_exp
+
+
+@dataclass
+class Null(Type_statement):
+    pass
+
+
+@dataclass
+class Type_declaration:
+    pass
+
+
+@dataclass
+class Declaration(Type_declaration):
+    name: str
+    init: Type_exp | None = None
+
+
+@dataclass
 class Type_exp:
     pass
 
@@ -43,6 +79,11 @@ class Type_exp:
 @dataclass
 class Constant(Type_exp):
     value: int
+
+
+@dataclass
+class Var(Type_exp):
+    name: str
 
 
 @dataclass
@@ -56,6 +97,12 @@ class Binary(Type_exp):
     op: Type_binary_operator
     left: Type_exp
     right: Type_exp
+
+
+@dataclass
+class Assignment(Type_exp):
+    lval: Type_exp
+    rval: Type_exp
 
 
 @dataclass

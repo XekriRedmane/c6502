@@ -28,7 +28,7 @@ recognize are forwarded to the preprocessor (pcpp), so `-D`, `-U`, `-I`,
 own `-o` is not forwarded.
 
 Stage-selection flags (mutually exclusive, one required with `compile.py`):
-`--lex`, `--parse`, `--tac`, `--codegen`.
+`--lex`, `--parse`, `--resolve`, `--tac`, `--codegen`.
 
 ## Regenerating AST modules
 
@@ -48,32 +48,48 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains six passes, each a separate module that takes one
-AST and returns another (or text for emit):
+`compile.py --codegen` chains seven passes, each a separate module that takes
+one AST and returns another (or text for emit):
 
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar lives
-   in `c99.lark`. Only `int main(void) { return <exp>; }` is accepted; `<exp>`
-   covers integer constants, unary `-`/`~`, binary `+`/`-`/`*`/`/`/`%`, and
-   parentheses. Precedence is encoded by rule layering
-   (`exp → add_exp → mul_exp → unary_exp → atom`).
-2. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
+   in `c99.lark`. The grammar accepts `int main(void) { <block_item>* }`; a
+   block item is a declaration (`int x;` / `int x = exp;`) or a statement
+   (`return exp;`, `exp;`, or a null `;`). `<exp>` covers integer constants,
+   identifiers, unary `-`/`~`/`!`, binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/
+   comparison/`&&`/`||`, parentheses, and right-associative `=` (the LHS is
+   loosened from C99's `unary-expression` to `logical_or_exp`, so e.g.
+   `1+2=3+4` parses — variable resolution / semantic analysis rejects it).
+2. `passes.variable_resolution.resolve_program` — `c99_ast` → `c99_ast`.
+   Rewrites every user-written variable name to a program-unique
+   `@<N>.<orig>` (illegal in a C identifier, so it can't collide with user
+   names). A `Declaration(name)` bumps a global counter, mints a new
+   unique name, and records `name → unique` in the per-function scope;
+   declaring the same name twice raises `VariableResolutionError`. A
+   `Var(name)` in any expression is rewritten to its mapped unique name;
+   referencing an undeclared name raises. An `Assignment` additionally
+   checks its lval is a `Var` (not a `Binary`, `Constant`, `Unary`, or
+   nested `Assignment`) and raises "invalid lvalue" otherwise —
+   `1+2=3`, `-a=5`, `(a=b)=c` all fail here. When richer lvalues
+   (`*p`, `a[i]`, `s.f`) land, this check widens to an "is-lvalue"
+   predicate. Scope today is flat per function (no nested blocks yet).
+3. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
    code). Compound expressions flatten into ops, materializing each intermediate
    into a fresh `Var(%n)`. `Binary(op, src1, src2, dst)` evaluates `src1` first
    so its temps get lower numbers.
-3. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
+4. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
    instruction lowers into a sequence of atoms (`Mov` to/from `A`, atomic ops
    on `A`, carry setup if needed). Output is correct but redundant — every
    intermediate is materialized through a `Frame` slot. Optimization is
    deferred to TAC-level passes.
-4. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
+5. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
    `Frame(offset)` slot. Per function: walks instructions in order, mints
    offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
    the same offset for repeated names. `args_bytes` is `0` currently.
-5. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
+6. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
    `Frame` offset = local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites every
    `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
-6. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
+7. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
    every node maps to one 6502 instruction, except `Ret` and
    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
 
@@ -203,6 +219,16 @@ uv run python -m unittest
 The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 
 ## Status (what works end-to-end through `--codegen`)
+
+**Temporary caveat:** the grammar and `passes.variable_resolution`
+accept declarations, assignments, expression statements, and null
+statements, but `c99_to_tac` hasn't been updated for the new
+`Function.body = list[block_item]` shape yet. Until it is, `--tac`
+and `--codegen` break on any source that exercises those constructs,
+and the `c99_to_tac` / `compile` end-to-end tests fail in sympathy.
+The list below describes what the pipeline supported before the
+grammar rewrite and is expected to support again once the translator
+catches up.
 
 - `int main(void)` returning a single integer expression
 - integer constants

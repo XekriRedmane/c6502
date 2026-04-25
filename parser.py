@@ -40,18 +40,56 @@ class _ASTBuilder(Transformer):
     def start(self, function):
         return c99_ast.Program(function_definition=function)
 
+    def function(self, items):
+        # items = [INT, IDENTIFIER, LPAREN, VOID, RPAREN, LBRACE,
+        #          *block_items, RBRACE]. Non-inline because block_item*
+        #          expands to a variable number of children.
+        name = items[1]
+        block_items = items[6:-1]
+        return c99_ast.Function(name=str(name), body=list(block_items))
+
+    # Alternatives of `block_item` — wrap a statement / declaration.
     @v_args(inline=True)
-    def function(self, _int, name, _lparen, _void, _rparen, _lbrace, body, _rbrace):
-        return c99_ast.Function(name=str(name), body=body)
+    def stmt_item(self, statement):
+        return c99_ast.S(statement=statement)
 
     @v_args(inline=True)
-    def statement(self, _return, exp, _semi):
+    def decl_item(self, declaration):
+        return c99_ast.D(declaration=declaration)
+
+    # `declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON`. The optional
+    # initializer makes the children variable-length (5 tokens with init,
+    # 3 without), so non-inline again.
+    def declaration(self, items):
+        name = items[1]
+        init = items[3] if len(items) == 5 else None
+        return c99_ast.Declaration(name=str(name), init=init)
+
+    # Alternatives of `statement` — each named in c99.lark.
+    @v_args(inline=True)
+    def return_stmt(self, _return, exp, _semi):
         return c99_ast.Return(exp=exp)
+
+    @v_args(inline=True)
+    def expression_stmt(self, exp, _semi):
+        return c99_ast.Expression(exp=exp)
+
+    @v_args(inline=True)
+    def null_stmt(self, _semi):
+        return c99_ast.Null()
 
     # Alternatives of `exp` — each named in c99.lark.
     @v_args(inline=True)
     def constant(self, token):
         return c99_ast.Constant(value=int(str(token)))
+
+    @v_args(inline=True)
+    def identifier(self, token):
+        return c99_ast.Var(name=str(token))
+
+    @v_args(inline=True)
+    def assignment(self, lval, _assign, rval):
+        return c99_ast.Assignment(lval=lval, rval=rval)
 
     @v_args(inline=True)
     def unary(self, op, inner):

@@ -46,6 +46,8 @@ mutually-exclusive flag:
 | ----------- | ------------------------------------------------------------- |
 | `--lex`     | one `line:col<TAB>kind<TAB>value` line per token              |
 | `--parse`   | `pretty(c99_ast)` — the parsed AST                            |
+| `--resolve` | `pretty(c99_ast)` after variable resolution (user names →     |
+|             | `@N.orig`)                                                    |
 | `--tac`     | `pretty(tac_ast)` — three-address-code IR                     |
 | `--codegen` | 6502 assembly text                                            |
 
@@ -58,8 +60,8 @@ uv run python compile.py - --tac < source.c                # stdin
 Notes:
 - `-` as the input filename reads from stdin.
 - With `--codegen`, the `-o` filename must end in `.asm`.
-- The other stages (`--lex`, `--parse`, `--tac`) accept any output
-  filename, or default to stdout.
+- The other stages (`--lex`, `--parse`, `--resolve`, `--tac`) accept any
+  output filename, or default to stdout.
 - The comment-stripping step uses pcpp via the Python API (see
   `preprocessor.py`); pcpp is a project dependency, no shelling out.
 - Any flag `compile.py` doesn't recognize is forwarded to the
@@ -73,57 +75,74 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
 `compile.py` is the only CLI; every other module (`lexer.py`,
-`parser.py`, `c99_to_tac.py`, `tac_to_asm.py`,
-`passes/replace_pseudoregisters.py`, `passes/allocate_stack.py`, `asm_emit.py`) is
-library-only and used as an import.
+`parser.py`, `passes/variable_resolution.py`, `c99_to_tac.py`,
+`tac_to_asm.py`, `passes/replace_pseudoregisters.py`,
+`passes/allocate_stack.py`, `asm_emit.py`) is library-only and used
+as an import.
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains six passes. Each is a separate module
+`compile.py --codegen` chains seven passes. Each is a separate module
 that takes an AST and returns an AST (or text, for emit):
 
 1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
-   Lark/LALR parser using the grammar in `c99.lark`. Currently
-   handles `int main(void) { return <exp>; }` where `<exp>` is built
-   from integer constants, the unary operators `-` and `~`, the
-   binary operators `+`/`-`/`*`/`/`/`%`, and parentheses. Operator
-   precedence is encoded by a precedence-climbing rule layout
-   (`exp → add_exp → mul_exp → unary_exp → atom`).
+   Lark/LALR parser using the grammar in `c99.lark`. Accepts
+   `int main(void) { <block_item>* }`, where a block item is a
+   declaration (`int x;` or `int x = exp;`) or a statement
+   (`return exp;`, `exp;`, or a null `;`). `<exp>` is built from
+   integer constants, identifiers, the unary ops (`-`/`~`/`!`),
+   binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
+   parentheses, and right-associative `=`. Operator precedence is
+   encoded by a precedence-climbing rule layout (`exp →
+   assignment_exp → logical_or_exp → … → unary_exp → atom`).
 
-2. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
+2. **`passes.variable_resolution.resolve_program`** — `c99_ast` →
+   `c99_ast`. Rewrites every user-written identifier to a
+   program-unique `@<N>.<orig>` (illegal as a C identifier, so it
+   can't collide with user names). A `Declaration` mints a fresh
+   unique name; a second declaration of the same original name
+   raises `VariableResolutionError`. Every `Var` reference in an
+   expression is rewritten to its mapped unique name; referencing
+   an undeclared name also raises. An `Assignment` additionally
+   checks its lval is a `Var` (c6502 doesn't have richer lvalues
+   yet) and raises "invalid lvalue" for `1+2=3`, `-a=5`,
+   `(a=b)=c`, etc. Scope is flat per function for now (no nested
+   blocks yet).
+
+3. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
    `c99_ast` → `tac_ast` (three-address code). Compound expressions
    flatten into a sequence of ops, materializing each intermediate
    into a fresh `Var(%n)` temporary. `Binary(op, src1, src2, dst)`
    evaluates `src1` first so its temps get the lower numbers.
 
-3. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
+4. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
    `tac_ast` → `asm_ast`. Each TAC instruction lowers into a
    sequence of asm atoms (`Mov` to/from `A`, atomic ops on `A`,
    carry setup if needed). Optimization is deferred to TAC-level
    passes — this pass produces correct but redundant output (every
    intermediate is materialized through a `Frame` slot).
 
-4. **`passes.replace_pseudoregisters.replace_program`** — assigns each
+5. **`passes.replace_pseudoregisters.replace_program`** — assigns each
    `Pseudo(name)` a `Frame(offset)` slot. Per-function: walks
    instructions in order, mints offsets `args_bytes+1`,
    `args_bytes+2`, … for each new pseudo name; reuses the same
    offset for repeated names. `args_bytes` is `0` for now (no
    function arguments yet).
 
-5. **`passes.allocate_stack.allocate_program`** — finds each function's
+6. **`passes.allocate_stack.allocate_program`** — finds each function's
    `M` (the highest `Frame` offset = its local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites
    every `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
    The emit phase uses these to generate the prelude/epilogue.
 
-6. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
+7. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
    assembly text. **Atomic IR**: every node maps to one 6502
    instruction, with the exceptions of `Ret` and `FunctionPrologue`
    (the multi-instruction prelude/epilogue — see "Function stack
    frame layout" below).
 
 The intermediate stages are inspectable via `compile.py`'s
-`--lex`, `--parse`, `--tac`, `--codegen` flags.
+`--lex`, `--parse`, `--resolve`, `--tac`, `--codegen` flags.
 
 ## Lexer and parser as APIs
 
@@ -554,8 +573,17 @@ Notes:
 
 ## Status
 
-Currently end-to-end (C source through `compile.py --codegen` to
-runnable-shape 6502 assembly):
+**Temporary caveat:** the grammar and `variable_resolution` now
+accept declarations, assignments, expression statements, and null
+statements, but `c99_to_tac` still assumes the old `Function.body`
+shape (a single statement). Until it's updated, `--tac` and
+`--codegen` break on any source that uses the new constructs, and
+the test suite has matching expected failures for `c99_to_tac` and
+`compile` end-to-end tests.
+
+What has worked end-to-end (`compile.py --codegen` to runnable-shape
+6502 assembly) and is expected to work again once the translator
+catches up:
 
 - `int main(void)` returning a single integer expression
 - integer constants

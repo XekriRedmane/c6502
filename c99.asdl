@@ -1,11 +1,18 @@
 module C99 {
     program = Program(function_definition)
-    function_definition = Function(identifier name, statement body)
-    statement = Return(exp)
+    function_definition = Function(identifier name, block_item* body)
+    block_item = S(statement) | D(declaration)
+    statement =
+        Return(exp)
+        | Expression(exp)
+        | Null
+    declaration = Declaration(identifier name, exp? init)
     exp =
         Constant(int value)
+        | Var(identifier name)
         | Unary(unary_operator op, exp)
         | Binary(binary_operator op, exp left, exp right)
+        | Assignment(exp lval, exp rval)
     unary_operator = Complement | Negate | LogicalNot
     binary_operator =
         Add | Subtract | Multiply | Divide | Modulo

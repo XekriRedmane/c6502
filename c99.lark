@@ -167,14 +167,27 @@ WS: /[ \t\n\f]+/
 
 start: function
 
-function: INT IDENTIFIER LPAREN VOID RPAREN LBRACE statement RBRACE
-statement: RETURN exp SEMICOLON
+function: INT IDENTIFIER LPAREN VOID RPAREN LBRACE block_item* RBRACE
+block_item: statement    -> stmt_item
+          | declaration  -> decl_item
+declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
+statement: RETURN exp SEMICOLON  -> return_stmt
+         | exp SEMICOLON         -> expression_stmt
+         | SEMICOLON             -> null_stmt
+
 // Expression precedence (low to high) via the standard precedence-
 // climbing layout: each level recurses left into itself (for left
 // associativity) and right into the next-tighter level. Lark's `?`
 // rule prefix inlines a level when it has a single child, so the
 // AST sees no extra wrapping for "passes through to next level".
-?exp: logical_or_exp
+?exp: assignment_exp
+// Right-recursive so `=` is right-associative: `a = b = c` parses as
+// `a = (b = c)`. The LHS is only one level tighter (`logical_or_exp`)
+// rather than C99's `unary_exp`, which means the grammar accepts things
+// like `1+2=3+4` — semantic analysis will reject those later by
+// checking for modifiable lvalues.
+?assignment_exp: logical_or_exp ASSIGN assignment_exp -> assignment
+               | logical_or_exp
 ?logical_or_exp: logical_or_exp OROR logical_and_exp  -> logical_or
                | logical_and_exp
 ?logical_and_exp: logical_and_exp ANDAND or_exp       -> logical_and
@@ -207,6 +220,8 @@ statement: RETURN exp SEMICOLON
           | atom
 ?atom: INTEGER_CONSTANT             -> constant
      | LPAREN exp RPAREN            -> paren
+     | IDENTIFIER                   -> identifier
+
 unop: MINUS                         -> negate
     | TILDE                         -> complement
     | BANG                          -> logical_not

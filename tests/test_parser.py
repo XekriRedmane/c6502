@@ -27,7 +27,9 @@ class TestParser(unittest.TestCase):
         expected = c99_ast.Program(
             function_definition=c99_ast.Function(
                 name="main",
-                body=c99_ast.Return(exp=c99_ast.Constant(value=42)),
+                body=[c99_ast.S(statement=c99_ast.Return(
+                    exp=c99_ast.Constant(value=42),
+                ))],
             ),
         )
         self.assertEqual(ast, expected)
@@ -39,14 +41,13 @@ class TestParser(unittest.TestCase):
             "int\nmain(void)\n{\n    return 42;\n}",
         ]:
             with self.subTest(src=src):
-                ast = parse(src)
-                self.assertEqual(ast.function_definition.body.exp.value, 42)
+                self.assertEqual(_return_stmt(parse(src)).exp.value, 42)
 
     def test_various_return_values(self):
         for val in [0, 1, 42, 255, 1000, 0xDEADBEEF]:
             with self.subTest(val=val):
                 ast = parse(f"int main(void) {{ return {val}; }}")
-                self.assertEqual(ast.function_definition.body.exp.value, val)
+                self.assertEqual(_return_stmt(ast).exp.value, val)
 
     def test_function_name_captured(self):
         for name in ["main", "foo", "_start", "a1b2"]:
@@ -57,7 +58,7 @@ class TestParser(unittest.TestCase):
     def test_unary_negate(self):
         ast = parse("int main(void) { return -42; }")
         self.assertEqual(
-            ast.function_definition.body,
+            _return_stmt(ast),
             c99_ast.Return(exp=c99_ast.Unary(
                 op=c99_ast.Negate(),
                 exp=c99_ast.Constant(value=42),
@@ -67,7 +68,7 @@ class TestParser(unittest.TestCase):
     def test_unary_complement(self):
         ast = parse("int main(void) { return ~10; }")
         self.assertEqual(
-            ast.function_definition.body,
+            _return_stmt(ast),
             c99_ast.Return(exp=c99_ast.Unary(
                 op=c99_ast.Complement(),
                 exp=c99_ast.Constant(value=10),
@@ -77,14 +78,14 @@ class TestParser(unittest.TestCase):
     def test_parens_do_not_appear_in_ast(self):
         ast = parse("int main(void) { return (42); }")
         self.assertEqual(
-            ast.function_definition.body,
+            _return_stmt(ast),
             c99_ast.Return(exp=c99_ast.Constant(value=42)),
         )
 
     def test_nested_unary(self):
         ast = parse("int main(void) { return -(-42); }")
         self.assertEqual(
-            ast.function_definition.body.exp,
+            _return_stmt(ast).exp,
             c99_ast.Unary(
                 op=c99_ast.Negate(),
                 exp=c99_ast.Unary(
@@ -97,7 +98,7 @@ class TestParser(unittest.TestCase):
     def test_mixed_unary_with_parens(self):
         ast = parse("int main(void) { return ~(-5); }")
         self.assertEqual(
-            ast.function_definition.body.exp,
+            _return_stmt(ast).exp,
             c99_ast.Unary(
                 op=c99_ast.Complement(),
                 exp=c99_ast.Unary(
@@ -113,14 +114,33 @@ class TestParser(unittest.TestCase):
         self.assertIsInstance(ast, c99_ast.Program)
         self.assertIsInstance(ast.function_definition, c99_ast.Type_function_definition)
         self.assertIsInstance(ast.function_definition, c99_ast.Function)
-        self.assertIsInstance(ast.function_definition.body, c99_ast.Type_statement)
-        self.assertIsInstance(ast.function_definition.body, c99_ast.Return)
-        self.assertIsInstance(ast.function_definition.body.exp, c99_ast.Type_exp)
-        self.assertIsInstance(ast.function_definition.body.exp, c99_ast.Constant)
+        # body is a list of block_items now.
+        self.assertIsInstance(ast.function_definition.body, list)
+        self.assertEqual(len(ast.function_definition.body), 1)
+        item = ast.function_definition.body[0]
+        self.assertIsInstance(item, c99_ast.Type_block_item)
+        self.assertIsInstance(item, c99_ast.S)
+        self.assertIsInstance(item.statement, c99_ast.Type_statement)
+        self.assertIsInstance(item.statement, c99_ast.Return)
+        self.assertIsInstance(item.statement.exp, c99_ast.Type_exp)
+        self.assertIsInstance(item.statement.exp, c99_ast.Constant)
+
+
+def _return_stmt(ast: c99_ast.Type_program) -> c99_ast.Return:
+    """Extract the single Return statement from
+    `int main(void) { return <exp>; }`. Function.body is now a list
+    of block_items; here we expect exactly one S(statement=Return)."""
+    body = ast.function_definition.body
+    assert len(body) == 1, body
+    item = body[0]
+    assert isinstance(item, c99_ast.S), item
+    stmt = item.statement
+    assert isinstance(stmt, c99_ast.Return), stmt
+    return stmt
 
 
 def _exp_of(src: str) -> c99_ast.Type_exp:
-    return parse(f"int main(void) {{ return {src}; }}").function_definition.body.exp
+    return _return_stmt(parse(f"int main(void) {{ return {src}; }}")).exp
 
 
 class TestBinaryPrecedence(unittest.TestCase):
@@ -518,10 +538,8 @@ class TestValidFiles(unittest.TestCase):
                 ast = parse(_preprocess(path.read_text()))
                 self.assertIsInstance(ast, c99_ast.Program)
                 self.assertEqual(ast.function_definition.name, "main")
-                self.assertIsInstance(ast.function_definition.body, c99_ast.Return)
-                self.assertIsInstance(
-                    ast.function_definition.body.exp, c99_ast.Constant,
-                )
+                stmt = _return_stmt(ast)
+                self.assertIsInstance(stmt.exp, c99_ast.Constant)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

@@ -88,10 +88,16 @@ that takes an AST and returns an AST (or text, for emit):
 
 1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
    Lark/LALR parser using the grammar in `c99.lark`. Accepts
-   `int main(void) { <block_item>* }`, where a block item is a
-   declaration (`int x;` or `int x = exp;`) or a statement
-   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`,
-   `goto label;`, `label: stmt`, or a null `;`). The dangling-else ambiguity is resolved by Lark's
+   `int main(void) <block>`, where `<block>` is `{ <block_item>* }`
+   wrapped in a `Block` AST node so a function body is
+   `Function(name, Block([...]))`. A block item is a declaration
+   (`int x;` or `int x = exp;`) or a statement (`return exp;`,
+   `exp;`, `if (exp) stmt (else stmt)?`, `goto label;`,
+   `label: stmt`, or a null `;`). The ASDL also has a
+   `Compound(block)` statement variant for `{ ... }` as a nested
+   statement; the type is wired through every pass but the
+   grammar has no `compound_stmt` rule yet, so it isn't reachable
+   from source. The dangling-else ambiguity is resolved by Lark's
    LALR(1) backend preferring shift over reduce on `else`, which
    binds the `else` to the nearest preceding unmatched `if` —
    the C99 §6.8.4.1 rule. `<exp>` is built from
@@ -125,9 +131,12 @@ that takes an AST and returns an AST (or text, for emit):
    an undeclared name also raises. An `Assignment` additionally
    checks its lval is a `Var` (c6502 doesn't have richer lvalues
    yet) and raises "invalid lvalue" for `1+2=3`, `-a=5`,
-   `(a=b)=c`, etc. Scope is flat per function for now (no nested
-   blocks yet). Labels and gotos pass through unchanged — they
-   live in a separate namespace and are owned by the next pass.
+   `(a=b)=c`, etc. Scope is flat per function for now — the same
+   scope dict is reused across every nested `Block`, so when
+   nested-scope semantics land (push on `Block` entry, pop on
+   exit), the routing through `resolve_block` is already in
+   place. Labels and gotos pass through unchanged — they live in
+   a separate namespace and are owned by the next pass.
 
 3. **`passes.label_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Validates and rewrites `LabeledStmt` (C99 §6.8.1) and

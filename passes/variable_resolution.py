@@ -77,11 +77,26 @@ class Resolver:
                 # the variable namespace. The counter keeps running
                 # across functions so names stay globally unique.
                 scope: dict[str, str] = {}
-                new_body = [
-                    self.resolve_block_item(item, scope) for item in body
-                ]
-                return c99_ast.Function(name=name, body=new_body)
+                return c99_ast.Function(
+                    name=name, body=self.resolve_block(body, scope),
+                )
         raise TypeError(f"unexpected function: {fn!r}")
+
+    def resolve_block(
+        self,
+        block: c99_ast.Type_block,
+        scope: dict[str, str],
+    ) -> c99_ast.Type_block:
+        # Today scope is flat per function — the same dict is passed
+        # in and reused for every block. When nested blocks need
+        # their own scope (C99's actual rule), this is the place to
+        # push a new frame on entry and pop on exit.
+        match block:
+            case c99_ast.Block(block_item=items):
+                return c99_ast.Block(block_item=[
+                    self.resolve_block_item(item, scope) for item in items
+                ])
+        raise TypeError(f"unexpected block: {block!r}")
 
     def resolve_block_item(
         self,
@@ -145,6 +160,16 @@ class Resolver:
                         self.resolve_statement(else_stmt, scope)
                         if else_stmt is not None else None
                     ),
+                )
+            case c99_ast.Compound(block=block):
+                # `{ ... }` — descend into the inner block. Today
+                # scope is flat per function (no nested-block scoping
+                # yet), so the same scope dict is passed straight in;
+                # see `resolve_block`. The grammar doesn't yet
+                # produce Compound (no compound_stmt rule), so this
+                # branch is forward-compat for when it does.
+                return c99_ast.Compound(
+                    block=self.resolve_block(block, scope),
                 )
             case c99_ast.Goto(label=label):
                 # Labels live in their own namespace — variable

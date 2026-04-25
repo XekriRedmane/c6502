@@ -573,32 +573,32 @@ class TestTranslateGotoAndLabeled(unittest.TestCase):
         self.assertEqual(instrs, [tac_ast.Label(name=".main@foo")])
 
     def test_nested_labeled_statements(self):
-        # `a: b: ;` -> Label("@main.a"); Label("@main.b").
+        # `a: b: ;` -> Label(".main@a"); Label(".main@b").
         t = Translator()
         instrs: list = []
         t.translate_statement(
             c99_ast.LabeledStmt(
-                label="@main.a",
+                label=".main@a",
                 statement=c99_ast.LabeledStmt(
-                    label="@main.b", statement=c99_ast.Null(),
+                    label=".main@b", statement=c99_ast.Null(),
                 ),
             ),
             instrs,
         )
         self.assertEqual(instrs, [
-            tac_ast.Label(name="@main.a"),
-            tac_ast.Label(name="@main.b"),
+            tac_ast.Label(name=".main@a"),
+            tac_ast.Label(name=".main@b"),
         ])
 
     def test_goto_in_function_body(self):
         # End-to-end through translate_function: `int main(void) {
         # foo: goto foo; }` -> Label, Jump, then implicit Ret(0).
-        fn = c99_ast.Function(name="main", body=[
+        fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.S(statement=c99_ast.LabeledStmt(
                 label=".main@foo",
                 statement=c99_ast.Goto(label=".main@foo"),
             )),
-        ])
+        ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
             [
@@ -682,7 +682,9 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
     terminates."""
 
     def test_empty_function_gets_implicit_return_zero(self):
-        fn = c99_ast.Function(name="main", body=[])
+        fn = c99_ast.Function(
+            name="main", body=c99_ast.Block(block_item=[]),
+        )
         self.assertEqual(
             Translator().translate_function(fn),
             tac_ast.Function(
@@ -692,11 +694,11 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         )
 
     def test_body_without_return_gets_implicit_return_zero(self):
-        fn = c99_ast.Function(name="main", body=[
+        fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.D(declaration=c99_ast.Declaration(
                 name="@0.x", init=c99_ast.Constant(value=5),
             )),
-        ])
+        ]))
         self.assertEqual(
             Translator().translate_function(fn),
             tac_ast.Function(
@@ -714,11 +716,11 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
     def test_explicit_return_does_not_append_a_second_one(self):
         # If the body already ends in a Return, the implicit Ret(0)
         # would be dead code — skip it.
-        fn = c99_ast.Function(name="main", body=[
+        fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Constant(value=7),
             )),
-        ])
+        ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
             [tac_ast.Ret(val=tac_ast.Constant(value=7))],
@@ -727,12 +729,12 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
     def test_null_after_return_does_not_trigger_second_return(self):
         # Null emits nothing, so the last emitted instruction is still
         # Ret — no implicit zero-return appended.
-        fn = c99_ast.Function(name="main", body=[
+        fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Constant(value=7),
             )),
             c99_ast.S(statement=c99_ast.Null()),
-        ])
+        ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
             [tac_ast.Ret(val=tac_ast.Constant(value=7))],
@@ -740,7 +742,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
 
     def test_block_items_processed_in_order(self):
         # Two declarations, then a return.
-        fn = c99_ast.Function(name="main", body=[
+        fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.D(declaration=c99_ast.Declaration(
                 name="@0.a", init=c99_ast.Constant(value=1),
             )),
@@ -750,7 +752,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
             c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Var(name="@1.b"),
             )),
-        ])
+        ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
             [
@@ -771,9 +773,9 @@ class TestTranslateProgram(unittest.TestCase):
     def test_return_constant(self):
         prog = c99_ast.Program(function_definition=c99_ast.Function(
             name="main",
-            body=[c99_ast.S(statement=c99_ast.Return(
+            body=c99_ast.Block(block_item=[c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Constant(value=42),
-            ))],
+            ))]),
         ))
         self.assertEqual(
             translate_program(prog),
@@ -787,10 +789,12 @@ class TestTranslateProgram(unittest.TestCase):
         tac = translate_program(c99_ast.Program(
             function_definition=c99_ast.Function(
                 name="main",
-                body=[c99_ast.S(statement=c99_ast.Return(exp=c99_ast.Unary(
-                    op=c99_ast.Negate(),
-                    exp=c99_ast.Constant(value=5),
-                )))],
+                body=c99_ast.Block(block_item=[c99_ast.S(
+                    statement=c99_ast.Return(exp=c99_ast.Unary(
+                        op=c99_ast.Negate(),
+                        exp=c99_ast.Constant(value=5),
+                    )),
+                )]),
             ),
         ))
         self.assertEqual(

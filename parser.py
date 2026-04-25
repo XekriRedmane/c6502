@@ -57,13 +57,16 @@ class _ASTBuilder(Transformer):
     def start(self, function):
         return c99_ast.Program(function_definition=function)
 
-    def function(self, items):
-        # items = [INT, IDENTIFIER, LPAREN, VOID, RPAREN, LBRACE,
-        #          *block_items, RBRACE]. Non-inline because block_item*
-        #          expands to a variable number of children.
-        name = items[1]
-        block_items = items[6:-1]
-        return c99_ast.Function(name=str(name), body=list(block_items))
+    @v_args(inline=True)
+    def function(self, _int, name, _lp, _void, _rp, body):
+        # The grammar's `function: INT IDENTIFIER LPAREN VOID RPAREN
+        # block` rule hands us a fully-built Block as the body.
+        return c99_ast.Function(name=str(name), body=body)
+
+    def block(self, items):
+        # `block: LBRACE block_item* RBRACE`. Non-inline because
+        # block_item* expands to a variable number of children.
+        return c99_ast.Block(block_item=list(items[1:-1]))
 
     # Alternatives of `block_item` — wrap a statement / declaration.
     @v_args(inline=True)

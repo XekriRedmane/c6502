@@ -27,9 +27,11 @@ class TestParser(unittest.TestCase):
         expected = c99_ast.Program(
             function_definition=c99_ast.Function(
                 name="main",
-                body=[c99_ast.S(statement=c99_ast.Return(
-                    exp=c99_ast.Constant(value=42),
-                ))],
+                body=c99_ast.Block(block_item=[c99_ast.S(
+                    statement=c99_ast.Return(
+                        exp=c99_ast.Constant(value=42),
+                    ),
+                )]),
             ),
         )
         self.assertEqual(ast, expected)
@@ -114,10 +116,12 @@ class TestParser(unittest.TestCase):
         self.assertIsInstance(ast, c99_ast.Program)
         self.assertIsInstance(ast.function_definition, c99_ast.Type_function_definition)
         self.assertIsInstance(ast.function_definition, c99_ast.Function)
-        # body is a list of block_items now.
-        self.assertIsInstance(ast.function_definition.body, list)
-        self.assertEqual(len(ast.function_definition.body), 1)
-        item = ast.function_definition.body[0]
+        # body is a Block wrapping a list of block_items.
+        body = ast.function_definition.body
+        self.assertIsInstance(body, c99_ast.Type_block)
+        self.assertIsInstance(body, c99_ast.Block)
+        self.assertEqual(len(body.block_item), 1)
+        item = body.block_item[0]
         self.assertIsInstance(item, c99_ast.Type_block_item)
         self.assertIsInstance(item, c99_ast.S)
         self.assertIsInstance(item.statement, c99_ast.Type_statement)
@@ -128,11 +132,12 @@ class TestParser(unittest.TestCase):
 
 def _return_stmt(ast: c99_ast.Type_program) -> c99_ast.Return:
     """Extract the single Return statement from
-    `int main(void) { return <exp>; }`. Function.body is now a list
-    of block_items; here we expect exactly one S(statement=Return)."""
-    body = ast.function_definition.body
-    assert len(body) == 1, body
-    item = body[0]
+    `int main(void) { return <exp>; }`. Function.body is a Block
+    around a list of block_items; here we expect exactly one
+    S(statement=Return)."""
+    items = ast.function_definition.body.block_item
+    assert len(items) == 1, items
+    item = items[0]
     assert isinstance(item, c99_ast.S), item
     stmt = item.statement
     assert isinstance(stmt, c99_ast.Return), stmt
@@ -919,9 +924,9 @@ class TestIfStatement(unittest.TestCase):
     favor of shifting, which gives that binding for free."""
 
     def _stmt_of(self, src):
-        body = parse(f"int main(void) {{ {src} }}").function_definition.body
-        assert len(body) == 1, body
-        item = body[0]
+        items = parse(f"int main(void) {{ {src} }}").function_definition.body.block_item
+        assert len(items) == 1, items
+        item = items[0]
         assert isinstance(item, c99_ast.S), item
         return item.statement
 
@@ -1002,9 +1007,9 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
     shifting, picking the labeled-statement branch."""
 
     def _stmt_of(self, src):
-        body = parse(f"int main(void) {{ {src} }}").function_definition.body
-        assert len(body) == 1, body
-        item = body[0]
+        items = parse(f"int main(void) {{ {src} }}").function_definition.body.block_item
+        assert len(items) == 1, items
+        item = items[0]
         assert isinstance(item, c99_ast.S), item
         return item.statement
 
@@ -1048,11 +1053,11 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
     def test_label_inside_if_then(self):
         # Labels can appear inside an if-then or if-else (the branch
         # is a single statement, which can be a labeled statement).
-        body = parse(
+        items = parse(
             "int main(void) { if (1) foo: return 0; }"
-        ).function_definition.body
+        ).function_definition.body.block_item
         self.assertEqual(
-            body[0].statement,
+            items[0].statement,
             c99_ast.IfStmt(
                 condition=c99_ast.Constant(value=1),
                 then_clause=c99_ast.LabeledStmt(
@@ -1069,11 +1074,11 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
         # Conditional, not a goto-target. (LALR state at "after
         # IDENTIFIER inside a conditional_exp" doesn't include the
         # labeled_stmt option, so no conflict.)
-        body = parse(
+        items = parse(
             "int main(void) { return a ? b : c; }"
-        ).function_definition.body
+        ).function_definition.body.block_item
         self.assertEqual(
-            body[0].statement,
+            items[0].statement,
             c99_ast.Return(exp=c99_ast.Conditional(
                 condition=c99_ast.Var(name="a"),
                 true_clause=c99_ast.Var(name="b"),
@@ -1084,10 +1089,10 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
     def test_goto_then_label_in_program(self):
         # End-to-end: `int main(void) { goto end; end: return 0; }`.
         prog = parse("int main(void) { goto end; end: return 0; }")
-        body = prog.function_definition.body
-        self.assertEqual(body[0].statement, c99_ast.Goto(label="end"))
+        items = prog.function_definition.body.block_item
+        self.assertEqual(items[0].statement, c99_ast.Goto(label="end"))
         self.assertEqual(
-            body[1].statement,
+            items[1].statement,
             c99_ast.LabeledStmt(
                 label="end",
                 statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),

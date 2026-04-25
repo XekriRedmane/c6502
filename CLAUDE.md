@@ -53,10 +53,17 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 one AST and returns another (or text for emit):
 
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar lives
-   in `c99.lark`. The grammar accepts `int main(void) { <block_item>* }`; a
-   block item is a declaration (`int x;` / `int x = exp;`) or a statement
-   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`, `goto label;`,
-   `label: stmt`, or a null `;`). The `IDENTIFIER COLON statement` rule
+   in `c99.lark`. The grammar accepts `int main(void) <block>`, where a
+   `<block>` is `{ <block_item>* }` (its own AST product type
+   `Block(block_item*)` so a function body is `Function(name,
+   Block([...]))`). A block item is a declaration (`int x;` / `int x =
+   exp;`) or a statement (`return exp;`, `exp;`, `if (exp) stmt (else
+   stmt)?`, `goto label;`, `label: stmt`, or a null `;`). The ASDL also
+   declares `Compound(block)` as a statement variant so `{ ... }` can
+   appear as a nested statement, but the grammar doesn't yet have a
+   `compound_stmt` alternative — the AST type is plumbed everywhere
+   (passes descend into the inner block) but no source can produce one
+   yet. The `IDENTIFIER COLON statement` rule
    for labeled statements introduces a shift-reduce conflict at
    statement-start on COLON lookahead — Lark's LALR(1) backend resolves
    it by shifting (same mechanism that handles dangling-else), which
@@ -108,9 +115,13 @@ one AST and returns another (or text for emit):
    nested `Assignment`) and raises "invalid lvalue" otherwise —
    `1+2=3`, `-a=5`, `(a=b)=c` all fail here. When richer lvalues
    (`*p`, `a[i]`, `s.f`) land, this check widens to an "is-lvalue"
-   predicate. Scope today is flat per function (no nested blocks yet).
-   Labels and gotos pass through unchanged — they live in a separate
-   namespace and are owned by the next pass.
+   predicate. Scope today is flat per function: `resolve_block`
+   reuses the same scope dict across nested blocks, so a hypothetical
+   `{ int a; { int a; } }` would still raise as a duplicate. (When
+   nested-scope semantics land, push a new frame on `Block` entry
+   and pop on exit — the rest of the pass already routes through
+   `resolve_block`.) Labels and gotos pass through unchanged — they
+   live in a separate namespace and are owned by the next pass.
 3. `passes.label_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Validates labeled statements (C99 §6.8.1) and `goto` targets
    (§6.8.6). Two walks per function: (a) collect every `LabeledStmt`,

@@ -11,7 +11,10 @@ from passes.variable_resolution import (
 
 
 def _function(*body_items) -> c99_ast.Type_function_definition:
-    return c99_ast.Function(name="main", body=list(body_items))
+    return c99_ast.Function(
+        name="main",
+        body=c99_ast.Block(block_item=list(body_items)),
+    )
 
 
 def _decl(name, init=None) -> c99_ast.Type_block_item:
@@ -336,7 +339,7 @@ class TestIfStatementResolution(unittest.TestCase):
             )),
         )
         resolved = resolve_function(fn)
-        if_stmt = resolved.body[2].statement
+        if_stmt = resolved.body.block_item[2].statement
         self.assertEqual(if_stmt.else_clause,
                          c99_ast.Return(exp=c99_ast.Var(name="@1.b")))
 
@@ -373,7 +376,7 @@ class TestConditionalResolution(unittest.TestCase):
         )
         resolved = resolve_function(fn)
         self.assertEqual(
-            resolved.body[3],
+            resolved.body.block_item[3],
             _ret(c99_ast.Conditional(
                 condition=c99_ast.Var(name="@0.a"),
                 true_clause=c99_ast.Var(name="@1.b"),
@@ -415,17 +418,17 @@ class TestLabeledAndGotoPassthrough(unittest.TestCase):
     def test_goto_passes_through_unchanged(self):
         prog = parse("int main(void) { goto foo; }")
         resolved = resolve_program(prog)
-        body = resolved.function_definition.body
-        self.assertEqual(body[0].statement, c99_ast.Goto(label="foo"))
+        items = resolved.function_definition.body.block_item
+        self.assertEqual(items[0].statement, c99_ast.Goto(label="foo"))
 
     def test_labeled_statement_label_unchanged_body_resolved(self):
         # `foo: return a;` — the Return inside the labeled stmt has a
         # Var reference that must be resolved to the unique name.
         prog = parse("int main(void) { int a; foo: return a; }")
         resolved = resolve_program(prog)
-        body = resolved.function_definition.body
+        items = resolved.function_definition.body.block_item
         self.assertEqual(
-            body[1].statement,
+            items[1].statement,
             c99_ast.LabeledStmt(
                 label="foo",
                 statement=c99_ast.Return(exp=c99_ast.Var(name="@0.a")),

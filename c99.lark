@@ -167,7 +167,8 @@ WS: /[ \t\n\f]+/
 
 start: function
 
-function: INT IDENTIFIER LPAREN VOID RPAREN LBRACE block_item* RBRACE
+function: INT IDENTIFIER LPAREN VOID RPAREN block
+block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
           | declaration  -> decl_item
 declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON

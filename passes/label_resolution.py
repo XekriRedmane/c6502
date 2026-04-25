@@ -76,13 +76,26 @@ class LabelResolver:
                 # statements (e.g. labels inside an if-then or
                 # if-else, or labels nested within other labels).
                 labels: dict[str, str] = {}
-                for item in body:
-                    self._collect_block_item(item, name, labels)
+                self._collect_block(body, name, labels)
                 # Pass 2: rewrite the AST, validating each Goto's
                 # target along the way.
-                new_body = [self._rewrite_block_item(item, labels) for item in body]
-                return c99_ast.Function(name=name, body=new_body)
+                return c99_ast.Function(
+                    name=name, body=self._rewrite_block(body, labels),
+                )
         raise TypeError(f"unexpected function: {fn!r}")
+
+    def _collect_block(
+        self,
+        block: c99_ast.Type_block,
+        fn_name: str,
+        labels: dict[str, str],
+    ) -> None:
+        match block:
+            case c99_ast.Block(block_item=items):
+                for item in items:
+                    self._collect_block_item(item, fn_name, labels)
+                return
+        raise TypeError(f"unexpected block: {block!r}")
 
     def _collect_block_item(
         self,
@@ -120,10 +133,26 @@ class LabelResolver:
                 self._collect_statement(then, fn_name, labels)
                 if else_ is not None:
                     self._collect_statement(else_, fn_name, labels)
+            case c99_ast.Compound(block=block):
+                # Labels inside a `{ ... }` block are still scoped to
+                # the enclosing function — descend.
+                self._collect_block(block, fn_name, labels)
             case _:
                 # Return / Expression / Goto / Null can't contain
                 # nested statements that would introduce labels.
                 pass
+
+    def _rewrite_block(
+        self,
+        block: c99_ast.Type_block,
+        labels: dict[str, str],
+    ) -> c99_ast.Type_block:
+        match block:
+            case c99_ast.Block(block_item=items):
+                return c99_ast.Block(block_item=[
+                    self._rewrite_block_item(item, labels) for item in items
+                ])
+        raise TypeError(f"unexpected block: {block!r}")
 
     def _rewrite_block_item(
         self,
@@ -168,6 +197,10 @@ class LabelResolver:
                         self._rewrite_statement(else_, labels)
                         if else_ is not None else None
                     ),
+                )
+            case c99_ast.Compound(block=block):
+                return c99_ast.Compound(
+                    block=self._rewrite_block(block, labels),
                 )
             case _:
                 # Return / Expression / Null don't reference labels

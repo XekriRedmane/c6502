@@ -22,7 +22,17 @@ class Type_function_definition:
 @dataclass
 class Function(Type_function_definition):
     name: str
-    body: list[Type_block_item] = field(default_factory=list)
+    body: Type_block
+
+
+@dataclass
+class Type_block:
+    pass
+
+
+@dataclass
+class Block(Type_block):
+    block_item: list[Type_block_item] = field(default_factory=list)
 
 
 @dataclass
@@ -60,6 +70,11 @@ class IfStmt(Type_statement):
     condition: Type_exp
     then_clause: Type_statement
     else_clause: Type_statement | None = None
+
+
+@dataclass
+class Compound(Type_statement):
+    block: Type_block
 
 
 @dataclass

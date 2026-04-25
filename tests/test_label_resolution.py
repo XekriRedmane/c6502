@@ -11,7 +11,10 @@ from passes.label_resolution import (
 
 
 def _function(*body_items, name="main") -> c99_ast.Type_function_definition:
-    return c99_ast.Function(name=name, body=list(body_items))
+    return c99_ast.Function(
+        name=name,
+        body=c99_ast.Block(block_item=list(body_items)),
+    )
 
 
 def _ret(exp) -> c99_ast.Type_block_item:
@@ -84,7 +87,7 @@ class TestLabelRewriting(unittest.TestCase):
         )
         resolved = resolve_function(fn)
         self.assertEqual(
-            resolved.body[0].statement.label,
+            resolved.body.block_item[0].statement.label,
             ".other@foo",
         )
 
@@ -160,13 +163,13 @@ class TestLabelsInIfStatements(unittest.TestCase):
             _goto("foo"),
         )
         resolved = resolve_function(fn)
-        if_stmt = resolved.body[0].statement
+        items = resolved.body.block_item
         self.assertEqual(
-            if_stmt.then_clause,
+            items[0].statement.then_clause,
             c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
         )
         self.assertEqual(
-            resolved.body[1].statement,
+            items[1].statement,
             c99_ast.Goto(label=".main@foo"),
         )
 
@@ -182,7 +185,7 @@ class TestLabelsInIfStatements(unittest.TestCase):
             )),
         )
         resolved = resolve_function(fn)
-        if_stmt = resolved.body[1].statement
+        if_stmt = resolved.body.block_item[1].statement
         self.assertEqual(if_stmt.then_clause, c99_ast.Goto(label=".main@foo"))
 
 
@@ -216,7 +219,7 @@ class TestPassthrough(unittest.TestCase):
         fn = _function(decl, _ret(c99_ast.Var(name="x")))
         resolved = resolve_function(fn)
         # Block items are rebuilt but content is identical.
-        self.assertEqual(resolved.body[0], decl)
+        self.assertEqual(resolved.body.block_item[0], decl)
 
 
 class TestResolveProgram(unittest.TestCase):
@@ -243,9 +246,9 @@ class TestIntegrationWithParser(unittest.TestCase):
     def test_basic_program(self):
         prog = parse("int main(void) { foo: goto foo; return 0; }")
         resolved = resolve_program(prog)
-        body = resolved.function_definition.body
+        items = resolved.function_definition.body.block_item
         self.assertEqual(
-            body[0].statement,
+            items[0].statement,
             c99_ast.LabeledStmt(
                 label=".main@foo",
                 statement=c99_ast.Goto(label=".main@foo"),

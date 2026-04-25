@@ -166,8 +166,7 @@ class Translator:
         match fn:
             case c99_ast.Function(name=name, body=body):
                 instrs: list[tac_ast.Type_instruction] = []
-                for item in body:
-                    self.translate_block_item(item, instrs)
+                self.translate_block(body, instrs)
                 # If the body didn't end in a Return, fall off the end
                 # with an implicit `return 0`. C99 §5.1.2.2.3 specifies
                 # this for `main`; we apply it generally so every TAC
@@ -178,6 +177,18 @@ class Translator:
                     instrs.append(tac_ast.Ret(val=tac_ast.Constant(value=0)))
                 return tac_ast.Function(name=name, instructions=instrs)
         raise TypeError(f"unexpected function: {fn!r}")
+
+    def translate_block(
+        self,
+        block: c99_ast.Type_block,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        match block:
+            case c99_ast.Block(block_item=items):
+                for item in items:
+                    self.translate_block_item(item, instrs)
+                return
+        raise TypeError(f"unexpected block: {block!r}")
 
     def translate_block_item(
         self,
@@ -265,6 +276,13 @@ class Translator:
                     instrs.append(tac_ast.Label(name=else_label))
                     self.translate_statement(else_stmt, instrs)
                     instrs.append(tac_ast.Label(name=end_label))
+                return
+            case c99_ast.Compound(block=block):
+                # `{ ... }` — emit the block's items in sequence,
+                # with no extra TAC structure. The grammar doesn't
+                # yet produce Compound (no compound_stmt rule), so
+                # this branch is forward-compat for when it does.
+                self.translate_block(block, instrs)
                 return
             case c99_ast.Goto(label=label):
                 # `goto label;` lowers to an unconditional Jump. The

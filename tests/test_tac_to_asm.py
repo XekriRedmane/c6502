@@ -692,10 +692,101 @@ class TestTranslateFunction(unittest.TestCase):
         )
 
 
+class TestTranslateFunctionCall(unittest.TestCase):
+    """TAC `FunctionCall(name, args, dst)` lowers to a 3-step
+    sequence per the soft-stack convention: AllocateStack(N) to make
+    room for args, one Mov per arg into Stack(1)..Stack(N), JSR to
+    the callee, and Mov(Reg(A), dst) to capture the return value
+    into the call's destination temp."""
+
+    def test_no_args(self):
+        # `f()` lowers to: just the JSR plus the return-value
+        # capture. No AllocateStack (N=0), no arg writes.
+        instrs = translate_instruction(tac_ast.FunctionCall(
+            name="f", args=[],
+            dst=tac_ast.Var(name="@0.t"),
+        ))
+        self.assertEqual(instrs, [
+            asm_ast.Call(name="f"),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
+        ])
+
+    def test_constant_arg(self):
+        # `f(42)` — the constant arg gets written directly to
+        # Stack(1) via Mov(Imm, Stack), one asm instruction (the
+        # emitter handles Imm→Stack as LDA imm + LDY off + STA).
+        instrs = translate_instruction(tac_ast.FunctionCall(
+            name="f",
+            args=[tac_ast.Constant(value=42)],
+            dst=tac_ast.Var(name="@0.t"),
+        ))
+        self.assertEqual(instrs, [
+            asm_ast.AllocateStack(bytes=1),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=42),
+                dst=asm_ast.Stack(offset=1),
+            ),
+            asm_ast.Call(name="f"),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
+        ])
+
+    def test_var_arg_uses_pseudo(self):
+        # `f(x)` where x is a TAC Var — the arg val translates to
+        # Pseudo(x), which after the frame-layout pass becomes a
+        # Frame operand. The emitter then handles Frame→Stack as
+        # an indirect-Y load + indirect-Y store.
+        instrs = translate_instruction(tac_ast.FunctionCall(
+            name="f",
+            args=[tac_ast.Var(name="@0.x")],
+            dst=tac_ast.Var(name="@1.t"),
+        ))
+        self.assertEqual(instrs, [
+            asm_ast.AllocateStack(bytes=1),
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="@0.x"),
+                dst=asm_ast.Stack(offset=1),
+            ),
+            asm_ast.Call(name="f"),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@1.t")),
+        ])
+
+    def test_multiple_args_get_stack_offsets_1_to_n(self):
+        # `f(a, b, c)` — args land at Stack(1), Stack(2), Stack(3)
+        # in source order. After the callee sets up its frame, those
+        # same bytes become Frame(M+3), Frame(M+4), Frame(M+5) on
+        # the callee side.
+        instrs = translate_instruction(tac_ast.FunctionCall(
+            name="f",
+            args=[
+                tac_ast.Constant(value=1),
+                tac_ast.Constant(value=2),
+                tac_ast.Constant(value=3),
+            ],
+            dst=tac_ast.Var(name="@0.t"),
+        ))
+        self.assertEqual(instrs, [
+            asm_ast.AllocateStack(bytes=3),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=1),
+                dst=asm_ast.Stack(offset=1),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=2),
+                dst=asm_ast.Stack(offset=2),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=3),
+                dst=asm_ast.Stack(offset=3),
+            ),
+            asm_ast.Call(name="f"),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
+        ])
+
+
 class TestTranslateProgram(unittest.TestCase):
     def test_full_tree(self):
-        # tac.asdl is plural now, asm.asdl is still singular —
-        # tac_to_asm bridges by accepting one TAC function.
+        # Both sides plural: a one-function TAC program lowers to a
+        # one-function asm program. Param lists ride through.
         prog = tac_ast.Program(
             function_definition=[tac_ast.Function(
                 name="main",
@@ -704,13 +795,14 @@ class TestTranslateProgram(unittest.TestCase):
             )],
         )
         expected = asm_ast.Program(
-            function_definition=asm_ast.Function(
+            function_definition=[asm_ast.Function(
                 name="main",
+                params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_REG_A),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
-            ),
+            )],
         )
         self.assertEqual(translate_program(prog), expected)
 

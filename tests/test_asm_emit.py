@@ -18,9 +18,13 @@ _Y = asm_ast.Y()
 
 
 def _prog(*instrs, name="main") -> asm_ast.Type_program:
-    return asm_ast.Program(function_definition=asm_ast.Function(
-        name=name, instructions=list(instrs),
-    ))
+    # asm.asdl is plural now: Program holds a list of Functions and
+    # Function carries a (possibly empty) params list. Tests build
+    # one-function programs through this helper, so the wrapping
+    # stays out of every test body.
+    return asm_ast.Program(function_definition=[asm_ast.Function(
+        name=name, params=[], instructions=list(instrs),
+    )])
 
 
 class TestEmitMov(unittest.TestCase):
@@ -389,6 +393,44 @@ class TestEmitInstruction(unittest.TestCase):
             emit_instruction(stub())
 
 
+class TestEmitAllocateStack(unittest.TestCase):
+    """`AllocateStack(N)` is the caller-side soft-stack frame
+    allocation: SSP -= N (16-bit). Reuses the same `_emit_ssp_sub`
+    helper that drives the prologue, so the byte sequence matches
+    what the prologue's local-allocation step produces."""
+
+    def test_zero_emits_nothing(self):
+        # SSP -= 0 is a no-op; the helper emits an empty list and
+        # the call site doesn't bracket it with anything (no comment,
+        # no blank). Calls with no args go straight to JSR.
+        self.assertEqual(
+            emit_instruction(asm_ast.AllocateStack(bytes=0)), [],
+        )
+
+    def test_one_emits_16bit_sub_one(self):
+        # SSP -= 1: SEC, LDA SSP, SBC #$01, STA SSP, LDA SSP+1,
+        # SBC #$00, STA SSP+1. (The high-byte SBC propagates the
+        # borrow even when only the low byte changes.)
+        self.assertEqual(
+            emit_instruction(asm_ast.AllocateStack(bytes=1)),
+            [
+                "   SEC",
+                "   LDA   SSP",
+                "   SBC   #$01",
+                "   STA   SSP",
+                "   LDA   SSP+1",
+                "   SBC   #$00",
+                "   STA   SSP+1",
+            ],
+        )
+
+    def test_high_byte_set_when_amount_exceeds_byte(self):
+        # SSP -= 0x0100: low byte SBC's #$00, high byte SBC's #$01.
+        out = emit_instruction(asm_ast.AllocateStack(bytes=0x0100))
+        self.assertIn("   SBC   #$00", out)
+        self.assertIn("   SBC   #$01", out)
+
+
 class TestEmitFunctionPrologue(unittest.TestCase):
     def test_zero_emits_nothing(self):
         # No locals (and no args yet) means no FP setup is needed.
@@ -612,6 +654,42 @@ class TestEmitProgram(unittest.TestCase):
             emit_program(prog),
             "main:\n   SUBROUTINE\n\n   LDA   #$2A\n   RTS\n",
         )
+
+    def test_multi_function(self):
+        # Two functions in source order, separated by a single
+        # blank line. Each gets its own `name:` label and
+        # SUBROUTINE directive.
+        prog = asm_ast.Program(function_definition=[
+            asm_ast.Function(
+                name="foo", params=[],
+                instructions=[
+                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                ],
+            ),
+            asm_ast.Function(
+                name="main", params=[],
+                instructions=[
+                    asm_ast.Call(name="foo"),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                ],
+            ),
+        ])
+        out = emit_program(prog)
+        # foo's body, then a blank line, then main's body.
+        self.assertEqual(
+            out,
+            "foo:\n   SUBROUTINE\n\n   LDA   #$01\n   RTS\n"
+            "\n"
+            "main:\n   SUBROUTINE\n\n   JSR   foo\n   RTS\n",
+        )
+
+    def test_empty_program_emits_just_a_newline(self):
+        # No functions at all → empty join + trailing newline. Not
+        # a useful program in practice but the dispatcher should
+        # handle it without crashing.
+        prog = asm_ast.Program(function_definition=[])
+        self.assertEqual(emit_program(prog), "\n")
 
 
 class TestColumnAlignment(unittest.TestCase):

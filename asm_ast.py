@@ -11,7 +11,7 @@ class Type_program:
 
 @dataclass
 class Program(Type_program):
-    function_definition: Type_function_definition
+    function_definition: list[Type_function_definition] = field(default_factory=list)
 
 
 @dataclass
@@ -22,6 +22,7 @@ class Type_function_definition:
 @dataclass
 class Function(Type_function_definition):
     name: str
+    params: list[str] = field(default_factory=list)
     instructions: list[Type_instruction] = field(default_factory=list)
 
 
@@ -46,6 +47,11 @@ class Ret(Type_instruction):
 class FunctionPrologue(Type_instruction):
     arg_bytes: int
     local_bytes: int
+
+
+@dataclass
+class AllocateStack(Type_instruction):
+    bytes: int
 
 
 @dataclass

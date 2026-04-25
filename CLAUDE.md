@@ -50,7 +50,7 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains ten passes, each a separate module that
+`compile.py --codegen` chains nine passes, each a separate module that
 takes one AST and returns another (or text for emit):
 
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar
@@ -345,30 +345,54 @@ takes one AST and returns another (or text for emit):
    when the condition or post-clause slot is empty (a missing
    condition is treated as unconditionally true).
 7. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
-   instruction lowers into a sequence of atoms (`Mov` to/from `A`, atomic ops
-   on `A`, carry setup if needed). Output is correct but redundant — every
-   intermediate is materialized through a `Frame` slot. Optimization is
-   deferred to TAC-level passes. **Asymmetry:** tac.asdl is now plural
-   (`Program(function_definition*)`) but asm.asdl is still singular,
-   so this pass currently asserts exactly one TAC function and
-   translates it. Multi-function asm is gated on the calling-
-   convention work that also enables lowering TAC `FunctionCall`
-   instructions — until both land, the user-call form raises
-   `NotImplementedError` here. The runtime helper calls (`mul8` /
-   `divmod8` / `shl8` / `asr8`) emitted by the binary-op lowerings
-   bypass TAC `FunctionCall` entirely; they go straight to
-   `asm_ast.Call`, so they keep working.
-8. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
-   `Frame(offset)` slot. Per function: walks instructions in order, mints
-   offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
-   the same offset for repeated names. `args_bytes` is `0` currently.
-9. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
-   `Frame` offset = local-byte count), prepends
-   `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites every
-   `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
-10. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
-    every node maps to one 6502 instruction, except `Ret` and
-    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
+   function lowers to one asm function; `Program.function_definition`
+   is plural on both sides, and parameter lists ride through. Each
+   TAC instruction lowers into a sequence of atoms (`Mov` to/from
+   `A`, atomic ops on `A`, carry setup if needed). Output is correct
+   but redundant — every intermediate is materialized through a
+   `Frame` slot. Optimization is deferred to TAC-level passes.
+   **TAC `FunctionCall(name, args, dst)`** lowers to the caller-
+   side soft-stack convention: `AllocateStack(N)` (subtract N from
+   SSP for the arg slots), one `Mov(translate_val(arg), Stack(i))`
+   per arg writing into Stack(1)..Stack(N), `Call(name)`, and
+   finally `Mov(Reg(A), translate_val(dst))` to capture the return
+   value. The callee's epilogue rewinds SSP all the way back to
+   the caller's pre-call value, so there's no per-call cleanup at
+   the call site. The runtime helper calls (`mul8` / `divmod8` /
+   `shl8` / `asr8`) emitted by the binary-op lowerings still go
+   straight to `asm_ast.Call` (no `AllocateStack`); they take their
+   operands in registers, not on the soft stack, so they bypass
+   the user-function calling convention entirely.
+8. `passes.replace_pseudoregisters.replace_program` — replaces every
+   `Pseudo(name)` operand with a `Frame(offset)` and lays out the
+   function's stack frame. Walks each function twice:
+   - **Pass 1 (discovery):** mint a Frame offset for every Pseudo
+     name that *isn't* in the function's `params`. Locals get
+     sequential offsets 1..M in source-encounter order, where M is
+     the count of distinct local pseudos.
+   - **Finalize:** compute param offsets now that M is known.
+     Param j (1-indexed) maps to `Frame(M + 2 + j)` — i.e., M+3
+     for the first param, M+4 for the second, etc. The 2-byte gap
+     at M+1, M+2 holds the saved caller FP.
+   - **Pass 2 (replacement):** rewrite each Pseudo operand using
+     the union of the local and param maps; pass everything else
+     through.
+   The pass also prepends `FunctionPrologue(arg_bytes=N,
+   local_bytes=M)` and patches every `Ret(...)` with the same N/M,
+   so the emitter has the dimensions it needs for the prologue's
+   space-allocation step and the epilogue's SSP-rewind. (Previously
+   a separate `allocate_stack` pass did the prologue/Ret patching;
+   that work is now folded in here because both jobs need shared
+   state — M and N — and merging them is simpler than threading
+   the dims through a side channel.)
+9. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text.
+   **Atomic IR**: every node maps to one 6502 instruction, except
+   `Ret` and `FunctionPrologue` (multi-step compound nodes
+   documented above) and `AllocateStack(N)` which expands to the
+   16-bit `SSP -= N` sequence (SEC; LDA SSP; SBC #lo; STA SSP; LDA
+   SSP+1; SBC #hi; STA SSP+1). Multi-function programs emit each
+   function's body in source order separated by a single blank
+   line.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
 step 8 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
@@ -591,9 +615,7 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   `JumpIfFalse` drop out of the lowered TAC entirely
 - arbitrary parenthesisation
 
-Lowered all the way through TAC (but **not yet to asm** — `tac_to_asm`
-asserts a single TAC function and refuses TAC `FunctionCall` until
-the calling convention is wired up):
+Lowered all the way to 6502 asm:
 - Function declarations at block scope: `int foo(void);` /
   `int foo(int a, int b);`. `identifier_resolution` registers the
   name in a per-program function-name set, leaves it unrenamed
@@ -601,24 +623,26 @@ the calling convention is wired up):
   declarations of the same function as same-symbol redeclarations.
   `c99_to_tac` discards `FunctionDecl` block items (they're a
   name-binding artifact for earlier passes, not runtime state).
-- Function calls: `f()`, `f(a, b + 1)`. Lowered to a single TAC
-  `FunctionCall(name, args, dst)` instruction after evaluating
-  each arg in source order. The dst temp is the call's value; the
-  caller threads it through into `Copy` / `Binary` / `Ret`.
+- Function calls: `f()`, `f(a, b + 1)`. Lowered through TAC to
+  the soft-stack calling convention: caller subtracts N from SSP,
+  writes args at Stack(1)..Stack(N), JSRs, copies the return value
+  out of A. The callee's prologue saves the caller's FP, captures
+  its own FP, and the epilogue rewinds SSP all the way back to
+  the caller's pre-call value — no per-call cleanup.
 - Multiple top-level function definitions (`int foo(void) { ... }
   int main(void) { ... }`). `Program.function_definition` is a
-  list on both c99 and TAC sides now; each c99 function yields one
-  TAC function in source order.
+  list on c99, TAC, and asm sides; each c99 function yields one
+  TAC function yields one asm function, all emitted in source
+  order separated by blank lines.
+- Function parameters land at Frame(M+3)..Frame(M+2+N) in the
+  callee's frame; locals at Frame(1)..Frame(M); saved caller FP
+  at the 2-byte gap M+1, M+2.
 
 Not yet in the pipeline at all: file-scope (forward) declarations,
-calling-convention support that actually consumes parameters in
-codegen (the IR threads `arg_bytes` everywhere but the asm
-translator hardcodes 0 and `Function` definitions hand their param
-names to identifier resolution / type checking only — codegen still
-ignores them), `switch` statements (the loop-labeling pass is sole
-owner of break-targets right now; once switch lands its lowering
-will track its own break-target separately), types other than `int`
-(so unsigned right shift and unsigned ordering aren't distinguishable
+`switch` statements (the loop-labeling pass is sole owner of
+break-targets right now; once switch lands its lowering will track
+its own break-target separately), types other than `int` (so
+unsigned right shift and unsigned ordering aren't distinguishable
 yet), and the runtime header that defines `SSP`/`FP`, initializes
 `SSP`, sets the reset vector, and provides `mul8`/`divmod8`/`shl8`/
 `asr8`.

@@ -138,37 +138,43 @@ class Translator:
     def translate_program(
         self, prog: tac_ast.Type_program,
     ) -> asm_ast.Type_program:
-        # tac.asdl now stores `function_definition*`, but asm.asdl is
-        # still singular. Bridging the gap is gated on extending the
-        # asm side (and the calling-convention work that goes with
-        # it). For now we accept exactly one TAC function and lower
-        # it; multi-function programs error out cleanly here rather
-        # than producing a half-formed asm tree.
+        # Both sides plural now: each TAC function lowers to one asm
+        # function. The Translator instance is shared across all
+        # functions in the program so its label counter (used by the
+        # comparison + unary-not lowerings) keeps minting globally
+        # unique labels — `.cmp_neg@7` for the first function won't
+        # collide with `.cmp_neg@8` in the next.
         match prog:
             case tac_ast.Program(function_definition=fns):
-                if len(fns) != 1:
-                    raise NotImplementedError(
-                        "tac_to_asm currently supports a single "
-                        f"function definition; got {len(fns)} "
-                        "(asm.asdl needs to widen first)"
-                    )
-                return asm_ast.Program(
-                    function_definition=self.translate_function(fns[0]),
-                )
+                return asm_ast.Program(function_definition=[
+                    self.translate_function(fn) for fn in fns
+                ])
         raise TypeError(f"unexpected program node: {prog!r}")
 
     def translate_function(
         self, fn: tac_ast.Type_function_definition,
     ) -> asm_ast.Type_function_definition:
         match fn:
-            case tac_ast.Function(name=name, instructions=instrs):
-                # Parameters on the TAC Function go unused here —
-                # they're informational until the calling convention
-                # is wired up.
+            case tac_ast.Function(
+                name=name, params=params, instructions=instrs,
+            ):
+                # Parameter names ride through to the asm Function
+                # so the frame-layout pass can place them at the
+                # right Frame offsets. References to params inside
+                # the body are TAC `Var(@<N>.<orig>)` and lower to
+                # `Pseudo(@<N>.<orig>)` like any other TAC variable;
+                # the layout pass uses the name match against the
+                # Function's `params` list to decide whether each
+                # Pseudo is a parameter (Frame offset M+3+j) or a
+                # local (Frame offset 1..M).
                 out: list[asm_ast.Type_instruction] = []
                 for instr in instrs:
                     out.extend(self.translate_instruction(instr))
-                return asm_ast.Function(name=name, instructions=out)
+                return asm_ast.Function(
+                    name=name,
+                    params=list(params),
+                    instructions=out,
+                )
         raise TypeError(f"unexpected function node: {fn!r}")
 
     def translate_instruction(
@@ -215,22 +221,45 @@ class Translator:
                     asm_ast.Mov(src=translate_val(cond), dst=_REG_A),
                     asm_ast.Branch(cond=asm_ast.EQ(), target=target),
                 ]
-            case tac_ast.FunctionCall():
-                # User-function calls land here once tac.asdl has
-                # them, but the 6502 calling convention for them
-                # isn't designed yet (the soft-stack frame layout
-                # works only for the runtime helpers `mul8` /
-                # `divmod8` / `shl8` / `asr8`, which the binary-op
-                # lowerings emit as raw `Call`s — they don't go
-                # through TAC FunctionCall). The translator must
-                # eventually push args onto the soft stack, emit
-                # `Call`, and copy the return value out of A into
-                # `dst`. Until that's wired up, refuse cleanly.
-                raise NotImplementedError(
-                    "tac_to_asm: user-function FunctionCall lowering "
-                    "is not yet implemented (6502 calling convention "
-                    "is still TODO)"
-                )
+            case tac_ast.FunctionCall(name=name, args=args, dst=dst):
+                # Caller-side lowering for `dst = name(args...)`.
+                # Per the soft-stack convention (CLAUDE.md "Function
+                # stack frame"):
+                #   1. Subtract N from SSP (allocate N bytes for
+                #      args; soft stack grows down). Args will land
+                #      at Stack(1)..Stack(N) from the caller's
+                #      post-decrement view, which is exactly the
+                #      slots the callee will read as its
+                #      Frame(M+3)..Frame(M+2+N).
+                #   2. Write each arg into its slot. Args translate
+                #      to Imm or Pseudo via translate_val; the
+                #      emitter's Mov(Imm, Stack) and the post-
+                #      replacement Mov(Frame, Stack) both lower to
+                #      a single load + indirect store, so each arg
+                #      write is one asm instruction (or two with the
+                #      LDY for indirect-Y addressing).
+                #   3. JSR name. The callee saves the caller's FP,
+                #      sets up its own frame, runs, and restores
+                #      SSP via its epilogue — the caller doesn't
+                #      need any post-call cleanup of the arg slots.
+                #   4. Move the return value (in A) into `dst`.
+                arg_vals = [translate_val(a) for a in args]
+                emitted: list[asm_ast.Type_instruction] = []
+                if arg_vals:
+                    emitted.append(asm_ast.AllocateStack(
+                        bytes=len(arg_vals),
+                    ))
+                    for i, av in enumerate(arg_vals):
+                        # Stack offset is 1-based (the soft-stack
+                        # convention uses SSP+1..SSP+N for args).
+                        emitted.append(asm_ast.Mov(
+                            src=av, dst=asm_ast.Stack(offset=i + 1),
+                        ))
+                emitted.append(asm_ast.Call(name=name))
+                emitted.append(asm_ast.Mov(
+                    src=_REG_A, dst=translate_val(dst),
+                ))
+                return emitted
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     def translate_binary(

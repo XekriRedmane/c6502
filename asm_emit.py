@@ -611,6 +611,14 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_function_prologue(ab, lb)
         case asm_ast.Ret(arg_bytes=ab, local_bytes=lb):
             return _emit_ret(ab, lb)
+        case asm_ast.AllocateStack(bytes=n):
+            # Caller-side soft-stack frame allocation for a call
+            # site: subtract `n` from SSP (16-bit). The same
+            # `_emit_ssp_sub` helper that drives the prologue's
+            # space-for-locals reservation. The caller doesn't have
+            # to undo this — the callee's epilogue rewinds SSP all
+            # the way back to the caller's pre-call value.
+            return _emit_ssp_sub(n)
         case asm_ast.Add(src=src, dst=dst):
             return _emit_add(src, dst)
         case asm_ast.Sub(src=src, dst=dst):
@@ -678,8 +686,18 @@ def emit_function(fn: asm_ast.Type_function_definition) -> list[str]:
 
 def emit_program(prog: asm_ast.Type_program) -> str:
     match prog:
-        case asm_ast.Program(function_definition=fn):
-            return "\n".join(emit_function(fn)) + "\n"
+        case asm_ast.Program(function_definition=fns):
+            # One blank line separates consecutive function bodies
+            # so they're visually distinct in the output. Trailing
+            # newline at the very end (so the file ends in a
+            # newline rather than a label).
+            chunks = [emit_function(fn) for fn in fns]
+            joined: list[str] = []
+            for i, chunk in enumerate(chunks):
+                if i > 0:
+                    joined.append("")
+                joined.extend(chunk)
+            return "\n".join(joined) + "\n"
         case _:
             raise TypeError(f"unexpected program: {prog!r}")
 

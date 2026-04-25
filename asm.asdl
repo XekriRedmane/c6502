@@ -1,11 +1,12 @@
 module ASM {
-    program = Program(function_definition)
-    function_definition = Function(identifier name, instruction* instructions)
+    program = Program(function_definition*)
+    function_definition = Function(identifier name, identifier* params, instruction* instructions)
 
     instruction =
         Mov(operand src, operand dst)
         | Ret(int arg_bytes, int local_bytes)
         | FunctionPrologue(int arg_bytes, int local_bytes)
+        | AllocateStack(int bytes)
         | Add(operand src, operand dst)
         | Sub(operand src, operand dst)
         | Call(identifier name)

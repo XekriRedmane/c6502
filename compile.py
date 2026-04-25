@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-from passes.allocate_stack import allocate_program as allocate_stack
 from asm_emit import emit_program
 from tac_to_asm import translate_program as translate_to_asm
 from lexer import tokenize
@@ -80,11 +79,11 @@ def _run_stage(stage: str, source: str) -> str:
             resolve_labels(resolve_identifiers(parse(source)))
         )))) + "\n"
     if stage == "codegen":
-        return emit_program(allocate_stack(replace_pseudoregs(
+        return emit_program(replace_pseudoregs(
             translate_to_asm(translate_to_tac(_type_check(label_loops(
                 resolve_labels(resolve_identifiers(parse(source)))
             ))))
-        )))
+        ))
     raise AssertionError(f"unknown stage: {stage!r}")
 
 

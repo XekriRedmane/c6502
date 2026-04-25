@@ -14,8 +14,26 @@ State:
 
 Mapping:
   C99 Program(fn)             -> TAC Program(translate_function(fn))
-  C99 Function(name, body)    -> TAC Function(name, <instrs built from body>)
+  C99 Function(name, body)    -> TAC Function(name, <instrs built from
+                                 each block_item in order>); if the
+                                 body doesn't already end in a Ret,
+                                 append `Ret(Constant(0))` (C99
+                                 §5.1.2.2.3 for main; we apply it
+                                 generally so every function
+                                 terminates).
+  C99 S(stmt)                 -> dispatches to translate_statement
+  C99 D(decl)                 -> dispatches to translate_declaration
+  C99 Declaration(name, init) -> if init is None, emit nothing; else
+                                 evaluate init then
+                                 Copy(init_val, Var(name)) — same TAC
+                                 as the assignment `name = init`. TAC
+                                 has no separate notion of a declared-
+                                 but-uninitialized variable; the var
+                                 name appears the first time it's used.
   C99 Return(exp)             -> emit Ret(translate_exp(exp))
+  C99 Expression(exp)         -> translate_exp(exp) for side effects;
+                                 the returned val is discarded.
+  C99 Null                    -> emit nothing
   C99 Constant(v)             -> TAC Constant(v)
   C99 Unary(op, inner)        -> emit Unary(op', translate(inner), Var(t))
                                  and return Var(t), where t is a fresh temp
@@ -24,6 +42,19 @@ Mapping:
                                  and return Var(t); left is translated
                                  before right so any temps it needs are
                                  numbered first.
+  C99 Var(name)               -> TAC Var(name) — passthrough. The name
+                                 is the unique `@N.orig` minted by
+                                 variable_resolution; it shares a
+                                 namespace with TAC temps `%n` but
+                                 can't collide because `@` and `%` are
+                                 both illegal in C identifiers.
+  C99 Assignment(Var(v), rval) -> emit translate(rval) -> rval_val,
+                                 then Copy(rval_val, Var(v)); return
+                                 Var(v) so chained assignments
+                                 (`b = a = 5`) compose correctly. lval
+                                 must be a Var (variable_resolution
+                                 enforces this; we double-check at
+                                 runtime).
   C99 Negate / Complement /   -> TAC Negate / Complement / LogicalNot
     LogicalNot
   C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
@@ -87,9 +118,51 @@ class Translator:
         match fn:
             case c99_ast.Function(name=name, body=body):
                 instrs: list[tac_ast.Type_instruction] = []
-                self.translate_statement(body, instrs)
+                for item in body:
+                    self.translate_block_item(item, instrs)
+                # If the body didn't end in a Return, fall off the end
+                # with an implicit `return 0`. C99 §5.1.2.2.3 specifies
+                # this for `main`; we apply it generally so every TAC
+                # function is guaranteed to terminate with a Ret. If a
+                # Ret is already there, skip — adding a second would
+                # be unreachable dead code.
+                if not instrs or not isinstance(instrs[-1], tac_ast.Ret):
+                    instrs.append(tac_ast.Ret(val=tac_ast.Constant(value=0)))
                 return tac_ast.Function(name=name, instructions=instrs)
         raise TypeError(f"unexpected function: {fn!r}")
+
+    def translate_block_item(
+        self,
+        item: c99_ast.Type_block_item,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        match item:
+            case c99_ast.S(statement=stmt):
+                self.translate_statement(stmt, instrs)
+                return
+            case c99_ast.D(declaration=decl):
+                self.translate_declaration(decl, instrs)
+                return
+        raise TypeError(f"unexpected block item: {item!r}")
+
+    def translate_declaration(
+        self,
+        decl: c99_ast.Type_declaration,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        # TAC has no "declare" instruction — variables are introduced
+        # by their first appearance. So a bare `int x;` lowers to
+        # nothing, and `int x = e;` lowers exactly like the assignment
+        # `x = e`: evaluate the initializer, then Copy into the var.
+        match decl:
+            case c99_ast.Declaration(name=name, init=init):
+                if init is not None:
+                    init_val = self.translate_exp(init, instrs)
+                    instrs.append(tac_ast.Copy(
+                        src=init_val, dst=tac_ast.Var(name=name),
+                    ))
+                return
+        raise TypeError(f"unexpected declaration: {decl!r}")
 
     def translate_statement(
         self,
@@ -99,6 +172,15 @@ class Translator:
         match stmt:
             case c99_ast.Return(exp=exp):
                 instrs.append(tac_ast.Ret(val=self.translate_exp(exp, instrs)))
+                return
+            case c99_ast.Expression(exp=exp):
+                # Translate for side effects (assignments today; calls
+                # later). Whatever val the expression returns goes
+                # unused — the result-temp it points at is just dead.
+                self.translate_exp(exp, instrs)
+                return
+            case c99_ast.Null():
+                # No-op statement. Nothing to emit.
                 return
         raise TypeError(f"unexpected statement: {stmt!r}")
 
@@ -142,6 +224,29 @@ class Translator:
                     src2=src2,
                     dst=dst,
                 ))
+                return dst
+            case c99_ast.Var(name=name):
+                # Resolved name from variable_resolution (e.g. `@0.x`)
+                # passes straight through into TAC's Var namespace —
+                # `@` and TAC's `%` are both illegal in C identifiers,
+                # so user vars and translator temps can't collide.
+                return tac_ast.Var(name=name)
+            case c99_ast.Assignment(lval=lval, rval=rval):
+                # variable_resolution already enforces lval-is-Var;
+                # the runtime check here is belt-and-braces in case a
+                # later refactor lets a non-Var slip through.
+                if not isinstance(lval, c99_ast.Var):
+                    raise TypeError(
+                        f"assignment lval must be Var (variable_"
+                        f"resolution should have enforced this); "
+                        f"got {lval!r}"
+                    )
+                rval_val = self.translate_exp(rval, instrs)
+                dst = tac_ast.Var(name=lval.name)
+                instrs.append(tac_ast.Copy(src=rval_val, dst=dst))
+                # Return the lval so chained assignments compose:
+                # `b = a = 5` -> inner returns Var(@0.a), outer copies
+                # that into @1.b and returns Var(@1.b).
                 return dst
         raise TypeError(f"unexpected exp: {exp!r}")
 

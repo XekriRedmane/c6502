@@ -573,17 +573,18 @@ Notes:
 
 ## Status
 
-**Temporary caveat:** the grammar and `variable_resolution` now
-accept declarations, assignments, expression statements, and null
-statements, but `c99_to_tac` still assumes the old `Function.body`
-shape (a single statement). Until it's updated, `--tac` and
-`--codegen` break on any source that uses the new constructs, and
-the test suite has matching expected failures for `c99_to_tac` and
-`compile` end-to-end tests.
+Currently end-to-end (C source through `compile.py --codegen` to
+runnable-shape 6502 assembly):
 
-What has worked end-to-end (`compile.py --codegen` to runnable-shape
-6502 assembly) and is expected to work again once the translator
-catches up:
+- variable declarations (`int x;` and `int x = exp;`), assignments
+  (`x = exp;`), expression statements, and null statements (`;`).
+  Variable resolution maps each user name to a unique `@N.orig`
+  before the TAC translator sees it, so locals can shadow temps
+  without confusion. `c99_to_tac` lowers a declaration's
+  initializer the same way it lowers an assignment (`Copy` from the
+  evaluated rval into the var). Functions without a `return`
+  statement get an implicit `Ret(Constant(0))` from the TAC
+  translator.
 
 - `int main(void)` returning a single integer expression
 - integer constants
@@ -619,9 +620,10 @@ Not yet anywhere in the pipeline:
   `arg_bytes` through everywhere, but the parser only accepts
   `(void)` and the translator hardcodes `arg_bytes = 0`.
 - multiple functions, function calls, control flow statements
-  (`if`, `while`), variable declarations, types other than `int`
-  (so unsigned right shift and unsigned ordering aren't
-  distinguishable yet).
+  (`if`, `while`, `for`, `do`, `switch`), nested compound statements
+  (variable resolution treats each function body as a single flat
+  scope today), types other than `int` (so unsigned right shift and
+  unsigned ordering aren't distinguishable yet).
 - a runtime header that defines `SSP`/`FP` at their ZP addresses,
   initializes `SSP` to top-of-RAM, sets the reset vector to a stub
   that calls `main`, and provides `mul8`/`divmod8`/`shl8`/`asr8`.

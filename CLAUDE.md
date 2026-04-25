@@ -220,16 +220,12 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 
 ## Status (what works end-to-end through `--codegen`)
 
-**Temporary caveat:** the grammar and `passes.variable_resolution`
-accept declarations, assignments, expression statements, and null
-statements, but `c99_to_tac` hasn't been updated for the new
-`Function.body = list[block_item]` shape yet. Until it is, `--tac`
-and `--codegen` break on any source that exercises those constructs,
-and the `c99_to_tac` / `compile` end-to-end tests fail in sympathy.
-The list below describes what the pipeline supported before the
-grammar rewrite and is expected to support again once the translator
-catches up.
-
+- `int main(void) { <block_item>* }`, where a block item is a
+  declaration (`int x;` or `int x = exp;`) or a statement (`return
+  exp;`, `exp;`, or a null `;`). If the body has no `return`, the
+  TAC translator appends an implicit `Ret(Constant(0))` (C99
+  §5.1.2.2.3 for `main`; applied generally so every function
+  terminates).
 - `int main(void)` returning a single integer expression
 - integer constants
 - unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`

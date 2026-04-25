@@ -288,8 +288,31 @@ def _attribute_line(f: Field) -> str:
     return f"    {name}: {ann}"
 
 
+# A field gets a Python default whenever it's optional or a sequence; a
+# required field doesn't. Python dataclasses forbid a field-with-default
+# being followed by a field-without-default in positional order, so when
+# an ASDL constructor mixes the two with defaults appearing first we emit
+# `@dataclass(kw_only=True)` to dodge the ordering rule rather than
+# silently reordering the user's ASDL fields.
+def _has_default(f: Field) -> bool:
+    return f.optional or f.sequence
+
+
+def _needs_kw_only(fs: list[Field]) -> bool:
+    seen_default = False
+    for f in fs:
+        if _has_default(f):
+            seen_default = True
+        elif seen_default:
+            return True
+    return False
+
+
 def _gen_product_block(t: Type) -> list[str]:
-    lines = ["@dataclass", f"class Type_{t.name}:"]
+    decorator = (
+        "@dataclass(kw_only=True)" if _needs_kw_only(t.fields) else "@dataclass"
+    )
+    lines = [decorator, f"class Type_{t.name}:"]
     if not t.fields:
         lines.append("    pass")
     else:
@@ -312,7 +335,11 @@ def _gen_sum_blocks(t: Type) -> list[list[str]]:
         base.append("    pass")
     blocks.append(base)
     for c in t.constructors:
-        lines = ["@dataclass", f"class {c.name}(Type_{t.name}):"]
+        decorator = (
+            "@dataclass(kw_only=True)"
+            if _needs_kw_only(c.fields) else "@dataclass"
+        )
+        lines = [decorator, f"class {c.name}(Type_{t.name}):"]
         if not c.fields:
             lines.append("    pass")
         else:

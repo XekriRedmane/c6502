@@ -665,6 +665,175 @@ class TestNestedScopes(unittest.TestCase):
         self.assertIn("'b'", str(ctx.exception))
 
 
+class TestLoopResolution(unittest.TestCase):
+    """C99 §6.8.5 iteration statements. While/do-while don't introduce a
+    variable scope of their own (any header sees the enclosing block's
+    scope; the body opens a scope only if it's a Compound). The for-
+    statement's header IS its own block-scope (§6.8.5.3): a declaration
+    in the for-init shadows any outer name for the entire loop, and the
+    condition / post / body all resolve in that header scope."""
+
+    def test_break_continue_pass_through(self):
+        # Loop labels are minted by loop_labeling — variable_resolution
+        # leaves break/continue alone.
+        prog = parse(
+            "int main(void) { while (1) { break; continue; } return 0; }"
+        )
+        resolved = resolve_program(prog)
+        # while -> body is a Compound -> block -> block_item.
+        compound_body = (
+            resolved.function_definition.body.block_item[0]
+            .statement.body
+        )
+        body_items = compound_body.block.block_item
+        self.assertEqual(body_items[0].statement, c99_ast.BreakStmt(label=""))
+        self.assertEqual(
+            body_items[1].statement, c99_ast.ContinueStmt(label=""),
+        )
+
+    def test_while_body_resolves_outer_var(self):
+        prog = parse("int main(void) { int a; while (a) a = a + 1; return 0; }")
+        resolved = resolve_program(prog)
+        while_stmt = resolved.function_definition.body.block_item[1].statement
+        self.assertEqual(while_stmt.condition, c99_ast.Var(name="@0.a"))
+        # Body is `a = a + 1` — both Vars resolve to @0.a.
+        body = while_stmt.body
+        self.assertIsInstance(body, c99_ast.Expression)
+        self.assertEqual(body.exp.lval, c99_ast.Var(name="@0.a"))
+        self.assertEqual(body.exp.rval.left, c99_ast.Var(name="@0.a"))
+
+    def test_while_undeclared_in_condition_raises(self):
+        prog = parse("int main(void) { while (a) ; return 0; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_do_while_body_resolves_outer_var(self):
+        prog = parse("int main(void) { int a; do a = 1; while (a); return 0; }")
+        resolved = resolve_program(prog)
+        do_stmt = resolved.function_definition.body.block_item[1].statement
+        self.assertEqual(do_stmt.condition, c99_ast.Var(name="@0.a"))
+        self.assertEqual(do_stmt.body.exp.lval, c99_ast.Var(name="@0.a"))
+
+    def test_do_while_undeclared_in_body_raises(self):
+        prog = parse("int main(void) { do a = 1; while (1); return 0; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_for_init_decl_binds_in_header_and_body(self):
+        # `for (int i = 0; i < 10; i++) i;` — every `i` resolves to the
+        # same unique name introduced by the for-init declaration.
+        prog = parse(
+            "int main(void) { for (int i = 0; i < 10; i++) i; return 0; }"
+        )
+        resolved = resolve_program(prog)
+        for_stmt = resolved.function_definition.body.block_item[0].statement
+        decl = for_stmt.init.declaration
+        self.assertEqual(decl.name, "@0.i")
+        self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@0.i"))
+        self.assertEqual(for_stmt.post_clause.operand, c99_ast.Var(name="@0.i"))
+        self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
+
+    def test_for_init_decl_shadows_outer(self):
+        # `int a; for (int a = 1; a < 10; a++) a = a + 5; return a;`
+        # The for-header `a` is a fresh binding (@1.a) that shadows
+        # the outer @0.a inside the loop. After the loop, `return a`
+        # reads the outer @0.a (the for-header scope is gone).
+        prog = parse(
+            "int main(void) { int a; "
+            "for (int a = 1; a < 10; a = a + 1) a = a + 5; "
+            "return a; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.function_definition.body.block_item
+        outer_decl = items[0].declaration
+        self.assertEqual(outer_decl.name, "@0.a")
+        for_stmt = items[1].statement
+        # for-header's `a` is a fresh unique name.
+        self.assertEqual(for_stmt.init.declaration.name, "@1.a")
+        # Condition / post / body all see @1.a.
+        self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@1.a"))
+        self.assertEqual(for_stmt.post_clause.lval, c99_ast.Var(name="@1.a"))
+        self.assertEqual(for_stmt.body.exp.lval, c99_ast.Var(name="@1.a"))
+        # After the loop, `return a` resolves to the outer @0.a.
+        self.assertEqual(
+            items[2].statement,
+            c99_ast.Return(exp=c99_ast.Var(name="@0.a")),
+        )
+
+    def test_for_init_exp_uses_outer_scope(self):
+        # `int i; for (i = 0; i < 5; i++) i;` — the init is an
+        # expression, not a declaration, so it just references the
+        # already-declared outer `i`.
+        prog = parse(
+            "int main(void) { int i; "
+            "for (i = 0; i < 5; i++) i; return 0; }"
+        )
+        resolved = resolve_program(prog)
+        for_stmt = resolved.function_definition.body.block_item[1].statement
+        # Init is the assignment `i = 0`; both Vars resolve to @0.i.
+        self.assertEqual(for_stmt.init.exp.lval, c99_ast.Var(name="@0.i"))
+        self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
+
+    def test_for_empty_header_body_resolves(self):
+        # `for (;;) i;` — the empty header still opens a scope, but no
+        # binding is added, so the body sees outer names as usual.
+        prog = parse(
+            "int main(void) { int i; for (;;) i; }"
+        )
+        resolved = resolve_program(prog)
+        for_stmt = resolved.function_definition.body.block_item[1].statement
+        self.assertEqual(for_stmt.init, c99_ast.InitExp(exp=None))
+        self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
+
+    def test_for_undeclared_in_condition_raises(self):
+        # `for (;a<10;) ;` with no `a` in scope.
+        prog = parse("int main(void) { for (; a < 10;) ; return 0; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_for_undeclared_in_post_raises(self):
+        prog = parse("int main(void) { for (;;a++) ; return 0; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_for_init_decl_visible_to_compound_body(self):
+        # The compound body sees the for-header's binding, even though
+        # it opens its own scope (the inner scope's clone carries the
+        # outer entry forward).
+        prog = parse(
+            "int main(void) { for (int i = 0; ; ) { i; break; } }"
+        )
+        resolved = resolve_program(prog)
+        for_stmt = resolved.function_definition.body.block_item[0].statement
+        body_block = for_stmt.body.block
+        first_item = body_block.block_item[0].statement
+        self.assertEqual(first_item.exp, c99_ast.Var(name="@0.i"))
+
+    def test_for_compound_body_can_shadow_for_init(self):
+        # `for (int i = 0;;) { int i = 5; ... }` — the compound body
+        # opens its own scope and can shadow the for-init's `i`.
+        prog = parse(
+            "int main(void) { for (int i = 0;;) { int i = 5; break; } }"
+        )
+        resolved = resolve_program(prog)
+        for_stmt = resolved.function_definition.body.block_item[0].statement
+        self.assertEqual(for_stmt.init.declaration.name, "@0.i")
+        body_decl = for_stmt.body.block.block_item[0].declaration
+        self.assertEqual(body_decl.name, "@1.i")
+
+    def test_for_init_duplicate_with_for_scope_decl_in_body_is_legal(self):
+        # `for (int i = 0; ; ) { int i = 5; }` is legal because the
+        # body's compound is a new (inner) scope. But `for (int i = 0;
+        # ; ) int i = 5;` would be a parse error (declarations aren't
+        # legal as a non-compound for-body in C99) — we don't have to
+        # cover that here, the grammar handles it.
+        prog = parse(
+            "int main(void) { for (int i = 0;;) { int i = 1; break; } }"
+        )
+        # Should not raise.
+        resolve_program(prog)
+
+
 class TestResolveProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
         fn = _function(_decl("x"), _ret(c99_ast.Var(name="x")))

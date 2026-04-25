@@ -78,6 +78,39 @@ class Compound(Type_statement):
 
 
 @dataclass
+class BreakStmt(Type_statement):
+    label: str
+
+
+@dataclass
+class ContinueStmt(Type_statement):
+    label: str
+
+
+@dataclass
+class WhileStmt(Type_statement):
+    condition: Type_exp
+    body: Type_statement
+    label: str
+
+
+@dataclass
+class DoWhileStmt(Type_statement):
+    body: Type_statement
+    condition: Type_exp
+    label: str
+
+
+@dataclass(kw_only=True)
+class ForStmt(Type_statement):
+    init: Type_for_init
+    condition: Type_exp | None = None
+    post_clause: Type_exp | None = None
+    body: Type_statement
+    label: str
+
+
+@dataclass
 class Goto(Type_statement):
     label: str
 
@@ -102,6 +135,21 @@ class Type_declaration:
 class Declaration(Type_declaration):
     name: str
     init: Type_exp | None = None
+
+
+@dataclass
+class Type_for_init:
+    pass
+
+
+@dataclass
+class InitDecl(Type_for_init):
+    declaration: Type_declaration
+
+
+@dataclass
+class InitExp(Type_for_init):
+    exp: Type_exp | None = None
 
 
 @dataclass

@@ -29,7 +29,8 @@ own `-o` is not forwarded.
 
 Stage-selection flags (mutually exclusive, one required with `compile.py`):
 `--lex`, `--parse`, `--resolve`, `--tac`, `--codegen`. `--resolve` runs
-both name-resolution passes (variable then label).
+the three name-resolution passes (variable resolution, label resolution,
+loop labeling) in that order.
 
 ## Regenerating AST modules
 
@@ -49,7 +50,7 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains eight passes, each a separate module that takes
+`compile.py --codegen` chains nine passes, each a separate module that takes
 one AST and returns another (or text for emit):
 
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar lives
@@ -59,7 +60,14 @@ one AST and returns another (or text for emit):
    Block([...]))`). A block item is a declaration (`int x;` / `int x =
    exp;`) or a statement (`return exp;`, `exp;`, `if (exp) stmt (else
    stmt)?`, `goto label;`, `label: stmt`, a `<block>` (compound
-   statement, `Compound(block)`), or a null `;`). The compound-
+   statement, `Compound(block)`), `break;`, `continue;`,
+   `while (exp) stmt`, `do stmt while (exp);`,
+   `for (<for_init> exp? ; exp?) stmt`, or a null `;`). Iteration
+   statements introduce a `for_init` rule covering a declaration or
+   `exp? ;`. The loop AST nodes (`WhileStmt`, `DoWhileStmt`, `ForStmt`,
+   `BreakStmt`, `ContinueStmt`) carry an `identifier label` field that
+   the parser leaves as the empty string — the loop_labeling pass
+   fills it in later. The compound-
    statement rule reuses the same `block` rule the function body uses
    — the only difference is the transformer wraps the resulting
    `Block` in a `Compound`. The `IDENTIFIER COLON statement` rule
@@ -125,9 +133,15 @@ one AST and returns another (or text for emit):
    name that's currently outer-scoped legally shadows it (overwrite
    with a fresh unique name flagged as inner). Exiting the inner
    block discards its dict — Python GC handles this since we cloned
-   the parent's map rather than aliasing it. Labels and gotos pass
-   through unchanged — they live in a separate namespace and are
-   owned by the next pass.
+   the parent's map rather than aliasing it. While/do-while bodies
+   resolve in the parent scope (they don't introduce a scope of
+   their own; a Compound body opens its own scope as usual). The
+   for-header (`for (<init> ...) body`) opens a fresh scope per
+   C99 §6.8.5.3, so `int a; for (int a = 1; a < 10; a++) ...`
+   shadows the outer `a` for the duration of the loop and the
+   outer `a` is intact afterward. Labels, gotos, break, and
+   continue pass through unchanged — they live in separate
+   namespaces and are owned by later passes.
 3. `passes.label_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Validates labeled statements (C99 §6.8.1) and `goto` targets
    (§6.8.6). Two walks per function: (a) collect every `LabeledStmt`,
@@ -136,43 +150,80 @@ one AST and returns another (or text for emit):
    `Goto` target with the unique name and raising
    `LabelResolutionError` for any goto whose target wasn't declared in
    the same function. Labels are visible across the whole function
-   (forward gotos are fine). The leading `.` makes them dasm-style
-   **local labels**, scoped only to the SUBROUTINE the asm emits —
-   so two functions can both have a label `foo` without colliding
-   in the global asm namespace. The `@` separator (illegal in a C
-   identifier, so it can't appear in `<funcname>` or `<orig>`)
-   keeps user labels disjoint from translator-minted labels
-   (`.if_end_N`, `.cond_else_N`, …) and from any user-written
-   identifier. C99 §6.8.6 also forbids jumping into the
-   scope of a variably-modified-type identifier; c6502 has no
-   VLAs, so that constraint is vacuously satisfied.
-4. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
+   (forward gotos are fine), so both walks descend into the bodies
+   of `if`, compound, while, do-while, and for statements. The
+   leading `.` makes them dasm-style **local labels**, scoped only
+   to the SUBROUTINE the asm emits — so two functions can both have
+   a label `foo` without colliding in the global asm namespace. The
+   `@` separator (illegal in a C identifier, so it can't appear in
+   `<funcname>` or `<orig>`) keeps user labels disjoint from
+   translator-minted labels (which all carry `@<digits>`, e.g.
+   `.if_end@N`, `.loop@N`) and from any user-written identifier.
+   C99 §6.8.6 also forbids jumping into the scope of a variably-
+   modified-type identifier; c6502 has no VLAs, so that constraint
+   is vacuously satisfied.
+4. `passes.loop_labeling.label_program` — `c99_ast` → `c99_ast`.
+   Mints a unique label `.loop@<N>` per iteration statement and
+   stamps it onto that loop's `label` field. While walking the
+   body, the same label is stamped onto every `BreakStmt` /
+   `ContinueStmt` encountered, with nested loops pushing their own
+   label as the current one for their body. A `break;` / `continue;`
+   outside any iteration statement raises `LoopLabelingError`.
+   (C99 §6.8.6.3 also allows `break` inside a switch; c6502 has no
+   switch yet, so the loop pass is sole owner of break/continue
+   targets right now — when switch lands its lowering will track
+   its own break-target separately.) The pass runs *after*
+   label_resolution: loop labels are translator-minted, not user-
+   written, so they slot in only once user-defined goto / labeled-
+   stmt names have already been resolved. The two namespaces are
+   disjoint by construction — a user label is `.<funcname>@<orig>`
+   where the part after `@` is a C identifier (starts with a letter
+   or underscore), while a loop label is `.loop@<N>` where the part
+   after `@` is digits, so the two forms can't ever match. Codegen
+   derives concrete control-flow targets by appending suffixes
+   (`_start`, `_continue`, `_break`) to the loop's base label.
+5. `c99_to_tac.translate_program` — `c99_ast` → `tac_ast` (three-address
    code). Compound expressions flatten into ops, materializing each intermediate
    into a fresh `Var(%n)`. `Binary(op, src1, src2, dst)` evaluates `src1` first
    so its temps get lower numbers. `Goto(label)` lowers to a TAC
    `Jump(label)`; `LabeledStmt(label, stmt)` lowers to a TAC
    `Label(label)` followed by the inner statement's lowering. Label
    names arrive pre-mangled by label_resolution and pass through
-   unchanged.
-5. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
+   unchanged. Iteration statements derive concrete control-flow
+   targets from the base label set by loop_labeling, by suffix:
+   `<base>_start` (top of loop), `<base>_continue` (continue
+   target), `<base>_break` (break target). `BreakStmt(label)` →
+   `Jump(<label>_break)`, `ContinueStmt(label)` →
+   `Jump(<label>_continue)`. The three loop kinds lower to fixed
+   sequences: `while` is `Label(_continue); <eval cond>;
+   JumpIfFalse(_break); <body>; Jump(_continue); Label(_break)`;
+   `do-while` is `Label(_start); <body>; Label(_continue);
+   <eval cond>; JumpIfTrue(_start); Label(_break)`; `for` is
+   `<init>; Label(_start); [<eval cond>; JumpIfFalse(_break);]
+   <body>; Label(_continue); [<post>;] Jump(_start);
+   Label(_break)`, with the bracketed sections omitted when the
+   condition or post-clause slot is empty (a missing condition is
+   treated as unconditionally true).
+6. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. Each TAC
    instruction lowers into a sequence of atoms (`Mov` to/from `A`, atomic ops
    on `A`, carry setup if needed). Output is correct but redundant — every
    intermediate is materialized through a `Frame` slot. Optimization is
    deferred to TAC-level passes.
-6. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
+7. `passes.replace_pseudoregisters.replace_program` — assigns each `Pseudo(name)` a
    `Frame(offset)` slot. Per function: walks instructions in order, mints
    offsets `args_bytes+1`, `args_bytes+2`, … for each new pseudo name; reuses
    the same offset for repeated names. `args_bytes` is `0` currently.
-7. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
+8. `passes.allocate_stack.allocate_program` — finds each function's `M` (highest
    `Frame` offset = local-byte count), prepends
    `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites every
    `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
-8. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
+9. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text. **Atomic IR**:
    every node maps to one 6502 instruction, except `Ret` and
    `FunctionPrologue`, which expand to the multi-instruction prelude/epilogue.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
-step 5. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are TAC-only concepts;
+step 7 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
+are TAC-only concepts;
 `tac_to_asm` lowers each to a `Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence
 targeting one of the runtime helpers `mul8` / `divmod8` / `shl8` / `asr8`.
 All take operands in `A` and `X`: `mul8` returns low/high in A/X, `divmod8`
@@ -343,19 +394,19 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   Copy(%new, a)` and returns `%old` so the result is the operand's
   value *before* the mutation)
 - `if (cond) stmt` and `if (cond) stmt else stmt` — `c99_to_tac`
-  lowers to `JumpIfFalse(cond, end_N)` + body + `Label(end_N)` (no
-  else); with else, `JumpIfFalse(cond, else_N)` + then-body +
-  `Jump(end_N)` + `Label(else_N)` + else-body + `Label(end_N)`. Labels
-  share the Translator's label counter (`.if_end_N`/`.if_else_N` —
+  lowers to `JumpIfFalse(cond, end@N)` + body + `Label(end@N)` (no
+  else); with else, `JumpIfFalse(cond, else@N)` + then-body +
+  `Jump(end@N)` + `Label(else@N)` + else-body + `Label(end@N)`. Labels
+  share the Translator's label counter (`.if_end@N`/`.if_else@N` —
   dasm local labels with a leading dot) with the short-circuit and
   inline-comparison lowerings, so each `if` gets globally unique
   numbers
 - ternary `cond ? t : f` — `c99_to_tac` lowers it like an if/else
   that also produces a value: `<eval cond>; JumpIfFalse(cond,
-  .cond_else_N); <eval t>; Copy(t, dst); Jump(.cond_end_N);
-  Label(.cond_else_N); <eval f>; Copy(f, dst); Label(.cond_end_N)`
+  .cond_else@N); <eval t>; Copy(t, dst); Jump(.cond_end@N);
+  Label(.cond_else@N); <eval f>; Copy(f, dst); Label(.cond_end@N)`
   and the Conditional expression returns `dst`. Labels
-  (`.cond_else_N` / `.cond_end_N`) share the same Translator counter
+  (`.cond_else@N` / `.cond_end@N`) share the same Translator counter
   as the `if` / short-circuit / inline-comparison lowerings, so
   numbering stays globally unique across the program
 - labeled statements `label: stmt` (C99 §6.8.1) and `goto label;`
@@ -364,18 +415,38 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   function, then rewrites both sides to `.<funcname>@<orig>` —
   dasm-style local labels (leading dot, scoped to the SUBROUTINE)
   with `@` as separator (illegal in C identifiers, so it can't
-  collide with translator-minted labels like `.if_end_N` or with
-  any user-written identifier). `c99_to_tac` lowers
+  collide with any user-written identifier). Translator-minted
+  labels (`.if_end@N`, `.cond_else@N`, `.loop@N`, …) embed `@`
+  too, but the part after `@` is digits there vs. a C identifier
+  here, so the two forms stay disjoint. `c99_to_tac` lowers
   `Goto(L)` to `Jump(L)` and `LabeledStmt(L, s)` to `Label(L)`
   followed by lowering `s`. Labels are visible across the entire
   function body, so forward gotos are fine. Variably-modified-type
   scope-jump check (also §6.8.6) is vacuous because c6502 has no
   VLAs
+- iteration statements `while (cond) stmt`, `do stmt while (cond);`,
+  and `for (<for_init> exp? ; exp?) stmt`, plus the jump statements
+  `break;` and `continue;`. The `for_init` slot is either a
+  declaration (`for (int i = 0; ...)`) or an expression-or-empty
+  (`for (i = 0; ...)`, `for (; ...)`). `passes.loop_labeling` mints
+  a `.loop@<N>` per iteration statement and stamps it onto the loop
+  AST node and onto every `break` / `continue` inside the body; a
+  `break` or `continue` outside any loop raises
+  `LoopLabelingError`. `c99_to_tac` derives `_start` / `_continue`
+  / `_break` sub-labels from the base by suffix and lays out the
+  three loop kinds as documented in pass 5 above. The for-header
+  opens its own variable scope (C99 §6.8.5.3), so
+  `int a; for (int a = 1; ...) ...` legally shadows the outer
+  `a` for the duration of the loop. A missing `for` condition is
+  treated as unconditionally true, so the test and its
+  `JumpIfFalse` drop out of the lowered TAC entirely
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
 everywhere but parser only accepts `(void)` and translator hardcodes 0),
-multiple functions, user-defined calls, loop / switch statements,
+multiple functions, user-defined calls, `switch` statements (the
+loop-labeling pass is sole owner of break-targets right now; once
+switch lands its lowering will track its own break-target separately),
 types other than `int` (so unsigned right shift and unsigned ordering
 aren't distinguishable yet), and the runtime header that defines
 `SSP`/`FP`, initializes `SSP`, sets the reset vector, and provides

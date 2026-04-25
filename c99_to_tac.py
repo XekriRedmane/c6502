@@ -7,7 +7,7 @@ fresh Var-typed temporaries and emit the corresponding TAC instruction.
 
 State:
   - Translator owns the temporary-name counter (`%0`, `%1`, ...) and a
-    separate label counter (`and_false_0`, `and_end_0`, ...) for the
+    separate label counter (`and_false@0`, `and_end@0`, ...) for the
     short-circuit lowerings.
   - The per-function instruction list is passed down explicitly as an
     argument so there's no implicit "current function" on the instance.
@@ -35,11 +35,11 @@ Mapping:
                                  the returned val is discarded.
   C99 IfStmt(cond, then,      -> evaluate cond, JumpIfFalse around
         else_clause)             the then-branch (skip directly to
-                                 if_end_N when there's no else;
+                                 if_end@N when there's no else;
                                  jump-around an else-branch with a
                                  Jump+Label pair when there is). All
                                  labels come from the shared label
-                                 counter (`if_end_N`, `if_else_N`).
+                                 counter (`if_end@N`, `if_else@N`).
   C99 Goto(label)             -> tac Jump(label). The label name is
                                  the unique `.<funcname>@<label>`
                                  minted by label_resolution — a
@@ -52,6 +52,42 @@ Mapping:
   C99 LabeledStmt(label, stmt) -> emit tac Label(label), then lower
                                  the inner statement. Label name is
                                  already unique (see Goto).
+  C99 BreakStmt(label)        -> tac Jump(<label>_break). The
+                                 incoming `label` is the base name
+                                 (`.loop@<N>`) attached by
+                                 loop_labeling; we derive the per-
+                                 loop sub-targets by suffix.
+  C99 ContinueStmt(label)     -> tac Jump(<label>_continue).
+  C99 WhileStmt(cond, body,   -> Label(<continue>); <eval cond -> v>;
+                label)           JumpIfFalse(v, <break>); <lower body>;
+                                 Jump(<continue>); Label(<break>). The
+                                 continue target is at the top of
+                                 the loop (re-tests the condition);
+                                 the break target sits after.
+  C99 DoWhileStmt(body, cond, -> Label(<start>); <lower body>;
+                  label)         Label(<continue>); <eval cond -> v>;
+                                 JumpIfTrue(v, <start>); Label(<break>).
+                                 The continue target sits between the
+                                 body and the test, so `continue` re-
+                                 runs the condition.
+  C99 ForStmt(init, cond,     -> <init insns>; Label(<start>);
+              post, body,        <eval cond -> v>;  -- omitted if cond
+              label)             JumpIfFalse(v, <break>); -- is None
+                                 <lower body>; Label(<continue>);
+                                 <post insns>; -- omitted if post is None
+                                 Jump(<start>); Label(<break>). The
+                                 init runs once, then a test-body-
+                                 post cycle. `continue` jumps to the
+                                 post step (so it still runs); a
+                                 missing condition is treated as
+                                 unconditionally true so the test
+                                 and its JumpIfFalse drop out.
+  C99 InitDecl(decl)          -> same as a top-level Declaration
+                                 (Copy of the initializer into the
+                                 var; nothing for a bare `int x;`).
+  C99 InitExp(exp)            -> evaluate `exp` for its side effects;
+                                 result is discarded. Empty
+                                 `InitExp(None)` lowers to nothing.
   C99 Compound(block)         -> lower each block item in order;
                                  no extra TAC structure (TAC is
                                  flat — block boundaries don't
@@ -103,29 +139,29 @@ Mapping:
 
   C99 Conditional(cond, t, f) -> like an if/else that also produces a
                                  value: evaluate cond, JumpIfFalse to
-                                 cond_else_N, evaluate t and Copy into
-                                 a fresh dst temp, Jump(cond_end_N),
-                                 Label(cond_else_N), evaluate f and
+                                 cond_else@N, evaluate t and Copy into
+                                 a fresh dst temp, Jump(cond_end@N),
+                                 Label(cond_else@N), evaluate f and
                                  Copy into the same dst, Label(
-                                 cond_end_N). Returns dst. Labels come
+                                 cond_end@N). Returns dst. Labels come
                                  from the shared label counter
-                                 (`cond_else_N`/`cond_end_N`), so each
+                                 (`cond_else@N`/`cond_end@N`), so each
                                  ternary gets globally unique numbers.
 
 Short-circuit lowerings (no corresponding TAC binary op — the control
 flow *is* the semantics):
   C99 Binary(LogicalAnd, L, R):
       <eval L -> src1>
-      JumpIfFalse(src1, and_false_N)
+      JumpIfFalse(src1, and_false@N)
       <eval R -> src2>
-      JumpIfFalse(src2, and_false_N)
+      JumpIfFalse(src2, and_false@N)
       Copy(Constant(1), result)
-      Jump(and_end_N)
-      Label(and_false_N)
+      Jump(and_end@N)
+      Label(and_false@N)
       Copy(Constant(0), result)
-      Label(and_end_N)
-  C99 Binary(LogicalOr, L, R): symmetric, with JumpIfTrue / or_true_N /
-      or_end_N and the 0/1 constants swapped. Each use of && or || gets
+      Label(and_end@N)
+  C99 Binary(LogicalOr, L, R): symmetric, with JumpIfTrue / or_true@N /
+      or_end@N and the 0/1 constants swapped. Each use of && or || gets
       a fresh N so nested short-circuits don't collide.
 """
 
@@ -133,6 +169,27 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
+
+
+# Per-loop sub-label derivation. The loop_labeling pass stamps each
+# loop with a base label like `.loop@3`; the TAC lowering needs three
+# distinct targets for that loop (start, continue target, break
+# target), so we suffix the base. The base contains `@` (illegal in
+# any C identifier), so neither it nor its suffixed forms can collide
+# with a user-mangled label. They're also disjoint from every other
+# translator-minted label (`.if_end@<N>`, `.cond_else@<N>`, …): those
+# differ in prefix, and they end at the digit run after `@` rather
+# than in a `_start`/`_continue`/`_break` suffix.
+def _start_label(loop_label: str) -> str:
+    return f"{loop_label}_start"
+
+
+def _continue_label(loop_label: str) -> str:
+    return f"{loop_label}_continue"
+
+
+def _break_label(loop_label: str) -> str:
+    return f"{loop_label}_break"
 
 
 class Translator:
@@ -148,11 +205,13 @@ class Translator:
     def make_label(self, prefix: str) -> str:
         # Leading `.` makes this a dasm-style local label — scoped to
         # the enclosing SUBROUTINE, so labels in different functions
-        # don't collide in the global asm namespace. The single
-        # underscore between the prefix and counter keeps these
-        # disjoint from user-mangled labels (`.<funcname>__<orig>`),
-        # which use a double underscore.
-        name = f".{prefix}_{self._label_counter}"
+        # don't collide in the global asm namespace. The `@`
+        # separator (illegal in any C identifier) means a translator-
+        # minted label can never be confused with anything the user
+        # could write: user goto labels are mangled to
+        # `.<funcname>@<orig>` where the part after `@` is a C
+        # identifier; here the part after `@` is digits.
+        name = f".{prefix}@{self._label_counter}"
         self._label_counter += 1
         return name
 
@@ -261,7 +320,7 @@ class Translator:
                 #   Label(end_N)
                 # Labels share the same counter the short-circuit
                 # lowerings use, so each `if` gets globally unique
-                # `if_else_N`/`if_end_N` numbers.
+                # `if_else@N`/`if_end@N` numbers.
                 cond_val = self.translate_exp(cond, instrs)
                 end_label = self.make_label("if_end")
                 if else_stmt is None:
@@ -299,8 +358,10 @@ class Translator:
                 # minted by label_resolution — a dasm local label
                 # (leading dot scopes it to the enclosing SUBROUTINE).
                 # The `@` separator (illegal in a C identifier) keeps
-                # user labels disjoint from translator-minted ones
-                # like `.if_end_N`.
+                # these disjoint from translator-minted labels like
+                # `.if_end@N` — they share the @-marker convention,
+                # but the part after `@` is a C identifier here vs.
+                # a digit run there.
                 instrs.append(tac_ast.Jump(target=label))
                 return
             case c99_ast.LabeledStmt(label=label, statement=inner):
@@ -311,10 +372,125 @@ class Translator:
                 instrs.append(tac_ast.Label(name=label))
                 self.translate_statement(inner, instrs)
                 return
+            case c99_ast.BreakStmt(label=label):
+                # `break;` lowers to an unconditional jump to the
+                # break-target label of the enclosing loop. The loop
+                # label is the base name (e.g. `.loop@3`) minted by
+                # the loop_labeling pass; we derive the per-loop
+                # break/continue/start targets from it by suffix.
+                instrs.append(tac_ast.Jump(target=_break_label(label)))
+                return
+            case c99_ast.ContinueStmt(label=label):
+                instrs.append(tac_ast.Jump(target=_continue_label(label)))
+                return
+            case c99_ast.WhileStmt(condition=cond, body=body, label=label):
+                # while: test-then-body, with the continue target at
+                # the top of the loop (re-tests the condition) and the
+                # break target after the loop.
+                #   Label(<continue>)
+                #   <eval cond -> v>
+                #   JumpIfFalse(v, <break>)
+                #   <lower body>
+                #   Jump(<continue>)
+                #   Label(<break>)
+                cont = _continue_label(label)
+                brk = _break_label(label)
+                instrs.append(tac_ast.Label(name=cont))
+                cond_val = self.translate_exp(cond, instrs)
+                instrs.append(tac_ast.JumpIfFalse(
+                    condition=cond_val, target=brk,
+                ))
+                self.translate_statement(body, instrs)
+                instrs.append(tac_ast.Jump(target=cont))
+                instrs.append(tac_ast.Label(name=brk))
+                return
+            case c99_ast.DoWhileStmt(body=body, condition=cond, label=label):
+                # do-while: body-then-test. The continue target sits
+                # *between* the body and the condition test (so
+                # `continue` re-runs the test), and the break target
+                # sits after everything.
+                #   Label(<start>)
+                #   <lower body>
+                #   Label(<continue>)
+                #   <eval cond -> v>
+                #   JumpIfTrue(v, <start>)
+                #   Label(<break>)
+                start = _start_label(label)
+                cont = _continue_label(label)
+                brk = _break_label(label)
+                instrs.append(tac_ast.Label(name=start))
+                self.translate_statement(body, instrs)
+                instrs.append(tac_ast.Label(name=cont))
+                cond_val = self.translate_exp(cond, instrs)
+                instrs.append(tac_ast.JumpIfTrue(
+                    condition=cond_val, target=start,
+                ))
+                instrs.append(tac_ast.Label(name=brk))
+                return
+            case c99_ast.ForStmt(
+                init=init, condition=cond, post_clause=post,
+                body=body, label=label,
+            ):
+                # for: init, then test-body-post, with the continue
+                # target between the body and the post-iteration step
+                # (so `continue` skips the rest of the body but still
+                # runs the post step), and the break target after the
+                # loop. A missing condition is treated as
+                # unconditionally true — we just skip the
+                # JumpIfFalse, since there's nothing to test.
+                #   <init insns>
+                #   Label(<start>)
+                #   <eval cond -> v>          (omitted if cond is None)
+                #   JumpIfFalse(v, <break>)   (omitted if cond is None)
+                #   <lower body>
+                #   Label(<continue>)
+                #   <post insns>              (omitted if post is None)
+                #   Jump(<start>)
+                #   Label(<break>)
+                start = _start_label(label)
+                cont = _continue_label(label)
+                brk = _break_label(label)
+                self.translate_for_init(init, instrs)
+                instrs.append(tac_ast.Label(name=start))
+                if cond is not None:
+                    cond_val = self.translate_exp(cond, instrs)
+                    instrs.append(tac_ast.JumpIfFalse(
+                        condition=cond_val, target=brk,
+                    ))
+                self.translate_statement(body, instrs)
+                instrs.append(tac_ast.Label(name=cont))
+                if post is not None:
+                    # Post-clause is an expression evaluated for its
+                    # side effects (the result value is discarded).
+                    self.translate_exp(post, instrs)
+                instrs.append(tac_ast.Jump(target=start))
+                instrs.append(tac_ast.Label(name=brk))
+                return
             case c99_ast.Null():
                 # No-op statement. Nothing to emit.
                 return
         raise TypeError(f"unexpected statement: {stmt!r}")
+
+    def translate_for_init(
+        self,
+        init: c99_ast.Type_for_init,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        # For-init runs once before the loop body. A declaration
+        # lowers exactly like a top-level declaration (Copy of init
+        # value into the var, or nothing for a bare `int x;`); an
+        # expression-init runs the expression for side effects with
+        # the result thrown away. An empty `for (;;)` lowers to no
+        # init instructions.
+        match init:
+            case c99_ast.InitDecl(declaration=decl):
+                self.translate_declaration(decl, instrs)
+                return
+            case c99_ast.InitExp(exp=exp):
+                if exp is not None:
+                    self.translate_exp(exp, instrs)
+                return
+        raise TypeError(f"unexpected for_init: {init!r}")
 
     def translate_exp(
         self,
@@ -392,14 +568,14 @@ class Translator:
                 # same counter as `if`/short-circuit, so numbering stays
                 # globally unique.
                 #   <eval cond -> cond_val>
-                #   JumpIfFalse(cond_val, cond_else_N)
+                #   JumpIfFalse(cond_val, cond_else@N)
                 #   <eval true -> t_val>
                 #   Copy(t_val, dst)
-                #   Jump(cond_end_N)
-                #   Label(cond_else_N)
+                #   Jump(cond_end@N)
+                #   Label(cond_else@N)
                 #   <eval false -> f_val>
                 #   Copy(f_val, dst)
-                #   Label(cond_end_N)
+                #   Label(cond_end@N)
                 cond_val = self.translate_exp(cond, instrs)
                 else_label = self.make_label("cond_else")
                 end_label = self.make_label("cond_end")

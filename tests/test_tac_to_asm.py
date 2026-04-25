@@ -59,12 +59,12 @@ class TestTranslateUnopAtoms(unittest.TestCase):
         self.assertEqual(
             translate_unop_atoms(tac_ast.LogicalNot()),
             [
-                asm_ast.Branch(cond=asm_ast.EQ(), target=".lnot_true_0"),
+                asm_ast.Branch(cond=asm_ast.EQ(), target=".lnot_true@0"),
                 asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-                asm_ast.Jump(target=".lnot_end_1"),
-                asm_ast.Label(name=".lnot_true_0"),
+                asm_ast.Jump(target=".lnot_end@1"),
+                asm_ast.Label(name=".lnot_true@0"),
                 asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Label(name=".lnot_end_1"),
+                asm_ast.Label(name=".lnot_end@1"),
             ],
         )
 
@@ -155,12 +155,12 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(instr),
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.Branch(cond=asm_ast.EQ(), target=".lnot_true_0"),
+                asm_ast.Branch(cond=asm_ast.EQ(), target=".lnot_true@0"),
                 asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-                asm_ast.Jump(target=".lnot_end_1"),
-                asm_ast.Label(name=".lnot_true_0"),
+                asm_ast.Jump(target=".lnot_end@1"),
+                asm_ast.Label(name=".lnot_true@0"),
                 asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Label(name=".lnot_end_1"),
+                asm_ast.Label(name=".lnot_end@1"),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
@@ -393,25 +393,25 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
 
     def test_jump_is_atom_for_atom(self):
         self.assertEqual(
-            translate_instruction(tac_ast.Jump(target=".and_end_0")),
-            [asm_ast.Jump(target=".and_end_0")],
+            translate_instruction(tac_ast.Jump(target=".and_end@0")),
+            [asm_ast.Jump(target=".and_end@0")],
         )
 
     def test_label_is_atom_for_atom(self):
         self.assertEqual(
-            translate_instruction(tac_ast.Label(name=".or_true_3")),
-            [asm_ast.Label(name=".or_true_3")],
+            translate_instruction(tac_ast.Label(name=".or_true@3")),
+            [asm_ast.Label(name=".or_true@3")],
         )
 
     def test_jump_if_true_constant_stages_through_a_then_bne(self):
         self.assertEqual(
             translate_instruction(tac_ast.JumpIfTrue(
                 condition=tac_ast.Constant(value=1),
-                target=".or_true_0",
+                target=".or_true@0",
             )),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Branch(cond=asm_ast.NE(), target=".or_true_0"),
+                asm_ast.Branch(cond=asm_ast.NE(), target=".or_true@0"),
             ],
         )
 
@@ -419,11 +419,11 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
         self.assertEqual(
             translate_instruction(tac_ast.JumpIfTrue(
                 condition=tac_ast.Var(name="%0"),
-                target=".or_true_0",
+                target=".or_true@0",
             )),
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.Branch(cond=asm_ast.NE(), target=".or_true_0"),
+                asm_ast.Branch(cond=asm_ast.NE(), target=".or_true@0"),
             ],
         )
 
@@ -431,11 +431,11 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
         self.assertEqual(
             translate_instruction(tac_ast.JumpIfFalse(
                 condition=tac_ast.Constant(value=0),
-                target=".and_false_0",
+                target=".and_false@0",
             )),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-                asm_ast.Branch(cond=asm_ast.EQ(), target=".and_false_0"),
+                asm_ast.Branch(cond=asm_ast.EQ(), target=".and_false@0"),
             ],
         )
 
@@ -443,11 +443,11 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
         self.assertEqual(
             translate_instruction(tac_ast.JumpIfFalse(
                 condition=tac_ast.Var(name="%2"),
-                target=".and_false_0",
+                target=".and_false@0",
             )),
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%2"), dst=_REG_A),
-                asm_ast.Branch(cond=asm_ast.EQ(), target=".and_false_0"),
+                asm_ast.Branch(cond=asm_ast.EQ(), target=".and_false@0"),
             ],
         )
 
@@ -461,23 +461,23 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
             instructions=[
                 tac_ast.JumpIfFalse(
                     condition=tac_ast.Constant(value=1),
-                    target=".and_false_0",
+                    target=".and_false@0",
                 ),
                 tac_ast.JumpIfFalse(
                     condition=tac_ast.Constant(value=2),
-                    target=".and_false_0",
+                    target=".and_false@0",
                 ),
                 tac_ast.Copy(
                     src=tac_ast.Constant(value=1),
                     dst=tac_ast.Var(name="%0"),
                 ),
-                tac_ast.Jump(target=".and_end_1"),
-                tac_ast.Label(name=".and_false_0"),
+                tac_ast.Jump(target=".and_end@1"),
+                tac_ast.Label(name=".and_false@0"),
                 tac_ast.Copy(
                     src=tac_ast.Constant(value=0),
                     dst=tac_ast.Var(name="%0"),
                 ),
-                tac_ast.Label(name=".and_end_1"),
+                tac_ast.Label(name=".and_end@1"),
                 tac_ast.Ret(val=tac_ast.Var(name="%0")),
             ],
         )
@@ -488,23 +488,23 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
                     asm_ast.Branch(
-                        cond=asm_ast.EQ(), target=".and_false_0",
+                        cond=asm_ast.EQ(), target=".and_false@0",
                     ),
                     asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
                     asm_ast.Branch(
-                        cond=asm_ast.EQ(), target=".and_false_0",
+                        cond=asm_ast.EQ(), target=".and_false@0",
                     ),
                     asm_ast.Mov(
                         src=asm_ast.Imm(value=1),
                         dst=asm_ast.Pseudo(name="%0"),
                     ),
-                    asm_ast.Jump(target=".and_end_1"),
-                    asm_ast.Label(name=".and_false_0"),
+                    asm_ast.Jump(target=".and_end@1"),
+                    asm_ast.Label(name=".and_false@0"),
                     asm_ast.Mov(
                         src=asm_ast.Imm(value=0),
                         dst=asm_ast.Pseudo(name="%0"),
                     ),
-                    asm_ast.Label(name=".and_end_1"),
+                    asm_ast.Label(name=".and_end@1"),
                     asm_ast.Mov(
                         src=asm_ast.Pseudo(name="%0"), dst=_REG_A,
                     ),
@@ -554,12 +554,12 @@ class TestTranslateComparisons(unittest.TestCase):
         return [
             asm_ast.Mov(src=self._src1_op(), dst=_REG_A),
             asm_ast.Compare(left=_REG_A, right=self._src2_op()),
-            asm_ast.Branch(cond=cond, target=".cmp_true_0"),
+            asm_ast.Branch(cond=cond, target=".cmp_true@0"),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Jump(target=".cmp_end_1"),
-            asm_ast.Label(name=".cmp_true_0"),
+            asm_ast.Jump(target=".cmp_end@1"),
+            asm_ast.Label(name=".cmp_true@0"),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=".cmp_end_1"),
+            asm_ast.Label(name=".cmp_end@1"),
             asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
         ]
 
@@ -568,17 +568,17 @@ class TestTranslateComparisons(unittest.TestCase):
             asm_ast.Mov(src=left_op, dst=_REG_A),
             asm_ast.SetCarry(),
             asm_ast.Sub(src=right_op, dst=_REG_A),
-            asm_ast.Branch(cond=asm_ast.VC(), target=".cmp_novf_0"),
+            asm_ast.Branch(cond=asm_ast.VC(), target=".cmp_novf@0"),
             asm_ast.Xor(
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
-            asm_ast.Label(name=".cmp_novf_0"),
-            asm_ast.Branch(cond=cond, target=".cmp_true_1"),
+            asm_ast.Label(name=".cmp_novf@0"),
+            asm_ast.Branch(cond=cond, target=".cmp_true@1"),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
-            asm_ast.Jump(target=".cmp_end_2"),
-            asm_ast.Label(name=".cmp_true_1"),
+            asm_ast.Jump(target=".cmp_end@2"),
+            asm_ast.Label(name=".cmp_true@1"),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-            asm_ast.Label(name=".cmp_end_2"),
+            asm_ast.Label(name=".cmp_end@2"),
             asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
         ]
 

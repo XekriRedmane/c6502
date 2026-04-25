@@ -189,6 +189,115 @@ class TestLabelsInIfStatements(unittest.TestCase):
         self.assertEqual(if_stmt.then_clause, c99_ast.Goto(label=".main@foo"))
 
 
+class TestLabelsInLoops(unittest.TestCase):
+    """Label resolution must descend into the bodies of while, do-
+    while, and for loops — labels there are still scoped to the
+    enclosing function and must be collected and rewritten just like
+    labels at top level. Break and continue carry loop labels (from
+    the loop_labeling pass), not goto labels — this pass must leave
+    them alone."""
+
+    def test_label_inside_while_body_is_visible(self):
+        # `while (1) foo: ;  goto foo;` — label inside the loop body
+        # is reachable from outside the loop.
+        prog = parse("int main(void) { while (1) foo: ; goto foo; return 0; }")
+        resolved = resolve_program(prog)
+        items = resolved.function_definition.body.block_item
+        self.assertEqual(
+            items[0].statement.body,
+            c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
+        )
+        self.assertEqual(items[1].statement, c99_ast.Goto(label=".main@foo"))
+
+    def test_label_inside_do_while_body_is_visible(self):
+        prog = parse(
+            "int main(void) { do foo: ; while (1); goto foo; return 0; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.function_definition.body.block_item
+        self.assertEqual(
+            items[0].statement.body,
+            c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
+        )
+        self.assertEqual(items[1].statement, c99_ast.Goto(label=".main@foo"))
+
+    def test_label_inside_for_body_is_visible(self):
+        prog = parse(
+            "int main(void) { for (;;) foo: ; goto foo; return 0; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.function_definition.body.block_item
+        self.assertEqual(
+            items[0].statement.body,
+            c99_ast.LabeledStmt(label=".main@foo", statement=c99_ast.Null()),
+        )
+        self.assertEqual(items[1].statement, c99_ast.Goto(label=".main@foo"))
+
+    def test_duplicate_label_across_loop_boundary_raises(self):
+        # `while (1) foo: ;  foo: ;` — same label in loop body and
+        # outside is a duplicate within the function.
+        prog = parse(
+            "int main(void) { while (1) foo: ; foo: ; return 0; }"
+        )
+        with self.assertRaises(LabelResolutionError):
+            resolve_program(prog)
+
+    def test_goto_inside_loop_body_resolves_outer_label(self):
+        prog = parse(
+            "int main(void) { foo: ; while (1) goto foo; return 0; }"
+        )
+        resolved = resolve_program(prog)
+        while_stmt = resolved.function_definition.body.block_item[1].statement
+        self.assertEqual(while_stmt.body, c99_ast.Goto(label=".main@foo"))
+
+    def test_undefined_goto_inside_for_body_raises(self):
+        prog = parse(
+            "int main(void) { for (;;) goto missing; return 0; }"
+        )
+        with self.assertRaises(LabelResolutionError):
+            resolve_program(prog)
+
+    def test_break_continue_pass_through_unchanged(self):
+        # break / continue carry loop-pass labels (or empty strings
+        # before that pass runs); label_resolution mustn't touch them.
+        fn = _function(
+            c99_ast.S(statement=c99_ast.WhileStmt(
+                condition=c99_ast.Constant(value=1),
+                body=c99_ast.Compound(block=c99_ast.Block(block_item=[
+                    c99_ast.S(statement=c99_ast.BreakStmt(label="")),
+                    c99_ast.S(statement=c99_ast.ContinueStmt(label="")),
+                ])),
+                label="",
+            )),
+        )
+        resolved = resolve_function(fn)
+        compound = resolved.body.block_item[0].statement.body
+        self.assertEqual(
+            compound.block.block_item[0].statement,
+            c99_ast.BreakStmt(label=""),
+        )
+        self.assertEqual(
+            compound.block.block_item[1].statement,
+            c99_ast.ContinueStmt(label=""),
+        )
+
+    def test_loop_label_field_is_preserved(self):
+        # Whatever string the loop_labeling pass put into the .label
+        # field, label_resolution must leave it alone.
+        fn = _function(
+            c99_ast.S(statement=c99_ast.WhileStmt(
+                condition=c99_ast.Constant(value=1),
+                body=c99_ast.Null(),
+                label=".main@loop_3",
+            )),
+        )
+        resolved = resolve_function(fn)
+        self.assertEqual(
+            resolved.body.block_item[0].statement.label,
+            ".main@loop_3",
+        )
+
+
 class TestPassthrough(unittest.TestCase):
     """Statements without labels or gotos should pass through
     unchanged (modulo the new AST allocations the pass makes for

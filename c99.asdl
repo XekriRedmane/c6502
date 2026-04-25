@@ -8,10 +8,18 @@ module C99 {
         | Expression(exp)
         | IfStmt(exp condition, statement then_clause, statement? else_clause)
         | Compound(block)
+        -- labels for BreakStmt, ContinueStmt, WhileStmt, DoWhileStmt, ForStmt
+        -- are determined during loop labeling pass
+        | BreakStmt(identifier label)
+        | ContinueStmt(identifier label)
+        | WhileStmt(exp condition, statement body, identifier label)
+        | DoWhileStmt(statement body, exp condition, identifier label)
+        | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label)
         | Goto(identifier label)
         | LabeledStmt(identifier label, statement statement)
         | Null
     declaration = Declaration(identifier name, exp? init)
+    for_init = InitDecl(declaration) | InitExp(exp?)
     exp =
         Constant(int value)
         | Var(identifier name)

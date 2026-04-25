@@ -24,12 +24,12 @@ Naming scheme: each declared label is rewritten to
 label — valid only between the enclosing `SUBROUTINE` directive and
 the next one — which gives us per-function label namespaces for free
 (two functions can each have a label `foo` without colliding in the
-emitted asm). The `@` separator keeps user labels disjoint from
-translator-generated labels (`.<prefix>_<N>` like `.if_end_0`,
-which use only `[a-zA-Z0-9_]`) and from any user-written identifier
-in the source — `@` is illegal in a C identifier, so it can't
-appear in `<funcname>` or `<orig>` and so a user-mangled label can
-never look like a translator-minted one.
+emitted asm). The `@` separator (illegal in a C identifier) keeps
+user labels disjoint from any user-written identifier in the source.
+Translator-generated labels also embed `@` (`.<prefix>@<N>` like
+`.if_end@0`), so they share the marks-non-user-label property; the
+two forms stay disjoint because the part after `@` is a C identifier
+here but a digit run there.
 
 The `<funcname>` segment isn't strictly needed for correctness
 (local-label scoping already isolates per-function), but it's kept
@@ -137,9 +137,16 @@ class LabelResolver:
                 # Labels inside a `{ ... }` block are still scoped to
                 # the enclosing function — descend.
                 self._collect_block(block, fn_name, labels)
+            case c99_ast.WhileStmt(body=body) | c99_ast.DoWhileStmt(body=body):
+                self._collect_statement(body, fn_name, labels)
+            case c99_ast.ForStmt(body=body):
+                # The for-header (init/condition/post) can't host
+                # labeled statements — only the body can.
+                self._collect_statement(body, fn_name, labels)
             case _:
-                # Return / Expression / Goto / Null can't contain
-                # nested statements that would introduce labels.
+                # Return / Expression / Goto / Break / Continue / Null
+                # can't contain nested statements that would introduce
+                # labels.
                 pass
 
     def _rewrite_block(
@@ -202,9 +209,37 @@ class LabelResolver:
                 return c99_ast.Compound(
                     block=self._rewrite_block(block, labels),
                 )
+            case c99_ast.WhileStmt(
+                condition=cond, body=body, label=label,
+            ):
+                return c99_ast.WhileStmt(
+                    condition=cond,
+                    body=self._rewrite_statement(body, labels),
+                    label=label,
+                )
+            case c99_ast.DoWhileStmt(
+                body=body, condition=cond, label=label,
+            ):
+                return c99_ast.DoWhileStmt(
+                    body=self._rewrite_statement(body, labels),
+                    condition=cond,
+                    label=label,
+                )
+            case c99_ast.ForStmt(
+                init=init, condition=cond, post_clause=post,
+                body=body, label=label,
+            ):
+                return c99_ast.ForStmt(
+                    init=init,
+                    condition=cond,
+                    post_clause=post,
+                    body=self._rewrite_statement(body, labels),
+                    label=label,
+                )
             case _:
-                # Return / Expression / Null don't reference labels
-                # and have no nested statements — pass through.
+                # Return / Expression / Break / Continue / Null don't
+                # reference labels and have no nested statements —
+                # pass through.
                 return stmt
 
 

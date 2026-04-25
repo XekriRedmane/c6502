@@ -1173,6 +1173,144 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
         )
 
 
+class TestIterationStatements(unittest.TestCase):
+    """C99 §6.8.5 iteration statements (`while`, `do-while`, `for`) and
+    §6.8.6 jump statements (`break`, `continue`). All loop labels are
+    minted by the loop_labeling pass; the parser leaves them as the
+    empty string."""
+
+    def _stmt_of(self, src):
+        items = parse(f"int main(void) {{ {src} }}").function_definition.body.block_item
+        assert len(items) == 1, items
+        item = items[0]
+        assert isinstance(item, c99_ast.S), item
+        return item.statement
+
+    def test_break(self):
+        self.assertEqual(self._stmt_of("break;"), c99_ast.BreakStmt(label=""))
+
+    def test_continue(self):
+        self.assertEqual(
+            self._stmt_of("continue;"), c99_ast.ContinueStmt(label=""),
+        )
+
+    def test_while_loop(self):
+        self.assertEqual(
+            self._stmt_of("while (1) break;"),
+            c99_ast.WhileStmt(
+                condition=c99_ast.Constant(value=1),
+                body=c99_ast.BreakStmt(label=""),
+                label="",
+            ),
+        )
+
+    def test_do_while_loop(self):
+        self.assertEqual(
+            self._stmt_of("do continue; while (0);"),
+            c99_ast.DoWhileStmt(
+                body=c99_ast.ContinueStmt(label=""),
+                condition=c99_ast.Constant(value=0),
+                label="",
+            ),
+        )
+
+    def test_for_loop_full(self):
+        # `for (int i = 0; i < 10; i++) ;` — all three header slots
+        # populated; init is a declaration.
+        self.assertEqual(
+            self._stmt_of("for (int i = 0; i < 10; i++) ;"),
+            c99_ast.ForStmt(
+                init=c99_ast.InitDecl(declaration=c99_ast.Declaration(
+                    name="i", init=c99_ast.Constant(value=0),
+                )),
+                condition=c99_ast.Binary(
+                    op=c99_ast.LessThan(),
+                    left=c99_ast.Var(name="i"),
+                    right=c99_ast.Constant(value=10),
+                ),
+                post_clause=c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="i"),
+                ),
+                body=c99_ast.Null(),
+                label="",
+            ),
+        )
+
+    def test_for_loop_with_init_exp(self):
+        # `for (i = 0; ...; ...)` — init is an expression, not a decl.
+        items = parse(
+            "int main(void) { int i; for (i = 0; i < 5; i++) break; }"
+        ).function_definition.body.block_item
+        for_stmt = items[1].statement
+        self.assertIsInstance(for_stmt, c99_ast.ForStmt)
+        self.assertEqual(
+            for_stmt.init,
+            c99_ast.InitExp(exp=c99_ast.Assignment(
+                lval=c99_ast.Var(name="i"),
+                rval=c99_ast.Constant(value=0),
+            )),
+        )
+
+    def test_for_loop_empty_header(self):
+        # `for (;;) break;` — all three slots empty; init is InitExp(None).
+        self.assertEqual(
+            self._stmt_of("for (;;) break;"),
+            c99_ast.ForStmt(
+                init=c99_ast.InitExp(exp=None),
+                condition=None,
+                post_clause=None,
+                body=c99_ast.BreakStmt(label=""),
+                label="",
+            ),
+        )
+
+    def test_for_loop_condition_only(self):
+        # `for (; cond;) ...` — only the condition slot is populated.
+        self.assertEqual(
+            self._stmt_of("for (; 1;) break;"),
+            c99_ast.ForStmt(
+                init=c99_ast.InitExp(exp=None),
+                condition=c99_ast.Constant(value=1),
+                post_clause=None,
+                body=c99_ast.BreakStmt(label=""),
+                label="",
+            ),
+        )
+
+    def test_for_loop_post_only(self):
+        # `for (;; post) ...` — only the post-iteration slot is populated.
+        items = parse(
+            "int main(void) { int i; for (;; i++) break; }"
+        ).function_definition.body.block_item
+        for_stmt = items[1].statement
+        self.assertEqual(for_stmt.condition, None)
+        self.assertEqual(
+            for_stmt.post_clause,
+            c99_ast.Postfix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Var(name="i"),
+            ),
+        )
+
+    def test_for_loop_with_compound_body(self):
+        # The body of a for-loop can be a compound statement.
+        stmt = self._stmt_of("for (;;) { break; }")
+        self.assertIsInstance(stmt, c99_ast.ForStmt)
+        self.assertEqual(
+            stmt.body,
+            c99_ast.Compound(block=c99_ast.Block(block_item=[
+                c99_ast.S(statement=c99_ast.BreakStmt(label="")),
+            ])),
+        )
+
+    def test_nested_loops(self):
+        stmt = self._stmt_of("while (1) for (;;) break;")
+        self.assertIsInstance(stmt, c99_ast.WhileStmt)
+        self.assertIsInstance(stmt.body, c99_ast.ForStmt)
+        self.assertEqual(stmt.body.body, c99_ast.BreakStmt(label=""))
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

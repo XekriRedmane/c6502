@@ -215,9 +215,92 @@ class Resolver:
                     label=label,
                     statement=self.resolve_statement(inner, scope),
                 )
+            case c99_ast.BreakStmt(label=label):
+                # Loop labels live in their own namespace and are minted
+                # by the loop_labeling pass — pass through here.
+                return c99_ast.BreakStmt(label=label)
+            case c99_ast.ContinueStmt(label=label):
+                return c99_ast.ContinueStmt(label=label)
+            case c99_ast.WhileStmt(
+                condition=cond, body=body, label=label,
+            ):
+                # `while (cond) body` doesn't introduce its own
+                # variable scope (no place to declare in the header).
+                # If `body` is a Compound, that opens its own scope via
+                # the Compound branch — same story as IfStmt.
+                return c99_ast.WhileStmt(
+                    condition=self.resolve_exp(cond, scope),
+                    body=self.resolve_statement(body, scope),
+                    label=label,
+                )
+            case c99_ast.DoWhileStmt(
+                body=body, condition=cond, label=label,
+            ):
+                return c99_ast.DoWhileStmt(
+                    body=self.resolve_statement(body, scope),
+                    condition=self.resolve_exp(cond, scope),
+                    label=label,
+                )
+            case c99_ast.ForStmt(
+                init=init, condition=cond, post_clause=post,
+                body=body, label=label,
+            ):
+                # C99 §6.8.5.3: the for-header opens its own block-
+                # scope, and the controlling expression, post-iteration
+                # expression, and body all live in that scope. So a
+                # `for (int a = 1; ...; ...) ...` shadows any outer
+                # `a` for the duration of the loop, and the inner `a`
+                # is visible in the condition / post / body.
+                #
+                # Mechanics match Compound: clone the parent scope and
+                # flip all entries to outer-scoped so a header
+                # declaration of an outer name is allowed (legal
+                # shadow), then resolve init/cond/post/body all in
+                # that cloned scope. The body's own scope (if it is a
+                # Compound) opens via the Compound branch.
+                for_scope: _Scope = {
+                    n: (u, False) for n, (u, _) in scope.items()
+                }
+                new_init = self.resolve_for_init(init, for_scope)
+                new_cond = (
+                    self.resolve_exp(cond, for_scope)
+                    if cond is not None else None
+                )
+                new_post = (
+                    self.resolve_exp(post, for_scope)
+                    if post is not None else None
+                )
+                new_body = self.resolve_statement(body, for_scope)
+                return c99_ast.ForStmt(
+                    init=new_init,
+                    condition=new_cond,
+                    post_clause=new_post,
+                    body=new_body,
+                    label=label,
+                )
             case c99_ast.Null():
                 return c99_ast.Null()
         raise TypeError(f"unexpected statement: {stmt!r}")
+
+    def resolve_for_init(
+        self,
+        init: c99_ast.Type_for_init,
+        scope: _Scope,
+    ) -> c99_ast.Type_for_init:
+        # InitDecl runs through the same resolve_declaration as a top-
+        # level declaration so duplicate-decl and shadowing rules apply
+        # uniformly. InitExp is just an optional expression, evaluated
+        # in the for-header scope so any prior outer name is visible.
+        match init:
+            case c99_ast.InitDecl(declaration=decl):
+                return c99_ast.InitDecl(
+                    declaration=self.resolve_declaration(decl, scope),
+                )
+            case c99_ast.InitExp(exp=exp):
+                return c99_ast.InitExp(
+                    exp=self.resolve_exp(exp, scope) if exp is not None else None,
+                )
+        raise TypeError(f"unexpected for_init: {init!r}")
 
     def resolve_exp(
         self, exp: c99_ast.Type_exp, scope: _Scope,

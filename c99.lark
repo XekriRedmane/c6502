@@ -172,6 +172,8 @@ block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
           | declaration  -> decl_item
 declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
+for_init: declaration | exp? SEMICOLON
+
 // `if (exp) statement (else statement)?` — the optional else is the
 // classic dangling-else ambiguity. Lark's LALR(1) backend resolves
 // shift-reduce conflicts in favor of shifting, which binds `else` to
@@ -193,20 +195,27 @@ declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
 // items don't include the labeled_stmt option), so `a ? b : c`
 // continues to parse as a ternary even though `b` is also an
 // IDENTIFIER followed by COLON.
-statement: RETURN exp SEMICOLON                            -> return_stmt
-         | exp SEMICOLON                                   -> expression_stmt
-         | IF LPAREN exp RPAREN statement (ELSE statement)? -> if_stmt
-         | GOTO IDENTIFIER SEMICOLON                       -> goto_stmt
-         | IDENTIFIER COLON statement                      -> labeled_stmt
-         | block                                           -> compound_stmt
-         | SEMICOLON                                       -> null_stmt
+statement: RETURN exp SEMICOLON                                     -> return_stmt
+         | exp SEMICOLON                                            -> expression_stmt
+         | IF LPAREN exp RPAREN statement (ELSE statement)?         -> if_stmt
+         | GOTO IDENTIFIER SEMICOLON                                -> goto_stmt
+         | IDENTIFIER COLON statement                               -> labeled_stmt
+         | block                                                    -> compound_stmt
+         | BREAK SEMICOLON                                          -> break_stmt
+         | CONTINUE SEMICOLON                                       -> continue_stmt
+         | WHILE LPAREN exp RPAREN statement                        -> while_stmt
+         | DO statement WHILE LPAREN exp RPAREN SEMICOLON           -> do_stmt
+         | FOR LPAREN for_init exp? SEMICOLON exp? RPAREN statement -> for_stmt
+         | SEMICOLON                                                -> null_stmt
 
 // Expression precedence (low to high) via the standard precedence-
 // climbing layout: each level recurses left into itself (for left
 // associativity) and right into the next-tighter level. Lark's `?`
 // rule prefix inlines a level when it has a single child, so the
 // AST sees no extra wrapping for "passes through to next level".
+
 ?exp: assignment_exp
+
 // Right-recursive so `=` is right-associative: `a = b = c` parses as
 // `a = (b = c)`. The LHS is `conditional_exp` (one level tighter than
 // assignment, same as C99's §6.5.16 but looser than C99's `unary_exp`),
@@ -215,6 +224,7 @@ statement: RETURN exp SEMICOLON                            -> return_stmt
 // for modifiable lvalues. The compound-assignment alternatives share
 // the `compound_assign` builder, which dispatches on the operator
 // token's type and emits the desugared `lval = lval OP rval`.
+
 ?assignment_exp: conditional_exp ASSIGN assignment_exp         -> assignment
                | conditional_exp PLUS_ASSIGN assignment_exp    -> compound_assign
                | conditional_exp MINUS_ASSIGN assignment_exp   -> compound_assign

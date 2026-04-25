@@ -54,18 +54,20 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_codegen_if_else(self):
         # `if (a) return 1; else return 2;` should produce a BEQ to
-        # an `.if_else_*` local label and a JMP to an `.if_end_*`
-        # local label (leading dot is dasm's local-label marker).
+        # an `.if_else@*` local label and a JMP to an `.if_end@*`
+        # local label (leading dot is dasm's local-label marker; `@`
+        # marks it as translator-minted, never collidable with a
+        # user-written name).
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="int main(void) { int a = 0; "
                   "if (a) return 1; else return 2; }",
         )
         self.assertEqual(rc, 0)
-        self.assertIn("BEQ   .if_else_", out)
-        self.assertIn("JMP   .if_end_", out)
-        self.assertIn(".if_else_", out)
-        self.assertIn(".if_end_", out)
+        self.assertIn("BEQ   .if_else@", out)
+        self.assertIn("JMP   .if_end@", out)
+        self.assertIn(".if_else@", out)
+        self.assertIn(".if_end@", out)
 
     def test_codegen_block_shadowing(self):
         # `int a = 1; { int a = 2; } return a;` — the inner block

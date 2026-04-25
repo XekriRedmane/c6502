@@ -7,9 +7,10 @@ exactly one of:
   --lex      stop after tokenization; one `line:col<tab>kind<tab>value`
              line per token
   --parse    stop after parsing; pretty-print the c99_ast tree
-  --resolve  stop after name resolution (variable resolution then label
-             resolution); pretty-print the rewritten c99_ast (user
-             variables -> `@N.orig`, labels -> `@<funcname>.<orig>`)
+  --resolve  stop after name resolution (variable resolution, label
+             resolution, then loop labeling); pretty-print the
+             rewritten c99_ast (user variables -> `@N.orig`, labels ->
+             `@<funcname>.<orig>`, loops -> `.loop@N`)
   --tac      stop after TAC translation; pretty-print the tac_ast tree
   --codegen  go all the way to 6502 assembly text
 
@@ -35,6 +36,7 @@ from parser import parse
 from preprocessor import preprocess
 from pretty import pretty
 from passes.label_resolution import resolve_program as resolve_labels
+from passes.loop_labeling import label_program as label_loops
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from passes.variable_resolution import resolve_program as resolve_variables
 from c99_to_tac import translate_program as translate_to_tac
@@ -53,16 +55,18 @@ def _run_stage(stage: str, source: str) -> str:
     if stage == "parse":
         return pretty(parse(source)) + "\n"
     if stage == "resolve":
-        return pretty(resolve_labels(resolve_variables(parse(source)))) + "\n"
-    if stage == "tac":
-        return pretty(translate_to_tac(
+        return pretty(label_loops(
             resolve_labels(resolve_variables(parse(source)))
         )) + "\n"
+    if stage == "tac":
+        return pretty(translate_to_tac(label_loops(
+            resolve_labels(resolve_variables(parse(source)))
+        ))) + "\n"
     if stage == "codegen":
         return emit_program(allocate_stack(replace_pseudoregs(
-            translate_to_asm(translate_to_tac(
+            translate_to_asm(translate_to_tac(label_loops(
                 resolve_labels(resolve_variables(parse(source)))
-            ))
+            )))
         )))
     raise AssertionError(f"unknown stage: {stage!r}")
 
@@ -79,7 +83,8 @@ def main(argv: list[str]) -> int:
                         const="parse", help="stop after parsing")
     stages.add_argument("--resolve", dest="stage", action="store_const",
                         const="resolve",
-                        help="stop after variable + label resolution")
+                        help="stop after variable + label resolution + "
+                             "loop labeling")
     stages.add_argument("--tac", dest="stage", action="store_const",
                         const="tac", help="stop after TAC translation")
     stages.add_argument("--codegen", dest="stage", action="store_const",

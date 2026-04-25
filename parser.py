@@ -125,6 +125,66 @@ class _ASTBuilder(Transformer):
     def null_stmt(self, _semi):
         return c99_ast.Null()
 
+    # Loop and jump statements. Loop labels are minted by the
+    # loop_labeling pass that runs after variable_resolution; the
+    # parser leaves them as empty strings.
+    @v_args(inline=True)
+    def break_stmt(self, _break, _semi):
+        return c99_ast.BreakStmt(label="")
+
+    @v_args(inline=True)
+    def continue_stmt(self, _continue, _semi):
+        return c99_ast.ContinueStmt(label="")
+
+    @v_args(inline=True)
+    def while_stmt(self, _while, _lp, cond, _rp, body):
+        return c99_ast.WhileStmt(condition=cond, body=body, label="")
+
+    @v_args(inline=True)
+    def do_stmt(self, _do, body, _while, _lp, cond, _rp, _semi):
+        return c99_ast.DoWhileStmt(body=body, condition=cond, label="")
+
+    # `for_init: declaration | exp? SEMICOLON`. The declaration alternative
+    # already consumes its own SEMICOLON, so a declaration arrives as the
+    # only child. The exp-or-empty alternative carries an explicit
+    # SEMICOLON token: zero or one preceding exp child, then SEMICOLON.
+    def for_init(self, items):
+        if len(items) == 1:
+            child = items[0]
+            if isinstance(child, c99_ast.Declaration):
+                return c99_ast.InitDecl(declaration=child)
+            # Bare SEMICOLON — empty for-init clause.
+            return c99_ast.InitExp(exp=None)
+        # exp + SEMICOLON.
+        return c99_ast.InitExp(exp=items[0])
+
+    # `for (for_init exp? ; exp?) statement` — for_init contributes one
+    # child that already swallowed the first SEMICOLON; the middle SEMI
+    # between the condition and post_clause is in our items list. Each
+    # of condition / post_clause is independently optional, so we scan
+    # for the SEMICOLON to know which side each remaining child is on.
+    def for_stmt(self, items):
+        # items: [FOR, LPAREN, for_init, condition?, SEMICOLON, post_clause?,
+        #         RPAREN, statement]
+        init = items[2]
+        body = items[-1]
+        middle = items[3:-2]
+        semi_idx = next(
+            i for i, c in enumerate(middle)
+            if hasattr(c, "type") and c.type == "SEMICOLON"
+        )
+        condition = middle[0] if semi_idx > 0 else None
+        post_clause = (
+            middle[semi_idx + 1] if semi_idx + 1 < len(middle) else None
+        )
+        return c99_ast.ForStmt(
+            init=init,
+            condition=condition,
+            post_clause=post_clause,
+            body=body,
+            label="",
+        )
+
     # Alternatives of `exp` — each named in c99.lark.
     @v_args(inline=True)
     def constant(self, token):

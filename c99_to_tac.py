@@ -85,6 +85,17 @@ Mapping:
     LessThan / GreaterThan /
     LessOrEqual / GreaterOrEqual
 
+  C99 Conditional(cond, t, f) -> like an if/else that also produces a
+                                 value: evaluate cond, JumpIfFalse to
+                                 cond_else_N, evaluate t and Copy into
+                                 a fresh dst temp, Jump(cond_end_N),
+                                 Label(cond_else_N), evaluate f and
+                                 Copy into the same dst, Label(
+                                 cond_end_N). Returns dst. Labels come
+                                 from the shared label counter
+                                 (`cond_else_N`/`cond_end_N`), so each
+                                 ternary gets globally unique numbers.
+
 Short-circuit lowerings (no corresponding TAC binary op — the control
 flow *is* the semantics):
   C99 Binary(LogicalAnd, L, R):

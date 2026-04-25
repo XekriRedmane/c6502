@@ -131,12 +131,17 @@ that takes an AST and returns an AST (or text, for emit):
    an undeclared name also raises. An `Assignment` additionally
    checks its lval is a `Var` (c6502 doesn't have richer lvalues
    yet) and raises "invalid lvalue" for `1+2=3`, `-a=5`,
-   `(a=b)=c`, etc. Scope is flat per function for now — the same
-   scope dict is reused across every nested `Block`, so when
-   nested-scope semantics land (push on `Block` entry, pop on
-   exit), the routing through `resolve_block` is already in
-   place. Labels and gotos pass through unchanged — they live in
-   a separate namespace and are owned by the next pass.
+   `(a=b)=c`, etc. Scope is per-block: each `Block` owns a map
+   from user name to `(unique_name, inner)` where `inner` is True
+   iff the name was declared in this block. Entering a nested
+   block clones the parent's map with every entry flipped to
+   outer-scoped (`inner=False`), so the inner block sees the
+   outer's variables but only collides on a re-declaration in the
+   *same* block — declaring an outer name in an inner block legally
+   shadows it. Exiting the block discards its map; the parent's is
+   intact (we cloned, not aliased). Labels and gotos pass through
+   unchanged — they live in a separate namespace and are owned by
+   the next pass.
 
 3. **`passes.label_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Validates and rewrites `LabeledStmt` (C99 §6.8.1) and

@@ -115,13 +115,20 @@ one AST and returns another (or text for emit):
    nested `Assignment`) and raises "invalid lvalue" otherwise —
    `1+2=3`, `-a=5`, `(a=b)=c` all fail here. When richer lvalues
    (`*p`, `a[i]`, `s.f`) land, this check widens to an "is-lvalue"
-   predicate. Scope today is flat per function: `resolve_block`
-   reuses the same scope dict across nested blocks, so a hypothetical
-   `{ int a; { int a; } }` would still raise as a duplicate. (When
-   nested-scope semantics land, push a new frame on `Block` entry
-   and pop on exit — the rest of the pass already routes through
-   `resolve_block`.) Labels and gotos pass through unchanged — they
-   live in a separate namespace and are owned by the next pass.
+   predicate. Scope is per-block: each `Block` owns a `dict[str,
+   tuple[str, bool]]` mapping each visible user name to
+   `(unique_name, inner)`, where `inner` is True iff the name was
+   declared in *this* block. Entering a nested block clones the
+   parent's map and flips every entry's `inner` flag to False — so
+   the inner block sees the outer's variables but knows they
+   weren't declared in it. A duplicate-decl error fires only when
+   an already-inner-scoped entry would be overwritten; declaring a
+   name that's currently outer-scoped legally shadows it (overwrite
+   with a fresh unique name flagged as inner). Exiting the inner
+   block discards its dict — Python GC handles this since we cloned
+   the parent's map rather than aliasing it. Labels and gotos pass
+   through unchanged — they live in a separate namespace and are
+   owned by the next pass.
 3. `passes.label_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Validates labeled statements (C99 §6.8.1) and `goto` targets
    (§6.8.6). Two walks per function: (a) collect every `LabeledStmt`,

@@ -52,6 +52,10 @@ Mapping:
   C99 LabeledStmt(label, stmt) -> emit tac Label(label), then lower
                                  the inner statement. Label name is
                                  already unique (see Goto).
+  C99 Compound(block)         -> lower each block item in order;
+                                 no extra TAC structure (TAC is
+                                 flat — block boundaries don't
+                                 survive into the IR).
   C99 Null                    -> emit nothing
   C99 Constant(v)             -> TAC Constant(v)
   C99 Unary(op, inner)        -> emit Unary(op', translate(inner), Var(t))
@@ -278,10 +282,15 @@ class Translator:
                     instrs.append(tac_ast.Label(name=end_label))
                 return
             case c99_ast.Compound(block=block):
-                # `{ ... }` — emit the block's items in sequence,
-                # with no extra TAC structure. The grammar doesn't
-                # yet produce Compound (no compound_stmt rule), so
-                # this branch is forward-compat for when it does.
+                # `{ ... }` — TAC is flat, so a compound statement
+                # is just its block items lowered in order. Scope is
+                # already gone by this point (variable_resolution
+                # rewrote every name to its globally-unique form), so
+                # there's nothing left for `{ ... }` to mean at the
+                # IR level. The grammar doesn't yet have a
+                # `compound_stmt` rule, so this only fires when an
+                # AST is built directly; the lowering is the same
+                # either way.
                 self.translate_block(block, instrs)
                 return
             case c99_ast.Goto(label=label):

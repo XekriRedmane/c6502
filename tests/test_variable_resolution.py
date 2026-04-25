@@ -35,6 +35,12 @@ def _null() -> c99_ast.Type_block_item:
     return c99_ast.S(statement=c99_ast.Null())
 
 
+def _compound(*inner_items) -> c99_ast.Type_block_item:
+    return c99_ast.S(statement=c99_ast.Compound(
+        block=c99_ast.Block(block_item=list(inner_items)),
+    ))
+
+
 class TestMakeUnique(unittest.TestCase):
     def test_format_is_at_counter_dot_original(self):
         r = Resolver()
@@ -468,6 +474,195 @@ class TestStatementPassthrough(unittest.TestCase):
                 _ret(c99_ast.Var(name="@0.a")),
             ),
         )
+
+
+class TestNestedScopes(unittest.TestCase):
+    """Nested-block scope semantics. Each `Compound` opens a new
+    scope: a redeclaration of the same name in the *same* block is
+    an error, but a declaration that shadows an outer block's name
+    is legal — and the inner declaration mints a fresh unique name
+    distinct from the outer one. When the inner block exits, the
+    outer block's binding is intact (the inner scope was a clone,
+    not an alias)."""
+
+    def test_inner_block_can_shadow_outer_name(self):
+        # int a = 1;       // @0.a, inner-scoped to outer block
+        # {
+        #   int a = 2;     // @1.a, inner-scoped to inner block
+        # }
+        # The inner `a` shadows the outer one; both get fresh unique
+        # names. The outer `a` is untouched after the inner block.
+        fn = _function(
+            _decl("a", init=c99_ast.Constant(value=1)),
+            _compound(
+                _decl("a", init=c99_ast.Constant(value=2)),
+            ),
+        )
+        resolved = resolve_function(fn)
+        # Outer decl: @0.a (the outer block's first decl).
+        outer_decl = resolved.body.block_item[0].declaration
+        self.assertEqual(outer_decl.name, "@0.a")
+        # Inner Compound -> Block -> first item -> declaration. The
+        # unique name is fresh (@1.a), distinct from @0.a.
+        inner_block = resolved.body.block_item[1].statement.block
+        inner_decl = inner_block.block_item[0].declaration
+        self.assertEqual(inner_decl.name, "@1.a")
+
+    def test_inner_block_sees_outer_name_when_not_shadowed(self):
+        # int a = 1;
+        # { return a; }    // resolves to outer @0.a
+        fn = _function(
+            _decl("a", init=c99_ast.Constant(value=1)),
+            _compound(
+                _ret(c99_ast.Var(name="a")),
+            ),
+        )
+        resolved = resolve_function(fn)
+        inner_block = resolved.body.block_item[1].statement.block
+        ret_stmt = inner_block.block_item[0].statement
+        self.assertEqual(ret_stmt, c99_ast.Return(
+            exp=c99_ast.Var(name="@0.a"),
+        ))
+
+    def test_inner_decl_self_init_reads_inner_uninitialized_name(self):
+        # int a = 5;
+        # { int a = a; }   // inner `a` rebinds before resolving
+        #                  // its initializer, so the RHS `a` is the
+        #                  // *inner* @1.a (uninitialized — UB in C
+        #                  // but syntactically what `int a = a;`
+        #                  // means; matches the same rule the outer
+        #                  // self-init test exercises).
+        fn = _function(
+            _decl("a", init=c99_ast.Constant(value=5)),
+            _compound(
+                _decl("a", init=c99_ast.Var(name="a")),
+            ),
+        )
+        resolved = resolve_function(fn)
+        inner_block = resolved.body.block_item[1].statement.block
+        inner_decl = inner_block.block_item[0].declaration
+        self.assertEqual(inner_decl, c99_ast.Declaration(
+            name="@1.a", init=c99_ast.Var(name="@1.a"),
+        ))
+
+    def test_outer_name_intact_after_inner_block_exits(self):
+        # int a = 1;
+        # { int a = 2; }   // shadow
+        # return a;        // resolves to outer @0.a, not the inner one
+        fn = _function(
+            _decl("a", init=c99_ast.Constant(value=1)),
+            _compound(
+                _decl("a", init=c99_ast.Constant(value=2)),
+            ),
+            _ret(c99_ast.Var(name="a")),
+        )
+        resolved = resolve_function(fn)
+        ret_stmt = resolved.body.block_item[2].statement
+        self.assertEqual(ret_stmt, c99_ast.Return(
+            exp=c99_ast.Var(name="@0.a"),
+        ))
+
+    def test_redeclaration_in_same_inner_block_raises(self):
+        # { int a; int a; }  — both decls in the SAME inner block,
+        # so the second collides with the first's inner-scoped entry.
+        fn = _function(
+            _compound(
+                _decl("a"),
+                _decl("a"),
+            ),
+        )
+        with self.assertRaises(VariableResolutionError) as ctx:
+            resolve_function(fn)
+        self.assertIn("'a'", str(ctx.exception))
+
+    def test_redeclaration_in_outer_after_inner_decl_still_raises(self):
+        # int a;
+        # { int a; }   // shadow, fine
+        # int a;       // collides with the OUTER `a`, raises
+        fn = _function(
+            _decl("a"),
+            _compound(_decl("a")),
+            _decl("a"),
+        )
+        with self.assertRaises(VariableResolutionError):
+            resolve_function(fn)
+
+    def test_two_inner_blocks_can_each_redeclare(self):
+        # int a;
+        # { int a; }   // ok — fresh inner block
+        # { int a; }   // also ok — separate inner block, separate scope
+        # The two inner `a`s get distinct unique names.
+        fn = _function(
+            _decl("a"),
+            _compound(_decl("a")),
+            _compound(_decl("a")),
+        )
+        resolved = resolve_function(fn)
+        outer = resolved.body.block_item[0].declaration
+        first_inner = (
+            resolved.body.block_item[1].statement.block.block_item[0].declaration
+        )
+        second_inner = (
+            resolved.body.block_item[2].statement.block.block_item[0].declaration
+        )
+        # Three distinct unique names.
+        self.assertEqual(
+            {outer.name, first_inner.name, second_inner.name},
+            {"@0.a", "@1.a", "@2.a"},
+        )
+
+    def test_doubly_nested_blocks_chain_outer_visibility(self):
+        # int a;
+        # { { return a; } }   // resolves to the outermost @0.a
+        fn = _function(
+            _decl("a"),
+            _compound(
+                _compound(
+                    _ret(c99_ast.Var(name="a")),
+                ),
+            ),
+        )
+        resolved = resolve_function(fn)
+        outer_compound = resolved.body.block_item[1].statement
+        inner_compound = outer_compound.block.block_item[0].statement
+        ret_stmt = inner_compound.block.block_item[0].statement
+        self.assertEqual(ret_stmt, c99_ast.Return(
+            exp=c99_ast.Var(name="@0.a"),
+        ))
+
+    def test_doubly_nested_redeclaration_uses_innermost(self):
+        # int a = 1;
+        # {
+        #   int a = 2;         // shadow #1: @1.a
+        #   { return a; }      // resolves to @1.a (innermost visible)
+        # }
+        fn = _function(
+            _decl("a", init=c99_ast.Constant(value=1)),
+            _compound(
+                _decl("a", init=c99_ast.Constant(value=2)),
+                _compound(
+                    _ret(c99_ast.Var(name="a")),
+                ),
+            ),
+        )
+        resolved = resolve_function(fn)
+        middle_compound = resolved.body.block_item[1].statement
+        inner_compound = middle_compound.block.block_item[1].statement
+        ret_stmt = inner_compound.block.block_item[0].statement
+        self.assertEqual(ret_stmt, c99_ast.Return(
+            exp=c99_ast.Var(name="@1.a"),
+        ))
+
+    def test_inner_block_undeclared_var_still_raises(self):
+        # { return b; }   — `b` was never declared anywhere.
+        fn = _function(
+            _compound(
+                _ret(c99_ast.Var(name="b")),
+            ),
+        )
+        with self.assertRaises(VariableResolutionError) as ctx:
+            resolve_function(fn)
+        self.assertIn("'b'", str(ctx.exception))
 
 
 class TestResolveProgram(unittest.TestCase):

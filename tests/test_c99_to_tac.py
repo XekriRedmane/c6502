@@ -609,6 +609,139 @@ class TestTranslateGotoAndLabeled(unittest.TestCase):
         )
 
 
+class TestTranslateCompound(unittest.TestCase):
+    """`Compound(block)` lowers as if its block items were inlined
+    into the surrounding instruction stream — TAC is flat, so block
+    boundaries don't survive into the IR. Variable names arrive
+    pre-resolved (variable_resolution has already given each
+    declaration its globally-unique `@N.orig` form), so there's
+    nothing scope-related left to express."""
+
+    def test_compound_emits_inner_items_in_order(self):
+        # `{ int x = 1; return x; }`:
+        #   Copy(1, @0.x); Ret(@0.x)
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.Compound(block=c99_ast.Block(block_item=[
+                c99_ast.D(declaration=c99_ast.Declaration(
+                    name="@0.x", init=c99_ast.Constant(value=1),
+                )),
+                c99_ast.S(statement=c99_ast.Return(
+                    exp=c99_ast.Var(name="@0.x"),
+                )),
+            ])),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.Copy(
+                src=tac_ast.Constant(value=1),
+                dst=tac_ast.Var(name="@0.x"),
+            ),
+            tac_ast.Ret(val=tac_ast.Var(name="@0.x")),
+        ])
+
+    def test_empty_compound_emits_nothing(self):
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.Compound(block=c99_ast.Block(block_item=[])),
+            instrs,
+        )
+        self.assertEqual(instrs, [])
+
+    def test_nested_compound_flattens(self):
+        # `{ { return 1; } }` — both braces disappear at the IR
+        # level; the inner Return is the only TAC produced.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.Compound(block=c99_ast.Block(block_item=[
+                c99_ast.S(statement=c99_ast.Compound(
+                    block=c99_ast.Block(block_item=[
+                        c99_ast.S(statement=c99_ast.Return(
+                            exp=c99_ast.Constant(value=1),
+                        )),
+                    ]),
+                )),
+            ])),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.Ret(val=tac_ast.Constant(value=1)),
+        ])
+
+    def test_compound_inside_function_body(self):
+        # End-to-end through translate_function: `int main(void) { {
+        # return 7; } }`. The outer block is the function body, the
+        # inner Compound is just a nested block that lowers
+        # transparently.
+        fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
+            c99_ast.S(statement=c99_ast.Compound(
+                block=c99_ast.Block(block_item=[
+                    c99_ast.S(statement=c99_ast.Return(
+                        exp=c99_ast.Constant(value=7),
+                    )),
+                ]),
+            )),
+        ]))
+        self.assertEqual(
+            Translator().translate_function(fn).instructions,
+            [tac_ast.Ret(val=tac_ast.Constant(value=7))],
+        )
+
+    def test_compound_with_distinct_shadowed_decls(self):
+        # The two `x` decls have already been given distinct unique
+        # names by variable_resolution (@0.x outer, @1.x inner), so
+        # the TAC has two separate Copy targets — there's no
+        # collision and no scope concept needed at this stage.
+        # Source equivalent: `int x = 1; { int x = 2; }`.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(c99_ast.Compound(
+            block=c99_ast.Block(block_item=[
+                c99_ast.D(declaration=c99_ast.Declaration(
+                    name="@1.x", init=c99_ast.Constant(value=2),
+                )),
+            ]),
+        ), instrs)
+        # Just the inner Compound's effect.
+        self.assertEqual(instrs, [
+            tac_ast.Copy(
+                src=tac_ast.Constant(value=2),
+                dst=tac_ast.Var(name="@1.x"),
+            ),
+        ])
+
+    def test_compound_in_if_branch(self):
+        # `if (1) { return 2; }` — the then-clause is a Compound. The
+        # if-stmt mints its own labels around the Compound's body.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Compound(
+                    block=c99_ast.Block(block_item=[
+                        c99_ast.S(statement=c99_ast.Return(
+                            exp=c99_ast.Constant(value=2),
+                        )),
+                    ]),
+                ),
+                else_clause=None,
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=1),
+                target=".if_end_0",
+            ),
+            tac_ast.Ret(val=tac_ast.Constant(value=2)),
+            tac_ast.Label(name=".if_end_0"),
+        ])
+
+
 class TestTranslateConditional(unittest.TestCase):
     """Ternary `cond ? t : f` lowers to an if/else-shaped sequence
     that also produces a value: both arms Copy into a shared dst

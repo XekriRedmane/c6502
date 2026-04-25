@@ -421,6 +421,118 @@ class TestTranslateBlockItems(unittest.TestCase):
         )
 
 
+class TestTranslateIfStatement(unittest.TestCase):
+    """`if` lowers to JumpIfFalse + Label (no else) or JumpIfFalse +
+    Jump + two Labels (with else). The labels share the Translator's
+    label counter with the short-circuit and inline-comparison
+    lowerings."""
+
+    def test_if_without_else_emits_jump_around_then(self):
+        # `if (1) return 2;` -> JumpIfFalse(1, end); Ret(2); Label(end)
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
+                else_clause=None,
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=1),
+                target="if_end_0",
+            ),
+            tac_ast.Ret(val=tac_ast.Constant(value=2)),
+            tac_ast.Label(name="if_end_0"),
+        ])
+
+    def test_if_with_else_emits_split_branches(self):
+        # `if (1) return 2; else return 3;`:
+        #   JumpIfFalse(1, else_label); Ret(2); Jump(end_label);
+        #   Label(else_label); Ret(3); Label(end_label)
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
+                else_clause=c99_ast.Return(exp=c99_ast.Constant(value=3)),
+            ),
+            instrs,
+        )
+        # end_label is minted before else_label (translate_exp doesn't
+        # mint labels for a Constant, so the first make_label call is
+        # for if_end -> if_end_0, then if_else -> if_else_1).
+        self.assertEqual(instrs, [
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=1),
+                target="if_else_1",
+            ),
+            tac_ast.Ret(val=tac_ast.Constant(value=2)),
+            tac_ast.Jump(target="if_end_0"),
+            tac_ast.Label(name="if_else_1"),
+            tac_ast.Ret(val=tac_ast.Constant(value=3)),
+            tac_ast.Label(name="if_end_0"),
+        ])
+
+    def test_nested_if_each_gets_unique_labels(self):
+        # `if (1) if (2) return 3;` — outer mints if_end_0, inner mints
+        # if_end_1.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.IfStmt(
+                    condition=c99_ast.Constant(value=2),
+                    then_clause=c99_ast.Return(
+                        exp=c99_ast.Constant(value=3),
+                    ),
+                    else_clause=None,
+                ),
+                else_clause=None,
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=1),
+                target="if_end_0",
+            ),
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Constant(value=2),
+                target="if_end_1",
+            ),
+            tac_ast.Ret(val=tac_ast.Constant(value=3)),
+            tac_ast.Label(name="if_end_1"),
+            tac_ast.Label(name="if_end_0"),
+        ])
+
+    def test_if_with_var_condition_evaluates_first(self):
+        # The condition is evaluated for its result before the
+        # JumpIfFalse fires. With a Var, no extra instructions — the
+        # JumpIfFalse takes the Var directly.
+        t = Translator()
+        instrs: list = []
+        t.translate_statement(
+            c99_ast.IfStmt(
+                condition=c99_ast.Var(name="a"),
+                then_clause=c99_ast.Null(),
+                else_clause=None,
+            ),
+            instrs,
+        )
+        self.assertEqual(instrs, [
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Var(name="a"),
+                target="if_end_0",
+            ),
+            tac_ast.Label(name="if_end_0"),
+        ])
+
+
 class TestTranslateFunctionFallThrough(unittest.TestCase):
     """translate_function appends an implicit `Ret(Constant(0))` if
     the body doesn't already end in a Ret. C99 §5.1.2.2.3 specifies

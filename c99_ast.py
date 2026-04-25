@@ -56,6 +56,13 @@ class Expression(Type_statement):
 
 
 @dataclass
+class IfStmt(Type_statement):
+    condition: Type_exp
+    then_clause: Type_statement
+    else_clause: Type_statement | None = None
+
+
+@dataclass
 class Null(Type_statement):
     pass
 

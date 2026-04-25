@@ -54,7 +54,10 @@ one AST and returns another (or text for emit):
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar lives
    in `c99.lark`. The grammar accepts `int main(void) { <block_item>* }`; a
    block item is a declaration (`int x;` / `int x = exp;`) or a statement
-   (`return exp;`, `exp;`, or a null `;`). `<exp>` covers integer constants,
+   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`, or a null `;`).
+   The dangling-else ambiguity is resolved by Lark's LALR(1) backend
+   preferring shift, which binds `else` to the nearest preceding
+   unmatched `if` (the C99 §6.8.4.1 rule). `<exp>` covers integer constants,
    identifiers, unary `-`/`~`/`!`, binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/
    comparison/`&&`/`||`, parentheses, and right-associative `=` (the LHS is
    loosened from C99's `unary-expression` to `logical_or_exp`, so e.g.
@@ -276,12 +279,20 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   `c99_to_tac` lowers it to `Copy(a, %old); Binary(Add/Sub, a, 1, %new);
   Copy(%new, a)` and returns `%old` so the result is the operand's
   value *before* the mutation)
+- `if (cond) stmt` and `if (cond) stmt else stmt` — `c99_to_tac`
+  lowers to `JumpIfFalse(cond, end_N)` + body + `Label(end_N)` (no
+  else); with else, `JumpIfFalse(cond, else_N)` + then-body +
+  `Jump(end_N)` + `Label(else_N)` + else-body + `Label(end_N)`. Labels
+  share the Translator's label counter (`if_end_N`/`if_else_N`) with
+  the short-circuit and inline-comparison lowerings, so each `if` gets
+  globally unique numbers
 - arbitrary parenthesisation
 
 Not yet in the pipeline at all: function arguments (IR threads `arg_bytes`
 everywhere but parser only accepts `(void)` and translator hardcodes 0),
-multiple functions, user-defined calls, control flow statements,
-variable declarations, types other than `int` (so unsigned right shift
-and unsigned ordering aren't distinguishable yet), and the runtime header
-that defines `SSP`/`FP`, initializes `SSP`, sets the reset vector, and
-provides `mul8`/`divmod8`/`shl8`/`asr8`.
+multiple functions, user-defined calls, loop / switch / goto / labeled
+statements, compound statements (no nested blocks — variable resolution
+treats each function body as a single flat scope), types other than `int`
+(so unsigned right shift and unsigned ordering aren't distinguishable
+yet), and the runtime header that defines `SSP`/`FP`, initializes `SSP`,
+sets the reset vector, and provides `mul8`/`divmod8`/`shl8`/`asr8`.

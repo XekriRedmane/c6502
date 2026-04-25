@@ -5,6 +5,7 @@ module C99 {
     statement =
         Return(exp)
         | Expression(exp)
+        | IfStmt(exp condition, statement then_clause, statement? else_clause)
         | Null
     declaration = Declaration(identifier name, exp? init)
     exp =

@@ -171,9 +171,16 @@ function: INT IDENTIFIER LPAREN VOID RPAREN LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
           | declaration  -> decl_item
 declaration: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
-statement: RETURN exp SEMICOLON  -> return_stmt
-         | exp SEMICOLON         -> expression_stmt
-         | SEMICOLON             -> null_stmt
+// `if (exp) statement (else statement)?` — the optional else is the
+// classic dangling-else ambiguity. Lark's LALR(1) backend resolves
+// shift-reduce conflicts in favor of shifting, which binds `else` to
+// the nearest preceding unmatched `if` (the C99-correct rule). Lark
+// emits a warning for the conflict; the warning is the expected
+// behavior, not a bug.
+statement: RETURN exp SEMICOLON                            -> return_stmt
+         | exp SEMICOLON                                   -> expression_stmt
+         | IF LPAREN exp RPAREN statement (ELSE statement)? -> if_stmt
+         | SEMICOLON                                       -> null_stmt
 
 // Expression precedence (low to high) via the standard precedence-
 // climbing layout: each level recurses left into itself (for left

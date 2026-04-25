@@ -89,7 +89,11 @@ that takes an AST and returns an AST (or text, for emit):
    Lark/LALR parser using the grammar in `c99.lark`. Accepts
    `int main(void) { <block_item>* }`, where a block item is a
    declaration (`int x;` or `int x = exp;`) or a statement
-   (`return exp;`, `exp;`, or a null `;`). `<exp>` is built from
+   (`return exp;`, `exp;`, `if (exp) stmt (else stmt)?`, or a
+   null `;`). The dangling-else ambiguity is resolved by Lark's
+   LALR(1) backend preferring shift over reduce on `else`, which
+   binds the `else` to the nearest preceding unmatched `if` —
+   the C99 §6.8.4.1 rule. `<exp>` is built from
    integer constants, identifiers, the unary ops (`-`/`~`/`!`),
    binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
    parentheses, right-associative `=` plus the ten compound
@@ -638,6 +642,16 @@ runnable-shape 6502 assembly):
   pre-mutation value. Postfix is one precedence level tighter than
   unary, so `-a++` parses as `-(a++)` and `a+++b` lexes via max-munch
   as `a++ + b`)
+- `if (cond) stmt` and `if (cond) stmt else stmt`. `c99_to_tac` lowers
+  to `JumpIfFalse(cond, end_N)` + body + `Label(end_N)` for the
+  no-else form, or `JumpIfFalse(cond, else_N)` + then-body +
+  `Jump(end_N)` + `Label(else_N)` + else-body + `Label(end_N)` with
+  an else. The labels (`if_end_N` / `if_else_N`) come from the same
+  Translator label counter as the short-circuit and inline-comparison
+  lowerings, so they're globally unique. Dangling-else binds to the
+  nearest `if` per C99 §6.8.4.1 — Lark's LALR(1) backend resolves the
+  shift-reduce conflict in favor of shifting, which gives that binding
+  for free
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:

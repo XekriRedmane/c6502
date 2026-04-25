@@ -296,6 +296,66 @@ class TestExpressionResolution(unittest.TestCase):
         resolve_function(fn)
 
 
+class TestIfStatementResolution(unittest.TestCase):
+    """If-statements don't open a new scope today (there are no
+    nested blocks yet), so the same flat per-function scope is shared
+    between the condition, the then-branch, and the optional else-
+    branch."""
+
+    def test_if_resolves_condition_and_then(self):
+        fn = _function(
+            _decl("a"),
+            c99_ast.S(statement=c99_ast.IfStmt(
+                condition=c99_ast.Var(name="a"),
+                then_clause=c99_ast.Return(exp=c99_ast.Var(name="a")),
+                else_clause=None,
+            )),
+        )
+        self.assertEqual(
+            resolve_function(fn),
+            _function(
+                _decl("@0.a"),
+                c99_ast.S(statement=c99_ast.IfStmt(
+                    condition=c99_ast.Var(name="@0.a"),
+                    then_clause=c99_ast.Return(
+                        exp=c99_ast.Var(name="@0.a"),
+                    ),
+                    else_clause=None,
+                )),
+            ),
+        )
+
+    def test_if_resolves_else_branch(self):
+        fn = _function(
+            _decl("a"),
+            _decl("b"),
+            c99_ast.S(statement=c99_ast.IfStmt(
+                condition=c99_ast.Var(name="a"),
+                then_clause=c99_ast.Return(exp=c99_ast.Var(name="a")),
+                else_clause=c99_ast.Return(exp=c99_ast.Var(name="b")),
+            )),
+        )
+        resolved = resolve_function(fn)
+        if_stmt = resolved.body[2].statement
+        self.assertEqual(if_stmt.else_clause,
+                         c99_ast.Return(exp=c99_ast.Var(name="@1.b")))
+
+    def test_if_undeclared_in_condition_raises(self):
+        prog = parse("int main(void) { if (a) return 0; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_if_undeclared_in_then_branch_raises(self):
+        prog = parse("int main(void) { if (1) return a; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+    def test_if_undeclared_in_else_branch_raises(self):
+        prog = parse("int main(void) { if (1) return 0; else return a; }")
+        with self.assertRaises(VariableResolutionError):
+            resolve_program(prog)
+
+
 class TestStatementPassthrough(unittest.TestCase):
     def test_null_statement_is_preserved(self):
         fn = _function(_null())

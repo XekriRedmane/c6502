@@ -782,6 +782,88 @@ class TestIncrementDecrement(unittest.TestCase):
         )
 
 
+class TestIfStatement(unittest.TestCase):
+    """`if (exp) stmt` with an optional `else stmt`. Dangling else
+    binds to the nearest preceding unmatched `if` (C99 §6.8.4.1) —
+    Lark's LALR(1) backend resolves the shift-reduce conflict in
+    favor of shifting, which gives that binding for free."""
+
+    def _stmt_of(self, src):
+        body = parse(f"int main(void) {{ {src} }}").function_definition.body
+        assert len(body) == 1, body
+        item = body[0]
+        assert isinstance(item, c99_ast.S), item
+        return item.statement
+
+    def test_if_without_else(self):
+        self.assertEqual(
+            self._stmt_of("if (1) return 2;"),
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
+                else_clause=None,
+            ),
+        )
+
+    def test_if_with_else(self):
+        self.assertEqual(
+            self._stmt_of("if (1) return 2; else return 3;"),
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
+                else_clause=c99_ast.Return(exp=c99_ast.Constant(value=3)),
+            ),
+        )
+
+    def test_dangling_else_binds_to_inner_if(self):
+        # `if (a) if (b) X; else Y;` — the `else Y` belongs to the
+        # inner `if (b)`, not the outer `if (a)`. So the outer's
+        # else_clause is None, and the inner has both branches.
+        stmt = self._stmt_of(
+            "if (1) if (2) return 3; else return 4;"
+        )
+        self.assertEqual(
+            stmt,
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.IfStmt(
+                    condition=c99_ast.Constant(value=2),
+                    then_clause=c99_ast.Return(
+                        exp=c99_ast.Constant(value=3),
+                    ),
+                    else_clause=c99_ast.Return(
+                        exp=c99_ast.Constant(value=4),
+                    ),
+                ),
+                else_clause=None,
+            ),
+        )
+
+    def test_if_with_compound_condition(self):
+        # `if (a == 1)` exercises the condition slot accepting any
+        # expression — here a Binary.
+        stmt = self._stmt_of("if (1 == 2) return 3;")
+        self.assertEqual(
+            stmt.condition,
+            c99_ast.Binary(
+                op=c99_ast.Equal(),
+                left=c99_ast.Constant(value=1),
+                right=c99_ast.Constant(value=2),
+            ),
+        )
+
+    def test_if_with_null_then_branch(self):
+        # `if (1) ;` — the then-branch is a Null statement.
+        self.assertEqual(
+            self._stmt_of("if (1) ;"),
+            c99_ast.IfStmt(
+                condition=c99_ast.Constant(value=1),
+                then_clause=c99_ast.Null(),
+                else_clause=None,
+            ),
+        )
+
+
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestValidFiles(unittest.TestCase):
     """Each file in tests/valid/ must parse into an AST for `int main(void)`

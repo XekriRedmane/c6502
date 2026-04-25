@@ -52,6 +52,20 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("LDA   #$2A", out)
         self.assertIn("RTS", out)
 
+    def test_codegen_if_else(self):
+        # `if (a) return 1; else return 2;` should produce a BEQ to
+        # an `if_else_*` label and a JMP to an `if_end_*` label.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { int a = 0; "
+                  "if (a) return 1; else return 2; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("BEQ   if_else_", out)
+        self.assertIn("JMP   if_end_", out)
+        self.assertIn("if_else_", out)
+        self.assertIn("if_end_", out)
+
     def test_codegen_postfix_increment(self):
         # `a++` generates: load a into A, store into the saved-old
         # frame slot, then ADC #$01 against a, store back. We just

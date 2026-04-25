@@ -91,6 +91,18 @@ class _ASTBuilder(Transformer):
     def expression_stmt(self, exp, _semi):
         return c99_ast.Expression(exp=exp)
 
+    # `if (exp) stmt` (4 children) or `if (exp) stmt else stmt` (6
+    # children). The else-branch is variable, so non-inline.
+    def if_stmt(self, items):
+        condition = items[2]
+        then_clause = items[4]
+        else_clause = items[6] if len(items) == 7 else None
+        return c99_ast.IfStmt(
+            condition=condition,
+            then_clause=then_clause,
+            else_clause=else_clause,
+        )
+
     @v_args(inline=True)
     def null_stmt(self, _semi):
         return c99_ast.Null()

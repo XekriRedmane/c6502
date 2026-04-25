@@ -132,6 +132,20 @@ class Resolver:
                 return c99_ast.Return(exp=self.resolve_exp(exp, scope))
             case c99_ast.Expression(exp=exp):
                 return c99_ast.Expression(exp=self.resolve_exp(exp, scope))
+            case c99_ast.IfStmt(
+                condition=cond, then_clause=then_stmt, else_clause=else_stmt,
+            ):
+                # If-statements don't introduce a new scope today (no
+                # nested blocks yet), so the same flat scope is passed
+                # to the condition and to both branches.
+                return c99_ast.IfStmt(
+                    condition=self.resolve_exp(cond, scope),
+                    then_clause=self.resolve_statement(then_stmt, scope),
+                    else_clause=(
+                        self.resolve_statement(else_stmt, scope)
+                        if else_stmt is not None else None
+                    ),
+                )
             case c99_ast.Null():
                 return c99_ast.Null()
         raise TypeError(f"unexpected statement: {stmt!r}")

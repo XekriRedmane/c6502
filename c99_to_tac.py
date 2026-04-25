@@ -33,6 +33,13 @@ Mapping:
   C99 Return(exp)             -> emit Ret(translate_exp(exp))
   C99 Expression(exp)         -> translate_exp(exp) for side effects;
                                  the returned val is discarded.
+  C99 IfStmt(cond, then,      -> evaluate cond, JumpIfFalse around
+        else_clause)             the then-branch (skip directly to
+                                 if_end_N when there's no else;
+                                 jump-around an else-branch with a
+                                 Jump+Label pair when there is). All
+                                 labels come from the shared label
+                                 counter (`if_end_N`, `if_else_N`).
   C99 Null                    -> emit nothing
   C99 Constant(v)             -> TAC Constant(v)
   C99 Unary(op, inner)        -> emit Unary(op', translate(inner), Var(t))
@@ -190,6 +197,45 @@ class Translator:
                 # later). Whatever val the expression returns goes
                 # unused — the result-temp it points at is just dead.
                 self.translate_exp(exp, instrs)
+                return
+            case c99_ast.IfStmt(
+                condition=cond, then_clause=then_stmt, else_clause=else_stmt,
+            ):
+                # `if (cond) then` lowers to:
+                #   <eval cond -> cond_val>
+                #   JumpIfFalse(cond_val, end_N)
+                #   <lower then>
+                #   Label(end_N)
+                # With an else-branch, an extra Jump and Label split
+                # the two arms:
+                #   <eval cond -> cond_val>
+                #   JumpIfFalse(cond_val, else_N)
+                #   <lower then>
+                #   Jump(end_N)
+                #   Label(else_N)
+                #   <lower else>
+                #   Label(end_N)
+                # Labels share the same counter the short-circuit
+                # lowerings use, so each `if` gets globally unique
+                # `if_else_N`/`if_end_N` numbers.
+                cond_val = self.translate_exp(cond, instrs)
+                end_label = self.make_label("if_end")
+                if else_stmt is None:
+                    instrs.append(tac_ast.JumpIfFalse(
+                        condition=cond_val, target=end_label,
+                    ))
+                    self.translate_statement(then_stmt, instrs)
+                    instrs.append(tac_ast.Label(name=end_label))
+                else:
+                    else_label = self.make_label("if_else")
+                    instrs.append(tac_ast.JumpIfFalse(
+                        condition=cond_val, target=else_label,
+                    ))
+                    self.translate_statement(then_stmt, instrs)
+                    instrs.append(tac_ast.Jump(target=end_label))
+                    instrs.append(tac_ast.Label(name=else_label))
+                    self.translate_statement(else_stmt, instrs)
+                    instrs.append(tac_ast.Label(name=end_label))
                 return
             case c99_ast.Null():
                 # No-op statement. Nothing to emit.

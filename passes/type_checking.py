@@ -9,118 +9,97 @@ each identifier's resolved name.
 
 The SymbolTable is the canonical "what does this name mean?" source for
 every later pass:
-  * `c99_to_tac` consumes it twice — once to set `is_global` on each
-    TAC `Function`, and once at the end to enumerate every
-    static-storage-duration object and emit a TAC `StaticVariable`
-    for each one with a definition.
+  * `c99_to_tac` consumes it to set `is_global` on each TAC `Function`,
+    and to enumerate every static-storage-duration object at the end
+    of program translation.
   * later codegen passes will use it to distinguish module-local
     NONE-linkage statics from translation-unit-global EXTERNAL
-    symbols when laying out asm sections / picking label conventions.
+    symbols, and (eventually) to size each operand for 16-bit `long`.
 
 Type vocabulary
 ---------------
-- `Int()`: the only object type today.
-- `FunType(params=tuple[Type, ...], ret=Type)`: function types,
-  always `Int -> ... -> Int` for now.
+The data-type hierarchy now lives on the c99 AST (`c99_ast.Int`,
+`c99_ast.Long`, `c99_ast.FunType`) — every var_decl / function_decl
+already carries its declared type, and the parser puts those nodes
+straight into the AST. This module imports them directly and re-
+exports the names so existing callers (and unit tests) can keep
+writing `from passes.type_checking import Int, FunType`. Equality is
+structural via `@dataclass` defaults, which is what we need for
+type comparisons.
 
-Both `Type` subclasses are frozen dataclasses, so equality is
-structural and arity differences distinguish function types.
+`Int()` is 1-byte signed (-128..127) and `Long()` is 2-byte signed
+(-32768..32767), per the parser's `_make_const` invariant.
+`FunType(params, ret)` describes a function's signature. `Type` is
+the marker base — the `c99_ast.Type_data_type` it aliases is what
+identifier_resolution leaves on every var_decl / function_decl AST
+node.
+
+No implicit conversions
+-----------------------
+Per the current dialect's rule, this pass rejects any operation that
+mixes Int and Long without an explicit `Cast`. A user can always
+write `(long)x + y` (where y is Long) to convert, but `x + y` with
+an Int x and a Long y is a type error. This is stricter than C99's
+"usual arithmetic conversions" (§6.3.1.8) — those are deferred until
+codegen learns 16-bit operations.
+
+Cast expressions are accepted in any direction (Int→Long, Long→Int,
+Int→Int, Long→Long); the conversion itself is the codegen's
+problem. The cast's target type is what the type checker reports
+for the surrounding expression.
 
 Symbol attributes
 -----------------
 A `Symbol` carries a `type` plus an `IdAttr` describing how the
-symbol exists at runtime. The three `IdAttr` subclasses encode the
-three runtime categories C99 distinguishes:
+symbol exists at runtime:
 
-- `LocalAttr`: an automatic-storage object — block-scope `int x;`,
-  function parameter. Lives on the soft stack with a fresh slot per
-  function activation. No `is_global`, no initial value tracked
-  (the initializer is lowered as a TAC `Copy` at the declaration
-  site, same as before).
+- `LocalAttr`: an automatic-storage object — block-scope `int x;` or
+  `long x;`, function parameter. Lives on the soft stack with a
+  fresh slot per function activation.
 - `StaticAttr(initial_value, is_global)`: an object with static
   storage duration. Covers every file-scope object plus block-scope
-  `static int x;`. The `initial_value` is one of `Initial(c)`,
-  `Tentative`, or `NoInitializer`; `is_global` is True iff the
-  symbol has external linkage. `c99_to_tac` emits a TAC
-  `StaticVariable` for each StaticAttr whose `initial_value` is
-  `Initial(c)` (use `c`) or `Tentative` (use `0`); `NoInitializer`
-  entries describe a reference to a symbol defined in some other
-  declaration / TU and emit nothing.
+  `static`. `initial_value` is one of `Initial(c)`, `Tentative`, or
+  `NoInitializer`; `is_global` is True iff the symbol has external
+  linkage.
 - `FunAttr(defined, is_global)`: a function name. `defined` flips
-  to True the first time we see a definition (a `FunctionDecl` whose
-  `function_decl.body` is non-None); subsequent definitions raise.
-  `is_global` is True iff the function has external linkage.
-
-`is_global` is the bool that asm output ultimately cares about
-(visible-outside-the-TU vs. not), so we materialize it here once
-rather than threading the three-way `Linkage` enum through every
-later pass.
+  to True the first time we see a definition; subsequent definitions
+  raise.
 
 Initial-value rules (C99 §6.7.8 / §6.9.2)
 -----------------------------------------
-- Block-scope `static int x;` (no initializer) → `Initial(0)` —
-  C99 §6.7.8.10: "If an object that has static storage duration is
-  not initialized explicitly, ... if it has arithmetic type, it is
-  initialized to (positive or unsigned) zero."
-- Block-scope `static int x = e;` → `Initial(c)` where `c` is the
-  constant value of `e`. Initializers for static-storage objects
-  must be constant expressions; we accept only integer literals
-  today and reject anything else as a `TypeCheckError`.
-- Block-scope `extern int x;` → `NoInitializer`; the declaration is
-  a reference, not a definition. Resolver guarantees the linkage is
-  EXTERNAL or INTERNAL (matching the prior visible decl).
-- File-scope `int x;` (no initializer) → `Tentative`. C99 §6.9.2.2
-  defers tentative definitions to the end of the TU and resolves
-  any unresolved tentative to an `Initial(0)` definition.
-- File-scope `int x = e;` → `Initial(c)`. Same constant-expression
-  restriction as block-scope `static`.
-- File-scope `extern int x;` (no initializer) → `NoInitializer`.
-- File-scope `extern int x = e;` → `Initial(c)` (the initializer
-  promotes the declaration to a definition; this is unusual but
-  legal).
+Same shape as before, but the expected initializer type now comes
+from the var_decl's declared `data_type`:
+- File-scope `T x;` (no init, no extern) → `Tentative`.
+- File-scope `T x = c;` → `Initial(c)`. Constant-expression check.
+- File-scope `extern T x;` → `NoInitializer`.
+- File-scope `extern T x = c;` → `Initial(c)`.
+- Block-scope `static T x;` (no init) → `Initial(0)` per §6.7.8.10.
+- Block-scope `static T x = c;` → `Initial(c)`.
+- Block-scope `extern T x;` → `NoInitializer`.
+- Block-scope `T x [= e];` → `LocalAttr` (no init tracked here; the
+  TAC pass lowers it as a runtime `Copy`).
 
-Merging on redeclaration
-------------------------
-Multiple declarations of the same identifier at file scope are
-common (`int foo(void); int foo(void) { ... }`, `int x; int x = 5;`,
-`extern int x; static int x = 5;` — the last one is UB but
-identifier_resolution already rejects linkage changes). The merge
-rules:
-- Function: signatures must be equal; `defined` becomes True if either
-  side is True; raise on True+True.
-- Object: `is_global` must be equal (resolver enforces this); the
-  initial-value lattice merges as
-    Initial(a) ∨ Initial(b)         → error if a != b (multiple
-                                       definitions of the same object)
-    Initial(a) ∨ (Tentative or
-                  NoInitializer)    → Initial(a)
-    Tentative ∨ Tentative           → Tentative
-    Tentative ∨ NoInitializer       → Tentative
-    NoInitializer ∨ NoInitializer   → NoInitializer
+Static-storage initializers must be constant expressions of a type
+compatible with the variable's declared type. Today the parser only
+produces ConstInt/ConstLong for integer literals; a Long-typed
+static initialized with a ConstInt (or vice versa) is rejected here
+unless the user wraps it in an explicit cast.
 
 Errors raised (`TypeCheckError`)
 --------------------------------
-Carried over from before:
-- Function used as a variable (`Var(name)` where `name` resolves to
-  a function symbol).
+- Function used as a variable (`Var(name)` resolving to a `FunType`).
 - Variable called as a function.
-- Wrong arity at a call site.
-- Argument or return-type mismatch (degenerate today since every
-  type is `Int`).
-- Incompatible function redeclaration (signature differs).
-- Function redefinition (two definitions of the same name).
-
-New for this pass:
-- Initializer for a static-storage object isn't a compile-time
-  constant.
-- Multiple definitions of an object (`int x = 1; int x = 2;`).
-- Initializer with `extern` at *block* scope (C99 §6.7.8 forbids
-  it: "If the declaration of an identifier has block scope, and
-  the identifier has external or internal linkage, the declaration
-  shall have no initializer for the identifier.").
-
-The pass does **not** modify the AST. Its return contract is the
-input program (returned as-is) plus the populated SymbolTable.
+- Wrong call arity, or argument type mismatch (now meaningful with
+  Int / Long).
+- Mismatched binary-operator operand types.
+- Mismatched assignment / conditional-branch types.
+- Initializer type doesn't match the variable's declared type.
+- Return value's type doesn't match the enclosing function's return
+  type.
+- Static-storage initializer isn't a constant expression.
+- Cast target type isn't `Int` or `Long` (no `FunType` casts).
+- Multiple definitions of the same object / function.
+- Incompatible redeclaration of a function (signature differs).
 """
 
 from __future__ import annotations
@@ -138,26 +117,19 @@ class TypeCheckError(Exception):
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
+#
+# We re-export the c99_ast data-type classes as `Type` / `Int` /
+# `Long` / `FunType` so every consumer (this pass, c99_to_tac, the
+# codegen passes, the unit tests) can refer to them under stable
+# `passes.type_checking.<Name>` names. The aliases are pure re-exports:
+# constructing `Int()` from either module returns an instance of the
+# same underlying dataclass, so `is`-checks and `==` comparisons
+# behave identically across imports.
 
-
-@dataclass(frozen=True)
-class Type:
-    """Marker base class for the type AST. Frozen + dataclass so
-    subclasses get value equality and hashability for free."""
-
-
-@dataclass(frozen=True)
-class Int(Type):
-    """The only object type today."""
-
-
-@dataclass(frozen=True)
-class FunType(Type):
-    """A C function type: an ordered tuple of parameter types and a
-    return type. Stored as a tuple (not list) so the dataclass is
-    hashable and value-comparable."""
-    params: tuple[Type, ...]
-    ret: Type
+Type = c99_ast.Type_data_type
+Int = c99_ast.Int
+Long = c99_ast.Long
+FunType = c99_ast.FunType
 
 
 # ---------------------------------------------------------------------------
@@ -181,15 +153,18 @@ class Tentative(InitialValue):
 
 @dataclass(frozen=True)
 class Initial(InitialValue):
-    """Object declared with an initializer. Today the only legal
-    initializer for a static-storage object is an integer
-    constant; `value` carries that integer."""
+    """Object declared with an initializer. The integer carries the
+    constant value of the initializer expression. The `Type` is the
+    initializer's static type (`Int` or `Long`) — needed because the
+    same byte values can mean different things in 1-byte vs. 2-byte
+    representations and because c99_to_tac will eventually need to
+    pick the right `StaticVariable` width."""
     value: int
 
 
 @dataclass(frozen=True)
 class NoInitializer(InitialValue):
-    """`extern int x;` — the declaration is a reference to a symbol
+    """`extern T x;` — the declaration is a reference to a symbol
     whose definition lives elsewhere. Emits nothing during
     `c99_to_tac`'s static-variable enumeration."""
 
@@ -208,18 +183,19 @@ class IdAttr:
 
 @dataclass(frozen=True)
 class LocalAttr(IdAttr):
-    """Automatic-storage object — block-scope `int x;` or function
-    parameter. No `is_global` (it isn't visible across TUs / can't
-    be), no `initial_value` (the initializer, if any, is lowered as
-    a regular TAC `Copy` at the declaration's source position)."""
+    """Automatic-storage object — block-scope `int x;` / `long x;`
+    or function parameter. No `is_global` (it isn't visible across
+    TUs / can't be), no `initial_value` (the initializer, if any, is
+    lowered as a regular TAC `Copy` at the declaration's source
+    position)."""
 
 
 @dataclass(frozen=True)
 class StaticAttr(IdAttr):
     """An object with static storage duration. Covers every file-
-    scope object and every block-scope `static int x;`. `is_global`
-    is True iff the symbol has external linkage; the codegen will
-    use it to decide between a TU-local label and a global symbol.
+    scope object and every block-scope `static`. `is_global` is True
+    iff the symbol has external linkage; the codegen will use it to
+    decide between a TU-local label and a global symbol.
     `initial_value` carries the resolved init expression if known,
     or one of the deferred markers (Tentative, NoInitializer)."""
     initial_value: InitialValue
@@ -251,15 +227,7 @@ class Symbol:
 
 
 class SymbolTable:
-    """Flat dict[str, Symbol] keyed by resolved identifier name.
-
-    identifier_resolution gives every NONE-linkage name a unique
-    `@<N>.<orig>` and every INTERNAL/EXTERNAL name its source
-    spelling, so a single dict is enough — no nested scopes. The
-    table is built up in source-program order by a single
-    `TypeChecker` walk and then exposed to later passes (mainly
-    `c99_to_tac`).
-    """
+    """Flat dict[str, Symbol] keyed by resolved identifier name."""
 
     def __init__(self) -> None:
         self._table: dict[str, Symbol] = {}
@@ -299,19 +267,60 @@ def _linkage_to_is_global(linkage: Linkage) -> bool:
     return linkage is Linkage.EXTERNAL
 
 
-def _const_init_value(exp: c99_ast.Type_exp, name: str) -> int:
+def _const_init_value(
+    exp: c99_ast.Type_exp, name: str, declared_type: Type,
+) -> int:
     """Static-storage initializers must be compile-time constant
-    expressions (C99 §6.7.8.4). Today we accept only integer
-    literals; anything richer (constant folding of `1+2`,
-    address-of, etc.) needs a constant-expression evaluator we
-    don't have yet."""
+    expressions (C99 §6.7.8.4). Today we accept a raw integer
+    literal or a `Cast` of one; that's enough to write
+    `static long x = (long)5;` to force a Long-typed init for a
+    small value.
+
+    The returned int is the underlying numeric value; the
+    declared_type tells us which `Const` variant the literal must
+    have produced (ConstInt for Int, ConstLong for Long).
+    """
+    expected = _const_variant_for(declared_type, name)
     match exp:
-        case c99_ast.Constant(value=v):
-            return v
+        case c99_ast.Constant(const=c) if isinstance(c, expected):
+            return c.int
+        case c99_ast.Cast(target_type=t, exp=c99_ast.Constant(const=c)):
+            # `static long x = (long)5;` — cast on a constant.
+            # Validate the cast target matches the declared type.
+            if not _types_equal(t, declared_type):
+                raise TypeCheckError(
+                    f"initializer for {name!r}: cast to {t!r} "
+                    f"doesn't match declared type {declared_type!r}"
+                )
+            # The inner constant's variant doesn't have to match the
+            # target type — that's exactly what the cast bridges. We
+            # use the cast's target as the result type and the
+            # constant's value as the byte payload.
+            return c.int
     raise TypeCheckError(
         f"initializer for static-storage object {name!r} is not a "
         f"constant expression"
     )
+
+
+def _const_variant_for(t: Type, name: str) -> type:
+    """Return the `Type_const` subclass that the parser should have
+    produced for a literal of declared type `t`."""
+    if isinstance(t, Int):
+        return c99_ast.ConstInt
+    if isinstance(t, Long):
+        return c99_ast.ConstLong
+    raise TypeCheckError(
+        f"unexpected declared type for initializer of {name!r}: {t!r}"
+    )
+
+
+def _types_equal(a: Type, b: Type) -> bool:
+    """Structural type equality. The asdl-generated dataclasses use
+    `@dataclass` (eq=True), so `Int() == Int()` and
+    `Long() == Long()` work out of the box; FunType's structural
+    comparison covers params + ret recursively."""
+    return a == b
 
 
 def _merge_initial_value(
@@ -325,10 +334,6 @@ def _merge_initial_value(
     Otherwise the more-defined of the two wins (Initial > Tentative >
     NoInitializer)."""
     if isinstance(old, Initial) and isinstance(new, Initial):
-        # `int x = 1; int x = 2;` — two definitions of the same
-        # object. (Even when the values agree this is a §6.9.2
-        # constraint violation; we reject any case where both are
-        # Initial.)
         raise TypeCheckError(
             f"redefinition of object {name!r}: prior initializer "
             f"{old.value}, new initializer {new.value}"
@@ -342,6 +347,14 @@ def _merge_initial_value(
     return NoInitializer()
 
 
+def _is_object_type(t: Type) -> bool:
+    """True iff `t` is a value type that can name an object (Int /
+    Long today; not FunType). Used at the boundary where we expect
+    an object — variable references, cast targets, arithmetic
+    operands."""
+    return isinstance(t, (Int, Long))
+
+
 class TypeChecker:
     """Walks one program, populating `self.symbols`. The same
     instance is used for the whole program so the symbol table
@@ -349,11 +362,10 @@ class TypeChecker:
 
     def __init__(self) -> None:
         self.symbols = SymbolTable()
-        # Per-function context for `Return` checking. The current
-        # language only has `Int` so this is unused for now, but the
-        # field is kept so a future widening to richer return types
-        # has a place to land.
-        self._current_function: str | None = None
+        # Type the enclosing function should return — set by
+        # `_check_function_decl` while walking a body, restored on
+        # exit. Used by `_check_statement` to type-check `return`s.
+        self._return_type: Type | None = None
 
     def check_program(
         self, prog: c99_ast.Type_program,
@@ -393,20 +405,24 @@ class TypeChecker:
         # `extern` + init    → Initial(c) (definition by initializer)
         # else (no spec / static), no init → Tentative
         # else (no spec / static), init    → Initial(c)
+        if not _is_object_type(vd.data_type):
+            raise TypeCheckError(
+                f"file-scope object {vd.name!r} declared with non-"
+                f"object type {vd.data_type!r}"
+            )
         is_extern = isinstance(vd.storage_class, c99_ast.Extern)
         if vd.init is None:
             initial: InitialValue = (
                 NoInitializer() if is_extern else Tentative()
             )
         else:
-            initial = Initial(_const_init_value(vd.init, vd.name))
-        # Recover linkage from the storage class. Recomputing here is
-        # cleaner than threading the resolver's table through, and the
-        # rules are the same the resolver applied:
+            initial = Initial(_const_init_value(
+                vd.init, vd.name, vd.data_type,
+            ))
+        # Recover linkage from the storage class.
         if isinstance(vd.storage_class, c99_ast.Static):
             linkage = Linkage.INTERNAL
         elif is_extern:
-            # File-scope extern: matches prior visible if any.
             prior = self.symbols.get(vd.name)
             if prior is not None and isinstance(prior.attrs, StaticAttr):
                 linkage = (
@@ -420,7 +436,7 @@ class TypeChecker:
         is_global = _linkage_to_is_global(linkage)
         self._add_or_merge_static_object(
             name=vd.name,
-            type_=Int(),
+            type_=vd.data_type,
             initial=initial,
             is_global=is_global,
         )
@@ -433,23 +449,19 @@ class TypeChecker:
     ) -> None:
         # Both declarations and definitions land here, distinguished
         # by `body is None`.
-        ftype = FunType(
-            params=tuple(Int() for _ in fd.params),
-            ret=Int(),
-        )
+        ftype = fd.data_type
+        if not isinstance(ftype, FunType):
+            raise TypeError(
+                f"function decl {fd.name!r} has non-FunType "
+                f"data_type {ftype!r}"
+            )
         defined = fd.body is not None
         # Linkage: file-scope follows static / extern / default rules;
         # block-scope is always EXTERNAL by virtue of the resolver
-        # accepting only no-specifier and `extern`. The resolver also
-        # rejects `static` at block scope, so we don't need to check
-        # for it.
+        # accepting only no-specifier and `extern` for functions.
         if isinstance(fd.storage_class, c99_ast.Static):
             linkage = Linkage.INTERNAL
         else:
-            # Default-or-extern: matches prior visible if any (only
-            # meaningful at file scope; at block scope the prior
-            # visible is also a function or unrelated and we can
-            # only see EXTERNAL/INTERNAL via file-scope inheritance).
             prior = self.symbols.get(fd.name)
             if prior is not None and isinstance(prior.attrs, FunAttr):
                 linkage = (
@@ -469,18 +481,22 @@ class TypeChecker:
             # Walk the body. Parameters share the body's outermost
             # scope per §6.9.1.7 (so adding them to the symbol table
             # *before* the body, with LocalAttr, lets references
-            # inside the body type-check against them).
-            for p in fd.params:
-                self.symbols[p] = Symbol(type=Int(), attrs=LocalAttr())
-            saved = self._current_function
-            self._current_function = fd.name
+            # inside the body type-check against them). Each
+            # parameter's type comes from the FunType's params list,
+            # paired with the param name in the function_decl's
+            # `params` array.
+            for p_name, p_type in zip(fd.params, ftype.params):
+                self.symbols[p_name] = Symbol(
+                    type=p_type, attrs=LocalAttr(),
+                )
+            saved = self._return_type
+            self._return_type = ftype.ret
             assert fd.body is not None
             self._check_block(fd.body)
-            self._current_function = saved
+            self._return_type = saved
         # `file_scope` flag is currently unused — it'll matter once
         # the language grows constraints that differ between the
-        # two scopes (e.g. inline / _Noreturn placement). Kept to
-        # preserve call-site clarity.
+        # two scopes. Kept for call-site clarity.
         del file_scope
 
     # ------------------------------------------------------------------
@@ -508,16 +524,12 @@ class TypeChecker:
                 f"{type(existing.attrs).__name__}, now redeclared as "
                 f"a static-storage object"
             )
-        if existing.type != type_:
+        if not _types_equal(existing.type, type_):
             raise TypeCheckError(
                 f"incompatible redeclaration of {name!r}: "
                 f"previous {existing.type!r}, new {type_!r}"
             )
         if existing.attrs.is_global != is_global:
-            # The resolver already rejects file-scope linkage changes,
-            # but defense-in-depth here keeps the symbol table
-            # internally consistent if a future caller skips the
-            # resolver.
             raise TypeCheckError(
                 f"linkage of {name!r} disagrees with prior "
                 f"declaration"
@@ -551,7 +563,7 @@ class TypeChecker:
                 f"{type(existing.attrs).__name__}, now redeclared as "
                 f"a function"
             )
-        if existing.type != ftype:
+        if not _types_equal(existing.type, ftype):
             raise TypeCheckError(
                 f"incompatible redeclaration of {name!r}: "
                 f"previous {existing.type!r}, new {ftype!r}"
@@ -565,8 +577,6 @@ class TypeChecker:
             raise TypeCheckError(
                 f"redefinition of function {name!r}"
             )
-        # `defined` only flips False → True; `is_global` is already
-        # checked equal above.
         new_defined = existing.attrs.defined or defined
         self.symbols[name] = Symbol(
             type=ftype,
@@ -605,10 +615,6 @@ class TypeChecker:
                 self._check_block_var(vd)
                 return
             case c99_ast.FunctionDecl(function_decl=fd):
-                # Block-scope function declarations have no body
-                # (C99 forbids nested function definitions). Treat
-                # them like file-scope decls but with `file_scope=
-                # False` for future-proofing.
                 self._check_function_decl(fd, file_scope=False)
                 return
         raise TypeError(f"unexpected declaration: {decl!r}")
@@ -616,36 +622,17 @@ class TypeChecker:
     def _check_block_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
-        # Block-scope variable declarations split three ways:
-        #   `extern int x;`  → reference; static storage, linkage from
-        #                      prior visible. NO initializer allowed
-        #                      (§6.7.8.5). Recorded as StaticAttr with
-        #                      NoInitializer iff this is the first
-        #                      declaration for the name; otherwise
-        #                      merged with the prior entry.
-        #   `static int x;`  → static-storage local, NONE linkage,
-        #                      module-private (is_global=False). The
-        #                      default initializer is zero; an explicit
-        #                      initializer must be a constant
-        #                      expression. Each block-scope `static`
-        #                      gets its own unique resolved name from
-        #                      identifier_resolution, so symbol-table
-        #                      collisions don't happen.
-        #   plain `int x;`   → automatic storage, LocalAttr. The
-        #                      initializer is a regular runtime
-        #                      expression and is type-checked here;
-        #                      c99_to_tac lowers it to a `Copy` at
-        #                      the declaration site.
+        if not _is_object_type(vd.data_type):
+            raise TypeCheckError(
+                f"object {vd.name!r} declared with non-object type "
+                f"{vd.data_type!r}"
+            )
         if isinstance(vd.storage_class, c99_ast.Extern):
             if vd.init is not None:
                 raise TypeCheckError(
                     f"block-scope `extern` declaration of {vd.name!r} "
                     f"may not have an initializer"
                 )
-            # Linkage matches prior visible (resolver already enforced
-            # this, but we recompute from the symbol table to set
-            # is_global). If no prior is in the symbol table yet, the
-            # resolver would have given it EXTERNAL.
             prior = self.symbols.get(vd.name)
             if prior is not None and isinstance(prior.attrs, StaticAttr):
                 is_global = prior.attrs.is_global
@@ -658,34 +645,36 @@ class TypeChecker:
                 is_global = True
             self._add_or_merge_static_object(
                 name=vd.name,
-                type_=Int(),
+                type_=vd.data_type,
                 initial=NoInitializer(),
                 is_global=is_global,
             )
             return
         if isinstance(vd.storage_class, c99_ast.Static):
-            # Block-scope static: NONE linkage → is_global=False.
-            # Resolver gave the name a unique `@<N>.<orig>` so the
-            # symbol-table key won't collide with any other
-            # static-storage object.
             if vd.init is None:
                 initial: InitialValue = Initial(0)
             else:
-                initial = Initial(_const_init_value(vd.init, vd.name))
+                initial = Initial(_const_init_value(
+                    vd.init, vd.name, vd.data_type,
+                ))
             self.symbols[vd.name] = Symbol(
-                type=Int(),
+                type=vd.data_type,
                 attrs=StaticAttr(initial_value=initial, is_global=False),
             )
             return
-        # Plain `int x;` — automatic storage. The initializer is a
-        # runtime expression; type-check it here.
-        self.symbols[vd.name] = Symbol(type=Int(), attrs=LocalAttr())
+        # Plain `int x;` / `long x;` — automatic storage. The
+        # initializer is a runtime expression; type-check it here
+        # against the declared type.
+        self.symbols[vd.name] = Symbol(
+            type=vd.data_type, attrs=LocalAttr(),
+        )
         if vd.init is not None:
             init_type = self._check_exp(vd.init)
-            if init_type != Int():
+            if not _types_equal(init_type, vd.data_type):
                 raise TypeCheckError(
                     f"cannot initialize variable {vd.name!r} of type "
-                    f"Int with value of type {init_type}"
+                    f"{vd.data_type!r} with value of type "
+                    f"{init_type!r}"
                 )
 
     # ------------------------------------------------------------------
@@ -698,9 +687,18 @@ class TypeChecker:
         match stmt:
             case c99_ast.Return(exp=exp):
                 t = self._check_exp(exp)
-                if t != Int():
+                expected = self._return_type
+                # `expected is None` only happens if `Return` shows
+                # up outside any function body, which the parser
+                # doesn't allow; defensive check just in case.
+                if expected is None:
                     raise TypeCheckError(
-                        f"return value of type {t}, expected Int"
+                        "return statement outside of any function"
+                    )
+                if not _types_equal(t, expected):
+                    raise TypeCheckError(
+                        f"return value of type {t!r}, expected "
+                        f"{expected!r}"
                     )
                 return
             case c99_ast.Expression(exp=exp):
@@ -745,7 +743,6 @@ class TypeChecker:
                 | c99_ast.ContinueStmt()
                 | c99_ast.Null()
             ):
-                # Pure control flow: no expressions to type-check.
                 return
         raise TypeError(f"unexpected statement: {stmt!r}")
 
@@ -756,17 +753,22 @@ class TypeChecker:
             case c99_ast.InitDecl(var_decl=vd):
                 # The for-init-decl rule (resolver) forbids storage-
                 # class specifiers, so this is always plain
-                # `int <name> = <exp>;` and lands as a LocalAttr.
+                # `T <name> = <exp>;` and lands as a LocalAttr.
+                if not _is_object_type(vd.data_type):
+                    raise TypeCheckError(
+                        f"for-init {vd.name!r} declared with non-"
+                        f"object type {vd.data_type!r}"
+                    )
                 self.symbols[vd.name] = Symbol(
-                    type=Int(), attrs=LocalAttr(),
+                    type=vd.data_type, attrs=LocalAttr(),
                 )
                 if vd.init is not None:
                     init_type = self._check_exp(vd.init)
-                    if init_type != Int():
+                    if not _types_equal(init_type, vd.data_type):
                         raise TypeCheckError(
                             f"cannot initialize variable {vd.name!r} "
-                            f"of type Int with value of type "
-                            f"{init_type}"
+                            f"of type {vd.data_type!r} with value of "
+                            f"type {init_type!r}"
                         )
                 return
             case c99_ast.InitExp(exp=exp):
@@ -777,8 +779,28 @@ class TypeChecker:
 
     def _check_exp(self, exp: c99_ast.Type_exp) -> Type:
         match exp:
-            case c99_ast.Constant():
-                return Int()
+            case c99_ast.Constant(const=c):
+                # ConstInt → Int; ConstLong → Long. The parser's
+                # `_make_const` already restricted the values, so
+                # we don't re-check here.
+                if isinstance(c, c99_ast.ConstInt):
+                    return Int()
+                if isinstance(c, c99_ast.ConstLong):
+                    return Long()
+                raise TypeError(f"unexpected const: {c!r}")
+            case c99_ast.Cast(target_type=target, exp=inner):
+                if not _is_object_type(target):
+                    raise TypeCheckError(
+                        f"cast target type must be Int or Long, got "
+                        f"{target!r}"
+                    )
+                inner_type = self._check_exp(inner)
+                if not _is_object_type(inner_type):
+                    raise TypeCheckError(
+                        f"cannot cast non-object type {inner_type!r} "
+                        f"to {target!r}"
+                    )
+                return target
             case c99_ast.Var(name=name):
                 sym = self.symbols.get(name)
                 if sym is None:
@@ -790,38 +812,56 @@ class TypeChecker:
                         f"function {name!r} used as a variable"
                     )
                 return sym.type
-            case c99_ast.Unary(exp=inner):
+            case c99_ast.Unary(op=op, exp=inner):
                 t = self._check_exp(inner)
-                if t != Int():
+                if not _is_object_type(t):
                     raise TypeCheckError(
-                        f"unary operator on non-Int type {t}"
+                        f"unary operator on non-object type {t!r}"
                     )
-                return Int()
-            case c99_ast.Binary(left=lhs, right=rhs):
+                # `!x` always yields an int (C99 §6.5.3.3.5: "The
+                # result has type int"). `-x` and `~x` preserve type.
+                if isinstance(op, c99_ast.LogicalNot):
+                    return Int()
+                return t
+            case c99_ast.Binary(op=op, left=lhs, right=rhs):
                 tl = self._check_exp(lhs)
                 tr = self._check_exp(rhs)
-                if tl != Int() or tr != Int():
+                if not _is_object_type(tl) or not _is_object_type(tr):
                     raise TypeCheckError(
-                        f"binary operator on non-Int types: "
-                        f"{tl}, {tr}"
+                        f"binary operator on non-object types: "
+                        f"{tl!r}, {tr!r}"
                     )
-                return Int()
+                if not _types_equal(tl, tr):
+                    raise TypeCheckError(
+                        f"binary operator operand types disagree "
+                        f"({tl!r} vs {tr!r}); use an explicit cast"
+                    )
+                # Comparisons and logical and/or always yield int
+                # regardless of operand type.
+                if isinstance(op, (
+                    c99_ast.Equal, c99_ast.NotEqual,
+                    c99_ast.LessThan, c99_ast.GreaterThan,
+                    c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
+                    c99_ast.LogicalAnd, c99_ast.LogicalOr,
+                )):
+                    return Int()
+                return tl
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
-                if tl != tr:
+                if not _types_equal(tl, tr):
                     raise TypeCheckError(
-                        f"assignment type mismatch: "
-                        f"target {tl}, value {tr}"
+                        f"assignment type mismatch: target {tl!r}, "
+                        f"value {tr!r}; use an explicit cast"
                     )
                 return tl
             case c99_ast.Postfix(operand=op):
                 t = self._check_exp(op)
-                if t != Int():
+                if not _is_object_type(t):
                     raise TypeCheckError(
-                        f"postfix operator on non-Int type {t}"
+                        f"postfix operator on non-object type {t!r}"
                     )
-                return Int()
+                return t
             case c99_ast.Conditional(
                 condition=cond,
                 true_clause=t_clause,
@@ -830,10 +870,10 @@ class TypeChecker:
                 self._check_exp(cond)
                 tt = self._check_exp(t_clause)
                 tf = self._check_exp(f_clause)
-                if tt != tf:
+                if not _types_equal(tt, tf):
                     raise TypeCheckError(
                         f"conditional branches have mismatched "
-                        f"types: {tt}, {tf}"
+                        f"types: {tt!r}, {tf!r}"
                     )
                 return tt
             case c99_ast.FunctionCall(name=name, args=args):
@@ -857,10 +897,10 @@ class TypeChecker:
                     zip(args, sym.type.params),
                 ):
                     actual = self._check_exp(arg)
-                    if actual != expected:
+                    if not _types_equal(actual, expected):
                         raise TypeCheckError(
                             f"argument {i + 1} of call to {name!r}: "
-                            f"got {actual}, expected {expected}"
+                            f"got {actual!r}, expected {expected!r}"
                         )
                 return sym.type.ret
         raise TypeError(f"unexpected exp: {exp!r}")

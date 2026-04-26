@@ -19,13 +19,16 @@ module C99 {
         | LabeledStmt(identifier label, statement statement)
         | Null
     declaration = FunctionDecl(function_decl) | VarDecl(var_decl)
-    var_decl = (identifier name, exp? init, storage_class?)
-    function_decl = (identifier name, identifier* params, block? body, storage_class?)
+    var_decl = (identifier name, exp? init, data_type, storage_class?)
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
     storage_class = Static | Extern
+    -- Ints are 1 byte, longs are 2 bytes.
+    data_type = Int | Long | FunType(data_type* params, data_type ret)
     for_init = InitDecl(var_decl) | InitExp(exp?)
     exp =
-        Constant(int value)
+        Constant(const)
         | Var(identifier name)
+        | Cast(data_type target_type, exp)
         | Unary(unary_operator op, exp)
         | Binary(binary_operator op, exp left, exp right)
         | Assignment(exp lval, exp rval)
@@ -41,4 +44,5 @@ module C99 {
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
         | LogicalAnd | LogicalOr
+    const = ConstInt(int) | ConstLong(int)
 }

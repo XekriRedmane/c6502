@@ -316,10 +316,15 @@ class Translator:
         `translate_program`."""
         match fn:
             case c99_ast.Function(name=name, params=params, body=body):
+                ftype = c99_ast.FunType(
+                    params=[c99_ast.Int() for _ in params],
+                    ret=c99_ast.Int(),
+                )
                 fd = c99_ast.Type_function_decl(
                     name=name,
                     params=list(params),
                     body=body,
+                    data_type=ftype,
                     storage_class=None,
                 )
                 return self._translate_function(fd)
@@ -678,8 +683,21 @@ class Translator:
         instrs: list[tac_ast.Type_instruction],
     ) -> tac_ast.Type_val:
         match exp:
-            case c99_ast.Constant(value=v):
-                return tac_ast.Constant(value=v)
+            case c99_ast.Constant(const=c):
+                # ConstInt and ConstLong both lower to a TAC
+                # `Constant(value)` for now. Sizing happens later in
+                # the pipeline; this slice doesn't yet carry per-
+                # operand size through TAC, so a too-large value will
+                # surface as a `_check_byte` failure at asm emit time.
+                return tac_ast.Constant(value=c.int)
+            case c99_ast.Cast(exp=inner):
+                # `Cast(target, exp)` is a no-op at TAC for this
+                # slice — the type system has already validated the
+                # cast, and 16-bit conversion codegen is deferred.
+                # When the back end learns size-changing conversions
+                # this becomes the place to emit a sign-extension or
+                # truncation primitive.
+                return self.translate_exp(inner, instrs)
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
                 dst = tac_ast.Var(name=self.make_temporary_variable_name())

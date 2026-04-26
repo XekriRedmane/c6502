@@ -24,11 +24,16 @@ def _program(*functions) -> c99_ast.Type_program:
     """Wrap legacy `Function` nodes into a new-shape Program."""
     decls: list[c99_ast.Type_declaration] = []
     for fn in functions:
+        ftype = c99_ast.FunType(
+            params=[c99_ast.Int() for _ in fn.params],
+            ret=c99_ast.Int(),
+        )
         decls.append(c99_ast.FunctionDecl(
             function_decl=c99_ast.Type_function_decl(
                 name=fn.name,
                 params=list(fn.params),
                 body=fn.body,
+                data_type=ftype,
                 storage_class=None,
             ),
         ))
@@ -95,7 +100,7 @@ class TestMakeLabel(unittest.TestCase):
 class TestSimpleLoops(unittest.TestCase):
     def test_while_loop_gets_label_and_break_inside_picks_it_up(self):
         # while (1) break;
-        fn = _function(_while(c99_ast.Constant(value=1), c99_ast.BreakStmt(label="")))
+        fn = _function(_while(c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.BreakStmt(label="")))
         labeled = label_function(fn)
         while_stmt = labeled.body.block_item[0].statement
         self.assertEqual(while_stmt.label, ".loop@0")
@@ -103,7 +108,7 @@ class TestSimpleLoops(unittest.TestCase):
 
     def test_while_loop_continue_inside_body_picks_label_up(self):
         fn = _function(_while(
-            c99_ast.Constant(value=1), c99_ast.ContinueStmt(label=""),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.ContinueStmt(label=""),
         ))
         labeled = label_function(fn)
         while_stmt = labeled.body.block_item[0].statement
@@ -111,7 +116,7 @@ class TestSimpleLoops(unittest.TestCase):
 
     def test_do_while_loop_gets_label(self):
         fn = _function(_do_while(
-            c99_ast.BreakStmt(label=""), c99_ast.Constant(value=1),
+            c99_ast.BreakStmt(label=""), c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
         ))
         labeled = label_function(fn)
         do_stmt = labeled.body.block_item[0].statement
@@ -132,8 +137,8 @@ class TestSimpleLoops(unittest.TestCase):
     def test_consecutive_loops_get_distinct_labels(self):
         # Two independent while loops each mint their own label.
         fn = _function(
-            _while(c99_ast.Constant(value=1), c99_ast.BreakStmt(label="")),
-            _while(c99_ast.Constant(value=1), c99_ast.BreakStmt(label="")),
+            _while(c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.BreakStmt(label="")),
+            _while(c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.BreakStmt(label="")),
         )
         labeled = label_function(fn)
         first = labeled.body.block_item[0].statement
@@ -153,9 +158,9 @@ class TestNestedLoops(unittest.TestCase):
         # while (1) { while (1) break; }   — the break inside the inner
         # while targets the inner loop, not the outer one.
         fn = _function(_while(
-            c99_ast.Constant(value=1),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             _compound(_while(
-                c99_ast.Constant(value=1), c99_ast.BreakStmt(label=""),
+                c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.BreakStmt(label=""),
             )),
         ))
         labeled = label_function(fn)
@@ -174,9 +179,9 @@ class TestNestedLoops(unittest.TestCase):
         # the OUTER loop's body, after the inner loop, so it targets
         # the outer loop.
         fn = _function(_while(
-            c99_ast.Constant(value=1),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             _compound(
-                _while(c99_ast.Constant(value=1), c99_ast.Null()),
+                _while(c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.Null()),
                 _break(),
             ),
         ))
@@ -196,11 +201,11 @@ class TestNestedLoops(unittest.TestCase):
             c99_ast.InitExp(exp=None), None, None,
             _compound(
                 _while(
-                    c99_ast.Constant(value=1),
+                    c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                     _compound(
                         _do_while(
                             _compound(_break()),
-                            c99_ast.Constant(value=1),
+                            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                         ),
                         _break(),
                     ),
@@ -234,7 +239,7 @@ class TestNestedLoops(unittest.TestCase):
         # while (1) for (;;) continue;   — the continue is inside the
         # for-loop body (not its header), so it targets the for-loop.
         fn = _function(_while(
-            c99_ast.Constant(value=1),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             c99_ast.ForStmt(
                 init=c99_ast.InitExp(exp=None),
                 condition=None,
@@ -271,7 +276,7 @@ class TestBreakContinueOutsideLoop(unittest.TestCase):
         # `if (1) break;` at function scope — the if doesn't establish
         # a loop, so the break has no enclosing loop.
         fn = _function(c99_ast.S(statement=c99_ast.IfStmt(
-            condition=c99_ast.Constant(value=1),
+            condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             then_clause=c99_ast.BreakStmt(label=""),
             else_clause=None,
         )))
@@ -298,7 +303,7 @@ class TestBreakContinueOutsideLoop(unittest.TestCase):
         # `while (1) ; break;`  — the break is OUTSIDE the while loop,
         # so it has no enclosing loop and must raise.
         fn = _function(
-            _while(c99_ast.Constant(value=1), c99_ast.Null()),
+            _while(c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.Null()),
             _break(),
         )
         with self.assertRaises(LoopLabelingError):
@@ -313,9 +318,9 @@ class TestBreakInsideIfBranchInsideLoop(unittest.TestCase):
     def test_break_in_if_then_inside_while(self):
         # while (1) if (1) break;
         fn = _function(_while(
-            c99_ast.Constant(value=1),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 then_clause=c99_ast.BreakStmt(label=""),
                 else_clause=None,
             ),
@@ -328,9 +333,9 @@ class TestBreakInsideIfBranchInsideLoop(unittest.TestCase):
     def test_break_in_if_else_inside_while(self):
         # while (1) if (1) ; else continue;
         fn = _function(_while(
-            c99_ast.Constant(value=1),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 then_clause=c99_ast.Null(),
                 else_clause=c99_ast.ContinueStmt(label=""),
             ),
@@ -344,7 +349,7 @@ class TestBreakInsideIfBranchInsideLoop(unittest.TestCase):
         # while (1) foo: break;   — the labeled statement inside the
         # loop doesn't change loop scope.
         fn = _function(_while(
-            c99_ast.Constant(value=1),
+            c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             c99_ast.LabeledStmt(
                 label="foo", statement=c99_ast.BreakStmt(label=""),
             ),
@@ -363,14 +368,14 @@ class TestPassthrough(unittest.TestCase):
     pass doesn't have to know about that namespace.)"""
 
     def test_function_without_loops(self):
-        fn = _function(_ret(c99_ast.Constant(value=42)))
+        fn = _function(_ret(c99_ast.Constant(const=c99_ast.ConstInt(int=42))))
         self.assertEqual(label_function(fn), fn)
 
     def test_if_with_no_loops_or_breaks(self):
         fn = _function(c99_ast.S(statement=c99_ast.IfStmt(
-            condition=c99_ast.Constant(value=1),
-            then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
-            else_clause=c99_ast.Return(exp=c99_ast.Constant(value=3)),
+            condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+            then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
+            else_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=3))),
         )))
         self.assertEqual(label_function(fn), fn)
 
@@ -381,7 +386,7 @@ class TestPassthrough(unittest.TestCase):
             c99_ast.S(statement=c99_ast.Goto(label=".main@end")),
             c99_ast.S(statement=c99_ast.LabeledStmt(
                 label=".main@end",
-                statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+                statement=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0))),
             )),
         )
         self.assertEqual(label_function(fn), fn)
@@ -389,7 +394,7 @@ class TestPassthrough(unittest.TestCase):
 
 class TestLabelProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
-        fn = _function(_while(c99_ast.Constant(value=1), c99_ast.BreakStmt(label="")))
+        fn = _function(_while(c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.BreakStmt(label="")))
         prog = _program(fn)
         labeled = label_program(prog)
         labeled_while = labeled.declaration[0].function_decl.body.block_item[0].statement

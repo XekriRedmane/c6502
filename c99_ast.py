@@ -142,18 +142,20 @@ class VarDecl(Type_declaration):
     var_decl: Type_var_decl
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Type_var_decl:
     name: str
     init: Type_exp | None = None
+    data_type: Type_data_type
     storage_class: Type_storage_class | None = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Type_function_decl:
     name: str
     params: list[str] = field(default_factory=list)
     body: Type_block | None = None
+    data_type: Type_data_type
     storage_class: Type_storage_class | None = None
 
 
@@ -170,6 +172,27 @@ class Static(Type_storage_class):
 @dataclass
 class Extern(Type_storage_class):
     pass
+
+
+@dataclass
+class Type_data_type:
+    pass
+
+
+@dataclass
+class Int(Type_data_type):
+    pass
+
+
+@dataclass
+class Long(Type_data_type):
+    pass
+
+
+@dataclass(kw_only=True)
+class FunType(Type_data_type):
+    params: list[Type_data_type] = field(default_factory=list)
+    ret: Type_data_type
 
 
 @dataclass
@@ -194,12 +217,18 @@ class Type_exp:
 
 @dataclass
 class Constant(Type_exp):
-    value: int
+    const: Type_const
 
 
 @dataclass
 class Var(Type_exp):
     name: str
+
+
+@dataclass
+class Cast(Type_exp):
+    target_type: Type_data_type
+    exp: Type_exp
 
 
 @dataclass
@@ -368,3 +397,18 @@ class LogicalAnd(Type_binary_operator):
 @dataclass
 class LogicalOr(Type_binary_operator):
     pass
+
+
+@dataclass
+class Type_const:
+    pass
+
+
+@dataclass
+class ConstInt(Type_const):
+    int: int
+
+
+@dataclass
+class ConstLong(Type_const):
+    int: int

@@ -31,9 +31,10 @@ class TestParser(unittest.TestCase):
                     params=[],
                     body=c99_ast.Block(block_item=[c99_ast.S(
                         statement=c99_ast.Return(
-                            exp=c99_ast.Constant(value=42),
+                            exp=c99_ast.Constant(const=c99_ast.ConstInt(int=42)),
                         ),
                     )]),
+                    data_type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
                     storage_class=None,
                 ),
             )],
@@ -47,13 +48,17 @@ class TestParser(unittest.TestCase):
             "int\nmain(void)\n{\n    return 42;\n}",
         ]:
             with self.subTest(src=src):
-                self.assertEqual(_return_stmt(parse(src)).exp.value, 42)
+                self.assertEqual(_return_stmt(parse(src)).exp.const.int, 42)
 
     def test_various_return_values(self):
-        for val in [0, 1, 42, 255, 1000, 0xDEADBEEF]:
+        # Values <=127 land in ConstInt; 128..32767 land in ConstLong.
+        # Anything outside those ranges raises at parse time per the
+        # `_make_const` factory, so the literal range here matches the
+        # AST's representable space.
+        for val in [0, 1, 42, 127, 128, 1000, 32767]:
             with self.subTest(val=val):
                 ast = parse(f"int main(void) {{ return {val}; }}")
-                self.assertEqual(_return_stmt(ast).exp.value, val)
+                self.assertEqual(_return_stmt(ast).exp.const.int, val)
 
     def test_function_name_captured(self):
         for name in ["main", "foo", "_start", "a1b2"]:
@@ -67,7 +72,7 @@ class TestParser(unittest.TestCase):
             _return_stmt(ast),
             c99_ast.Return(exp=c99_ast.Unary(
                 op=c99_ast.Negate(),
-                exp=c99_ast.Constant(value=42),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=42)),
             )),
         )
 
@@ -77,7 +82,7 @@ class TestParser(unittest.TestCase):
             _return_stmt(ast),
             c99_ast.Return(exp=c99_ast.Unary(
                 op=c99_ast.Complement(),
-                exp=c99_ast.Constant(value=10),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=10)),
             )),
         )
 
@@ -85,7 +90,7 @@ class TestParser(unittest.TestCase):
         ast = parse("int main(void) { return (42); }")
         self.assertEqual(
             _return_stmt(ast),
-            c99_ast.Return(exp=c99_ast.Constant(value=42)),
+            c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=42))),
         )
 
     def test_nested_unary(self):
@@ -96,7 +101,7 @@ class TestParser(unittest.TestCase):
                 op=c99_ast.Negate(),
                 exp=c99_ast.Unary(
                     op=c99_ast.Negate(),
-                    exp=c99_ast.Constant(value=42),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=42)),
                 ),
             ),
         )
@@ -109,7 +114,7 @@ class TestParser(unittest.TestCase):
                 op=c99_ast.Complement(),
                 exp=c99_ast.Unary(
                     op=c99_ast.Negate(),
-                    exp=c99_ast.Constant(value=5),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
                 ),
             ),
         )
@@ -174,11 +179,11 @@ class TestBinaryPrecedence(unittest.TestCase):
             _exp_of("1 + 2 * 3"),
             c99_ast.Binary(
                 op=c99_ast.Add(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.Multiply(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -192,10 +197,10 @@ class TestBinaryPrecedence(unittest.TestCase):
                 op=c99_ast.Add(),
                 left=c99_ast.Binary(
                     op=c99_ast.Multiply(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -209,13 +214,13 @@ class TestBinaryPrecedence(unittest.TestCase):
                 op=c99_ast.Add(),
                 left=c99_ast.Binary(
                     op=c99_ast.Multiply(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
                 right=c99_ast.Binary(
                     op=c99_ast.Multiply(),
-                    left=c99_ast.Constant(value=3),
-                    right=c99_ast.Constant(value=4),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=4)),
                 ),
             ),
         )
@@ -228,10 +233,10 @@ class TestBinaryPrecedence(unittest.TestCase):
                 op=c99_ast.Subtract(),
                 left=c99_ast.Binary(
                     op=c99_ast.Subtract(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -243,10 +248,10 @@ class TestBinaryPrecedence(unittest.TestCase):
                 op=c99_ast.Divide(),
                 left=c99_ast.Binary(
                     op=c99_ast.Divide(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -258,10 +263,10 @@ class TestBinaryPrecedence(unittest.TestCase):
                 op=c99_ast.Multiply(),
                 left=c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -272,9 +277,9 @@ class TestBinaryPrecedence(unittest.TestCase):
             c99_ast.Binary(
                 op=c99_ast.Multiply(),
                 left=c99_ast.Unary(
-                    op=c99_ast.Negate(), exp=c99_ast.Constant(value=1),
+                    op=c99_ast.Negate(), exp=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
-                right=c99_ast.Constant(value=2),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
             ),
         )
 
@@ -284,8 +289,8 @@ class TestBinaryPrecedence(unittest.TestCase):
             _exp_of("10 % 3"),
             c99_ast.Binary(
                 op=c99_ast.Modulo(),
-                left=c99_ast.Constant(value=10),
-                right=c99_ast.Constant(value=3),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=10)),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -310,8 +315,8 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
                     _exp_of(f"5 {sym} 3"),
                     c99_ast.Binary(
                         op=op,
-                        left=c99_ast.Constant(value=5),
-                        right=c99_ast.Constant(value=3),
+                        left=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                        right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                     ),
                 )
 
@@ -321,11 +326,11 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
             _exp_of("1 & 2 << 3"),
             c99_ast.Binary(
                 op=c99_ast.BitwiseAnd(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.LeftShift(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -336,11 +341,11 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
             _exp_of("1 << 2 + 3"),
             c99_ast.Binary(
                 op=c99_ast.LeftShift(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -351,11 +356,11 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
             _exp_of("1 ^ 2 & 3"),
             c99_ast.Binary(
                 op=c99_ast.BitwiseXor(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.BitwiseAnd(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -366,11 +371,11 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
             _exp_of("1 | 2 ^ 3"),
             c99_ast.Binary(
                 op=c99_ast.BitwiseOr(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.BitwiseXor(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -383,10 +388,10 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
                 op=c99_ast.LeftShift(),
                 left=c99_ast.Binary(
                     op=c99_ast.LeftShift(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -398,10 +403,10 @@ class TestBitwiseAndShiftBinaryOps(unittest.TestCase):
                 op=c99_ast.BitwiseOr(),
                 left=c99_ast.Binary(
                     op=c99_ast.BitwiseOr(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -427,8 +432,8 @@ class TestComparisonOps(unittest.TestCase):
                     _exp_of(f"5 {sym} 3"),
                     c99_ast.Binary(
                         op=op,
-                        left=c99_ast.Constant(value=5),
-                        right=c99_ast.Constant(value=3),
+                        left=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                        right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                     ),
                 )
 
@@ -438,11 +443,11 @@ class TestComparisonOps(unittest.TestCase):
             _exp_of("1 == 2 < 3"),
             c99_ast.Binary(
                 op=c99_ast.Equal(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.LessThan(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -453,11 +458,11 @@ class TestComparisonOps(unittest.TestCase):
             _exp_of("1 < 2 << 3"),
             c99_ast.Binary(
                 op=c99_ast.LessThan(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.LeftShift(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -468,11 +473,11 @@ class TestComparisonOps(unittest.TestCase):
             _exp_of("1 & 2 == 3"),
             c99_ast.Binary(
                 op=c99_ast.BitwiseAnd(),
-                left=c99_ast.Constant(value=1),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 right=c99_ast.Binary(
                     op=c99_ast.Equal(),
-                    left=c99_ast.Constant(value=2),
-                    right=c99_ast.Constant(value=3),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -487,10 +492,10 @@ class TestComparisonOps(unittest.TestCase):
                 op=c99_ast.Equal(),
                 left=c99_ast.Binary(
                     op=c99_ast.Equal(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                right=c99_ast.Constant(value=3),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -503,7 +508,7 @@ class TestLogicalNotUnary(unittest.TestCase):
             _exp_of("!5"),
             c99_ast.Unary(
                 op=c99_ast.LogicalNot(),
-                exp=c99_ast.Constant(value=5),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
             ),
         )
 
@@ -515,7 +520,7 @@ class TestLogicalNotUnary(unittest.TestCase):
                 op=c99_ast.LogicalNot(),
                 exp=c99_ast.Unary(
                     op=c99_ast.LogicalNot(),
-                    exp=c99_ast.Constant(value=5),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
                 ),
             ),
         )
@@ -527,9 +532,9 @@ class TestLogicalNotUnary(unittest.TestCase):
             c99_ast.Binary(
                 op=c99_ast.Multiply(),
                 left=c99_ast.Unary(
-                    op=c99_ast.LogicalNot(), exp=c99_ast.Constant(value=1),
+                    op=c99_ast.LogicalNot(), exp=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
-                right=c99_ast.Constant(value=2),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
             ),
         )
 
@@ -541,7 +546,7 @@ class TestLogicalNotUnary(unittest.TestCase):
                 op=c99_ast.LogicalNot(),
                 exp=c99_ast.Unary(
                     op=c99_ast.Negate(),
-                    exp=c99_ast.Constant(value=5),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
                 ),
             ),
         )
@@ -560,7 +565,7 @@ class TestAssignment(unittest.TestCase):
             _exp_of("a = 1"),
             c99_ast.Assignment(
                 lval=c99_ast.Var(name="a"),
-                rval=c99_ast.Constant(value=1),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             ),
         )
 
@@ -572,7 +577,7 @@ class TestAssignment(unittest.TestCase):
                 lval=c99_ast.Var(name="a"),
                 rval=c99_ast.Assignment(
                     lval=c99_ast.Var(name="b"),
-                    rval=c99_ast.Constant(value=1),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
             ),
         )
@@ -600,7 +605,7 @@ class TestAssignment(unittest.TestCase):
                         rval=c99_ast.Binary(
                             op=op,
                             left=c99_ast.Var(name="a"),
-                            right=c99_ast.Constant(value=1),
+                            right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                         ),
                     ),
                 )
@@ -621,7 +626,7 @@ class TestAssignment(unittest.TestCase):
                         rval=c99_ast.Binary(
                             op=c99_ast.Add(),
                             left=c99_ast.Var(name="b"),
-                            right=c99_ast.Constant(value=1),
+                            right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                         ),
                     ),
                 ),
@@ -642,8 +647,8 @@ class TestAssignment(unittest.TestCase):
                     left=c99_ast.Var(name="a"),
                     right=c99_ast.Binary(
                         op=c99_ast.Add(),
-                        left=c99_ast.Constant(value=1),
-                        right=c99_ast.Constant(value=2),
+                        left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                        right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                     ),
                 ),
             ),
@@ -657,11 +662,11 @@ class TestAssignment(unittest.TestCase):
         self.assertEqual(
             _exp_of("1 += 2"),
             c99_ast.Assignment(
-                lval=c99_ast.Constant(value=1),
+                lval=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Constant(value=1),
-                    right=c99_ast.Constant(value=2),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
             ),
         )
@@ -682,7 +687,7 @@ class TestIncrementDecrement(unittest.TestCase):
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
                     left=c99_ast.Var(name="a"),
-                    right=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
             ),
         )
@@ -695,7 +700,7 @@ class TestIncrementDecrement(unittest.TestCase):
                 rval=c99_ast.Binary(
                     op=c99_ast.Subtract(),
                     left=c99_ast.Var(name="a"),
-                    right=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
             ),
         )
@@ -747,7 +752,7 @@ class TestIncrementDecrement(unittest.TestCase):
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
                     left=post,
-                    right=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
             ),
         )
@@ -789,7 +794,7 @@ class TestIncrementDecrement(unittest.TestCase):
             rval=c99_ast.Binary(
                 op=c99_ast.Add(),
                 left=c99_ast.Var(name="a"),
-                right=c99_ast.Constant(value=1),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             ),
         )
         self.assertEqual(
@@ -799,7 +804,7 @@ class TestIncrementDecrement(unittest.TestCase):
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
                     left=inner,
-                    right=c99_ast.Constant(value=1),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
             ),
         )
@@ -816,9 +821,9 @@ class TestConditional(unittest.TestCase):
         self.assertEqual(
             _exp_of("1 ? 2 : 3"),
             c99_ast.Conditional(
-                condition=c99_ast.Constant(value=1),
-                true_clause=c99_ast.Constant(value=2),
-                false_clause=c99_ast.Constant(value=3),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -829,9 +834,9 @@ class TestConditional(unittest.TestCase):
             c99_ast.Assignment(
                 lval=c99_ast.Var(name="a"),
                 rval=c99_ast.Conditional(
-                    condition=c99_ast.Constant(value=1),
-                    true_clause=c99_ast.Constant(value=2),
-                    false_clause=c99_ast.Constant(value=3),
+                    condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -846,8 +851,8 @@ class TestConditional(unittest.TestCase):
                     left=c99_ast.Var(name="a"),
                     right=c99_ast.Var(name="b"),
                 ),
-                true_clause=c99_ast.Constant(value=2),
-                false_clause=c99_ast.Constant(value=3),
+                true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -856,12 +861,12 @@ class TestConditional(unittest.TestCase):
         self.assertEqual(
             _exp_of("1 ? 2 : 3 || 4"),
             c99_ast.Conditional(
-                condition=c99_ast.Constant(value=1),
-                true_clause=c99_ast.Constant(value=2),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 false_clause=c99_ast.Binary(
                     op=c99_ast.LogicalOr(),
-                    left=c99_ast.Constant(value=3),
-                    right=c99_ast.Constant(value=4),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=4)),
                 ),
             ),
         )
@@ -876,11 +881,11 @@ class TestConditional(unittest.TestCase):
             _exp_of("1 ? 2 : a = 5"),
             c99_ast.Assignment(
                 lval=c99_ast.Conditional(
-                    condition=c99_ast.Constant(value=1),
-                    true_clause=c99_ast.Constant(value=2),
+                    condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                     false_clause=c99_ast.Var(name="a"),
                 ),
-                rval=c99_ast.Constant(value=5),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
             ),
         )
 
@@ -894,9 +899,9 @@ class TestConditional(unittest.TestCase):
                 condition=c99_ast.Var(name="x"),
                 true_clause=c99_ast.Assignment(
                     lval=c99_ast.Var(name="x"),
-                    rval=c99_ast.Constant(value=1),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 ),
-                false_clause=c99_ast.Constant(value=2),
+                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
             ),
         )
 
@@ -910,10 +915,10 @@ class TestConditional(unittest.TestCase):
                 condition=c99_ast.Var(name="a"),
                 true_clause=c99_ast.Conditional(
                     condition=c99_ast.Var(name="b"),
-                    true_clause=c99_ast.Constant(value=1),
-                    false_clause=c99_ast.Constant(value=2),
+                    true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                 ),
-                false_clause=c99_ast.Constant(value=3),
+                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
             ),
         )
 
@@ -925,11 +930,11 @@ class TestConditional(unittest.TestCase):
             _exp_of("a ? 1 : b ? 2 : 3"),
             c99_ast.Conditional(
                 condition=c99_ast.Var(name="a"),
-                true_clause=c99_ast.Constant(value=1),
+                true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 false_clause=c99_ast.Conditional(
                     condition=c99_ast.Var(name="b"),
-                    true_clause=c99_ast.Constant(value=2),
-                    false_clause=c99_ast.Constant(value=3),
+                    true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                 ),
             ),
         )
@@ -952,8 +957,8 @@ class TestIfStatement(unittest.TestCase):
         self.assertEqual(
             self._stmt_of("if (1) return 2;"),
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
-                then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
                 else_clause=None,
             ),
         )
@@ -962,9 +967,9 @@ class TestIfStatement(unittest.TestCase):
         self.assertEqual(
             self._stmt_of("if (1) return 2; else return 3;"),
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
-                then_clause=c99_ast.Return(exp=c99_ast.Constant(value=2)),
-                else_clause=c99_ast.Return(exp=c99_ast.Constant(value=3)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
+                else_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=3))),
             ),
         )
 
@@ -978,14 +983,14 @@ class TestIfStatement(unittest.TestCase):
         self.assertEqual(
             stmt,
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 then_clause=c99_ast.IfStmt(
-                    condition=c99_ast.Constant(value=2),
+                    condition=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                     then_clause=c99_ast.Return(
-                        exp=c99_ast.Constant(value=3),
+                        exp=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                     ),
                     else_clause=c99_ast.Return(
-                        exp=c99_ast.Constant(value=4),
+                        exp=c99_ast.Constant(const=c99_ast.ConstInt(int=4)),
                     ),
                 ),
                 else_clause=None,
@@ -1000,8 +1005,8 @@ class TestIfStatement(unittest.TestCase):
             stmt.condition,
             c99_ast.Binary(
                 op=c99_ast.Equal(),
-                left=c99_ast.Constant(value=1),
-                right=c99_ast.Constant(value=2),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
             ),
         )
 
@@ -1010,7 +1015,7 @@ class TestIfStatement(unittest.TestCase):
         self.assertEqual(
             self._stmt_of("if (1) ;"),
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 then_clause=c99_ast.Null(),
                 else_clause=None,
             ),
@@ -1043,7 +1048,7 @@ class TestCompoundStatement(unittest.TestCase):
             self._stmt_of("{ return 0; }"),
             c99_ast.Compound(block=c99_ast.Block(block_item=[
                 c99_ast.S(statement=c99_ast.Return(
-                    exp=c99_ast.Constant(value=0),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
                 )),
             ])),
         )
@@ -1055,7 +1060,8 @@ class TestCompoundStatement(unittest.TestCase):
             c99_ast.Compound(block=c99_ast.Block(block_item=[
                 c99_ast.D(declaration=c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
-                        name="a", init=c99_ast.Constant(value=1),
+                        name="a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                        data_type=c99_ast.Int(),
                     ),
                 )),
                 c99_ast.S(statement=c99_ast.Return(exp=c99_ast.Var(name="a"))),
@@ -1081,10 +1087,10 @@ class TestCompoundStatement(unittest.TestCase):
         self.assertEqual(
             self._stmt_of("if (1) { return 2; }"),
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 then_clause=c99_ast.Compound(block=c99_ast.Block(block_item=[
                     c99_ast.S(statement=c99_ast.Return(
-                        exp=c99_ast.Constant(value=2),
+                        exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
                     )),
                 ])),
                 else_clause=None,
@@ -1118,7 +1124,7 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
             self._stmt_of("foo: return 0;"),
             c99_ast.LabeledStmt(
                 label="foo",
-                statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+                statement=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0))),
             ),
         )
 
@@ -1152,10 +1158,10 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
         self.assertEqual(
             items[0].statement,
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 then_clause=c99_ast.LabeledStmt(
                     label="foo",
-                    statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+                    statement=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0))),
                 ),
                 else_clause=None,
             ),
@@ -1188,7 +1194,7 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
             items[1].statement,
             c99_ast.LabeledStmt(
                 label="end",
-                statement=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+                statement=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0))),
             ),
         )
 
@@ -1218,7 +1224,7 @@ class TestIterationStatements(unittest.TestCase):
         self.assertEqual(
             self._stmt_of("while (1) break;"),
             c99_ast.WhileStmt(
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 body=c99_ast.BreakStmt(label=""),
                 label="",
             ),
@@ -1229,7 +1235,7 @@ class TestIterationStatements(unittest.TestCase):
             self._stmt_of("do continue; while (0);"),
             c99_ast.DoWhileStmt(
                 body=c99_ast.ContinueStmt(label=""),
-                condition=c99_ast.Constant(value=0),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
                 label="",
             ),
         )
@@ -1241,12 +1247,13 @@ class TestIterationStatements(unittest.TestCase):
             self._stmt_of("for (int i = 0; i < 10; i++) ;"),
             c99_ast.ForStmt(
                 init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
-                    name="i", init=c99_ast.Constant(value=0),
+                    name="i", init=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
+                    data_type=c99_ast.Int(),
                 )),
                 condition=c99_ast.Binary(
                     op=c99_ast.LessThan(),
                     left=c99_ast.Var(name="i"),
-                    right=c99_ast.Constant(value=10),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=10)),
                 ),
                 post_clause=c99_ast.Postfix(
                     op=c99_ast.Increment(),
@@ -1268,7 +1275,7 @@ class TestIterationStatements(unittest.TestCase):
             for_stmt.init,
             c99_ast.InitExp(exp=c99_ast.Assignment(
                 lval=c99_ast.Var(name="i"),
-                rval=c99_ast.Constant(value=0),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
             )),
         )
 
@@ -1291,7 +1298,7 @@ class TestIterationStatements(unittest.TestCase):
             self._stmt_of("for (; 1;) break;"),
             c99_ast.ForStmt(
                 init=c99_ast.InitExp(exp=None),
-                condition=c99_ast.Constant(value=1),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                 post_clause=None,
                 body=c99_ast.BreakStmt(label=""),
                 label="",
@@ -1365,7 +1372,9 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
             first,
             c99_ast.D(declaration=c99_ast.FunctionDecl(
                 function_decl=c99_ast.Type_function_decl(
-                    name="foo", params=[], body=None, storage_class=None,
+                    name="foo", params=[], body=None,
+                    data_type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
+                    storage_class=None,
                 ),
             )),
         )
@@ -1397,11 +1406,11 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
             c99_ast.FunctionCall(
                 name="f",
                 args=[
-                    c99_ast.Constant(value=1),
+                    c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
                     c99_ast.Binary(
                         op=c99_ast.Add(),
-                        left=c99_ast.Constant(value=2),
-                        right=c99_ast.Constant(value=3),
+                        left=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                        right=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
                     ),
                 ],
             ),
@@ -1437,7 +1446,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
             c99_ast.Binary(
                 op=c99_ast.Add(),
                 left=c99_ast.FunctionCall(name="f", args=[]),
-                right=c99_ast.Constant(value=1),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
             ),
         )
 
@@ -1473,6 +1482,137 @@ class TestInvalidParseFiles(unittest.TestCase):
                 src = _preprocess(path.read_text())
                 with self.assertRaises((LexError, UnexpectedInput)):
                     parse(src)
+
+
+class TestLongAndCasts(unittest.TestCase):
+    """`long` introduces a 2-byte type and a per-declaration `data_type`
+    field on var_decl/function_decl. Casts sit between unary and
+    multiplicative in the precedence chain (C99 §6.5.4): tighter than
+    `*`/`/`/`%`, looser than the unary operators, right-associative.
+    Constant literals dispatch into `ConstInt` (1-byte fit) or
+    `ConstLong` (2-byte fit) based on their value, with anything
+    outside ±32767 rejected at parse time."""
+
+    def test_int_var_decl_carries_int_data_type(self):
+        ast = parse("int x = 5;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(vd.data_type, c99_ast.Int())
+
+    def test_long_var_decl_carries_long_data_type(self):
+        ast = parse("long x = 5;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(vd.data_type, c99_ast.Long())
+
+    def test_long_int_resolves_to_long(self):
+        # `long int` and `int long` both mean Long per C99 §6.7.2.
+        for src in ["long int x;", "int long x;"]:
+            with self.subTest(src=src):
+                ast = parse(src)
+                vd = ast.declaration[0].var_decl
+                self.assertEqual(vd.data_type, c99_ast.Long())
+
+    def test_function_decl_carries_funtype(self):
+        ast = parse("long foo(int a, long b);")
+        fd = ast.declaration[0].function_decl
+        self.assertEqual(
+            fd.data_type,
+            c99_ast.FunType(
+                params=[c99_ast.Int(), c99_ast.Long()],
+                ret=c99_ast.Long(),
+            ),
+        )
+
+    def test_small_literal_is_const_int(self):
+        ast = parse("int main(void) { return 5; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(ret.exp, c99_ast.Constant(
+            const=c99_ast.ConstInt(int=5),
+        ))
+
+    def test_large_literal_is_const_long(self):
+        ast = parse("int main(void) { return 200; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(ret.exp, c99_ast.Constant(
+            const=c99_ast.ConstLong(int=200),
+        ))
+
+    def test_int_max_boundary(self):
+        # 127 is the maximum signed-1-byte value; still ConstInt.
+        # 128 forces ConstLong.
+        ast = parse("int main(void) { return 127; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertIsInstance(ret.exp.const, c99_ast.ConstInt)
+        ast = parse("int main(void) { return 128; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertIsInstance(ret.exp.const, c99_ast.ConstLong)
+
+    def test_literal_out_of_range_raises(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("int main(void) { return 32768; }")
+        self.assertIn("out of range", str(ctx.exception))
+
+    def test_unsigned_suffix_rejected(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("int main(void) { return 5U; }")
+        self.assertIn("unsigned", str(ctx.exception))
+
+    def test_long_long_rejected(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("long long x;")
+        self.assertIn("long long", str(ctx.exception))
+
+    def test_cast_to_long(self):
+        ast = parse("int main(void) { return (long)5; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(
+            ret.exp,
+            c99_ast.Cast(
+                target_type=c99_ast.Long(),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+            ),
+        )
+
+    def test_cast_is_right_associative(self):
+        # `(int)(long)5` parses as `(int)((long)5)`.
+        ast = parse("int main(void) { return (int)(long)5; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(
+            ret.exp,
+            c99_ast.Cast(
+                target_type=c99_ast.Int(),
+                exp=c99_ast.Cast(
+                    target_type=c99_ast.Long(),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                ),
+            ),
+        )
+
+    def test_cast_binds_tighter_than_multiply(self):
+        # `(int)x * 2` parses as `((int)x) * 2`, not `(int)(x * 2)`.
+        ast = parse("int main(void) { int x; return (int)x * 2; }")
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
+        self.assertIsInstance(ret.exp, c99_ast.Binary)
+        self.assertIsInstance(ret.exp.left, c99_ast.Cast)
+        self.assertIsInstance(ret.exp.right, c99_ast.Constant)
+
+    def test_unary_minus_takes_cast_exp(self):
+        # `-(int)x` parses as `-((int)x)` per §6.5.3.1 (unary-operator
+        # takes a cast-expression).
+        ast = parse("int main(void) { int x; return -(int)x; }")
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
+        self.assertIsInstance(ret.exp, c99_ast.Unary)
+        self.assertIsInstance(ret.exp.op, c99_ast.Negate)
+        self.assertIsInstance(ret.exp.exp, c99_ast.Cast)
+
+    def test_prefix_increment_does_not_take_cast(self):
+        # `++(int)x` is a parse error: prefix ++ takes a unary-exp,
+        # which excludes casts. (And the cast result isn't an lvalue
+        # anyway, so this matches C99's rejection.)
+        with self.assertRaises(UnexpectedInput):
+            parse("int main(void) { int x; return ++(int)x; }")
 
 
 if __name__ == "__main__":

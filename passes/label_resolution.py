@@ -101,6 +101,7 @@ class LabelResolver:
             name=fd.name,
             params=list(fd.params),
             body=self._rewrite_block(fd.body, labels),
+            data_type=fd.data_type,
             storage_class=fd.storage_class,
         )
 
@@ -113,10 +114,15 @@ class LabelResolver:
         # scope for the public version.
         match fn:
             case c99_ast.Function(name=name, params=params, body=body):
+                ftype = c99_ast.FunType(
+                    params=[c99_ast.Int() for _ in params],
+                    ret=c99_ast.Int(),
+                )
                 fd = c99_ast.Type_function_decl(
                     name=name,
                     params=list(params),
                     body=body,
+                    data_type=ftype,
                     storage_class=None,
                 )
                 new_fd = self._resolve_function_decl(fd)

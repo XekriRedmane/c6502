@@ -68,31 +68,64 @@ _STORAGE_CLASSES = {
     "EXTERN": c99_ast.Extern,
 }
 
+# Token types of every leaf the `specifier` rule can produce. After the
+# `type_specifier` and `specifier` transformer methods unwrap their
+# child trees, every entry on a specifier list is one of these tokens.
+_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "STATIC", "EXTERN")
+_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG")
+
+
+def _resolve_data_type(type_specs):
+    """Map a list of type-specifier tokens (each `INT` or `LONG`) to a
+    c99_ast `Int()` or `Long()`. The valid combinations follow C99
+    §6.7.2:
+      * `int`           → Int
+      * `long`          → Long
+      * `int long` /
+        `long int`      → Long
+      * `long long`     — C99 long long type (64-bit) — rejected, we
+                          only model 1-byte and 2-byte ints today
+      * anything else (no type, multiple `int`, etc.) — rejected
+    """
+    int_count = sum(1 for t in type_specs if t.type == "INT")
+    long_count = sum(1 for t in type_specs if t.type == "LONG")
+    if int_count == 0 and long_count == 0:
+        raise ParserError("missing type specifier")
+    if int_count > 1:
+        raise ParserError(
+            "multiple type specifiers in a declaration "
+            "(at most one 'int' is permitted)"
+        )
+    if long_count > 1:
+        raise ParserError(
+            "'long long' is not supported (only 'int' and 'long' are "
+            "modeled today)"
+        )
+    if long_count == 1:
+        return c99_ast.Long()
+    return c99_ast.Int()
+
 
 def _split_specifiers(specs):
-    """Validate a `specifier+` token list and split it into (type-
-    spelled-out, storage class).
+    """Validate a `specifier+` token list and split it into
+    `(data_type, storage_class)`.
 
-    The grammar rule `specifier: INT | STATIC | EXTERN` is permissive —
-    `specifier+` accepts any combination of these tokens, in any order.
-    C99 §6.7.2 / §6.7.1.2 are stricter:
-      * exactly one type specifier (today only INT is in the grammar,
-        so "exactly one INT")
+    The grammar rule `specifier: type_specifier | STATIC | EXTERN`
+    accepts any interleaving of type and storage-class specifiers in a
+    declaration. C99 §6.7.1.2 / §6.7.2 are stricter:
+      * exactly one type (composed from `INT` and `LONG` per
+        `_resolve_data_type`)
       * at most one storage-class specifier
 
-    A missing INT is also rejected: C99 dropped C89's implicit-int
-    rule, so `static x;` is ill-formed.
-
-    Returns the AST storage-class node (`Static` / `Extern`) or None.
-    The type specifier itself isn't returned because there's only one
-    type today; once richer types land, this returns a type AST node
-    too.
+    Returns `(data_type, storage_class)` where data_type is a
+    c99_ast.Int() or .Long() (or .FunType for the future) and
+    storage_class is a c99_ast.Static() / .Extern() / None.
     """
-    int_count = 0
+    type_specs = []
     storage = None
     for spec in specs:
-        if spec.type == "INT":
-            int_count += 1
+        if spec.type in _TYPE_SPECIFIER_TOKEN_TYPES:
+            type_specs.append(spec)
         else:
             cls = _STORAGE_CLASSES[spec.type]
             if storage is not None:
@@ -101,14 +134,7 @@ def _split_specifiers(specs):
                     "in a declaration"
                 )
             storage = cls()
-    if int_count == 0:
-        raise ParserError("missing type specifier")
-    if int_count > 1:
-        raise ParserError(
-            "multiple type specifiers in a declaration "
-            "(only one 'int' is permitted)"
-        )
-    return storage
+    return _resolve_data_type(type_specs), storage
 
 
 def _consume_specifiers(items, start):
@@ -121,11 +147,79 @@ def _consume_specifiers(items, start):
     while (
         i < len(items)
         and hasattr(items[i], "type")
-        and items[i].type in ("INT", "STATIC", "EXTERN")
+        and items[i].type in _SPECIFIER_TOKEN_TYPES
     ):
         specs.append(items[i])
         i += 1
     return specs, i
+
+
+# Integer-literal suffix decoding: a trailing `L`/`LL` is informational
+# (these dialect dialects use value-driven sizing rather than the C99
+# §6.4.4.1 rules), and `U`/`u` is rejected because we don't have
+# unsigned types yet.
+_INT_SUFFIX_PATTERN = (
+    "lL"  # any combination of L characters in any case (l, L, ll, LL, lL, Ll)
+)
+
+
+def _parse_integer_text(text):
+    """Strip C99 integer-constant suffixes (`L`, `LL`, `U`, `UL`, etc.)
+    from `text` and return the numeric value as a non-negative int.
+    Hex (`0x...`), octal (`0...`), and decimal forms are all accepted
+    via Python's `int(s, 0)`. C source literals are always non-negative
+    — negation comes from a unary-minus operator applied later — so the
+    return is always >= 0.
+
+    `U`/`u` suffixes are rejected: c6502 doesn't model unsigned types
+    yet, and silently dropping the suffix would let `5U` masquerade as
+    a signed int with no warning. `L`/`LL` suffixes are accepted but
+    discarded — sizing is driven by the literal's value, so a small
+    `L`-suffixed literal will still land in `ConstInt` (this is a
+    pragmatic deviation from C99 §6.4.4.1's type-from-suffix rule)."""
+    s = text
+    if "u" in s or "U" in s:
+        raise ParserError(
+            f"unsigned integer literals are not supported: {text!r}"
+        )
+    while s and s[-1] in _INT_SUFFIX_PATTERN:
+        s = s[:-1]
+    if not s:
+        raise ParserError(f"empty integer literal after suffix: {text!r}")
+    return int(s, 0)
+
+
+# Range bounds for the two integer constant variants. ConstInt is the
+# canonical 1-byte-signed form (-128..127); ConstLong is the 2-byte-
+# signed form, restricted to values that *don't* already fit in
+# ConstInt. The asdl-generated dataclasses don't enforce these ranges
+# themselves — callers go through `_make_const` to get a node with a
+# guaranteed-in-range field.
+_INT_MIN = -128
+_INT_MAX = 127
+_LONG_MIN = -32768
+_LONG_MAX = 32767
+
+
+def _make_const(value):
+    """Factory for c99_ast `Type_const` nodes. Picks the smallest
+    variant that fits `value`:
+      *  -128..127             → ConstInt
+      *  -32768..-129 / 128..32767 → ConstLong
+      *  anything else         → ParserError
+
+    The narrowing rule is mandated by the asdl invariant: ConstLong
+    must not hold a value that fits in ConstInt's range. Callers that
+    construct constants synthetically (the parser, future constant-
+    folding, tests) all funnel through here so the invariant holds."""
+    if _INT_MIN <= value <= _INT_MAX:
+        return c99_ast.ConstInt(int=value)
+    if _LONG_MIN <= value <= _LONG_MAX:
+        return c99_ast.ConstLong(int=value)
+    raise ParserError(
+        f"integer constant {value} out of range for c6502 (max 16-bit "
+        f"signed: {_LONG_MIN}..{_LONG_MAX})"
+    )
 
 
 class _ASTBuilder(Transformer):
@@ -137,19 +231,55 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def specifier(self, token):
-        # `specifier: INT | STATIC | EXTERN`. The Tree wraps a single
-        # token; pass it through so var_decl / function_decl can scan
-        # the leading specifier run.
+        # `specifier: type_specifier | STATIC | EXTERN`. Either branch
+        # contributes a single token (after `type_specifier` unwraps
+        # its tree), so this method just passes the token through for
+        # var_decl / function_decl to scan.
         return token
 
+    @v_args(inline=True)
+    def type_specifier(self, token):
+        # `type_specifier: INT | LONG`. Inline the single child so the
+        # caller (`specifier` or `type_name`) sees a Token directly.
+        return token
+
+    def type_name(self, items):
+        # `type_name: type_specifier+`. Used inside cast expressions.
+        # Each item is a token (INT or LONG) thanks to the
+        # `type_specifier` transformer above; map them through
+        # `_resolve_data_type` so callers get the c99_ast Int/Long
+        # node, not the raw token list.
+        return _resolve_data_type(items)
+
     def param_list(self, items):
-        # `(void)` -> empty parameter list. Otherwise `int IDENT (,
-        # int IDENT)*`, which arrives as INT, IDENT, COMMA, INT,
-        # IDENT, ...; we keep just the IDENT tokens and return their
-        # names.
+        # `(void)` → empty parameter list. Otherwise
+        #   type_specifier+ IDENTIFIER (COMMA type_specifier+ IDENTIFIER)*
+        # — each parameter has its own run of type_specifier tokens
+        # followed by an IDENTIFIER. The result is a list of
+        # (name, data_type) tuples; `function_decl` splits them into
+        # the parallel `params` (names) and `data_type.params` (types)
+        # arrays its AST shape requires.
         if len(items) == 1 and getattr(items[0], "type", None) == "VOID":
             return []
-        return [str(items[i]) for i in range(1, len(items), 3)]
+        out = []
+        i = 0
+        while i < len(items):
+            type_specs = []
+            while (
+                i < len(items)
+                and hasattr(items[i], "type")
+                and items[i].type in _TYPE_SPECIFIER_TOKEN_TYPES
+            ):
+                type_specs.append(items[i])
+                i += 1
+            # items[i] is now the IDENTIFIER for this param.
+            name = str(items[i])
+            i += 1
+            out.append((name, _resolve_data_type(type_specs)))
+            # Skip over the COMMA separator if there's another param.
+            if i < len(items) and getattr(items[i], "type", None) == "COMMA":
+                i += 1
+        return out
 
     def block(self, items):
         # `block: LBRACE block_item* RBRACE`. Non-inline because
@@ -180,16 +310,19 @@ class _ASTBuilder(Transformer):
         # Layout: <specs...> IDENTIFIER [ASSIGN exp] SEMICOLON. The
         # specifier validation lives in `_split_specifiers` — this
         # method just slices the token stream into specs / name /
-        # initializer.
+        # initializer and pulls the data_type out of the specifiers.
         specs, i = _consume_specifiers(items, 0)
-        storage_class = _split_specifiers(specs)
+        data_type, storage_class = _split_specifiers(specs)
         name = items[i]
         i += 1
         init = None
         if items[i].type == "ASSIGN":
             init = items[i + 1]
         return c99_ast.Type_var_decl(
-            name=str(name), init=init, storage_class=storage_class,
+            name=str(name),
+            init=init,
+            data_type=data_type,
+            storage_class=storage_class,
         )
 
     def function_decl(self, items):
@@ -200,19 +333,31 @@ class _ASTBuilder(Transformer):
         # `block` transformer has already turned the latter into a
         # Block AST node, so we tell the two apart by inspecting the
         # last item.
+        #
+        # `param_list` returns a list of (name, type) tuples. We split
+        # them into parallel arrays: the AST's `params` field is a
+        # list of names, while the function's overall `data_type`
+        # carries the param types alongside the return type as
+        # `FunType(params, ret)`.
         specs, i = _consume_specifiers(items, 0)
-        storage_class = _split_specifiers(specs)
+        return_type, storage_class = _split_specifiers(specs)
         name = items[i]
         # items[i+1] = LPAREN, items[i+2] = param_list, items[i+3] = RPAREN
-        params = items[i + 2]
+        param_pairs = items[i + 2]
         last = items[i + 4]
         if hasattr(last, "type") and last.type == "SEMICOLON":
             body = None
         else:
             # `block` already produced a c99_ast.Block.
             body = last
+        param_names = [n for (n, _t) in param_pairs]
+        param_types = [t for (_n, t) in param_pairs]
+        ftype = c99_ast.FunType(params=param_types, ret=return_type)
         return c99_ast.Type_function_decl(
-            name=str(name), params=params, body=body,
+            name=str(name),
+            params=param_names,
+            body=body,
+            data_type=ftype,
             storage_class=storage_class,
         )
 
@@ -319,12 +464,29 @@ class _ASTBuilder(Transformer):
 
     # Alternatives of `exp` — each named in c99.lark.
     @v_args(inline=True)
-    def constant(self, token):
-        return c99_ast.Constant(value=int(str(token)))
+    def const(self, token):
+        # `const: INTEGER_CONSTANT`. Strip any C99 size suffix
+        # (`L`/`LL`), reject unsigned suffixes, then dispatch on the
+        # numeric value to the right `Type_const` variant.
+        return _make_const(_parse_integer_text(str(token)))
+
+    @v_args(inline=True)
+    def constant(self, c):
+        # `?atom: const -> constant`. The `const` handler already
+        # built a ConstInt or ConstLong; wrap it in the Constant
+        # expression node.
+        return c99_ast.Constant(const=c)
 
     @v_args(inline=True)
     def identifier(self, token):
         return c99_ast.Var(name=str(token))
+
+    @v_args(inline=True)
+    def cast(self, _lp, target_type, _rp, exp):
+        # `cast_exp: LPAREN type_name RPAREN cast_exp -> cast`. The
+        # `type_name` transformer already resolved the type-specifier
+        # run to a c99_ast Int/Long node; just plug it into the AST.
+        return c99_ast.Cast(target_type=target_type, exp=exp)
 
     @v_args(inline=True)
     def assignment(self, lval, _assign, rval):
@@ -366,7 +528,9 @@ class _ASTBuilder(Transformer):
         return c99_ast.Assignment(
             lval=operand,
             rval=c99_ast.Binary(
-                op=op, left=operand, right=c99_ast.Constant(value=1),
+                op=op,
+                left=operand,
+                right=c99_ast.Constant(const=_make_const(1)),
             ),
         )
 

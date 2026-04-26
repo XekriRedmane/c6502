@@ -169,7 +169,7 @@ WS: /[ \t\n\f]+/
 start: declaration*
 
 declaration: function_decl | var_decl
-specifier: INT | STATIC | EXTERN
+specifier: type_specifier | STATIC | EXTERN
 var_decl: specifier+ IDENTIFIER (ASSIGN exp)? SEMICOLON
 function_decl: specifier+ IDENTIFIER LPAREN param_list RPAREN (SEMICOLON | block)
 
@@ -178,7 +178,8 @@ function_decl: specifier+ IDENTIFIER LPAREN param_list RPAREN (SEMICOLON | block
 // function_definitions today (the AST's Function only carries name
 // and body), but they are kept on function_decl for the future
 // type-checking pass.
-param_list: VOID | INT IDENTIFIER (COMMA INT IDENTIFIER)*
+param_list: VOID | type_specifier+ IDENTIFIER (COMMA type_specifier+ IDENTIFIER)*
+type_specifier: INT | LONG
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
@@ -283,17 +284,32 @@ statement: RETURN exp SEMICOLON                                     -> return_st
 ?add_exp: add_exp PLUS mul_exp      -> add
         | add_exp MINUS mul_exp     -> subtract
         | mul_exp
-?mul_exp: mul_exp STAR unary_exp    -> multiply
-        | mul_exp SLASH unary_exp   -> divide
-        | mul_exp PERCENT unary_exp -> modulo
-        | unary_exp
+?mul_exp: mul_exp STAR cast_exp     -> multiply
+        | mul_exp SLASH cast_exp    -> divide
+        | mul_exp PERCENT cast_exp  -> modulo
+        | cast_exp
+// Cast expression (C99 §6.5.4) sits between unary and multiplicative.
+// Right-recursive so `(int)(long)x` parses as `(int)((long)x)`. The
+// LPAREN-vs-paren-expr ambiguity is resolved at LALR(1) by the next
+// token after `(`: type_specifier (INT/LONG) → cast; anything else
+// → parenthesised exp.
+?cast_exp: LPAREN type_name RPAREN cast_exp  -> cast
+         | unary_exp
+// type-name (§6.7.6) — for now just one or more type_specifiers (no
+// abstract declarators since we have no pointer/array types). The
+// transformer reuses `_resolve_data_type` to map the run of INT/LONG
+// tokens to `Int()` or `Long()`.
+type_name: type_specifier+
 // Prefix `++`/`--` sit at unary precedence (alongside `-`/`~`/`!`) and
 // desugar at parse time to `lval = lval ± 1` — same shape as a compound
 // assignment, so no AST node is needed. Postfix `a++`/`a--` need their
 // own node because they evaluate to the *old* value of the operand
 // while still mutating it; that can't be expressed by reusing
-// Assignment/Binary alone.
-?unary_exp: unop unary_exp           -> unary
+// Assignment/Binary alone. The unary-operator alternative takes a
+// `cast_exp` (per §6.5.3.1) so `-(int)x` parses as `-((int)x)`;
+// prefix ++/-- keep their unary_exp operand because the cast result
+// isn't an lvalue.
+?unary_exp: unop cast_exp            -> unary
           | PLUSPLUS unary_exp       -> pre_increment
           | MINUSMINUS unary_exp     -> pre_decrement
           | postfix_exp
@@ -308,10 +324,11 @@ statement: RETURN exp SEMICOLON                                     -> return_st
 // FunctionCall(name, args) takes the callee as a string identifier
 // (not a general expression), so the LHS is restricted to
 // IDENTIFIER directly — no `(p)(args)` form yet.
-?atom: INTEGER_CONSTANT                       -> constant
+?atom: const                       -> constant
      | LPAREN exp RPAREN                      -> paren
      | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
      | IDENTIFIER                             -> identifier
+const: INTEGER_CONSTANT
 
 unop: MINUS                         -> negate
     | TILDE                         -> complement

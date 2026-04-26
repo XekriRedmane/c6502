@@ -299,6 +299,7 @@ class Resolver:
                     var_decl=c99_ast.Type_var_decl(
                         name=vd.name,
                         init=new_init,
+                        data_type=vd.data_type,
                         storage_class=vd.storage_class,
                     ),
                 )
@@ -366,6 +367,7 @@ class Resolver:
             name=fd.name,
             params=new_params,
             body=new_body,
+            data_type=fd.data_type,
             storage_class=fd.storage_class,
         )
 
@@ -558,6 +560,7 @@ class Resolver:
                 return c99_ast.Type_var_decl(
                     name=resolved,
                     init=new_init,
+                    data_type=vd.data_type,
                     storage_class=vd.storage_class,
                 )
         raise TypeError(f"unexpected var_decl: {vd!r}")
@@ -682,8 +685,18 @@ class Resolver:
         self, exp: c99_ast.Type_exp, scope: _Scope,
     ) -> c99_ast.Type_exp:
         match exp:
-            case c99_ast.Constant(value=v):
-                return c99_ast.Constant(value=v)
+            case c99_ast.Constant(const=c):
+                # `const` is a `Type_const` (ConstInt or ConstLong) —
+                # an inert value, not an identifier. Pass through.
+                return c99_ast.Constant(const=c)
+            case c99_ast.Cast(target_type=t, exp=inner):
+                # The target type is plain syntax (Int / Long / FunType
+                # nodes); only the inner expression has identifiers to
+                # resolve.
+                return c99_ast.Cast(
+                    target_type=t,
+                    exp=self.resolve_exp(inner, scope),
+                )
             case c99_ast.Var(name=name):
                 # Variables and functions share one C namespace, so a
                 # single lookup in the per-block scope is enough — file-
@@ -767,10 +780,19 @@ def resolve_function(
     `resolve_program` as a one-element program, and unwraps the
     resolved function back into the legacy shape so existing unit
     tests don't have to construct full Programs by hand."""
+    # The legacy `Function(name, params, body)` shape doesn't carry
+    # type information, so synthesize an Int-returning, Int-param
+    # FunType — that's what every test that uses this helper assumed
+    # implicitly anyway.
+    ftype = c99_ast.FunType(
+        params=[c99_ast.Int() for _ in fn.params],
+        ret=c99_ast.Int(),
+    )
     fd = c99_ast.Type_function_decl(
         name=fn.name,
         params=list(fn.params),
         body=fn.body,
+        data_type=ftype,
         storage_class=None,
     )
     prog = c99_ast.Program(declaration=[

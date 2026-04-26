@@ -11,6 +11,7 @@ from passes.type_checking import (
     Initial,
     Int,
     LocalAttr,
+    Long,
     NoInitializer,
     StaticAttr,
     Symbol,
@@ -41,7 +42,7 @@ class TestSymbolTableContents(unittest.TestCase):
         _, symbols = _check("int main(void) { return 0; }")
         self.assertIn("main", symbols)
         sym = symbols["main"]
-        self.assertEqual(sym.type, FunType(params=(), ret=Int()))
+        self.assertEqual(sym.type, FunType(params=[], ret=Int()))
         self.assertIsInstance(sym.attrs, FunAttr)
         self.assertTrue(sym.attrs.defined)
         # `main` has no specifier → external linkage → is_global=True.
@@ -62,7 +63,7 @@ class TestSymbolTableContents(unittest.TestCase):
             "int main(void) { int foo(int a, int b); return 0; }"
         )
         sym = symbols["foo"]
-        self.assertEqual(sym.type, FunType(params=(Int(), Int()), ret=Int()))
+        self.assertEqual(sym.type, FunType(params=[Int(), Int()], ret=Int()))
         self.assertIsInstance(sym.attrs, FunAttr)
         self.assertFalse(sym.attrs.defined)
         # No specifier on a block-scope function decl → as-if-extern
@@ -452,19 +453,31 @@ class TestProgramReturnedUnchanged(unittest.TestCase):
 
 
 class TestTypeEquality(unittest.TestCase):
+    """The data-type classes (Int, Long, FunType) live on the c99 AST
+    now and are non-frozen `@dataclass`-generated, so they support
+    structural equality but aren't hashable. Equality is what the
+    type checker actually relies on; hashability isn't load-bearing
+    for the symbol table (keyed by string name)."""
+
     def test_int_equals_itself(self):
         self.assertEqual(Int(), Int())
-        self.assertEqual(hash(Int()), hash(Int()))
+
+    def test_int_does_not_equal_long(self):
+        self.assertNotEqual(Int(), Long())
 
     def test_funtype_equals_structurally(self):
-        a = FunType(params=(Int(), Int()), ret=Int())
-        b = FunType(params=(Int(), Int()), ret=Int())
+        a = FunType(params=[Int(), Int()], ret=Int())
+        b = FunType(params=[Int(), Int()], ret=Int())
         self.assertEqual(a, b)
-        self.assertEqual(hash(a), hash(b))
+
+    def test_funtype_distinguishes_param_types(self):
+        a = FunType(params=[Int(), Int()], ret=Int())
+        b = FunType(params=[Int(), Long()], ret=Int())
+        self.assertNotEqual(a, b)
 
     def test_funtype_arity_distinguishes(self):
-        a = FunType(params=(Int(),), ret=Int())
-        b = FunType(params=(Int(), Int()), ret=Int())
+        a = FunType(params=[Int()], ret=Int())
+        b = FunType(params=[Int(), Int()], ret=Int())
         self.assertNotEqual(a, b)
 
 
@@ -510,6 +523,172 @@ class TestErrors(unittest.TestCase):
         stub = type("Stub", (c99_ast.Type_exp,), {})
         with self.assertRaises(TypeError):
             TypeChecker()._check_exp(stub())
+
+
+class TestLongAndCasts(unittest.TestCase):
+    """End-to-end type-checking with `long` declarations and explicit
+    casts. The strict rule: no implicit Int↔Long conversion. A cast is
+    the only way to convert."""
+
+    def test_long_variable_is_recorded_as_long(self):
+        _, symbols = _check("long x; int main(void) { return 0; }")
+        self.assertEqual(symbols["x"].type, Long())
+
+    def test_long_local_is_recorded_as_long(self):
+        _, symbols = _check(
+            "int main(void) { long x = (long)5; return 0; }"
+        )
+        self.assertEqual(symbols["@0.x"].type, Long())
+
+    def test_function_return_type_long(self):
+        _, symbols = _check(
+            "long foo(void); int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            symbols["foo"].type,
+            FunType(params=[], ret=Long()),
+        )
+
+    def test_function_param_types(self):
+        _, symbols = _check(
+            "int foo(int a, long b); int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            symbols["foo"].type,
+            FunType(params=[Int(), Long()], ret=Int()),
+        )
+
+    def test_int_init_with_long_literal_raises(self):
+        # `int x = 200;` — 200 is a Long literal (doesn't fit in
+        # signed 1 byte), so the initializer's type doesn't match the
+        # declared `int`.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check("int main(void) { int x = 200; return 0; }")
+        self.assertIn("type", str(ctx.exception).lower())
+
+    def test_long_init_with_int_literal_raises(self):
+        # `long x = 5;` — 5 is an Int literal, doesn't match declared
+        # Long. User must write `(long)5`.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check("int main(void) { long x = 5; return 0; }")
+        self.assertIn("type", str(ctx.exception).lower())
+
+    def test_long_init_with_cast(self):
+        # `long x = (long)5;` — explicit cast, should type-check.
+        _check("int main(void) { long x = (long)5; return 0; }")
+
+    def test_int_long_addition_without_cast_raises(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a = 1; long b = (long)2; "
+                "return a + b; }"
+            )
+        self.assertIn("disagree", str(ctx.exception))
+
+    def test_int_long_addition_with_cast(self):
+        # Promote the int to long before adding; result is long; cast
+        # back to int for the return.
+        _check(
+            "int main(void) { int a = 1; long b = (long)2; "
+            "return (int)((long)a + b); }"
+        )
+
+    def test_assignment_with_mismatched_types_raises(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a; long b = (long)1; "
+                "a = b; return 0; }"
+            )
+        self.assertIn("type mismatch", str(ctx.exception))
+
+    def test_call_arg_type_mismatch_raises(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int foo(long x); "
+                "int main(void) { return foo(1); }"
+            )
+        self.assertIn("argument", str(ctx.exception).lower())
+
+    def test_call_arg_with_explicit_cast(self):
+        _check(
+            "int foo(long x); "
+            "int main(void) { return foo((long)1); }"
+        )
+
+    def test_return_type_mismatch_raises(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check("long main(void) { return 5; }")
+        self.assertIn("return", str(ctx.exception).lower())
+
+    def test_return_type_with_explicit_cast(self):
+        _check("long main(void) { return (long)5; }")
+
+    def test_static_long_with_int_literal_raises(self):
+        # `static long x = 5;` — 5 is an Int literal; the cast factory
+        # rejects it because the variant doesn't match the declared
+        # type.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { static long x = 5; return 0; }"
+            )
+        self.assertIn("constant expression", str(ctx.exception).lower())
+
+    def test_static_long_with_cast_initializer(self):
+        # `static long x = (long)5;` — cast bridges the type, should
+        # type-check.
+        _, symbols = _check(
+            "int main(void) { static long x = (long)5; return 0; }"
+        )
+        sym = symbols["@0.x"]
+        self.assertEqual(sym.type, Long())
+        self.assertEqual(
+            sym.attrs,
+            StaticAttr(initial_value=Initial(value=5), is_global=False),
+        )
+
+    def test_logical_not_returns_int_for_long_operand(self):
+        # !x on a Long operand yields Int per C99 §6.5.3.3.5. The
+        # surrounding context here forces the `!` result to be
+        # comparable to an Int (= 0 → still int) — the type-check
+        # passing means !long_x returned int.
+        _check(
+            "int main(void) { long x = (long)1; return !x; }"
+        )
+
+    def test_comparison_on_longs_returns_int(self):
+        # `a == b` with both operands Long: result is Int, used as a
+        # return value of int main → must match.
+        _check(
+            "int main(void) { long a = (long)1; long b = (long)2; "
+            "return a == b; }"
+        )
+
+    def test_cast_target_must_be_object_type(self):
+        # Casting to a function type isn't representable in our
+        # grammar (type_name only accepts INT/LONG specifiers), so we
+        # exercise this via a synthetic AST.
+        from passes.identifier_resolution import resolve_program
+        prog = c99_ast.Program(declaration=[c99_ast.FunctionDecl(
+            function_decl=c99_ast.Type_function_decl(
+                name="main",
+                params=[],
+                body=c99_ast.Block(block_item=[c99_ast.S(
+                    statement=c99_ast.Return(exp=c99_ast.Cast(
+                        target_type=c99_ast.FunType(
+                            params=[], ret=c99_ast.Int(),
+                        ),
+                        exp=c99_ast.Constant(
+                            const=c99_ast.ConstInt(int=0),
+                        ),
+                    )),
+                )]),
+                data_type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
+                storage_class=None,
+            ),
+        )])
+        with self.assertRaises(TypeCheckError) as ctx:
+            check_program(resolve_program(prog))
+        self.assertIn("Int or Long", str(ctx.exception))
 
 
 if __name__ == "__main__":

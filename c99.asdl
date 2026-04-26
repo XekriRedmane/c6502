@@ -25,16 +25,19 @@ module C99 {
     -- Ints are 1 byte, longs are 2 bytes.
     data_type = Int | Long | FunType(data_type* params, data_type ret)
     for_init = InitDecl(var_decl) | InitExp(exp?)
+
+    -- All expressions have a data type, which might be unspecified.
     exp =
-        Constant(const)
-        | Var(identifier name)
-        | Cast(data_type target_type, exp)
-        | Unary(unary_operator op, exp)
-        | Binary(binary_operator op, exp left, exp right)
-        | Assignment(exp lval, exp rval)
-        | Postfix(incdec_op op, exp operand)
-        | Conditional(exp condition, exp true_clause, exp false_clause)
-        | FunctionCall(identifier name, exp* args)
+        Constant(const, data_type?)
+        | Var(identifier name, data_type?)
+        | Cast(data_type target_type, exp, data_type?)
+        | Unary(unary_operator op, exp, data_type?)
+        | Binary(binary_operator op, exp left, exp right, data_type?)
+        | Assignment(exp lval, exp rval, data_type?)
+        | Postfix(incdec_op op, exp operand, data_type?)
+        | Conditional(exp condition, exp true_clause, exp false_clause, data_type?)
+        | FunctionCall(identifier name, exp* args, data_type?)
+
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement
     binary_operator =

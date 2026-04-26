@@ -268,50 +268,34 @@ def _linkage_to_is_global(linkage: Linkage) -> bool:
 
 
 def _const_init_value(
-    exp: c99_ast.Type_exp, name: str, declared_type: Type,
+    exp: c99_ast.Type_exp, name: str,
 ) -> int:
     """Static-storage initializers must be compile-time constant
-    expressions (C99 §6.7.8.4). Today we accept a raw integer
-    literal or a `Cast` of one; that's enough to write
-    `static long x = (long)5;` to force a Long-typed init for a
-    small value.
+    expressions (C99 §6.7.8.4). After `_check_exp` and the
+    initializer-conversion rule have run, the AST shape is one of:
+      * a `Constant(ConstInt|ConstLong)` — variant doesn't have to
+        match the variable's declared type, since
+        `_convert_to(...)` has already wrapped a mismatch in a
+        `Cast`.
+      * a `Cast` (possibly nested) wrapping a Constant — produced
+        by `_convert_to` for narrowing/widening initializers, or
+        explicitly written by the user.
 
-    The returned int is the underlying numeric value; the
-    declared_type tells us which `Const` variant the literal must
-    have produced (ConstInt for Int, ConstLong for Long).
+    Both shapes reduce to the underlying integer value. The Cast
+    target's type tells codegen the storage width when laying out
+    the StaticVariable; for now the raw value passes through and
+    asm emit's `_check_byte` enforces the 0..255 range — Long-
+    typed statics with values above 255 hit the deferred-codegen
+    boundary there.
     """
-    expected = _const_variant_for(declared_type, name)
     match exp:
-        case c99_ast.Constant(const=c) if isinstance(c, expected):
+        case c99_ast.Constant(const=c):
             return c.int
-        case c99_ast.Cast(target_type=t, exp=c99_ast.Constant(const=c)):
-            # `static long x = (long)5;` — cast on a constant.
-            # Validate the cast target matches the declared type.
-            if not _types_equal(t, declared_type):
-                raise TypeCheckError(
-                    f"initializer for {name!r}: cast to {t!r} "
-                    f"doesn't match declared type {declared_type!r}"
-                )
-            # The inner constant's variant doesn't have to match the
-            # target type — that's exactly what the cast bridges. We
-            # use the cast's target as the result type and the
-            # constant's value as the byte payload.
-            return c.int
+        case c99_ast.Cast(exp=inner):
+            return _const_init_value(inner, name)
     raise TypeCheckError(
         f"initializer for static-storage object {name!r} is not a "
         f"constant expression"
-    )
-
-
-def _const_variant_for(t: Type, name: str) -> type:
-    """Return the `Type_const` subclass that the parser should have
-    produced for a literal of declared type `t`."""
-    if isinstance(t, Int):
-        return c99_ast.ConstInt
-    if isinstance(t, Long):
-        return c99_ast.ConstLong
-    raise TypeCheckError(
-        f"unexpected declared type for initializer of {name!r}: {t!r}"
     )
 
 
@@ -353,6 +337,36 @@ def _is_object_type(t: Type) -> bool:
     an object — variable references, cast targets, arithmetic
     operands."""
     return isinstance(t, (Int, Long))
+
+
+def _common_type(a: Type, b: Type) -> Type:
+    """The common arithmetic type for two object types, per a
+    restricted form of C99 §6.3.1.8. With only Int and Long in the
+    language:
+      * matching types       → that type
+      * Int / Long mixed     → Long (the wider type wins)
+
+    Both operands must be object types; the caller has already
+    enforced that. Returned types are fresh Int / Long instances so
+    callers can attach them to AST nodes without aliasing."""
+    if _types_equal(a, b):
+        # Use a fresh instance so we don't alias the operand's
+        # data_type into the result.
+        return Long() if isinstance(a, Long) else Int()
+    return Long()
+
+
+def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
+    """If `exp.data_type` already equals `target`, return `exp` as-is.
+    Otherwise wrap it in an implicit `Cast(target, exp)` and tag the
+    Cast with `target` as its data_type. The wrapper is what TAC /
+    codegen will see, so every operand reaching the back end has a
+    self-describing type and any size-changing conversion is an
+    explicit Cast node."""
+    if exp.data_type is not None and _types_equal(exp.data_type, target):
+        return exp
+    cast = c99_ast.Cast(target_type=target, exp=exp, data_type=target)
+    return cast
 
 
 class TypeChecker:
@@ -416,9 +430,17 @@ class TypeChecker:
                 NoInitializer() if is_extern else Tentative()
             )
         else:
-            initial = Initial(_const_init_value(
-                vd.init, vd.name, vd.data_type,
-            ))
+            # Type-check the initializer normally (sets data_type
+            # on every node) and convert to the declared type if
+            # they differ — same shape as Assignment / Return /
+            # arg conversion. After this, `vd.init` is either a
+            # bare Constant (variant matches declared type) or
+            # `Cast(declared_type, original_init)` for the
+            # mismatched case. `_const_init_value` then drills
+            # through any Cast wrappers to the underlying integer.
+            self._check_exp(vd.init)
+            vd.init = _convert_to(vd.init, vd.data_type)
+            initial = Initial(_const_init_value(vd.init, vd.name))
         # Recover linkage from the storage class.
         if isinstance(vd.storage_class, c99_ast.Static):
             linkage = Linkage.INTERNAL
@@ -654,28 +676,30 @@ class TypeChecker:
             if vd.init is None:
                 initial: InitialValue = Initial(0)
             else:
-                initial = Initial(_const_init_value(
-                    vd.init, vd.name, vd.data_type,
-                ))
+                # Same flow as the file-scope-static path: type-
+                # check, apply the conversion rule (so a literal of
+                # the wrong variant gets wrapped in an implicit
+                # Cast), then drill through Casts to the underlying
+                # integer value.
+                self._check_exp(vd.init)
+                vd.init = _convert_to(vd.init, vd.data_type)
+                initial = Initial(_const_init_value(vd.init, vd.name))
             self.symbols[vd.name] = Symbol(
                 type=vd.data_type,
                 attrs=StaticAttr(initial_value=initial, is_global=False),
             )
             return
         # Plain `int x;` / `long x;` — automatic storage. The
-        # initializer is a runtime expression; type-check it here
-        # against the declared type.
+        # initializer is a runtime expression; type-check it and
+        # convert to the declared type so the AST carries an
+        # explicit Cast for any narrowing/widening (same shape as
+        # Assignment / Return / arg conversion).
         self.symbols[vd.name] = Symbol(
             type=vd.data_type, attrs=LocalAttr(),
         )
         if vd.init is not None:
-            init_type = self._check_exp(vd.init)
-            if not _types_equal(init_type, vd.data_type):
-                raise TypeCheckError(
-                    f"cannot initialize variable {vd.name!r} of type "
-                    f"{vd.data_type!r} with value of type "
-                    f"{init_type!r}"
-                )
+            self._check_exp(vd.init)
+            vd.init = _convert_to(vd.init, vd.data_type)
 
     # ------------------------------------------------------------------
     # Statements / expressions
@@ -686,7 +710,7 @@ class TypeChecker:
     ) -> None:
         match stmt:
             case c99_ast.Return(exp=exp):
-                t = self._check_exp(exp)
+                self._check_exp(exp)
                 expected = self._return_type
                 # `expected is None` only happens if `Return` shows
                 # up outside any function body, which the parser
@@ -695,11 +719,11 @@ class TypeChecker:
                     raise TypeCheckError(
                         "return statement outside of any function"
                     )
-                if not _types_equal(t, expected):
-                    raise TypeCheckError(
-                        f"return value of type {t!r}, expected "
-                        f"{expected!r}"
-                    )
+                # Return-value conversion (C99 §6.8.6.4.3): if the
+                # value's type doesn't match the declared return
+                # type, wrap it in an implicit Cast — same shape as
+                # Assignment / FunctionCall arg conversion.
+                stmt.exp = _convert_to(exp, expected)
                 return
             case c99_ast.Expression(exp=exp):
                 self._check_exp(exp)
@@ -763,13 +787,11 @@ class TypeChecker:
                     type=vd.data_type, attrs=LocalAttr(),
                 )
                 if vd.init is not None:
-                    init_type = self._check_exp(vd.init)
-                    if not _types_equal(init_type, vd.data_type):
-                        raise TypeCheckError(
-                            f"cannot initialize variable {vd.name!r} "
-                            f"of type {vd.data_type!r} with value of "
-                            f"type {init_type!r}"
-                        )
+                    # Initializer-conversion rule: type-check then
+                    # wrap in an implicit Cast if needed (same
+                    # shape as block-scope var decls).
+                    self._check_exp(vd.init)
+                    vd.init = _convert_to(vd.init, vd.data_type)
                 return
             case c99_ast.InitExp(exp=exp):
                 if exp is not None:
@@ -778,16 +800,32 @@ class TypeChecker:
         raise TypeError(f"unexpected for_init: {init!r}")
 
     def _check_exp(self, exp: c99_ast.Type_exp) -> Type:
+        """Type-check an expression, populating `exp.data_type` in
+        place on every node visited. Returns the computed type for
+        caller convenience (callers like `_check_block_var` need to
+        compare it against a declared type).
+
+        For `Binary` and `Conditional`, if operand types disagree,
+        the narrower operand is wrapped in an implicit `Cast` —
+        TAC sees a self-describing tree where every operand has a
+        concrete `data_type` and any size-changing conversion is an
+        explicit Cast node. The mutation happens on the parent
+        `Binary` / `Conditional` node's child fields (`left` /
+        `right` / `true_clause` / `false_clause`).
+        """
         match exp:
             case c99_ast.Constant(const=c):
                 # ConstInt → Int; ConstLong → Long. The parser's
                 # `_make_const` already restricted the values, so
                 # we don't re-check here.
                 if isinstance(c, c99_ast.ConstInt):
-                    return Int()
-                if isinstance(c, c99_ast.ConstLong):
-                    return Long()
-                raise TypeError(f"unexpected const: {c!r}")
+                    t = Int()
+                elif isinstance(c, c99_ast.ConstLong):
+                    t = Long()
+                else:
+                    raise TypeError(f"unexpected const: {c!r}")
+                exp.data_type = t
+                return t
             case c99_ast.Cast(target_type=target, exp=inner):
                 if not _is_object_type(target):
                     raise TypeCheckError(
@@ -800,6 +838,7 @@ class TypeChecker:
                         f"cannot cast non-object type {inner_type!r} "
                         f"to {target!r}"
                     )
+                exp.data_type = target
                 return target
             case c99_ast.Var(name=name):
                 sym = self.symbols.get(name)
@@ -811,6 +850,7 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"function {name!r} used as a variable"
                     )
+                exp.data_type = sym.type
                 return sym.type
             case c99_ast.Unary(op=op, exp=inner):
                 t = self._check_exp(inner)
@@ -821,8 +861,11 @@ class TypeChecker:
                 # `!x` always yields an int (C99 §6.5.3.3.5: "The
                 # result has type int"). `-x` and `~x` preserve type.
                 if isinstance(op, c99_ast.LogicalNot):
-                    return Int()
-                return t
+                    result = Int()
+                else:
+                    result = t
+                exp.data_type = result
+                return result
             case c99_ast.Binary(op=op, left=lhs, right=rhs):
                 tl = self._check_exp(lhs)
                 tr = self._check_exp(rhs)
@@ -831,29 +874,51 @@ class TypeChecker:
                         f"binary operator on non-object types: "
                         f"{tl!r}, {tr!r}"
                     )
-                if not _types_equal(tl, tr):
-                    raise TypeCheckError(
-                        f"binary operator operand types disagree "
-                        f"({tl!r} vs {tr!r}); use an explicit cast"
-                    )
-                # Comparisons and logical and/or always yield int
-                # regardless of operand type.
+                # Usual arithmetic conversions (C99 §6.3.1.8): if
+                # operand types differ, promote the narrower one to
+                # the common type by wrapping it in an implicit
+                # Cast. Both operands now have type `common`, so the
+                # underlying op is well-defined at one width.
+                common = _common_type(tl, tr)
+                exp.left = _convert_to(lhs, common)
+                exp.right = _convert_to(rhs, common)
+                # Result type: arithmetic / bitwise / shift ops yield
+                # the common type; comparison and logical-and/or
+                # always yield int regardless of operand type
+                # (§6.5.3.3.5 / §6.5.8.6 / §6.5.13.3 / §6.5.14.3).
                 if isinstance(op, (
                     c99_ast.Equal, c99_ast.NotEqual,
                     c99_ast.LessThan, c99_ast.GreaterThan,
                     c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
                     c99_ast.LogicalAnd, c99_ast.LogicalOr,
                 )):
-                    return Int()
-                return tl
+                    result = Int()
+                else:
+                    result = common
+                exp.data_type = result
+                return result
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
-                if not _types_equal(tl, tr):
-                    raise TypeCheckError(
-                        f"assignment type mismatch: target {tl!r}, "
-                        f"value {tr!r}; use an explicit cast"
-                    )
+                # Assignment conversion (C99 §6.5.16.1): the value of
+                # the right operand is converted to the type of the
+                # assignment expression. Implemented by wrapping the
+                # rval in an implicit Cast when its type doesn't
+                # already match the lval's. This covers compound
+                # assignments too — `int_x += long_y` parses as
+                # `int_x = int_x + long_y`, the Binary promotes both
+                # operands to Long and yields Long, then this branch
+                # narrows the Long result back to Int via an
+                # implicit (int) cast — same semantics as the
+                # explicit `int_x = (int)((long)int_x + long_y)`.
+                # Note we don't re-check `_is_object_type(tl)` here:
+                # identifier_resolution already enforces that the
+                # lval is a Var, and Var lookups in `_check_exp`
+                # raise "function used as variable" if the type
+                # isn't an object type, so `tl` is always Int or
+                # Long by the time we land here.
+                exp.rval = _convert_to(rv, tl)
+                exp.data_type = tl
                 return tl
             case c99_ast.Postfix(operand=op):
                 t = self._check_exp(op)
@@ -861,6 +926,7 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"postfix operator on non-object type {t!r}"
                     )
+                exp.data_type = t
                 return t
             case c99_ast.Conditional(
                 condition=cond,
@@ -870,12 +936,18 @@ class TypeChecker:
                 self._check_exp(cond)
                 tt = self._check_exp(t_clause)
                 tf = self._check_exp(f_clause)
-                if not _types_equal(tt, tf):
+                if not _is_object_type(tt) or not _is_object_type(tf):
                     raise TypeCheckError(
-                        f"conditional branches have mismatched "
-                        f"types: {tt!r}, {tf!r}"
+                        f"conditional branches must be object types, "
+                        f"got {tt!r}, {tf!r}"
                     )
-                return tt
+                # C99 §6.5.15.5: usual arithmetic conversions on the
+                # two branches; result has the common type.
+                common = _common_type(tt, tf)
+                exp.true_clause = _convert_to(t_clause, common)
+                exp.false_clause = _convert_to(f_clause, common)
+                exp.data_type = common
+                return common
             case c99_ast.FunctionCall(name=name, args=args):
                 sym = self.symbols.get(name)
                 if sym is None:
@@ -893,15 +965,18 @@ class TypeChecker:
                         f"argument{plural}, expected "
                         f"{len(sym.type.params)}"
                     )
+                # Argument conversion (C99 §6.5.2.2.7): each argument
+                # is converted, as if by assignment, to the type of
+                # the corresponding parameter. Mutate `args` in place
+                # so the post-conversion arg list is what the back end
+                # sees — same shape as Assignment / Binary / Conditional
+                # promotion.
                 for i, (arg, expected) in enumerate(
                     zip(args, sym.type.params),
                 ):
-                    actual = self._check_exp(arg)
-                    if not _types_equal(actual, expected):
-                        raise TypeCheckError(
-                            f"argument {i + 1} of call to {name!r}: "
-                            f"got {actual!r}, expected {expected!r}"
-                        )
+                    self._check_exp(arg)
+                    args[i] = _convert_to(arg, expected)
+                exp.data_type = sym.type.ret
                 return sym.type.ret
         raise TypeError(f"unexpected exp: {exp!r}")
 

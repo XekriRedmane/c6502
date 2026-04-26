@@ -218,23 +218,27 @@ class Type_exp:
 @dataclass
 class Constant(Type_exp):
     const: Type_const
+    data_type: Type_data_type | None = None
 
 
 @dataclass
 class Var(Type_exp):
     name: str
+    data_type: Type_data_type | None = None
 
 
 @dataclass
 class Cast(Type_exp):
     target_type: Type_data_type
     exp: Type_exp
+    data_type: Type_data_type | None = None
 
 
 @dataclass
 class Unary(Type_exp):
     op: Type_unary_operator
     exp: Type_exp
+    data_type: Type_data_type | None = None
 
 
 @dataclass
@@ -242,18 +246,21 @@ class Binary(Type_exp):
     op: Type_binary_operator
     left: Type_exp
     right: Type_exp
+    data_type: Type_data_type | None = None
 
 
 @dataclass
 class Assignment(Type_exp):
     lval: Type_exp
     rval: Type_exp
+    data_type: Type_data_type | None = None
 
 
 @dataclass
 class Postfix(Type_exp):
     op: Type_incdec_op
     operand: Type_exp
+    data_type: Type_data_type | None = None
 
 
 @dataclass
@@ -261,12 +268,14 @@ class Conditional(Type_exp):
     condition: Type_exp
     true_clause: Type_exp
     false_clause: Type_exp
+    data_type: Type_data_type | None = None
 
 
 @dataclass
 class FunctionCall(Type_exp):
     name: str
     args: list[Type_exp] = field(default_factory=list)
+    data_type: Type_data_type | None = None
 
 
 @dataclass

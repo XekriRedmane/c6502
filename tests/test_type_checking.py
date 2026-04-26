@@ -558,84 +558,297 @@ class TestLongAndCasts(unittest.TestCase):
             FunType(params=[Int(), Long()], ret=Int()),
         )
 
-    def test_int_init_with_long_literal_raises(self):
-        # `int x = 200;` — 200 is a Long literal (doesn't fit in
-        # signed 1 byte), so the initializer's type doesn't match the
-        # declared `int`.
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check("int main(void) { int x = 200; return 0; }")
-        self.assertIn("type", str(ctx.exception).lower())
+    def test_long_init_with_int_literal_inserts_cast(self):
+        # `long x = 5;` — the int literal is converted to Long via
+        # an implicit Cast on the initializer, same shape as
+        # assignment / arg / return conversion.
+        prog, _ = _check(
+            "int main(void) { long x = 5; return 0; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        vd = items[0].declaration.var_decl
+        self.assertEqual(vd.data_type, Long())
+        self.assertIsInstance(vd.init, c99_ast.Cast)
+        self.assertEqual(vd.init.target_type, Long())
+        self.assertEqual(vd.init.data_type, Long())
+        self.assertIsInstance(vd.init.exp, c99_ast.Constant)
 
-    def test_long_init_with_int_literal_raises(self):
-        # `long x = 5;` — 5 is an Int literal, doesn't match declared
-        # Long. User must write `(long)5`.
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check("int main(void) { long x = 5; return 0; }")
-        self.assertIn("type", str(ctx.exception).lower())
+    def test_int_init_with_long_literal_inserts_cast(self):
+        # `int x = 200;` — 200 doesn't fit in signed 1 byte so it's
+        # a ConstLong; the initializer gets wrapped in Cast(Int).
+        prog, _ = _check(
+            "int main(void) { int x = 200; return 0; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        vd = items[0].declaration.var_decl
+        self.assertEqual(vd.data_type, Int())
+        self.assertIsInstance(vd.init, c99_ast.Cast)
+        self.assertEqual(vd.init.target_type, Int())
 
-    def test_long_init_with_cast(self):
-        # `long x = (long)5;` — explicit cast, should type-check.
-        _check("int main(void) { long x = (long)5; return 0; }")
+    def test_init_no_cast_when_types_match(self):
+        # `long x = (long)5;` — the user-written cast produces a
+        # Long-typed initializer that already matches the declared
+        # type; the type checker doesn't add a redundant wrapper.
+        prog, _ = _check(
+            "int main(void) { long x = (long)5; return 0; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        vd = items[0].declaration.var_decl
+        # `vd.init` is the user's Cast(Long, ConstInt(5)) — not
+        # a wrapper Cast(Long, Cast(Long, ...)).
+        self.assertIsInstance(vd.init, c99_ast.Cast)
+        self.assertEqual(vd.init.target_type, Long())
+        self.assertIsInstance(vd.init.exp, c99_ast.Constant)
 
-    def test_int_long_addition_without_cast_raises(self):
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check(
-                "int main(void) { int a = 1; long b = (long)2; "
-                "return a + b; }"
-            )
-        self.assertIn("disagree", str(ctx.exception))
+    def test_int_long_addition_promotes_to_long(self):
+        # `int_a + long_b` performs the usual arithmetic
+        # conversions: the int operand is wrapped in an implicit
+        # `Cast(Long)`, and the binary's result type is Long. The
+        # int-returning function then narrows the Long back to Int
+        # via an implicit Cast on the Return statement.
+        prog, _ = _check(
+            "int main(void) { int a = 1; long b = (long)2; "
+            "return a + b; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        ret_stmt = items[2].statement
+        # Outer Cast(Int) from the Return-conversion rule.
+        self.assertIsInstance(ret_stmt.exp, c99_ast.Cast)
+        self.assertEqual(ret_stmt.exp.target_type, Int())
+        # Inside that, the Binary is Long-typed (post-promotion).
+        binary = ret_stmt.exp.exp
+        self.assertIsInstance(binary, c99_ast.Binary)
+        self.assertEqual(binary.data_type, Long())
+        # The Int operand `a` got wrapped in Cast(Long).
+        self.assertIsInstance(binary.left, c99_ast.Cast)
+        self.assertEqual(binary.left.target_type, Long())
+        # The Long operand `b` passes through unchanged.
+        self.assertIsInstance(binary.right, c99_ast.Var)
+        self.assertEqual(binary.right.data_type, Long())
 
-    def test_int_long_addition_with_cast(self):
-        # Promote the int to long before adding; result is long; cast
-        # back to int for the return.
+    def test_int_long_addition_with_outer_cast(self):
+        # Wrap the (long) result in an explicit (int) so the return
+        # type matches.
         _check(
             "int main(void) { int a = 1; long b = (long)2; "
-            "return (int)((long)a + b); }"
+            "return (int)(a + b); }"
         )
 
-    def test_assignment_with_mismatched_types_raises(self):
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check(
-                "int main(void) { int a; long b = (long)1; "
-                "a = b; return 0; }"
-            )
-        self.assertIn("type mismatch", str(ctx.exception))
+    def test_binary_promotion_inserts_implicit_cast(self):
+        # After type-checking, the int operand is wrapped in a
+        # `Cast(target=Long(), exp=..., data_type=Long())` so the
+        # binary's two operands both have type Long. The Binary
+        # itself carries data_type=Long().
+        prog, _symbols = _check(
+            "long main(void) { int a = 1; long b = (long)2; "
+            "return (long)0 + (a + b); }"
+        )
+        # Drill into `return (long)0 + (a + b);` — the outer Binary's
+        # right operand is `(a + b)`, which should be a Binary whose
+        # int operand `a` was wrapped in an implicit Cast.
+        items = prog.declaration[0].function_decl.body.block_item
+        ret = items[2].statement
+        outer_binary = ret.exp
+        self.assertIsInstance(outer_binary, c99_ast.Binary)
+        self.assertEqual(outer_binary.data_type, Long())
+        inner_binary = outer_binary.right
+        self.assertIsInstance(inner_binary, c99_ast.Binary)
+        self.assertEqual(inner_binary.data_type, Long())
+        # `a` (Int) wrapped in implicit Cast to Long; `b` (Long)
+        # passes through unchanged.
+        self.assertIsInstance(inner_binary.left, c99_ast.Cast)
+        self.assertEqual(inner_binary.left.target_type, Long())
+        self.assertEqual(inner_binary.left.data_type, Long())
+        self.assertIsInstance(inner_binary.left.exp, c99_ast.Var)
+        self.assertEqual(inner_binary.left.exp.data_type, Int())
+        self.assertIsInstance(inner_binary.right, c99_ast.Var)
+        self.assertEqual(inner_binary.right.data_type, Long())
 
-    def test_call_arg_type_mismatch_raises(self):
+    def test_assignment_widens_rval_with_implicit_cast(self):
+        # `long_x = int_y;` — the rval is wrapped in an implicit
+        # Cast(Long) so the assignment's two sides have matching
+        # types. The Assignment node itself reports data_type Long.
+        prog, _ = _check(
+            "int main(void) { int a = 1; long b = (long)0; "
+            "b = a; return 0; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        # `b = a;` is the third item (after the two declarations).
+        assign = items[2].statement.exp
+        self.assertIsInstance(assign, c99_ast.Assignment)
+        self.assertEqual(assign.data_type, Long())
+        # rval was an Int Var; now wrapped in Cast(target=Long).
+        self.assertIsInstance(assign.rval, c99_ast.Cast)
+        self.assertEqual(assign.rval.target_type, Long())
+        self.assertEqual(assign.rval.data_type, Long())
+        self.assertIsInstance(assign.rval.exp, c99_ast.Var)
+        self.assertEqual(assign.rval.exp.data_type, Int())
+
+    def test_assignment_narrows_rval_with_implicit_cast(self):
+        # `int_x = long_y;` — symmetric: rval gets wrapped in
+        # Cast(Int). Assignment's data_type is Int.
+        prog, _ = _check(
+            "int main(void) { int a = 0; long b = (long)200; "
+            "a = b; return a; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        assign = items[2].statement.exp
+        self.assertIsInstance(assign, c99_ast.Assignment)
+        self.assertEqual(assign.data_type, Int())
+        self.assertIsInstance(assign.rval, c99_ast.Cast)
+        self.assertEqual(assign.rval.target_type, Int())
+        self.assertEqual(assign.rval.data_type, Int())
+
+    def test_assignment_no_cast_when_types_match(self):
+        # `int_x = int_y;` — rval already has the right type, so no
+        # Cast is inserted; rval stays as the original Var node.
+        prog, _ = _check(
+            "int main(void) { int a = 0; int b = 1; "
+            "a = b; return a; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        assign = items[2].statement.exp
+        self.assertIsInstance(assign, c99_ast.Assignment)
+        self.assertEqual(assign.data_type, Int())
+        # No Cast wrapper.
+        self.assertIsInstance(assign.rval, c99_ast.Var)
+        self.assertEqual(assign.rval.data_type, Int())
+
+    def test_compound_assignment_to_int_narrows_long_result(self):
+        # `int_x += long_y;` desugars to `int_x = int_x + long_y;`.
+        # The Binary promotes both operands to Long (result Long),
+        # then the Assignment narrows the rval back to Int with an
+        # implicit Cast. Net effect: same as
+        # `int_x = (int)((long)int_x + long_y);`.
+        prog, _ = _check(
+            "int main(void) { int a = 0; long b = (long)2; "
+            "a += b; return a; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        assign = items[2].statement.exp
+        self.assertIsInstance(assign, c99_ast.Assignment)
+        self.assertEqual(assign.data_type, Int())
+        # The rval (a Binary that produced Long) is now wrapped in
+        # an implicit Cast(Int).
+        self.assertIsInstance(assign.rval, c99_ast.Cast)
+        self.assertEqual(assign.rval.target_type, Int())
+        # The Binary inside the Cast still has data_type Long.
+        self.assertIsInstance(assign.rval.exp, c99_ast.Binary)
+        self.assertEqual(assign.rval.exp.data_type, Long())
+
+    def test_call_arg_widens_with_implicit_cast(self):
+        # `foo(int_lit)` where foo's param is Long — the int literal
+        # is converted to Long via an implicit Cast on the arg list.
+        prog, _ = _check(
+            "int foo(long x); "
+            "int main(void) { return foo(1); }"
+        )
+        # Drill into main's return: `return foo(1);` → call's args[0]
+        # is now a Cast(Long, ConstInt(1)).
+        ret = (
+            prog.declaration[1].function_decl.body.block_item[0]
+            .statement.exp
+        )
+        self.assertIsInstance(ret, c99_ast.FunctionCall)
+        self.assertEqual(len(ret.args), 1)
+        arg0 = ret.args[0]
+        self.assertIsInstance(arg0, c99_ast.Cast)
+        self.assertEqual(arg0.target_type, Long())
+        self.assertEqual(arg0.data_type, Long())
+        self.assertIsInstance(arg0.exp, c99_ast.Constant)
+        self.assertEqual(arg0.exp.data_type, Int())
+
+    def test_call_arg_narrows_with_implicit_cast(self):
+        # Symmetric: `foo(long_var)` where foo's param is Int — the
+        # Long arg gets wrapped in Cast(Int).
+        prog, _ = _check(
+            "int foo(int x); "
+            "int main(void) { long y = (long)1; return foo(y); }"
+        )
+        items = prog.declaration[1].function_decl.body.block_item
+        ret = items[1].statement.exp
+        arg0 = ret.args[0]
+        self.assertIsInstance(arg0, c99_ast.Cast)
+        self.assertEqual(arg0.target_type, Int())
+        self.assertEqual(arg0.data_type, Int())
+
+    def test_call_arg_no_cast_when_types_match(self):
+        # When the arg's type already matches the param, no Cast
+        # wrapper is inserted; the original arg node passes through.
+        prog, _ = _check(
+            "int foo(int x); "
+            "int main(void) { return foo(5); }"
+        )
+        ret = (
+            prog.declaration[1].function_decl.body.block_item[0]
+            .statement.exp
+        )
+        self.assertIsInstance(ret.args[0], c99_ast.Constant)
+        self.assertEqual(ret.args[0].data_type, Int())
+
+    def test_call_arity_mismatch_still_raises(self):
+        # Conversion only applies once arity matches; the wrong
+        # count of args still raises.
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
-                "int foo(long x); "
+                "int foo(int a, int b); "
                 "int main(void) { return foo(1); }"
             )
-        self.assertIn("argument", str(ctx.exception).lower())
+        self.assertIn("expected 2", str(ctx.exception))
 
-    def test_call_arg_with_explicit_cast(self):
-        _check(
-            "int foo(long x); "
-            "int main(void) { return foo((long)1); }"
+    def test_return_widens_value_with_implicit_cast(self):
+        # `long main() { return 5; }` — the int literal is converted
+        # to Long via an implicit Cast on the Return statement's exp.
+        prog, _ = _check("long main(void) { return 5; }")
+        ret_stmt = (
+            prog.declaration[0].function_decl.body.block_item[0]
+            .statement
+        )
+        self.assertIsInstance(ret_stmt, c99_ast.Return)
+        self.assertIsInstance(ret_stmt.exp, c99_ast.Cast)
+        self.assertEqual(ret_stmt.exp.target_type, Long())
+        self.assertEqual(ret_stmt.exp.data_type, Long())
+
+    def test_return_narrows_value_with_implicit_cast(self):
+        # Symmetric: returning a Long from an int-returning function
+        # narrows via implicit Cast(Int).
+        prog, _ = _check(
+            "int main(void) { long x = (long)5; return x; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        ret_stmt = items[1].statement
+        self.assertIsInstance(ret_stmt.exp, c99_ast.Cast)
+        self.assertEqual(ret_stmt.exp.target_type, Int())
+
+    def test_return_no_cast_when_types_match(self):
+        # No Cast wrapper when the return value's type already
+        # matches the function's declared return type.
+        prog, _ = _check("int main(void) { return 5; }")
+        ret_stmt = (
+            prog.declaration[0].function_decl.body.block_item[0]
+            .statement
+        )
+        self.assertNotIsInstance(ret_stmt.exp, c99_ast.Cast)
+        self.assertEqual(ret_stmt.exp.data_type, Int())
+
+    def test_static_long_init_with_int_literal_converts(self):
+        # `static long x = 5;` — the int literal is converted to
+        # Long by the initializer-conversion rule. The Initial's
+        # value is the underlying integer (5); codegen narrows /
+        # widens to the declared type's width when laying out the
+        # StaticVariable.
+        _, symbols = _check(
+            "int main(void) { static long x = 5; return 0; }"
+        )
+        sym = symbols["@0.x"]
+        self.assertEqual(sym.type, Long())
+        self.assertEqual(
+            sym.attrs,
+            StaticAttr(initial_value=Initial(value=5), is_global=False),
         )
 
-    def test_return_type_mismatch_raises(self):
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check("long main(void) { return 5; }")
-        self.assertIn("return", str(ctx.exception).lower())
-
-    def test_return_type_with_explicit_cast(self):
-        _check("long main(void) { return (long)5; }")
-
-    def test_static_long_with_int_literal_raises(self):
-        # `static long x = 5;` — 5 is an Int literal; the cast factory
-        # rejects it because the variant doesn't match the declared
-        # type.
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check(
-                "int main(void) { static long x = 5; return 0; }"
-            )
-        self.assertIn("constant expression", str(ctx.exception).lower())
-
-    def test_static_long_with_cast_initializer(self):
-        # `static long x = (long)5;` — cast bridges the type, should
-        # type-check.
+    def test_static_long_with_explicit_cast_initializer(self):
+        # `static long x = (long)5;` — explicit cast, also fine.
         _, symbols = _check(
             "int main(void) { static long x = (long)5; return 0; }"
         )
@@ -644,6 +857,30 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertEqual(
             sym.attrs,
             StaticAttr(initial_value=Initial(value=5), is_global=False),
+        )
+
+    def test_static_init_with_non_constant_raises(self):
+        # `static int x = a;` — `a` isn't a constant; the
+        # initializer-conversion rule still inserts a Cast wrapper
+        # for the type, but `_const_init_value` rejects the Var
+        # at the bottom of the Cast chain because it's not a
+        # constant expression.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a = 1; static int x = a; "
+                "return 0; }"
+            )
+        self.assertIn("constant expression", str(ctx.exception).lower())
+
+    def test_file_scope_long_init_with_int_literal(self):
+        # `long x = 5;` at file scope — same conversion as block-
+        # scope static. The Initial captures the underlying value.
+        _, symbols = _check(
+            "long x = 5; int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            symbols["x"].attrs,
+            StaticAttr(initial_value=Initial(value=5), is_global=True),
         )
 
     def test_logical_not_returns_int_for_long_operand(self):
@@ -662,6 +899,96 @@ class TestLongAndCasts(unittest.TestCase):
             "int main(void) { long a = (long)1; long b = (long)2; "
             "return a == b; }"
         )
+
+    def test_data_type_set_on_constant_var_unary_postfix(self):
+        # Round-trip through type-checking and verify the per-node
+        # data_type is populated on every expression node.
+        prog, _symbols = _check(
+            "int main(void) { int a = 5; a++; return -a; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        # `int a = 5;` — Constant gets Int.
+        init = items[0].declaration.var_decl.init
+        self.assertIsInstance(init, c99_ast.Constant)
+        self.assertEqual(init.data_type, Int())
+        # `a++;` — the Postfix and the inner Var both Int.
+        post = items[1].statement.exp
+        self.assertIsInstance(post, c99_ast.Postfix)
+        self.assertEqual(post.data_type, Int())
+        self.assertEqual(post.operand.data_type, Int())
+        # `return -a;` — Unary's data_type is Int (preserves operand).
+        ret_exp = items[2].statement.exp
+        self.assertIsInstance(ret_exp, c99_ast.Unary)
+        self.assertEqual(ret_exp.data_type, Int())
+        self.assertEqual(ret_exp.exp.data_type, Int())
+
+    def test_logical_not_long_yields_int(self):
+        # `!(long)1` — the inner Cast has data_type Long, but the
+        # surrounding Unary(LogicalNot) reports data_type Int.
+        prog, _ = _check(
+            "int main(void) { return !((long)1); }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[0]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Unary)
+        self.assertIsInstance(ret_exp.op, c99_ast.LogicalNot)
+        self.assertEqual(ret_exp.data_type, Int())
+        self.assertEqual(ret_exp.exp.data_type, Long())
+
+    def test_comparison_with_promotion_yields_int(self):
+        # `int_a == long_b` — operands promoted to common type Long,
+        # but the Binary's data_type is Int.
+        prog, _ = _check(
+            "int main(void) { int a = 1; long b = (long)2; "
+            "return a == b; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[2]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Binary)
+        self.assertIsInstance(ret_exp.op, c99_ast.Equal)
+        self.assertEqual(ret_exp.data_type, Int())
+        # `a` got wrapped in a Cast to Long for the comparison.
+        self.assertIsInstance(ret_exp.left, c99_ast.Cast)
+        self.assertEqual(ret_exp.left.data_type, Long())
+        # `b` passes through as Long.
+        self.assertEqual(ret_exp.right.data_type, Long())
+
+    def test_conditional_branches_promote_to_common_type(self):
+        # `cond ? int_t : long_f` — true branch is Int, false branch
+        # is Long; common type is Long, true branch wrapped in Cast.
+        prog, _ = _check(
+            "long main(void) { int a = 1; long b = (long)2; "
+            "return 1 ? a : b; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[2]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Conditional)
+        self.assertEqual(ret_exp.data_type, Long())
+        # The Int branch (`a`) got wrapped in a Cast to Long.
+        self.assertIsInstance(ret_exp.true_clause, c99_ast.Cast)
+        self.assertEqual(ret_exp.true_clause.data_type, Long())
+        self.assertEqual(ret_exp.false_clause.data_type, Long())
+
+    def test_no_implicit_cast_when_operands_already_match(self):
+        # When both operands have the same type, no Cast wrapping
+        # happens — operand nodes remain the originals.
+        prog, _ = _check(
+            "int main(void) { int a = 1; int b = 2; return a + b; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[2]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Binary)
+        self.assertEqual(ret_exp.data_type, Int())
+        self.assertIsInstance(ret_exp.left, c99_ast.Var)
+        self.assertIsInstance(ret_exp.right, c99_ast.Var)
 
     def test_cast_target_must_be_object_type(self):
         # Casting to a function type isn't representable in our

@@ -55,6 +55,7 @@ class TestPretty(unittest.TestCase):
                         const=ConstInt(
                           int=0,
                         ),
+                        data_type=None,
                       ),
                     ),
                     data_type=FunType(

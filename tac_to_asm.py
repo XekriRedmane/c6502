@@ -1,100 +1,96 @@
 """Translate a tac_ast tree into an asm_ast tree.
 
-The Translator class holds a label counter so it can mint unique
-labels for the inline lowerings that need them: the six comparisons
-(`== != < > <= >=`) and unary `!`. Module-level `translate_*`
-functions construct a fresh Translator per call; use the class
-directly when you want the counter to persist across calls.
+The asm IR is strictly 1:1 with 6502 opcodes — every node maps to
+exactly one instruction (with the documented exceptions of `Ret`,
+`FunctionPrologue`, and `AllocateStack`). The 6502 is an 8-bit
+machine, so the IR has no width tagging: every operand is one byte.
 
-Mapping:
-  Program(fn)              -> Program(translate_function(fn))
-  Function(name, instrs)   -> Function(name, flat-mapped instructions)
-  Ret(val)                 -> [Mov(translate_val(val), Reg(A)),
-                               Ret(arg_bytes=0, local_bytes=0)]
-                              (allocate_stack fills in arg/local bytes)
-  Unary(op, src, dst)      -> [Mov(translate_val(src), Reg(A)),
-                               <atoms for op on A>,
-                               Mov(Reg(A), translate_val(dst))]
-                              The op is lowered to atomic instructions:
-                                Complement -> Xor(A, Imm($FF), A)
-                                Negate     -> Xor(A, Imm($FF), A);
-                                              ClearCarry;
-                                              Add(Imm(1), A)
-                                LogicalNot -> Branch(EQ, true);
-                                              Mov(0,A); Jump(end);
-                                              true: Mov(1,A); end:
-                                              (no extra Compare — the
-                                              framing Mov(src,A)'s LDA
-                                              already set Z.)
-                              asm_ast has no Unary node anymore — it's
-                              strictly a TAC concept.
-  Binary(op, src1, src2, dst) -> see translate_binary below.
-  Copy(src, dst)           -> [Mov(src, dst)]. The emitter's Mov
-                              handles every legal operand shape so
-                              there's nothing to expand here.
-  Jump(target)             -> [Jump(target)]   (atom-for-atom)
-  Label(name)              -> [Label(name)]    (atom-for-atom)
-  JumpIfTrue(cond, target) -> [Mov(cond, A), Branch(NE, target)].
-                              LDA sets Z based on the loaded byte, so
-                              BNE fires exactly when cond is non-zero
-                              (C's truthiness).
-  JumpIfFalse(cond, target) -> [Mov(cond, A), Branch(EQ, target)]
-                              (mirror of JumpIfTrue).
+`tac_to_asm` is therefore the home of all 16-bit lowering. For each
+TAC instruction whose operands are `Long` (per the symbol table),
+the translator emits a sequence of byte-level asm atoms — typically
+two passes (low byte, high byte) with the 6502's carry flag
+threading naturally between them for arithmetic. Multi-byte
+operands are addressed via the `offset` field on `Pseudo` / `Stack`
+/ `Frame` / `Data`: `Pseudo(name, offset=0)` is the low byte of
+`name`, `Pseudo(name, offset=1)` the high byte; `Imm`
+constants split into their low/high two's-complement bytes.
 
-Binary lowerings:
-  Add / Subtract                 [Mov(src1, A), ClearCarry|SetCarry,
-                                  Add|Sub(src2, A), Mov(A, dst)]
-  BitwiseAnd / BitwiseOr /       [Mov(src1, A), And|Or|Xor(...), Mov(A, dst)]
-    BitwiseXor                   No carry setup; AND/ORA/EOR don't touch C.
-  Multiply / Divide / Modulo /   [Mov(src2, A), Mov(A, X), Mov(src1, A),
-    LeftShift / RightShift       Call(<helper>), <result fetch>, Mov(A, dst)]
-                                 Runtime helpers (A, X in; A out):
-                                   mul8     A * X -> low in A, high in X
-                                   divmod8  A / X -> quot in A, rem in X
-                                   shl8     A << X (logical) -> A
-                                   asr8     A >> X (arithmetic, signed) -> A
-                                 Right shift uses asr8 because c6502
-                                 currently treats integers as signed.
-                                 Modulo pulls the remainder out of X via
-                                 Mov(Reg(X), Reg(A)) before storing.
-  Equal / NotEqual               Compare + Branch(EQ|NE) + 0/1 select:
-                                   [Mov(src1, A),
-                                    Compare(A, src2),
-                                    Branch(EQ|NE, true_label),
-                                    Mov(Imm(0), A),
-                                    Jump(end_label),
-                                    Label(true_label),
-                                    Mov(Imm(1), A),
-                                    Label(end_label),
-                                    Mov(A, dst)]
-                                 CMP doesn't touch V, but Z is reliable:
-                                 Z=1 iff src1==src2 unconditionally.
-  LessThan / GreaterOrEqual /    SBC with V-correction + Branch(MI|PL) +
-    GreaterThan / LessOrEqual    0/1 select. CMP can't be used for signed
-                                 ordering because it leaves V alone, and
-                                 the N flag lies when signed subtraction
-                                 overflows (e.g., +1 < -128 would be
-                                 flagged wrongly). The canonical idiom:
-                                   [Mov(L, A),
-                                    SetCarry,
-                                    Sub(R, A),          ; A = L - R,
-                                                        ; sets N, Z, C, V
-                                    Branch(VC, novf),
-                                    Xor(A, Imm($80), A),; flip N when
-                                                        ; overflow made it lie
-                                    Label(novf),
-                                    Branch(MI|PL, true_label),
-                                    ... 0/1 select ...]
-                                 For `<` and `>=` we compute src1-src2 and
-                                 branch on MI/PL respectively. For `>` and
-                                 `<=` we swap operands and compute
-                                 src2-src1, then branch on MI/PL — that
-                                 sidesteps the fact that Z is unreliable
-                                 after the EOR correction (EOR #$80 can
-                                 create a spurious Z=1 when the pre-EOR
-                                 result was $80).
-  Constant(v)              -> Imm(v)
-  Var(name)                -> Pseudo(name)
+The Translator class holds a label counter so inline lowerings
+(comparisons, `!`, sign-extension) get unique labels across the
+whole program. Module-level `translate_*` functions construct a
+fresh Translator per call; use the class directly when you want
+the counter to persist across calls.
+
+Mapping highlights (full per-op detail in `translate_binary` /
+`translate_instruction`):
+  Program(top_level)        -> Program(top_level)
+  Function(name, …)         -> Function(name, …, flat-mapped instrs)
+  StaticVariable(name, …)   -> StaticVariable(name, …, init-rewrapped)
+  Ret(val)                  -> stage `val` in A (and X for the high
+                               byte of a Long return), then Ret.
+  Copy(src, dst)            -> 1× Mov for Int; 2× Mov (lo, hi) for Long.
+  SignExtend(src, dst)      -> Mov(src, A); Mov(A, dst.lo); Branch(MI,
+                               sx_neg@N); LDA #$00; Jump(sx_done@N);
+                               Label(sx_neg@N); LDA #$FF; Label(sx_done@N);
+                               Mov(A, dst.hi). The framing LDA sets N
+                               based on the source byte's sign; STA
+                               preserves flags so BMI sees the right N.
+  Truncate(src, dst)        -> Mov(src.lo, dst). Memory is little-
+                               endian so the source's offset-0 byte is
+                               the low byte; the high byte is just
+                               discarded.
+  Unary(op, src, dst)       -> Mov src→A, atomic op on A, Mov A→dst
+                               (Int). For Long operands the negate /
+                               complement / logical-not lowerings are
+                               byte-pair templates (see translate_unop).
+  Binary(Add, …)            -> Int: Mov src1→A; CLC; Add(src2, A);
+                               Mov A→dst.
+                               Long: same pattern, twice in succession,
+                               with no CLC between the low and high
+                               adds — the carry from the low ADC
+                               threads into the high ADC. (LDA only
+                               affects N/Z, not C.)
+  Binary(Subtract, …)       -> Same shape with SetCarry/Sub. The borrow
+                               (in 6502 terms, an inverted-carry) also
+                               threads through the high SBC.
+  Binary(BitwiseAnd/Or/Xor) -> Byte op on each pair of bytes; no carry
+                               threading needed (these don't touch C).
+  Binary(Equal/NotEqual)    -> Int: Compare + Branch + 0/1 select.
+                               Long: high CMP first; if differ, short-
+                               circuit to a label that will see Z=0;
+                               else fall through to low CMP (whose Z
+                               is the final answer). 0/1 select after.
+  Binary(LessThan/GE/GT/LE) -> Int: SBC with V-correction + Branch.
+                               Long: low SBC then high SBC (carry
+                               threads), V-correction on the high
+                               result, branch on MI/PL. Same operand-
+                               swap trick used for `>` / `<=`.
+  Binary(Multiply/Divide/   -> Runtime helper Calls. Today only the
+    Modulo/LeftShift/         8-bit helpers (mul8/divmod8/shl8/asr8)
+    RightShift)               are wired up, so a Long operand raises
+                               NotImplementedError pending mul16/
+                               divmod16/shl16/asr16.
+  FunctionCall(name, args,  -> AllocateStack(total_arg_bytes); write
+              dst)             each arg's bytes into Stack(off..off+
+                               size-1) in source order; Call name; copy
+                               return value out of A (and X for Long).
+  Jump/Label                -> atom-for-atom.
+  JumpIfTrue/JumpIfFalse    -> Int: Mov(cond, A); Branch(NE/EQ).
+                               Long: Mov(cond.lo, A); Or(cond.hi, A);
+                               Branch(NE/EQ). The OR sets Z=1 iff
+                               *both* bytes are zero, which is the
+                               16-bit "is zero" test.
+  Constant(c)               -> Imm(c.int) (1-byte values direct; for
+                               Long values, callers extract bytes
+                               via `_byte_at`).
+  Var(name)                 -> Pseudo(name, offset=0). Subsequent
+                               `_byte_at(_, k)` calls bump offset to
+                               address byte k.
+
+Calling convention (callee-side, see also `replace_pseudoregisters`):
+  - Each Long arg occupies 2 stack bytes (low at the lower offset).
+  - Long return value: low byte in A, high byte in X (matches the
+    mul8 / divmod8 helpers' existing convention).
 """
 
 from __future__ import annotations
@@ -107,15 +103,12 @@ from passes.type_checking import SymbolTable
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
-_BYTE = asm_ast.Byte()
-_DOUBLE_BYTE = asm_ast.DoubleByte()
 
-# Runtime helper names for the remaining multi-instruction ops. All
-# take operands in A (and X for the binary ones). mul8 / divmod8
-# return both halves of the result (A, X). shl8 / asr8 take a value
-# in A and a shift count in X and return the shifted value in A.
-# (The comparison helpers cmp_*8 and the unary-not helper lnot8 are
-# gone — the translator lowers those inline now.)
+# Runtime helper names (8-bit). mul8 / divmod8 return both halves of
+# the result in A and X. shl8 / asr8 take a value in A and a shift
+# count in X and return the shifted value in A. The 16-bit helpers
+# (mul16/divmod16/shl16/asr16) aren't in this repo yet; using `*`,
+# `/`, `%`, `<<`, or `>>` on Long operands raises NotImplementedError.
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _SHL8 = "shl8"
@@ -137,50 +130,67 @@ def _to_asm_static_init(
     raise TypeError(f"unexpected static_init: {init!r}")
 
 
+def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
+    """Address the k-th byte (0 = low, 1 = high) of a multi-byte
+    operand. For `Imm`, extract that byte of the constant — Python's
+    `>>` on a negative int is arithmetic, so a negative Long folds
+    to its two's-complement bytes (e.g. `-1 → low=$FF, high=$FF`).
+    For memory-shaped operands (`Pseudo`/`Stack`/`Frame`/`Data`),
+    bump the operand's `offset` by k. Registers don't have an offset
+    concept (they're 1-byte), so they're rejected here — callers
+    should never reach this with a `Reg`."""
+    match op:
+        case asm_ast.Imm(value=v):
+            return asm_ast.Imm(value=(v >> (8 * k)) & 0xFF)
+        case asm_ast.Pseudo(name=n, offset=base):
+            return asm_ast.Pseudo(name=n, offset=base + k)
+        case asm_ast.Stack(offset=base):
+            return asm_ast.Stack(offset=base + k)
+        case asm_ast.Frame(offset=base):
+            return asm_ast.Frame(offset=base + k)
+        case asm_ast.Data(name=n, offset=base):
+            return asm_ast.Data(name=n, offset=base + k)
+    raise TypeError(f"can't address byte {k} of {op!r}")
+
+
 class Translator:
-    """Holds the label counter so inline lowerings in the same program
-    (comparisons and unary `!`) get unique labels, plus a handle to
-    the type-checker's symbol table so it can look up TAC `Var`
-    types when picking `asm_type` for typed instructions. One
-    Translator per program; each `make_label` call bumps the
-    counter."""
+    """One Translator per program (so the `make_label` counter is
+    program-global). Holds the type-checker's symbol table so it can
+    look up TAC `Var` types and pick the right operand-size dispatch
+    for each instruction."""
 
     def __init__(self, symbols: SymbolTable | None = None) -> None:
         self._label_counter = 0
         # Optional — synthetic-AST tests can build a Translator
-        # without a symbol table. In that case `_asm_type_for_val`
-        # falls back to `Byte` for any Var whose name isn't found,
-        # which matches the current Int-only world the existing tests
-        # were written for.
+        # without a symbol table. In that case `_size_of` falls back
+        # to `1` (Byte) for any Var whose name isn't found, which
+        # matches the Int-only world the existing tests assume.
         self._symbols = symbols
 
-    def _asm_type_for_val(
-        self, val: tac_ast.Type_val,
-    ) -> asm_ast.Type_asm_type:
-        """Pick `Byte` or `DoubleByte` for a TAC val based on its
-        width. Constants dispatch on the const variant directly;
-        Vars look up the symbol table — if the name isn't there
-        (synthetic AST), default to `Byte`."""
+    def _size_of(self, val: tac_ast.Type_val) -> int:
+        """1 for an Int-typed val, 2 for a Long-typed val. Constants
+        dispatch on the const variant; Vars look up the symbol-table
+        type. Unknown Vars (synthetic test AST) default to 1."""
         match val:
             case tac_ast.Constant(const=tac_ast.ConstLong()):
-                return _DOUBLE_BYTE
+                return 2
             case tac_ast.Constant(const=tac_ast.ConstInt()):
-                return _BYTE
+                return 1
             case tac_ast.Var(name=name):
                 sym = (
                     self._symbols.get(name)
                     if self._symbols is not None else None
                 )
                 if sym is not None and isinstance(sym.type, c99_ast.Long):
-                    return _DOUBLE_BYTE
-                return _BYTE
+                    return 2
+                return 1
         raise TypeError(f"unexpected val: {val!r}")
 
     def make_label(self, prefix: str) -> str:
         # Leading `.` makes this a dasm-style local label, scoped to
-        # the enclosing SUBROUTINE. See c99_to_tac.Translator.make_label
-        # for the `@` convention that keeps these disjoint from any
-        # user-written name.
+        # the enclosing SUBROUTINE. The `@` separator (illegal in any
+        # C identifier) keeps these disjoint from any user-written
+        # name.
         name = f".{prefix}@{self._label_counter}"
         self._label_counter += 1
         return name
@@ -188,27 +198,17 @@ class Translator:
     def translate_program(
         self, prog: tac_ast.Type_program,
     ) -> asm_ast.Type_program:
-        # The TAC program shape is `Program(top_level*)`, where
-        # `top_level` is either `Function` or `StaticVariable`. The
-        # asm shape mirrors it 1:1: each TAC `Function` lowers to an
-        # asm `Function`, each TAC `StaticVariable` rides through to
-        # an asm `StaticVariable` unchanged (asm_emit handles the
-        # `name dc.b $XX` rendering). The Translator instance is
-        # shared across all functions so its label counter (used by
-        # the comparison + unary-not lowerings) keeps minting globally
-        # unique labels.
+        # Each TAC `Function` lowers to an asm `Function`; each TAC
+        # `StaticVariable` rides through to an asm `StaticVariable`
+        # unchanged, with the typed init (`IntInit | LongInit`)
+        # rewrapped 1-to-1. The variant of the init alone determines
+        # the cell size at emit (DC.B for IntInit, DC.W for LongInit);
+        # the asm side has no separate `data_type` field.
         match prog:
             case tac_ast.Program(top_level=top_levels):
                 out: list[asm_ast.Type_top_level] = []
                 for tl in top_levels:
                     if isinstance(tl, tac_ast.StaticVariable):
-                        # Both TAC and asm carry a typed `static_init`
-                        # (`IntInit | LongInit`); the rewrap is
-                        # 1-to-1. The asm side drops the TAC's
-                        # separate `data_type` field — the variant
-                        # of the init alone determines the cell
-                        # size at emit (DC.B for IntInit, two bytes
-                        # for LongInit).
                         out.append(asm_ast.StaticVariable(
                             name=tl.name,
                             is_global=tl.is_global,
@@ -231,15 +231,15 @@ class Translator:
                 # so the frame-layout pass can place them at the
                 # right Frame offsets. References to params inside
                 # the body are TAC `Var(@<N>.<orig>)` and lower to
-                # `Pseudo(@<N>.<orig>)` like any other TAC variable;
-                # the layout pass uses the name match against the
-                # Function's `params` list to decide whether each
-                # Pseudo is a parameter (Frame offset M+3+j) or a
-                # local (Frame offset 1..M). References to static-
-                # storage objects also pass through as `Pseudo` here;
-                # the same layout pass distinguishes them by name and
-                # rewrites them as `Data(name)` for absolute-addressed
-                # access.
+                # `Pseudo(@<N>.<orig>, offset=0)` like any other TAC
+                # variable; replace_pseudoregisters uses the symbol
+                # table to size each pseudo (1 byte for Int, 2 for
+                # Long) and resolves Pseudo(name, offset=k) to the
+                # k-th byte of its allocated slot. References to
+                # static-storage objects also pass through as Pseudo
+                # here; replace_pseudoregisters distinguishes them
+                # by name and rewrites them as `Data(name, offset=k)`
+                # for absolute-addressed access.
                 out: list[asm_ast.Type_instruction] = []
                 for instr in instrs:
                     out.extend(self.translate_instruction(instr))
@@ -256,143 +256,299 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         match instr:
             case tac_ast.Ret(val=val):
-                # arg_bytes/local_bytes are zeros here; the
-                # allocate_stack pass rewrites them to the function's
-                # actual N and M.
-                #
-                # The Mov's asm_type follows the val's type. For an
-                # Int return that's Byte (load 1 byte into A as
-                # before). For a Long return it's DoubleByte —
-                # which the eventual 8-bit lowering pass will split
-                # into a 2-byte transfer (e.g., low byte in A, high
-                # byte in X); until then asm_emit raises on
-                # DoubleByte, so a Long-returning function's `Ret`
-                # fails loudly rather than silently truncating to
-                # the low byte.
-                return [
-                    asm_ast.Mov(
-                        asm_type=self._asm_type_for_val(val),
-                        src=translate_val(val), dst=_REG_A,
-                    ),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
-                ]
+                return self._translate_ret(val)
             case tac_ast.SignExtend(src=src, dst=dst):
-                # Asm `Movsx` is implicitly Byte→DoubleByte: it loads
-                # one byte and replicates the sign bit into the
-                # upper byte of a 2-byte destination. The actual
-                # 6502 sequence — load the byte, branch on its sign,
-                # write 0x00 / 0xFF to the dst's high byte — is the
-                # job of the deferred 8-bit lowering pass; here we
-                # just record the intent.
-                return [asm_ast.Movsx(
-                    src=translate_val(src), dst=translate_val(dst),
-                )]
+                return self._translate_sign_extend(src, dst)
             case tac_ast.Truncate(src=src, dst=dst):
-                # Truncate Long→Int reads the low byte of a 2-byte
-                # source and writes it to a 1-byte destination.
-                # Memory layout is little-endian, so the source's
-                # byte address (Frame / Stack / Data) is exactly
-                # the low byte; a plain `Mov(Byte, src, dst)` does
-                # the right thing without any high-byte shuffle.
-                return [asm_ast.Mov(
-                    asm_type=_BYTE,
-                    src=translate_val(src), dst=translate_val(dst),
-                )]
+                # The k-th byte of a 2-byte memory layout is at
+                # base+k (little-endian), so the source's offset-0
+                # byte is the low byte. A Long → Int narrowing just
+                # moves that low byte and discards the high.
+                src_op = translate_val(src)
+                dst_op = translate_val(dst)
+                return [asm_ast.Mov(src=_byte_at(src_op, 0), dst=dst_op)]
             case tac_ast.Unary(op=op, src=src, dst=dst):
-                return (
-                    [asm_ast.Mov(asm_type=_BYTE, src=translate_val(src), dst=_REG_A)]
-                    + self.translate_unop_atoms(op)
-                    + [asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=translate_val(dst))]
-                )
+                return self._translate_unary(op, src, dst)
             case tac_ast.Binary(op=op, src1=src1, src2=src2, dst=dst):
                 return self.translate_binary(op, src1, src2, dst)
             case tac_ast.Copy(src=src, dst=dst):
-                # A single Mov, sized by the operand type. For Int
-                # operands this is `Mov(Byte, src, dst)` — same as
-                # before. For Long operands the deferred 8-bit
-                # lowering pass will split a `Mov(DoubleByte, …)`
-                # into two `Mov(Byte, …)` ops at adjacent memory
-                # addresses; until that lands, asm_emit raises on
-                # DoubleByte so Long copies fail loudly rather than
-                # silently moving only one byte.
-                return [asm_ast.Mov(
-                    asm_type=self._asm_type_for_val(src),
-                    src=translate_val(src), dst=translate_val(dst),
-                )]
+                return self._translate_copy(src, dst)
             case tac_ast.Jump(target=target):
                 return [asm_ast.Jump(target=target)]
             case tac_ast.Label(name=name):
                 return [asm_ast.Label(name=name)]
             case tac_ast.JumpIfTrue(condition=cond, target=target):
-                # LDA (immediate or indirect-Y) sets Z based on the
-                # loaded byte, so after the Mov, BNE branches exactly
-                # when the condition is non-zero (C's truthiness).
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=translate_val(cond), dst=_REG_A),
-                    asm_ast.Branch(cond=asm_ast.NE(), target=target),
-                ]
+                return self._translate_cond_jump(
+                    cond, target, asm_ast.NE(),
+                )
             case tac_ast.JumpIfFalse(condition=cond, target=target):
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=translate_val(cond), dst=_REG_A),
-                    asm_ast.Branch(cond=asm_ast.EQ(), target=target),
-                ]
+                return self._translate_cond_jump(
+                    cond, target, asm_ast.EQ(),
+                )
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
-                # Caller-side lowering for `dst = name(args...)`.
-                # Per the soft-stack convention (CLAUDE.md "Function
-                # stack frame"):
-                #   1. Subtract N from SSP (allocate N bytes for
-                #      args; soft stack grows down). Args will land
-                #      at Stack(1)..Stack(N) from the caller's
-                #      post-decrement view, which is exactly the
-                #      slots the callee will read as its
-                #      Frame(M+3)..Frame(M+2+N).
-                #   2. Write each arg into its slot. Args translate
-                #      to Imm or Pseudo via translate_val; the
-                #      emitter's Mov(Imm, Stack) and the post-
-                #      replacement Mov(Frame, Stack) both lower to
-                #      a single load + indirect store, so each arg
-                #      write is one asm instruction (or two with the
-                #      LDY for indirect-Y addressing).
-                #   3. JSR name. The callee saves the caller's FP,
-                #      sets up its own frame, runs, and restores
-                #      SSP via its epilogue — the caller doesn't
-                #      need any post-call cleanup of the arg slots.
-                #   4. Move the return value (in A) into `dst`.
-                emitted: list[asm_ast.Type_instruction] = []
-                if args:
-                    # Stack offset is 1-based (the soft-stack
-                    # convention uses SSP+1..SSP+N for args). Each
-                    # arg push picks `asm_type` from the TAC arg's
-                    # type — Int args lower to a 1-byte transfer
-                    # (Byte) at the existing 1-byte-per-arg offset
-                    # convention; Long args lower to a logical 2-
-                    # byte transfer (DoubleByte) which the deferred
-                    # 8-bit lowering pass will split into two byte
-                    # writes at adjacent offsets. Until that lands,
-                    # asm_emit raises on DoubleByte, so a call with
-                    # a Long arg fails loudly.
-                    emitted.append(asm_ast.AllocateStack(
-                        bytes=len(args),
-                    ))
-                    for i, arg in enumerate(args):
-                        emitted.append(asm_ast.Mov(
-                            asm_type=self._asm_type_for_val(arg),
-                            src=translate_val(arg),
-                            dst=asm_ast.Stack(offset=i + 1),
-                        ))
-                emitted.append(asm_ast.Call(name=name))
-                # Return-value capture: the val is in A. asm_type
-                # picked from the dst's type — Int → Byte (load A
-                # into a 1-byte slot, the existing path); Long →
-                # DoubleByte, which fails at asm_emit (16-bit
-                # return-value materialization is the deferred
-                # lowering pass's job).
-                emitted.append(asm_ast.Mov(
-                    asm_type=self._asm_type_for_val(dst),
-                    src=_REG_A, dst=translate_val(dst),
-                ))
-                return emitted
+                return self._translate_function_call(name, args, dst)
         raise TypeError(f"unexpected instruction node: {instr!r}")
+
+    # ------------------------------------------------------------------
+    # Per-instruction lowerings
+    # ------------------------------------------------------------------
+
+    def _translate_ret(
+        self, val: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Stage the return value in registers, then Ret. Convention:
+          Int return → A.
+          Long return → A = low byte, X = high byte.
+        Matches the mul8 / divmod8 runtime-helper convention so
+        callers can capture a Long return the same way they capture
+        a multi-result helper call."""
+        src_op = translate_val(val)
+        size = self._size_of(val)
+        if size == 1:
+            return [
+                asm_ast.Mov(src=src_op, dst=_REG_A),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            ]
+        # Long: load high byte into X via A, then low byte into A.
+        # We do high first so A holds low at the call point — same
+        # convention as mul8.
+        return [
+            asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+        ]
+
+    def _translate_copy(
+        self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        src_op = translate_val(src)
+        dst_op = translate_val(dst)
+        size = self._size_of(src)
+        # Per-byte Mov; the emitter handles every legal addressing
+        # pair (Imm→Reg, Reg→Mem, Mem→Mem, etc.) and routes through A
+        # for memory-to-memory shapes.
+        return [
+            asm_ast.Mov(src=_byte_at(src_op, k), dst=_byte_at(dst_op, k))
+            for k in range(size)
+        ]
+
+    def _translate_sign_extend(
+        self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Int → Long sign-extension. Load the source byte (sets N
+        based on its sign), store it into the low byte of dst (STA
+        preserves flags), then branch on the original N flag to
+        write 0x00 / 0xFF to the high byte. Two minted labels per
+        use; the Translator's counter keeps them globally unique."""
+        src_op = translate_val(src)
+        dst_op = translate_val(dst)
+        neg_label = self.make_label("sx_neg")
+        end_label = self.make_label("sx_done")
+        return [
+            asm_ast.Mov(src=src_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+            asm_ast.Branch(cond=asm_ast.MI(), target=neg_label),
+            asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
+            asm_ast.Jump(target=end_label),
+            asm_ast.Label(name=neg_label),
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_REG_A),
+            asm_ast.Label(name=end_label),
+            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
+        ]
+
+    def _translate_unary(
+        self,
+        op: tac_ast.Type_unary_operator,
+        src: tac_ast.Type_val,
+        dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        src_op = translate_val(src)
+        dst_op = translate_val(dst)
+        # `!x` always yields Int (per the type checker), even for a
+        # Long operand. Other unary ops preserve type.
+        if isinstance(op, tac_ast.LogicalNot):
+            return self._translate_logical_not(src_op, dst_op, src)
+        size = self._size_of(src)
+        if size == 1:
+            return (
+                [asm_ast.Mov(src=src_op, dst=_REG_A)]
+                + self._unop_atoms(op)
+                + [asm_ast.Mov(src=_REG_A, dst=dst_op)]
+            )
+        # Long Negate / Complement.
+        if isinstance(op, tac_ast.Complement):
+            # ~X = X XOR $FFFF. Independent on each byte.
+            return [
+                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+                asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                    dst=_REG_A,
+                ),
+                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+                asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
+                asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                    dst=_REG_A,
+                ),
+                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
+            ]
+        if isinstance(op, tac_ast.Negate):
+            # -X = (~X) + 1, two's complement, 16-bit. Complement
+            # both bytes, then a 16-bit ADC #1: low ADC adds 1 with
+            # CLC; high ADC adds 0 to propagate carry.
+            return [
+                # Low byte: complement, then add 1.
+                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+                asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                    dst=_REG_A,
+                ),
+                asm_ast.ClearCarry(),
+                asm_ast.Add(src=asm_ast.Imm(value=0x01), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+                # High byte: complement, then add 0 with the carry
+                # from the low ADC. LDA preserves C.
+                asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
+                asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                    dst=_REG_A,
+                ),
+                asm_ast.Add(src=asm_ast.Imm(value=0x00), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
+            ]
+        raise TypeError(f"unexpected unary operator: {op!r}")
+
+    def _translate_logical_not(
+        self,
+        src_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        src_val: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """!x: 1 if x is zero, 0 otherwise. Result is always Int
+        (1 byte in dst). For a Long source, OR the two bytes first
+        — the result is zero iff both bytes are zero. Then the
+        framing LDA's Z flag drives a Branch(EQ) into a 0/1 select."""
+        true_label = self.make_label("lnot_true")
+        end_label = self.make_label("lnot_end")
+        size = self._size_of(src_val)
+        if size == 1:
+            head = [asm_ast.Mov(src=src_op, dst=_REG_A)]
+        else:
+            head = [
+                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+                asm_ast.Or(src=_byte_at(src_op, 1), dst=_REG_A),
+            ]
+        return head + [
+            asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Jump(target=end_label),
+            asm_ast.Label(name=true_label),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Label(name=end_label),
+            asm_ast.Mov(src=_REG_A, dst=dst_op),
+        ]
+
+    def _unop_atoms(
+        self, op: tac_ast.Type_unary_operator,
+    ) -> list[asm_ast.Type_instruction]:
+        """Atomic 8-bit asm sequences implementing Complement /
+        Negate on A. Result stays in A. LogicalNot is handled
+        separately since it needs labels and a different shape."""
+        match op:
+            case tac_ast.Complement():
+                # ~A = A XOR $FF
+                return [asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                    dst=_REG_A,
+                )]
+            case tac_ast.Negate():
+                # -A = (~A) + 1, two's complement
+                return [
+                    asm_ast.Xor(
+                        src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
+                        dst=_REG_A,
+                    ),
+                    asm_ast.ClearCarry(),
+                    asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
+                ]
+        raise TypeError(f"unexpected unary operator: {op!r}")
+
+    def _translate_cond_jump(
+        self,
+        cond: tac_ast.Type_val,
+        target: str,
+        branch_cond: asm_ast.Type_condition,
+    ) -> list[asm_ast.Type_instruction]:
+        """Conditional jump on the truthiness of `cond`. For Int,
+        a single Mov sets Z based on the loaded byte and we Branch.
+        For Long, OR the two bytes — the result is zero iff both
+        bytes are zero (i.e. the 16-bit value is zero), and Z
+        reflects that."""
+        cond_op = translate_val(cond)
+        size = self._size_of(cond)
+        if size == 1:
+            return [
+                asm_ast.Mov(src=cond_op, dst=_REG_A),
+                asm_ast.Branch(cond=branch_cond, target=target),
+            ]
+        return [
+            asm_ast.Mov(src=_byte_at(cond_op, 0), dst=_REG_A),
+            asm_ast.Or(src=_byte_at(cond_op, 1), dst=_REG_A),
+            asm_ast.Branch(cond=branch_cond, target=target),
+        ]
+
+    def _translate_function_call(
+        self,
+        name: str,
+        args: list[tac_ast.Type_val],
+        dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Caller side of the soft-stack calling convention. Each arg
+        occupies size_of(arg_type) consecutive stack bytes (1 for
+        Int, 2 for Long), packed in source order starting at Stack(1).
+        The callee's prologue saves FP, captures its own FP, and the
+        epilogue rewinds SSP all the way back to the caller's pre-
+        call value — no per-call cleanup at the call site.
+
+        Return value: an Int return arrives in A. A Long return
+        arrives with A = low byte, X = high byte (matches the
+        mul8/divmod8 helper convention).
+        """
+        # Compute total arg-stack bytes and per-arg base offsets.
+        arg_sizes = [self._size_of(a) for a in args]
+        total = sum(arg_sizes)
+        emitted: list[asm_ast.Type_instruction] = []
+        if total > 0:
+            emitted.append(asm_ast.AllocateStack(bytes=total))
+            off = 1
+            for arg, sz in zip(args, arg_sizes):
+                arg_op = translate_val(arg)
+                for k in range(sz):
+                    emitted.append(asm_ast.Mov(
+                        src=_byte_at(arg_op, k),
+                        dst=asm_ast.Stack(offset=off + k),
+                    ))
+                off += sz
+        emitted.append(asm_ast.Call(name=name))
+        # Capture return value. Int → from A; Long → from A (low)
+        # and X (high), with X routed via A for the high-byte store.
+        dst_op = translate_val(dst)
+        dst_size = self._size_of(dst)
+        if dst_size == 1:
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+        else:
+            # Save the low byte first (A holds it). Then transfer X
+            # to A and store the high byte. The order matters because
+            # the second Mov clobbers A.
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
+            emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
+        return emitted
+
+    # ------------------------------------------------------------------
+    # Binary ops
+    # ------------------------------------------------------------------
 
     def translate_binary(
         self,
@@ -401,195 +557,300 @@ class Translator:
         src2: tac_ast.Type_val,
         dst: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
-        """Lower a TAC Binary into an asm sequence. Correctness first:
-        each lowering emits a straightforward, unoptimized sequence.
-        Optimization is deferred to TAC-level passes."""
+        """Lower a TAC Binary into asm. Operand size dispatches the
+        sequence shape: Int → today's single-byte sequences; Long →
+        per-byte sequences with carry threading where needed.
+
+        The type checker promotes both operands to the common type
+        before this point, so `_size_of(src1) == _size_of(src2)` is
+        an invariant. The result type matches the operand type for
+        arithmetic / bitwise / shift, and is always Int for
+        comparisons (the size dispatch keys off the operand size,
+        not the result size, since that's what determines the
+        sequence shape)."""
         src1_op = translate_val(src1)
         src2_op = translate_val(src2)
         dst_op = translate_val(dst)
+        size = self._size_of(src1)
         match op:
             case tac_ast.Add():
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
-                    asm_ast.ClearCarry(),
-                    asm_ast.Add(src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-                ]
+                return self._translate_add_sub(
+                    src1_op, src2_op, dst_op, size,
+                    setup=asm_ast.ClearCarry(), op_cls=asm_ast.Add,
+                )
             case tac_ast.Subtract():
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
-                    asm_ast.SetCarry(),
-                    asm_ast.Sub(src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-                ]
+                return self._translate_add_sub(
+                    src1_op, src2_op, dst_op, size,
+                    setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
+                )
             case tac_ast.Multiply():
-                return _translate_ax_call(src1_op, src2_op, dst_op, _MUL8,
-                                          result_in_x=False)
+                _require_byte_helper(size, "*")
+                return _translate_ax_call(
+                    src1_op, src2_op, dst_op, _MUL8, result_in_x=False,
+                )
             case tac_ast.Divide():
-                return _translate_ax_call(src1_op, src2_op, dst_op, _DIVMOD8,
-                                          result_in_x=False)
+                _require_byte_helper(size, "/")
+                return _translate_ax_call(
+                    src1_op, src2_op, dst_op, _DIVMOD8, result_in_x=False,
+                )
             case tac_ast.Modulo():
-                return _translate_ax_call(src1_op, src2_op, dst_op, _DIVMOD8,
-                                          result_in_x=True)
+                _require_byte_helper(size, "%")
+                return _translate_ax_call(
+                    src1_op, src2_op, dst_op, _DIVMOD8, result_in_x=True,
+                )
             case tac_ast.BitwiseAnd():
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
-                    asm_ast.And(asm_type=_BYTE, src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-                ]
+                return self._translate_bitwise(
+                    src1_op, src2_op, dst_op, size, asm_ast.And,
+                )
             case tac_ast.BitwiseOr():
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
-                    asm_ast.Or(asm_type=_BYTE, src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-                ]
+                return self._translate_bitwise(
+                    src1_op, src2_op, dst_op, size, asm_ast.Or,
+                )
             case tac_ast.BitwiseXor():
-                return [
-                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
-                    asm_ast.Xor(asm_type=_BYTE, src1=_REG_A, src2=src2_op, dst=_REG_A),
-                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-                ]
+                return self._translate_xor(
+                    src1_op, src2_op, dst_op, size,
+                )
             case tac_ast.LeftShift():
-                return _translate_ax_call(src1_op, src2_op, dst_op, _SHL8,
-                                          result_in_x=False)
+                _require_byte_helper(size, "<<")
+                return _translate_ax_call(
+                    src1_op, src2_op, dst_op, _SHL8, result_in_x=False,
+                )
             case tac_ast.RightShift():
-                return _translate_ax_call(src1_op, src2_op, dst_op, _ASR8,
-                                          result_in_x=False)
+                _require_byte_helper(size, ">>")
+                return _translate_ax_call(
+                    src1_op, src2_op, dst_op, _ASR8, result_in_x=False,
+                )
             case tac_ast.Equal():
                 return self._translate_equality(
-                    src1_op, src2_op, dst_op, asm_ast.EQ(),
+                    src1_op, src2_op, dst_op, size, asm_ast.EQ(),
                 )
             case tac_ast.NotEqual():
                 return self._translate_equality(
-                    src1_op, src2_op, dst_op, asm_ast.NE(),
+                    src1_op, src2_op, dst_op, size, asm_ast.NE(),
                 )
             case tac_ast.LessThan():
                 # src1 < src2 signed: compute src1 - src2, branch on MI.
                 return self._translate_signed_ordering(
-                    src1_op, src2_op, dst_op, asm_ast.MI(),
+                    src1_op, src2_op, dst_op, size, asm_ast.MI(),
                 )
             case tac_ast.GreaterOrEqual():
                 # src1 >= src2 signed: compute src1 - src2, branch on PL.
                 return self._translate_signed_ordering(
-                    src1_op, src2_op, dst_op, asm_ast.PL(),
+                    src1_op, src2_op, dst_op, size, asm_ast.PL(),
                 )
             case tac_ast.GreaterThan():
                 # src1 > src2 signed <=> src2 < src1 signed.
-                # Swap and reuse the MI-branch path. (Can't just do
-                # src1-src2 and branch on NE & PL because Z is
-                # unreliable after the EOR #$80 overflow correction.)
                 return self._translate_signed_ordering(
-                    src2_op, src1_op, dst_op, asm_ast.MI(),
+                    src2_op, src1_op, dst_op, size, asm_ast.MI(),
                 )
             case tac_ast.LessOrEqual():
-                # src1 <= src2 signed <=> src2 >= src1 signed. Swap
-                # and reuse the PL-branch path.
+                # src1 <= src2 signed <=> src2 >= src1 signed.
                 return self._translate_signed_ordering(
-                    src2_op, src1_op, dst_op, asm_ast.PL(),
+                    src2_op, src1_op, dst_op, size, asm_ast.PL(),
                 )
         raise TypeError(f"unexpected binary operator: {op!r}")
+
+    def _translate_add_sub(
+        self,
+        src1_op: asm_ast.Type_operand,
+        src2_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+        *,
+        setup: asm_ast.Type_instruction,
+        op_cls,
+    ) -> list[asm_ast.Type_instruction]:
+        """Add/Sub templated by size. Carry setup runs once before
+        the low byte; the high byte's ADC/SBC reuses the carry
+        produced by the low op (LDA only affects N/Z)."""
+        out: list[asm_ast.Type_instruction] = []
+        for k in range(size):
+            out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))
+            if k == 0:
+                out.append(setup)
+            out.append(op_cls(src=_byte_at(src2_op, k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return out
+
+    def _translate_bitwise(
+        self,
+        src1_op: asm_ast.Type_operand,
+        src2_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+        op_cls,
+    ) -> list[asm_ast.Type_instruction]:
+        """And/Or templated by size. Each byte is independent (no
+        carry / flag threading needed)."""
+        out: list[asm_ast.Type_instruction] = []
+        for k in range(size):
+            out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))
+            out.append(op_cls(src=_byte_at(src2_op, k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return out
+
+    def _translate_xor(
+        self,
+        src1_op: asm_ast.Type_operand,
+        src2_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+    ) -> list[asm_ast.Type_instruction]:
+        """Xor uses the asymmetric `Xor(src1, src2, dst)` shape so
+        the emitter can pick which side carries the addressing
+        mode. Same per-byte expansion as And/Or."""
+        out: list[asm_ast.Type_instruction] = []
+        for k in range(size):
+            out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))
+            out.append(asm_ast.Xor(
+                src1=_REG_A, src2=_byte_at(src2_op, k), dst=_REG_A,
+            ))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return out
 
     def _translate_equality(
         self,
         src1_op: asm_ast.Type_operand,
         src2_op: asm_ast.Type_operand,
         dst_op: asm_ast.Type_operand,
+        size: int,
         cond: asm_ast.Type_condition,
     ) -> list[asm_ast.Type_instruction]:
-        """Lower == / != via Compare + Branch(EQ|NE) + 0/1 select.
-        CMP sets Z=1 iff src1==src2 unconditionally (no overflow
-        concern), so it's correct for both signed and unsigned."""
+        """== / != via Compare + Branch + 0/1 select. CMP sets Z=1
+        iff the bytes are equal (no overflow concern), so this is
+        correct for both signed and unsigned at the byte level.
+
+        For Long, CMP the high bytes first; if they differ, short-
+        circuit to a label (via BNE) — at that label Z is 0, which
+        is what we want for "not equal". Otherwise fall through to
+        the low-byte CMP whose Z is the final answer.
+        """
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
-        return [
-            asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
-            asm_ast.Compare(left=_REG_A, right=src2_op),
+        out: list[asm_ast.Type_instruction] = []
+        if size == 1:
+            out.extend([
+                asm_ast.Mov(src=src1_op, dst=_REG_A),
+                asm_ast.Compare(left=_REG_A, right=src2_op),
+            ])
+        else:
+            differ_label = self.make_label("cmp_differ")
+            # High bytes first — if they differ the answer's "not
+            # equal" without needing to look at the low bytes.
+            out.extend([
+                asm_ast.Mov(src=_byte_at(src1_op, 1), dst=_REG_A),
+                asm_ast.Compare(
+                    left=_REG_A, right=_byte_at(src2_op, 1),
+                ),
+                asm_ast.Branch(cond=asm_ast.NE(), target=differ_label),
+                asm_ast.Mov(src=_byte_at(src1_op, 0), dst=_REG_A),
+                asm_ast.Compare(
+                    left=_REG_A, right=_byte_at(src2_op, 0),
+                ),
+                asm_ast.Label(name=differ_label),
+            ])
+        out.extend([
             asm_ast.Branch(cond=cond, target=true_label),
-            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=end_label),
             asm_ast.Label(name=true_label),
-            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-        ]
+            asm_ast.Mov(src=_REG_A, dst=dst_op),
+        ])
+        return out
 
     def _translate_signed_ordering(
         self,
         left_op: asm_ast.Type_operand,
         right_op: asm_ast.Type_operand,
         dst_op: asm_ast.Type_operand,
+        size: int,
         cond: asm_ast.Type_condition,
     ) -> list[asm_ast.Type_instruction]:
-        """Lower a signed ordering compare via SBC with V-correction:
-           LDA left; SEC; SBC right       ; sets N, Z, C, V
-           BVC novf                       ; if no overflow, N is correct
-           EOR #$80                       ; else flip N to correct it
-         novf:
-           B<cond> true                   ; MI for <, PL for >=
-           LDA #0 ; JMP end ; true: LDA #1 ; end: STA dst
+        """Signed ordering compare via SBC with V-correction:
+           LDA left.lo; SEC; SBC right.lo
+           [LDA left.hi;       SBC right.hi]   (Long only; carry threads)
+           BVC novf; EOR #$80; novf:
+           B<cond> true; LDA #0; JMP end; true: LDA #1; end: STA dst
 
-        Caller chooses who's on the left and which condition to branch
-        on to select among <, >=, >, <= (see translate_binary)."""
+        The V-correction handles signed overflow: when the
+        subtraction overflows, the N flag from SBC is "wrong"
+        relative to the mathematical sign of the difference, so
+        EOR #$80 flips it. For Long, we sub the low bytes first
+        (carry threads via the existing carry register) then sub
+        the high bytes; the V flag from the high-byte SBC reflects
+        the 16-bit overflow, and N reflects the 16-bit sign of the
+        result. Caller picks operand order and branch condition to
+        select among <, >=, >, <=."""
         novf_label = self.make_label("cmp_novf")
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
-        return [
-            asm_ast.Mov(asm_type=_BYTE, src=left_op, dst=_REG_A),
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),
             asm_ast.SetCarry(),
-            asm_ast.Sub(src=right_op, dst=_REG_A),
+            asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A),
+        ]
+        if size > 1:
+            # High byte: load with LDA (preserves C from low SBC),
+            # then SBC threads the borrow. Result's N/V reflect the
+            # 16-bit subtraction.
+            out.extend([
+                asm_ast.Mov(src=_byte_at(left_op, 1), dst=_REG_A),
+                asm_ast.Sub(src=_byte_at(right_op, 1), dst=_REG_A),
+            ])
+        out.extend([
             asm_ast.Branch(cond=asm_ast.VC(), target=novf_label),
-            asm_ast.Xor(asm_type=_BYTE, 
+            asm_ast.Xor(
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
             asm_ast.Label(name=novf_label),
             asm_ast.Branch(cond=cond, target=true_label),
-            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=end_label),
             asm_ast.Label(name=true_label),
-            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
-        ]
+            asm_ast.Mov(src=_REG_A, dst=dst_op),
+        ])
+        return out
 
     def translate_unop_atoms(
         self, op: tac_ast.Type_unary_operator,
     ) -> list[asm_ast.Type_instruction]:
-        """Atomic asm instructions implementing the unary op on A.
-        Result is left in A. LogicalNot lowers inline (no runtime
-        helper) and mints two labels per use, so this lives on the
-        Translator to share the label counter with the comparison
-        lowerings."""
-        match op:
-            case tac_ast.Complement():
-                # ~A = A XOR $FF
-                return [asm_ast.Xor(asm_type=_BYTE, 
-                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
-                )]
-            case tac_ast.Negate():
-                # -A = (~A) + 1, two's complement
-                return [
-                    asm_ast.Xor(asm_type=_BYTE, 
-                        src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
-                    ),
-                    asm_ast.ClearCarry(),
-                    asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
-                ]
-            case tac_ast.LogicalNot():
-                # !A := 1 if A == 0 else 0. The framing Mov(src, A)
-                # around this atom already emits LDA, which sets Z
-                # based on the loaded byte — so we can branch on EQ
-                # directly without an extra Compare.
-                true_label = self.make_label("lnot_true")
-                end_label = self.make_label("lnot_end")
-                return [
-                    asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
-                    asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=0), dst=_REG_A),
-                    asm_ast.Jump(target=end_label),
-                    asm_ast.Label(name=true_label),
-                    asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=1), dst=_REG_A),
-                    asm_ast.Label(name=end_label),
-                ]
-        raise TypeError(f"unexpected unary operator: {op!r}")
+        """Backwards-compat shim for the old standalone-unop entry
+        point. Returns the 8-bit atomic sequence on A; LogicalNot
+        uses the inline labelled form. Tests that exercised the
+        old entry point still work; production callers go through
+        `translate_instruction(Unary(...))` which handles the
+        framing Mov / Mov pair."""
+        if isinstance(op, tac_ast.LogicalNot):
+            true_label = self.make_label("lnot_true")
+            end_label = self.make_label("lnot_end")
+            return [
+                asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
+                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Jump(target=end_label),
+                asm_ast.Label(name=true_label),
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Label(name=end_label),
+            ]
+        return self._unop_atoms(op)
+
+
+def _require_byte_helper(size: int, op_name: str) -> None:
+    """The runtime helpers (`mul8`, `divmod8`, `shl8`, `asr8`) are
+    8-bit only. Using `*`, `/`, `%`, `<<`, or `>>` on Long operands
+    would need 16-bit equivalents (mul16/divmod16/shl16/asr16) that
+    aren't in this repo yet — raise here so the failure points at
+    the source-level construct rather than at a confusing emit-time
+    value-out-of-range."""
+    if size != 1:
+        raise NotImplementedError(
+            f"binary `{op_name}` on long operands is not implemented "
+            f"yet (would need a 16-bit runtime helper that isn't in "
+            f"this repo)"
+        )
 
 
 def _translate_ax_call(
@@ -606,29 +867,29 @@ def _translate_ax_call(
     helper's result comes back in X (Modulo), transfer it to A before
     storing to dst."""
     out: list[asm_ast.Type_instruction] = [
-        asm_ast.Mov(asm_type=_BYTE, src=src2_op, dst=_REG_A),
-        asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=_REG_X),
-        asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
+        asm_ast.Mov(src=src2_op, dst=_REG_A),
+        asm_ast.Mov(src=_REG_A, dst=_REG_X),
+        asm_ast.Mov(src=src1_op, dst=_REG_A),
         asm_ast.Call(name=helper),
     ]
     if result_in_x:
-        out.append(asm_ast.Mov(asm_type=_BYTE, src=_REG_X, dst=_REG_A))
-    out.append(asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op))
+        out.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+    out.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
     return out
 
 
 def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
+    """Translate a TAC val to its asm operand form. Constants
+    become `Imm(value)` (the value is an int byte for Int constants,
+    or — for Long constants — a 2-byte value the caller will split
+    into bytes via `_byte_at`). Vars become `Pseudo(name, offset=0)`;
+    callers that need to address higher bytes of a multi-byte value
+    bump the offset via `_byte_at`."""
     match val:
         case tac_ast.Constant(const=c):
-            # The TAC const carries variant info (ConstInt /
-            # ConstLong); the asm `Imm` operand is just a raw byte
-            # today. Pulling out `c.int` discards the variant, which
-            # is fine for Int-typed constants and the deferred-
-            # codegen boundary for Long-typed ones — values above
-            # 1-byte range hit `_check_byte` at asm emit time.
             return asm_ast.Imm(value=c.int)
         case tac_ast.Var(name=n):
-            return asm_ast.Pseudo(name=n)
+            return asm_ast.Pseudo(name=n, offset=0)
     raise TypeError(f"unexpected val node: {val!r}")
 
 
@@ -646,17 +907,17 @@ def translate_program(
     symbols: SymbolTable | None = None,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
-    `c99_to_tac` produced — `Translator._asm_type_for_val` consults
-    it to pick `Byte` / `DoubleByte` for typed Mov-class
-    instructions. Unit-test callers that don't care about types can
-    omit it; the Translator falls back to `Byte` for unknown
-    names."""
+    `c99_to_tac` produced — the Translator consults it via
+    `_size_of` to pick the right size dispatch (1-byte vs 2-byte
+    sequence) for each instruction. Unit-test callers that only
+    exercise Int paths can omit it; the Translator falls back to
+    1-byte (Int) for any name not in the table."""
     return Translator(symbols).translate_program(prog)
 
 
 def translate_function(
     fn: tac_ast.Type_top_level,
-) -> asm_ast.Type_function_definition:
+) -> asm_ast.Function:
     return Translator().translate_function(fn)
 
 

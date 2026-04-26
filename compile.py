@@ -94,6 +94,7 @@ def _run_stage(stage: str, source: str) -> str:
                 translate_to_tac(prog, symbols), symbols,
             ),
             extra_statics=statics,
+            symbols=symbols,
         ))
     raise AssertionError(f"unknown stage: {stage!r}")
 

@@ -87,15 +87,18 @@ Atomic arithmetic / flag instructions:
     N/Z/C flags an `SBC left - right` would, without writing the
     result anywhere.
 
-`Data(name)` operand. References a static-storage object by symbolic
-name. Lowers to 6502 absolute addressing — `LDA name`, `STA name`,
-`ADC name`, `EOR name`, etc. The assembler resolves the name to a
-fixed address; no LDY indirect-Y preamble is needed (the address is
-known at assembly time, not runtime). `Data` is legal anywhere
-`Stack`/`Frame` is legal as a memory operand: read sources for
-arithmetic / logic / compare ops, both sides of a `Mov`. The
-matching `replace_pseudoregisters` pass produces `Data` operands
-from any `Pseudo` whose name is a top-level `StaticVariable`.
+`Data(name, offset)` operand. References a static-storage object by
+symbolic name. Lowers to 6502 absolute addressing — `LDA name`,
+`STA name`, `ADC name`, `EOR name`, etc. for `offset == 0`, and
+`LDA name+offset` etc. for nonzero offsets. The assembler resolves
+the symbol+offset to a fixed address; no LDY indirect-Y preamble
+is needed (the address is known at assembly time, not runtime).
+`Data` is legal anywhere `Stack`/`Frame` is legal as a memory
+operand: read sources for arithmetic / logic / compare ops, both
+sides of a `Mov`. The matching `replace_pseudoregisters` pass
+produces `Data` operands from any `Pseudo` whose name is a top-
+level `StaticVariable`; the `offset` lets a single Pseudo address
+the high byte of a 2-byte (`Long`) static via `Data(name, offset=1)`.
 
 `StaticVariable(name, is_global, init)` top-level node. Emitted as
 `<name>:` on its own line followed by `DC.B $XX` on the next, where
@@ -274,6 +277,17 @@ def _is_memory_operand(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, (asm_ast.Stack, asm_ast.Frame, asm_ast.Data))
 
 
+def _data_addr(d: asm_ast.Data) -> str:
+    """Absolute-addressing operand string for a Data reference. The
+    `offset` field selects the byte within a multi-byte static — 0
+    for the low byte (and the only byte of an Int static), 1 for the
+    high byte of a Long. We render `name+offset` for nonzero offsets
+    and bare `name` for the common offset-0 case."""
+    if d.offset == 0:
+        return d.name
+    return f"{d.name}+{d.offset}"
+
+
 def _emit_memop_load(
     addr_op: asm_ast.Type_operand, opcode: str = "LDA",
 ) -> list[str]:
@@ -281,7 +295,7 @@ def _emit_memop_load(
     if a different opcode is passed; the caller picks). Indirect-Y
     for Stack/Frame, absolute for Data."""
     if isinstance(addr_op, asm_ast.Data):
-        return [_instr_line(opcode, addr_op.name)]
+        return [_instr_line(opcode, _data_addr(addr_op))]
     return [
         _emit_load_y(addr_op.offset),
         _instr_line(opcode, _indirect_addr(addr_op)),
@@ -292,7 +306,7 @@ def _emit_memop_store(addr_op: asm_ast.Type_operand) -> list[str]:
     """Store A into the byte addressed by `addr_op`. Indirect-Y for
     Stack/Frame, absolute for Data."""
     if isinstance(addr_op, asm_ast.Data):
-        return [_instr_line("STA", addr_op.name)]
+        return [_instr_line("STA", _data_addr(addr_op))]
     return [
         _emit_load_y(addr_op.offset),
         _instr_line("STA", _indirect_addr(addr_op)),
@@ -431,8 +445,8 @@ def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
                 _emit_load_y(src.offset),
                 _instr_line(opcode, _indirect_addr(src)),
             ]
-        case asm_ast.Data(name=name):
-            return [_instr_line(opcode, name)]
+        case asm_ast.Data():
+            return [_instr_line(opcode, _data_addr(src))]
         case _:
             raise ValueError(
                 f"unsupported {opcode} source: {src!r}"
@@ -575,8 +589,8 @@ def _emit_compare(
         case asm_ast.Imm(value=v):
             _check_byte("immediate", v)
             return [_instr_line(opcode, f"#${v:02X}")]
-        case asm_ast.Data(name=name):
-            return [_instr_line(opcode, name)]
+        case asm_ast.Data():
+            return [_instr_line(opcode, _data_addr(right))]
         case asm_ast.Stack() | asm_ast.Frame():
             if opcode != "CMP":
                 raise ValueError(
@@ -632,32 +646,10 @@ def _emit_ret(arg_bytes: int, local_bytes: int) -> list[str]:
     )
 
 
-def _check_byte_typed(t: asm_ast.Type_asm_type, kind: str) -> None:
-    """Reject `DoubleByte`-typed instructions at emit. The deferred
-    8-bit lowering pass will turn each DoubleByte op into a pair of
-    Byte ops at adjacent addresses; until that lands, programs that
-    actually reach a DoubleByte instruction here are using `long`
-    arithmetic that the back end can't render to 6502 yet."""
-    if isinstance(t, asm_ast.DoubleByte):
-        raise NotImplementedError(
-            f"asm-level DoubleByte {kind} not implemented yet "
-            f"(awaiting 8-bit lowering pass)"
-        )
-
-
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
-        case asm_ast.Mov(asm_type=t, src=src, dst=dst):
-            _check_byte_typed(t, "Mov")
+        case asm_ast.Mov(src=src, dst=dst):
             return _emit_mov(src, dst)
-        case asm_ast.Movsx():
-            # Sign-extend Byte→DoubleByte. Needs a multi-byte
-            # write (low byte = src, high byte = $00 / $FF based on
-            # src's sign bit). Deferred to the 8-bit lowering pass.
-            raise NotImplementedError(
-                "asm-level Movsx (Byte→DoubleByte sign-extension) "
-                "not implemented yet (awaiting 8-bit lowering pass)"
-            )
         case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
             return _emit_function_prologue(ab, lb)
         case asm_ast.Ret(arg_bytes=ab, local_bytes=lb):
@@ -678,38 +670,27 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return [_instr_line("CLC")]
         case asm_ast.SetCarry():
             return [_instr_line("SEC")]
-        case asm_ast.Inc(asm_type=t, dst=dst):
-            _check_byte_typed(t, "Inc")
+        case asm_ast.Inc(dst=dst):
             return _emit_inc(dst)
-        case asm_ast.Dec(asm_type=t, dst=dst):
-            _check_byte_typed(t, "Dec")
+        case asm_ast.Dec(dst=dst):
             return _emit_dec(dst)
-        case asm_ast.Push(asm_type=t, src=src):
-            _check_byte_typed(t, "Push")
+        case asm_ast.Push(src=src):
             return _emit_push(src)
-        case asm_ast.Pop(asm_type=t, dst=dst):
-            _check_byte_typed(t, "Pop")
+        case asm_ast.Pop(dst=dst):
             return _emit_pop(dst)
-        case asm_ast.Xor(asm_type=t, src1=s1, src2=s2, dst=dst):
-            _check_byte_typed(t, "Xor")
+        case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
             return _emit_xor(s1, s2, dst)
-        case asm_ast.And(asm_type=t, src=src, dst=dst):
-            _check_byte_typed(t, "And")
+        case asm_ast.And(src=src, dst=dst):
             return _emit_acc_logic("AND", "And", src, dst)
-        case asm_ast.Or(asm_type=t, src=src, dst=dst):
-            _check_byte_typed(t, "Or")
+        case asm_ast.Or(src=src, dst=dst):
             return _emit_acc_logic("ORA", "Or", src, dst)
-        case asm_ast.ArithmeticShiftLeft(asm_type=t, dst=dst):
-            _check_byte_typed(t, "ArithmeticShiftLeft")
+        case asm_ast.ArithmeticShiftLeft(dst=dst):
             return _emit_acc_shift("ASL", "ArithmeticShiftLeft", dst)
-        case asm_ast.LogicalShiftRight(asm_type=t, dst=dst):
-            _check_byte_typed(t, "LogicalShiftRight")
+        case asm_ast.LogicalShiftRight(dst=dst):
             return _emit_acc_shift("LSR", "LogicalShiftRight", dst)
-        case asm_ast.RotateLeft(asm_type=t, dst=dst):
-            _check_byte_typed(t, "RotateLeft")
+        case asm_ast.RotateLeft(dst=dst):
             return _emit_acc_shift("ROL", "RotateLeft", dst)
-        case asm_ast.RotateRight(asm_type=t, dst=dst):
-            _check_byte_typed(t, "RotateRight")
+        case asm_ast.RotateRight(dst=dst):
             return _emit_acc_shift("ROR", "RotateRight", dst)
         case asm_ast.Call(name=name):
             return [_instr_line("JSR", name)]

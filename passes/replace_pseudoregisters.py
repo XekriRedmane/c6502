@@ -6,34 +6,46 @@ convention (see README "Function stack frame layout"):
 
     FP+1 ... FP+M           local-byte slots (M = local_bytes)
     FP+M+1, FP+M+2          saved caller FP (the 2-byte gap)
-    FP+M+3 ... FP+M+2+N     arg slots (N = arg_bytes = len(params)),
-                            arg j (1-indexed) at offset M+2+j
+    FP+M+3 ... FP+M+2+N     arg slots (N = arg_bytes), with each
+                            param j (1-indexed) starting at offset
+                            M+3 + sum-of-prior-param-sizes
 
 A Pseudo can refer to one of three things, distinguished by name:
 
   * **a static-storage object** — a name that appears as a top-level
-    `StaticVariable` in the same program. References are absolute-
-    addressed (the symbol is at a fixed memory address), so the
-    Pseudo lowers to a `Data(name)` operand. The asm emitter then
-    renders `LDA name` / `STA name` / `ADC name` etc.
+    `StaticVariable` in the same program (or in `extra_statics`,
+    for extern references with no local definition). The pseudo
+    lowers to a `Data(name, offset=k)` operand — absolute
+    addressing, with `offset` selecting the byte of a multi-byte
+    static.
   * **a function parameter** — a name in the enclosing function's
     `params` list. The arg byte sits in the caller's frame at
-    `Frame(M + 2 + j)` for the j-th param.
+    `Frame(M + 2 + j_offset + k)` for the j-th param's k-th byte,
+    where `j_offset` is the running sum of prior param sizes.
   * **a local temporary** — anything else. Each distinct local name
-    gets a fresh `Frame(off)` slot starting at 1, in encounter order.
+    gets `size_of(name)` consecutive `Frame(off)` slots starting at
+    1, in encounter order, where `size_of` reads the symbol-table
+    type for the name (Long → 2 bytes, Int / unknown → 1 byte).
+
+Pseudo's `offset` field selects which byte of the allocated slot
+this reference is — `Pseudo(name, offset=0)` is the low byte (or
+the only byte of an Int), `Pseudo(name, offset=1)` is the high
+byte of a Long. The replace step adds the encountered offset to
+the slot's base offset.
 
 Per-function steps:
 
   1. Walk the function's instructions, classifying every Pseudo
-     (static / param / local) and minting local offsets in
-     encounter order. After the walk, M = (count of distinct local
-     pseudos).
-  2. Now that M is known, compute param offsets: param j
-     (1-indexed) → `Frame(M + 2 + j)`. Params not actually
-     referenced in the body still get an entry, but the entry only
-     matters if some instruction touches the name.
+     (static / param / local) by name. Mint local *base* offsets
+     (the offset of the low byte) in encounter order, advancing
+     by `size_of(name)` each time. After the walk,
+     M = (total bytes of distinct local pseudos).
+  2. Compute param base offsets analogously, advancing by each
+     param's size in `params` order, starting from M+3.
+     N = total arg bytes.
   3. Walk the instructions a second time, replacing each Pseudo
-     with its computed `Data` / `Frame` operand.
+     with its computed `Data(name, offset)` / `Frame(base+offset)`
+     operand.
   4. Prepend `FunctionPrologue(arg_bytes=N, local_bytes=M)` and
      rewrite every `Ret(...)` to carry the same `N` and `M`. The
      emitter consumes those dimensions to lay down the prologue
@@ -58,6 +70,8 @@ function's dims.
 from __future__ import annotations
 
 import asm_ast
+import c99_ast
+from passes.type_checking import SymbolTable
 
 
 def _operands_in(instr: asm_ast.Type_instruction):
@@ -66,9 +80,6 @@ def _operands_in(instr: asm_ast.Type_instruction):
     without operand fields yield nothing."""
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
-            yield src
-            yield dst
-        case asm_ast.Movsx(src=src, dst=dst):
             yield src
             yield dst
         case asm_ast.Add(src=src, dst=dst):
@@ -108,68 +119,112 @@ def _operands_in(instr: asm_ast.Type_instruction):
             yield right
 
 
+def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
+    """How many bytes the named pseudo occupies. Reads the symbol
+    table — Long → 2 bytes, anything else (Int / unknown) → 1 byte.
+    A None symbol table or an absent entry both default to 1, which
+    matches the Int-only world unit tests assume."""
+    if symbols is None:
+        return 1
+    sym = symbols.get(name)
+    if sym is None:
+        return 1
+    if isinstance(sym.type, c99_ast.Long):
+        return 2
+    return 1
+
+
 class Replacer:
     """Per-function offset state. Built up in the first walk
     (locals) and finalized once M is known (params)."""
 
     def __init__(
-        self, params: list[str], statics: frozenset[str],
+        self,
+        params: list[str],
+        statics: frozenset[str],
+        symbols: SymbolTable | None = None,
     ) -> None:
         self.params = params
         self.param_set = set(params)
+        self.symbols = symbols
         # Pseudos whose names appear in `statics` are static-storage
         # objects (file-scope variables and block-scope statics) —
-        # they get `Data(name)` not a frame slot.
+        # they get `Data(name, offset)` not a frame slot.
         self.statics = statics
-        # Locals get sequential offsets in encounter order, starting
-        # at 1 (FP points at the next-free byte; FP+1 is the first
-        # writable slot).
-        self.local_offsets: dict[str, int] = {}
-        # Filled in by `finalize` once the local count is known.
-        self.param_offsets: dict[str, int] = {}
+        # Locals get a *base* offset per distinct name (the offset
+        # of byte 0); the byte at `Pseudo(name, offset=k)` is at
+        # base+k. Encounter order; each name advances the running
+        # cursor by `size_of(name)`.
+        self.local_bases: dict[str, int] = {}
+        self.local_total: int = 0
+        # Filled in by `finalize` once the local total is known.
+        self.param_bases: dict[str, int] = {}
+        self.param_total: int = 0
 
     def discover(self, op: asm_ast.Type_operand) -> None:
-        """First-pass: assign local offsets to non-param, non-static
-        Pseudos as we see them. Params are skipped — their offsets
-        depend on M (= the final count of locals), which we don't
-        know until the walk finishes. Statics are skipped — they
-        don't live in the frame at all."""
+        """First-pass: assign local base offsets to non-param, non-
+        static Pseudos as we see them. Params are skipped — their
+        offsets depend on M (= the final local-byte count), which
+        we don't know until the walk finishes. Statics are skipped
+        — they don't live in the frame at all."""
         if not isinstance(op, asm_ast.Pseudo):
             return
         if op.name in self.statics:
             return
         if op.name in self.param_set:
             return
-        if op.name not in self.local_offsets:
-            self.local_offsets[op.name] = len(self.local_offsets) + 1
+        if op.name in self.local_bases:
+            return
+        # First sighting of this name — allocate a fresh base offset
+        # and advance the cursor by the symbol's size. FP+1 is the
+        # first writable slot (FP itself points at the next-free
+        # byte), so the first local lands at offset 1.
+        size = _size_of_name(op.name, self.symbols)
+        self.local_bases[op.name] = self.local_total + 1
+        self.local_total += size
 
     def finalize(self) -> tuple[int, int]:
-        """Compute param offsets given the now-known local count.
-        Returns `(arg_bytes, local_bytes)` for the prologue/Ret."""
-        m = len(self.local_offsets)
-        n = len(self.params)
-        # Param j (1-indexed) sits at Frame offset M + 2 + j —
-        # i.e., M+3 for the first param, M+4 for the second, etc.
-        # The 2-byte gap (M+1, M+2) holds the saved caller FP.
-        for j, name in enumerate(self.params, start=1):
-            self.param_offsets[name] = m + 2 + j
-        return n, m
+        """Compute param base offsets given the now-known local
+        total. Returns `(arg_bytes, local_bytes)` for the
+        prologue / Ret patches.
+
+        Param j (1-indexed) sits at Frame offset M + 2 + (sum of
+        prior param sizes) + 1 — i.e., the first byte of the
+        first param is M+3, the next param starts after the first
+        one's bytes, etc. The 2-byte gap (M+1, M+2) holds the
+        saved caller FP."""
+        m = self.local_total
+        cursor = m + 3  # first param's first byte
+        for name in self.params:
+            self.param_bases[name] = cursor
+            cursor += _size_of_name(name, self.symbols)
+        self.param_total = cursor - (m + 3)
+        return self.param_total, m
 
     def replace(self, op: asm_ast.Type_operand) -> asm_ast.Type_operand:
         """Second-pass: turn each Pseudo into its computed `Data` or
-        `Frame`. Other operands pass through unchanged. The
-        static-set check comes first — a name reusing a value that
-        would otherwise look like a local would still resolve to
-        Data here, which matches the C semantics (static-storage
-        objects own their names module-wide)."""
+        `Frame`. Other operands pass through unchanged. The static-
+        set check comes first — a name reusing a value that would
+        otherwise look like a local would still resolve to Data
+        here, which matches the C semantics (static-storage
+        objects own their names module-wide).
+
+        The Pseudo's `offset` field selects which byte of the
+        named value this reference is; we add it to the resolved
+        base address — Data's own `offset`, or the local/param's
+        Frame offset."""
         if not isinstance(op, asm_ast.Pseudo):
             return op
         if op.name in self.statics:
-            return asm_ast.Data(name=op.name)
-        if op.name in self.local_offsets:
-            return asm_ast.Frame(offset=self.local_offsets[op.name])
-        if op.name in self.param_offsets:
-            return asm_ast.Frame(offset=self.param_offsets[op.name])
+            return asm_ast.Data(name=op.name, offset=op.offset)
+        if op.name in self.local_bases:
+            return asm_ast.Frame(
+                offset=self.local_bases[op.name] + op.offset,
+            )
+        if op.name in self.param_bases:
+            return asm_ast.Frame(
+                offset=self.param_bases[op.name] + op.offset,
+            )
         # Unrecognized Pseudo — would mean a name not in any of the
         # three maps, which is a bug in an upstream pass. The emitter
         # would reject it later anyway, but raising here pinpoints
@@ -184,21 +239,11 @@ class Replacer:
         arg_bytes: int, local_bytes: int,
     ) -> asm_ast.Type_instruction:
         """Rewrite an instruction's operand fields, and patch `Ret`
-        to carry the function's dims. The `asm_type` field on typed
-        instructions rides through unchanged — it tags the
-        instruction's width (Byte / DoubleByte) regardless of which
-        operand kind sits in src / dst."""
+        to carry the function's dims. Instructions without operand
+        fields (or only register operands) pass through unchanged."""
         match instr:
-            case asm_ast.Mov(asm_type=t, src=src, dst=dst):
+            case asm_ast.Mov(src=src, dst=dst):
                 return asm_ast.Mov(
-                    asm_type=t,
-                    src=self.replace(src), dst=self.replace(dst),
-                )
-            case asm_ast.Movsx(src=src, dst=dst):
-                # Sign-extend has implicit Byte→DoubleByte semantics
-                # (no asm_type field). Operands still go through
-                # the Pseudo replacement.
-                return asm_ast.Movsx(
                     src=self.replace(src), dst=self.replace(dst),
                 )
             case asm_ast.Add(src=src, dst=dst):
@@ -209,47 +254,36 @@ class Replacer:
                 return asm_ast.Sub(
                     src=self.replace(src), dst=self.replace(dst),
                 )
-            case asm_ast.And(asm_type=t, src=src, dst=dst):
+            case asm_ast.And(src=src, dst=dst):
                 return asm_ast.And(
-                    asm_type=t,
                     src=self.replace(src), dst=self.replace(dst),
                 )
-            case asm_ast.Or(asm_type=t, src=src, dst=dst):
+            case asm_ast.Or(src=src, dst=dst):
                 return asm_ast.Or(
-                    asm_type=t,
                     src=self.replace(src), dst=self.replace(dst),
                 )
-            case asm_ast.Xor(asm_type=t, src1=s1, src2=s2, dst=dst):
+            case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
                 return asm_ast.Xor(
-                    asm_type=t,
                     src1=self.replace(s1),
                     src2=self.replace(s2),
                     dst=self.replace(dst),
                 )
-            case asm_ast.Inc(asm_type=t, dst=dst):
-                return asm_ast.Inc(asm_type=t, dst=self.replace(dst))
-            case asm_ast.Dec(asm_type=t, dst=dst):
-                return asm_ast.Dec(asm_type=t, dst=self.replace(dst))
-            case asm_ast.ArithmeticShiftLeft(asm_type=t, dst=dst):
-                return asm_ast.ArithmeticShiftLeft(
-                    asm_type=t, dst=self.replace(dst),
-                )
-            case asm_ast.LogicalShiftRight(asm_type=t, dst=dst):
-                return asm_ast.LogicalShiftRight(
-                    asm_type=t, dst=self.replace(dst),
-                )
-            case asm_ast.RotateLeft(asm_type=t, dst=dst):
-                return asm_ast.RotateLeft(
-                    asm_type=t, dst=self.replace(dst),
-                )
-            case asm_ast.RotateRight(asm_type=t, dst=dst):
-                return asm_ast.RotateRight(
-                    asm_type=t, dst=self.replace(dst),
-                )
-            case asm_ast.Push(asm_type=t, src=src):
-                return asm_ast.Push(asm_type=t, src=self.replace(src))
-            case asm_ast.Pop(asm_type=t, dst=dst):
-                return asm_ast.Pop(asm_type=t, dst=self.replace(dst))
+            case asm_ast.Inc(dst=dst):
+                return asm_ast.Inc(dst=self.replace(dst))
+            case asm_ast.Dec(dst=dst):
+                return asm_ast.Dec(dst=self.replace(dst))
+            case asm_ast.ArithmeticShiftLeft(dst=dst):
+                return asm_ast.ArithmeticShiftLeft(dst=self.replace(dst))
+            case asm_ast.LogicalShiftRight(dst=dst):
+                return asm_ast.LogicalShiftRight(dst=self.replace(dst))
+            case asm_ast.RotateLeft(dst=dst):
+                return asm_ast.RotateLeft(dst=self.replace(dst))
+            case asm_ast.RotateRight(dst=dst):
+                return asm_ast.RotateRight(dst=self.replace(dst))
+            case asm_ast.Push(src=src):
+                return asm_ast.Push(src=self.replace(src))
+            case asm_ast.Pop(dst=dst):
+                return asm_ast.Pop(dst=self.replace(dst))
             case asm_ast.Compare(left=left, right=right):
                 return asm_ast.Compare(
                     left=self.replace(left),
@@ -270,23 +304,27 @@ class Replacer:
 def replace_function(
     fn: asm_ast.Function,
     statics: frozenset[str] = frozenset(),
+    symbols: SymbolTable | None = None,
 ) -> asm_ast.Function:
     """Lay out a single function's frame and rewrite Pseudo operands.
 
     `statics` is the set of static-storage names visible at the
     program top level. A Pseudo whose name is in this set lowers to
-    `Data(name)` (absolute addressing); everything else becomes a
-    `Frame(off)` (frame-pointer-relative). The default of an empty
-    set is a unit-test convenience for callers that aren't dealing
-    with statics — `replace_program` always passes the program-wide
-    set.
+    `Data(name, offset)` (absolute addressing); everything else
+    becomes a `Frame(off)`. `symbols` is the type-checker's symbol
+    table, consulted to size each pseudo (Long → 2 bytes, Int →
+    1 byte). Both default to empty / None for unit-test
+    convenience — `replace_program` always passes the program-wide
+    set and the real symbol table.
     """
     match fn:
         case asm_ast.Function(
             name=name, is_global=is_global,
             params=params, instructions=instrs,
         ):
-            r = Replacer(params=list(params), statics=statics)
+            r = Replacer(
+                params=list(params), statics=statics, symbols=symbols,
+            )
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
                 for op in _operands_in(instr):
@@ -319,6 +357,7 @@ def replace_function(
 def replace_program(
     prog: asm_ast.Type_program,
     extra_statics: frozenset[str] = frozenset(),
+    symbols: SymbolTable | None = None,
 ) -> asm_ast.Type_program:
     """Lay out frames and lower Pseudo operands for every Function in
     `prog`.
@@ -335,10 +374,9 @@ def replace_program(
         the union, those references would look like undeclared
         Pseudos and the layout pass would mistake them for locals.
 
-    A future cleanup could thread the SymbolTable directly and
-    derive both sources from it; for now `extra_statics` is the
-    minimal extra surface needed to fix the extern case without
-    rewiring the pipeline.
+    `symbols` is the same type-checker symbol table — passed through
+    so `replace_function` can size each pseudo (Long → 2 bytes,
+    Int → 1 byte).
     """
     match prog:
         case asm_ast.Program(top_level=top_levels):
@@ -352,7 +390,7 @@ def replace_program(
                     # Nothing to lay out; pass through.
                     new_top.append(tl)
                 else:
-                    new_top.append(replace_function(tl, statics))
+                    new_top.append(replace_function(tl, statics, symbols))
             return asm_ast.Program(top_level=new_top)
         case _:
             raise TypeError(f"unexpected program node: {prog!r}")

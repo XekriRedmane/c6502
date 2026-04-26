@@ -15,21 +15,6 @@ class Program(Type_program):
 
 
 @dataclass
-class Type_asm_type:
-    pass
-
-
-@dataclass
-class Byte(Type_asm_type):
-    pass
-
-
-@dataclass
-class DoubleByte(Type_asm_type):
-    pass
-
-
-@dataclass
 class Type_top_level:
     pass
 
@@ -71,13 +56,6 @@ class Type_instruction:
 
 @dataclass
 class Mov(Type_instruction):
-    asm_type: Type_asm_type
-    src: Type_operand
-    dst: Type_operand
-
-
-@dataclass
-class Movsx(Type_instruction):
     src: Type_operand
     dst: Type_operand
 
@@ -128,31 +106,26 @@ class SetCarry(Type_instruction):
 
 @dataclass
 class Inc(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class Dec(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class Push(Type_instruction):
-    asm_type: Type_asm_type
     src: Type_operand
 
 
 @dataclass
 class Pop(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class Xor(Type_instruction):
-    asm_type: Type_asm_type
     src1: Type_operand
     src2: Type_operand
     dst: Type_operand
@@ -160,39 +133,33 @@ class Xor(Type_instruction):
 
 @dataclass
 class And(Type_instruction):
-    asm_type: Type_asm_type
     src: Type_operand
     dst: Type_operand
 
 
 @dataclass
 class Or(Type_instruction):
-    asm_type: Type_asm_type
     src: Type_operand
     dst: Type_operand
 
 
 @dataclass
 class ArithmeticShiftLeft(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class LogicalShiftRight(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class RotateLeft(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class RotateRight(Type_instruction):
-    asm_type: Type_asm_type
     dst: Type_operand
 
 
@@ -236,6 +203,7 @@ class Reg(Type_operand):
 @dataclass
 class Pseudo(Type_operand):
     name: str
+    offset: int
 
 
 @dataclass
@@ -251,6 +219,7 @@ class Frame(Type_operand):
 @dataclass
 class Data(Type_operand):
     name: str
+    offset: int
 
 
 @dataclass

@@ -11,10 +11,28 @@ from passes.loop_labeling import (
 
 
 def _function(*body_items, name="main") -> c99_ast.Type_function_definition:
+    # Returns the legacy `Function(...)` AST shape — no longer
+    # produced by the parser, but `label_function` still accepts
+    # it for unit-testing convenience.
     return c99_ast.Function(
         name=name,
         body=c99_ast.Block(block_item=list(body_items)),
     )
+
+
+def _program(*functions) -> c99_ast.Type_program:
+    """Wrap legacy `Function` nodes into a new-shape Program."""
+    decls: list[c99_ast.Type_declaration] = []
+    for fn in functions:
+        decls.append(c99_ast.FunctionDecl(
+            function_decl=c99_ast.Type_function_decl(
+                name=fn.name,
+                params=list(fn.params),
+                body=fn.body,
+                storage_class=None,
+            ),
+        ))
+    return c99_ast.Program(declaration=decls)
 
 
 def _ret(exp) -> c99_ast.Type_block_item:
@@ -372,9 +390,9 @@ class TestPassthrough(unittest.TestCase):
 class TestLabelProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
         fn = _function(_while(c99_ast.Constant(value=1), c99_ast.BreakStmt(label="")))
-        prog = c99_ast.Program(function_definition=[fn])
+        prog = _program(fn)
         labeled = label_program(prog)
-        labeled_while = labeled.function_definition[0].body.block_item[0].statement
+        labeled_while = labeled.declaration[0].function_decl.body.block_item[0].statement
         self.assertEqual(labeled_while.label, ".loop@0")
         self.assertEqual(labeled_while.body,
                          c99_ast.BreakStmt(label=".loop@0"))
@@ -389,7 +407,7 @@ class TestIntegrationWithParser(unittest.TestCase):
     def test_while_with_break_from_source(self):
         prog = parse("int main(void) { while (1) break; return 0; }")
         labeled = label_program(prog)
-        items = labeled.function_definition[0].body.block_item
+        items = labeled.declaration[0].function_decl.body.block_item
         while_stmt = items[0].statement
         self.assertEqual(while_stmt.label, ".loop@0")
         self.assertEqual(while_stmt.body, c99_ast.BreakStmt(label=".loop@0"))
@@ -399,7 +417,7 @@ class TestIntegrationWithParser(unittest.TestCase):
             "int main(void) { for (;;) continue; return 0; }"
         )
         labeled = label_program(prog)
-        for_stmt = labeled.function_definition[0].body.block_item[0].statement
+        for_stmt = labeled.declaration[0].function_decl.body.block_item[0].statement
         self.assertEqual(for_stmt.label, ".loop@0")
         self.assertEqual(for_stmt.body, c99_ast.ContinueStmt(label=".loop@0"))
 
@@ -411,7 +429,7 @@ class TestIntegrationWithParser(unittest.TestCase):
             "return 0; }"
         )
         labeled = label_program(prog)
-        outer = labeled.function_definition[0].body.block_item[0].statement
+        outer = labeled.declaration[0].function_decl.body.block_item[0].statement
         outer_items = outer.body.block.block_item
         for_stmt = outer_items[0].statement
         for_items = for_stmt.body.block.block_item

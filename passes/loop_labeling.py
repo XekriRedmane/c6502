@@ -72,30 +72,64 @@ class LoopLabeler:
         self, prog: c99_ast.Type_program,
     ) -> c99_ast.Type_program:
         match prog:
-            case c99_ast.Program(function_definition=fns):
-                # Each top-level function gets walked in turn; the
-                # per-program counter keeps loop labels globally
-                # unique even across functions (so `.loop@0` belongs
-                # to whichever loop appears first in the program).
-                return c99_ast.Program(function_definition=[
-                    self.label_function(fn) for fn in fns
+            case c99_ast.Program(declaration=decls):
+                # Walk each top-level declaration in turn; the per-
+                # program counter keeps loop labels globally unique
+                # across functions. Variable declarations and body-less
+                # function declarations pass through verbatim — they
+                # don't host iteration statements.
+                return c99_ast.Program(declaration=[
+                    self._label_declaration(d) for d in decls
                 ])
         raise TypeError(f"unexpected program: {prog!r}")
+
+    def _label_declaration(
+        self, decl: c99_ast.Type_declaration,
+    ) -> c99_ast.Type_declaration:
+        match decl:
+            case c99_ast.VarDecl():
+                return decl
+            case c99_ast.FunctionDecl(function_decl=fd):
+                if fd.body is None:
+                    return decl
+                return c99_ast.FunctionDecl(
+                    function_decl=self._label_function_decl(fd),
+                )
+        raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _label_function_decl(
+        self, fd: c99_ast.Type_function_decl,
+    ) -> c99_ast.Type_function_decl:
+        # Function bodies start outside any loop: a top-level
+        # `break;` / `continue;` is an error. Params don't host loops
+        # or break/continue — they pass through verbatim.
+        assert fd.body is not None
+        return c99_ast.Type_function_decl(
+            name=fd.name,
+            params=list(fd.params),
+            body=self.label_block(fd.body, current_loop=None),
+            storage_class=fd.storage_class,
+        )
 
     def label_function(
         self, fn: c99_ast.Type_function_definition,
     ) -> c99_ast.Type_function_definition:
+        # Test-convenience entry point — accepts the legacy
+        # `Function(...)` shape and unwraps. See `label_function` at
+        # module scope for the public version.
         match fn:
             case c99_ast.Function(name=name, params=params, body=body):
-                # Function bodies start outside any loop: a top-level
-                # `break;` / `continue;` is an error. The counter
-                # keeps running across functions so labels stay
-                # globally unique. Params don't host loops or
-                # break/continue — they pass through verbatim.
-                return c99_ast.Function(
+                fd = c99_ast.Type_function_decl(
                     name=name,
                     params=list(params),
-                    body=self.label_block(body, current_loop=None),
+                    body=body,
+                    storage_class=None,
+                )
+                new_fd = self._label_function_decl(fd)
+                return c99_ast.Function(
+                    name=new_fd.name,
+                    params=list(new_fd.params),
+                    body=new_fd.body,
                 )
         raise TypeError(f"unexpected function: {fn!r}")
 

@@ -458,6 +458,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
         # lowering into a coherent asm sequence.
         fn = tac_ast.Function(
             name="main",
+            is_global=True,
             instructions=[
                 tac_ast.JumpIfFalse(
                     condition=tac_ast.Constant(value=1),
@@ -485,7 +486,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
             translate_function(fn),
             asm_ast.Function(
                 name="main",
-                instructions=[
+                is_global=True, instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
                     asm_ast.Branch(
                         cond=asm_ast.EQ(), target=".and_false@0",
@@ -657,6 +658,7 @@ class TestTranslateFunction(unittest.TestCase):
     def test_flattens_instructions(self):
         fn = tac_ast.Function(
             name="main",
+            is_global=True,
             instructions=[
                 tac_ast.Unary(
                     op=tac_ast.Negate(),
@@ -670,7 +672,7 @@ class TestTranslateFunction(unittest.TestCase):
             translate_function(fn),
             asm_ast.Function(
                 name="main",
-                instructions=[
+                is_global=True, instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
                     asm_ast.Xor(
                         src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
@@ -685,10 +687,10 @@ class TestTranslateFunction(unittest.TestCase):
         )
 
     def test_empty_function(self):
-        fn = tac_ast.Function(name="main", instructions=[])
+        fn = tac_ast.Function(name="main", is_global=True, instructions=[])
         self.assertEqual(
             translate_function(fn),
-            asm_ast.Function(name="main", instructions=[]),
+            asm_ast.Function(name="main", is_global=True, instructions=[]),
         )
 
 
@@ -788,16 +790,17 @@ class TestTranslateProgram(unittest.TestCase):
         # Both sides plural: a one-function TAC program lowers to a
         # one-function asm program. Param lists ride through.
         prog = tac_ast.Program(
-            function_definition=[tac_ast.Function(
+            top_level=[tac_ast.Function(
                 name="main",
+                is_global=True,
                 params=[],
                 instructions=[tac_ast.Ret(val=tac_ast.Constant(value=42))],
             )],
         )
         expected = asm_ast.Program(
-            function_definition=[asm_ast.Function(
+            top_level=[asm_ast.Function(
                 name="main",
-                params=[],
+                is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_REG_A),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),

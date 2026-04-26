@@ -12,9 +12,12 @@ def _reg_a():
     return asm_ast.Reg(reg=asm_ast.A())
 
 
-def _fn(*instrs, name="main", params=()):
+def _fn(*instrs, name="main", params=(), is_global=True):
     return asm_ast.Function(
-        name=name, params=list(params), instructions=list(instrs),
+        name=name,
+        is_global=is_global,
+        params=list(params),
+        instructions=list(instrs),
     )
 
 
@@ -306,21 +309,79 @@ class TestUnknownPseudo(unittest.TestCase):
     def test_unknown_pseudo_raises(self):
         # We exercise the branch by feeding a Replacer directly
         # (skipping the discover walk that would have found "x").
-        r = Replacer(params=[])
+        # `statics` is empty so `x` doesn't match any path.
+        r = Replacer(params=[], statics=frozenset())
         with self.assertRaises(ValueError) as ctx:
             r.replace(asm_ast.Pseudo(name="x"))
         self.assertIn("x", str(ctx.exception))
 
 
+class TestStaticVariableLowering(unittest.TestCase):
+    """A Pseudo whose name appears as a top-level StaticVariable in the
+    same program lowers to `Data(name)` (absolute addressing) rather
+    than a frame slot. The static-name set is computed by
+    replace_program from the program's top_level list and threaded
+    into each function's Replacer."""
+
+    def test_pseudo_for_static_becomes_data(self):
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(name="g", is_global=True, init=5),
+            asm_ast.Function(
+                name="main", is_global=True, params=[],
+                instructions=[
+                    asm_ast.Mov(src=asm_ast.Pseudo(name="g"), dst=_reg_a()),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                ],
+            ),
+        ])
+        out = replace_program(prog)
+        # The StaticVariable rides through unchanged; the Pseudo for
+        # `g` becomes `Data(g)`.
+        self.assertEqual(out.top_level[0],
+                         asm_ast.StaticVariable(name="g", is_global=True, init=5))
+        fn = out.top_level[1]
+        # Index 0 is the FunctionPrologue prepended by the pass.
+        self.assertEqual(
+            fn.instructions[1].src, asm_ast.Data(name="g"),
+        )
+
+    def test_static_does_not_consume_a_local_slot(self):
+        # `g` is a static; `t` is a local. M should be 1 (just `t`),
+        # not 2 — the static doesn't take a frame slot.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(name="g", is_global=False, init=0),
+            asm_ast.Function(
+                name="main", is_global=True, params=[],
+                instructions=[
+                    asm_ast.Mov(src=asm_ast.Imm(value=1),
+                                dst=asm_ast.Pseudo(name="t")),
+                    asm_ast.Mov(src=asm_ast.Pseudo(name="g"),
+                                dst=asm_ast.Pseudo(name="t")),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                ],
+            ),
+        ])
+        out = replace_program(prog)
+        fn = out.top_level[1]
+        self.assertEqual(
+            fn.instructions[0],
+            asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
+        )
+        self.assertEqual(fn.instructions[2].src, asm_ast.Data(name="g"))
+        self.assertEqual(fn.instructions[2].dst, asm_ast.Frame(offset=1))
+
+
 class TestReplaceProgram(unittest.TestCase):
-    """`replace_program` walks every function in a multi-function
+    """`replace_program` walks every Function in a multi-Function
     Program. Each function gets its own Replacer instance so the
-    local counter restarts at 1."""
+    local counter restarts at 1. StaticVariable entries pass through
+    unchanged but their names contribute to the static-name set
+    used by every Replacer."""
 
     def test_two_functions_have_independent_local_counters(self):
-        prog = asm_ast.Program(function_definition=[
+        prog = asm_ast.Program(top_level=[
             asm_ast.Function(
-                name="foo", params=[],
+                name="foo", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1),
                                 dst=asm_ast.Pseudo(name="t")),
@@ -328,7 +389,7 @@ class TestReplaceProgram(unittest.TestCase):
                 ],
             ),
             asm_ast.Function(
-                name="bar", params=[],
+                name="bar", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=2),
                                 dst=asm_ast.Pseudo(name="t")),
@@ -339,18 +400,18 @@ class TestReplaceProgram(unittest.TestCase):
         out = replace_program(prog)
         # Each function's `t` lands at Frame(1), independently.
         self.assertEqual(
-            out.function_definition[0].instructions[1].dst,
+            out.top_level[0].instructions[1].dst,
             asm_ast.Frame(offset=1),
         )
         self.assertEqual(
-            out.function_definition[1].instructions[1].dst,
+            out.top_level[1].instructions[1].dst,
             asm_ast.Frame(offset=1),
         )
 
     def test_function_with_params_and_locals_via_program(self):
-        prog = asm_ast.Program(function_definition=[
+        prog = asm_ast.Program(top_level=[
             asm_ast.Function(
-                name="foo", params=["a"],
+                name="foo", is_global=True, params=["a"],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=5),
                                 dst=asm_ast.Pseudo(name="t")),
@@ -361,7 +422,7 @@ class TestReplaceProgram(unittest.TestCase):
             ),
         ])
         out = replace_program(prog)
-        fn = out.function_definition[0]
+        fn = out.top_level[0]
         # M=1 (one local `t`), N=1 (one param `a`). Local at 1,
         # param at 1+2+1=4.
         self.assertEqual(
@@ -383,7 +444,7 @@ class TestErrors(unittest.TestCase):
             replace_program(stub())
 
     def test_unknown_function_raises(self):
-        stub = type("Stub", (asm_ast.Type_function_definition,), {})
+        stub = type("Stub", (asm_ast.Type_top_level,), {})
         with self.assertRaises(TypeError):
             replace_function(stub())
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from lark import Lark, Transformer
+from lark.exceptions import VisitError
 from lark.visitors import v_args
 
 import c99_ast
@@ -33,6 +34,13 @@ _LARK = Lark.open(
     lexer="basic",
     start=["start", "lex_only"],
 )
+
+
+class ParserError(Exception):
+    """Raised for declaration-specifier constraint violations that the
+    LALR grammar accepts but C99 §6.7.2 / §6.7.1 forbids — multiple
+    type specifiers, multiple storage-class specifiers, or a missing
+    type specifier (C99 dropped the C89 implicit-int rule)."""
 
 
 # Compound-assignment operator tokens → AST binary-operator class. The
@@ -52,22 +60,87 @@ _COMPOUND_ASSIGN_OPS = {
 }
 
 
+# Storage-class specifier token type → AST node class. Used by
+# `_split_specifiers` to map the parsed token to the AST node that
+# rides on `Type_var_decl.storage_class` / `Type_function_decl.storage_class`.
+_STORAGE_CLASSES = {
+    "STATIC": c99_ast.Static,
+    "EXTERN": c99_ast.Extern,
+}
+
+
+def _split_specifiers(specs):
+    """Validate a `specifier+` token list and split it into (type-
+    spelled-out, storage class).
+
+    The grammar rule `specifier: INT | STATIC | EXTERN` is permissive —
+    `specifier+` accepts any combination of these tokens, in any order.
+    C99 §6.7.2 / §6.7.1.2 are stricter:
+      * exactly one type specifier (today only INT is in the grammar,
+        so "exactly one INT")
+      * at most one storage-class specifier
+
+    A missing INT is also rejected: C99 dropped C89's implicit-int
+    rule, so `static x;` is ill-formed.
+
+    Returns the AST storage-class node (`Static` / `Extern`) or None.
+    The type specifier itself isn't returned because there's only one
+    type today; once richer types land, this returns a type AST node
+    too.
+    """
+    int_count = 0
+    storage = None
+    for spec in specs:
+        if spec.type == "INT":
+            int_count += 1
+        else:
+            cls = _STORAGE_CLASSES[spec.type]
+            if storage is not None:
+                raise ParserError(
+                    "at most one storage-class specifier permitted "
+                    "in a declaration"
+                )
+            storage = cls()
+    if int_count == 0:
+        raise ParserError("missing type specifier")
+    if int_count > 1:
+        raise ParserError(
+            "multiple type specifiers in a declaration "
+            "(only one 'int' is permitted)"
+        )
+    return storage
+
+
+def _consume_specifiers(items, start):
+    """Pull the leading specifier tokens off `items`. Returns
+    `(specs, idx)` where `idx` is the position of the first non-
+    specifier item (the IDENTIFIER for both var_decl and function_decl,
+    by grammar)."""
+    specs = []
+    i = start
+    while (
+        i < len(items)
+        and hasattr(items[i], "type")
+        and items[i].type in ("INT", "STATIC", "EXTERN")
+    ):
+        specs.append(items[i])
+        i += 1
+    return specs, i
+
+
 class _ASTBuilder(Transformer):
     def start(self, items):
-        # `start: function_definition*` — items is the list of
-        # Function nodes already built by `function_definition`.
-        return c99_ast.Program(function_definition=list(items))
+        # `start: declaration*` — items is the list of Type_declaration
+        # nodes already built by `declaration` (each wrapping a
+        # function_decl or var_decl).
+        return c99_ast.Program(declaration=list(items))
 
-    def function_definition(self, items):
-        # `function_definition: INT IDENTIFIER LPAREN param_list
-        # RPAREN block`. Parameter names ride along on the Function
-        # AST node so identifier_resolution can rename them and
-        # the type-checking pass can validate calls against them.
-        # Non-inline because param_list returns a list.
-        name = items[1]
-        params = items[3]
-        body = items[5]
-        return c99_ast.Function(name=str(name), params=params, body=body)
+    @v_args(inline=True)
+    def specifier(self, token):
+        # `specifier: INT | STATIC | EXTERN`. The Tree wraps a single
+        # token; pass it through so var_decl / function_decl can scan
+        # the leading specifier run.
+        return token
 
     def param_list(self, items):
         # `(void)` -> empty parameter list. Otherwise `int IDENT (,
@@ -103,19 +176,44 @@ class _ASTBuilder(Transformer):
         return c99_ast.FunctionDecl(function_decl=child)
 
     def var_decl(self, items):
-        # `var_decl: INT IDENTIFIER (ASSIGN exp)? SEMICOLON`. With
-        # initializer, items has 5 elements; without, 3.
-        name = items[1]
-        init = items[3] if len(items) == 5 else None
-        return c99_ast.Type_var_decl(name=str(name), init=init)
+        # `var_decl: specifier+ IDENTIFIER (ASSIGN exp)? SEMICOLON`.
+        # Layout: <specs...> IDENTIFIER [ASSIGN exp] SEMICOLON. The
+        # specifier validation lives in `_split_specifiers` — this
+        # method just slices the token stream into specs / name /
+        # initializer.
+        specs, i = _consume_specifiers(items, 0)
+        storage_class = _split_specifiers(specs)
+        name = items[i]
+        i += 1
+        init = None
+        if items[i].type == "ASSIGN":
+            init = items[i + 1]
+        return c99_ast.Type_var_decl(
+            name=str(name), init=init, storage_class=storage_class,
+        )
 
     def function_decl(self, items):
-        # `function_decl: INT IDENTIFIER LPAREN param_list RPAREN
-        # SEMICOLON`. No body in the block-scope form.
-        name = items[1]
-        params = items[3]
+        # `function_decl: specifier+ IDENTIFIER LPAREN param_list
+        # RPAREN (SEMICOLON | block)`. The trailing alternative
+        # distinguishes a forward declaration (SEMICOLON, body=None)
+        # from a function definition (block, body=Block(...)). The
+        # `block` transformer has already turned the latter into a
+        # Block AST node, so we tell the two apart by inspecting the
+        # last item.
+        specs, i = _consume_specifiers(items, 0)
+        storage_class = _split_specifiers(specs)
+        name = items[i]
+        # items[i+1] = LPAREN, items[i+2] = param_list, items[i+3] = RPAREN
+        params = items[i + 2]
+        last = items[i + 4]
+        if hasattr(last, "type") and last.type == "SEMICOLON":
+            body = None
+        else:
+            # `block` already produced a c99_ast.Block.
+            body = last
         return c99_ast.Type_function_decl(
-            name=str(name), params=params, body=None,
+            name=str(name), params=params, body=body,
+            storage_class=storage_class,
         )
 
     # Alternatives of `statement` — each named in c99.lark.
@@ -401,4 +499,13 @@ _BUILDER = _ASTBuilder()
 
 def parse(source: str) -> c99_ast.Type_program:
     tree = _LARK.parse(source, start="start")
-    return _BUILDER.transform(tree)
+    try:
+        return _BUILDER.transform(tree)
+    except VisitError as e:
+        # Lark wraps any exception raised by a transformer method in
+        # `VisitError`. We raise our own ParserError from
+        # `_split_specifiers`, so unwrap to give the caller a clean
+        # ParserError instead of forcing it to dig through `.orig_exc`.
+        if isinstance(e.orig_exc, ParserError):
+            raise e.orig_exc
+        raise

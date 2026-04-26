@@ -12,10 +12,34 @@ from passes.identifier_resolution import (
 
 
 def _function(*body_items) -> c99_ast.Type_function_definition:
+    # Returns the legacy `Function(...)` AST shape — no longer
+    # produced by the parser, but `resolve_function` still accepts
+    # it for unit-testing convenience (see resolve_function's
+    # docstring in passes.identifier_resolution).
     return c99_ast.Function(
         name="main",
         body=c99_ast.Block(block_item=list(body_items)),
     )
+
+
+def _program(*functions) -> c99_ast.Type_program:
+    """Wrap one or more legacy-shape `Function` nodes (as returned
+    by `_function`) into a new-shape `Program(declaration=[...])`.
+    Each Function becomes `FunctionDecl(function_decl=Type_function_decl(
+    name, params, body, storage_class=None))`. Tests that compare
+    against an entire resolved program use this so they don't have
+    to spell out the wrapping by hand for each fixture."""
+    decls: list[c99_ast.Type_declaration] = []
+    for fn in functions:
+        decls.append(c99_ast.FunctionDecl(
+            function_decl=c99_ast.Type_function_decl(
+                name=fn.name,
+                params=list(fn.params),
+                body=fn.body,
+                storage_class=None,
+            ),
+        ))
+    return c99_ast.Program(declaration=decls)
 
 
 def _decl(name, init=None) -> c99_ast.Type_block_item:
@@ -429,7 +453,7 @@ class TestLabeledAndGotoPassthrough(unittest.TestCase):
     def test_goto_passes_through_unchanged(self):
         prog = parse("int main(void) { goto foo; }")
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         self.assertEqual(items[0].statement, c99_ast.Goto(label="foo"))
 
     def test_labeled_statement_label_unchanged_body_resolved(self):
@@ -437,7 +461,7 @@ class TestLabeledAndGotoPassthrough(unittest.TestCase):
         # Var reference that must be resolved to the unique name.
         prog = parse("int main(void) { int a; foo: return a; }")
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         self.assertEqual(
             items[1].statement,
             c99_ast.LabeledStmt(
@@ -695,7 +719,7 @@ class TestLoopResolution(unittest.TestCase):
         resolved = resolve_program(prog)
         # while -> body is a Compound -> block -> block_item.
         compound_body = (
-            resolved.function_definition[0].body.block_item[0]
+            resolved.declaration[0].function_decl.body.block_item[0]
             .statement.body
         )
         body_items = compound_body.block.block_item
@@ -707,7 +731,7 @@ class TestLoopResolution(unittest.TestCase):
     def test_while_body_resolves_outer_var(self):
         prog = parse("int main(void) { int a; while (a) a = a + 1; return 0; }")
         resolved = resolve_program(prog)
-        while_stmt = resolved.function_definition[0].body.block_item[1].statement
+        while_stmt = resolved.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(while_stmt.condition, c99_ast.Var(name="@0.a"))
         # Body is `a = a + 1` — both Vars resolve to @0.a.
         body = while_stmt.body
@@ -723,7 +747,7 @@ class TestLoopResolution(unittest.TestCase):
     def test_do_while_body_resolves_outer_var(self):
         prog = parse("int main(void) { int a; do a = 1; while (a); return 0; }")
         resolved = resolve_program(prog)
-        do_stmt = resolved.function_definition[0].body.block_item[1].statement
+        do_stmt = resolved.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(do_stmt.condition, c99_ast.Var(name="@0.a"))
         self.assertEqual(do_stmt.body.exp.lval, c99_ast.Var(name="@0.a"))
 
@@ -739,7 +763,7 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { for (int i = 0; i < 10; i++) i; return 0; }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition[0].body.block_item[0].statement
+        for_stmt = resolved.declaration[0].function_decl.body.block_item[0].statement
         decl = for_stmt.init.var_decl
         self.assertEqual(decl.name, "@0.i")
         self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@0.i"))
@@ -757,7 +781,7 @@ class TestLoopResolution(unittest.TestCase):
             "return a; }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         outer_decl = items[0].declaration.var_decl
         self.assertEqual(outer_decl.name, "@0.a")
         for_stmt = items[1].statement
@@ -782,7 +806,7 @@ class TestLoopResolution(unittest.TestCase):
             "for (i = 0; i < 5; i++) i; return 0; }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition[0].body.block_item[1].statement
+        for_stmt = resolved.declaration[0].function_decl.body.block_item[1].statement
         # Init is the assignment `i = 0`; both Vars resolve to @0.i.
         self.assertEqual(for_stmt.init.exp.lval, c99_ast.Var(name="@0.i"))
         self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
@@ -794,7 +818,7 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { int i; for (;;) i; }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition[0].body.block_item[1].statement
+        for_stmt = resolved.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(for_stmt.init, c99_ast.InitExp(exp=None))
         self.assertEqual(for_stmt.body.exp, c99_ast.Var(name="@0.i"))
 
@@ -817,7 +841,7 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { for (int i = 0; ; ) { i; break; } }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition[0].body.block_item[0].statement
+        for_stmt = resolved.declaration[0].function_decl.body.block_item[0].statement
         body_block = for_stmt.body.block
         first_item = body_block.block_item[0].statement
         self.assertEqual(first_item.exp, c99_ast.Var(name="@0.i"))
@@ -829,7 +853,7 @@ class TestLoopResolution(unittest.TestCase):
             "int main(void) { for (int i = 0;;) { int i = 5; break; } }"
         )
         resolved = resolve_program(prog)
-        for_stmt = resolved.function_definition[0].body.block_item[0].statement
+        for_stmt = resolved.declaration[0].function_decl.body.block_item[0].statement
         self.assertEqual(for_stmt.init.var_decl.name, "@0.i")
         body_decl = for_stmt.body.block.block_item[0].declaration.var_decl
         self.assertEqual(body_decl.name, "@1.i")
@@ -849,16 +873,16 @@ class TestLoopResolution(unittest.TestCase):
 
 class TestResolveProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
-        # Program.function_definition is a list now; the helper builds
+        # Program.declaration is a list now; the helper builds
         # a single Function and we wrap it in a one-element list.
         fn = _function(_decl("x"), _ret(c99_ast.Var(name="x")))
-        prog = c99_ast.Program(function_definition=[fn])
+        prog = _program(fn)
         self.assertEqual(
             resolve_program(prog),
-            c99_ast.Program(function_definition=[_function(
+            _program(_function(
                 _decl("@0.x"),
                 _ret(c99_ast.Var(name="@0.x")),
-            )]),
+            )),
         )
 
 
@@ -869,12 +893,10 @@ class TestIntegrationWithParser(unittest.TestCase):
     def test_simple_program(self):
         prog = parse("int main(void) { int a = 5; return a; }")
         resolved = resolve_program(prog)
-        expected = c99_ast.Program(
-            function_definition=[_function(
-                _decl("@0.a", init=c99_ast.Constant(value=5)),
-                _ret(c99_ast.Var(name="@0.a")),
-            )],
-        )
+        expected = _program(_function(
+            _decl("@0.a", init=c99_ast.Constant(value=5)),
+            _ret(c99_ast.Var(name="@0.a")),
+        ))
         self.assertEqual(resolved, expected)
 
     def test_duplicate_decl_from_source(self):
@@ -896,7 +918,7 @@ class TestIntegrationWithParser(unittest.TestCase):
             "int main(void) { int a = 1; { int a = 2; } return a; }"
         )
         resolved = resolve_program(prog)
-        body = resolved.function_definition[0].body.block_item
+        body = resolved.declaration[0].function_decl.body.block_item
         # Outer decl: @0.a = 1.
         self.assertEqual(body[0].declaration.var_decl.name, "@0.a")
         # Inner Compound's decl: @1.a = 2 (distinct unique name).
@@ -941,16 +963,14 @@ class TestIntegrationWithParser(unittest.TestCase):
         # operand should be rewritten to its unique resolved name.
         prog = parse("int main(void) { int a; a++; return a; }")
         resolved = resolve_program(prog)
-        expected = c99_ast.Program(
-            function_definition=[_function(
-                _decl("@0.a"),
-                _expr(c99_ast.Postfix(
-                    op=c99_ast.Increment(),
-                    operand=c99_ast.Var(name="@0.a"),
-                )),
-                _ret(c99_ast.Var(name="@0.a")),
-            )],
-        )
+        expected = _program(_function(
+            _decl("@0.a"),
+            _expr(c99_ast.Postfix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Var(name="@0.a"),
+            )),
+            _ret(c99_ast.Var(name="@0.a")),
+        ))
         self.assertEqual(resolved, expected)
 
     def test_prefix_rejects_non_var_operand_via_assignment_check(self):
@@ -968,20 +988,18 @@ class TestIntegrationWithParser(unittest.TestCase):
         # must resolve to the same unique name.
         prog = parse("int main(void) { int a; a += 1; return a; }")
         resolved = resolve_program(prog)
-        expected = c99_ast.Program(
-            function_definition=[_function(
-                _decl("@0.a"),
-                _expr(c99_ast.Assignment(
-                    lval=c99_ast.Var(name="@0.a"),
-                    rval=c99_ast.Binary(
-                        op=c99_ast.Add(),
-                        left=c99_ast.Var(name="@0.a"),
-                        right=c99_ast.Constant(value=1),
-                    ),
-                )),
-                _ret(c99_ast.Var(name="@0.a")),
-            )],
-        )
+        expected = _program(_function(
+            _decl("@0.a"),
+            _expr(c99_ast.Assignment(
+                lval=c99_ast.Var(name="@0.a"),
+                rval=c99_ast.Binary(
+                    op=c99_ast.Add(),
+                    left=c99_ast.Var(name="@0.a"),
+                    right=c99_ast.Constant(value=1),
+                ),
+            )),
+            _ret(c99_ast.Var(name="@0.a")),
+        ))
         self.assertEqual(resolved, expected)
 
 
@@ -999,7 +1017,7 @@ class TestFunctionLinkage(unittest.TestCase):
             "int main(void) { int foo(void); foo(); return 0; }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         decl = items[0].declaration
         self.assertIsInstance(decl, c99_ast.FunctionDecl)
         self.assertEqual(decl.function_decl.name, "foo")
@@ -1036,7 +1054,7 @@ class TestFunctionLinkage(unittest.TestCase):
             "int main(void) { int f(int x); int a; return f(a); }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         ret = items[2].statement
         self.assertEqual(
             ret.exp,
@@ -1051,7 +1069,7 @@ class TestFunctionLinkage(unittest.TestCase):
         # recursive call resolves.
         prog = parse("int main(void) { return main(); }")
         resolved = resolve_program(prog)
-        ret = resolved.function_definition[0].body.block_item[0].statement
+        ret = resolved.declaration[0].function_decl.body.block_item[0].statement
         self.assertEqual(
             ret.exp, c99_ast.FunctionCall(name="main", args=[]),
         )
@@ -1063,7 +1081,7 @@ class TestFunctionLinkage(unittest.TestCase):
         )
         resolved = resolve_program(prog)
         ret = (
-            resolved.function_definition[1].body.block_item[0].statement
+            resolved.declaration[1].function_decl.body.block_item[0].statement
         )
         self.assertEqual(
             ret.exp, c99_ast.FunctionCall(name="foo", args=[]),
@@ -1079,7 +1097,7 @@ class TestFunctionLinkage(unittest.TestCase):
         )
         resolved = resolve_program(prog)
         call = (
-            resolved.function_definition[0].body.block_item[2]
+            resolved.declaration[0].function_decl.body.block_item[2]
             .statement.exp
         )
         self.assertEqual(call.name, "f")
@@ -1109,7 +1127,7 @@ class TestParameterResolution(unittest.TestCase):
         )
         resolved = resolve_program(prog)
         decl = (
-            resolved.function_definition[0].body.block_item[0]
+            resolved.declaration[0].function_decl.body.block_item[0]
             .declaration.function_decl
         )
         self.assertEqual(decl.name, "foo")
@@ -1131,7 +1149,7 @@ class TestParameterResolution(unittest.TestCase):
             "int main(void) { int a; int foo(int a); return a; }"
         )
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         # Outer variable: NONE-linkage → renamed.
         outer_a = items[0].declaration.var_decl
         self.assertEqual(outer_a.name, "@0.a")
@@ -1147,7 +1165,7 @@ class TestParameterResolution(unittest.TestCase):
     def test_function_definition_renames_params(self):
         prog = parse("int main(int x, int y) { return x + y; }")
         resolved = resolve_program(prog)
-        fn = resolved.function_definition[0]
+        fn = resolved.declaration[0].function_decl
         self.assertEqual(fn.params, ["@0.x", "@1.y"])
         # Body sees the renamed params.
         ret = fn.body.block_item[0].statement
@@ -1183,7 +1201,7 @@ class TestParameterResolution(unittest.TestCase):
             "int foo(int a) { { int a = 3; return a; } return a; }"
         )
         resolved = resolve_program(prog)
-        fn = resolved.function_definition[0]
+        fn = resolved.declaration[0].function_decl
         # Param: @0.a.
         self.assertEqual(fn.params, ["@0.a"])
         # Inner compound's `int a = 3;` rebinds to a fresh @1.a.
@@ -1198,7 +1216,7 @@ class TestParameterResolution(unittest.TestCase):
     def test_function_body_can_reference_param(self):
         prog = parse("int foo(int x) { return x + 1; }")
         resolved = resolve_program(prog)
-        fn = resolved.function_definition[0]
+        fn = resolved.declaration[0].function_decl
         ret = fn.body.block_item[0].statement
         self.assertEqual(
             ret.exp,
@@ -1219,7 +1237,7 @@ class TestParameterResolution(unittest.TestCase):
         )
         # Should not raise.
         resolved = resolve_program(prog)
-        items = resolved.function_definition[0].body.block_item
+        items = resolved.declaration[0].function_decl.body.block_item
         # The outer `x` gets `@1.x` (`@0.x` was minted for the param,
         # then the param scope was discarded).
         self.assertEqual(items[1].declaration.var_decl.name, "@1.x")
@@ -1238,25 +1256,110 @@ class TestLinkageTracking(unittest.TestCase):
     via a public surface."""
 
     def test_function_decl_recorded_as_external(self):
+        # `int main(...) { ... }` is a file-scope function definition;
+        # the block-scope `int foo(void);` declaration doesn't appear
+        # in the file-scope table at all (it lives in the body's local
+        # scope dict, which goes out of scope when the body is done).
+        # So we expect only `main` here, with EXTERNAL linkage.
         prog = parse("int main(void) { int foo(void); return foo(); }")
         r = Resolver()
         r.resolve_program(prog)
-        # `main` (definition) and `foo` (decl) both EXTERNAL.
-        self.assertEqual(r._functions["main"], Linkage.EXTERNAL)
-        self.assertEqual(r._functions["foo"], Linkage.EXTERNAL)
+        self.assertEqual(r._file_scope["main"], ("main", Linkage.EXTERNAL))
+        self.assertNotIn("foo", r._file_scope)
 
     def test_top_level_function_definition_recorded_as_external(self):
         # `int foo(void) { ... } int main(void) { ... }` — both
-        # registered before any body is walked, both EXTERNAL.
+        # registered (with EXTERNAL linkage) before any body is
+        # walked, so each can call the other regardless of source
+        # order.
         prog = parse(
             "int foo(void) { return 1; } "
             "int main(void) { return 0; }"
         )
         r = Resolver()
         r.resolve_program(prog)
-        self.assertEqual(r._functions, {
-            "foo": Linkage.EXTERNAL, "main": Linkage.EXTERNAL,
+        self.assertEqual(r._file_scope, {
+            "foo": ("foo", Linkage.EXTERNAL),
+            "main": ("main", Linkage.EXTERNAL),
         })
+
+    def test_static_at_file_scope_is_internal(self):
+        # `static int foo(void);` at file scope → INTERNAL linkage.
+        prog = parse("static int foo(void) { return 0; }")
+        r = Resolver()
+        r.resolve_program(prog)
+        self.assertEqual(r._file_scope["foo"], ("foo", Linkage.INTERNAL))
+
+    def test_extern_inherits_prior_linkage(self):
+        # File-scope `static int foo(void);` followed by `extern int
+        # foo(void) { ... }` — the extern decl takes the prior visible
+        # decl's linkage, so the definition is also INTERNAL.
+        prog = parse(
+            "static int foo(void); "
+            "extern int foo(void) { return 0; }"
+        )
+        r = Resolver()
+        r.resolve_program(prog)
+        self.assertEqual(r._file_scope["foo"], ("foo", Linkage.INTERNAL))
+
+    def test_file_scope_variable_recorded(self):
+        # `int g;` at file scope → EXTERNAL linkage; `static int s;`
+        # → INTERNAL.
+        prog = parse("int g; static int s; int main(void) { return 0; }")
+        r = Resolver()
+        r.resolve_program(prog)
+        self.assertEqual(r._file_scope["g"], ("g", Linkage.EXTERNAL))
+        self.assertEqual(r._file_scope["s"], ("s", Linkage.INTERNAL))
+
+    def test_changing_linkage_at_file_scope_is_an_error(self):
+        # `static int x; int x;` is UB per C99 §6.2.2.7. We give a
+        # clean diagnostic rather than silently accepting it.
+        prog = parse("static int x; int x; int main(void) { return 0; }")
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("'x'", str(ctx.exception))
+
+    def test_block_scope_extern_inherits_file_scope_linkage(self):
+        # File scope `static int x = 5;` has INTERNAL linkage. Inside
+        # `main`, `extern int x;` follows the prior-visible rule and
+        # also picks up INTERNAL — and importantly *doesn't get
+        # renamed*, so references to `x` inside main bind by source
+        # spelling.
+        prog = parse(
+            "static int x = 5; "
+            "int main(void) { extern int x; return x; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.declaration[1].function_decl.body.block_item
+        block_extern = items[0].declaration.var_decl
+        self.assertEqual(block_extern.name, "x")
+        ret = items[1].statement
+        self.assertEqual(ret.exp, c99_ast.Var(name="x"))
+
+    def test_static_at_block_scope_is_none_linkage(self):
+        # `static int x = 5;` at block scope changes storage duration
+        # but not linkage — §6.2.2 still tags this as NONE-linkage,
+        # so it gets renamed like any block-scope local.
+        prog = parse(
+            "int main(void) { static int x = 5; return x; }"
+        )
+        resolved = resolve_program(prog)
+        items = resolved.declaration[0].function_decl.body.block_item
+        decl = items[0].declaration.var_decl
+        self.assertEqual(decl.name, "@0.x")
+        ret = items[1].statement
+        self.assertEqual(ret.exp, c99_ast.Var(name="@0.x"))
+
+    def test_static_on_block_scope_function_decl_raises(self):
+        # `static int foo(void);` is forbidden at block scope per
+        # C99 §6.2.2: "A function declaration can contain the
+        # storage-class specifier static only if it is at file scope."
+        prog = parse(
+            "int main(void) { static int foo(void); return 0; }"
+        )
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(prog)
+        self.assertIn("'foo'", str(ctx.exception))
 
     def test_block_scope_variable_recorded_as_none_linkage(self):
         # `int a;` at block scope — NONE linkage, gets renamed.

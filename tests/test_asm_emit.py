@@ -22,8 +22,8 @@ def _prog(*instrs, name="main") -> asm_ast.Type_program:
     # Function carries a (possibly empty) params list. Tests build
     # one-function programs through this helper, so the wrapping
     # stays out of every test body.
-    return asm_ast.Program(function_definition=[asm_ast.Function(
-        name=name, params=[], instructions=list(instrs),
+    return asm_ast.Program(top_level=[asm_ast.Function(
+        name=name, is_global=True, params=[], instructions=list(instrs),
     )])
 
 
@@ -324,7 +324,7 @@ class TestEmitFunctionWithLabels(unittest.TestCase):
     a typical lowering of `if` would be Branch -> body -> Label."""
 
     def test_branch_then_label_layout(self):
-        fn = asm_ast.Function(name="main", instructions=[
+        fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.Branch(cond=asm_ast.NE(), target="L_skip"),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
             asm_ast.Label(name="L_skip"),
@@ -344,7 +344,7 @@ class TestEmitFunctionWithLabels(unittest.TestCase):
         )
 
     def test_jump_back_to_top(self):
-        fn = asm_ast.Function(name="main", instructions=[
+        fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.Label(name="L_top"),
             asm_ast.Jump(target="L_top"),
         ])
@@ -577,7 +577,7 @@ class TestEmitRet(unittest.TestCase):
 
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
-        fn = asm_ast.Function(name="main", instructions=[
+        fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         ])
@@ -593,7 +593,7 @@ class TestEmitFunction(unittest.TestCase):
         )
 
     def test_empty_instructions_label_and_subroutine_only(self):
-        fn = asm_ast.Function(name="main", instructions=[])
+        fn = asm_ast.Function(name="main", is_global=True, instructions=[])
         self.assertEqual(emit_function(fn), ["main:", "   SUBROUTINE"])
 
     def test_prologue_body_epilogue_section_markers(self):
@@ -601,7 +601,7 @@ class TestEmitFunction(unittest.TestCase):
         # before the prologue asm, a blank line + body asm, a blank line,
         # then `; epilogue` before the epilogue asm. This is the visual
         # separator between boilerplate and actual content.
-        fn = asm_ast.Function(name="main", instructions=[
+        fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
             asm_ast.Mov(src=asm_ast.Imm(value=7),
                         dst=asm_ast.Frame(offset=1)),
@@ -630,7 +630,7 @@ class TestEmitFunction(unittest.TestCase):
         # Prologue trails with a blank; Ret leads with a blank. In a
         # function with no body between them, emit_function collapses
         # the two blanks into one so we don't get a double-blank gap.
-        fn = asm_ast.Function(name="main", instructions=[
+        fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
             asm_ast.Ret(arg_bytes=0, local_bytes=1),
         ])
@@ -659,16 +659,16 @@ class TestEmitProgram(unittest.TestCase):
         # Two functions in source order, separated by a single
         # blank line. Each gets its own `name:` label and
         # SUBROUTINE directive.
-        prog = asm_ast.Program(function_definition=[
+        prog = asm_ast.Program(top_level=[
             asm_ast.Function(
-                name="foo", params=[],
+                name="foo", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             ),
             asm_ast.Function(
-                name="main", params=[],
+                name="main", is_global=True, params=[],
                 instructions=[
                     asm_ast.Call(name="foo"),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
@@ -688,8 +688,158 @@ class TestEmitProgram(unittest.TestCase):
         # No functions at all → empty join + trailing newline. Not
         # a useful program in practice but the dispatcher should
         # handle it without crashing.
-        prog = asm_ast.Program(function_definition=[])
+        prog = asm_ast.Program(top_level=[])
         self.assertEqual(emit_program(prog), "\n")
+
+    def test_static_variable_renders_label_and_dc_b(self):
+        # `static int g = 5;` → labeled byte at the named symbol.
+        # The init byte is hex-formatted, two digits, with a leading
+        # `$`. The label sits in column 1; the `DC.B` directive in
+        # the opcode column.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(name="g", is_global=False, init=5),
+        ])
+        self.assertEqual(emit_program(prog), "g:\n   DC.B  $05\n")
+
+    def test_zero_initialized_static_variable(self):
+        # File-scope `int x;` (tentative) resolves to init=0; emits
+        # `DC.B $00`. Same shape as an explicit `int x = 0;`.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(name="x", is_global=True, init=0),
+        ])
+        self.assertEqual(emit_program(prog), "x:\n   DC.B  $00\n")
+
+    def test_function_then_static_variable(self):
+        # Function and static variable separated by a single blank
+        # line, same convention as multi-function programs.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.Function(
+                name="main", is_global=True, params=[],
+                instructions=[
+                    asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                ],
+            ),
+            asm_ast.StaticVariable(name="g", is_global=False, init=7),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "main:\n   SUBROUTINE\n\n   LDA   #$2A\n   RTS\n"
+            "\n"
+            "g:\n   DC.B  $07\n",
+        )
+
+    def test_static_variable_init_byte_range_check(self):
+        # init must fit in a byte. The check uses `_check_byte`
+        # internally so out-of-range values raise.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(name="bad", is_global=False, init=256),
+        ])
+        with self.assertRaises(ValueError):
+            emit_program(prog)
+
+
+class TestEmitDataOperand(unittest.TestCase):
+    """`Data(name)` is the absolute-addressing operand the frame-
+    layout pass produces from a Pseudo whose name is a top-level
+    StaticVariable. It uses 6502 absolute addressing (no LDY
+    indirect-Y preamble) — `LDA name`, `STA name`, `ADC name`, etc."""
+
+    def test_mov_data_to_a(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.Data(name="g"), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   LDA   g"])
+
+    def test_mov_a_to_data(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=_reg(_A), dst=asm_ast.Data(name="g"),
+        ))
+        self.assertEqual(out, ["   STA   g"])
+
+    def test_mov_imm_to_data(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.Imm(value=42), dst=asm_ast.Data(name="g"),
+        ))
+        self.assertEqual(out, ["   LDA   #$2A", "   STA   g"])
+
+    def test_mov_data_to_data(self):
+        # Static-to-static copy: load via absolute, store via absolute.
+        # No LDY needed for either side.
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.Data(name="src"),
+            dst=asm_ast.Data(name="dst"),
+        ))
+        self.assertEqual(out, ["   LDA   src", "   STA   dst"])
+
+    def test_mov_data_to_frame(self):
+        # Static → local: absolute load, then indirect-Y store.
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.Data(name="g"),
+            dst=asm_ast.Frame(offset=1),
+        ))
+        self.assertEqual(out, [
+            "   LDA   g",
+            "   LDY   #$01",
+            "   STA   (FP),Y",
+        ])
+
+    def test_mov_frame_to_data(self):
+        # Local → static: indirect-Y load, then absolute store.
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.Frame(offset=1),
+            dst=asm_ast.Data(name="g"),
+        ))
+        self.assertEqual(out, [
+            "   LDY   #$01",
+            "   LDA   (FP),Y",
+            "   STA   g",
+        ])
+
+    def test_add_data_to_a(self):
+        # ADC has absolute-mode support; no LDY needed.
+        out = emit_instruction(asm_ast.Add(
+            src=asm_ast.Data(name="g"), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   ADC   g"])
+
+    def test_sub_data_from_a(self):
+        out = emit_instruction(asm_ast.Sub(
+            src=asm_ast.Data(name="g"), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   SBC   g"])
+
+    def test_and_data(self):
+        out = emit_instruction(asm_ast.And(
+            src=asm_ast.Data(name="g"), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   AND   g"])
+
+    def test_or_data(self):
+        out = emit_instruction(asm_ast.Or(
+            src=asm_ast.Data(name="g"), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   ORA   g"])
+
+    def test_xor_data(self):
+        out = emit_instruction(asm_ast.Xor(
+            src1=_reg(_A), src2=asm_ast.Data(name="g"), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   EOR   g"])
+
+    def test_compare_a_with_data(self):
+        out = emit_instruction(asm_ast.Compare(
+            left=_reg(_A), right=asm_ast.Data(name="g"),
+        ))
+        self.assertEqual(out, ["   CMP   g"])
+
+    def test_compare_x_with_data(self):
+        # CPX has absolute-mode support, so Data on the right works
+        # with X on the left.
+        out = emit_instruction(asm_ast.Compare(
+            left=_reg(asm_ast.X()), right=asm_ast.Data(name="g"),
+        ))
+        self.assertEqual(out, ["   CPX   g"])
 
 
 class TestColumnAlignment(unittest.TestCase):

@@ -5,12 +5,29 @@ holding the result of an earlier instruction). Compound expressions get
 flattened: nested operators materialize their intermediate results into
 fresh Var-typed temporaries and emit the corresponding TAC instruction.
 
+The TAC program shape was widened: `tac_ast.Program(top_level*)`, where
+`top_level` is `Function(name, is_global, params, instructions)` or
+`StaticVariable(name, is_global, init)`. Function definitions come from
+walking the c99 AST in source order; static variables come from the
+symbol table after the AST walk. We deliberately *don't* emit any TAC
+for the file-scope variable declarations or block-scope `extern` /
+`static` variable declarations encountered during the AST walk — those
+are objects with static storage duration whose initialization is
+handled by `StaticVariable` entries enumerated from the symbol table.
+
 State:
   - Translator owns the temporary-name counter (`%0`, `%1`, ...) and a
     separate label counter (`and_false@0`, `and_end@0`, ...) for the
     short-circuit lowerings.
   - The per-function instruction list is passed down explicitly as an
     argument so there's no implicit "current function" on the instance.
+  - The symbol table from `passes.type_checking` is held as
+    `self._symbols`. It feeds two distinct uses: (a) reading
+    `FunAttr.is_global` when constructing each TAC `Function`, and
+    (b) iterating every `StaticAttr` entry at the end to emit the
+    corresponding TAC `StaticVariable` (or to skip the entry if its
+    `initial_value` is `NoInitializer` — that's a reference to
+    a definition that lives elsewhere).
 
 Mapping:
   C99 Program(fn)             -> TAC Program(translate_function(fn))
@@ -169,6 +186,14 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
+from passes.type_checking import (
+    FunAttr,
+    Initial,
+    NoInitializer,
+    StaticAttr,
+    SymbolTable,
+    Tentative,
+)
 
 
 # Per-loop sub-label derivation. The loop_labeling pass stamps each
@@ -193,9 +218,23 @@ def _break_label(loop_label: str) -> str:
 
 
 class Translator:
-    def __init__(self) -> None:
+    def __init__(self, symbols: SymbolTable | None = None) -> None:
         self._temp_counter = 0
         self._label_counter = 0
+        # Read-only handle to the type-checker's symbol table. Used
+        # twice: to set `is_global` on each TAC Function (lookup keyed
+        # by source name, since FunAttr names aren't renamed by
+        # identifier_resolution) and to iterate StaticAttr entries
+        # at the end of `translate_program` for StaticVariable
+        # emission.
+        #
+        # The optional default exists so that unit tests of internal
+        # translation methods (`translate_exp`, `translate_statement`,
+        # …) that don't construct Function nodes can build a
+        # Translator without first running type-checking. Any test
+        # that exercises `translate_program` or `_translate_function`
+        # must pass a real symbol table — those paths read FunAttr.
+        self._symbols = symbols if symbols is not None else SymbolTable()
 
     def make_temporary_variable_name(self) -> str:
         name = f"%{self._temp_counter}"
@@ -216,45 +255,144 @@ class Translator:
         return name
 
     def translate_program(self, prog: c99_ast.Type_program) -> tac_ast.Type_program:
-        # Process each top-level function definition in source order.
-        # Today the c99 AST's top level only ever contains
-        # `function_definition` entries (forward declarations at file
-        # scope aren't accepted yet); if and when block-style
-        # `FunctionDecl` declarations land at the top level, those
-        # would be discarded here — only definitions emit TAC.
+        # Two passes assemble the TAC program's top-level list:
+        # (1) Walk c99 declarations in source order. Each
+        #     FunctionDecl with a body lowers to a TAC Function;
+        #     every other top-level c99 declaration (forward
+        #     function declarations and file-scope variable
+        #     declarations) emits nothing here. The static-storage
+        #     objects appear in the next pass.
+        # (2) Iterate the symbol table once and emit a TAC
+        #     StaticVariable for each StaticAttr entry whose
+        #     initial value is concrete (Initial(c) or Tentative —
+        #     the latter resolved to 0 per C99 §6.9.2.2).
+        #     NoInitializer entries are pure references to a
+        #     definition elsewhere; they emit nothing.
+        # The two passes can't be folded because the symbol table
+        # is what tells us each static-storage object's resolved
+        # initial value (after merging across redeclarations) and
+        # `is_global` flag — neither is locally available at any
+        # one declaration site.
         match prog:
-            case c99_ast.Program(function_definition=fns):
-                return tac_ast.Program(function_definition=[
-                    self.translate_function(fn) for fn in fns
-                ])
+            case c99_ast.Program(declaration=decls):
+                top_levels: list[tac_ast.Type_top_level] = []
+                for d in decls:
+                    fn = self._translate_top_level_declaration(d)
+                    if fn is not None:
+                        top_levels.append(fn)
+                top_levels.extend(self._emit_static_variables())
+                return tac_ast.Program(top_level=top_levels)
         raise TypeError(f"unexpected program: {prog!r}")
+
+    def _translate_top_level_declaration(
+        self, decl: c99_ast.Type_declaration,
+    ) -> tac_ast.Type_top_level | None:
+        # File-scope declarations: function definitions become TAC
+        # Functions; everything else (forward function decls, all
+        # variable decls) is consumed by the symbol-table pass.
+        match decl:
+            case c99_ast.FunctionDecl(function_decl=fd):
+                if fd.body is None:
+                    return None
+                return self._translate_function(fd)
+            case c99_ast.VarDecl():
+                # File-scope variable declarations don't generate TAC
+                # at the AST-walk stage. Their definitions appear via
+                # the symbol-table pass below.
+                return None
+        raise TypeError(f"unexpected declaration: {decl!r}")
 
     def translate_function(
         self, fn: c99_ast.Type_function_definition,
-    ) -> tac_ast.Type_function_definition:
+    ) -> tac_ast.Function:
+        """Test-convenience entry point. The c99 AST no longer holds
+        function definitions in the legacy `Function(name, params,
+        body)` shape — they live inside `FunctionDecl(function_decl=
+        Type_function_decl(...))`. Tests still find it convenient to
+        build a free-standing `Function` and translate it, so this
+        method accepts the legacy shape, lifts it into a
+        `Type_function_decl`, and dispatches to `_translate_function`.
+        Production code reaches `_translate_function` directly via
+        `translate_program`."""
         match fn:
             case c99_ast.Function(name=name, params=params, body=body):
-                instrs: list[tac_ast.Type_instruction] = []
-                self.translate_block(body, instrs)
-                # If the body didn't end in a Return, fall off the end
-                # with an implicit `return 0`. C99 §5.1.2.2.3 specifies
-                # this for `main`; we apply it generally so every TAC
-                # function is guaranteed to terminate with a Ret —
-                # control falling off the end of any TAC function
-                # would be undefined, and the implicit zero-return
-                # papers over execution paths that forgot a `return`.
-                # If a Ret is already the last instruction, skip —
-                # adding a second would be unreachable dead code.
-                if not instrs or not isinstance(instrs[-1], tac_ast.Ret):
-                    instrs.append(tac_ast.Ret(val=tac_ast.Constant(value=0)))
-                # Parameter names ride through to TAC verbatim — they
-                # were already renamed to `@<N>.<orig>` by identifier
-                # resolution, and TAC `Var(@<N>.<orig>)` references
-                # in the body see the same names.
-                return tac_ast.Function(
-                    name=name, params=list(params), instructions=instrs,
+                fd = c99_ast.Type_function_decl(
+                    name=name,
+                    params=list(params),
+                    body=body,
+                    storage_class=None,
                 )
+                return self._translate_function(fd)
         raise TypeError(f"unexpected function: {fn!r}")
+
+    def _translate_function(
+        self, fd: c99_ast.Type_function_decl,
+    ) -> tac_ast.Function:
+        assert fd.body is not None
+        instrs: list[tac_ast.Type_instruction] = []
+        self.translate_block(fd.body, instrs)
+        # If the body didn't end in a Return, fall off the end
+        # with an implicit `return 0`. C99 §5.1.2.2.3 specifies
+        # this for `main`; we apply it generally so every TAC
+        # function is guaranteed to terminate with a Ret —
+        # control falling off the end of any TAC function
+        # would be undefined, and the implicit zero-return
+        # papers over execution paths that forgot a `return`.
+        if not instrs or not isinstance(instrs[-1], tac_ast.Ret):
+            instrs.append(tac_ast.Ret(val=tac_ast.Constant(value=0)))
+        # `is_global` rides through from the symbol table. Function
+        # names aren't renamed by identifier_resolution (linkage
+        # forces the source spelling), so the lookup key matches
+        # `fd.name` directly. If the symbol table is empty (a unit-
+        # test convenience — see `Translator.__init__`), default to
+        # `is_global=True`, which matches the linkage of any function
+        # without an explicit `static` specifier.
+        sym = self._symbols.get(fd.name)
+        if sym is not None and isinstance(sym.attrs, FunAttr):
+            is_global = sym.attrs.is_global
+        else:
+            is_global = True
+        # Parameter names ride through to TAC verbatim — they were
+        # already renamed to `@<N>.<orig>` by identifier resolution,
+        # and TAC `Var(@<N>.<orig>)` references in the body see the
+        # same names.
+        return tac_ast.Function(
+            name=fd.name,
+            is_global=is_global,
+            params=list(fd.params),
+            instructions=instrs,
+        )
+
+    def _emit_static_variables(self) -> list[tac_ast.StaticVariable]:
+        # Walk the symbol table in insertion order (which matches
+        # source order for file-scope decls) and emit a TAC
+        # StaticVariable for every StaticAttr with a concrete initial
+        # value. NoInitializer entries are pure references — the
+        # definition is somewhere else and emits its own
+        # StaticVariable, or it's an external dependency the linker
+        # resolves. C99 §6.9.2.2: a Tentative definition that wasn't
+        # upgraded by an explicit Initial somewhere in the TU resolves
+        # to a zero-initialized definition at end-of-TU; that's
+        # exactly when we hit Tentative here, so we emit init=0.
+        out: list[tac_ast.StaticVariable] = []
+        for name, sym in self._symbols.items():
+            if not isinstance(sym.attrs, StaticAttr):
+                continue
+            init = sym.attrs.initial_value
+            if isinstance(init, Initial):
+                init_value = init.value
+            elif isinstance(init, Tentative):
+                init_value = 0
+            elif isinstance(init, NoInitializer):
+                continue
+            else:
+                raise TypeError(f"unexpected initial value: {init!r}")
+            out.append(tac_ast.StaticVariable(
+                name=name,
+                is_global=sym.attrs.is_global,
+                init=init_value,
+            ))
+        return out
 
     def translate_block(
         self,
@@ -287,15 +425,29 @@ class Translator:
         decl: c99_ast.Type_declaration,
         instrs: list[tac_ast.Type_instruction],
     ) -> None:
-        # TAC has no "declare" instruction — variables are introduced
-        # by their first appearance. So a bare `int x;` lowers to
-        # nothing, and `int x = e;` lowers exactly like the assignment
-        # `x = e`: evaluate the initializer, then Copy into the var.
+        # TAC has no "declare" instruction — automatic-storage
+        # variables are introduced by their first appearance. So a
+        # bare `int x;` lowers to nothing, and `int x = e;` lowers
+        # exactly like the assignment `x = e`: evaluate the
+        # initializer, then Copy into the var.
+        #
+        # Block-scope `static int x [= e];` and `extern int x;` are
+        # objects with static storage duration — their definitions
+        # appear in the program's StaticVariable list assembled from
+        # the symbol table. They don't run any code at the
+        # declaration's source location, so we drop them here. The
+        # `storage_class is not None` check is sufficient to make the
+        # split: identifier_resolution / type-check have already
+        # rejected any block-scope storage-class specifier other than
+        # `static` / `extern`.
+        #
         # A FunctionDecl is purely a name-binding artifact (consumed
         # by identifier_resolution to validate calls); it has no
         # runtime effect, so it lowers to nothing.
         match decl:
             case c99_ast.VarDecl(var_decl=vd):
+                if vd.storage_class is not None:
+                    return
                 if vd.init is not None:
                     init_val = self.translate_exp(vd.init, instrs)
                     instrs.append(tac_ast.Copy(
@@ -769,7 +921,19 @@ class Translator:
         raise TypeError(f"unexpected binop: {op!r}")
 
 
-def translate_program(prog: c99_ast.Type_program) -> tac_ast.Type_program:
+def translate_program(
+    prog: c99_ast.Type_program,
+    symbols: SymbolTable | None = None,
+) -> tac_ast.Type_program:
     """Convenience wrapper: builds a fresh Translator per call (so the
-    temporary counter starts at 0 every time)."""
-    return Translator().translate_program(prog)
+    temporary counter starts at 0 every time). The `symbols` table
+    must be the one produced by `passes.type_checking.check_program`
+    on the same `prog` — it's consumed both for `is_global` lookups
+    on functions and for the StaticVariable enumeration at the end of
+    program translation. The default of `None` is a test convenience;
+    the wrapper will run `check_program` on `prog` to fill it in,
+    which is what the production pipeline does anyway."""
+    if symbols is None:
+        from passes.type_checking import check_program
+        _, symbols = check_program(prog)
+    return Translator(symbols).translate_program(prog)

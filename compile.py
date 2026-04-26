@@ -43,19 +43,17 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from passes.identifier_resolution import resolve_program as resolve_identifiers
-from passes.type_checking import check_program as type_check_program
+from passes.type_checking import (
+    StaticAttr,
+    check_program as type_check_program,
+)
 from c99_to_tac import translate_program as translate_to_tac
 
 
-def _type_check(prog):
-    """Pipeline-friendly wrapper: type-check the program, drop the
-    returned symbol table (no later pass in the pipeline consumes it
-    today), and return the unchanged AST so the chained `translate_*`
-    calls keep working as before. When a downstream pass needs the
-    symbol table, this wrapper goes away in favor of threading the
-    `(prog, symbols)` tuple through."""
-    prog, _symbols = type_check_program(prog)
-    return prog
+def _resolved(source: str):
+    """Run parse + the three name-resolution passes. Used by every
+    stage from `--resolve` onward."""
+    return label_loops(resolve_labels(resolve_identifiers(parse(source))))
 
 
 def _format_tokens(source: str) -> str:
@@ -71,18 +69,29 @@ def _run_stage(stage: str, source: str) -> str:
     if stage == "parse":
         return pretty(parse(source)) + "\n"
     if stage == "resolve":
-        return pretty(label_loops(
-            resolve_labels(resolve_identifiers(parse(source)))
-        )) + "\n"
+        return pretty(_resolved(source)) + "\n"
     if stage == "tac":
-        return pretty(translate_to_tac(_type_check(label_loops(
-            resolve_labels(resolve_identifiers(parse(source)))
-        )))) + "\n"
+        # Thread the symbol table from type_checking into c99_to_tac
+        # so the latter can read function-linkage flags and emit
+        # StaticVariable entries for static-storage objects.
+        prog, symbols = type_check_program(_resolved(source))
+        return pretty(translate_to_tac(prog, symbols)) + "\n"
     if stage == "codegen":
+        prog, symbols = type_check_program(_resolved(source))
+        # `replace_pseudoregisters` needs to recognize every static-
+        # storage object — including extern references that don't
+        # produce a StaticVariable definition here — to avoid
+        # mistaking their Pseudos for locals. Any StaticAttr entry in
+        # the symbol table is a static-storage object; pass the full
+        # set as `extra_statics` so the asm pass picks up the externs
+        # the asm program doesn't otherwise know about.
+        statics = frozenset(
+            name for name, sym in symbols.items()
+            if isinstance(sym.attrs, StaticAttr)
+        )
         return emit_program(replace_pseudoregs(
-            translate_to_asm(translate_to_tac(_type_check(label_loops(
-                resolve_labels(resolve_identifiers(parse(source)))
-            ))))
+            translate_to_asm(translate_to_tac(prog, symbols)),
+            extra_statics=statics,
         ))
     raise AssertionError(f"unknown stage: {stage!r}")
 

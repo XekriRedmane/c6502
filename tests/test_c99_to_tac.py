@@ -6,6 +6,28 @@ from parser import parse
 from c99_to_tac import Translator, translate_program
 
 
+def _c99_program_of(*functions) -> c99_ast.Type_program:
+    """Wrap one or more legacy-shape `c99_ast.Function` nodes into
+    a new-shape `c99_ast.Program(declaration=[FunctionDecl(...)])`.
+    Lets tests build synthetic programs without spelling out the
+    triple-nested wrap (`Program → declaration → FunctionDecl →
+    function_decl`) every time. The legacy `Function` node still
+    exists in c99_ast (kept for transitional convenience even though
+    the parser no longer emits it); we lift each one into a
+    `Type_function_decl` with `body` set and `storage_class=None`."""
+    decls: list[c99_ast.Type_declaration] = []
+    for fn in functions:
+        decls.append(c99_ast.FunctionDecl(
+            function_decl=c99_ast.Type_function_decl(
+                name=fn.name,
+                params=list(fn.params),
+                body=fn.body,
+                storage_class=None,
+            ),
+        ))
+    return c99_ast.Program(declaration=decls)
+
+
 class TestTranslateExp(unittest.TestCase):
     def test_constant_returns_tac_constant_emits_nothing(self):
         t = Translator()
@@ -845,6 +867,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
             Translator().translate_function(fn),
             tac_ast.Function(
                 name="main",
+                is_global=True,
                 instructions=[tac_ast.Ret(val=tac_ast.Constant(value=0))],
             ),
         )
@@ -861,6 +884,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
             Translator().translate_function(fn),
             tac_ast.Function(
                 name="main",
+                is_global=True,
                 instructions=[
                     tac_ast.Copy(
                         src=tac_ast.Constant(value=5),
@@ -935,24 +959,24 @@ class TestTranslateProgram(unittest.TestCase):
     def test_return_constant(self):
         # Both c99 and TAC programs are lists of Functions now, so
         # the `[Function(...)]` wrapping mirrors on both sides.
-        prog = c99_ast.Program(function_definition=[c99_ast.Function(
+        prog = _c99_program_of(c99_ast.Function(
             name="main",
             body=c99_ast.Block(block_item=[c99_ast.S(statement=c99_ast.Return(
                 exp=c99_ast.Constant(value=42),
             ))]),
-        )])
+        ))
         self.assertEqual(
             translate_program(prog),
-            tac_ast.Program(function_definition=[tac_ast.Function(
+            tac_ast.Program(top_level=[tac_ast.Function(
                 name="main",
+                is_global=True,
                 params=[],
                 instructions=[tac_ast.Ret(val=tac_ast.Constant(value=42))],
             )]),
         )
 
     def test_return_unary(self):
-        tac = translate_program(c99_ast.Program(
-            function_definition=[c99_ast.Function(
+        tac = translate_program(_c99_program_of(c99_ast.Function(
                 name="main",
                 body=c99_ast.Block(block_item=[c99_ast.S(
                     statement=c99_ast.Return(exp=c99_ast.Unary(
@@ -960,10 +984,9 @@ class TestTranslateProgram(unittest.TestCase):
                         exp=c99_ast.Constant(value=5),
                     )),
                 )]),
-            )],
-        ))
+            )))
         self.assertEqual(
-            tac.function_definition[0].instructions,
+            tac.top_level[0].instructions,
             [
                 tac_ast.Unary(
                     op=tac_ast.Negate(),
@@ -977,7 +1000,7 @@ class TestTranslateProgram(unittest.TestCase):
     def test_end_to_end_nested_from_source(self):
         tac = translate_program(parse("int main(void) { return -(~5); }"))
         self.assertEqual(
-            tac.function_definition[0].instructions,
+            tac.top_level[0].instructions,
             [
                 tac_ast.Unary(
                     op=tac_ast.Complement(),
@@ -1100,7 +1123,7 @@ class TestTranslateProgram(unittest.TestCase):
             "int main(void) { int a; ++a; }"
         ))
         self.assertEqual(
-            tac.function_definition[0].instructions,
+            tac.top_level[0].instructions,
             [
                 tac_ast.Binary(
                     op=tac_ast.Add(),
@@ -1126,7 +1149,7 @@ class TestTranslateProgram(unittest.TestCase):
             "int main(void) { int a; a += 1; }"
         ))
         self.assertEqual(
-            tac.function_definition[0].instructions,
+            tac.top_level[0].instructions,
             [
                 tac_ast.Binary(
                     op=tac_ast.Add(),
@@ -1149,7 +1172,7 @@ class TestTranslateProgram(unittest.TestCase):
         # allocates %0); then the add (allocating %1).
         tac = translate_program(parse("int main(void) { return 1 + 2 * 3; }"))
         self.assertEqual(
-            tac.function_definition[0].instructions,
+            tac.top_level[0].instructions,
             [
                 tac_ast.Binary(
                     op=tac_ast.Multiply(),
@@ -1173,9 +1196,9 @@ class TestTranslateProgram(unittest.TestCase):
         src = "int main(void) { return -5; }"
         a = translate_program(parse(src))
         b = translate_program(parse(src))
-        self.assertEqual(a.function_definition[0].instructions[0].dst,
+        self.assertEqual(a.top_level[0].instructions[0].dst,
                          tac_ast.Var(name="%0"))
-        self.assertEqual(b.function_definition[0].instructions[0].dst,
+        self.assertEqual(b.top_level[0].instructions[0].dst,
                          tac_ast.Var(name="%0"))
 
 
@@ -1594,7 +1617,7 @@ class TestEndToEndLoops(unittest.TestCase):
         prog = self._translate(
             "int main(void) { while (1) break; return 0; }"
         )
-        instrs = prog.function_definition[0].instructions
+        instrs = prog.top_level[0].instructions
         self.assertEqual(instrs[0], tac_ast.Label(name=".loop@0_continue"))
         self.assertEqual(
             instrs[2], tac_ast.Jump(target=".loop@0_break"),
@@ -1604,7 +1627,7 @@ class TestEndToEndLoops(unittest.TestCase):
         prog = self._translate(
             "int main(void) { for (;;) continue; return 0; }"
         )
-        instrs = prog.function_definition[0].instructions
+        instrs = prog.top_level[0].instructions
         # No condition → no JumpIfFalse anywhere.
         self.assertFalse(any(
             isinstance(i, tac_ast.JumpIfFalse) for i in instrs
@@ -1620,7 +1643,7 @@ class TestEndToEndLoops(unittest.TestCase):
             "return 0; }"
         )
         targets = {
-            i.target for i in prog.function_definition[0].instructions
+            i.target for i in prog.top_level[0].instructions
             if isinstance(i, tac_ast.Jump)
         }
         # Both outer (.loop@0_*) and inner (.loop@1_*) sub-labels
@@ -1785,8 +1808,8 @@ class TestTranslateFunctionCall(unittest.TestCase):
         )
         prog = resolve_identifiers(prog)
         tac = translate_program(prog)
-        self.assertEqual(len(tac.function_definition), 2)
-        foo_fn, main_fn = tac.function_definition
+        self.assertEqual(len(tac.top_level), 2)
+        foo_fn, main_fn = tac.top_level
         self.assertEqual(foo_fn.name, "foo")
         self.assertEqual(foo_fn.params, ["@0.a"])
         # `foo`'s body lowered: Ret(Var(@0.a)).
@@ -1811,7 +1834,7 @@ class TestTranslateFunctionCall(unittest.TestCase):
 
 class TestTranslateMultipleFunctions(unittest.TestCase):
     """Top-level c99 functions go through one at a time, each
-    yielding a TAC function_definition. The order of TAC functions
+    yielding a TAC top_level entry. The order of TAC functions
     matches the source order. Each function gets its own implicit
     Ret(0) safety net at the end if the body falls off without
     returning."""
@@ -1827,7 +1850,7 @@ class TestTranslateMultipleFunctions(unittest.TestCase):
         )
         prog = resolve_identifiers(prog)
         tac = translate_program(prog)
-        names = [fn.name for fn in tac.function_definition]
+        names = [fn.name for fn in tac.top_level]
         self.assertEqual(names, ["foo", "bar", "main"])
 
     def test_each_function_gets_its_own_implicit_ret_zero(self):
@@ -1843,7 +1866,7 @@ class TestTranslateMultipleFunctions(unittest.TestCase):
         )
         prog = resolve_identifiers(prog)
         tac = translate_program(prog)
-        for fn in tac.function_definition:
+        for fn in tac.top_level:
             self.assertEqual(
                 fn.instructions,
                 [tac_ast.Ret(val=tac_ast.Constant(value=0))],
@@ -1861,7 +1884,7 @@ class TestTranslateMultipleFunctions(unittest.TestCase):
         prog = parse("int foo(int a, int b) { return a + b; }")
         prog = resolve_identifiers(prog)
         tac = translate_program(prog)
-        fn = tac.function_definition[0]
+        fn = tac.top_level[0]
         self.assertEqual(fn.params, ["@0.a", "@1.b"])
         # Body sees Var("@0.a") and Var("@1.b") in the Add.
         binary = fn.instructions[0]

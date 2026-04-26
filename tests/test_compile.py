@@ -29,7 +29,10 @@ class TestCompileDriver(unittest.TestCase):
         rc, out, _ = self._run(["compile.py", "-", "--parse"], stdin=self.SOURCE)
         self.assertEqual(rc, 0)
         self.assertIn("Program(", out)
-        self.assertIn("Function(", out)
+        # Top level is `declaration=[FunctionDecl(function_decl=...)]`
+        # since the grammar collapsed function definitions into the
+        # generic declaration shape.
+        self.assertIn("FunctionDecl(", out)
         self.assertIn("Constant(", out)
         self.assertIn("value=42", out)
 
@@ -129,6 +132,61 @@ class TestCompileDriver(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("LDA   #$05", out)
         self.assertIn("ADC   #$03", out)
+
+    def test_codegen_file_scope_static_variable(self):
+        # `static int g = 7;` at file scope → INTERNAL linkage,
+        # Initial(7). The asm emits the variable as a labeled DC.B,
+        # and references inside main use absolute addressing (LDA g).
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="static int g = 7; int main(void) { return g; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("g:", out)
+        self.assertIn("DC.B  $07", out)
+        self.assertIn("LDA   g", out)
+
+    def test_codegen_block_scope_static_zero_initialized(self):
+        # `static int x;` at block scope: NONE linkage but static
+        # storage duration. Renamed by identifier_resolution to a
+        # unique `@N.x`, default-zero-initialized, lowered to a
+        # StaticVariable at top level. References inside main use
+        # absolute addressing against that mangled name.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int main(void) { static int x; return x; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("DC.B  $00", out)
+        # The mangled label appears (the exact name is brittle to
+        # the unique-counter so we just check for the prefix).
+        self.assertIn("@0.x:", out)
+        self.assertIn("LDA   @0.x", out)
+
+    def test_codegen_file_scope_tentative_definition(self):
+        # `int x;` at file scope is a tentative definition; type-
+        # checking resolves it to Initial(0) at end-of-TU and
+        # c99_to_tac emits a StaticVariable with init=0.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="int x; int main(void) { return x; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("x:", out)
+        self.assertIn("DC.B  $00", out)
+        self.assertIn("LDA   x", out)
+
+    def test_codegen_extern_no_initializer_emits_nothing(self):
+        # `extern int x;` with no initializer → NoInitializer; the
+        # symbol is referenced (LDA x) but no DC.B is emitted —
+        # the definition lives in another TU.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin="extern int x; int main(void) { return x; }",
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("LDA   x", out)
+        self.assertNotIn("x:\n   DC.B", out)
 
     def test_pcpp_strips_comments(self):
         rc, out, _ = self._run(

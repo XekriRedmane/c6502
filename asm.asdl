@@ -1,6 +1,8 @@
 module ASM {
-    program = Program(function_definition*)
-    function_definition = Function(identifier name, identifier* params, instruction* instructions)
+    program = Program(top_level*)
+    top_level =
+        Function(identifier name, bool is_global, identifier* params, instruction* instructions)
+        | StaticVariable(identifier name, bool is_global, int init)
 
     instruction =
         Mov(operand src, operand dst)
@@ -28,8 +30,14 @@ module ASM {
         | Branch(condition cond, identifier target)
         | Compare(operand left, operand right)
 
+    -- Data(name): the byte at the absolute address `name`. Used for
+    -- references to static-storage objects (file-scope variables and
+    -- block-scope statics). Lowered by asm_emit as direct/absolute
+    -- addressing (e.g. `LDA name`, `STA name`) — no LDY indirect-Y
+    -- preamble like Stack/Frame need, since the address is fixed.
     operand = Imm(int value) | Reg(reg) | Pseudo(identifier name)
             | Stack(int offset) | Frame(int offset)
+            | Data(identifier name)
     reg = A | X | Y
     -- 6502 branch conditions, named after the suffix on each Bxx
     -- opcode: BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS.

@@ -165,23 +165,13 @@ HASH: "#"
 WS: /[ \t\n\f]+/
 %ignore WS
 
-// Top-level: a translation unit is a list of function *definitions*
-// (each carries a body). Forward declarations at file scope aren't
-// modeled in the AST yet — the c99.asdl `program = Program(function_
-// definition*)` intentionally only stores definitions. Block-scope
-// `function_decl` is a different rule (no body) so the LALR(1)
-// parser doesn't get a shift-reduce conflict at LPAREN-vs-block.
-start: function_definition*
+// Top-level: a translation unit is a list of function declarations.
+start: declaration*
 
-function_definition: INT IDENTIFIER LPAREN param_list RPAREN block
-
-// Block-scope declaration: either a variable declaration or a
-// function declaration (no body — C99 forbids nested function
-// definitions). The matching AST sum is `declaration = FunctionDecl
-// (function_decl) | VarDecl(var_decl)`.
 declaration: function_decl | var_decl
-var_decl: INT IDENTIFIER (ASSIGN exp)? SEMICOLON
-function_decl: INT IDENTIFIER LPAREN param_list RPAREN SEMICOLON
+specifier: INT | STATIC | EXTERN
+var_decl: specifier+ IDENTIFIER (ASSIGN exp)? SEMICOLON
+function_decl: specifier+ IDENTIFIER LPAREN param_list RPAREN (SEMICOLON | block)
 
 // `(void)` is the empty-parameter idiom; otherwise a comma-separated
 // list of `int IDENTIFIER`. Parameter names aren't kept on

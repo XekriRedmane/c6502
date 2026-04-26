@@ -11,7 +11,7 @@ class Type_program:
 
 @dataclass
 class Program(Type_program):
-    function_definition: list[Type_function_definition] = field(default_factory=list)
+    declaration: list[Type_declaration] = field(default_factory=list)
 
 
 @dataclass
@@ -146,6 +146,7 @@ class VarDecl(Type_declaration):
 class Type_var_decl:
     name: str
     init: Type_exp | None = None
+    storage_class: Type_storage_class | None = None
 
 
 @dataclass
@@ -153,6 +154,22 @@ class Type_function_decl:
     name: str
     params: list[str] = field(default_factory=list)
     body: Type_block | None = None
+    storage_class: Type_storage_class | None = None
+
+
+@dataclass
+class Type_storage_class:
+    pass
+
+
+@dataclass
+class Static(Type_storage_class):
+    pass
+
+
+@dataclass
+class Extern(Type_storage_class):
+    pass
 
 
 @dataclass

@@ -1,6 +1,8 @@
 module TAC {
-    program = Program(function_definition*)
-    function_definition = Function(identifier name, identifier* params, instruction* instructions)
+    program = Program(top_level*)
+    top_level =
+        Function(identifier name, bool is_global, identifier* params, instruction* instructions)
+        | StaticVariable(identifier name, bool is_global, int init)
     instruction =
         Ret(val)
         | Unary(unary_operator op, val src, val dst)

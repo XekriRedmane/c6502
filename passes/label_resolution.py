@@ -59,36 +59,71 @@ class LabelResolver:
         self, prog: c99_ast.Type_program,
     ) -> c99_ast.Type_program:
         match prog:
-            case c99_ast.Program(function_definition=fns):
-                # Each top-level function gets its own per-function
-                # label scope — labels never escape their enclosing
-                # function (C99 §6.8.6.1). The same `LabelResolver`
-                # instance can handle every function because it
-                # carries no per-function state itself.
-                return c99_ast.Program(function_definition=[
-                    self.resolve_function(fn) for fn in fns
+            case c99_ast.Program(declaration=decls):
+                # The top-level shape is `Program(declaration*)` —
+                # each entry is either a variable declaration (no
+                # body) or a function declaration (which may or may
+                # not have a body — only definitions do). We only
+                # have label work to do for function bodies; non-
+                # function declarations and body-less function
+                # declarations pass through verbatim.
+                return c99_ast.Program(declaration=[
+                    self._resolve_declaration(d) for d in decls
                 ])
         raise TypeError(f"unexpected program: {prog!r}")
+
+    def _resolve_declaration(
+        self, decl: c99_ast.Type_declaration,
+    ) -> c99_ast.Type_declaration:
+        match decl:
+            case c99_ast.VarDecl():
+                # Variable declarations can't host labels.
+                return decl
+            case c99_ast.FunctionDecl(function_decl=fd):
+                if fd.body is None:
+                    return decl
+                return c99_ast.FunctionDecl(
+                    function_decl=self._resolve_function_decl(fd),
+                )
+        raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _resolve_function_decl(
+        self, fd: c99_ast.Type_function_decl,
+    ) -> c99_ast.Type_function_decl:
+        # Pass 1: collect every labeled statement in the body, minting
+        # unique names and rejecting duplicates. Pass 2: rewrite the
+        # AST, validating each Goto's target along the way. Params
+        # don't host labels — they pass through verbatim.
+        labels: dict[str, str] = {}
+        assert fd.body is not None
+        self._collect_block(fd.body, fd.name, labels)
+        return c99_ast.Type_function_decl(
+            name=fd.name,
+            params=list(fd.params),
+            body=self._rewrite_block(fd.body, labels),
+            storage_class=fd.storage_class,
+        )
 
     def resolve_function(
         self, fn: c99_ast.Type_function_definition,
     ) -> c99_ast.Type_function_definition:
+        # Test-convenience entry point — accepts the legacy
+        # `Function(...)` shape, threads through the new function-
+        # decl path, and unwraps. See `resolve_function` at module
+        # scope for the public version.
         match fn:
             case c99_ast.Function(name=name, params=params, body=body):
-                # Pass 1: collect every labeled statement, minting
-                # unique names and rejecting duplicates. Walk the
-                # whole function body, descending into nested
-                # statements (e.g. labels inside an if-then or
-                # if-else, or labels nested within other labels).
-                labels: dict[str, str] = {}
-                self._collect_block(body, name, labels)
-                # Pass 2: rewrite the AST, validating each Goto's
-                # target along the way. Params don't host labels —
-                # they pass through verbatim.
-                return c99_ast.Function(
+                fd = c99_ast.Type_function_decl(
                     name=name,
                     params=list(params),
-                    body=self._rewrite_block(body, labels),
+                    body=body,
+                    storage_class=None,
+                )
+                new_fd = self._resolve_function_decl(fd)
+                return c99_ast.Function(
+                    name=new_fd.name,
+                    params=list(new_fd.params),
+                    body=new_fd.body,
                 )
         raise TypeError(f"unexpected function: {fn!r}")
 

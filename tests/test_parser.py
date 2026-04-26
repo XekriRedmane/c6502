@@ -25,13 +25,17 @@ class TestParser(unittest.TestCase):
     def test_minimal_function(self):
         ast = parse("int main(void) { return 42; }")
         expected = c99_ast.Program(
-            function_definition=[c99_ast.Function(
-                name="main",
-                body=c99_ast.Block(block_item=[c99_ast.S(
-                    statement=c99_ast.Return(
-                        exp=c99_ast.Constant(value=42),
-                    ),
-                )]),
+            declaration=[c99_ast.FunctionDecl(
+                function_decl=c99_ast.Type_function_decl(
+                    name="main",
+                    params=[],
+                    body=c99_ast.Block(block_item=[c99_ast.S(
+                        statement=c99_ast.Return(
+                            exp=c99_ast.Constant(value=42),
+                        ),
+                    )]),
+                    storage_class=None,
+                ),
             )],
         )
         self.assertEqual(ast, expected)
@@ -55,7 +59,7 @@ class TestParser(unittest.TestCase):
         for name in ["main", "foo", "_start", "a1b2"]:
             with self.subTest(name=name):
                 ast = parse(f"int {name}(void) {{ return 0; }}")
-                self.assertEqual(ast.function_definition[0].name, name)
+                self.assertEqual(ast.declaration[0].function_decl.name, name)
 
     def test_unary_negate(self):
         ast = parse("int main(void) { return -42; }")
@@ -114,14 +118,19 @@ class TestParser(unittest.TestCase):
         ast = parse("int main(void) { return 0; }")
         self.assertIsInstance(ast, c99_ast.Type_program)
         self.assertIsInstance(ast, c99_ast.Program)
-        # `function_definition` is a list of Function nodes.
-        self.assertIsInstance(ast.function_definition, list)
-        self.assertEqual(len(ast.function_definition), 1)
-        fn = ast.function_definition[0]
-        self.assertIsInstance(fn, c99_ast.Type_function_definition)
-        self.assertIsInstance(fn, c99_ast.Function)
+        # `declaration` is a list of Type_declaration nodes; a function
+        # definition arrives as `FunctionDecl(function_decl=Type_function_decl(...))`
+        # with body=Block(...). A forward declaration is the same shape
+        # with body=None.
+        self.assertIsInstance(ast.declaration, list)
+        self.assertEqual(len(ast.declaration), 1)
+        decl = ast.declaration[0]
+        self.assertIsInstance(decl, c99_ast.Type_declaration)
+        self.assertIsInstance(decl, c99_ast.FunctionDecl)
+        fd = decl.function_decl
+        self.assertIsInstance(fd, c99_ast.Type_function_decl)
         # body is a Block wrapping a list of block_items.
-        body = fn.body
+        body = fd.body
         self.assertIsInstance(body, c99_ast.Type_block)
         self.assertIsInstance(body, c99_ast.Block)
         self.assertEqual(len(body.block_item), 1)
@@ -136,13 +145,15 @@ class TestParser(unittest.TestCase):
 
 def _return_stmt(ast: c99_ast.Type_program) -> c99_ast.Return:
     """Extract the single Return statement from
-    `int main(void) { return <exp>; }`. Program.function_definition
-    is a list — here we expect exactly one Function. Function.body
-    is a Block around a list of block_items; here we expect exactly
-    one S(statement=Return)."""
-    fns = ast.function_definition
-    assert len(fns) == 1, fns
-    items = fns[0].body.block_item
+    `int main(void) { return <exp>; }`. Program.declaration is a list
+    of Type_declaration nodes — here we expect exactly one
+    FunctionDecl(function_decl=Type_function_decl(..., body=Block(...))).
+    The body is a Block around a list of block_items; here we expect
+    exactly one S(statement=Return)."""
+    decls = ast.declaration
+    assert len(decls) == 1, decls
+    fd = decls[0].function_decl
+    items = fd.body.block_item
     assert len(items) == 1, items
     item = items[0]
     assert isinstance(item, c99_ast.S), item
@@ -931,7 +942,7 @@ class TestIfStatement(unittest.TestCase):
     favor of shifting, which gives that binding for free."""
 
     def _stmt_of(self, src):
-        items = parse(f"int main(void) {{ {src} }}").function_definition[0].body.block_item
+        items = parse(f"int main(void) {{ {src} }}").declaration[0].function_decl.body.block_item
         assert len(items) == 1, items
         item = items[0]
         assert isinstance(item, c99_ast.S), item
@@ -1013,7 +1024,7 @@ class TestCompoundStatement(unittest.TestCase):
     transformer wraps the resulting `Block` in a `Compound`."""
 
     def _stmt_of(self, src):
-        items = parse(f"int main(void) {{ {src} }}").function_definition[0].body.block_item
+        items = parse(f"int main(void) {{ {src} }}").declaration[0].function_decl.body.block_item
         assert len(items) == 1, items
         item = items[0]
         assert isinstance(item, c99_ast.S), item
@@ -1089,7 +1100,7 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
     shifting, picking the labeled-statement branch."""
 
     def _stmt_of(self, src):
-        items = parse(f"int main(void) {{ {src} }}").function_definition[0].body.block_item
+        items = parse(f"int main(void) {{ {src} }}").declaration[0].function_decl.body.block_item
         assert len(items) == 1, items
         item = items[0]
         assert isinstance(item, c99_ast.S), item
@@ -1137,7 +1148,7 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
         # is a single statement, which can be a labeled statement).
         items = parse(
             "int main(void) { if (1) foo: return 0; }"
-        ).function_definition[0].body.block_item
+        ).declaration[0].function_decl.body.block_item
         self.assertEqual(
             items[0].statement,
             c99_ast.IfStmt(
@@ -1158,7 +1169,7 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
         # labeled_stmt option, so no conflict.)
         items = parse(
             "int main(void) { return a ? b : c; }"
-        ).function_definition[0].body.block_item
+        ).declaration[0].function_decl.body.block_item
         self.assertEqual(
             items[0].statement,
             c99_ast.Return(exp=c99_ast.Conditional(
@@ -1171,7 +1182,7 @@ class TestLabeledStmtAndGoto(unittest.TestCase):
     def test_goto_then_label_in_program(self):
         # End-to-end: `int main(void) { goto end; end: return 0; }`.
         prog = parse("int main(void) { goto end; end: return 0; }")
-        items = prog.function_definition[0].body.block_item
+        items = prog.declaration[0].function_decl.body.block_item
         self.assertEqual(items[0].statement, c99_ast.Goto(label="end"))
         self.assertEqual(
             items[1].statement,
@@ -1189,7 +1200,7 @@ class TestIterationStatements(unittest.TestCase):
     empty string."""
 
     def _stmt_of(self, src):
-        items = parse(f"int main(void) {{ {src} }}").function_definition[0].body.block_item
+        items = parse(f"int main(void) {{ {src} }}").declaration[0].function_decl.body.block_item
         assert len(items) == 1, items
         item = items[0]
         assert isinstance(item, c99_ast.S), item
@@ -1250,7 +1261,7 @@ class TestIterationStatements(unittest.TestCase):
         # `for (i = 0; ...; ...)` — init is an expression, not a decl.
         items = parse(
             "int main(void) { int i; for (i = 0; i < 5; i++) break; }"
-        ).function_definition[0].body.block_item
+        ).declaration[0].function_decl.body.block_item
         for_stmt = items[1].statement
         self.assertIsInstance(for_stmt, c99_ast.ForStmt)
         self.assertEqual(
@@ -1291,7 +1302,7 @@ class TestIterationStatements(unittest.TestCase):
         # `for (;; post) ...` — only the post-iteration slot is populated.
         items = parse(
             "int main(void) { int i; for (;; i++) break; }"
-        ).function_definition[0].body.block_item
+        ).declaration[0].function_decl.body.block_item
         for_stmt = items[1].statement
         self.assertEqual(for_stmt.condition, None)
         self.assertEqual(
@@ -1321,37 +1332,40 @@ class TestIterationStatements(unittest.TestCase):
 
 
 class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
-    """Top-level rule is `function_definition*` — each entry must
-    have a body. A `function_decl` (no body) lives at block scope as
-    a declaration, never at top level. The matching AST: top-level
-    becomes `Program([Function, Function, ...])`; block-scope decls
-    become `D(FunctionDecl(Type_function_decl(name, params, body)))`."""
+    """Top-level rule is `declaration*` — each entry is a `FunctionDecl`
+    or `VarDecl`. A function definition is a `FunctionDecl` whose
+    `function_decl.body` is a `Block`; a forward declaration sets
+    `body=None`. The same `FunctionDecl` shape appears at block scope
+    (always with `body=None`, since C99 forbids nested function
+    definitions)."""
 
     def test_multiple_top_level_functions(self):
         ast = parse(
             "int foo(void) { return 1; } int main(void) { return 0; }"
         )
-        self.assertEqual(len(ast.function_definition), 2)
-        self.assertEqual(ast.function_definition[0].name, "foo")
-        self.assertEqual(ast.function_definition[1].name, "main")
+        self.assertEqual(len(ast.declaration), 2)
+        self.assertEqual(ast.declaration[0].function_decl.name, "foo")
+        self.assertEqual(ast.declaration[1].function_decl.name, "main")
 
-    def test_top_level_function_decl_is_a_parse_error(self):
-        # File-scope forward declarations aren't supported yet — the
-        # AST's top level is `function_definition*`, which only
-        # accepts forms with a body. A declaration without a body
-        # has to live at block scope.
-        from lark.exceptions import UnexpectedInput
-        with self.assertRaises(UnexpectedInput):
-            parse("int foo(void); int main(void) { return 0; }")
+    def test_top_level_function_decl_parses_as_forward_declaration(self):
+        # File-scope forward declarations are now first-class — they
+        # share the same `FunctionDecl` shape as definitions, just
+        # with `body=None`. The grammar accepts the SEMICOLON or
+        # block alternative on `function_decl`.
+        ast = parse("int foo(void); int main(void) { return 0; }")
+        self.assertEqual(len(ast.declaration), 2)
+        self.assertEqual(ast.declaration[0].function_decl.name, "foo")
+        self.assertIsNone(ast.declaration[0].function_decl.body)
+        self.assertIsNotNone(ast.declaration[1].function_decl.body)
 
     def test_block_scope_function_decl_no_args(self):
         ast = parse("int main(void) { int foo(void); return 0; }")
-        first = ast.function_definition[0].body.block_item[0]
+        first = ast.declaration[0].function_decl.body.block_item[0]
         self.assertEqual(
             first,
             c99_ast.D(declaration=c99_ast.FunctionDecl(
                 function_decl=c99_ast.Type_function_decl(
-                    name="foo", params=[], body=None,
+                    name="foo", params=[], body=None, storage_class=None,
                 ),
             )),
         )
@@ -1360,7 +1374,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
         ast = parse(
             "int main(void) { int sum(int a, int b); return 0; }"
         )
-        first = ast.function_definition[0].body.block_item[0]
+        first = ast.declaration[0].function_decl.body.block_item[0]
         self.assertEqual(
             first.declaration.function_decl.params, ["a", "b"],
         )
@@ -1368,7 +1382,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
     def test_function_call_no_args(self):
         ast = parse("int main(void) { int f(void); return f(); }")
         # Last block item is `return f();`.
-        ret = ast.function_definition[0].body.block_item[1].statement
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(
             ret.exp, c99_ast.FunctionCall(name="f", args=[]),
         )
@@ -1377,7 +1391,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
         ast = parse(
             "int main(void) { int f(int x, int y); return f(1, 2 + 3); }"
         )
-        ret = ast.function_definition[0].body.block_item[1].statement
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(
             ret.exp,
             c99_ast.FunctionCall(
@@ -1401,7 +1415,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
         ast = parse(
             "int main(void) { int f(int x); int x; return f(x); }"
         )
-        ret = ast.function_definition[0].body.block_item[2].statement
+        ret = ast.declaration[0].function_decl.body.block_item[2].statement
         self.assertIsInstance(ret.exp, c99_ast.FunctionCall)
         self.assertEqual(ret.exp.args, [c99_ast.Var(name="x")])
 
@@ -1409,7 +1423,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
         # `f` alone is a Var (atom -> identifier). Only `f(...)` is
         # a call. Useful as a regression for the LALR shift decision.
         ast = parse("int main(void) { int f; return f; }")
-        ret = ast.function_definition[0].body.block_item[1].statement
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(ret.exp, c99_ast.Var(name="f"))
 
     def test_function_call_inside_arithmetic(self):
@@ -1417,7 +1431,7 @@ class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):
         ast = parse(
             "int main(void) { int f(void); return f() + 1; }"
         )
-        ret = ast.function_definition[0].body.block_item[1].statement
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
         self.assertEqual(
             ret.exp,
             c99_ast.Binary(
@@ -1441,7 +1455,7 @@ class TestValidFiles(unittest.TestCase):
             with self.subTest(file=path.name):
                 ast = parse(_preprocess(path.read_text()))
                 self.assertIsInstance(ast, c99_ast.Program)
-                self.assertEqual(ast.function_definition[0].name, "main")
+                self.assertEqual(ast.declaration[0].function_decl.name, "main")
                 stmt = _return_stmt(ast)
                 self.assertIsInstance(stmt.exp, c99_ast.Constant)
 

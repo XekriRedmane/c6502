@@ -1,104 +1,89 @@
 """Identifier resolution pass: c99_ast -> c99_ast.
 
 Resolves every user-written identifier — variables and function names
-both — to a form later passes can treat as unambiguous, and rejects
-references that don't match any declaration.
+both — to a form later passes can treat as unambiguous, rejects
+references that don't match any declaration, and tags every
+declaration with its C99 §6.2.2 linkage kind.
 
-Variables get program-uniquely renamed to `@<N>.<original>`, so later
-passes can flatten scope without re-implementing it. Function names
-are left alone: they have external linkage (C99 §6.2.2), so the
-linker resolves them by their original spelling, and two declarations
-of the same function name refer to the same code. If we renamed
-`int foo(void); foo();`, the call would no longer resolve to the
-user's actual `foo`.
+Linkage drives renaming: identifiers with NONE linkage get a program-
+unique `@<N>.<original>` rename so later passes can flatten scope
+without re-implementing it; INTERNAL- and EXTERNAL-linkage identifiers
+keep their source spelling because the linker (or later TU passes,
+for INTERNAL) resolves them by name. The `@<N>.<original>` scheme is
+collision-proof: `@` is illegal in a C identifier, so a resolved
+NONE-linkage name can never alias anything the user could write or
+any external symbol.
 
-The pass is named "identifier resolution" rather than "variable
-resolution" because it owns *both* identifier kinds — variables get
-the rename treatment, functions get the registration-and-validation
-treatment, and a `FunctionCall` to an undeclared name is one of the
-errors raised here. Naming it after just one half (variables) was a
-hangover from when the language only had variables.
+Linkage rules implemented (C99 §6.2.2)
+--------------------------------------
+File scope (top-level declarations):
+  * `static int x;` / `static int foo(...);`     → INTERNAL
+  * `extern int x;` / `extern int foo(...);`     → matches the linkage
+    of the prior visible declaration of the same name (INTERNAL or
+    EXTERNAL); EXTERNAL otherwise.
+  * `int x;`                                     → EXTERNAL (file-scope
+    object with no specifier — §6.2.2.5).
+  * `int foo(...);` / `int foo(...) { ... }`     → as if `extern` —
+    matches prior visible if any, else EXTERNAL (§6.2.2.5).
 
-Variables in the current language all have *no* linkage (every var
-declaration we accept today is a block-scope `int x;` — automatic
-storage, no `extern`/`static` keyword), so renaming them program-
-uniquely is safe. When file-scope or `extern`/`static` variables
-land, this pass widens to skip names with external/internal linkage,
-same as it already does for functions.
+Block scope:
+  * `int x;` / `static int x;`                   → NONE.
+    `static` at block scope changes storage duration, not linkage —
+    §6.2.2 still classifies "a block scope identifier for an object
+    declared without the storage-class specifier extern" as NONE.
+  * `extern int x;`                              → matches prior
+    visible declaration's linkage if it has any (INTERNAL/EXTERNAL),
+    else EXTERNAL. The "prior visible" lookup walks the current scope
+    chain — including the file-scope parent that's cloned into every
+    function body — so a block-scope `extern int x;` after a
+    file-scope `static int x;` correctly inherits INTERNAL.
+  * `int foo(...);` (function decl, no body)     → as if `extern` —
+    same prior-visible rule. `static` is not legal on a block-scope
+    function declaration (§6.2.2: "A function declaration can contain
+    the storage-class specifier static only if it is at file scope.").
+  * function parameter                           → NONE.
 
-The unique-name scheme is `@<N>.<original>`: `@` and `.` are both
-illegal in a C identifier, so a resolved name can never collide with
-anything the user could write. The leading counter guarantees
-uniqueness across the whole program.
+Renaming
+--------
+NONE-linkage names get `@<N>.<original>`, INTERNAL/EXTERNAL keep their
+source spelling. The unique-counter is bumped only on a rename, so
+EXTERNAL declarations sharing a name (e.g. `int foo(void); int
+foo(void) { ... }`) don't perturb the numbering.
 
-Errors (raised as `IdentifierResolutionError`):
-  - declaring the same *variable* name twice in the same block
-    (shadowing an outer block's name is fine — see scope semantics
-    below)
-  - referencing a variable name that hasn't been declared yet
-  - calling a function that hasn't been declared anywhere in the
-    program
-  - an Assignment whose lval isn't a `Var` (e.g. `1+2 = 3`,
-    `-a = 5`, `(a = b) = c`). The grammar intentionally accepts
-    these so a clear diagnostic can be produced here rather than a
-    cryptic syntax error. Note C's richer set of lvalues
-    (`*p = x`, `a[i] = x`, `s.f = x`) doesn't exist yet; when those
-    land, this check widens to "is-lvalue" rather than "is-Var".
+Errors raised (`IdentifierResolutionError`)
+-------------------------------------------
+  * declaring a NONE-linkage name twice in the same block
+  * declaring the same name twice in the same scope with different
+    linkages (a constraint violation per C99 §6.7 / §6.2.2 — e.g.
+    `static int x; int x;` at file scope)
+  * referencing a variable name that hasn't been declared
+  * calling a function that hasn't been declared anywhere visible
+  * `static` on a block-scope function declaration
+  * an Assignment / Postfix whose lval isn't a Var (when richer
+    lvalues land — `*p`, `a[i]`, `s.f` — this widens to an "is-
+    lvalue" predicate)
 
-Function declarations
----------------------
-A `FunctionDecl` block item registers its name in a per-program
-function-name set. Multiple declarations of the same function are
-legal — every one refers to the same code. Function declarations
-themselves carry their identifier through unchanged; the parameter
-names attached to the declaration (used by the future type-checking
-pass to validate calls) also pass through verbatim. The body slot
-on `function_decl` is unused at block scope (C99 forbids nested
-function definitions) — the parser leaves it as None.
+Two-pass walk over the program
+------------------------------
+A function body can call (or read) a name declared *later* at file
+scope — `int main(void) { return foo(); } int foo(void) { return 1; }`
+is well-formed. To keep that working we register every file-scope
+declaration's linkage in a first pass *before* descending into any
+body in a second pass. Both passes walk in source order so each
+declaration's linkage is computed against the visible-prior table at
+that point.
 
-Function definitions (top-level `Function(name, body)`) likewise
-register their name in the function-name set so `main()` can call
-itself or be referenced from another function. Definitions and
-declarations share one set: `int foo(void); ... int foo(void) { ...
-}` is two registrations of `foo`, same as two declarations.
-
-Duplicate *definitions* aren't this pass's problem — they're a
-type-checker concern (C99 §6.9). We just collect names and reject
-calls to names that nothing has declared.
-
-Scope semantics
+Scope structure
 ---------------
-Each block owns a `dict[str, tuple[str, bool, Linkage]]` mapping
-each visible *variable* name to `(resolved_name, inner, linkage)`
-where `inner` is True iff the name was declared in *this* block and
-`linkage` is the C99 §6.2.2 linkage kind for the declaration.
-Entering a nested block clones the parent's map and flips every
-entry's `inner` flag to False — so the inner block sees the outer
-block's variables but knows they weren't declared in it. Linkage
-rides along unchanged, since linkage is fixed at the declaration
-site.
-
-This makes the rules tiny:
-  - declaration: collide only against an already-inner-scoped entry.
-    An outer-scoped entry just means we're shadowing it — overwrite
-    with a fresh entry and flag it as inner. Renaming itself is
-    gated on linkage (NONE → mint `@<N>.<orig>`; INTERNAL/EXTERNAL →
-    keep the source spelling so the linker can find it).
-  - reference: `scope[name][0]` is the resolved name to use,
-    regardless of linkage or inner/outer.
-  - exit: the inner scope dict goes out of Python scope and is
-    discarded; the outer map is untouched (we cloned it, not aliased
-    it).
-
-So `int a; { int a; }` resolves the inner `a` to a fresh `@N.a`
-distinct from the outer one; `int a; int a;` (same block) raises;
-and `int a; { a = 1; }` resolves the inner-block reference to the
-outer `a`'s unique name.
-
-Function names go in a separate per-program table (`_functions`)
-keyed by source name and carrying the linkage kind. Today every
-entry is `Linkage.EXTERNAL`, but the dict shape is right for
-`static int foo(void);` once the storage-class specifier lands.
+A `_Scope` is `dict[str, tuple[str, bool, Linkage]]` mapping each
+visible name to `(resolved_name, inner, linkage)`. `inner` is True iff
+the binding was introduced in the *current* block. Entering a nested
+block clones the parent and flips every entry's `inner` flag to False.
+The file-scope identifier table seeds the per-function body's scope
+the same way: every entry from `_file_scope` arrives as outer-scoped,
+and any function-body or block-scope declaration that shadows it gets
+its own inner-scoped entry. This is what makes the prior-visible rule
+fall out cleanly from `scope.get(name)`.
 
 The pass builds a new AST rather than mutating in place. Stateless
 nodes (operators, `Null`) could safely be shared, but we allocate
@@ -118,25 +103,25 @@ class Linkage(Enum):
     one of these, fixed at its declaration site:
 
       - NONE: identifier names a unique entity each time the
-        declaration is reached. Block-scope automatic variables (the
-        only variables we accept today) are NONE-linkage.
+        declaration is reached. Block-scope automatic variables and
+        block-scope `static` objects (storage duration changes but
+        linkage doesn't), function parameters, and "anything other
+        than an object or a function" all carry NONE linkage.
       - INTERNAL: identifier denotes the same object/function within
-        a translation unit. Produced by `static` at file scope (not
-        yet supported).
+        a translation unit. Produced by `static` at file scope, and
+        inherited by an `extern` redeclaration of an internally-linked
+        prior decl.
       - EXTERNAL: identifier denotes the same object/function across
         all translation units the program is linked from. Produced by
-        a function declaration / definition (always, today) or by an
-        `extern` declaration (not yet supported).
+        any file-scope object declaration without a specifier, by any
+        function declaration without a specifier, and (often) by
+        `extern` declarations.
 
     Renaming is keyed off linkage rather than "is it a function":
-    NONE-linkage names are renamed to globally-unique `@<N>.<orig>`
-    strings; INTERNAL and EXTERNAL names keep their original spelling
-    because the linker (or later TU passes, for INTERNAL) must be able
-    to find them by name. Today every variable we see is NONE and
-    every function is EXTERNAL, so the behavior matches the simpler
-    "rename variables, leave functions alone" rule — but storing the
-    linkage explicitly lets `extern`/`static` slot in cleanly when
-    they land.
+    NONE-linkage names get globally-unique `@<N>.<orig>` strings;
+    INTERNAL and EXTERNAL names keep their original spelling because
+    the linker (or later TU passes, for INTERNAL) must be able to find
+    them by name.
     """
     NONE = "none"
     INTERNAL = "internal"
@@ -153,109 +138,243 @@ class IdentifierResolutionError(Exception):
     """Raised for duplicate declarations or uses of undeclared names."""
 
 
+def _storage_is(sc, kind):
+    """True iff the storage-class node is of the given kind class
+    (`c99_ast.Static` / `c99_ast.Extern`). `None` matches nothing."""
+    return sc is not None and isinstance(sc, kind)
+
+
 class Resolver:
-    """Holds the unique-name counter and the program-wide function
-    table. One Resolver per program; each *NONE-linkage* declaration
-    bumps the counter, and every function declaration / definition
-    registers a name with its linkage. Module-level `resolve_*`
-    wrappers build a fresh Resolver per call."""
+    """Holds the unique-name counter and the file-scope identifier
+    table. One Resolver per program; each NONE-linkage declaration
+    bumps the counter, and every file-scope declaration registers a
+    name with its computed linkage. Module-level `resolve_*` wrappers
+    build a fresh Resolver per call."""
 
     def __init__(self) -> None:
         self._counter = 0
-        # Functions visible somewhere in the program, keyed by
-        # original name and carrying the linkage kind for the
-        # declaration. Today every function is EXTERNAL, but the
-        # dict is the right shape for `static int foo(void);` (which
-        # would land here as INTERNAL). Populated by top-level
-        # function definitions and by `FunctionDecl` block items;
-        # used to validate `FunctionCall` targets.
-        self._functions: dict[str, Linkage] = {}
+        # File-scope ordinary identifiers (objects + functions —
+        # they share one C namespace). Maps source name to
+        # (resolved_name, linkage). Resolved name == source name for
+        # every entry here, because file-scope identifiers are always
+        # INTERNAL or EXTERNAL and aren't renamed; carrying it
+        # explicitly keeps the shape uniform with the per-block
+        # `_Scope` so the same lookup-and-shadow logic works for both.
+        # Populated by the first pass over `Program.declaration`;
+        # consumed when seeding each function body's outer scope and
+        # when validating top-level Var / FunctionCall references.
+        self._file_scope: dict[str, tuple[str, Linkage]] = {}
 
     def make_unique(self, original: str) -> str:
         name = f"@{self._counter}.{original}"
         self._counter += 1
         return name
 
+    # ------------------------------------------------------------------
+    # Top-level program walk
+    # ------------------------------------------------------------------
+
     def resolve_program(
         self, prog: c99_ast.Type_program,
     ) -> c99_ast.Type_program:
         match prog:
-            case c99_ast.Program(function_definition=fns):
-                # Pre-register every top-level function definition's
-                # name so a call inside one function can target
-                # another function defined later in the file. Without
-                # this pre-pass, forward calls would fail "undeclared
-                # function" because we hadn't yet visited the
-                # definition. Block-scope `FunctionDecl` items are
-                # registered as we encounter them during the walk.
-                for fn in fns:
-                    self._register_function_definition(fn)
-                return c99_ast.Program(function_definition=[
-                    self.resolve_function(fn) for fn in fns
+            case c99_ast.Program(declaration=decls):
+                # Pass 1: walk every file-scope declaration in source
+                # order, computing each one's linkage against the
+                # already-registered prior decls and recording it in
+                # `_file_scope`. This *only* populates the file-scope
+                # table — it doesn't recurse into bodies or
+                # initializers, so a body in any function can later
+                # reference a global / function declared further down
+                # in the file.
+                for d in decls:
+                    self._register_file_scope(d)
+                # Pass 2: walk each declaration again, this time
+                # resolving initializers, bodies, and parameter scopes.
+                return c99_ast.Program(declaration=[
+                    self._resolve_file_scope_decl(d) for d in decls
                 ])
         raise TypeError(f"unexpected program: {prog!r}")
 
-    def _register_function_definition(
-        self, fn: c99_ast.Type_function_definition,
-    ) -> None:
-        # Idempotent — duplicate registrations of the same name are
-        # legal (multiple decls / decls plus a definition all refer
-        # to the same external symbol). Duplicate-*definition*
-        # detection is a type-checker concern, not ours. All function
-        # definitions today have external linkage; once `static`
-        # lands at file scope, it'll downgrade this to INTERNAL.
-        match fn:
-            case c99_ast.Function(name=name):
-                self._functions[name] = Linkage.EXTERNAL
-                return
-        raise TypeError(f"unexpected function: {fn!r}")
+    # ------------------------------------------------------------------
+    # File-scope linkage determination
+    # ------------------------------------------------------------------
 
-    def resolve_function(
-        self, fn: c99_ast.Type_function_definition,
-    ) -> c99_ast.Type_function_definition:
-        match fn:
-            case c99_ast.Function(name=name, params=params, body=body):
-                # C99 §6.9.1.7: parameters and the function body's
-                # outermost local variables share one scope. So we
-                # build the param scope here and process the body's
-                # block items directly into it (no clone-flip), so a
-                # body decl that reuses a param name raises duplicate-
-                # decl. Compound statements *inside* the body do open
-                # nested scopes via the usual resolve_block path.
-                #
-                # The unique-name counter keeps running across
-                # functions so resolved names stay globally unique
-                # and a call in one function can target a function
-                # declared elsewhere.
-                new_params, scope = self._resolve_params(params)
-                match body:
-                    case c99_ast.Block(block_item=items):
-                        new_body = c99_ast.Block(block_item=[
-                            self.resolve_block_item(item, scope)
-                            for item in items
-                        ])
-                    case _:
-                        raise TypeError(f"unexpected body: {body!r}")
-                return c99_ast.Function(
-                    name=name, params=new_params, body=new_body,
+    def _register_file_scope(
+        self, decl: c99_ast.Type_declaration,
+    ) -> None:
+        match decl:
+            case c99_ast.VarDecl(var_decl=vd):
+                linkage = self._file_scope_object_linkage(
+                    vd.name, vd.storage_class,
                 )
-        raise TypeError(f"unexpected function: {fn!r}")
+                self._record_file_scope(vd.name, linkage)
+            case c99_ast.FunctionDecl(function_decl=fd):
+                linkage = self._file_scope_function_linkage(
+                    fd.name, fd.storage_class,
+                )
+                self._record_file_scope(fd.name, linkage)
+            case _:
+                raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _file_scope_object_linkage(
+        self,
+        name: str,
+        storage_class: c99_ast.Type_storage_class | None,
+    ) -> Linkage:
+        # File-scope object linkage (C99 §6.2.2.3 / §6.2.2.4 / §6.2.2.5):
+        #   static  → INTERNAL
+        #   extern  → match prior visible (INTERNAL or EXTERNAL); else EXTERNAL
+        #   none    → EXTERNAL (file-scope objects without a specifier
+        #             have external linkage)
+        if _storage_is(storage_class, c99_ast.Static):
+            return Linkage.INTERNAL
+        if _storage_is(storage_class, c99_ast.Extern):
+            return self._extern_inherited_linkage(self._file_scope.get(name))
+        return Linkage.EXTERNAL
+
+    def _file_scope_function_linkage(
+        self,
+        name: str,
+        storage_class: c99_ast.Type_storage_class | None,
+    ) -> Linkage:
+        # File-scope function linkage (§6.2.2.3 / §6.2.2.5):
+        #   static  → INTERNAL
+        #   extern  → match prior visible; else EXTERNAL
+        #   none    → as if extern: match prior visible; else EXTERNAL
+        if _storage_is(storage_class, c99_ast.Static):
+            return Linkage.INTERNAL
+        return self._extern_inherited_linkage(self._file_scope.get(name))
+
+    @staticmethod
+    def _extern_inherited_linkage(
+        prior: tuple[str, Linkage] | None,
+    ) -> Linkage:
+        """Apply the C99 §6.2.2.4 rule: an `extern` (or no-specifier
+        function) declaration takes its linkage from the prior visible
+        declaration if that prior has linkage; otherwise EXTERNAL."""
+        if prior is not None and prior[1] in (
+            Linkage.INTERNAL, Linkage.EXTERNAL,
+        ):
+            return prior[1]
+        return Linkage.EXTERNAL
+
+    def _record_file_scope(self, name: str, linkage: Linkage) -> None:
+        # File-scope identifiers aren't renamed (linker uses the
+        # source spelling), so resolved_name == name. Reject a
+        # change-of-linkage redeclaration; a same-linkage redeclaration
+        # is idempotent and legal (the multi-decl case for both
+        # functions and tentative-definition objects).
+        prior = self._file_scope.get(name)
+        if prior is not None and prior[1] != linkage:
+            # C99 §6.2.2.7 says this is undefined behavior, but we have
+            # the visibility to give a clean diagnostic, so we do.
+            raise IdentifierResolutionError(
+                f"file-scope identifier {name!r} declared with "
+                f"{linkage.value} linkage after a prior "
+                f"{prior[1].value} declaration"
+            )
+        self._file_scope[name] = (name, linkage)
+
+    # ------------------------------------------------------------------
+    # Pass 2: resolve each top-level declaration's body / initializer
+    # ------------------------------------------------------------------
+
+    def _resolve_file_scope_decl(
+        self, decl: c99_ast.Type_declaration,
+    ) -> c99_ast.Type_declaration:
+        match decl:
+            case c99_ast.VarDecl(var_decl=vd):
+                # File-scope objects keep their source name (linkage is
+                # never NONE here). The initializer (if any) resolves
+                # against the file-scope table — references to other
+                # globals/functions are valid because everything has
+                # already been registered in pass 1.
+                seed_scope = self._file_scope_seed()
+                new_init = (
+                    self.resolve_exp(vd.init, seed_scope)
+                    if vd.init is not None else None
+                )
+                return c99_ast.VarDecl(
+                    var_decl=c99_ast.Type_var_decl(
+                        name=vd.name,
+                        init=new_init,
+                        storage_class=vd.storage_class,
+                    ),
+                )
+            case c99_ast.FunctionDecl(function_decl=fd):
+                return c99_ast.FunctionDecl(
+                    function_decl=self._resolve_function_decl(
+                        fd, file_scope=True,
+                    ),
+                )
+        raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _file_scope_seed(self) -> _Scope:
+        """Build a `_Scope` view of the file-scope table for use as the
+        outer scope of a function body or as the lookup scope for a
+        file-scope variable's initializer. Every entry comes through
+        as outer-scoped (inner=False) so block declarations can
+        legally shadow it."""
+        return {
+            name: (resolved, False, link)
+            for name, (resolved, link) in self._file_scope.items()
+        }
+
+    # ------------------------------------------------------------------
+    # Function declarations and definitions (file or block scope)
+    # ------------------------------------------------------------------
+
+    def _resolve_function_decl(
+        self,
+        fd: c99_ast.Type_function_decl,
+        *,
+        file_scope: bool,
+    ) -> c99_ast.Type_function_decl:
+        """Resolve a `function_decl` (forward declaration *or* function
+        definition — they're the same shape in c99_ast, distinguished
+        by whether `body` is None). Used for both file-scope and
+        block-scope function declarations; `file_scope` only affects
+        whether the function body's outermost scope is seeded from
+        `_file_scope` (definitions only appear at file scope today;
+        the flag is a future-proofing courtesy)."""
+        new_params, param_scope = self._resolve_params(fd.params)
+        new_body: c99_ast.Type_block | None
+        if fd.body is None:
+            new_body = None
+        else:
+            # C99 §6.9.1.7: parameters share the body's outermost scope
+            # (so an outer-block decl that reuses a param name is a
+            # duplicate-decl error). Combine the file-scope parent with
+            # the param scope to form the body's seed scope. A param
+            # in the param scope shadows any same-named file-scope
+            # entry in the seed (which is fine — params have NONE
+            # linkage, file-scope entries have EXTERNAL/INTERNAL, and
+            # the param value wins for the shadow).
+            seed: _Scope = self._file_scope_seed() if file_scope else {}
+            for p_orig, p_resolved in zip(fd.params, new_params):
+                seed[p_orig] = (p_resolved, True, Linkage.NONE)
+            match fd.body:
+                case c99_ast.Block(block_item=items):
+                    new_body = c99_ast.Block(block_item=[
+                        self.resolve_block_item(item, seed)
+                        for item in items
+                    ])
+                case _:
+                    raise TypeError(f"unexpected body: {fd.body!r}")
+        return c99_ast.Type_function_decl(
+            name=fd.name,
+            params=new_params,
+            body=new_body,
+            storage_class=fd.storage_class,
+        )
 
     def _resolve_params(
         self, params: list[str],
     ) -> tuple[list[str], _Scope]:
         """Validate parameter-name uniqueness and rename each param to
         a fresh `@<N>.<orig>`. Returns the renamed names (in order)
-        and the scope dict the params populate.
-
-        Same shape as resolving a list of NONE-linkage variable
-        declarations: each param is added to a fresh scope as
-        inner=True; a duplicate raises. Used by both `FunctionDecl`
-        (where the returned scope is discarded — the param scope
-        dies at the end of the declarator) and by function
-        definitions (where the returned scope IS the body's outer
-        scope, per C99 §6.9.1.7).
-        """
+        and the param scope dict."""
         scope: _Scope = {}
         renamed: list[str] = []
         for original in params:
@@ -268,6 +387,10 @@ class Resolver:
             renamed.append(unique)
         return renamed, scope
 
+    # ------------------------------------------------------------------
+    # Block-scope declarations
+    # ------------------------------------------------------------------
+
     def resolve_block(
         self,
         block: c99_ast.Type_block,
@@ -275,11 +398,7 @@ class Resolver:
     ) -> c99_ast.Type_block:
         # Entering a new block: clone the parent scope, flipping every
         # entry's inner-scoped flag to False. Linkage tags ride along
-        # unchanged — an identifier's linkage is fixed at its
-        # declaration site, not by which block it's visible in. The
-        # resulting `local` scope is what the block's items resolve
-        # in; it goes out of scope (and so is discarded) when this
-        # method returns, leaving `parent_scope` untouched.
+        # unchanged.
         local: _Scope = {
             name: (resolved, False, link)
             for name, (resolved, _, link) in parent_scope.items()
@@ -314,41 +433,97 @@ class Resolver:
     ) -> c99_ast.Type_declaration:
         match decl:
             case c99_ast.VarDecl(var_decl=vd):
-                # Block-scope `int x;` — the only variable form we
-                # accept today — is automatic storage with NONE
-                # linkage. When `extern` / `static` declarators land,
-                # this is where the storage-class specifier maps to
-                # INTERNAL or EXTERNAL and `resolve_var_decl` skips
-                # the rename for non-NONE linkage.
+                linkage = self._block_scope_object_linkage(vd, scope)
                 return c99_ast.VarDecl(
-                    var_decl=self.resolve_var_decl(vd, scope, Linkage.NONE),
+                    var_decl=self.resolve_var_decl(vd, scope, linkage),
                 )
             case c99_ast.FunctionDecl(function_decl=fd):
-                # Function declarations have external linkage today —
-                # the linker resolves them by their original spelling,
-                # so we leave the function *name* alone and just
-                # register it. Multiple declarations of the same
-                # function are legal (each refers to the same external
-                # symbol). Parameter names get the same treatment as
-                # local variables: validate uniqueness within the
-                # parameter list, mint a `@<N>.<orig>` unique name for
-                # each, and replace the originals in the AST. The
-                # param scope built up during this is discarded — for
-                # a body-less declaration the params have nowhere to
-                # be looked up. (For a definition, the param scope
-                # *is* the body's outer scope; see `resolve_function`.)
-                # `int a; int foo(int a);` is legal because the param
-                # scope is independent of the surrounding block scope.
-                self._functions[fd.name] = Linkage.EXTERNAL
-                new_params, _ = self._resolve_params(fd.params)
+                linkage = self._block_scope_function_linkage(fd, scope)
+                # Stash the block-scope function declaration in the
+                # current scope under its source name and EXTERNAL/
+                # INTERNAL linkage. References (Var / FunctionCall) in
+                # the same scope chain see it; an inner block can
+                # shadow it just like any other identifier.
+                self._record_block_decl(fd.name, fd.name, linkage, scope)
+                # The param names get the same NONE-linkage treatment
+                # as variables, but in their own scope — the scope is
+                # discarded after this method returns (a block-scope
+                # decl has no body). `_resolve_function_decl` does
+                # both jobs.
                 return c99_ast.FunctionDecl(
-                    function_decl=c99_ast.Type_function_decl(
-                        name=fd.name,
-                        params=new_params,
-                        body=fd.body,
+                    function_decl=self._resolve_function_decl(
+                        fd, file_scope=False,
                     ),
                 )
         raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _block_scope_object_linkage(
+        self,
+        vd: c99_ast.Type_var_decl,
+        scope: _Scope,
+    ) -> Linkage:
+        # Block-scope object linkage (§6.2.2.4 / §6.2.2.6):
+        #   extern → prior-visible rule; else EXTERNAL
+        #   else   → NONE (including `static`, which only changes
+        #            storage duration, not linkage)
+        if _storage_is(vd.storage_class, c99_ast.Extern):
+            prior = scope.get(vd.name)
+            prior_link = prior[2] if prior is not None else None
+            if prior_link in (Linkage.INTERNAL, Linkage.EXTERNAL):
+                return prior_link
+            return Linkage.EXTERNAL
+        return Linkage.NONE
+
+    def _block_scope_function_linkage(
+        self,
+        fd: c99_ast.Type_function_decl,
+        scope: _Scope,
+    ) -> Linkage:
+        # Block-scope function declaration (§6.2.2.5):
+        #   no specifier → as if `extern`: prior-visible rule
+        #   extern       → same prior-visible rule
+        #   static       → forbidden at block scope (§6.2.2: "A
+        #                  function declaration can contain the
+        #                  storage-class specifier static only if it
+        #                  is at file scope")
+        if _storage_is(fd.storage_class, c99_ast.Static):
+            raise IdentifierResolutionError(
+                f"static is not allowed on a block-scope function "
+                f"declaration: {fd.name!r}"
+            )
+        prior = scope.get(fd.name)
+        prior_link = prior[2] if prior is not None else None
+        if prior_link in (Linkage.INTERNAL, Linkage.EXTERNAL):
+            return prior_link
+        return Linkage.EXTERNAL
+
+    def _record_block_decl(
+        self,
+        original: str,
+        resolved: str,
+        linkage: Linkage,
+        scope: _Scope,
+    ) -> None:
+        """Add a block-scope binding to `scope`, raising on an
+        incompatible same-block redeclaration. Callers compute the
+        resolved name (for NONE-linkage) or pass the source name
+        (for INTERNAL/EXTERNAL)."""
+        existing = scope.get(original)
+        if existing is not None and existing[1]:
+            # Same-block redeclaration. Allowed only when both old and
+            # new have non-NONE linkage that matches — that's the
+            # "two declarations of the same external object/function"
+            # case. Anything else (NONE-NONE, NONE-EXTERNAL, etc.) is
+            # a constraint violation.
+            existing_link = existing[2]
+            if existing_link != linkage or linkage is Linkage.NONE:
+                raise IdentifierResolutionError(
+                    f"duplicate declaration of {original!r}"
+                )
+            # Same external symbol redeclared — keep the existing
+            # entry (resolved name and inner flag don't change).
+            return
+        scope[original] = (resolved, True, linkage)
 
     def resolve_var_decl(
         self,
@@ -358,44 +533,40 @@ class Resolver:
     ) -> c99_ast.Type_var_decl:
         match vd:
             case c99_ast.Type_var_decl(name=name, init=init):
-                # Duplicate-check fires only when an already-inner-
-                # scoped entry would be overwritten — i.e. two
-                # declarations of the same name in the *same* block.
-                # An outer-scoped entry is the parent's binding
-                # bleeding through; declaring `name` here legally
-                # shadows it.
-                # (When linked redeclarations land — `extern int x;`
-                # twice in one block, both EXTERNAL — this rule will
-                # need to permit the second one if the linkages
-                # agree. Today the only declarable form is NONE-
-                # linkage, so the rule stays "any same-block redecl
-                # raises".)
-                existing = scope.get(name)
-                if existing is not None and existing[1]:
-                    raise IdentifierResolutionError(
-                        f"duplicate declaration of {name!r}"
-                    )
-                # Renaming is gated on linkage: NONE-linkage gets a
-                # fresh `@<N>.<orig>`; INTERNAL/EXTERNAL keep the
-                # source spelling because the linker (or later TU
-                # passes, for INTERNAL) needs to find them by name.
+                # Renaming is gated on linkage: NONE → fresh
+                # `@<N>.<orig>`; INTERNAL/EXTERNAL → keep source
+                # spelling.
                 if linkage is Linkage.NONE:
                     resolved = self.make_unique(name)
                 else:
                     resolved = name
                 # Bind before resolving the initializer so `int a = a;`
-                # resolves to the new `a` (self-initialization — UB in
-                # C, but syntactically the identifier on the RHS refers
-                # to the one being declared). Importantly this also
-                # means a shadowing decl's initializer can *not* see
-                # the outer `a` — `int a = 5; { int a = a; }` reads
-                # the inner uninitialized `a`, matching C's rule.
-                scope[name] = (resolved, True, linkage)
+                # resolves to the new binding (matches C's rule that
+                # `a` on the RHS refers to the one being declared,
+                # even though the read of an uninitialized object is
+                # UB at runtime). The same rule lets a shadowing
+                # decl's initializer NOT see the outer binding —
+                # `int a = 5; { int a = a; }` reads the inner
+                # uninitialized `a`.
+                self._record_block_decl(name, resolved, linkage, scope)
+                # `extern int x = ...;` is a tentative-definition / one-
+                # def-rule concern best handled by the type checker; we
+                # let the initializer resolve normally.
                 new_init = (
                     self.resolve_exp(init, scope) if init is not None else None
                 )
-                return c99_ast.Type_var_decl(name=resolved, init=new_init)
+                return c99_ast.Type_var_decl(
+                    name=resolved,
+                    init=new_init,
+                    storage_class=vd.storage_class,
+                )
         raise TypeError(f"unexpected var_decl: {vd!r}")
+
+    # ------------------------------------------------------------------
+    # Statements and expressions (mostly unchanged from before — only
+    # the file-scope identifier lookup and the matching-on-c99_ast.Var
+    # branch differ from the per-block scope logic).
+    # ------------------------------------------------------------------
 
     def resolve_statement(
         self,
@@ -410,11 +581,6 @@ class Resolver:
             case c99_ast.IfStmt(
                 condition=cond, then_clause=then_stmt, else_clause=else_stmt,
             ):
-                # `if (cond) stmt [else stmt]` — neither branch is its
-                # own block in C99 §6.8.4. Only when a branch is itself
-                # a Compound statement does a new scope open, and that
-                # case is handled by the Compound branch below when
-                # the recursion descends into it.
                 return c99_ast.IfStmt(
                     condition=self.resolve_exp(cond, scope),
                     then_clause=self.resolve_statement(then_stmt, scope),
@@ -424,15 +590,10 @@ class Resolver:
                     ),
                 )
             case c99_ast.Compound(block=block):
-                # `{ ... }` opens a new lexical scope (C99 §6.8.3).
-                # `resolve_block` does the clone-and-flag-outer dance.
                 return c99_ast.Compound(
                     block=self.resolve_block(block, scope),
                 )
             case c99_ast.Goto(label=label):
-                # Labels live in their own namespace — variable
-                # resolution doesn't touch them. label_resolution
-                # owns the validity / uniqueness check.
                 return c99_ast.Goto(label=label)
             case c99_ast.LabeledStmt(label=label, statement=inner):
                 return c99_ast.LabeledStmt(
@@ -440,18 +601,12 @@ class Resolver:
                     statement=self.resolve_statement(inner, scope),
                 )
             case c99_ast.BreakStmt(label=label):
-                # Loop labels live in their own namespace and are minted
-                # by the loop_labeling pass — pass through here.
                 return c99_ast.BreakStmt(label=label)
             case c99_ast.ContinueStmt(label=label):
                 return c99_ast.ContinueStmt(label=label)
             case c99_ast.WhileStmt(
                 condition=cond, body=body, label=label,
             ):
-                # `while (cond) body` doesn't introduce its own
-                # variable scope (no place to declare in the header).
-                # If `body` is a Compound, that opens its own scope via
-                # the Compound branch — same story as IfStmt.
                 return c99_ast.WhileStmt(
                     condition=self.resolve_exp(cond, scope),
                     body=self.resolve_statement(body, scope),
@@ -470,18 +625,9 @@ class Resolver:
                 body=body, label=label,
             ):
                 # C99 §6.8.5.3: the for-header opens its own block-
-                # scope, and the controlling expression, post-iteration
-                # expression, and body all live in that scope. So a
-                # `for (int a = 1; ...; ...) ...` shadows any outer
-                # `a` for the duration of the loop, and the inner `a`
-                # is visible in the condition / post / body.
-                #
-                # Mechanics match Compound: clone the parent scope and
-                # flip all entries to outer-scoped so a header
-                # declaration of an outer name is allowed (legal
-                # shadow), then resolve init/cond/post/body all in
-                # that cloned scope. The body's own scope (if it is a
-                # Compound) opens via the Compound branch.
+                # scope. Mechanics match Compound: clone the parent
+                # scope flipping all entries to outer-scoped, then
+                # resolve init/cond/post/body in the clone.
                 for_scope: _Scope = {
                     n: (resolved, False, link)
                     for n, (resolved, _, link) in scope.items()
@@ -512,14 +658,17 @@ class Resolver:
         init: c99_ast.Type_for_init,
         scope: _Scope,
     ) -> c99_ast.Type_for_init:
-        # InitDecl runs through resolve_var_decl so duplicate-decl and
-        # shadowing rules apply uniformly. C99 §6.8.5 forbids function
-        # declarations in for-init, and the AST reflects that — InitDecl
-        # carries `var_decl`, not the wider `declaration` sum.
-        # InitExp is just an optional expression, evaluated in the for-
-        # header scope so any prior outer name is visible.
         match init:
             case c99_ast.InitDecl(var_decl=vd):
+                # C99 §6.8.5.3: the for-init is restricted to a *non-
+                # extern, non-static* declaration. Reject either
+                # storage class up front so the resolver doesn't
+                # silently accept ill-formed C.
+                if vd.storage_class is not None:
+                    raise IdentifierResolutionError(
+                        f"storage-class specifier not allowed on a "
+                        f"for-init declaration: {vd.name!r}"
+                    )
                 return c99_ast.InitDecl(
                     var_decl=self.resolve_var_decl(vd, scope, Linkage.NONE),
                 )
@@ -536,22 +685,14 @@ class Resolver:
             case c99_ast.Constant(value=v):
                 return c99_ast.Constant(value=v)
             case c99_ast.Var(name=name):
-                # Variables and functions share a single ordinary-
-                # identifier namespace in C, so we look up the name
-                # in both the per-block variable scope and the
-                # program-wide function table. A hit in the variable
-                # scope returns the renamed name; a hit in the
-                # function table returns the original name unchanged
-                # (its EXTERNAL linkage forbids renaming). Either way
-                # the type-checking pass decides whether using the
-                # name in a Var context is legal — `int foo(void);
-                # return foo;` is a "function used as a variable"
-                # type error, not a name-resolution error, so we let
-                # it through to the right diagnostic.
+                # Variables and functions share one C namespace, so a
+                # single lookup in the per-block scope is enough — file-
+                # scope entries arrive there too via the seed clone, and
+                # block-scope function decls live in the same map. The
+                # type checker decides whether using the name in a Var
+                # context is legal; we just hand off the resolved name.
                 if name in scope:
                     return c99_ast.Var(name=scope[name][0])
-                if name in self._functions:
-                    return c99_ast.Var(name=name)
                 raise IdentifierResolutionError(
                     f"undeclared identifier {name!r}"
                 )
@@ -566,14 +707,6 @@ class Resolver:
                     right=self.resolve_exp(right, scope),
                 )
             case c99_ast.Assignment(lval=lval, rval=rval):
-                # The grammar accepts any expression on the LHS so we
-                # can produce a clear diagnostic here. Today the only
-                # legal lval is a plain identifier — when pointer
-                # deref / array index / struct field land, widen this
-                # check. Checked pre-resolution: resolution preserves
-                # node shape, so the check would be equivalent either
-                # way, but checking first avoids the pointless descent
-                # into an invalid LHS.
                 if not isinstance(lval, c99_ast.Var):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in assignment: {lval!r}"
@@ -593,12 +726,6 @@ class Resolver:
                     false_clause=self.resolve_exp(false_clause, scope),
                 )
             case c99_ast.Postfix(op=op, operand=operand):
-                # Same lvalue rule as Assignment: postfix `a++` /
-                # `a--` mutates its operand, so the operand has to
-                # name a storage location. Prefix `++a` / `--a` is
-                # already desugared to an Assignment by the parser,
-                # so the Assignment branch above catches its lvalue
-                # check.
                 if not isinstance(operand, c99_ast.Var):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in postfix: {operand!r}"
@@ -607,18 +734,12 @@ class Resolver:
                     op=op, operand=self.resolve_exp(operand, scope),
                 )
             case c99_ast.FunctionCall(name=name, args=args):
-                # Same dual lookup as `Var`: prefer the function
-                # table (the common case for legal calls), but fall
-                # back to the variable scope so that `int x; x();`
-                # reaches the type checker with a "variable called
-                # as a function" diagnostic instead of a misleading
-                # "undeclared" here. A truly undeclared name (in
-                # neither namespace) still raises locally.
+                # Same single-namespace lookup as Var. The call is
+                # syntactically legal as long as the name is declared
+                # (block scope, file scope, or as an inherited file-
+                # scope entry); the type checker enforces "the name
+                # actually denotes a function".
                 new_args = [self.resolve_exp(a, scope) for a in args]
-                if name in self._functions:
-                    return c99_ast.FunctionCall(
-                        name=name, args=new_args,
-                    )
                 if name in scope:
                     return c99_ast.FunctionCall(
                         name=scope[name][0], args=new_args,
@@ -636,9 +757,29 @@ def resolve_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:
 def resolve_function(
     fn: c99_ast.Type_function_definition,
 ) -> c99_ast.Type_function_definition:
-    # Pre-register the function's own name so it can recurse, then
-    # walk its body. Mostly useful for unit tests that exercise a
-    # single function in isolation.
-    r = Resolver()
-    r._register_function_definition(fn)
-    return r.resolve_function(fn)
+    """Test convenience: resolve a single function in isolation.
+
+    The c99 AST top-level shape is `Program(declaration*)` now, with
+    function definitions encoded as `FunctionDecl(function_decl=...,
+    body=Block(...))`. The legacy `Function(...)` node is still
+    declared in `c99_ast` but no longer produced by the parser. This
+    wrapper accepts a `Function` node, threads it through
+    `resolve_program` as a one-element program, and unwraps the
+    resolved function back into the legacy shape so existing unit
+    tests don't have to construct full Programs by hand."""
+    fd = c99_ast.Type_function_decl(
+        name=fn.name,
+        params=list(fn.params),
+        body=fn.body,
+        storage_class=None,
+    )
+    prog = c99_ast.Program(declaration=[
+        c99_ast.FunctionDecl(function_decl=fd),
+    ])
+    resolved = Resolver().resolve_program(prog)
+    new_fd = resolved.declaration[0].function_decl
+    return c99_ast.Function(
+        name=new_fd.name,
+        params=list(new_fd.params),
+        body=new_fd.body,
+    )

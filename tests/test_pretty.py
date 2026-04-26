@@ -25,27 +25,33 @@ class TestPretty(unittest.TestCase):
         self.assertEqual(pretty(Empty()), "Empty()")
 
     def test_nested_ast(self):
-        # `function_definition` is a list, so pretty-print walks into
-        # a list-of-Function and indents one level deeper. Function
-        # also carries `params` (a list of strings, empty here for
-        # `void`), which appears between `name` and `body`.
+        # `Program.declaration` is a list, so pretty-print walks into
+        # a list-of-FunctionDecl and indents one level deeper.
+        # `Type_function_decl` carries `params` (empty here for
+        # `void`), `body`, and `storage_class`.
         node = c99_ast.Program(
-            function_definition=[c99_ast.Function(
-                name="main",
-                params=[],
-                body=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+            declaration=[c99_ast.FunctionDecl(
+                function_decl=c99_ast.Type_function_decl(
+                    name="main",
+                    params=[],
+                    body=c99_ast.Return(exp=c99_ast.Constant(value=0)),
+                    storage_class=None,
+                ),
             )],
         )
         expected = textwrap.dedent("""\
             Program(
-              function_definition=[
-                Function(
-                  name='main',
-                  params=[],
-                  body=Return(
-                    exp=Constant(
-                      value=0,
+              declaration=[
+                FunctionDecl(
+                  function_decl=Type_function_decl(
+                    name='main',
+                    params=[],
+                    body=Return(
+                      exp=Constant(
+                        value=0,
+                      ),
                     ),
+                    storage_class=None,
                   ),
                 ),
               ],
@@ -88,14 +94,18 @@ class TestPretty(unittest.TestCase):
 
     def test_output_is_valid_python(self):
         node = c99_ast.Program(
-            function_definition=[c99_ast.Function(
-                name="main",
-                body=c99_ast.Return(exp=c99_ast.Constant(value=42)),
+            declaration=[c99_ast.FunctionDecl(
+                function_decl=c99_ast.Type_function_decl(
+                    name="main",
+                    body=c99_ast.Return(exp=c99_ast.Constant(value=42)),
+                    storage_class=None,
+                ),
             )],
         )
         ns = {
             "Program": c99_ast.Program,
-            "Function": c99_ast.Function,
+            "FunctionDecl": c99_ast.FunctionDecl,
+            "Type_function_decl": c99_ast.Type_function_decl,
             "Return": c99_ast.Return,
             "Constant": c99_ast.Constant,
         }

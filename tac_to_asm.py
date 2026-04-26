@@ -138,25 +138,37 @@ class Translator:
     def translate_program(
         self, prog: tac_ast.Type_program,
     ) -> asm_ast.Type_program:
-        # Both sides plural now: each TAC function lowers to one asm
-        # function. The Translator instance is shared across all
-        # functions in the program so its label counter (used by the
-        # comparison + unary-not lowerings) keeps minting globally
-        # unique labels — `.cmp_neg@7` for the first function won't
-        # collide with `.cmp_neg@8` in the next.
+        # The TAC program shape is `Program(top_level*)`, where
+        # `top_level` is either `Function` or `StaticVariable`. The
+        # asm shape mirrors it 1:1: each TAC `Function` lowers to an
+        # asm `Function`, each TAC `StaticVariable` rides through to
+        # an asm `StaticVariable` unchanged (asm_emit handles the
+        # `name dc.b $XX` rendering). The Translator instance is
+        # shared across all functions so its label counter (used by
+        # the comparison + unary-not lowerings) keeps minting globally
+        # unique labels.
         match prog:
-            case tac_ast.Program(function_definition=fns):
-                return asm_ast.Program(function_definition=[
-                    self.translate_function(fn) for fn in fns
-                ])
+            case tac_ast.Program(top_level=top_levels):
+                out: list[asm_ast.Type_top_level] = []
+                for tl in top_levels:
+                    if isinstance(tl, tac_ast.StaticVariable):
+                        out.append(asm_ast.StaticVariable(
+                            name=tl.name,
+                            is_global=tl.is_global,
+                            init=tl.init,
+                        ))
+                    else:
+                        out.append(self.translate_function(tl))
+                return asm_ast.Program(top_level=out)
         raise TypeError(f"unexpected program node: {prog!r}")
 
     def translate_function(
-        self, fn: tac_ast.Type_function_definition,
-    ) -> asm_ast.Type_function_definition:
+        self, fn: tac_ast.Type_top_level,
+    ) -> asm_ast.Function:
         match fn:
             case tac_ast.Function(
-                name=name, params=params, instructions=instrs,
+                name=name, is_global=is_global,
+                params=params, instructions=instrs,
             ):
                 # Parameter names ride through to the asm Function
                 # so the frame-layout pass can place them at the
@@ -166,12 +178,17 @@ class Translator:
                 # the layout pass uses the name match against the
                 # Function's `params` list to decide whether each
                 # Pseudo is a parameter (Frame offset M+3+j) or a
-                # local (Frame offset 1..M).
+                # local (Frame offset 1..M). References to static-
+                # storage objects also pass through as `Pseudo` here;
+                # the same layout pass distinguishes them by name and
+                # rewrites them as `Data(name)` for absolute-addressed
+                # access.
                 out: list[asm_ast.Type_instruction] = []
                 for instr in instrs:
                     out.extend(self.translate_instruction(instr))
                 return asm_ast.Function(
                     name=name,
+                    is_global=is_global,
                     params=list(params),
                     instructions=out,
                 )
@@ -508,7 +525,7 @@ def translate_program(prog: tac_ast.Type_program) -> asm_ast.Type_program:
 
 
 def translate_function(
-    fn: tac_ast.Type_function_definition,
+    fn: tac_ast.Type_top_level,
 ) -> asm_ast.Type_function_definition:
     return Translator().translate_function(fn)
 

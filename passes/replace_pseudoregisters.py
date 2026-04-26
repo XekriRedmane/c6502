@@ -9,44 +9,50 @@ convention (see README "Function stack frame layout"):
     FP+M+3 ... FP+M+2+N     arg slots (N = arg_bytes = len(params)),
                             arg j (1-indexed) at offset M+2+j
 
-This pass walks each asm Function once, and:
+A Pseudo can refer to one of three things, distinguished by name:
 
-  1. Identifies every distinct Pseudo name. Names that match the
-     function's `params` list are *parameters* and get deferred
-     offsets; everything else is a *local* and gets assigned the
-     next sequential offset starting at 1.
+  * **a static-storage object** — a name that appears as a top-level
+    `StaticVariable` in the same program. References are absolute-
+    addressed (the symbol is at a fixed memory address), so the
+    Pseudo lowers to a `Data(name)` operand. The asm emitter then
+    renders `LDA name` / `STA name` / `ADC name` etc.
+  * **a function parameter** — a name in the enclosing function's
+    `params` list. The arg byte sits in the caller's frame at
+    `Frame(M + 2 + j)` for the j-th param.
+  * **a local temporary** — anything else. Each distinct local name
+    gets a fresh `Frame(off)` slot starting at 1, in encounter order.
 
-     We assign locals in encounter order (same scheme the previous
-     replace-only pass used), so M = (count of distinct local
-     pseudos) once the walk finishes. The locals are densely packed
-     1..M.
+Per-function steps:
 
-  2. Computes param offsets after M is known: param j (1-indexed)
-     gets `Frame(M + 2 + j)` — that is, `M + 3` for the first param,
-     `M + 4` for the second, and so on. Params not actually
+  1. Walk the function's instructions, classifying every Pseudo
+     (static / param / local) and minting local offsets in
+     encounter order. After the walk, M = (count of distinct local
+     pseudos).
+  2. Now that M is known, compute param offsets: param j
+     (1-indexed) → `Frame(M + 2 + j)`. Params not actually
      referenced in the body still get an entry, but the entry only
-     matters if some instruction references the name.
-
-  3. Walks the instructions a second time, replacing each Pseudo
-     with its computed Frame.
-
-  4. Prepends `FunctionPrologue(arg_bytes=N, local_bytes=M)` and
-     rewrites every `Ret(...)` to carry the same `N` and `M`. The
+     matters if some instruction touches the name.
+  3. Walk the instructions a second time, replacing each Pseudo
+     with its computed `Data` / `Frame` operand.
+  4. Prepend `FunctionPrologue(arg_bytes=N, local_bytes=M)` and
+     rewrite every `Ret(...)` to carry the same `N` and `M`. The
      emitter consumes those dimensions to lay down the prologue
      boilerplate (allocate `M+2` bytes, save caller FP, capture FP)
      and the epilogue (PHA return value, rewind SSP by `N+M+2`,
      restore caller FP, PLA, RTS).
 
-The result is a fully-laid-out Function — Pseudos all gone, frame
-dims baked into the prologue/Ret. There's no separate
-`allocate_stack` pass anymore: the two jobs need shared state (M
-and N) and merging them is simpler than threading `M` through a
-side channel.
+The set of static-storage names is collected from `program.top_
+level` once, before any function is rewritten — every `StaticVariable`
+top-level entry contributes its name. Block-scope statics arrive
+with the `@<N>.<orig>` rename from identifier_resolution; file-
+scope statics keep their source spelling. Both reach the asm side
+verbatim and are matched here by exact string.
 
-Operands other than `Pseudo` pass through unchanged. Instructions
-without operand fields (`AllocateStack`, `Call`, `Jump`, …) pass
-through too, except `Ret` which is patched with the function's
-dims.
+`StaticVariable` top-level entries pass through unchanged — the
+frame-layout pass has nothing to do for them. Instructions inside
+a function with no operand fields (`AllocateStack`, `Call`, `Jump`,
+…) also pass through, except `Ret` which is patched with the
+function's dims.
 """
 
 from __future__ import annotations
@@ -103,9 +109,15 @@ class Replacer:
     """Per-function offset state. Built up in the first walk
     (locals) and finalized once M is known (params)."""
 
-    def __init__(self, params: list[str]) -> None:
+    def __init__(
+        self, params: list[str], statics: frozenset[str],
+    ) -> None:
         self.params = params
         self.param_set = set(params)
+        # Pseudos whose names appear in `statics` are static-storage
+        # objects (file-scope variables and block-scope statics) —
+        # they get `Data(name)` not a frame slot.
+        self.statics = statics
         # Locals get sequential offsets in encounter order, starting
         # at 1 (FP points at the next-free byte; FP+1 is the first
         # writable slot).
@@ -114,11 +126,14 @@ class Replacer:
         self.param_offsets: dict[str, int] = {}
 
     def discover(self, op: asm_ast.Type_operand) -> None:
-        """First-pass: assign local offsets to non-param Pseudos as
-        we see them. Params are skipped — their offsets depend on M
-        (= the final count of locals), which we don't know until
-        the walk finishes."""
+        """First-pass: assign local offsets to non-param, non-static
+        Pseudos as we see them. Params are skipped — their offsets
+        depend on M (= the final count of locals), which we don't
+        know until the walk finishes. Statics are skipped — they
+        don't live in the frame at all."""
         if not isinstance(op, asm_ast.Pseudo):
+            return
+        if op.name in self.statics:
             return
         if op.name in self.param_set:
             return
@@ -138,21 +153,27 @@ class Replacer:
         return n, m
 
     def replace(self, op: asm_ast.Type_operand) -> asm_ast.Type_operand:
-        """Second-pass: turn each Pseudo into its computed Frame.
-        Other operands pass through unchanged."""
+        """Second-pass: turn each Pseudo into its computed `Data` or
+        `Frame`. Other operands pass through unchanged. The
+        static-set check comes first — a name reusing a value that
+        would otherwise look like a local would still resolve to
+        Data here, which matches the C semantics (static-storage
+        objects own their names module-wide)."""
         if not isinstance(op, asm_ast.Pseudo):
             return op
+        if op.name in self.statics:
+            return asm_ast.Data(name=op.name)
         if op.name in self.local_offsets:
             return asm_ast.Frame(offset=self.local_offsets[op.name])
         if op.name in self.param_offsets:
             return asm_ast.Frame(offset=self.param_offsets[op.name])
-        # Unrecognized Pseudo — would mean a name not in either map,
-        # which is a bug in an upstream pass. The emitter would
-        # reject it later anyway, but raising here pinpoints the
-        # cause.
+        # Unrecognized Pseudo — would mean a name not in any of the
+        # three maps, which is a bug in an upstream pass. The emitter
+        # would reject it later anyway, but raising here pinpoints
+        # the cause.
         raise ValueError(
-            f"Pseudo({op.name!r}) is neither a local nor a "
-            "declared parameter; check tac_to_asm output"
+            f"Pseudo({op.name!r}) is neither a static, a local, nor "
+            f"a declared parameter; check tac_to_asm output"
         )
 
     def replace_instruction(
@@ -226,11 +247,25 @@ class Replacer:
 
 
 def replace_function(
-    fn: asm_ast.Type_function_definition,
-) -> asm_ast.Type_function_definition:
+    fn: asm_ast.Function,
+    statics: frozenset[str] = frozenset(),
+) -> asm_ast.Function:
+    """Lay out a single function's frame and rewrite Pseudo operands.
+
+    `statics` is the set of static-storage names visible at the
+    program top level. A Pseudo whose name is in this set lowers to
+    `Data(name)` (absolute addressing); everything else becomes a
+    `Frame(off)` (frame-pointer-relative). The default of an empty
+    set is a unit-test convenience for callers that aren't dealing
+    with statics — `replace_program` always passes the program-wide
+    set.
+    """
     match fn:
-        case asm_ast.Function(name=name, params=params, instructions=instrs):
-            r = Replacer(params=list(params))
+        case asm_ast.Function(
+            name=name, is_global=is_global,
+            params=params, instructions=instrs,
+        ):
+            r = Replacer(params=list(params), statics=statics)
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
                 for op in _operands_in(instr):
@@ -252,6 +287,7 @@ def replace_function(
             )
             return asm_ast.Function(
                 name=name,
+                is_global=is_global,
                 params=list(params),
                 instructions=[prologue] + new_instrs,
             )
@@ -261,11 +297,41 @@ def replace_function(
 
 def replace_program(
     prog: asm_ast.Type_program,
+    extra_statics: frozenset[str] = frozenset(),
 ) -> asm_ast.Type_program:
+    """Lay out frames and lower Pseudo operands for every Function in
+    `prog`.
+
+    The static-name set is the union of:
+      * every `StaticVariable` name declared at top level in `prog`,
+        and
+      * `extra_statics` — names of objects with static storage
+        duration that don't have a `StaticVariable` definition in
+        this TU. The canonical caller (`compile.py`) populates this
+        from the type-checker's symbol table: any `StaticAttr` entry
+        whose `initial_value` is `NoInitializer` (a block-scope or
+        file-scope `extern int x;` reference) belongs here. Without
+        the union, those references would look like undeclared
+        Pseudos and the layout pass would mistake them for locals.
+
+    A future cleanup could thread the SymbolTable directly and
+    derive both sources from it; for now `extra_statics` is the
+    minimal extra surface needed to fix the extern case without
+    rewiring the pipeline.
+    """
     match prog:
-        case asm_ast.Program(function_definition=fns):
-            return asm_ast.Program(function_definition=[
-                replace_function(fn) for fn in fns
-            ])
+        case asm_ast.Program(top_level=top_levels):
+            statics = frozenset(
+                tl.name for tl in top_levels
+                if isinstance(tl, asm_ast.StaticVariable)
+            ) | extra_statics
+            new_top: list[asm_ast.Type_top_level] = []
+            for tl in top_levels:
+                if isinstance(tl, asm_ast.StaticVariable):
+                    # Nothing to lay out; pass through.
+                    new_top.append(tl)
+                else:
+                    new_top.append(replace_function(tl, statics))
+            return asm_ast.Program(top_level=new_top)
         case _:
             raise TypeError(f"unexpected program node: {prog!r}")

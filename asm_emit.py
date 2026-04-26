@@ -78,13 +78,37 @@ Atomic arithmetic / flag instructions:
   - `Label(name)` -> `<name>:` at column 1. No opcode column. Lets a
     `Jump`/`Branch` resolve to a position inside the same function.
   - `Compare(left, right)` -> `CMP`/`CPX`/`CPY` depending on whether
-    `left` is `Reg(A)`/`Reg(X)`/`Reg(Y)`. `right` is `Imm`/`Stack`/`Frame`
-    for CMP (Stack/Frame go through LDY indirect-Y like Add/Sub); for
-    CPX and CPY `right` must be `Imm` because the 6502's CPX/CPY lack an
-    indirect-Y addressing mode, so soft-stack operands can't be compared
-    against X or Y directly (load to A and use CMP instead). Sets the
-    same N/Z/C flags an `SBC left - right` would, without writing the
+    `left` is `Reg(A)`/`Reg(X)`/`Reg(Y)`. `right` is `Imm`/`Stack`/`Frame`/
+    `Data` for CMP (Stack/Frame go through LDY indirect-Y like Add/Sub;
+    Data uses 6502 absolute addressing, no LDY needed). For CPX/CPY,
+    `right` is `Imm` or `Data` (the 6502's CPX/CPY have absolute mode
+    but no indirect-Y, so soft-stack operands can't be compared against
+    X or Y directly — load to A and use CMP instead). Sets the same
+    N/Z/C flags an `SBC left - right` would, without writing the
     result anywhere.
+
+`Data(name)` operand. References a static-storage object by symbolic
+name. Lowers to 6502 absolute addressing — `LDA name`, `STA name`,
+`ADC name`, `EOR name`, etc. The assembler resolves the name to a
+fixed address; no LDY indirect-Y preamble is needed (the address is
+known at assembly time, not runtime). `Data` is legal anywhere
+`Stack`/`Frame` is legal as a memory operand: read sources for
+arithmetic / logic / compare ops, both sides of a `Mov`. The
+matching `replace_pseudoregisters` pass produces `Data` operands
+from any `Pseudo` whose name is a top-level `StaticVariable`.
+
+`StaticVariable(name, is_global, init)` top-level node. Emitted as
+`<name>:` on its own line followed by `DC.B $XX` on the next, where
+`XX` is the byte init value. (Mnemonics are uppercased per the
+`_instr_line` convention — including the `dc.b` directive name.)
+The `is_global` flag is recorded on the IR but not yet surfaced in
+the asm output: dasm has no native "export" / "module-private"
+distinction, and statics get unique names anyway (block-scope
+statics arrive with `@<N>.<orig>` from identifier_resolution; file-
+scope INTERNAL keeps the source spelling but the user wrote
+`static`). When multi-TU linking lands this is where a
+`.globl name` directive (or equivalent) would appear under
+`is_global=True`.
 
 (`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
@@ -243,9 +267,44 @@ def _emit_indirect_store(off: int, addr_op: asm_ast.Type_operand) -> list[str]:
     ]
 
 
+def _is_memory_operand(op: asm_ast.Type_operand) -> bool:
+    """True iff `op` is a memory operand (Stack/Frame/Data) — i.e.,
+    something that needs a load/store opcode rather than a transfer
+    or immediate. Used at the dispatch boundary in Mov."""
+    return isinstance(op, (asm_ast.Stack, asm_ast.Frame, asm_ast.Data))
+
+
+def _emit_memop_load(
+    addr_op: asm_ast.Type_operand, opcode: str = "LDA",
+) -> list[str]:
+    """Read the byte addressed by `addr_op` into A (or another reg
+    if a different opcode is passed; the caller picks). Indirect-Y
+    for Stack/Frame, absolute for Data."""
+    if isinstance(addr_op, asm_ast.Data):
+        return [_instr_line(opcode, addr_op.name)]
+    return [
+        _emit_load_y(addr_op.offset),
+        _instr_line(opcode, _indirect_addr(addr_op)),
+    ]
+
+
+def _emit_memop_store(addr_op: asm_ast.Type_operand) -> list[str]:
+    """Store A into the byte addressed by `addr_op`. Indirect-Y for
+    Stack/Frame, absolute for Data."""
+    if isinstance(addr_op, asm_ast.Data):
+        return [_instr_line("STA", addr_op.name)]
+    return [
+        _emit_load_y(addr_op.offset),
+        _instr_line("STA", _indirect_addr(addr_op)),
+    ]
+
+
 def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
     _reject_pseudo(src)
     _reject_pseudo(dst)
+    # Register-register and immediate-to-register cases stay as
+    # special cases (different opcodes per pair); the memory-operand
+    # cases (Stack/Frame/Data) are unified via `_emit_memop_*`.
     match src, dst:
         case asm_ast.Imm(value=v), asm_ast.Reg(reg=r):
             _check_byte("immediate", v)
@@ -258,33 +317,22 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             return [_instr_line("TAX")]
         case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("TAY")]
-        case asm_ast.Imm(value=v), (
-            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
-        ) as dst_addr:
-            _check_byte("immediate", v)
-            return (
-                [_instr_line("LDA", f"#${v:02X}")]
-                + _emit_indirect_store(off, dst_addr)
-            )
-        case (
-            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
-        ) as src_addr, asm_ast.Reg(reg=asm_ast.A()):
-            return _emit_indirect_load(off, src_addr)
-        case asm_ast.Reg(reg=asm_ast.A()), (
-            asm_ast.Stack(offset=off) | asm_ast.Frame(offset=off)
-        ) as dst_addr:
-            return _emit_indirect_store(off, dst_addr)
-        case (
-            asm_ast.Stack(offset=src_off) | asm_ast.Frame(offset=src_off)
-        ) as src_addr, (
-            asm_ast.Stack(offset=dst_off) | asm_ast.Frame(offset=dst_off)
-        ) as dst_addr:
-            return (
-                _emit_indirect_load(src_off, src_addr)
-                + _emit_indirect_store(dst_off, dst_addr)
-            )
-        case _:
-            raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
+    # Memory-operand paths. `_is_memory_operand` covers Stack, Frame,
+    # and Data — the addressing-mode difference is hidden inside
+    # `_emit_memop_load` / `_emit_memop_store`.
+    if isinstance(src, asm_ast.Imm) and _is_memory_operand(dst):
+        _check_byte("immediate", src.value)
+        return (
+            [_instr_line("LDA", f"#${src.value:02X}")]
+            + _emit_memop_store(dst)
+        )
+    if _is_memory_operand(src) and _is_reg_a(dst):
+        return _emit_memop_load(src)
+    if _is_reg_a(src) and _is_memory_operand(dst):
+        return _emit_memop_store(dst)
+    if _is_memory_operand(src) and _is_memory_operand(dst):
+        return _emit_memop_load(src) + _emit_memop_store(dst)
+    raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
 
 
 def _check_local_bytes(m: int) -> None:
@@ -369,6 +417,28 @@ def _is_reg_a(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
 
 
+def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
+    """Common emit for ADC/SBC/AND/ORA/EOR sources: the destination is
+    always Reg(A); the source can be Imm (direct), Stack/Frame
+    (indirect-Y), or Data (absolute). The opcode picks the operation
+    and the source picks the addressing mode."""
+    match src:
+        case asm_ast.Imm(value=v):
+            _check_byte("immediate", v)
+            return [_instr_line(opcode, f"#${v:02X}")]
+        case asm_ast.Stack() | asm_ast.Frame():
+            return [
+                _emit_load_y(src.offset),
+                _instr_line(opcode, _indirect_addr(src)),
+            ]
+        case asm_ast.Data(name=name):
+            return [_instr_line(opcode, name)]
+        case _:
+            raise ValueError(
+                f"unsupported {opcode} source: {src!r}"
+            )
+
+
 def _emit_add(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
     """At emit, Add is the single ADC instruction (with addressing-mode
     setup for indirect-Y sources). Carry is the caller's job — a
@@ -376,17 +446,7 @@ def _emit_add(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
     _reject_pseudo(src)
     _reject_pseudo(dst)
     _check_dst_is_a(dst, "Add")
-    match src:
-        case asm_ast.Imm(value=v):
-            _check_byte("immediate", v)
-            return [_instr_line("ADC", f"#${v:02X}")]
-        case asm_ast.Stack() | asm_ast.Frame():
-            return [
-                _emit_load_y(src.offset),
-                _instr_line("ADC", _indirect_addr(src)),
-            ]
-        case _:
-            raise ValueError(f"cannot emit Add(src={src!r}, dst={dst!r})")
+    return _emit_acc_arith_src("ADC", src)
 
 
 def _emit_sub(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
@@ -395,17 +455,7 @@ def _emit_sub(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
     _reject_pseudo(src)
     _reject_pseudo(dst)
     _check_dst_is_a(dst, "Sub")
-    match src:
-        case asm_ast.Imm(value=v):
-            _check_byte("immediate", v)
-            return [_instr_line("SBC", f"#${v:02X}")]
-        case asm_ast.Stack() | asm_ast.Frame():
-            return [
-                _emit_load_y(src.offset),
-                _instr_line("SBC", _indirect_addr(src)),
-            ]
-        case _:
-            raise ValueError(f"cannot emit Sub(src={src!r}, dst={dst!r})")
+    return _emit_acc_arith_src("SBC", src)
 
 
 def _emit_acc_logic(
@@ -420,19 +470,7 @@ def _emit_acc_logic(
     _reject_pseudo(src)
     _reject_pseudo(dst)
     _check_dst_is_a(dst, op_name)
-    match src:
-        case asm_ast.Imm(value=v):
-            _check_byte("immediate", v)
-            return [_instr_line(opcode, f"#${v:02X}")]
-        case asm_ast.Stack() | asm_ast.Frame():
-            return [
-                _emit_load_y(src.offset),
-                _instr_line(opcode, _indirect_addr(src)),
-            ]
-        case _:
-            raise ValueError(
-                f"cannot emit {op_name}(src={src!r}, dst={dst!r})"
-            )
+    return _emit_acc_arith_src(opcode, src)
 
 
 def _emit_acc_shift(
@@ -509,28 +547,17 @@ def _emit_xor(
             "Xor srcs must include Reg(A); "
             f"got src1={src1!r}, src2={src2!r}"
         )
-    match other:
-        case asm_ast.Imm(value=v):
-            _check_byte("immediate", v)
-            return [_instr_line("EOR", f"#${v:02X}")]
-        case asm_ast.Stack() | asm_ast.Frame():
-            return [
-                _emit_load_y(other.offset),
-                _instr_line("EOR", _indirect_addr(other)),
-            ]
-        case _:
-            raise ValueError(
-                "Xor non-A operand must be Imm/Stack/Frame, "
-                f"got {other!r}"
-            )
+    return _emit_acc_arith_src("EOR", other)
 
 
 def _emit_compare(
     left: asm_ast.Type_operand, right: asm_ast.Type_operand,
 ) -> list[str]:
-    """Compare(left, right) -> CMP/CPX/CPY. The register on the left picks
-    the opcode; the right side carries the addressing mode. CPX/CPY have
-    no indirect-Y mode, so Stack/Frame are only legal when left is A."""
+    """Compare(left, right) -> CMP/CPX/CPY. The register on the left
+    picks the opcode; the right side carries the addressing mode.
+    CPX/CPY support immediate and absolute addressing (so Imm and
+    Data work for any left register), but they lack indirect-Y, so
+    Stack/Frame is only legal when left is A."""
     _reject_pseudo(left)
     _reject_pseudo(right)
     if not isinstance(left, asm_ast.Reg):
@@ -548,11 +575,13 @@ def _emit_compare(
         case asm_ast.Imm(value=v):
             _check_byte("immediate", v)
             return [_instr_line(opcode, f"#${v:02X}")]
+        case asm_ast.Data(name=name):
+            return [_instr_line(opcode, name)]
         case asm_ast.Stack() | asm_ast.Frame():
             if opcode != "CMP":
                 raise ValueError(
-                    f"Compare with left={left!r} requires Imm right "
-                    "(CPX/CPY have no indirect-Y addressing mode); "
+                    f"Compare with left={left!r} requires Imm or Data "
+                    "right (CPX/CPY have no indirect-Y addressing mode); "
                     f"got {right!r}"
                 )
             return [
@@ -663,7 +692,7 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             raise TypeError(f"unexpected instruction: {instr!r}")
 
 
-def emit_function(fn: asm_ast.Type_function_definition) -> list[str]:
+def emit_function(fn: asm_ast.Function) -> list[str]:
     match fn:
         case asm_ast.Function(name=name, instructions=instrs):
             # Label in col 1; SUBROUTINE directive in col 4 (same column as
@@ -684,14 +713,48 @@ def emit_function(fn: asm_ast.Type_function_definition) -> list[str]:
             raise TypeError(f"unexpected function: {fn!r}")
 
 
+def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
+    """Render a top-level static-storage object as a labeled byte:
+
+        <name>:
+            dc.b $XX
+
+    where `XX` is the byte init value (zero for tentative
+    definitions per C99 §6.9.2.2; the type-checker resolved that to
+    `Initial(0)` before TAC emission). Two-line form keeps the label
+    in column 1, matching the function-header convention, with the
+    `dc.b` directive at the opcode column. Initialized definitions
+    and zero-initialized definitions render the same way — the byte
+    just happens to be zero in the latter case.
+
+    `is_global` rides on the IR but doesn't yet alter the emit:
+    dasm has no native module-private vs. exported distinction, and
+    block-scope statics already arrive with unique
+    `@<N>.<orig>` names so cross-function shadowing isn't an issue.
+    A future multi-TU build would emit a `.globl name` directive
+    here under `is_global=True`."""
+    _check_byte(f"init for {sv.name!r}", sv.init)
+    return [f"{sv.name}:", _instr_line("dc.b", f"${sv.init:02X}")]
+
+
+def emit_top_level(tl: asm_ast.Type_top_level) -> list[str]:
+    """Dispatch on the top_level alternative."""
+    if isinstance(tl, asm_ast.Function):
+        return emit_function(tl)
+    if isinstance(tl, asm_ast.StaticVariable):
+        return emit_static_variable(tl)
+    raise TypeError(f"unexpected top-level node: {tl!r}")
+
+
 def emit_program(prog: asm_ast.Type_program) -> str:
     match prog:
-        case asm_ast.Program(function_definition=fns):
-            # One blank line separates consecutive function bodies
+        case asm_ast.Program(top_level=top_levels):
+            # One blank line separates consecutive top-level
+            # entries (function bodies, static-variable definitions)
             # so they're visually distinct in the output. Trailing
             # newline at the very end (so the file ends in a
             # newline rather than a label).
-            chunks = [emit_function(fn) for fn in fns]
+            chunks = [emit_top_level(tl) for tl in top_levels]
             joined: list[str] = []
             for i, chunk in enumerate(chunks):
                 if i > 0:

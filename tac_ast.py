@@ -11,19 +11,27 @@ class Type_program:
 
 @dataclass
 class Program(Type_program):
-    function_definition: list[Type_function_definition] = field(default_factory=list)
+    top_level: list[Type_top_level] = field(default_factory=list)
 
 
 @dataclass
-class Type_function_definition:
+class Type_top_level:
     pass
 
 
 @dataclass
-class Function(Type_function_definition):
+class Function(Type_top_level):
     name: str
+    is_global: bool
     params: list[str] = field(default_factory=list)
     instructions: list[Type_instruction] = field(default_factory=list)
+
+
+@dataclass
+class StaticVariable(Type_top_level):
+    name: str
+    is_global: bool
+    init: int
 
 
 @dataclass

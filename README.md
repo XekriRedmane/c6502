@@ -78,9 +78,9 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 `compile.py` is the only CLI; every other module (`lexer.py`,
 `parser.py`, `passes/identifier_resolution.py`,
 `passes/label_resolution.py`, `passes/loop_labeling.py`,
-`c99_to_tac.py`, `tac_to_asm.py`,
-`passes/replace_pseudoregisters.py`, `passes/allocate_stack.py`,
-`asm_emit.py`) is library-only and used as an import.
+`passes/type_checking.py`, `c99_to_tac.py`, `tac_to_asm.py`,
+`passes/replace_pseudoregisters.py`, `asm_emit.py`) is library-only
+and used as an import.
 
 ## Compiler pipeline
 
@@ -88,40 +88,50 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 that takes an AST and returns an AST (or text, for emit):
 
 1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
-   Lark/LALR parser using the grammar in `c99.lark`. Accepts
-   `int main(void) <block>`, where `<block>` is `{ <block_item>* }`
-   wrapped in a `Block` AST node so a function body is
-   `Function(name, Block([...]))`. A block item is a declaration
-   (`int x;` or `int x = exp;`) or a statement (`return exp;`,
-   `exp;`, `if (exp) stmt (else stmt)?`, `goto label;`,
-   `label: stmt`, a nested `<block>` (compound statement,
-   `Compound(block)`), `break;`, `continue;`,
-   `while (exp) stmt`, `do stmt while (exp);`,
-   `for (<for_init> exp? ; exp?) stmt`, or a null `;`). The for-init
+   Lark/LALR parser using the grammar in `c99.lark`. A translation
+   unit is `Program(declaration*)`: each top-level declaration is a
+   `VarDecl` (file-scope object) or a `FunctionDecl` (forward
+   declaration when `body=None`, definition when `body=Block(...)`).
+   Both declaration kinds carry an optional `storage_class` of
+   `Static` or `Extern` parsed from the `specifier+` run that
+   precedes the identifier. The parser splits the run into a single
+   type specifier (`int` today) plus at most one storage class;
+   illegal combinations (multiple storage classes, multiple type
+   specifiers, missing type specifier) raise `ParserError` from
+   `_split_specifiers`.
+
+   A function `body` is a `Block` of `block_item`s; each item is a
+   declaration (`int x;`, `int x = exp;`, `static int x = 5;`,
+   `extern int x;`, or `int foo(int a);`) or a statement (`return
+   exp;`, `exp;`, `if (exp) stmt (else stmt)?`, `goto label;`,
+   `label: stmt`, a nested block as a `Compound(block)`, `break;`,
+   `continue;`, `while (exp) stmt`, `do stmt while (exp);`, `for
+   (<for_init> exp? ; exp?) stmt`, or a null `;`). The for-init
    slot is either a declaration or `exp? ;`. Loop AST nodes
    (`WhileStmt`, `DoWhileStmt`, `ForStmt`) and the jump nodes
    (`BreakStmt`, `ContinueStmt`) carry an `identifier label` field
    that the parser leaves as the empty string; loop_labeling fills
-   it in later. The compound-statement
-   rule reuses the same `block` rule the function body uses; the
-   transformer just wraps the resulting `Block` in a `Compound`. The dangling-else ambiguity is resolved by Lark's
-   LALR(1) backend preferring shift over reduce on `else`, which
-   binds the `else` to the nearest preceding unmatched `if` —
-   the C99 §6.8.4.1 rule. `<exp>` is built from
-   integer constants, identifiers, the unary ops (`-`/`~`/`!`),
-   binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
+   it in later. The compound-statement rule reuses the same `block`
+   rule the function body uses; the transformer just wraps the
+   resulting `Block` in a `Compound`. The dangling-else ambiguity
+   is resolved by Lark's LALR(1) backend preferring shift over
+   reduce on `else`, which binds the `else` to the nearest
+   preceding unmatched `if` — the C99 §6.8.4.1 rule. `<exp>` is
+   built from integer constants, identifiers, function calls
+   (`f(arg, ...)`), the unary ops (`-`/`~`/`!`), binary
+   `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
    parentheses, right-associative `=` plus the ten compound
    assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-   `<<=`, `>>=`), the four increment/decrement operators in
-   both prefix (`++a` / `--a`) and postfix (`a++` / `a--`) form,
-   and the ternary `cond ? t : f`. Compound assignments desugar
-   at parse time to `Assignment(lval, Binary(OP, lval, rval))`;
+   `<<=`, `>>=`), the four increment/decrement operators in both
+   prefix (`++a` / `--a`) and postfix (`a++` / `a--`) form, and
+   the ternary `cond ? t : f`. Compound assignments desugar at
+   parse time to `Assignment(lval, Binary(OP, lval, rval))`;
    prefix `++a` / `--a` desugar the same way to `a = a ± 1`.
    Postfix keeps its own `Postfix(incdec_op, exp)` AST node
    because it must evaluate to the operand's *old* value while
    mutating it. The ternary is its own `Conditional(condition,
-   true_clause, false_clause)` node; grammatically it sits
-   between assignment and logical-or, with the false-clause slot
+   true_clause, false_clause)` node; grammatically it sits between
+   assignment and logical-or, with the false-clause slot
    restricted to `conditional_exp` (so `?:` is right-associative
    and `1 ? 2 : a = 5` parses as `(1 ? 2 : a) = 5`). Operator
    precedence is encoded by a precedence-climbing rule layout
@@ -129,29 +139,49 @@ that takes an AST and returns an AST (or text, for emit):
    → unary_exp → postfix_exp → atom`).
 
 2. **`passes.identifier_resolution.resolve_program`** — `c99_ast` →
-   `c99_ast`. Rewrites every user-written identifier to a
-   program-unique `@<N>.<orig>` (illegal as a C identifier, so it
-   can't collide with user names). A `Declaration` mints a fresh
-   unique name; a second declaration of the same original name
-   raises `IdentifierResolutionError`. Every `Var` reference in an
-   expression is rewritten to its mapped unique name; referencing
-   an undeclared name also raises. An `Assignment` additionally
-   checks its lval is a `Var` (c6502 doesn't have richer lvalues
-   yet) and raises "invalid lvalue" for `1+2=3`, `-a=5`,
-   `(a=b)=c`, etc. Scope is per-block: each `Block` owns a map
-   from user name to `(unique_name, inner)` where `inner` is True
-   iff the name was declared in this block. Entering a nested
-   block clones the parent's map with every entry flipped to
-   outer-scoped (`inner=False`), so the inner block sees the
-   outer's variables but only collides on a re-declaration in the
-   *same* block — declaring an outer name in an inner block legally
-   shadows it. Exiting the block discards its map; the parent's is
-   intact (we cloned, not aliased). While/do-while bodies share the
-   parent scope; for-headers (`for (<init> ...) ...`) open a fresh
-   scope per C99 §6.8.5.3, so a header declaration legally shadows
-   any outer name for the duration of the loop. Labels, gotos,
-   break, and continue pass through unchanged — they live in
-   separate namespaces and are owned by later passes.
+   `c99_ast`. Rewrites every user-written identifier — variables and
+   function names both — and tags each declaration with its C99
+   §6.2.2 linkage kind. Renaming is keyed off linkage:
+   `Linkage.NONE` names get a program-unique `@<N>.<orig>` (illegal
+   as a C identifier, so collision-proof), while `Linkage.INTERNAL`
+   and `Linkage.EXTERNAL` names keep their source spelling — the
+   linker (or later TU passes, for INTERNAL) resolves them by name.
+
+   The pass walks the program twice. The first pass registers every
+   file-scope declaration in `_file_scope` with its computed linkage
+   so a function body can reference a global declared further down
+   in the file. The second pass resolves each declaration's
+   initializer / body. File-scope linkage rules: `static` →
+   INTERNAL; `extern` → matches the prior visible declaration's
+   linkage if any, else EXTERNAL; no specifier → EXTERNAL for
+   objects, as-if-`extern` (so prior-visible-or-EXTERNAL) for
+   functions. Block-scope linkage rules: plain `int x;` and
+   `static int x;` → NONE (the `static` changes storage duration,
+   not linkage); `extern int x;` → prior-visible rule against the
+   inherited file-scope parent; block-scope function declarations →
+   as-if-`extern` (and `static` is rejected at block scope per
+   §6.2.2).
+
+   Each scope owns a map from user name to `(resolved_name, inner,
+   linkage)` where `inner` is True iff the name was declared in this
+   block. Entering a nested block clones the parent's map and flips
+   every entry's `inner` flag to False; the file-scope table seeds
+   each function body's outermost scope the same way. So a block-
+   scope `extern int x;` after a file-scope `static int x = 5;`
+   sees the file-scope entry as outer-scoped INTERNAL, and the
+   prior-visible rule kicks in to give the block decl INTERNAL
+   linkage with the source spelling preserved. While/do-while bodies
+   share the parent scope; for-headers (`for (<init> ...) ...`) open
+   a fresh scope per C99 §6.8.5.3, so a header declaration legally
+   shadows any outer name for the duration of the loop. Function
+   parameters share the body's outermost scope (§6.9.1.7) — a body
+   decl that reuses a param name raises duplicate-decl; an inner
+   compound legally shadows the param. `Assignment` and `Postfix`
+   require their lval / operand to be a `Var` (richer lvalues
+   haven't landed yet); `1+2=3`, `-a=5`, `(a=b)=c`, `1++` all raise
+   "invalid lvalue" here. Labels, gotos, break, and continue pass
+   through unchanged — they live in separate namespaces and are
+   owned by later passes.
 
 3. **`passes.label_resolution.resolve_program`** — `c99_ast` →
    `c99_ast`. Validates and rewrites `LabeledStmt` (C99 §6.8.1) and
@@ -190,19 +220,85 @@ that takes an AST and returns an AST (or text, for emit):
    structural — `.loop@<N>` has digits after `@`, `.<funcname>@<orig>`
    has a C identifier — so the two forms can never match.
 
-5. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
-   `c99_ast` → `tac_ast` (three-address code). Compound expressions
-   flatten into a sequence of ops, materializing each intermediate
-   into a fresh `Var(%n)` temporary. `Binary(op, src1, src2, dst)`
-   evaluates `src1` first so its temps get the lower numbers.
-   `Goto(label)` lowers to a TAC `Jump(label)`; `LabeledStmt(label,
-   stmt)` lowers to a TAC `Label(label)` followed by the inner
-   statement's lowering. Label names arrive pre-mangled by
-   label_resolution and pass through unchanged. Iteration
-   statements derive concrete control-flow targets from the base
-   label set by loop_labeling, by suffix: `<base>_start` (top of
-   loop), `<base>_continue` (continue target), `<base>_break`
-   (break target). `BreakStmt(label)` →
+5. **`passes.type_checking.check_program`** — `c99_ast` →
+   `(c99_ast, SymbolTable)`. Validates that every identifier is used
+   in a way consistent with its declaration and produces the
+   `SymbolTable` later passes consume. The AST itself is returned
+   unchanged. Each `Symbol` carries a `type` plus an `IdAttr` —
+   `LocalAttr` (automatic-storage object), `StaticAttr(initial_value,
+   is_global)` (static-storage object — every file-scope object plus
+   block-scope `static`), or `FunAttr(defined, is_global)` (a
+   function name). `is_global` is True iff the symbol has external
+   linkage, materialized once here so the asm backend doesn't have
+   to re-derive it from the three-way `Linkage` enum.
+
+   `InitialValue` is one of `Initial(c)`, `Tentative`, or
+   `NoInitializer` per C99 §6.9.2. Initializer rules:
+   - File-scope `int x = e;` / `static int x = e;` →
+     `Initial(c)` where `c` is the constant value of `e`. Static-
+     storage initializers must be compile-time constant expressions
+     (only integer literals today; non-constant initializers raise).
+   - File-scope `int x;` / `static int x;` → `Tentative`. Per
+     §6.9.2.2 a tentative definition resolves to a zero-initialized
+     definition at end-of-TU if no `Initial` ever appears for it.
+   - File-scope `extern int x;` (no init) → `NoInitializer`. The
+     declaration is a reference to a definition elsewhere.
+   - Block-scope `static int x;` → `Initial(0)` per §6.7.8.10
+     (block-scope statics are zero-initialized by default).
+   - Block-scope `static int x = e;` → `Initial(c)`.
+   - Block-scope `extern int x;` → `NoInitializer`. Initializers are
+     forbidden on block-scope `extern` declarations (§6.7.8.5) and
+     raise here.
+   - Block-scope `int x [= e];` → `LocalAttr` (no static-storage
+     metadata; the initializer, if any, lowers as a regular runtime
+     `Copy` at the declaration site).
+
+   Multiple file-scope declarations of the same identifier merge:
+   function signatures must agree; `defined` flips False→True on
+   first definition; two distinct `Initial(c)` values are an
+   error; otherwise the more-defined of two initial-value tags wins
+   (`Initial > Tentative > NoInitializer`).
+
+   Other diagnostics carried over: function used as a variable, a
+   variable called as a function, wrong call arity, function
+   redefinition, an initializer that doesn't match the declared
+   type.
+
+6. **`c99_to_tac.translate_program`** (`c99_to_tac.py`) —
+   `(c99_ast, SymbolTable)` → `tac_ast`. The TAC program shape is
+   `Program(top_level*)`, where each `top_level` is either a
+   `Function(name, is_global, params, instructions)` or a
+   `StaticVariable(name, is_global, init)`. Two passes assemble the
+   list:
+
+   1. Walk c99 declarations in source order. Each `FunctionDecl`
+      with a body lowers to a TAC `Function`; `is_global` rides
+      through from the function's symbol-table entry. File-scope
+      variable declarations and forward function declarations emit
+      nothing here — their definitions appear in the second pass.
+      Block-scope variable declarations with a storage class
+      (`static` / `extern`) also skip TAC emission at the
+      declaration site; plain `int x [= e];` lowers to a `Copy`
+      from the evaluated initializer into the var.
+   2. Iterate the symbol table once. Each `StaticAttr` entry whose
+      `initial_value` is `Initial(c)` (use `c`) or `Tentative` (use
+      `0`) becomes a TAC `StaticVariable`; `NoInitializer` entries
+      describe a reference to a definition elsewhere and emit
+      nothing.
+
+   Compound expressions flatten into ops, materializing each
+   intermediate into a fresh `Var(%n)` temporary. `Binary(op, src1,
+   src2, dst)` evaluates `src1` first so its temps get the lower
+   numbers. `FunctionCall(name, args, dst)` evaluates each arg in
+   source order, mints a fresh dst temp, and emits a single TAC
+   `FunctionCall` instruction. `Goto(label)` lowers to a TAC
+   `Jump(label)`; `LabeledStmt(label, stmt)` lowers to a TAC
+   `Label(label)` followed by the inner statement's lowering. Label
+   names arrive pre-mangled by label_resolution and pass through
+   unchanged. Iteration statements derive concrete control-flow
+   targets from the base label set by loop_labeling, by suffix:
+   `<base>_start` (top of loop), `<base>_continue` (continue
+   target), `<base>_break` (break target). `BreakStmt(label)` →
    `Jump(<label>_break)`, `ContinueStmt(label)` →
    `Jump(<label>_continue)`. The three loop kinds lower to fixed
    sequences:
@@ -217,31 +313,50 @@ that takes an AST and returns an AST (or text, for emit):
      condition is treated as unconditionally true so the test and
      `JumpIfFalse` drop out entirely.
 
-6. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
-   `tac_ast` → `asm_ast`. Each TAC instruction lowers into a
-   sequence of asm atoms (`Mov` to/from `A`, atomic ops on `A`,
-   carry setup if needed). Optimization is deferred to TAC-level
-   passes — this pass produces correct but redundant output (every
-   intermediate is materialized through a `Frame` slot).
+   Every TAC function ends in a `Ret` — if the body falls off the
+   end without returning, an implicit `Ret(Constant(0))` is
+   appended (C99 §5.1.2.2.3 mandates this for `main`; we apply it
+   generally so every TAC function terminates).
 
-7. **`passes.replace_pseudoregisters.replace_program`** — assigns each
-   `Pseudo(name)` a `Frame(offset)` slot. Per-function: walks
-   instructions in order, mints offsets `args_bytes+1`,
-   `args_bytes+2`, … for each new pseudo name; reuses the same
-   offset for repeated names. `args_bytes` is `0` for now (no
-   function arguments yet).
+7. **`tac_to_asm.translate_program`** (`tac_to_asm.py`) —
+   `tac_ast` → `asm_ast`. The asm program shape mirrors TAC:
+   `Program(top_level*)` with `Function(name, is_global, params,
+   instructions)` and `StaticVariable(name, is_global, init)`. Each
+   TAC `Function` lowers atom by atom; each TAC `StaticVariable`
+   rides through to an asm `StaticVariable` unchanged. Each TAC
+   instruction lowers into a sequence of asm atoms (`Mov` to/from
+   `A`, atomic ops on `A`, carry setup if needed). Optimization is
+   deferred to TAC-level passes — this pass produces correct but
+   redundant output (every intermediate is materialized through a
+   `Frame` slot or a `Data` symbol).
 
-8. **`passes.allocate_stack.allocate_program`** — finds each function's
-   `M` (the highest `Frame` offset = its local-byte count), prepends
-   `FunctionPrologue(arg_bytes=0, local_bytes=M)`, and rewrites
-   every `Ret(...)` to carry the same `arg_bytes`/`local_bytes`.
-   The emit phase uses these to generate the prelude/epilogue.
+8. **`passes.replace_pseudoregisters.replace_program`** — lays out
+   each function's stack frame and rewrites every `Pseudo` operand.
+   A `Pseudo(name)` resolves three ways depending on the name:
+   - The name appears as a top-level `StaticVariable` in the same
+     program (or, via `extra_statics`, as a `StaticAttr` symbol-
+     table entry without a definition in this TU — i.e., an extern
+     reference). The pseudo lowers to `Data(name)` (absolute
+     addressing).
+   - The name is in the function's `params` list. The pseudo
+     becomes `Frame(M + 2 + j)` for the j-th param (1-indexed) once
+     `M` is known.
+   - Otherwise it's a local temporary, assigned `Frame(off)` slots
+     `1..M` in encounter order.
+
+   Per function: walk once to classify and mint local offsets,
+   compute `M`/`N`, walk again to rewrite operands, prepend
+   `FunctionPrologue(arg_bytes=N, local_bytes=M)`, and patch every
+   `Ret(...)` with the same dimensions. `StaticVariable` top-level
+   entries pass through unchanged.
 
 9. **`asm_emit.emit_program`** (`asm_emit.py`) — `asm_ast` → 6502
-   assembly text. **Atomic IR**: every node maps to one 6502
-   instruction, with the exceptions of `Ret` and `FunctionPrologue`
-   (the multi-instruction prelude/epilogue — see "Function stack
-   frame layout" below).
+   assembly text. Each `Function` emits as a labeled `SUBROUTINE`
+   block; each `StaticVariable` emits as `<name>: DC.B $XX`.
+   **Atomic IR**: every instruction node maps to one 6502 opcode,
+   with the exceptions of `Ret` and `FunctionPrologue` (the multi-
+   instruction prelude/epilogue — see "Function stack frame layout"
+   below) and `AllocateStack(N)` (a 16-bit `SSP -= N` sequence).
 
 The intermediate stages are inspectable via `compile.py`'s
 `--lex`, `--parse`, `--resolve`, `--tac`, `--codegen` flags.
@@ -266,29 +381,33 @@ tool.
 ## asm IR and the atomic emit
 
 The asm IR (declared in `asm.asdl`) is one node per 6502 instruction,
-with `Ret` and `FunctionPrologue` as the only multi-instruction
-exceptions. Compound concepts like `Unary` (no longer in the asm AST
-at all — it's strictly a TAC node) are lowered into atoms by
-`tac_to_asm`.
+with `Ret`, `FunctionPrologue`, and `AllocateStack` as the only
+multi-instruction exceptions. Compound concepts like `Unary` are
+strictly TAC nodes — `tac_to_asm` lowers them into atoms before they
+reach the asm AST.
 
 Output formatting: labels at column 1, opcodes at column 4, operands
 at column 10. Each function emits `<name>:` on one line, the
 `SUBROUTINE` directive on the next, a blank line, then instructions.
+Each `StaticVariable` emits as `<name>:` on one line, `DC.B $XX` on
+the next.
 
 | asm node                          | 6502 emission                          |
 | --------------------------------- | -------------------------------------- |
 | `Mov(Imm(v), Reg(A/X/Y))`         | `LDA/LDX/LDY #$v`                      |
 | `Mov(Reg(X/Y), Reg(A))`           | `TXA` / `TYA`                          |
 | `Mov(Reg(A), Reg(X/Y))`           | `TAX` / `TAY`                          |
-| `Mov(Imm(v), Stack/Frame(o))`     | `LDA #$v; LDY #o; STA (PTR),Y`         |
-| `Mov(Stack/Frame(o), Reg(A))`     | `LDY #o; LDA (PTR),Y`                  |
-| `Mov(Reg(A), Stack/Frame(o))`     | `LDY #o; STA (PTR),Y`                  |
-| `Mov(Stack/Frame, Stack/Frame)`   | indirect-Y load + indirect-Y store via A |
-| `Add(Imm(v), Reg(A))`             | `ADC #$v`                              |
-| `Add(Stack/Frame(o), Reg(A))`     | `LDY #o; ADC (PTR),Y`                  |
-| `Sub(Imm(v), Reg(A))`             | `SBC #$v`                              |
-| `Sub(Stack/Frame(o), Reg(A))`     | `LDY #o; SBC (PTR),Y`                  |
-| `Xor(Reg(A), Imm(v), Reg(A))` (or reverse) | `EOR #$v`                     |
+| `Mov(Imm(v), <mem>)`              | `LDA #$v; <store mem>`                 |
+| `Mov(<mem>, Reg(A))`              | `<load mem>`                           |
+| `Mov(Reg(A), <mem>)`              | `<store mem>`                          |
+| `Mov(<mem>, <mem>)`               | `<load>` then `<store>` via A          |
+| `Add(<mem>, Reg(A))` / `Imm`      | `ADC <mem>` / `ADC #$v`                |
+| `Sub(<mem>, Reg(A))` / `Imm`      | `SBC <mem>` / `SBC #$v`                |
+| `Xor(Reg(A), <mem-or-imm>, Reg(A))` (commutative) | `EOR <op>`         |
+| `And(<mem-or-imm>, Reg(A))`       | `AND <op>`                             |
+| `Or(<mem-or-imm>, Reg(A))`        | `ORA <op>`                             |
+| `Compare(Reg(A), <mem-or-imm>)`   | `CMP <op>`                             |
+| `Compare(Reg(X/Y), Imm/Data)`     | `CPX/CPY <op>` (no indirect-Y mode)    |
 | `ClearCarry` / `SetCarry`         | `CLC` / `SEC`                          |
 | `Inc(Reg(X/Y))` / `Dec(Reg(X/Y))` | `INX/INY` / `DEX/DEY`                  |
 | `ArithmeticShiftLeft(Reg(A))`     | `ASL A`                                |
@@ -297,15 +416,23 @@ at column 10. Each function emits `<name>:` on one line, the
 | `RotateRight(Reg(A))`             | `ROR A`                                |
 | `Push(Reg(A))` / `Pop(Reg(A))`    | `PHA` / `PLA`                          |
 | `Call(name)`                      | `JSR <name>`                           |
+| `AllocateStack(N)`                | 16-bit `SSP -= N` sequence             |
 | `Jump(target)`                    | `JMP <target>`                         |
 | `Branch(cond, target)`            | `B<cond> <target>` (cond ∈ CC/CS/EQ/MI/NE/PL/VC/VS) |
 | `Label(name)`                     | `<name>:` at column 1                  |
 | `FunctionPrologue(N, M)`          | multi-instruction; see frame docs      |
 | `Ret(N, M)`                       | multi-instruction; see frame docs      |
+| `StaticVariable(name, _, init)`   | `<name>:` then `DC.B $<init>`          |
 
-`PTR` is the symbol `SSP` for `Stack` operands, `FP` for `Frame`
-operands. Stack/Frame offsets are 0..255 (one-byte `LDY` index).
-Immediates are 0..255 (single byte).
+`<mem>` covers `Stack(off)`, `Frame(off)`, and `Data(name)`. Stack
+and Frame use indirect-Y addressing through a zero-page pointer:
+`LDY #off; LDA (PTR),Y` to read, `LDY #off; STA (PTR),Y` to write.
+`PTR` is `SSP` for `Stack`, `FP` for `Frame`. `Data(name)` uses
+absolute addressing — `LDA name` / `STA name` / `ADC name` etc., no
+LDY preamble — and is what every static-storage object reference
+becomes after `replace_pseudoregisters` runs. Stack/Frame offsets
+are 0..255 (one-byte `LDY` index). Immediates and static-variable
+init bytes are 0..255 (single byte).
 
 Notes:
 - `Add`/`Sub` don't emit `CLC`/`SEC` themselves — the caller emits
@@ -359,8 +486,8 @@ The helpers are part of the runtime header (not in this repo yet):
   (arithmetic, sign-preserving). c6502 currently treats integers as
   signed, so `>>` always goes through `asr8`.
 
-Unary `!` used to go through a `lnot8` helper but now lowers inline —
-see "Unary `!` lowering" below.
+Unary `!` lowers inline rather than through a helper — see "Unary
+`!` lowering" below.
 
 ### Comparison lowering
 
@@ -458,11 +585,11 @@ Label(lnot_end@M)
 Mov(A, dst)
 ```
 
-Earlier versions of c6502 went through a `lnot8` runtime helper; the
-inline form is cheaper and drops one helper from the runtime header.
-The labels come from the same `Translator` counter that the
-comparison lowerings use, so `!` and `==`/`<`/etc. in the same
-program get globally unique label numbers.
+The inline form means there's no `lnot8` runtime helper to write —
+the framing `LDA` already sets `Z` for free. The labels come from
+the same `Translator` counter that the comparison lowerings use, so
+`!` and `==`/`<`/etc. in the same program get globally unique label
+numbers.
 
 ## Function stack frame layout
 
@@ -676,55 +803,126 @@ Notes:
   include control. `--passthru-comments` keeps comments if you ever
   need the opposite behavior.
 
+## Storage classes and linkage
+
+c6502 implements C99 §6.2.2 linkage and storage-class specifiers.
+The pipeline distinguishes three runtime categories of identifier:
+
+- **Automatic-storage objects** — block-scope `int x [= e];` and
+  function parameters. NONE-linkage; live on the soft-stack frame
+  with a fresh slot per function activation.
+- **Static-storage objects** — every file-scope object plus block-
+  scope `static int x [= e];`. Live at a fixed memory address and
+  emit as a top-level `StaticVariable` in the asm output. References
+  use absolute addressing (`LDA name` / `STA name`), not the
+  indirect-Y soft-stack mode.
+- **Function names** — every `FunctionDecl` (definition or forward
+  declaration). EXTERNAL by default, INTERNAL with `static`.
+
+`is_global` on the asm IR is True for EXTERNAL linkage and False
+otherwise (INTERNAL or NONE). `replace_pseudoregisters` consults
+the program's `StaticVariable` list (plus an `extra_statics`
+parameter from `compile.py` carrying static-storage names that
+don't have a definition in this TU — e.g. `extern int x;` against
+no prior declaration here) to decide whether each `Pseudo(name)`
+becomes a `Data(name)` or a `Frame(off)`.
+
+Linkage rules at a glance:
+
+| declaration                                        | linkage    | storage   | initial value                |
+| -------------------------------------------------- | ---------- | --------- | ---------------------------- |
+| file-scope `int x;`                                | EXTERNAL   | static    | `Tentative` (zero at end-TU) |
+| file-scope `int x = c;`                            | EXTERNAL   | static    | `Initial(c)`                 |
+| file-scope `static int x [= c];`                   | INTERNAL   | static    | `Tentative` / `Initial(c)`   |
+| file-scope `extern int x;` (no prior visible)      | EXTERNAL   | static    | `NoInitializer`              |
+| file-scope `extern int x;` (prior INTERNAL)        | INTERNAL   | static    | inherits prior init          |
+| file-scope `int foo(...);` / `int foo(...) {…}`    | EXTERNAL   | n/a       | n/a                          |
+| file-scope `static int foo(...);`                  | INTERNAL   | n/a       | n/a                          |
+| block-scope `int x [= e];` (no specifier)          | NONE       | automatic | (runtime `Copy` at decl)     |
+| block-scope `static int x;` (no init)              | NONE       | static    | `Initial(0)` per §6.7.8.10   |
+| block-scope `static int x = c;`                    | NONE       | static    | `Initial(c)`                 |
+| block-scope `extern int x;`                        | matches prior visible | static | `NoInitializer`     |
+| function parameter                                 | NONE       | automatic | n/a                          |
+
+A `static` on a block-scope function declaration is rejected per
+§6.2.2 ("A function declaration can contain the storage-class
+specifier static only if it is at file scope"). Two file-scope
+declarations of the same name with different linkages are UB per
+§6.2.2.7; identifier_resolution rejects the change-of-linkage
+case rather than silently accepting it.
+
+Renaming is keyed off linkage: NONE-linkage names are renamed to a
+program-unique `@<N>.<orig>` so block-scope statics don't collide
+with file-scope spellings; INTERNAL/EXTERNAL names keep their
+source spelling so the linker (or later TU passes, for INTERNAL)
+can resolve them by name. Block-scope statics therefore land in the
+asm output under a mangled label like `@0.x:` — collision-proof
+across functions but still the same fixed memory address each time
+the function runs.
+
 ## Status
 
-Currently end-to-end (C source through `compile.py --codegen` to
-runnable-shape 6502 assembly):
+End-to-end (C source through `compile.py --codegen` to runnable-shape
+6502 assembly):
 
-- variable declarations (`int x;` and `int x = exp;`), assignments
-  (`x = exp;`), expression statements, and null statements (`;`).
-  Variable resolution maps each user name to a unique `@N.orig`
-  before the TAC translator sees it, so locals can shadow temps
-  without confusion. `c99_to_tac` lowers a declaration's
-  initializer the same way it lowers an assignment (`Copy` from the
-  evaluated rval into the var). Functions without a `return`
-  statement get an implicit `Ret(Constant(0))` from the TAC
-  translator.
+- multiple top-level functions, function definitions, forward
+  declarations, and function calls (with parameters). Caller pushes
+  N argument bytes onto the soft stack, JSRs, and the callee
+  prologue captures FP. Args land at `Frame(M+3)..Frame(M+2+N)` in
+  the callee's frame; locals at `Frame(1)..Frame(M)`; the saved
+  caller FP at the 2-byte gap M+1, M+2.
 
-- `int main(void)` returning a single integer expression
+- variable declarations (`int x;` and `int x = exp;`), assignments,
+  expression statements, and null statements (`;`). Block-scope
+  automatic variables get unique `@<N>.<orig>` names before TAC.
+  `c99_to_tac` lowers an automatic-storage initializer the same way
+  it lowers an assignment (`Copy` from the evaluated rval into the
+  var). Functions without a `return` statement get an implicit
+  `Ret(Constant(0))` from the TAC translator.
+
+- storage-class specifiers `static` and `extern`, with the C99
+  §6.2.2 linkage rules. File-scope objects, file-scope `static`
+  objects, and block-scope `static` objects all emit as top-level
+  `StaticVariable` nodes; references use absolute addressing.
+  Block-scope and file-scope `extern` declarations are recognized
+  as references — the asm output uses absolute addressing for them,
+  but no `DC.B` is emitted (the definition lives in another TU).
+  See the "Storage classes and linkage" section above.
+
 - integer constants
 - unary `-` (negate), `~` (complement), and `!` (logical not —
   lowers inline to `Branch(EQ) + 0/1 select`, no runtime helper)
 - binary `+`, `-`, `*`, `/`, `%` (with TAC-level precedence).
-  Multiply/divide/modulo emit `JSR mul8` / `JSR divmod8` against the
-  runtime helpers described in "`Call` and runtime helpers" above —
-  the helpers themselves aren't in this repo yet.
+  Multiply/divide/modulo emit `JSR mul8` / `JSR divmod8` against
+  the runtime helpers described in "`Call` and runtime helpers"
+  above — the helpers themselves aren't in this repo yet.
 - binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
-- binary `<<` (logical) and `>>` (arithmetic — c6502 currently treats
-  integers as signed); emit `JSR shl8` / `JSR asr8`.
+- binary `<<` (logical) and `>>` (arithmetic — c6502 treats integers
+  as signed); emit `JSR shl8` / `JSR asr8`.
 - binary `==` and `!=` (lower inline to `CMP` + `BEQ`/`BNE` + a 0/1
   select — see "Comparison lowering" above; no runtime helper)
 - binary `<`, `>`, `<=`, `>=` (signed; lower inline to `SBC` with a
   V-flag correction and then `BMI`/`BPL` + 0/1 select. c6502 assumes
-  signed integers today, so this matches C's `int` relational
-  semantics. `>` and `<=` swap their operands to reuse the same
-  MI/PL branch paths — the EOR correction makes `Z` unreliable, so
-  swapping is cheaper than a second compare)
+  signed integers, so this matches C's `int` relational semantics.
+  `>` and `<=` swap their operands to reuse the same MI/PL branch
+  paths — the EOR correction makes `Z` unreliable, so swapping is
+  cheaper than a second compare)
 - binary `&&` and `||` (short-circuit; `c99_to_tac` lowers them to
-  `JumpIfFalse`/`JumpIfTrue` + `Jump`/`Label`/`Copy`, then `tac_to_asm`
-  lowers the conditional jumps to `Mov(cond, A); Branch(EQ|NE, target)`
-  — LDA sets Z based on the loaded byte, so BEQ/BNE drive off C's
-  truthy/falsy directly. `Copy` becomes a single `Mov`; TAC `Jump`
-  and `Label` are atom-for-atom. No runtime helper, no TAC binop —
-  the control flow *is* the semantics)
+  `JumpIfFalse`/`JumpIfTrue` + `Jump`/`Label`/`Copy`, then
+  `tac_to_asm` lowers the conditional jumps to `Mov(cond, A);
+  Branch(EQ|NE, target)` — LDA sets Z based on the loaded byte, so
+  BEQ/BNE drive off C's truthy/falsy directly. `Copy` becomes a
+  single `Mov`; TAC `Jump` and `Label` are atom-for-atom. No runtime
+  helper, no TAC binop — the control flow *is* the semantics)
 - compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-  `<<=`, `>>=` (the parser desugars `lval OP= rval` to `lval = lval OP
-  rval`, so the lowering is exactly the underlying binary op followed
-  by a `Copy` back into the lval — no AST/IR additions, no extra cases
-  in any later pass. Right-associative like plain `=`, so `a += b += 1`
-  is `a += (b += 1)`. The lval is duplicated as a tree reference, which
-  is safe today because the only legal lval is a `Var`; richer lvalues
-  in future will need to materialize the address into a temp first)
+  `<<=`, `>>=` (the parser desugars `lval OP= rval` to `lval = lval
+  OP rval`, so the lowering is exactly the underlying binary op
+  followed by a `Copy` back into the lval — no AST/IR additions, no
+  extra cases in any later pass. Right-associative like plain `=`,
+  so `a += b += 1` is `a += (b += 1)`. The lval is duplicated as a
+  tree reference, which is safe because the only legal lval is a
+  `Var`; richer lvalues in future will need to materialize the
+  address into a temp first)
 - prefix `++a` / `--a` (parse-time desugaring to `a = a ± 1` — same
   shape as a compound assignment; returns the operand's *new* value)
 - postfix `a++` / `a--` (its own `Postfix(incdec_op, exp)` AST node
@@ -734,36 +932,36 @@ runnable-shape 6502 assembly):
   pre-mutation value. Postfix is one precedence level tighter than
   unary, so `-a++` parses as `-(a++)` and `a+++b` lexes via max-munch
   as `a++ + b`)
-- `if (cond) stmt` and `if (cond) stmt else stmt`. `c99_to_tac` lowers
-  to `JumpIfFalse(cond, end@N)` + body + `Label(end@N)` for the
-  no-else form, or `JumpIfFalse(cond, else@N)` + then-body +
+- `if (cond) stmt` and `if (cond) stmt else stmt`. `c99_to_tac`
+  lowers to `JumpIfFalse(cond, end@N)` + body + `Label(end@N)` for
+  the no-else form, or `JumpIfFalse(cond, else@N)` + then-body +
   `Jump(end@N)` + `Label(else@N)` + else-body + `Label(end@N)` with
   an else. The labels (`if_end@N` / `if_else@N`) come from the same
-  Translator label counter as the short-circuit and inline-comparison
-  lowerings, so they're globally unique. Dangling-else binds to the
-  nearest `if` per C99 §6.8.4.1 — Lark's LALR(1) backend resolves the
-  shift-reduce conflict in favor of shifting, which gives that binding
-  for free
-- ternary `cond ? t : f`. `c99_to_tac` lowers it like an if/else that
-  also produces a value: evaluate `cond`, `JumpIfFalse` to
+  Translator label counter as the short-circuit and inline-
+  comparison lowerings, so they're globally unique. Dangling-else
+  binds to the nearest `if` per C99 §6.8.4.1 — Lark's LALR(1)
+  backend resolves the shift-reduce conflict in favor of shifting,
+  which gives that binding for free
+- ternary `cond ? t : f`. `c99_to_tac` lowers it like an if/else
+  that also produces a value: evaluate `cond`, `JumpIfFalse` to
   `cond_else@N`, evaluate the true-clause and `Copy` into a shared
-  `dst` temp, `Jump(cond_end@N)`, `Label(cond_else@N)`, evaluate the
-  false-clause and `Copy` into the same `dst`, `Label(cond_end@N)` —
-  the Conditional expression returns `dst`. Labels share the same
-  Translator counter as `if` / short-circuit / inline-comparison
-  lowerings, so each ternary gets globally unique
-  `cond_else@N` / `cond_end@N` numbers. Right-associative and has
-  lower precedence than all binaries: `a || b ? 1 : 2` is
+  `dst` temp, `Jump(cond_end@N)`, `Label(cond_else@N)`, evaluate
+  the false-clause and `Copy` into the same `dst`,
+  `Label(cond_end@N)` — the Conditional expression returns `dst`.
+  Labels share the same Translator counter as `if` / short-circuit
+  / inline-comparison lowerings, so each ternary gets globally
+  unique `cond_else@N` / `cond_end@N` numbers. Right-associative
+  and has lower precedence than all binaries: `a || b ? 1 : 2` is
   `(a||b) ? 1 : 2`, `1 ? 2 : 3 || 4` is `1 ? 2 : (3||4)`, and
   `a ? 1 : b ? 2 : 3` is `a ? 1 : (b ? 2 : 3)`
 - labeled statements `label: stmt` (C99 §6.8.1) and `goto label;`
-  (§6.8.6). `passes.label_resolution` ensures labels are unique within
-  a function and that every goto target is declared somewhere in the
-  enclosing function, then rewrites each declared label and matching
-  goto target to `.<funcname>@<orig>` — dasm local labels (leading
-  dot, scoped to the SUBROUTINE) with `@` as the separator (illegal
-  in a C identifier, so user labels stay disjoint from any user-
-  written name; translator-minted labels like `.if_end@N` and
+  (§6.8.6). `passes.label_resolution` ensures labels are unique
+  within a function and that every goto target is declared somewhere
+  in the enclosing function, then rewrites each declared label and
+  matching goto target to `.<funcname>@<orig>` — dasm local labels
+  (leading dot, scoped to the SUBROUTINE) with `@` as the separator
+  (illegal in a C identifier, so user labels stay disjoint from any
+  user-written name; translator-minted labels like `.if_end@N` and
   `.loop@N` also embed `@`, but their part-after-`@` is digits vs.
   a C identifier here, so the two forms can't match). `c99_to_tac`
   lowers `Goto(L)` to TAC `Jump(L)` and `LabeledStmt(L, s)` to
@@ -779,42 +977,31 @@ runnable-shape 6502 assembly):
   own label, so an inner break/continue targets the innermost
   enclosing loop. A break/continue outside any loop raises
   `LoopLabelingError`. `c99_to_tac` derives `<base>_start` /
-  `<base>_continue` / `<base>_break` sub-labels by suffix and lays
-  out each loop kind as documented in pass 5: `while` puts the
-  continue target at the top (re-tests the condition); `do-while`
-  puts the continue target between the body and the test (so
-  `continue` re-runs the test); `for` puts the continue target
-  between the body and the post-clause (so `continue` skips the
-  rest of the body but still runs the post step). A missing `for`
-  condition is treated as unconditionally true, so the test and
-  `JumpIfFalse` drop out of the lowered TAC. The for-header opens
-  its own variable-resolution scope (C99 §6.8.5.3), so
-  `int a; for (int a = 1; a < 10; a++) ...` legally shadows the
-  outer `a` for the duration of the loop
+  `<base>_continue` / `<base>_break` sub-labels by suffix. The
+  for-header opens its own variable-resolution scope (C99
+  §6.8.5.3), so `int a; for (int a = 1; a < 10; a++) ...` legally
+  shadows the outer `a` for the duration of the loop.
 - compound statements (`{ ... }` as a nested statement, C99 §6.8.3).
   Each compound statement opens a new variable-resolution scope —
   shadowing across blocks is legal (`int a = 1; { int a = 2; }` is
   fine), redeclaration in the same block is not. At the TAC level
-  blocks dissolve: TAC has no scope, so `Compound(block)` lowers
-  to its block items in order with no extra structure (names are
+  blocks dissolve: TAC has no scope, so `Compound(block)` lowers to
+  its block items in order with no extra structure (names are
   already globally unique by the time they reach TAC).
 - arbitrary parenthesisation
 
 Not yet anywhere in the pipeline:
 
-- function arguments (`int f(int x)` etc.). The IR threads
-  `arg_bytes` through everywhere, but the parser only accepts
-  `(void)` and the translator hardcodes `arg_bytes = 0`.
-- multiple functions, function calls, `switch` statements (the loop-
-  labeling pass owns break-targets right now; once switch lands its
-  lowering will track its own break-target separately), types other
-  than `int` (so unsigned right shift and unsigned ordering aren't
-  distinguishable yet).
+- types other than `int` (so unsigned right shift and unsigned
+  ordering aren't distinguishable yet).
+- `switch` statements. The loop-labeling pass is sole owner of
+  break-targets right now; once switch lands its lowering will
+  track its own break-target separately.
 - a runtime header that defines `SSP`/`FP` at their ZP addresses,
   initializes `SSP` to top-of-RAM, sets the reset vector to a stub
   that calls `main`, and provides `mul8`/`divmod8`/`shl8`/`asr8`.
-  The emitted assembly references these symbols but the header that
-  supplies them isn't in this repo yet.
+  The emitted assembly references these symbols but the header
+  that supplies them isn't in this repo yet.
 
 ## Tests
 

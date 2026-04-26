@@ -1917,6 +1917,33 @@ class TestMakeTemporaryVariableName(unittest.TestCase):
         self.assertEqual(t.make_temporary_variable_name(), "%1")
         self.assertEqual(t.make_temporary_variable_name(), "%2")
 
+    def test_temp_registers_in_symbol_table_with_passed_type(self):
+        # Each call to `make_temporary_variable_name` adds a
+        # LocalAttr entry to the Translator's symbol table, keyed by
+        # the minted name and typed by the caller-provided type.
+        from passes.type_checking import LocalAttr
+        from passes.type_checking import SymbolTable as ST
+        symbols = ST()
+        t = Translator(symbols)
+        name_int = t.make_temporary_variable_name(c99_ast.Int())
+        name_long = t.make_temporary_variable_name(c99_ast.Long())
+        self.assertEqual(symbols[name_int].type, c99_ast.Int())
+        self.assertIsInstance(symbols[name_int].attrs, LocalAttr)
+        self.assertEqual(symbols[name_long].type, c99_ast.Long())
+        self.assertIsInstance(symbols[name_long].attrs, LocalAttr)
+
+    def test_temp_without_type_defaults_to_int(self):
+        # The optional-type backstop is for unit tests that want
+        # the bare counter without going through type-checking;
+        # the temp still gets registered, with a default Int type.
+        from passes.type_checking import LocalAttr
+        from passes.type_checking import SymbolTable as ST
+        symbols = ST()
+        t = Translator(symbols)
+        name = t.make_temporary_variable_name()
+        self.assertEqual(symbols[name].type, c99_ast.Int())
+        self.assertIsInstance(symbols[name].attrs, LocalAttr)
+
 
 class TestCastAndStaticVariableTypes(unittest.TestCase):
     """The TAC lowering for `Cast`, the typed `Constant` shape, and
@@ -2019,6 +2046,65 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         self.assertIsInstance(ret.val, tac_ast.Constant)
         self.assertIsInstance(ret.val.const, tac_ast.ConstLong)
         self.assertEqual(ret.val.const.int, 0)
+
+
+class TestTempSymbolTableRegistration(unittest.TestCase):
+    """Every `%N` temporary minted during TAC translation is recorded
+    in the Translator's symbol table as a `LocalAttr` automatic-
+    storage object. The recorded type matches the surrounding
+    expression's `data_type` (set by the type checker), so codegen
+    can size each temp's frame slot correctly."""
+
+    def _typecheck_and_lower(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        # Reuse the type-checked program's symbol table — the
+        # Translator extends it with each temp it mints.
+        translate_program(prog, symbols)
+        return symbols
+
+    def test_int_binary_temp_registered_as_int(self):
+        symbols = self._typecheck_and_lower(
+            "int main(void) { int a = 1; int b = 2; return a + b; }"
+        )
+        # The Binary `a + b` produces a temp; both operands and the
+        # result are Int.
+        from passes.type_checking import LocalAttr
+        for name, sym in symbols.items():
+            if not name.startswith("%"):
+                continue
+            self.assertEqual(sym.type, c99_ast.Int())
+            self.assertIsInstance(sym.attrs, LocalAttr)
+
+    def test_long_promotion_temp_registered_as_long(self):
+        # `(long)a + b` — a is Int (gets wrapped in implicit
+        # Cast(Long, …)), then the Binary's result is Long. The temp
+        # for the Cast result and the temp for the Binary result are
+        # both Long.
+        symbols = self._typecheck_and_lower(
+            "int main(void) { int a = 1; long b = (long)2; "
+            "return (int)((long)a + b); }"
+        )
+        # The four temps minted: SignExtend(a)→Long; Binary(+)→Long
+        # (after promotion); Truncate of the outer (int) cast→Int;
+        # the Cast(long)2 wrapping a constant didn't actually need a
+        # SignExtend (no-op identity for that path's Cast on a
+        # Constant — the existing _tac const ConstInt(2) is wrapped
+        # in `(long)` which the type checker handles as Cast). The
+        # exact count isn't load-bearing for the test; we just
+        # verify each temp is registered with its right type.
+        from passes.type_checking import LocalAttr
+        temp_types = {
+            name: sym.type for name, sym in symbols.items()
+            if name.startswith("%")
+        }
+        # At least one Long temp (the SignExtend / Binary result)
+        # and at least one Int temp (the Truncate result).
+        self.assertIn(c99_ast.Long(), temp_types.values())
+        self.assertIn(c99_ast.Int(), temp_types.values())
+        for sym in (symbols[name] for name in temp_types):
+            self.assertIsInstance(sym.attrs, LocalAttr)
 
 
 if __name__ == "__main__":

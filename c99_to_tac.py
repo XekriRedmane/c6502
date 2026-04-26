@@ -189,8 +189,10 @@ import tac_ast
 from passes.type_checking import (
     FunAttr,
     Initial,
+    LocalAttr,
     NoInitializer,
     StaticAttr,
+    Symbol,
     SymbolTable,
     Tentative,
 )
@@ -310,9 +312,28 @@ class Translator:
         # must pass a real symbol table — those paths read FunAttr.
         self._symbols = symbols if symbols is not None else SymbolTable()
 
-    def make_temporary_variable_name(self) -> str:
+    def make_temporary_variable_name(
+        self, t: c99_ast.Type_data_type | None = None,
+    ) -> str:
+        """Mint a fresh temporary variable name `%N` and register it
+        in the symbol table as a `LocalAttr` automatic-storage
+        object. Each temporary holds the result of an expression, so
+        its type is the surrounding expression's `data_type` — the
+        caller passes that in so codegen can size each temp's
+        frame slot correctly.
+
+        The optional default of `None` is a backstop for unit tests
+        that exercise the bare counter without going through
+        type-checking; the temp registers as `Int` in that case.
+        Production callers — `translate_exp` for every kind of
+        compound expression — always pass an explicit type.
+        """
         name = f"%{self._temp_counter}"
         self._temp_counter += 1
+        self._symbols[name] = Symbol(
+            type=t if t is not None else c99_ast.Int(),
+            attrs=LocalAttr(),
+        )
         return name
 
     def make_label(self, prefix: str) -> str:
@@ -798,8 +819,10 @@ class Translator:
                 source = inner.data_type
                 if source is None or source == target:
                     return inner_val
+                # The temp holds the casted value — its type is the
+                # cast's target.
                 dst = tac_ast.Var(
-                    name=self.make_temporary_variable_name(),
+                    name=self.make_temporary_variable_name(target),
                 )
                 if (isinstance(target, c99_ast.Long)
                         and isinstance(source, c99_ast.Int)):
@@ -819,7 +842,12 @@ class Translator:
                 return dst
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
-                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                # The temp's type is the Unary node's data_type
+                # (set by the type checker — same as inner's type
+                # for negate/complement, Int for logical-not).
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
                 instrs.append(tac_ast.Unary(
                     op=self.translate_unop(op),
                     src=src,
@@ -842,7 +870,13 @@ class Translator:
                 # readers will expect.
                 src1 = self.translate_exp(left, instrs)
                 src2 = self.translate_exp(right, instrs)
-                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                # The Binary's data_type (set by the type checker)
+                # is the result type after usual arithmetic
+                # conversions — the common type for arithmetic /
+                # bitwise / shift, Int for comparisons.
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
                 instrs.append(tac_ast.Binary(
                     op=self.translate_binop(op),
                     src1=src1,
@@ -896,7 +930,12 @@ class Translator:
                 cond_val = self.translate_exp(cond, instrs)
                 else_label = self.make_label("cond_else")
                 end_label = self.make_label("cond_end")
-                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                # The two arms have already been promoted to the
+                # common type by the type checker, and the
+                # Conditional's data_type is that common type.
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
                 instrs.append(tac_ast.JumpIfFalse(
                     condition=cond_val, target=else_label,
                 ))
@@ -920,7 +959,13 @@ class Translator:
                 arg_vals = [
                     self.translate_exp(a, instrs) for a in args
                 ]
-                dst = tac_ast.Var(name=self.make_temporary_variable_name())
+                # The temp captures the call's return value; its
+                # type is the function's declared return type,
+                # which the type checker has stamped on the
+                # FunctionCall node's data_type.
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
                 instrs.append(tac_ast.FunctionCall(
                     name=name, args=arg_vals, dst=dst,
                 ))
@@ -942,14 +987,18 @@ class Translator:
                         f"got {operand!r}"
                     )
                 var = tac_ast.Var(name=operand.name)
-                old = tac_ast.Var(name=self.make_temporary_variable_name())
-                instrs.append(tac_ast.Copy(src=var, dst=old))
-                new = tac_ast.Var(name=self.make_temporary_variable_name())
-                # The `+1` / `-1` literal must have the same type as
-                # the operand so the Binary's two operands match.
                 # Operand's data_type was set by the type checker;
                 # fall back to Int if absent (synthetic test AST).
+                # Both temps (the captured `old` value and the
+                # incremented `new` value) have the operand's type.
                 op_type = operand.data_type or c99_ast.Int()
+                old = tac_ast.Var(
+                    name=self.make_temporary_variable_name(op_type),
+                )
+                instrs.append(tac_ast.Copy(src=var, dst=old))
+                new = tac_ast.Var(
+                    name=self.make_temporary_variable_name(op_type),
+                )
                 instrs.append(tac_ast.Binary(
                     op=self.translate_incdec(op),
                     src1=var,
@@ -984,7 +1033,11 @@ class Translator:
             short_circuit_value, fallthrough_value = 0, 1
         branch_label = self.make_label(branch_prefix)
         end_label = self.make_label(end_prefix)
-        dst = tac_ast.Var(name=self.make_temporary_variable_name())
+        # Short-circuit's result is always Int per C99 §6.5.13.3 /
+        # §6.5.14.3, regardless of operand type.
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.Int()),
+        )
 
         src1 = self.translate_exp(left, instrs)
         instrs.append(short_circuit_jump(condition=src1, target=branch_label))

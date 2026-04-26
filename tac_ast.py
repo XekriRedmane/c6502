@@ -31,7 +31,8 @@ class Function(Type_top_level):
 class StaticVariable(Type_top_level):
     name: str
     is_global: bool
-    init: int
+    data_type: Type_data_type
+    init: Type_static_init
 
 
 @dataclass
@@ -42,6 +43,18 @@ class Type_instruction:
 @dataclass
 class Ret(Type_instruction):
     val: Type_val
+
+
+@dataclass
+class SignExtend(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class Truncate(Type_instruction):
+    src: Type_val
+    dst: Type_val
 
 
 @dataclass
@@ -101,7 +114,7 @@ class Type_val:
 
 @dataclass
 class Constant(Type_val):
-    value: int
+    const: Type_const
 
 
 @dataclass
@@ -212,3 +225,54 @@ class LessOrEqual(Type_binary_operator):
 @dataclass
 class GreaterOrEqual(Type_binary_operator):
     pass
+
+
+@dataclass
+class Type_data_type:
+    pass
+
+
+@dataclass
+class Int(Type_data_type):
+    pass
+
+
+@dataclass
+class Long(Type_data_type):
+    pass
+
+
+@dataclass(kw_only=True)
+class FunType(Type_data_type):
+    params: list[Type_data_type] = field(default_factory=list)
+    ret: Type_data_type
+
+
+@dataclass
+class Type_const:
+    pass
+
+
+@dataclass
+class ConstInt(Type_const):
+    int: int
+
+
+@dataclass
+class ConstLong(Type_const):
+    int: int
+
+
+@dataclass
+class Type_static_init:
+    pass
+
+
+@dataclass
+class IntInit(Type_static_init):
+    int: int
+
+
+@dataclass
+class LongInit(Type_static_init):
+    int: int

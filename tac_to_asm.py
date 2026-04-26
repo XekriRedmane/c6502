@@ -118,6 +118,18 @@ _SHL8 = "shl8"
 _ASR8 = "asr8"
 
 
+def _static_init_value(init: tac_ast.Type_static_init) -> int:
+    """Pull the raw integer payload out of a TAC `static_init` (the
+    typed wrapper around the value of a `StaticVariable.init`).
+    Both `IntInit` and `LongInit` carry the value in their `int`
+    field — the wrapper exists for size dispatch on the codegen
+    side, not to alter the value."""
+    match init:
+        case tac_ast.IntInit(int=v) | tac_ast.LongInit(int=v):
+            return v
+    raise TypeError(f"unexpected static_init: {init!r}")
+
+
 class Translator:
     """Holds the label counter so inline lowerings in the same program
     (comparisons and unary `!`) get unique labels. One Translator per
@@ -152,10 +164,20 @@ class Translator:
                 out: list[asm_ast.Type_top_level] = []
                 for tl in top_levels:
                     if isinstance(tl, tac_ast.StaticVariable):
+                        # The TAC StaticVariable carries a typed
+                        # init (`IntInit` / `LongInit`) and a
+                        # data_type. The asm `StaticVariable` is
+                        # untyped and stores a raw byte init; pull
+                        # the underlying integer out of the static-
+                        # init wrapper. Long-typed cells get one
+                        # byte today (the deferred 16-bit codegen
+                        # boundary); values above 1-byte range
+                        # surface as `_check_byte` failures at
+                        # asm emit time.
                         out.append(asm_ast.StaticVariable(
                             name=tl.name,
                             is_global=tl.is_global,
-                            init=tl.init,
+                            init=_static_init_value(tl.init),
                         ))
                     else:
                         out.append(self.translate_function(tl))
@@ -206,6 +228,21 @@ class Translator:
                     asm_ast.Mov(src=translate_val(val), dst=_REG_A),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ]
+            case tac_ast.SignExtend() | tac_ast.Truncate():
+                # Sign-extension (Int → Long) and truncation
+                # (Long → Int) need 16-bit-aware codegen — multi-
+                # byte loads / stores plus carry-propagation for
+                # SignExtend's high-byte step. None of that is
+                # wired through the asm IR yet, so encountering
+                # either node here means a program is using long
+                # arithmetic that the back end can't lower today.
+                # Raise loudly rather than silently emitting a
+                # wrong 1-byte op.
+                kind = type(instr).__name__
+                raise NotImplementedError(
+                    f"asm-level {kind} (16-bit conversion) not "
+                    f"implemented yet"
+                )
             case tac_ast.Unary(op=op, src=src, dst=dst):
                 return (
                     [asm_ast.Mov(src=translate_val(src), dst=_REG_A)]
@@ -504,8 +541,14 @@ def _translate_ax_call(
 
 def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
     match val:
-        case tac_ast.Constant(value=v):
-            return asm_ast.Imm(value=v)
+        case tac_ast.Constant(const=c):
+            # The TAC const carries variant info (ConstInt /
+            # ConstLong); the asm `Imm` operand is just a raw byte
+            # today. Pulling out `c.int` discards the variant, which
+            # is fine for Int-typed constants and the deferred-
+            # codegen boundary for Long-typed ones — values above
+            # 1-byte range hit `_check_byte` at asm emit time.
+            return asm_ast.Imm(value=c.int)
         case tac_ast.Var(name=n):
             return asm_ast.Pseudo(name=n)
     raise TypeError(f"unexpected val node: {val!r}")

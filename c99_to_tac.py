@@ -217,6 +217,80 @@ def _break_label(loop_label: str) -> str:
     return f"{loop_label}_break"
 
 
+# ---------------------------------------------------------------------------
+# c99 → TAC type / const translation
+# ---------------------------------------------------------------------------
+#
+# The c99 and TAC ASDLs declare parallel `data_type` and `const`
+# sums (`Int | Long | FunType` and `ConstInt(int) | ConstLong(int)`),
+# so the translation between them is a one-to-one rewrap. Keeping the
+# TAC nodes as their own dataclasses (instead of reusing the c99
+# nodes) lets later passes evolve TAC's type system without
+# disturbing the source AST — and the rewrap stays cheap.
+
+def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
+    """Translate a c99 data_type to its TAC counterpart."""
+    if isinstance(t, c99_ast.Int):
+        return tac_ast.Int()
+    if isinstance(t, c99_ast.Long):
+        return tac_ast.Long()
+    if isinstance(t, c99_ast.FunType):
+        return tac_ast.FunType(
+            params=[_to_tac_data_type(p) for p in t.params],
+            ret=_to_tac_data_type(t.ret),
+        )
+    raise TypeError(f"unexpected c99 data_type: {t!r}")
+
+
+def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
+    """Translate a c99 const to its TAC counterpart, preserving the
+    variant. The size invariants (ConstInt in -128..127, ConstLong
+    in the rest of the signed-2-byte range) are already enforced by
+    the parser's `_make_const`."""
+    if isinstance(c, c99_ast.ConstInt):
+        return tac_ast.ConstInt(int=c.int)
+    if isinstance(c, c99_ast.ConstLong):
+        return tac_ast.ConstLong(int=c.int)
+    raise TypeError(f"unexpected c99 const: {c!r}")
+
+
+def _tac_const_for(t: c99_ast.Type_data_type, value: int) -> tac_ast.Type_const:
+    """Build a TAC const of the right variant for an Int / Long
+    type tag. Used by the synthetic-constant call sites (postfix
+    `+1`, short-circuit 0/1, implicit `return 0`) where the c99 AST
+    has no source-level constant to translate."""
+    if isinstance(t, c99_ast.Int):
+        return tac_ast.ConstInt(int=value)
+    if isinstance(t, c99_ast.Long):
+        return tac_ast.ConstLong(int=value)
+    raise TypeError(
+        f"cannot build a TAC const for non-object type {t!r}"
+    )
+
+
+def _tac_const_val(t: c99_ast.Type_data_type, value: int) -> tac_ast.Constant:
+    """Convenience: build a TAC `Constant(const=...)` val typed by
+    `t`. The result is a `Type_val` ready to drop into a TAC
+    instruction's src / dst slot."""
+    return tac_ast.Constant(const=_tac_const_for(t, value))
+
+
+def _tac_static_init_for(
+    t: c99_ast.Type_data_type, value: int,
+) -> tac_ast.Type_static_init:
+    """Build a TAC `static_init` (IntInit / LongInit) wrapping `value`,
+    with the variant chosen by the declared type. Used both for
+    explicit `Initial(c)` initializers and for tentative definitions
+    that resolve to zero of the declared type at end-of-TU."""
+    if isinstance(t, c99_ast.Int):
+        return tac_ast.IntInit(int=value)
+    if isinstance(t, c99_ast.Long):
+        return tac_ast.LongInit(int=value)
+    raise TypeError(
+        f"static-storage object can't have non-object type {t!r}"
+    )
+
+
 class Translator:
     def __init__(self, symbols: SymbolTable | None = None) -> None:
         self._temp_counter = 0
@@ -343,8 +417,18 @@ class Translator:
         # control falling off the end of any TAC function
         # would be undefined, and the implicit zero-return
         # papers over execution paths that forgot a `return`.
+        # The constant's variant matches the function's declared
+        # return type so a Long-returning function gets a
+        # ConstLong(0) and an Int-returning one gets ConstInt(0).
         if not instrs or not isinstance(instrs[-1], tac_ast.Ret):
-            instrs.append(tac_ast.Ret(val=tac_ast.Constant(value=0)))
+            ret_type = (
+                fd.data_type.ret
+                if isinstance(fd.data_type, c99_ast.FunType)
+                else c99_ast.Int()
+            )
+            instrs.append(tac_ast.Ret(
+                val=_tac_const_val(ret_type, 0),
+            ))
         # `is_global` rides through from the symbol table. Function
         # names aren't renamed by identifier_resolution (linkage
         # forces the source spelling), so the lookup key matches
@@ -372,13 +456,18 @@ class Translator:
         # Walk the symbol table in insertion order (which matches
         # source order for file-scope decls) and emit a TAC
         # StaticVariable for every StaticAttr with a concrete initial
-        # value. NoInitializer entries are pure references — the
+        # value. The initial value is wrapped in a typed
+        # `IntInit(...)` or `LongInit(...)` matching the variable's
+        # declared type, so codegen knows whether to emit a 1-byte
+        # or 2-byte cell.
+        # NoInitializer entries are pure references — the
         # definition is somewhere else and emits its own
         # StaticVariable, or it's an external dependency the linker
         # resolves. C99 §6.9.2.2: a Tentative definition that wasn't
         # upgraded by an explicit Initial somewhere in the TU resolves
-        # to a zero-initialized definition at end-of-TU; that's
-        # exactly when we hit Tentative here, so we emit init=0.
+        # to a zero-initialized definition at end-of-TU; we emit that
+        # zero through the same IntInit / LongInit wrapper, choosing
+        # the variant by the variable's declared type.
         out: list[tac_ast.StaticVariable] = []
         for name, sym in self._symbols.items():
             if not isinstance(sym.attrs, StaticAttr):
@@ -392,10 +481,12 @@ class Translator:
                 continue
             else:
                 raise TypeError(f"unexpected initial value: {init!r}")
+            data_type = _to_tac_data_type(sym.type)
             out.append(tac_ast.StaticVariable(
                 name=name,
                 is_global=sym.attrs.is_global,
-                init=init_value,
+                data_type=data_type,
+                init=_tac_static_init_for(sym.type, init_value),
             ))
         return out
 
@@ -684,20 +775,48 @@ class Translator:
     ) -> tac_ast.Type_val:
         match exp:
             case c99_ast.Constant(const=c):
-                # ConstInt and ConstLong both lower to a TAC
-                # `Constant(value)` for now. Sizing happens later in
-                # the pipeline; this slice doesn't yet carry per-
-                # operand size through TAC, so a too-large value will
-                # surface as a `_check_byte` failure at asm emit time.
-                return tac_ast.Constant(value=c.int)
-            case c99_ast.Cast(exp=inner):
-                # `Cast(target, exp)` is a no-op at TAC for this
-                # slice — the type system has already validated the
-                # cast, and 16-bit conversion codegen is deferred.
-                # When the back end learns size-changing conversions
-                # this becomes the place to emit a sign-extension or
-                # truncation primitive.
-                return self.translate_exp(inner, instrs)
+                # The c99 and TAC const sums are 1-to-1; just rewrap
+                # under the matching TAC variant. The asm backend
+                # extracts the underlying int and feeds it to its
+                # `Imm` operand, so a ConstLong value above the
+                # 1-byte range will hit the deferred-codegen
+                # boundary at asm emit's `_check_byte`.
+                return tac_ast.Constant(const=_to_tac_const(c))
+            case c99_ast.Cast(target_type=target, exp=inner):
+                # Lower `Cast` to a typed conversion instruction
+                # when the source and target types differ:
+                #   Int  → Long   →  SignExtend(src, dst)
+                #   Long → Int    →  Truncate(src, dst)
+                #   matching      →  no-op (just return inner's val)
+                # The source type comes from the inner node's
+                # `data_type`, set by the type checker. If it's None
+                # (synthetic AST that bypassed type-checking — e.g.
+                # a unit test of Cast lowering on its own), fall
+                # back to the no-op path so the test stays focused
+                # on the structural translation.
+                inner_val = self.translate_exp(inner, instrs)
+                source = inner.data_type
+                if source is None or source == target:
+                    return inner_val
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(),
+                )
+                if (isinstance(target, c99_ast.Long)
+                        and isinstance(source, c99_ast.Int)):
+                    instrs.append(tac_ast.SignExtend(
+                        src=inner_val, dst=dst,
+                    ))
+                elif (isinstance(target, c99_ast.Int)
+                        and isinstance(source, c99_ast.Long)):
+                    instrs.append(tac_ast.Truncate(
+                        src=inner_val, dst=dst,
+                    ))
+                else:
+                    raise TypeError(
+                        f"cannot lower Cast from {source!r} to "
+                        f"{target!r}"
+                    )
+                return dst
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
                 dst = tac_ast.Var(name=self.make_temporary_variable_name())
@@ -826,10 +945,15 @@ class Translator:
                 old = tac_ast.Var(name=self.make_temporary_variable_name())
                 instrs.append(tac_ast.Copy(src=var, dst=old))
                 new = tac_ast.Var(name=self.make_temporary_variable_name())
+                # The `+1` / `-1` literal must have the same type as
+                # the operand so the Binary's two operands match.
+                # Operand's data_type was set by the type checker;
+                # fall back to Int if absent (synthetic test AST).
+                op_type = operand.data_type or c99_ast.Int()
                 instrs.append(tac_ast.Binary(
                     op=self.translate_incdec(op),
                     src1=var,
-                    src2=tac_ast.Constant(value=1),
+                    src2=_tac_const_val(op_type, 1),
                     dst=new,
                 ))
                 instrs.append(tac_ast.Copy(src=new, dst=var))
@@ -866,13 +990,17 @@ class Translator:
         instrs.append(short_circuit_jump(condition=src1, target=branch_label))
         src2 = self.translate_exp(right, instrs)
         instrs.append(short_circuit_jump(condition=src2, target=branch_label))
+        # Short-circuit's result is always Int (per C99 §6.5.13.3 /
+        # §6.5.14.3), so the 0/1 selector constants are ConstInt.
         instrs.append(tac_ast.Copy(
-            src=tac_ast.Constant(value=fallthrough_value), dst=dst,
+            src=_tac_const_val(c99_ast.Int(), fallthrough_value),
+            dst=dst,
         ))
         instrs.append(tac_ast.Jump(target=end_label))
         instrs.append(tac_ast.Label(name=branch_label))
         instrs.append(tac_ast.Copy(
-            src=tac_ast.Constant(value=short_circuit_value), dst=dst,
+            src=_tac_const_val(c99_ast.Int(), short_circuit_value),
+            dst=dst,
         ))
         instrs.append(tac_ast.Label(name=end_label))
         return dst

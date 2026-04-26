@@ -2,9 +2,11 @@ module TAC {
     program = Program(top_level*)
     top_level =
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
-        | StaticVariable(identifier name, bool is_global, int init)
+        | StaticVariable(identifier name, bool is_global, data_type, static_init init)
     instruction =
         Ret(val)
+        | SignExtend(val src, val dst)
+        | Truncate(val src, val dst)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)
@@ -13,7 +15,7 @@ module TAC {
         | JumpIfFalse(val condition, identifier target)
         | Label(identifier name)
         | FunctionCall(identifier name, val* args, val dst)
-    val = Constant(int value) | Var(identifier name)
+    val = Constant(const) | Var(identifier name)
     unary_operator = Complement | Negate | LogicalNot
     binary_operator =
         Add | Subtract | Multiply | Divide | Modulo
@@ -21,4 +23,7 @@ module TAC {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
+    data_type = Int | Long | FunType(data_type* params, data_type ret)
+    const = ConstInt(int) | ConstLong(int)
+    static_init = IntInit(int) | LongInit(int)
 }

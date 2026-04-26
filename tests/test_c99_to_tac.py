@@ -38,7 +38,7 @@ class TestTranslateExp(unittest.TestCase):
         t = Translator()
         instrs: list = []
         result = t.translate_exp(c99_ast.Constant(const=c99_ast.ConstInt(int=42)), instrs)
-        self.assertEqual(result, tac_ast.Constant(value=42))
+        self.assertEqual(result, tac_ast.Constant(const=tac_ast.ConstInt(int=42)))
         self.assertEqual(instrs, [])
 
     def test_unary_emits_instruction_and_returns_dst_var(self):
@@ -56,7 +56,7 @@ class TestTranslateExp(unittest.TestCase):
             instrs,
             [tac_ast.Unary(
                 op=tac_ast.Negate(),
-                src=tac_ast.Constant(value=5),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                 dst=tac_ast.Var(name="%0"),
             )],
         )
@@ -78,7 +78,7 @@ class TestTranslateExp(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Unary(
                 op=tac_ast.Complement(),
-                src=tac_ast.Constant(value=5),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                 dst=tac_ast.Var(name="%0"),
             ),
             tac_ast.Unary(
@@ -104,8 +104,8 @@ class TestTranslateExp(unittest.TestCase):
             instrs,
             [tac_ast.Binary(
                 op=tac_ast.Add(),
-                src1=tac_ast.Constant(value=1),
-                src2=tac_ast.Constant(value=2),
+                src1=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 dst=tac_ast.Var(name="%0"),
             )],
         )
@@ -184,12 +184,12 @@ class TestTranslateExp(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Unary(
                 op=tac_ast.Negate(),
-                src=tac_ast.Constant(value=1),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 dst=tac_ast.Var(name="%0"),
             ),
             tac_ast.Unary(
                 op=tac_ast.Negate(),
-                src=tac_ast.Constant(value=2),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 dst=tac_ast.Var(name="%1"),
             ),
             tac_ast.Binary(
@@ -229,7 +229,7 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
         self.assertEqual(
             instrs,
             [tac_ast.Copy(
-                src=tac_ast.Constant(value=5),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                 dst=tac_ast.Var(name="@0.a"),
             )],
         )
@@ -274,8 +274,8 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
             [
                 tac_ast.Binary(
                     op=tac_ast.Add(),
-                    src1=tac_ast.Constant(value=1),
-                    src2=tac_ast.Constant(value=2),
+                    src1=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                    src2=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Copy(
@@ -307,7 +307,7 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
             instrs,
             [
                 tac_ast.Copy(
-                    src=tac_ast.Constant(value=5),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                     dst=tac_ast.Var(name="@0.a"),
                 ),
                 tac_ast.Copy(
@@ -380,7 +380,7 @@ class TestTranslateBlockItems(unittest.TestCase):
         self.assertEqual(
             instrs,
             [tac_ast.Copy(
-                src=tac_ast.Constant(value=5),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                 dst=tac_ast.Var(name="@0.x"),
             )],
         )
@@ -406,8 +406,8 @@ class TestTranslateBlockItems(unittest.TestCase):
             [
                 tac_ast.Binary(
                     op=tac_ast.Add(),
-                    src1=tac_ast.Constant(value=1),
-                    src2=tac_ast.Constant(value=2),
+                    src1=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                    src2=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Copy(
@@ -432,7 +432,7 @@ class TestTranslateBlockItems(unittest.TestCase):
         self.assertEqual(
             instrs,
             [tac_ast.Copy(
-                src=tac_ast.Constant(value=5),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                 dst=tac_ast.Var(name="@0.a"),
             )],
         )
@@ -466,7 +466,7 @@ class TestTranslateBlockItems(unittest.TestCase):
         self.assertEqual(
             instrs,
             [tac_ast.Copy(
-                src=tac_ast.Constant(value=7),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=7)),
                 dst=tac_ast.Var(name="@0.x"),
             )],
         )
@@ -492,10 +492,10 @@ class TestTranslateIfStatement(unittest.TestCase):
         )
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".if_end@0",
             ),
-            tac_ast.Ret(val=tac_ast.Constant(value=2)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=2))),
             tac_ast.Label(name=".if_end@0"),
         ])
 
@@ -518,13 +518,13 @@ class TestTranslateIfStatement(unittest.TestCase):
         # for if_end -> if_end@0, then if_else -> if_else@1).
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".if_else@1",
             ),
-            tac_ast.Ret(val=tac_ast.Constant(value=2)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=2))),
             tac_ast.Jump(target=".if_end@0"),
             tac_ast.Label(name=".if_else@1"),
-            tac_ast.Ret(val=tac_ast.Constant(value=3)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=3))),
             tac_ast.Label(name=".if_end@0"),
         ])
 
@@ -549,14 +549,14 @@ class TestTranslateIfStatement(unittest.TestCase):
         )
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".if_end@0",
             ),
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=2),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 target=".if_end@1",
             ),
-            tac_ast.Ret(val=tac_ast.Constant(value=3)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=3))),
             tac_ast.Label(name=".if_end@1"),
             tac_ast.Label(name=".if_end@0"),
         ])
@@ -609,7 +609,7 @@ class TestTranslateGotoAndLabeled(unittest.TestCase):
         )
         self.assertEqual(instrs, [
             tac_ast.Label(name=".main@foo"),
-            tac_ast.Ret(val=tac_ast.Constant(value=0)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0))),
         ])
 
     def test_labeled_null_statement_emits_just_the_label(self):
@@ -655,7 +655,7 @@ class TestTranslateGotoAndLabeled(unittest.TestCase):
             [
                 tac_ast.Label(name=".main@foo"),
                 tac_ast.Jump(target=".main@foo"),
-                tac_ast.Ret(val=tac_ast.Constant(value=0)),
+                tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0))),
             ],
         )
 
@@ -689,7 +689,7 @@ class TestTranslateCompound(unittest.TestCase):
         )
         self.assertEqual(instrs, [
             tac_ast.Copy(
-                src=tac_ast.Constant(value=1),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 dst=tac_ast.Var(name="@0.x"),
             ),
             tac_ast.Ret(val=tac_ast.Var(name="@0.x")),
@@ -722,7 +722,7 @@ class TestTranslateCompound(unittest.TestCase):
             instrs,
         )
         self.assertEqual(instrs, [
-            tac_ast.Ret(val=tac_ast.Constant(value=1)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=1))),
         ])
 
     def test_compound_inside_function_body(self):
@@ -741,7 +741,7 @@ class TestTranslateCompound(unittest.TestCase):
         ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
-            [tac_ast.Ret(val=tac_ast.Constant(value=7))],
+            [tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=7)))],
         )
 
     def test_compound_with_distinct_shadowed_decls(self):
@@ -765,7 +765,7 @@ class TestTranslateCompound(unittest.TestCase):
         # Just the inner Compound's effect.
         self.assertEqual(instrs, [
             tac_ast.Copy(
-                src=tac_ast.Constant(value=2),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 dst=tac_ast.Var(name="@1.x"),
             ),
         ])
@@ -791,10 +791,10 @@ class TestTranslateCompound(unittest.TestCase):
         )
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".if_end@0",
             ),
-            tac_ast.Ret(val=tac_ast.Constant(value=2)),
+            tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=2))),
             tac_ast.Label(name=".if_end@0"),
         ])
 
@@ -823,17 +823,17 @@ class TestTranslateConditional(unittest.TestCase):
         self.assertEqual(val, tac_ast.Var(name="%0"))
         self.assertEqual(instrs, [
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".cond_else@0",
             ),
             tac_ast.Copy(
-                src=tac_ast.Constant(value=2),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 dst=tac_ast.Var(name="%0"),
             ),
             tac_ast.Jump(target=".cond_end@1"),
             tac_ast.Label(name=".cond_else@0"),
             tac_ast.Copy(
-                src=tac_ast.Constant(value=3),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
                 dst=tac_ast.Var(name="%0"),
             ),
             tac_ast.Label(name=".cond_end@1"),
@@ -880,7 +880,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
             tac_ast.Function(
                 name="main",
                 is_global=True,
-                instructions=[tac_ast.Ret(val=tac_ast.Constant(value=0))],
+                instructions=[tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0)))],
             ),
         )
 
@@ -900,10 +900,10 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
                 is_global=True,
                 instructions=[
                     tac_ast.Copy(
-                        src=tac_ast.Constant(value=5),
+                        src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                         dst=tac_ast.Var(name="@0.x"),
                     ),
-                    tac_ast.Ret(val=tac_ast.Constant(value=0)),
+                    tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0))),
                 ],
             ),
         )
@@ -918,7 +918,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
-            [tac_ast.Ret(val=tac_ast.Constant(value=7))],
+            [tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=7)))],
         )
 
     def test_null_after_return_does_not_trigger_second_return(self):
@@ -932,7 +932,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         ]))
         self.assertEqual(
             Translator().translate_function(fn).instructions,
-            [tac_ast.Ret(val=tac_ast.Constant(value=7))],
+            [tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=7)))],
         )
 
     def test_block_items_processed_in_order(self):
@@ -958,11 +958,11 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
             Translator().translate_function(fn).instructions,
             [
                 tac_ast.Copy(
-                    src=tac_ast.Constant(value=1),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                     dst=tac_ast.Var(name="@0.a"),
                 ),
                 tac_ast.Copy(
-                    src=tac_ast.Constant(value=2),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                     dst=tac_ast.Var(name="@1.b"),
                 ),
                 tac_ast.Ret(val=tac_ast.Var(name="@1.b")),
@@ -986,7 +986,7 @@ class TestTranslateProgram(unittest.TestCase):
                 name="main",
                 is_global=True,
                 params=[],
-                instructions=[tac_ast.Ret(val=tac_ast.Constant(value=42))],
+                instructions=[tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=42)))],
             )]),
         )
 
@@ -1005,7 +1005,7 @@ class TestTranslateProgram(unittest.TestCase):
             [
                 tac_ast.Unary(
                     op=tac_ast.Negate(),
-                    src=tac_ast.Constant(value=5),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Ret(val=tac_ast.Var(name="%0")),
@@ -1019,7 +1019,7 @@ class TestTranslateProgram(unittest.TestCase):
             [
                 tac_ast.Unary(
                     op=tac_ast.Complement(),
-                    src=tac_ast.Constant(value=5),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Unary(
@@ -1054,7 +1054,7 @@ class TestTranslateProgram(unittest.TestCase):
             tac_ast.Binary(
                 op=tac_ast.Add(),
                 src1=tac_ast.Var(name="a"),
-                src2=tac_ast.Constant(value=1),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 dst=tac_ast.Var(name="%1"),
             ),
             tac_ast.Copy(
@@ -1101,7 +1101,7 @@ class TestTranslateProgram(unittest.TestCase):
             tac_ast.Binary(
                 op=tac_ast.Add(),
                 src1=tac_ast.Var(name="a"),
-                src2=tac_ast.Constant(value=1),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 dst=tac_ast.Var(name="%1"),
             ),
             tac_ast.Copy(
@@ -1143,14 +1143,14 @@ class TestTranslateProgram(unittest.TestCase):
                 tac_ast.Binary(
                     op=tac_ast.Add(),
                     src1=tac_ast.Var(name="a"),
-                    src2=tac_ast.Constant(value=1),
+                    src2=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Copy(
                     src=tac_ast.Var(name="%0"),
                     dst=tac_ast.Var(name="a"),
                 ),
-                tac_ast.Ret(val=tac_ast.Constant(value=0)),
+                tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0))),
             ],
         )
 
@@ -1169,14 +1169,14 @@ class TestTranslateProgram(unittest.TestCase):
                 tac_ast.Binary(
                     op=tac_ast.Add(),
                     src1=tac_ast.Var(name="a"),
-                    src2=tac_ast.Constant(value=1),
+                    src2=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Copy(
                     src=tac_ast.Var(name="%0"),
                     dst=tac_ast.Var(name="a"),
                 ),
-                tac_ast.Ret(val=tac_ast.Constant(value=0)),
+                tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0))),
             ],
         )
 
@@ -1191,13 +1191,13 @@ class TestTranslateProgram(unittest.TestCase):
             [
                 tac_ast.Binary(
                     op=tac_ast.Multiply(),
-                    src1=tac_ast.Constant(value=2),
-                    src2=tac_ast.Constant(value=3),
+                    src1=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
+                    src2=tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Binary(
                     op=tac_ast.Add(),
-                    src1=tac_ast.Constant(value=1),
+                    src1=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                     src2=tac_ast.Var(name="%0"),
                     dst=tac_ast.Var(name="%1"),
                 ),
@@ -1240,7 +1240,7 @@ class TestTranslateLoops(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Label(name=".loop@0_continue"),
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_break",
             ),
             tac_ast.Jump(target=".loop@0_continue"),
@@ -1267,7 +1267,7 @@ class TestTranslateLoops(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Label(name=".loop@0_continue"),
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_break",
             ),
             tac_ast.Jump(target=".loop@0_break"),
@@ -1293,7 +1293,7 @@ class TestTranslateLoops(unittest.TestCase):
             tac_ast.Label(name=".loop@0_start"),
             tac_ast.Label(name=".loop@0_continue"),
             tac_ast.JumpIfTrue(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_start",
             ),
             tac_ast.Label(name=".loop@0_break"),
@@ -1318,7 +1318,7 @@ class TestTranslateLoops(unittest.TestCase):
             tac_ast.Jump(target=".loop@0_continue"),
             tac_ast.Label(name=".loop@0_continue"),
             tac_ast.JumpIfTrue(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_start",
             ),
             tac_ast.Label(name=".loop@0_break"),
@@ -1372,14 +1372,14 @@ class TestTranslateLoops(unittest.TestCase):
         self.assertEqual(instrs, [
             # init: i = 0.
             tac_ast.Copy(
-                src=tac_ast.Constant(value=0),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=0)),
                 dst=tac_ast.Var(name="i"),
             ),
             tac_ast.Label(name=".loop@0_start"),
             # No condition insns needed for a Constant — JumpIfFalse
             # takes the Constant directly.
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_break",
             ),
             # body: break -> Jump(_break).
@@ -1395,7 +1395,7 @@ class TestTranslateLoops(unittest.TestCase):
             tac_ast.Binary(
                 op=tac_ast.Add(),
                 src1=tac_ast.Var(name="i"),
-                src2=tac_ast.Constant(value=1),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 dst=tac_ast.Var(name="%1"),
             ),
             tac_ast.Copy(
@@ -1426,7 +1426,7 @@ class TestTranslateLoops(unittest.TestCase):
         )
         self.assertEqual(instrs, [
             tac_ast.Copy(
-                src=tac_ast.Constant(value=0),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(int=0)),
                 dst=tac_ast.Var(name="i"),
             ),
             tac_ast.Label(name=".loop@0_start"),
@@ -1508,7 +1508,7 @@ class TestTranslateLoops(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Label(name=".loop@0_start"),
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_break",
             ),
             tac_ast.Label(name=".loop@0_continue"),
@@ -1595,13 +1595,13 @@ class TestTranslateNestedLoops(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Label(name=".loop@0_continue"),
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@0_break",
             ),
             # Inner while.
             tac_ast.Label(name=".loop@1_continue"),
             tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(value=1),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
                 target=".loop@1_break",
             ),
             tac_ast.Jump(target=".loop@1_break"),  # inner break
@@ -1711,8 +1711,8 @@ class TestTranslateFunctionCall(unittest.TestCase):
             tac_ast.FunctionCall(
                 name="f",
                 args=[
-                    tac_ast.Constant(value=1),
-                    tac_ast.Constant(value=2),
+                    tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                    tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 ],
                 dst=tac_ast.Var(name="%0"),
             ),
@@ -1739,8 +1739,8 @@ class TestTranslateFunctionCall(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.Binary(
                 op=tac_ast.Add(),
-                src1=tac_ast.Constant(value=1),
-                src2=tac_ast.Constant(value=2),
+                src1=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
                 dst=tac_ast.Var(name="%0"),
             ),
             tac_ast.FunctionCall(
@@ -1775,12 +1775,12 @@ class TestTranslateFunctionCall(unittest.TestCase):
         self.assertEqual(instrs, [
             tac_ast.FunctionCall(
                 name="g",
-                args=[tac_ast.Constant(value=1)],
+                args=[tac_ast.Constant(const=tac_ast.ConstInt(int=1))],
                 dst=tac_ast.Var(name="%0"),
             ),
             tac_ast.FunctionCall(
                 name="g",
-                args=[tac_ast.Constant(value=2)],
+                args=[tac_ast.Constant(const=tac_ast.ConstInt(int=2))],
                 dst=tac_ast.Var(name="%1"),
             ),
             tac_ast.FunctionCall(
@@ -1845,7 +1845,7 @@ class TestTranslateFunctionCall(unittest.TestCase):
         call, ret = main_fn.instructions
         self.assertIsInstance(call, tac_ast.FunctionCall)
         self.assertEqual(call.name, "foo")
-        self.assertEqual(call.args, [tac_ast.Constant(value=42)])
+        self.assertEqual(call.args, [tac_ast.Constant(const=tac_ast.ConstInt(int=42))])
         self.assertEqual(ret, tac_ast.Ret(val=call.dst))
 
 
@@ -1886,7 +1886,7 @@ class TestTranslateMultipleFunctions(unittest.TestCase):
         for fn in tac.top_level:
             self.assertEqual(
                 fn.instructions,
-                [tac_ast.Ret(val=tac_ast.Constant(value=0))],
+                [tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0)))],
             )
 
     def test_function_params_pass_through_to_tac(self):
@@ -1916,6 +1916,109 @@ class TestMakeTemporaryVariableName(unittest.TestCase):
         self.assertEqual(t.make_temporary_variable_name(), "%0")
         self.assertEqual(t.make_temporary_variable_name(), "%1")
         self.assertEqual(t.make_temporary_variable_name(), "%2")
+
+
+class TestCastAndStaticVariableTypes(unittest.TestCase):
+    """The TAC lowering for `Cast`, the typed `Constant` shape, and
+    the typed `StaticVariable` initial value all bridge the c99
+    AST's typed nodes to the TAC AST's typed nodes. End-to-end
+    cases through the full pipeline (parse → resolve → type-check
+    → translate_to_tac) verify the wiring."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_int_to_long_cast_emits_sign_extend(self):
+        tac = self._tac(
+            "int main(void) { int x = 5; long y = (long)x; "
+            "return (int)y; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        # Int→Long cast on `x` becomes SignExtend; Long→Int cast on
+        # `y` for the return becomes Truncate.
+        self.assertIn("SignExtend", kinds)
+        self.assertIn("Truncate", kinds)
+
+    def test_identity_cast_emits_no_conversion(self):
+        # `(int)x` where `x` is already Int — same source and target
+        # types, so no SignExtend / Truncate gets emitted.
+        tac = self._tac("int main(void) { int x = 5; return (int)x; }")
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertNotIn("SignExtend", kinds)
+        self.assertNotIn("Truncate", kinds)
+
+    def test_constant_lowers_with_const_variant_preserved(self):
+        # ConstInt and ConstLong on the c99 side translate to the
+        # matching variant on the TAC side.
+        tac = self._tac("int main(void) { return 5; }")
+        ret = tac.top_level[0].instructions[0]
+        self.assertIsInstance(ret, tac_ast.Ret)
+        self.assertIsInstance(ret.val, tac_ast.Constant)
+        self.assertIsInstance(ret.val.const, tac_ast.ConstInt)
+        self.assertEqual(ret.val.const.int, 5)
+
+    def test_static_variable_carries_data_type_and_typed_init(self):
+        tac = self._tac(
+            "long g_long = 7; "
+            "int g_int = 3; "
+            "int main(void) { return g_int; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(statics["g_long"].data_type, tac_ast.Long())
+        self.assertEqual(
+            statics["g_long"].init, tac_ast.LongInit(int=7),
+        )
+        self.assertEqual(statics["g_int"].data_type, tac_ast.Int())
+        self.assertEqual(
+            statics["g_int"].init, tac_ast.IntInit(int=3),
+        )
+
+    def test_tentative_long_resolves_to_long_init_zero(self):
+        # `long x;` at file scope is a tentative definition →
+        # zero-initialized at end-of-TU. The zero is wrapped in
+        # LongInit, picking the variant by the variable's declared
+        # type rather than defaulting to IntInit.
+        tac = self._tac("long x; int main(void) { return 0; }")
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(statics["x"].data_type, tac_ast.Long())
+        self.assertEqual(
+            statics["x"].init, tac_ast.LongInit(int=0),
+        )
+
+    def test_tentative_int_resolves_to_int_init_zero(self):
+        tac = self._tac("int x; int main(void) { return 0; }")
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(statics["x"].data_type, tac_ast.Int())
+        self.assertEqual(
+            statics["x"].init, tac_ast.IntInit(int=0),
+        )
+
+    def test_long_returning_function_implicit_zero_uses_const_long(self):
+        # If a Long-returning function falls off the end without a
+        # return, the implicit `Ret(0)` uses ConstLong(0) rather
+        # than ConstInt(0) so the val matches the declared return
+        # type.
+        tac = self._tac("long main(void) { }")
+        instrs = tac.top_level[0].instructions
+        ret = instrs[-1]
+        self.assertIsInstance(ret, tac_ast.Ret)
+        self.assertIsInstance(ret.val, tac_ast.Constant)
+        self.assertIsInstance(ret.val.const, tac_ast.ConstLong)
+        self.assertEqual(ret.val.const.int, 0)
 
 
 if __name__ == "__main__":

@@ -632,10 +632,32 @@ def _emit_ret(arg_bytes: int, local_bytes: int) -> list[str]:
     )
 
 
+def _check_byte_typed(t: asm_ast.Type_asm_type, kind: str) -> None:
+    """Reject `DoubleByte`-typed instructions at emit. The deferred
+    8-bit lowering pass will turn each DoubleByte op into a pair of
+    Byte ops at adjacent addresses; until that lands, programs that
+    actually reach a DoubleByte instruction here are using `long`
+    arithmetic that the back end can't render to 6502 yet."""
+    if isinstance(t, asm_ast.DoubleByte):
+        raise NotImplementedError(
+            f"asm-level DoubleByte {kind} not implemented yet "
+            f"(awaiting 8-bit lowering pass)"
+        )
+
+
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
-        case asm_ast.Mov(src=src, dst=dst):
+        case asm_ast.Mov(asm_type=t, src=src, dst=dst):
+            _check_byte_typed(t, "Mov")
             return _emit_mov(src, dst)
+        case asm_ast.Movsx():
+            # Sign-extend Byte→DoubleByte. Needs a multi-byte
+            # write (low byte = src, high byte = $00 / $FF based on
+            # src's sign bit). Deferred to the 8-bit lowering pass.
+            raise NotImplementedError(
+                "asm-level Movsx (Byte→DoubleByte sign-extension) "
+                "not implemented yet (awaiting 8-bit lowering pass)"
+            )
         case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
             return _emit_function_prologue(ab, lb)
         case asm_ast.Ret(arg_bytes=ab, local_bytes=lb):
@@ -656,27 +678,38 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return [_instr_line("CLC")]
         case asm_ast.SetCarry():
             return [_instr_line("SEC")]
-        case asm_ast.Inc(dst=dst):
+        case asm_ast.Inc(asm_type=t, dst=dst):
+            _check_byte_typed(t, "Inc")
             return _emit_inc(dst)
-        case asm_ast.Dec(dst=dst):
+        case asm_ast.Dec(asm_type=t, dst=dst):
+            _check_byte_typed(t, "Dec")
             return _emit_dec(dst)
-        case asm_ast.Push(src=src):
+        case asm_ast.Push(asm_type=t, src=src):
+            _check_byte_typed(t, "Push")
             return _emit_push(src)
-        case asm_ast.Pop(dst=dst):
+        case asm_ast.Pop(asm_type=t, dst=dst):
+            _check_byte_typed(t, "Pop")
             return _emit_pop(dst)
-        case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
+        case asm_ast.Xor(asm_type=t, src1=s1, src2=s2, dst=dst):
+            _check_byte_typed(t, "Xor")
             return _emit_xor(s1, s2, dst)
-        case asm_ast.And(src=src, dst=dst):
+        case asm_ast.And(asm_type=t, src=src, dst=dst):
+            _check_byte_typed(t, "And")
             return _emit_acc_logic("AND", "And", src, dst)
-        case asm_ast.Or(src=src, dst=dst):
+        case asm_ast.Or(asm_type=t, src=src, dst=dst):
+            _check_byte_typed(t, "Or")
             return _emit_acc_logic("ORA", "Or", src, dst)
-        case asm_ast.ArithmeticShiftLeft(dst=dst):
+        case asm_ast.ArithmeticShiftLeft(asm_type=t, dst=dst):
+            _check_byte_typed(t, "ArithmeticShiftLeft")
             return _emit_acc_shift("ASL", "ArithmeticShiftLeft", dst)
-        case asm_ast.LogicalShiftRight(dst=dst):
+        case asm_ast.LogicalShiftRight(asm_type=t, dst=dst):
+            _check_byte_typed(t, "LogicalShiftRight")
             return _emit_acc_shift("LSR", "LogicalShiftRight", dst)
-        case asm_ast.RotateLeft(dst=dst):
+        case asm_ast.RotateLeft(asm_type=t, dst=dst):
+            _check_byte_typed(t, "RotateLeft")
             return _emit_acc_shift("ROL", "RotateLeft", dst)
-        case asm_ast.RotateRight(dst=dst):
+        case asm_ast.RotateRight(asm_type=t, dst=dst):
+            _check_byte_typed(t, "RotateRight")
             return _emit_acc_shift("ROR", "RotateRight", dst)
         case asm_ast.Call(name=name):
             return [_instr_line("JSR", name)]
@@ -714,27 +747,56 @@ def emit_function(fn: asm_ast.Function) -> list[str]:
 
 
 def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
-    """Render a top-level static-storage object as a labeled byte:
+    """Render a top-level static-storage object as a labeled byte
+    (`IntInit`) or labeled word (`LongInit`):
 
+        # IntInit(int=N)
         <name>:
             dc.b $XX
 
-    where `XX` is the byte init value (zero for tentative
-    definitions per C99 §6.9.2.2; the type-checker resolved that to
-    `Initial(0)` before TAC emission). Two-line form keeps the label
-    in column 1, matching the function-header convention, with the
-    `dc.b` directive at the opcode column. Initialized definitions
-    and zero-initialized definitions render the same way — the byte
-    just happens to be zero in the latter case.
+        # LongInit(int=N)
+        <name>:
+            dc.w $XXXX
+
+    The init's variant determines the cell width. dasm's `dc.w`
+    emits 2 bytes in little-endian order, which matches the rest of
+    the soft-stack memory model (low byte at the symbol's address,
+    high byte at +1).
+
+    Out-of-range values raise via `_check_byte` / `_check_word`.
 
     `is_global` rides on the IR but doesn't yet alter the emit:
     dasm has no native module-private vs. exported distinction, and
-    block-scope statics already arrive with unique
-    `@<N>.<orig>` names so cross-function shadowing isn't an issue.
-    A future multi-TU build would emit a `.globl name` directive
-    here under `is_global=True`."""
-    _check_byte(f"init for {sv.name!r}", sv.init)
-    return [f"{sv.name}:", _instr_line("dc.b", f"${sv.init:02X}")]
+    block-scope statics already arrive with unique `@<N>.<orig>`
+    names so cross-function shadowing isn't an issue. A future
+    multi-TU build would emit a `.globl name` directive here under
+    `is_global=True`.
+    """
+    match sv.init:
+        case asm_ast.IntInit(int=v):
+            _check_byte(f"init for {sv.name!r}", v)
+            return [f"{sv.name}:", _instr_line("dc.b", f"${v:02X}")]
+        case asm_ast.LongInit(int=v):
+            _check_word(f"init for {sv.name!r}", v)
+            # Mask to 16 bits so signed-negative values render as
+            # their two's-complement bit pattern (e.g. -1 → $FFFF).
+            return [
+                f"{sv.name}:",
+                _instr_line("dc.w", f"${v & 0xFFFF:04X}"),
+            ]
+    raise TypeError(f"unexpected static_init: {sv.init!r}")
+
+
+def _check_word(label: str, v: int) -> None:
+    """Range check for a 2-byte signed/unsigned constant. Accepts
+    -32768..65535 — covers both the signed range Long literals
+    target and the unsigned bit pattern that comes out of casting a
+    negative Long. The 16-bit emit then masks to 0xFFFF, so a
+    negative value lays down as its two's-complement byte pattern."""
+    if not -32768 <= v <= 65535:
+        raise ValueError(
+            f"{label} {v} out of range for 16-bit (-32768..65535)"
+        )
 
 
 def emit_top_level(tl: asm_ast.Type_top_level) -> list[str]:

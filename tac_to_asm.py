@@ -100,11 +100,15 @@ Binary lowerings:
 from __future__ import annotations
 
 import asm_ast
+import c99_ast
 import tac_ast
+from passes.type_checking import SymbolTable
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
+_BYTE = asm_ast.Byte()
+_DOUBLE_BYTE = asm_ast.DoubleByte()
 
 # Runtime helper names for the remaining multi-instruction ops. All
 # take operands in A (and X for the binary ones). mul8 / divmod8
@@ -118,25 +122,59 @@ _SHL8 = "shl8"
 _ASR8 = "asr8"
 
 
-def _static_init_value(init: tac_ast.Type_static_init) -> int:
-    """Pull the raw integer payload out of a TAC `static_init` (the
-    typed wrapper around the value of a `StaticVariable.init`).
-    Both `IntInit` and `LongInit` carry the value in their `int`
-    field — the wrapper exists for size dispatch on the codegen
-    side, not to alter the value."""
+def _to_asm_static_init(
+    init: tac_ast.Type_static_init,
+) -> asm_ast.Type_static_init:
+    """Translate a TAC static_init to its asm counterpart. The two
+    sums are 1-to-1 (`IntInit(int) | LongInit(int)`), so this is a
+    pure rewrap — the variant tells the asm side whether to lay out
+    a 1-byte (`IntInit`) or 2-byte (`LongInit`) cell."""
     match init:
-        case tac_ast.IntInit(int=v) | tac_ast.LongInit(int=v):
-            return v
+        case tac_ast.IntInit(int=v):
+            return asm_ast.IntInit(int=v)
+        case tac_ast.LongInit(int=v):
+            return asm_ast.LongInit(int=v)
     raise TypeError(f"unexpected static_init: {init!r}")
 
 
 class Translator:
     """Holds the label counter so inline lowerings in the same program
-    (comparisons and unary `!`) get unique labels. One Translator per
-    program; each `make_label` call bumps the counter."""
+    (comparisons and unary `!`) get unique labels, plus a handle to
+    the type-checker's symbol table so it can look up TAC `Var`
+    types when picking `asm_type` for typed instructions. One
+    Translator per program; each `make_label` call bumps the
+    counter."""
 
-    def __init__(self) -> None:
+    def __init__(self, symbols: SymbolTable | None = None) -> None:
         self._label_counter = 0
+        # Optional — synthetic-AST tests can build a Translator
+        # without a symbol table. In that case `_asm_type_for_val`
+        # falls back to `Byte` for any Var whose name isn't found,
+        # which matches the current Int-only world the existing tests
+        # were written for.
+        self._symbols = symbols
+
+    def _asm_type_for_val(
+        self, val: tac_ast.Type_val,
+    ) -> asm_ast.Type_asm_type:
+        """Pick `Byte` or `DoubleByte` for a TAC val based on its
+        width. Constants dispatch on the const variant directly;
+        Vars look up the symbol table — if the name isn't there
+        (synthetic AST), default to `Byte`."""
+        match val:
+            case tac_ast.Constant(const=tac_ast.ConstLong()):
+                return _DOUBLE_BYTE
+            case tac_ast.Constant(const=tac_ast.ConstInt()):
+                return _BYTE
+            case tac_ast.Var(name=name):
+                sym = (
+                    self._symbols.get(name)
+                    if self._symbols is not None else None
+                )
+                if sym is not None and isinstance(sym.type, c99_ast.Long):
+                    return _DOUBLE_BYTE
+                return _BYTE
+        raise TypeError(f"unexpected val: {val!r}")
 
     def make_label(self, prefix: str) -> str:
         # Leading `.` makes this a dasm-style local label, scoped to
@@ -164,20 +202,17 @@ class Translator:
                 out: list[asm_ast.Type_top_level] = []
                 for tl in top_levels:
                     if isinstance(tl, tac_ast.StaticVariable):
-                        # The TAC StaticVariable carries a typed
-                        # init (`IntInit` / `LongInit`) and a
-                        # data_type. The asm `StaticVariable` is
-                        # untyped and stores a raw byte init; pull
-                        # the underlying integer out of the static-
-                        # init wrapper. Long-typed cells get one
-                        # byte today (the deferred 16-bit codegen
-                        # boundary); values above 1-byte range
-                        # surface as `_check_byte` failures at
-                        # asm emit time.
+                        # Both TAC and asm carry a typed `static_init`
+                        # (`IntInit | LongInit`); the rewrap is
+                        # 1-to-1. The asm side drops the TAC's
+                        # separate `data_type` field — the variant
+                        # of the init alone determines the cell
+                        # size at emit (DC.B for IntInit, two bytes
+                        # for LongInit).
                         out.append(asm_ast.StaticVariable(
                             name=tl.name,
                             is_global=tl.is_global,
-                            init=_static_init_value(tl.init),
+                            init=_to_asm_static_init(tl.init),
                         ))
                     else:
                         out.append(self.translate_function(tl))
@@ -224,38 +259,64 @@ class Translator:
                 # arg_bytes/local_bytes are zeros here; the
                 # allocate_stack pass rewrites them to the function's
                 # actual N and M.
+                #
+                # The Mov's asm_type follows the val's type. For an
+                # Int return that's Byte (load 1 byte into A as
+                # before). For a Long return it's DoubleByte —
+                # which the eventual 8-bit lowering pass will split
+                # into a 2-byte transfer (e.g., low byte in A, high
+                # byte in X); until then asm_emit raises on
+                # DoubleByte, so a Long-returning function's `Ret`
+                # fails loudly rather than silently truncating to
+                # the low byte.
                 return [
-                    asm_ast.Mov(src=translate_val(val), dst=_REG_A),
+                    asm_ast.Mov(
+                        asm_type=self._asm_type_for_val(val),
+                        src=translate_val(val), dst=_REG_A,
+                    ),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ]
-            case tac_ast.SignExtend() | tac_ast.Truncate():
-                # Sign-extension (Int → Long) and truncation
-                # (Long → Int) need 16-bit-aware codegen — multi-
-                # byte loads / stores plus carry-propagation for
-                # SignExtend's high-byte step. None of that is
-                # wired through the asm IR yet, so encountering
-                # either node here means a program is using long
-                # arithmetic that the back end can't lower today.
-                # Raise loudly rather than silently emitting a
-                # wrong 1-byte op.
-                kind = type(instr).__name__
-                raise NotImplementedError(
-                    f"asm-level {kind} (16-bit conversion) not "
-                    f"implemented yet"
-                )
+            case tac_ast.SignExtend(src=src, dst=dst):
+                # Asm `Movsx` is implicitly Byte→DoubleByte: it loads
+                # one byte and replicates the sign bit into the
+                # upper byte of a 2-byte destination. The actual
+                # 6502 sequence — load the byte, branch on its sign,
+                # write 0x00 / 0xFF to the dst's high byte — is the
+                # job of the deferred 8-bit lowering pass; here we
+                # just record the intent.
+                return [asm_ast.Movsx(
+                    src=translate_val(src), dst=translate_val(dst),
+                )]
+            case tac_ast.Truncate(src=src, dst=dst):
+                # Truncate Long→Int reads the low byte of a 2-byte
+                # source and writes it to a 1-byte destination.
+                # Memory layout is little-endian, so the source's
+                # byte address (Frame / Stack / Data) is exactly
+                # the low byte; a plain `Mov(Byte, src, dst)` does
+                # the right thing without any high-byte shuffle.
+                return [asm_ast.Mov(
+                    asm_type=_BYTE,
+                    src=translate_val(src), dst=translate_val(dst),
+                )]
             case tac_ast.Unary(op=op, src=src, dst=dst):
                 return (
-                    [asm_ast.Mov(src=translate_val(src), dst=_REG_A)]
+                    [asm_ast.Mov(asm_type=_BYTE, src=translate_val(src), dst=_REG_A)]
                     + self.translate_unop_atoms(op)
-                    + [asm_ast.Mov(src=_REG_A, dst=translate_val(dst))]
+                    + [asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=translate_val(dst))]
                 )
             case tac_ast.Binary(op=op, src1=src1, src2=src2, dst=dst):
                 return self.translate_binary(op, src1, src2, dst)
             case tac_ast.Copy(src=src, dst=dst):
-                # A single Mov — the emitter already handles every
-                # legal operand shape (Imm→Frame routes through A
-                # internally; Frame→Frame emits load-then-store).
+                # A single Mov, sized by the operand type. For Int
+                # operands this is `Mov(Byte, src, dst)` — same as
+                # before. For Long operands the deferred 8-bit
+                # lowering pass will split a `Mov(DoubleByte, …)`
+                # into two `Mov(Byte, …)` ops at adjacent memory
+                # addresses; until that lands, asm_emit raises on
+                # DoubleByte so Long copies fail loudly rather than
+                # silently moving only one byte.
                 return [asm_ast.Mov(
+                    asm_type=self._asm_type_for_val(src),
                     src=translate_val(src), dst=translate_val(dst),
                 )]
             case tac_ast.Jump(target=target):
@@ -267,12 +328,12 @@ class Translator:
                 # loaded byte, so after the Mov, BNE branches exactly
                 # when the condition is non-zero (C's truthiness).
                 return [
-                    asm_ast.Mov(src=translate_val(cond), dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=translate_val(cond), dst=_REG_A),
                     asm_ast.Branch(cond=asm_ast.NE(), target=target),
                 ]
             case tac_ast.JumpIfFalse(condition=cond, target=target):
                 return [
-                    asm_ast.Mov(src=translate_val(cond), dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=translate_val(cond), dst=_REG_A),
                     asm_ast.Branch(cond=asm_ast.EQ(), target=target),
                 ]
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
@@ -297,20 +358,37 @@ class Translator:
                 #      SSP via its epilogue — the caller doesn't
                 #      need any post-call cleanup of the arg slots.
                 #   4. Move the return value (in A) into `dst`.
-                arg_vals = [translate_val(a) for a in args]
                 emitted: list[asm_ast.Type_instruction] = []
-                if arg_vals:
+                if args:
+                    # Stack offset is 1-based (the soft-stack
+                    # convention uses SSP+1..SSP+N for args). Each
+                    # arg push picks `asm_type` from the TAC arg's
+                    # type — Int args lower to a 1-byte transfer
+                    # (Byte) at the existing 1-byte-per-arg offset
+                    # convention; Long args lower to a logical 2-
+                    # byte transfer (DoubleByte) which the deferred
+                    # 8-bit lowering pass will split into two byte
+                    # writes at adjacent offsets. Until that lands,
+                    # asm_emit raises on DoubleByte, so a call with
+                    # a Long arg fails loudly.
                     emitted.append(asm_ast.AllocateStack(
-                        bytes=len(arg_vals),
+                        bytes=len(args),
                     ))
-                    for i, av in enumerate(arg_vals):
-                        # Stack offset is 1-based (the soft-stack
-                        # convention uses SSP+1..SSP+N for args).
+                    for i, arg in enumerate(args):
                         emitted.append(asm_ast.Mov(
-                            src=av, dst=asm_ast.Stack(offset=i + 1),
+                            asm_type=self._asm_type_for_val(arg),
+                            src=translate_val(arg),
+                            dst=asm_ast.Stack(offset=i + 1),
                         ))
                 emitted.append(asm_ast.Call(name=name))
+                # Return-value capture: the val is in A. asm_type
+                # picked from the dst's type — Int → Byte (load A
+                # into a 1-byte slot, the existing path); Long →
+                # DoubleByte, which fails at asm_emit (16-bit
+                # return-value materialization is the deferred
+                # lowering pass's job).
                 emitted.append(asm_ast.Mov(
+                    asm_type=self._asm_type_for_val(dst),
                     src=_REG_A, dst=translate_val(dst),
                 ))
                 return emitted
@@ -332,17 +410,17 @@ class Translator:
         match op:
             case tac_ast.Add():
                 return [
-                    asm_ast.Mov(src=src1_op, dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
                     asm_ast.ClearCarry(),
                     asm_ast.Add(src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(src=_REG_A, dst=dst_op),
+                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
                 ]
             case tac_ast.Subtract():
                 return [
-                    asm_ast.Mov(src=src1_op, dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
                     asm_ast.SetCarry(),
                     asm_ast.Sub(src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(src=_REG_A, dst=dst_op),
+                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
                 ]
             case tac_ast.Multiply():
                 return _translate_ax_call(src1_op, src2_op, dst_op, _MUL8,
@@ -355,21 +433,21 @@ class Translator:
                                           result_in_x=True)
             case tac_ast.BitwiseAnd():
                 return [
-                    asm_ast.Mov(src=src1_op, dst=_REG_A),
-                    asm_ast.And(src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(src=_REG_A, dst=dst_op),
+                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
+                    asm_ast.And(asm_type=_BYTE, src=src2_op, dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
                 ]
             case tac_ast.BitwiseOr():
                 return [
-                    asm_ast.Mov(src=src1_op, dst=_REG_A),
-                    asm_ast.Or(src=src2_op, dst=_REG_A),
-                    asm_ast.Mov(src=_REG_A, dst=dst_op),
+                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
+                    asm_ast.Or(asm_type=_BYTE, src=src2_op, dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
                 ]
             case tac_ast.BitwiseXor():
                 return [
-                    asm_ast.Mov(src=src1_op, dst=_REG_A),
-                    asm_ast.Xor(src1=_REG_A, src2=src2_op, dst=_REG_A),
-                    asm_ast.Mov(src=_REG_A, dst=dst_op),
+                    asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
+                    asm_ast.Xor(asm_type=_BYTE, src1=_REG_A, src2=src2_op, dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
                 ]
             case tac_ast.LeftShift():
                 return _translate_ax_call(src1_op, src2_op, dst_op, _SHL8,
@@ -424,15 +502,15 @@ class Translator:
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
         return [
-            asm_ast.Mov(src=src1_op, dst=_REG_A),
+            asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
             asm_ast.Compare(left=_REG_A, right=src2_op),
             asm_ast.Branch(cond=cond, target=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=end_label),
             asm_ast.Label(name=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=dst_op),
+            asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
         ]
 
     def _translate_signed_ordering(
@@ -456,21 +534,21 @@ class Translator:
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
         return [
-            asm_ast.Mov(src=left_op, dst=_REG_A),
+            asm_ast.Mov(asm_type=_BYTE, src=left_op, dst=_REG_A),
             asm_ast.SetCarry(),
             asm_ast.Sub(src=right_op, dst=_REG_A),
             asm_ast.Branch(cond=asm_ast.VC(), target=novf_label),
-            asm_ast.Xor(
+            asm_ast.Xor(asm_type=_BYTE, 
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
             asm_ast.Label(name=novf_label),
             asm_ast.Branch(cond=cond, target=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=end_label),
             asm_ast.Label(name=true_label),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=dst_op),
+            asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op),
         ]
 
     def translate_unop_atoms(
@@ -484,13 +562,13 @@ class Translator:
         match op:
             case tac_ast.Complement():
                 # ~A = A XOR $FF
-                return [asm_ast.Xor(
+                return [asm_ast.Xor(asm_type=_BYTE, 
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                 )]
             case tac_ast.Negate():
                 # -A = (~A) + 1, two's complement
                 return [
-                    asm_ast.Xor(
+                    asm_ast.Xor(asm_type=_BYTE, 
                         src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                     ),
                     asm_ast.ClearCarry(),
@@ -505,10 +583,10 @@ class Translator:
                 end_label = self.make_label("lnot_end")
                 return [
                     asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
-                    asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=0), dst=_REG_A),
                     asm_ast.Jump(target=end_label),
                     asm_ast.Label(name=true_label),
-                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                    asm_ast.Mov(asm_type=_BYTE, src=asm_ast.Imm(value=1), dst=_REG_A),
                     asm_ast.Label(name=end_label),
                 ]
         raise TypeError(f"unexpected unary operator: {op!r}")
@@ -528,14 +606,14 @@ def _translate_ax_call(
     helper's result comes back in X (Modulo), transfer it to A before
     storing to dst."""
     out: list[asm_ast.Type_instruction] = [
-        asm_ast.Mov(src=src2_op, dst=_REG_A),
-        asm_ast.Mov(src=_REG_A, dst=_REG_X),
-        asm_ast.Mov(src=src1_op, dst=_REG_A),
+        asm_ast.Mov(asm_type=_BYTE, src=src2_op, dst=_REG_A),
+        asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=_REG_X),
+        asm_ast.Mov(asm_type=_BYTE, src=src1_op, dst=_REG_A),
         asm_ast.Call(name=helper),
     ]
     if result_in_x:
-        out.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
-    out.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+        out.append(asm_ast.Mov(asm_type=_BYTE, src=_REG_X, dst=_REG_A))
+    out.append(asm_ast.Mov(asm_type=_BYTE, src=_REG_A, dst=dst_op))
     return out
 
 
@@ -563,8 +641,17 @@ def translate_unop_atoms(
 # Module-level wrappers: each call builds a fresh Translator (so the
 # label counter restarts at 0). Use the Translator class directly when
 # you need the counter to persist across calls.
-def translate_program(prog: tac_ast.Type_program) -> asm_ast.Type_program:
-    return Translator().translate_program(prog)
+def translate_program(
+    prog: tac_ast.Type_program,
+    symbols: SymbolTable | None = None,
+) -> asm_ast.Type_program:
+    """Convenience wrapper. The optional `symbols` table is the one
+    `c99_to_tac` produced — `Translator._asm_type_for_val` consults
+    it to pick `Byte` / `DoubleByte` for typed Mov-class
+    instructions. Unit-test callers that don't care about types can
+    omit it; the Translator falls back to `Byte` for unknown
+    names."""
+    return Translator(symbols).translate_program(prog)
 
 
 def translate_function(

@@ -90,7 +90,9 @@ def _run_stage(stage: str, source: str) -> str:
             if isinstance(sym.attrs, StaticAttr)
         )
         return emit_program(replace_pseudoregs(
-            translate_to_asm(translate_to_tac(prog, symbols)),
+            translate_to_asm(
+                translate_to_tac(prog, symbols), symbols,
+            ),
             extra_statics=statics,
         ))
     raise AssertionError(f"unknown stage: {stage!r}")

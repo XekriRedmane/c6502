@@ -15,6 +15,21 @@ class Program(Type_program):
 
 
 @dataclass
+class Type_asm_type:
+    pass
+
+
+@dataclass
+class Byte(Type_asm_type):
+    pass
+
+
+@dataclass
+class DoubleByte(Type_asm_type):
+    pass
+
+
+@dataclass
 class Type_top_level:
     pass
 
@@ -31,7 +46,22 @@ class Function(Type_top_level):
 class StaticVariable(Type_top_level):
     name: str
     is_global: bool
-    init: int
+    init: Type_static_init
+
+
+@dataclass
+class Type_static_init:
+    pass
+
+
+@dataclass
+class IntInit(Type_static_init):
+    int: int
+
+
+@dataclass
+class LongInit(Type_static_init):
+    int: int
 
 
 @dataclass
@@ -41,6 +71,13 @@ class Type_instruction:
 
 @dataclass
 class Mov(Type_instruction):
+    asm_type: Type_asm_type
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
+class Movsx(Type_instruction):
     src: Type_operand
     dst: Type_operand
 
@@ -91,26 +128,31 @@ class SetCarry(Type_instruction):
 
 @dataclass
 class Inc(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class Dec(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class Push(Type_instruction):
+    asm_type: Type_asm_type
     src: Type_operand
 
 
 @dataclass
 class Pop(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class Xor(Type_instruction):
+    asm_type: Type_asm_type
     src1: Type_operand
     src2: Type_operand
     dst: Type_operand
@@ -118,33 +160,39 @@ class Xor(Type_instruction):
 
 @dataclass
 class And(Type_instruction):
+    asm_type: Type_asm_type
     src: Type_operand
     dst: Type_operand
 
 
 @dataclass
 class Or(Type_instruction):
+    asm_type: Type_asm_type
     src: Type_operand
     dst: Type_operand
 
 
 @dataclass
 class ArithmeticShiftLeft(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class LogicalShiftRight(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class RotateLeft(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 
 @dataclass
 class RotateRight(Type_instruction):
+    asm_type: Type_asm_type
     dst: Type_operand
 
 

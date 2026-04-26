@@ -1,11 +1,14 @@
 module ASM {
     program = Program(top_level*)
+    asm_type = Byte | DoubleByte
     top_level =
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
-        | StaticVariable(identifier name, bool is_global, int init)
+        | StaticVariable(identifier name, bool is_global, static_init init)
+    static_init = IntInit(int) | LongInit(int)
 
     instruction =
-        Mov(operand src, operand dst)
+        Mov(asm_type, operand src, operand dst)
+        | Movsx(operand src, operand dst)
         | Ret(int arg_bytes, int local_bytes)
         | FunctionPrologue(int arg_bytes, int local_bytes)
         | AllocateStack(int bytes)
@@ -14,17 +17,17 @@ module ASM {
         | Call(identifier name)
         | ClearCarry
         | SetCarry
-        | Inc(operand dst)
-        | Dec(operand dst)
-        | Push(operand src)
-        | Pop(operand dst)
-        | Xor(operand src1, operand src2, operand dst)
-        | And(operand src, operand dst)
-        | Or(operand src, operand dst)
-        | ArithmeticShiftLeft(operand dst)
-        | LogicalShiftRight(operand dst)
-        | RotateLeft(operand dst)
-        | RotateRight(operand dst)
+        | Inc(asm_type, operand dst)
+        | Dec(asm_type, operand dst)
+        | Push(asm_type, operand src)
+        | Pop(asm_type, operand dst)
+        | Xor(asm_type, operand src1, operand src2, operand dst)
+        | And(asm_type, operand src, operand dst)
+        | Or(asm_type, operand src, operand dst)
+        | ArithmeticShiftLeft(asm_type, operand dst)
+        | LogicalShiftRight(asm_type, operand dst)
+        | RotateLeft(asm_type, operand dst)
+        | RotateRight(asm_type, operand dst)
         | Label(identifier name)
         | Jump(identifier target)
         | Branch(condition cond, identifier target)

@@ -68,6 +68,9 @@ def _operands_in(instr: asm_ast.Type_instruction):
         case asm_ast.Mov(src=src, dst=dst):
             yield src
             yield dst
+        case asm_ast.Movsx(src=src, dst=dst):
+            yield src
+            yield dst
         case asm_ast.Add(src=src, dst=dst):
             yield src
             yield dst
@@ -181,10 +184,21 @@ class Replacer:
         arg_bytes: int, local_bytes: int,
     ) -> asm_ast.Type_instruction:
         """Rewrite an instruction's operand fields, and patch `Ret`
-        to carry the function's dims."""
+        to carry the function's dims. The `asm_type` field on typed
+        instructions rides through unchanged — it tags the
+        instruction's width (Byte / DoubleByte) regardless of which
+        operand kind sits in src / dst."""
         match instr:
-            case asm_ast.Mov(src=src, dst=dst):
+            case asm_ast.Mov(asm_type=t, src=src, dst=dst):
                 return asm_ast.Mov(
+                    asm_type=t,
+                    src=self.replace(src), dst=self.replace(dst),
+                )
+            case asm_ast.Movsx(src=src, dst=dst):
+                # Sign-extend has implicit Byte→DoubleByte semantics
+                # (no asm_type field). Operands still go through
+                # the Pseudo replacement.
+                return asm_ast.Movsx(
                     src=self.replace(src), dst=self.replace(dst),
                 )
             case asm_ast.Add(src=src, dst=dst):
@@ -195,40 +209,47 @@ class Replacer:
                 return asm_ast.Sub(
                     src=self.replace(src), dst=self.replace(dst),
                 )
-            case asm_ast.And(src=src, dst=dst):
+            case asm_ast.And(asm_type=t, src=src, dst=dst):
                 return asm_ast.And(
+                    asm_type=t,
                     src=self.replace(src), dst=self.replace(dst),
                 )
-            case asm_ast.Or(src=src, dst=dst):
+            case asm_ast.Or(asm_type=t, src=src, dst=dst):
                 return asm_ast.Or(
+                    asm_type=t,
                     src=self.replace(src), dst=self.replace(dst),
                 )
-            case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
+            case asm_ast.Xor(asm_type=t, src1=s1, src2=s2, dst=dst):
                 return asm_ast.Xor(
+                    asm_type=t,
                     src1=self.replace(s1),
                     src2=self.replace(s2),
                     dst=self.replace(dst),
                 )
-            case asm_ast.Inc(dst=dst):
-                return asm_ast.Inc(dst=self.replace(dst))
-            case asm_ast.Dec(dst=dst):
-                return asm_ast.Dec(dst=self.replace(dst))
-            case asm_ast.ArithmeticShiftLeft(dst=dst):
+            case asm_ast.Inc(asm_type=t, dst=dst):
+                return asm_ast.Inc(asm_type=t, dst=self.replace(dst))
+            case asm_ast.Dec(asm_type=t, dst=dst):
+                return asm_ast.Dec(asm_type=t, dst=self.replace(dst))
+            case asm_ast.ArithmeticShiftLeft(asm_type=t, dst=dst):
                 return asm_ast.ArithmeticShiftLeft(
-                    dst=self.replace(dst),
+                    asm_type=t, dst=self.replace(dst),
                 )
-            case asm_ast.LogicalShiftRight(dst=dst):
+            case asm_ast.LogicalShiftRight(asm_type=t, dst=dst):
                 return asm_ast.LogicalShiftRight(
-                    dst=self.replace(dst),
+                    asm_type=t, dst=self.replace(dst),
                 )
-            case asm_ast.RotateLeft(dst=dst):
-                return asm_ast.RotateLeft(dst=self.replace(dst))
-            case asm_ast.RotateRight(dst=dst):
-                return asm_ast.RotateRight(dst=self.replace(dst))
-            case asm_ast.Push(src=src):
-                return asm_ast.Push(src=self.replace(src))
-            case asm_ast.Pop(dst=dst):
-                return asm_ast.Pop(dst=self.replace(dst))
+            case asm_ast.RotateLeft(asm_type=t, dst=dst):
+                return asm_ast.RotateLeft(
+                    asm_type=t, dst=self.replace(dst),
+                )
+            case asm_ast.RotateRight(asm_type=t, dst=dst):
+                return asm_ast.RotateRight(
+                    asm_type=t, dst=self.replace(dst),
+                )
+            case asm_ast.Push(asm_type=t, src=src):
+                return asm_ast.Push(asm_type=t, src=self.replace(src))
+            case asm_ast.Pop(asm_type=t, dst=dst):
+                return asm_ast.Pop(asm_type=t, dst=self.replace(dst))
             case asm_ast.Compare(left=left, right=right):
                 return asm_ast.Compare(
                     left=self.replace(left),

@@ -34,7 +34,7 @@ class TestEmitMov(unittest.TestCase):
             with self.subTest(v=v):
                 self.assertEqual(
                     emit_instruction(
-                        asm_ast.Mov(src=asm_ast.Imm(value=v), dst=_reg(_A))
+                        asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=v), dst=_reg(_A))
                     ),
                     [f"   LDA   {expected}"],
                 )
@@ -42,7 +42,7 @@ class TestEmitMov(unittest.TestCase):
     def test_imm_to_x_emits_ldx(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_X))
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x2A), dst=_reg(_X))
             ),
             ["   LDX   #$2A"],
         )
@@ -50,7 +50,7 @@ class TestEmitMov(unittest.TestCase):
     def test_imm_to_y_emits_ldy(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_Y))
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x2A), dst=_reg(_Y))
             ),
             ["   LDY   #$2A"],
         )
@@ -60,30 +60,30 @@ class TestEmitMov(unittest.TestCase):
             with self.subTest(v=v):
                 with self.assertRaises(ValueError):
                     emit_instruction(
-                        asm_ast.Mov(src=asm_ast.Imm(value=v), dst=_reg(_A))
+                        asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=v), dst=_reg(_A))
                     )
 
     def test_x_to_a_emits_txa(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Mov(src=_reg(_X), dst=_reg(_A))),
+            emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_X), dst=_reg(_A))),
             ["   TXA"],
         )
 
     def test_y_to_a_emits_tya(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Mov(src=_reg(_Y), dst=_reg(_A))),
+            emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_Y), dst=_reg(_A))),
             ["   TYA"],
         )
 
     def test_a_to_x_emits_tax(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Mov(src=_reg(_A), dst=_reg(_X))),
+            emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=_reg(_X))),
             ["   TAX"],
         )
 
     def test_a_to_y_emits_tay(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Mov(src=_reg(_A), dst=_reg(_Y))),
+            emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=_reg(_Y))),
             ["   TAY"],
         )
 
@@ -91,17 +91,17 @@ class TestEmitMov(unittest.TestCase):
         unsupported = [
             # No 6502 instruction for register-to-register among same reg or
             # the X<->Y pair.
-            asm_ast.Mov(src=_reg(_A), dst=_reg(_A)),
-            asm_ast.Mov(src=_reg(_X), dst=_reg(_X)),
-            asm_ast.Mov(src=_reg(_Y), dst=_reg(_Y)),
-            asm_ast.Mov(src=_reg(_X), dst=_reg(_Y)),
-            asm_ast.Mov(src=_reg(_Y), dst=_reg(_X)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=_reg(_A)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_X), dst=_reg(_X)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_Y), dst=_reg(_Y)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_X), dst=_reg(_Y)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_Y), dst=_reg(_X)),
             # X/Y <-> Stack not handled (would clobber A); codegen must go
             # via A explicitly.
-            asm_ast.Mov(src=_reg(_X), dst=asm_ast.Stack(offset=2)),
-            asm_ast.Mov(src=asm_ast.Stack(offset=2), dst=_reg(_X)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_X), dst=asm_ast.Stack(offset=2)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Stack(offset=2), dst=_reg(_X)),
             # Imm cannot be a destination.
-            asm_ast.Mov(src=_reg(_A), dst=asm_ast.Imm(value=0)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=asm_ast.Imm(value=0)),
         ]
         for instr in unsupported:
             with self.subTest(instr=instr):
@@ -113,7 +113,7 @@ class TestEmitMovStack(unittest.TestCase):
     def test_imm_to_stack(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Imm(value=0x2A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x2A),
                             dst=asm_ast.Stack(offset=3))
             ),
             ["   LDA   #$2A", "   LDY   #$03", "   STA   (SSP),Y"],
@@ -122,7 +122,7 @@ class TestEmitMovStack(unittest.TestCase):
     def test_stack_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Stack(offset=5), dst=_reg(_A))
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Stack(offset=5), dst=_reg(_A))
             ),
             ["   LDY   #$05", "   LDA   (SSP),Y"],
         )
@@ -130,7 +130,7 @@ class TestEmitMovStack(unittest.TestCase):
     def test_a_to_stack(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=_reg(_A), dst=asm_ast.Stack(offset=7))
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=asm_ast.Stack(offset=7))
             ),
             ["   LDY   #$07", "   STA   (SSP),Y"],
         )
@@ -138,7 +138,7 @@ class TestEmitMovStack(unittest.TestCase):
     def test_stack_to_stack(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Stack(offset=1),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Stack(offset=1),
                             dst=asm_ast.Stack(offset=4))
             ),
             [
@@ -154,7 +154,7 @@ class TestEmitMovStack(unittest.TestCase):
             with self.subTest(off=off):
                 with self.assertRaises(ValueError):
                     emit_instruction(
-                        asm_ast.Mov(src=_reg(_A), dst=asm_ast.Stack(offset=off))
+                        asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=asm_ast.Stack(offset=off))
                     )
 
 
@@ -162,7 +162,7 @@ class TestEmitMovFrame(unittest.TestCase):
     def test_imm_to_frame(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Imm(value=0x2A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x2A),
                             dst=asm_ast.Frame(offset=3))
             ),
             ["   LDA   #$2A", "   LDY   #$03", "   STA   (FP),Y"],
@@ -171,7 +171,7 @@ class TestEmitMovFrame(unittest.TestCase):
     def test_frame_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Frame(offset=5), dst=_reg(_A))
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Frame(offset=5), dst=_reg(_A))
             ),
             ["   LDY   #$05", "   LDA   (FP),Y"],
         )
@@ -179,7 +179,7 @@ class TestEmitMovFrame(unittest.TestCase):
     def test_a_to_frame(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=_reg(_A), dst=asm_ast.Frame(offset=7))
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=asm_ast.Frame(offset=7))
             ),
             ["   LDY   #$07", "   STA   (FP),Y"],
         )
@@ -187,7 +187,7 @@ class TestEmitMovFrame(unittest.TestCase):
     def test_frame_to_frame(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Frame(offset=1),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Frame(offset=1),
                             dst=asm_ast.Frame(offset=4))
             ),
             [
@@ -203,7 +203,7 @@ class TestEmitMovFrame(unittest.TestCase):
             with self.subTest(off=off):
                 with self.assertRaises(ValueError):
                     emit_instruction(
-                        asm_ast.Mov(src=_reg(_A), dst=asm_ast.Frame(offset=off))
+                        asm_ast.Mov(asm_type=asm_ast.Byte(), src=_reg(_A), dst=asm_ast.Frame(offset=off))
                     )
 
 
@@ -214,7 +214,7 @@ class TestEmitMovMixed(unittest.TestCase):
     def test_stack_to_frame(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Stack(offset=2),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Stack(offset=2),
                             dst=asm_ast.Frame(offset=3))
             ),
             [
@@ -228,7 +228,7 @@ class TestEmitMovMixed(unittest.TestCase):
     def test_frame_to_stack(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Mov(src=asm_ast.Frame(offset=2),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Frame(offset=2),
                             dst=asm_ast.Stack(offset=3))
             ),
             [
@@ -326,7 +326,7 @@ class TestEmitFunctionWithLabels(unittest.TestCase):
     def test_branch_then_label_layout(self):
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.Branch(cond=asm_ast.NE(), target="L_skip"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_reg(_A)),
             asm_ast.Label(name="L_skip"),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         ])
@@ -371,17 +371,17 @@ class TestEmitRejectsPseudo(unittest.TestCase):
 
     def test_mov_with_pseudo_src(self):
         self._assert_pseudo_error(
-            asm_ast.Mov(src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
         )
 
     def test_mov_with_pseudo_dst(self):
         self._assert_pseudo_error(
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t"))
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t"))
         )
 
     def test_mov_with_pseudo_on_both_sides(self):
         self._assert_pseudo_error(
-            asm_ast.Mov(src=asm_ast.Pseudo(name="a"),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="a"),
                         dst=asm_ast.Pseudo(name="b"))
         )
 
@@ -578,7 +578,7 @@ class TestEmitRet(unittest.TestCase):
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0), dst=_reg(_A)),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         ])
         self.assertEqual(
@@ -603,9 +603,9 @@ class TestEmitFunction(unittest.TestCase):
         # separator between boilerplate and actual content.
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
-            asm_ast.Mov(src=asm_ast.Imm(value=7),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=7),
                         dst=asm_ast.Frame(offset=1)),
-            asm_ast.Mov(src=asm_ast.Frame(offset=1),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Frame(offset=1),
                         dst=asm_ast.Reg(reg=asm_ast.A())),
             asm_ast.Ret(arg_bytes=0, local_bytes=1),
         ])
@@ -647,7 +647,7 @@ class TestEmitFunction(unittest.TestCase):
 class TestEmitProgram(unittest.TestCase):
     def test_full(self):
         prog = _prog(
-            asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=42), dst=_reg(_A)),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         )
         self.assertEqual(
@@ -663,7 +663,7 @@ class TestEmitProgram(unittest.TestCase):
             asm_ast.Function(
                 name="foo", is_global=True, params=[],
                 instructions=[
-                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_reg(_A)),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             ),
@@ -697,7 +697,7 @@ class TestEmitProgram(unittest.TestCase):
         # `$`. The label sits in column 1; the `DC.B` directive in
         # the opcode column.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="g", is_global=False, init=5),
+            asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(int=5)),
         ])
         self.assertEqual(emit_program(prog), "g:\n   DC.B  $05\n")
 
@@ -705,7 +705,7 @@ class TestEmitProgram(unittest.TestCase):
         # File-scope `int x;` (tentative) resolves to init=0; emits
         # `DC.B $00`. Same shape as an explicit `int x = 0;`.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="x", is_global=True, init=0),
+            asm_ast.StaticVariable(name="x", is_global=True, init=asm_ast.IntInit(int=0)),
         ])
         self.assertEqual(emit_program(prog), "x:\n   DC.B  $00\n")
 
@@ -716,11 +716,11 @@ class TestEmitProgram(unittest.TestCase):
             asm_ast.Function(
                 name="main", is_global=True, params=[],
                 instructions=[
-                    asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=42), dst=_reg(_A)),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             ),
-            asm_ast.StaticVariable(name="g", is_global=False, init=7),
+            asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(int=7)),
         ])
         self.assertEqual(
             emit_program(prog),
@@ -733,7 +733,7 @@ class TestEmitProgram(unittest.TestCase):
         # init must fit in a byte. The check uses `_check_byte`
         # internally so out-of-range values raise.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="bad", is_global=False, init=256),
+            asm_ast.StaticVariable(name="bad", is_global=False, init=asm_ast.IntInit(int=256)),
         ])
         with self.assertRaises(ValueError):
             emit_program(prog)
@@ -746,19 +746,19 @@ class TestEmitDataOperand(unittest.TestCase):
     indirect-Y preamble) — `LDA name`, `STA name`, `ADC name`, etc."""
 
     def test_mov_data_to_a(self):
-        out = emit_instruction(asm_ast.Mov(
+        out = emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), 
             src=asm_ast.Data(name="g"), dst=_reg(_A),
         ))
         self.assertEqual(out, ["   LDA   g"])
 
     def test_mov_a_to_data(self):
-        out = emit_instruction(asm_ast.Mov(
+        out = emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), 
             src=_reg(_A), dst=asm_ast.Data(name="g"),
         ))
         self.assertEqual(out, ["   STA   g"])
 
     def test_mov_imm_to_data(self):
-        out = emit_instruction(asm_ast.Mov(
+        out = emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), 
             src=asm_ast.Imm(value=42), dst=asm_ast.Data(name="g"),
         ))
         self.assertEqual(out, ["   LDA   #$2A", "   STA   g"])
@@ -766,7 +766,7 @@ class TestEmitDataOperand(unittest.TestCase):
     def test_mov_data_to_data(self):
         # Static-to-static copy: load via absolute, store via absolute.
         # No LDY needed for either side.
-        out = emit_instruction(asm_ast.Mov(
+        out = emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), 
             src=asm_ast.Data(name="src"),
             dst=asm_ast.Data(name="dst"),
         ))
@@ -774,7 +774,7 @@ class TestEmitDataOperand(unittest.TestCase):
 
     def test_mov_data_to_frame(self):
         # Static → local: absolute load, then indirect-Y store.
-        out = emit_instruction(asm_ast.Mov(
+        out = emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), 
             src=asm_ast.Data(name="g"),
             dst=asm_ast.Frame(offset=1),
         ))
@@ -786,7 +786,7 @@ class TestEmitDataOperand(unittest.TestCase):
 
     def test_mov_frame_to_data(self):
         # Local → static: indirect-Y load, then absolute store.
-        out = emit_instruction(asm_ast.Mov(
+        out = emit_instruction(asm_ast.Mov(asm_type=asm_ast.Byte(), 
             src=asm_ast.Frame(offset=1),
             dst=asm_ast.Data(name="g"),
         ))
@@ -810,19 +810,19 @@ class TestEmitDataOperand(unittest.TestCase):
         self.assertEqual(out, ["   SBC   g"])
 
     def test_and_data(self):
-        out = emit_instruction(asm_ast.And(
+        out = emit_instruction(asm_ast.And(asm_type=asm_ast.Byte(), 
             src=asm_ast.Data(name="g"), dst=_reg(_A),
         ))
         self.assertEqual(out, ["   AND   g"])
 
     def test_or_data(self):
-        out = emit_instruction(asm_ast.Or(
+        out = emit_instruction(asm_ast.Or(asm_type=asm_ast.Byte(), 
             src=asm_ast.Data(name="g"), dst=_reg(_A),
         ))
         self.assertEqual(out, ["   ORA   g"])
 
     def test_xor_data(self):
-        out = emit_instruction(asm_ast.Xor(
+        out = emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
             src1=_reg(_A), src2=asm_ast.Data(name="g"), dst=_reg(_A),
         ))
         self.assertEqual(out, ["   EOR   g"])
@@ -847,7 +847,7 @@ class TestColumnAlignment(unittest.TestCase):
 
     def test_columns(self):
         prog = _prog(
-            asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
             asm_ast.Ret(arg_bytes=0, local_bytes=0),
         )
         lines = emit_program(prog).splitlines()
@@ -981,57 +981,57 @@ class TestEmitClearSetCarry(unittest.TestCase):
 class TestEmitInc(unittest.TestCase):
     def test_inc_x(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Inc(dst=_reg(_X))),
+            emit_instruction(asm_ast.Inc(asm_type=asm_ast.Byte(), dst=_reg(_X))),
             ["   INX"],
         )
 
     def test_inc_y(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Inc(dst=_reg(_Y))),
+            emit_instruction(asm_ast.Inc(asm_type=asm_ast.Byte(), dst=_reg(_Y))),
             ["   INY"],
         )
 
     def test_inc_a_raises(self):
         # Plain 6502 has no INA.
         with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.Inc(dst=_reg(_A)))
+            emit_instruction(asm_ast.Inc(asm_type=asm_ast.Byte(), dst=_reg(_A)))
 
     def test_inc_other_raises(self):
         for dst in [asm_ast.Imm(value=1), asm_ast.Stack(offset=1),
                     asm_ast.Frame(offset=1)]:
             with self.subTest(dst=dst):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Inc(dst=dst))
+                    emit_instruction(asm_ast.Inc(asm_type=asm_ast.Byte(), dst=dst))
 
 
 class TestEmitDec(unittest.TestCase):
     def test_dec_x(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Dec(dst=_reg(_X))),
+            emit_instruction(asm_ast.Dec(asm_type=asm_ast.Byte(), dst=_reg(_X))),
             ["   DEX"],
         )
 
     def test_dec_y(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Dec(dst=_reg(_Y))),
+            emit_instruction(asm_ast.Dec(asm_type=asm_ast.Byte(), dst=_reg(_Y))),
             ["   DEY"],
         )
 
     def test_dec_a_raises(self):
         with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.Dec(dst=_reg(_A)))
+            emit_instruction(asm_ast.Dec(asm_type=asm_ast.Byte(), dst=_reg(_A)))
 
 
 class TestEmitPushPop(unittest.TestCase):
     def test_push_a(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Push(src=_reg(_A))),
+            emit_instruction(asm_ast.Push(asm_type=asm_ast.Byte(), src=_reg(_A))),
             ["   PHA"],
         )
 
     def test_pop_a(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Pop(dst=_reg(_A))),
+            emit_instruction(asm_ast.Pop(asm_type=asm_ast.Byte(), dst=_reg(_A))),
             ["   PLA"],
         )
 
@@ -1040,19 +1040,19 @@ class TestEmitPushPop(unittest.TestCase):
                     asm_ast.Imm(value=1), asm_ast.Stack(offset=1)]:
             with self.subTest(src=src):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Push(src=src))
+                    emit_instruction(asm_ast.Push(asm_type=asm_ast.Byte(), src=src))
 
     def test_pop_non_a_raises(self):
         for dst in [_reg(_X), _reg(_Y), asm_ast.Stack(offset=1)]:
             with self.subTest(dst=dst):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Pop(dst=dst))
+                    emit_instruction(asm_ast.Pop(asm_type=asm_ast.Byte(), dst=dst))
 
 
 class TestEmitXor(unittest.TestCase):
     def test_a_imm(self):
         self.assertEqual(
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_reg(_A),
                 src2=asm_ast.Imm(value=0xFF),
                 dst=_reg(_A),
@@ -1064,7 +1064,7 @@ class TestEmitXor(unittest.TestCase):
         # XOR is commutative; emit accepts either ordering of the
         # (Reg(A), Imm) pair.
         self.assertEqual(
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=asm_ast.Imm(value=0x0A),
                 src2=_reg(_A),
                 dst=_reg(_A),
@@ -1074,7 +1074,7 @@ class TestEmitXor(unittest.TestCase):
 
     def test_dst_must_be_a(self):
         with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_reg(_A),
                 src2=asm_ast.Imm(value=1),
                 dst=_reg(_X),
@@ -1093,14 +1093,14 @@ class TestEmitXor(unittest.TestCase):
         for s1, s2 in bad:
             with self.subTest(src1=s1, src2=s2):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Xor(
+                    emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                         src1=s1, src2=s2, dst=_reg(_A),
                     ))
 
     def test_a_stack(self):
         # A XOR <byte at SSP+off> — reads via indirect-Y, then EOR.
         self.assertEqual(
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_reg(_A),
                 src2=asm_ast.Stack(offset=3),
                 dst=_reg(_A),
@@ -1113,7 +1113,7 @@ class TestEmitXor(unittest.TestCase):
         # mode regardless of which slot it sits in.
         expected = ["   LDY   #$02", "   EOR   (FP),Y"]
         self.assertEqual(
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_reg(_A),
                 src2=asm_ast.Frame(offset=2),
                 dst=_reg(_A),
@@ -1121,7 +1121,7 @@ class TestEmitXor(unittest.TestCase):
             expected,
         )
         self.assertEqual(
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=asm_ast.Frame(offset=2),
                 src2=_reg(_A),
                 dst=_reg(_A),
@@ -1131,7 +1131,7 @@ class TestEmitXor(unittest.TestCase):
 
     def test_imm_out_of_range_raises(self):
         with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.Xor(
+            emit_instruction(asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_reg(_A),
                 src2=asm_ast.Imm(value=256),
                 dst=_reg(_A),
@@ -1154,7 +1154,7 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
         for cls, opcode in self._CASES:
             with self.subTest(op=opcode):
                 self.assertEqual(
-                    emit_instruction(cls(dst=_reg(_A))),
+                    emit_instruction(cls(asm_type=asm_ast.Byte(), dst=_reg(_A))),
                     [f"   {opcode}   A"],
                 )
 
@@ -1166,13 +1166,16 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
                         asm_ast.Frame(offset=1)]:
                 with self.subTest(op=cls.__name__, dst=dst):
                     with self.assertRaises(ValueError):
-                        emit_instruction(cls(dst=dst))
+                        emit_instruction(cls(asm_type=asm_ast.Byte(), dst=dst))
 
     def test_pseudo_dst_rejected(self):
         for cls, _ in self._CASES:
             with self.subTest(op=cls.__name__):
                 with self.assertRaises(ValueError) as cm:
-                    emit_instruction(cls(dst=asm_ast.Pseudo(name="t")))
+                    emit_instruction(cls(
+                        asm_type=asm_ast.Byte(),
+                        dst=asm_ast.Pseudo(name="t"),
+                    ))
                 self.assertIn("Pseudo", str(cm.exception))
 
 
@@ -1185,7 +1188,7 @@ class TestEmitAnd(unittest.TestCase):
     def test_imm_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.And(src=asm_ast.Imm(value=0x0F), dst=_reg(_A))
+                asm_ast.And(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x0F), dst=_reg(_A))
             ),
             ["   AND   #$0F"],
         )
@@ -1193,7 +1196,7 @@ class TestEmitAnd(unittest.TestCase):
     def test_stack_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.And(src=asm_ast.Stack(offset=3), dst=_reg(_A))
+                asm_ast.And(asm_type=asm_ast.Byte(), src=asm_ast.Stack(offset=3), dst=_reg(_A))
             ),
             ["   LDY   #$03", "   AND   (SSP),Y"],
         )
@@ -1201,7 +1204,7 @@ class TestEmitAnd(unittest.TestCase):
     def test_frame_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.And(src=asm_ast.Frame(offset=2), dst=_reg(_A))
+                asm_ast.And(asm_type=asm_ast.Byte(), src=asm_ast.Frame(offset=2), dst=_reg(_A))
             ),
             ["   LDY   #$02", "   AND   (FP),Y"],
         )
@@ -1209,19 +1212,19 @@ class TestEmitAnd(unittest.TestCase):
     def test_dst_must_be_a(self):
         with self.assertRaises(ValueError):
             emit_instruction(
-                asm_ast.And(src=asm_ast.Imm(value=1), dst=_reg(_X))
+                asm_ast.And(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_reg(_X))
             )
 
     def test_register_src_raises(self):
         for src in [_reg(_X), _reg(_Y), _reg(_A)]:
             with self.subTest(src=src):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.And(src=src, dst=_reg(_A)))
+                    emit_instruction(asm_ast.And(asm_type=asm_ast.Byte(), src=src, dst=_reg(_A)))
 
     def test_pseudo_src_rejected(self):
         with self.assertRaises(ValueError) as cm:
             emit_instruction(
-                asm_ast.And(src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
+                asm_ast.And(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="t"), dst=_reg(_A))
             )
         self.assertIn("Pseudo", str(cm.exception))
 
@@ -1232,7 +1235,7 @@ class TestEmitOr(unittest.TestCase):
     def test_imm_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Or(src=asm_ast.Imm(value=0xF0), dst=_reg(_A))
+                asm_ast.Or(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0xF0), dst=_reg(_A))
             ),
             ["   ORA   #$F0"],
         )
@@ -1240,7 +1243,7 @@ class TestEmitOr(unittest.TestCase):
     def test_stack_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Or(src=asm_ast.Stack(offset=3), dst=_reg(_A))
+                asm_ast.Or(asm_type=asm_ast.Byte(), src=asm_ast.Stack(offset=3), dst=_reg(_A))
             ),
             ["   LDY   #$03", "   ORA   (SSP),Y"],
         )
@@ -1248,7 +1251,7 @@ class TestEmitOr(unittest.TestCase):
     def test_frame_to_a(self):
         self.assertEqual(
             emit_instruction(
-                asm_ast.Or(src=asm_ast.Frame(offset=2), dst=_reg(_A))
+                asm_ast.Or(asm_type=asm_ast.Byte(), src=asm_ast.Frame(offset=2), dst=_reg(_A))
             ),
             ["   LDY   #$02", "   ORA   (FP),Y"],
         )
@@ -1256,14 +1259,14 @@ class TestEmitOr(unittest.TestCase):
     def test_dst_must_be_a(self):
         with self.assertRaises(ValueError):
             emit_instruction(
-                asm_ast.Or(src=asm_ast.Imm(value=1), dst=_reg(_X))
+                asm_ast.Or(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_reg(_X))
             )
 
     def test_register_src_raises(self):
         for src in [_reg(_X), _reg(_Y), _reg(_A)]:
             with self.subTest(src=src):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Or(src=src, dst=_reg(_A)))
+                    emit_instruction(asm_ast.Or(asm_type=asm_ast.Byte(), src=src, dst=_reg(_A)))
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ class TestTranslateUnopAtoms(unittest.TestCase):
     def test_complement_emits_xor_with_ff(self):
         self.assertEqual(
             translate_unop_atoms(tac_ast.Complement()),
-            [asm_ast.Xor(
+            [asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
             )],
         )
@@ -43,7 +43,7 @@ class TestTranslateUnopAtoms(unittest.TestCase):
         self.assertEqual(
             translate_unop_atoms(tac_ast.Negate()),
             [
-                asm_ast.Xor(
+                asm_ast.Xor(asm_type=asm_ast.Byte(), 
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                 ),
                 asm_ast.ClearCarry(),
@@ -60,10 +60,10 @@ class TestTranslateUnopAtoms(unittest.TestCase):
             translate_unop_atoms(tac_ast.LogicalNot()),
             [
                 asm_ast.Branch(cond=asm_ast.EQ(), target=".lnot_true@0"),
-                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0), dst=_REG_A),
                 asm_ast.Jump(target=".lnot_end@1"),
                 asm_ast.Label(name=".lnot_true@0"),
-                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
                 asm_ast.Label(name=".lnot_end@1"),
             ],
         )
@@ -89,7 +89,7 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=7)))),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=7), dst=_REG_A),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0),
             ],
         )
@@ -98,7 +98,7 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(tac_ast.Ret(val=tac_ast.Var(name="%3"))),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%3"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%3"), dst=_REG_A),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0),
             ],
         )
@@ -114,13 +114,13 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
-                asm_ast.Xor(
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=5), dst=_REG_A),
+                asm_ast.Xor(asm_type=asm_ast.Byte(), 
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                 ),
                 asm_ast.ClearCarry(),
                 asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
             ],
         )
 
@@ -134,11 +134,11 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%1"), dst=_REG_A),
-                asm_ast.Xor(
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%1"), dst=_REG_A),
+                asm_ast.Xor(asm_type=asm_ast.Byte(), 
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                 ),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%2")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%2")),
             ],
         )
 
@@ -154,14 +154,14 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
                 asm_ast.Branch(cond=asm_ast.EQ(), target=".lnot_true@0"),
-                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0), dst=_REG_A),
                 asm_ast.Jump(target=".lnot_end@1"),
                 asm_ast.Label(name=".lnot_true@0"),
-                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
                 asm_ast.Label(name=".lnot_end@1"),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -176,10 +176,10 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=3), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=3), dst=_REG_A),
                 asm_ast.ClearCarry(),
                 asm_ast.Add(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -194,10 +194,10 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
                 asm_ast.SetCarry(),
                 asm_ast.Sub(src=asm_ast.Imm(value=5), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -213,11 +213,11 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                asm_ast.Mov(src=asm_ast.Imm(value=3), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=3), dst=_REG_A),
                 asm_ast.Call(name="mul8"),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -233,11 +233,11 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=5), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
                 asm_ast.Call(name="divmod8"),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -253,9 +253,9 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.And(src=asm_ast.Imm(value=0x0F), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.And(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x0F), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -269,9 +269,9 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=0xF0), dst=_REG_A),
-                asm_ast.Or(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0xF0), dst=_REG_A),
+                asm_ast.Or(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -287,13 +287,13 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
-                asm_ast.Xor(
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Xor(asm_type=asm_ast.Byte(), 
                     src1=_REG_A,
                     src2=asm_ast.Pseudo(name="%1"),
                     dst=_REG_A,
                 ),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%2")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%2")),
             ],
         )
 
@@ -308,11 +308,11 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=2), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
                 asm_ast.Call(name="shl8"),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%1")),
             ],
         )
 
@@ -329,11 +329,11 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                asm_ast.Mov(src=asm_ast.Imm(value=0x80), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0x80), dst=_REG_A),
                 asm_ast.Call(name="asr8"),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
             ],
         )
 
@@ -349,12 +349,12 @@ class TestTranslateInstruction(unittest.TestCase):
         self.assertEqual(
             translate_instruction(instr),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                asm_ast.Mov(src=asm_ast.Imm(value=17), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=5), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=17), dst=_REG_A),
                 asm_ast.Call(name="divmod8"),
-                asm_ast.Mov(src=_REG_X, dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_X, dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
             ],
         )
 
@@ -372,7 +372,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 src=tac_ast.Constant(const=tac_ast.ConstInt(int=0)),
                 dst=tac_ast.Var(name="%0"),
             )),
-            [asm_ast.Mov(
+            [asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Imm(value=0), dst=asm_ast.Pseudo(name="%0"),
             )],
         )
@@ -385,7 +385,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 src=tac_ast.Var(name="%a"),
                 dst=tac_ast.Var(name="%b"),
             )),
-            [asm_ast.Mov(
+            [asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Pseudo(name="%a"),
                 dst=asm_ast.Pseudo(name="%b"),
             )],
@@ -410,7 +410,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 target=".or_true@0",
             )),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
                 asm_ast.Branch(cond=asm_ast.NE(), target=".or_true@0"),
             ],
         )
@@ -422,7 +422,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 target=".or_true@0",
             )),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
                 asm_ast.Branch(cond=asm_ast.NE(), target=".or_true@0"),
             ],
         )
@@ -434,7 +434,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 target=".and_false@0",
             )),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0), dst=_REG_A),
                 asm_ast.Branch(cond=asm_ast.EQ(), target=".and_false@0"),
             ],
         )
@@ -446,7 +446,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                 target=".and_false@0",
             )),
             [
-                asm_ast.Mov(src=asm_ast.Pseudo(name="%2"), dst=_REG_A),
+                asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%2"), dst=_REG_A),
                 asm_ast.Branch(cond=asm_ast.EQ(), target=".and_false@0"),
             ],
         )
@@ -487,26 +487,26 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
             asm_ast.Function(
                 name="main",
                 is_global=True, instructions=[
-                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
                     asm_ast.Branch(
                         cond=asm_ast.EQ(), target=".and_false@0",
                     ),
-                    asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=2), dst=_REG_A),
                     asm_ast.Branch(
                         cond=asm_ast.EQ(), target=".and_false@0",
                     ),
-                    asm_ast.Mov(
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), 
                         src=asm_ast.Imm(value=1),
                         dst=asm_ast.Pseudo(name="%0"),
                     ),
                     asm_ast.Jump(target=".and_end@1"),
                     asm_ast.Label(name=".and_false@0"),
-                    asm_ast.Mov(
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), 
                         src=asm_ast.Imm(value=0),
                         dst=asm_ast.Pseudo(name="%0"),
                     ),
                     asm_ast.Label(name=".and_end@1"),
-                    asm_ast.Mov(
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), 
                         src=asm_ast.Pseudo(name="%0"), dst=_REG_A,
                     ),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
@@ -553,34 +553,34 @@ class TestTranslateComparisons(unittest.TestCase):
 
     def _equality_expected(self, cond):
         return [
-            asm_ast.Mov(src=self._src1_op(), dst=_REG_A),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=self._src1_op(), dst=_REG_A),
             asm_ast.Compare(left=_REG_A, right=self._src2_op()),
             asm_ast.Branch(cond=cond, target=".cmp_true@0"),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=".cmp_end@1"),
             asm_ast.Label(name=".cmp_true@0"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=".cmp_end@1"),
-            asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=self._dst_op()),
         ]
 
     def _signed_ordering_expected(self, left_op, right_op, cond):
         return [
-            asm_ast.Mov(src=left_op, dst=_REG_A),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=left_op, dst=_REG_A),
             asm_ast.SetCarry(),
             asm_ast.Sub(src=right_op, dst=_REG_A),
             asm_ast.Branch(cond=asm_ast.VC(), target=".cmp_novf@0"),
-            asm_ast.Xor(
+            asm_ast.Xor(asm_type=asm_ast.Byte(), 
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
             asm_ast.Label(name=".cmp_novf@0"),
             asm_ast.Branch(cond=cond, target=".cmp_true@1"),
-            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=".cmp_end@2"),
             asm_ast.Label(name=".cmp_true@1"),
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=".cmp_end@2"),
-            asm_ast.Mov(src=_REG_A, dst=self._dst_op()),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=self._dst_op()),
         ]
 
     def test_equal_uses_compare_and_beq(self):
@@ -673,14 +673,14 @@ class TestTranslateFunction(unittest.TestCase):
             asm_ast.Function(
                 name="main",
                 is_global=True, instructions=[
-                    asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                    asm_ast.Xor(
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=1), dst=_REG_A),
+                    asm_ast.Xor(asm_type=asm_ast.Byte(), 
                         src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
                     ),
                     asm_ast.ClearCarry(),
                     asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
-                    asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
-                    asm_ast.Mov(src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="%0")),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Pseudo(name="%0"), dst=_REG_A),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             ),
@@ -710,7 +710,7 @@ class TestTranslateFunctionCall(unittest.TestCase):
         ))
         self.assertEqual(instrs, [
             asm_ast.Call(name="f"),
-            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
         ])
 
     def test_constant_arg(self):
@@ -724,12 +724,12 @@ class TestTranslateFunctionCall(unittest.TestCase):
         ))
         self.assertEqual(instrs, [
             asm_ast.AllocateStack(bytes=1),
-            asm_ast.Mov(
+            asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Imm(value=42),
                 dst=asm_ast.Stack(offset=1),
             ),
             asm_ast.Call(name="f"),
-            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
         ])
 
     def test_var_arg_uses_pseudo(self):
@@ -744,12 +744,12 @@ class TestTranslateFunctionCall(unittest.TestCase):
         ))
         self.assertEqual(instrs, [
             asm_ast.AllocateStack(bytes=1),
-            asm_ast.Mov(
+            asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Pseudo(name="@0.x"),
                 dst=asm_ast.Stack(offset=1),
             ),
             asm_ast.Call(name="f"),
-            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@1.t")),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="@1.t")),
         ])
 
     def test_multiple_args_get_stack_offsets_1_to_n(self):
@@ -768,20 +768,20 @@ class TestTranslateFunctionCall(unittest.TestCase):
         ))
         self.assertEqual(instrs, [
             asm_ast.AllocateStack(bytes=3),
-            asm_ast.Mov(
+            asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Imm(value=1),
                 dst=asm_ast.Stack(offset=1),
             ),
-            asm_ast.Mov(
+            asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Imm(value=2),
                 dst=asm_ast.Stack(offset=2),
             ),
-            asm_ast.Mov(
+            asm_ast.Mov(asm_type=asm_ast.Byte(), 
                 src=asm_ast.Imm(value=3),
                 dst=asm_ast.Stack(offset=3),
             ),
             asm_ast.Call(name="f"),
-            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
+            asm_ast.Mov(asm_type=asm_ast.Byte(), src=_REG_A, dst=asm_ast.Pseudo(name="@0.t")),
         ])
 
 
@@ -802,7 +802,7 @@ class TestTranslateProgram(unittest.TestCase):
                 name="main",
                 is_global=True, params=[],
                 instructions=[
-                    asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_REG_A),
+                    asm_ast.Mov(asm_type=asm_ast.Byte(), src=asm_ast.Imm(value=42), dst=_REG_A),
                     asm_ast.Ret(arg_bytes=0, local_bytes=0),
                 ],
             )],
@@ -828,34 +828,44 @@ class TestErrors(unittest.TestCase):
 
 
 class TestSignExtendAndTruncate(unittest.TestCase):
-    """16-bit conversion codegen (SignExtend / Truncate) is the
-    deferred boundary — `tac_to_asm` raises NotImplementedError
-    rather than silently emitting wrong 1-byte ops."""
+    """SignExtend lowers to asm `Movsx(src, dst)` (an implicit
+    Byte→DoubleByte sign-extend); Truncate lowers to a single
+    `Mov(Byte, src, dst)` that reads the low byte of the 2-byte
+    source. The actual 16-bit shape work happens in the deferred
+    8-bit lowering pass and at asm_emit, which raises on Movsx and
+    on `DoubleByte`-typed instructions."""
 
-    def test_sign_extend_raises(self):
-        with self.assertRaises(NotImplementedError) as ctx:
-            translate_instruction(tac_ast.SignExtend(
-                src=tac_ast.Var(name="@0.x"),
-                dst=tac_ast.Var(name="%0"),
-            ))
-        self.assertIn("SignExtend", str(ctx.exception))
+    def test_sign_extend_lowers_to_movsx(self):
+        out = translate_instruction(tac_ast.SignExtend(
+            src=tac_ast.Var(name="@0.x"),
+            dst=tac_ast.Var(name="%0"),
+        ))
+        self.assertEqual(out, [asm_ast.Movsx(
+            src=asm_ast.Pseudo(name="@0.x"),
+            dst=asm_ast.Pseudo(name="%0"),
+        )])
 
-    def test_truncate_raises(self):
-        with self.assertRaises(NotImplementedError) as ctx:
-            translate_instruction(tac_ast.Truncate(
-                src=tac_ast.Var(name="@0.x"),
-                dst=tac_ast.Var(name="%0"),
-            ))
-        self.assertIn("Truncate", str(ctx.exception))
+    def test_truncate_lowers_to_byte_mov(self):
+        # Memory layout is little-endian, so the source's address
+        # already points at the low byte — `Mov(Byte, src, dst)`
+        # transfers exactly that.
+        out = translate_instruction(tac_ast.Truncate(
+            src=tac_ast.Var(name="@0.x"),
+            dst=tac_ast.Var(name="%0"),
+        ))
+        self.assertEqual(out, [asm_ast.Mov(
+            asm_type=asm_ast.Byte(),
+            src=asm_ast.Pseudo(name="@0.x"),
+            dst=asm_ast.Pseudo(name="%0"),
+        )])
 
 
 class TestStaticVariableTranslation(unittest.TestCase):
-    """The TAC `StaticVariable` carries `data_type` and a typed
-    `IntInit` / `LongInit` wrapper; the asm `StaticVariable` is
-    untyped (1 byte today). The translator pulls the raw integer
-    out of the wrapper and feeds it to the asm node — variant
-    info is discarded, sizing is the deferred 16-bit codegen
-    concern."""
+    """TAC `StaticVariable` and asm `StaticVariable` both carry a
+    typed `IntInit` / `LongInit` wrapper; the translation is a pure
+    rewrap, with the variant preserved end-to-end so asm_emit can
+    pick the right cell width (`DC.B` vs `DC.W`) at the final
+    emit."""
 
     def test_int_init_passes_through(self):
         prog = tac_ast.Program(top_level=[
@@ -867,12 +877,13 @@ class TestStaticVariableTranslation(unittest.TestCase):
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(name="g", is_global=True, init=42),
+            asm_ast.StaticVariable(
+                name="g", is_global=True,
+                init=asm_ast.IntInit(int=42),
+            ),
         ])
 
-    def test_long_init_extracts_int_value(self):
-        # The asm side stores just an int; the IntInit / LongInit
-        # wrapper exists only at the TAC level.
+    def test_long_init_passes_through_as_long_init(self):
         prog = tac_ast.Program(top_level=[
             tac_ast.StaticVariable(
                 name="g", is_global=False,
@@ -882,7 +893,10 @@ class TestStaticVariableTranslation(unittest.TestCase):
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
-            asm_ast.StaticVariable(name="g", is_global=False, init=200),
+            asm_ast.StaticVariable(
+                name="g", is_global=False,
+                init=asm_ast.LongInit(int=200),
+            ),
         ])
 
 

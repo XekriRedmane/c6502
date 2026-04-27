@@ -60,6 +60,12 @@ class DoubleInit(Type_static_init):
 
 
 @dataclass
+class AddressInit(Type_static_init):
+    name: str
+    offset: int
+
+
+@dataclass
 class Type_instruction:
     pass
 

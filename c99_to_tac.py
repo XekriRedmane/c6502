@@ -187,6 +187,7 @@ from __future__ import annotations
 import c99_ast
 import tac_ast
 from passes.type_checking import (
+    AddressInit,
     FunAttr,
     Initial,
     LocalAttr,
@@ -366,7 +367,8 @@ def _fold_fp_cast_constant(
 
 
 def _tac_static_init_for(
-    t: c99_ast.Type_data_type, value: int | float,
+    t: c99_ast.Type_data_type,
+    value: int | float | AddressInit,
 ) -> tac_ast.Type_static_init:
     """Build a TAC `static_init` wrapping `value`, with the variant
     matching the declared type — the integer side of the TAC
@@ -380,7 +382,20 @@ def _tac_static_init_for(
     `float(value)` for FP variants — so an integer initializer for
     an FP static (e.g. `double x = 3;`) lays down `3.0` and an FP
     initializer for an integer static (after `_convert_to` wraps it
-    in a Cast) lays down its truncated integer."""
+    in a Cast) lays down its truncated integer.
+
+    AddressInit values (`&otherstatic` initializers) only make
+    sense for Pointer-typed statics. The type checker has already
+    validated this at the source-level construct, so an
+    AddressInit here against a non-Pointer declared type is a
+    bug — raise."""
+    if isinstance(value, AddressInit):
+        if not isinstance(t, c99_ast.Pointer):
+            raise TypeError(
+                f"AddressInit value can only initialize a pointer-"
+                f"typed static; got declared type {t!r}"
+            )
+        return tac_ast.AddressInit(name=value.name, offset=value.offset)
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(int=int(value))
     if isinstance(t, c99_ast.Long):

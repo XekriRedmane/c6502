@@ -386,3 +386,9 @@ class FloatInit(Type_static_init):
 @dataclass
 class DoubleInit(Type_static_init):
     float: float
+
+
+@dataclass
+class AddressInit(Type_static_init):
+    name: str
+    offset: int

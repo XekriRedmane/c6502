@@ -7,8 +7,13 @@ module ASM {
     -- integer value. FloatInit / DoubleInit lay down 4 / 8 little-
     -- endian bytes of an IEEE 754 single / double — asm_emit packs
     -- the float into bytes via Python's struct.pack at emit time.
+    -- AddressInit lays down a 2-byte little-endian word equal to
+    -- the address `name + offset` — resolved at link time by the
+    -- assembler. Used for Pointer-typed statics initialized with
+    -- `&otherstatic`. asm_emit renders as `DC.W name+offset`.
     static_init = IntInit(int) | LongInit(int)
                 | FloatInit(float) | DoubleInit(float)
+                | AddressInit(identifier name, int offset)
 
     -- Ret's `save_a` flag controls whether the epilogue brackets the
     -- SSP/FP arithmetic with PHA/PLA to preserve A across the

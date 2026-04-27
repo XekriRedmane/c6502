@@ -156,15 +156,29 @@ class Tentative(InitialValue):
 
 
 @dataclass(frozen=True)
+class AddressInit:
+    """Static pointer initializer of the form `&name+offset` —
+    the address of another static-storage object (or a function).
+    The address is link-time known, so codegen lays the bytes
+    down via the assembler's symbol-resolution (`DC.W name+off`)
+    rather than as a literal numeric value. C99 §6.6.7 paragraph 9
+    permits this shape inside a constant expression."""
+    name: str
+    offset: int = 0
+
+
+@dataclass(frozen=True)
 class Initial(InitialValue):
     """Object declared with an initializer. The value carries the
-    constant from the initializer expression — an `int` for the
-    four integer types, a `float` (Python double-precision) for
-    `Float` / `Double`. The variable's declared type tells codegen
-    which `StaticVariable` width to emit; the same numeric value
-    can mean different things in different widths, and Float vs.
-    Double also pick different IEEE 754 byte sequences."""
-    value: int | float
+    constant lifted out of the initializer expression — an `int`
+    for the four integer types, a `float` (Python double-precision)
+    for `Float` / `Double`, or an `AddressInit` for a Pointer-typed
+    static initialized with `&otherstatic`. The variable's declared
+    type tells codegen which `StaticVariable` width to emit; the
+    same numeric value can mean different things in different
+    widths, and Float vs. Double also pick different IEEE 754 byte
+    sequences."""
+    value: int | float | AddressInit
 
 
 @dataclass(frozen=True)
@@ -274,25 +288,33 @@ def _linkage_to_is_global(linkage: Linkage) -> bool:
 
 def _const_init_value(
     exp: c99_ast.Type_exp, name: str,
-) -> int | float:
+    symbols: SymbolTable | None = None,
+) -> int | float | AddressInit:
     """Static-storage initializers must be compile-time constant
     expressions (C99 §6.7.8.4). After `_check_exp` and the
     initializer-conversion rule have run, the AST shape is one of:
-      * a `Constant(ConstInt|ConstLong|ConstUInt|ConstULong|
-        ConstFloat|ConstDouble)` — variant doesn't have to match
-        the variable's declared type, since `_convert_to(...)` has
-        already wrapped a mismatch in a `Cast`.
-      * a `Cast` (possibly nested) wrapping a Constant — produced
+      * a `Constant(...)` — drills to its int / float value.
+      * a `Cast` (possibly nested) wrapping any of these — produced
         by `_convert_to` for narrowing/widening initializers, or
         explicitly written by the user.
+      * an `AddressOf(Var(name))` — taking the address of another
+        static-storage object (or a function). C99 §6.6.7 paragraph
+        9 makes this a valid constant expression; we capture it as
+        an `AddressInit` and let codegen emit `DC.W name` so the
+        assembler resolves the symbol at link time.
 
-    Both shapes reduce to the underlying value (int for the four
-    integer variants, float for ConstFloat / ConstDouble). The
-    Cast target's type tells codegen the storage width when laying
-    out the StaticVariable; the raw value passes through, and the
-    declared-type-driven conversion (e.g. int constant initializer
-    for a Float static) happens in c99_to_tac when it builds the
-    typed `*Init` node.
+    Integer- and float-shaped values pass through to `int` / `float`
+    Python values; the address-of shape returns an `AddressInit`.
+    The Cast target's type tells codegen the storage width when
+    laying out the StaticVariable; the raw value passes through,
+    and the declared-type-driven conversion (e.g. int constant
+    initializer for a Float static) happens in c99_to_tac when it
+    builds the typed `*Init` node.
+
+    `symbols` is consulted when an AddressOf shape is detected, to
+    confirm the operand is a static-storage object or a function
+    (taking the address of a local would be a runtime expression,
+    not a constant expression).
     """
     match exp:
         case c99_ast.Constant(const=c):
@@ -300,7 +322,33 @@ def _const_init_value(
                 return c.float
             return c.int
         case c99_ast.Cast(exp=inner):
-            return _const_init_value(inner, name)
+            return _const_init_value(inner, name, symbols)
+        case c99_ast.AddressOf(exp=inner):
+            # Only `&name` (a bare Var operand) is a constant
+            # expression — `&*p` and other forms aren't (they
+            # depend on runtime values).
+            if not isinstance(inner, c99_ast.Var):
+                raise TypeCheckError(
+                    f"initializer for static-storage object {name!r} "
+                    f"takes the address of a non-Var expression "
+                    f"{inner!r}"
+                )
+            target = inner.name
+            if symbols is not None:
+                sym = symbols.get(target)
+                if sym is None:
+                    raise TypeCheckError(
+                        f"initializer for static-storage object "
+                        f"{name!r} references undeclared identifier "
+                        f"{target!r}"
+                    )
+                if not isinstance(sym.attrs, (StaticAttr, FunAttr)):
+                    raise TypeCheckError(
+                        f"initializer for static-storage object "
+                        f"{name!r} takes the address of {target!r}, "
+                        f"which doesn't have static storage duration"
+                    )
+            return AddressInit(name=target, offset=0)
     raise TypeCheckError(
         f"initializer for static-storage object {name!r} is not a "
         f"constant expression"
@@ -536,7 +584,9 @@ class TypeChecker:
             # through any Cast wrappers to the underlying integer.
             self._check_exp(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
-            initial = Initial(_const_init_value(vd.init, vd.name))
+            initial = Initial(
+                _const_init_value(vd.init, vd.name, self.symbols),
+            )
         # Recover linkage from the storage class.
         if isinstance(vd.storage_class, c99_ast.Static):
             linkage = Linkage.INTERNAL
@@ -779,7 +829,9 @@ class TypeChecker:
                 # integer value.
                 self._check_exp(vd.init)
                 vd.init = _convert_to(vd.init, vd.data_type)
-                initial = Initial(_const_init_value(vd.init, vd.name))
+                initial = Initial(
+                    _const_init_value(vd.init, vd.name, self.symbols),
+                )
             self.symbols[vd.name] = Symbol(
                 type=vd.data_type,
                 attrs=StaticAttr(initial_value=initial, is_global=False),

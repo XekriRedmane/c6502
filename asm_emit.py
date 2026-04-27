@@ -945,6 +945,17 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
                 _instr_line("dc.l", f"${lo:08X}"),
                 _instr_line("dc.l", f"${hi:08X}"),
             ]
+        case asm_ast.AddressInit(name=target, offset=off):
+            # `&otherstatic` initializer — lay down 2 little-endian
+            # bytes equal to the target's address. dasm resolves
+            # `target` (and the optional `+off`) to the final
+            # address at link time. Same as a `LongInit` cell-wise,
+            # just with a symbolic value instead of a literal.
+            operand = target if off == 0 else f"{target}+{off}"
+            return [
+                f"{sv.name}:",
+                _instr_line("dc.w", operand),
+            ]
     raise TypeError(f"unexpected static_init: {sv.init!r}")
 
 

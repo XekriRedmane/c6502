@@ -51,6 +51,14 @@ module TAC {
     -- patterns.
     const = ConstInt(int) | ConstLong(int)
           | ConstFloat(float) | ConstDouble(float)
+    -- AddressInit lays down a 2-byte word that resolves at link
+    -- time to the address `name + offset`. Only used for Pointer-
+    -- typed statics initialized with `&otherstatic` (C99 §6.6.7
+    -- paragraph 9 — taking the address of a static-storage object
+    -- is a constant expression). asm_emit renders it as
+    -- `DC.W name+offset` (or `DC.W name` when offset==0); the
+    -- assembler resolves the symbol.
     static_init = IntInit(int) | LongInit(int) | UIntInit(int) | ULongInit(int)
                 | FloatInit(float) | DoubleInit(float)
+                | AddressInit(identifier name, int offset)
 }

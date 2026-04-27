@@ -2654,6 +2654,105 @@ class TestPointerUnaryOps(unittest.TestCase):
                 "return p / 2; }\n"
             )
 
+
+class TestStaticPointerInit(unittest.TestCase):
+    """Static-storage pointer initializers — null (already covered)
+    and `&otherstatic` (C99 §6.6.7 paragraph 9)."""
+
+    def _codegen(self, src: str) -> str:
+        from compile import _run_stage
+        return _run_stage("codegen", src)
+
+    def _typecheck(self, src: str) -> None:
+        from compile import _run_stage
+        _run_stage("tac", src)
+
+    def test_static_pointer_addressof_static_at_file_scope(self):
+        # `static int a; static int *a_ptr = &a;` — the canonical
+        # case the user asked about. Lays down `a_ptr: DC.W a` so
+        # the assembler resolves the address at link time.
+        text = self._codegen(
+            "static int a;\n"
+            "static int *a_ptr = &a;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("a_ptr:", text)
+        # The `dc.w` operand is the bare symbol `a` (no `+offset`
+        # since the offset is 0).
+        self.assertIn("DC.W  a", text)
+
+    def test_external_pointer_addressof_static(self):
+        # `int *p = &a;` (external linkage) — same lowering path.
+        text = self._codegen(
+            "int a;\n"
+            "int *p = &a;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("p:", text)
+        self.assertIn("DC.W  a", text)
+
+    def test_block_scope_static_pointer_addressof_file_scope(self):
+        # A function-local `static int *p = &g;` keeps its
+        # block-scope rename (`@N.p`) but still resolves to a
+        # `DC.W g` lay-down. The block-scope `static` makes the
+        # variable internal-linkage; the AddressInit machinery
+        # doesn't care about linkage.
+        text = self._codegen(
+            "int g;\n"
+            "int main(void) {\n"
+            "  static int *p = &g;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        self.assertIn("DC.W  g", text)
+
+    def test_static_pointer_addressof_long(self):
+        # `&y` where y is a 2-byte static — the address is still
+        # 2 bytes (every address is); pointee type doesn't affect
+        # it.
+        text = self._codegen(
+            "long y;\n"
+            "long *lp = &y;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("DC.W  y", text)
+
+    def test_addressof_local_in_static_init_rejected(self):
+        # An automatic-storage variable's address isn't a constant
+        # expression — its location isn't known at link time. The
+        # type checker rejects it with a focused message.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) {\n"
+                "  int local;\n"
+                "  static int *p = &local;\n"
+                "  return 0;\n"
+                "}\n"
+            )
+        self.assertIn("static storage duration", str(cm.exception))
+
+    def test_static_pointer_zero_init_still_works(self):
+        # `static int *p = 0;` — the existing null-pointer-constant
+        # path. Verify it still lays down `DC.W $0000` after the
+        # AddressInit changes.
+        text = self._codegen(
+            "static int *p = 0;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("p:", text)
+        self.assertIn("DC.W  $0000", text)
+
+    def test_static_pointer_no_init_is_zero(self):
+        # Tentative definition (no initializer) lays down the
+        # Long-equivalent zero word for the pointer slot.
+        text = self._codegen(
+            "int *p;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("p:", text)
+        self.assertIn("DC.W  $0000", text)
+
     def test_complement_float_rejected(self):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully

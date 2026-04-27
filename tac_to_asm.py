@@ -255,6 +255,8 @@ def _to_asm_static_init(
             return asm_ast.FloatInit(float=v)
         case tac_ast.DoubleInit(float=v):
             return asm_ast.DoubleInit(float=v)
+        case tac_ast.AddressInit(name=n, offset=off):
+            return asm_ast.AddressInit(name=n, offset=off)
     raise TypeError(f"unexpected static_init: {init!r}")
 
 

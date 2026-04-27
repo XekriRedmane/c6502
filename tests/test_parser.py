@@ -2562,6 +2562,59 @@ class TestPointerUnaryOps(unittest.TestCase):
                 "int main(void) { long y; long *lp; lp = &y; return -lp; }\n"
             )
 
+    def test_logical_and_two_pointers(self):
+        # `p && q` — non-null check on each. The existing 2-byte
+        # cond-jump lowering ORs the two address bytes per operand
+        # and BEQ-shortcircuits on a null result, exactly matching
+        # the truthy/falsy semantics for pointers.
+        text = self._codegen(
+            "int main(void) { int x; int y; int *p; int *q; "
+            "p = &x; q = &y; if (p && q) return 1; return 0; }\n"
+        )
+        # Two ORA's (one per operand) and the and_false short-circuit.
+        self.assertGreaterEqual(text.count("ORA   (FP),Y"), 2)
+        self.assertIn(".and_false@", text)
+
+    def test_logical_or_two_pointers(self):
+        text = self._codegen(
+            "int main(void) { int x; int y; int *p; int *q; "
+            "p = &x; q = &y; if (p || q) return 1; return 0; }\n"
+        )
+        self.assertGreaterEqual(text.count("ORA   (FP),Y"), 2)
+        self.assertIn(".or_true@", text)
+
+    def test_logical_and_pointer_and_int(self):
+        # Mixed pointer + integer is fine — the operands are tested
+        # independently, so they don't have to share a common type.
+        self._codegen(
+            "int main(void) { int a; int x; int *p; "
+            "a = 1; p = &x; if (a && p) return 1; return 0; }\n"
+        )
+
+    def test_logical_or_int_and_pointer(self):
+        self._codegen(
+            "int main(void) { int a; int x; int *p; "
+            "a = 0; p = &x; if (a || p) return 1; return 0; }\n"
+        )
+
+    def test_logical_and_distinct_pointer_types(self):
+        # Two pointers of *different* types are fine for `&&` /
+        # `||` — unlike `==` / `!=`, no common type is required;
+        # each operand's truthiness is tested independently.
+        self._codegen(
+            "int main(void) { int x; long y; int *p; long *lp; "
+            "p = &x; lp = &y; if (p && lp) return 1; return 0; }\n"
+        )
+
+    def test_logical_and_result_is_int(self):
+        # Result of `&&` / `||` is `int` per C99 §6.5.13.3 /
+        # §6.5.14.3, regardless of operand type. Use it where an
+        # int is required.
+        self._codegen(
+            "int main(void) { int *p; int *q; "
+            "return p && q; }\n"
+        )
+
     def test_complement_float_rejected(self):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully

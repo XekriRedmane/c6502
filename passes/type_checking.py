@@ -1060,16 +1060,31 @@ class TypeChecker:
                         f"binary operator on non-object types: "
                         f"{tl!r}, {tr!r}"
                     )
+                # `&&` / `||` test each operand for non-zero
+                # independently (C99 §6.5.13 / §6.5.14) — no usual-
+                # arithmetic-conversions promotion. Pointers are
+                # legal: a non-null pointer is "true", a null
+                # pointer is "false". By short-circuiting before
+                # `_common_type`, we sidestep its crash on Pointer
+                # operands (it calls `type(a)()` for matching
+                # types, which fails for Pointer's required
+                # referenced_type field).
+                if isinstance(op, (c99_ast.LogicalAnd, c99_ast.LogicalOr)):
+                    # Both operands have to be scalar — the
+                    # `_is_object_type` check above is sufficient
+                    # (we've excluded FunType, the only non-scalar
+                    # object type in the c6502 vocabulary).
+                    exp.data_type = Int()
+                    return Int()
                 # Pointer equality (C99 §6.5.9.2) takes its own path
-                # — `_common_type` would crash on Pointer (it calls
-                # `type(a)()` for matching types, which fails for
-                # Pointer's required referenced_type field), and the
-                # legality rules differ from arithmetic: matching
-                # pointer type is OK, pointer + null pointer
-                # constant is OK, anything else is rejected. Other
-                # binary ops on pointers (arithmetic, ordering)
-                # aren't yet supported and fall through to the
-                # arithmetic path below, which raises.
+                # — `_common_type` would crash on Pointer for the
+                # same reason as above, and the legality rules
+                # differ from arithmetic: matching pointer type is
+                # OK, pointer + null pointer constant is OK,
+                # anything else is rejected. Other binary ops on
+                # pointers (arithmetic, ordering) aren't yet
+                # supported and fall through to the arithmetic path
+                # below, which raises.
                 if (
                     isinstance(op, (c99_ast.Equal, c99_ast.NotEqual))
                     and (_is_pointer_type(tl) or _is_pointer_type(tr))

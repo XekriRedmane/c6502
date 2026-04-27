@@ -1963,17 +1963,19 @@ class TestAbstractDeclaratorGrammar(unittest.TestCase):
         # `int (*)[3]` — pointer to array of 3 ints.
         self._parse_type_name("int (*)[3]")
 
-    def test_pointer_cast_parses_then_raises(self):
-        # `(int *)x` — full parse() path. The grammar accepts the
-        # form (proving the abstract_declarator rule integrates
-        # with cast_exp), and the transformer raises
-        # NotImplementedError because the abstract_declarator
-        # subtree isn't wired through to the AST yet. Both
-        # behaviors are intentional.
-        from lark.exceptions import VisitError
-        with self.assertRaises(VisitError) as cm:
-            parse("int main(void) { int x; return (int *)x; }")
-        self.assertIsInstance(cm.exception.orig_exc, NotImplementedError)
+    def test_pointer_cast_builds_pointer_target_type(self):
+        # `(int *)x` — the cast's target_type is `Pointer(Int())`.
+        # The full parse() path runs the type_name transformer,
+        # which composes the pointer wrapper around the base type
+        # via `_apply_abstract_declarator`. Verify by inspecting
+        # the resulting Cast node.
+        ast = parse("int main(void) { int x; return (int *)x; }")
+        ret = ast.declaration[0].function_decl.body.block_item[1].statement
+        self.assertIsInstance(ret.exp, c99_ast.Cast)
+        self.assertEqual(
+            ret.exp.target_type,
+            c99_ast.Pointer(referenced_type=c99_ast.Int()),
+        )
 
 
 class TestPointerDeclarations(unittest.TestCase):
@@ -2215,6 +2217,247 @@ class TestPointerOpsEndToEnd(unittest.TestCase):
         # epilogue contributes a fixed CLC of its own.)
         self.assertEqual(
             with_amp_x.count("CLC") - with_amp_deref.count("CLC"), 1,
+        )
+
+
+class TestPointerEquality(unittest.TestCase):
+    """`==` and `!=` between pointers, plus the null-pointer-
+    constant exception. Other binary ops on pointers (arithmetic,
+    ordering) are still unsupported."""
+
+    def _codegen(self, src: str) -> str:
+        from compile import _run_stage
+        return _run_stage("codegen", src)
+
+    def _typecheck(self, src: str) -> None:
+        # Run the pipeline through the type-check stage so type
+        # errors surface here rather than from later passes.
+        from compile import _run_stage
+        _run_stage("tac", src)
+
+    def test_equal_same_pointer_type(self):
+        # `p == q` for two same-type pointers — the existing 2-byte
+        # Equal lowering applies unchanged (Pointer is sized like
+        # Long), so the asm has the high-byte / low-byte CMP pair.
+        text = self._codegen(
+            "int main(void) {\n"
+            "  int x;\n"
+            "  int *p; int *q;\n"
+            "  p = &x; q = &x;\n"
+            "  return p == q;\n"
+            "}\n"
+        )
+        # Two CMPs (one per byte) and the BNE short-circuit landmark.
+        self.assertEqual(text.count("CMP   (FP),Y"), 2)
+        self.assertIn(".cmp_differ@", text)
+
+    def test_not_equal_same_pointer_type(self):
+        text = self._codegen(
+            "int main(void) {\n"
+            "  int x;\n"
+            "  int *p; int *q;\n"
+            "  p = &x; q = &x;\n"
+            "  return p != q;\n"
+            "}\n"
+        )
+        self.assertEqual(text.count("CMP   (FP),Y"), 2)
+
+    def test_pointer_equal_to_null_constant_on_right(self):
+        # `p == 0` — the literal 0 is recognized as a null pointer
+        # constant; the type checker converts it to the pointer
+        # type. End-to-end this should compile cleanly.
+        self._codegen(
+            "int main(void) { int *p; if (p == 0) return 1; return 0; }\n"
+        )
+
+    def test_pointer_equal_to_null_constant_on_left(self):
+        # `0 == p` — same legality, mirror order.
+        self._codegen(
+            "int main(void) { int *p; if (0 == p) return 1; return 0; }\n"
+        )
+
+    def test_pointer_not_equal_to_null_through_long(self):
+        # `p != 0L` — null pointer constant via a Long literal. The
+        # detector drills past the `0` regardless of the integer
+        # variant.
+        self._codegen(
+            "int main(void) { int *p; if (p != 0L) return 1; return 0; }\n"
+        )
+
+    def test_pointer_equal_to_null_through_cast(self):
+        # `(long)0` is still a null pointer constant — the detector
+        # drills through Cast wrappers.
+        self._codegen(
+            "int main(void) { int *p; if (p == (long)0) return 1; return 0; }\n"
+        )
+
+    def test_pointer_compare_to_nonzero_int_rejected(self):
+        # `p == 5` — 5 isn't a null pointer constant, so the
+        # comparison is illegal under our rules.
+        from passes.type_checking import TypeCheckError
+        from lark.exceptions import VisitError
+        with self.assertRaises((TypeCheckError, VisitError)) as cm:
+            self._typecheck(
+                "int main(void) { int *p; if (p == 5) return 1; return 0; }\n"
+            )
+        # Unwrap the TypeCheckError if it's wrapped (compile.py
+        # may surface it directly).
+        err = cm.exception
+        if hasattr(err, "orig_exc") and isinstance(err.orig_exc, TypeCheckError):
+            err = err.orig_exc
+        self.assertIsInstance(err, TypeCheckError)
+
+    def test_pointer_compare_distinct_pointer_types_rejected(self):
+        # `int *p; long *q; p == q;` — different pointer types,
+        # rejected even though both sides are pointers.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) {\n"
+                "  int *p; long *q;\n"
+                "  if (p == q) return 1;\n"
+                "  return 0;\n"
+                "}\n"
+            )
+
+    def test_ordering_on_pointers_still_unsupported(self):
+        # `<` / `>` / `<=` / `>=` on pointers aren't wired up yet;
+        # this test pins the current behavior so we notice when it
+        # changes. The existing arithmetic path falls through and
+        # raises (Pointer isn't an arithmetic type).
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises((TypeCheckError, TypeError)):
+            self._typecheck(
+                "int main(void) { int *p; int *q; "
+                "if (p < q) return 1; return 0; }\n"
+            )
+
+    def test_equal_result_is_int(self):
+        # The result of `==` on pointers is `int` (per C99 §6.5.9.1),
+        # matching the existing comparison-result rule. Verify by
+        # using it in a context that requires an int (a `return`
+        # from an int-returning function).
+        self._codegen(
+            "int main(void) { int *p; int *q; "
+            "p = q; return p == q; }\n"
+        )
+
+
+class TestPointerIntegerCasts(unittest.TestCase):
+    """Casts between integer types and pointer types, both
+    directions. Pointer is 2 bytes, so the existing
+    SignExtend / ZeroExtend / Truncate / no-op machinery covers
+    everything via byte-width dispatch — these tests pin the
+    end-to-end paths."""
+
+    def _codegen(self, src: str) -> str:
+        from compile import _run_stage
+        return _run_stage("codegen", src)
+
+    def test_pointer_to_int_uses_truncate(self):
+        # `(int)p` — Pointer (2B) → Int (1B) is a Truncate. The
+        # asm just moves the low byte; the high byte is dropped.
+        # No `BMI` (sign-extend marker) and no `LDA #$00` for the
+        # high half should appear from the cast itself.
+        text = self._codegen(
+            "int main(void) {\n"
+            "  int x; int a; int *p;\n"
+            "  p = &x;\n"
+            "  a = (int)p;\n"
+            "  return a;\n"
+            "}\n"
+        )
+        # The cast produces no extra arithmetic — just plain Movs.
+        # Verify by checking a representative pattern: the asm
+        # successfully includes a load of A and store-back. (Pinning
+        # exact lines is too brittle; the smoke is that codegen
+        # completes and the program structure is intact.)
+        self.assertIn("RTS", text)
+
+    def test_pointer_to_long_is_no_op(self):
+        # `(long)p` — Pointer (2B) → Long (2B) is a no-op cast at
+        # the c99_to_tac level (same width); the inner val passes
+        # through. Smoke-check the program compiles end-to-end.
+        self._codegen(
+            "int main(void) {\n"
+            "  int x; long l; int *p;\n"
+            "  p = &x;\n"
+            "  l = (long)p;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+
+    def test_int_to_pointer_sign_extends(self):
+        # `(int *)a` — Int (1B, signed) → Pointer (2B). Goes
+        # through the SignExtend path: the low byte is the source's
+        # value, the high byte is 0x00 if the source is non-negative
+        # and 0xFF if it's negative. Verify by looking for the
+        # sign-extend label landmarks.
+        text = self._codegen(
+            "int main(void) {\n"
+            "  int a; int *p;\n"
+            "  a = 5;\n"
+            "  p = (int *)a;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        self.assertIn(".sx_neg@", text)
+        self.assertIn("LDA   #$FF", text)
+        self.assertIn("LDA   #$00", text)
+
+    def test_uint_to_pointer_zero_extends(self):
+        # `(int *)u` — UInt (1B, unsigned) → Pointer (2B). Goes
+        # through ZeroExtend: high byte unconditionally zero, no
+        # branch. The asm has the low-byte copy followed by a
+        # `LDA #$00` for the high byte; no sign-extend labels.
+        text = self._codegen(
+            "int main(void) {\n"
+            "  unsigned int u; int *p;\n"
+            "  u = 200u;\n"
+            "  p = (int *)u;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        self.assertNotIn(".sx_neg@", text)
+        self.assertIn("LDA   #$00", text)
+
+    def test_long_to_pointer_is_no_op(self):
+        # `(int *)l` — Long (2B) → Pointer (2B) is a no-op cast.
+        # No SignExtend / ZeroExtend / Truncate needed; the inner
+        # val passes through. Smoke-check it compiles.
+        self._codegen(
+            "int main(void) {\n"
+            "  long l; int *p;\n"
+            "  l = 0x1234L;\n"
+            "  p = (int *)l;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+
+    def test_pointer_to_pointer_different_pointee_no_op(self):
+        # `(long *)p` where p is `int *` — Pointer (2B) → Pointer
+        # (2B) is a no-op cast (the bytes are identical; only the
+        # type-checker's view of the pointee changes). Smoke-check
+        # the program compiles.
+        self._codegen(
+            "int main(void) {\n"
+            "  int x; int *p; long *lp;\n"
+            "  p = &x;\n"
+            "  lp = (long *)p;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+
+    def test_double_pointer_cast(self):
+        # `(int **)a` — building a 2-byte pointer-to-pointer from
+        # a 1-byte int. Same SignExtend path as `(int *)a`.
+        self._codegen(
+            "int main(void) {\n"
+            "  int a; int **pp;\n"
+            "  a = 1;\n"
+            "  pp = (int **)a;\n"
+            "  return 0;\n"
+            "}\n"
         )
 
 

@@ -542,29 +542,21 @@ class _ASTBuilder(Transformer):
         # `type_name: type_specifier+ abstract_declarator?` — used
         # inside cast expressions.
         #
-        # When `abstract_declarator` is absent, every item is a
-        # type_specifier Token (the `type_specifier` transformer
-        # above passes the INT / LONG / SIGNED / etc. tokens
-        # through), so `_resolve_data_type` maps them to a c99_ast
-        # base type directly.
-        #
-        # When `abstract_declarator` is present, the trailing item
-        # is a Lark Tree — the new rules in c99.lark accept the
-        # full §6.7.6 grammar, but no transformer methods are wired
-        # for the inner declarator rules yet, so the subtree
-        # arrives raw. Raise a focused NotImplementedError so the
-        # failure points at the missing wire-up, not at a downstream
-        # `'Tree' object has no attribute 'type'` cascade.
+        # type_specifier tokens land first (the `type_specifier`
+        # transformer passes INT / LONG / SIGNED / etc. tokens
+        # through). If an abstract_declarator subtree is present,
+        # it's the last item — `_apply_abstract_declarator` wraps
+        # the base type with its pointer / array / function
+        # modifiers (pointer-only is supported today; arrays /
+        # function-pointers raise NotImplementedError).
         type_specs = [it for it in items if isinstance(it, Token)]
-        if len(type_specs) != len(items):
-            raise NotImplementedError(
-                "abstract_declarator inside a type_name (cast target) "
-                "isn't wired through to the AST yet — the grammar "
-                "accepts the form, but the transformer doesn't yet "
-                "know how to compose a Pointer / array / function "
-                "wrapper around the base type"
-            )
-        return _resolve_data_type(type_specs)
+        base = _resolve_data_type(type_specs)
+        if len(type_specs) == len(items):
+            # No abstract_declarator — bare type-specifier list.
+            return base
+        # Trailing abstract_declarator subtree.
+        adecl_tree = items[-1]
+        return _apply_abstract_declarator(adecl_tree, base)
 
     def parameter_declaration(self, items):
         # `parameter_declaration: specifier+ declarator

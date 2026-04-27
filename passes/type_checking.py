@@ -360,6 +360,30 @@ def _is_pointer_type(t: Type) -> bool:
     return isinstance(t, Pointer)
 
 
+def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
+    """Detect a null pointer constant per C99 §6.3.2.3.3 — "an
+    integer constant expression with the value 0, or such an
+    expression cast to type void *". c6502 has no constant-folding
+    pass, so we recognize the literal form: a `Constant` whose
+    integer-variant `const` is 0, optionally wrapped in any number
+    of `Cast`s. (`(int)0`, `(long)0`, `((void *)0)` once void
+    pointers exist, etc.) Used at the type-check boundary for
+    pointer equality — `p == 0` and `0 == p` are legal even though
+    the bare types don't match."""
+    while isinstance(exp, c99_ast.Cast):
+        exp = exp.exp
+    if not isinstance(exp, c99_ast.Constant):
+        return False
+    c = exp.const
+    if isinstance(
+        c,
+        (c99_ast.ConstInt, c99_ast.ConstLong,
+         c99_ast.ConstUInt, c99_ast.ConstULong),
+    ):
+        return c.int == 0
+    return False
+
+
 def _is_arithmetic_type(t: Type) -> bool:
     """True iff `t` is integer or floating — the types that
     participate in C99 §6.3.1.8 usual arithmetic conversions.
@@ -871,6 +895,44 @@ class TypeChecker:
                 return
         raise TypeError(f"unexpected for_init: {init!r}")
 
+    def _pointer_equality_common_type(
+        self,
+        lhs: c99_ast.Type_exp, rhs: c99_ast.Type_exp,
+        tl: Type, tr: Type,
+    ) -> Type:
+        """Pick the common type for a `==` / `!=` whose operands
+        include at least one pointer. Three legal shapes per C99
+        §6.5.9 (and the c6502-specific simplification noted in the
+        commit message):
+          pointer == same pointer            → that pointer type
+          pointer == null pointer constant   → the pointer type
+                                              (the 0 is converted)
+          null pointer constant == pointer   → mirror of above
+        Anything else (mismatched pointer types, pointer + non-zero
+        integer, pointer + FP) raises. Caller has already
+        established that at least one of `tl` / `tr` is Pointer."""
+        l_ptr = _is_pointer_type(tl)
+        r_ptr = _is_pointer_type(tr)
+        if l_ptr and r_ptr:
+            if not _types_equal(tl, tr):
+                raise TypeCheckError(
+                    f"comparison of distinct pointer types: "
+                    f"{tl!r} vs {tr!r}"
+                )
+            # Fresh instance so callers can attach to AST nodes
+            # without aliasing — same convention as `_common_type`.
+            return Pointer(referenced_type=tl.referenced_type)
+        # Exactly one operand is a pointer; the other must be a
+        # null pointer constant.
+        if l_ptr and _is_null_pointer_constant(rhs):
+            return Pointer(referenced_type=tl.referenced_type)
+        if r_ptr and _is_null_pointer_constant(lhs):
+            return Pointer(referenced_type=tr.referenced_type)
+        raise TypeCheckError(
+            f"comparison between pointer and non-null-constant "
+            f"non-pointer: {tl!r} vs {tr!r}"
+        )
+
     def _check_exp(self, exp: c99_ast.Type_exp) -> Type:
         """Type-check an expression, populating `exp.data_type` in
         place on every node visited. Returns the computed type for
@@ -956,6 +1018,27 @@ class TypeChecker:
                         f"binary operator on non-object types: "
                         f"{tl!r}, {tr!r}"
                     )
+                # Pointer equality (C99 §6.5.9.2) takes its own path
+                # — `_common_type` would crash on Pointer (it calls
+                # `type(a)()` for matching types, which fails for
+                # Pointer's required referenced_type field), and the
+                # legality rules differ from arithmetic: matching
+                # pointer type is OK, pointer + null pointer
+                # constant is OK, anything else is rejected. Other
+                # binary ops on pointers (arithmetic, ordering)
+                # aren't yet supported and fall through to the
+                # arithmetic path below, which raises.
+                if (
+                    isinstance(op, (c99_ast.Equal, c99_ast.NotEqual))
+                    and (_is_pointer_type(tl) or _is_pointer_type(tr))
+                ):
+                    common = self._pointer_equality_common_type(
+                        lhs, rhs, tl, tr,
+                    )
+                    exp.left = _convert_to(lhs, common)
+                    exp.right = _convert_to(rhs, common)
+                    exp.data_type = Int()
+                    return Int()
                 # Usual arithmetic conversions (C99 §6.3.1.8): if
                 # operand types differ, promote the narrower one to
                 # the common type by wrapping it in an implicit

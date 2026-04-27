@@ -72,8 +72,10 @@ _STORAGE_CLASSES = {
 # `type_specifier` and `specifier` transformer methods unwrap their
 # child trees, every entry on a specifier list is one of these tokens.
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
+                           "FLOAT", "DOUBLE",
                            "STATIC", "EXTERN")
-_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED")
+_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
+                                "FLOAT", "DOUBLE")
 
 
 def _resolve_data_type(type_specs):
@@ -85,16 +87,51 @@ def _resolve_data_type(type_specs):
       * `long`, `long int`,
         `signed long`, `signed long int`      → Long
       * `unsigned long`, `unsigned long int`  → ULong
-      * `long long` (any combination)         — rejected (no
-                                                 long long type)
+      * `float`                               → Float
+      * `double`                              → Double
+      * `long double`                         — rejected (no long
+                                                 double type)
+      * `long long` (any combination)         — rejected (no long
+                                                 long type)
       * `signed unsigned` / `unsigned signed` — rejected
-      * duplicate `int` / `signed` / `unsigned` — rejected
+      * `float`/`double` mixed with any of `int` / `long` /
+        `signed` / `unsigned`                 — rejected
+      * duplicate `int` / `signed` / `unsigned` / `float` /
+        `double`                              — rejected
       * empty list                            — rejected
     """
     int_count = sum(1 for t in type_specs if t.type == "INT")
     long_count = sum(1 for t in type_specs if t.type == "LONG")
     signed_count = sum(1 for t in type_specs if t.type == "SIGNED")
     unsigned_count = sum(1 for t in type_specs if t.type == "UNSIGNED")
+    float_count = sum(1 for t in type_specs if t.type == "FLOAT")
+    double_count = sum(1 for t in type_specs if t.type == "DOUBLE")
+    is_fp = float_count > 0 or double_count > 0
+    is_integer = (
+        int_count > 0 or signed_count > 0 or unsigned_count > 0
+    )
+    if is_fp and is_integer:
+        raise ParserError(
+            "floating type cannot combine with 'int' / 'signed' / "
+            "'unsigned'"
+        )
+    if float_count > 1:
+        raise ParserError("'float' specified more than once")
+    if double_count > 1:
+        raise ParserError("'double' specified more than once")
+    if float_count == 1 and double_count == 1:
+        raise ParserError(
+            "'float' and 'double' cannot both appear in a declaration"
+        )
+    if double_count == 1 and long_count >= 1:
+        raise ParserError(
+            "'long double' is not supported (only 'float' and "
+            "'double' are modeled today)"
+        )
+    if float_count == 1 and long_count >= 1:
+        raise ParserError(
+            "'long float' is not a valid type"
+        )
     if signed_count > 0 and unsigned_count > 0:
         raise ParserError(
             "'signed' and 'unsigned' cannot both appear in a "
@@ -104,7 +141,7 @@ def _resolve_data_type(type_specs):
         raise ParserError("'signed' specified more than once")
     if unsigned_count > 1:
         raise ParserError("'unsigned' specified more than once")
-    if (int_count == 0 and long_count == 0
+    if not is_fp and (int_count == 0 and long_count == 0
             and signed_count == 0 and unsigned_count == 0):
         raise ParserError("missing type specifier")
     if int_count > 1:
@@ -117,6 +154,10 @@ def _resolve_data_type(type_specs):
             "'long long' is not supported (only 'int' and 'long' are "
             "modeled today)"
         )
+    if float_count == 1:
+        return c99_ast.Float()
+    if double_count == 1:
+        return c99_ast.Double()
     is_unsigned = unsigned_count == 1
     is_long = long_count == 1
     if is_long and is_unsigned:
@@ -248,9 +289,32 @@ def _parse_integer_token(text):
 
 
 def _const_for_token(token):
-    """Map a Lark integer-constant token to a c99_ast `Type_const`
-    node per C99 §6.4.4.1 paragraph 5."""
+    """Map a Lark constant token to a c99_ast `Type_const` node.
+    Integer literals follow C99 §6.4.4.1 paragraph 5 (first variant
+    in the per-(suffix, base) candidate list whose range fits the
+    value); floating literals follow C99 §6.4.4.2 (suffix uniquely
+    determines the type — no value-fitting rule)."""
     text = str(token)
+    if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
+        # Strip a trailing `f`/`F` before parsing — Python's
+        # `float()` doesn't recognise C suffixes.
+        body = text[:-1] if token.type == "FLOAT_CONSTANT" else text
+        if body.startswith(("0x", "0X")):
+            # Hex floats (`0x1.0p3`) lex but Python's `float()`
+            # can't parse them; rejected here until we wire up a
+            # manual conversion.
+            raise ParserError(
+                f"hex floating literal {text!r} is not supported"
+            )
+        cls = (
+            c99_ast.ConstDouble if token.type == "DOUBLE_CONSTANT"
+            else c99_ast.ConstFloat
+        )
+        return cls(float=float(body))
+    if token.type == "LONG_DOUBLE_CONSTANT":
+        raise ParserError(
+            f"`long double` is not supported (literal {text!r})"
+        )
     value, base, has_ll = _parse_integer_token(text)
     if has_ll:
         raise ParserError(
@@ -523,10 +587,13 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def const(self, token):
         # `const: INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER
-        # | ULONG_INTEGER`. The lex split is by suffix presence only;
-        # `_const_for_token` consults the C99 §6.4.4.1 type list
-        # (keyed by token-kind + base) and picks the first variant
-        # whose range fits the value.
+        # | ULONG_INTEGER | DOUBLE_CONSTANT | FLOAT_CONSTANT
+        # | LONG_DOUBLE_CONSTANT`. The lex split is by suffix presence
+        # only. For integers, `_const_for_token` consults the C99
+        # §6.4.4.1 type list (keyed by token-kind + base) and picks
+        # the first variant whose range fits. For FP, the suffix
+        # uniquely determines the type (§6.4.4.2). Long-double and
+        # long-long both raise here.
         return _const_for_token(token)
 
     @v_args(inline=True)

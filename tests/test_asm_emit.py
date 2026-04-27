@@ -739,6 +739,48 @@ class TestEmitProgram(unittest.TestCase):
         with self.assertRaises(ValueError):
             emit_program(prog)
 
+    def test_static_float_renders_dc_l(self):
+        # FloatInit lays down 4 bytes IEEE 754 single, little-endian.
+        # 0.5f → 0x3F000000 (sign=0, exp=126, mantissa=0).
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="half", is_global=False,
+                init=asm_ast.FloatInit(float=0.5),
+            ),
+        ])
+        self.assertEqual(emit_program(prog), "half:\n   DC.L  $3F000000\n")
+
+    def test_static_double_renders_two_dc_ls(self):
+        # DoubleInit lays down 8 bytes IEEE 754 double — two `DC.L`
+        # halves, low-half then high-half. 0.5 (double) →
+        # 0x3FE0000000000000 → low LE half $00000000, high LE half
+        # $3FE00000.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="half_d", is_global=False,
+                init=asm_ast.DoubleInit(float=0.5),
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "half_d:\n   DC.L  $00000000\n   DC.L  $3FE00000\n",
+        )
+
+    def test_static_double_pi_byte_pattern(self):
+        # Spot-check a non-trivial double — 3.14 → 0x40091EB851EB851F.
+        # In LE bytes (low to high): 1F 85 EB 51 B8 1E 09 40. As two
+        # LE 32-bit halves: $51EB851F, $40091EB8.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="pi", is_global=False,
+                init=asm_ast.DoubleInit(float=3.14),
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "pi:\n   DC.L  $51EB851F\n   DC.L  $40091EB8\n",
+        )
+
 
 class TestEmitDataOperand(unittest.TestCase):
     """`Data(name)` is the absolute-addressing operand the frame-

@@ -117,12 +117,14 @@ scope INTERNAL keeps the source spelling but the user wrote
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
 atoms. Likewise `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are
 TAC-only concepts; `tac_to_asm` lowers each to `Mov`s into the
-shared `HSLOT` zero-page block, a `Call` to the appropriate
+shared `HARGS` zero-page block, a `Call` to the appropriate
 runtime helper (mul8/mul16/divmod8/divmod16/asl8/asl16/asr8/asr16,
 keyed off operand size), and `Mov`s reading the result back out.)
 """
 
 from __future__ import annotations
+
+import struct
 
 import asm_ast
 
@@ -731,8 +733,8 @@ def emit_function(fn: asm_ast.Function) -> list[str]:
 
 
 def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
-    """Render a top-level static-storage object as a labeled byte
-    (`IntInit`) or labeled word (`LongInit`):
+    """Render a top-level static-storage object as a labeled byte /
+    word / dword / qword:
 
         # IntInit(int=N)
         <name>:
@@ -742,10 +744,26 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
         <name>:
             dc.w $XXXX
 
+        # FloatInit(float=v)              (4 bytes IEEE 754 single)
+        <name>:
+            dc.l $WWWWWWWW
+
+        # DoubleInit(float=v)             (8 bytes IEEE 754 double)
+        <name>:
+            dc.l $LLLLLLLL
+            dc.l $HHHHHHHH
+
     The init's variant determines the cell width. dasm's `dc.w`
-    emits 2 bytes in little-endian order, which matches the rest of
-    the soft-stack memory model (low byte at the symbol's address,
-    high byte at +1).
+    emits 2 bytes in little-endian order, `dc.l` emits 4 bytes
+    likewise, matching the rest of the soft-stack memory model
+    (low byte at the symbol's address, high byte at the higher
+    addresses). For DoubleInit we emit two `dc.l`s — low half then
+    high half — because dasm has no native 8-byte directive. The
+    float value is packed into IEEE 754 bytes here via
+    `struct.pack`; the resulting little-endian bytes are repacked
+    as 32-bit big-endian-displayed dwords for the dc.l constants
+    (the assembler converts them back to little-endian on output,
+    so the in-memory layout matches the original bytes exactly).
 
     Out-of-range values raise via `_check_byte` / `_check_word`.
 
@@ -767,6 +785,27 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
             return [
                 f"{sv.name}:",
                 _instr_line("dc.w", f"${v & 0xFFFF:04X}"),
+            ]
+        case asm_ast.FloatInit(float=v):
+            # Pack as IEEE 754 single-precision, little-endian (`<f`).
+            # Reinterpret the 4-byte sequence as a 32-bit unsigned
+            # int (also little-endian) so dasm's `dc.l` lays the
+            # exact same byte sequence down.
+            (word,) = struct.unpack("<I", struct.pack("<f", v))
+            return [
+                f"{sv.name}:",
+                _instr_line("dc.l", f"${word:08X}"),
+            ]
+        case asm_ast.DoubleInit(float=v):
+            # Pack as IEEE 754 double-precision, little-endian.
+            # Reinterpret the 8-byte sequence as two little-endian
+            # 32-bit unsigned ints (low then high half) and emit
+            # one `dc.l` per half.
+            lo, hi = struct.unpack("<II", struct.pack("<d", v))
+            return [
+                f"{sv.name}:",
+                _instr_line("dc.l", f"${lo:08X}"),
+                _instr_line("dc.l", f"${hi:08X}"),
             ]
     raise TypeError(f"unexpected static_init: {sv.init!r}")
 

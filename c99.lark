@@ -26,17 +26,25 @@ LONG_INTEGER: _BARE_INT _LSUFFIX
 UINT_INTEGER: _BARE_INT _INT_U
 ULONG_INTEGER: _BARE_INT (_INT_U _LSUFFIX | _LSUFFIX _INT_U)
 
-// -- Floating constant (docs/floats_grammar.txt) --
+// -- Floating constant (docs/floats_grammar.txt; C99 §6.4.4.2) --
+// Three terminals split by suffix presence — same shape as the four
+// integer terminals (no value-driven splitting at lex time). The
+// parser's `_const_for_token` then dispatches each (token-kind,
+// value) pair to the matching c99_ast const variant per §6.4.4.2:
+//   * unsuffixed → double (ConstDouble)
+//   * f / F      → float  (ConstFloat)
+//   * l / L      → long double — rejected (c6502 has no long double)
 // NOTE: fractions use an explicit (?:...) group. Without it, the top-level `|`
 // leaks out when these are concatenated into the enclosing terminal.
-_FLOAT_SUFFIX: /[flFL]/
 _DEC_EXP: /[eE][+-]?[0-9]+/
 _BIN_EXP: /[pP][+-]?[0-9]+/
 _DEC_FRAC: /(?:[0-9]*\.[0-9]+|[0-9]+\.)/
 _HEX_FRAC: /(?:[0-9a-fA-F]*\.[0-9a-fA-F]+|[0-9a-fA-F]+\.?)/
 _DEC_FLOAT: _DEC_FRAC _DEC_EXP? | /[0-9]+/ _DEC_EXP
 _HEX_FLOAT: /0[xX]/ _HEX_FRAC _BIN_EXP
-FLOATING_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT) _FLOAT_SUFFIX?
+DOUBLE_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT)
+FLOAT_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT) /[fF]/
+LONG_DOUBLE_CONSTANT: (_HEX_FLOAT | _DEC_FLOAT) /[lL]/
 
 // -- Escape sequences (docs/chars_grammar.txt) --
 _SIMPLE_ESC: /\\['"?\\abfnrtv]/
@@ -189,7 +197,7 @@ function_decl: specifier+ IDENTIFIER LPAREN param_list RPAREN (SEMICOLON | block
 // and body), but they are kept on function_decl for the future
 // type-checking pass.
 param_list: VOID | type_specifier+ IDENTIFIER (COMMA type_specifier+ IDENTIFIER)*
-type_specifier: INT | LONG | SIGNED | UNSIGNED
+type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
@@ -301,8 +309,8 @@ statement: RETURN exp SEMICOLON                                     -> return_st
 // Cast expression (C99 §6.5.4) sits between unary and multiplicative.
 // Right-recursive so `(int)(long)x` parses as `(int)((long)x)`. The
 // LPAREN-vs-paren-expr ambiguity is resolved at LALR(1) by the next
-// token after `(`: type_specifier (INT/LONG) → cast; anything else
-// → parenthesised exp.
+// token after `(`: any type-specifier token (INT/LONG/SIGNED/
+// UNSIGNED/FLOAT/DOUBLE) → cast; anything else → parenthesised exp.
 ?cast_exp: LPAREN type_name RPAREN cast_exp  -> cast
          | unary_exp
 // type-name (§6.7.6) — for now just one or more type_specifiers (no
@@ -342,6 +350,9 @@ const: INTEGER_CONSTANT
      | LONG_INTEGER
      | UINT_INTEGER
      | ULONG_INTEGER
+     | DOUBLE_CONSTANT
+     | FLOAT_CONSTANT
+     | LONG_DOUBLE_CONSTANT
 
 unop: MINUS                         -> negate
     | TILDE                         -> complement
@@ -365,7 +376,8 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | UNSIGNED | VOID | VOLATILE | WHILE
          | BOOL | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
-         | FLOATING_CONSTANT | CHARACTER_CONSTANT
+         | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
+         | CHARACTER_CONSTANT
          | STRING_LITERAL | IDENTIFIER | INVALID_NUMBER
          | ELLIPSIS | LSHIFT_ASSIGN | RSHIFT_ASSIGN
          | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT

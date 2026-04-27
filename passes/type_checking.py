@@ -130,6 +130,8 @@ Int = c99_ast.Int
 Long = c99_ast.Long
 UInt = c99_ast.UInt
 ULong = c99_ast.ULong
+Float = c99_ast.Float
+Double = c99_ast.Double
 FunType = c99_ast.FunType
 
 
@@ -154,13 +156,14 @@ class Tentative(InitialValue):
 
 @dataclass(frozen=True)
 class Initial(InitialValue):
-    """Object declared with an initializer. The integer carries the
-    constant value of the initializer expression. The `Type` is the
-    initializer's static type (`Int` or `Long`) — needed because the
-    same byte values can mean different things in 1-byte vs. 2-byte
-    representations and because c99_to_tac will eventually need to
-    pick the right `StaticVariable` width."""
-    value: int
+    """Object declared with an initializer. The value carries the
+    constant from the initializer expression — an `int` for the
+    four integer types, a `float` (Python double-precision) for
+    `Float` / `Double`. The variable's declared type tells codegen
+    which `StaticVariable` width to emit; the same numeric value
+    can mean different things in different widths, and Float vs.
+    Double also pick different IEEE 754 byte sequences."""
+    value: int | float
 
 
 @dataclass(frozen=True)
@@ -270,27 +273,30 @@ def _linkage_to_is_global(linkage: Linkage) -> bool:
 
 def _const_init_value(
     exp: c99_ast.Type_exp, name: str,
-) -> int:
+) -> int | float:
     """Static-storage initializers must be compile-time constant
     expressions (C99 §6.7.8.4). After `_check_exp` and the
     initializer-conversion rule have run, the AST shape is one of:
-      * a `Constant(ConstInt|ConstLong)` — variant doesn't have to
-        match the variable's declared type, since
-        `_convert_to(...)` has already wrapped a mismatch in a
-        `Cast`.
+      * a `Constant(ConstInt|ConstLong|ConstUInt|ConstULong|
+        ConstFloat|ConstDouble)` — variant doesn't have to match
+        the variable's declared type, since `_convert_to(...)` has
+        already wrapped a mismatch in a `Cast`.
       * a `Cast` (possibly nested) wrapping a Constant — produced
         by `_convert_to` for narrowing/widening initializers, or
         explicitly written by the user.
 
-    Both shapes reduce to the underlying integer value. The Cast
-    target's type tells codegen the storage width when laying out
-    the StaticVariable; for now the raw value passes through and
-    asm emit's `_check_byte` enforces the 0..255 range — Long-
-    typed statics with values above 255 hit the deferred-codegen
-    boundary there.
+    Both shapes reduce to the underlying value (int for the four
+    integer variants, float for ConstFloat / ConstDouble). The
+    Cast target's type tells codegen the storage width when laying
+    out the StaticVariable; the raw value passes through, and the
+    declared-type-driven conversion (e.g. int constant initializer
+    for a Float static) happens in c99_to_tac when it builds the
+    typed `*Init` node.
     """
     match exp:
         case c99_ast.Constant(const=c):
+            if isinstance(c, (c99_ast.ConstFloat, c99_ast.ConstDouble)):
+                return c.float
             return c.int
         case c99_ast.Cast(exp=inner):
             return _const_init_value(inner, name)
@@ -334,10 +340,18 @@ def _merge_initial_value(
 
 def _is_object_type(t: Type) -> bool:
     """True iff `t` is a value type that can name an object (Int,
-    Long, UInt, ULong; not FunType). Used at the boundary where we
-    expect an object — variable references, cast targets,
-    arithmetic operands."""
+    Long, UInt, ULong, Float, Double; not FunType). Used at the
+    boundary where we expect an object — variable references, cast
+    targets, arithmetic operands."""
+    return isinstance(t, (Int, Long, UInt, ULong, Float, Double))
+
+
+def _is_integer_type(t: Type) -> bool:
     return isinstance(t, (Int, Long, UInt, ULong))
+
+
+def _is_floating_type(t: Type) -> bool:
+    return isinstance(t, (Float, Double))
 
 
 # Width and signedness predicates for the four integer types. Width
@@ -357,9 +371,15 @@ def _is_signed(t: Type) -> bool:
 
 
 def _common_type(a: Type, b: Type) -> Type:
-    """Usual arithmetic conversions per C99 §6.3.1.8 paragraph 1,
-    restricted to the four integer types c6502 models. With ranks
-    1 (Int/UInt) and 2 (Long/ULong):
+    """Usual arithmetic conversions per C99 §6.3.1.8 paragraph 1.
+
+    Floating types dominate per §6.3.1.8.1:
+      * either operand `Double` → result `Double`
+      * else either operand `Float` → result `Float`
+      * else both operands integer → integer rules (below)
+
+    Integer rules, restricted to the four types c6502 models. With
+    ranks 1 (Int/UInt) and 2 (Long/ULong):
       * matching types               → that type
       * both signed (or both unsigned) → the higher-rank type wins
       * mixed; unsigned has rank ≥ signed → unsigned wins
@@ -372,6 +392,10 @@ def _common_type(a: Type, b: Type) -> Type:
 
     Returned types are fresh instances so callers can attach them
     to AST nodes without aliasing."""
+    if isinstance(a, Double) or isinstance(b, Double):
+        return Double()
+    if isinstance(a, Float) or isinstance(b, Float):
+        return Float()
     if _types_equal(a, b):
         return type(a)()
     a_signed, b_signed = _is_signed(a), _is_signed(b)
@@ -851,9 +875,9 @@ class TypeChecker:
         match exp:
             case c99_ast.Constant(const=c):
                 # Each const variant carries its own implied type;
-                # the parser's C99 §6.4.4.1 dispatch already chose
-                # the variant based on suffix, base, and value, so
-                # no re-checking here.
+                # the parser's C99 §6.4.4.1 / §6.4.4.2 dispatch
+                # already chose the variant based on suffix, base,
+                # and value, so no re-checking here.
                 if isinstance(c, c99_ast.ConstInt):
                     t = Int()
                 elif isinstance(c, c99_ast.ConstLong):
@@ -862,6 +886,10 @@ class TypeChecker:
                     t = UInt()
                 elif isinstance(c, c99_ast.ConstULong):
                     t = ULong()
+                elif isinstance(c, c99_ast.ConstFloat):
+                    t = Float()
+                elif isinstance(c, c99_ast.ConstDouble):
+                    t = Double()
                 else:
                     raise TypeError(f"unexpected const: {c!r}")
                 exp.data_type = t
@@ -869,8 +897,9 @@ class TypeChecker:
             case c99_ast.Cast(target_type=target, exp=inner):
                 if not _is_object_type(target):
                     raise TypeCheckError(
-                        f"cast target type must be an integer object "
-                        f"type (Int / Long / UInt / ULong), got {target!r}"
+                        f"cast target type must be an object type "
+                        f"(Int / Long / UInt / ULong / Float / "
+                        f"Double), got {target!r}"
                     )
                 inner_type = self._check_exp(inner)
                 if not _is_object_type(inner_type):

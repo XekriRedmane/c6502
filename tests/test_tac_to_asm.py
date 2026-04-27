@@ -202,9 +202,9 @@ class TestTranslateInstruction(unittest.TestCase):
         )
 
     def test_binary_multiply_lowered_to_mul8_call(self):
-        # 8-bit operands → mul8: src1 → HSLOT+0, src2 → HSLOT+1, Call,
-        # then result low byte from HSLOT+2 → dst (the high byte at
-        # HSLOT+3 is discarded, since int*int truncates to int).
+        # 8-bit operands → mul8: src1 → HARGS+0, src2 → HARGS+1, Call,
+        # then result low byte from HARGS+2 → dst (the high byte at
+        # HARGS+3 is discarded, since int*int truncates to int).
         instr = tac_ast.Binary(
             op=tac_ast.Multiply(),
             src1=tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
@@ -215,18 +215,18 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(instr),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=3), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=0)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=1)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="mul8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HSLOT", offset=2), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1", offset=0)),
             ],
         )
 
     def test_binary_divide_lowered_to_divmod8_call(self):
-        # divmod8: dividend → HSLOT+0, divisor → HSLOT+1, Call,
-        # quotient (HSLOT+2) → dst. Remainder at HSLOT+3 is unused
+        # divmod8: dividend → HARGS+0, divisor → HARGS+1, Call,
+        # quotient (HARGS+2) → dst. Remainder at HARGS+3 is unused
         # for `/` (Modulo reads it; see below).
         instr = tac_ast.Binary(
             op=tac_ast.Divide(),
@@ -238,11 +238,11 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(instr),
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=0)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=1)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="divmod8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HSLOT", offset=2), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1", offset=0)),
             ],
         )
@@ -304,8 +304,8 @@ class TestTranslateInstruction(unittest.TestCase):
         )
 
     def test_binary_left_shift_lowered_to_asl8_call(self):
-        # asl8: value → HSLOT+0, count → HSLOT+1, Call, result
-        # (HSLOT+2) → dst.
+        # asl8: value → HARGS+0, count → HARGS+1, Call, result
+        # (HARGS+2) → dst.
         instr = tac_ast.Binary(
             op=tac_ast.LeftShift(),
             src1=tac_ast.Var(name="%0"),
@@ -316,11 +316,11 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(instr),
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=0)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=1)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="asl8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HSLOT", offset=2), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1", offset=0)),
             ],
         )
@@ -339,18 +339,18 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(instr),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=64), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=0)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=1)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="asr8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HSLOT", offset=2), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0", offset=0)),
             ],
         )
 
     def test_binary_modulo_lowered_to_divmod8_remainder(self):
         # Same input layout as Divide; the remainder lives at the
-        # slot pair after the quotient (HSLOT+3 for divmod8).
+        # slot pair after the quotient (HARGS+3 for divmod8).
         instr = tac_ast.Binary(
             op=tac_ast.Modulo(),
             src1=tac_ast.Constant(const=tac_ast.ConstInt(int=17)),
@@ -361,11 +361,11 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(instr),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=17), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=0)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HSLOT", offset=1)),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="divmod8"),
-                asm_ast.Mov(src=asm_ast.Data(name="HSLOT", offset=3), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=3), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0", offset=0)),
             ],
         )

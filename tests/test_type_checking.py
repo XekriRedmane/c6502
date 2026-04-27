@@ -1015,7 +1015,7 @@ class TestLongAndCasts(unittest.TestCase):
         )])
         with self.assertRaises(TypeCheckError) as ctx:
             check_program(resolve_program(prog))
-        self.assertIn("integer object type", str(ctx.exception))
+        self.assertIn("object type", str(ctx.exception))
 
 
 if __name__ == "__main__":

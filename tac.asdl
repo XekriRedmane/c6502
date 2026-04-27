@@ -24,7 +24,14 @@ module TAC {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
-    data_type = Int | Long | UInt | ULong | FunType(data_type* params, data_type ret)
+    data_type = Int | Long | UInt | ULong | Float | Double
+              | FunType(data_type* params, data_type ret)
+    -- TAC `const` collapses integer signedness onto width (the 6502
+    -- has no signedness at the byte level), but FP variants stay
+    -- distinct because Float and Double have different IEEE 754 bit
+    -- patterns.
     const = ConstInt(int) | ConstLong(int)
+          | ConstFloat(float) | ConstDouble(float)
     static_init = IntInit(int) | LongInit(int) | UIntInit(int) | ULongInit(int)
+                | FloatInit(float) | DoubleInit(float)
 }

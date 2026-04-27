@@ -22,8 +22,13 @@ module C99 {
     var_decl = (identifier name, exp? init, data_type, storage_class?)
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
     storage_class = Static | Extern
-    -- Ints are 1 byte, longs are 2 bytes.
-    data_type = Int | Long | UInt | ULong | FunType(data_type* params, data_type ret)
+    -- Integer types: Int 1B, Long 2B, UInt 1B, ULong 2B (signed
+    -- variants are two's complement, unsigned are bare bit patterns).
+    -- Floating types: Float is IEEE 754 single (4B), Double is IEEE
+    -- 754 double (8B). Long double (16B IEEE 754 quad / extended)
+    -- isn't modelled — the parser rejects it.
+    data_type = Int | Long | UInt | ULong | Float | Double
+              | FunType(data_type* params, data_type ret)
     for_init = InitDecl(var_decl) | InitExp(exp?)
 
     -- All expressions have a data type, which might be unspecified.
@@ -47,5 +52,11 @@ module C99 {
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
         | LogicalAnd | LogicalOr
+    -- Integer const variants store a non-negative int literal value
+    -- (negation is a separate unary-minus operator). Float / Double
+    -- variants store the literal as a Python float — Python's float
+    -- is IEEE 754 double, so the single-precision value lays down
+    -- losslessly after rounding at lex time.
     const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int)
+          | ConstFloat(float) | ConstDouble(float)
 }

@@ -67,12 +67,12 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                swap trick used for `>` / `<=`.
   Binary(Multiply/Divide/   -> Runtime helper Calls. Operands and
     Modulo/LeftShift/         results are exchanged through the
-    RightShift)               shared zero-page slot block `HSLOT`
-                               (8 bytes); 8-bit operands dispatch
+    RightShift)               shared zero-page slot block `HARGS`
+                               (24 bytes); 8-bit operands dispatch
                                to mul8/divmod8/asl8/asr8, 16-bit
                                operands to mul16/divmod16/asl16/
                                asr16. Caller writes inputs into
-                               HSLOT+0..N-1, JSRs, reads the result
+                               HARGS+0..N-1, JSRs, reads the result
                                from a fixed offset later in the
                                block (see the constants section
                                for each helper's layout).
@@ -96,11 +96,13 @@ Mapping highlights (full per-op detail in `translate_binary` /
 Calling convention (callee-side, see also `replace_pseudoregisters`):
   - Each Long arg occupies 2 stack bytes (low at the lower offset).
   - Long return value: low byte in A, high byte in X. (Runtime
-    helpers use a separate ZP-slot convention — see the HSLOT block
+    helpers use a separate ZP-slot convention — see the HARGS block
     above — so user-function and helper return paths are distinct.)
 """
 
 from __future__ import annotations
+
+import struct
 
 import asm_ast
 import c99_ast
@@ -111,31 +113,40 @@ from passes.type_checking import SymbolTable
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
 
-# Runtime helpers exchange operands through a shared 8-byte block in
-# zero page. The asm symbol `HSLOT` names the block's base address
-# (defined to $04 by the runtime header); each helper documents its
-# own byte layout within HSLOT+0..HSLOT+7. Inputs sit at the low
-# offsets, outputs at the high offsets, and inputs survive the call.
+# Runtime helpers exchange operands through a shared 24-byte block
+# in zero page (`$04`–`$1B`). The asm symbol `HARGS` names the
+# block's base address (defined to $04 by the runtime header); each
+# helper documents its own byte layout within HARGS+0..HARGS+23.
+# Inputs sit at the low offsets, outputs at the high offsets, and
+# inputs survive the call. The block is sized for the largest helper
+# (a double-precision FP op needs 16 bytes of inputs + 8 bytes of
+# output); integer helpers use only the low 8 bytes.
 #
 # 8-bit helpers:
-#   mul8     in:  A=HSLOT+0, B=HSLOT+1   out: result.lo=HSLOT+2,
-#                                              result.hi=HSLOT+3
-#   divmod8  in:  num=HSLOT+0, den=HSLOT+1
-#                                       out: quot=HSLOT+2, rem=HSLOT+3
-#   asl8     in:  val=HSLOT+0, count=HSLOT+1
-#                                       out: result=HSLOT+2
+#   mul8     in:  A=HARGS+0, B=HARGS+1   out: result.lo=HARGS+2,
+#                                              result.hi=HARGS+3
+#   divmod8  in:  num=HARGS+0, den=HARGS+1
+#                                       out: quot=HARGS+2, rem=HARGS+3
+#   asl8     in:  val=HARGS+0, count=HARGS+1
+#                                       out: result=HARGS+2
 #   asr8     same shape as asl8 (signed arithmetic right shift)
 #
 # 16-bit helpers:
-#   mul16    in:  A=HSLOT+0..1, B=HSLOT+2..3
-#                                       out: result=HSLOT+4..7 (32-bit)
-#   divmod16 in:  num=HSLOT+0..1, den=HSLOT+2..3
-#                                       out: quot=HSLOT+4..5,
-#                                            rem=HSLOT+6..7
-#   asl16    in:  val=HSLOT+0..1, count=HSLOT+2 (1 byte)
-#                                       out: result=HSLOT+3..4
+#   mul16    in:  A=HARGS+0..1, B=HARGS+2..3
+#                                       out: result=HARGS+4..7 (32-bit)
+#   divmod16 in:  num=HARGS+0..1, den=HARGS+2..3
+#                                       out: quot=HARGS+4..5,
+#                                            rem=HARGS+6..7
+#   asl16    in:  val=HARGS+0..1, count=HARGS+2 (1 byte)
+#                                       out: result=HARGS+3..4
 #   asr16    same shape as asl16
-_HSLOT = "HSLOT"
+#
+# FP helpers (not implemented yet; layout reserved):
+#   fadd/fsub/fmul/fdiv  in:  A=HARGS+0..3, B=HARGS+4..7
+#                              out: result=HARGS+8..11
+#   dadd/dsub/dmul/ddiv  in:  A=HARGS+0..7, B=HARGS+8..15
+#                              out: result=HARGS+16..23
+_HARGS = "HARGS"
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _ASL8 = "asl8"
@@ -150,13 +161,15 @@ def _to_asm_static_init(
     init: tac_ast.Type_static_init,
 ) -> asm_ast.Type_static_init:
     """Translate a TAC static_init to its asm counterpart. The asm
-    sum carries only the two width variants (`IntInit` / `LongInit`),
-    so unsigned variants from TAC collapse onto the matching width:
-    UIntInit → IntInit, ULongInit → LongInit. The integer value
-    passes through unchanged; asm_emit's `_check_byte` (0..255) and
-    `_check_word` (-32768..65535) bound the rendered cell, so an
-    unsigned 0..255 / 0..65535 value lays down identically to the
-    signed wrapper would have for the same numeric value."""
+    integer side carries only the two width variants (`IntInit` /
+    `LongInit`), so unsigned variants from TAC collapse onto the
+    matching width: UIntInit → IntInit, ULongInit → LongInit. The
+    integer value passes through unchanged; asm_emit's `_check_byte`
+    (0..255) and `_check_word` (-32768..65535) bound the rendered
+    cell. The FP side keeps Float / Double distinct because their
+    IEEE 754 byte layouts differ — FloatInit is 4 bytes (single),
+    DoubleInit is 8 bytes (double); the float value rides through
+    1-to-1 and asm_emit packs it via `struct.pack` at emit time."""
     match init:
         case tac_ast.IntInit(int=v):
             return asm_ast.IntInit(int=v)
@@ -166,6 +179,10 @@ def _to_asm_static_init(
             return asm_ast.IntInit(int=v)
         case tac_ast.ULongInit(int=v):
             return asm_ast.LongInit(int=v)
+        case tac_ast.FloatInit(float=v):
+            return asm_ast.FloatInit(float=v)
+        case tac_ast.DoubleInit(float=v):
+            return asm_ast.DoubleInit(float=v)
     raise TypeError(f"unexpected static_init: {init!r}")
 
 
@@ -207,27 +224,33 @@ class Translator:
         self._symbols = symbols
 
     def _size_of(self, val: tac_ast.Type_val) -> int:
-        """1 for a 1-byte-typed val (Int / UInt), 2 for a 2-byte-
-        typed val (Long / ULong). Constants dispatch on the const
-        variant — TAC has only ConstInt/ConstLong (signedness is
-        collapsed at the byte level), so width follows directly.
-        Vars look up the symbol-table type, which still carries the
-        full c99 signedness. Unknown Vars (synthetic test AST)
+        """Byte width of a TAC val. Integer types: 1 for Int / UInt,
+        2 for Long / ULong. Floating types: 4 for Float, 8 for
+        Double. Constants dispatch on the const variant; Vars look
+        up the symbol-table type. Unknown Vars (synthetic test AST)
         default to 1."""
         match val:
             case tac_ast.Constant(const=tac_ast.ConstLong()):
                 return 2
             case tac_ast.Constant(const=tac_ast.ConstInt()):
                 return 1
+            case tac_ast.Constant(const=tac_ast.ConstFloat()):
+                return 4
+            case tac_ast.Constant(const=tac_ast.ConstDouble()):
+                return 8
             case tac_ast.Var(name=name):
                 sym = (
                     self._symbols.get(name)
                     if self._symbols is not None else None
                 )
-                if sym is not None and isinstance(
-                    sym.type, (c99_ast.Long, c99_ast.ULong),
-                ):
+                if sym is None:
+                    return 1
+                if isinstance(sym.type, (c99_ast.Long, c99_ast.ULong)):
                     return 2
+                if isinstance(sym.type, c99_ast.Float):
+                    return 4
+                if isinstance(sym.type, c99_ast.Double):
+                    return 8
                 return 1
         raise TypeError(f"unexpected val: {val!r}")
 
@@ -348,7 +371,7 @@ class Translator:
           Long return → A = low byte, X = high byte.
         Two-register Long return keeps the epilogue cheap (no extra
         memory traffic for short returns). Runtime helpers use a
-        separate ZP-slot convention (see HSLOT) since their multi-
+        separate ZP-slot convention (see HARGS) since their multi-
         byte results don't fit in registers."""
         src_op = translate_val(val)
         size = self._size_of(val)
@@ -579,7 +602,7 @@ class Translator:
 
         Return value: an Int return arrives in A. A Long return
         arrives with A = low byte, X = high byte. (User-function
-        returns use registers; runtime helpers use the HSLOT zero-
+        returns use registers; runtime helpers use the HARGS zero-
         page block instead.)
         """
         # Compute total arg-stack bytes and per-arg base offsets.
@@ -651,10 +674,10 @@ class Translator:
                     setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
                 )
             case tac_ast.Multiply():
-                # 8-bit: mul8 result low byte at HSLOT+2 (the high
-                # byte at HSLOT+3 is discarded — int*int wraps to int
+                # 8-bit: mul8 result low byte at HARGS+2 (the high
+                # byte at HARGS+3 is discarded — int*int wraps to int
                 # under C's modular semantics). 16-bit: mul16 result
-                # low half at HSLOT+4..5 (the high half at HSLOT+6..7
+                # low half at HARGS+4..5 (the high half at HARGS+6..7
                 # is discarded for the same reason).
                 helper, out_off = (
                     (_MUL8, 2) if size == 1 else (_MUL16, 4)
@@ -701,8 +724,8 @@ class Translator:
                     src1_op, src2_op, dst_op, size,
                 )
             case tac_ast.LeftShift():
-                # asl8: 1B value + 1B count → 1B result at HSLOT+2.
-                # asl16: 2B value + 1B count → 2B result at HSLOT+3.
+                # asl8: 1B value + 1B count → 1B result at HARGS+2.
+                # asl16: 2B value + 1B count → 2B result at HARGS+3.
                 # The type checker promotes both shift operands to a
                 # common type, so for size=2 the count arrives as 2B
                 # — we pass only its low byte (shifts by ≥16 are UB
@@ -952,12 +975,12 @@ class Translator:
         return self._unop_atoms(op)
 
 
-def _hslot(k: int) -> asm_ast.Type_operand:
+def _hargs(k: int) -> asm_ast.Type_operand:
     """Reference the k-th byte of the shared zero-page slot block,
-    addressed absolutely as `HSLOT+k` (collapses to `HSLOT` when k=0).
-    The runtime header pins `HSLOT` at $04, so dasm picks zero-page
+    addressed absolutely as `HARGS+k` (collapses to `HARGS` when k=0).
+    The runtime header pins `HARGS` at $04, so dasm picks zero-page
     addressing automatically."""
-    return asm_ast.Data(name=_HSLOT, offset=k)
+    return asm_ast.Data(name=_HARGS, offset=k)
 
 
 def _translate_helper_call(
@@ -970,8 +993,8 @@ def _translate_helper_call(
     """Lower a TAC op that delegates to a runtime helper using the
     shared zero-page slot block. `inputs` is a list of
     `(source-operand, num-bytes)` pairs packed sequentially from
-    `HSLOT+0` upward; the helper reads them in place. After the
-    call, copy `output_size` bytes from `HSLOT+output_offset` into
+    `HARGS+0` upward; the helper reads them in place. After the
+    call, copy `output_size` bytes from `HARGS+output_offset` into
     `dst_op`.
 
     Each byte routes through A — A is the only register that can
@@ -985,12 +1008,12 @@ def _translate_helper_call(
     for src_op, sz in inputs:
         for k in range(sz):
             out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
-            out.append(asm_ast.Mov(src=_REG_A, dst=_hslot(slot)))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_hargs(slot)))
             slot += 1
     out.append(asm_ast.Call(name=helper))
     for k in range(output_size):
         out.append(asm_ast.Mov(
-            src=_hslot(output_offset + k), dst=_REG_A,
+            src=_hargs(output_offset + k), dst=_REG_A,
         ))
         out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
     return out
@@ -998,12 +1021,22 @@ def _translate_helper_call(
 
 def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
     """Translate a TAC val to its asm operand form. Constants
-    become `Imm(value)` (the value is an int byte for Int constants,
-    or — for Long constants — a 2-byte value the caller will split
-    into bytes via `_byte_at`). Vars become `Pseudo(name, offset=0)`;
-    callers that need to address higher bytes of a multi-byte value
-    bump the offset via `_byte_at`."""
+    become `Imm(value)`, where `value` is the bit-pattern integer
+    of any width (1 byte for ConstInt, 2 for ConstLong, 4 for
+    ConstFloat's IEEE 754 single, 8 for ConstDouble's IEEE 754
+    double); the caller splits multi-byte values into bytes via
+    `_byte_at`. FP constants pack to a non-negative bit pattern
+    here (via `struct.pack`) so the same shift-and-mask byte
+    extraction in `_byte_at` works without special-casing FP.
+    Vars become `Pseudo(name, offset=0)`; callers that need to
+    address higher bytes bump the offset via `_byte_at`."""
     match val:
+        case tac_ast.Constant(const=tac_ast.ConstFloat(float=v)):
+            (bits,) = struct.unpack("<I", struct.pack("<f", v))
+            return asm_ast.Imm(value=bits)
+        case tac_ast.Constant(const=tac_ast.ConstDouble(float=v)):
+            (bits,) = struct.unpack("<Q", struct.pack("<d", v))
+            return asm_ast.Imm(value=bits)
         case tac_ast.Constant(const=c):
             return asm_ast.Imm(value=c.int)
         case tac_ast.Var(name=n):

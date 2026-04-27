@@ -3,7 +3,12 @@ module ASM {
     top_level =
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
         | StaticVariable(identifier name, bool is_global, static_init init)
+    -- IntInit / LongInit lay down 1 / 2 little-endian bytes of an
+    -- integer value. FloatInit / DoubleInit lay down 4 / 8 little-
+    -- endian bytes of an IEEE 754 single / double — asm_emit packs
+    -- the float into bytes via Python's struct.pack at emit time.
     static_init = IntInit(int) | LongInit(int)
+                | FloatInit(float) | DoubleInit(float)
 
     instruction =
         Mov(operand src, operand dst)

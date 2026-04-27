@@ -1621,5 +1621,106 @@ class TestLongAndCasts(unittest.TestCase):
             parse("int main(void) { int x; return ++(int)x; }")
 
 
+class TestFloatingTypesAndConstants(unittest.TestCase):
+    """C99 §6.4.4.2 floating constants. Three terminals, one variant
+    per suffix: unsuffixed → ConstDouble, f/F → ConstFloat, l/L →
+    rejected (no long double in c6502). The `float` and `double`
+    type specifiers join `int`/`long`/`signed`/`unsigned`."""
+
+    def test_double_var_decl(self):
+        ast = parse("double x = 3.14;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(vd.data_type, c99_ast.Double())
+        self.assertEqual(
+            vd.init,
+            c99_ast.Constant(const=c99_ast.ConstDouble(float=3.14)),
+        )
+
+    def test_float_var_decl(self):
+        ast = parse("float y = 2.5f;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(vd.data_type, c99_ast.Float())
+        self.assertEqual(
+            vd.init,
+            c99_ast.Constant(const=c99_ast.ConstFloat(float=2.5)),
+        )
+
+    def test_unsuffixed_literal_is_const_double(self):
+        for src in ["3.14", "1.0", ".5", "1e10", "1.0e-3", "3."]:
+            with self.subTest(src=src):
+                ast = parse(f"double x = {src};")
+                self.assertIsInstance(
+                    ast.declaration[0].var_decl.init.const,
+                    c99_ast.ConstDouble,
+                )
+
+    def test_f_suffix_is_const_float(self):
+        for src in ["3.14f", "3.14F", "1e10f", ".5F"]:
+            with self.subTest(src=src):
+                ast = parse(f"float x = {src};")
+                self.assertIsInstance(
+                    ast.declaration[0].var_decl.init.const,
+                    c99_ast.ConstFloat,
+                )
+
+    def test_long_double_literal_rejected(self):
+        from parser import ParserError
+        for src in ["3.14l", "3.14L", "1e10l"]:
+            with self.subTest(src=src):
+                with self.assertRaises(ParserError) as ctx:
+                    parse(f"double x = {src};")
+                self.assertIn("long double", str(ctx.exception))
+
+    def test_long_double_type_rejected(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("long double x = 1.0;")
+        self.assertIn("long double", str(ctx.exception))
+
+    def test_hex_float_rejected(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("double x = 0x1.0p3;")
+        self.assertIn("hex floating literal", str(ctx.exception))
+
+    def test_float_double_combined_rejected(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("float double x;")
+        self.assertIn("'float' and 'double'", str(ctx.exception))
+
+    def test_fp_with_int_specifier_rejected(self):
+        from parser import ParserError
+        for src in ["int float x;", "unsigned double x;",
+                    "double signed x;"]:
+            with self.subTest(src=src):
+                with self.assertRaises(ParserError) as ctx:
+                    parse(src)
+                self.assertIn(
+                    "floating type cannot combine", str(ctx.exception),
+                )
+
+    def test_cast_to_double(self):
+        # The cast LPAREN-disambiguation must shift on FLOAT / DOUBLE
+        # like it does on INT / LONG.
+        ast = parse("int main(void) { return (double)1; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(
+            ret.exp,
+            c99_ast.Cast(
+                target_type=c99_ast.Double(),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+            ),
+        )
+
+    def test_function_return_type_double(self):
+        ast = parse("double pi(void);")
+        fd = ast.declaration[0].function_decl
+        self.assertEqual(
+            fd.data_type,
+            c99_ast.FunType(params=[], ret=c99_ast.Double()),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

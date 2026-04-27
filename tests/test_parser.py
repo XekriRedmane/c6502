@@ -2521,6 +2521,47 @@ class TestPointerUnaryOps(unittest.TestCase):
                 "int main(void) { long y; long *lp; lp = &y; return -lp; }\n"
             )
 
+    def test_complement_float_rejected(self):
+        # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
+        # has no bit-pattern semantics that `~` would meaningfully
+        # produce, so it's a strict type error.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { float f; f = 1.5f; return ~f; }\n"
+            )
+        self.assertIn("'~'", str(cm.exception))
+        self.assertIn("integer", str(cm.exception))
+
+    def test_complement_double_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { double d; d = 1.5; return ~d; }\n"
+            )
+
+    def test_negate_float_still_allowed(self):
+        # `-f` on a Float is legal C99 (the FP runtime helper for
+        # negate is just a sign-bit flip). The current c99_to_tac
+        # would still raise NotImplementedError when trying to
+        # lower it, but the type-check should pass — this test
+        # pins the type-check side.
+        # Use a place where the cast-or-negate doesn't reach the
+        # later passes: just type-check via the type_checker
+        # directly.
+        from parser import parse
+        from passes.identifier_resolution import resolve_program
+        from passes.label_resolution import resolve_program as lresolve
+        from passes.loop_labeling import label_program
+        from passes.type_checking import check_program
+        ast = parse("int main(void) { float f; f = 1.5f; return -f; }\n")
+        ast = resolve_program(ast)
+        ast = lresolve(ast)
+        ast = label_program(ast)
+        # check_program doesn't raise on float negate (the FP
+        # arithmetic lowering is unfinished, but type-check is fine).
+        check_program(ast)
+
 
 if __name__ == "__main__":
     unittest.main()

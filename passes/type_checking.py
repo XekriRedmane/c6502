@@ -1002,14 +1002,17 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"unary operator on non-object type {t!r}"
                     )
-                # Per-operator operand-type constraints. `-` and `~`
-                # don't make sense on a pointer (negating an address
-                # gives garbage; bit-flipping it likewise). `!p` is
-                # legal — it's defined as `p != 0`, the pointer's
-                # null-ness check (C99 §6.5.3.3.5: result is int).
-                # Strict C99 also requires `~` to take integer (no
-                # FP) and `-` to take arithmetic (no pointer); the
-                # FP-side checks are outside this commit's scope.
+                # Per-operator operand-type constraints:
+                #   `-` requires arithmetic (rejects Pointer per
+                #     C99 §6.5.3.3.1).
+                #   `~` requires integer (rejects Pointer per the
+                #     same paragraph, and rejects Float / Double
+                #     per §6.5.3.3.4: "The operand of the unary ~
+                #     operator shall have integer type.").
+                #   `!` requires scalar (integer / floating /
+                #     pointer); always yields int per §6.5.3.3.5.
+                #     `!p` is legal — it's defined as `p != 0`,
+                #     the pointer's null-ness check.
                 if (
                     isinstance(op, (c99_ast.Negate, c99_ast.Complement))
                     and _is_pointer_type(t)
@@ -1018,6 +1021,14 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"unary '{op_name}' is not defined on pointer "
                         f"type {t!r}"
+                    )
+                if (
+                    isinstance(op, c99_ast.Complement)
+                    and _is_floating_type(t)
+                ):
+                    raise TypeCheckError(
+                        f"unary '~' requires integer operand, got "
+                        f"{type(t).__name__}"
                     )
                 # `!x` always yields an int. `-x` and `~x` preserve
                 # type.

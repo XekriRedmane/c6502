@@ -223,12 +223,27 @@ def _break_label(loop_label: str) -> str:
 # c99 → TAC type / const translation
 # ---------------------------------------------------------------------------
 #
-# The c99 and TAC ASDLs declare parallel `data_type` and `const`
-# sums (`Int | Long | FunType` and `ConstInt(int) | ConstLong(int)`),
-# so the translation between them is a one-to-one rewrap. Keeping the
-# TAC nodes as their own dataclasses (instead of reusing the c99
-# nodes) lets later passes evolve TAC's type system without
-# disturbing the source AST — and the rewrap stays cheap.
+# The c99 and TAC ASDLs declare parallel `data_type` sums (Int /
+# Long / UInt / ULong / FunType), so translating data_type is a
+# one-to-one rewrap. The `const` sum is narrower in TAC (only
+# ConstInt / ConstLong — the 6502 doesn't care about signedness at
+# the byte level, so unsigned values pass through the signed
+# variant of the matching width). The `static_init` sum, on the
+# other hand, is the same shape on both sides (IntInit / LongInit /
+# UIntInit / ULongInit) — codegen uses the variant to pick the dasm
+# directive (DC.B / DC.W) and to track the declared type for
+# debug / linker purposes.
+
+def _byte_width_of(t: c99_ast.Type_data_type) -> int:
+    """1 for the single-byte object types (Int / UInt), 2 for the
+    two-byte ones (Long / ULong). Used by Cast lowering to decide
+    between SignExtend / ZeroExtend / Truncate / no-op."""
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+        return 1
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
+        return 2
+    raise TypeError(f"_byte_width_of: not an integer object type: {t!r}")
+
 
 def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
     """Translate a c99 data_type to its TAC counterpart."""
@@ -236,6 +251,10 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.Int()
     if isinstance(t, c99_ast.Long):
         return tac_ast.Long()
+    if isinstance(t, c99_ast.UInt):
+        return tac_ast.UInt()
+    if isinstance(t, c99_ast.ULong):
+        return tac_ast.ULong()
     if isinstance(t, c99_ast.FunType):
         return tac_ast.FunType(
             params=[_to_tac_data_type(p) for p in t.params],
@@ -245,25 +264,33 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
 
 
 def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
-    """Translate a c99 const to its TAC counterpart, preserving the
-    variant. The size invariants (ConstInt in -128..127, ConstLong
-    in the rest of the signed-2-byte range) are already enforced by
-    the parser's `_make_const`."""
+    """Translate a c99 const to its TAC counterpart. TAC has no
+    unsigned const variants — the 6502 has no signedness at the
+    byte level, so a ConstUInt(v) becomes a TAC ConstInt(v) (1-byte
+    value) and a ConstULong(v) becomes a TAC ConstLong(v) (2-byte
+    value). The integer value passes through unchanged; downstream
+    `_byte_at` masks each byte with `& 0xFF`, so the bit pattern is
+    preserved regardless of how the integer is interpreted."""
     if isinstance(c, c99_ast.ConstInt):
         return tac_ast.ConstInt(int=c.int)
     if isinstance(c, c99_ast.ConstLong):
+        return tac_ast.ConstLong(int=c.int)
+    if isinstance(c, c99_ast.ConstUInt):
+        return tac_ast.ConstInt(int=c.int)
+    if isinstance(c, c99_ast.ConstULong):
         return tac_ast.ConstLong(int=c.int)
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
 def _tac_const_for(t: c99_ast.Type_data_type, value: int) -> tac_ast.Type_const:
-    """Build a TAC const of the right variant for an Int / Long
-    type tag. Used by the synthetic-constant call sites (postfix
-    `+1`, short-circuit 0/1, implicit `return 0`) where the c99 AST
-    has no source-level constant to translate."""
-    if isinstance(t, c99_ast.Int):
+    """Build a TAC const of the right *width* for the c99 type tag.
+    TAC has no unsigned const variants (see `_to_tac_const`), so
+    UInt and Int both produce ConstInt; ULong and Long both produce
+    ConstLong. Used by the synthetic-constant call sites (postfix
+    `+1`, short-circuit 0/1, implicit `return 0`)."""
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
         return tac_ast.ConstInt(int=value)
-    if isinstance(t, c99_ast.Long):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
         return tac_ast.ConstLong(int=value)
     raise TypeError(
         f"cannot build a TAC const for non-object type {t!r}"
@@ -280,14 +307,20 @@ def _tac_const_val(t: c99_ast.Type_data_type, value: int) -> tac_ast.Constant:
 def _tac_static_init_for(
     t: c99_ast.Type_data_type, value: int,
 ) -> tac_ast.Type_static_init:
-    """Build a TAC `static_init` (IntInit / LongInit) wrapping `value`,
-    with the variant chosen by the declared type. Used both for
-    explicit `Initial(c)` initializers and for tentative definitions
-    that resolve to zero of the declared type at end-of-TU."""
+    """Build a TAC `static_init` wrapping `value`, with the variant
+    matching the declared type — the four-way TAC `static_init` sum
+    keeps signedness alongside width (unlike `const`, where signed
+    and unsigned collapse). Used both for explicit `Initial(c)`
+    initializers and for tentative definitions resolved to zero of
+    the declared type at end-of-TU."""
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(int=value)
     if isinstance(t, c99_ast.Long):
         return tac_ast.LongInit(int=value)
+    if isinstance(t, c99_ast.UInt):
+        return tac_ast.UIntInit(int=value)
+    if isinstance(t, c99_ast.ULong):
+        return tac_ast.ULongInit(int=value)
     raise TypeError(
         f"static-storage object can't have non-object type {t!r}"
     )
@@ -804,41 +837,52 @@ class Translator:
                 # boundary at asm emit's `_check_byte`.
                 return tac_ast.Constant(const=_to_tac_const(c))
             case c99_ast.Cast(target_type=target, exp=inner):
-                # Lower `Cast` to a typed conversion instruction
-                # when the source and target types differ:
-                #   Int  → Long   →  SignExtend(src, dst)
-                #   Long → Int    →  Truncate(src, dst)
-                #   matching      →  no-op (just return inner's val)
+                # Lower `Cast` based on the byte widths of the source
+                # and target c99 types — the 6502 has no signedness
+                # distinction, so cross-sign casts at the same width
+                # are no-ops:
+                #   same width (Int↔UInt, Long↔ULong, …)  → no-op
+                #   1B → 2B, source signed (Int)          → SignExtend
+                #   1B → 2B, source unsigned (UInt)       → ZeroExtend
+                #     (not yet representable in TAC; raises)
+                #   2B → 1B (any signedness)              → Truncate
                 # The source type comes from the inner node's
-                # `data_type`, set by the type checker. If it's None
-                # (synthetic AST that bypassed type-checking — e.g.
-                # a unit test of Cast lowering on its own), fall
-                # back to the no-op path so the test stays focused
-                # on the structural translation.
+                # `data_type`, set by the type checker. If it's
+                # None (synthetic AST that bypassed type-checking —
+                # e.g. a unit test of Cast lowering on its own),
+                # fall back to the no-op path so the test stays
+                # focused on the structural translation.
                 inner_val = self.translate_exp(inner, instrs)
                 source = inner.data_type
                 if source is None or source == target:
+                    return inner_val
+                src_w = _byte_width_of(source)
+                tgt_w = _byte_width_of(target)
+                if src_w == tgt_w:
+                    # Same width, different signedness — bit pattern
+                    # is identical, so the cast carries no codegen.
                     return inner_val
                 # The temp holds the casted value — its type is the
                 # cast's target.
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(target),
                 )
-                if (isinstance(target, c99_ast.Long)
-                        and isinstance(source, c99_ast.Int)):
-                    instrs.append(tac_ast.SignExtend(
-                        src=inner_val, dst=dst,
-                    ))
-                elif (isinstance(target, c99_ast.Int)
-                        and isinstance(source, c99_ast.Long)):
+                if src_w < tgt_w:
+                    if isinstance(source, (c99_ast.Int, c99_ast.Long)):
+                        instrs.append(tac_ast.SignExtend(
+                            src=inner_val, dst=dst,
+                        ))
+                    else:
+                        # Unsigned source → wider type: zero-fill
+                        # the new high byte rather than replicating
+                        # the sign bit.
+                        instrs.append(tac_ast.ZeroExtend(
+                            src=inner_val, dst=dst,
+                        ))
+                else:  # src_w > tgt_w
                     instrs.append(tac_ast.Truncate(
                         src=inner_val, dst=dst,
                     ))
-                else:
-                    raise TypeError(
-                        f"cannot lower Cast from {source!r} to "
-                        f"{target!r}"
-                    )
                 return dst
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)

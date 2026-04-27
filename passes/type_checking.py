@@ -18,30 +18,29 @@ every later pass:
 
 Type vocabulary
 ---------------
-The data-type hierarchy now lives on the c99 AST (`c99_ast.Int`,
-`c99_ast.Long`, `c99_ast.FunType`) — every var_decl / function_decl
-already carries its declared type, and the parser puts those nodes
-straight into the AST. This module imports them directly and re-
-exports the names so existing callers (and unit tests) can keep
-writing `from passes.type_checking import Int, FunType`. Equality is
-structural via `@dataclass` defaults, which is what we need for
-type comparisons.
+The data-type hierarchy lives on the c99 AST (`c99_ast.Int`,
+`c99_ast.Long`, `c99_ast.UInt`, `c99_ast.ULong`, `c99_ast.FunType`).
+Every var_decl / function_decl already carries its declared type,
+and the parser puts those nodes straight into the AST. This module
+imports them directly and re-exports the names so existing callers
+(and unit tests) can keep writing `from passes.type_checking
+import Int, FunType`. Equality is structural via `@dataclass`
+defaults, which is what we need for type comparisons.
 
-`Int()` is 1-byte signed (-128..127) and `Long()` is 2-byte signed
-(-32768..32767), per the parser's `_make_const` invariant.
-`FunType(params, ret)` describes a function's signature. `Type` is
-the marker base — the `c99_ast.Type_data_type` it aliases is what
-identifier_resolution leaves on every var_decl / function_decl AST
-node.
+`Int()` is 1-byte signed (-128..127), `Long()` is 2-byte signed
+(-32768..32767), `UInt()` is 1-byte unsigned (0..255), and
+`ULong()` is 2-byte unsigned (0..65535). `FunType(params, ret)`
+describes a function's signature. `Type` is the marker base — the
+`c99_ast.Type_data_type` it aliases is what identifier_resolution
+leaves on every var_decl / function_decl AST node.
 
-No implicit conversions
------------------------
-Per the current dialect's rule, this pass rejects any operation that
-mixes Int and Long without an explicit `Cast`. A user can always
-write `(long)x + y` (where y is Long) to convert, but `x + y` with
-an Int x and a Long y is a type error. This is stricter than C99's
-"usual arithmetic conversions" (§6.3.1.8) — those are deferred until
-codegen learns 16-bit operations.
+Implicit conversions
+--------------------
+Mixed-type arithmetic is handled by C99's usual arithmetic
+conversions (§6.3.1.8): the narrower or signed-displaceable operand
+is wrapped in an implicit `Cast` to the common type, so by the time
+TAC sees the tree every operand has its concrete data_type and any
+size- or signedness-changing conversion is an explicit Cast node.
 
 Cast expressions are accepted in any direction (Int→Long, Long→Int,
 Int→Int, Long→Long); the conversion itself is the codegen's
@@ -129,6 +128,8 @@ class TypeCheckError(Exception):
 Type = c99_ast.Type_data_type
 Int = c99_ast.Int
 Long = c99_ast.Long
+UInt = c99_ast.UInt
+ULong = c99_ast.ULong
 FunType = c99_ast.FunType
 
 
@@ -332,28 +333,62 @@ def _merge_initial_value(
 
 
 def _is_object_type(t: Type) -> bool:
-    """True iff `t` is a value type that can name an object (Int /
-    Long today; not FunType). Used at the boundary where we expect
-    an object — variable references, cast targets, arithmetic
-    operands."""
+    """True iff `t` is a value type that can name an object (Int,
+    Long, UInt, ULong; not FunType). Used at the boundary where we
+    expect an object — variable references, cast targets,
+    arithmetic operands."""
+    return isinstance(t, (Int, Long, UInt, ULong))
+
+
+# Width and signedness predicates for the four integer types. Width
+# determines the C99 §6.3.1.1 "rank" (Int and UInt share rank 1;
+# Long and ULong share rank 2 — `long long` and friends would be
+# rank 3 but c6502 doesn't model them).
+def _int_width(t: Type) -> int:
+    if isinstance(t, (Int, UInt)):
+        return 1
+    if isinstance(t, (Long, ULong)):
+        return 2
+    raise TypeError(f"_int_width: not an integer object type: {t!r}")
+
+
+def _is_signed(t: Type) -> bool:
     return isinstance(t, (Int, Long))
 
 
 def _common_type(a: Type, b: Type) -> Type:
-    """The common arithmetic type for two object types, per a
-    restricted form of C99 §6.3.1.8. With only Int and Long in the
-    language:
-      * matching types       → that type
-      * Int / Long mixed     → Long (the wider type wins)
+    """Usual arithmetic conversions per C99 §6.3.1.8 paragraph 1,
+    restricted to the four integer types c6502 models. With ranks
+    1 (Int/UInt) and 2 (Long/ULong):
+      * matching types               → that type
+      * both signed (or both unsigned) → the higher-rank type wins
+      * mixed; unsigned has rank ≥ signed → unsigned wins
+      * mixed; signed has higher rank and can represent all of the
+        unsigned type's range                → signed wins
+        (Long can represent UInt's 0..255, so Long + UInt → Long)
+      * otherwise → unsigned counterpart of the signed type
+        (no such case arises in c6502 today since Long always
+        represents UInt; kept for forward compatibility.)
 
-    Both operands must be object types; the caller has already
-    enforced that. Returned types are fresh Int / Long instances so
-    callers can attach them to AST nodes without aliasing."""
+    Returned types are fresh instances so callers can attach them
+    to AST nodes without aliasing."""
     if _types_equal(a, b):
-        # Use a fresh instance so we don't alias the operand's
-        # data_type into the result.
-        return Long() if isinstance(a, Long) else Int()
-    return Long()
+        return type(a)()
+    a_signed, b_signed = _is_signed(a), _is_signed(b)
+    a_rank, b_rank = _int_width(a), _int_width(b)
+    if a_signed == b_signed:
+        # Both signed or both unsigned — higher rank wins.
+        return type(a)() if a_rank >= b_rank else type(b)()
+    # Mixed signedness.
+    signed, unsigned = (a, b) if a_signed else (b, a)
+    if _int_width(unsigned) >= _int_width(signed):
+        return type(unsigned)()
+    # Signed has the higher rank. The C99 rule asks whether it
+    # can represent every value of the unsigned type. With our
+    # types the only mixed-rank case is Long (signed, rank 2) +
+    # UInt (unsigned, rank 1), and Long's range -32768..32767
+    # spans UInt's 0..255 entirely, so the signed type wins.
+    return type(signed)()
 
 
 def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
@@ -815,13 +850,18 @@ class TypeChecker:
         """
         match exp:
             case c99_ast.Constant(const=c):
-                # ConstInt → Int; ConstLong → Long. The parser's
-                # `_make_const` already restricted the values, so
-                # we don't re-check here.
+                # Each const variant carries its own implied type;
+                # the parser's C99 §6.4.4.1 dispatch already chose
+                # the variant based on suffix, base, and value, so
+                # no re-checking here.
                 if isinstance(c, c99_ast.ConstInt):
                     t = Int()
                 elif isinstance(c, c99_ast.ConstLong):
                     t = Long()
+                elif isinstance(c, c99_ast.ConstUInt):
+                    t = UInt()
+                elif isinstance(c, c99_ast.ConstULong):
+                    t = ULong()
                 else:
                     raise TypeError(f"unexpected const: {c!r}")
                 exp.data_type = t
@@ -829,8 +869,8 @@ class TypeChecker:
             case c99_ast.Cast(target_type=target, exp=inner):
                 if not _is_object_type(target):
                     raise TypeCheckError(
-                        f"cast target type must be Int or Long, got "
-                        f"{target!r}"
+                        f"cast target type must be an integer object "
+                        f"type (Int / Long / UInt / ULong), got {target!r}"
                     )
                 inner_type = self._check_exp(inner)
                 if not _is_object_type(inner_type):

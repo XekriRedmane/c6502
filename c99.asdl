@@ -23,7 +23,7 @@ module C99 {
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
     storage_class = Static | Extern
     -- Ints are 1 byte, longs are 2 bytes.
-    data_type = Int | Long | FunType(data_type* params, data_type ret)
+    data_type = Int | Long | UInt | ULong | FunType(data_type* params, data_type ret)
     for_init = InitDecl(var_decl) | InitExp(exp?)
 
     -- All expressions have a data type, which might be unspecified.
@@ -47,5 +47,5 @@ module C99 {
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
         | LogicalAnd | LogicalOr
-    const = ConstInt(int) | ConstLong(int)
+    const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int)
 }

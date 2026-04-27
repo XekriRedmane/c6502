@@ -121,15 +121,16 @@ def _operands_in(instr: asm_ast.Type_instruction):
 
 def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
-    table — Long → 2 bytes, anything else (Int / unknown) → 1 byte.
-    A None symbol table or an absent entry both default to 1, which
-    matches the Int-only world unit tests assume."""
+    table — 2-byte types (Long, ULong) → 2; everything else
+    (Int, UInt, unknown) → 1. A None symbol table or an absent
+    entry both default to 1, which matches the Int-only world unit
+    tests assume."""
     if symbols is None:
         return 1
     sym = symbols.get(name)
     if sym is None:
         return 1
-    if isinstance(sym.type, c99_ast.Long):
+    if isinstance(sym.type, (c99_ast.Long, c99_ast.ULong)):
         return 2
     return 1
 

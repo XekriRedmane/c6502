@@ -6,6 +6,7 @@ module TAC {
     instruction =
         Ret(val)
         | SignExtend(val src, val dst)
+        | ZeroExtend(val src, val dst)
         | Truncate(val src, val dst)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
@@ -23,7 +24,7 @@ module TAC {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
-    data_type = Int | Long | FunType(data_type* params, data_type ret)
+    data_type = Int | Long | UInt | ULong | FunType(data_type* params, data_type ret)
     const = ConstInt(int) | ConstLong(int)
-    static_init = IntInit(int) | LongInit(int)
+    static_init = IntInit(int) | LongInit(int) | UIntInit(int) | ULongInit(int)
 }

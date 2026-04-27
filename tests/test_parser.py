@@ -1547,16 +1547,22 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIsInstance(ret.exp.const, c99_ast.ConstLong)
 
     def test_literal_out_of_range_raises(self):
+        # 32768 doesn't fit `int` (≤127) or `long` (≤32767); per
+        # C99 §6.4.4.1 the next type in the unsuffixed-decimal list
+        # is `long long`, which c6502 doesn't model.
         from parser import ParserError
         with self.assertRaises(ParserError) as ctx:
             parse("int main(void) { return 32768; }")
-        self.assertIn("out of range", str(ctx.exception))
+        self.assertIn("doesn't fit", str(ctx.exception))
 
-    def test_unsigned_suffix_rejected(self):
-        from parser import ParserError
-        with self.assertRaises(ParserError) as ctx:
-            parse("int main(void) { return 5U; }")
-        self.assertIn("unsigned", str(ctx.exception))
+    def test_unsigned_suffix_promotes_to_uint(self):
+        # `5U` carries a U suffix; per C99 §6.4.4.1 the type list is
+        # unsigned int, unsigned long, unsigned long long. 5 fits in
+        # `unsigned int`, so it lands in ConstUInt.
+        ast = parse("int main(void) { return 5U; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertIsInstance(ret.exp.const, c99_ast.ConstUInt)
+        self.assertEqual(ret.exp.const.int, 5)
 
     def test_long_long_rejected(self):
         from parser import ParserError

@@ -71,25 +71,41 @@ _STORAGE_CLASSES = {
 # Token types of every leaf the `specifier` rule can produce. After the
 # `type_specifier` and `specifier` transformer methods unwrap their
 # child trees, every entry on a specifier list is one of these tokens.
-_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "STATIC", "EXTERN")
-_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG")
+_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
+                           "STATIC", "EXTERN")
+_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED")
 
 
 def _resolve_data_type(type_specs):
-    """Map a list of type-specifier tokens (each `INT` or `LONG`) to a
-    c99_ast `Int()` or `Long()`. The valid combinations follow C99
-    §6.7.2:
-      * `int`           → Int
-      * `long`          → Long
-      * `int long` /
-        `long int`      → Long
-      * `long long`     — C99 long long type (64-bit) — rejected, we
-                          only model 1-byte and 2-byte ints today
-      * anything else (no type, multiple `int`, etc.) — rejected
+    """Map a list of type-specifier tokens to a c99_ast object type.
+    Valid combinations follow C99 §6.7.2 (subset c6502 models —
+    no `char`, `short`, `_Bool`, or `long long`):
+      * `int`, `signed`, `signed int`         → Int
+      * `unsigned`, `unsigned int`            → UInt
+      * `long`, `long int`,
+        `signed long`, `signed long int`      → Long
+      * `unsigned long`, `unsigned long int`  → ULong
+      * `long long` (any combination)         — rejected (no
+                                                 long long type)
+      * `signed unsigned` / `unsigned signed` — rejected
+      * duplicate `int` / `signed` / `unsigned` — rejected
+      * empty list                            — rejected
     """
     int_count = sum(1 for t in type_specs if t.type == "INT")
     long_count = sum(1 for t in type_specs if t.type == "LONG")
-    if int_count == 0 and long_count == 0:
+    signed_count = sum(1 for t in type_specs if t.type == "SIGNED")
+    unsigned_count = sum(1 for t in type_specs if t.type == "UNSIGNED")
+    if signed_count > 0 and unsigned_count > 0:
+        raise ParserError(
+            "'signed' and 'unsigned' cannot both appear in a "
+            "declaration"
+        )
+    if signed_count > 1:
+        raise ParserError("'signed' specified more than once")
+    if unsigned_count > 1:
+        raise ParserError("'unsigned' specified more than once")
+    if (int_count == 0 and long_count == 0
+            and signed_count == 0 and unsigned_count == 0):
         raise ParserError("missing type specifier")
     if int_count > 1:
         raise ParserError(
@@ -101,8 +117,14 @@ def _resolve_data_type(type_specs):
             "'long long' is not supported (only 'int' and 'long' are "
             "modeled today)"
         )
-    if long_count == 1:
+    is_unsigned = unsigned_count == 1
+    is_long = long_count == 1
+    if is_long and is_unsigned:
+        return c99_ast.ULong()
+    if is_long:
         return c99_ast.Long()
+    if is_unsigned:
+        return c99_ast.UInt()
     return c99_ast.Int()
 
 
@@ -154,71 +176,106 @@ def _consume_specifiers(items, start):
     return specs, i
 
 
-# Integer-literal suffix decoding: a trailing `L`/`LL` is informational
-# (these dialect dialects use value-driven sizing rather than the C99
-# §6.4.4.1 rules), and `U`/`u` is rejected because we don't have
-# unsigned types yet.
-_INT_SUFFIX_PATTERN = (
-    "lL"  # any combination of L characters in any case (l, L, ll, LL, lL, Ll)
-)
-
-
-def _parse_integer_text(text):
-    """Strip C99 integer-constant suffixes (`L`, `LL`, `U`, `UL`, etc.)
-    from `text` and return the numeric value as a non-negative int.
-    Hex (`0x...`), octal (`0...`), and decimal forms are all accepted
-    via Python's `int(s, 0)`. C source literals are always non-negative
-    — negation comes from a unary-minus operator applied later — so the
-    return is always >= 0.
-
-    `U`/`u` suffixes are rejected: c6502 doesn't model unsigned types
-    yet, and silently dropping the suffix would let `5U` masquerade as
-    a signed int with no warning. `L`/`LL` suffixes are accepted but
-    discarded — sizing is driven by the literal's value, so a small
-    `L`-suffixed literal will still land in `ConstInt` (this is a
-    pragmatic deviation from C99 §6.4.4.1's type-from-suffix rule)."""
-    s = text
-    if "u" in s or "U" in s:
-        raise ParserError(
-            f"unsigned integer literals are not supported: {text!r}"
-        )
-    while s and s[-1] in _INT_SUFFIX_PATTERN:
-        s = s[:-1]
-    if not s:
-        raise ParserError(f"empty integer literal after suffix: {text!r}")
-    return int(s, 0)
-
-
-# Range bounds for the two integer constant variants. ConstInt is the
-# canonical 1-byte-signed form (-128..127); ConstLong is the 2-byte-
-# signed form, restricted to values that *don't* already fit in
-# ConstInt. The asdl-generated dataclasses don't enforce these ranges
-# themselves — callers go through `_make_const` to get a node with a
-# guaranteed-in-range field.
-_INT_MIN = -128
+# Integer constant typing per C99 §6.4.4.1 paragraph 5: "the type of
+# an integer constant is the first of the corresponding list in which
+# its value can be represented." c6502 models four integer types —
+# int / long / unsigned int / unsigned long — corresponding 1:1 with
+# the four c99_ast `const` variants. There is no `long long`, so any
+# literal whose only fitting type would be `long long` (or
+# `unsigned long long`) is rejected.
+#
+# Type ranges (literals are non-negative — unary minus comes from an
+# operator, applied later):
+#     int            0..127     ConstInt
+#     long           0..32767   ConstLong
+#     unsigned int   0..255     ConstUInt
+#     unsigned long  0..65535   ConstULong
 _INT_MAX = 127
-_LONG_MIN = -32768
 _LONG_MAX = 32767
+_UINT_MAX = 255
+_ULONG_MAX = 65535
+
+# Per-(token-kind, base) candidate-type list. Each entry is a tuple of
+# (max_value, c99_ast Const class) — pick the first whose max accepts
+# the literal's value. Bases: "decimal" for plain decimal literals,
+# "hex_oct" for hex (0x...) and octal (0...) literals. The C99 table
+# distinguishes the two for the unsuffixed and L-only suffix cases;
+# the U-only and U+L suffix cases share one list across bases.
+_INT = c99_ast.ConstInt
+_LONG = c99_ast.ConstLong
+_UINT = c99_ast.ConstUInt
+_ULONG = c99_ast.ConstULong
+
+_CANDIDATES = {
+    ("INTEGER_CONSTANT", "decimal"): [(_INT_MAX, _INT), (_LONG_MAX, _LONG)],
+    ("INTEGER_CONSTANT", "hex_oct"): [
+        (_INT_MAX, _INT), (_UINT_MAX, _UINT),
+        (_LONG_MAX, _LONG), (_ULONG_MAX, _ULONG),
+    ],
+    ("LONG_INTEGER",    "decimal"): [(_LONG_MAX, _LONG)],
+    ("LONG_INTEGER",    "hex_oct"): [(_LONG_MAX, _LONG), (_ULONG_MAX, _ULONG)],
+    ("UINT_INTEGER",    "decimal"): [(_UINT_MAX, _UINT), (_ULONG_MAX, _ULONG)],
+    ("UINT_INTEGER",    "hex_oct"): [(_UINT_MAX, _UINT), (_ULONG_MAX, _ULONG)],
+    ("ULONG_INTEGER",   "decimal"): [(_ULONG_MAX, _ULONG)],
+    ("ULONG_INTEGER",   "hex_oct"): [(_ULONG_MAX, _ULONG)],
+}
 
 
-def _make_const(value):
-    """Factory for c99_ast `Type_const` nodes. Picks the smallest
-    variant that fits `value`:
-      *  -128..127             → ConstInt
-      *  -32768..-129 / 128..32767 → ConstLong
-      *  anything else         → ParserError
+def _parse_integer_token(text):
+    """Strip the C99 integer-constant suffix off `text` and return
+    `(value, base, has_ll)`:
+      * `value` — the non-negative integer (literals are always
+        non-negative; negation is a separate unary-minus operator).
+      * `base` — `"hex_oct"` for hex (`0x...`) and octal (`0...`)
+        literals, `"decimal"` otherwise. The two bases share suffix
+        rules but differ in their unsuffixed / L-suffixed type lists
+        (C99 §6.4.4.1 table).
+      * `has_ll` — True if the suffix contains `LL` or `ll`. c6502
+        doesn't model `long long`, so callers reject these.
+    """
+    i = len(text)
+    while i > 0 and text[i - 1] in "uUlL":
+        i -= 1
+    digits, suffix = text[:i], text[i:]
+    has_ll = "LL" in suffix or "ll" in suffix
+    if digits.startswith(("0x", "0X")):
+        base = "hex_oct"
+    elif len(digits) > 1 and digits.startswith("0"):
+        base = "hex_oct"
+    else:
+        base = "decimal"
+    return int(digits, 0), base, has_ll
 
-    The narrowing rule is mandated by the asdl invariant: ConstLong
-    must not hold a value that fits in ConstInt's range. Callers that
-    construct constants synthetically (the parser, future constant-
-    folding, tests) all funnel through here so the invariant holds."""
-    if _INT_MIN <= value <= _INT_MAX:
-        return c99_ast.ConstInt(int=value)
-    if _LONG_MIN <= value <= _LONG_MAX:
-        return c99_ast.ConstLong(int=value)
+
+def _const_for_token(token):
+    """Map a Lark integer-constant token to a c99_ast `Type_const`
+    node per C99 §6.4.4.1 paragraph 5."""
+    text = str(token)
+    value, base, has_ll = _parse_integer_token(text)
+    if has_ll:
+        raise ParserError(
+            f"`long long` is not supported (literal {text!r})"
+        )
+    for max_value, cls in _CANDIDATES[(token.type, base)]:
+        if value <= max_value:
+            return cls(int=value)
     raise ParserError(
-        f"integer constant {value} out of range for c6502 (max 16-bit "
-        f"signed: {_LONG_MIN}..{_LONG_MAX})"
+        f"integer constant {text!r} doesn't fit any supported type "
+        f"(c6502 has no `long long` / `unsigned long long`)"
+    )
+
+
+def _make_int_const(value):
+    """Factory for synthetic non-negative literals (e.g. the `1`
+    minted by prefix `++a` desugaring). Picks the smallest
+    candidate from the unsuffixed-decimal type list — same rule the
+    parser applies to `1` written in source."""
+    for max_value, cls in _CANDIDATES[("INTEGER_CONSTANT", "decimal")]:
+        if value <= max_value:
+            return cls(int=value)
+    raise ParserError(
+        f"synthetic integer constant {value} out of range "
+        f"(c6502 has no `long long`)"
     )
 
 
@@ -465,10 +522,12 @@ class _ASTBuilder(Transformer):
     # Alternatives of `exp` — each named in c99.lark.
     @v_args(inline=True)
     def const(self, token):
-        # `const: INTEGER_CONSTANT`. Strip any C99 size suffix
-        # (`L`/`LL`), reject unsigned suffixes, then dispatch on the
-        # numeric value to the right `Type_const` variant.
-        return _make_const(_parse_integer_text(str(token)))
+        # `const: INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER
+        # | ULONG_INTEGER`. The lex split is by suffix presence only;
+        # `_const_for_token` consults the C99 §6.4.4.1 type list
+        # (keyed by token-kind + base) and picks the first variant
+        # whose range fits the value.
+        return _const_for_token(token)
 
     @v_args(inline=True)
     def constant(self, c):
@@ -530,7 +589,7 @@ class _ASTBuilder(Transformer):
             rval=c99_ast.Binary(
                 op=op,
                 left=operand,
-                right=c99_ast.Constant(const=_make_const(1)),
+                right=c99_ast.Constant(const=_make_int_const(1)),
             ),
         )
 

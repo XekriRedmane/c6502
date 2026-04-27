@@ -118,14 +118,22 @@ _ASR8 = "asr8"
 def _to_asm_static_init(
     init: tac_ast.Type_static_init,
 ) -> asm_ast.Type_static_init:
-    """Translate a TAC static_init to its asm counterpart. The two
-    sums are 1-to-1 (`IntInit(int) | LongInit(int)`), so this is a
-    pure rewrap — the variant tells the asm side whether to lay out
-    a 1-byte (`IntInit`) or 2-byte (`LongInit`) cell."""
+    """Translate a TAC static_init to its asm counterpart. The asm
+    sum carries only the two width variants (`IntInit` / `LongInit`),
+    so unsigned variants from TAC collapse onto the matching width:
+    UIntInit → IntInit, ULongInit → LongInit. The integer value
+    passes through unchanged; asm_emit's `_check_byte` (0..255) and
+    `_check_word` (-32768..65535) bound the rendered cell, so an
+    unsigned 0..255 / 0..65535 value lays down identically to the
+    signed wrapper would have for the same numeric value."""
     match init:
         case tac_ast.IntInit(int=v):
             return asm_ast.IntInit(int=v)
         case tac_ast.LongInit(int=v):
+            return asm_ast.LongInit(int=v)
+        case tac_ast.UIntInit(int=v):
+            return asm_ast.IntInit(int=v)
+        case tac_ast.ULongInit(int=v):
             return asm_ast.LongInit(int=v)
     raise TypeError(f"unexpected static_init: {init!r}")
 
@@ -168,9 +176,13 @@ class Translator:
         self._symbols = symbols
 
     def _size_of(self, val: tac_ast.Type_val) -> int:
-        """1 for an Int-typed val, 2 for a Long-typed val. Constants
-        dispatch on the const variant; Vars look up the symbol-table
-        type. Unknown Vars (synthetic test AST) default to 1."""
+        """1 for a 1-byte-typed val (Int / UInt), 2 for a 2-byte-
+        typed val (Long / ULong). Constants dispatch on the const
+        variant — TAC has only ConstInt/ConstLong (signedness is
+        collapsed at the byte level), so width follows directly.
+        Vars look up the symbol-table type, which still carries the
+        full c99 signedness. Unknown Vars (synthetic test AST)
+        default to 1."""
         match val:
             case tac_ast.Constant(const=tac_ast.ConstLong()):
                 return 2
@@ -181,7 +193,9 @@ class Translator:
                     self._symbols.get(name)
                     if self._symbols is not None else None
                 )
-                if sym is not None and isinstance(sym.type, c99_ast.Long):
+                if sym is not None and isinstance(
+                    sym.type, (c99_ast.Long, c99_ast.ULong),
+                ):
                     return 2
                 return 1
         raise TypeError(f"unexpected val: {val!r}")
@@ -259,6 +273,8 @@ class Translator:
                 return self._translate_ret(val)
             case tac_ast.SignExtend(src=src, dst=dst):
                 return self._translate_sign_extend(src, dst)
+            case tac_ast.ZeroExtend(src=src, dst=dst):
+                return self._translate_zero_extend(src, dst)
             case tac_ast.Truncate(src=src, dst=dst):
                 # The k-th byte of a 2-byte memory layout is at
                 # base+k (little-endian), so the source's offset-0
@@ -354,6 +370,24 @@ class Translator:
             asm_ast.Label(name=neg_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_REG_A),
             asm_ast.Label(name=end_label),
+            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
+        ]
+
+    def _translate_zero_extend(
+        self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """UInt → ULong (or UInt → Long) zero-extension. Copy the
+        source byte into the dst's low byte, then write a literal 0
+        into the high byte. No branch needed: the new high byte is
+        unconditionally zero, regardless of the source's bit pattern.
+        Routes the source byte through A so memory-to-memory dst
+        layouts work uniformly."""
+        src_op = translate_val(src)
+        dst_op = translate_val(dst)
+        return [
+            asm_ast.Mov(src=src_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+            asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
         ]
 

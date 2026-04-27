@@ -61,26 +61,46 @@ takes one AST and returns another (or text for emit):
    *definition* is the FunctionDecl variant with `body=Block(...)`,
    while a forward declaration has `body=None`. Both `var_decl` and
    `function_decl` carry a required `data_type` (one of `Int()`,
-   `Long()`, or — for functions — `FunType(params, ret)`) and an
-   optional `storage_class` (`Static()` / `Extern()` / None). The
-   parser builds the function's `FunType` from the per-param
-   `type_specifier+` runs and the return-type specifiers. A
-   `<param_list>` is `void` (empty params) or comma-separated
-   `<type_specifier>+ IDENT` pairs. Parameter *names* live on the
-   function_decl's `params` array; their *types* live in parallel
-   on `data_type.params`.
+   `Long()`, `UInt()`, `ULong()`, or — for functions —
+   `FunType(params, ret)`) and an optional `storage_class`
+   (`Static()` / `Extern()` / None). The parser builds the function's
+   `FunType` from the per-param `type_specifier+` runs and the
+   return-type specifiers. A `<param_list>` is `void` (empty params)
+   or comma-separated `<type_specifier>+ IDENT` pairs. Parameter
+   *names* live on the function_decl's `params` array; their *types*
+   live in parallel on `data_type.params`.
 
-   The type vocabulary is two integer types — `Int()` is 1-byte signed
-   (-128..127), `Long()` is 2-byte signed (-32768..32767). The parser's
-   `_make_const(value)` factory dispatches integer literals to the
-   smallest-fitting variant: -128..127 → `ConstInt(int)`, the rest of
-   the signed-2-byte range → `ConstLong(int)`, anything outside →
-   `ParserError`. `Constant(const)` wraps the resulting `Type_const`.
-   `_split_specifiers` validates the run of specifier tokens (`int`,
-   `long`, `static`, `extern`) and splits it into the (data_type,
-   storage_class) pair, rejecting multiple type specifiers, multiple
-   storage classes, missing type, `long long`, and unsigned suffixes
-   (`5U`).
+   The type vocabulary is four integer types: `Int()` is 1-byte
+   signed (-128..127), `Long()` is 2-byte signed (-32768..32767),
+   `UInt()` is 1-byte unsigned (0..255), `ULong()` is 2-byte unsigned
+   (0..65535). The lexer splits integer literals into four terminals
+   by suffix (`INTEGER_CONSTANT` for no suffix, `LONG_INTEGER` for
+   `L`/`LL`, `UINT_INTEGER` for `U`-only, `ULONG_INTEGER` for `U+L`
+   in any order). The parser's `_const_for_token` then maps each
+   token + base (decimal vs. hex/octal) to a c99 const variant per
+   the C99 §6.4.4.1 paragraph 5 type-list rule (first type whose
+   range fits the value):
+   * unsuffixed decimal:    int → long
+   * unsuffixed hex/octal:  int → unsigned int → long → unsigned long
+   * `L` decimal:           long
+   * `L` hex/octal:         long → unsigned long
+   * `U`:                   unsigned int → unsigned long
+   * `UL` (any order):      unsigned long
+
+   Picking `ConstInt`/`ConstLong`/`ConstUInt`/`ConstULong` from those
+   lists (and rejecting any literal whose only fitting type would be
+   `long long` / `unsigned long long`, since c6502 doesn't model
+   them). `LL`/`ll` suffixes parse but are rejected with a
+   "long long not supported" error. `Constant(const)` wraps the
+   resulting `Type_const`. `_split_specifiers` validates the run of
+   specifier tokens (`int`, `long`, `signed`, `unsigned`, `static`,
+   `extern`) and splits it into the `(data_type, storage_class)`
+   pair. `_resolve_data_type` decodes the C99 §6.7.2 combinations
+   c6502 supports (`int` / `signed [int]` → Int; `unsigned [int]` →
+   UInt; `long [int]` / `signed long [int]` → Long;
+   `unsigned long [int]` → ULong), rejecting multiple type
+   specifiers, multiple storage classes, missing type, `long long`,
+   and `signed unsigned`.
    A `<block>` is `{ <block_item>* }` (its own AST product type
    `Block(block_item*)` so a function body is `Function(name,
    Block([...]))`). A block item is a declaration (`var_decl` or
@@ -125,10 +145,11 @@ takes one AST and returns another (or text for emit):
    `--` keep their `unary_exp` operand because the cast result isn't
    an lvalue (so `++(int)x` is a parse error). The LPAREN-vs-paren-
    expr ambiguity is resolved at LALR(1) by the next token after `(`:
-   `INT` / `LONG` → cast; anything else → parenthesised exp. Each
-   `Cast(target_type, exp)` carries a resolved `Int()` / `Long()`
-   target type (built by the `type_name: type_specifier+` rule, which
-   reuses `_resolve_data_type`).
+   any type-specifier token (`INT`, `LONG`, `SIGNED`, `UNSIGNED`) →
+   cast; anything else → parenthesised exp. Each
+   `Cast(target_type, exp)` carries a resolved `Int()` / `Long()` /
+   `UInt()` / `ULong()` target type (built by the `type_name:
+   type_specifier+` rule, which reuses `_resolve_data_type`).
    The assignment LHS is loosened from C99's
    `unary-expression` to `conditional_exp`, so `1+2=3+4` and
    `(1?2:a)=5` both parse — identifier resolution rejects the non-lvalue
@@ -293,14 +314,16 @@ takes one AST and returns another (or text for emit):
 5. `passes.type_checking.check_program` — `(c99_ast, SymbolTable)`.
    Walks the AST once and produces a `SymbolTable` (a `dict[str,
    Symbol]` keyed by resolved identifier name). The data-type
-   classes (`Int`, `Long`, `FunType`) live on `c99_ast` and are re-
-   exported here under stable `passes.type_checking.<Name>` names so
-   every consumer agrees on the type vocabulary; equality is
-   structural via `@dataclass`. Each `Symbol` carries a `type` plus
-   an `IdAttr` describing its runtime category:
+   classes (`Int`, `Long`, `UInt`, `ULong`, `FunType`) live on
+   `c99_ast` and are re-exported here under stable
+   `passes.type_checking.<Name>` names so every consumer agrees on
+   the type vocabulary; equality is structural via `@dataclass`.
+   Each `Symbol` carries a `type` plus an `IdAttr` describing its
+   runtime category:
    - `LocalAttr` — automatic-storage object (block-scope `int x;`
-     / `long x;`, function parameter, or any TAC temporary
-     introduced by `c99_to_tac`).
+     / `long x;` / `unsigned int x;` / `unsigned long x;`,
+     function parameter, or any TAC temporary introduced by
+     `c99_to_tac`).
    - `StaticAttr(initial_value, is_global)` — every file-scope
      object plus block-scope `static`. `initial_value` is one of
      `Initial(c)`, `Tentative`, or `NoInitializer` per C99 §6.9.2.
@@ -314,20 +337,31 @@ takes one AST and returns another (or text for emit):
    place — every `Constant` / `Var` / `Cast` / `Unary` / `Binary` /
    `Assignment` / `Postfix` / `Conditional` / `FunctionCall` ends up
    tagged with its concrete result type. Constants pick from the
-   const variant (ConstInt → Int, ConstLong → Long); Cast picks its
-   target_type; Var picks the symbol's type; Unary / Postfix inherit
-   the inner operand's type, except `!` which always yields Int per
-   §6.5.3.3.5.
+   const variant (ConstInt → Int, ConstLong → Long, ConstUInt →
+   UInt, ConstULong → ULong); Cast picks its target_type; Var picks
+   the symbol's type; Unary / Postfix inherit the inner operand's
+   type, except `!` which always yields Int per §6.5.3.3.5.
 
    **Implicit conversions** apply C99 §6.3.1.8's usual arithmetic
-   conversions on a restricted two-type world: matching types pass
-   through; an Int / Long mix promotes the Int operand to Long. The
-   narrower operand is wrapped in an implicit `Cast(target=common,
-   exp=…, data_type=common)` via `_convert_to(exp, target)`, so by
-   the time TAC sees the tree every operand has its concrete
-   data_type and any size-changing conversion is an explicit Cast
-   node. The same `_convert_to` helper runs at every place C99
-   specifies a conversion:
+   conversions across the four-type vocabulary, keyed by C99
+   §6.3.1.1 conversion rank (`Int` and `UInt` are rank 1;
+   `Long` and `ULong` are rank 2):
+   * matching types → that type
+   * both signed (or both unsigned) → the higher-rank type wins
+     (Int+Long → Long, UInt+ULong → ULong)
+   * mixed signedness, unsigned has rank ≥ signed → unsigned wins
+     (Int+UInt → UInt, Int+ULong → ULong, Long+ULong → ULong)
+   * mixed signedness, signed has higher rank and can represent
+     all unsigned values → signed wins (Long+UInt → Long, since
+     Long's -32768..32767 covers UInt's 0..255)
+
+   The narrower or signed-displaceable operand is wrapped in an
+   implicit `Cast(target=common, exp=…, data_type=common)` via
+   `_convert_to(exp, target)`, so by the time TAC sees the tree
+   every operand has its concrete data_type and any size- or
+   signedness-changing conversion is an explicit Cast node. The
+   same `_convert_to` helper runs at every place C99 specifies a
+   conversion:
    - **Binary** operands (§6.3.1.8): both promoted to the common
      type before the op.
    - **Assignment** rval (§6.5.16.1): converted to lval's type.
@@ -354,10 +388,11 @@ takes one AST and returns another (or text for emit):
    Errors raised (`TypeCheckError`):
    - Function used as a variable / variable called as a function.
    - Wrong call arity.
-   - Mismatched binary-operator operand types (only when neither is
-     an object type — Int/Long mixes are handled by promotion now).
+   - Mismatched binary-operator operand types (only when neither
+     is an object type — every Int/Long/UInt/ULong mix is handled
+     by promotion now).
    - Initializer / cast / return-value types not assignable.
-   - Cast target isn't an object type (no `FunType` casts).
+   - Cast target isn't an integer object type (no `FunType` casts).
    - Incompatible redeclaration of an object or function (signature
      differs, or linkage disagrees with prior).
    - Multiple definitions (function with `defined=True` already, or
@@ -381,30 +416,50 @@ takes one AST and returns another (or text for emit):
       variable declarations and forward function declarations emit
       nothing here. Block-scope variable declarations with a storage
       class (`static` / `extern`) also skip TAC emission at the
-      declaration site; plain `int x [= e];` / `long x [= e];`
-      lowers to a `Copy` from the evaluated initializer into the var.
+      declaration site; plain `int x [= e];` / `long x [= e];` /
+      `unsigned int x [= e];` / `unsigned long x [= e];` lowers to
+      a `Copy` from the evaluated initializer into the var.
    2. Iterate the symbol table once. Each `StaticAttr` entry whose
       `initial_value` is `Initial(c)` (use `c`) or `Tentative` (use
-      `0`) becomes a TAC `StaticVariable`, with a typed `IntInit(v)`
-      / `LongInit(v)` chosen by the variable's declared type;
-      `NoInitializer` entries describe a reference to a definition
-      elsewhere and emit nothing.
+      `0`) becomes a TAC `StaticVariable`, with a typed
+      `IntInit(v)` / `LongInit(v)` / `UIntInit(v)` / `ULongInit(v)`
+      chosen by the variable's declared type; `NoInitializer`
+      entries describe a reference to a definition elsewhere and
+      emit nothing.
 
-   The c99 and TAC ASDLs declare parallel `data_type` / `const`
-   sums (`Int | Long | FunType` and `ConstInt(int) | ConstLong(int)`),
-   so translation between them is a one-to-one rewrap
-   (`_to_tac_data_type`, `_to_tac_const`); the helpers
-   `_tac_const_for(t, v)` and `_tac_const_val(t, v)` build typed
-   constants for the synthetic-constant call sites (postfix `+1`,
-   short-circuit 0/1, implicit `return 0` per declared return type).
+   The c99 and TAC ASDLs declare parallel `data_type` sums
+   (Int / Long / UInt / ULong / FunType), so translating data_type
+   is a one-to-one rewrap (`_to_tac_data_type`). The TAC `const`
+   sum is narrower (only `ConstInt(int) | ConstLong(int)`) — the
+   6502 doesn't care about signedness at the byte level, so
+   `_to_tac_const` collapses unsigned variants onto the matching
+   width: `ConstUInt(v) → ConstInt(v)`, `ConstULong(v) →
+   ConstLong(v)`. The integer value passes through unchanged;
+   downstream `_byte_at` masks each byte with `& 0xFF`, so the bit
+   pattern is preserved regardless of how the integer is
+   interpreted. The TAC `static_init` sum, on the other hand,
+   keeps signedness alongside width (IntInit / LongInit /
+   UIntInit / ULongInit) — `_tac_static_init_for(t, v)` dispatches
+   on the declared type. The helpers `_tac_const_for(t, v)` and
+   `_tac_const_val(t, v)` build typed constants for the synthetic-
+   constant call sites (postfix `+1`, short-circuit 0/1, implicit
+   `return 0`); they pick by width since TAC `const` collapses
+   sign — `Int`/`UInt` → `ConstInt(v)`, `Long`/`ULong` →
+   `ConstLong(v)`.
 
-   **Cast lowering.** `Cast(target, exp)` lowers to the inner val
-   plus one of:
-   - `SignExtend(src, dst)` for Int → Long
-   - `Truncate(src, dst)` for Long → Int
-   - elide (just return inner's val) for matching types
-   The source type comes from the inner node's `data_type` (set by
-   the type checker); a `None` data_type — synthetic AST that
+   **Cast lowering.** `Cast(target, exp)` lowers based on the byte
+   widths of the source and target c99 types; same-width casts
+   are no-ops because the 6502 has no signedness distinction:
+   - same width (`Int↔UInt`, `Long↔ULong`, plus matching types) →
+     elide (just return inner's val)
+   - 1B → 2B with a *signed* source (`Int → Long` /
+     `Int → ULong`) → `SignExtend(src, dst)`
+   - 1B → 2B with an *unsigned* source (`UInt → Long` /
+     `UInt → ULong`) → `ZeroExtend(src, dst)`
+   - 2B → 1B (any signedness combination) →
+     `Truncate(src, dst)`
+   The source type comes from the inner node's `data_type` (set
+   by the type checker); a `None` data_type — synthetic AST that
    bypassed type-checking — falls back to the elide path so unit
    tests of pure Cast translation stay focused.
 
@@ -427,8 +482,9 @@ takes one AST and returns another (or text for emit):
    its body falls off without an explicit return (C99 §5.1.2.2.3
    mandates this for `main`; we apply it generally so every TAC
    function terminates). The constant's variant matches the
-   function's declared return type — Long-returning functions get
-   `ConstLong(0)`, Int-returning ones get `ConstInt(0)`.
+   function's declared return type — 2-byte-returning functions
+   (Long / ULong) get `ConstLong(0)`, 1-byte-returning ones
+   (Int / UInt) get `ConstInt(0)`.
    `FunctionDecl` block items lower to nothing.
    `FunctionCall(name, args)` lowers to: evaluate each arg in
    source order (left-most temp first), collect the resulting TAC
@@ -462,19 +518,22 @@ takes one AST and returns another (or text for emit):
    `Function(name, is_global, params, instructions)` and
    `StaticVariable(name, is_global, init)`. Each TAC `Function`
    lowers atom by atom; each TAC `StaticVariable` rides through to
-   an asm `StaticVariable` unchanged, with the typed init
-   (`IntInit | LongInit`) rewrapped 1-to-1. The asm side has no
-   `data_type` field — the variant of the init alone determines
-   the cell size at emit (DC.B for IntInit, DC.W for LongInit).
+   an asm `StaticVariable`, with the asm-side init carrying only
+   the two width variants (`IntInit | LongInit`) — TAC's
+   `UIntInit(v)` collapses to asm `IntInit(v)` and `ULongInit(v)`
+   to `LongInit(v)`. The asm side has no `data_type` field — the
+   variant of the init alone determines the cell size at emit
+   (DC.B for IntInit, DC.W for LongInit).
 
    **The asm IR is strictly 1:1 with 6502 opcodes** — no width
    tagging anywhere. The 6502 is an 8-bit machine, so every asm
    instruction is implicitly Byte-typed. That makes `tac_to_asm`
    the single home of all 16-bit lowering: for each TAC instruction
-   whose operands are `Long` (per the symbol table), the translator
-   emits a sequence of byte-level asm atoms — typically two passes
-   (low byte, then high byte) with the 6502's carry flag threading
-   naturally between them for arithmetic.
+   whose operands are 2-byte (`Long` or `ULong`, per the symbol
+   table), the translator emits a sequence of byte-level asm atoms
+   — typically two passes (low byte, then high byte) with the
+   6502's carry flag threading naturally between them for
+   arithmetic.
 
    **Per-byte addressing.** `Pseudo` and `Data` carry an `int
    offset` field that selects which byte of a multi-byte value the
@@ -487,11 +546,15 @@ takes one AST and returns another (or text for emit):
    bump their `offset` by k.
 
    **Operand-size dispatch.** `Translator._size_of(val)` returns 1
-   (Int) or 2 (Long) by reading the symbol table for Vars and the
-   const variant for Constants. Each per-instruction lowering
-   keys off this size — Int operands lower to today's single-byte
-   sequences; Long operands lower to byte-pair sequences with
-   carry threading where appropriate. Examples:
+   for 1-byte types (Int / UInt) or 2 for 2-byte types (Long /
+   ULong) by reading the symbol table for Vars and the const
+   variant for Constants (TAC `const` collapses sign, so its
+   variant alone gives the width). Each per-instruction lowering
+   keys off this size — 1-byte operands lower to today's single-
+   byte sequences; 2-byte operands lower to byte-pair sequences
+   with carry threading where appropriate. Signedness only matters
+   for ordering comparisons and shifts; everywhere else the byte
+   sequences are identical. Examples:
    - `Copy(src, dst)`: 1 Mov for Int, 2 Movs (lo, hi) for Long.
    - `Binary(Add, …)` Long: `Mov src1.lo→A; CLC; Add(src2.lo, A);
      Mov A→dst.lo; Mov src1.hi→A; Add(src2.hi, A); Mov A→dst.hi`.
@@ -509,24 +572,30 @@ takes one AST and returns another (or text for emit):
    - `JumpIfFalse(Long_cond, target)`: `Mov(cond.lo, A);
      Or(cond.hi, A); Branch(EQ, target)` — the OR sets Z=1 iff
      both bytes are zero, i.e. the 16-bit value is zero.
-   - `Mul/Div/Mod/Shift` on Long: not implemented yet — the runtime
-     helpers (mul8/divmod8/shl8/asr8) are 8-bit only and the
-     16-bit equivalents (mul16/divmod16/shl16/asr16) aren't in
-     this repo. `_require_byte_helper` raises `NotImplementedError`
-     at TAC-translation time so the failure points at the source-
-     level construct.
+   - `Mul/Div/Mod/Shift` on 2-byte operands (Long or ULong): not
+     implemented yet — the runtime helpers (mul8/divmod8/shl8/asr8)
+     are 8-bit only and the 16-bit equivalents (mul16/divmod16/
+     shl16/asr16) aren't in this repo. `_require_byte_helper` raises
+     `NotImplementedError` at TAC-translation time so the failure
+     points at the source-level construct.
 
    **Cast lowering.**
-   - `Truncate(src, dst)` (Long → Int): `Mov(_byte_at(src, 0),
-     dst)` — memory is little-endian, so the source's offset-0
+   - `Truncate(src, dst)` (any 2B → any 1B): `Mov(_byte_at(src,
+     0), dst)` — memory is little-endian, so the source's offset-0
      byte is the low byte, and the high byte is just discarded.
-   - `SignExtend(src, dst)` (Int → Long): inline byte sequence —
-     `Mov(src, A); Mov(A, dst.lo); Branch(MI, sx_neg@N); LDA #$00;
-     Jump(sx_done@N); Label(sx_neg@N); LDA #$FF; Label(sx_done@N);
-     Mov(A, dst.hi)`. The framing LDA sets N based on the source
-     byte's sign; STA preserves flags so BMI sees the right N.
-     The two minted labels come from the Translator's program-
-     global counter.
+     Used for Long → Int, ULong → Int, Long → UInt, ULong → UInt.
+   - `SignExtend(src, dst)` (signed 1B → any 2B): inline byte
+     sequence — `Mov(src, A); Mov(A, dst.lo); Branch(MI, sx_neg@N);
+     LDA #$00; Jump(sx_done@N); Label(sx_neg@N); LDA #$FF;
+     Label(sx_done@N); Mov(A, dst.hi)`. The framing LDA sets N
+     based on the source byte's sign; STA preserves flags so BMI
+     sees the right N. Used for Int → Long and Int → ULong; the
+     two minted labels come from the Translator's program-global
+     counter.
+   - `ZeroExtend(src, dst)` (unsigned 1B → any 2B): inline byte
+     sequence — `Mov(src, A); Mov(A, dst.lo); LDA #$00; Mov(A,
+     dst.hi)`. No branch needed — the new high byte is
+     unconditionally zero. Used for UInt → Long and UInt → ULong.
 
    Output is correct but redundant — every intermediate is
    materialized through a `Frame` slot. Optimization is deferred to
@@ -552,7 +621,8 @@ takes one AST and returns another (or text for emit):
    `Data(name, offset)` for static-storage references) and lays
    out the function's stack frame. Takes the type-checker's
    SymbolTable so it can size each pseudo by its declared type:
-   `Long` → 2 contiguous bytes, `Int` (or unknown) → 1 byte.
+   2-byte types (`Long` / `ULong`) → 2 contiguous bytes, 1-byte
+   types (`Int` / `UInt` / unknown) → 1 byte.
    Walks each function twice:
    - **Pass 1 (discovery):** mint a *base* offset (the offset of
      byte 0) for every Pseudo name that *isn't* in the function's
@@ -722,31 +792,52 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 ## Status (what works end-to-end through `--codegen`)
 
 - `int main(void) { <block_item>* }`, where a block item is a
-  declaration (`int x;` / `long x;` / `int x = exp;` / `long x = exp;`)
-  or a statement (`return exp;`, `exp;`, `goto label;`, `label:
-  stmt`, a nested `{ ... }` block, or a null `;`). If the body has
-  no `return`, the TAC translator appends an implicit
+  declaration (`int x;` / `long x;` / `unsigned int x;` /
+  `unsigned long x;` / any of those with `= exp;`) or a statement
+  (`return exp;`, `exp;`, `goto label;`, `label: stmt`, a nested
+  `{ ... }` block, or a null `;`). If the body has no `return`,
+  the TAC translator appends an implicit
   `Ret(_tac_const_val(ret_type, 0))` (C99 §5.1.2.2.3 for `main`;
   applied generally so every function terminates), with the
-  constant variant chosen by the function's declared return type.
+  constant width chosen by the function's declared return type.
   Nested blocks open a new variable-resolution scope (per-block
   clone with outer-vs-inner flagging — see pass 2); shadowing
   across blocks is legal, redeclaration in the same block is not.
-- The `long` type and explicit `(int)` / `(long)` casts parse,
-  type-check, and lower all the way through to 6502 asm. 16-bit
-  arithmetic (`+`, `-`, bitwise ops, comparisons, equality, sign-
-  extension on Cast Int→Long, truncation on Cast Long→Int) is
+- All four integer types (`int`, `long`, `unsigned int`,
+  `unsigned long`) and explicit casts among them parse, type-
+  check, and lower all the way through to 6502 asm. 16-bit
+  arithmetic (`+`, `-`, bitwise ops, comparisons, equality,
+  sign-extension on widening signed casts, zero-extension on
+  widening unsigned casts, truncation on narrowing casts) is
   expanded into byte-level sequences by `tac_to_asm` — each
-  operand's type drives the dispatch via the symbol table. Long-
-  typed locals / params / temporaries occupy 2 contiguous frame
-  bytes; Long return values come back with low byte in A and high
-  byte in X (matching the mul8/divmod8 helper convention). The one
-  remaining gap: `*`, `/`, `%`, `<<`, `>>` on Long operands raises
-  `NotImplementedError` in `tac_to_asm` because the 16-bit runtime
-  helpers (`mul16` / `divmod16` / `shl16` / `asr16`) aren't in
-  this repo yet.
+  operand's type drives the dispatch via the symbol table.
+  2-byte-typed locals / params / temporaries occupy 2 contiguous
+  frame bytes; 2-byte return values come back with low byte in A
+  and high byte in X (matching the mul8/divmod8 helper
+  convention). Mixed-type arithmetic goes through C99 §6.3.1.8's
+  usual arithmetic conversions in `passes.type_checking` —
+  `long + unsigned int` promotes the unsigned int to long via a
+  `ZeroExtend`, `int + unsigned int` promotes the int to unsigned
+  int via a same-width no-op cast, etc. Comparison ops still
+  lower as if the operands are signed (`SBC` + V-correction);
+  unsigned ordering would need a separate inline lowering that
+  uses `BCC`/`BCS` instead of the V-corrected `BMI`/`BPL`. The
+  remaining gaps: `*`, `/`, `%`, `<<`, `>>` on 2-byte operands
+  raises `NotImplementedError` in `tac_to_asm` because the 16-bit
+  runtime helpers (`mul16` / `divmod16` / `shl16` / `asr16`)
+  aren't in this repo yet.
 - `int main(void)` returning a single integer expression
-- integer constants
+- integer constants of all four flavors per C99 §6.4.4.1
+  paragraph 5: lex-time split into `INTEGER_CONSTANT` /
+  `LONG_INTEGER` / `UINT_INTEGER` / `ULONG_INTEGER` by suffix,
+  then parser dispatches each (token-kind, base, value) triple to
+  the first variant in C99's type list whose range fits the
+  value (so e.g. `0x80` lex'd as INTEGER_CONSTANT becomes
+  `ConstUInt(128)` because `int`'s range stops at 127 and the
+  hex/octal type list passes through `unsigned int` next, while
+  `0x8000L` becomes `ConstULong(32768)` because the hex/octal `L`
+  list goes `long → unsigned long`). The `LL`/`ll` suffix lexes
+  but the parser rejects it ("long long is not supported")
 - unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`
   — no runtime helper; the framing `LDA` already sets Z)
 - binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops emit `JSR mul8` /
@@ -853,12 +944,22 @@ Lowered all the way to 6502 asm:
   callee's frame; locals at Frame(1)..Frame(M); saved caller FP
   at the 2-byte gap M+1, M+2.
 
+Partially supported: unsigned types (`unsigned int`, `unsigned
+long`) parse and propagate through every pass — values lay down
+correctly, mixed-type arithmetic promotes per C99 §6.3.1.8, and
+explicit casts lower to `SignExtend` / `ZeroExtend` / `Truncate` /
+no-op as appropriate. What still acts signed: `<` / `>` / `<=` /
+`>=` use the V-corrected `SBC` + `BMI`/`BPL` sequence regardless
+of operand signedness, and `>>` always emits `JSR asr8` (signed
+arithmetic right shift) — neither has the unsigned variant
+(`BCC`/`BCS` ordering, `JSR lsr8` for unsigned right shift) wired
+up yet.
+
 Not yet in the pipeline at all: `switch` statements (the loop-
-labeling pass is sole owner of break-targets right now; once switch
-lands its lowering will track its own break-target separately),
-unsigned types (so unsigned right shift and unsigned ordering
-aren't distinguishable from signed yet), the 16-bit runtime
-helpers (`mul16` / `divmod16` / `shl16` / `asr16`) needed to lower
-`*` / `/` / `%` / `<<` / `>>` on Long operands, and the runtime
-header that defines `SSP`/`FP`, initializes `SSP`, sets the reset
-vector, and provides `mul8`/`divmod8`/`shl8`/`asr8`.
+labeling pass is sole owner of break-targets right now; once
+switch lands its lowering will track its own break-target
+separately), the 16-bit runtime helpers (`mul16` / `divmod16` /
+`shl16` / `asr16`) needed to lower `*` / `/` / `%` / `<<` / `>>`
+on 2-byte operands, and the runtime header that defines `SSP`/`FP`,
+initializes `SSP`, sets the reset vector, and provides `mul8` /
+`divmod8` / `shl8` / `asr8`.

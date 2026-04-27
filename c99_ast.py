@@ -189,6 +189,16 @@ class Long(Type_data_type):
     pass
 
 
+@dataclass
+class UInt(Type_data_type):
+    pass
+
+
+@dataclass
+class ULong(Type_data_type):
+    pass
+
+
 @dataclass(kw_only=True)
 class FunType(Type_data_type):
     params: list[Type_data_type] = field(default_factory=list)
@@ -420,4 +430,14 @@ class ConstInt(Type_const):
 
 @dataclass
 class ConstLong(Type_const):
+    int: int
+
+
+@dataclass
+class ConstUInt(Type_const):
+    int: int
+
+
+@dataclass
+class ConstULong(Type_const):
     int: int

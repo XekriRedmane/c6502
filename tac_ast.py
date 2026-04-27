@@ -52,6 +52,12 @@ class SignExtend(Type_instruction):
 
 
 @dataclass
+class ZeroExtend(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
 class Truncate(Type_instruction):
     src: Type_val
     dst: Type_val
@@ -242,6 +248,16 @@ class Long(Type_data_type):
     pass
 
 
+@dataclass
+class UInt(Type_data_type):
+    pass
+
+
+@dataclass
+class ULong(Type_data_type):
+    pass
+
+
 @dataclass(kw_only=True)
 class FunType(Type_data_type):
     params: list[Type_data_type] = field(default_factory=list)
@@ -275,4 +291,14 @@ class IntInit(Type_static_init):
 
 @dataclass
 class LongInit(Type_static_init):
+    int: int
+
+
+@dataclass
+class UIntInit(Type_static_init):
+    int: int
+
+
+@dataclass
+class ULongInit(Type_static_init):
     int: int

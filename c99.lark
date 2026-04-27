@@ -6,15 +6,25 @@
 // Keyword classification is done in the wrapper (lexer.py): the KEYWORDS set
 // is applied to IDENTIFIER tokens after tokenization.
 
-// -- Integer constant (docs/ints_grammar.txt) --
+// -- Integer constant (docs/ints_grammar.txt; C99 §6.4.4.1).
+// Four terminals split by suffix presence — no value-driven splitting at
+// lex time. The parser then maps (token-kind, base, value) to a c99_ast
+// const variant per §6.4.4.1 paragraph 5 ("the type ... is the first of
+// the corresponding list in which its value can be represented"). Both
+// LONG_INTEGER and ULONG_INTEGER also match the `LL` form; the parser
+// rejects it because c6502 has no `long long`.
 _INT_L: /[lL]/
 _INT_LL: /ll|LL/
 _INT_U: /[uU]/
-_INT_SUFFIX: _INT_U (_INT_LL | _INT_L)? | (_INT_LL | _INT_L) _INT_U?
+_LSUFFIX: _INT_LL | _INT_L
 _HEX_INT: /0[xX][0-9a-fA-F]+/
 _DECIMAL_INT: /[1-9][0-9]*/
 _OCTAL_INT: /0[0-7]*/
-INTEGER_CONSTANT: (_HEX_INT | _DECIMAL_INT | _OCTAL_INT) _INT_SUFFIX?
+_BARE_INT: _HEX_INT | _DECIMAL_INT | _OCTAL_INT
+INTEGER_CONSTANT: _BARE_INT
+LONG_INTEGER: _BARE_INT _LSUFFIX
+UINT_INTEGER: _BARE_INT _INT_U
+ULONG_INTEGER: _BARE_INT (_INT_U _LSUFFIX | _LSUFFIX _INT_U)
 
 // -- Floating constant (docs/floats_grammar.txt) --
 // NOTE: fractions use an explicit (?:...) group. Without it, the top-level `|`
@@ -179,7 +189,7 @@ function_decl: specifier+ IDENTIFIER LPAREN param_list RPAREN (SEMICOLON | block
 // and body), but they are kept on function_decl for the future
 // type-checking pass.
 param_list: VOID | type_specifier+ IDENTIFIER (COMMA type_specifier+ IDENTIFIER)*
-type_specifier: INT | LONG
+type_specifier: INT | LONG | SIGNED | UNSIGNED
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
@@ -329,6 +339,9 @@ type_name: type_specifier+
      | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
      | IDENTIFIER                             -> identifier
 const: INTEGER_CONSTANT
+     | LONG_INTEGER
+     | UINT_INTEGER
+     | ULONG_INTEGER
 
 unop: MINUS                         -> negate
     | TILDE                         -> complement
@@ -351,7 +364,8 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
          | BOOL | COMPLEX | IMAGINARY
-         | INTEGER_CONSTANT | FLOATING_CONSTANT | CHARACTER_CONSTANT
+         | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
+         | FLOATING_CONSTANT | CHARACTER_CONSTANT
          | STRING_LITERAL | IDENTIFIER | INVALID_NUMBER
          | ELLIPSIS | LSHIFT_ASSIGN | RSHIFT_ASSIGN
          | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT

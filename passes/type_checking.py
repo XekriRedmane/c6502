@@ -1096,6 +1096,28 @@ class TypeChecker:
                     exp.right = _convert_to(rhs, common)
                     exp.data_type = Int()
                     return Int()
+                # Multiplicative operators (`*`, `/`, `%`) — C99
+                # §6.5.5 requires arithmetic operands for `*` and
+                # `/` and integer operands for `%`. None of those
+                # categories include Pointer, so pointer operands
+                # are flat-out rejected here. (Without this the
+                # failure cascades into `_common_type`'s `type(a)()`
+                # crash on Pointer; better to flag it cleanly.)
+                if (
+                    isinstance(op, (
+                        c99_ast.Multiply, c99_ast.Divide, c99_ast.Modulo,
+                    ))
+                    and (_is_pointer_type(tl) or _is_pointer_type(tr))
+                ):
+                    op_name = {
+                        c99_ast.Multiply: "*",
+                        c99_ast.Divide: "/",
+                        c99_ast.Modulo: "%",
+                    }[type(op)]
+                    raise TypeCheckError(
+                        f"binary '{op_name}' is not defined on pointer "
+                        f"operands ({tl!r} {op_name} {tr!r})"
+                    )
                 # Usual arithmetic conversions (C99 §6.3.1.8): if
                 # operand types differ, promote the narrower one to
                 # the common type by wrapping it in an implicit

@@ -2615,6 +2615,45 @@ class TestPointerUnaryOps(unittest.TestCase):
             "return p && q; }\n"
         )
 
+    def test_multiply_pointer_rejected(self):
+        # C99 §6.5.5 — `*` requires arithmetic operands. Pointer
+        # is rejected on either side.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { int x; int *p; p = &x; "
+                "return p * 2; }\n"
+            )
+        self.assertIn("'*'", str(cm.exception))
+
+    def test_divide_two_pointers_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { int *p; int *q; "
+                "return p / q; }\n"
+            )
+        self.assertIn("'/'", str(cm.exception))
+
+    def test_modulo_pointer_rhs_rejected(self):
+        # Pointer on the right also gets rejected — the check fires
+        # symmetrically.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { int a; int *p; "
+                "return a % p; }\n"
+            )
+        self.assertIn("'%'", str(cm.exception))
+
+    def test_divide_pointer_lhs_int_rhs_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { int x; int *p; p = &x; "
+                "return p / 2; }\n"
+            )
+
     def test_complement_float_rejected(self):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully

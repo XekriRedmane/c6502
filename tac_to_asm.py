@@ -190,6 +190,15 @@ _HARGS = "HARGS"
 # clobber it, so the byte sequence is always "stage to DPTR, then
 # access" with no expectation that DPTR survives across other ops.
 _DPTR = "DPTR"
+# `icall` is the runtime trampoline for indirect function calls:
+# its single instruction is `JMP (DPTR)`, which reads a 2-byte
+# address from the DPTR zero-page slot and jumps there. The caller
+# stages the function pointer's bytes into DPTR, then `JSR icall`
+# — the JSR pushes the return address as usual, the trampoline
+# JMP transfers control to the target, and the target's RTS pops
+# back to the caller. Lives in the runtime header alongside the
+# arithmetic helpers.
+_ICALL = "icall"
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _ASL8 = "asl8"
@@ -459,6 +468,8 @@ class Translator:
                 )
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
                 return self._translate_function_call(name, args, dst)
+            case tac_ast.IndirectCall(ptr=ptr, args=args, dst=dst):
+                return self._translate_indirect_call(ptr, args, dst)
             case tac_ast.GetAddress(operand=operand, dst=dst):
                 return self._translate_get_address(operand, dst)
             case tac_ast.Load(src_ptr=src_ptr, dst=dst):
@@ -834,6 +845,60 @@ class Translator:
             # Float (4B) / Double (8B): the callee left the result
             # in HARGS at the matching helper-output offset. Read it
             # back byte-by-byte through A.
+            in_off = 8 if dst_size == 4 else 16
+            for k in range(dst_size):
+                emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return emitted
+
+    def _translate_indirect_call(
+        self,
+        ptr: tac_ast.Type_val,
+        args: list[tac_ast.Type_val],
+        dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Indirect call through a function pointer. Same shape as
+        the direct path — caller pushes args onto the soft stack,
+        callee's epilogue rewinds SSP — but the call site stages
+        the function pointer's two bytes into DPTR and JSRs the
+        runtime `icall` trampoline (`icall: JMP (DPTR)`). The
+        trampoline JSR pushes the return address as usual, the
+        JMP indirect transfers control to the target function, and
+        the function's RTS returns past the JSR icall. Return-value
+        capture is identical to the direct path.
+
+        DPTR is caller-saved like HARGS — the callee may clobber
+        it freely. We just need it intact at the moment of the
+        JSR icall, which the staging sequence guarantees."""
+        # Push args onto the soft stack (same as direct).
+        arg_sizes = [self._size_of(a) for a in args]
+        total = sum(arg_sizes)
+        emitted: list[asm_ast.Type_instruction] = []
+        if total > 0:
+            emitted.append(asm_ast.AllocateStack(bytes=total))
+            off = 1
+            for arg, sz in zip(args, arg_sizes):
+                arg_op = translate_val(arg)
+                for k in range(sz):
+                    emitted.append(asm_ast.Mov(
+                        src=_byte_at(arg_op, k),
+                        dst=asm_ast.Stack(offset=off + k),
+                    ))
+                off += sz
+        # Stage the function-pointer's two bytes into DPTR, then
+        # JSR the trampoline.
+        emitted.extend(self._stage_dptr(translate_val(ptr)))
+        emitted.append(asm_ast.Call(name=_ICALL))
+        # Capture return value — same byte plan as the direct path.
+        dst_op = translate_val(dst)
+        dst_size = self._size_of(dst)
+        if dst_size == 1:
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+        elif dst_size == 2:
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
+            emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
+        else:
             in_off = 8 if dst_size == 4 else 16
             for k in range(dst_size):
                 emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))

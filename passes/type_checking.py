@@ -1250,16 +1250,33 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"undeclared identifier {name!r}"
                     )
-                if not isinstance(sym.type, FunType):
+                # Two callee shapes:
+                #   FunType                — direct call (`foo()`).
+                #   Pointer(FunType)       — indirect call through a
+                #     function pointer (`fp()`). C99 §6.5.2.2 says
+                #     the callee must have type pointer-to-function;
+                #     §6.3.2.1.4 lets a function name auto-decay to
+                #     a pointer, so both shapes converge on the
+                #     same `FunType` for arg / return checking.
+                # Anything else (Int / Long / etc.) is an error.
+                fn_type: FunType
+                if isinstance(sym.type, FunType):
+                    fn_type = sym.type
+                elif (
+                    isinstance(sym.type, Pointer)
+                    and isinstance(sym.type.referenced_type, FunType)
+                ):
+                    fn_type = sym.type.referenced_type
+                else:
                     raise TypeCheckError(
                         f"variable {name!r} called as a function"
                     )
-                if len(args) != len(sym.type.params):
+                if len(args) != len(fn_type.params):
                     plural = "s" if len(args) != 1 else ""
                     raise TypeCheckError(
                         f"function {name!r} called with {len(args)} "
                         f"argument{plural}, expected "
-                        f"{len(sym.type.params)}"
+                        f"{len(fn_type.params)}"
                     )
                 # Argument conversion (C99 §6.5.2.2.7): each argument
                 # is converted, as if by assignment, to the type of
@@ -1268,12 +1285,12 @@ class TypeChecker:
                 # sees — same shape as Assignment / Binary / Conditional
                 # promotion.
                 for i, (arg, expected) in enumerate(
-                    zip(args, sym.type.params),
+                    zip(args, fn_type.params),
                 ):
                     self._check_exp(arg)
                     args[i] = _convert_to(arg, expected)
-                exp.data_type = sym.type.ret
-                return sym.type.ret
+                exp.data_type = fn_type.ret
+                return fn_type.ret
             case c99_ast.Dereference(exp=inner):
                 # `*e` — operand must have pointer type, result is
                 # the pointee (C99 §6.5.3.2.4). The lvalue-ness of

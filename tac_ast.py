@@ -167,6 +167,13 @@ class FunctionCall(Type_instruction):
     dst: Type_val
 
 
+@dataclass(kw_only=True)
+class IndirectCall(Type_instruction):
+    ptr: Type_val
+    args: list[Type_val] = field(default_factory=list)
+    dst: Type_val
+
+
 @dataclass
 class Type_val:
     pass

@@ -2809,6 +2809,102 @@ class TestStaticPointerInit(unittest.TestCase):
         )
         self.assertIn("DC.W  foo", text)
 
+
+class TestIndirectCall(unittest.TestCase):
+    """Calling through a function pointer. The 6502 has no JSR
+    indirect, so we trampoline: stage the function pointer's two
+    bytes into DPTR, then `JSR icall` (a runtime trampoline whose
+    body is `JMP (DPTR)`)."""
+
+    def _codegen(self, src: str) -> str:
+        from compile import _run_stage
+        return _run_stage("codegen", src)
+
+    def _typecheck(self, src: str) -> None:
+        from compile import _run_stage
+        _run_stage("tac", src)
+
+    def test_indirect_call_no_args(self):
+        # `fp()` with a function-pointer-typed `fp`. The asm
+        # stages fp's two bytes into DPTR and JSRs `icall`.
+        text = self._codegen(
+            "int foo(void) { return 7; }\n"
+            "int main(void) {\n"
+            "  int (*fp)(void) = &foo;\n"
+            "  return fp();\n"
+            "}\n"
+        )
+        self.assertIn("STA   DPTR", text)
+        self.assertIn("STA   DPTR+1", text)
+        self.assertIn("JSR   icall", text)
+
+    def test_indirect_call_with_args(self):
+        # `fp(5)` — args still ride on the soft stack the same as
+        # for a direct call. Only the call-site `JSR` target
+        # differs.
+        text = self._codegen(
+            "int foo(int x) { return x + 1; }\n"
+            "int main(void) {\n"
+            "  int (*fp)(int) = &foo;\n"
+            "  return fp(5);\n"
+            "}\n"
+        )
+        self.assertIn("JSR   icall", text)
+        # The `5` lands in A right before the soft-stack write.
+        self.assertIn("LDA   #$05", text)
+        # Allocate-stack for the 1-byte arg (SSP -= 1).
+        self.assertIn("SBC   #$01", text)
+
+    def test_direct_and_indirect_call_in_same_function(self):
+        # Direct call `foo(...)` keeps the existing `JSR foo`
+        # form; indirect `fp(...)` uses `JSR icall`. Both can
+        # coexist in the same function body.
+        text = self._codegen(
+            "int foo(int x) { return x; }\n"
+            "int main(void) {\n"
+            "  int (*fp)(int) = &foo;\n"
+            "  int a = foo(1);\n"
+            "  int b = fp(2);\n"
+            "  return a + b;\n"
+            "}\n"
+        )
+        self.assertIn("JSR   foo", text)
+        self.assertIn("JSR   icall", text)
+
+    def test_indirect_call_long_return(self):
+        # Indirect call returning Long uses the same A=lo / X=hi
+        # convention as a direct call — the `JSR icall` is
+        # transparent.
+        text = self._codegen(
+            "long foo(void) { return 0x1234L; }\n"
+            "int main(void) {\n"
+            "  long (*fp)(void) = &foo;\n"
+            "  long y = fp();\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        self.assertIn("JSR   icall", text)
+        # After the JSR, the caller stores A then transfers X→A
+        # for the high byte.
+        self.assertIn("TXA", text)
+
+    def test_indirect_call_through_runtime_assigned_pointer(self):
+        # The function pointer doesn't have to be initialized at
+        # compile time — assigning `&foo` at runtime works the
+        # same way (GetAddress + Copy stamps fp's bytes; the
+        # subsequent `fp()` reads them back into DPTR).
+        text = self._codegen(
+            "int foo(void) { return 7; }\n"
+            "int main(void) {\n"
+            "  int (*fp)(void);\n"
+            "  fp = &foo;\n"
+            "  return fp();\n"
+            "}\n"
+        )
+        self.assertIn("LDA   #<foo", text)
+        self.assertIn("LDA   #>foo", text)
+        self.assertIn("JSR   icall", text)
+
     def test_complement_float_rejected(self):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully

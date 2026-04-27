@@ -35,6 +35,15 @@ module TAC {
         | JumpIfFalse(val condition, identifier target)
         | Label(identifier name)
         | FunctionCall(identifier name, val* args, val dst)
+        -- Indirect call via a function pointer. `ptr` is a Pointer-
+        -- typed val whose 2-byte value is the target function's
+        -- address. tac_to_asm stages those bytes into the DPTR
+        -- zero-page slot and JSRs the runtime `icall` trampoline,
+        -- which JMPs (DPTR) to reach the target. Args / return-
+        -- value capture follow the same soft-stack convention as
+        -- direct FunctionCall — the only difference is the call-
+        -- site instruction (`JSR icall` instead of `JSR <name>`).
+        | IndirectCall(val ptr, val* args, val dst)
     val = Constant(const) | Var(identifier name)
     unary_operator = Complement | Negate | LogicalNot
     binary_operator =

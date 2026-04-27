@@ -1142,13 +1142,14 @@ Not yet in the pipeline at all: `switch` statements (the loop-
 labeling pass is sole owner of break-targets right now; once
 switch lands its lowering will track its own break-target
 separately), and the runtime header that defines `SSP` / `FP` /
-`HARGS`, initializes `SSP`, sets the reset vector, and provides
-the runtime helpers `mul8` / `divmod8` / `asl8` / `asr8` /
-`mul16` / `divmod16` / `asl16` / `asr16` plus the 18 FP-conversion
-helpers (`i2f`/`u2f`/`l2f`/`ul2f`, `i2d`/`u2d`/`l2d`/`ul2d`, `f2i`/
-`f2u`/`f2l`/`f2ul`, `d2i`/`d2u`/`d2l`/`d2ul`, `f2d`, `d2f`) and
-the FP arithmetic helpers above. `tac_to_asm` already emits Calls
-to all eight integer helpers and to all 18 conversion helpers, so
-a program that uses `*` / `/` / `%` / `<<` / `>>` or any FP↔int
-or Float↔Double cast assembles but won't link until those helpers
-exist.
+`HARGS` / `DPTR`, initializes `SSP`, sets the reset vector, and
+provides the runtime helpers `mul8` / `divmod8` / `asl8` / `asr8`
+/ `mul16` / `divmod16` / `asl16` / `asr16` plus the 18
+FP-conversion helpers (`i2f`/`u2f`/`l2f`/`ul2f`, `i2d`/`u2d`/`l2d`/
+`ul2d`, `f2i`/`f2u`/`f2l`/`f2ul`, `d2i`/`d2u`/`d2l`/`d2ul`, `f2d`,
+`d2f`), the FP arithmetic helpers above, and the `icall`
+trampoline (`JMP (DPTR)`) used by `IndirectCall`. `tac_to_asm`
+already emits Calls to all of these, so a program that uses
+`*` / `/` / `%` / `<<` / `>>`, any FP↔int or Float↔Double cast,
+or any indirect call (`fp()` where fp is a function pointer)
+assembles but won't link until those helpers exist.

@@ -782,6 +782,23 @@ helpers because TAC's integer `const` collapses signedness onto
 width — by the time the dispatch runs, only the source's c99 type
 (via the symbol table) tells signed from unsigned.
 
+**Indirect call trampoline**: `icall` is a single-instruction
+helper used by `IndirectCall` (call through a function pointer).
+The 6502 has `JMP indirect` but no `JSR indirect`, so we trampoline:
+
+```
+icall:  JMP  (DPTR)
+```
+
+The caller stages the function pointer's two bytes into `DPTR`,
+then `JSR icall`. The `JSR` pushes a return address as usual, the
+trampoline `JMP (DPTR)` transfers control to the target function
+(the address it reads from the `DPTR` zero-page slot), and the
+target's `RTS` pops back to just past the `JSR icall`. `DPTR` is
+caller-saved like `HARGS` — the called function may freely clobber
+it. Args and return values follow the same conventions as a
+direct call (soft-stack args, register / `HARGS` return).
+
 #### Return-value convention
 
 Return values use registers when they fit and `HARGS` when they

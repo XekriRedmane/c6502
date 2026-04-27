@@ -1156,11 +1156,15 @@ class Translator:
                 # `f(arg1, arg2, ...)` lowers to: evaluate each arg
                 # in source order (so its temporaries get the lower
                 # numbers), collect the resulting TAC vals, mint a
-                # fresh dst temp for the return value, and emit a
-                # single `FunctionCall(name, args, dst)` instruction.
-                # Returns dst so the caller can thread the value
-                # through into a later instruction (Copy, Binary,
-                # Ret, ...).
+                # fresh dst temp for the return value, and emit
+                # either a direct `FunctionCall(name, args, dst)`
+                # (when `name` denotes a function — type checker
+                # has stamped sym.type as FunType) or an indirect
+                # `IndirectCall(ptr=Var(name), args, dst)` (when
+                # `name` denotes a pointer-to-function — the type
+                # checker accepts both shapes for the callee). The
+                # arg-evaluation and return-temp logic is identical
+                # either way.
                 arg_vals = [
                     self.translate_exp(a, instrs) for a in args
                 ]
@@ -1171,9 +1175,21 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
-                instrs.append(tac_ast.FunctionCall(
-                    name=name, args=arg_vals, dst=dst,
-                ))
+                sym = self._symbols.get(name)
+                if sym is not None and isinstance(sym.type, c99_ast.Pointer):
+                    # Indirect call — the callee is a function-
+                    # pointer-typed Var. Pass the pointer val (which
+                    # carries the function's address at runtime) to
+                    # IndirectCall; tac_to_asm stages it into DPTR
+                    # before JSR-ing the icall trampoline.
+                    instrs.append(tac_ast.IndirectCall(
+                        ptr=tac_ast.Var(name=name),
+                        args=arg_vals, dst=dst,
+                    ))
+                else:
+                    instrs.append(tac_ast.FunctionCall(
+                        name=name, args=arg_vals, dst=dst,
+                    ))
                 return dst
             case c99_ast.Postfix(op=op, operand=operand):
                 # `a++` (resp. `a--`) returns the *old* value of `a`

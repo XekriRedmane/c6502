@@ -323,6 +323,34 @@ def _tac_const_val(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Con
     return tac_ast.Constant(const=_tac_const_for(t, value))
 
 
+def _fold_fp_cast_constant(
+    source: c99_ast.Type_data_type,
+    target: c99_ast.Type_data_type,
+    c: tac_ast.Type_const,
+) -> tac_ast.Type_const:
+    """Compile-time fold of a Cast whose operand is a Constant and
+    whose source-or-target is FP. Returns a TAC const of `target`'s
+    type. We have to do this work in `c99_to_tac` (rather than the
+    runtime helper-call path) because TAC's `const` collapses integer
+    signedness onto width — by the time `tac_to_asm` sees the constant,
+    it can't tell `Int` from `UInt`. Here `source` is the c99 type
+    (still distinguishing signed and unsigned), so we can pick the
+    right interpretation: an unsigned source masks any negative TAC
+    int back to its unsigned bit pattern (e.g. ConstInt(-1) viewed as
+    UInt → 255) before converting. C99 §6.3.1.4 requires FP→integer
+    truncation toward zero, which is also Python's `int(float)`
+    semantics."""
+    if isinstance(c, (tac_ast.ConstFloat, tac_ast.ConstDouble)):
+        v: int | float = c.float
+    elif isinstance(c, tac_ast.ConstInt):
+        v = c.int & 0xFF if isinstance(source, c99_ast.UInt) else c.int
+    elif isinstance(c, tac_ast.ConstLong):
+        v = c.int & 0xFFFF if isinstance(source, c99_ast.ULong) else c.int
+    else:
+        raise TypeError(f"unexpected TAC const: {c!r}")
+    return _tac_const_for(target, v)
+
+
 def _tac_static_init_for(
     t: c99_ast.Type_data_type, value: int | float,
 ) -> tac_ast.Type_static_init:
@@ -867,19 +895,24 @@ class Translator:
                 # boundary at asm emit's `_check_byte`.
                 return tac_ast.Constant(const=_to_tac_const(c))
             case c99_ast.Cast(target_type=target, exp=inner):
-                # Lower `Cast` based on the byte widths of the source
-                # and target c99 types — the 6502 has no signedness
-                # distinction, so cross-sign casts at the same width
-                # are no-ops:
-                #   same width (Int↔UInt, Long↔ULong, Float↔Float)
+                # Lower `Cast` based on the source/target c99 types.
+                # The 6502 has no signedness distinction, so cross-sign
+                # integer casts at the same width are no-ops; FP types
+                # need explicit conversion nodes because their bit
+                # patterns aren't compatible with integers (or with
+                # each other across precisions):
+                #   src == target                         → no-op
+                #   integer same width (Int↔UInt, Long↔ULong)
                 #                                         → no-op
-                #   1B → 2B, source signed (Int)          → SignExtend
-                #   1B → 2B, source unsigned (UInt)       → ZeroExtend
-                #   2B → 1B integer (any signedness)      → Truncate
-                # FP-involving runtime casts (int↔float, int↔double,
-                # float↔double) need runtime helpers (i2f / f2i / f2d
-                # / d2f / …) that aren't wired up yet — raise here so
-                # the failure points at the source-level construct.
+                #   integer 1B → 2B, source signed (Int)  → SignExtend
+                #   integer 1B → 2B, source unsigned      → ZeroExtend
+                #   integer 2B → 1B (any signedness)      → Truncate
+                #   integer → Float / Double              → IntToFloat /
+                #                                           IntToDouble
+                #   Float / Double → integer              → FloatToInt /
+                #                                           DoubleToInt
+                #   Float ↔ Double                        → FloatToDouble /
+                #                                           DoubleToFloat
                 # The source type comes from the inner node's
                 # `data_type`, set by the type checker. If it's
                 # None (synthetic AST that bypassed type-checking —
@@ -896,24 +929,55 @@ class Translator:
                 tgt_fp = isinstance(
                     target, (c99_ast.Float, c99_ast.Double),
                 )
+                # The temp holds the casted value — its type is the
+                # cast's target.
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(target),
+                )
                 if src_fp or tgt_fp:
-                    raise NotImplementedError(
-                        f"runtime cast between {type(source).__name__} "
-                        f"and {type(target).__name__} is not "
-                        f"implemented yet (would need an FP runtime "
-                        f"helper that isn't in this repo)"
-                    )
+                    # FP-involving cast. If the source is a compile-
+                    # time Constant, fold it in Python here — that
+                    # avoids a runtime helper call AND sidesteps the
+                    # signedness-erasure of TAC integer consts (see
+                    # `_fold_fp_cast_constant` for why).
+                    if isinstance(inner_val, tac_ast.Constant):
+                        return tac_ast.Constant(
+                            const=_fold_fp_cast_constant(
+                                source, target, inner_val.const,
+                            ),
+                        )
+                    # Otherwise the source is a Var — tac_to_asm picks
+                    # the right helper (signed vs. unsigned, 1B vs. 2B
+                    # for integer side; Float vs. Double for FP side)
+                    # by looking up src/dst types in the symbol table.
+                    if src_fp and tgt_fp:
+                        # Float ↔ Double cross-precision (same-precision
+                        # was caught by the source == target check).
+                        node_cls = (
+                            tac_ast.FloatToDouble
+                            if isinstance(source, c99_ast.Float)
+                            else tac_ast.DoubleToFloat
+                        )
+                    elif src_fp:
+                        node_cls = (
+                            tac_ast.FloatToInt
+                            if isinstance(source, c99_ast.Float)
+                            else tac_ast.DoubleToInt
+                        )
+                    else:
+                        node_cls = (
+                            tac_ast.IntToFloat
+                            if isinstance(target, c99_ast.Float)
+                            else tac_ast.IntToDouble
+                        )
+                    instrs.append(node_cls(src=inner_val, dst=dst))
+                    return dst
                 src_w = _byte_width_of(source)
                 tgt_w = _byte_width_of(target)
                 if src_w == tgt_w:
                     # Same width, different signedness — bit pattern
                     # is identical, so the cast carries no codegen.
                     return inner_val
-                # The temp holds the casted value — its type is the
-                # cast's target.
-                dst = tac_ast.Var(
-                    name=self.make_temporary_variable_name(target),
-                )
                 if src_w < tgt_w:
                     if isinstance(source, (c99_ast.Int, c99_ast.Long)):
                         instrs.append(tac_ast.SignExtend(

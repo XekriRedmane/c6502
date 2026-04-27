@@ -493,12 +493,24 @@ takes one AST and returns another (or text for emit):
      `UInt → ULong`) → `ZeroExtend(src, dst)`
    - 2B → 1B (any signedness combination) →
      `Truncate(src, dst)`
-   - any FP-involving runtime cast (int↔float, int↔double,
-     float↔double) → `NotImplementedError` (would need an FP
-     runtime helper that isn't in this repo). Static-storage
-     initializers don't take this path — `_tac_static_init_for`
-     does the int→float conversion in Python at static-init build
-     time.
+   - integer → Float / Double → `IntToFloat(src, dst)` /
+     `IntToDouble(src, dst)`
+   - Float / Double → integer → `FloatToInt(src, dst)` /
+     `DoubleToInt(src, dst)`
+   - Float ↔ Double cross-precision → `FloatToDouble(src, dst)` /
+     `DoubleToFloat(src, dst)`
+   The six FP-conversion nodes are TAC-only (the asm IR is 1:1
+   with 6502 opcodes); `tac_to_asm` lowers each to a runtime
+   helper Call. The TAC nodes themselves carry no signedness or
+   width info — `tac_to_asm` reads the symbol-table types of src
+   and dst to pick the right helper (i2f vs. u2f vs. l2f vs. ul2f
+   on the integer side, f2d / d2f on the FP side). To keep that
+   dispatch simple, `c99_to_tac` compile-time-folds any FP cast
+   whose operand is a TAC `Constant` — folding sidesteps the
+   integer-signedness erasure baked into TAC's `const` sum (see
+   `_fold_fp_cast_constant`). Static-storage initializers also
+   bypass the runtime path: `_tac_static_init_for` does the
+   int→float conversion in Python at static-init build time.
    The source type comes from the inner node's `data_type` (set
    by the type checker); a `None` data_type — synthetic AST that
    bypassed type-checking — falls back to the elide path so unit
@@ -941,10 +953,20 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
 - explicit casts among any of the four integer types lower
   through `SignExtend` / `ZeroExtend` / `Truncate` / no-op as
   appropriate. FP-involving runtime casts (int↔float, int↔double,
-  float↔double) raise `NotImplementedError` at TAC translation
-  time pending FP runtime helpers; static initialisers do the
-  conversion in Python at static-init build time, so e.g.
-  `double x = 3;` lays down `3.0` correctly
+  float↔double) lower through six TAC-only nodes (`IntToFloat` /
+  `IntToDouble` / `FloatToInt` / `DoubleToInt` / `FloatToDouble`
+  / `DoubleToFloat`); `tac_to_asm` marshals operands through HARGS
+  and emits `JSR i2f` / `JSR u2f` / `JSR l2f` / `JSR ul2f` (and
+  the d-variants for double, the f2*/d2* family for FP→int, plus
+  `JSR f2d` / `JSR d2f` for cross-precision), with the helper name
+  picked from the operand's symbol-table type so signed and
+  unsigned conversions go to distinct helpers. Compile-time
+  constant casts are folded in Python by `c99_to_tac` (see
+  `_fold_fp_cast_constant`) — no helper call. Static initialisers
+  also do the conversion in Python at build time, so e.g. `double
+  x = 3;` lays down `3.0` correctly. The 18 conversion helpers
+  themselves aren't in this repo yet — see the runtime-header
+  status note below
 - unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`
   — no runtime helper; the framing `LDA` already sets Z)
 - binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops marshal
@@ -1066,15 +1088,19 @@ variant (`BCC`/`BCS` ordering, `JSR lsr8` / `JSR lsr16` for
 unsigned right shift) wired up yet.
 
 Floating types (`float`, `double`) parse, type-check, and lower
-through to byte-correct IEEE 754 static initialisers and
-block-scope load sequences. What's missing: arithmetic / unary
+through to byte-correct IEEE 754 static initialisers, block-scope
+load sequences, and runtime conversions between FP and integer
+types (the six TAC nodes IntToFloat / IntToDouble / FloatToInt /
+DoubleToInt / FloatToDouble / DoubleToFloat all lower into HARGS-
+marshaled helper Calls). What's still missing: arithmetic / unary
 ops on FP operands (`+` / `-` / `*` / `/` / `<` / `>` / `==` /
-…) and runtime conversions to/from integer types — both raise
-`NotImplementedError` at TAC translation time pending the FP
-runtime library (`fadd` / `fsub` / `fmul` / `fdiv` / `dadd` /
-`dsub` / `dmul` / `ddiv` / `i2f` / `f2i` / `f2d` / `d2f` / …),
-which will marshal operands through HARGS the same way the
-integer helpers do.
+…) raise `NotImplementedError` at TAC translation time pending
+the FP arithmetic runtime helpers (`fadd` / `fsub` / `fmul` /
+`fdiv` / `dadd` / `dsub` / `dmul` / `ddiv`), and the conversion
+helpers themselves (`i2f` / `u2f` / `l2f` / `ul2f` and their
+d-variants, `f2i` / `f2u` / `f2l` / `f2ul` and their d-variants,
+plus `f2d` / `d2f`) aren't in this repo yet either — `tac_to_asm`
+emits the Calls in advance of the runtime header landing.
 
 Not yet in the pipeline at all: `switch` statements (the loop-
 labeling pass is sole owner of break-targets right now; once
@@ -1082,7 +1108,11 @@ switch lands its lowering will track its own break-target
 separately), and the runtime header that defines `SSP` / `FP` /
 `HARGS`, initializes `SSP`, sets the reset vector, and provides
 the runtime helpers `mul8` / `divmod8` / `asl8` / `asr8` /
-`mul16` / `divmod16` / `asl16` / `asr16` (plus the FP helpers
-above). `tac_to_asm` already emits Calls to all eight integer
-helpers, so a program that uses `*` / `/` / `%` / `<<` / `>>`
-assembles but won't link until the helpers exist.
+`mul16` / `divmod16` / `asl16` / `asr16` plus the 18 FP-conversion
+helpers (`i2f`/`u2f`/`l2f`/`ul2f`, `i2d`/`u2d`/`l2d`/`ul2d`, `f2i`/
+`f2u`/`f2l`/`f2ul`, `d2i`/`d2u`/`d2l`/`d2ul`, `f2d`, `d2f`) and
+the FP arithmetic helpers above. `tac_to_asm` already emits Calls
+to all eight integer helpers and to all 18 conversion helpers, so
+a program that uses `*` / `/` / `%` / `<<` / `>>` or any FP↔int
+or Float↔Double cast assembles but won't link until those helpers
+exist.

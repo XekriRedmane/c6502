@@ -64,6 +64,42 @@ class Truncate(Type_instruction):
 
 
 @dataclass
+class IntToFloat(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class IntToDouble(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class FloatToInt(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class DoubleToInt(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class FloatToDouble(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
+class DoubleToFloat(Type_instruction):
+    src: Type_val
+    dst: Type_val
+
+
+@dataclass
 class Unary(Type_instruction):
     op: Type_unary_operator
     src: Type_val

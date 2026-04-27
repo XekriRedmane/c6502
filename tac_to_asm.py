@@ -141,11 +141,37 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 #                                       out: result=HARGS+3..4
 #   asr16    same shape as asl16
 #
-# FP helpers (not implemented yet; layout reserved):
+# FP arithmetic helpers (not implemented yet; layout reserved):
 #   fadd/fsub/fmul/fdiv  in:  A=HARGS+0..3, B=HARGS+4..7
 #                              out: result=HARGS+8..11
 #   dadd/dsub/dmul/ddiv  in:  A=HARGS+0..7, B=HARGS+8..15
 #                              out: result=HARGS+16..23
+#
+# FP/integer conversion helpers (not implemented yet; layout
+# reserved). Inputs at low offsets, output immediately after
+# (matching the existing helper convention). The signed/unsigned and
+# narrow/wide variants are separate helpers because the runtime
+# implementations differ — tac_to_asm picks the right name from the
+# operand's symbol-table type (Int / UInt / Long / ULong vs. Float /
+# Double):
+#   i2f      (signed 1B → float):     in HARGS+0;     out HARGS+1..4
+#   u2f      (unsigned 1B → float):   in HARGS+0;     out HARGS+1..4
+#   l2f      (signed 2B → float):     in HARGS+0..1;  out HARGS+2..5
+#   ul2f     (unsigned 2B → float):   in HARGS+0..1;  out HARGS+2..5
+#   i2d      (signed 1B → double):    in HARGS+0;     out HARGS+1..8
+#   u2d      (unsigned 1B → double):  in HARGS+0;     out HARGS+1..8
+#   l2d      (signed 2B → double):    in HARGS+0..1;  out HARGS+2..9
+#   ul2d     (unsigned 2B → double):  in HARGS+0..1;  out HARGS+2..9
+#   f2i      (float → signed 1B):     in HARGS+0..3;  out HARGS+4
+#   f2u      (float → unsigned 1B):   in HARGS+0..3;  out HARGS+4
+#   f2l      (float → signed 2B):     in HARGS+0..3;  out HARGS+4..5
+#   f2ul     (float → unsigned 2B):   in HARGS+0..3;  out HARGS+4..5
+#   d2i      (double → signed 1B):    in HARGS+0..7;  out HARGS+8
+#   d2u      (double → unsigned 1B):  in HARGS+0..7;  out HARGS+8
+#   d2l      (double → signed 2B):    in HARGS+0..7;  out HARGS+8..9
+#   d2ul     (double → unsigned 2B):  in HARGS+0..7;  out HARGS+8..9
+#   f2d      (float → double):        in HARGS+0..3;  out HARGS+4..11
+#   d2f      (double → float):        in HARGS+0..7;  out HARGS+8..11
 _HARGS = "HARGS"
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
@@ -155,6 +181,35 @@ _MUL16 = "mul16"
 _DIVMOD16 = "divmod16"
 _ASL16 = "asl16"
 _ASR16 = "asr16"
+# Conversion helpers, keyed by (source-c99-type, target-c99-type) at
+# the dispatch site. Signedness rides on the c99 type so we can pick
+# i2f / u2f apart even though TAC's integer constants don't carry it.
+_INT_TO_FLOAT = {
+    c99_ast.Int: "i2f",
+    c99_ast.UInt: "u2f",
+    c99_ast.Long: "l2f",
+    c99_ast.ULong: "ul2f",
+}
+_INT_TO_DOUBLE = {
+    c99_ast.Int: "i2d",
+    c99_ast.UInt: "u2d",
+    c99_ast.Long: "l2d",
+    c99_ast.ULong: "ul2d",
+}
+_FLOAT_TO_INT = {
+    c99_ast.Int: "f2i",
+    c99_ast.UInt: "f2u",
+    c99_ast.Long: "f2l",
+    c99_ast.ULong: "f2ul",
+}
+_DOUBLE_TO_INT = {
+    c99_ast.Int: "d2i",
+    c99_ast.UInt: "d2u",
+    c99_ast.Long: "d2l",
+    c99_ast.ULong: "d2ul",
+}
+_FLOAT_TO_DOUBLE = "f2d"
+_DOUBLE_TO_FLOAT = "d2f"
 
 
 def _to_asm_static_init(
@@ -337,6 +392,31 @@ class Translator:
                 src_op = translate_val(src)
                 dst_op = translate_val(dst)
                 return [asm_ast.Mov(src=_byte_at(src_op, 0), dst=dst_op)]
+            case tac_ast.IntToFloat(src=src, dst=dst):
+                return self._translate_int_to_fp(src, dst, target_double=False)
+            case tac_ast.IntToDouble(src=src, dst=dst):
+                return self._translate_int_to_fp(src, dst, target_double=True)
+            case tac_ast.FloatToInt(src=src, dst=dst):
+                return self._translate_fp_to_int(src, dst, source_double=False)
+            case tac_ast.DoubleToInt(src=src, dst=dst):
+                return self._translate_fp_to_int(src, dst, source_double=True)
+            case tac_ast.FloatToDouble(src=src, dst=dst):
+                # Float → Double widens IEEE 754 single (4B) to double
+                # (8B). Inputs and outputs go through HARGS — see the
+                # `f2d` / `d2f` layout in the constants section.
+                return _translate_helper_call(
+                    inputs=[(translate_val(src), 4)],
+                    helper=_FLOAT_TO_DOUBLE,
+                    output_offset=4, output_size=8,
+                    dst_op=translate_val(dst),
+                )
+            case tac_ast.DoubleToFloat(src=src, dst=dst):
+                return _translate_helper_call(
+                    inputs=[(translate_val(src), 8)],
+                    helper=_DOUBLE_TO_FLOAT,
+                    output_offset=8, output_size=4,
+                    dst_op=translate_val(dst),
+                )
             case tac_ast.Unary(op=op, src=src, dst=dst):
                 return self._translate_unary(op, src, dst)
             case tac_ast.Binary(op=op, src1=src1, src2=src2, dst=dst):
@@ -445,6 +525,72 @@ class Translator:
             asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
         ]
+
+    def _int_type_of(
+        self, val: tac_ast.Type_val,
+    ) -> type[c99_ast.Type_data_type]:
+        """Look up the c99 integer type class (Int / UInt / Long /
+        ULong) of a Var. The conversion-helper dispatch tables key on
+        this class to pick i2f vs. u2f vs. l2f vs. ul2f (and similarly
+        for the other directions). Constants don't reach here —
+        c99_to_tac folds compile-time constant FP casts in Python
+        because the TAC `const` sum doesn't carry signedness."""
+        if not isinstance(val, tac_ast.Var):
+            raise TypeError(
+                "FP conversion helper dispatch requires a Var source/dst; "
+                f"got {val!r}. c99_to_tac should fold Constant casts."
+            )
+        if self._symbols is None:
+            raise TypeError(
+                "FP conversion helper dispatch requires a symbol table"
+            )
+        sym = self._symbols.get(val.name)
+        if sym is None:
+            raise TypeError(f"unknown Var in FP conversion: {val.name}")
+        return type(sym.type)
+
+    def _translate_int_to_fp(
+        self,
+        src: tac_ast.Type_val, dst: tac_ast.Type_val,
+        *, target_double: bool,
+    ) -> list[asm_ast.Type_instruction]:
+        """Int / UInt / Long / ULong → Float or Double via runtime
+        helper. Source byte width comes from the symbol-table type;
+        signedness picks i2f vs. u2f (or i2d vs. u2d, etc.). Output
+        sits at HARGS+(input_bytes); see the helper layout table at
+        the top of the file."""
+        src_type = self._int_type_of(src)
+        table = _INT_TO_DOUBLE if target_double else _INT_TO_FLOAT
+        helper = table[src_type]
+        in_bytes = self._size_of(src)
+        out_bytes = 8 if target_double else 4
+        return _translate_helper_call(
+            inputs=[(translate_val(src), in_bytes)],
+            helper=helper,
+            output_offset=in_bytes, output_size=out_bytes,
+            dst_op=translate_val(dst),
+        )
+
+    def _translate_fp_to_int(
+        self,
+        src: tac_ast.Type_val, dst: tac_ast.Type_val,
+        *, source_double: bool,
+    ) -> list[asm_ast.Type_instruction]:
+        """Float or Double → Int / UInt / Long / ULong via runtime
+        helper. Output byte width and signedness come from the dst's
+        symbol-table type. The helpers truncate toward zero per
+        C99 §6.3.1.4."""
+        dst_type = self._int_type_of(dst)
+        table = _DOUBLE_TO_INT if source_double else _FLOAT_TO_INT
+        helper = table[dst_type]
+        in_bytes = 8 if source_double else 4
+        out_bytes = self._size_of(dst)
+        return _translate_helper_call(
+            inputs=[(translate_val(src), in_bytes)],
+            helper=helper,
+            output_offset=in_bytes, output_size=out_bytes,
+            dst_op=translate_val(dst),
+        )
 
     def _translate_unary(
         self,

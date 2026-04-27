@@ -241,8 +241,9 @@ class TestEmitMovMixed(unittest.TestCase):
 
 
 class TestEmitCall(unittest.TestCase):
-    """Call(name) maps to a single JSR <name>. The runtime helpers
-    mul8 / divmod8 are the two call targets tac_to_asm emits today."""
+    """Call(name) maps to a single JSR <name>. tac_to_asm emits Calls
+    for runtime helpers (mul8 / divmod8 / asl8 / asr8 plus their
+    16-bit variants) and for user-function calls."""
 
     def test_call_mul8(self):
         self.assertEqual(

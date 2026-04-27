@@ -65,11 +65,17 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                threads), V-correction on the high
                                result, branch on MI/PL. Same operand-
                                swap trick used for `>` / `<=`.
-  Binary(Multiply/Divide/   -> Runtime helper Calls. Today only the
-    Modulo/LeftShift/         8-bit helpers (mul8/divmod8/shl8/asr8)
-    RightShift)               are wired up, so a Long operand raises
-                               NotImplementedError pending mul16/
-                               divmod16/shl16/asr16.
+  Binary(Multiply/Divide/   -> Runtime helper Calls. Operands and
+    Modulo/LeftShift/         results are exchanged through the
+    RightShift)               shared zero-page slot block `HSLOT`
+                               (8 bytes); 8-bit operands dispatch
+                               to mul8/divmod8/asl8/asr8, 16-bit
+                               operands to mul16/divmod16/asl16/
+                               asr16. Caller writes inputs into
+                               HSLOT+0..N-1, JSRs, reads the result
+                               from a fixed offset later in the
+                               block (see the constants section
+                               for each helper's layout).
   FunctionCall(name, args,  -> AllocateStack(total_arg_bytes); write
               dst)             each arg's bytes into Stack(off..off+
                                size-1) in source order; Call name; copy
@@ -89,8 +95,9 @@ Mapping highlights (full per-op detail in `translate_binary` /
 
 Calling convention (callee-side, see also `replace_pseudoregisters`):
   - Each Long arg occupies 2 stack bytes (low at the lower offset).
-  - Long return value: low byte in A, high byte in X (matches the
-    mul8 / divmod8 helpers' existing convention).
+  - Long return value: low byte in A, high byte in X. (Runtime
+    helpers use a separate ZP-slot convention — see the HSLOT block
+    above — so user-function and helper return paths are distinct.)
 """
 
 from __future__ import annotations
@@ -104,15 +111,39 @@ from passes.type_checking import SymbolTable
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
 
-# Runtime helper names (8-bit). mul8 / divmod8 return both halves of
-# the result in A and X. shl8 / asr8 take a value in A and a shift
-# count in X and return the shifted value in A. The 16-bit helpers
-# (mul16/divmod16/shl16/asr16) aren't in this repo yet; using `*`,
-# `/`, `%`, `<<`, or `>>` on Long operands raises NotImplementedError.
+# Runtime helpers exchange operands through a shared 8-byte block in
+# zero page. The asm symbol `HSLOT` names the block's base address
+# (defined to $04 by the runtime header); each helper documents its
+# own byte layout within HSLOT+0..HSLOT+7. Inputs sit at the low
+# offsets, outputs at the high offsets, and inputs survive the call.
+#
+# 8-bit helpers:
+#   mul8     in:  A=HSLOT+0, B=HSLOT+1   out: result.lo=HSLOT+2,
+#                                              result.hi=HSLOT+3
+#   divmod8  in:  num=HSLOT+0, den=HSLOT+1
+#                                       out: quot=HSLOT+2, rem=HSLOT+3
+#   asl8     in:  val=HSLOT+0, count=HSLOT+1
+#                                       out: result=HSLOT+2
+#   asr8     same shape as asl8 (signed arithmetic right shift)
+#
+# 16-bit helpers:
+#   mul16    in:  A=HSLOT+0..1, B=HSLOT+2..3
+#                                       out: result=HSLOT+4..7 (32-bit)
+#   divmod16 in:  num=HSLOT+0..1, den=HSLOT+2..3
+#                                       out: quot=HSLOT+4..5,
+#                                            rem=HSLOT+6..7
+#   asl16    in:  val=HSLOT+0..1, count=HSLOT+2 (1 byte)
+#                                       out: result=HSLOT+3..4
+#   asr16    same shape as asl16
+_HSLOT = "HSLOT"
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
-_SHL8 = "shl8"
+_ASL8 = "asl8"
 _ASR8 = "asr8"
+_MUL16 = "mul16"
+_DIVMOD16 = "divmod16"
+_ASL16 = "asl16"
+_ASR16 = "asr16"
 
 
 def _to_asm_static_init(
@@ -315,9 +346,10 @@ class Translator:
         """Stage the return value in registers, then Ret. Convention:
           Int return → A.
           Long return → A = low byte, X = high byte.
-        Matches the mul8 / divmod8 runtime-helper convention so
-        callers can capture a Long return the same way they capture
-        a multi-result helper call."""
+        Two-register Long return keeps the epilogue cheap (no extra
+        memory traffic for short returns). Runtime helpers use a
+        separate ZP-slot convention (see HSLOT) since their multi-
+        byte results don't fit in registers."""
         src_op = translate_val(val)
         size = self._size_of(val)
         if size == 1:
@@ -546,8 +578,9 @@ class Translator:
         call value — no per-call cleanup at the call site.
 
         Return value: an Int return arrives in A. A Long return
-        arrives with A = low byte, X = high byte (matches the
-        mul8/divmod8 helper convention).
+        arrives with A = low byte, X = high byte. (User-function
+        returns use registers; runtime helpers use the HSLOT zero-
+        page block instead.)
         """
         # Compute total arg-stack bytes and per-arg base offsets.
         arg_sizes = [self._size_of(a) for a in args]
@@ -618,19 +651,42 @@ class Translator:
                     setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
                 )
             case tac_ast.Multiply():
-                _require_byte_helper(size, "*")
-                return _translate_ax_call(
-                    src1_op, src2_op, dst_op, _MUL8, result_in_x=False,
+                # 8-bit: mul8 result low byte at HSLOT+2 (the high
+                # byte at HSLOT+3 is discarded — int*int wraps to int
+                # under C's modular semantics). 16-bit: mul16 result
+                # low half at HSLOT+4..5 (the high half at HSLOT+6..7
+                # is discarded for the same reason).
+                helper, out_off = (
+                    (_MUL8, 2) if size == 1 else (_MUL16, 4)
+                )
+                return _translate_helper_call(
+                    inputs=[(src1_op, size), (src2_op, size)],
+                    helper=helper,
+                    output_offset=out_off, output_size=size,
+                    dst_op=dst_op,
                 )
             case tac_ast.Divide():
-                _require_byte_helper(size, "/")
-                return _translate_ax_call(
-                    src1_op, src2_op, dst_op, _DIVMOD8, result_in_x=False,
+                # divmod8/divmod16 quotient sits at the byte(s)
+                # immediately after the inputs; the remainder follows
+                # at the next slot pair (see Modulo below).
+                helper, out_off = (
+                    (_DIVMOD8, 2) if size == 1 else (_DIVMOD16, 4)
+                )
+                return _translate_helper_call(
+                    inputs=[(src1_op, size), (src2_op, size)],
+                    helper=helper,
+                    output_offset=out_off, output_size=size,
+                    dst_op=dst_op,
                 )
             case tac_ast.Modulo():
-                _require_byte_helper(size, "%")
-                return _translate_ax_call(
-                    src1_op, src2_op, dst_op, _DIVMOD8, result_in_x=True,
+                helper, out_off = (
+                    (_DIVMOD8, 3) if size == 1 else (_DIVMOD16, 6)
+                )
+                return _translate_helper_call(
+                    inputs=[(src1_op, size), (src2_op, size)],
+                    helper=helper,
+                    output_offset=out_off, output_size=size,
+                    dst_op=dst_op,
                 )
             case tac_ast.BitwiseAnd():
                 return self._translate_bitwise(
@@ -645,14 +701,38 @@ class Translator:
                     src1_op, src2_op, dst_op, size,
                 )
             case tac_ast.LeftShift():
-                _require_byte_helper(size, "<<")
-                return _translate_ax_call(
-                    src1_op, src2_op, dst_op, _SHL8, result_in_x=False,
+                # asl8: 1B value + 1B count → 1B result at HSLOT+2.
+                # asl16: 2B value + 1B count → 2B result at HSLOT+3.
+                # The type checker promotes both shift operands to a
+                # common type, so for size=2 the count arrives as 2B
+                # — we pass only its low byte (shifts by ≥16 are UB
+                # anyway, so the dropped high byte is irrelevant).
+                if size == 1:
+                    inputs = [(src1_op, 1), (src2_op, 1)]
+                    helper, out_off = _ASL8, 2
+                else:
+                    inputs = [(src1_op, 2), (src2_op, 1)]
+                    helper, out_off = _ASL16, 3
+                return _translate_helper_call(
+                    inputs=inputs, helper=helper,
+                    output_offset=out_off, output_size=size,
+                    dst_op=dst_op,
                 )
             case tac_ast.RightShift():
-                _require_byte_helper(size, ">>")
-                return _translate_ax_call(
-                    src1_op, src2_op, dst_op, _ASR8, result_in_x=False,
+                # `>>` always goes through the signed asr8/asr16 —
+                # c6502 currently treats every integer as signed for
+                # shift purposes (no logical-right-shift helper wired
+                # up yet). Same input-byte layout as LeftShift.
+                if size == 1:
+                    inputs = [(src1_op, 1), (src2_op, 1)]
+                    helper, out_off = _ASR8, 2
+                else:
+                    inputs = [(src1_op, 2), (src2_op, 1)]
+                    helper, out_off = _ASR16, 3
+                return _translate_helper_call(
+                    inputs=inputs, helper=helper,
+                    output_offset=out_off, output_size=size,
+                    dst_op=dst_op,
                 )
             case tac_ast.Equal():
                 return self._translate_equality(
@@ -872,43 +952,47 @@ class Translator:
         return self._unop_atoms(op)
 
 
-def _require_byte_helper(size: int, op_name: str) -> None:
-    """The runtime helpers (`mul8`, `divmod8`, `shl8`, `asr8`) are
-    8-bit only. Using `*`, `/`, `%`, `<<`, or `>>` on Long operands
-    would need 16-bit equivalents (mul16/divmod16/shl16/asr16) that
-    aren't in this repo yet — raise here so the failure points at
-    the source-level construct rather than at a confusing emit-time
-    value-out-of-range."""
-    if size != 1:
-        raise NotImplementedError(
-            f"binary `{op_name}` on long operands is not implemented "
-            f"yet (would need a 16-bit runtime helper that isn't in "
-            f"this repo)"
-        )
+def _hslot(k: int) -> asm_ast.Type_operand:
+    """Reference the k-th byte of the shared zero-page slot block,
+    addressed absolutely as `HSLOT+k` (collapses to `HSLOT` when k=0).
+    The runtime header pins `HSLOT` at $04, so dasm picks zero-page
+    addressing automatically."""
+    return asm_ast.Data(name=_HSLOT, offset=k)
 
 
-def _translate_ax_call(
-    src1_op: asm_ast.Type_operand,
-    src2_op: asm_ast.Type_operand,
-    dst_op: asm_ast.Type_operand,
+def _translate_helper_call(
+    inputs: list[tuple[asm_ast.Type_operand, int]],
     helper: str,
-    result_in_x: bool,
+    output_offset: int,
+    output_size: int,
+    dst_op: asm_ast.Type_operand,
 ) -> list[asm_ast.Type_instruction]:
-    """Lower a TAC op that delegates to a runtime helper taking A and X.
-    src2 is staged through A (the only register the emitter can load
-    from a Frame/Stack/Imm uniformly) into X, then src1 is loaded into
-    A last so A holds the primary operand at the call. If the
-    helper's result comes back in X (Modulo), transfer it to A before
-    storing to dst."""
-    out: list[asm_ast.Type_instruction] = [
-        asm_ast.Mov(src=src2_op, dst=_REG_A),
-        asm_ast.Mov(src=_REG_A, dst=_REG_X),
-        asm_ast.Mov(src=src1_op, dst=_REG_A),
-        asm_ast.Call(name=helper),
-    ]
-    if result_in_x:
-        out.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
-    out.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+    """Lower a TAC op that delegates to a runtime helper using the
+    shared zero-page slot block. `inputs` is a list of
+    `(source-operand, num-bytes)` pairs packed sequentially from
+    `HSLOT+0` upward; the helper reads them in place. After the
+    call, copy `output_size` bytes from `HSLOT+output_offset` into
+    `dst_op`.
+
+    Each byte routes through A — A is the only register that can
+    load uniformly from any source-operand kind, and the only one
+    that can store to a `Data` destination. Inputs survive the call
+    so caller-side dst can safely overlap an input at the TAC level
+    (matters for `x = x * y` etc. once value numbering elides
+    redundant Copies)."""
+    out: list[asm_ast.Type_instruction] = []
+    slot = 0
+    for src_op, sz in inputs:
+        for k in range(sz):
+            out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_hslot(slot)))
+            slot += 1
+    out.append(asm_ast.Call(name=helper))
+    for k in range(output_size):
+        out.append(asm_ast.Mov(
+            src=_hslot(output_offset + k), dst=_REG_A,
+        ))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
     return out
 
 

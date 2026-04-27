@@ -572,12 +572,29 @@ takes one AST and returns another (or text for emit):
    - `JumpIfFalse(Long_cond, target)`: `Mov(cond.lo, A);
      Or(cond.hi, A); Branch(EQ, target)` — the OR sets Z=1 iff
      both bytes are zero, i.e. the 16-bit value is zero.
-   - `Mul/Div/Mod/Shift` on 2-byte operands (Long or ULong): not
-     implemented yet — the runtime helpers (mul8/divmod8/shl8/asr8)
-     are 8-bit only and the 16-bit equivalents (mul16/divmod16/
-     shl16/asr16) aren't in this repo. `_require_byte_helper` raises
-     `NotImplementedError` at TAC-translation time so the failure
-     points at the source-level construct.
+   - `Mul/Div/Mod/Shift` (any operand width): runtime-helper Calls.
+     Operands are exchanged through `HSLOT`, an 8-byte zero-page
+     block (`$04`–`$0B`) that the runtime header pins by name.
+     Caller writes inputs into `HSLOT+0..N-1`, JSRs the helper
+     (mul8/divmod8/asl8/asr8 for 1-byte operands, mul16/divmod16/
+     asl16/asr16 for 2-byte), and reads the result from a fixed
+     offset later in the block. Inputs survive the call. Per-helper
+     layout (inputs → outputs):
+       mul8     A:`+0`, B:`+1`              → product:`+2..+3` (16-bit)
+       divmod8  num:`+0`, den:`+1`          → quot:`+2`, rem:`+3`
+       asl8/    val:`+0`, count:`+1`        → result:`+2`
+        asr8
+       mul16    A:`+0..+1`, B:`+2..+3`      → product:`+4..+7` (32-bit)
+       divmod16 num:`+0..+1`, den:`+2..+3`  → quot:`+4..+5`,
+                                              rem:`+6..+7`
+       asl16/   val:`+0..+1`, count:`+2`    → result:`+3..+4`
+        asr16    (1-byte count: shifts ≥16 are UB, so the high byte
+                  of a promoted-to-Long count is dropped)
+     `RightShift` always dispatches to the signed `asr` variant —
+     c6502 currently treats every integer as signed for shift
+     purposes. The 16-bit helpers themselves aren't in the repo
+     yet; the lowerings emit calls to them in advance of the runtime
+     header landing.
 
    **Cast lowering.**
    - `Truncate(src, dst)` (any 2B → any 1B): `Mov(_byte_at(src,
@@ -608,13 +625,14 @@ takes one AST and returns another (or text for emit):
    source order (low byte at the lower offset for Long args),
    `Call(name)`, then capture the return value. Int return: Mov A
    → dst. Long return: Mov A → dst.lo; Mov X → A; Mov A → dst.hi
-   (return convention: A = low byte, X = high byte, matching the
-   mul8/divmod8 helpers). The callee's epilogue rewinds SSP all
-   the way back to the caller's pre-call value, so there's no
-   per-call cleanup. The runtime helper calls (`mul8` / `divmod8` /
-   `shl8` / `asr8`) emitted by the binary-op lowerings still go
-   straight to `asm_ast.Call` (no `AllocateStack`); they take
-   their operands in registers, not on the soft stack, so they
+   (return convention: A = low byte, X = high byte — two-register
+   so the epilogue stays cheap for short returns). The callee's
+   epilogue rewinds SSP all the way back to the caller's pre-call
+   value, so there's no per-call cleanup. Runtime-helper calls
+   (mul8/mul16/divmod8/divmod16/asl8/asl16/asr8/asr16) emitted by
+   the binary-op lowerings still go straight to `asm_ast.Call`
+   (no `AllocateStack`); they exchange operands through the
+   `HSLOT` zero-page block instead of the soft stack, so they
    bypass the user-function calling convention entirely.
 8. `passes.replace_pseudoregisters.replace_program` — replaces every
    `Pseudo(name, offset)` operand with a `Frame(offset)` (or
@@ -666,13 +684,14 @@ takes one AST and returns another (or text for emit):
 `Pseudo` operands at emit time are an error — they must have been resolved by
 step 8 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
 are TAC-only concepts;
-`tac_to_asm` lowers each to a `Mov`/`Mov`/`Mov`/`Call`/`Mov` sequence
-targeting one of the runtime helpers `mul8` / `divmod8` / `shl8` / `asr8`.
-All take operands in `A` and `X`: `mul8` returns low/high in A/X, `divmod8`
-returns quotient/remainder in A/X, `shl8` returns `A << X` (logical) in A,
-`asr8` returns `A >> X` (arithmetic, sign-preserving) in A. Right shift
-goes through the signed helper because c6502 currently treats all integers
-as signed. The unary `LogicalNot` is lowered inline (no runtime helper):
+`tac_to_asm` lowers each to a sequence of `Mov`s into the shared
+zero-page block `HSLOT` (`$04`–`$0B`), a `Call` to the appropriate
+runtime helper (`mul8`/`divmod8`/`asl8`/`asr8` for 1-byte operands,
+`mul16`/`divmod16`/`asl16`/`asr16` for 2-byte operands), and `Mov`s
+reading the result back out at a helper-specific offset within HSLOT
+(see step 7's per-helper layout table). Right shift always dispatches
+to the signed `asr` variant because c6502 currently treats all
+integers as signed. The unary `LogicalNot` is lowered inline (no runtime helper):
 `Mov src→A; Branch(EQ, true); Mov 0→A; Jump end; true: Mov 1→A; end:
 Mov A→dst`. The framing `Mov(src, A)` already sets Z via `LDA`, so no
 `Compare` is needed before the branch.
@@ -706,9 +725,14 @@ addresses and short-lived `PHA`/`PHP`). This dodges the 256-byte page-1 limit
 and keeps return addresses out of the way during frame teardown.
 
 Reserved zero-page: `$00`/`$01` = `SSP` (soft stack pointer, low/high),
-`$02`/`$03` = `FP` (frame pointer). Both point at the **next-free byte** and
-grow downward. Access is always indirect-indexed: `LDY #off; LDA (SSP),Y` or
-`LDA (FP),Y`, so `Y` is scratch for any soft-stack access.
+`$02`/`$03` = `FP` (frame pointer), `$04`–`$0B` = `HSLOT` (8-byte
+runtime-helper exchange block — see step 7 of the pipeline for each
+helper's per-byte layout). `SSP` and `FP` both point at the
+**next-free byte** and grow downward. SSP/FP access is always
+indirect-indexed: `LDY #off; LDA (SSP),Y` or `LDA (FP),Y`, so `Y`
+is scratch for any soft-stack access. HSLOT bytes are accessed
+absolutely (`LDA HSLOT+k` / `STA HSLOT+k`); dasm picks zero-page
+addressing automatically because the symbol resolves into page 0.
 
 Inside a function `SSP` is unstable (any intra-function push shifts it). So
 every function captures `FP` once in its prelude and addresses args/locals
@@ -748,8 +772,8 @@ annotated sample prologue/epilogue.
   modes but no indirect-Y, so soft-stack values can't be shifted in
   place — load to A, shift, store back. These atoms are present in the
   IR but `tac_to_asm` doesn't emit them yet (`<<`/`>>` go through the
-  `shl8` / `asr8` runtime helpers); they'll be useful once 16-bit
-  shifts land.
+  `asl` / `asr` runtime helpers); they're available for inlining
+  inside the helpers themselves once those land.
 - `Label(name)`, `Jump(target)`, and `Branch(cond, target)` are the
   control-flow atoms. `Label` emits `<name>:` at column 1 (same column
   as the function name); `Jump` is `JMP <target>`; `Branch` is one of
@@ -813,19 +837,21 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   operand's type drives the dispatch via the symbol table.
   2-byte-typed locals / params / temporaries occupy 2 contiguous
   frame bytes; 2-byte return values come back with low byte in A
-  and high byte in X (matching the mul8/divmod8 helper
-  convention). Mixed-type arithmetic goes through C99 §6.3.1.8's
-  usual arithmetic conversions in `passes.type_checking` —
-  `long + unsigned int` promotes the unsigned int to long via a
-  `ZeroExtend`, `int + unsigned int` promotes the int to unsigned
-  int via a same-width no-op cast, etc. Comparison ops still
-  lower as if the operands are signed (`SBC` + V-correction);
-  unsigned ordering would need a separate inline lowering that
-  uses `BCC`/`BCS` instead of the V-corrected `BMI`/`BPL`. The
-  remaining gaps: `*`, `/`, `%`, `<<`, `>>` on 2-byte operands
-  raises `NotImplementedError` in `tac_to_asm` because the 16-bit
-  runtime helpers (`mul16` / `divmod16` / `shl16` / `asr16`)
-  aren't in this repo yet.
+  and high byte in X (two-register Long return so the epilogue
+  stays cheap for short returns; runtime helpers use a separate
+  ZP-slot convention — see HSLOT). Mixed-type arithmetic goes
+  through C99 §6.3.1.8's usual arithmetic conversions in
+  `passes.type_checking` — `long + unsigned int` promotes the
+  unsigned int to long via a `ZeroExtend`, `int + unsigned int`
+  promotes the int to unsigned int via a same-width no-op cast,
+  etc. Comparison ops still lower as if the operands are signed
+  (`SBC` + V-correction); unsigned ordering would need a separate
+  inline lowering that uses `BCC`/`BCS` instead of the V-corrected
+  `BMI`/`BPL`. `*`, `/`, `%`, `<<`, `>>` on 2-byte operands lower
+  to calls to `mul16` / `divmod16` / `asl16` / `asr16` against
+  HSLOT — the marshaling is in place but the helpers themselves
+  aren't in this repo yet, so a Long arithmetic program will
+  assemble but won't link until the runtime header lands.
 - `int main(void)` returning a single integer expression
 - integer constants of all four flavors per C99 §6.4.4.1
   paragraph 5: lex-time split into `INTEGER_CONSTANT` /
@@ -840,12 +866,15 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   but the parser rejects it ("long long is not supported")
 - unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`
   — no runtime helper; the framing `LDA` already sets Z)
-- binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops emit `JSR mul8` /
-  `JSR divmod8` against the runtime helpers — see below)
+- binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops marshal
+  operands into the `HSLOT` zero-page block and emit
+  `JSR mul8` / `JSR divmod8` for 1-byte operands or
+  `JSR mul16` / `JSR divmod16` for 2-byte operands — see below)
 - binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
-- binary `<<` (logical) and `>>` (arithmetic; c6502 assumes signed
-  integers right now). Both emit `JSR shl8` / `JSR asr8` against the
-  runtime helpers
+- binary `<<` and `>>` (`>>` is arithmetic; c6502 assumes signed
+  integers right now). Both marshal through HSLOT and emit
+  `JSR asl8`/`JSR asr8` for 1-byte operands or `JSR asl16`/
+  `JSR asr16` for 2-byte operands
 - binary `==` and `!=` (lower inline to `CMP` + `BEQ`/`BNE` + a 0/1
   select — no runtime helper)
 - binary `<`, `>`, `<=`, `>=` (signed; lower inline to `SBC` with a
@@ -950,16 +979,18 @@ correctly, mixed-type arithmetic promotes per C99 §6.3.1.8, and
 explicit casts lower to `SignExtend` / `ZeroExtend` / `Truncate` /
 no-op as appropriate. What still acts signed: `<` / `>` / `<=` /
 `>=` use the V-corrected `SBC` + `BMI`/`BPL` sequence regardless
-of operand signedness, and `>>` always emits `JSR asr8` (signed
-arithmetic right shift) — neither has the unsigned variant
-(`BCC`/`BCS` ordering, `JSR lsr8` for unsigned right shift) wired
-up yet.
+of operand signedness, and `>>` always emits `JSR asr8` / `JSR
+asr16` (signed arithmetic right shift) — neither has the unsigned
+variant (`BCC`/`BCS` ordering, `JSR lsr8` / `JSR lsr16` for
+unsigned right shift) wired up yet.
 
 Not yet in the pipeline at all: `switch` statements (the loop-
 labeling pass is sole owner of break-targets right now; once
 switch lands its lowering will track its own break-target
-separately), the 16-bit runtime helpers (`mul16` / `divmod16` /
-`shl16` / `asr16`) needed to lower `*` / `/` / `%` / `<<` / `>>`
-on 2-byte operands, and the runtime header that defines `SSP`/`FP`,
-initializes `SSP`, sets the reset vector, and provides `mul8` /
-`divmod8` / `shl8` / `asr8`.
+separately), and the runtime header that defines `SSP` / `FP` /
+`HSLOT`, initializes `SSP`, sets the reset vector, and provides
+the runtime helpers `mul8` / `divmod8` / `asl8` / `asr8` /
+`mul16` / `divmod16` / `asl16` / `asr16`. `tac_to_asm` already
+emits Calls to all eight helpers (the 16-bit ones for Long
+operands), so a Long arithmetic program assembles but won't link
+until the helpers exist.

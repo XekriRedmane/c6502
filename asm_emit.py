@@ -115,8 +115,11 @@ scope INTERNAL keeps the source spelling but the user wrote
 
 (`Unary` no longer exists at the asm AST level — `tac_to_asm`
 lowers TAC `Unary` directly into `Mov`/`Xor`/`ClearCarry`/`Add`
-atoms. Likewise `Mul`/`Div`/`Mod` are TAC-only concepts; `tac_to_asm`
-lowers them to `Call mul8` / `Call divmod8` plus register shuffles.)
+atoms. Likewise `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are
+TAC-only concepts; `tac_to_asm` lowers each to `Mov`s into the
+shared `HSLOT` zero-page block, a `Call` to the appropriate
+runtime helper (mul8/mul16/divmod8/divmod16/asl8/asl16/asr8/asr16,
+keyed off operand size), and `Mov`s reading the result back out.)
 """
 
 from __future__ import annotations

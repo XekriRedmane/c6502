@@ -932,6 +932,7 @@ when a function tears down its frame.
 | `$00`/`$01` | SSP   | soft stack pointer (low / high byte)                     |
 | `$02`/`$03` | FP    | frame pointer (low / high byte)                          |
 | `$04`–`$1B` | HARGS | runtime-helper argument/result exchange block (24 bytes) |
+| `$1C`/`$1D` | DPTR  | dereference / scratch indirect pointer (low / high byte) |
 
 `HARGS` is the I/O block that runtime helpers read inputs from and
 write outputs into; the user-function calling convention (soft-stack
@@ -948,6 +949,28 @@ all 24 bytes, so a function that needs a value to survive a helper
 call has to spill it to a frame slot first. See the per-helper byte
 layouts in `tac_to_asm.py` for the input / output offsets each
 helper uses within `HARGS`.
+
+`DPTR` is the **dereference / scratch indirect pointer** — a single
+2-byte zero-page slot used by the `Load` and `Store` TAC ops to
+reach memory through a pointer. The lowering pattern is always
+"stage the target address into `DPTR`, then access via `(DPTR),Y`":
+
+```
+LDA  ptr+0
+STA  DPTR
+LDA  ptr+1
+STA  DPTR+1
+LDY  #0
+LDA  (DPTR),Y       ; or `STA (DPTR),Y` for a Store
+... LDY #1; LDA (DPTR),Y for the next byte; etc.
+```
+
+Like `HARGS`, `DPTR` is **caller-saved**: any runtime-helper call
+or any unrelated `Load` / `Store` may clobber it, so codegen
+re-stages the address each time a dereference is needed. The
+`AddressOf` operator doesn't touch `DPTR` — it just produces a
+2-byte value (via `LoadAddress`); the computed address only winds
+up in `DPTR` later, when something reads or writes through it.
 
 ### Soft stack convention
 

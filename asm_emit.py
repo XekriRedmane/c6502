@@ -141,6 +141,11 @@ _OPERAND_COL = 9   # "column 10"
 # header `equ`s each to its zero-page address.
 _SSP = "SSP"
 _FP = "FP"
+# DPTR is the dereference / scratch indirect-pointer pair, reserved
+# at zero-page `$1C`/`$1D` by the runtime header. Used by the
+# `Indirect(off)` operand for `(DPTR),Y` indirect-Y access — the
+# addressing mode that backs Load and Store TAC ops.
+_DPTR = "DPTR"
 
 
 def _instr_line(opcode: str, operand: str = "") -> str:
@@ -250,11 +255,16 @@ def _emit_ssp_add(amt: int) -> list[str]:
 
 
 def _indirect_addr(op: asm_ast.Type_operand) -> str:
-    """ZP indirect-Y addressing string for a Stack or Frame operand."""
+    """ZP indirect-Y addressing string for a Stack / Frame /
+    Indirect operand. Each kind picks a different ZP pointer pair
+    (SSP / FP / DPTR); the `,Y` index is supplied separately by an
+    LDY before the access (see _emit_load_y)."""
     if isinstance(op, asm_ast.Stack):
         return f"({_SSP}),Y"
     if isinstance(op, asm_ast.Frame):
         return f"({_FP}),Y"
+    if isinstance(op, asm_ast.Indirect):
+        return f"({_DPTR}),Y"
     raise TypeError(f"not an indirect operand: {op!r}")
 
 
@@ -280,10 +290,14 @@ def _emit_indirect_store(off: int, addr_op: asm_ast.Type_operand) -> list[str]:
 
 
 def _is_memory_operand(op: asm_ast.Type_operand) -> bool:
-    """True iff `op` is a memory operand (Stack/Frame/Data) — i.e.,
-    something that needs a load/store opcode rather than a transfer
-    or immediate. Used at the dispatch boundary in Mov."""
-    return isinstance(op, (asm_ast.Stack, asm_ast.Frame, asm_ast.Data))
+    """True iff `op` is a memory operand (Stack / Frame / Data /
+    Indirect) — i.e., something that needs a load/store opcode
+    rather than a transfer or immediate. Used at the dispatch
+    boundary in Mov."""
+    return isinstance(
+        op,
+        (asm_ast.Stack, asm_ast.Frame, asm_ast.Data, asm_ast.Indirect),
+    )
 
 
 def _data_addr(d: asm_ast.Data) -> str:
@@ -322,6 +336,28 @@ def _emit_memop_store(addr_op: asm_ast.Type_operand) -> list[str]:
     ]
 
 
+def _imm_label_text(op: asm_ast.Type_operand) -> str:
+    """Render an ImmLabelLow / ImmLabelHigh operand as a dasm
+    immediate. Uses dasm's `<` (low byte) and `>` (high byte) label
+    operators: `#<name` for the low half of `name`'s address,
+    `#>name` for the high half. A non-zero offset is parenthesised
+    so dasm's parser binds the `<` / `>` to the full `name+offset`
+    sum, not just to `name`."""
+    if isinstance(op, asm_ast.ImmLabelLow):
+        prefix = "<"
+    elif isinstance(op, asm_ast.ImmLabelHigh):
+        prefix = ">"
+    else:
+        raise TypeError(f"not an ImmLabel operand: {op!r}")
+    if op.offset == 0:
+        return f"#{prefix}{op.name}"
+    return f"#{prefix}({op.name}+{op.offset})"
+
+
+def _is_imm_label(op: asm_ast.Type_operand) -> bool:
+    return isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh))
+
+
 def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
     _reject_pseudo(src)
     _reject_pseudo(dst)
@@ -340,9 +376,21 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             return [_instr_line("TAX")]
         case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("TAY")]
+    # ImmLabel paths. Same shape as Imm — load to A as immediate,
+    # then optionally store. Restricted to A-as-destination since
+    # only `LDA #<name` / `LDA #>name` are used by LoadAddress
+    # today; X/Y immediate variants would compose the same way but
+    # aren't needed.
+    if _is_imm_label(src) and _is_reg_a(dst):
+        return [_instr_line("LDA", _imm_label_text(src))]
+    if _is_imm_label(src) and _is_memory_operand(dst):
+        return (
+            [_instr_line("LDA", _imm_label_text(src))]
+            + _emit_memop_store(dst)
+        )
     # Memory-operand paths. `_is_memory_operand` covers Stack, Frame,
-    # and Data — the addressing-mode difference is hidden inside
-    # `_emit_memop_load` / `_emit_memop_store`.
+    # Data, and Indirect — the addressing-mode difference is hidden
+    # inside `_emit_memop_load` / `_emit_memop_store`.
     if isinstance(src, asm_ast.Imm) and _is_memory_operand(dst):
         _check_byte("immediate", src.value)
         return (
@@ -637,6 +685,81 @@ def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
     )
 
 
+def _shift_offset(
+    op: asm_ast.Type_operand, k: int,
+) -> asm_ast.Type_operand:
+    """Return a copy of `op` with its byte offset bumped by `k`. Used
+    by `_emit_load_address` to reach the high byte of a 2-byte dst
+    after writing the low byte."""
+    if isinstance(op, asm_ast.Frame):
+        return asm_ast.Frame(offset=op.offset + k)
+    if isinstance(op, asm_ast.Stack):
+        return asm_ast.Stack(offset=op.offset + k)
+    if isinstance(op, asm_ast.Data):
+        return asm_ast.Data(name=op.name, offset=op.offset + k)
+    raise TypeError(f"can't shift offset on operand {op!r}")
+
+
+def _emit_load_address(
+    src: asm_ast.Type_operand, dst: asm_ast.Type_operand,
+) -> list[str]:
+    """`LoadAddress(src, dst)` — write the 2-byte address of `src`
+    into `dst` (a 2-byte memory operand). Two cases, dispatched by
+    `src`'s resolved kind:
+
+      Data(name, off)   — `src` is a static-storage object; its
+                          address is link-time known. Load the low /
+                          high halves as immediates via dasm's
+                          `<` / `>` label operators:
+                              LDA  #<(name+off)
+                              STA  dst.lo
+                              LDA  #>(name+off)
+                              STA  dst.hi
+
+      Frame(off)        — `src` is a local or param at FP-relative
+                          offset `off`. Compute `FP + off` as a
+                          16-bit add. ADC's carry chains the high
+                          byte automatically; the SEC isn't needed
+                          because we want CLC-add semantics.
+                              CLC
+                              LDA  FP
+                              ADC  #off
+                              STA  dst.lo
+                              LDA  FP+1
+                              ADC  #0
+                              STA  dst.hi
+
+    `dst` must be a memory operand (Frame / Stack / Data); the
+    caller should have resolved any Pseudo before reaching here.
+    Stack-source LoadAddress isn't supported (no use case yet —
+    address-of a callee-side stack arg would be SSP-relative)."""
+    if not _is_memory_operand(dst):
+        raise TypeError(f"LoadAddress dst must be a memory operand, got {dst!r}")
+    dst_hi = _shift_offset(dst, 1)
+    reg_a = asm_ast.Reg(reg=asm_ast.A())
+    if isinstance(src, asm_ast.Data):
+        return (
+            _emit_mov(asm_ast.ImmLabelLow(name=src.name, offset=src.offset), reg_a)
+            + _emit_memop_store(dst)
+            + _emit_mov(asm_ast.ImmLabelHigh(name=src.name, offset=src.offset), reg_a)
+            + _emit_memop_store(dst_hi)
+        )
+    if isinstance(src, asm_ast.Frame):
+        _check_byte("LoadAddress offset", src.offset)
+        return [
+            _instr_line("CLC"),
+            _instr_line("LDA", _FP),
+            _instr_line("ADC", f"#${src.offset:02X}"),
+        ] + _emit_memop_store(dst) + [
+            _instr_line("LDA", f"{_FP}+1"),
+            _instr_line("ADC", "#$00"),
+        ] + _emit_memop_store(dst_hi)
+    raise TypeError(
+        f"LoadAddress src must be Data or Frame (resolved Pseudo); "
+        f"got {src!r}"
+    )
+
+
 def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> list[str]:
     if arg_bytes + local_bytes == 0:
         # No frame to tear down — A wasn't going to get clobbered, so
@@ -672,6 +795,8 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_function_prologue(ab, lb)
         case asm_ast.Ret(arg_bytes=ab, local_bytes=lb, save_a=sa):
             return _emit_ret(ab, lb, sa)
+        case asm_ast.LoadAddress(src=src, dst=dst):
+            return _emit_load_address(src, dst)
         case asm_ast.AllocateStack(bytes=n):
             # Caller-side soft-stack frame allocation for a call
             # site: subtract `n` from SSP (16-bit). The same

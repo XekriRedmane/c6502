@@ -43,6 +43,18 @@ module ASM {
         | Jump(identifier target)
         | Branch(condition cond, identifier target)
         | Compare(operand left, operand right)
+        -- LoadAddress(src, dst) — compound node, expanded by
+        -- replace_pseudoregisters into a sequence of atomic Movs.
+        -- `src` is a Pseudo naming the lvalue to take the address
+        -- of; `dst` is the 2-byte storage that receives the
+        -- address. Static-storage src expands to two
+        -- `Mov(ImmLabelLow/High, ...)` atoms; local-storage src
+        -- expands to a 16-bit add of FP + frame_offset. Bypasses
+        -- the asm IR's "1:1 with opcodes" rule (like Ret /
+        -- FunctionPrologue / AllocateStack do) because there's no
+        -- single 6502 opcode for "compute the address of an
+        -- operand into two bytes".
+        | LoadAddress(operand src, operand dst)
 
     -- Pseudo(name, offset): a stand-in operand minted by tac_to_asm
     -- for any TAC value that doesn't yet have a concrete address.
@@ -61,10 +73,27 @@ module ASM {
     -- `LDA name`, `LDA name+1` accesses the high byte of a Long
     -- static. No LDY indirect-Y preamble like Stack/Frame need,
     -- since the address is fixed.
+    --
+    -- Indirect(offset): the byte at `(DPTR),Y` with `Y = offset`.
+    -- Same indirect-Y addressing mode as Stack/Frame, but using
+    -- the dedicated `DPTR` zero-page pointer pair (reserved for
+    -- the dereference / scratch indirect-pointer use). Caller is
+    -- responsible for loading DPTR with the desired 16-bit address
+    -- before issuing any Indirect(offset) access.
+    --
+    -- ImmLabelLow / ImmLabelHigh: immediate byte equal to the low /
+    -- high half of the address `name + offset`. dasm renders these
+    -- as `#<(name+offset)` / `#>(name+offset)` (collapsing the
+    -- `+offset` when offset==0). Used by LoadAddress when the
+    -- target is a static-storage name — its address is link-time
+    -- known, so the address bytes can be loaded as immediates.
     operand = Imm(int value) | Reg(reg)
             | Pseudo(identifier name, int offset)
             | Stack(int offset) | Frame(int offset)
             | Data(identifier name, int offset)
+            | Indirect(int offset)
+            | ImmLabelLow(identifier name, int offset)
+            | ImmLabelHigh(identifier name, int offset)
     reg = A | X | Y
     -- 6502 branch conditions, named after the suffix on each Bxx
     -- opcode: BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS.

@@ -133,6 +133,7 @@ ULong = c99_ast.ULong
 Float = c99_ast.Float
 Double = c99_ast.Double
 FunType = c99_ast.FunType
+Pointer = c99_ast.Pointer
 
 
 # ---------------------------------------------------------------------------
@@ -339,11 +340,12 @@ def _merge_initial_value(
 
 
 def _is_object_type(t: Type) -> bool:
-    """True iff `t` is a value type that can name an object (Int,
-    Long, UInt, ULong, Float, Double; not FunType). Used at the
-    boundary where we expect an object — variable references, cast
-    targets, arithmetic operands."""
-    return isinstance(t, (Int, Long, UInt, ULong, Float, Double))
+    """True iff `t` is a value type that can name an object — per
+    C99 §6.2.5, "A pointer type ... is an object type" along with
+    the arithmetic types. Excludes only FunType (a function isn't
+    an object). Used at the boundary where we expect an object —
+    variable references, cast targets, arithmetic operands."""
+    return isinstance(t, (Int, Long, UInt, ULong, Float, Double, Pointer))
 
 
 def _is_integer_type(t: Type) -> bool:
@@ -352,6 +354,17 @@ def _is_integer_type(t: Type) -> bool:
 
 def _is_floating_type(t: Type) -> bool:
     return isinstance(t, (Float, Double))
+
+
+def _is_pointer_type(t: Type) -> bool:
+    return isinstance(t, Pointer)
+
+
+def _is_arithmetic_type(t: Type) -> bool:
+    """True iff `t` is integer or floating — the types that
+    participate in C99 §6.3.1.8 usual arithmetic conversions.
+    Excludes Pointer, even though Pointer is an object type."""
+    return _is_integer_type(t) or _is_floating_type(t)
 
 
 # Width and signedness predicates for the four integer types. Width
@@ -1047,6 +1060,32 @@ class TypeChecker:
                     args[i] = _convert_to(arg, expected)
                 exp.data_type = sym.type.ret
                 return sym.type.ret
+            case c99_ast.Dereference(exp=inner):
+                # `*e` — operand must have pointer type, result is
+                # the pointee (C99 §6.5.3.2.4). The lvalue-ness of
+                # the result is structural (Assignment / AddressOf /
+                # Postfix accept Dereference); not encoded in the type.
+                t_inner = self._check_exp(inner)
+                if not _is_pointer_type(t_inner):
+                    raise TypeCheckError(
+                        f"unary '*' requires a pointer operand, got "
+                        f"{type(t_inner).__name__}"
+                    )
+                pointee = t_inner.referenced_type
+                exp.data_type = pointee
+                return pointee
+            case c99_ast.AddressOf(exp=inner):
+                # `&e` — result is `Pointer(operand_type)`
+                # (C99 §6.5.3.2.3). Lvalue check on `e` lives in
+                # identifier_resolution. The operand is allowed to
+                # have any object type (the type checker has already
+                # rejected function-typed Vars in the inner
+                # `_check_exp` call via the "function used as
+                # variable" check).
+                t_inner = self._check_exp(inner)
+                result = Pointer(referenced_type=t_inner)
+                exp.data_type = result
+                return result
         raise TypeError(f"unexpected exp: {exp!r}")
 
 

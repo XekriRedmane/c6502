@@ -1802,5 +1802,421 @@ class TestFloatingTypesAndConstants(unittest.TestCase):
         )
 
 
+class TestDeclaratorGrammar(unittest.TestCase):
+    """Grammar-only tests for §6.7.5 declarators. The new rules
+    (`declarator` / `direct_declarator` / `pointer` / `parameter_*`
+    / `identifier_list`) aren't yet reachable from the translation-
+    unit start rule, so we parse them via Lark's `declarator`
+    start. The transformer doesn't have methods for these yet, so
+    we don't assert on AST shape — just that the grammar accepts
+    the form (no `UnexpectedInput`)."""
+
+    @staticmethod
+    def _parse_declarator(src: str):
+        from parser import _LARK
+        return _LARK.parse(src, start="declarator")
+
+    def test_plain_identifier(self):
+        # A bare IDENTIFIER is the simplest declarator.
+        self._parse_declarator("p")
+
+    def test_pointer_to_identifier(self):
+        # `*p` — pointer + IDENTIFIER.
+        self._parse_declarator("*p")
+
+    def test_pointer_to_pointer(self):
+        # `**p` — chained pointer.
+        self._parse_declarator("**p")
+
+    def test_qualified_pointer(self):
+        # `* const p` — type-qualifier in the pointer rule.
+        self._parse_declarator("* const p")
+
+    def test_pointer_to_qualified_pointer(self):
+        # `* const * volatile p` — qualifiers chain through.
+        self._parse_declarator("* const * volatile p")
+
+    def test_parenthesised_declarator(self):
+        # `(*p)` — parenthesised pointer declarator. Used as the
+        # building block for function-pointer types.
+        self._parse_declarator("(*p)")
+
+    def test_array_declarator(self):
+        # `a[10]` — direct_declarator with the plain array suffix.
+        self._parse_declarator("a[10]")
+
+    def test_empty_array_declarator(self):
+        # `a[]` — `array_size_plain` with empty assignment_exp.
+        self._parse_declarator("a[]")
+
+    def test_static_array_declarator(self):
+        # `a[static 10]` — array_size_static.
+        self._parse_declarator("a[static 10]")
+
+    def test_qualifier_static_array_declarator(self):
+        # `a[const static 10]` — `array_size_quals_static`.
+        self._parse_declarator("a[const static 10]")
+
+    def test_unspecified_size_array_declarator(self):
+        # `a[*]` — VLA "unspecified size" form (§6.7.5.2.1).
+        self._parse_declarator("a[*]")
+
+    def test_function_declarator_no_params(self):
+        # `f()` — direct_declarator with empty identifier_list.
+        self._parse_declarator("f()")
+
+    def test_function_declarator_with_params(self):
+        # `f(int x, long y)` — parameter_type_list with two named
+        # parameter_declarations.
+        self._parse_declarator("f(int x, long y)")
+
+    def test_function_declarator_unnamed_param(self):
+        # `f(int)` — parameter_declaration with no declarator.
+        self._parse_declarator("f(int)")
+
+    def test_function_declarator_pointer_param(self):
+        # `f(int *)` — parameter_declaration with abstract_declarator
+        # (a pointer alone).
+        self._parse_declarator("f(int *)")
+
+    def test_variadic_function_declarator(self):
+        # `f(int x, ...)` — parameter_type_list with the trailing
+        # ELLIPSIS.
+        self._parse_declarator("f(int x, ...)")
+
+    def test_function_pointer(self):
+        # `(*fp)(int)` — the canonical function-pointer declarator.
+        self._parse_declarator("(*fp)(int)")
+
+    def test_array_of_pointers(self):
+        # `*a[10]` — pointer + direct_declarator with array suffix.
+        # Per C99 precedence the suffix binds tighter than the
+        # pointer prefix, giving "array of pointers to int" once
+        # wrapped with `int`.
+        self._parse_declarator("*a[10]")
+
+    def test_kr_identifier_list(self):
+        # `f(x, y, z)` — old-style K&R declarator with an
+        # identifier list (no types). Accepted for grammar
+        # completeness even though the AST won't model it.
+        self._parse_declarator("f(x, y, z)")
+
+
+class TestAbstractDeclaratorGrammar(unittest.TestCase):
+    """Grammar tests for §6.7.6 abstract declarators. Reachable
+    from `type_name` (which appears inside cast expressions). The
+    `type_name` transformer raises NotImplementedError when an
+    abstract_declarator is present — the grammar parses the form
+    but the AST isn't wired through yet — so we exercise the
+    `type_name` start rule directly to confirm grammar acceptance
+    without forcing the transformer to run."""
+
+    @staticmethod
+    def _parse_type_name(src: str):
+        from parser import _LARK
+        return _LARK.parse(src, start="type_name")
+
+    def test_plain_specifier_only(self):
+        # `int` — no abstract_declarator. Existing behavior.
+        self._parse_type_name("int")
+
+    def test_pointer(self):
+        # `int *` — pointer-only abstract_declarator.
+        self._parse_type_name("int *")
+
+    def test_pointer_to_pointer(self):
+        # `int **` — chained pointer.
+        self._parse_type_name("int **")
+
+    def test_qualified_pointer(self):
+        # `int * const` — type-qualifier inside the pointer rule.
+        self._parse_type_name("int * const")
+
+    def test_array(self):
+        # `int [3]` — direct_abstract_declarator with no prefix +
+        # array suffix (§6.7.6 form 2, empty prefix).
+        self._parse_type_name("int [3]")
+
+    def test_empty_array(self):
+        # `int []` — array_size_plain with both qualifiers and size
+        # absent.
+        self._parse_type_name("int []")
+
+    def test_function_no_params(self):
+        # `int ()` — function abstract declarator, no params.
+        self._parse_type_name("int ()")
+
+    def test_function_with_params(self):
+        # `int (int)` — function abstract declarator. The LPAREN
+        # vs. parenthesised-abstract-declarator ambiguity is
+        # resolved by lookahead on the token after LPAREN: type-
+        # specifier / RPAREN → parameter_type_list form.
+        self._parse_type_name("int (int)")
+
+    def test_function_pointer(self):
+        # `int (*)(int)` — pointer to function returning int taking
+        # int. The canonical place where an abstract_declarator's
+        # parenthesised form appears.
+        self._parse_type_name("int (*)(int)")
+
+    def test_pointer_to_array(self):
+        # `int (*)[3]` — pointer to array of 3 ints.
+        self._parse_type_name("int (*)[3]")
+
+    def test_pointer_cast_parses_then_raises(self):
+        # `(int *)x` — full parse() path. The grammar accepts the
+        # form (proving the abstract_declarator rule integrates
+        # with cast_exp), and the transformer raises
+        # NotImplementedError because the abstract_declarator
+        # subtree isn't wired through to the AST yet. Both
+        # behaviors are intentional.
+        from lark.exceptions import VisitError
+        with self.assertRaises(VisitError) as cm:
+            parse("int main(void) { int x; return (int *)x; }")
+        self.assertIsInstance(cm.exception.orig_exc, NotImplementedError)
+
+
+class TestPointerDeclarations(unittest.TestCase):
+    """End-to-end tests that pointer types in var_decl /
+    function_decl flow correctly through the parser into
+    c99_ast nodes. Pointers are 2 bytes (the 6502's address
+    width); see also test_replace_pseudoregisters for the
+    frame-layout side and test_tac_to_asm for the size-dispatch."""
+
+    def test_pointer_var_decl(self):
+        # `int *p;` — file-scope variable with pointer type.
+        ast = parse("int *p;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(vd.name, "p")
+        self.assertEqual(vd.data_type, c99_ast.Pointer(referenced_type=c99_ast.Int()))
+
+    def test_pointer_to_pointer_var_decl(self):
+        # `int **p;` — pointer to pointer.
+        ast = parse("int **p;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(
+            vd.data_type,
+            c99_ast.Pointer(
+                referenced_type=c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            ),
+        )
+
+    def test_pointer_var_inside_function(self):
+        # Block-scope pointer variable.
+        ast = parse("int main(void) { int *q; return 0; }")
+        body = ast.declaration[0].function_decl.body
+        # block_item[0] is the declaration of q.
+        d = body.block_item[0].declaration.var_decl
+        self.assertEqual(d.name, "q")
+        self.assertEqual(d.data_type, c99_ast.Pointer(referenced_type=c99_ast.Int()))
+
+    def test_long_pointer_var_decl(self):
+        # `long *p;` — pointer to long. The pointer's size is still
+        # 2 bytes; the pointee being long doesn't change that.
+        ast = parse("long *p;")
+        vd = ast.declaration[0].var_decl
+        self.assertEqual(
+            vd.data_type, c99_ast.Pointer(referenced_type=c99_ast.Long()),
+        )
+
+    def test_function_returning_pointer(self):
+        # `int *foo(void);` — forward decl of a function returning
+        # a pointer. `foo` lands in var_decl (function-typed
+        # declarator with no body) and the transformer rewraps it
+        # as a FunctionDecl with body=None.
+        ast = parse("int *foo(void);")
+        fd = ast.declaration[0].function_decl
+        self.assertEqual(fd.name, "foo")
+        self.assertIsNone(fd.body)
+        self.assertEqual(fd.params, [])
+        self.assertEqual(
+            fd.data_type,
+            c99_ast.FunType(
+                params=[], ret=c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            ),
+        )
+
+    def test_function_with_pointer_param(self):
+        # `int foo(int *p);` — forward decl with a named pointer
+        # param.
+        ast = parse("int foo(int *p);")
+        fd = ast.declaration[0].function_decl
+        self.assertEqual(fd.params, ["p"])
+        self.assertEqual(
+            fd.data_type,
+            c99_ast.FunType(
+                params=[c99_ast.Pointer(referenced_type=c99_ast.Int())],
+                ret=c99_ast.Int(),
+            ),
+        )
+
+    def test_function_with_unnamed_pointer_param(self):
+        # `int foo(int *);` — forward decl with an unnamed pointer
+        # param (abstract_declarator on the param). Param name is
+        # the empty string in the AST (legacy convention; could be
+        # None but the AST field is `identifier*`).
+        ast = parse("int foo(int *);")
+        fd = ast.declaration[0].function_decl
+        # The param-name list reflects the unnamed slot; the type
+        # list still has the pointer.
+        self.assertEqual(
+            fd.data_type.params,
+            [c99_ast.Pointer(referenced_type=c99_ast.Int())],
+        )
+
+    def test_function_definition_with_pointer_param_and_return(self):
+        # `int *foo(int *p) { return p; }` — full definition.
+        ast = parse("int *foo(int *p) { return p; }")
+        fd = ast.declaration[0].function_decl
+        self.assertEqual(fd.name, "foo")
+        self.assertEqual(fd.params, ["p"])
+        self.assertEqual(
+            fd.data_type,
+            c99_ast.FunType(
+                params=[c99_ast.Pointer(referenced_type=c99_ast.Int())],
+                ret=c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            ),
+        )
+        self.assertIsNotNone(fd.body)
+
+    def test_pointer_var_decl_through_full_pipeline(self):
+        # End-to-end: `int *p;` should make it through the full
+        # compile pipeline (parse → identifier_resolution →
+        # label_resolution → loop_labeling → type_checking →
+        # c99_to_tac → tac_to_asm → replace_pseudoregisters →
+        # asm_emit) without raising. Pointer is sized as 2 bytes,
+        # so a static `int *p;` lays down as `DC.W $0000`.
+        from compile import _run_stage
+        text = _run_stage("codegen", "int *p;\n")
+        self.assertIn("p:", text)
+        self.assertIn("DC.W  $0000", text)
+
+    def test_pointer_local_gets_two_frame_bytes(self):
+        # Pointer locals occupy 2 contiguous frame bytes — same
+        # treatment as Long. Verify the prologue allocates the
+        # right amount.
+        from compile import _run_stage
+        text = _run_stage(
+            "codegen",
+            "int main(void) { int *p; p = p; return 0; }\n",
+        )
+        # M=2 (one pointer local) + 2 (saved-FP slot) = 4; SSP -= 4.
+        self.assertIn("prologue: 0 arg bytes, 2 local bytes", text)
+        self.assertIn("SBC   #$04", text)
+
+    def test_pointer_function_returns_long_style(self):
+        # A function returning `int *` uses the same 2-byte return
+        # convention as `long`: low byte in A, high byte in X. The
+        # callee's epilogue PHAs A across the SSP/FP arithmetic.
+        from compile import _run_stage
+        text = _run_stage(
+            "codegen",
+            "int *foo(int *p) { return p; }\n"
+            "int main(void) { return 0; }\n",
+        )
+        # The return sequence stages high byte through X first
+        # (load high → A → X → load low → A → return).
+        self.assertIn("foo:", text)
+        # Prologue allocates 0 local bytes (pointer param sits in
+        # the caller's pushed args, not in our locals).
+        self.assertIn("prologue: 2 arg bytes, 0 local bytes", text)
+
+
+class TestPointerOpsEndToEnd(unittest.TestCase):
+    """Dereference (`*p`) and AddressOf (`&x`) flowing all the way
+    through to 6502 asm. Smoke-checks the pipeline: parse → resolve
+    → type-check → c99_to_tac → tac_to_asm → replace_pseudoregisters
+    → asm_emit."""
+
+    def _codegen(self, src: str) -> str:
+        from compile import _run_stage
+        return _run_stage("codegen", src)
+
+    def test_address_of_local_uses_fp_arithmetic(self):
+        # `&x` for a local computes its address as `FP + frame_off`
+        # via a 16-bit add. We don't pin the exact frame offset in
+        # case layout shifts; just check the shape: CLC + LDA FP +
+        # ADC #imm followed by a store, then LDA FP+1 + ADC #$00 +
+        # store.
+        text = self._codegen(
+            "int main(void) { int x; int *p; p = &x; return 0; }\n"
+        )
+        self.assertIn("CLC", text)
+        self.assertIn("LDA   FP", text)
+        self.assertIn("LDA   FP+1", text)
+        self.assertIn("ADC   #$00", text)
+
+    def test_address_of_static_uses_immediate_label(self):
+        # `&g` for a file-scope object uses `#<g` / `#>g`
+        # immediates to load the address bytes; no FP arithmetic.
+        text = self._codegen(
+            "int g;\nint main(void) { int *p; p = &g; return 0; }\n"
+        )
+        self.assertIn("LDA   #<g", text)
+        self.assertIn("LDA   #>g", text)
+
+    def test_dereference_read_uses_dptr(self):
+        # `*p` (read) stages p's two bytes into DPTR / DPTR+1, then
+        # reads via `(DPTR),Y`.
+        text = self._codegen(
+            "int main(void) { int x; int *p; p = &x; return *p; }\n"
+        )
+        self.assertIn("STA   DPTR", text)
+        self.assertIn("STA   DPTR+1", text)
+        self.assertIn("LDA   (DPTR),Y", text)
+
+    def test_dereference_write_uses_dptr(self):
+        # `*p = 5` stages p's bytes into DPTR / DPTR+1, then writes
+        # via `STA (DPTR),Y` with `Y = 0` for the (single) byte of
+        # an Int store.
+        text = self._codegen(
+            "int main(void) { int x; int *p; p = &x; *p = 5; return 0; }\n"
+        )
+        self.assertIn("STA   DPTR", text)
+        self.assertIn("STA   (DPTR),Y", text)
+        # The value 5 lands in A right before the indirect store.
+        self.assertIn("LDA   #$05", text)
+
+    def test_pointer_to_long_writes_two_bytes_through_dptr(self):
+        # `*lp = 0x1234L` for a `long *lp` writes 2 bytes via
+        # `(DPTR),Y` with Y=0 then Y=1 — same byte-pair pattern as
+        # any other Long copy, but the destination is indirect
+        # rather than a Frame slot.
+        text = self._codegen(
+            "int main(void) { long y; long *lp; lp = &y; "
+            "*lp = 0x1234L; return 0; }\n"
+        )
+        self.assertIn("LDA   #$34", text)
+        self.assertIn("LDA   #$12", text)
+        # Two indirect writes (Y=0 for low, Y=1 for high).
+        self.assertIn("LDY   #$00", text)
+        self.assertIn("LDY   #$01", text)
+        self.assertIn("STA   (DPTR),Y", text)
+
+    def test_address_of_dereference_collapses(self):
+        # `&*p` ≡ `p` per C99 §6.5.3.2.3 — c99_to_tac elides the
+        # GetAddress when the operand is a Dereference, so `q = &*p`
+        # produces no LoadAddress sequence (no FP-arithmetic, no
+        # ImmLabel pair) — just a plain Long-style Copy from p to q.
+        # Compare against the same program with `q = &x` to confirm
+        # the elision: the `&*p` form should have one *fewer*
+        # FP-add sequence than the `&x` form.
+        with_amp_x = self._codegen(
+            "int main(void) { int x; int *p; int *q; "
+            "p = &x; q = &x; return 0; }\n"
+        )
+        with_amp_deref = self._codegen(
+            "int main(void) { int x; int *p; int *q; "
+            "p = &x; q = &*p; return 0; }\n"
+        )
+        # The CLC count differs by exactly 1: the `&*p` version
+        # omits the LoadAddress arithmetic that `&x` would emit.
+        # (Each `&local` lowers to one CLC for its FP-add; the
+        # epilogue contributes a fixed CLC of its own.)
+        self.assertEqual(
+            with_amp_x.count("CLC") - with_amp_deref.count("CLC"), 1,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

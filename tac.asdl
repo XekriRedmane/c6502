@@ -14,6 +14,19 @@ module TAC {
         | DoubleToInt(val src, val dst)
         | FloatToDouble(val src, val dst)
         | DoubleToFloat(val src, val dst)
+        -- Pointer ops. `GetAddress(name, dst)` produces the 2-byte
+        -- address of `name`'s storage cell; `name` must be a Var
+        -- naming an lvalue (a local, param, or static), and `dst`
+        -- is a Pointer-typed temp. `Load(src_ptr, dst)` reads N
+        -- bytes through the pointer in `src_ptr` into `dst`, where
+        -- N is `dst`'s width per the symbol table. `Store(src,
+        -- dst_ptr)` writes `src`'s N bytes through the pointer in
+        -- `dst_ptr`. tac_to_asm marshals `src_ptr` / `dst_ptr` into
+        -- the zero-page DPTR pair before issuing the indirect-Y
+        -- accesses.
+        | GetAddress(val operand, val dst)
+        | Load(val src_ptr, val dst)
+        | Store(val src, val dst_ptr)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)

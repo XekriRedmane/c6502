@@ -117,19 +117,28 @@ def _operands_in(instr: asm_ast.Type_instruction):
         case asm_ast.Compare(left=left, right=right):
             yield left
             yield right
+        case asm_ast.LoadAddress(src=src, dst=dst):
+            # `src` is a Pseudo naming the lvalue whose address we
+            # want; discovering it ensures the local gets a frame
+            # slot allocated even if the function body never reads
+            # / writes its value (just `&x` with no other use).
+            # `dst` is the 2-byte temp that receives the address.
+            yield src
+            yield dst
 
 
 def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
-    table — Int/UInt → 1, Long/ULong → 2, Float → 4, Double → 8.
-    A None symbol table or an absent entry both default to 1, which
-    matches the Int-only world unit tests assume."""
+    table — Int/UInt → 1, Long/ULong → 2, Float → 4, Double → 8,
+    Pointer → 2 (the 6502's address width). A None symbol table or
+    an absent entry both default to 1, which matches the Int-only
+    world unit tests assume."""
     if symbols is None:
         return 1
     sym = symbols.get(name)
     if sym is None:
         return 1
-    if isinstance(sym.type, (c99_ast.Long, c99_ast.ULong)):
+    if isinstance(sym.type, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return 2
     if isinstance(sym.type, c99_ast.Float):
         return 4
@@ -301,6 +310,14 @@ class Replacer:
                 return asm_ast.Ret(
                     arg_bytes=arg_bytes, local_bytes=local_bytes,
                     save_a=save_a,
+                )
+            case asm_ast.LoadAddress(src=src, dst=dst):
+                # Resolve the Pseudo operands; asm_emit expands the
+                # compound node into the right sequence of atomic
+                # Movs based on the resolved src kind (Frame → 16-bit
+                # FP-relative add; Data → ImmLabelLow/High pair).
+                return asm_ast.LoadAddress(
+                    src=self.replace(src), dst=self.replace(dst),
                 )
             case _:
                 # AllocateStack / Call / Jump / Branch / Label /

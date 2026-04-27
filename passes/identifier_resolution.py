@@ -720,7 +720,12 @@ class Resolver:
                     right=self.resolve_exp(right, scope),
                 )
             case c99_ast.Assignment(lval=lval, rval=rval):
-                if not isinstance(lval, c99_ast.Var):
+                # Lvalue forms accepted today: a bare Var, or a
+                # Dereference (`*p = …`). Per C99 §6.3.2.1.1, the
+                # result of a unary `*` is an lvalue. Other lvalue
+                # forms (array subscript, struct member access)
+                # aren't modelled yet.
+                if not isinstance(lval, (c99_ast.Var, c99_ast.Dereference)):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in assignment: {lval!r}"
                     )
@@ -739,12 +744,35 @@ class Resolver:
                     false_clause=self.resolve_exp(false_clause, scope),
                 )
             case c99_ast.Postfix(op=op, operand=operand):
-                if not isinstance(operand, c99_ast.Var):
+                # Same lvalue rule as Assignment — Var or Dereference.
+                if not isinstance(operand, (c99_ast.Var, c99_ast.Dereference)):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in postfix: {operand!r}"
                     )
                 return c99_ast.Postfix(
                     op=op, operand=self.resolve_exp(operand, scope),
+                )
+            case c99_ast.Dereference(exp=inner):
+                # `*e` — recurse into the operand. The lvalue check
+                # for `&(*e)` is structural (handled in the AddressOf
+                # case), so we don't need to validate `e` here.
+                return c99_ast.Dereference(
+                    exp=self.resolve_exp(inner, scope),
+                )
+            case c99_ast.AddressOf(exp=inner):
+                # `&e` — operand must be an lvalue. Today that's a
+                # bare Var (`&x`) or a Dereference (`&*p`, which is
+                # equivalent to `p` itself but legal syntax). The
+                # type checker enforces additional constraints
+                # (operand must denote an object, not a function or
+                # `register` storage); here we just enforce the
+                # syntactic lvalue restriction.
+                if not isinstance(inner, (c99_ast.Var, c99_ast.Dereference)):
+                    raise IdentifierResolutionError(
+                        f"invalid operand of unary '&': {inner!r}"
+                    )
+                return c99_ast.AddressOf(
+                    exp=self.resolve_exp(inner, scope),
                 )
             case c99_ast.FunctionCall(name=name, args=args):
                 # Same single-namespace lookup as Var. The call is

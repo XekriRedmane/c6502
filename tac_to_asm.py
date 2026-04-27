@@ -182,6 +182,14 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 #   f2d      (float → double):        in HARGS+0..3;  out HARGS+4..11
 #   d2f      (double → float):        in HARGS+0..7;  out HARGS+8..11
 _HARGS = "HARGS"
+# DPTR is the dereference / scratch indirect-pointer pair. Reserved
+# at zero-page `$1C`/`$1D` (right after HARGS). Used by Load /
+# Store TAC ops: caller writes the 2-byte target address into
+# `DPTR` / `DPTR+1`, then reads or writes through `(DPTR),Y` with Y
+# = byte offset. Caller-saved like HARGS — any helper call may
+# clobber it, so the byte sequence is always "stage to DPTR, then
+# access" with no expectation that DPTR survives across other ops.
+_DPTR = "DPTR"
 _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _ASL8 = "asl8"
@@ -290,9 +298,9 @@ class Translator:
     def _size_of(self, val: tac_ast.Type_val) -> int:
         """Byte width of a TAC val. Integer types: 1 for Int / UInt,
         2 for Long / ULong. Floating types: 4 for Float, 8 for
-        Double. Constants dispatch on the const variant; Vars look
-        up the symbol-table type. Unknown Vars (synthetic test AST)
-        default to 1."""
+        Double. Pointer: 2 (the 6502's address width). Constants
+        dispatch on the const variant; Vars look up the symbol-table
+        c99 type. Unknown Vars (synthetic test AST) default to 1."""
         match val:
             case tac_ast.Constant(const=tac_ast.ConstLong()):
                 return 2
@@ -309,7 +317,10 @@ class Translator:
                 )
                 if sym is None:
                     return 1
-                if isinstance(sym.type, (c99_ast.Long, c99_ast.ULong)):
+                if isinstance(
+                    sym.type,
+                    (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer),
+                ):
                     return 2
                 if isinstance(sym.type, c99_ast.Float):
                     return 4
@@ -446,6 +457,12 @@ class Translator:
                 )
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
                 return self._translate_function_call(name, args, dst)
+            case tac_ast.GetAddress(operand=operand, dst=dst):
+                return self._translate_get_address(operand, dst)
+            case tac_ast.Load(src_ptr=src_ptr, dst=dst):
+                return self._translate_load(src_ptr, dst)
+            case tac_ast.Store(src=src, dst_ptr=dst_ptr):
+                return self._translate_store(src, dst_ptr)
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     # ------------------------------------------------------------------
@@ -822,6 +839,71 @@ class Translator:
         return emitted
 
     # ------------------------------------------------------------------
+    # Pointer ops
+    # ------------------------------------------------------------------
+
+    def _translate_get_address(
+        self, operand: tac_ast.Type_val, dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """`&x` — produce a `LoadAddress` compound asm node. The
+        operand at TAC time is a Var naming the lvalue; we hand it
+        through as a Pseudo so replace_pseudoregisters can dispatch
+        on its storage class (local → FP-relative add; static →
+        immediate label-half loads). dst is the 2-byte temp that
+        holds the resulting address."""
+        if not isinstance(operand, tac_ast.Var):
+            raise TypeError(
+                f"GetAddress operand must be a Var (an lvalue name); "
+                f"got {operand!r}"
+            )
+        return [asm_ast.LoadAddress(
+            src=asm_ast.Pseudo(name=operand.name, offset=0),
+            dst=translate_val(dst),
+        )]
+
+    def _translate_load(
+        self, src_ptr: tac_ast.Type_val, dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """`*p` (read) — stage the 2-byte address `p` into the DPTR
+        zero-page pair, then read N bytes through `(DPTR),Y` into
+        `dst`. N is dst's width per the symbol table."""
+        ptr_op = translate_val(src_ptr)
+        dst_op = translate_val(dst)
+        n = self._size_of(dst)
+        return [
+            *self._stage_dptr(ptr_op),
+            *_indirect_read(dst_op, n),
+        ]
+
+    def _translate_store(
+        self, src: tac_ast.Type_val, dst_ptr: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """`*p = v` — stage the 2-byte address `p` into DPTR, then
+        write `src`'s N bytes through `(DPTR),Y`. N is src's width."""
+        ptr_op = translate_val(dst_ptr)
+        src_op = translate_val(src)
+        n = self._size_of(src)
+        return [
+            *self._stage_dptr(ptr_op),
+            *_indirect_write(src_op, n),
+        ]
+
+    @staticmethod
+    def _stage_dptr(
+        ptr_op: asm_ast.Type_operand,
+    ) -> list[asm_ast.Type_instruction]:
+        """Copy the two address bytes from `ptr_op` into the DPTR
+        zero-page pair. Routes each byte through A because A is the
+        only register that loads uniformly from any source-operand
+        kind (Imm, Pseudo, Frame, Data, Indirect)."""
+        return [
+            asm_ast.Mov(src=_byte_at(ptr_op, 0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name=_DPTR, offset=0)),
+            asm_ast.Mov(src=_byte_at(ptr_op, 1), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name=_DPTR, offset=1)),
+        ]
+
+    # ------------------------------------------------------------------
     # Binary ops
     # ------------------------------------------------------------------
 
@@ -1166,6 +1248,32 @@ def _hargs(k: int) -> asm_ast.Type_operand:
     The runtime header pins `HARGS` at $04, so dasm picks zero-page
     addressing automatically."""
     return asm_ast.Data(name=_HARGS, offset=k)
+
+
+def _indirect_read(
+    dst: asm_ast.Type_operand, n: int,
+) -> list[asm_ast.Type_instruction]:
+    """Read `n` bytes through DPTR (already staged with the source
+    address) into `dst`. Each byte routes through A: `LDY #k; LDA
+    (DPTR),Y; STA dst+k`. Used by the Load TAC op."""
+    out: list[asm_ast.Type_instruction] = []
+    for k in range(n):
+        out.append(asm_ast.Mov(src=asm_ast.Indirect(offset=k), dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst, k)))
+    return out
+
+
+def _indirect_write(
+    src: asm_ast.Type_operand, n: int,
+) -> list[asm_ast.Type_instruction]:
+    """Write `n` bytes from `src` through DPTR (already staged with
+    the destination address). Each byte routes through A: `LDY #k;
+    LDA src+k; STA (DPTR),Y`. Used by the Store TAC op."""
+    out: list[asm_ast.Type_instruction] = []
+    for k in range(n):
+        out.append(asm_ast.Mov(src=_byte_at(src, k), dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=asm_ast.Indirect(offset=k)))
+    return out
 
 
 def _translate_helper_call(

@@ -180,30 +180,38 @@ COMMA: ","
 HASH: "#"
 
 // -- Whitespace (ignored) --
+
 WS: /[ \t\n\f]+/
 %ignore WS
 
 // Top-level: a translation unit is a list of function declarations.
+
 start: declaration*
 
+// declaration (§6.7) and function-definition (§6.9.1). Both start
+// with `specifier+ declarator`; the trailing form distinguishes:
+//   `(ASSIGN exp)? SEMICOLON`  → var_decl
+//      (a function-typed declarator with no body lands here too —
+//       e.g. `int foo(int);` is a forward declaration of a function;
+//       the var_decl transformer dispatches on the declarator's
+//       composed type and rewraps as a FunctionDecl with body=None.)
+//   `block`                    → function_decl (definition)
+// LALR(1) lookahead-1 distinguishes the two on `LBRACE` vs `ASSIGN`/
+// `SEMICOLON` once the declarator has been parsed.
 declaration: function_decl | var_decl
 specifier: type_specifier | STATIC | EXTERN
-var_decl: specifier+ IDENTIFIER (ASSIGN exp)? SEMICOLON
-function_decl: specifier+ IDENTIFIER LPAREN param_list RPAREN (SEMICOLON | block)
+var_decl: specifier+ declarator (ASSIGN exp)? SEMICOLON
+function_decl: specifier+ declarator block
 
-// `(void)` is the empty-parameter idiom; otherwise a comma-separated
-// list of `int IDENTIFIER`. Parameter names aren't kept on
-// function_definitions today (the AST's Function only carries name
-// and body), but they are kept on function_decl for the future
-// type-checking pass.
-param_list: VOID | type_specifier+ IDENTIFIER (COMMA type_specifier+ IDENTIFIER)*
 type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
           | declaration  -> decl_item
+
 // for-init permits a variable declaration or an expression-or-empty,
 // per C99 §6.8.5: function declarations aren't legal here.
+
 for_init: var_decl | exp? SEMICOLON
 
 // `if (exp) statement (else statement)?` — the optional else is the
@@ -227,6 +235,7 @@ for_init: var_decl | exp? SEMICOLON
 // items don't include the labeled_stmt option), so `a ? b : c`
 // continues to parse as a ternary even though `b` is also an
 // IDENTIFIER followed by COLON.
+
 statement: RETURN exp SEMICOLON                                     -> return_stmt
          | exp SEMICOLON                                            -> expression_stmt
          | IF LPAREN exp RPAREN statement (ELSE statement)?         -> if_stmt
@@ -269,6 +278,7 @@ statement: RETURN exp SEMICOLON                                     -> return_st
                | conditional_exp LSHIFT_ASSIGN assignment_exp  -> compound_assign
                | conditional_exp RSHIFT_ASSIGN assignment_exp  -> compound_assign
                | conditional_exp
+
 // Ternary `cond ? then : else`. The condition is `logical_or_exp`, so
 // `||` binds tighter than `?:`. The true-clause is a full `exp` (so
 // `x ? x = 1 : 2` parses as `x ? (x = 1) : 2`). The false-clause is
@@ -276,6 +286,7 @@ statement: RETURN exp SEMICOLON                                     -> return_st
 // 2 : 3` parses as `a ? 1 : (b ? 2 : 3)`) and keeps assignments out of
 // the false-clause slot — so `1 ? 2 : a = 5` parses as `(1 ? 2 : a) = 5`
 // via the outer assignment rule, not `1 ? 2 : (a = 5)`.
+
 ?conditional_exp: logical_or_exp QUESTION exp COLON conditional_exp -> conditional
                 | logical_or_exp
 ?logical_or_exp: logical_or_exp OROR logical_and_exp  -> logical_or
@@ -306,18 +317,16 @@ statement: RETURN exp SEMICOLON                                     -> return_st
         | mul_exp SLASH cast_exp    -> divide
         | mul_exp PERCENT cast_exp  -> modulo
         | cast_exp
+
 // Cast expression (C99 §6.5.4) sits between unary and multiplicative.
 // Right-recursive so `(int)(long)x` parses as `(int)((long)x)`. The
 // LPAREN-vs-paren-expr ambiguity is resolved at LALR(1) by the next
 // token after `(`: any type-specifier token (INT/LONG/SIGNED/
 // UNSIGNED/FLOAT/DOUBLE) → cast; anything else → parenthesised exp.
+
 ?cast_exp: LPAREN type_name RPAREN cast_exp  -> cast
          | unary_exp
-// type-name (§6.7.6) — for now just one or more type_specifiers (no
-// abstract declarators since we have no pointer/array types). The
-// transformer reuses `_resolve_data_type` to map the run of INT/LONG
-// tokens to `Int()` or `Long()`.
-type_name: type_specifier+
+
 // Prefix `++`/`--` sit at unary precedence (alongside `-`/`~`/`!`) and
 // desugar at parse time to `lval = lval ± 1` — same shape as a compound
 // assignment, so no AST node is needed. Postfix `a++`/`a--` need their
@@ -340,6 +349,7 @@ type_name: type_specifier+
 // LALR(1) state level — these productions only fire when the parser
 // is starting a fresh unary_exp, while the binary forms only fire
 // after a left operand has already reduced.
+
 ?unary_exp: unop cast_exp            -> unary
           | STAR cast_exp            -> dereference
           | AMP cast_exp             -> address_of
@@ -349,6 +359,7 @@ type_name: type_specifier+
 ?postfix_exp: postfix_exp PLUSPLUS   -> post_increment
             | postfix_exp MINUSMINUS -> post_decrement
             | atom
+
 // Function call sits at atom level (one form of primary expression
 // per C99 §6.5.2). The IDENTIFIER LPAREN form is shift/reduce-
 // distinguishable from the bare-identifier form on LPAREN lookahead:
@@ -357,6 +368,7 @@ type_name: type_specifier+
 // FunctionCall(name, args) takes the callee as a string identifier
 // (not a general expression), so the LHS is restricted to
 // IDENTIFIER directly — no `(p)(args)` form yet.
+
 ?atom: const                       -> constant
      | LPAREN exp RPAREN                      -> paren
      | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
@@ -376,13 +388,139 @@ unop: MINUS                         -> negate
 // Argument-list nodes: each arg is a full `exp` (assignment-level
 // expression — comma operator isn't supported, so this matches C's
 // argument-expression-list grammar).
+
 arg_list: exp (COMMA exp)*
+
+// Type qualifiers (§6.7.3) — accepted by the grammar so qualified
+// types parse without fuss in pointers / arrays / parameter lists /
+// casts. None of them are modelled in the AST today (no const-
+// correctness, no `restrict` aliasing analysis, no `volatile`
+// memory-fence emission), so the transformer treats them as syntax-
+// only noise.
+type_qualifier: CONST | RESTRICT | VOLATILE
+
+// Declarators (§6.7.5).
+//
+// A declarator names something and gives the derived (pointer /
+// array / function) type that wraps the declaration's specifier-
+// supplied base type. This rule set is grammatically complete but
+// is not yet wired into `var_decl` / `function_decl` above (those
+// still accept only the bare-IDENTIFIER form). When they migrate,
+// pointer locals (`int *p;`), array locals (`int a[10];`), and
+// function-pointer locals follow.
+declarator: pointer? direct_declarator
+pointer: STAR type_qualifier* pointer?
+
+// `direct-declarator` is left-recursive across array (`[...]`) and
+// function (`(...)`) suffixes — `int *a[3]()` parses as
+// `*(a[3]())` (an array-of-functions; rejected at type-check time
+// but syntactically valid). The two function alternatives cover
+// prototype-form `(parameter-type-list)` and old-style K&R
+// `(identifier-list_opt)`.
+direct_declarator: IDENTIFIER
+                 | LPAREN declarator RPAREN
+                 | direct_declarator LBRACKET array_suffix RBRACKET
+                 | direct_declarator LPAREN parameter_type_list RPAREN
+                 | direct_declarator LPAREN VOID RPAREN
+                 | direct_declarator LPAREN identifier_list? RPAREN
+
+// Array-suffix variants per §6.7.5.2:
+//   [ type-qualifier-list_opt assignment-expression_opt ]
+//   [ static type-qualifier-list_opt assignment-expression ]
+//   [ type-qualifier-list static assignment-expression ]
+//   [ type-qualifier-list_opt * ]   (VLA "of unspecified size")
+// The `static` form (§6.7.5.2.2) declares a minimum-size assertion;
+// the `*` form (§6.7.5.2.1) is valid only in function-prototype
+// scope. Listed STATIC-first / qualifier-then-STATIC / STAR /
+// fallback so each lookahead picks one alternative deterministically.
+array_suffix: STATIC type_qualifier* assignment_exp     -> array_size_static
+            | type_qualifier+ STATIC assignment_exp     -> array_size_quals_static
+            | type_qualifier* STAR                      -> array_size_unspec
+            | type_qualifier* assignment_exp?           -> array_size_plain
+
+// Parameter type list (§6.7.5.3). The trailing `, ...` covers
+// variadic functions; c6502 has no variadic AST node yet so the
+// transformer rejects it, but the grammar accepts it.
+//
+// LALR(1) note: writing this as
+// `parameter_list (COMMA ELLIPSIS)?` would create a shift-reduce
+// at the trailing COMMA — at the kernel item `parameter_list .`
+// with lookahead COMMA, the parser can't tell whether the COMMA
+// extends `parameter_list` (with another `parameter_declaration`)
+// or starts the optional `, ...` suffix. Lark's shift-preference
+// resolves it toward the extension, breaking variadic parses. We
+// dodge by treating ELLIPSIS as a pseudo-parameter inside the
+// repetition: the COMMA decision is made *before* the next item,
+// then the `parameter_or_ellipsis` alternative cleanly picks
+// parameter_declaration vs. ELLIPSIS by FIRST set. The AST builder
+// (when wired through) is responsible for enforcing C99's
+// "ELLIPSIS only at the end" constraint.
+parameter_type_list: parameter_declaration (COMMA parameter_or_ellipsis)*
+parameter_or_ellipsis: parameter_declaration | ELLIPSIS
+
+// Per §6.7.5: a parameter declaration is `declaration-specifiers`
+// followed by either a (named) `declarator` or an (unnamed,
+// optional) `abstract-declarator`. The two alternatives share the
+// FIRST set of `LPAREN` / `STAR` / `LBRACKET` after the specifiers,
+// so LALR(1) sees a shift-reduce ambiguity here. Lark resolves it
+// via shift-preference, which biases toward the `declarator`
+// alternative — fine for now, since the transformer only needs the
+// grammar to accept both shapes; the AST builder for parameters
+// (when wired through) will inspect the resulting tree to pick
+// which alternative was actually meant.
+parameter_declaration: specifier+ declarator
+                     | specifier+ abstract_declarator?
+
+// Old-style K&R identifier list (§6.7.5). Accepted for grammar
+// completeness; the c6502 AST has no representation for K&R-style
+// declarators, so the transformer rejects them when encountered.
+identifier_list: IDENTIFIER (COMMA IDENTIFIER)*
+
+// Abstract declarators (§6.7.6) — declarators with the identifier
+// omitted, used in type-names (cast targets) and unnamed parameter
+// declarations. Covers three shapes:
+//   pointer alone:                          int *
+//   pointer + direct_abstract:              int *(*)(int)
+//   direct_abstract alone:                  int (*)(int), int [3]
+abstract_declarator: pointer
+                   | pointer? direct_abstract_declarator
+
+// Same array / function suffixes as `direct_declarator`, but with
+// the recursive prefix optional. C99 writes that as
+// `direct-abstract-declarator_opt [...]` etc.; LALR(1) needs the
+// `_opt` expanded into separate "with prefix" / "without prefix"
+// alternatives so the parser doesn't have to look past the
+// LBRACKET / LPAREN to decide whether a prefix is coming. The
+// `LPAREN abstract_declarator RPAREN` / `LPAREN parameter_type_list?
+// RPAREN` ambiguity at the start of an empty-prefix form is
+// resolved by lookahead-1: STAR / LPAREN / LBRACKET after the outer
+// LPAREN start an abstract_declarator (parenthesised), while a
+// type-specifier or RPAREN starts the function form.
+direct_abstract_declarator: LPAREN abstract_declarator RPAREN
+                          | direct_abstract_declarator LBRACKET array_suffix RBRACKET
+                          | direct_abstract_declarator LPAREN parameter_type_list? RPAREN
+                          | direct_abstract_declarator LPAREN VOID RPAREN
+                          | LBRACKET array_suffix RBRACKET
+                          | LPAREN parameter_type_list? RPAREN
+                          | LPAREN VOID RPAREN
+
+// type-name (§6.7.6). Used inside cast expressions. Without an
+// abstract_declarator the transformer maps the run of type_specifier
+// tokens to a c99_ast Int / Long / UInt / ULong / Float / Double via
+// `_resolve_data_type` — same behavior as before. With an
+// abstract_declarator present (e.g., `(int *)x`), the transformer
+// composes a Pointer wrapping above the base type for pure-pointer
+// abstract declarators and rejects the array / function-pointer
+// shapes (no AST plumbing for them yet).
+
+type_name: type_specifier+ abstract_declarator?
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as
 // the parser rules above don't cover everything. Passing this as an
 // additional start in lexer.py keeps every terminal alive for .lex().
 // Remove when the real parser rules cover the full language.
+
 lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | DEFAULT | DO | DOUBLE | ELSE | ENUM | EXTERN
          | FLOAT | FOR | GOTO | IF | INLINE | INT | LONG

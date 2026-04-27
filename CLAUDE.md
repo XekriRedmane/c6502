@@ -71,13 +71,22 @@ takes one AST and returns another (or text for emit):
    function_decl's `params` array; their *types* live in parallel
    on `data_type.params`.
 
-   The type vocabulary is four integer types and two floating
-   types. Integers: `Int()` is 1-byte signed (-128..127), `Long()`
-   is 2-byte signed (-32768..32767), `UInt()` is 1-byte unsigned
-   (0..255), `ULong()` is 2-byte unsigned (0..65535). Floating:
-   `Float()` is IEEE 754 single (4 bytes), `Double()` is IEEE 754
-   double (8 bytes). `long double` (16-byte IEEE 754 quad /
-   extended) isn't modelled — the parser rejects it.
+   The type vocabulary is four integer types, two floating types,
+   plus pointers and function types. Integers: `Int()` is 1-byte
+   signed (-128..127), `Long()` is 2-byte signed (-32768..32767),
+   `UInt()` is 1-byte unsigned (0..255), `ULong()` is 2-byte
+   unsigned (0..65535). Floating: `Float()` is IEEE 754 single
+   (4 bytes), `Double()` is IEEE 754 double (8 bytes). `long
+   double` (16-byte IEEE 754 quad / extended) isn't modelled — the
+   parser rejects it. `Pointer(referenced_type)` is a 2-byte
+   address (the 6502's address width); declared with `*` in the
+   declarator, e.g. `int *p;`. At the byte level a pointer is
+   indistinguishable from a `Long`, so `_to_tac_data_type` collapses
+   `Pointer` onto TAC `Long` and the size-dispatch in `tac_to_asm`
+   / `replace_pseudoregisters` treats Pointer as 2-byte; the c99
+   symbol table preserves the Pointer type for later passes
+   (cast dispatch, dereference / address-of lowering when those
+   land).
 
    The lexer splits integer literals into four terminals
    by suffix (`INTEGER_CONSTANT` for no suffix, `LONG_INTEGER` for
@@ -133,11 +142,26 @@ takes one AST and returns another (or text for emit):
    `for (<for_init> exp? ; exp?) stmt`, or a null `;`). The two
    declaration alternatives map to the AST sum
    `declaration = FunctionDecl(function_decl) | VarDecl(var_decl)`:
-   `var_decl` is `int IDENT (= exp)? ;` and produces
-   `Type_var_decl(name, init?)`; `function_decl` is `int IDENT
-   (param_list) ;` (no body — C99 forbids nested function definitions
-   at block scope) and produces `Type_function_decl(name, params,
-   body=None)`. Iteration statements introduce a `for_init` rule
+   `var_decl` is `<specifier>+ <declarator> (= exp)? ;` and
+   `function_decl` is `<specifier>+ <declarator> <block>` (the
+   function-definition path; forward declarations like `int foo(int
+   x);` parse as `var_decl` because the trailing `;` matches that
+   rule, and the var_decl transformer rewraps as a `Type_function_
+   decl` with `body=None` whenever the declarator composes to a
+   FunType). The transformer walks the declarator parse tree (per
+   C99 §6.7.5: postfix array / function suffixes bind tighter than
+   prefix `*`) via `_apply_declarator`, returning `(name,
+   composed_type, outer_param_names)`. Composed type accumulates
+   `Pointer` wrappers from the pointer prefix and `FunType`
+   wrappers from function suffixes; the outermost function-suffix's
+   param names ride along separately for the AST's `params` field
+   (which holds names alongside the function's `data_type` =
+   `FunType` carrying param types). `int *p;` → `Pointer(Int())`;
+   `int *foo(int *x)` → `FunType(params=[Pointer(Int())],
+   ret=Pointer(Int()))`. Array declarators (`int a[10];`) and
+   function-pointer declarators (`int (*fp)(int);`) parse but
+   `_apply_direct_declarator` raises NotImplementedError when it
+   hits an array suffix — c99_ast has no Array variant yet. Iteration statements introduce a `for_init` rule
    covering a `var_decl` or `exp? ;` (function declarations aren't
    legal in for-init per C99 §6.8.5). The loop AST nodes (`WhileStmt`, `DoWhileStmt`, `ForStmt`,
    `BreakStmt`, `ContinueStmt`) carry an `identifier label` field that

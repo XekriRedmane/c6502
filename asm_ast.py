@@ -197,6 +197,12 @@ class Compare(Type_instruction):
 
 
 @dataclass
+class LoadAddress(Type_instruction):
+    src: Type_operand
+    dst: Type_operand
+
+
+@dataclass
 class Type_operand:
     pass
 
@@ -229,6 +235,23 @@ class Frame(Type_operand):
 
 @dataclass
 class Data(Type_operand):
+    name: str
+    offset: int
+
+
+@dataclass
+class Indirect(Type_operand):
+    offset: int
+
+
+@dataclass
+class ImmLabelLow(Type_operand):
+    name: str
+    offset: int
+
+
+@dataclass
+class ImmLabelHigh(Type_operand):
     name: str
     offset: int
 

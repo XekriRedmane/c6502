@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lark import Lark, Transformer
+from lark import Lark, Token, Transformer
 from lark.exceptions import VisitError
 from lark.visitors import v_args
 
@@ -32,7 +32,14 @@ _LARK = Lark.open(
     str(_GRAMMAR_PATH),
     parser="lalr",
     lexer="basic",
-    start=["start", "lex_only"],
+    # `start` is the real translation-unit entry point; `lex_only`
+    # keeps every terminal reachable so the lexer-only tests don't
+    # see "unused terminal" trimming. `declarator` and `type_name`
+    # are exposed so the §6.7.5 / §6.7.6 grammar can be unit-tested
+    # in isolation, since nothing reachable from `start` exercises
+    # the named-declarator side yet (var_decl / function_decl still
+    # take a bare IDENTIFIER, not a full declarator).
+    start=["start", "lex_only", "declarator", "type_name"],
 )
 
 
@@ -343,6 +350,173 @@ def _make_int_const(value):
     )
 
 
+# ---------------------------------------------------------------------------
+# Declarator walking
+# ---------------------------------------------------------------------------
+#
+# C99 declarators (§6.7.5) wrap a base type with a chain of modifiers
+# — pointers, array bounds, function signatures — and name an
+# identifier in the middle. The `_apply_declarator` helper walks a
+# raw `declarator` parse Tree from the OUTER form inward, threading
+# the base type and accumulating wrappers per the §6.7.5 precedence
+# rule: postfix array / function suffixes bind tighter than a prefix
+# `*`, so `int *foo(int)` is "function returning int*" not "pointer
+# to function returning int".
+#
+# We don't add Lark transformer methods for `declarator` /
+# `direct_declarator` / `pointer` — the walk needs the structural
+# info (recursive nesting, suffix vs. prefix) and a single helper
+# that owns the algorithm is clearer than splitting it across
+# transformer methods.
+
+def _is_token(x, ttype: str) -> bool:
+    return hasattr(x, "type") and x.type == ttype
+
+
+def _apply_declarator(decl_tree, base_type):
+    """Walk a `declarator: pointer? direct_declarator` parse tree.
+
+    Returns `(name, composed_type, outer_param_names)`:
+      name              — identifier the declarator names.
+      composed_type     — full c99_ast type for that name.
+      outer_param_names — list[str | None] of parameter names from
+                          the OUTERMOST direct_declarator's function
+                          suffix (or None if the declarator has no
+                          such suffix). Caller checks composed_type
+                          to decide whether these are real function
+                          params: `composed_type is FunType` →
+                          they're the function's params; anything
+                          else (e.g. `Pointer(FunType)` for a
+                          function-pointer variable) → noise that
+                          belongs to the pointee, not the variable
+                          itself.
+    """
+    children = decl_tree.children
+    if len(children) == 2:
+        # `pointer direct_declarator` — pointer wraps the base type
+        # before the inner direct_declarator threads its suffixes
+        # through. Per §6.7.5 the pointer modifier applies AFTER
+        # the postfix suffixes (the `*` is "outer" lexically but
+        # "inner" in the type composition).
+        pointer_tree, direct_tree = children
+        base_type = _wrap_pointers(pointer_tree, base_type)
+    else:
+        # `direct_declarator` — pointer? matched empty.
+        (direct_tree,) = children
+    return _apply_direct_declarator(direct_tree, base_type)
+
+
+def _wrap_pointers(pointer_tree, base_type):
+    """`pointer: STAR type_qualifier* pointer?`. Walks the optional
+    nested `pointer` chain, wrapping `base_type` once per `*`. Type
+    qualifiers (`const` / `restrict` / `volatile`) accepted by the
+    grammar are dropped — c6502 doesn't model qualifier semantics."""
+    depth = 0
+    cur = pointer_tree
+    while True:
+        depth += 1
+        inner = None
+        for c in cur.children:
+            if hasattr(c, "data") and c.data == "pointer":
+                inner = c
+                break
+        if inner is None:
+            break
+        cur = inner
+    for _ in range(depth):
+        base_type = c99_ast.Pointer(referenced_type=base_type)
+    return base_type
+
+
+def _apply_direct_declarator(dd_tree, base_type):
+    """Walk a `direct_declarator` Tree. Returns
+    `(name, composed_type, outer_param_names)` — same shape as
+    `_apply_declarator`. The outer-vs-inner distinction follows
+    Lark's parse tree: the OUTERMOST direct_declarator is the FIRST
+    one we recurse into (its suffix has already been parsed at
+    parse time), and inner direct_declarators are deeper recursions."""
+    children = dd_tree.children
+    # 1) IDENTIFIER alone — base case.
+    if len(children) == 1 and _is_token(children[0], "IDENTIFIER"):
+        return str(children[0]), base_type, None
+    # 2) `LPAREN declarator RPAREN` — recurse into the inner
+    #    declarator with the same base_type.
+    if (
+        len(children) == 3
+        and _is_token(children[0], "LPAREN")
+        and _is_token(children[2], "RPAREN")
+        and hasattr(children[1], "data")
+        and children[1].data == "declarator"
+    ):
+        return _apply_declarator(children[1], base_type)
+    inner_dd = children[0]
+    # 3) Array suffix — c99_ast has no Array variant, so reject
+    #    syntactically valid array declarators with a focused error.
+    if any(_is_token(c, "LBRACKET") for c in children):
+        raise NotImplementedError(
+            "array declarators aren't wired through to the AST yet "
+            "— c99_ast has no Array variant"
+        )
+    # 4) Function suffix — `inner_dd LPAREN body? RPAREN` where body
+    #    is a parameter_type_list, VOID, an identifier_list, or
+    #    empty (K&R `f()`).
+    middle = children[2:-1]  # drop LPAREN at [1] and RPAREN at [-1]
+    if not middle:
+        # `f()` — K&R-style empty list. Treat as no params.
+        param_pairs = []
+    elif len(middle) == 1 and _is_token(middle[0], "VOID"):
+        # `(void)` — explicit empty params.
+        param_pairs = []
+    elif len(middle) == 1 and isinstance(middle[0], list):
+        # parameter_type_list transformer returns a list of
+        # (name_or_None, type) tuples — by the time this helper
+        # runs, Lark has already transformed the subtree.
+        param_pairs = middle[0]
+    elif len(middle) == 1 and hasattr(middle[0], "data"):
+        if middle[0].data == "identifier_list":
+            raise NotImplementedError(
+                "K&R-style identifier-list functions aren't supported"
+            )
+        raise AssertionError(
+            f"unexpected direct_declarator function-form child: {middle[0]!r}"
+        )
+    else:
+        raise AssertionError(
+            f"unexpected direct_declarator function-form children: {children!r}"
+        )
+    param_types = [t for (_n, t) in param_pairs]
+    new_base = c99_ast.FunType(params=param_types, ret=base_type)
+    name, composed, _inner_outer_params = _apply_direct_declarator(
+        inner_dd, new_base,
+    )
+    # Our suffix is the OUTERMOST one for this declarator — propagate
+    # our own param names up. (Inner outer-params, if any, are from
+    # a deeper recursion and represent inner function-types — they
+    # belong to the type, not to this declarator's name.)
+    param_names = [n for (n, _t) in param_pairs]
+    return name, composed, param_names
+
+
+def _apply_abstract_declarator(adecl_tree, base_type):
+    """Walk an `abstract_declarator` (no name; used for type-names
+    and unnamed parameter declarations). Currently supports only
+    pointer-only abstract declarators (`*`, `**`, ...) — the array /
+    function-suffix forms aren't wired through to the AST yet."""
+    children = adecl_tree.children
+    # `abstract_declarator: pointer | pointer? direct_abstract_declarator`
+    # The pointer-only form has a single `pointer` child.
+    if (
+        len(children) == 1
+        and hasattr(children[0], "data")
+        and children[0].data == "pointer"
+    ):
+        return _wrap_pointers(children[0], base_type)
+    raise NotImplementedError(
+        "abstract declarators with array / function suffixes "
+        "aren't wired through to the AST yet"
+    )
+
+
 class _ASTBuilder(Transformer):
     def start(self, items):
         # `start: declaration*` — items is the list of Type_declaration
@@ -365,42 +539,83 @@ class _ASTBuilder(Transformer):
         return token
 
     def type_name(self, items):
-        # `type_name: type_specifier+`. Used inside cast expressions.
-        # Each item is a token (INT or LONG) thanks to the
-        # `type_specifier` transformer above; map them through
-        # `_resolve_data_type` so callers get the c99_ast Int/Long
-        # node, not the raw token list.
-        return _resolve_data_type(items)
+        # `type_name: type_specifier+ abstract_declarator?` — used
+        # inside cast expressions.
+        #
+        # When `abstract_declarator` is absent, every item is a
+        # type_specifier Token (the `type_specifier` transformer
+        # above passes the INT / LONG / SIGNED / etc. tokens
+        # through), so `_resolve_data_type` maps them to a c99_ast
+        # base type directly.
+        #
+        # When `abstract_declarator` is present, the trailing item
+        # is a Lark Tree — the new rules in c99.lark accept the
+        # full §6.7.6 grammar, but no transformer methods are wired
+        # for the inner declarator rules yet, so the subtree
+        # arrives raw. Raise a focused NotImplementedError so the
+        # failure points at the missing wire-up, not at a downstream
+        # `'Tree' object has no attribute 'type'` cascade.
+        type_specs = [it for it in items if isinstance(it, Token)]
+        if len(type_specs) != len(items):
+            raise NotImplementedError(
+                "abstract_declarator inside a type_name (cast target) "
+                "isn't wired through to the AST yet — the grammar "
+                "accepts the form, but the transformer doesn't yet "
+                "know how to compose a Pointer / array / function "
+                "wrapper around the base type"
+            )
+        return _resolve_data_type(type_specs)
 
-    def param_list(self, items):
-        # `(void)` → empty parameter list. Otherwise
-        #   type_specifier+ IDENTIFIER (COMMA type_specifier+ IDENTIFIER)*
-        # — each parameter has its own run of type_specifier tokens
-        # followed by an IDENTIFIER. The result is a list of
-        # (name, data_type) tuples; `function_decl` splits them into
-        # the parallel `params` (names) and `data_type.params` (types)
-        # arrays its AST shape requires.
-        if len(items) == 1 and getattr(items[0], "type", None) == "VOID":
-            return []
-        out = []
-        i = 0
-        while i < len(items):
-            type_specs = []
-            while (
-                i < len(items)
-                and hasattr(items[i], "type")
-                and items[i].type in _TYPE_SPECIFIER_TOKEN_TYPES
+    def parameter_declaration(self, items):
+        # `parameter_declaration: specifier+ declarator
+        #                       | specifier+ abstract_declarator?`
+        # Returns `(name_or_None, data_type)`. An unnamed parameter
+        # — `int foo(int *)` — gives `name=None`. An empty
+        # abstract_declarator (`int foo(int)` would give the inner
+        # `int` here) gives `name=None` and the bare specifier type.
+        specs = []
+        rest = []
+        for it in items:
+            if (
+                hasattr(it, "type")
+                and it.type in _SPECIFIER_TOKEN_TYPES
             ):
-                type_specs.append(items[i])
-                i += 1
-            # items[i] is now the IDENTIFIER for this param.
-            name = str(items[i])
-            i += 1
-            out.append((name, _resolve_data_type(type_specs)))
-            # Skip over the COMMA separator if there's another param.
-            if i < len(items) and getattr(items[i], "type", None) == "COMMA":
-                i += 1
-        return out
+                specs.append(it)
+            else:
+                rest.append(it)
+        base, _storage = _split_specifiers(specs)
+        if not rest:
+            return (None, base)
+        decl_tree = rest[0]
+        if decl_tree.data == "declarator":
+            name, composed, _outer = _apply_declarator(decl_tree, base)
+            return (name, composed)
+        if decl_tree.data == "abstract_declarator":
+            return (None, _apply_abstract_declarator(decl_tree, base))
+        raise AssertionError(
+            f"unexpected parameter_declaration child: {decl_tree.data}"
+        )
+
+    def parameter_or_ellipsis(self, items):
+        # `parameter_or_ellipsis: parameter_declaration | ELLIPSIS`.
+        # parameter_declaration has already been transformed into a
+        # tuple; ELLIPSIS comes through as a Token. Reject ELLIPSIS
+        # for now — c6502 has no variadic AST node.
+        item = items[0]
+        if hasattr(item, "type") and item.type == "ELLIPSIS":
+            raise ParserError(
+                "variadic functions ('...') aren't supported yet"
+            )
+        return item
+
+    def parameter_type_list(self, items):
+        # `parameter_type_list: parameter_declaration
+        #                       (COMMA parameter_or_ellipsis)*`
+        # — items alternate: tuple, COMMA, tuple, COMMA, ... .
+        # Strip COMMAs and return the list of (name_or_None, type)
+        # tuples. The transformer for parameter_or_ellipsis already
+        # rejected ELLIPSIS, so by here every entry is a real param.
+        return [it for it in items if not _is_token(it, "COMMA")]
 
     def block(self, items):
         # `block: LBRACE block_item* RBRACE`. Non-inline because
@@ -427,58 +642,73 @@ class _ASTBuilder(Transformer):
         return c99_ast.FunctionDecl(function_decl=child)
 
     def var_decl(self, items):
-        # `var_decl: specifier+ IDENTIFIER (ASSIGN exp)? SEMICOLON`.
-        # Layout: <specs...> IDENTIFIER [ASSIGN exp] SEMICOLON. The
-        # specifier validation lives in `_split_specifiers` — this
-        # method just slices the token stream into specs / name /
-        # initializer and pulls the data_type out of the specifiers.
+        # `var_decl: specifier+ declarator (ASSIGN exp)? SEMICOLON`.
+        # Layout: <specs...> declarator [ASSIGN exp] SEMICOLON. The
+        # specifiers give the BASE type; the declarator wraps it
+        # with pointer / function modifiers and names the identifier.
+        # If the resulting composed_type is FunType, this is actually
+        # a forward function declaration (`int foo(int);` parses as
+        # var_decl with a function-typed declarator) — rewrap as
+        # Type_function_decl with body=None.
         specs, i = _consume_specifiers(items, 0)
-        data_type, storage_class = _split_specifiers(specs)
-        name = items[i]
+        base_type, storage_class = _split_specifiers(specs)
+        decl_tree = items[i]
+        name, composed, outer_param_names = _apply_declarator(
+            decl_tree, base_type,
+        )
         i += 1
         init = None
-        if items[i].type == "ASSIGN":
+        if i < len(items) and _is_token(items[i], "ASSIGN"):
             init = items[i + 1]
+        if isinstance(composed, c99_ast.FunType):
+            if init is not None:
+                raise ParserError(
+                    "function declaration cannot have an initializer"
+                )
+            return c99_ast.Type_function_decl(
+                name=name,
+                params=outer_param_names or [],
+                body=None,
+                data_type=composed,
+                storage_class=storage_class,
+            )
         return c99_ast.Type_var_decl(
-            name=str(name),
+            name=name,
             init=init,
-            data_type=data_type,
+            data_type=composed,
             storage_class=storage_class,
         )
 
     def function_decl(self, items):
-        # `function_decl: specifier+ IDENTIFIER LPAREN param_list
-        # RPAREN (SEMICOLON | block)`. The trailing alternative
-        # distinguishes a forward declaration (SEMICOLON, body=None)
-        # from a function definition (block, body=Block(...)). The
-        # `block` transformer has already turned the latter into a
-        # Block AST node, so we tell the two apart by inspecting the
-        # last item.
+        # `function_decl: specifier+ declarator block` — function
+        # *definition* path (body present). Forward declarations land
+        # in `var_decl` above (the grammar lets `int foo(int);` parse
+        # as var_decl with a function-typed declarator, since both
+        # rules share the `specifier+ declarator` prefix and the
+        # trailing `(ASSIGN exp)? SEMICOLON` matches the no-init,
+        # no-body case).
         #
-        # `param_list` returns a list of (name, type) tuples. We split
-        # them into parallel arrays: the AST's `params` field is a
-        # list of names, while the function's overall `data_type`
-        # carries the param types alongside the return type as
-        # `FunType(params, ret)`.
+        # The declarator must compose to a FunType — its outermost
+        # direct_declarator form has to be the function-suffix shape.
+        # Anything else (a plain identifier, a function-pointer
+        # variable, ...) means the source isn't a function definition.
         specs, i = _consume_specifiers(items, 0)
-        return_type, storage_class = _split_specifiers(specs)
-        name = items[i]
-        # items[i+1] = LPAREN, items[i+2] = param_list, items[i+3] = RPAREN
-        param_pairs = items[i + 2]
-        last = items[i + 4]
-        if hasattr(last, "type") and last.type == "SEMICOLON":
-            body = None
-        else:
-            # `block` already produced a c99_ast.Block.
-            body = last
-        param_names = [n for (n, _t) in param_pairs]
-        param_types = [t for (_n, t) in param_pairs]
-        ftype = c99_ast.FunType(params=param_types, ret=return_type)
+        base_type, storage_class = _split_specifiers(specs)
+        decl_tree = items[i]
+        name, composed, outer_param_names = _apply_declarator(
+            decl_tree, base_type,
+        )
+        block = items[i + 1]
+        if not isinstance(composed, c99_ast.FunType):
+            raise ParserError(
+                f"function definition's declarator must compose to a "
+                f"function type; got {type(composed).__name__}"
+            )
         return c99_ast.Type_function_decl(
-            name=str(name),
-            params=param_names,
-            body=body,
-            data_type=ftype,
+            name=name,
+            params=outer_param_names or [],
+            body=block,
+            data_type=composed,
             storage_class=storage_class,
         )
 

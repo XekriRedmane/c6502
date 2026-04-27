@@ -236,9 +236,10 @@ def _break_label(loop_label: str) -> str:
 
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
     """Byte width of an object type. Int / UInt = 1, Long / ULong = 2,
-    Float = 4, Double = 8. Used by Cast lowering to decide between
-    SignExtend / ZeroExtend / Truncate / no-op (for integer types)
-    and by various size-driven dispatch sites downstream."""
+    Float = 4, Double = 8, Pointer = 2 (the 6502's address width).
+    Used by Cast lowering to decide between SignExtend / ZeroExtend /
+    Truncate / no-op (for integer types) and by various size-driven
+    dispatch sites downstream."""
     if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
         return 1
     if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
@@ -247,11 +248,20 @@ def _byte_width_of(t: c99_ast.Type_data_type) -> int:
         return 4
     if isinstance(t, c99_ast.Double):
         return 8
+    if isinstance(t, c99_ast.Pointer):
+        return 2
     raise TypeError(f"_byte_width_of: not an object type: {t!r}")
 
 
 def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
-    """Translate a c99 data_type to its TAC counterpart."""
+    """Translate a c99 data_type to its TAC counterpart. The TAC
+    type sum has no Pointer variant — at the byte level, a 2-byte
+    address is indistinguishable from a 2-byte integer on the 6502
+    — so Pointer collapses onto `Long` (same width, same byte
+    semantics). The c99 symbol table still carries Pointer for
+    later passes that care (cast dispatch, dereference / address-of
+    lowering when those land), but downstream TAC ops just see a
+    2-byte unsigned-ish value."""
     if isinstance(t, c99_ast.Int):
         return tac_ast.Int()
     if isinstance(t, c99_ast.Long):
@@ -264,6 +274,8 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.Float()
     if isinstance(t, c99_ast.Double):
         return tac_ast.Double()
+    if isinstance(t, c99_ast.Pointer):
+        return tac_ast.Long()
     if isinstance(t, c99_ast.FunType):
         return tac_ast.FunType(
             params=[_to_tac_data_type(p) for p in t.params],
@@ -301,11 +313,13 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
     precision). TAC collapses integer signedness onto width — UInt
     and Int both produce ConstInt; ULong and Long both produce
     ConstLong (see `_to_tac_const`) — but Float / Double remain
-    distinct. Used by the synthetic-constant call sites (postfix
-    `+1`, short-circuit 0/1, implicit `return 0`)."""
+    distinct. Pointer collapses onto ConstLong (same 2-byte width
+    as Long; addresses are unsigned-ish 2-byte values). Used by the
+    synthetic-constant call sites (postfix `+1`, short-circuit 0/1,
+    implicit `return 0`)."""
     if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
         return tac_ast.ConstInt(int=int(value))
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return tac_ast.ConstLong(int=int(value))
     if isinstance(t, c99_ast.Float):
         return tac_ast.ConstFloat(float=float(value))
@@ -379,6 +393,11 @@ def _tac_static_init_for(
         return tac_ast.FloatInit(float=float(value))
     if isinstance(t, c99_ast.Double):
         return tac_ast.DoubleInit(float=float(value))
+    if isinstance(t, c99_ast.Pointer):
+        # Pointer collapses onto Long for static-init purposes —
+        # addresses are 2-byte values written as a little-endian
+        # 16-bit integer (e.g. NULL = 0x0000).
+        return tac_ast.LongInit(int=int(value))
     raise TypeError(
         f"static-storage object can't have non-object type {t!r}"
     )
@@ -1046,22 +1065,38 @@ class Translator:
                 # so user vars and translator temps can't collide.
                 return tac_ast.Var(name=name)
             case c99_ast.Assignment(lval=lval, rval=rval):
-                # identifier_resolution already enforces lval-is-Var;
-                # the runtime check here is belt-and-braces in case a
-                # later refactor lets a non-Var slip through.
-                if not isinstance(lval, c99_ast.Var):
-                    raise TypeError(
-                        f"assignment lval must be Var (variable_"
-                        f"resolution should have enforced this); "
-                        f"got {lval!r}"
-                    )
+                # identifier_resolution accepts two lval shapes:
+                # `Var(name)` (a named storage cell) and
+                # `Dereference(ptr_exp)` (a store-through-pointer).
+                # Anything else gets rejected upstream; the runtime
+                # check here is belt-and-braces in case a later
+                # refactor lets a non-lvalue slip through.
                 rval_val = self.translate_exp(rval, instrs)
-                dst = tac_ast.Var(name=lval.name)
-                instrs.append(tac_ast.Copy(src=rval_val, dst=dst))
-                # Return the lval so chained assignments compose:
-                # `b = a = 5` -> inner returns Var(@0.a), outer copies
-                # that into @1.b and returns Var(@1.b).
-                return dst
+                if isinstance(lval, c99_ast.Var):
+                    dst = tac_ast.Var(name=lval.name)
+                    instrs.append(tac_ast.Copy(src=rval_val, dst=dst))
+                    # Return the lval so chained assignments compose:
+                    # `b = a = 5` -> inner returns Var(@0.a), outer copies
+                    # that into @1.b and returns Var(@1.b).
+                    return dst
+                if isinstance(lval, c99_ast.Dereference):
+                    # `*p = rval` lowers to a Store: evaluate the
+                    # pointer expression, then write the rval's bytes
+                    # through the pointer. The result of the
+                    # expression is the rval value itself (post-
+                    # conversion via the type checker's _convert_to),
+                    # so we return rval_val for the chained-assignment
+                    # case `*q = *p = 5`.
+                    ptr_val = self.translate_exp(lval.exp, instrs)
+                    instrs.append(tac_ast.Store(
+                        src=rval_val, dst_ptr=ptr_val,
+                    ))
+                    return rval_val
+                raise TypeError(
+                    f"assignment lval must be Var or Dereference "
+                    f"(identifier_resolution should have enforced "
+                    f"this); got {lval!r}"
+                )
             case c99_ast.Conditional(
                 condition=cond,
                 true_clause=true_clause,
@@ -1162,6 +1197,52 @@ class Translator:
                 ))
                 instrs.append(tac_ast.Copy(src=new, dst=var))
                 return old
+            case c99_ast.Dereference(exp=inner):
+                # `*p` (read context) — evaluate the pointer
+                # expression, then Load N bytes through the
+                # resulting pointer into a fresh pointee-typed temp.
+                # The dst's type comes from the type checker (the
+                # Dereference node's data_type is the pointee).
+                #
+                # The store-through-pointer case (`*p = rval`) is
+                # handled in the Assignment case above; that path
+                # never reaches this one because Assignment doesn't
+                # call translate_exp on its lval.
+                ptr_val = self.translate_exp(inner, instrs)
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
+                instrs.append(tac_ast.Load(src_ptr=ptr_val, dst=dst))
+                return dst
+            case c99_ast.AddressOf(exp=inner):
+                # `&e` — `e` is an lvalue (validated by
+                # identifier_resolution; today: Var or Dereference).
+                # The result is a pointer-typed temp, type stamped
+                # by the type checker.
+                if isinstance(inner, c99_ast.Var):
+                    # `&x` — straightforward GetAddress on the
+                    # named storage cell. Works uniformly for
+                    # locals, params, and statics; the asm-side
+                    # LoadAddress dispatches on storage class via
+                    # the symbol table.
+                    dst = tac_ast.Var(
+                        name=self.make_temporary_variable_name(exp.data_type),
+                    )
+                    instrs.append(tac_ast.GetAddress(
+                        operand=tac_ast.Var(name=inner.name), dst=dst,
+                    ))
+                    return dst
+                if isinstance(inner, c99_ast.Dereference):
+                    # `&*e` ≡ `e` per C99 §6.5.3.2.3 — neither `&`
+                    # nor `*` is evaluated, the result is just `e`.
+                    # Translate the pointer expression directly,
+                    # skipping the Load that a bare `*e` would emit.
+                    return self.translate_exp(inner.exp, instrs)
+                raise TypeError(
+                    f"address-of operand must be Var or Dereference "
+                    f"(identifier_resolution should have enforced "
+                    f"this); got {inner!r}"
+                )
         raise TypeError(f"unexpected exp: {exp!r}")
 
     def translate_short_circuit(

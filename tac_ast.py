@@ -100,6 +100,24 @@ class DoubleToFloat(Type_instruction):
 
 
 @dataclass
+class GetAddress(Type_instruction):
+    operand: Type_val
+    dst: Type_val
+
+
+@dataclass
+class Load(Type_instruction):
+    src_ptr: Type_val
+    dst: Type_val
+
+
+@dataclass
+class Store(Type_instruction):
+    src: Type_val
+    dst_ptr: Type_val
+
+
+@dataclass
 class Unary(Type_instruction):
     op: Type_unary_operator
     src: Type_val

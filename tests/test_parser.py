@@ -2460,6 +2460,47 @@ class TestPointerIntegerCasts(unittest.TestCase):
             "}\n"
         )
 
+    def test_float_to_pointer_rejected(self):
+        # C99 §6.3.2.3 doesn't define floating ↔ pointer
+        # conversions. The type checker rejects them with a
+        # focused message.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { float f; int *p; "
+                "f = 1.5f; p = (int *)f; return 0; }\n"
+            )
+        self.assertIn("pointer", str(cm.exception))
+        self.assertIn("floating", str(cm.exception))
+
+    def test_double_to_pointer_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { double d; long *lp; "
+                "d = 2.5; lp = (long *)d; return 0; }\n"
+            )
+
+    def test_pointer_to_float_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { int x; int *p; float f; "
+                "p = &x; f = (float)p; return 0; }\n"
+            )
+
+    def test_pointer_to_double_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { int x; int *p; double d; "
+                "p = &x; d = (double)p; return 0; }\n"
+            )
+
+    def _typecheck(self, src: str) -> None:
+        from compile import _run_stage
+        _run_stage("tac", src)
+
 
 class TestPointerUnaryOps(unittest.TestCase):
     """Unary operators on pointer operands. `-p` and `~p` are

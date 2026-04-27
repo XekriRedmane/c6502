@@ -974,13 +974,27 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"cast target type must be an object type "
                         f"(Int / Long / UInt / ULong / Float / "
-                        f"Double), got {target!r}"
+                        f"Double / Pointer), got {target!r}"
                     )
                 inner_type = self._check_exp(inner)
                 if not _is_object_type(inner_type):
                     raise TypeCheckError(
                         f"cannot cast non-object type {inner_type!r} "
                         f"to {target!r}"
+                    )
+                # C99 §6.3.2.3 only defines pointer ↔ integer and
+                # pointer ↔ pointer conversions. Pointer ↔ floating
+                # has no meaning — an address isn't an arithmetic
+                # value — so reject those mixes here.
+                src_fp = _is_floating_type(inner_type)
+                tgt_fp = _is_floating_type(target)
+                src_ptr = _is_pointer_type(inner_type)
+                tgt_ptr = _is_pointer_type(target)
+                if (src_fp and tgt_ptr) or (src_ptr and tgt_fp):
+                    raise TypeCheckError(
+                        f"cannot cast between pointer and "
+                        f"floating-point type: {inner_type!r} → "
+                        f"{target!r}"
                     )
                 exp.data_type = target
                 return target

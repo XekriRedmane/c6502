@@ -406,9 +406,16 @@ def replace_program(
     """
     match prog:
         case asm_ast.Program(top_level=top_levels):
+            # Top-level static-storage names: every StaticVariable
+            # (file-scope and block-scope `static` variables) plus
+            # every Function (function names also resolve to a
+            # link-time-known absolute address — needed so an
+            # `&foo` GetAddress on a function name reaches the
+            # `Data(name)` lowering path instead of failing the
+            # "Pseudo is neither static, local, nor param" guard).
             statics = frozenset(
                 tl.name for tl in top_levels
-                if isinstance(tl, asm_ast.StaticVariable)
+                if isinstance(tl, (asm_ast.StaticVariable, asm_ast.Function))
             ) | extra_statics
             new_top: list[asm_ast.Type_top_level] = []
             for tl in top_levels:

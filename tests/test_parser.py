@@ -2753,6 +2753,62 @@ class TestStaticPointerInit(unittest.TestCase):
         self.assertIn("p:", text)
         self.assertIn("DC.W  $0000", text)
 
+    def test_function_pointer_initializer(self):
+        # `int (*fp)(void) = &foo;` — function-pointer static
+        # initializer. The address-of-function path produces an
+        # AddressInit pointing at the function symbol; asm_emit
+        # lays down `fp: DC.W foo` so the assembler resolves the
+        # function's address at link time.
+        text = self._codegen(
+            "int foo(void) { return 7; }\n"
+            "int (*fp)(void) = &foo;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("fp:", text)
+        self.assertIn("DC.W  foo", text)
+
+    def test_function_pointer_initializer_forward_decl(self):
+        # The pointee function doesn't need a body in this TU —
+        # `&foo` works against a pure forward declaration too.
+        # The resulting `DC.W foo` reference is left for the
+        # linker to resolve.
+        text = self._codegen(
+            "int foo(int x);\n"
+            "int (*fp)(int) = &foo;\n"
+            "int main(void) { return 0; }\n"
+        )
+        self.assertIn("DC.W  foo", text)
+
+    def test_function_pointer_runtime_assign(self):
+        # `fp = &foo;` (runtime, not a static init) — the
+        # GetAddress / LoadAddress chain has to recognize `foo` as
+        # a static-storage name so it takes the immediate-label
+        # path (`LDA #<foo`) instead of the FP-relative-add path
+        # for locals.
+        text = self._codegen(
+            "int foo(void) { return 7; }\n"
+            "int main(void) {\n"
+            "  int (*fp)(void);\n"
+            "  fp = &foo;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        self.assertIn("LDA   #<foo", text)
+        self.assertIn("LDA   #>foo", text)
+
+    def test_block_scope_static_function_pointer_initializer(self):
+        # Same as the variable cases — block-scope `static int
+        # (*fp)(void) = &foo;` keeps its `@N.fp` rename but still
+        # resolves the function symbol at link time.
+        text = self._codegen(
+            "int foo(void) { return 7; }\n"
+            "int main(void) {\n"
+            "  static int (*fp)(void) = &foo;\n"
+            "  return 0;\n"
+            "}\n"
+        )
+        self.assertIn("DC.W  foo", text)
+
     def test_complement_float_rejected(self):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully

@@ -1289,13 +1289,25 @@ class TypeChecker:
                 exp.data_type = pointee
                 return pointee
             case c99_ast.AddressOf(exp=inner):
-                # `&e` — result is `Pointer(operand_type)`
-                # (C99 §6.5.3.2.3). Lvalue check on `e` lives in
-                # identifier_resolution. The operand is allowed to
-                # have any object type (the type checker has already
-                # rejected function-typed Vars in the inner
-                # `_check_exp` call via the "function used as
-                # variable" check).
+                # `&e` — result is `Pointer(operand_type)` per C99
+                # §6.5.3.2.3. Lvalue check on `e` lives in
+                # identifier_resolution.
+                #
+                # Function names need a special case: the regular
+                # `Var` lookup rejects function-typed names with
+                # "function used as a variable" (since they aren't
+                # legal in most expression contexts), but `&foo`
+                # is exactly the place where they ARE legal —
+                # taking the address of a function yields a function
+                # pointer. Detect that shape directly so the inner
+                # `_check_exp` doesn't trip the guard.
+                if isinstance(inner, c99_ast.Var):
+                    sym = self.symbols.get(inner.name)
+                    if sym is not None and isinstance(sym.type, FunType):
+                        inner.data_type = sym.type
+                        result = Pointer(referenced_type=sym.type)
+                        exp.data_type = result
+                        return result
                 t_inner = self._check_exp(inner)
                 result = Pointer(referenced_type=t_inner)
                 exp.data_type = result

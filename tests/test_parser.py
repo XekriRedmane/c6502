@@ -2905,6 +2905,60 @@ class TestIndirectCall(unittest.TestCase):
         self.assertIn("LDA   #>foo", text)
         self.assertIn("JSR   icall", text)
 
+    def test_indirect_call_with_dereference_callee(self):
+        # `(*fp)(args)` — the canonical C idiom. Auto-decay per
+        # C99 §6.3.2.1.4 makes this equivalent to `fp(args)`; the
+        # parser reduces both forms to FunctionCall(name=fp, ...)
+        # and the same JSR icall lowering applies.
+        text = self._codegen(
+            "int foo(int x) { return x + 1; }\n"
+            "int main(void) {\n"
+            "  int (*fp)(int) = &foo;\n"
+            "  return (*fp)(5);\n"
+            "}\n"
+        )
+        self.assertIn("JSR   icall", text)
+
+    def test_parenthesized_direct_callee(self):
+        # `(foo)(args)` — paren around a function name. Resolves
+        # the same as `foo(args)` (direct call, JSR foo).
+        text = self._codegen(
+            "int foo(int x) { return x + 1; }\n"
+            "int main(void) {\n"
+            "  return (foo)(5);\n"
+            "}\n"
+        )
+        self.assertIn("JSR   foo", text)
+        self.assertNotIn("JSR   icall", text)
+
+    def test_address_of_function_then_call(self):
+        # `(&foo)(args)` — explicitly take foo's address, then
+        # call through it. Per the auto-decay rule the parens-and-
+        # `&` cancel out to leave just `foo(args)`. Reduces to a
+        # direct call.
+        text = self._codegen(
+            "int foo(int x) { return x + 1; }\n"
+            "int main(void) {\n"
+            "  return (&foo)(5);\n"
+            "}\n"
+        )
+        self.assertIn("JSR   foo", text)
+        self.assertNotIn("JSR   icall", text)
+
+    def test_complex_callee_rejected(self):
+        # `(arr[i])(args)`, `(f())(args)`, etc. would need the
+        # FunctionCall AST to carry an arbitrary callee expression
+        # rather than a string name. Pin the current behavior:
+        # a non-name callee inside the parens raises a parser
+        # error.
+        from parser import ParserError
+        from lark.exceptions import VisitError
+        # `(1)(args)` — a non-name callee.
+        with self.assertRaises((ParserError, VisitError)):
+            self._typecheck(
+                "int main(void) { return (1)(5); }\n"
+            )
+
     def test_complement_float_rejected(self):
         # C99 §6.5.3.3.4 — `~` requires an integer operand. Float
         # has no bit-pattern semantics that `~` would meaningfully

@@ -919,6 +919,43 @@ class _ASTBuilder(Transformer):
         args = items[2] if len(items) == 4 else []
         return c99_ast.FunctionCall(name=name, args=args)
 
+    # `LPAREN exp RPAREN LPAREN arg_list? RPAREN` — function call
+    # through a parenthesised callee. Children:
+    #   [LPAREN, callee_exp, RPAREN, LPAREN, arg_list?, RPAREN]
+    # — 5 if no args, 6 with an arg_list. Per C99 §6.3.2.1.4 the
+    # callee auto-decays to a function pointer in any expression
+    # context except the operands of `&` / `sizeof`, so several
+    # surface forms boil down to "call through this name":
+    #   `(fp)(args)`   — Var(fp): direct or indirect, depending on
+    #                    fp's symbol-table type. Same as `fp(args)`.
+    #   `(*fp)(args)`  — Dereference(Var(fp)): the dereference is
+    #                    elided per the auto-decay rule. Same as
+    #                    `fp(args)`.
+    #   `(&foo)(args)` — AddressOf(Var(foo)): pointer to foo,
+    #                    immediately called through. Same as
+    #                    `foo(args)`.
+    # Anything else (`(arr[i])(args)`, `(f())(args)`, ...) needs
+    # the AST's name field replaced with a general callee
+    # expression — separate scope; reject for now.
+    def indirect_function_call(self, items):
+        callee = items[1]
+        args = items[4] if len(items) == 6 else []
+        # Drill through the auto-decay shapes.
+        if isinstance(callee, c99_ast.Var):
+            name = callee.name
+        elif (
+            isinstance(callee, (c99_ast.Dereference, c99_ast.AddressOf))
+            and isinstance(callee.exp, c99_ast.Var)
+        ):
+            name = callee.exp.name
+        else:
+            raise ParserError(
+                "indirect call through complex expression not "
+                "supported — callee must be a name, `*name`, or "
+                "`&name`"
+            )
+        return c99_ast.FunctionCall(name=name, args=args)
+
     # `arg_list: exp (COMMA exp)*` — every other child is an exp;
     # the COMMA tokens are interleaved.
     def arg_list(self, items):

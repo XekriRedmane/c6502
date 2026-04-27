@@ -366,11 +366,25 @@ statement: RETURN exp SEMICOLON                                     -> return_st
 // after IDENTIFIER, LALR(1) sees LPAREN and shifts (function_call);
 // any other lookahead reduces to identifier→atom. The AST node
 // FunctionCall(name, args) takes the callee as a string identifier
-// (not a general expression), so the LHS is restricted to
-// IDENTIFIER directly — no `(p)(args)` form yet.
+// (not a general expression). The two grammar alternatives supply
+// the name from different shapes:
+//   `IDENTIFIER LPAREN args RPAREN`  → bare-name callee `foo(args)`.
+//   `LPAREN exp RPAREN LPAREN args RPAREN` → parenthesised-callee
+//     forms like `(*fp)(args)` or `(fp)(args)`. The transformer
+//     accepts only the shapes that boil down to a single named
+//     identifier (Var / Dereference-of-Var / AddressOf-of-Var)
+//     since the AST node only carries a string name; richer
+//     callee expressions would need a different AST shape.
+//
+// LALR(1) note: the `LPAREN exp RPAREN` form shares its prefix
+// with the plain `paren` atom, creating a shift-reduce on the
+// trailing-LPAREN lookahead. Lark's shift-preference picks the
+// indirect_function_call alternative when another LPAREN follows,
+// which is what we want — anything else reduces to paren.
 
 ?atom: const                       -> constant
      | LPAREN exp RPAREN                      -> paren
+     | LPAREN exp RPAREN LPAREN arg_list? RPAREN -> indirect_function_call
      | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
      | IDENTIFIER                             -> identifier
 const: INTEGER_CONSTANT

@@ -2461,5 +2461,66 @@ class TestPointerIntegerCasts(unittest.TestCase):
         )
 
 
+class TestPointerUnaryOps(unittest.TestCase):
+    """Unary operators on pointer operands. `-p` and `~p` are
+    nonsensical (negate / bit-flip an address) and rejected at
+    type-check time. `!p` is the null-pointer test (`p != 0`) and
+    is legal — the existing 2-byte LogicalNot lowering ORs the two
+    address bytes and drives a 0/1 select off the resulting Z
+    flag."""
+
+    def _typecheck(self, src: str) -> None:
+        from compile import _run_stage
+        _run_stage("tac", src)
+
+    def _codegen(self, src: str) -> str:
+        from compile import _run_stage
+        return _run_stage("codegen", src)
+
+    def test_negate_pointer_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { int x; int *p; p = &x; return -p; }\n"
+            )
+        self.assertIn("'-'", str(cm.exception))
+
+    def test_complement_pointer_rejected(self):
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError) as cm:
+            self._typecheck(
+                "int main(void) { int x; int *p; p = &x; return ~p; }\n"
+            )
+        self.assertIn("'~'", str(cm.exception))
+
+    def test_logical_not_pointer_lowers_to_or_of_both_bytes(self):
+        # `!p` for a 2-byte pointer ORs the two address bytes and
+        # branches on the resulting Z flag — Z=1 iff both bytes are
+        # zero, i.e., the pointer is null. The existing Long-sized
+        # LogicalNot lowering handles this for free.
+        text = self._codegen(
+            "int main(void) { int x; int *p; p = &x; return !p; }\n"
+        )
+        # The asm has an `ORA (FP),Y` (combining the two bytes) then
+        # the lnot 0/1-select via BEQ to a `lnot_true` label.
+        self.assertIn("ORA   (FP),Y", text)
+        self.assertIn(".lnot_true@", text)
+
+    def test_logical_not_pointer_to_pointer(self):
+        # `!pp` for an `int **` — also 2 bytes, same lowering.
+        self._codegen(
+            "int main(void) { int *p; int **pp; pp = &p; return !pp; }\n"
+        )
+
+    def test_long_pointer_negate_still_rejected(self):
+        # Same rule applies for `long *` — pointer-ness is what
+        # matters, not the pointee.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { long y; long *lp; lp = &y; return -lp; }\n"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1002,8 +1002,25 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"unary operator on non-object type {t!r}"
                     )
-                # `!x` always yields an int (C99 §6.5.3.3.5: "The
-                # result has type int"). `-x` and `~x` preserve type.
+                # Per-operator operand-type constraints. `-` and `~`
+                # don't make sense on a pointer (negating an address
+                # gives garbage; bit-flipping it likewise). `!p` is
+                # legal — it's defined as `p != 0`, the pointer's
+                # null-ness check (C99 §6.5.3.3.5: result is int).
+                # Strict C99 also requires `~` to take integer (no
+                # FP) and `-` to take arithmetic (no pointer); the
+                # FP-side checks are outside this commit's scope.
+                if (
+                    isinstance(op, (c99_ast.Negate, c99_ast.Complement))
+                    and _is_pointer_type(t)
+                ):
+                    op_name = "-" if isinstance(op, c99_ast.Negate) else "~"
+                    raise TypeCheckError(
+                        f"unary '{op_name}' is not defined on pointer "
+                        f"type {t!r}"
+                    )
+                # `!x` always yields an int. `-x` and `~x` preserve
+                # type.
                 if isinstance(op, c99_ast.LogicalNot):
                     result = Int()
                 else:

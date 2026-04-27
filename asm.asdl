@@ -10,9 +10,17 @@ module ASM {
     static_init = IntInit(int) | LongInit(int)
                 | FloatInit(float) | DoubleInit(float)
 
+    -- Ret's `save_a` flag controls whether the epilogue brackets the
+    -- SSP/FP arithmetic with PHA/PLA to preserve A across the
+    -- 16-bit add. Integer returns (Int → A; Long → A=lo, X=hi)
+    -- need this; FP returns leave their result in HARGS instead, so
+    -- A doesn't carry anything important across the arithmetic and
+    -- the epilogue can skip the PHA/PLA pair (`save_a=False`). The
+    -- flag has no effect when arg_bytes + local_bytes == 0 (the
+    -- collapsed epilogue is just `RTS` either way).
     instruction =
         Mov(operand src, operand dst)
-        | Ret(int arg_bytes, int local_bytes)
+        | Ret(int arg_bytes, int local_bytes, bool save_a)
         | FunctionPrologue(int arg_bytes, int local_bytes)
         | AllocateStack(int bytes)
         | Add(operand src, operand dst)

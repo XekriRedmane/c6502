@@ -329,7 +329,7 @@ class TestEmitFunctionWithLabels(unittest.TestCase):
             asm_ast.Branch(cond=asm_ast.NE(), target="L_skip"),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
             asm_ast.Label(name="L_skip"),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ])
         self.assertEqual(
             emit_function(fn),
@@ -510,7 +510,7 @@ class TestEmitRet(unittest.TestCase):
     def test_zero_dimensions_just_rts(self):
         # No args and no locals — nothing to dealloc, no FP to restore.
         self.assertEqual(
-            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0)),
+            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True)),
             ["   RTS"],
         )
 
@@ -520,7 +520,7 @@ class TestEmitRet(unittest.TestCase):
         # A leading blank line + `; epilogue` comment mark where the
         # boilerplate starts.
         self.assertEqual(
-            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3)),
+            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3, save_a=True)),
             [
                 "",
                 "   ; epilogue",
@@ -546,11 +546,48 @@ class TestEmitRet(unittest.TestCase):
             ],
         )
 
+    def test_save_a_false_skips_pha_pla(self):
+        # FP-return path: same SSP/FP rewind, but no PHA/PLA wrap.
+        # The return value lives in HARGS, which the rewind doesn't
+        # touch, so there's nothing to preserve in A.
+        self.assertEqual(
+            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3, save_a=False)),
+            [
+                "",
+                "   ; epilogue",
+                # SSP = FP + 5 (no PHA before)
+                "   CLC",
+                "   LDA   FP",
+                "   ADC   #$05",
+                "   STA   SSP",
+                "   LDA   FP+1",
+                "   ADC   #$00",
+                "   STA   SSP+1",
+                "   LDY   #$04",
+                "   LDA   (FP),Y",
+                "   TAX",
+                "   INY",
+                "   LDA   (FP),Y",
+                "   STA   FP+1",
+                "   STX   FP",
+                # RTS directly, no PLA
+                "   RTS",
+            ],
+        )
+
+    def test_save_a_false_with_zero_dimensions_still_just_rts(self):
+        # No frame to tear down — save_a is irrelevant; either flag
+        # collapses to a bare RTS.
+        self.assertEqual(
+            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False)),
+            ["   RTS"],
+        )
+
     def test_args_shift_ssp_rewind_not_fp_slot(self):
         # M=2, N=4: SSP rewind is FP + (4+2+2) = FP + 8, but the
         # saved-FP slot is still at FP+M+1=3 / FP+M+2=4 — args don't
         # shift the slot location.
-        out = emit_instruction(asm_ast.Ret(arg_bytes=4, local_bytes=2))
+        out = emit_instruction(asm_ast.Ret(arg_bytes=4, local_bytes=2, save_a=True))
         # SSP rewind low byte = M+N+2 = 8
         self.assertIn("   ADC   #$08", out)
         # FP-slot read uses LDY #(M+1) = #$03
@@ -560,7 +597,7 @@ class TestEmitRet(unittest.TestCase):
         # The SSP-rewind ADC pair carries between low and high. With
         # a 9-bit-ish total (e.g. N=0x100, M=0), low byte = $02
         # (= 0x100+0+2 low byte), high byte = $01.
-        out = emit_instruction(asm_ast.Ret(arg_bytes=0x100, local_bytes=0))
+        out = emit_instruction(asm_ast.Ret(arg_bytes=0x100, local_bytes=0, save_a=True))
         self.assertIn("   ADC   #$02", out)
         self.assertIn("   ADC   #$01", out)
 
@@ -568,19 +605,19 @@ class TestEmitRet(unittest.TestCase):
         for lb in [-1, 254, 1000]:
             with self.subTest(local_bytes=lb):
                 with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=lb))
+                    emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=lb, save_a=True))
 
     def test_total_out_of_range_raises(self):
         # M+N+2 > 0xFFFF can't fit in a 16-bit SSP arithmetic.
         with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.Ret(arg_bytes=0xFFFE, local_bytes=0))
+            emit_instruction(asm_ast.Ret(arg_bytes=0xFFFE, local_bytes=0, save_a=True))
 
 
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ])
         self.assertEqual(
             emit_function(fn),
@@ -608,7 +645,7 @@ class TestEmitFunction(unittest.TestCase):
                         dst=asm_ast.Frame(offset=1)),
             asm_ast.Mov(src=asm_ast.Frame(offset=1),
                         dst=asm_ast.Reg(reg=asm_ast.A())),
-            asm_ast.Ret(arg_bytes=0, local_bytes=1),
+            asm_ast.Ret(arg_bytes=0, local_bytes=1, save_a=True),
         ])
         out = emit_function(fn)
         self.assertIn("   ; prologue: 0 arg bytes, 1 local bytes", out)
@@ -633,7 +670,7 @@ class TestEmitFunction(unittest.TestCase):
         # the two blanks into one so we don't get a double-blank gap.
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
-            asm_ast.Ret(arg_bytes=0, local_bytes=1),
+            asm_ast.Ret(arg_bytes=0, local_bytes=1, save_a=True),
         ])
         out = emit_function(fn)
         # No two adjacent blank lines anywhere.
@@ -649,7 +686,7 @@ class TestEmitProgram(unittest.TestCase):
     def test_full(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         )
         self.assertEqual(
             emit_program(prog),
@@ -665,14 +702,14 @@ class TestEmitProgram(unittest.TestCase):
                 name="foo", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
             asm_ast.Function(
                 name="main", is_global=True, params=[],
                 instructions=[
                     asm_ast.Call(name="foo"),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         ])
@@ -718,7 +755,7 @@ class TestEmitProgram(unittest.TestCase):
                 name="main", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
             asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(int=7)),
@@ -891,7 +928,7 @@ class TestColumnAlignment(unittest.TestCase):
     def test_columns(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         )
         lines = emit_program(prog).splitlines()
         # Label at column 1 (index 0).

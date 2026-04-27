@@ -26,16 +26,20 @@ Soft-stack convention (see README "Function stack frame layout"):
     `M <= 253` so `LDY #(M+2)` fits in a byte. Args themselves were
     pushed by the caller before JSR; the prologue doesn't allocate
     them.
-  - `Ret(arg_bytes=N, local_bytes=M)` for `N+M > 0`: leads with a
-    blank line and `; epilogue` comment to mark the boilerplate
-    region, PHAs the return value, then `SSP = FP + (N + M + 2)` in
-    one shot (the +2 is the saved-FP slot; the result is the
-    caller's pre-arg-push SSP, so the caller needs no per-call
-    cleanup). Then reads the saved FP via `(FP),Y` with `Y=M+1` (low)
-    and `Y=M+2` (high), stashing the low byte in X across the high
-    read so we don't corrupt the FP register's role as the indirect
-    base mid-read. Then PLA, RTS. For `N+M == 0` it just emits
-    `RTS`.
+  - `Ret(arg_bytes=N, local_bytes=M, save_a=…)` for `N+M > 0`: leads
+    with a blank line and `; epilogue` comment to mark the
+    boilerplate region; if `save_a=True` (the integer-return
+    convention), PHAs the return value first. Then `SSP = FP + (N +
+    M + 2)` in one shot (the +2 is the saved-FP slot; the result is
+    the caller's pre-arg-push SSP, so the caller needs no per-call
+    cleanup). Then reads the saved FP via `(FP),Y` with `Y=M+1`
+    (low) and `Y=M+2` (high), stashing the low byte in X across the
+    high read so we don't corrupt the FP register's role as the
+    indirect base mid-read. Closes with `PLA, RTS` (when save_a=True)
+    or just `RTS` (when save_a=False — FP returns leave the result
+    in HARGS, which the SSP/FP arithmetic doesn't touch, so there's
+    nothing to preserve in A across the rewind). For `N+M == 0` it
+    just emits `RTS` regardless of save_a.
 
 One-instruction-per-node rule. With the exceptions of `Ret` and
 `FunctionPrologue` (the multi-step compound nodes documented above),
@@ -633,22 +637,31 @@ def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
     )
 
 
-def _emit_ret(arg_bytes: int, local_bytes: int) -> list[str]:
+def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> list[str]:
     if arg_bytes + local_bytes == 0:
+        # No frame to tear down — A wasn't going to get clobbered, so
+        # `save_a` is irrelevant here.
         return [_instr_line("RTS")]
     # Compute the new SSP directly from FP (one 16-bit add), restore
-    # FP from its slot via (FP),Y, then RTS. The whole thing is
-    # PHA/PLA-wrapped so the return value in A survives. Leading
-    # blank + `; epilogue` comment separate the boilerplate from the
-    # body above.
+    # FP from its slot via (FP),Y, then RTS. Leading blank + `;
+    # epilogue` comment separate the boilerplate from the body above.
+    #
+    # When save_a=True (Int / Long returns), bracket the SSP/FP
+    # arithmetic with PHA/PLA so the return value in A survives the
+    # 16-bit add. When save_a=False (FP returns), skip the PHA/PLA —
+    # the return value is already in HARGS, and HARGS isn't touched
+    # by the SSP/FP arithmetic, so there's nothing to preserve.
     rewind = arg_bytes + local_bytes + 2
-    return (
-        ["", _comment_line("epilogue")]
-        + [_instr_line("PHA")]
-        + _emit_set_ssp_to_fp_plus(rewind)
+    body = (
+        _emit_set_ssp_to_fp_plus(rewind)
         + _emit_restore_fp_from_slot(local_bytes)
-        + [_instr_line("PLA"), _instr_line("RTS")]
     )
+    head = ["", _comment_line("epilogue")]
+    if save_a:
+        return head + [_instr_line("PHA")] + body + [
+            _instr_line("PLA"), _instr_line("RTS"),
+        ]
+    return head + body + [_instr_line("RTS")]
 
 
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
@@ -657,8 +670,8 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_mov(src, dst)
         case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
             return _emit_function_prologue(ab, lb)
-        case asm_ast.Ret(arg_bytes=ab, local_bytes=lb):
-            return _emit_ret(ab, lb)
+        case asm_ast.Ret(arg_bytes=ab, local_bytes=lb, save_a=sa):
+            return _emit_ret(ab, lb, sa)
         case asm_ast.AllocateStack(bytes=n):
             # Caller-side soft-stack frame allocation for a call
             # site: subtract `n` from SSP (16-bit). The same

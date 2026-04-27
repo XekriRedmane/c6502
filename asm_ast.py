@@ -74,6 +74,7 @@ class Mov(Type_instruction):
 class Ret(Type_instruction):
     arg_bytes: int
     local_bytes: int
+    save_a: bool
 
 
 @dataclass

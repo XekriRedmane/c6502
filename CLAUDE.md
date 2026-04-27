@@ -691,10 +691,15 @@ takes one AST and returns another (or text for emit):
    (each Long arg contributes 2 bytes, each Int 1), one Mov per
    arg byte writing into `Stack(1)..Stack(total_arg_bytes)` in
    source order (low byte at the lower offset for Long args),
-   `Call(name)`, then capture the return value. Int return: Mov A
-   → dst. Long return: Mov A → dst.lo; Mov X → A; Mov A → dst.hi
-   (return convention: A = low byte, X = high byte — two-register
-   so the epilogue stays cheap for short returns). The callee's
+   `Call(name)`, then capture the return value. The convention is
+   width-driven: Int (1B) ← A; Long (2B) ← A=low, X=high (with X
+   routed through A for the high-byte store); Float (4B) ← bytes
+   read from `HARGS+8..11` byte-by-byte through A; Double (8B) ←
+   bytes read from `HARGS+16..23`. The FP slots are deliberately
+   the same as the FP arithmetic helpers' output slots — see
+   "Return-value convention" in the README. Caller has to capture
+   the FP return *immediately* after the JSR, before any other
+   helper Call, since HARGS is caller-saved. The callee's
    epilogue rewinds SSP all the way back to the caller's pre-call
    value, so there's no per-call cleanup. Runtime-helper calls
    (mul8/mul16/divmod8/divmod16/asl8/asl16/asr8/asr16) emitted by
@@ -913,8 +918,15 @@ The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
   2-byte-typed locals / params / temporaries occupy 2 contiguous
   frame bytes; 2-byte return values come back with low byte in A
   and high byte in X (two-register Long return so the epilogue
-  stays cheap for short returns; runtime helpers use a separate
-  ZP-slot convention — see HARGS). Mixed-type arithmetic goes
+  PHA/PLA only needs to save A; X isn't touched by the SSP/FP
+  arithmetic). Float (4B) and Double (8B) returns come back
+  through HARGS instead — `HARGS+8..11` for Float and
+  `HARGS+16..23` for Double, matching the FP arithmetic helpers'
+  output slots so a function ending in `return a OP b;` for FP
+  operands needs no epilogue copy. FP returns also flip
+  `Ret(save_a=False)` so the epilogue skips the PHA/PLA pair —
+  the SSP/FP arithmetic doesn't touch HARGS. See README's
+  "Return-value convention" subsection. Mixed-type arithmetic goes
   through C99 §6.3.1.8's usual arithmetic conversions in
   `passes.type_checking` — `long + unsigned int` promotes the
   unsigned int to long via a `ZeroExtend`, `int + unsigned int`

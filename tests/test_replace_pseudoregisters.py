@@ -33,7 +33,7 @@ class TestLocalLayout(unittest.TestCase):
             asm_ast.Mov(src=asm_ast.Imm(value=2),
                         dst=asm_ast.Pseudo(name="b", offset=0)),
             asm_ast.Mov(src=asm_ast.Pseudo(name="a", offset=0), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ))
         # `a` was first → Frame(1); `b` second → Frame(2). Two
         # locals → M=2, so the prologue and Ret carry local_bytes=2.
@@ -44,14 +44,14 @@ class TestLocalLayout(unittest.TestCase):
             asm_ast.Mov(src=asm_ast.Imm(value=2),
                         dst=asm_ast.Frame(offset=2)),
             asm_ast.Mov(src=asm_ast.Frame(offset=1), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=2),
+            asm_ast.Ret(arg_bytes=0, local_bytes=2, save_a=True),
         ))
 
     def test_same_pseudo_on_both_sides_uses_one_offset(self):
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Pseudo(name="x", offset=0),
                         dst=asm_ast.Pseudo(name="x", offset=0)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ))
         # One local, M=1; both sides resolve to Frame(1).
         self.assertEqual(out.instructions[1], asm_ast.Mov(
@@ -63,7 +63,7 @@ class TestLocalLayout(unittest.TestCase):
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Imm(value=7),
                         dst=asm_ast.Pseudo(name="t", offset=0)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ))
         self.assertEqual(out.instructions[1], asm_ast.Mov(
             src=asm_ast.Imm(value=7),
@@ -112,7 +112,7 @@ class TestLocalLayout(unittest.TestCase):
         for src_instr, expected_instr in op_cases:
             with self.subTest(src=src_instr):
                 out = replace_function(_fn(
-                    src_instr, asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    src_instr, asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ))
                 # Body starts at index 1 (prologue is index 0).
                 self.assertEqual(out.instructions[1], expected_instr)
@@ -128,12 +128,12 @@ class TestNoPseudosNoLocals(unittest.TestCase):
     def test_function_with_no_pseudos(self):
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ))
         self.assertEqual(out, _fn(
             asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=0),
             asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ))
 
     def test_empty_function(self):
@@ -155,7 +155,7 @@ class TestParamLayout(unittest.TestCase):
         # M=0, N=1 → param `a` at offset 0+2+1 = 3.
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Pseudo(name="a", offset=0), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             params=("a",),
         ))
         self.assertEqual(out.instructions[1], asm_ast.Mov(
@@ -168,7 +168,7 @@ class TestParamLayout(unittest.TestCase):
         )
         self.assertEqual(
             out.instructions[-1],
-            asm_ast.Ret(arg_bytes=1, local_bytes=0),
+            asm_ast.Ret(arg_bytes=1, local_bytes=0, save_a=True),
         )
 
     def test_two_params_two_locals(self):
@@ -183,7 +183,7 @@ class TestParamLayout(unittest.TestCase):
             asm_ast.Mov(src=asm_ast.Imm(value=2),
                         dst=asm_ast.Pseudo(name="t2", offset=0)),
             asm_ast.Mov(src=asm_ast.Pseudo(name="b", offset=0), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             params=("a", "b"),
         ))
         # Indices: 0=prologue, 1..4=body, 5=Ret.
@@ -205,7 +205,7 @@ class TestParamLayout(unittest.TestCase):
         )
         self.assertEqual(
             out.instructions[-1],
-            asm_ast.Ret(arg_bytes=2, local_bytes=2),
+            asm_ast.Ret(arg_bytes=2, local_bytes=2, save_a=True),
         )
 
     def test_param_order_independent_of_use_order(self):
@@ -216,7 +216,7 @@ class TestParamLayout(unittest.TestCase):
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Pseudo(name="b", offset=0), dst=_reg_a()),
             asm_ast.Mov(src=asm_ast.Pseudo(name="a", offset=0), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             params=("a", "b"),
         ))
         # M=0, N=2: a→3, b→4.
@@ -230,7 +230,7 @@ class TestParamLayout(unittest.TestCase):
         # in prologue/Ret still reflects len(params).
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Pseudo(name="a", offset=0), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             params=("a", "b"),
         ))
         self.assertEqual(
@@ -239,7 +239,21 @@ class TestParamLayout(unittest.TestCase):
         )
         self.assertEqual(
             out.instructions[-1],
-            asm_ast.Ret(arg_bytes=2, local_bytes=0),
+            asm_ast.Ret(arg_bytes=2, local_bytes=0, save_a=True),
+        )
+
+    def test_save_a_false_carries_through_ret_patch(self):
+        # tac_to_asm sets save_a=False on Ret for FP returns; the
+        # patch in pass-2 must keep it that way (only arg_bytes /
+        # local_bytes get rewritten from the function totals).
+        out = replace_function(_fn(
+            asm_ast.Mov(src=asm_ast.Imm(value=5),
+                        dst=asm_ast.Pseudo(name="t", offset=0)),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ))
+        self.assertEqual(
+            out.instructions[-1],
+            asm_ast.Ret(arg_bytes=0, local_bytes=1, save_a=False),
         )
 
     def test_param_used_as_dst(self):
@@ -249,7 +263,7 @@ class TestParamLayout(unittest.TestCase):
         out = replace_function(_fn(
             asm_ast.Mov(src=asm_ast.Imm(value=5),
                         dst=asm_ast.Pseudo(name="a", offset=0)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             params=("a",),
         ))
         self.assertEqual(out.instructions[1], asm_ast.Mov(
@@ -269,7 +283,7 @@ class TestPassThrough(unittest.TestCase):
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg_a()),
             asm_ast.Mov(src=asm_ast.Frame(offset=7), dst=_reg_a()),
             asm_ast.Mov(src=asm_ast.Stack(offset=3), dst=_reg_a()),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ))
         # Body (indices 1..3) untouched.
         self.assertEqual(
@@ -290,7 +304,7 @@ class TestPassThrough(unittest.TestCase):
             asm_ast.Jump(target="end"),
             asm_ast.Branch(cond=asm_ast.EQ(), target="end"),
             asm_ast.Label(name="end"),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
+            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
         ]
         out = replace_function(_fn(*instrs))
         # All four control-flow instructions pass through verbatim;
@@ -330,7 +344,7 @@ class TestStaticVariableLowering(unittest.TestCase):
                 name="main", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Pseudo(name="g", offset=0), dst=_reg_a()),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         ])
@@ -357,7 +371,7 @@ class TestStaticVariableLowering(unittest.TestCase):
                                 dst=asm_ast.Pseudo(name="t", offset=0)),
                     asm_ast.Mov(src=asm_ast.Pseudo(name="g", offset=0),
                                 dst=asm_ast.Pseudo(name="t", offset=0)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         ])
@@ -385,7 +399,7 @@ class TestReplaceProgram(unittest.TestCase):
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1),
                                 dst=asm_ast.Pseudo(name="t", offset=0)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
             asm_ast.Function(
@@ -393,7 +407,7 @@ class TestReplaceProgram(unittest.TestCase):
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=2),
                                 dst=asm_ast.Pseudo(name="t", offset=0)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         ])
@@ -417,7 +431,7 @@ class TestReplaceProgram(unittest.TestCase):
                                 dst=asm_ast.Pseudo(name="t", offset=0)),
                     asm_ast.Mov(src=asm_ast.Pseudo(name="a", offset=0),
                                 dst=_reg_a()),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         ])

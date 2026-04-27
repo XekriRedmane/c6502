@@ -94,10 +94,19 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                address byte k.
 
 Calling convention (callee-side, see also `replace_pseudoregisters`):
-  - Each Long arg occupies 2 stack bytes (low at the lower offset).
-  - Long return value: low byte in A, high byte in X. (Runtime
-    helpers use a separate ZP-slot convention — see the HARGS block
-    above — so user-function and helper return paths are distinct.)
+  - Each arg occupies size_of(arg_type) consecutive stack bytes (low
+    at the lower offset for multi-byte args).
+  - Return value rides in registers when small enough to fit, in the
+    HARGS zero-page block when not:
+      Int (1B)    → A.
+      Long (2B)   → A = low byte, X = high byte.
+      Float (4B)  → HARGS+8..11.
+      Double (8B) → HARGS+16..23.
+    The FP slots are deliberately the same as the FP arithmetic
+    helpers' output slots, so a function ending in `return a+b;` for
+    FP operands needs no epilogue copy. FP returns also skip the
+    epilogue's PHA/PLA pair (Ret(save_a=False)) — the SSP/FP
+    arithmetic doesn't touch HARGS, so there's nothing to preserve.
 """
 
 from __future__ import annotations
@@ -446,29 +455,50 @@ class Translator:
     def _translate_ret(
         self, val: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
-        """Stage the return value in registers, then Ret. Convention:
-          Int return → A.
-          Long return → A = low byte, X = high byte.
-        Two-register Long return keeps the epilogue cheap (no extra
-        memory traffic for short returns). Runtime helpers use a
-        separate ZP-slot convention (see HARGS) since their multi-
-        byte results don't fit in registers."""
+        """Stage the return value, then Ret. Convention by width:
+          Int (1B)    → A.
+          Long (2B)   → A = low byte, X = high byte.
+          Float (4B)  → HARGS+8..11.
+          Double (8B) → HARGS+16..23.
+        Integer returns ride in registers because the epilogue's
+        PHA/PLA can preserve A across the SSP/FP arithmetic cheaply
+        (and X isn't touched by that arithmetic). FP returns ride
+        through HARGS at the same offsets the FP arithmetic helpers
+        write to (`fadd` / `fsub` / `fmul` / `fdiv` → HARGS+8..11;
+        `dadd` / `dsub` / `dmul` / `ddiv` → HARGS+16..23), so a
+        function whose body ends in `return a OP b;` for FP operands
+        leaves the result in the right slot already — no epilogue
+        copy. The `save_a=False` Ret skips the PHA/PLA pair the
+        integer path uses; HARGS isn't touched by SSP/FP arithmetic.
+        arg_bytes/local_bytes are placeholders patched by
+        replace_pseudoregisters."""
         src_op = translate_val(val)
         size = self._size_of(val)
         if size == 1:
             return [
                 asm_ast.Mov(src=src_op, dst=_REG_A),
-                asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             ]
-        # Long: load high byte into X via A, then low byte into A.
-        # We do high first so A holds low at the call point — same
-        # convention as mul8.
-        return [
-            asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=_REG_X),
-            asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0),
-        ]
+        if size == 2:
+            # Long: load high byte into X via A, then low byte into
+            # A. We do high first so A holds low at the call point
+            # — same convention as mul8.
+            return [
+                asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+            ]
+        # Float / Double: write the src bytes into HARGS at the
+        # precision-matching helper-output offset, then Ret with
+        # save_a=False.
+        out_off = 8 if size == 4 else 16
+        seq: list[asm_ast.Type_instruction] = []
+        for k in range(size):
+            seq.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+            seq.append(asm_ast.Mov(src=_REG_A, dst=_hargs(out_off + k)))
+        seq.append(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False))
+        return seq
 
     def _translate_copy(
         self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
@@ -746,10 +776,13 @@ class Translator:
         epilogue rewinds SSP all the way back to the caller's pre-
         call value — no per-call cleanup at the call site.
 
-        Return value: an Int return arrives in A. A Long return
-        arrives with A = low byte, X = high byte. (User-function
-        returns use registers; runtime helpers use the HARGS zero-
-        page block instead.)
+        Return value, by dst width (read directly after the JSR,
+        before any other helper call clobbers HARGS):
+          Int (1B)    ← A.
+          Long (2B)   ← A = low byte, X = high byte.
+          Float (4B)  ← HARGS+8..11.
+          Double (8B) ← HARGS+16..23.
+        See `_translate_ret` for the matching callee-side write.
         """
         # Compute total arg-stack bytes and per-arg base offsets.
         arg_sizes = [self._size_of(a) for a in args]
@@ -767,19 +800,25 @@ class Translator:
                     ))
                 off += sz
         emitted.append(asm_ast.Call(name=name))
-        # Capture return value. Int → from A; Long → from A (low)
-        # and X (high), with X routed via A for the high-byte store.
         dst_op = translate_val(dst)
         dst_size = self._size_of(dst)
         if dst_size == 1:
+            # Int: from A directly.
             emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
-        else:
-            # Save the low byte first (A holds it). Then transfer X
-            # to A and store the high byte. The order matters because
-            # the second Mov clobbers A.
+        elif dst_size == 2:
+            # Long: A = low (save first, before TXA clobbers it),
+            # then X → A → high.
             emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
             emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
             emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
+        else:
+            # Float (4B) / Double (8B): the callee left the result
+            # in HARGS at the matching helper-output offset. Read it
+            # back byte-by-byte through A.
+            in_off = 8 if dst_size == 4 else 16
+            for k in range(dst_size):
+                emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
         return emitted
 
     # ------------------------------------------------------------------

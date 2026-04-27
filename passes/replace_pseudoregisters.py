@@ -293,9 +293,14 @@ class Replacer:
                     left=self.replace(left),
                     right=self.replace(right),
                 )
-            case asm_ast.Ret():
+            case asm_ast.Ret(save_a=save_a):
+                # Patch arg_bytes / local_bytes from the function's
+                # totals; carry save_a through unchanged — tac_to_asm
+                # set it based on whether the return value is in
+                # registers (Int / Long) or in HARGS (Float / Double).
                 return asm_ast.Ret(
                     arg_bytes=arg_bytes, local_bytes=local_bytes,
+                    save_a=save_a,
                 )
             case _:
                 # AllocateStack / Call / Jump / Branch / Label /

@@ -90,7 +90,7 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=7)))),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
-                asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             ],
         )
 
@@ -99,9 +99,128 @@ class TestTranslateInstruction(unittest.TestCase):
             translate_instruction(tac_ast.Ret(val=tac_ast.Var(name="%3"))),
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%3", offset=0), dst=_REG_A),
-                asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             ],
         )
+
+    def test_ret_long_constant_loads_high_into_x_low_into_a(self):
+        # 2-byte returns: high byte routed through A → X first (so A
+        # is free for the low byte at the call point), then low byte
+        # into A. save_a=True so the epilogue PHA/PLA preserves A.
+        self.assertEqual(
+            translate_instruction(
+                tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstLong(int=0x1234)))
+            ),
+            [
+                asm_ast.Mov(src=asm_ast.Imm(value=0x12), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=_REG_X),
+                asm_ast.Mov(src=asm_ast.Imm(value=0x34), dst=_REG_A),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+            ],
+        )
+
+    def test_ret_float_writes_hargs_8_through_11_no_save_a(self):
+        # Float return: write 4 bytes of the IEEE 754 single bit
+        # pattern into HARGS+8..11 (the same slot fadd/fsub/fmul/fdiv
+        # write to). save_a=False because HARGS isn't clobbered by
+        # SSP/FP arithmetic, so the epilogue skips PHA/PLA.
+        # 1.5f → bit pattern 0x3FC00000, little-endian bytes
+        # 00 00 C0 3F.
+        from tac_to_asm import Translator
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%f"] = Symbol(type=c99_ast.Float(), attrs=LocalAttr())
+        t = Translator(symbols=symbols)
+        self.assertEqual(
+            t.translate_instruction(tac_ast.Ret(val=tac_ast.Var(name="%f"))),
+            [
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%f", offset=0), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=8)),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%f", offset=1), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=9)),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%f", offset=2), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=10)),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%f", offset=3), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=11)),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+            ],
+        )
+
+    def test_ret_double_writes_hargs_16_through_23_no_save_a(self):
+        # Double return: 8 bytes into HARGS+16..23 (the dadd/dsub/
+        # dmul/ddiv output slot). save_a=False as for Float.
+        from tac_to_asm import Translator
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%d"] = Symbol(type=c99_ast.Double(), attrs=LocalAttr())
+        t = Translator(symbols=symbols)
+        out = t.translate_instruction(tac_ast.Ret(val=tac_ast.Var(name="%d")))
+        # Expect 8 byte-pairs (Pseudo→A, A→HARGS+16..23) followed by
+        # Ret(save_a=False).
+        expected: list = []
+        for k in range(8):
+            expected.append(asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%d", offset=k), dst=_REG_A,
+            ))
+            expected.append(asm_ast.Mov(
+                src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=16 + k),
+            ))
+        expected.append(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False))
+        self.assertEqual(out, expected)
+
+    def test_function_call_captures_float_return_from_hargs_8_through_11(self):
+        # Caller-side: after JSR, read the 4-byte Float return from
+        # HARGS+8..11 into the dst pseudo, byte-by-byte through A.
+        from tac_to_asm import Translator
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%dst"] = Symbol(type=c99_ast.Float(), attrs=LocalAttr())
+        t = Translator(symbols=symbols)
+        out = t.translate_instruction(tac_ast.FunctionCall(
+            name="ret_f", args=[], dst=tac_ast.Var(name="%dst"),
+        ))
+        # No args → no AllocateStack, no arg writes; just Call then
+        # 4 read-pairs.
+        expected: list = [asm_ast.Call(name="ret_f")]
+        for k in range(4):
+            expected.append(asm_ast.Mov(
+                src=asm_ast.Data(name="HARGS", offset=8 + k), dst=_REG_A,
+            ))
+            expected.append(asm_ast.Mov(
+                src=_REG_A, dst=asm_ast.Pseudo(name="%dst", offset=k),
+            ))
+        self.assertEqual(out, expected)
+
+    def test_function_call_captures_double_return_from_hargs_16_through_23(self):
+        from tac_to_asm import Translator
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%dst"] = Symbol(type=c99_ast.Double(), attrs=LocalAttr())
+        t = Translator(symbols=symbols)
+        out = t.translate_instruction(tac_ast.FunctionCall(
+            name="ret_d", args=[], dst=tac_ast.Var(name="%dst"),
+        ))
+        expected: list = [asm_ast.Call(name="ret_d")]
+        for k in range(8):
+            expected.append(asm_ast.Mov(
+                src=asm_ast.Data(name="HARGS", offset=16 + k), dst=_REG_A,
+            ))
+            expected.append(asm_ast.Mov(
+                src=_REG_A, dst=asm_ast.Pseudo(name="%dst", offset=k),
+            ))
+        self.assertEqual(out, expected)
 
     def test_unary_negate_lowered_to_atoms_around_a(self):
         # Mov(src, A) -> Xor(A, $FF, A) -> ClearCarry -> Add(1, A)
@@ -521,7 +640,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
                     asm_ast.Mov(
                         src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A,
                     ),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         )
@@ -693,7 +812,7 @@ class TestTranslateFunction(unittest.TestCase):
                     asm_ast.Add(src=asm_ast.Imm(value=1), dst=_REG_A),
                     asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0", offset=0)),
                     asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
         )
@@ -815,7 +934,7 @@ class TestTranslateProgram(unittest.TestCase):
                 is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_REG_A),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0),
+                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             )],
         )

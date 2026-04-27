@@ -690,28 +690,126 @@ Notes:
 
 ### `Call` and runtime helpers
 
-`tac_to_asm` lowers TAC binary ops that don't have a direct 6502
-encoding (`Multiply` / `Divide` / `Modulo` / `LeftShift` / `RightShift`)
-into a short sequence around a `Call`:
+`tac_to_asm` lowers TAC operations that don't have a direct 6502
+encoding — `Multiply` / `Divide` / `Modulo` / `LeftShift` /
+`RightShift` plus the six FP-conversion nodes — into a short
+sequence that marshals operands through `HARGS`, calls the helper,
+and reads the result back out. The shape is the same for every
+helper:
 
 ```
-Mov(src2, A)     ; stage src2 through A (emitter has no direct
-Mov(A, X)        ;   Stack/Frame -> X mov, so src2 rides via A)
-Mov(src1, A)     ; src1 into A last, so A holds the primary operand
-Call mul8        ;   at the call site
-Mov(A, dst)
+Mov src1.byte0 -> A; Mov A -> HARGS+0     ; pack inputs starting
+Mov src1.byte1 -> A; Mov A -> HARGS+1     ;   at HARGS+0 in source-
+Mov src2.byte0 -> A; Mov A -> HARGS+...   ;   byte order
+...
+Call <helper>                              ; helper reads inputs and
+                                           ;   writes its output to
+                                           ;   a fixed HARGS offset
+Mov HARGS+<out_off> -> A; Mov A -> dst.byte0
+Mov HARGS+<out_off+1> -> A; Mov A -> dst.byte1
+...
 ```
 
-The helpers are part of the runtime header (not in this repo yet):
+Every byte routes through `A` because `A` is the only register that
+loads uniformly from any source-operand kind and stores to any
+destination kind. **Inputs survive the call**, so a helper may use
+the slots between its inputs and outputs as scratch but must leave
+the input bytes intact — caller-side `dst` can therefore overlap an
+input at the TAC level (matters for `x = x * y`).
 
-- `mul8` — `A := A * X`, low byte in `A`, high byte in `X`. Since the
-  only type today is 8-bit, only `A` is stored back into `dst`.
-- `divmod8` — `A := A / X`, quotient in `A`, remainder in `X`. Divide
-  stores `A`; Modulo adds `Mov(Reg(X), Reg(A))` before the final
-  store so it commits the remainder instead.
-- `shl8` — `A := A << X` (logical). `asr8` — `A := A >> X`
-  (arithmetic, sign-preserving). c6502 currently treats integers as
-  signed, so `>>` always goes through `asr8`.
+The helpers are part of the runtime header (not in this repo yet).
+Each helper documents its own per-byte HARGS layout; the dispatch
+in `tac_to_asm` knows the layout for every helper it emits.
+
+**Integer helpers** (the `8` / `16` suffix is the operand width):
+
+| helper     | inputs                                       | output                          |
+| ---------- | -------------------------------------------- | ------------------------------- |
+| `mul8`     | `A=HARGS+0`, `B=HARGS+1` (1B each)           | `result=HARGS+2..3` (2B)        |
+| `divmod8`  | `num=HARGS+0`, `den=HARGS+1` (1B each)       | `quot=HARGS+2`, `rem=HARGS+3`   |
+| `asl8`     | `val=HARGS+0`, `count=HARGS+1` (1B each)     | `result=HARGS+2` (1B)           |
+| `asr8`     | (same shape as `asl8`; signed right shift)   | `result=HARGS+2` (1B)           |
+| `mul16`    | `A=HARGS+0..1`, `B=HARGS+2..3` (2B each)     | `result=HARGS+4..7` (4B)        |
+| `divmod16` | `num=HARGS+0..1`, `den=HARGS+2..3`           | `quot=HARGS+4..5`, `rem=HARGS+6..7` |
+| `asl16`    | `val=HARGS+0..1` (2B), `count=HARGS+2` (1B)  | `result=HARGS+3..4` (2B)        |
+| `asr16`    | (same shape as `asl16`)                      | `result=HARGS+3..4` (2B)        |
+
+The dispatch picks the 8-bit or 16-bit helper from the operand
+width. `>>` always picks the signed `asr` variant — c6502 currently
+treats every integer as signed for shifts. `mul8` / `mul16` produce
+double-width results, but the lowering reads only the low half: C
+multiplication wraps on overflow, so the high half is discarded.
+
+**FP arithmetic helpers** (Float = 4B IEEE 754 single, Double = 8B
+IEEE 754 double):
+
+| helper                              | inputs                                     | output                  |
+| ----------------------------------- | ------------------------------------------ | ----------------------- |
+| `fadd` / `fsub` / `fmul` / `fdiv`   | `A=HARGS+0..3` (4B), `B=HARGS+4..7` (4B)   | `result=HARGS+8..11` (4B)  |
+| `dadd` / `dsub` / `dmul` / `ddiv`   | `A=HARGS+0..7` (8B), `B=HARGS+8..15` (8B)  | `result=HARGS+16..23` (8B) |
+
+`dadd` / `dsub` / `dmul` / `ddiv` fill the entire 24-byte block —
+that is what sets `HARGS`'s size.
+
+**FP↔integer / FP↔FP conversion helpers** (one helper per
+source-signedness × source-width pair on the integer side; FP side
+picks by precision):
+
+| helper | direction      | input           | output           |
+| ------ | -------------- | --------------- | ---------------- |
+| `i2f`  | Int → Float    | `HARGS+0` (1B)  | `HARGS+1..4` (4B)  |
+| `u2f`  | UInt → Float   | `HARGS+0` (1B)  | `HARGS+1..4` (4B)  |
+| `l2f`  | Long → Float   | `HARGS+0..1` (2B) | `HARGS+2..5` (4B) |
+| `ul2f` | ULong → Float  | `HARGS+0..1` (2B) | `HARGS+2..5` (4B) |
+| `i2d`  | Int → Double   | `HARGS+0` (1B)  | `HARGS+1..8` (8B)  |
+| `u2d`  | UInt → Double  | `HARGS+0` (1B)  | `HARGS+1..8` (8B)  |
+| `l2d`  | Long → Double  | `HARGS+0..1` (2B) | `HARGS+2..9` (8B) |
+| `ul2d` | ULong → Double | `HARGS+0..1` (2B) | `HARGS+2..9` (8B) |
+| `f2i`  | Float → Int    | `HARGS+0..3` (4B) | `HARGS+4` (1B)   |
+| `f2u`  | Float → UInt   | `HARGS+0..3` (4B) | `HARGS+4` (1B)   |
+| `f2l`  | Float → Long   | `HARGS+0..3` (4B) | `HARGS+4..5` (2B) |
+| `f2ul` | Float → ULong  | `HARGS+0..3` (4B) | `HARGS+4..5` (2B) |
+| `d2i`  | Double → Int   | `HARGS+0..7` (8B) | `HARGS+8` (1B)   |
+| `d2u`  | Double → UInt  | `HARGS+0..7` (8B) | `HARGS+8` (1B)   |
+| `d2l`  | Double → Long  | `HARGS+0..7` (8B) | `HARGS+8..9` (2B) |
+| `d2ul` | Double → ULong | `HARGS+0..7` (8B) | `HARGS+8..9` (2B) |
+| `f2d`  | Float → Double | `HARGS+0..3` (4B) | `HARGS+4..11` (8B) |
+| `d2f`  | Double → Float | `HARGS+0..7` (8B) | `HARGS+8..11` (4B) |
+
+All conversion helpers truncate FP→integer toward zero per
+C99 §6.3.1.4. The signed and unsigned variants are separate
+helpers because TAC's integer `const` collapses signedness onto
+width — by the time the dispatch runs, only the source's c99 type
+(via the symbol table) tells signed from unsigned.
+
+#### Return-value convention
+
+Return values use registers when they fit and `HARGS` when they
+don't. The size cutoff is dictated by what the epilogue can
+preserve cheaply — see "Calling convention" below; the `PHA` step
+that bridges the SSP/FP arithmetic only saves `A`, which works
+fine for one or two bytes but isn't extensible to four or eight.
+
+| return type | location                                                |
+| ----------- | ------------------------------------------------------- |
+| `int` / `unsigned int` (1B)   | `A`                                   |
+| `long` / `unsigned long` (2B) | `A`=low byte, `X`=high byte           |
+| `float` (4B)                  | `HARGS+8..11`                         |
+| `double` (8B)                 | `HARGS+16..23`                        |
+
+The FP slots **deliberately overlap with the FP arithmetic helpers'
+output slots**: a function whose body is `return a + b;` for FP
+operands ends with a helper call (`fadd` / `dadd` / etc.) that has
+already left the result in the right place — no extra copy needed
+in the epilogue. The same alignment makes `return a * b;`,
+`return (float)i;`, `return (double)f;` and so on epilogue-free.
+
+Because `HARGS` is caller-saved (any helper call may clobber it),
+an FP return value sits in HARGS only across the `RTS` boundary —
+the caller reads it back out immediately after the `JSR`, before
+issuing any other helper call. The SSP/FP arithmetic in the
+epilogue doesn't touch HARGS, so the FP return path skips the
+`PHA` / `PLA` pair the integer path uses.
 
 Unary `!` lowers inline rather than through a helper — see "Unary
 `!` lowering" below.
@@ -829,10 +927,27 @@ when a function tears down its frame.
 
 ### Reserved zero-page locations
 
-| address     | name | purpose                                      |
-| ----------- | ---- | -------------------------------------------- |
-| `$00`/`$01` | SSP  | soft stack pointer (low / high byte)         |
-| `$02`/`$03` | FP   | frame pointer (low / high byte)              |
+| address     | name  | purpose                                                  |
+| ----------- | ----- | -------------------------------------------------------- |
+| `$00`/`$01` | SSP   | soft stack pointer (low / high byte)                     |
+| `$02`/`$03` | FP    | frame pointer (low / high byte)                          |
+| `$04`–`$1B` | HARGS | runtime-helper argument/result exchange block (24 bytes) |
+
+`HARGS` is the I/O block that runtime helpers read inputs from and
+write outputs into; the user-function calling convention (soft-stack
+args, register returns) doesn't touch it. It is sized for the largest
+helper in the FP emulation library: a double-precision binary op
+(`dadd` / `dsub` / `dmul` / `ddiv`) takes two 8-byte operands at
+`HARGS+0..7` and `HARGS+8..15` and writes its 8-byte result at
+`HARGS+16..23`, exactly filling the 24-byte block. Smaller helpers
+(integer `mul8` / `divmod8` / `mul16` / `divmod16` / shifts, FP↔int
+conversions, `f2d` / `d2f`, single-precision arithmetic) use only
+the low end of the block; the unused high bytes stay free for the
+caller. The block is **caller-saved**: any helper call may clobber
+all 24 bytes, so a function that needs a value to survive a helper
+call has to spill it to a frame slot first. See the per-helper byte
+layouts in `tac_to_asm.py` for the input / output offsets each
+helper uses within `HARGS`.
 
 ### Soft stack convention
 

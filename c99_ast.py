@@ -216,6 +216,11 @@ class FunType(Type_data_type):
 
 
 @dataclass
+class Pointer(Type_data_type):
+    referenced_type: Type_data_type
+
+
+@dataclass
 class Type_for_init:
     pass
 
@@ -295,6 +300,18 @@ class Conditional(Type_exp):
 class FunctionCall(Type_exp):
     name: str
     args: list[Type_exp] = field(default_factory=list)
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class Dereference(Type_exp):
+    exp: Type_exp
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class AddressOf(Type_exp):
+    exp: Type_exp
     data_type: Type_data_type | None = None
 
 

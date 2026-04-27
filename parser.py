@@ -637,6 +637,19 @@ class _ASTBuilder(Transformer):
     def unary(self, op, inner):
         return c99_ast.Unary(op=op, exp=inner)
 
+    # `*e` and `&e` build their own AST nodes (not Unary variants).
+    # The leading STAR / AMP token is discarded — the AST node itself
+    # encodes the operator. The `data_type` field is left unset for
+    # the type checker to fill in (Dereference yields the pointee
+    # type; AddressOf yields a Pointer to the operand's type).
+    @v_args(inline=True)
+    def dereference(self, _star, inner):
+        return c99_ast.Dereference(exp=inner)
+
+    @v_args(inline=True)
+    def address_of(self, _amp, inner):
+        return c99_ast.AddressOf(exp=inner)
+
     # Prefix `++a` / `--a` desugar to `a = a ± 1` (same shape as
     # `a += 1` / `a -= 1`). The lval node is duplicated by reference
     # — safe today because the only legal lval is a `Var`, which has

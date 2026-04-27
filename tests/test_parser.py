@@ -1620,6 +1620,86 @@ class TestLongAndCasts(unittest.TestCase):
         with self.assertRaises(UnexpectedInput):
             parse("int main(void) { int x; return ++(int)x; }")
 
+    def test_dereference_simple(self):
+        # `*p` builds a Dereference node, not a Unary.
+        self.assertEqual(
+            _exp_of("*p"),
+            c99_ast.Dereference(exp=c99_ast.Var(name="p")),
+        )
+
+    def test_address_of_simple(self):
+        # `&x` builds an AddressOf node, not a Unary.
+        self.assertEqual(
+            _exp_of("&x"),
+            c99_ast.AddressOf(exp=c99_ast.Var(name="x")),
+        )
+
+    def test_nested_dereference(self):
+        # `**p` parses right-to-left through the cast_exp recursion:
+        # the outer STAR's operand is itself a Dereference.
+        self.assertEqual(
+            _exp_of("**p"),
+            c99_ast.Dereference(
+                exp=c99_ast.Dereference(exp=c99_ast.Var(name="p")),
+            ),
+        )
+
+    def test_dereference_compose_with_address_of(self):
+        # `*&x` collapses to x's value at the type level, but at the
+        # parse level it's just a nesting of the two operators.
+        self.assertEqual(
+            _exp_of("*&x"),
+            c99_ast.Dereference(
+                exp=c99_ast.AddressOf(exp=c99_ast.Var(name="x")),
+            ),
+        )
+
+    def test_dereference_takes_cast_exp(self):
+        # Like the other unary operators, `*` takes a cast_exp — so
+        # `*(int *)p` would parse as `*((int *)p)` once cast targets
+        # accept pointer types. For now, `*(p)` is the simplest form
+        # that exercises the same precedence path.
+        self.assertEqual(
+            _exp_of("*(p)"),
+            c99_ast.Dereference(exp=c99_ast.Var(name="p")),
+        )
+
+    def test_unary_star_does_not_conflict_with_multiply(self):
+        # `a * *p` — the right operand of `*` is `*p` (a unary
+        # dereference), not a syntax error. Same precedence story as
+        # `a - -b` for unary minus.
+        self.assertEqual(
+            _exp_of("a * *p"),
+            c99_ast.Binary(
+                op=c99_ast.Multiply(),
+                left=c99_ast.Var(name="a"),
+                right=c99_ast.Dereference(exp=c99_ast.Var(name="p")),
+            ),
+        )
+
+    def test_unary_amp_does_not_conflict_with_bitwise_and(self):
+        # `a & &x` — the right operand of bitwise `&` is `&x` (an
+        # address-of), not a syntax error.
+        self.assertEqual(
+            _exp_of("a & &x"),
+            c99_ast.Binary(
+                op=c99_ast.BitwiseAnd(),
+                left=c99_ast.Var(name="a"),
+                right=c99_ast.AddressOf(exp=c99_ast.Var(name="x")),
+            ),
+        )
+
+    def test_dereference_as_assignment_lval_parses(self):
+        # The grammar allows `*p = 5;` even though the lvalue check in
+        # identifier_resolution may still reject non-Var lvals — that
+        # check belongs to a later pass, not the grammar.
+        ast = parse("int main(void) { int p; *p = 5; }")
+        item = ast.declaration[0].function_decl.body.block_item[1]
+        self.assertIsInstance(item.statement, c99_ast.Expression)
+        assn = item.statement.exp
+        self.assertIsInstance(assn, c99_ast.Assignment)
+        self.assertIsInstance(assn.lval, c99_ast.Dereference)
+
 
 class TestFloatingTypesAndConstants(unittest.TestCase):
     """C99 §6.4.4.2 floating constants. Three terminals, one variant

@@ -22,13 +22,21 @@ module C99 {
     var_decl = (identifier name, exp? init, data_type, storage_class?)
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
     storage_class = Static | Extern
+
     -- Integer types: Int 1B, Long 2B, UInt 1B, ULong 2B (signed
     -- variants are two's complement, unsigned are bare bit patterns).
     -- Floating types: Float is IEEE 754 single (4B), Double is IEEE
     -- 754 double (8B). Long double (16B IEEE 754 quad / extended)
     -- isn't modelled — the parser rejects it.
-    data_type = Int | Long | UInt | ULong | Float | Double
-              | FunType(data_type* params, data_type ret)
+    data_type = Int
+        | Long 
+        | UInt 
+        | ULong 
+        | Float 
+        | Double
+        | FunType(data_type* params, data_type ret)
+        | Pointer(data_type referenced_type)
+
     for_init = InitDecl(var_decl) | InitExp(exp?)
 
     -- All expressions have a data type, which might be unspecified.
@@ -42,6 +50,8 @@ module C99 {
         | Postfix(incdec_op op, exp operand, data_type?)
         | Conditional(exp condition, exp true_clause, exp false_clause, data_type?)
         | FunctionCall(identifier name, exp* args, data_type?)
+        | Dereference(exp, data_type?)
+        | AddressOf(exp, data_type?)
 
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement

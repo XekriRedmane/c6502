@@ -327,7 +327,22 @@ type_name: type_specifier+
 // `cast_exp` (per §6.5.3.1) so `-(int)x` parses as `-((int)x)`;
 // prefix ++/-- keep their unary_exp operand because the cast result
 // isn't an lvalue.
+//
+// Indirection `*e` and address-of `&e` (C99 §6.5.3.2) sit at unary
+// precedence and take a `cast_exp` operand (per §6.5.3.1), same as
+// the other unary operators. They build their own AST nodes
+// (`Dereference` / `AddressOf`) rather than going through `unop` /
+// `unary` because the AST models them as standalone exp variants,
+// not as variants of `unary_operator` (the type checker tracks
+// `Pointer`-ness through them, which the Complement/Negate/LogicalNot
+// trio doesn't need). The STAR-vs-multiply and AMP-vs-bitwise-AND
+// ambiguity is resolved the same way unary minus already is: at the
+// LALR(1) state level — these productions only fire when the parser
+// is starting a fresh unary_exp, while the binary forms only fire
+// after a left operand has already reduced.
 ?unary_exp: unop cast_exp            -> unary
+          | STAR cast_exp            -> dereference
+          | AMP cast_exp             -> address_of
           | PLUSPLUS unary_exp       -> pre_increment
           | MINUSMINUS unary_exp     -> pre_decrement
           | postfix_exp

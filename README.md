@@ -457,10 +457,17 @@ that takes an AST and returns an AST (or text, for emit):
    (Long or ULong, per the symbol table), the translator emits a
    sequence of byte-level asm atoms — typically a low-byte pass
    followed by a high-byte pass, with the 6502's carry flag
-   threading naturally between them for arithmetic. The TAC asm-
-   side `static_init` collapses to two width variants
+   threading naturally between them for arithmetic. The asm-side
+   `static_init` collapses to two width variants
    (`IntInit | LongInit`) — TAC `UIntInit(v) → IntInit(v)`,
-   `ULongInit(v) → LongInit(v)`.
+   `ULongInit(v) → LongInit(v)`. Same rationale as the const
+   collapse above: the 6502 has no signedness distinction at the
+   byte level, and the asm IR is 1:1 with opcodes (no width or
+   sign tagging), so all that matters at emit is the cell size —
+   `DC.B` (1 byte) vs `DC.W` (2 bytes). `asm_emit` masks the
+   value before printing it as `$XX`/`$XXXX`, so a negative
+   `LongInit(-1)` and an unsigned `LongInit(65535)` both render
+   as `$FFFF`.
 
    **Per-byte addressing.** `Pseudo` and `Data` carry an `int
    offset` field: `Pseudo(name, offset=0)` is the low byte (or

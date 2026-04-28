@@ -735,7 +735,7 @@ class TestEmitProgram(unittest.TestCase):
         # `$`. The label sits in column 1; the `DC.B` directive in
         # the opcode column.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(int=5)),
+            asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.IntInit(int=5)]),
         ])
         self.assertEqual(emit_program(prog), "g:\n   DC.B  $05\n")
 
@@ -743,7 +743,7 @@ class TestEmitProgram(unittest.TestCase):
         # File-scope `int x;` (tentative) resolves to init=0; emits
         # `DC.B $00`. Same shape as an explicit `int x = 0;`.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="x", is_global=True, init=asm_ast.IntInit(int=0)),
+            asm_ast.StaticVariable(name="x", is_global=True, init=[asm_ast.IntInit(int=0)]),
         ])
         self.assertEqual(emit_program(prog), "x:\n   DC.B  $00\n")
 
@@ -758,7 +758,7 @@ class TestEmitProgram(unittest.TestCase):
                     asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
-            asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(int=7)),
+            asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.IntInit(int=7)]),
         ])
         self.assertEqual(
             emit_program(prog),
@@ -771,10 +771,45 @@ class TestEmitProgram(unittest.TestCase):
         # init must fit in a byte. The check uses `_check_byte`
         # internally so out-of-range values raise.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="bad", is_global=False, init=asm_ast.IntInit(int=256)),
+            asm_ast.StaticVariable(name="bad", is_global=False, init=[asm_ast.IntInit(int=256)]),
         ])
         with self.assertRaises(ValueError):
             emit_program(prog)
+
+    def test_static_array_renders_per_element(self):
+        # Array statics arrive with a flat list of inits — emit
+        # one `DC.B` per IntInit element under the variable's label.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="a", is_global=False,
+                init=[
+                    asm_ast.IntInit(int=1),
+                    asm_ast.IntInit(int=2),
+                    asm_ast.IntInit(int=3),
+                ],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "a:\n   DC.B  $01\n   DC.B  $02\n   DC.B  $03\n",
+        )
+
+    def test_static_long_array_renders_per_element_dc_w(self):
+        # `long a[3] = {1, 2, 3};` — each element is a 2-byte LongInit.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="a", is_global=False,
+                init=[
+                    asm_ast.LongInit(int=1),
+                    asm_ast.LongInit(int=2),
+                    asm_ast.LongInit(int=3),
+                ],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "a:\n   DC.W  $0001\n   DC.W  $0002\n   DC.W  $0003\n",
+        )
 
     def test_static_float_renders_dc_l(self):
         # FloatInit lays down 4 bytes IEEE 754 single, little-endian.
@@ -782,7 +817,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="half", is_global=False,
-                init=asm_ast.FloatInit(float=0.5),
+                init=[asm_ast.FloatInit(float=0.5)],
             ),
         ])
         self.assertEqual(emit_program(prog), "half:\n   DC.L  $3F000000\n")
@@ -795,7 +830,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="half_d", is_global=False,
-                init=asm_ast.DoubleInit(float=0.5),
+                init=[asm_ast.DoubleInit(float=0.5)],
             ),
         ])
         self.assertEqual(
@@ -810,7 +845,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="pi", is_global=False,
-                init=asm_ast.DoubleInit(float=3.14),
+                init=[asm_ast.DoubleInit(float=3.14)],
             ),
         ])
         self.assertEqual(

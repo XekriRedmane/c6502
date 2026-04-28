@@ -191,6 +191,71 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("LDA   x", out)
         self.assertNotIn("x:\n   DC.B", out)
 
+    def test_codegen_static_multi_dim_array_init(self):
+        # `static int nested[3][2] = {{1,2},{3,4},{5,6}};` lays
+        # the bytes down in source order: 1, 2, 3, 4, 5, 6 — six
+        # consecutive DC.B directives under the variable's label.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin=(
+                "int main(void) { "
+                "static int nested[3][2] = {{1,2},{3,4},{5,6}}; "
+                "return nested[1][1]; }"
+            ),
+        )
+        self.assertEqual(rc, 0)
+        # Find the variable's section by the mangled label.
+        idx = out.index("@0.nested:")
+        section = out[idx:].splitlines()
+        # The first 7 lines are the label and 6 DC.Bs (other code
+        # may follow after).
+        self.assertEqual(section[0], "@0.nested:")
+        self.assertEqual(section[1], "   DC.B  $01")
+        self.assertEqual(section[2], "   DC.B  $02")
+        self.assertEqual(section[3], "   DC.B  $03")
+        self.assertEqual(section[4], "   DC.B  $04")
+        self.assertEqual(section[5], "   DC.B  $05")
+        self.assertEqual(section[6], "   DC.B  $06")
+
+    def test_codegen_static_array_partial_init_zero_pads(self):
+        # `static int a[5] = {1, 2};` zero-pads the trailing slots.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin=(
+                "int main(void) { "
+                "static int a[5] = {1, 2}; return a[2]; }"
+            ),
+        )
+        self.assertEqual(rc, 0)
+        idx = out.index("@0.a:")
+        section = out[idx:].splitlines()
+        self.assertEqual(section[1:6], [
+            "   DC.B  $01",
+            "   DC.B  $02",
+            "   DC.B  $00",
+            "   DC.B  $00",
+            "   DC.B  $00",
+        ])
+
+    def test_codegen_file_scope_long_array_init(self):
+        # File-scope `long a[3] = {1, 2, 3};` — each element is a
+        # 2-byte LongInit, so we get three DC.W directives.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin=(
+                "long a[3] = {1, 2, 3}; "
+                "int main(void) { return (int)a[0]; }"
+            ),
+        )
+        self.assertEqual(rc, 0)
+        idx = out.index("a:")
+        section = out[idx:].splitlines()
+        self.assertEqual(section[1:4], [
+            "   DC.W  $0001",
+            "   DC.W  $0002",
+            "   DC.W  $0003",
+        ])
+
     def test_pcpp_strips_comments(self):
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],

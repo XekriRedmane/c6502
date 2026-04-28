@@ -1418,19 +1418,80 @@ class TestArrays(unittest.TestCase):
             )
         self.assertIn("brace-enclosed initializer", str(ctx.exception))
 
-    def test_file_scope_array_rejected(self):
+    def test_extern_array_rejected(self):
+        # `extern T a[N];` would need to defer the static-init to
+        # whichever TU defines the array — c6502's symbol model
+        # doesn't support that yet.
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
-                "int a[10]; int main(void) { return 0; }"
+                "int main(void) { extern int a[10]; return 0; }"
             )
-        self.assertIn("file-scope arrays", str(ctx.exception))
+        self.assertIn("extern arrays", str(ctx.exception))
 
-    def test_static_array_rejected(self):
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check(
-                "int main(void) { static int a[10]; return 0; }"
-            )
-        self.assertIn("static / extern arrays", str(ctx.exception))
+    def test_static_array_with_init_list(self):
+        # Block-scope `static int a[3] = {1, 2, 3};` produces a
+        # StaticAttr whose `value` is a 3-element tuple matching
+        # the declared array size.
+        _, symbols = _check(
+            "int main(void) { static int a[3] = {1, 2, 3}; "
+            "return a[0]; }"
+        )
+        sym = symbols["@0.a"]
+        self.assertIsInstance(sym.attrs, StaticAttr)
+        self.assertIsInstance(sym.attrs.initial_value, Initial)
+        self.assertEqual(sym.attrs.initial_value.value, (1, 2, 3))
+
+    def test_file_scope_array_with_init_list(self):
+        _, symbols = _check(
+            "int a[3] = {10, 20, 30}; int main(void) { return a[0]; }"
+        )
+        sym = symbols["a"]
+        self.assertIsInstance(sym.attrs, StaticAttr)
+        self.assertEqual(sym.attrs.initial_value.value, (10, 20, 30))
+
+    def test_static_array_partial_init_zero_pads(self):
+        # `static int a[5] = {1, 2};` zero-pads the trailing 3
+        # entries per C99 §6.7.8.21.
+        _, symbols = _check(
+            "int main(void) { static int a[5] = {1, 2}; "
+            "return a[0]; }"
+        )
+        sym = symbols["@0.a"]
+        self.assertEqual(sym.attrs.initial_value.value, (1, 2, 0, 0, 0))
+
+    def test_static_array_no_init_zeroes(self):
+        # `static int a[3];` (no init) is zero-initialized per
+        # C99 §6.7.8.10.
+        _, symbols = _check(
+            "int main(void) { static int a[3]; return a[0]; }"
+        )
+        sym = symbols["@0.a"]
+        self.assertEqual(sym.attrs.initial_value.value, (0, 0, 0))
+
+    def test_static_multi_dim_array_with_init_list(self):
+        # `static int nested[3][2] = {{1,2},{3,4},{5,6}};` →
+        # value tuple is ((1,2),(3,4),(5,6)).
+        _, symbols = _check(
+            "int main(void) { "
+            "static int nested[3][2] = {{1,2},{3,4},{5,6}}; "
+            "return nested[1][1]; }"
+        )
+        sym = symbols["@0.nested"]
+        self.assertEqual(
+            sym.attrs.initial_value.value,
+            ((1, 2), (3, 4), (5, 6)),
+        )
+
+    def test_static_long_array_with_init_list(self):
+        # The init values pass through `_convert_to`, so an int
+        # literal initializing a long element gets the right
+        # underlying value.
+        _, symbols = _check(
+            "int main(void) { static long a[3] = {1, 2, 3}; "
+            "return 0; }"
+        )
+        sym = symbols["@0.a"]
+        self.assertEqual(sym.attrs.initial_value.value, (1, 2, 3))
 
     def test_address_of_array_rejected(self):
         # `&arr` for an array would have type `Pointer(Array(...))`,

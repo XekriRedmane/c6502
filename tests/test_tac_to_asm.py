@@ -1147,14 +1147,14 @@ class TestStaticVariableTranslation(unittest.TestCase):
             tac_ast.StaticVariable(
                 name="g", is_global=True,
                 data_type=tac_ast.Int(),
-                init=tac_ast.IntInit(int=42),
+                init=[tac_ast.IntInit(int=42)],
             ),
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
             asm_ast.StaticVariable(
                 name="g", is_global=True,
-                init=asm_ast.IntInit(int=42),
+                init=[asm_ast.IntInit(int=42)],
             ),
         ])
 
@@ -1163,14 +1163,42 @@ class TestStaticVariableTranslation(unittest.TestCase):
             tac_ast.StaticVariable(
                 name="g", is_global=False,
                 data_type=tac_ast.Long(),
-                init=tac_ast.LongInit(int=200),
+                init=[tac_ast.LongInit(int=200)],
             ),
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
             asm_ast.StaticVariable(
                 name="g", is_global=False,
-                init=asm_ast.LongInit(int=200),
+                init=[asm_ast.LongInit(int=200)],
+            ),
+        ])
+
+    def test_array_init_list_translates_per_element(self):
+        # Array statics arrive at tac_to_asm with a flat list of
+        # typed inits in source-byte order. The translation is
+        # element-by-element (UIntInit → IntInit, ULongInit →
+        # LongInit, others 1-to-1).
+        prog = tac_ast.Program(top_level=[
+            tac_ast.StaticVariable(
+                name="a", is_global=False,
+                data_type=tac_ast.Long(),  # arrays collapse to Long
+                init=[
+                    tac_ast.IntInit(int=1),
+                    tac_ast.IntInit(int=2),
+                    tac_ast.IntInit(int=3),
+                ],
+            ),
+        ])
+        out = translate_program(prog)
+        self.assertEqual(out.top_level, [
+            asm_ast.StaticVariable(
+                name="a", is_global=False,
+                init=[
+                    asm_ast.IntInit(int=1),
+                    asm_ast.IntInit(int=2),
+                    asm_ast.IntInit(int=3),
+                ],
             ),
         ])
 

@@ -31,7 +31,7 @@ class Function(Type_top_level):
 class StaticVariable(Type_top_level):
     name: str
     is_global: bool
-    init: Type_static_init
+    init: list[Type_static_init] = field(default_factory=list)
 
 
 @dataclass

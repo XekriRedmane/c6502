@@ -871,25 +871,20 @@ def emit_function(fn: asm_ast.Function) -> list[str]:
 
 
 def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
-    """Render a top-level static-storage object as a labeled byte /
-    word / dword / qword:
+    """Render a top-level static-storage object as a label followed
+    by one assembler directive per static_init item in `sv.init`.
+    The list is in source-byte order, so successive items lay
+    down sequentially under the variable's label:
 
-        # IntInit(int=N)
+        # scalar, e.g. IntInit(int=N)
         <name>:
             dc.b $XX
 
-        # LongInit(int=N)
+        # array of three IntInits
         <name>:
-            dc.w $XXXX
-
-        # FloatInit(float=v)              (4 bytes IEEE 754 single)
-        <name>:
-            dc.l $WWWWWWWW
-
-        # DoubleInit(float=v)             (8 bytes IEEE 754 double)
-        <name>:
-            dc.l $LLLLLLLL
-            dc.l $HHHHHHHH
+            dc.b $X1
+            dc.b $X2
+            dc.b $X3
 
     The init's variant determines the cell width. dasm's `dc.w`
     emits 2 bytes in little-endian order, `dc.l` emits 4 bytes
@@ -912,51 +907,45 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
     multi-TU build would emit a `.globl name` directive here under
     `is_global=True`.
     """
-    match sv.init:
-        case asm_ast.IntInit(int=v):
-            _check_byte(f"init for {sv.name!r}", v)
-            return [f"{sv.name}:", _instr_line("dc.b", f"${v:02X}")]
-        case asm_ast.LongInit(int=v):
-            _check_word(f"init for {sv.name!r}", v)
-            # Mask to 16 bits so signed-negative values render as
-            # their two's-complement bit pattern (e.g. -1 → $FFFF).
-            return [
-                f"{sv.name}:",
-                _instr_line("dc.w", f"${v & 0xFFFF:04X}"),
-            ]
-        case asm_ast.FloatInit(float=v):
-            # Pack as IEEE 754 single-precision, little-endian (`<f`).
-            # Reinterpret the 4-byte sequence as a 32-bit unsigned
-            # int (also little-endian) so dasm's `dc.l` lays the
-            # exact same byte sequence down.
-            (word,) = struct.unpack("<I", struct.pack("<f", v))
-            return [
-                f"{sv.name}:",
-                _instr_line("dc.l", f"${word:08X}"),
-            ]
-        case asm_ast.DoubleInit(float=v):
-            # Pack as IEEE 754 double-precision, little-endian.
-            # Reinterpret the 8-byte sequence as two little-endian
-            # 32-bit unsigned ints (low then high half) and emit
-            # one `dc.l` per half.
-            lo, hi = struct.unpack("<II", struct.pack("<d", v))
-            return [
-                f"{sv.name}:",
-                _instr_line("dc.l", f"${lo:08X}"),
-                _instr_line("dc.l", f"${hi:08X}"),
-            ]
-        case asm_ast.AddressInit(name=target, offset=off):
-            # `&otherstatic` initializer — lay down 2 little-endian
-            # bytes equal to the target's address. dasm resolves
-            # `target` (and the optional `+off`) to the final
-            # address at link time. Same as a `LongInit` cell-wise,
-            # just with a symbolic value instead of a literal.
-            operand = target if off == 0 else f"{target}+{off}"
-            return [
-                f"{sv.name}:",
-                _instr_line("dc.w", operand),
-            ]
-    raise TypeError(f"unexpected static_init: {sv.init!r}")
+    if not sv.init:
+        raise ValueError(f"static variable {sv.name!r} has no init")
+    lines: list[str] = [f"{sv.name}:"]
+    for item in sv.init:
+        match item:
+            case asm_ast.IntInit(int=v):
+                _check_byte(f"init for {sv.name!r}", v)
+                lines.append(_instr_line("dc.b", f"${v:02X}"))
+            case asm_ast.LongInit(int=v):
+                _check_word(f"init for {sv.name!r}", v)
+                # Mask to 16 bits so signed-negative values render as
+                # their two's-complement bit pattern (e.g. -1 → $FFFF).
+                lines.append(_instr_line("dc.w", f"${v & 0xFFFF:04X}"))
+            case asm_ast.FloatInit(float=v):
+                # Pack as IEEE 754 single-precision, little-endian (`<f`).
+                # Reinterpret the 4-byte sequence as a 32-bit unsigned
+                # int (also little-endian) so dasm's `dc.l` lays the
+                # exact same byte sequence down.
+                (word,) = struct.unpack("<I", struct.pack("<f", v))
+                lines.append(_instr_line("dc.l", f"${word:08X}"))
+            case asm_ast.DoubleInit(float=v):
+                # Pack as IEEE 754 double-precision, little-endian.
+                # Reinterpret the 8-byte sequence as two little-endian
+                # 32-bit unsigned ints (low then high half) and emit
+                # one `dc.l` per half.
+                lo, hi = struct.unpack("<II", struct.pack("<d", v))
+                lines.append(_instr_line("dc.l", f"${lo:08X}"))
+                lines.append(_instr_line("dc.l", f"${hi:08X}"))
+            case asm_ast.AddressInit(name=target, offset=off):
+                # `&otherstatic` initializer — lay down 2 little-endian
+                # bytes equal to the target's address. dasm resolves
+                # `target` (and the optional `+off`) to the final
+                # address at link time. Same as a `LongInit` cell-wise,
+                # just with a symbolic value instead of a literal.
+                operand = target if off == 0 else f"{target}+{off}"
+                lines.append(_instr_line("dc.w", operand))
+            case _:
+                raise TypeError(f"unexpected static_init: {item!r}")
+    return lines
 
 
 def _check_word(label: str, v: int) -> None:

@@ -178,8 +178,16 @@ class Initial(InitialValue):
     type tells codegen which `StaticVariable` width to emit; the
     same numeric value can mean different things in different
     widths, and Float vs. Double also pick different IEEE 754 byte
-    sequences."""
-    value: int | float | AddressInit
+    sequences.
+
+    For array-typed statics, `value` is a `tuple` whose length
+    matches the declared array size, with one element per array
+    slot — int / float / AddressInit for scalar element types,
+    or a nested tuple for nested arrays. Missing trailing entries
+    in the source initializer have already been padded with
+    typed-zero by the type-check (so codegen sees a complete
+    tuple of size `arr.size`)."""
+    value: int | float | AddressInit | tuple
 
 
 @dataclass(frozen=True)
@@ -354,6 +362,51 @@ def _const_init_value(
         f"initializer for static-storage object {name!r} is not a "
         f"constant expression"
     )
+
+
+def _zero_aggregate(t: "Type"):
+    """Build a default-zero value tree for static-storage object of
+    type `t`. Scalars use the matching Python zero (`0` for integer
+    / pointer, `0.0` for FP); arrays produce a tuple of size `N`,
+    each element zeroed recursively. Used both for tentative
+    definitions (no init) and for trailing entries missing from a
+    partial array initializer."""
+    if isinstance(t, Array):
+        return tuple(_zero_aggregate(t.element_type) for _ in range(t.size))
+    if isinstance(t, (Float, Double)):
+        return 0.0
+    return 0
+
+
+def _const_init_aggregate(
+    init: c99_ast.Type_exp,
+    var_type: "Type",
+    name: str,
+    symbols: "SymbolTable | None" = None,
+):
+    """Build a value tree (scalar or nested tuple) for an array
+    static initializer. Scalar leaves run through `_const_init_value`
+    so all the existing constant-expression rules apply (Cast
+    drilling, AddressOf static-storage); array nodes recurse into
+    their `InitList.items`, padding any missing trailing entries
+    with the element type's typed-zero per C99 §6.7.8.21."""
+    if isinstance(var_type, Array):
+        if not isinstance(init, c99_ast.InitList):
+            raise TypeCheckError(
+                f"static array {name!r} requires a brace-enclosed "
+                f"initializer (`{{...}}`)"
+            )
+        elem_type = var_type.element_type
+        items: list = []
+        for i in range(var_type.size):
+            if i < len(init.items):
+                items.append(_const_init_aggregate(
+                    init.items[i], elem_type, name, symbols,
+                ))
+            else:
+                items.append(_zero_aggregate(elem_type))
+        return tuple(items)
+    return _const_init_value(init, name, symbols)
 
 
 def _types_equal(a: Type, b: Type) -> bool:
@@ -607,20 +660,27 @@ class TypeChecker:
                 f"file-scope object {vd.name!r} declared with non-"
                 f"object type {vd.data_type!r}"
             )
-        if isinstance(vd.data_type, Array):
-            # File-scope (and block-scope `static`) arrays would need
-            # an init-list `static_init` variant in tac_ast, which
-            # c6502 doesn't model yet. Reject for now — only block-
-            # scope automatic-storage arrays are supported.
-            raise TypeCheckError(
-                f"file-scope arrays are not supported yet "
-                f"(declaration of {vd.name!r})"
-            )
         is_extern = isinstance(vd.storage_class, c99_ast.Extern)
         if vd.init is None:
             initial: InitialValue = (
                 NoInitializer() if is_extern else Tentative()
             )
+        elif isinstance(vd.data_type, Array):
+            # File-scope `int a[3] = {1, 2, 3};` — same shape as the
+            # block-scope `static` array path: validate the init list
+            # and lift its constant values into a typed-zero-padded
+            # value tuple.
+            if not isinstance(vd.init, c99_ast.InitList):
+                raise TypeCheckError(
+                    f"file-scope array {vd.name!r} requires a brace-"
+                    f"enclosed initializer (`{{...}}`)"
+                )
+            self._check_array_init_list(
+                vd.init, vd.data_type, vd.name,
+            )
+            initial = Initial(_const_init_aggregate(
+                vd.init, vd.data_type, vd.name, self.symbols,
+            ))
         else:
             # Type-check the initializer normally (sets data_type
             # on every node) and convert to the declared type if
@@ -845,15 +905,14 @@ class TypeChecker:
             )
         if (
             isinstance(vd.data_type, Array)
-            and vd.storage_class is not None
+            and isinstance(vd.storage_class, c99_ast.Extern)
         ):
-            # `static T a[N];` and `extern T a[N];` would need static
-            # array initialisation in the runtime model — out of
-            # scope for the current cut. Plain `T a[N];` (automatic
-            # storage) IS supported and falls through to the local
-            # path below.
+            # `extern T a[N];` would need to defer the static-init
+            # to whichever TU defines the array — c6502's symbol
+            # model doesn't support that yet. Block-scope `static`
+            # arrays are handled below.
             raise TypeCheckError(
-                f"static / extern arrays are not supported yet "
+                f"extern arrays are not supported yet "
                 f"(declaration of {vd.name!r})"
             )
         if isinstance(vd.storage_class, c99_ast.Extern):
@@ -881,7 +940,29 @@ class TypeChecker:
             return
         if isinstance(vd.storage_class, c99_ast.Static):
             if vd.init is None:
-                initial: InitialValue = Initial(0)
+                # `static int x;` / `static int a[N];` — zero-
+                # initialize per C99 §6.7.8.10. For arrays, that
+                # means a tuple of typed zeros sized to the array.
+                initial: InitialValue = Initial(_zero_aggregate(vd.data_type))
+            elif isinstance(vd.data_type, Array):
+                # `static int a[3] = {1, 2, 3};` — brace-enclosed
+                # initializer required (a bare scalar is illegal).
+                # `_check_array_init_list` validates the count and
+                # converts each item to the element type;
+                # `_const_init_aggregate` then walks the same tree
+                # to extract a Python value tuple for the symbol
+                # table, padding missing trailing entries.
+                if not isinstance(vd.init, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"static array {vd.name!r} requires a brace-"
+                        f"enclosed initializer (`{{...}}`)"
+                    )
+                self._check_array_init_list(
+                    vd.init, vd.data_type, vd.name,
+                )
+                initial = Initial(_const_init_aggregate(
+                    vd.init, vd.data_type, vd.name, self.symbols,
+                ))
             else:
                 # Same flow as the file-scope-static path: type-
                 # check, apply the conversion rule (so a literal of

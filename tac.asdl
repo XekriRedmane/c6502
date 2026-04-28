@@ -2,7 +2,7 @@ module TAC {
     program = Program(top_level*)
     top_level =
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
-        | StaticVariable(identifier name, bool is_global, data_type, static_init init)
+        | StaticVariable(identifier name, bool is_global, data_type, static_init* init)
     instruction =
         Ret(val)
         | SignExtend(val src, val dst)
@@ -67,6 +67,13 @@ module TAC {
     -- is a constant expression). asm_emit renders it as
     -- `DC.W name+offset` (or `DC.W name` when offset==0); the
     -- assembler resolves the symbol.
+    --
+    -- A `StaticVariable.init` is a list of these in source-byte
+    -- order. Scalar statics carry a single-element list; array
+    -- statics carry one entry per element (multi-dim arrays
+    -- flatten row-major). Missing trailing entries in the source
+    -- initializer are filled with a typed-zero of the element
+    -- type (per C99 §6.7.8.21).
     static_init = IntInit(int) | LongInit(int) | UIntInit(int) | ULongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)

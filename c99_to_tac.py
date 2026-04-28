@@ -427,6 +427,44 @@ def _tac_static_init_for(
     )
 
 
+def _zero_init_value(t: c99_ast.Type_data_type):
+    """Default-zero value tree for a Tentative file-scope static. A
+    scalar yields `0` (or `0.0` for FP); an array yields a tuple of
+    typed zeros sized to the array (recursive for multi-dim). The
+    type checker uses the same shape for `static T x;` (no init), so
+    `_flat_static_init` consumes both via the same code path."""
+    if isinstance(t, c99_ast.Array):
+        return tuple(_zero_init_value(t.element_type) for _ in range(t.size))
+    if isinstance(t, (c99_ast.Float, c99_ast.Double)):
+        return 0.0
+    return 0
+
+
+def _flat_static_init(
+    t: c99_ast.Type_data_type,
+    value,
+) -> list[tac_ast.Type_static_init]:
+    """Lay out a static-storage value tree as a flat list of TAC
+    `static_init` items in source-byte order. Scalars produce a
+    single-element list (`_tac_static_init_for` picks the variant
+    by type); arrays recursively flatten — each element of the
+    array's `value` tuple is laid out at its position, and the
+    flattening is row-major for multi-dim arrays. The list shape
+    mirrors the in-memory byte layout: each item describes how
+    many bytes go down at the next slot."""
+    if isinstance(t, c99_ast.Array):
+        if not isinstance(value, tuple) or len(value) != t.size:
+            raise TypeError(
+                f"array static init shape mismatch: expected tuple of "
+                f"size {t.size} for {t!r}, got {value!r}"
+            )
+        out: list[tac_ast.Type_static_init] = []
+        for elem in value:
+            out.extend(_flat_static_init(t.element_type, elem))
+        return out
+    return [_tac_static_init_for(t, value)]
+
+
 def _pointee_size(t: c99_ast.Type_data_type) -> int:
     """Bytes per element for `*ptr` where `ptr` has type `t`. Used to
     scale the integer operand in pointer arithmetic — `ptr + n`
@@ -641,18 +679,20 @@ class Translator:
         # Walk the symbol table in insertion order (which matches
         # source order for file-scope decls) and emit a TAC
         # StaticVariable for every StaticAttr with a concrete initial
-        # value. The initial value is wrapped in a typed
-        # `IntInit(...)` or `LongInit(...)` matching the variable's
-        # declared type, so codegen knows whether to emit a 1-byte
-        # or 2-byte cell.
+        # value. The initial value flattens to a list of typed
+        # `IntInit(...)` / `LongInit(...)` / etc. items in source-
+        # byte order. Scalar statics produce a single-element list;
+        # array statics produce one entry per array slot (multi-dim
+        # arrays flatten row-major).
         # NoInitializer entries are pure references — the
         # definition is somewhere else and emits its own
         # StaticVariable, or it's an external dependency the linker
         # resolves. C99 §6.9.2.2: a Tentative definition that wasn't
         # upgraded by an explicit Initial somewhere in the TU resolves
         # to a zero-initialized definition at end-of-TU; we emit that
-        # zero through the same IntInit / LongInit wrapper, choosing
-        # the variant by the variable's declared type.
+        # zero through the same typed-zero machinery as a `static T
+        # x;` with no init (handled by the type checker, which gives
+        # us a pre-zeroed value tree of the right shape).
         out: list[tac_ast.StaticVariable] = []
         for name, sym in self._symbols.items():
             if not isinstance(sym.attrs, StaticAttr):
@@ -661,7 +701,7 @@ class Translator:
             if isinstance(init, Initial):
                 init_value = init.value
             elif isinstance(init, Tentative):
-                init_value = 0
+                init_value = _zero_init_value(sym.type)
             elif isinstance(init, NoInitializer):
                 continue
             else:
@@ -671,7 +711,7 @@ class Translator:
                 name=name,
                 is_global=sym.attrs.is_global,
                 data_type=data_type,
-                init=_tac_static_init_for(sym.type, init_value),
+                init=_flat_static_init(sym.type, init_value),
             ))
         return out
 

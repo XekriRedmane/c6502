@@ -32,7 +32,7 @@ class StaticVariable(Type_top_level):
     name: str
     is_global: bool
     data_type: Type_data_type
-    init: Type_static_init
+    init: list[Type_static_init] = field(default_factory=list)
 
 
 @dataclass

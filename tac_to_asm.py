@@ -382,7 +382,7 @@ class Translator:
                         out.append(asm_ast.StaticVariable(
                             name=tl.name,
                             is_global=tl.is_global,
-                            init=_to_asm_static_init(tl.init),
+                            init=[_to_asm_static_init(i) for i in tl.init],
                         ))
                     else:
                         out.append(self.translate_function(tl))

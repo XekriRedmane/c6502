@@ -2001,11 +2001,11 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["g_long"].data_type, tac_ast.Long())
         self.assertEqual(
-            statics["g_long"].init, tac_ast.LongInit(int=7),
+            statics["g_long"].init, [tac_ast.LongInit(int=7)],
         )
         self.assertEqual(statics["g_int"].data_type, tac_ast.Int())
         self.assertEqual(
-            statics["g_int"].init, tac_ast.IntInit(int=3),
+            statics["g_int"].init, [tac_ast.IntInit(int=3)],
         )
 
     def test_tentative_long_resolves_to_long_init_zero(self):
@@ -2020,7 +2020,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["x"].data_type, tac_ast.Long())
         self.assertEqual(
-            statics["x"].init, tac_ast.LongInit(int=0),
+            statics["x"].init, [tac_ast.LongInit(int=0)],
         )
 
     def test_tentative_int_resolves_to_int_init_zero(self):
@@ -2031,7 +2031,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["x"].data_type, tac_ast.Int())
         self.assertEqual(
-            statics["x"].init, tac_ast.IntInit(int=0),
+            statics["x"].init, [tac_ast.IntInit(int=0)],
         )
 
     def test_long_returning_function_implicit_zero_uses_const_long(self):

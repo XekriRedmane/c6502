@@ -1253,12 +1253,26 @@ Lowered all the way to 6502 asm:
   fires in seven contexts: Subscript array operand, Binary operand,
   Conditional branch, Cast inner, Assignment rval, FunctionCall
   arg, Return value, var initializer. Rejected: array assignment
-  (`a = b`), file-scope and `static` / `extern` arrays (would need
-  a static-init-list variant), and `&arr` for an array (would need
-  `Pointer(Array(...))` modeled). Pre-increment / compound
-  assignment on subscripts (`++a[i]`, `a[i] += 1`) work via the
-  parser's desugaring to `a[i] = a[i] + 1`; postfix on a subscript
-  (`a[i]++`) isn't wired through.
+  (`a = b`), `extern` arrays (would need cross-TU init deferral),
+  and `&arr` for an array (would need `Pointer(Array(...))`
+  modeled). Pre-increment / compound assignment on subscripts
+  (`++a[i]`, `a[i] += 1`) work via the parser's desugaring to
+  `a[i] = a[i] + 1`; postfix on a subscript (`a[i]++`) isn't
+  wired through.
+- File-scope and block-scope `static` arrays with constant
+  initializer lists: `int a[3] = {1,2,3};` at file scope, or
+  `static int nested[3][2] = {{1,2},{3,4},{5,6}};` inside a
+  function. The type checker validates the InitList via the same
+  `_check_array_init_list` path as automatic-storage arrays, then
+  builds a value tree (a tuple of element values; nested tuples
+  for multi-dim) and stashes it on `Initial.value`. `c99_to_tac`
+  flattens the tree row-major into a list of typed `static_init`
+  items (`StaticVariable.init` is `static_init*`); `tac_to_asm`
+  rewraps each item; `asm_emit` lays them down as successive
+  `dc.b` / `dc.w` / `dc.l` directives under the variable's label.
+  Missing trailing entries zero-pad with the element type's
+  typed-zero (per C99 §6.7.8.21); a no-init `static int a[N];`
+  zero-fills the same way (§6.7.8.10).
 - Array initializer lists per C99 §6.7.8: `int a[3] = {1, 2, 3};`
   parses as `var_decl` with `init = InitList(items=[...])`. The
   type checker validates the count (≤ array size, with shorter

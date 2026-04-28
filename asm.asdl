@@ -2,7 +2,7 @@ module ASM {
     program = Program(top_level*)
     top_level =
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
-        | StaticVariable(identifier name, bool is_global, static_init init)
+        | StaticVariable(identifier name, bool is_global, static_init* init)
     -- IntInit / LongInit lay down 1 / 2 little-endian bytes of an
     -- integer value. FloatInit / DoubleInit lay down 4 / 8 little-
     -- endian bytes of an IEEE 754 single / double — asm_emit packs
@@ -11,6 +11,12 @@ module ASM {
     -- the address `name + offset` — resolved at link time by the
     -- assembler. Used for Pointer-typed statics initialized with
     -- `&otherstatic`. asm_emit renders as `DC.W name+offset`.
+    --
+    -- A `StaticVariable.init` is a list of these in source-byte
+    -- order. Scalar statics have a single-element list; array
+    -- statics have one entry per element (multi-dim arrays
+    -- flatten row-major). asm_emit lays them down sequentially
+    -- under the variable's label.
     static_init = IntInit(int) | LongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)

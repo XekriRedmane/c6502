@@ -1246,15 +1246,36 @@ Lowered all the way to 6502 asm:
   §6.7.8.21), and converts each item to the element type via the
   same `_convert_to` rule as scalar init / Assignment rval — so
   `long a[2] = {1, 2};` wraps each `Int` literal in
-  `Cast(Long, ...)`. Lowering in `c99_to_tac` emits a single
-  `GetAddress` for the array's base, then for each i ∈ [0..N): an
-  `Add` of the constant byte offset `i * sizeof(elem)` to base
-  (skipped when i==0), then a `Store` of the i-th item (or
-  `_tac_const_val(elem, 0)` for trailing missing items). Trailing
-  commas (`{1, 2, 3,}`) parse per the standard. Rejected: nested
-  init lists `{{...}, {...}}` (multi-dim init out of scope),
-  scalar init for an array (`int a[3] = 5;`), brace-enclosed init
-  for a scalar (`int x = {1, 2};`), and too many initializers.
+  `Cast(Long, ...)`. Lowering in `c99_to_tac._emit_init_stores`
+  emits a single `GetAddress` for the array's base, then walks the
+  initializer tree recursively, accumulating constant byte offsets
+  to each scalar leaf and emitting `Store(val, base + offset)` for
+  it (the Add is skipped when offset==0). For multi-dim arrays
+  (`int a[2][3] = {{1,2,3},{4,5,6}};`) each top-level item is
+  itself an InitList; the recursion threads the byte offset
+  through, so `a[1][0]` lands at `base + 1*sizeof(int[3]) +
+  0*sizeof(int) = base + 3`. Missing items zero-pad at any depth:
+  a missing inner sub-array is treated as an empty InitList so
+  every leaf zeroes. Trailing commas (`{1, 2, 3,}`) parse per the
+  standard. Rejected: scalar init for an array (`int a[3] = 5;`),
+  brace-enclosed init for a scalar (`int x = {1, 2};`), too many
+  initializers at any nesting level, and the C99 "subaggregate"
+  flat form for multi-dim (`int a[2][3] = {1,2,3,4,5,6};` — would
+  need a parsing-time pre-grouping pass we don't have).
+- Multi-dim subscript (`a[i][j]` for a multi-dim or pointer-to-
+  array operand): the type checker's existing decay logic produces
+  the AST `Subscript(AddressOf(Subscript(AddressOf(Var(a)), i)), j)`
+  — the inner `a[i]` yields `Array(elem_inner, M)` which decays
+  to `Pointer(elem_inner)` for the outer subscript's pointer-
+  arithmetic path. `c99_to_tac` handles the synthetic
+  `AddressOf(Subscript)` shape via a dedicated case in
+  `translate_exp`'s AddressOf branch: it dispatches to
+  `_translate_subscript_address` (the rvalue Subscript path
+  without the trailing Load), so the outer subscript's address
+  computation chains naturally through the inner's. User-written
+  `&a[i]` still doesn't reach this case (identifier_resolution
+  only allows AddressOf operands of Var or Dereference) — it's
+  reserved for the synthetic decay path.
 - Array parameters with the C99 §6.7.5.3.7 adjustment: a parameter
   declared as `T param[N]` (or `T param[]`) is adjusted at parse
   time to `T *param`, via `_adjust_param_type` in

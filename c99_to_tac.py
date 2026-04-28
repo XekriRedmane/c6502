@@ -1356,10 +1356,26 @@ class Translator:
                     # Translate the pointer expression directly,
                     # skipping the Load that a bare `*e` would emit.
                     return self.translate_exp(inner.exp, instrs)
+                if isinstance(inner, c99_ast.Subscript):
+                    # `&a[i]` ≡ `a + i` per C99 §6.5.3.2.3 — same
+                    # address arithmetic as the rvalue Subscript
+                    # path, but skip the trailing Load. This shape
+                    # only arrives synthetically from the type
+                    # checker's array-decay path: `a[i]` for a
+                    # multi-dim array `a` yields an Array-typed
+                    # Subscript, which `_decay_if_array` then wraps
+                    # in `AddressOf` to produce a pointer-to-element
+                    # for the next outer Subscript / Binary etc.
+                    # User-written `&a[i]` doesn't reach here —
+                    # identifier_resolution rejects AddressOf
+                    # operands that aren't Var or Dereference.
+                    return self._translate_subscript_address(
+                        inner.array, inner.index, instrs,
+                    )
                 raise TypeError(
-                    f"address-of operand must be Var or Dereference "
-                    f"(identifier_resolution should have enforced "
-                    f"this); got {inner!r}"
+                    f"address-of operand must be Var, Dereference, "
+                    f"or Subscript (identifier_resolution / array "
+                    f"decay should have enforced this); got {inner!r}"
                 )
         raise TypeError(f"unexpected exp: {exp!r}")
 
@@ -1450,52 +1466,79 @@ class Translator:
         instrs: list[tac_ast.Type_instruction],
     ) -> None:
         """Lower `T arr[N] = {e1, e2, ...};` (block-scope only) to a
-        sequence of element Stores. The type checker has already
-        validated count ≤ N and converted each item to the element
-        type, so each `init.items[i]` has the right type. Missing
-        items (when len(items) < N) get a zero-of-element-type
-        Store, matching C99's "remaining elements initialised to
-        zero" rule.
-
-        Layout: GetAddress for the array's base, then for each
-        element i compute `base + i*sizeof(elem)` (skipping the add
-        when i==0) and emit a Store. The Add is on a constant offset,
-        so no runtime Multiply is needed (the offset is folded at
-        translate time)."""
+        sequence of leaf Stores. GetAddress once for the array's
+        base, then walk the (possibly nested) initializer tree
+        recursively, accumulating a constant byte offset to each
+        scalar leaf and emitting `Store(val, base + offset)` for it.
+        Missing items at any level zero-pad per C99 §6.7.8.21."""
         arr_type = vd.data_type
         assert isinstance(arr_type, c99_ast.Array)
-        elem_type = arr_type.element_type
         init = vd.init
         assert isinstance(init, c99_ast.InitList)
-        ptr_to_elem = c99_ast.Pointer(referenced_type=elem_type)
+        # Single base address for the whole initializer tree; we
+        # treat it as a byte-pointer (typed Pointer(Int) is fine —
+        # the size dispatch on Store comes from the value's type,
+        # not the pointer's).
         base = tac_ast.Var(
-            name=self.make_temporary_variable_name(ptr_to_elem),
+            name=self.make_temporary_variable_name(
+                c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            ),
         )
         instrs.append(tac_ast.GetAddress(
             operand=tac_ast.Var(name=vd.name), dst=base,
         ))
+        self._emit_init_stores(arr_type, init, base, 0, instrs)
+
+    def _emit_init_stores(
+        self,
+        arr_type: c99_ast.Array,
+        init: c99_ast.InitList,
+        base: tac_ast.Type_val,
+        base_offset: int,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Walk an (possibly nested) initializer for an array of
+        type `arr_type`, emitting Store instructions for each scalar
+        leaf at `base + (base_offset + leaf_offset)` bytes. Missing
+        items zero-pad: a None item with an Array element type
+        recurses with an empty InitList (so all leaves of the
+        sub-array zero); a None item with a scalar element type
+        emits `Store(0-of-elem, addr)`."""
+        elem_type = arr_type.element_type
         elem_size = _sizeof(elem_type)
         for i in range(arr_type.size):
-            if i == 0:
-                addr = base
-            else:
-                addr = tac_ast.Var(
-                    name=self.make_temporary_variable_name(ptr_to_elem),
+            byte_offset = base_offset + i * elem_size
+            item = init.items[i] if i < len(init.items) else None
+            if isinstance(elem_type, c99_ast.Array):
+                # Recurse into the sub-array. A missing item is a
+                # logically-empty InitList — every leaf zeroes.
+                sub = (
+                    item if item is not None
+                    else c99_ast.InitList(items=[], data_type=elem_type)
                 )
-                instrs.append(tac_ast.Binary(
-                    op=tac_ast.Add(),
-                    src1=base,
-                    src2=_tac_const_val(c99_ast.Long(), i * elem_size),
-                    dst=addr,
-                ))
-            if i < len(init.items):
-                val = self.translate_exp(init.items[i], instrs)
+                self._emit_init_stores(
+                    elem_type, sub, base, byte_offset, instrs,
+                )
             else:
-                # C99 §6.7.8.21: missing trailing initializers get
-                # the same default as static-storage objects — zero
-                # of the element type.
-                val = _tac_const_val(elem_type, 0)
-            instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+                if item is None:
+                    val = _tac_const_val(elem_type, 0)
+                else:
+                    val = self.translate_exp(item, instrs)
+                if byte_offset == 0:
+                    addr = base
+                else:
+                    addr = tac_ast.Var(
+                        name=self.make_temporary_variable_name(
+                            c99_ast.Pointer(referenced_type=elem_type),
+                        ),
+                    )
+                    instrs.append(tac_ast.Binary(
+                        op=tac_ast.Add(),
+                        src1=base,
+                        src2=_tac_const_val(c99_ast.Long(), byte_offset),
+                        dst=addr,
+                    ))
+                instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
 
     def _translate_subscript_address(
         self,

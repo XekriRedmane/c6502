@@ -1413,15 +1413,53 @@ class TestArrays(unittest.TestCase):
             )
         self.assertIn("brace-enclosed", str(ctx.exception))
 
-    def test_nested_init_list_rejected(self):
-        # `int a[2][2] = {{1,2},{3,4}};` — multi-dim init not yet
-        # supported. The type checker hits this at the outer
-        # _check_array_init_list (element_type is itself an Array).
+    def test_nested_init_list_accepted_for_multi_dim(self):
+        # `int a[2][3] = {{1,2,3},{4,5,6}};` — both inner InitLists
+        # type-check against the inner Array type.
+        from c99_ast import Array
+        prog, _ = _check(
+            "int main(void) { int a[2][3] = {{1,2,3},{4,5,6}}; return 0; }"
+        )
+        decl = (
+            prog.declaration[0].function_decl.body.block_item[0]
+            .declaration.var_decl
+        )
+        self.assertEqual(
+            decl.init.data_type, Array(Array(Int(), 3), 2),
+        )
+        # Each top-level item is itself a typed InitList.
+        for sub in decl.init.items:
+            self.assertIsInstance(sub, c99_ast.InitList)
+            self.assertEqual(sub.data_type, Array(Int(), 3))
+
+    def test_flat_init_for_multi_dim_rejected(self):
+        # `int a[2][3] = {1,2,3,4,5,6};` — C99 §6.7.8 allows this
+        # via the "subaggregate" rule, but our type checker only
+        # supports the fully-nested form. Flat forms with too many
+        # outer items hit "too many initializers"; ones that fit the
+        # outer count fail with "expected nested initializer".
+        with self.assertRaises(TypeCheckError):
+            _check(
+                "int main(void) { int a[2][3] = {1,2,3,4,5,6}; return 0; }"
+            )
+
+    def test_flat_init_for_multi_dim_short_rejected(self):
+        # `int a[3][3] = {1, 2, 3};` — fits the outer count (3) but
+        # the items are scalars where InitLists are required.
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
-                "int main(void) { int a[2][2] = {{1,2},{3,4}}; return 0; }"
+                "int main(void) { int a[3][3] = {1, 2, 3}; return 0; }"
             )
-        self.assertIn("nested array initializers", str(ctx.exception))
+        self.assertIn("expected nested initializer", str(ctx.exception))
+
+    def test_nested_init_extra_braces_rejected(self):
+        # `int a[3] = {{1,2,3}};` — element type is Int (not an
+        # array), so a nested `{1,2,3}` is the wrong shape.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[3] = {{1,2,3}}; return 0; }"
+            )
+        self.assertIn("unexpected nested initializer", str(ctx.exception))
 
     def test_init_list_in_expression_position_rejected(self):
         # The grammar doesn't allow `{1, 2}` as a regular expression
@@ -1454,6 +1492,33 @@ class TestArrays(unittest.TestCase):
         self.assertIn(
             "brace-enclosed initializer", str(ctx.exception),
         )
+
+    def test_two_dim_subscript_yields_element_type(self):
+        # `a[i][j]` for `int a[3][4]` — outer Subscript has data_type
+        # Int (the leaf type); inner Subscript has data_type
+        # Array(Int, 4) which decays via AddressOf for the outer
+        # pointer-arithmetic path.
+        from c99_ast import Array, Pointer
+        prog, _ = _check(
+            "int main(void) { int a[3][4]; return a[1][2]; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Subscript)
+        self.assertEqual(ret_exp.data_type, Int())
+        # The outer's array operand is AddressOf wrapping the inner
+        # Subscript (the decay reification).
+        self.assertIsInstance(ret_exp.array, c99_ast.AddressOf)
+        self.assertEqual(
+            ret_exp.array.data_type, Pointer(referenced_type=Int()),
+        )
+        # The inner Subscript stamps Array(Int, 4) — the type before
+        # the outer's decay.
+        inner = ret_exp.array.exp
+        self.assertIsInstance(inner, c99_ast.Subscript)
+        self.assertEqual(inner.data_type, Array(Int(), 4))
 
     def test_pointer_subscript_works_too(self):
         # `p[i]` where p is `int *` — same shape as `a[i]` but the

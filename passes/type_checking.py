@@ -946,9 +946,13 @@ class TypeChecker:
         `init.data_type` with the array type so downstream passes
         recognise the shape.
 
-        Nested initializers (`{{...}, {...}}` for a multi-dim array)
-        aren't supported yet — each item must be a scalar
-        expression.
+        For multi-dim arrays (`int a[2][3] = {{1,2,3},{4,5,6}};`),
+        each top-level item must itself be an `InitList` matching
+        the inner array type — the recursion handles arbitrary
+        nesting. C99 also allows the flat form
+        (`{1,2,3,4,5,6}`) by §6.7.8.20's "subaggregate" rule, but
+        that's a parsing-time pre-grouping pass we don't have, so
+        only the fully-nested form is accepted.
         """
         if len(init.items) > arr_type.size:
             raise TypeCheckError(
@@ -957,25 +961,32 @@ class TypeChecker:
                 f"element{'s' if arr_type.size != 1 else ''}"
             )
         elem_type = arr_type.element_type
-        if isinstance(elem_type, Array):
-            raise TypeCheckError(
-                f"nested array initializers (`{{{{...}}, ...}}`) "
-                f"are not supported yet (declaration of "
-                f"{var_name!r})"
-            )
         for i, item in enumerate(init.items):
-            if isinstance(item, c99_ast.InitList):
-                raise TypeCheckError(
-                    f"unexpected nested initializer at index {i} "
-                    f"of {var_name!r} (element type is "
-                    f"{elem_type!r}, not an array)"
-                )
-            self._check_exp(item)
-            # Same conversion rule as scalar init / Assignment rval —
-            # array-decay first (so e.g. `&other` shapes work), then
-            # _convert_to wraps in an implicit Cast on type mismatch.
-            item = _decay_if_array(item)
-            init.items[i] = _convert_to(item, elem_type)
+            if isinstance(elem_type, Array):
+                # Each item must itself be a nested InitList — the
+                # flat form (`{1,2,3,4,5,6}` for `int[2][3]`) isn't
+                # supported.
+                if not isinstance(item, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"expected nested initializer (`{{...}}`) "
+                        f"at index {i} of {var_name!r}; element "
+                        f"type is {elem_type!r}"
+                    )
+                self._check_array_init_list(item, elem_type, var_name)
+            else:
+                if isinstance(item, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"unexpected nested initializer at index "
+                        f"{i} of {var_name!r} (element type is "
+                        f"{elem_type!r}, not an array)"
+                    )
+                self._check_exp(item)
+                # Same conversion rule as scalar init / Assignment
+                # rval — array-decay first (so e.g. `&other` shapes
+                # work), then _convert_to wraps in an implicit Cast
+                # on type mismatch.
+                item = _decay_if_array(item)
+                init.items[i] = _convert_to(item, elem_type)
         init.data_type = arr_type
 
     # ------------------------------------------------------------------

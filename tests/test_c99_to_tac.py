@@ -2419,6 +2419,119 @@ class TestArrayInitList(unittest.TestCase):
         self.assertEqual(offsets, [2, 4])
 
 
+class TestMultiDimArrays(unittest.TestCase):
+    """Multi-dim subscript chains and nested init lists. Subscript
+    on a multi-dim array threads through the type checker's array
+    decay (each inner result decays to a pointer for the outer
+    Subscript), which c99_to_tac handles via a new `AddressOf(
+    Subscript)` case in `translate_exp`. Nested init lists recurse
+    in `_emit_init_stores`, accumulating byte offsets for each
+    leaf."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_two_dim_subscript_lowers_with_two_scales(self):
+        # `int a[3][4]; a[i][j]` — outer dimension scales by
+        # sizeof(int[4]) = 4, inner by sizeof(int) = 1 (no scale
+        # emitted at the inner level since size 1).
+        tac = self._tac(
+            "int main(void) { int a[3][4]; return a[1][2]; }"
+        )
+        instrs = tac.top_level[0].instructions
+        muls = [
+            i for i in instrs
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        # Exactly one Multiply — for the outer dimension's index 1 ×
+        # sizeof(int[4]) = 4. The inner index doesn't need a Multiply
+        # because sizeof(int) is 1.
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(int=4)),
+        )
+        # Final Load is for sizeof(int) = 1 byte (size dispatched
+        # by the dst's type).
+        loads = [i for i in instrs if isinstance(i, tac_ast.Load)]
+        self.assertEqual(len(loads), 1)
+
+    def test_two_dim_long_subscript_scales_outer_by_six(self):
+        # `long a[2][3]; a[i][j]` — outer dimension scales by
+        # sizeof(long[3]) = 6, inner by sizeof(long) = 2.
+        tac = self._tac(
+            "long main(void) { long a[2][3]; return a[1][2]; }"
+        )
+        muls = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        # Two Multiplies — outer × 6, inner × 2.
+        self.assertEqual(len(muls), 2)
+        scales = sorted(m.src2.const.int for m in muls)
+        self.assertEqual(scales, [2, 6])
+
+    def test_two_dim_init_emits_six_stores(self):
+        # `int a[2][3] = {{1,2,3},{4,5,6}};` — six leaf Stores at
+        # offsets 0, 1, 2, 3, 4, 5.
+        tac = self._tac(
+            "int main(void) { int a[2][3] = {{1,2,3},{4,5,6}}; return 0; }"
+        )
+        stores = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Store)
+        ]
+        self.assertEqual(len(stores), 6)
+        # Stored values are 1..6 in row-major order.
+        for i, expected in enumerate([1, 2, 3, 4, 5, 6]):
+            self.assertEqual(
+                stores[i].src,
+                tac_ast.Constant(const=tac_ast.ConstInt(int=expected)),
+            )
+
+    def test_partial_two_dim_init_zero_pads(self):
+        # `int a[2][3] = {{1, 2}};` — outer item 0 has only 2 inner
+        # items (third zero-padded); outer item 1 missing entirely
+        # (all three inner zero-padded). Total: 6 Stores with
+        # values [1, 2, 0, 0, 0, 0].
+        tac = self._tac(
+            "int main(void) { int a[2][3] = {{1, 2}}; return 0; }"
+        )
+        stores = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Store)
+        ]
+        self.assertEqual(len(stores), 6)
+        for i, expected in enumerate([1, 2, 0, 0, 0, 0]):
+            self.assertEqual(
+                stores[i].src,
+                tac_ast.Constant(const=tac_ast.ConstInt(int=expected)),
+            )
+
+    def test_two_dim_init_uses_correct_byte_offsets(self):
+        # `long a[2][3] = {{1L,2L,3L},{4L,5L,6L}};` — sizeof(long)=2,
+        # so leaves are at offsets 0, 2, 4, 6, 8, 10.
+        tac = self._tac(
+            "int main(void) { "
+            "long a[2][3] = {{1L,2L,3L},{4L,5L,6L}}; return 0; }"
+        )
+        adds = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Add)
+        ]
+        # Five Adds for the five non-zero offsets (offset 0 is the
+        # base itself, no Add).
+        self.assertEqual(len(adds), 5)
+        offsets = sorted(a.src2.const.int for a in adds)
+        self.assertEqual(offsets, [2, 4, 6, 8, 10])
+
+
 class TestArrayFrameLayout(unittest.TestCase):
     """An array's frame slot is `sizeof(elem) * count` contiguous
     bytes; replace_pseudoregisters' `_size_of_name` reads the c99

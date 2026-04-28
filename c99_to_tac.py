@@ -277,6 +277,15 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.Double()
     if isinstance(t, c99_ast.Pointer):
         return tac_ast.Long()
+    if isinstance(t, c99_ast.Array):
+        # Arrays decay to pointers everywhere they're used as values,
+        # so a TAC `Var` with array c99 type would only show up as the
+        # operand of a `GetAddress` — which doesn't dispatch on its
+        # operand's TAC type. Collapse to Long for consistency with
+        # Pointer; the actual byte width of the storage is computed
+        # by `_size_of_name` in `replace_pseudoregisters` (which reads
+        # the c99 Array type directly).
+        return tac_ast.Long()
     if isinstance(t, c99_ast.FunType):
         return tac_ast.FunType(
             params=[_to_tac_data_type(p) for p in t.params],
@@ -416,6 +425,36 @@ def _tac_static_init_for(
     raise TypeError(
         f"static-storage object can't have non-object type {t!r}"
     )
+
+
+def _pointee_size(t: c99_ast.Type_data_type) -> int:
+    """Bytes per element for `*ptr` where `ptr` has type `t`. Used to
+    scale the integer operand in pointer arithmetic — `ptr + n`
+    advances by `n * _pointee_size(ptr)` bytes per C99 §6.5.6.8.
+    The widths match the rest of the c6502 type model: Int/UInt = 1,
+    Long/ULong = 2, Pointer = 2 (the 6502's address width), Float = 4,
+    Double = 8, Array = elem_size * count (so a `(int (*)[10]) + 1`
+    advances by 10 bytes — needed once multi-dim arrays land).
+    Function pointers and non-object types are rejected by the type
+    checker before this point."""
+    assert isinstance(t, c99_ast.Pointer), f"not a pointer: {t!r}"
+    return _sizeof(t.referenced_type)
+
+
+def _sizeof(t: c99_ast.Type_data_type) -> int:
+    """Bytes occupied by a value of type `t` in c6502's storage
+    model. Recursive for Array — `int[3][4]` is 12 bytes."""
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+        return 1
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+        return 2
+    if isinstance(t, c99_ast.Float):
+        return 4
+    if isinstance(t, c99_ast.Double):
+        return 8
+    if isinstance(t, c99_ast.Array):
+        return _sizeof(t.element_type) * t.size
+    raise TypeError(f"cannot size {t!r}")
 
 
 class Translator:
@@ -691,10 +730,13 @@ class Translator:
                 if vd.storage_class is not None:
                     return
                 if vd.init is not None:
-                    init_val = self.translate_exp(vd.init, instrs)
-                    instrs.append(tac_ast.Copy(
-                        src=init_val, dst=tac_ast.Var(name=vd.name),
-                    ))
+                    if isinstance(vd.init, c99_ast.InitList):
+                        self._translate_array_init_list(vd, instrs)
+                    else:
+                        init_val = self.translate_exp(vd.init, instrs)
+                        instrs.append(tac_ast.Copy(
+                            src=init_val, dst=tac_ast.Var(name=vd.name),
+                        ))
                 return
             case c99_ast.FunctionDecl():
                 return
@@ -903,10 +945,13 @@ class Translator:
                 # rather than going through the wider declaration
                 # dispatcher.
                 if vd.init is not None:
-                    init_val = self.translate_exp(vd.init, instrs)
-                    instrs.append(tac_ast.Copy(
-                        src=init_val, dst=tac_ast.Var(name=vd.name),
-                    ))
+                    if isinstance(vd.init, c99_ast.InitList):
+                        self._translate_array_init_list(vd, instrs)
+                    else:
+                        init_val = self.translate_exp(vd.init, instrs)
+                        instrs.append(tac_ast.Copy(
+                            src=init_val, dst=tac_ast.Var(name=vd.name),
+                        ))
                 return
             case c99_ast.InitExp(exp=exp):
                 if exp is not None:
@@ -1059,6 +1104,23 @@ class Translator:
                 # readers will expect.
                 src1 = self.translate_exp(left, instrs)
                 src2 = self.translate_exp(right, instrs)
+                # Pointer arithmetic (C99 §6.5.6) is the only case
+                # where an integer Binary needs more than a single
+                # TAC op: the integer operand has to be scaled by
+                # sizeof(pointee) before the add/sub, and ptr - ptr
+                # produces a byte-difference that has to be divided
+                # back down to an element count. Everything else
+                # falls through to the plain Binary lowering.
+                lt, rt = left.data_type, right.data_type
+                l_ptr = isinstance(lt, c99_ast.Pointer)
+                r_ptr = isinstance(rt, c99_ast.Pointer)
+                if (
+                    isinstance(op, (c99_ast.Add, c99_ast.Subtract))
+                    and (l_ptr or r_ptr)
+                ):
+                    return self.translate_pointer_arithmetic(
+                        op, src1, src2, lt, rt, exp.data_type, instrs,
+                    )
                 # The Binary's data_type (set by the type checker)
                 # is the result type after usual arithmetic
                 # conversions — the common type for arithmetic /
@@ -1079,6 +1141,21 @@ class Translator:
                 # `@` and TAC's `%` are both illegal in C identifiers,
                 # so user vars and translator temps can't collide.
                 return tac_ast.Var(name=name)
+            case c99_ast.Subscript(array=arr, index=idx):
+                # `a[i]` per C99 §6.5.2.1.2 is `*(a + i)`. The type
+                # checker has already decayed any array operand to a
+                # pointer and widened the index to Long, so this
+                # reuses the pointer-arithmetic lowering directly:
+                # compute the byte address, then Load N bytes through
+                # it into a fresh element-typed temp.
+                addr = self._translate_subscript_address(
+                    arr, idx, instrs,
+                )
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
+                instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
+                return dst
             case c99_ast.Assignment(lval=lval, rval=rval):
                 # identifier_resolution accepts two lval shapes:
                 # `Var(name)` (a named storage cell) and
@@ -1107,10 +1184,20 @@ class Translator:
                         src=rval_val, dst_ptr=ptr_val,
                     ))
                     return rval_val
+                if isinstance(lval, c99_ast.Subscript):
+                    # `a[i] = rval` — same address computation as the
+                    # rvalue Subscript, then Store instead of Load.
+                    addr = self._translate_subscript_address(
+                        lval.array, lval.index, instrs,
+                    )
+                    instrs.append(tac_ast.Store(
+                        src=rval_val, dst_ptr=addr,
+                    ))
+                    return rval_val
                 raise TypeError(
-                    f"assignment lval must be Var or Dereference "
-                    f"(identifier_resolution should have enforced "
-                    f"this); got {lval!r}"
+                    f"assignment lval must be Var, Dereference, or "
+                    f"Subscript (identifier_resolution should have "
+                    f"enforced this); got {lval!r}"
                 )
             case c99_ast.Conditional(
                 condition=cond,
@@ -1275,6 +1362,165 @@ class Translator:
                     f"this); got {inner!r}"
                 )
         raise TypeError(f"unexpected exp: {exp!r}")
+
+    def translate_pointer_arithmetic(
+        self,
+        op: c99_ast.Type_binary_operator,
+        src1: tac_ast.Type_val,
+        src2: tac_ast.Type_val,
+        lt: c99_ast.Type_data_type,
+        rt: c99_ast.Type_data_type,
+        result_type: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Lower pointer arithmetic to plain TAC ops. Three shapes,
+        all dispatched on the operand types the type checker stamped:
+          ptr ± int     — multiply the int by sizeof(pointee), then
+                          a normal Add / Subtract on two 2-byte values.
+                          Skip the multiply when sizeof(pointee) == 1.
+          ptr - ptr     — Subtract the two 2-byte pointers, then divide
+                          the byte-difference by sizeof(pointee) to get
+                          an element count. Skip the divide when
+                          sizeof(pointee) == 1. Result is Long.
+        The type checker's already widened any int operand to Long, so
+        every value reaching this method is 2 bytes wide and the
+        arithmetic happens at one width."""
+        l_ptr = isinstance(lt, c99_ast.Pointer)
+        r_ptr = isinstance(rt, c99_ast.Pointer)
+        if l_ptr and r_ptr:
+            # ptr - ptr (the only legal two-pointer additive op; ptr +
+            # ptr was rejected by the type checker).
+            assert isinstance(op, c99_ast.Subtract)
+            size = _pointee_size(lt)
+            diff = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.Long()),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Subtract(), src1=src1, src2=src2, dst=diff,
+            ))
+            if size == 1:
+                return diff
+            quot = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.Long()),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Divide(),
+                src1=diff,
+                src2=_tac_const_val(c99_ast.Long(), size),
+                dst=quot,
+            ))
+            return quot
+        # ptr ± int. The type checker widened the int operand to Long
+        # and rejected int - ptr, so the only remaining shapes are
+        # ptr_lhs ± int_rhs and int_lhs + ptr_rhs.
+        if l_ptr:
+            ptr_val, int_val, ptr_type = src1, src2, lt
+        else:
+            ptr_val, int_val, ptr_type = src2, src1, rt
+        size = _pointee_size(ptr_type)
+        if size != 1:
+            scaled = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.Long()),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Multiply(),
+                src1=int_val,
+                src2=_tac_const_val(c99_ast.Long(), size),
+                dst=scaled,
+            ))
+            int_val = scaled
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(result_type),
+        )
+        # For Subtract the type checker rejected int - ptr, so
+        # `ptr_val` is always the lhs. For Add the operation is
+        # commutative and the order doesn't matter, but we keep the
+        # pointer on the lhs for consistency.
+        instrs.append(tac_ast.Binary(
+            op=self.translate_binop(op),
+            src1=ptr_val,
+            src2=int_val,
+            dst=dst,
+        ))
+        return dst
+
+    def _translate_array_init_list(
+        self,
+        vd: c99_ast.Type_var_decl,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Lower `T arr[N] = {e1, e2, ...};` (block-scope only) to a
+        sequence of element Stores. The type checker has already
+        validated count ≤ N and converted each item to the element
+        type, so each `init.items[i]` has the right type. Missing
+        items (when len(items) < N) get a zero-of-element-type
+        Store, matching C99's "remaining elements initialised to
+        zero" rule.
+
+        Layout: GetAddress for the array's base, then for each
+        element i compute `base + i*sizeof(elem)` (skipping the add
+        when i==0) and emit a Store. The Add is on a constant offset,
+        so no runtime Multiply is needed (the offset is folded at
+        translate time)."""
+        arr_type = vd.data_type
+        assert isinstance(arr_type, c99_ast.Array)
+        elem_type = arr_type.element_type
+        init = vd.init
+        assert isinstance(init, c99_ast.InitList)
+        ptr_to_elem = c99_ast.Pointer(referenced_type=elem_type)
+        base = tac_ast.Var(
+            name=self.make_temporary_variable_name(ptr_to_elem),
+        )
+        instrs.append(tac_ast.GetAddress(
+            operand=tac_ast.Var(name=vd.name), dst=base,
+        ))
+        elem_size = _sizeof(elem_type)
+        for i in range(arr_type.size):
+            if i == 0:
+                addr = base
+            else:
+                addr = tac_ast.Var(
+                    name=self.make_temporary_variable_name(ptr_to_elem),
+                )
+                instrs.append(tac_ast.Binary(
+                    op=tac_ast.Add(),
+                    src1=base,
+                    src2=_tac_const_val(c99_ast.Long(), i * elem_size),
+                    dst=addr,
+                ))
+            if i < len(init.items):
+                val = self.translate_exp(init.items[i], instrs)
+            else:
+                # C99 §6.7.8.21: missing trailing initializers get
+                # the same default as static-storage objects — zero
+                # of the element type.
+                val = _tac_const_val(elem_type, 0)
+            instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+
+    def _translate_subscript_address(
+        self,
+        array: c99_ast.Type_exp,
+        index: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Compute the byte address of `array[index]`. The type
+        checker has already decayed any array operand to a pointer
+        and widened the index to Long, so this is exactly a pointer
+        + integer arithmetic op — `translate_pointer_arithmetic`
+        scales the index by `sizeof(*array)` and emits the Add. The
+        returned val is a Pointer-typed (so 2-byte, the 6502's
+        address width) temp holding the byte address; both the
+        rvalue path (Load through it) and the lvalue path (Store
+        through it) consume it the same way."""
+        arr_val = self.translate_exp(array, instrs)
+        idx_val = self.translate_exp(index, instrs)
+        return self.translate_pointer_arithmetic(
+            op=c99_ast.Add(),
+            src1=arr_val, src2=idx_val,
+            lt=array.data_type, rt=index.data_type,
+            result_type=array.data_type,
+            instrs=instrs,
+        )
 
     def translate_short_circuit(
         self,

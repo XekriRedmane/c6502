@@ -450,13 +450,52 @@ def _apply_direct_declarator(dd_tree, base_type):
     ):
         return _apply_declarator(children[1], base_type)
     inner_dd = children[0]
-    # 3) Array suffix — c99_ast has no Array variant, so reject
-    #    syntactically valid array declarators with a focused error.
-    if any(_is_token(c, "LBRACKET") for c in children):
-        raise NotImplementedError(
-            "array declarators aren't wired through to the AST yet "
-            "— c99_ast has no Array variant"
-        )
+    # 3) Array suffix — `direct_declarator LBRACKET array_suffix RBRACKET`.
+    #    Walked outer-first: the outermost suffix in source order is
+    #    the rightmost `[N]`, and `int a[3][4]` ends up as
+    #    Array(Array(Int, 4), 3) (a is array of 3 arrays of 4 ints).
+    #    The grammar accepts four `array_suffix` shapes (plain /
+    #    static / qualifiers-then-static / unspecified-VLA), but
+    #    c6502 only supports the plain form with a constant integer
+    #    size — no `[]`, no `static`, no qualifiers, no VLA `*`.
+    if (
+        len(children) == 4
+        and _is_token(children[1], "LBRACKET")
+        and _is_token(children[3], "RBRACKET")
+    ):
+        suffix = children[2]
+        if not hasattr(suffix, "data") or suffix.data != "array_size_plain":
+            raise NotImplementedError(
+                "only plain array sizes are supported "
+                f"(got {getattr(suffix, 'data', suffix)!r})"
+            )
+        if len(suffix.children) == 0:
+            raise NotImplementedError(
+                "array of unspecified size (`[]`) is not supported"
+            )
+        if len(suffix.children) > 1:
+            raise NotImplementedError(
+                "type-qualified array sizes aren't supported"
+            )
+        size_exp = suffix.children[0]
+        if not isinstance(size_exp, c99_ast.Constant):
+            raise NotImplementedError(
+                "array size must be an integer constant literal"
+            )
+        c = size_exp.const
+        if not isinstance(c, (
+            c99_ast.ConstInt, c99_ast.ConstLong,
+            c99_ast.ConstUInt, c99_ast.ConstULong,
+        )):
+            raise NotImplementedError(
+                "array size must be an integer constant"
+            )
+        if c.int <= 0:
+            raise ParserError("array size must be positive")
+        # Wrap base_type in an Array; recurse with the wrapped type
+        # so any further suffixes (deeper in inner_dd) compose on top.
+        new_base = c99_ast.Array(element_type=base_type, size=c.int)
+        return _apply_direct_declarator(inner_dd, new_base)
     # 4) Function suffix — `inner_dd LPAREN body? RPAREN` where body
     #    is a parameter_type_list, VOID, an identifier_list, or
     #    empty (K&R `f()`).
@@ -495,6 +534,30 @@ def _apply_direct_declarator(dd_tree, base_type):
     # belong to the type, not to this declarator's name.)
     param_names = [n for (n, _t) in param_pairs]
     return name, composed, param_names
+
+
+def _adjust_param_type(t):
+    """C99 §6.7.5.3.7 array-to-pointer adjustment for parameters:
+    "A declaration of a parameter as 'array of type' shall be
+    adjusted to 'qualified pointer to type'." So `int foo(int a[3])`
+    is exactly equivalent to `int foo(int *a)`. Only the OUTERMOST
+    array suffix decays — multi-dim params like `int a[3][4]` adjust
+    to `int (*a)[4]` (pointer to inner array), not `int **a`. The
+    adjustment happens at parse time so the FunType the type checker
+    builds, the function's symbol-table entry, and every Var
+    reference to the parameter all see the adjusted (pointer) type
+    uniformly.
+
+    C99 also adjusts function parameters of function type to
+    "pointer to function" (§6.7.5.3.8), but the c6502 grammar only
+    accepts named parameters via the `declarator` form which can't
+    produce a bare FunType for a parameter (a function-typed
+    declarator always wraps the FunType in a Pointer or names a
+    function being declared, not a parameter), so that adjustment
+    isn't needed here."""
+    if isinstance(t, c99_ast.Array):
+        return c99_ast.Pointer(referenced_type=t.element_type)
+    return t
 
 
 def _apply_abstract_declarator(adecl_tree, base_type):
@@ -581,9 +644,10 @@ class _ASTBuilder(Transformer):
         decl_tree = rest[0]
         if decl_tree.data == "declarator":
             name, composed, _outer = _apply_declarator(decl_tree, base)
-            return (name, composed)
+            return (name, _adjust_param_type(composed))
         if decl_tree.data == "abstract_declarator":
-            return (None, _apply_abstract_declarator(decl_tree, base))
+            t = _apply_abstract_declarator(decl_tree, base)
+            return (None, _adjust_param_type(t))
         raise AssertionError(
             f"unexpected parameter_declaration child: {decl_tree.data}"
         )
@@ -632,6 +696,27 @@ class _ASTBuilder(Transformer):
         if isinstance(child, c99_ast.Type_var_decl):
             return c99_ast.VarDecl(var_decl=child)
         return c99_ast.FunctionDecl(function_decl=child)
+
+    # `initializer` rule alternatives. `init_exp` is `assignment_exp`
+    # (a single scalar initializer); the inner exp passes through
+    # unchanged. `init_list` is `{ initializer (, initializer)* ,? }`
+    # — strip the LBRACE / COMMA / RBRACE tokens and wrap the
+    # remaining items in InitList. Items are themselves initializer
+    # results (an exp or another InitList), supporting nested init
+    # for future multi-dim use.
+    @v_args(inline=True)
+    def init_exp(self, exp):
+        return exp
+
+    def init_list(self, items):
+        children = [
+            it for it in items
+            if not (
+                hasattr(it, "type")
+                and it.type in ("LBRACE", "RBRACE", "COMMA")
+            )
+        ]
+        return c99_ast.InitList(items=children)
 
     def var_decl(self, items):
         # `var_decl: specifier+ declarator (ASSIGN exp)? SEMICOLON`.
@@ -906,6 +991,13 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def post_decrement(self, operand, _op):
         return c99_ast.Postfix(op=c99_ast.Decrement(), operand=operand)
+
+    # Postfix subscript `e1[e2]` per C99 §6.5.2.1. Children are
+    # `[postfix_exp, LBRACKET, exp, RBRACKET]` — keep the array and
+    # index expressions; bracket tokens are framing.
+    @v_args(inline=True)
+    def subscript(self, array, _lb, index, _rb):
+        return c99_ast.Subscript(array=array, index=index)
 
     @v_args(inline=True)
     def paren(self, _lp, inner, _rp):

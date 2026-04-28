@@ -221,6 +221,12 @@ class Pointer(Type_data_type):
 
 
 @dataclass
+class Array(Type_data_type):
+    element_type: Type_data_type
+    size: int
+
+
+@dataclass
 class Type_for_init:
     pass
 
@@ -312,6 +318,19 @@ class Dereference(Type_exp):
 @dataclass
 class AddressOf(Type_exp):
     exp: Type_exp
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class Subscript(Type_exp):
+    array: Type_exp
+    index: Type_exp
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class InitList(Type_exp):
+    items: list[Type_exp] = field(default_factory=list)
     data_type: Type_data_type | None = None
 
 

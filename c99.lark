@@ -200,7 +200,16 @@ start: declaration*
 // `SEMICOLON` once the declarator has been parsed.
 declaration: function_decl | var_decl
 specifier: type_specifier | STATIC | EXTERN
-var_decl: specifier+ declarator (ASSIGN exp)? SEMICOLON
+var_decl: specifier+ declarator (ASSIGN initializer)? SEMICOLON
+
+// Initializer per C99 §6.7.8: either a single assignment-level
+// expression, or a brace-enclosed list of initializers. The list
+// allows a trailing comma per the standard. Items are themselves
+// `initializer` for nesting (multi-dim init); the current type
+// checker only validates flat single-dim init, but the recursive
+// grammar leaves room without a future grammar bump.
+initializer: assignment_exp                                      -> init_exp
+           | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
 function_decl: specifier+ declarator block
 
 type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE
@@ -358,6 +367,7 @@ statement: RETURN exp SEMICOLON                                     -> return_st
           | postfix_exp
 ?postfix_exp: postfix_exp PLUSPLUS   -> post_increment
             | postfix_exp MINUSMINUS -> post_decrement
+            | postfix_exp LBRACKET exp RBRACKET -> subscript
             | atom
 
 // Function call sits at atom level (one form of primary expression

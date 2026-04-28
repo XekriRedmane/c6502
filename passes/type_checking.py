@@ -134,6 +134,7 @@ Float = c99_ast.Float
 Double = c99_ast.Double
 FunType = c99_ast.FunType
 Pointer = c99_ast.Pointer
+Array = c99_ast.Array
 
 
 # ---------------------------------------------------------------------------
@@ -388,12 +389,23 @@ def _merge_initial_value(
 
 
 def _is_object_type(t: Type) -> bool:
-    """True iff `t` is a value type that can name an object — per
-    C99 §6.2.5, "A pointer type ... is an object type" along with
-    the arithmetic types. Excludes only FunType (a function isn't
-    an object). Used at the boundary where we expect an object —
-    variable references, cast targets, arithmetic operands."""
+    """True iff `t` is a scalar value type that can appear as an
+    operand without further decay — per C99 §6.2.5, the arithmetic
+    types and pointers. Arrays are object types per the standard
+    too, but at every operand site they decay to a pointer first
+    (`_decay_if_array` runs before this check), so we exclude Array
+    here to keep the post-decay invariant catchable: any leftover
+    Array operand is a missed decay site, not legal C. FunType is
+    also excluded — a function isn't an object."""
     return isinstance(t, (Int, Long, UInt, ULong, Float, Double, Pointer))
+
+
+def _is_complete_object_type(t: Type) -> bool:
+    """Like `_is_object_type` but includes Array. Used at variable-
+    declaration sites where Array IS a legal type for the named
+    object (the array decays only when its name appears in an
+    expression, not when it's being declared)."""
+    return _is_object_type(t) or isinstance(t, Array)
 
 
 def _is_integer_type(t: Type) -> bool:
@@ -406,6 +418,33 @@ def _is_floating_type(t: Type) -> bool:
 
 def _is_pointer_type(t: Type) -> bool:
     return isinstance(t, Pointer)
+
+
+def _is_array_type(t: Type) -> bool:
+    return isinstance(t, Array)
+
+
+def _decay_if_array(exp: c99_ast.Type_exp) -> c99_ast.Type_exp:
+    """Implement C99 §6.3.2.1.3 array-to-pointer decay. If `exp.data_type`
+    is `Array(elem, N)`, wrap `exp` in an implicit `AddressOf` stamped
+    with `Pointer(elem)` and return the wrapper. Otherwise return `exp`
+    unchanged. The wrapper type is narrower than the strict C99
+    "pointer to array of N" — it's `Pointer(elem)`, the type the
+    pipeline cares about (what `*(arr + i)` operates on). Each call
+    site that consumes an expression — Binary operands, Conditional
+    branches, Cast inner, Assignment rval, FunctionCall args, Return
+    value, var initializer, Subscript array operand — is responsible
+    for decaying its inputs before further type-checking; the
+    `_is_object_type` predicate excludes Array, so any missed decay
+    site catches as a non-object-type error rather than silently
+    producing nonsense."""
+    if isinstance(exp.data_type, Array):
+        elem = exp.data_type.element_type
+        wrapped = c99_ast.AddressOf(
+            exp=exp, data_type=Pointer(referenced_type=elem),
+        )
+        return wrapped
+    return exp
 
 
 def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
@@ -563,10 +602,19 @@ class TypeChecker:
         # `extern` + init    → Initial(c) (definition by initializer)
         # else (no spec / static), no init → Tentative
         # else (no spec / static), init    → Initial(c)
-        if not _is_object_type(vd.data_type):
+        if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"file-scope object {vd.name!r} declared with non-"
                 f"object type {vd.data_type!r}"
+            )
+        if isinstance(vd.data_type, Array):
+            # File-scope (and block-scope `static`) arrays would need
+            # an init-list `static_init` variant in tac_ast, which
+            # c6502 doesn't model yet. Reject for now — only block-
+            # scope automatic-storage arrays are supported.
+            raise TypeCheckError(
+                f"file-scope arrays are not supported yet "
+                f"(declaration of {vd.name!r})"
             )
         is_extern = isinstance(vd.storage_class, c99_ast.Extern)
         if vd.init is None:
@@ -790,10 +838,23 @@ class TypeChecker:
     def _check_block_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
-        if not _is_object_type(vd.data_type):
+        if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"object {vd.name!r} declared with non-object type "
                 f"{vd.data_type!r}"
+            )
+        if (
+            isinstance(vd.data_type, Array)
+            and vd.storage_class is not None
+        ):
+            # `static T a[N];` and `extern T a[N];` would need static
+            # array initialisation in the runtime model — out of
+            # scope for the current cut. Plain `T a[N];` (automatic
+            # storage) IS supported and falls through to the local
+            # path below.
+            raise TypeCheckError(
+                f"static / extern arrays are not supported yet "
+                f"(declaration of {vd.name!r})"
             )
         if isinstance(vd.storage_class, c99_ast.Extern):
             if vd.init is not None:
@@ -846,8 +907,76 @@ class TypeChecker:
             type=vd.data_type, attrs=LocalAttr(),
         )
         if vd.init is not None:
+            if isinstance(vd.data_type, Array):
+                # Arrays must use a brace-enclosed initializer list
+                # (`int a[3] = {1, 2, 3};`); a bare scalar is illegal.
+                if not isinstance(vd.init, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"array {vd.name!r} requires a brace-enclosed "
+                        f"initializer (`{{...}}`)"
+                    )
+                self._check_array_init_list(
+                    vd.init, vd.data_type, vd.name,
+                )
+                return
+            # Scalar var with InitList init — `int x = {1,2,3};` is
+            # rejected (C99 also allows `int x = {5};` but that's a
+            # corner we don't need yet).
+            if isinstance(vd.init, c99_ast.InitList):
+                raise TypeCheckError(
+                    f"scalar variable {vd.name!r} cannot have a "
+                    f"brace-enclosed initializer"
+                )
             self._check_exp(vd.init)
+            vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
+
+    def _check_array_init_list(
+        self,
+        init: c99_ast.InitList,
+        arr_type: Array,
+        var_name: str,
+    ) -> None:
+        """Type-check a brace-enclosed initializer for an array.
+        Validates the item count (≤ array size; shorter lists are
+        zero-padded by `c99_to_tac` at lowering time) and converts
+        each item to the element type via `_convert_to` (so a
+        narrowing or widening literal gets an implicit Cast). Mutates
+        `init.items` in place with the converted forms; stamps
+        `init.data_type` with the array type so downstream passes
+        recognise the shape.
+
+        Nested initializers (`{{...}, {...}}` for a multi-dim array)
+        aren't supported yet — each item must be a scalar
+        expression.
+        """
+        if len(init.items) > arr_type.size:
+            raise TypeCheckError(
+                f"too many initializers for array {var_name!r}: "
+                f"{len(init.items)} given, array has {arr_type.size} "
+                f"element{'s' if arr_type.size != 1 else ''}"
+            )
+        elem_type = arr_type.element_type
+        if isinstance(elem_type, Array):
+            raise TypeCheckError(
+                f"nested array initializers (`{{{{...}}, ...}}`) "
+                f"are not supported yet (declaration of "
+                f"{var_name!r})"
+            )
+        for i, item in enumerate(init.items):
+            if isinstance(item, c99_ast.InitList):
+                raise TypeCheckError(
+                    f"unexpected nested initializer at index {i} "
+                    f"of {var_name!r} (element type is "
+                    f"{elem_type!r}, not an array)"
+                )
+            self._check_exp(item)
+            # Same conversion rule as scalar init / Assignment rval —
+            # array-decay first (so e.g. `&other` shapes work), then
+            # _convert_to wraps in an implicit Cast on type mismatch.
+            item = _decay_if_array(item)
+            init.items[i] = _convert_to(item, elem_type)
+        init.data_type = arr_type
 
     # ------------------------------------------------------------------
     # Statements / expressions
@@ -870,7 +999,10 @@ class TypeChecker:
                 # Return-value conversion (C99 §6.8.6.4.3): if the
                 # value's type doesn't match the declared return
                 # type, wrap it in an implicit Cast — same shape as
-                # Assignment / FunctionCall arg conversion.
+                # Assignment / FunctionCall arg conversion. Array
+                # decay applies here too — `int *foo() { return arr;
+                # }` is the standard idiom.
+                exp = _decay_if_array(exp)
                 stmt.exp = _convert_to(exp, expected)
                 return
             case c99_ast.Expression(exp=exp):
@@ -926,7 +1058,7 @@ class TypeChecker:
                 # The for-init-decl rule (resolver) forbids storage-
                 # class specifiers, so this is always plain
                 # `T <name> = <exp>;` and lands as a LocalAttr.
-                if not _is_object_type(vd.data_type):
+                if not _is_complete_object_type(vd.data_type):
                     raise TypeCheckError(
                         f"for-init {vd.name!r} declared with non-"
                         f"object type {vd.data_type!r}"
@@ -935,10 +1067,27 @@ class TypeChecker:
                     type=vd.data_type, attrs=LocalAttr(),
                 )
                 if vd.init is not None:
+                    if isinstance(vd.data_type, Array):
+                        if not isinstance(vd.init, c99_ast.InitList):
+                            raise TypeCheckError(
+                                f"array {vd.name!r} requires a "
+                                f"brace-enclosed initializer "
+                                f"(`{{...}}`)"
+                            )
+                        self._check_array_init_list(
+                            vd.init, vd.data_type, vd.name,
+                        )
+                        return
+                    if isinstance(vd.init, c99_ast.InitList):
+                        raise TypeCheckError(
+                            f"scalar variable {vd.name!r} cannot "
+                            f"have a brace-enclosed initializer"
+                        )
                     # Initializer-conversion rule: type-check then
                     # wrap in an implicit Cast if needed (same
                     # shape as block-scope var decls).
                     self._check_exp(vd.init)
+                    vd.init = _decay_if_array(vd.init)
                     vd.init = _convert_to(vd.init, vd.data_type)
                 return
             case c99_ast.InitExp(exp=exp):
@@ -1028,7 +1177,13 @@ class TypeChecker:
                         f"(Int / Long / UInt / ULong / Float / "
                         f"Double / Pointer), got {target!r}"
                     )
-                inner_type = self._check_exp(inner)
+                self._check_exp(inner)
+                # Decay an array operand before further type-checking
+                # — `(int *)arr` is legal and the cast operates on
+                # the decayed pointer.
+                exp.exp = _decay_if_array(inner)
+                inner = exp.exp
+                inner_type = inner.data_type
                 if not _is_object_type(inner_type):
                     raise TypeCheckError(
                         f"cannot cast non-object type {inner_type!r} "
@@ -1105,8 +1260,16 @@ class TypeChecker:
                 exp.data_type = result
                 return result
             case c99_ast.Binary(op=op, left=lhs, right=rhs):
-                tl = self._check_exp(lhs)
-                tr = self._check_exp(rhs)
+                self._check_exp(lhs)
+                self._check_exp(rhs)
+                # Array-to-pointer decay (C99 §6.3.2.1.3): both
+                # operands run through `_decay_if_array` before any
+                # type-driven dispatch, so a bare array name behaves
+                # exactly like a pointer to its first element.
+                exp.left = _decay_if_array(lhs)
+                exp.right = _decay_if_array(rhs)
+                lhs, rhs = exp.left, exp.right
+                tl, tr = lhs.data_type, rhs.data_type
                 if not _is_object_type(tl) or not _is_object_type(tr):
                     raise TypeCheckError(
                         f"binary operator on non-object types: "
@@ -1170,6 +1333,94 @@ class TypeChecker:
                         f"binary '{op_name}' is not defined on pointer "
                         f"operands ({tl!r} {op_name} {tr!r})"
                     )
+                # Pointer arithmetic (C99 §6.5.6) — additive operators
+                # only. Like the equality and multiplicative paths
+                # above, this short-circuits before `_common_type`
+                # (which can't construct a Pointer without a
+                # referenced_type). The four legal forms:
+                #   ptr + int / int + ptr  → ptr (offset by N elements)
+                #   ptr - int              → ptr (offset by -N elements)
+                #   ptr - ptr (same type)  → Long (element count;
+                #                            c6502's stand-in for the
+                #                            standard's ptrdiff_t)
+                # Anything else (ptr + ptr, int - ptr, ptr ± FP,
+                # mismatched ptr - ptr, pointer-to-function arithmetic)
+                # is a constraint violation. Ordering comparisons
+                # (`<`, `>`, `<=`, `>=`) on pointers (§6.5.8) aren't
+                # wired up yet and fall through to the arithmetic path
+                # below, which raises on the `_common_type` Pointer
+                # call.
+                if (
+                    isinstance(op, (c99_ast.Add, c99_ast.Subtract))
+                    and (_is_pointer_type(tl) or _is_pointer_type(tr))
+                ):
+                    op_name = "+" if isinstance(op, c99_ast.Add) else "-"
+                    # Reject pointer-to-function: §6.5.6.2 requires
+                    # "pointer to an object type" for the additive ops,
+                    # and sizeof(function) is undefined.
+                    for t in (tl, tr):
+                        if (
+                            isinstance(t, Pointer)
+                            and isinstance(t.referenced_type, FunType)
+                        ):
+                            raise TypeCheckError(
+                                f"binary '{op_name}' is not defined on "
+                                f"pointer-to-function operands "
+                                f"({tl!r} {op_name} {tr!r})"
+                            )
+                    if _is_floating_type(tl) or _is_floating_type(tr):
+                        raise TypeCheckError(
+                            f"binary '{op_name}' is not defined on a "
+                            f"pointer and a floating-point operand "
+                            f"({tl!r} {op_name} {tr!r})"
+                        )
+                    if _is_pointer_type(tl) and _is_pointer_type(tr):
+                        # ptr + ptr is illegal; ptr - ptr is legal iff
+                        # the pointer types match.
+                        if isinstance(op, c99_ast.Add):
+                            raise TypeCheckError(
+                                f"binary '+' is not defined on two "
+                                f"pointer operands ({tl!r} + {tr!r})"
+                            )
+                        if not _types_equal(tl, tr):
+                            raise TypeCheckError(
+                                f"subtraction of distinct pointer "
+                                f"types: {tl!r} - {tr!r}"
+                            )
+                        # Operand types stay as-is — both pointers are
+                        # 2 bytes at the byte level, so the underlying
+                        # subtract is a normal 2-byte op. The result
+                        # is a byte-difference that c99_to_tac will
+                        # divide by sizeof(pointee) to yield the
+                        # element count. Result type is Long
+                        # (c6502's ptrdiff_t).
+                        exp.data_type = Long()
+                        return Long()
+                    # Exactly one operand is a pointer; the other must
+                    # be integer. ptr + int / int + ptr / ptr - int are
+                    # legal; int - ptr is not.
+                    int_is_left = _is_integer_type(tl)
+                    if int_is_left and isinstance(op, c99_ast.Subtract):
+                        raise TypeCheckError(
+                            f"binary '-' between integer and pointer "
+                            f"is not defined ({tl!r} - {tr!r})"
+                        )
+                    # Widen the integer operand to Long so the
+                    # underlying byte-level add lines up with the
+                    # pointer's 2-byte width. c99_to_tac scales this
+                    # widened value by sizeof(pointee) before the add.
+                    if int_is_left:
+                        exp.left = _convert_to(lhs, Long())
+                        ptr_type = tr
+                    else:
+                        exp.right = _convert_to(rhs, Long())
+                        ptr_type = tl
+                    # Result is the pointer type — fresh instance per
+                    # the same convention as `_common_type`.
+                    exp.data_type = Pointer(
+                        referenced_type=ptr_type.referenced_type,
+                    )
+                    return exp.data_type
                 # Usual arithmetic conversions (C99 §6.3.1.8): if
                 # operand types differ, promote the narrower one to
                 # the common type by wrapping it in an implicit
@@ -1196,6 +1447,23 @@ class TypeChecker:
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
+                # Arrays aren't assignable as a whole (C99 §6.5.16.1
+                # constraint: lval must be a "modifiable lvalue", and
+                # an array isn't one). Subscript / Dereference lvals
+                # have their element type by the time we land here,
+                # so this only catches an outright `arr_name = ...`.
+                if isinstance(tl, Array):
+                    raise TypeCheckError(
+                        f"cannot assign to an array (use subscript): "
+                        f"{lv!r}"
+                    )
+                # rval array-to-pointer decay (`int *p = arr;` is
+                # the most common case). After decay, the rval is
+                # Pointer-typed and `_convert_to` either no-ops
+                # (when target matches) or wraps in a Pointer→Pointer
+                # Cast for cross-pointer-type assignments.
+                rv = _decay_if_array(rv)
+                exp.rval = rv
                 # Assignment conversion (C99 §6.5.16.1): the value of
                 # the right operand is converted to the type of the
                 # assignment expression. Implemented by wrapping the
@@ -1230,8 +1498,14 @@ class TypeChecker:
                 false_clause=f_clause,
             ):
                 self._check_exp(cond)
-                tt = self._check_exp(t_clause)
-                tf = self._check_exp(f_clause)
+                self._check_exp(t_clause)
+                self._check_exp(f_clause)
+                # Decay each branch independently — `cond ? arr : ptr`
+                # both branches end up as Pointer.
+                exp.true_clause = _decay_if_array(t_clause)
+                exp.false_clause = _decay_if_array(f_clause)
+                t_clause, f_clause = exp.true_clause, exp.false_clause
+                tt, tf = t_clause.data_type, f_clause.data_type
                 if not _is_object_type(tt) or not _is_object_type(tf):
                     raise TypeCheckError(
                         f"conditional branches must be object types, "
@@ -1288,6 +1562,7 @@ class TypeChecker:
                     zip(args, fn_type.params),
                 ):
                     self._check_exp(arg)
+                    arg = _decay_if_array(arg)
                     args[i] = _convert_to(arg, expected)
                 exp.data_type = fn_type.ret
                 return fn_type.ret
@@ -1296,7 +1571,13 @@ class TypeChecker:
                 # the pointee (C99 §6.5.3.2.4). The lvalue-ness of
                 # the result is structural (Assignment / AddressOf /
                 # Postfix accept Dereference); not encoded in the type.
-                t_inner = self._check_exp(inner)
+                self._check_exp(inner)
+                # `*arr` for an array decays arr first — `*(elem *)arr`
+                # is the address of the first element dereferenced,
+                # i.e. arr[0]. Same shape as `*(arr + 0)`.
+                exp.exp = _decay_if_array(inner)
+                inner = exp.exp
+                t_inner = inner.data_type
                 if not _is_pointer_type(t_inner):
                     raise TypeCheckError(
                         f"unary '*' requires a pointer operand, got "
@@ -1305,6 +1586,52 @@ class TypeChecker:
                 pointee = t_inner.referenced_type
                 exp.data_type = pointee
                 return pointee
+            case c99_ast.InitList():
+                # InitList only makes sense as the init slot of a
+                # var_decl whose data_type is Array — `_check_block_var`
+                # / `_check_for_init` consume it directly there. Hitting
+                # this case from inside a regular expression context
+                # means the user wrote `{1, 2}` somewhere it doesn't
+                # belong (a return value, an arg, an assignment rval,
+                # etc.).
+                raise TypeCheckError(
+                    "brace-enclosed initializer (`{...}`) is only "
+                    "valid as a variable initializer for an array"
+                )
+            case c99_ast.Subscript(array=arr, index=idx):
+                # `a[i]` per C99 §6.5.2.1 is defined as `*(a + i)`.
+                # Validate the operand types here and stamp the
+                # element type as the result; `c99_to_tac` lowers
+                # this node directly via address-arithmetic + Load
+                # (or address-arithmetic + Store on the lvalue path).
+                self._check_exp(arr)
+                self._check_exp(idx)
+                # Array operand decays to Pointer; a Pointer operand
+                # passes through untouched.
+                exp.array = _decay_if_array(arr)
+                arr = exp.array
+                ta = arr.data_type
+                if not _is_pointer_type(ta):
+                    raise TypeCheckError(
+                        f"subscript operand must be array or pointer, "
+                        f"got {ta!r}"
+                    )
+                if isinstance(ta.referenced_type, FunType):
+                    raise TypeCheckError(
+                        "subscript of pointer-to-function is not "
+                        "supported"
+                    )
+                ti = idx.data_type
+                if not _is_integer_type(ti):
+                    raise TypeCheckError(
+                        f"subscript index must be an integer, got "
+                        f"{ti!r}"
+                    )
+                # Widen the index to Long so c99_to_tac can use a
+                # uniform 2-byte add to compute the byte address.
+                exp.index = _convert_to(idx, Long())
+                exp.data_type = ta.referenced_type
+                return exp.data_type
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — result is `Pointer(operand_type)` per C99
                 # §6.5.3.2.3. Lvalue check on `e` lives in
@@ -1326,6 +1653,24 @@ class TypeChecker:
                         exp.data_type = result
                         return result
                 t_inner = self._check_exp(inner)
+                # `&arr` for an array would have type `Pointer(Array(
+                # elem, N))` per the standard, which the c6502
+                # pipeline doesn't model — `_to_tac_data_type` and
+                # `_pointee_size` only know about the value types.
+                # Decayed-array contexts (rvalue use of arr) reach
+                # here too via `_decay_if_array`, but those are
+                # synthesised AddressOf wrappers we built ourselves
+                # — they bypass `_check_exp` (we set their data_type
+                # directly). So any AddressOf we DO type-check here
+                # with an array-typed operand is a user-written
+                # `&arr`, which we reject for now.
+                if isinstance(t_inner, Array):
+                    raise TypeCheckError(
+                        f"taking the address of an array (`&arr`) "
+                        f"is not supported yet; use the array name "
+                        f"directly to get a pointer to its first "
+                        f"element"
+                    )
                 result = Pointer(referenced_type=t_inner)
                 exp.data_type = result
                 return result

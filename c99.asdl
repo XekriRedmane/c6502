@@ -29,13 +29,14 @@ module C99 {
     -- 754 double (8B). Long double (16B IEEE 754 quad / extended)
     -- isn't modelled — the parser rejects it.
     data_type = Int
-        | Long 
-        | UInt 
-        | ULong 
-        | Float 
+        | Long
+        | UInt
+        | ULong
+        | Float
         | Double
         | FunType(data_type* params, data_type ret)
         | Pointer(data_type referenced_type)
+        | Array(data_type element_type, int size)
 
     for_init = InitDecl(var_decl) | InitExp(exp?)
 
@@ -52,6 +53,14 @@ module C99 {
         | FunctionCall(identifier name, exp* args, data_type?)
         | Dereference(exp, data_type?)
         | AddressOf(exp, data_type?)
+        | Subscript(exp array, exp index, data_type?)
+        -- Initializer list `{e1, e2, ...}`. Only valid as the init
+        -- slot of a var_decl whose data_type is Array; rejected
+        -- elsewhere by the type checker. Items can themselves be
+        -- InitLists (a future hook for multi-dim init), but the
+        -- current cut only supports single-dim arrays with scalar
+        -- items.
+        | InitList(exp* items, data_type?)
 
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement

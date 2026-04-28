@@ -1018,5 +1018,459 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIn("object type", str(ctx.exception))
 
 
+def _ret_binary(prog):
+    """Helper: pull the Binary out of `return <exp>;` from a program
+    whose last block item is a Return. Most pointer-arithmetic tests
+    just want to inspect that Binary's data_type and operand types."""
+    items = prog.declaration[0].function_decl.body.block_item
+    return items[-1].statement.exp
+
+
+class TestPointerArithmetic(unittest.TestCase):
+    """C99 §6.5.6 additive operators on pointers. Four valid shapes:
+    `ptr + int`, `int + ptr`, `ptr - int` (each yields a pointer of
+    the same type), and `ptr - ptr` (yields Long, c6502's stand-in
+    for ptrdiff_t). Everything else is a constraint violation."""
+
+    def test_pointer_plus_int_yields_pointer(self):
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; return (long)(p + 1); }"
+        )
+        bin_exp = _ret_binary(prog).exp  # unwrap the (long) Cast
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
+
+    def test_int_plus_pointer_yields_pointer(self):
+        # Commutative: `int + ptr` is the same shape as `ptr + int`.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; return (long)(1 + p); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
+
+    def test_pointer_minus_int_yields_pointer(self):
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; return (long)(p - 1); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
+
+    def test_pointer_minus_pointer_yields_long(self):
+        # Both pointers are int*, result is the byte-difference / 1
+        # (c6502's ptrdiff_t is Long).
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "return p - q; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Long())
+
+    def test_int_operand_widened_to_long(self):
+        # The integer operand of pointer arithmetic gets widened to
+        # Long via an implicit Cast — pointers are 2 bytes wide, so
+        # the underlying byte-level add operates at one width.
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; return (long)(p + 1); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        # Right operand was `1` (Int); now wrapped in Cast(Long).
+        self.assertIsInstance(bin_exp.right, c99_ast.Cast)
+        self.assertEqual(bin_exp.right.target_type, Long())
+        # Left operand `p` is the pointer, unchanged.
+        from c99_ast import Pointer
+        self.assertEqual(bin_exp.left.data_type, Pointer(referenced_type=Int()))
+
+    def test_long_operand_passes_through(self):
+        # If the integer operand is already Long, no implicit Cast is
+        # inserted (matches `_convert_to`'s same-type identity).
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; long n = (long)1; "
+            "return (long)(p + n); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertIsInstance(bin_exp.right, c99_ast.Var)
+        self.assertEqual(bin_exp.right.data_type, Long())
+
+    def test_pointer_to_long_arithmetic_yields_pointer_to_long(self):
+        # The pointer's referenced_type is preserved across the
+        # arithmetic — a `long *p + 1` is still a `long *`.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { long a = (long)0; long *p = &a; "
+            "return (long)(p + 1); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Long()))
+
+    def test_pointer_plus_pointer_rejected(self):
+        # `ptr + ptr` is undefined per §6.5.6.2 — not a constraint
+        # the standard allows, since adding two addresses is
+        # meaningless.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a = 0; int *p = &a; int *q = &a; "
+                "return (int)(p + q); }"
+            )
+        self.assertIn("'+'", str(ctx.exception))
+        self.assertIn("two pointer", str(ctx.exception))
+
+    def test_int_minus_pointer_rejected(self):
+        # `int - ptr` is undefined per §6.5.6.2; only `ptr - int` and
+        # `ptr - ptr` are legal.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "long main(void) { int a = 0; int *p = &a; "
+                "return (long)(1 - p); }"
+            )
+        self.assertIn("'-'", str(ctx.exception))
+
+    def test_pointer_minus_distinct_pointer_rejected(self):
+        # ptr - ptr requires matching pointer types per §6.5.6.3.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "long main(void) { int a = 0; long b = (long)0; "
+                "int *p = &a; long *q = &b; return p - q; }"
+            )
+        self.assertIn("distinct pointer", str(ctx.exception))
+
+    def test_pointer_plus_float_rejected(self):
+        # FP isn't an integer type, so `ptr + double` violates the
+        # §6.5.6.2 constraint that the non-pointer operand have
+        # integer type.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "long main(void) { int a = 0; int *p = &a; "
+                "return (long)(p + 1.0); }"
+            )
+        self.assertIn("floating-point", str(ctx.exception))
+
+    def test_pointer_minus_double_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "long main(void) { int a = 0; int *p = &a; "
+                "return (long)(p - 1.0); }"
+            )
+        self.assertIn("floating-point", str(ctx.exception))
+
+
+class TestArrays(unittest.TestCase):
+    """Block-scope array declarations and the four contexts where
+    array-to-pointer decay applies (C99 §6.3.2.1.3): subscript array
+    operand, Binary operand, Conditional branch, Assignment rval.
+    The decay is reified as an `AddressOf(exp)` wrapper stamped with
+    `Pointer(elem)` — narrower than the strict C99 `Pointer(Array(
+    elem, N))`, but matches the runtime address (the address of the
+    array's first element)."""
+
+    def test_array_decl_records_array_type(self):
+        from c99_ast import Array
+        _, symbols = _check(
+            "int main(void) { int a[10]; return 0; }"
+        )
+        # Block-scope decl renamed to `@0.a` by identifier_resolution.
+        sym = symbols["@0.a"]
+        self.assertEqual(sym.type, Array(element_type=Int(), size=10))
+        self.assertIsInstance(sym.attrs, LocalAttr)
+
+    def test_subscript_yields_element_type(self):
+        # `a[i]` where a is `int[10]` has type Int.
+        prog, _ = _check(
+            "int main(void) { int a[10]; return a[3]; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        ret_exp = items[1].statement.exp
+        self.assertIsInstance(ret_exp, c99_ast.Subscript)
+        self.assertEqual(ret_exp.data_type, Int())
+
+    def test_subscript_array_operand_decays_to_pointer(self):
+        # The Subscript's `array` field gets wrapped in an AddressOf
+        # with type Pointer(elem) — that's the reified decay.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "int main(void) { int a[10]; return a[3]; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp.array, c99_ast.AddressOf)
+        self.assertEqual(
+            ret_exp.array.data_type, Pointer(referenced_type=Int()),
+        )
+
+    def test_subscript_index_widened_to_long(self):
+        # The index gets a Cast(Long) wrapper so the underlying
+        # pointer arithmetic operates at one width.
+        prog, _ = _check(
+            "int main(void) { int a[10]; return a[3]; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp.index, c99_ast.Cast)
+        self.assertEqual(ret_exp.index.target_type, Long())
+
+    def test_pointer_init_from_array_decays(self):
+        # `int *p = a;` — the rval `a` (array) decays to `&a` (pointer
+        # to first element) before the pointer-init conversion fires.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "int main(void) { int a[10]; int *p = a; return 0; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        # `int *p = a;` is the second item.
+        p_decl = items[1].declaration.var_decl
+        self.assertEqual(p_decl.data_type, Pointer(referenced_type=Int()))
+        # The init was an array-typed Var; now wrapped in AddressOf.
+        self.assertIsInstance(p_decl.init, c99_ast.AddressOf)
+        self.assertEqual(
+            p_decl.init.data_type, Pointer(referenced_type=Int()),
+        )
+
+    def test_pointer_arithmetic_on_array(self):
+        # `a + 1` where a is `int[10]` — array decays to `int *`,
+        # then pointer arithmetic kicks in. Result is `int *`.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a[10]; return (long)(a + 1); }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        # Outer Cast(long); inner Binary is the `a + 1`.
+        binary = ret_exp.exp
+        self.assertIsInstance(binary, c99_ast.Binary)
+        self.assertEqual(
+            binary.data_type, Pointer(referenced_type=Int()),
+        )
+
+    def test_array_minus_array_yields_long(self):
+        # `a - b` where both are `int[N]` — both decay to `int *`,
+        # then ptr - ptr yields Long (ptrdiff_t).
+        prog, _ = _check(
+            "long main(void) { int a[10]; int b[10]; return a - b; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[2]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Binary)
+        self.assertEqual(ret_exp.data_type, Long())
+
+    def test_assigning_to_array_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[10]; int b[10]; a = b; return 0; }"
+            )
+        self.assertIn("array", str(ctx.exception))
+
+    def test_scalar_initializer_for_array_rejected(self):
+        # `int a[3] = 5;` (scalar init for an array) — must use a
+        # brace-enclosed initializer list instead.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[3] = 5; return 0; }"
+            )
+        self.assertIn("brace-enclosed initializer", str(ctx.exception))
+
+    def test_file_scope_array_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int a[10]; int main(void) { return 0; }"
+            )
+        self.assertIn("file-scope arrays", str(ctx.exception))
+
+    def test_static_array_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { static int a[10]; return 0; }"
+            )
+        self.assertIn("static / extern arrays", str(ctx.exception))
+
+    def test_address_of_array_rejected(self):
+        # `&arr` for an array would have type `Pointer(Array(...))`,
+        # which the rest of the pipeline doesn't model. Reject it
+        # with a focused error rather than letting it slip through.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "long main(void) { int a[10]; return (long)&a; }"
+            )
+        self.assertIn("address of an array", str(ctx.exception))
+
+    def test_subscript_index_must_be_integer(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[10]; double i = 1.0; "
+                "return a[i]; }"
+            )
+        self.assertIn("integer", str(ctx.exception))
+
+    def test_array_param_adjusts_to_pointer_in_symbol_table(self):
+        # C99 §6.7.5.3.7: `int foo(int a[3])` adjusts the parameter
+        # type to `int *`. The function's FunType records the
+        # adjusted type, AND the parameter `a`'s symbol-table entry
+        # is a `Pointer(Int)` LocalAttr — so subscript on `a` inside
+        # the body goes through the pointer-subscript path.
+        from c99_ast import Pointer
+        _, symbols = _check(
+            "int foo(int a[3]) { return a[0]; } "
+            "int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            symbols["foo"].type.params, [Pointer(referenced_type=Int())],
+        )
+        # Param is renamed to `@0.a` by identifier_resolution.
+        self.assertEqual(
+            symbols["@0.a"].type, Pointer(referenced_type=Int()),
+        )
+
+    def test_array_param_decl_compatible_with_pointer_param_def(self):
+        # Two declarations of the same function should be compatible
+        # after the §6.7.5.3.7 adjustment — `int foo(int a[3]);`
+        # forward-declared then defined as `int foo(int *a)` should
+        # type-check cleanly.
+        _check(
+            "int foo(int a[3]); "
+            "int foo(int *a) { return a[0]; } "
+            "int main(void) { return 0; }"
+        )
+
+    def test_passing_array_to_array_param_decays(self):
+        # `foo(arr)` where foo takes `int a[3]` (adjusted to int*)
+        # and arr is `int[3]` — the array decays at the call site,
+        # matching the parameter's adjusted type.
+        _check(
+            "int foo(int a[3]) { return a[0]; } "
+            "int main(void) { int arr[3]; return foo(arr); }"
+        )
+
+    def test_array_init_list_stamps_data_type_and_converts_items(self):
+        # `int a[3] = {1, 2, 3};` — InitList gets data_type=
+        # Array(Int, 3), and each item is type-checked (here Int
+        # constants matching the element type — no Cast wrapping).
+        from c99_ast import Array
+        prog, _ = _check(
+            "int main(void) { int a[3] = {1, 2, 3}; return 0; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        decl = items[0].declaration.var_decl
+        self.assertIsInstance(decl.init, c99_ast.InitList)
+        self.assertEqual(decl.init.data_type, Array(Int(), 3))
+        for it in decl.init.items:
+            self.assertEqual(it.data_type, Int())
+
+    def test_array_init_list_widens_items_with_cast(self):
+        # `long a[2] = {1, 2};` — items are Int constants but
+        # element type is Long, so each item is wrapped in Cast(Long)
+        # by `_convert_to`.
+        prog, _ = _check(
+            "int main(void) { long a[2] = {1, 2}; return 0; }"
+        )
+        decl = (
+            prog.declaration[0].function_decl.body.block_item[0]
+            .declaration.var_decl
+        )
+        for it in decl.init.items:
+            self.assertIsInstance(it, c99_ast.Cast)
+            self.assertEqual(it.target_type, Long())
+
+    def test_too_many_initializers_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[2] = {1, 2, 3}; return 0; }"
+            )
+        self.assertIn("too many initializers", str(ctx.exception))
+
+    def test_short_init_list_accepted(self):
+        # Fewer items than the array size — legal; c99_to_tac pads
+        # the rest with zero-of-element-type Stores.
+        _check(
+            "int main(void) { int a[5] = {1, 2}; return 0; }"
+        )
+
+    def test_init_list_for_scalar_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int x = {1, 2}; return 0; }"
+            )
+        self.assertIn("brace-enclosed", str(ctx.exception))
+
+    def test_scalar_init_for_array_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[3] = 5; return 0; }"
+            )
+        self.assertIn("brace-enclosed", str(ctx.exception))
+
+    def test_nested_init_list_rejected(self):
+        # `int a[2][2] = {{1,2},{3,4}};` — multi-dim init not yet
+        # supported. The type checker hits this at the outer
+        # _check_array_init_list (element_type is itself an Array).
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a[2][2] = {{1,2},{3,4}}; return 0; }"
+            )
+        self.assertIn("nested array initializers", str(ctx.exception))
+
+    def test_init_list_in_expression_position_rejected(self):
+        # The grammar doesn't allow `{1, 2}` as a regular expression
+        # so user source can't reach the type-checker's InitList
+        # reject — but a synthesized AST can. Build the rejected
+        # shape directly so the defensive case stays covered.
+        from passes.identifier_resolution import resolve_program
+        prog = c99_ast.Program(declaration=[c99_ast.FunctionDecl(
+            function_decl=c99_ast.Type_function_decl(
+                name="main",
+                params=[],
+                body=c99_ast.Block(block_item=[c99_ast.S(
+                    statement=c99_ast.Return(exp=c99_ast.InitList(
+                        items=[
+                            c99_ast.Constant(
+                                const=c99_ast.ConstInt(int=1),
+                            ),
+                            c99_ast.Constant(
+                                const=c99_ast.ConstInt(int=2),
+                            ),
+                        ],
+                    )),
+                )]),
+                data_type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
+                storage_class=None,
+            ),
+        )])
+        with self.assertRaises(TypeCheckError) as ctx:
+            check_program(resolve_program(prog))
+        self.assertIn(
+            "brace-enclosed initializer", str(ctx.exception),
+        )
+
+    def test_pointer_subscript_works_too(self):
+        # `p[i]` where p is `int *` — same shape as `a[i]` but the
+        # array-decay step is a no-op. Result is the pointee type.
+        prog, _ = _check(
+            "int main(void) { int a[10]; int *p = a; return p[3]; }"
+        )
+        ret_exp = (
+            prog.declaration[0].function_decl.body.block_item[2]
+            .statement.exp
+        )
+        self.assertIsInstance(ret_exp, c99_ast.Subscript)
+        self.assertEqual(ret_exp.data_type, Int())
+        # The array operand here is the bare Var(p) — no AddressOf
+        # wrapper since p was already pointer-typed.
+        self.assertIsInstance(ret_exp.array, c99_ast.Var)
+
+
 if __name__ == "__main__":
     unittest.main()

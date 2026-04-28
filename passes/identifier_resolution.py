@@ -720,12 +720,15 @@ class Resolver:
                     right=self.resolve_exp(right, scope),
                 )
             case c99_ast.Assignment(lval=lval, rval=rval):
-                # Lvalue forms accepted today: a bare Var, or a
-                # Dereference (`*p = …`). Per C99 §6.3.2.1.1, the
-                # result of a unary `*` is an lvalue. Other lvalue
-                # forms (array subscript, struct member access)
-                # aren't modelled yet.
-                if not isinstance(lval, (c99_ast.Var, c99_ast.Dereference)):
+                # Lvalue forms accepted today: a bare Var, a
+                # Dereference (`*p = …`), or a Subscript (`a[i] = …`,
+                # which the type checker desugars to `*(a + i) = …`).
+                # Per C99 §6.3.2.1.1, the result of a unary `*` is an
+                # lvalue and so is the result of `[]` (`a[i]` is
+                # defined as `*(a + i)`).
+                if not isinstance(lval, (
+                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                )):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in assignment: {lval!r}"
                     )
@@ -744,8 +747,12 @@ class Resolver:
                     false_clause=self.resolve_exp(false_clause, scope),
                 )
             case c99_ast.Postfix(op=op, operand=operand):
-                # Same lvalue rule as Assignment — Var or Dereference.
-                if not isinstance(operand, (c99_ast.Var, c99_ast.Dereference)):
+                # Same lvalue rule as Assignment — Var, Dereference,
+                # or Subscript (the three syntactic lvalue forms
+                # supported today).
+                if not isinstance(operand, (
+                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                )):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in postfix: {operand!r}"
                     )
@@ -758,6 +765,25 @@ class Resolver:
                 # case), so we don't need to validate `e` here.
                 return c99_ast.Dereference(
                     exp=self.resolve_exp(inner, scope),
+                )
+            case c99_ast.Subscript(array=arr, index=idx):
+                # `a[i]` — both subexpressions are recursive contexts.
+                # The lvalue check for `a[i] = …` is the structural
+                # one in the Assignment / Postfix cases above; here we
+                # just thread name resolution through.
+                return c99_ast.Subscript(
+                    array=self.resolve_exp(arr, scope),
+                    index=self.resolve_exp(idx, scope),
+                )
+            case c99_ast.InitList(items=items):
+                # `{e1, e2, ...}` — recurse into each item. The type
+                # checker enforces that this only appears as a
+                # var_decl init slot for an Array; here we just
+                # resolve names. Items can themselves be InitLists
+                # (for nested / multi-dim init), so the recursion
+                # naturally handles both shapes.
+                return c99_ast.InitList(
+                    items=[self.resolve_exp(it, scope) for it in items],
                 )
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — operand must be an lvalue. Today that's a

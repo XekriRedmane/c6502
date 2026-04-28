@@ -432,6 +432,59 @@ takes one AST and returns another (or text for emit):
    go through the promotion so the underlying op happens at one
    width. Conditional `?:` uses the rule on its true/false branches.
 
+   **Pointer arithmetic** (C99 §6.5.6) takes its own path on
+   `Binary(Add | Subtract)` when at least one operand is a Pointer,
+   sidestepping `_common_type` (which can't construct a Pointer
+   without a `referenced_type`). Four legal shapes:
+   * `ptr + int` / `int + ptr` → result is the pointer type.
+   * `ptr - int` → result is the pointer type.
+   * `ptr - ptr` (matching pointer types) → result is `Long`,
+     c6502's stand-in for the standard's `ptrdiff_t`.
+   For the first three the integer operand is wrapped in an
+   implicit `Cast(Long)` (matching the pointer's 2-byte width), so
+   by the time TAC sees the Binary every operand is 2 bytes wide.
+   The actual scaling by `sizeof(pointee)` lives in `c99_to_tac` —
+   see step 6 below. Rejected at the type-check boundary:
+   `ptr + ptr`, `int - ptr`, `ptr ± floating`, `ptr - ptr` with
+   mismatched pointer types, and any additive op on a function
+   pointer (§6.5.6.2 requires "pointer to an object type").
+   Ordering comparisons on pointers (`<`/`>`/`<=`/`>=`, §6.5.8)
+   aren't wired up yet and fall through to the arithmetic path,
+   which raises on the `_common_type` Pointer call.
+
+   **Array-to-pointer decay** (C99 §6.3.2.1.3) is reified by
+   `_decay_if_array(exp)`: if `exp.data_type` is `Array(elem, N)`,
+   wrap `exp` in an implicit `AddressOf` stamped with
+   `Pointer(elem)` and return the wrapper. Each call site that
+   consumes an expression — Binary / Conditional / Cast inner /
+   Assignment rval / FunctionCall arg / Return value / var
+   initializer / Subscript array operand / Dereference operand —
+   is responsible for decaying its inputs before further type
+   checking; the `_is_object_type` predicate excludes Array, so any
+   missed decay site fails as a non-object-type error rather than
+   silently producing nonsense. The wrapper type is narrower than
+   the standard's `Pointer(Array(elem, N))` — c6502's pipeline
+   doesn't model pointer-to-array — but matches the runtime address
+   (the address of the array's first element). User-written `&arr`
+   for an array is rejected at type-check rather than producing the
+   unmodelled `Pointer(Array(...))`.
+
+   **Subscript** (`Subscript(array, index)`) is type-checked but
+   left in the AST for `c99_to_tac` to lower (rather than rewritten
+   here to `Dereference(Binary(Add, decayed, index))`, which would
+   require every parent slot to reassign). The array operand decays
+   to Pointer; the index is widened to Long; the result type is the
+   pointee. Pointer-typed array operands (`p[i]` where `p` is a
+   pointer) skip the decay step but go through the same downstream
+   lowering.
+
+   **Variable declarations** distinguish two predicates:
+   `_is_object_type` (the operand-allowed set: arithmetic types and
+   Pointer) and `_is_complete_object_type` (adds Array). Var-decl
+   sites use the broader predicate since `int a[10];` IS a legal
+   declaration; arithmetic / operand sites use the narrower one
+   because arrays must decay first.
+
    Static-storage initializers stay constant-expression-only:
    `_const_init_value` recursively drills through any number of
    Cast wrappers (the parser produces `Cast` for explicit casts,
@@ -574,6 +627,44 @@ takes one AST and returns another (or text for emit):
    Compound expressions flatten into ops, materializing each
    intermediate into a fresh `Var(%n)`. `Binary(op, src1, src2,
    dst)` evaluates `src1` first so its temps get lower numbers.
+
+   **Pointer arithmetic lowering.** When `Binary(Add | Subtract)`
+   has at least one Pointer operand (the type checker stamped the
+   operand types), `translate_pointer_arithmetic` takes over:
+   - `ptr ± int` — multiply the int operand by `_pointee_size(ptr)`
+     using a `Binary(Multiply, int, ConstLong(size))`, skipping the
+     multiply when size == 1; then emit a normal `Binary(Add /
+     Subtract)` on the pointer and the scaled int. The dst temp is
+     pointer-typed (so codegen sizes it as 2 bytes). For `int + ptr`
+     the lowering keeps the pointer on the lhs of the underlying
+     Add (consistency, not semantics — Add is commutative).
+   - `ptr - ptr` — emit `Binary(Subtract)` on the two 2-byte
+     pointers to get a Long byte-difference, then divide by
+     `_pointee_size(ptr)` via `Binary(Divide, diff,
+     ConstLong(size))` to recover the element count, skipping the
+     divide when size == 1. Result is Long.
+   `_pointee_size` returns the recursive `_sizeof` of the pointee:
+   1 for Int/UInt, 2 for Long/ULong/Pointer, 4 for Float, 8 for
+   Double, `_sizeof(elem) × count` for Array (so multi-dim pointer
+   arithmetic scales correctly — `int (*)[10]; q + 1` advances by
+   10 bytes). Same widths as the symbol-table sizing in `tac_to_asm`
+   and `replace_pseudoregisters`. The Multiply/Divide steps go
+   through the existing `mul16` / `divmod16` runtime helpers (so a
+   non-trivial pointer arithmetic program assembles but won't link
+   until those helpers land — same status as `*` / `/` on Long).
+
+   **Subscript lowering.** `Subscript(array, index)` reuses
+   `translate_pointer_arithmetic` directly: compute
+   `array_val + index*sizeof(elem)` (the Pointer-typed byte
+   address), then `Load(src_ptr=addr, dst=fresh_elem_temp)` for
+   rvalue context. On the lvalue path (Assignment with Subscript
+   lval) the same address computation feeds a `Store(src=rval,
+   dst_ptr=addr)`. Array decay was reified by the type checker as
+   an `AddressOf` wrapper, which lowers to a `GetAddress` here, so
+   `arr[i]` and `ptr[i]` go through the same TAC shape — the only
+   difference is that `arr[i]` evaluates to `GetAddress(arr) +
+   ...` while `ptr[i]` evaluates to `Load(ptr_var) + ...`.
+
    `Goto(label)` lowers to a TAC `Jump(label)`; `LabeledStmt(label,
    stmt)` lowers to a TAC `Label(label)` followed by the inner
    statement's lowering. Label names arrive pre-mangled by
@@ -1111,6 +1202,73 @@ Lowered all the way to 6502 asm:
 - Function parameters land at Frame(M+3)..Frame(M+2+N) in the
   callee's frame; locals at Frame(1)..Frame(M); saved caller FP
   at the 2-byte gap M+1, M+2.
+- Pointer arithmetic per C99 §6.5.6: `ptr + int`, `int + ptr`,
+  `ptr - int`, and `ptr - ptr` (matching pointer types). The
+  integer operand is widened to Long by the type checker, then
+  scaled by `sizeof(pointee)` in `c99_to_tac` before the underlying
+  byte-level Add/Subtract; `ptr - ptr` subtracts and divides by
+  `sizeof(pointee)` to recover an element count (result type
+  Long, c6502's stand-in for `ptrdiff_t`). Pointer-to-Int has
+  size 1 so no scaling is emitted; pointer-to-{Long,ULong,Pointer}
+  scales by 2, pointer-to-Float by 4, pointer-to-Double by 8 —
+  using `mul16` / `divmod16` runtime helpers, so a non-trivial
+  pointer-arithmetic program assembles but won't link until those
+  land. Rejected at type-check: `ptr + ptr`, `int - ptr`,
+  `ptr ± floating`, `ptr - ptr` with mismatched types, and any
+  additive op on a function pointer. Pointer ordering comparisons
+  (`<`/`>`/`<=`/`>=`) aren't wired up yet.
+- Block-scope arrays with constant integer sizes: `int a[10]`,
+  `long a[5]`, `int *a[10]`, `int a[3][4]` (multi-dim composes
+  outer-first as `Array(Array(elem, inner), outer)`). Frame
+  allocation reserves `sizeof(elem) × count` contiguous bytes via
+  `replace_pseudoregisters._size_of_name`'s recursive `_sizeof`.
+  Subscript `a[i]` and `p[i]` lower to address-arithmetic + Load
+  on the rvalue side and address-arithmetic + Store on the lvalue
+  side, sharing the pointer-arithmetic infrastructure (so a `long
+  a[5]; a[3]` emits `JSR mul16` for the by-2 scale exactly like
+  `long *p; p[3]` does). Array-to-pointer decay (C99 §6.3.2.1.3)
+  reifies as an implicit `AddressOf(arr_var)` wrapper stamped with
+  `Pointer(elem)` — narrower than the strict standard's
+  `Pointer(Array(elem, N))`, but matches the runtime address. Decay
+  fires in seven contexts: Subscript array operand, Binary operand,
+  Conditional branch, Cast inner, Assignment rval, FunctionCall
+  arg, Return value, var initializer. Rejected: array assignment
+  (`a = b`), file-scope and `static` / `extern` arrays (would need
+  a static-init-list variant), and `&arr` for an array (would need
+  `Pointer(Array(...))` modeled). Pre-increment / compound
+  assignment on subscripts (`++a[i]`, `a[i] += 1`) work via the
+  parser's desugaring to `a[i] = a[i] + 1`; postfix on a subscript
+  (`a[i]++`) isn't wired through.
+- Array initializer lists per C99 §6.7.8: `int a[3] = {1, 2, 3};`
+  parses as `var_decl` with `init = InitList(items=[...])`. The
+  type checker validates the count (≤ array size, with shorter
+  lists allowed and the rest zero-padded at lowering time per
+  §6.7.8.21), and converts each item to the element type via the
+  same `_convert_to` rule as scalar init / Assignment rval — so
+  `long a[2] = {1, 2};` wraps each `Int` literal in
+  `Cast(Long, ...)`. Lowering in `c99_to_tac` emits a single
+  `GetAddress` for the array's base, then for each i ∈ [0..N): an
+  `Add` of the constant byte offset `i * sizeof(elem)` to base
+  (skipped when i==0), then a `Store` of the i-th item (or
+  `_tac_const_val(elem, 0)` for trailing missing items). Trailing
+  commas (`{1, 2, 3,}`) parse per the standard. Rejected: nested
+  init lists `{{...}, {...}}` (multi-dim init out of scope),
+  scalar init for an array (`int a[3] = 5;`), brace-enclosed init
+  for a scalar (`int x = {1, 2};`), and too many initializers.
+- Array parameters with the C99 §6.7.5.3.7 adjustment: a parameter
+  declared as `T param[N]` (or `T param[]`) is adjusted at parse
+  time to `T *param`, via `_adjust_param_type` in
+  `parameter_declaration`. Only the OUTERMOST array suffix decays
+  — `int foo(int a[3][4])` becomes `int foo(int (*a)[4])`, carrying
+  type `Pointer(Array(Int, 4))`. The adjustment is single-source-of-
+  truth: the function's FunType, the parameter's symbol-table
+  entry, and every Var reference to the parameter all see the
+  pointer type uniformly. Forward-declaration with
+  `int foo(int a[3]);` is compatible with a definition
+  `int foo(int *a) { ... }` because the type checker compares the
+  post-adjustment FunTypes. At a call site, `foo(arr)` triggers
+  the regular array-to-pointer decay on the argument so its type
+  matches the parameter's adjusted type.
 
 Partially supported: unsigned types (`unsigned int`, `unsigned
 long`) parse and propagate through every pass — values lay down

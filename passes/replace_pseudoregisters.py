@@ -130,20 +130,29 @@ def _operands_in(instr: asm_ast.Type_instruction):
 def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
     table — Int/UInt → 1, Long/ULong → 2, Float → 4, Double → 8,
-    Pointer → 2 (the 6502's address width). A None symbol table or
-    an absent entry both default to 1, which matches the Int-only
-    world unit tests assume."""
+    Pointer → 2 (the 6502's address width), Array → recursive
+    element size × count (so `int a[10]` occupies 10 contiguous
+    frame bytes). A None symbol table or an absent entry both
+    default to 1, which matches the Int-only world unit tests
+    assume."""
     if symbols is None:
         return 1
     sym = symbols.get(name)
     if sym is None:
         return 1
-    if isinstance(sym.type, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+    return _sizeof(sym.type)
+
+
+def _sizeof(t: c99_ast.Type_data_type) -> int:
+    """Bytes occupied by a value of type `t`. Recursive for Array."""
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return 2
-    if isinstance(sym.type, c99_ast.Float):
+    if isinstance(t, c99_ast.Float):
         return 4
-    if isinstance(sym.type, c99_ast.Double):
+    if isinstance(t, c99_ast.Double):
         return 8
+    if isinstance(t, c99_ast.Array):
+        return _sizeof(t.element_type) * t.size
     return 1
 
 

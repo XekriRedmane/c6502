@@ -3001,5 +3001,254 @@ class TestIndirectCall(unittest.TestCase):
         check_program(ast)
 
 
+class TestArrayDeclarations(unittest.TestCase):
+    """Array declarators with constant integer sizes — `int a[10]`,
+    nested `int a[3][4]`, array-of-pointer `int *a[10]`. The ASDL
+    type is `Array(element_type, size)`; nested suffixes compose
+    outermost-first so `int a[3][4]` ends up as
+    Array(Array(Int, 4), 3) — an array of 3 arrays of 4 ints."""
+
+    def _decl_type(self, src):
+        from parser import parse
+        prog = parse(src)
+        items = prog.declaration[0].function_decl.body.block_item
+        return items[0].declaration.var_decl.data_type
+
+    def test_simple_int_array(self):
+        t = self._decl_type("int main(void) { int a[10]; return 0; }")
+        self.assertEqual(t, c99_ast.Array(element_type=c99_ast.Int(), size=10))
+
+    def test_long_array(self):
+        t = self._decl_type("int main(void) { long a[5]; return 0; }")
+        self.assertEqual(t, c99_ast.Array(element_type=c99_ast.Long(), size=5))
+
+    def test_two_dim_array_outer_size_outer(self):
+        # `int a[3][4]` is "array of 3 arrays of 4 ints" — the OUTER
+        # dimension (the one closer to the identifier) is the OUTER
+        # Array, with element_type itself an Array of the inner
+        # dimension.
+        t = self._decl_type("int main(void) { int a[3][4]; return 0; }")
+        self.assertEqual(t, c99_ast.Array(
+            element_type=c99_ast.Array(
+                element_type=c99_ast.Int(), size=4,
+            ),
+            size=3,
+        ))
+
+    def test_array_of_pointer(self):
+        # `int *a[10]` is "array of 10 pointers to int" — the postfix
+        # array suffix binds tighter than the prefix `*` (C99 §6.7.5).
+        t = self._decl_type("int main(void) { int *a[10]; return 0; }")
+        self.assertEqual(t, c99_ast.Array(
+            element_type=c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            size=10,
+        ))
+
+    def test_unspecified_size_rejected(self):
+        # `int a[]` (no size) would need an init list to determine
+        # the count, which c6502 doesn't support yet. Lark wraps
+        # transformer exceptions in `VisitError`.
+        from parser import parse
+        from lark.exceptions import VisitError
+        with self.assertRaises((NotImplementedError, VisitError)):
+            parse("int main(void) { int a[]; return 0; }")
+
+    def test_zero_size_rejected(self):
+        from parser import parse, ParserError
+        from lark.exceptions import VisitError
+        with self.assertRaises((ParserError, VisitError)):
+            parse("int main(void) { int a[0]; return 0; }")
+
+    def test_non_constant_size_rejected(self):
+        # `int a[n]` where n isn't a literal would parse the expression
+        # but the declarator walker rejects anything that isn't a
+        # bare integer constant.
+        from parser import parse
+        from lark.exceptions import VisitError
+        with self.assertRaises((NotImplementedError, VisitError)):
+            parse("int main(void) { int n = 10; int a[n]; return 0; }")
+
+
+class TestArrayParameterAdjustment(unittest.TestCase):
+    """C99 §6.7.5.3.7 — `T param[N]` parameters adjust to `T *param`
+    at the type-construction boundary. Only the OUTERMOST array
+    suffix decays — multi-dim params keep their inner Array."""
+
+    def _fun_type(self, src):
+        from parser import parse
+        prog = parse(src)
+        return prog.declaration[0].function_decl.data_type
+
+    def test_int_array_param_adjusts_to_pointer(self):
+        t = self._fun_type(
+            "int foo(int a[3]) { return 0; } "
+            "int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            t,
+            c99_ast.FunType(
+                params=[c99_ast.Pointer(referenced_type=c99_ast.Int())],
+                ret=c99_ast.Int(),
+            ),
+        )
+
+    def test_long_array_param_adjusts_to_pointer(self):
+        t = self._fun_type(
+            "int foo(long a[5]) { return 0; } "
+            "int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            t.params[0],
+            c99_ast.Pointer(referenced_type=c99_ast.Long()),
+        )
+
+    def test_two_dim_array_param_adjusts_only_outer(self):
+        # `int a[3][4]` — outer Array(_, 3) decays; inner Array(_, 4)
+        # stays. Result type is `Pointer(Array(Int, 4))`, the C
+        # equivalent of `int (*a)[4]`.
+        t = self._fun_type(
+            "int foo(int a[3][4]) { return 0; } "
+            "int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            t.params[0],
+            c99_ast.Pointer(
+                referenced_type=c99_ast.Array(
+                    element_type=c99_ast.Int(), size=4,
+                ),
+            ),
+        )
+
+    def test_pointer_param_unaffected(self):
+        # `int *a` is already a pointer — no adjustment to apply.
+        t = self._fun_type(
+            "int foo(int *a) { return 0; } "
+            "int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            t.params[0],
+            c99_ast.Pointer(referenced_type=c99_ast.Int()),
+        )
+
+    def test_pointer_to_array_param_unaffected(self):
+        # `int (*a)[3]` — the pointer is at the outer level, not the
+        # inner Array, so no adjustment fires.
+        t = self._fun_type(
+            "int foo(int (*a)[3]) { return 0; } "
+            "int main(void) { return 0; }"
+        )
+        self.assertEqual(
+            t.params[0],
+            c99_ast.Pointer(
+                referenced_type=c99_ast.Array(
+                    element_type=c99_ast.Int(), size=3,
+                ),
+            ),
+        )
+
+
+class TestInitializerListParsing(unittest.TestCase):
+    """`{e1, e2, ...}` brace-enclosed initializer per C99 §6.7.8.
+    Produces an `InitList(items)` AST node; the var_decl rule
+    accepts either an `init_exp` (single assignment expression) or
+    an `init_list` (the brace form) as the init slot."""
+
+    def _init(self, src):
+        from parser import parse
+        prog = parse(src)
+        items = prog.declaration[0].function_decl.body.block_item
+        return items[0].declaration.var_decl.init
+
+    def test_simple_int_init_list(self):
+        init = self._init(
+            "int main(void) { int a[3] = {1, 2, 3}; return 0; }"
+        )
+        self.assertIsInstance(init, c99_ast.InitList)
+        self.assertEqual(len(init.items), 3)
+        for item in init.items:
+            self.assertIsInstance(item, c99_ast.Constant)
+
+    def test_empty_init_list_rejected_by_grammar(self):
+        # `{}` would be a GNU/C2x extension — the standard requires
+        # at least one initializer. Lark fails to parse the empty
+        # form.
+        from parser import parse
+        with self.assertRaises(Exception):
+            parse("int main(void) { int a[3] = {}; return 0; }")
+
+    def test_trailing_comma_allowed(self):
+        # C99 §6.7.8 explicitly permits `{1, 2, 3,}` — handy for
+        # generated code and for adding new entries without diff
+        # noise.
+        init = self._init(
+            "int main(void) { int a[3] = {1, 2, 3,}; return 0; }"
+        )
+        self.assertIsInstance(init, c99_ast.InitList)
+        self.assertEqual(len(init.items), 3)
+
+    def test_partial_init_list(self):
+        # Fewer items than the array size — the type checker will
+        # zero-pad on lowering. The parser accepts the literal as is.
+        init = self._init(
+            "int main(void) { int a[5] = {1, 2}; return 0; }"
+        )
+        self.assertEqual(len(init.items), 2)
+
+    def test_expression_items(self):
+        # Each item is an `assignment_exp`, so any non-comma
+        # expression — including a Binary — is legal at parse time.
+        init = self._init(
+            "int main(void) { int x = 1; int a[2] = {x + 1, 2 * 3}; return 0; }"
+        )[1] if False else self._init(  # noqa: E501
+            "int main(void) { int a[2] = {1 + 2, 3 * 4}; return 0; }"
+        )
+        self.assertIsInstance(init.items[0], c99_ast.Binary)
+        self.assertIsInstance(init.items[1], c99_ast.Binary)
+
+
+class TestSubscriptParsing(unittest.TestCase):
+    """`e1[e2]` postfix expression — produces a `Subscript(array,
+    index)` AST node. Both subexpressions are full expressions
+    (assignment-level and below); the index can be any integer
+    expression at parse time."""
+
+    def _exp(self, src):
+        from parser import parse
+        prog = parse(src)
+        items = prog.declaration[0].function_decl.body.block_item
+        return items[-1].statement.exp
+
+    def test_simple_subscript(self):
+        exp = self._exp(
+            "int main(void) { int a[10]; return a[3]; }"
+        )
+        self.assertIsInstance(exp, c99_ast.Subscript)
+        self.assertIsInstance(exp.array, c99_ast.Var)
+        self.assertEqual(exp.array.name, "a")
+        self.assertIsInstance(exp.index, c99_ast.Constant)
+
+    def test_subscript_with_expression_index(self):
+        exp = self._exp(
+            "int main(void) { int a[10]; int i = 0; return a[i + 1]; }"
+        )
+        self.assertIsInstance(exp, c99_ast.Subscript)
+        self.assertIsInstance(exp.index, c99_ast.Binary)
+
+    def test_subscript_chained_for_two_dim(self):
+        # `a[i][j]` parses as `(a[i])[j]` — left-associative postfix.
+        exp = self._exp(
+            "int main(void) { int a[3][4]; return a[1][2]; }"
+        )
+        self.assertIsInstance(exp, c99_ast.Subscript)
+        # Outer index is `2`.
+        self.assertIsInstance(exp.index, c99_ast.Constant)
+        self.assertEqual(exp.index.const.int, 2)
+        # Inner array operand is itself a Subscript with index `1`.
+        self.assertIsInstance(exp.array, c99_ast.Subscript)
+        self.assertIsInstance(exp.array.array, c99_ast.Var)
+        self.assertEqual(exp.array.array.name, "a")
+        self.assertEqual(exp.array.index.const.int, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2107,5 +2107,368 @@ class TestTempSymbolTableRegistration(unittest.TestCase):
             self.assertIsInstance(sym.attrs, LocalAttr)
 
 
+class TestPointerArithmeticLowering(unittest.TestCase):
+    """C99 §6.5.6 pointer arithmetic lowers via `_pointee_size`-driven
+    scaling. ptr ± int multiplies the int by sizeof(pointee) (skipped
+    when that's 1) and then does a normal Add/Subtract on the two
+    2-byte values. ptr - ptr subtracts the addresses and divides the
+    byte-difference by sizeof(pointee) to yield an element count
+    (also skipped when sizeof(pointee) == 1)."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def _binary_ops(self, instrs):
+        """Pull just the Binary instructions out (filters out the
+        Copies / GetAddress / Ret framing that the rest of the body
+        produces)."""
+        return [i for i in instrs if isinstance(i, tac_ast.Binary)]
+
+    def test_int_ptr_plus_int_no_scaling(self):
+        # `int *p + 1` — sizeof(int) is 1, so no Multiply is emitted.
+        # The constant 1 is wrapped in an implicit Cast(Long) by the
+        # type checker (to match the pointer's 2-byte width); that
+        # Cast lowers into a SignExtend producing a Long-typed temp,
+        # which then becomes the Add's src2.
+        tac = self._tac(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(p + 1); }"
+        )
+        binaries = self._binary_ops(tac.top_level[0].instructions)
+        adds = [b for b in binaries if isinstance(b.op, tac_ast.Add)]
+        muls = [b for b in binaries if isinstance(b.op, tac_ast.Multiply)]
+        self.assertEqual(len(adds), 1)
+        self.assertEqual(len(muls), 0)
+
+    def test_long_ptr_plus_int_scales_by_two(self):
+        # `long *p + 1` — sizeof(long) is 2, so the int gets
+        # multiplied by 2 first, then added to the pointer.
+        tac = self._tac(
+            "long main(void) { long a = (long)0; long *p = &a; "
+            "return (long)(p + 1); }"
+        )
+        binaries = self._binary_ops(tac.top_level[0].instructions)
+        muls = [b for b in binaries if isinstance(b.op, tac_ast.Multiply)]
+        adds = [b for b in binaries if isinstance(b.op, tac_ast.Add)]
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(len(adds), 1)
+        # Multiply's src2 is the size constant (2 for long).
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(int=2)),
+        )
+        # The Add consumes the multiply's dst as its scaled operand.
+        self.assertEqual(adds[0].src2, muls[0].dst)
+
+    def test_double_ptr_plus_int_scales_by_eight(self):
+        tac = self._tac(
+            "long main(void) { double a = 0.0; double *p = &a; "
+            "return (long)(p + 1); }"
+        )
+        muls = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(int=8)),
+        )
+
+    def test_int_plus_int_ptr_swaps_operand_order(self):
+        # `1 + p` is commutative; the lowering keeps the pointer on
+        # the lhs of the underlying Add (consistency, not semantics).
+        # The pointer-typed temp is the AddressOf result, so we check
+        # by symbol-table type that src1 is Pointer-typed.
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(1 + p); }"
+        ))
+        tac = translate_program(prog, symbols)
+        adds = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Add)
+        ]
+        self.assertEqual(len(adds), 1)
+        # src1 is whatever val produced `p` — could be a Var (the
+        # GetAddress dst) or the variable itself. Either way it's
+        # pointer-typed.
+        src1 = adds[0].src1
+        self.assertIsInstance(src1, tac_ast.Var)
+        self.assertIsInstance(symbols[src1.name].type, c99_ast.Pointer)
+
+    def test_int_ptr_minus_int_emits_subtract(self):
+        tac = self._tac(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(p - 1); }"
+        )
+        binaries = self._binary_ops(tac.top_level[0].instructions)
+        subs = [b for b in binaries if isinstance(b.op, tac_ast.Subtract)]
+        adds = [b for b in binaries if isinstance(b.op, tac_ast.Add)]
+        self.assertEqual(len(subs), 1)
+        self.assertEqual(len(adds), 0)
+
+    def test_int_ptr_minus_int_ptr_subtracts_no_divide(self):
+        # `int *p - int *q` — sizeof(int) is 1, so the byte-difference
+        # IS the element count; no Divide is emitted.
+        tac = self._tac(
+            "long main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "return p - q; }"
+        )
+        binaries = self._binary_ops(tac.top_level[0].instructions)
+        subs = [b for b in binaries if isinstance(b.op, tac_ast.Subtract)]
+        divs = [b for b in binaries if isinstance(b.op, tac_ast.Divide)]
+        self.assertEqual(len(subs), 1)
+        self.assertEqual(len(divs), 0)
+
+    def test_long_ptr_minus_long_ptr_subtracts_then_divides_by_two(self):
+        tac = self._tac(
+            "long main(void) { long a = (long)0; "
+            "long *p = &a; long *q = &a; return p - q; }"
+        )
+        binaries = self._binary_ops(tac.top_level[0].instructions)
+        subs = [b for b in binaries if isinstance(b.op, tac_ast.Subtract)]
+        divs = [b for b in binaries if isinstance(b.op, tac_ast.Divide)]
+        self.assertEqual(len(subs), 1)
+        self.assertEqual(len(divs), 1)
+        # Divisor is sizeof(long) = 2.
+        self.assertEqual(
+            divs[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(int=2)),
+        )
+        # The Divide's src1 is the Sub's dst (chained byte-difference
+        # → element-count).
+        self.assertEqual(divs[0].src1, subs[0].dst)
+
+    def test_pointer_arithmetic_temp_is_pointer_typed(self):
+        # The Binary's dst temp should be Pointer-typed (so codegen
+        # sizes it as 2 bytes), not Long.
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(p + 1); }"
+        ))
+        translate_program(prog, symbols)
+        # Look for any temp typed as Pointer(Int).
+        ptr_temps = [
+            (name, sym.type) for name, sym in symbols.items()
+            if name.startswith("%")
+            and isinstance(sym.type, c99_ast.Pointer)
+            and sym.type == c99_ast.Pointer(referenced_type=c99_ast.Int())
+        ]
+        self.assertGreaterEqual(len(ptr_temps), 1)
+
+
+class TestSubscriptLowering(unittest.TestCase):
+    """`a[i]` lowers to address-arithmetic + Load on the rvalue side
+    and address-arithmetic + Store on the lvalue side, sharing the
+    pointer-arithmetic infrastructure (scaling by sizeof(elem),
+    Add to compute byte address). The type checker has already
+    decayed array operands and widened indices, so c99_to_tac sees
+    the same shape regardless of whether the source was `arr[i]`
+    or `ptr[i]`."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_subscript_read_emits_load(self):
+        # `int a[10]; ... a[3]` — Compute address (GetAddress on a
+        # plus an Add of the scaled index), then Load through it.
+        # Element type Int has size 1, so no Multiply is needed for
+        # the scale.
+        tac = self._tac(
+            "int main(void) { int a[10]; return a[3]; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertIn("GetAddress", kinds)
+        self.assertIn("Load", kinds)
+
+    def test_subscript_write_emits_store(self):
+        # `a[3] = 5;` — same address computation, then Store of the
+        # rval through the address.
+        tac = self._tac(
+            "int main(void) { int a[10]; a[3] = 5; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertIn("GetAddress", kinds)
+        self.assertIn("Store", kinds)
+        # No Load on the write path — we only need the address.
+        # (There's a Load if the rval mentions any subscript /
+        # dereference, but `5` is a Constant.)
+        self.assertNotIn("Load", kinds)
+
+    def test_long_subscript_scales_by_two(self):
+        # `long a[10]; ... a[3]` — sizeof(long) = 2, so the index
+        # gets a Multiply by 2 before the Add.
+        tac = self._tac(
+            "long main(void) { long a[10]; return a[3]; }"
+        )
+        instrs = tac.top_level[0].instructions
+        muls = [
+            i for i in instrs
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(int=2)),
+        )
+
+    def test_array_decay_in_pointer_init(self):
+        # `int *p = a;` where a is `int[10]` — the rval decays to
+        # `&a`, lowered as a GetAddress instruction. The result is
+        # a pointer-typed temp; Copy into `p`.
+        tac = self._tac(
+            "int main(void) { int a[10]; int *p = a; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        # First instruction is the GetAddress for the decay; second
+        # is the Copy into `p`.
+        self.assertIsInstance(instrs[0], tac_ast.GetAddress)
+        self.assertIsInstance(instrs[1], tac_ast.Copy)
+
+
+class TestArrayInitList(unittest.TestCase):
+    """`int a[N] = {e1, e2, ...}` lowers to GetAddress + a sequence
+    of Stores at compile-time offsets into the array's frame slot.
+    Missing trailing items are zero-padded per C99 §6.7.8.21."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_full_init_emits_n_stores(self):
+        # `int a[3] = {1, 2, 3}` — exactly 3 Stores, one per item.
+        tac = self._tac(
+            "int main(void) { int a[3] = {1, 2, 3}; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        stores = [i for i in instrs if isinstance(i, tac_ast.Store)]
+        self.assertEqual(len(stores), 3)
+        # Stored values are the three constants in order.
+        self.assertEqual(
+            stores[0].src,
+            tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+        )
+        self.assertEqual(
+            stores[1].src,
+            tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
+        )
+        self.assertEqual(
+            stores[2].src,
+            tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
+        )
+
+    def test_partial_init_pads_with_zeros(self):
+        # `int a[5] = {1, 2}` — 5 Stores: items 0/1 from the source,
+        # items 2/3/4 are ConstInt(0).
+        tac = self._tac(
+            "int main(void) { int a[5] = {1, 2}; return 0; }"
+        )
+        stores = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Store)
+        ]
+        self.assertEqual(len(stores), 5)
+        for i, expected_val in enumerate([1, 2, 0, 0, 0]):
+            self.assertEqual(
+                stores[i].src,
+                tac_ast.Constant(const=tac_ast.ConstInt(int=expected_val)),
+            )
+
+    def test_init_emits_get_address(self):
+        # The first instruction is a GetAddress for the array.
+        tac = self._tac(
+            "int main(void) { int a[3] = {1, 2, 3}; return 0; }"
+        )
+        first = tac.top_level[0].instructions[0]
+        self.assertIsInstance(first, tac_ast.GetAddress)
+        self.assertEqual(first.operand, tac_ast.Var(name="@0.a"))
+
+    def test_long_array_init_uses_long_offsets(self):
+        # `long a[3] = {1L, 2L, 3L}` — each element occupies 2 bytes,
+        # so the address Adds use offsets 2 and 4 (the first
+        # element's address is the base; no Add for it).
+        tac = self._tac(
+            "int main(void) { long a[3] = {1L, 2L, 3L}; return 0; }"
+        )
+        adds = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Add)
+        ]
+        # Two Adds: base+2 (for index 1) and base+4 (for index 2).
+        self.assertEqual(len(adds), 2)
+        offsets = sorted(a.src2.const.int for a in adds)
+        self.assertEqual(offsets, [2, 4])
+
+
+class TestArrayFrameLayout(unittest.TestCase):
+    """An array's frame slot is `sizeof(elem) * count` contiguous
+    bytes; replace_pseudoregisters' `_size_of_name` reads the c99
+    Array type from the symbol table to get this. End-to-end check
+    via the prologue's `local_bytes`."""
+
+    def _local_bytes(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        from passes.replace_pseudoregisters import replace_program
+        from c99_to_tac import translate_program as c99_to_tac_translate
+        from tac_to_asm import translate_program as tac_to_asm_translate
+        prog, symbols = check_program(_resolved(src))
+        tac = c99_to_tac_translate(prog, symbols)
+        asm = tac_to_asm_translate(tac, symbols)
+        asm = replace_program(asm, symbols=symbols)
+        prologue = next(
+            i for i in asm.top_level[0].instructions
+            if hasattr(i, "local_bytes")
+        )
+        return prologue.local_bytes
+
+    def test_int_array_takes_at_least_count_bytes(self):
+        # `int a[10]` — 10 bytes for the array, plus pointer-typed
+        # temps from the address arithmetic. Just check the array's
+        # contribution is included (>= 10 bytes total).
+        n = self._local_bytes(
+            "int main(void) { int a[10]; a[0] = 1; return 0; }"
+        )
+        self.assertGreaterEqual(n, 10)
+
+    def test_long_array_takes_at_least_two_x_count_bytes(self):
+        # `long a[5]` — 10 bytes for the array (5 × sizeof(long)).
+        n = self._local_bytes(
+            "long main(void) { long a[5]; a[0] = (long)1; return (long)0; }"
+        )
+        self.assertGreaterEqual(n, 10)
+
+    def test_arrays_of_different_sizes_differ_by_size_difference(self):
+        # `int a[10]` vs. `int a[20]` — same body shape, only the
+        # array size differs. The `local_bytes` difference must be
+        # exactly 10 bytes (the extra elements).
+        small = self._local_bytes(
+            "int main(void) { int a[10]; a[0] = 1; return 0; }"
+        )
+        big = self._local_bytes(
+            "int main(void) { int a[20]; a[0] = 1; return 0; }"
+        )
+        self.assertEqual(big - small, 10)
+
+
 if __name__ == "__main__":
     unittest.main()

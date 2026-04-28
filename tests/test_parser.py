@@ -1801,6 +1801,29 @@ class TestFloatingTypesAndConstants(unittest.TestCase):
             c99_ast.FunType(params=[], ret=c99_ast.Double()),
         )
 
+    def test_cast_to_array_type_rejected(self):
+        # `(int[3])foo` — array cast targets aren't lvalues and
+        # have no rvalue conversion either, so the cast is
+        # meaningless. Rejected at parse time with a clean error.
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("int main(void) { int x; return (int[3])x; }")
+        self.assertIn("cast to an array type", str(ctx.exception))
+
+    def test_cast_to_pointer_array_type_rejected(self):
+        # `(int *[3])foo` — array of pointers is still an array.
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("int main(void) { int x; return (int *[3])x; }")
+        self.assertIn("cast to an array type", str(ctx.exception))
+
+    def test_cast_to_multi_dim_array_type_rejected(self):
+        # `(int[3][4])foo` — multi-dim array cast.
+        from parser import ParserError
+        with self.assertRaises(ParserError) as ctx:
+            parse("int main(void) { int x; return (int[3][4])x; }")
+        self.assertIn("cast to an array type", str(ctx.exception))
+
 
 class TestDeclaratorGrammar(unittest.TestCase):
     """Grammar-only tests for §6.7.5 declarators. The new rules

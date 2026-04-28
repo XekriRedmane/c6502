@@ -560,11 +560,34 @@ def _adjust_param_type(t):
     return t
 
 
+def _abstract_declarator_has_array_suffix(adecl_tree):
+    """Walk an `abstract_declarator` parse tree looking for an array
+    suffix (`[N]`). Used to flag cast-to-array-type at parse time
+    with a user-facing error rather than the "not wired up" stub
+    that catches every other unsupported abstract-declarator
+    shape."""
+    if not hasattr(adecl_tree, "children"):
+        return False
+    for child in adecl_tree.children:
+        if _is_token(child, "LBRACKET"):
+            return True
+        if _abstract_declarator_has_array_suffix(child):
+            return True
+    return False
+
+
 def _apply_abstract_declarator(adecl_tree, base_type):
     """Walk an `abstract_declarator` (no name; used for type-names
     and unnamed parameter declarations). Currently supports only
     pointer-only abstract declarators (`*`, `**`, ...) — the array /
     function-suffix forms aren't wired through to the AST yet."""
+    # Cast-to-array-type (`(int[3])foo`, `(int *[3])foo`, …): array
+    # types aren't lvalues and have no rvalue conversion either, so
+    # casting an expression to an array type is meaningless. Flag it
+    # before the catch-all NotImplementedError so the error is
+    # user-actionable.
+    if _abstract_declarator_has_array_suffix(adecl_tree):
+        raise ParserError("cannot cast to an array type")
     children = adecl_tree.children
     # `abstract_declarator: pointer | pointer? direct_abstract_declarator`
     # The pointer-only form has a single `pointer` child.

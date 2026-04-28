@@ -560,46 +560,169 @@ def _adjust_param_type(t):
     return t
 
 
-def _abstract_declarator_has_array_suffix(adecl_tree):
-    """Walk an `abstract_declarator` parse tree looking for an array
-    suffix (`[N]`). Used to flag cast-to-array-type at parse time
-    with a user-facing error rather than the "not wired up" stub
-    that catches every other unsupported abstract-declarator
-    shape."""
-    if not hasattr(adecl_tree, "children"):
-        return False
-    for child in adecl_tree.children:
-        if _is_token(child, "LBRACKET"):
-            return True
-        if _abstract_declarator_has_array_suffix(child):
-            return True
-    return False
+def _array_size_from_suffix(suffix):
+    """Decode an `array_suffix` parse tree into a positive int size.
+    Used by both the named (`int a[3]`) and abstract (`int (*)[3]`)
+    declarator paths."""
+    if not hasattr(suffix, "data") or suffix.data != "array_size_plain":
+        raise NotImplementedError(
+            "only plain array sizes are supported "
+            f"(got {getattr(suffix, 'data', suffix)!r})"
+        )
+    if len(suffix.children) == 0:
+        raise NotImplementedError(
+            "array of unspecified size (`[]`) is not supported"
+        )
+    if len(suffix.children) > 1:
+        raise NotImplementedError(
+            "type-qualified array sizes aren't supported"
+        )
+    size_exp = suffix.children[0]
+    if not isinstance(size_exp, c99_ast.Constant):
+        raise NotImplementedError(
+            "array size must be an integer constant literal"
+        )
+    c = size_exp.const
+    if not isinstance(c, (
+        c99_ast.ConstInt, c99_ast.ConstLong,
+        c99_ast.ConstUInt, c99_ast.ConstULong,
+    )):
+        raise NotImplementedError(
+            "array size must be an integer constant"
+        )
+    if c.int <= 0:
+        raise ParserError("array size must be positive")
+    return c.int
 
 
 def _apply_abstract_declarator(adecl_tree, base_type):
-    """Walk an `abstract_declarator` (no name; used for type-names
-    and unnamed parameter declarations). Currently supports only
-    pointer-only abstract declarators (`*`, `**`, ...) — the array /
-    function-suffix forms aren't wired through to the AST yet."""
-    # Cast-to-array-type (`(int[3])foo`, `(int *[3])foo`, …): array
-    # types aren't lvalues and have no rvalue conversion either, so
-    # casting an expression to an array type is meaningless. Flag it
-    # before the catch-all NotImplementedError so the error is
-    # user-actionable.
-    if _abstract_declarator_has_array_suffix(adecl_tree):
-        raise ParserError("cannot cast to an array type")
+    """Walk an `abstract_declarator` parse tree (used for type-names
+    and unnamed parameter declarations) and return the composed
+    c99_ast type. The grammar is `pointer | pointer?
+    direct_abstract_declarator`. Same composition rule as
+    `_apply_declarator`: the pointer prefix wraps the base type FIRST
+    (so it ends up as the INNERMOST wrapper), then the direct
+    abstract declarator's suffixes wrap around it. So `int *[3]`
+    becomes `Array(Pointer(Int), 3)` — array of 3 pointers — while
+    `int (*)[3]` becomes `Pointer(Array(Int, 3))` — pointer to array.
+    """
     children = adecl_tree.children
-    # `abstract_declarator: pointer | pointer? direct_abstract_declarator`
-    # The pointer-only form has a single `pointer` child.
+    # `pointer` alone — no inner direct_abstract_declarator.
     if (
         len(children) == 1
         and hasattr(children[0], "data")
         and children[0].data == "pointer"
     ):
         return _wrap_pointers(children[0], base_type)
-    raise NotImplementedError(
-        "abstract declarators with array / function suffixes "
-        "aren't wired through to the AST yet"
+    # `pointer direct_abstract_declarator` — pointer wraps base FIRST,
+    # then the dad applies its suffixes around it.
+    if (
+        len(children) == 2
+        and hasattr(children[0], "data")
+        and children[0].data == "pointer"
+    ):
+        base_type = _wrap_pointers(children[0], base_type)
+        return _apply_direct_abstract_declarator(children[1], base_type)
+    # `direct_abstract_declarator` alone (no leading pointer).
+    if (
+        len(children) == 1
+        and hasattr(children[0], "data")
+        and children[0].data == "direct_abstract_declarator"
+    ):
+        return _apply_direct_abstract_declarator(children[0], base_type)
+    raise AssertionError(
+        f"unexpected abstract_declarator children: {children!r}"
+    )
+
+
+def _apply_direct_abstract_declarator(dad_tree, base_type):
+    """Walk a `direct_abstract_declarator`, applying the OUTERMOST
+    suffix in source order first (it's the rightmost child here) and
+    threading the composed type through the recursion. Mirrors
+    `_apply_direct_declarator` but with no IDENTIFIER base case — the
+    leaves are bare suffix forms (`[N]`, `(params)`) or a parenthesised
+    inner abstract_declarator."""
+    children = dad_tree.children
+    # Leaf 1: `LPAREN abstract_declarator RPAREN` — recurse into the
+    # inner abstract_declarator with the same base_type (parens just
+    # group; no suffix here).
+    if (
+        len(children) == 3
+        and _is_token(children[0], "LPAREN")
+        and _is_token(children[2], "RPAREN")
+        and hasattr(children[1], "data")
+        and children[1].data == "abstract_declarator"
+    ):
+        return _apply_abstract_declarator(children[1], base_type)
+    # Leaf 2: `LBRACKET array_suffix RBRACKET` — bare array suffix.
+    if (
+        len(children) == 3
+        and _is_token(children[0], "LBRACKET")
+        and _is_token(children[2], "RBRACKET")
+    ):
+        size = _array_size_from_suffix(children[1])
+        return c99_ast.Array(element_type=base_type, size=size)
+    # Leaf 3: `LPAREN parameter_type_list? RPAREN` / `LPAREN VOID
+    # RPAREN` — bare function suffix.
+    if (
+        len(children) >= 2
+        and _is_token(children[0], "LPAREN")
+        and _is_token(children[-1], "RPAREN")
+    ):
+        param_pairs = _parse_function_suffix_middle(children[1:-1])
+        param_types = [t for (_n, t) in param_pairs]
+        return c99_ast.FunType(params=param_types, ret=base_type)
+    # Recursive forms — first child is an inner direct_abstract_declarator,
+    # followed by a postfix suffix.
+    if (
+        len(children) >= 3
+        and hasattr(children[0], "data")
+        and children[0].data == "direct_abstract_declarator"
+    ):
+        inner_dad = children[0]
+        # Recursive array suffix: `inner LBRACKET array_suffix RBRACKET`.
+        if (
+            len(children) == 4
+            and _is_token(children[1], "LBRACKET")
+            and _is_token(children[3], "RBRACKET")
+        ):
+            size = _array_size_from_suffix(children[2])
+            new_base = c99_ast.Array(element_type=base_type, size=size)
+            return _apply_direct_abstract_declarator(inner_dad, new_base)
+        # Recursive function suffix: `inner LPAREN body? RPAREN`.
+        if (
+            _is_token(children[1], "LPAREN")
+            and _is_token(children[-1], "RPAREN")
+        ):
+            param_pairs = _parse_function_suffix_middle(children[2:-1])
+            param_types = [t for (_n, t) in param_pairs]
+            new_base = c99_ast.FunType(params=param_types, ret=base_type)
+            return _apply_direct_abstract_declarator(inner_dad, new_base)
+    raise AssertionError(
+        f"unexpected direct_abstract_declarator children: {children!r}"
+    )
+
+
+def _parse_function_suffix_middle(middle):
+    """Decode the middle children of a function-suffix declarator
+    (between LPAREN and RPAREN) into a list of `(name_or_None, type)`
+    pairs. Shared between the named and abstract walkers."""
+    if not middle:
+        # `f()` — K&R-style empty list. Treat as no params.
+        return []
+    if len(middle) == 1 and _is_token(middle[0], "VOID"):
+        return []
+    if len(middle) == 1 and isinstance(middle[0], list):
+        # parameter_type_list transformer returns a list of
+        # (name_or_None, type) tuples.
+        return middle[0]
+    if len(middle) == 1 and hasattr(middle[0], "data"):
+        if middle[0].data == "identifier_list":
+            raise NotImplementedError(
+                "K&R-style identifier-list functions aren't supported"
+            )
+    raise AssertionError(
+        f"unexpected function-suffix middle: {middle!r}"
     )
 
 
@@ -631,10 +754,12 @@ class _ASTBuilder(Transformer):
         # type_specifier tokens land first (the `type_specifier`
         # transformer passes INT / LONG / SIGNED / etc. tokens
         # through). If an abstract_declarator subtree is present,
-        # it's the last item — `_apply_abstract_declarator` wraps
-        # the base type with its pointer / array / function
-        # modifiers (pointer-only is supported today; arrays /
-        # function-pointers raise NotImplementedError).
+        # it's the last item — `_apply_abstract_declarator` composes
+        # it into the full type (pointers, arrays, function suffixes).
+        # We then reject the cast if the OUTERMOST composed type is
+        # `Array(...)`: array types aren't lvalues and have no rvalue
+        # conversion, so casting to a bare array is meaningless.
+        # Pointer-to-array (`int (*)[3]`) is allowed.
         type_specs = [it for it in items if isinstance(it, Token)]
         base = _resolve_data_type(type_specs)
         if len(type_specs) == len(items):
@@ -642,7 +767,10 @@ class _ASTBuilder(Transformer):
             return base
         # Trailing abstract_declarator subtree.
         adecl_tree = items[-1]
-        return _apply_abstract_declarator(adecl_tree, base)
+        composed = _apply_abstract_declarator(adecl_tree, base)
+        if isinstance(composed, c99_ast.Array):
+            raise ParserError("cannot cast to an array type")
+        return composed
 
     def parameter_declaration(self, items):
         # `parameter_declaration: specifier+ declarator

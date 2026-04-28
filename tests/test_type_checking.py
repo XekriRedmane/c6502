@@ -1493,15 +1493,25 @@ class TestArrays(unittest.TestCase):
         sym = symbols["@0.a"]
         self.assertEqual(sym.attrs.initial_value.value, (1, 2, 3))
 
-    def test_address_of_array_rejected(self):
-        # `&arr` for an array would have type `Pointer(Array(...))`,
-        # which the rest of the pipeline doesn't model. Reject it
-        # with a focused error rather than letting it slip through.
-        with self.assertRaises(TypeCheckError) as ctx:
-            _check(
-                "long main(void) { int a[10]; return (long)&a; }"
-            )
-        self.assertIn("address of an array", str(ctx.exception))
+    def test_address_of_array_typed_as_pointer_to_array(self):
+        # `&arr` for an array yields `Pointer(Array(elem, N))` per
+        # C99 §6.5.3.2.3. `_to_tac_data_type` collapses Pointer to
+        # Long and `_pointee_size` recurses into Array, so the rest
+        # of the pipeline handles this fine.
+        prog, _ = _check(
+            "int main(void) { int a[10]; int (*p)[10] = &a; return 0; }"
+        )
+        # Find the AddressOf inside the var-decl initializer.
+        body = prog.declaration[0].function_decl.body
+        decl = body.block_item[1].declaration.var_decl
+        addr = decl.init
+        self.assertIsInstance(addr, c99_ast.AddressOf)
+        self.assertEqual(
+            addr.data_type,
+            c99_ast.Pointer(referenced_type=c99_ast.Array(
+                element_type=c99_ast.Int(), size=10,
+            )),
+        )
 
     def test_subscript_index_must_be_integer(self):
         with self.assertRaises(TypeCheckError) as ctx:

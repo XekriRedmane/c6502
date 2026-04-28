@@ -1770,24 +1770,14 @@ class TypeChecker:
                         exp.data_type = result
                         return result
                 t_inner = self._check_exp(inner)
-                # `&arr` for an array would have type `Pointer(Array(
-                # elem, N))` per the standard, which the c6502
-                # pipeline doesn't model — `_to_tac_data_type` and
-                # `_pointee_size` only know about the value types.
-                # Decayed-array contexts (rvalue use of arr) reach
-                # here too via `_decay_if_array`, but those are
-                # synthesised AddressOf wrappers we built ourselves
-                # — they bypass `_check_exp` (we set their data_type
-                # directly). So any AddressOf we DO type-check here
-                # with an array-typed operand is a user-written
-                # `&arr`, which we reject for now.
-                if isinstance(t_inner, Array):
-                    raise TypeCheckError(
-                        f"taking the address of an array (`&arr`) "
-                        f"is not supported yet; use the array name "
-                        f"directly to get a pointer to its first "
-                        f"element"
-                    )
+                # `&arr` for an array — type per C99 §6.5.3.2.3 is
+                # `Pointer(Array(elem, N))`. `_to_tac_data_type`
+                # collapses Pointer onto Long, and `_pointee_size`
+                # / `_sizeof` recurse into Array, so the downstream
+                # pipeline handles this fine. Synthesised AddressOf
+                # wrappers from `_decay_if_array` bypass `_check_exp`
+                # (we set their data_type directly) so they don't
+                # double-up.
                 result = Pointer(referenced_type=t_inner)
                 exp.data_type = result
                 return result

@@ -474,11 +474,14 @@ takes one AST and returns another (or text for emit):
    checking; the `_is_object_type` predicate excludes Array, so any
    missed decay site fails as a non-object-type error rather than
    silently producing nonsense. The wrapper type is narrower than
-   the standard's `Pointer(Array(elem, N))` — c6502's pipeline
-   doesn't model pointer-to-array — but matches the runtime address
-   (the address of the array's first element). User-written `&arr`
-   for an array is rejected at type-check rather than producing the
-   unmodelled `Pointer(Array(...))`.
+   the standard's `Pointer(Array(elem, N))` (we use `Pointer(elem)`,
+   the address of the array's first element) — equivalent at the
+   byte level since both are the same 2-byte address, and downstream
+   pointer-arithmetic scaling reads the pointee from `Pointer.referenced_type`.
+   User-written `&arr` for an array DOES yield the standard
+   `Pointer(Array(elem, N))`; both forms work end-to-end because
+   `_to_tac_data_type` collapses `Pointer` onto `Long` and
+   `_pointee_size` recurses into `Array` for the scale factor.
 
    **Subscript** (`Subscript(array, index)`) is type-checked but
    left in the AST for `c99_to_tac` to lower (rather than rewritten
@@ -1252,10 +1255,15 @@ Lowered all the way to 6502 asm:
   `Pointer(Array(elem, N))`, but matches the runtime address. Decay
   fires in seven contexts: Subscript array operand, Binary operand,
   Conditional branch, Cast inner, Assignment rval, FunctionCall
-  arg, Return value, var initializer. Rejected: array assignment
-  (`a = b`), `extern` arrays (would need cross-TU init deferral),
-  and `&arr` for an array (would need `Pointer(Array(...))`
-  modeled). Pre-increment / compound assignment on subscripts
+  arg, Return value, var initializer. User-written `&arr` for an
+  array yields `Pointer(Array(elem, N))` per §6.5.3.2.3; this works
+  through the rest of the pipeline because Pointer collapses to Long
+  in TAC and `_pointee_size` recurses into Array. Casts targeting
+  pointer-to-array (`(int (*)[3])`) compose through the abstract
+  declarator and are accepted; the parser still rejects casts whose
+  composed top-level type is `Array(...)` itself. Rejected: array
+  assignment (`a = b`), `extern` arrays (would need cross-TU init
+  deferral). Pre-increment / compound assignment on subscripts
   (`++a[i]`, `a[i] += 1`) work via the parser's desugaring to
   `a[i] = a[i] + 1`; postfix on a subscript (`a[i]++`) isn't
   wired through.

@@ -2222,8 +2222,9 @@ class TestPointerOpsEndToEnd(unittest.TestCase):
 
 class TestPointerEquality(unittest.TestCase):
     """`==` and `!=` between pointers, plus the null-pointer-
-    constant exception. Other binary ops on pointers (arithmetic,
-    ordering) are still unsupported."""
+    constant exception. Relational ordering (`<` / `>` / `<=` / `>=`)
+    on same-type pointers is also covered here; arithmetic ops on
+    pointers live in their own test class."""
 
     def _codegen(self, src: str) -> str:
         from compile import _run_stage
@@ -2320,16 +2321,40 @@ class TestPointerEquality(unittest.TestCase):
                 "}\n"
             )
 
-    def test_ordering_on_pointers_still_unsupported(self):
-        # `<` / `>` / `<=` / `>=` on pointers aren't wired up yet;
-        # this test pins the current behavior so we notice when it
-        # changes. The existing arithmetic path falls through and
-        # raises (Pointer isn't an arithmetic type).
+    def test_ordering_same_pointer_type_compiles(self):
+        # `<` / `>` / `<=` / `>=` on same-type pointers — pointer
+        # operands dispatch to the unsigned-ordering lowering (no
+        # V-correction; carry flag carries the ordering result), so
+        # we get the per-byte SBC pair followed by BCC for `<`.
+        text = self._codegen(
+            "int main(void) {\n"
+            "  int x;\n"
+            "  int *p; int *q;\n"
+            "  p = &x; q = &x;\n"
+            "  return p < q;\n"
+            "}\n"
+        )
+        # Two SBCs (one per byte) and BCC for the unsigned `<`.
+        self.assertEqual(text.count("SBC   (FP),Y"), 2)
+        self.assertIn("BCC   .cmp_true@", text)
+        self.assertNotIn(".cmp_novf@", text)
+
+    def test_ordering_distinct_pointer_types_rejected(self):
         from passes.type_checking import TypeCheckError
-        with self.assertRaises((TypeCheckError, TypeError)):
+        with self.assertRaises(TypeCheckError):
             self._typecheck(
-                "int main(void) { int *p; int *q; "
+                "int main(void) { int *p; long *q; "
                 "if (p < q) return 1; return 0; }\n"
+            )
+
+    def test_ordering_pointer_vs_int_rejected(self):
+        # No null-pointer-constant exception for relational ops, so
+        # `p < 0` is rejected even though `p == 0` would be fine.
+        from passes.type_checking import TypeCheckError
+        with self.assertRaises(TypeCheckError):
+            self._typecheck(
+                "int main(void) { int *p; if (p < 0) return 1; "
+                "return 0; }\n"
             )
 
     def test_equal_result_is_int(self):

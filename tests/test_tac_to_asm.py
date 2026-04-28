@@ -785,6 +785,128 @@ class TestTranslateComparisons(unittest.TestCase):
         self.assertTrue(first_labels.isdisjoint(second_labels))
 
 
+class TestTranslatePointerOrdering(unittest.TestCase):
+    """Ordering ops on Pointer-typed operands dispatch to the
+    unsigned-ordering lowering: per-byte SBC with carry threading,
+    then BCC/BCS (no V-correction). Same operand-swap trick as the
+    signed form for `>` / `<=`."""
+
+    @staticmethod
+    def _setup():
+        from tac_to_asm import Translator
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        import c99_ast
+        symbols = SymbolTable()
+        ptr_int = c99_ast.Pointer(referenced_type=c99_ast.Int())
+        symbols["%p"] = Symbol(type=ptr_int, attrs=LocalAttr())
+        symbols["%q"] = Symbol(type=ptr_int, attrs=LocalAttr())
+        symbols["%r"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        return Translator(symbols=symbols)
+
+    @staticmethod
+    def _src1():
+        return tac_ast.Var(name="%p")
+
+    @staticmethod
+    def _src2():
+        return tac_ast.Var(name="%q")
+
+    @staticmethod
+    def _dst():
+        return tac_ast.Var(name="%r")
+
+    @staticmethod
+    def _byte(name, k):
+        return asm_ast.Pseudo(name=name, offset=k)
+
+    def _expected(self, left_name, right_name, cond):
+        # Two-byte SBC pair (carry threads), then BCC/BCS + 0/1
+        # select. No V-correction (no .cmp_novf label).
+        return [
+            asm_ast.Mov(src=self._byte(left_name, 0), dst=_REG_A),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=self._byte(right_name, 0), dst=_REG_A),
+            asm_ast.Mov(src=self._byte(left_name, 1), dst=_REG_A),
+            asm_ast.Sub(src=self._byte(right_name, 1), dst=_REG_A),
+            asm_ast.Branch(cond=cond, target=".cmp_true@0"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Jump(target=".cmp_end@1"),
+            asm_ast.Label(name=".cmp_true@0"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Label(name=".cmp_end@1"),
+            asm_ast.Mov(src=_REG_A, dst=self._byte("%r", 0)),
+        ]
+
+    def test_pointer_less_than_uses_bcc_no_swap(self):
+        # p < q unsigned: compute p - q, branch on CC (no borrow
+        # = false; borrow = true → BCC takes branch when borrow).
+        t = self._setup()
+        self.assertEqual(
+            t.translate_binary(
+                tac_ast.LessThan(), self._src1(), self._src2(), self._dst(),
+            ),
+            self._expected("%p", "%q", asm_ast.CC()),
+        )
+
+    def test_pointer_greater_or_equal_uses_bcs_no_swap(self):
+        # p >= q unsigned: compute p - q, branch on CS (no borrow).
+        t = self._setup()
+        self.assertEqual(
+            t.translate_binary(
+                tac_ast.GreaterOrEqual(),
+                self._src1(), self._src2(), self._dst(),
+            ),
+            self._expected("%p", "%q", asm_ast.CS()),
+        )
+
+    def test_pointer_greater_than_swaps_and_uses_bcc(self):
+        # p > q <=> q < p. Swap so left=%q, right=%p; BCC.
+        t = self._setup()
+        self.assertEqual(
+            t.translate_binary(
+                tac_ast.GreaterThan(),
+                self._src1(), self._src2(), self._dst(),
+            ),
+            self._expected("%q", "%p", asm_ast.CC()),
+        )
+
+    def test_pointer_less_or_equal_swaps_and_uses_bcs(self):
+        # p <= q <=> q >= p. Swap so left=%q, right=%p; BCS.
+        t = self._setup()
+        self.assertEqual(
+            t.translate_binary(
+                tac_ast.LessOrEqual(),
+                self._src1(), self._src2(), self._dst(),
+            ),
+            self._expected("%q", "%p", asm_ast.CS()),
+        )
+
+    def test_long_ordering_still_signed(self):
+        # Sanity check: Long (non-pointer) operands stick with the
+        # signed-ordering lowering — V-correction is present.
+        from tac_to_asm import Translator
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%a"] = Symbol(type=c99_ast.Long(), attrs=LocalAttr())
+        symbols["%b"] = Symbol(type=c99_ast.Long(), attrs=LocalAttr())
+        symbols["%r"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        t = Translator(symbols=symbols)
+        out = t.translate_binary(
+            tac_ast.LessThan(),
+            tac_ast.Var(name="%a"),
+            tac_ast.Var(name="%b"),
+            tac_ast.Var(name="%r"),
+        )
+        # The V-correction labels distinguish signed from unsigned.
+        labels = {i.name for i in out if isinstance(i, asm_ast.Label)}
+        self.assertTrue(any(name.startswith(".cmp_novf@") for name in labels))
+
+
 class TestTranslateFunction(unittest.TestCase):
     def test_flattens_instructions(self):
         fn = tac_ast.Function(

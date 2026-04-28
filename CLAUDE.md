@@ -445,12 +445,23 @@ takes one AST and returns another (or text for emit):
    by the time TAC sees the Binary every operand is 2 bytes wide.
    The actual scaling by `sizeof(pointee)` lives in `c99_to_tac` —
    see step 6 below. Rejected at the type-check boundary:
-   `ptr + ptr`, `int - ptr`, `ptr ± floating`, `ptr - ptr` with
-   mismatched pointer types, and any additive op on a function
-   pointer (§6.5.6.2 requires "pointer to an object type").
+   `ptr + ptr`, `int - ptr` (which catches `0 - p`), `ptr ±
+   floating`, `ptr - ptr` with mismatched pointer types, and any
+   additive op on a function pointer (§6.5.6.2 requires "pointer
+   to an object type").
    Ordering comparisons on pointers (`<`/`>`/`<=`/`>=`, §6.5.8)
-   aren't wired up yet and fall through to the arithmetic path,
-   which raises on the `_common_type` Pointer call.
+   take their own short-circuit path before `_common_type`, which
+   would crash on Pointer for the same reason as equality. The
+   constraint is stricter than equality's: both operands must be
+   pointers to compatible object types — null pointer constants
+   aren't accepted on the relational ops. Result is always Int per
+   §6.5.8.6. `tac_to_asm` dispatches pointer ordering to its own
+   unsigned-ordering lowering (per-byte SBC with carry threading,
+   then BCC/BCS — no V-correction), so addresses above $8000 rank
+   correctly. `>` / `<=` swap operands the same way the signed
+   form does. Non-pointer ordering still uses the signed
+   V-corrected sequence (a known limitation for `unsigned long`
+   operands).
 
    **Array-to-pointer decay** (C99 §6.3.2.1.3) is reified by
    `_decay_if_array(exp)`: if `exp.data_type` is `Array(elem, N)`,
@@ -1213,10 +1224,19 @@ Lowered all the way to 6502 asm:
   scales by 2, pointer-to-Float by 4, pointer-to-Double by 8 —
   using `mul16` / `divmod16` runtime helpers, so a non-trivial
   pointer-arithmetic program assembles but won't link until those
-  land. Rejected at type-check: `ptr + ptr`, `int - ptr`,
-  `ptr ± floating`, `ptr - ptr` with mismatched types, and any
-  additive op on a function pointer. Pointer ordering comparisons
-  (`<`/`>`/`<=`/`>=`) aren't wired up yet.
+  land. Rejected at type-check: `ptr + ptr`, `int - ptr` (which
+  catches `0 - p`), `ptr ± floating`, `ptr - ptr` with mismatched
+  types, and any additive op on a function pointer.
+- Pointer ordering comparisons (`<`/`>`/`<=`/`>=`) per C99 §6.5.8:
+  both operands must be pointers to compatible object types
+  (matching pointer types in c6502); result is Int. `tac_to_asm`
+  dispatches Pointer-typed operands to an unsigned-ordering
+  lowering (per-byte SBC with carry threading; BCC for `<` and
+  BCS for `>=`; `>` / `<=` swap operands), so addresses above
+  $8000 rank correctly. Rejected at type-check: pointer vs.
+  integer (no null-pointer-constant exception on the relational
+  ops, unlike equality), pointer vs. floating, mismatched pointer
+  types.
 - Block-scope arrays with constant integer sizes: `int a[10]`,
   `long a[5]`, `int *a[10]`, `int a[3][4]` (multi-dim composes
   outer-first as `Array(Array(elem, inner), outer)`). Frame

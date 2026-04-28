@@ -306,6 +306,22 @@ class Translator:
         # matches the Int-only world the existing tests assume.
         self._symbols = symbols
 
+    def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
+        """True iff `val` is a Var whose c99 symbol type is Pointer.
+        Constants never qualify — TAC's `const` sum has no pointer
+        variant (Pointer collapses onto Long for sizing). Used by
+        the ordering-op dispatch to pick unsigned vs. signed
+        comparison: pointers are 16-bit unsigned addresses, so
+        unsigned ordering is the only sensible interpretation."""
+        if not isinstance(val, tac_ast.Var):
+            return False
+        if self._symbols is None:
+            return False
+        sym = self._symbols.get(val.name)
+        if sym is None:
+            return False
+        return isinstance(sym.type, c99_ast.Pointer)
+
     def _size_of(self, val: tac_ast.Type_val) -> int:
         """Byte width of a TAC val. Integer types: 1 for Int / UInt,
         2 for Long / ULong. Floating types: 4 for Float, 8 for
@@ -996,6 +1012,14 @@ class Translator:
         src2_op = translate_val(src2)
         dst_op = translate_val(dst)
         size = self._size_of(src1)
+        # Ordering ops on pointer operands use unsigned comparison
+        # — pointers are 16-bit unsigned addresses, so the V-corrected
+        # signed sequence would mis-rank addresses ≥ $8000 as
+        # "negative". Type-checking forces both operands to be
+        # pointers when one is, so checking either side suffices.
+        pointer_cmp = (
+            self._is_pointer_val(src1) or self._is_pointer_val(src2)
+        )
         match op:
             case tac_ast.Add():
                 return self._translate_add_sub(
@@ -1100,22 +1124,42 @@ class Translator:
                     src1_op, src2_op, dst_op, size, asm_ast.NE(),
                 )
             case tac_ast.LessThan():
-                # src1 < src2 signed: compute src1 - src2, branch on MI.
+                # src1 < src2: compute src1 - src2, branch on MI
+                # (signed) or CC (unsigned, i.e. carry clear after
+                # SBC means a borrow occurred = left < right).
+                if pointer_cmp:
+                    return self._translate_unsigned_ordering(
+                        src1_op, src2_op, dst_op, size, asm_ast.CC(),
+                    )
                 return self._translate_signed_ordering(
                     src1_op, src2_op, dst_op, size, asm_ast.MI(),
                 )
             case tac_ast.GreaterOrEqual():
-                # src1 >= src2 signed: compute src1 - src2, branch on PL.
+                # src1 >= src2: branch on PL (signed) or CS
+                # (unsigned, no borrow).
+                if pointer_cmp:
+                    return self._translate_unsigned_ordering(
+                        src1_op, src2_op, dst_op, size, asm_ast.CS(),
+                    )
                 return self._translate_signed_ordering(
                     src1_op, src2_op, dst_op, size, asm_ast.PL(),
                 )
             case tac_ast.GreaterThan():
-                # src1 > src2 signed <=> src2 < src1 signed.
+                # src1 > src2 <=> src2 < src1. Same operand-swap
+                # trick as the signed form.
+                if pointer_cmp:
+                    return self._translate_unsigned_ordering(
+                        src2_op, src1_op, dst_op, size, asm_ast.CC(),
+                    )
                 return self._translate_signed_ordering(
                     src2_op, src1_op, dst_op, size, asm_ast.MI(),
                 )
             case tac_ast.LessOrEqual():
-                # src1 <= src2 signed <=> src2 >= src1 signed.
+                # src1 <= src2 <=> src2 >= src1.
+                if pointer_cmp:
+                    return self._translate_unsigned_ordering(
+                        src2_op, src1_op, dst_op, size, asm_ast.CS(),
+                    )
                 return self._translate_signed_ordering(
                     src2_op, src1_op, dst_op, size, asm_ast.PL(),
                 )
@@ -1276,6 +1320,49 @@ class Translator:
                 src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
             ),
             asm_ast.Label(name=novf_label),
+            asm_ast.Branch(cond=cond, target=true_label),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Jump(target=end_label),
+            asm_ast.Label(name=true_label),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Label(name=end_label),
+            asm_ast.Mov(src=_REG_A, dst=dst_op),
+        ])
+        return out
+
+    def _translate_unsigned_ordering(
+        self,
+        left_op: asm_ast.Type_operand,
+        right_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+        cond: asm_ast.Type_condition,
+    ) -> list[asm_ast.Type_instruction]:
+        """Unsigned ordering compare via SBC, no V-correction:
+           LDA left.lo; SEC; SBC right.lo
+           [LDA left.hi;       SBC right.hi]   (Long only; carry threads)
+           B<cond> true; LDA #0; JMP end; true: LDA #1; end: STA dst
+
+        After SBC, the carry flag is the unsigned ordering result:
+        C=1 means no borrow (left >= right unsigned), C=0 means
+        borrow (left < right unsigned). For Long, the borrow threads
+        through the per-byte SBCs, so the final carry reflects the
+        16-bit unsigned subtraction. Caller picks operand order and
+        BCC/BCS to select among <, >=, >, <=.
+        """
+        true_label = self.make_label("cmp_true")
+        end_label = self.make_label("cmp_end")
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A),
+        ]
+        if size > 1:
+            out.extend([
+                asm_ast.Mov(src=_byte_at(left_op, 1), dst=_REG_A),
+                asm_ast.Sub(src=_byte_at(right_op, 1), dst=_REG_A),
+            ])
+        out.extend([
             asm_ast.Branch(cond=cond, target=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=end_label),

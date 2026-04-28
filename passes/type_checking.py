@@ -1307,10 +1307,7 @@ class TypeChecker:
                 # same reason as above, and the legality rules
                 # differ from arithmetic: matching pointer type is
                 # OK, pointer + null pointer constant is OK,
-                # anything else is rejected. Other binary ops on
-                # pointers (arithmetic, ordering) aren't yet
-                # supported and fall through to the arithmetic path
-                # below, which raises.
+                # anything else is rejected.
                 if (
                     isinstance(op, (c99_ast.Equal, c99_ast.NotEqual))
                     and (_is_pointer_type(tl) or _is_pointer_type(tr))
@@ -1320,6 +1317,38 @@ class TypeChecker:
                     )
                     exp.left = _convert_to(lhs, common)
                     exp.right = _convert_to(rhs, common)
+                    exp.data_type = Int()
+                    return Int()
+                # Pointer ordering (C99 §6.5.8.2) — stricter than
+                # equality: both operands must be pointers to
+                # compatible object types. Null pointer constants
+                # aren't allowed on the relational ops the way they
+                # are on `==` / `!=`, and mixing pointer with integer
+                # / floating is a constraint violation. Result is
+                # always Int per §6.5.8.6.
+                if (
+                    isinstance(op, (
+                        c99_ast.LessThan, c99_ast.GreaterThan,
+                        c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
+                    ))
+                    and (_is_pointer_type(tl) or _is_pointer_type(tr))
+                ):
+                    op_name = {
+                        c99_ast.LessThan: "<",
+                        c99_ast.GreaterThan: ">",
+                        c99_ast.LessOrEqual: "<=",
+                        c99_ast.GreaterOrEqual: ">=",
+                    }[type(op)]
+                    if not (_is_pointer_type(tl) and _is_pointer_type(tr)):
+                        raise TypeCheckError(
+                            f"binary '{op_name}' between pointer and "
+                            f"non-pointer operand: {tl!r} {op_name} {tr!r}"
+                        )
+                    if not _types_equal(tl, tr):
+                        raise TypeCheckError(
+                            f"comparison of distinct pointer types: "
+                            f"{tl!r} {op_name} {tr!r}"
+                        )
                     exp.data_type = Int()
                     return Int()
                 # Multiplicative operators (`*`, `/`, `%`) — C99
@@ -1355,12 +1384,8 @@ class TypeChecker:
                 #                            c6502's stand-in for the
                 #                            standard's ptrdiff_t)
                 # Anything else (ptr + ptr, int - ptr, ptr ± FP,
-                # mismatched ptr - ptr, pointer-to-function arithmetic)
-                # is a constraint violation. Ordering comparisons
-                # (`<`, `>`, `<=`, `>=`) on pointers (§6.5.8) aren't
-                # wired up yet and fall through to the arithmetic path
-                # below, which raises on the `_common_type` Pointer
-                # call.
+                # mismatched ptr - ptr, pointer-to-function
+                # arithmetic) is a constraint violation.
                 if (
                     isinstance(op, (c99_ast.Add, c99_ast.Subtract))
                     and (_is_pointer_type(tl) or _is_pointer_type(tr))

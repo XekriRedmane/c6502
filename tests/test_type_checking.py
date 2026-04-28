@@ -1161,6 +1161,140 @@ class TestPointerArithmetic(unittest.TestCase):
             )
         self.assertIn("floating-point", str(ctx.exception))
 
+    def test_pointer_plus_zero_accepted(self):
+        # `p + 0` is the C identity for the pointer — accepted.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(p + 0); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
+
+    def test_zero_plus_pointer_accepted(self):
+        # `0 + p` is commutatively the same identity.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(0 + p); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
+
+    def test_pointer_minus_zero_accepted(self):
+        # `p - 0` is the C identity for the pointer — accepted.
+        # (Only `0 - p` is rejected, by the existing `int - ptr` rule.)
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int a = 0; int *p = &a; "
+            "return (long)(p - 0); }"
+        )
+        bin_exp = _ret_binary(prog).exp
+        self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
+
+    def test_zero_minus_pointer_rejected(self):
+        # `0 - p` falls under the existing `int - ptr` constraint
+        # violation per C99 §6.5.6.2.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "long main(void) { int a = 0; int *p = &a; "
+                "return (long)(0 - p); }"
+            )
+        self.assertIn("'-'", str(ctx.exception))
+
+
+class TestPointerOrdering(unittest.TestCase):
+    """C99 §6.5.8 relational operators on pointers. Both operands must
+    be pointers to compatible object types; the result is Int. Unlike
+    equality (§6.5.9.2) the relational ops don't accept null pointer
+    constants."""
+
+    def test_pointer_lt_pointer_yields_int(self):
+        prog, _ = _check(
+            "int main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "return p < q; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertIsInstance(bin_exp.op, c99_ast.LessThan)
+        self.assertEqual(bin_exp.data_type, Int())
+
+    def test_pointer_gt_pointer_yields_int(self):
+        prog, _ = _check(
+            "int main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "return p > q; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertIsInstance(bin_exp.op, c99_ast.GreaterThan)
+        self.assertEqual(bin_exp.data_type, Int())
+
+    def test_pointer_le_pointer_yields_int(self):
+        prog, _ = _check(
+            "int main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "return p <= q; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertIsInstance(bin_exp.op, c99_ast.LessOrEqual)
+        self.assertEqual(bin_exp.data_type, Int())
+
+    def test_pointer_ge_pointer_yields_int(self):
+        prog, _ = _check(
+            "int main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "return p >= q; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertIsInstance(bin_exp.op, c99_ast.GreaterOrEqual)
+        self.assertEqual(bin_exp.data_type, Int())
+
+    def test_pointer_to_long_ordering(self):
+        # Same-type pointers to Long are also legal — the type rule
+        # is about the pointer types matching, not the pointee being
+        # int-typed.
+        prog, _ = _check(
+            "int main(void) { long a = (long)0; long *p = &a; "
+            "long *q = &a; return p < q; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertEqual(bin_exp.data_type, Int())
+
+    def test_array_decay_in_ordering(self):
+        # `a < b` where both are arrays: each decays to a pointer of
+        # the same type, and the relational compares those.
+        prog, _ = _check(
+            "int main(void) { int a[10]; int b[10]; return a < b; }"
+        )
+        bin_exp = _ret_binary(prog)
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Int())
+        # Both sides got wrapped in implicit AddressOf via decay.
+        self.assertIsInstance(bin_exp.left, c99_ast.AddressOf)
+        self.assertIsInstance(bin_exp.right, c99_ast.AddressOf)
+
+    def test_distinct_pointer_types_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a = 0; long b = (long)0; "
+                "int *p = &a; long *q = &b; return p < q; }"
+            )
+        self.assertIn("distinct pointer", str(ctx.exception))
+
+    def test_pointer_vs_int_rejected(self):
+        # No null-pointer-constant exception for relational ops.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a = 0; int *p = &a; "
+                "return p < 0; }"
+            )
+        self.assertIn("non-pointer", str(ctx.exception))
+
+    def test_int_vs_pointer_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int a = 0; int *p = &a; "
+                "return 0 < p; }"
+            )
+        self.assertIn("non-pointer", str(ctx.exception))
+
 
 class TestArrays(unittest.TestCase):
     """Block-scope array declarations and the four contexts where

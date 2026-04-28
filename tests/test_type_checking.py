@@ -1520,6 +1520,47 @@ class TestArrays(unittest.TestCase):
         self.assertIsInstance(inner, c99_ast.Subscript)
         self.assertEqual(inner.data_type, Array(Int(), 4))
 
+    def test_address_of_subscript_yields_pointer_to_element(self):
+        # `&a[i]` ≡ `a + i` per C99 §6.5.3.2.3 — the result is a
+        # pointer to the element type. Works for both pointer
+        # operands (`&p[i]`) and array operands (`&arr[i]`, where
+        # arr decays to a pointer first).
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int x = 0; int *p = &x; "
+            "int *q = &p[3]; return (long)q; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        # Third item is `int *q = &p[3];`.
+        q_decl = items[2].declaration.var_decl
+        self.assertEqual(
+            q_decl.data_type, Pointer(referenced_type=Int()),
+        )
+        self.assertIsInstance(q_decl.init, c99_ast.AddressOf)
+        self.assertEqual(
+            q_decl.init.data_type, Pointer(referenced_type=Int()),
+        )
+        # The inner is the Subscript that `&` is taking the address
+        # of; its data_type is the element type (Int).
+        self.assertIsInstance(q_decl.init.exp, c99_ast.Subscript)
+        self.assertEqual(q_decl.init.exp.data_type, Int())
+
+    def test_address_of_array_subscript(self):
+        # `&arr[i]` for `int arr[10]` — arr decays inside the
+        # Subscript, then `&` of the (Int-typed) Subscript yields
+        # `int *`.
+        from c99_ast import Pointer
+        prog, _ = _check(
+            "long main(void) { int arr[10]; int *q = &arr[3]; "
+            "return (long)q; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        q_decl = items[1].declaration.var_decl
+        self.assertEqual(
+            q_decl.data_type, Pointer(referenced_type=Int()),
+        )
+        self.assertIsInstance(q_decl.init, c99_ast.AddressOf)
+
     def test_pointer_subscript_works_too(self):
         # `p[i]` where p is `int *` — same shape as `a[i]` but the
         # array-decay step is a no-op. Result is the pointee type.

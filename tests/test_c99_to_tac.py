@@ -2419,6 +2419,86 @@ class TestArrayInitList(unittest.TestCase):
         self.assertEqual(offsets, [2, 4])
 
 
+class TestAddressOfSubscript(unittest.TestCase):
+    """`&a[i]` ≡ `a + i` per C99 §6.5.3.2.3. Lowers via the same
+    `_translate_subscript_address` helper as the rvalue Subscript
+    path, but skips the trailing Load — so it produces exactly the
+    TAC shape that `a + i` would (scaled Add of the index to the
+    pointer base, no Load)."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_address_of_int_subscript_no_load(self):
+        # `int *p; &p[3]` — sizeof(int)=1, so no Multiply; one Add
+        # for the scaled index; no Load (we want the address, not
+        # the value).
+        tac = self._tac(
+            "long main(void) { int x = 0; int *p = &x; "
+            "int *q = &p[3]; return (long)q; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        # No Load anywhere — `&p[3]` is just an address calculation.
+        self.assertNotIn("Load", kinds)
+
+    def test_address_of_long_subscript_emits_scale(self):
+        # `long *p; &p[3]` — sizeof(long)=2, so a Multiply scales
+        # the index by 2; one Add adds it to the base; no Load.
+        tac = self._tac(
+            "long main(void) { long x = 0L; long *p = &x; "
+            "long *q = &p[3]; return (long)q; }"
+        )
+        muls = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(int=2)),
+        )
+        # No Load.
+        loads = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Load)
+        ]
+        self.assertEqual(len(loads), 0)
+
+    def test_address_of_subscript_matches_pointer_add(self):
+        # `&p[3]` and `p + 3` should produce structurally identical
+        # TAC instruction sequences — both lower to "scale 3 by
+        # sizeof(*p), add to p". Compare the two functions to verify.
+        tac = self._tac(
+            "int main(void) { "
+            "long x = 0L; long *p = &x; "
+            "long *q1 = &p[3]; "
+            "long *q2 = p + 3; "
+            "return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        # Pull the q1 and q2 init segments by tracking Copy
+        # destinations to @0.q1 / @0.q2. Easier: just compare the
+        # set of Binary opcodes used for each — both must have the
+        # same Multiply + Add pair scaling by 2.
+        binaries = [i for i in instrs if isinstance(i, tac_ast.Binary)]
+        muls = [b for b in binaries if isinstance(b.op, tac_ast.Multiply)]
+        adds = [b for b in binaries if isinstance(b.op, tac_ast.Add)]
+        # Two scales (one per init), two adds (one per init).
+        self.assertEqual(len(muls), 2)
+        self.assertEqual(len(adds), 2)
+        # Both Multiply scales are by 2.
+        for m in muls:
+            self.assertEqual(
+                m.src2,
+                tac_ast.Constant(const=tac_ast.ConstLong(int=2)),
+            )
+
+
 class TestMultiDimArrays(unittest.TestCase):
     """Multi-dim subscript chains and nested init lists. Subscript
     on a multi-dim array threads through the type checker's array

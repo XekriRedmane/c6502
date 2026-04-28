@@ -1267,15 +1267,16 @@ Lowered all the way to 6502 asm:
   the AST `Subscript(AddressOf(Subscript(AddressOf(Var(a)), i)), j)`
   — the inner `a[i]` yields `Array(elem_inner, M)` which decays
   to `Pointer(elem_inner)` for the outer subscript's pointer-
-  arithmetic path. `c99_to_tac` handles the synthetic
-  `AddressOf(Subscript)` shape via a dedicated case in
-  `translate_exp`'s AddressOf branch: it dispatches to
-  `_translate_subscript_address` (the rvalue Subscript path
-  without the trailing Load), so the outer subscript's address
-  computation chains naturally through the inner's. User-written
-  `&a[i]` still doesn't reach this case (identifier_resolution
-  only allows AddressOf operands of Var or Dereference) — it's
-  reserved for the synthetic decay path.
+  arithmetic path. `c99_to_tac` handles the `AddressOf(Subscript)`
+  shape via a dedicated case in `translate_exp`'s AddressOf branch:
+  it dispatches to `_translate_subscript_address` (the rvalue
+  Subscript path without the trailing Load), so the outer
+  subscript's address computation chains naturally through the
+  inner's. User-written `&a[i]` lowers through the same case —
+  identifier_resolution accepts Subscript as a third syntactic
+  lvalue (alongside Var and Dereference), and `&a[i]` is byte-
+  identical to `a + i` per C99 §6.5.3.2.3 (no Load, just the
+  scaled Add).
 - Array parameters with the C99 §6.7.5.3.7 adjustment: a parameter
   declared as `T param[N]` (or `T param[]`) is adjusted at parse
   time to `T *param`, via `_adjust_param_type` in

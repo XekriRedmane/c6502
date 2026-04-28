@@ -786,14 +786,18 @@ class Resolver:
                     items=[self.resolve_exp(it, scope) for it in items],
                 )
             case c99_ast.AddressOf(exp=inner):
-                # `&e` — operand must be an lvalue. Today that's a
-                # bare Var (`&x`) or a Dereference (`&*p`, which is
-                # equivalent to `p` itself but legal syntax). The
-                # type checker enforces additional constraints
-                # (operand must denote an object, not a function or
-                # `register` storage); here we just enforce the
-                # syntactic lvalue restriction.
-                if not isinstance(inner, (c99_ast.Var, c99_ast.Dereference)):
+                # `&e` — operand must be an lvalue. The three
+                # syntactic lvalue forms supported today are Var
+                # (`&x`), Dereference (`&*p`, equivalent to `p` per
+                # C99 §6.5.3.2.3), and Subscript (`&a[i]`, equivalent
+                # to `a + i` per the same paragraph). The type
+                # checker enforces additional constraints (operand
+                # must denote an object, not a function or `register`
+                # storage); here we just enforce the syntactic
+                # lvalue restriction.
+                if not isinstance(inner, (
+                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                )):
                     raise IdentifierResolutionError(
                         f"invalid operand of unary '&': {inner!r}"
                     )

@@ -74,7 +74,15 @@ module TAC {
     -- flatten row-major). Missing trailing entries in the source
     -- initializer are filled with a typed-zero of the element
     -- type (per C99 §6.7.8.21).
+    --
+    -- ZeroInit(int bytes) lays down a run of `bytes` zero bytes —
+    -- compresses the typed-zero items that come from missing-
+    -- initializer padding (C99 §6.7.8.21) and from no-init
+    -- statics (§6.7.8.10) into a single instruction. Adjacent
+    -- zero-valued typed inits are also coalesced into a single
+    -- ZeroInit during c99_to_tac flattening.
     static_init = IntInit(int) | LongInit(int) | UIntInit(int) | ULongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)
+                | ZeroInit(int bytes)
 }

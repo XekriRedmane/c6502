@@ -66,6 +66,11 @@ class AddressInit(Type_static_init):
 
 
 @dataclass
+class ZeroInit(Type_static_init):
+    bytes: int
+
+
+@dataclass
 class Type_instruction:
     pass
 

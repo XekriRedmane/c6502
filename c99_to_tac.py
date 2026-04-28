@@ -451,7 +451,18 @@ def _flat_static_init(
     array's `value` tuple is laid out at its position, and the
     flattening is row-major for multi-dim arrays. The list shape
     mirrors the in-memory byte layout: each item describes how
-    many bytes go down at the next slot."""
+    many bytes go down at the next slot. After flattening,
+    consecutive zero-valued typed items are coalesced into a
+    single `ZeroInit(N)` so missing-initializer zero-padding
+    (C99 §6.7.8.21) and no-init statics (§6.7.8.10) lay down as
+    a `DS.B N` directive instead of N separate `DC.B $00`s."""
+    return _coalesce_zero_inits(_flat_static_init_raw(t, value))
+
+
+def _flat_static_init_raw(
+    t: c99_ast.Type_data_type,
+    value,
+) -> list[tac_ast.Type_static_init]:
     if isinstance(t, c99_ast.Array):
         if not isinstance(value, tuple) or len(value) != t.size:
             raise TypeError(
@@ -460,9 +471,56 @@ def _flat_static_init(
             )
         out: list[tac_ast.Type_static_init] = []
         for elem in value:
-            out.extend(_flat_static_init(t.element_type, elem))
+            out.extend(_flat_static_init_raw(t.element_type, elem))
         return out
     return [_tac_static_init_for(t, value)]
+
+
+def _zero_byte_count(item: tac_ast.Type_static_init) -> int | None:
+    """Byte count of `item` if its in-memory bytes are all zero,
+    else None. Integer-zero items (Int / UInt / Long / ULong) and
+    `+0.0` FP items (`-0.0` isn't representable in c6502 statics —
+    the parser routes negation through `Unary`, which the constant-
+    expression check rejects) qualify. AddressInit never qualifies
+    — `&name` is symbolic, resolved by the assembler at link time
+    to an address that may or may not be zero."""
+    if isinstance(item, tac_ast.IntInit) and item.int == 0:
+        return 1
+    if isinstance(item, tac_ast.UIntInit) and item.int == 0:
+        return 1
+    if isinstance(item, tac_ast.LongInit) and item.int == 0:
+        return 2
+    if isinstance(item, tac_ast.ULongInit) and item.int == 0:
+        return 2
+    if isinstance(item, tac_ast.FloatInit) and item.float == 0.0:
+        return 4
+    if isinstance(item, tac_ast.DoubleInit) and item.float == 0.0:
+        return 8
+    if isinstance(item, tac_ast.ZeroInit):
+        return item.bytes
+    return None
+
+
+def _coalesce_zero_inits(
+    items: list[tac_ast.Type_static_init],
+) -> list[tac_ast.Type_static_init]:
+    """Merge runs of zero-valued items into single `ZeroInit(N)`
+    instructions. The merged byte count is the sum of each run's
+    member sizes (1 for IntInit, 2 for LongInit, …)."""
+    out: list[tac_ast.Type_static_init] = []
+    pending = 0
+    for item in items:
+        b = _zero_byte_count(item)
+        if b is not None:
+            pending += b
+            continue
+        if pending > 0:
+            out.append(tac_ast.ZeroInit(bytes=pending))
+            pending = 0
+        out.append(item)
+    if pending > 0:
+        out.append(tac_ast.ZeroInit(bytes=pending))
+    return out
 
 
 def _pointee_size(t: c99_ast.Type_data_type) -> int:

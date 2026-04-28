@@ -154,13 +154,15 @@ class TestCompileDriver(unittest.TestCase):
         # storage duration. Renamed by identifier_resolution to a
         # unique `@N.x`, default-zero-initialized, lowered to a
         # StaticVariable at top level. References inside main use
-        # absolute addressing against that mangled name.
+        # absolute addressing against that mangled name. The zero
+        # init lays down as `DS.B 1` (zero-run) rather than
+        # `DC.B $00`.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="int main(void) { static int x; return x; }",
         )
         self.assertEqual(rc, 0)
-        self.assertIn("DC.B  $00", out)
+        self.assertIn("DS.B  1", out)
         # The mangled label appears (the exact name is brittle to
         # the unique-counter so we just check for the prefix).
         self.assertIn("@0.x:", out)
@@ -168,15 +170,15 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_codegen_file_scope_tentative_definition(self):
         # `int x;` at file scope is a tentative definition; type-
-        # checking resolves it to Initial(0) at end-of-TU and
-        # c99_to_tac emits a StaticVariable with init=0.
+        # checking resolves it to a zeroed StaticVariable, and
+        # c99_to_tac emits the zero as a 1-byte `ZeroInit`.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="int x; int main(void) { return x; }",
         )
         self.assertEqual(rc, 0)
         self.assertIn("x:", out)
-        self.assertIn("DC.B  $00", out)
+        self.assertIn("DS.B  1", out)
         self.assertIn("LDA   x", out)
 
     def test_codegen_extern_no_initializer_emits_nothing(self):
@@ -219,6 +221,7 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_codegen_static_array_partial_init_zero_pads(self):
         # `static int a[5] = {1, 2};` zero-pads the trailing slots.
+        # The 3 trailing IntInit(0)s coalesce into one `DS.B 3`.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin=(
@@ -229,12 +232,35 @@ class TestCompileDriver(unittest.TestCase):
         self.assertEqual(rc, 0)
         idx = out.index("@0.a:")
         section = out[idx:].splitlines()
-        self.assertEqual(section[1:6], [
+        self.assertEqual(section[1:4], [
             "   DC.B  $01",
             "   DC.B  $02",
-            "   DC.B  $00",
-            "   DC.B  $00",
-            "   DC.B  $00",
+            "   DS.B  3",
+        ])
+
+    def test_codegen_static_multi_dim_array_zero_holes(self):
+        # `static long a[3][2] = {{100}, {200, 300}};` — a[0][1]
+        # is missing (one Long zero = 2 bytes), and the entire a[2]
+        # row is missing (two Longs = 4 bytes). The two zero gaps
+        # are independent (they bracket the {200,300} row), so they
+        # emit as two separate `DS.B`s.
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"],
+            stdin=(
+                "int main(void) { "
+                "static long a[3][2] = {{100}, {200, 300}}; "
+                "return 0; }"
+            ),
+        )
+        self.assertEqual(rc, 0)
+        idx = out.index("@0.a:")
+        section = out[idx:].splitlines()
+        self.assertEqual(section[1:6], [
+            "   DC.W  $0064",   # a[0][0] = 100
+            "   DS.B  2",       # a[0][1] = 0  (zero pad)
+            "   DC.W  $00C8",   # a[1][0] = 200
+            "   DC.W  $012C",   # a[1][1] = 300
+            "   DS.B  4",       # a[2][0] / a[2][1] = 0,0  (zero pad)
         ])
 
     def test_codegen_file_scope_long_array_init(self):

@@ -1174,6 +1174,23 @@ class TestStaticVariableTranslation(unittest.TestCase):
             ),
         ])
 
+    def test_zero_init_translates_one_to_one(self):
+        # `ZeroInit(N)` rewraps to its asm counterpart unchanged.
+        prog = tac_ast.Program(top_level=[
+            tac_ast.StaticVariable(
+                name="a", is_global=False,
+                data_type=tac_ast.Long(),
+                init=[tac_ast.ZeroInit(bytes=12)],
+            ),
+        ])
+        out = translate_program(prog)
+        self.assertEqual(out.top_level, [
+            asm_ast.StaticVariable(
+                name="a", is_global=False,
+                init=[asm_ast.ZeroInit(bytes=12)],
+            ),
+        ])
+
     def test_array_init_list_translates_per_element(self):
         # Array statics arrive at tac_to_asm with a flat list of
         # typed inits in source-byte order. The translation is

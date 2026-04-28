@@ -17,9 +17,17 @@ module ASM {
     -- statics have one entry per element (multi-dim arrays
     -- flatten row-major). asm_emit lays them down sequentially
     -- under the variable's label.
+    --
+    -- ZeroInit(int bytes) lays down a run of `bytes` zero bytes,
+    -- rendered as `DS.B <count>`. dasm's `ds.b` reserves storage
+    -- and zeroes it. Used both for missing-initializer zero-pad
+    -- runs and for any consecutive zero-valued typed inits — the
+    -- byte count is the only thing that matters for the resulting
+    -- memory image.
     static_init = IntInit(int) | LongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)
+                | ZeroInit(int bytes)
 
     -- Ret's `save_a` flag controls whether the epilogue brackets the
     -- SSP/FP arithmetic with PHA/PLA to preserve A across the

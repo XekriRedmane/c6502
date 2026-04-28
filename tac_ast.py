@@ -399,3 +399,8 @@ class DoubleInit(Type_static_init):
 class AddressInit(Type_static_init):
     name: str
     offset: int
+
+
+@dataclass
+class ZeroInit(Type_static_init):
+    bytes: int

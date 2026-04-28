@@ -1267,12 +1267,20 @@ Lowered all the way to 6502 asm:
   builds a value tree (a tuple of element values; nested tuples
   for multi-dim) and stashes it on `Initial.value`. `c99_to_tac`
   flattens the tree row-major into a list of typed `static_init`
-  items (`StaticVariable.init` is `static_init*`); `tac_to_asm`
-  rewraps each item; `asm_emit` lays them down as successive
-  `dc.b` / `dc.w` / `dc.l` directives under the variable's label.
-  Missing trailing entries zero-pad with the element type's
-  typed-zero (per C99 §6.7.8.21); a no-init `static int a[N];`
-  zero-fills the same way (§6.7.8.10).
+  items (`StaticVariable.init` is `static_init*`), then coalesces
+  any run of zero-valued items into a single `ZeroInit(bytes)` —
+  so `int a[5] = {1};` lays down as `IntInit(1) + ZeroInit(4)`,
+  and `long a[3][2] = {{100}, {200, 300}};` lays down as
+  `LongInit(100) + ZeroInit(2) + LongInit(200) + LongInit(300) +
+  ZeroInit(4)`. `tac_to_asm` rewraps each item; `asm_emit`
+  renders typed inits as `dc.b` / `dc.w` / `dc.l` and ZeroInits
+  as `ds.b N` (dasm reserves N zero-initialized bytes). The
+  coalescing is value-driven, so an explicit `{1, 0, 0, 0, 0}`
+  folds the same as `{1}`. AddressInit (`&otherstatic`) never
+  folds — its byte pattern is symbolic, resolved at link time.
+  Missing trailing entries zero-pad per C99 §6.7.8.21; a no-init
+  `static int a[N];` zero-fills via the same machinery
+  (§6.7.8.10).
 - Array initializer lists per C99 §6.7.8: `int a[3] = {1, 2, 3};`
   parses as `var_decl` with `init = InitList(items=[...])`. The
   type checker validates the count (≤ array size, with shorter

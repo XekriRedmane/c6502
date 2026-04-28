@@ -794,6 +794,33 @@ class TestEmitProgram(unittest.TestCase):
             "a:\n   DC.B  $01\n   DC.B  $02\n   DC.B  $03\n",
         )
 
+    def test_static_zero_init_renders_ds_b(self):
+        # ZeroInit(N) lays down a run of `N` zero bytes via dasm's
+        # `ds.b` directive — more compact than N separate `dc.b`s.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="a", is_global=False,
+                init=[
+                    asm_ast.IntInit(int=1),
+                    asm_ast.ZeroInit(bytes=4),
+                ],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "a:\n   DC.B  $01\n   DS.B  4\n",
+        )
+
+    def test_static_zero_init_byte_count_must_be_positive(self):
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="a", is_global=False,
+                init=[asm_ast.ZeroInit(bytes=0)],
+            ),
+        ])
+        with self.assertRaises(ValueError):
+            emit_program(prog)
+
     def test_static_long_array_renders_per_element_dc_w(self):
         # `long a[3] = {1, 2, 3};` — each element is a 2-byte LongInit.
         prog = asm_ast.Program(top_level=[

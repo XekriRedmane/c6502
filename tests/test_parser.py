@@ -2110,11 +2110,11 @@ class TestPointerDeclarations(unittest.TestCase):
         # label_resolution → loop_labeling → type_checking →
         # c99_to_tac → tac_to_asm → replace_pseudoregisters →
         # asm_emit) without raising. Pointer is sized as 2 bytes,
-        # so a static `int *p;` lays down as `DC.W $0000`.
+        # so a tentative `int *p;` lays down as `DS.B 2` (zero-run).
         from compile import _run_stage
         text = _run_stage("codegen", "int *p;\n")
         self.assertIn("p:", text)
-        self.assertIn("DC.W  $0000", text)
+        self.assertIn("DS.B  2", text)
 
     def test_pointer_local_gets_two_frame_bytes(self):
         # Pointer locals occupy 2 contiguous frame bytes — same
@@ -2782,24 +2782,24 @@ class TestStaticPointerInit(unittest.TestCase):
 
     def test_static_pointer_zero_init_still_works(self):
         # `static int *p = 0;` — the existing null-pointer-constant
-        # path. Verify it still lays down `DC.W $0000` after the
-        # AddressInit changes.
+        # path. Verify it lays down `DS.B 2` (the typed zero
+        # collapses to a 2-byte ZeroInit) instead of `DC.W $0000`.
         text = self._codegen(
             "static int *p = 0;\n"
             "int main(void) { return 0; }\n"
         )
         self.assertIn("p:", text)
-        self.assertIn("DC.W  $0000", text)
+        self.assertIn("DS.B  2", text)
 
     def test_static_pointer_no_init_is_zero(self):
-        # Tentative definition (no initializer) lays down the
-        # Long-equivalent zero word for the pointer slot.
+        # Tentative definition (no initializer) lays down a 2-byte
+        # zero run for the pointer slot.
         text = self._codegen(
             "int *p;\n"
             "int main(void) { return 0; }\n"
         )
         self.assertIn("p:", text)
-        self.assertIn("DC.W  $0000", text)
+        self.assertIn("DS.B  2", text)
 
     def test_function_pointer_initializer(self):
         # `int (*fp)(void) = &foo;` — function-pointer static

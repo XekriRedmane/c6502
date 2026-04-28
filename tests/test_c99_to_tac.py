@@ -2008,11 +2008,11 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
             statics["g_int"].init, [tac_ast.IntInit(int=3)],
         )
 
-    def test_tentative_long_resolves_to_long_init_zero(self):
+    def test_tentative_long_resolves_to_zero_init(self):
         # `long x;` at file scope is a tentative definition →
-        # zero-initialized at end-of-TU. The zero is wrapped in
-        # LongInit, picking the variant by the variable's declared
-        # type rather than defaulting to IntInit.
+        # zero-initialized at end-of-TU. The zero collapses into a
+        # `ZeroInit(2)` rather than a typed `LongInit(0)` so codegen
+        # can emit `DS.B 2`.
         tac = self._tac("long x; int main(void) { return 0; }")
         statics = {
             tl.name: tl for tl in tac.top_level
@@ -2020,10 +2020,10 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["x"].data_type, tac_ast.Long())
         self.assertEqual(
-            statics["x"].init, [tac_ast.LongInit(int=0)],
+            statics["x"].init, [tac_ast.ZeroInit(bytes=2)],
         )
 
-    def test_tentative_int_resolves_to_int_init_zero(self):
+    def test_tentative_int_resolves_to_zero_init(self):
         tac = self._tac("int x; int main(void) { return 0; }")
         statics = {
             tl.name: tl for tl in tac.top_level
@@ -2031,7 +2031,149 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["x"].data_type, tac_ast.Int())
         self.assertEqual(
-            statics["x"].init, [tac_ast.IntInit(int=0)],
+            statics["x"].init, [tac_ast.ZeroInit(bytes=1)],
+        )
+
+    def test_array_partial_init_coalesces_trailing_zeros(self):
+        # `int a[5] = {1};` → IntInit(1) followed by 4 zero bytes
+        # (one ZeroInit aggregating four IntInit(0) elements).
+        tac = self._tac(
+            "int main(void) { static int a[5] = {1}; return 0; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["@0.a"].init,
+            [tac_ast.IntInit(int=1), tac_ast.ZeroInit(bytes=4)],
+        )
+
+    def test_multi_dim_array_init_with_zero_holes(self):
+        # `long a[3][2] = {{100}, {200, 300}}` — c6502 longs are
+        # 2 bytes, so the holes are 2 bytes (a[0][1]) and 4 bytes
+        # (entire a[2]).
+        tac = self._tac(
+            "int main(void) { "
+            "static long a[3][2] = {{100}, {200, 300}}; "
+            "return 0; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["@0.a"].init,
+            [
+                tac_ast.LongInit(int=100),
+                tac_ast.ZeroInit(bytes=2),    # a[0][1] hole
+                tac_ast.LongInit(int=200),
+                tac_ast.LongInit(int=300),
+                tac_ast.ZeroInit(bytes=4),    # a[2] entirely missing
+            ],
+        )
+
+    def test_user_written_zeros_also_coalesce(self):
+        # The coalescing is value-driven, not source-tagged: an
+        # explicit `{1, 0, 0, 0, 0}` produces the same byte layout
+        # as `{1}`, so it folds the same way.
+        tac = self._tac(
+            "int main(void) { "
+            "static int a[5] = {1, 0, 0, 0, 0}; return 0; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["@0.a"].init,
+            [tac_ast.IntInit(int=1), tac_ast.ZeroInit(bytes=4)],
+        )
+
+    def test_address_init_does_not_merge_with_zeros(self):
+        # AddressInit is symbolic — the assembler resolves it to an
+        # address that's not necessarily zero, so it can't fold
+        # into a ZeroInit run.
+        tac = self._tac(
+            "int x; int *p = &x; int main(void) { return 0; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["p"].init,
+            [tac_ast.AddressInit(name="x", offset=0)],
+        )
+
+    def test_static_float_zero_uses_zero_init(self):
+        # `static float x = 0;` — the int literal converts to a
+        # FloatInit(0.0), which folds to ZeroInit(4). Both
+        # `= 0` and `= 0.0` produce the same shape.
+        for src in (
+            "static float x = 0; int main(void) { return 0; }",
+            "static float x = 0.0; int main(void) { return 0; }",
+        ):
+            with self.subTest(src=src):
+                tac = self._tac(src)
+                statics = {
+                    tl.name: tl for tl in tac.top_level
+                    if isinstance(tl, tac_ast.StaticVariable)
+                }
+                self.assertEqual(
+                    statics["x"].init, [tac_ast.ZeroInit(bytes=4)],
+                )
+
+    def test_static_double_zero_uses_zero_init(self):
+        # Same shape for double — DoubleInit(0.0) folds to
+        # ZeroInit(8).
+        for src in (
+            "static double x = 0; int main(void) { return 0; }",
+            "static double x = 0.0; int main(void) { return 0; }",
+        ):
+            with self.subTest(src=src):
+                tac = self._tac(src)
+                statics = {
+                    tl.name: tl for tl in tac.top_level
+                    if isinstance(tl, tac_ast.StaticVariable)
+                }
+                self.assertEqual(
+                    statics["x"].init, [tac_ast.ZeroInit(bytes=8)],
+                )
+
+    def test_tentative_float_resolves_to_zero_init(self):
+        tac = self._tac("float x; int main(void) { return 0; }")
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["x"].init, [tac_ast.ZeroInit(bytes=4)],
+        )
+
+    def test_tentative_double_resolves_to_zero_init(self):
+        tac = self._tac("double x; int main(void) { return 0; }")
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["x"].init, [tac_ast.ZeroInit(bytes=8)],
+        )
+
+    def test_static_float_array_zero_init(self):
+        # `static float a[3] = {1.5f};` — non-zero leader, then 8
+        # bytes of zero pad (two missing FloatInit(0.0)s = 8 bytes).
+        tac = self._tac(
+            "int main(void) { static float a[3] = {1.5f}; return 0; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["@0.a"].init,
+            [tac_ast.FloatInit(float=1.5), tac_ast.ZeroInit(bytes=8)],
         )
 
     def test_long_returning_function_implicit_zero_uses_const_long(self):

@@ -943,6 +943,15 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
                 # just with a symbolic value instead of a literal.
                 operand = target if off == 0 else f"{target}+{off}"
                 lines.append(_instr_line("dc.w", operand))
+            case asm_ast.ZeroInit(bytes=n):
+                # Run of `n` zero bytes — dasm's `ds.b` reserves
+                # storage initialized to zero, so we don't have to
+                # spell out `n` separate `dc.b $00`s.
+                if n <= 0:
+                    raise ValueError(
+                        f"ZeroInit byte count must be positive, got {n}"
+                    )
+                lines.append(_instr_line("ds.b", str(n)))
             case _:
                 raise TypeError(f"unexpected static_init: {item!r}")
     return lines

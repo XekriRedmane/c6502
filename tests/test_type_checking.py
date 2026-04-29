@@ -424,6 +424,94 @@ class TestStatementsAndExpressions(unittest.TestCase):
             )
 
 
+class TestSwitch(unittest.TestCase):
+    """Switch type-checking. Goes through the full chain (parse +
+    identifier_resolution + label_resolution + loop_labeling +
+    type_checking) because the labeling pass populates SwitchStmt's
+    `cases` list, which the type checker reads."""
+
+    def _check_full(self, src: str):
+        from passes.label_resolution import resolve_program as resolve_labels
+        from passes.loop_labeling import label_program
+        ast = parse(src)
+        ast = resolve_identifiers(ast)
+        ast = resolve_labels(ast)
+        ast = label_program(ast)
+        return check_program(ast)
+
+    def test_basic_switch_passes(self):
+        self._check_full(
+            "int main(void) { switch (3) { case 0: return 0;"
+            " case 1: return 1; default: return 2; } }"
+        )
+
+    def test_long_switch_passes(self):
+        self._check_full(
+            "int main(void) { long x = 5; switch (x) {"
+            " case 0L: return 0; case 5L: return 1; } return 9; }"
+        )
+
+    def test_switch_on_double_rejected(self):
+        with self.assertRaisesRegex(TypeCheckError, "integer type"):
+            self._check_full(
+                "int main(void) { switch (3.0) { case 0: return 0; } }"
+            )
+
+    def test_switch_on_pointer_rejected(self):
+        with self.assertRaisesRegex(TypeCheckError, "integer type"):
+            self._check_full(
+                "int main(void) { int *p = 0; switch (p) {"
+                " case 0: return 0; } return 1; }"
+            )
+
+    def test_non_constant_case_rejected(self):
+        with self.assertRaisesRegex(TypeCheckError, "constant expression"):
+            self._check_full(
+                "int main(void) { int a = 3; switch (a) {"
+                " case 0: return 0; case a: return 1; } return 9; }"
+            )
+
+    def test_double_case_rejected(self):
+        with self.assertRaisesRegex(TypeCheckError, "constant expression"):
+            self._check_full(
+                "int main(void) { int a = 3; switch (a) {"
+                " case 1.0: return 0; } return 9; }"
+            )
+
+    def test_duplicate_case_after_promotion_rejected(self):
+        # 256 wraps to 0 modulo c6502's 1-byte int, so it duplicates
+        # case 0.
+        with self.assertRaisesRegex(TypeCheckError, "duplicate case"):
+            self._check_full(
+                "int main(void) { switch (3) { case 0: return 0;"
+                " case 256: return 1; } return 9; }"
+            )
+
+    def test_case_value_canonicalized_to_promoted_type(self):
+        # `int` switch with `case 5L:` — the type checker converts
+        # the long case constant to int.
+        prog, _syms = self._check_full(
+            "int main(void) { switch (3) { case 5L: return 0; } return 1; }"
+        )
+        sw = prog.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(len(sw.cases), 1)
+        self.assertEqual(
+            sw.cases[0].value,
+            c99_ast.Constant(
+                const=c99_ast.ConstInt(int=5),
+                data_type=Int(),
+            ),
+        )
+
+    def test_promoted_type_stamped(self):
+        prog, _syms = self._check_full(
+            "int main(void) { long x = 5; switch (x) { case 0: return 0; } return 1; }"
+        )
+        # Items: D (long x=5;), S (switch), S (return 1).
+        sw = prog.declaration[0].function_decl.body.block_item[1].statement
+        self.assertEqual(sw.promoted_type, Long())
+
+
 class TestSymbolTableAPI(unittest.TestCase):
     """Direct exercises of `SymbolTable`. The table is now a thin
     `dict[str, Symbol]` wrapper — the merging logic moved to

@@ -112,6 +112,29 @@ class ForStmt(Type_statement):
 
 
 @dataclass
+class SwitchStmt(Type_statement):
+    control: Type_exp
+    body: Type_statement
+    label: str
+    cases: list[Type_switch_case] = field(default_factory=list)
+    default_label: str | None = None
+    promoted_type: Type_data_type | None = None
+
+
+@dataclass
+class CaseStmt(Type_statement):
+    value: Type_exp
+    body: Type_statement
+    label: str
+
+
+@dataclass
+class DefaultStmt(Type_statement):
+    body: Type_statement
+    label: str
+
+
+@dataclass
 class Goto(Type_statement):
     label: str
 
@@ -125,6 +148,12 @@ class LabeledStmt(Type_statement):
 @dataclass
 class Null(Type_statement):
     pass
+
+
+@dataclass
+class Type_switch_case:
+    value: Type_exp
+    label: str
 
 
 @dataclass

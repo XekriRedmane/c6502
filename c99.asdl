@@ -8,16 +8,28 @@ module C99 {
         | Expression(exp)
         | IfStmt(exp condition, statement then_clause, statement? else_clause)
         | Compound(block)
-        -- labels for BreakStmt, ContinueStmt, WhileStmt, DoWhileStmt, ForStmt
-        -- are determined during loop labeling pass
+        -- labels for BreakStmt, ContinueStmt, WhileStmt, DoWhileStmt, ForStmt,
+        -- SwitchStmt, CaseStmt, DefaultStmt are determined during the
+        -- loop labeling pass. SwitchStmt.cases / .default_label collect the
+        -- switch's case / default labels (also filled in by the labeling
+        -- pass), so the TAC translator can emit the dispatch chain
+        -- without re-walking the body.
         | BreakStmt(identifier label)
         | ContinueStmt(identifier label)
         | WhileStmt(exp condition, statement body, identifier label)
         | DoWhileStmt(statement body, exp condition, identifier label)
         | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label)
+        | SwitchStmt(exp control, statement body, identifier label, switch_case* cases, identifier? default_label, data_type? promoted_type)
+        | CaseStmt(exp value, statement body, identifier label)
+        | DefaultStmt(statement body, identifier label)
         | Goto(identifier label)
         | LabeledStmt(identifier label, statement statement)
         | Null
+
+    -- Per-switch case entry (filled in by the labeling pass and updated
+    -- by the type checker once each value is constant-folded and
+    -- converted to the switch's promoted control type).
+    switch_case = (exp value, identifier label)
     declaration = FunctionDecl(function_decl) | VarDecl(var_decl)
     var_decl = (identifier name, exp? init, data_type, storage_class?)
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)

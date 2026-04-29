@@ -877,6 +877,57 @@ class TestLoopResolution(unittest.TestCase):
         resolve_program(prog)
 
 
+class TestSwitchResolution(unittest.TestCase):
+    """C99 §6.8.4.2 switch / case / default. Switch doesn't open a
+    scope of its own (same as while / do-while); a Compound body opens
+    its own scope as usual. Case / default labels are translator-
+    minted, not user-written, so identifier_resolution leaves them
+    alone — but it must descend into the case / default bodies (and
+    the controlling expression) to resolve any user-written
+    identifiers there."""
+
+    def test_switch_control_resolves_outer_var(self):
+        prog = parse(
+            "int main(void) { int a = 1; switch (a) { case 0: return 0; }"
+            " return 9; }"
+        )
+        resolved = resolve_program(prog)
+        sw = resolved.declaration[0].function_decl.body.block_item[1].statement
+        self.assertEqual(sw.control, c99_ast.Var(name="@0.a"))
+
+    def test_undeclared_var_in_switch_control_raises(self):
+        prog = parse(
+            "int main(void) { switch (a) { case 0: return 0; } return 9; }"
+        )
+        with self.assertRaises(IdentifierResolutionError):
+            resolve_program(prog)
+
+    def test_undeclared_var_inside_case_body_raises(self):
+        prog = parse(
+            "int main(void) { switch (1) { case 0: return a; } return 9; }"
+        )
+        with self.assertRaises(IdentifierResolutionError):
+            resolve_program(prog)
+
+    def test_undeclared_var_inside_default_body_raises(self):
+        prog = parse(
+            "int main(void) { switch (1) { default: return a; } }"
+        )
+        with self.assertRaises(IdentifierResolutionError):
+            resolve_program(prog)
+
+    def test_undeclared_var_in_case_value_raises(self):
+        # Identifier resolution doesn't enforce constness — that's
+        # later — but it does descend into the case value, so an
+        # undeclared name there raises here.
+        prog = parse(
+            "int main(void) { int x = 1; switch (x) { case y: return 0; }"
+            " return 9; }"
+        )
+        with self.assertRaises(IdentifierResolutionError):
+            resolve_program(prog)
+
+
 class TestResolveProgram(unittest.TestCase):
     def test_wraps_function_in_program(self):
         # Program.declaration is a list now; the helper builds

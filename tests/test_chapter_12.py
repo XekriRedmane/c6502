@@ -69,12 +69,12 @@ _INCOMPATIBLE_VALID = frozenset([
     "unsigned_expressions/logical.c",
     "unsigned_expressions/simple.c",
     "unsigned_expressions/static_variables.c",
-])
-
-
-_EXPECTED_FAILURES_CODEGEN = frozenset([
+    # Switch test with case constants beyond c6502's 16-bit ULong.
     "extra_credit/switch_uint.c",
 ])
+
+
+_EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

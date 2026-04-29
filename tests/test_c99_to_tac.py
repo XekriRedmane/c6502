@@ -1671,6 +1671,76 @@ class TestEndToEndLoops(unittest.TestCase):
         self.assertIn(".loop@1_continue", targets)
 
 
+class TestEndToEndSwitch(unittest.TestCase):
+    """Pipe through parse + identifier_resolution + label_resolution +
+    loop_labeling + type_checking + c99_to_tac. Switch lowers to a
+    compare-and-jump dispatch chain followed by the body and a
+    trailing break label; case/default labels are inlined where they
+    appear in source."""
+
+    def _translate(self, src):
+        from passes.identifier_resolution import (
+            resolve_program as resolve_identifiers,
+        )
+        from passes.label_resolution import resolve_program as resolve_labels
+        from passes.loop_labeling import label_program as label_loops
+        from passes.type_checking import check_program
+        ast = label_loops(
+            resolve_labels(resolve_identifiers(parse(src)))
+        )
+        ast, syms = check_program(ast)
+        return Translator(syms).translate_program(ast)
+
+    def test_dispatch_chain_then_body_then_break(self):
+        prog = self._translate(
+            "int main(void) { switch (3) {"
+            " case 0: return 0;"
+            " case 5: return 5;"
+            " default: return 99; } }"
+        )
+        instrs = prog.top_level[0].instructions
+        # First: comparisons + JumpIfTrue for each case, then
+        # unconditional Jump to the default.
+        jumps = [i for i in instrs
+                 if isinstance(i, (tac_ast.JumpIfTrue, tac_ast.Jump))]
+        targets = [j.target for j in jumps]
+        self.assertEqual(targets[0], ".case@1")
+        self.assertEqual(targets[1], ".case@2")
+        # Third entry is the unconditional fallthrough Jump.
+        self.assertEqual(targets[2], ".default@3")
+        # The trailing break label is emitted at the end.
+        labels = [i.name for i in instrs if isinstance(i, tac_ast.Label)]
+        self.assertIn(".case@1", labels)
+        self.assertIn(".case@2", labels)
+        self.assertIn(".default@3", labels)
+        self.assertEqual(labels[-1], ".switch@0_break")
+
+    def test_no_default_falls_through_to_break_label(self):
+        prog = self._translate(
+            "int main(void) { switch (3) { case 0: return 0; } return 9; }"
+        )
+        instrs = prog.top_level[0].instructions
+        # The fallthrough Jump (after the dispatch chain) goes to the
+        # switch's break label, not a default.
+        unconditional_jumps = [
+            j.target for j in instrs if isinstance(j, tac_ast.Jump)
+        ]
+        self.assertEqual(unconditional_jumps[0], ".switch@0_break")
+
+    def test_break_in_switch_targets_break_label(self):
+        prog = self._translate(
+            "int main(void) { switch (1) {"
+            " case 1: break; default: return 0; } return 9; }"
+        )
+        targets = [
+            i.target for i in prog.top_level[0].instructions
+            if isinstance(i, tac_ast.Jump)
+        ]
+        # The case body is `break;`, which lowers to Jump to the
+        # switch's break label.
+        self.assertIn(".switch@0_break", targets)
+
+
 class TestTranslateFunctionCall(unittest.TestCase):
     """`f(a, b, ...)` lowers to: evaluate each arg in source order
     (so its temporaries get the lower numbers), collect the resulting

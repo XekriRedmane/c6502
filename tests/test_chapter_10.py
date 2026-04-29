@@ -47,14 +47,7 @@ _SEMANTIC_FAILURES = (
 _ANY_REJECTION = _PARSE_FAILURES + _SEMANTIC_FAILURES
 
 
-# valid/ files that exercise `switch` — keyword lexes but no grammar
-# rule accepts it, so they fail at parse today. Drop entries when
-# switch lands.
-_EXPECTED_FAILURES_CODEGEN = frozenset([
-    "extra_credit/switch_on_extern.c",
-    "extra_credit/switch_skip_extern_decl.c",
-    "extra_credit/switch_skip_static_initializer.c",
-])
+_EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
 _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()

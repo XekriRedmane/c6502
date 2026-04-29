@@ -6,17 +6,9 @@ chapter_8 covers iteration statements (`while`, `do`/`while`, `for`),
   valid/             — must compile through `--codegen`.
   invalid_parse/     — must fail at lex or parse.
   invalid_semantics/ — must be rejected somewhere in the pipeline.
-                       Today, files exercising switch fail at parse
-                       (not in our grammar) instead of at semantic;
-                       once switch lands they'll fail at the intended
-                       semantic stage. The harness accepts either
-                       so it doesn't have to track that boundary.
 
-c6502 doesn't yet support `switch` / `case` / `default` (the keywords
-lex but no grammar production accepts them). All chapter_8/valid files
-that use switch are listed in `_EXPECTED_FAILURES_CODEGEN`. Two
-non-switch files use literals beyond c6502's 16-bit Long range and
-land in `_INCOMPATIBLE`.
+Two non-switch files use literals beyond c6502's 16-bit Long range
+and land in `_INCOMPATIBLE_VALID`.
 """
 
 import shutil
@@ -55,34 +47,7 @@ _INCOMPATIBLE_VALID = frozenset([
 ])
 
 
-# valid/ files that exercise `switch` — the keyword lexes but no
-# grammar rule accepts it, so they fail at parse today. Drop entries
-# as a switch implementation lands.
-_EXPECTED_FAILURES_CODEGEN = frozenset([
-    "extra_credit/case_block.c",
-    "extra_credit/duffs_device.c",
-    "extra_credit/loop_in_switch.c",
-    "extra_credit/switch.c",
-    "extra_credit/switch_assign_in_condition.c",
-    "extra_credit/switch_break.c",
-    "extra_credit/switch_decl.c",
-    "extra_credit/switch_default.c",
-    "extra_credit/switch_default_fallthrough.c",
-    "extra_credit/switch_default_not_last.c",
-    "extra_credit/switch_default_only.c",
-    "extra_credit/switch_empty.c",
-    "extra_credit/switch_fallthrough.c",
-    "extra_credit/switch_goto_mid_case.c",
-    "extra_credit/switch_in_loop.c",
-    "extra_credit/switch_nested_cases.c",
-    "extra_credit/switch_nested_not_taken.c",
-    "extra_credit/switch_nested_switch.c",
-    "extra_credit/switch_no_case.c",
-    "extra_credit/switch_not_taken.c",
-    "extra_credit/switch_single_case.c",
-    "extra_credit/switch_with_continue.c",
-    "extra_credit/switch_with_continue_2.c",
-])
+_EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
@@ -131,9 +96,7 @@ class TestChapter8InvalidParse(unittest.TestCase):
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
 class TestChapter8InvalidSemantics(unittest.TestCase):
     """Each chapter_8/invalid_semantics file must be rejected
-    somewhere in the pipeline. Today some files (those using switch)
-    fail at parse rather than at the intended semantic stage; the
-    harness accepts either."""
+    somewhere in the pipeline (parse or any semantic pass)."""
 
     def test_codegen_rejects(self):
         files = sorted((_C8 / "invalid_semantics").rglob("*.c"))

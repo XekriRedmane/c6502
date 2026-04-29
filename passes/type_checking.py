@@ -106,6 +106,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import c99_ast
+from passes.constant_expression import (
+    ConstantExpressionError,
+    evaluate_integer_constant_expression,
+)
 from passes.identifier_resolution import Linkage
 
 
@@ -545,6 +549,37 @@ def _int_width(t: Type) -> int:
 
 def _is_signed(t: Type) -> bool:
     return isinstance(t, (Int, Long))
+
+
+def _coerce_int_to_type(value: int, t: Type) -> int:
+    """Reduce `value` mod 2**(8*width) and re-interpret with `t`'s
+    signedness. Same byte-level rule as the runtime cast lowering in
+    tac_to_asm — Truncate / SignExtend / ZeroExtend all collapse to
+    width-modular arithmetic for compile-time-known values. Used by
+    the switch type-checker to canonicalize case values to the
+    promoted control type."""
+    width_bits = 8 * _int_width(t)
+    mask = (1 << width_bits) - 1
+    raw = value & mask
+    if _is_signed(t) and raw & (1 << (width_bits - 1)):
+        raw -= 1 << width_bits
+    return raw
+
+
+def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
+    """Build a `Type_const` integer variant matching `t`. Inputs come
+    from `_coerce_int_to_type`; for unsigned types the value is non-
+    negative, for signed types it may be negative. The const variants
+    store non-negative bit patterns for downstream `_byte_at` shift-
+    and-mask consumers, so signed negatives wrap to their two's-
+    complement bit pattern at the matching width."""
+    if isinstance(t, (Int, UInt)):
+        bits = value & 0xFF
+        return c99_ast.ConstInt(int=bits) if isinstance(t, Int) else c99_ast.ConstUInt(int=bits)
+    if isinstance(t, (Long, ULong)):
+        bits = value & 0xFFFF
+        return c99_ast.ConstLong(int=bits) if isinstance(t, Long) else c99_ast.ConstULong(int=bits)
+    raise TypeError(f"_const_for_value: not an integer type: {t!r}")
 
 
 def _common_type(a: Type, b: Type) -> Type:
@@ -1183,6 +1218,17 @@ class TypeChecker:
             case c99_ast.LabeledStmt(statement=inner):
                 self._check_statement(inner)
                 return
+            case c99_ast.SwitchStmt():
+                self._check_switch(stmt)
+                return
+            case c99_ast.CaseStmt(body=inner) | c99_ast.DefaultStmt(body=inner):
+                # The case / default value's typing is handled by the
+                # owning switch's `_check_switch` (which runs through
+                # `evaluate_integer_constant_expression`); here we just
+                # descend into the inner statement so any nested
+                # statements get checked.
+                self._check_statement(inner)
+                return
             case (
                 c99_ast.Goto()
                 | c99_ast.BreakStmt()
@@ -1191,6 +1237,60 @@ class TypeChecker:
             ):
                 return
         raise TypeError(f"unexpected statement: {stmt!r}")
+
+    def _check_switch(self, stmt: c99_ast.SwitchStmt) -> None:
+        # C99 §6.8.4.2.1: "The controlling expression of a switch
+        # statement shall have integer type." For c6502 the four
+        # integer types are Int/UInt/Long/ULong; reject Float,
+        # Double, and Pointer.
+        self._check_exp(stmt.control)
+        ctrl_type = stmt.control.data_type
+        if ctrl_type is None or not _is_integer_type(ctrl_type):
+            raise TypeCheckError(
+                f"switch controlling expression must have integer type "
+                f"(got {ctrl_type!r}); C99 §6.8.4.2.1"
+            )
+        # Integer promotion (§6.3.1.1). For c6502's four integer
+        # types every type is already at promotion rank ≥ Int, so
+        # promotion is a no-op — the promoted type IS the control
+        # type. Stash it on the SwitchStmt so c99_to_tac can match
+        # case-constant variants to the dispatch type without
+        # recomputing.
+        stmt.promoted_type = ctrl_type
+        # Validate every case value: it must be an integer constant
+        # expression (§6.6.6 + §6.8.4.2.3); after conversion to the
+        # promoted control type, no two cases shall have the same
+        # value (§6.8.4.2.3).
+        seen_values: dict[int, str] = {}
+        for case in stmt.cases:
+            try:
+                value, _value_type = (
+                    evaluate_integer_constant_expression(case.value)
+                )
+            except ConstantExpressionError as e:
+                raise TypeCheckError(
+                    f"case label is not an integer constant expression: "
+                    f"{e}"
+                ) from e
+            # Convert to the promoted type via the same width-modular
+            # rule the runtime cast lowering would apply.
+            converted = _coerce_int_to_type(value, ctrl_type)
+            if converted in seen_values:
+                raise TypeCheckError(
+                    f"duplicate case value {converted} in switch "
+                    f"statement (C99 §6.8.4.2.3)"
+                )
+            seen_values[converted] = case.label
+            # Replace the case's value expression with a single
+            # canonicalized integer Constant of the promoted type, so
+            # c99_to_tac can dispatch off a uniform shape.
+            case.value = c99_ast.Constant(
+                const=_const_for_value(converted, ctrl_type),
+                data_type=ctrl_type,
+            )
+        # Now type-check the body — case / default nodes inside it
+        # will descend via the case branch above.
+        self._check_statement(stmt.body)
 
     def _check_for_init(
         self, init: c99_ast.Type_for_init,

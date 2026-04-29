@@ -3,7 +3,7 @@ import unittest
 from lark.exceptions import UnexpectedInput
 
 import c99_ast
-from parser import parse
+from parser import ParserError, parse
 
 
 class TestParser(unittest.TestCase):
@@ -1321,6 +1321,63 @@ class TestIterationStatements(unittest.TestCase):
         self.assertIsInstance(stmt, c99_ast.WhileStmt)
         self.assertIsInstance(stmt.body, c99_ast.ForStmt)
         self.assertEqual(stmt.body.body, c99_ast.BreakStmt(label=""))
+
+
+class TestSwitchStatements(unittest.TestCase):
+    """C99 §6.8.4.2 switch / case / default. Labels and the cases /
+    default_label fields on SwitchStmt are filled in by later passes;
+    the parser leaves them empty/None. Case label expressions go
+    through the `constant_exp` non-terminal (§6.6) — semantics are
+    enforced later but the grammar already excludes assignment /
+    comma since `constant_exp = conditional_exp`."""
+
+    def _stmt_of(self, src):
+        items = parse(f"int main(void) {{ {src} }}").declaration[0].function_decl.body.block_item
+        assert len(items) == 1, items
+        item = items[0]
+        assert isinstance(item, c99_ast.S), item
+        return item.statement
+
+    def test_basic_switch(self):
+        stmt = self._stmt_of(
+            "switch (3) { case 0: return 0; case 1: return 1;"
+            " default: return 2; }"
+        )
+        self.assertIsInstance(stmt, c99_ast.SwitchStmt)
+        self.assertEqual(stmt.label, "")
+        self.assertEqual(stmt.cases, [])
+        self.assertIsNone(stmt.default_label)
+        self.assertIsNone(stmt.promoted_type)
+        items = stmt.body.block.block_item
+        self.assertIsInstance(items[0].statement, c99_ast.CaseStmt)
+        self.assertIsInstance(items[2].statement, c99_ast.DefaultStmt)
+
+    def test_case_value_carries_constant(self):
+        stmt = self._stmt_of("switch (3) { case 5: return 0; }")
+        case0 = stmt.body.block.block_item[0].statement
+        self.assertEqual(
+            case0.value,
+            c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+        )
+
+    def test_assignment_in_case_label_rejected(self):
+        # `case x = 1:` is a syntactic error because `constant_exp`
+        # delegates to `conditional_exp`, which excludes assignment.
+        from lark.exceptions import UnexpectedInput
+        with self.assertRaises((UnexpectedInput, ParserError)):
+            parse("int main(void) { int x; switch (x) { case x = 1: return 0; } }")
+
+    def test_switch_missing_paren_rejected(self):
+        from lark.exceptions import UnexpectedInput
+        with self.assertRaises((UnexpectedInput, ParserError)):
+            parse("int main(void) { switch 1 { case 0: return 0; } }")
+
+    def test_default_with_no_following_statement_rejected(self):
+        # `default:` without a body is a parse error — the rule
+        # requires a statement.
+        from lark.exceptions import UnexpectedInput
+        with self.assertRaises((UnexpectedInput, ParserError)):
+            parse("int main(void) { switch (1) { default: } }")
 
 
 class TestFunctionDeclarationsAndDefinitions(unittest.TestCase):

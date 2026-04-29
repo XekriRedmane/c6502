@@ -1020,6 +1020,79 @@ class Translator:
                 instrs.append(tac_ast.Jump(target=start))
                 instrs.append(tac_ast.Label(name=brk))
                 return
+            case c99_ast.SwitchStmt(
+                control=control, body=body, label=label,
+                cases=cases, default_label=default_label,
+                promoted_type=promoted_type,
+            ):
+                # Switch dispatch: evaluate the control once, then a
+                # compare-and-conditional-jump per case, then an
+                # unconditional jump to the default (or to the break
+                # label if no default), then the body which contains
+                # the case / default labels inline. C99 §6.8.4.2.4 —
+                # cases fall through unless `break` is hit; the body
+                # walk emits a Label for each case/default node it
+                # encounters, exactly where they appear in source.
+                #
+                # Layout:
+                #   <eval control -> t>
+                #   for each (case_value, case_label):
+                #     Binary(Equal, t, case_const, eq_temp)
+                #     JumpIfTrue(eq_temp, case_label)
+                #   Jump(default_label or <break>)
+                #   <lower body>            (emits Label(case/default))
+                #   Label(<break>)
+                #
+                # The break label uses the same `_break` suffix
+                # convention as iteration statements so a `break;`
+                # inside the switch body — already stamped with the
+                # switch's base label by the loop-labeling pass —
+                # lowers to Jump(<base>_break) via the regular
+                # BreakStmt path.
+                brk = _break_label(label)
+                t_val = self.translate_exp(control, instrs)
+                for case in cases:
+                    # The type checker canonicalised every
+                    # case.value to a Constant of the promoted type,
+                    # so a single translate_exp gets a TAC val of
+                    # the matching width.
+                    case_val = self.translate_exp(case.value, instrs)
+                    eq_temp = tac_ast.Var(
+                        name=self.make_temporary_variable_name(
+                            c99_ast.Int(),
+                        ),
+                    )
+                    instrs.append(tac_ast.Binary(
+                        op=tac_ast.Equal(),
+                        src1=t_val,
+                        src2=case_val,
+                        dst=eq_temp,
+                    ))
+                    instrs.append(tac_ast.JumpIfTrue(
+                        condition=eq_temp, target=case.label,
+                    ))
+                # No case matched: fall through to default if there
+                # is one, else jump past the body.
+                instrs.append(tac_ast.Jump(
+                    target=default_label if default_label is not None else brk,
+                ))
+                self.translate_statement(body, instrs)
+                instrs.append(tac_ast.Label(name=brk))
+                return
+            case c99_ast.CaseStmt(body=body, label=label):
+                # The dispatch chain emitted at the SwitchStmt above
+                # already targeted `label`; here we just plant the
+                # label and recurse into the inner statement. The
+                # case's `value` was already canonicalised by the
+                # type checker and consumed by the dispatch chain —
+                # nothing to emit at the case site itself.
+                instrs.append(tac_ast.Label(name=label))
+                self.translate_statement(body, instrs)
+                return
+            case c99_ast.DefaultStmt(body=body, label=label):
+                instrs.append(tac_ast.Label(name=label))
+                self.translate_statement(body, instrs)
+                return
             case c99_ast.Null():
                 # No-op statement. Nothing to emit.
                 return

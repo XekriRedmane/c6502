@@ -652,6 +652,43 @@ class Resolver:
                     condition=self.resolve_exp(cond, scope),
                     label=label,
                 )
+            case c99_ast.SwitchStmt(
+                control=control, body=body, label=label,
+                cases=cases, default_label=default_label,
+                promoted_type=promoted_type,
+            ):
+                # `switch (e) stmt` doesn't open a scope of its own
+                # (same as while / do-while). A Compound body opens
+                # its own scope as usual; control and body resolve
+                # against the surrounding scope. cases / default_label
+                # / promoted_type are filled in by later passes; pass
+                # them through unchanged. The `cases` list is empty
+                # at this point — case bodies are inside `body`.
+                return c99_ast.SwitchStmt(
+                    control=self.resolve_exp(control, scope),
+                    body=self.resolve_statement(body, scope),
+                    label=label,
+                    cases=list(cases),
+                    default_label=default_label,
+                    promoted_type=promoted_type,
+                )
+            case c99_ast.CaseStmt(value=value, body=body, label=label):
+                # The `value` expression is required to be a constant
+                # by the labeling / type-checking passes; resolution
+                # itself is uniform — `case a:` should produce
+                # "undeclared identifier" if `a` isn't declared, rather
+                # than tripping a different error path. So resolve the
+                # value like any other expression.
+                return c99_ast.CaseStmt(
+                    value=self.resolve_exp(value, scope),
+                    body=self.resolve_statement(body, scope),
+                    label=label,
+                )
+            case c99_ast.DefaultStmt(body=body, label=label):
+                return c99_ast.DefaultStmt(
+                    body=self.resolve_statement(body, scope),
+                    label=label,
+                )
             case c99_ast.ForStmt(
                 init=init, condition=cond, post_clause=post,
                 body=body, label=label,

@@ -1100,6 +1100,43 @@ class _ASTBuilder(Transformer):
         # exp + SEMICOLON.
         return c99_ast.InitExp(exp=items[0])
 
+    # `switch (exp) statement` — the controlling expression is a full
+    # `exp` (per C99 §6.8.4.2.1 — wider than the §6.6 constraints
+    # imposed on case labels). The labeling pass mints `.switch@<N>`
+    # and stamps it onto `label`; the same pass walks the body to
+    # collect `cases` / `default_label`. The type checker fills in
+    # `promoted_type` after integer promotion of the control.
+    @v_args(inline=True)
+    def switch_stmt(self, _switch, _lp, control, _rp, body):
+        return c99_ast.SwitchStmt(
+            control=control,
+            body=body,
+            label="",
+            cases=[],
+            default_label=None,
+            promoted_type=None,
+        )
+
+    # `case constant_exp : statement`. The grammar's `constant_exp`
+    # non-terminal is just a one-child wrapper around `conditional_exp`
+    # (C99 §6.6 — same syntax, additional semantic constraints). The
+    # constness check lives in the labeling / type-checking passes,
+    # not here.
+    @v_args(inline=True)
+    def case_stmt(self, _case, value, _colon, body):
+        return c99_ast.CaseStmt(value=value, body=body, label="")
+
+    @v_args(inline=True)
+    def default_stmt(self, _default, _colon, body):
+        return c99_ast.DefaultStmt(body=body, label="")
+
+    @v_args(inline=True)
+    def constant_exp(self, exp):
+        # Pass-through wrapper. The grammar non-terminal exists so call
+        # sites are self-documenting and share a §6.6 validator; the
+        # AST shape is just the inner exp.
+        return exp
+
     # `for (for_init exp? ; exp?) statement` — for_init contributes one
     # child that already swallowed the first SEMICOLON; the middle SEMI
     # between the condition and post_clause is in our items list. Each

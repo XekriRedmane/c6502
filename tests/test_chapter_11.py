@@ -13,9 +13,9 @@ The upstream `valid/libraries/` subdir is multi-TU and isn't applicable.
 
 Most chapter_11 tests use 32+ bit integer literals (the upstream
 target's `long` is 8 bytes; c6502's is 2). Files where the only
-fitting type would be `long long` go into `_INCOMPATIBLE_VALID`. Two
-`switch` tests are listed in `_EXPECTED_FAILURES_CODEGEN` until c6502
-grows a switch implementation.
+fitting type would be `long long` go into `_INCOMPATIBLE_VALID`,
+including two `switch` tests whose case constants don't fit in
+c6502's 16-bit Long.
 """
 
 import shutil
@@ -74,14 +74,13 @@ _INCOMPATIBLE_VALID = frozenset([
     "long_expressions/simple.c",
     "long_expressions/static_long.c",
     "long_expressions/type_specifiers.c",
-])
-
-
-_EXPECTED_FAILURES_CODEGEN = frozenset([
-    # `switch` keyword lexes but no grammar rule accepts it.
+    # Switch tests with case constants beyond c6502's 16-bit Long.
     "extra_credit/switch_int.c",
     "extra_credit/switch_long.c",
 ])
+
+
+_EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

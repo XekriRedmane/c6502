@@ -192,6 +192,15 @@ class LabelResolver:
                 # The for-header (init/condition/post) can't host
                 # labeled statements — only the body can.
                 self._collect_statement(body, fn_name, labels)
+            case c99_ast.SwitchStmt(body=body):
+                # Switch bodies can contain user labels (and gotos to
+                # them) just like any other statement context — descend
+                # so they participate in the per-function namespace.
+                # case / default labels are translator-minted, not user
+                # labels, and are ignored here.
+                self._collect_statement(body, fn_name, labels)
+            case c99_ast.CaseStmt(body=body) | c99_ast.DefaultStmt(body=body):
+                self._collect_statement(body, fn_name, labels)
             case _:
                 # Return / Expression / Goto / Break / Continue / Null
                 # can't contain nested statements that would introduce
@@ -282,6 +291,30 @@ class LabelResolver:
                     init=init,
                     condition=cond,
                     post_clause=post,
+                    body=self._rewrite_statement(body, labels),
+                    label=label,
+                )
+            case c99_ast.SwitchStmt(
+                control=control, body=body, label=label,
+                cases=cases, default_label=default_label,
+                promoted_type=promoted_type,
+            ):
+                return c99_ast.SwitchStmt(
+                    control=control,
+                    body=self._rewrite_statement(body, labels),
+                    label=label,
+                    cases=list(cases),
+                    default_label=default_label,
+                    promoted_type=promoted_type,
+                )
+            case c99_ast.CaseStmt(value=value, body=body, label=label):
+                return c99_ast.CaseStmt(
+                    value=value,
+                    body=self._rewrite_statement(body, labels),
+                    label=label,
+                )
+            case c99_ast.DefaultStmt(body=body, label=label):
+                return c99_ast.DefaultStmt(
                     body=self._rewrite_statement(body, labels),
                     label=label,
                 )

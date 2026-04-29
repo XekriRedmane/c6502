@@ -166,7 +166,19 @@ takes one AST and returns another (or text for emit):
    legal in for-init per C99 §6.8.5). The loop AST nodes (`WhileStmt`, `DoWhileStmt`, `ForStmt`,
    `BreakStmt`, `ContinueStmt`) carry an `identifier label` field that
    the parser leaves as the empty string — the loop_labeling pass
-   fills it in later. The compound-
+   fills it in later. Selection / case statements (`SwitchStmt`,
+   `CaseStmt`, `DefaultStmt`) carry the same kind of `label` field;
+   `SwitchStmt` additionally has `cases` (a list of
+   `(value, label)` pairs collected from its body), an optional
+   `default_label`, and an optional `promoted_type` (filled by the
+   type checker — see pass 5). The case-label expression goes
+   through a `constant_exp` non-terminal that's a one-child
+   wrapper around `conditional_exp`; the wrapper exists so the
+   site is self-documenting and shares a §6.6 validator across
+   future call sites (enums, array sizes, etc. — see
+   `passes.constant_expression`). The case / default rules
+   introduce their own COLON shift-reduce situation analogous to
+   labeled statements; LALR(1) shift resolves it correctly. The compound-
    statement rule reuses the same `block` rule the function body uses
    — the only difference is the transformer wraps the resulting
    `Block` in a `Compound`. The `IDENTIFIER COLON statement` rule
@@ -314,9 +326,14 @@ takes one AST and returns another (or text for emit):
    for-header (`for (<init> ...) body`) opens a fresh scope per
    C99 §6.8.5.3, so `int a; for (int a = 1; a < 10; a++) ...`
    shadows the outer `a` for the duration of the loop and the
-   outer `a` is intact afterward. Labels, gotos, break, and
-   continue pass through unchanged — they live in separate
-   namespaces and are owned by later passes.
+   outer `a` is intact afterward. `switch` doesn't introduce a
+   scope of its own (a Compound body does, as usual); the
+   controlling expression and `case` / `default` bodies all
+   resolve in the surrounding scope. Labels, gotos, break,
+   continue, and `case` / `default` labels themselves all pass
+   through unchanged — they live in separate namespaces and are
+   owned by later passes (label_resolution for user labels;
+   loop_labeling for break / continue / case / default).
 3. `passes.label_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Validates labeled statements (C99 §6.8.1) and `goto` targets
    (§6.8.6). Two walks per function: (a) collect every `LabeledStmt`,
@@ -338,25 +355,42 @@ takes one AST and returns another (or text for emit):
    modified-type identifier; c6502 has no VLAs, so that constraint
    is vacuously satisfied.
 4. `passes.loop_labeling.label_program` — `c99_ast` → `c99_ast`.
-   Mints a unique label `.loop@<N>` per iteration statement and
-   stamps it onto that loop's `label` field. While walking the
-   body, the same label is stamped onto every `BreakStmt` /
-   `ContinueStmt` encountered, with nested loops pushing their own
-   label as the current one for their body. A `break;` / `continue;`
-   outside any iteration statement raises `LoopLabelingError`.
-   (C99 §6.8.6.3 also allows `break` inside a switch; c6502 has no
-   switch yet, so the loop pass is sole owner of break/continue
-   targets right now — when switch lands its lowering will track
-   its own break-target separately.) The pass runs *after*
-   label_resolution: loop labels are translator-minted, not user-
-   written, so they slot in only once user-defined goto / labeled-
-   stmt names have already been resolved. The two namespaces are
-   disjoint by construction — a user label is `.<funcname>@<orig>`
-   where the part after `@` is a C identifier (starts with a letter
-   or underscore), while a loop label is `.loop@<N>` where the part
-   after `@` is digits, so the two forms can't ever match. Codegen
-   derives concrete control-flow targets by appending suffixes
-   (`_start`, `_continue`, `_break`) to the loop's base label.
+   Mints a unique label per iteration statement (`.loop@<N>`) and
+   per `switch` statement (`.switch@<N>`), stamping it onto that
+   statement's `label` field. While walking the body, the pass
+   threads two pieces of state per C99 §6.8.6:
+   - `current_loop` — innermost iteration statement's label, used
+     to resolve `continue` (§6.8.6.2 — only iteration statements).
+   - `current_break_target` — innermost iteration *or* switch
+     label, used to resolve `break` (§6.8.6.3 — both kinds).
+   Iteration statements push to both; switch pushes only to
+   `current_break_target` (so `continue` inside a switch inside a
+   loop still finds the loop). A third bit of state,
+   `current_switch`, holds the innermost enclosing switch's case-
+   collector — `case <e>:` and `default:` nodes encountered during
+   the walk mint their own labels (`.case@<N>` / `.default@<N>`),
+   stamp them onto the AST node, and append to that switch's
+   `cases` / `default_label` fields. Case labels can sit inside
+   if / loop / compound bodies inside a switch (Duff's-device-
+   style), so iteration / if / compound nodes preserve
+   `current_switch`; only a nested SwitchStmt swaps in a fresh
+   collector for its own body. Errors (`LoopLabelingError`):
+   `break;` outside any iteration / switch; `continue;` outside
+   any iteration; `case` / `default` outside any switch; duplicate
+   `default:` within one switch (case-value uniqueness is checked
+   later, in the type-checking pass). The pass runs *after*
+   label_resolution: loop / switch / case / default labels are
+   translator-minted, not user-written, so they slot in only once
+   user-defined goto / labeled-stmt names have already been
+   resolved. The namespaces are disjoint by construction — a user
+   label is `.<funcname>@<orig>` where the part after `@` is a C
+   identifier; a loop / switch / case / default label is
+   `.{loop,switch,case,default}@<N>` where the part after `@` is
+   digits, so the two forms can't ever match. Codegen derives
+   concrete control-flow targets for iteration statements by
+   appending suffixes (`_start`, `_continue`, `_break`) to the
+   loop's base label; switches use only the `_break` suffix (the
+   dispatch chain emits the case / default labels directly).
 5. `passes.type_checking.check_program` — `(c99_ast, SymbolTable)`.
    Walks the AST once and produces a `SymbolTable` (a `dict[str,
    Symbol]` keyed by resolved identifier name). The data-type
@@ -505,6 +539,34 @@ takes one AST and returns another (or text for emit):
    and the implicit-conversion rule wraps a mismatched literal in
    another Cast) to the underlying integer or float value.
 
+   **Switch type-checking** (C99 §6.8.4.2). The control expression
+   must have integer type — Int / Long / UInt / ULong; Float /
+   Double / Pointer rejected per §6.8.4.2.1. After integer
+   promotion (a no-op in c6502 since every integer type is already
+   at promotion rank ≥ Int), the promoted type is stamped on
+   `SwitchStmt.promoted_type` and each case value is funneled
+   through `passes.constant_expression.evaluate_integer_constant_
+   expression` to fold it to a Python `int`, converted to the
+   promoted type modulo width via `_coerce_int_to_type`. Each
+   case's `value` is then replaced by a single canonicalized
+   `Constant` of the promoted type so c99_to_tac sees a uniform
+   shape. Uniqueness is checked on the converted integer values
+   (per §6.8.4.2.3), so e.g. `case 256:` in an Int (1-byte) switch
+   wraps to 0 and conflicts with `case 0:`. The case body and any
+   nested case / default nodes are type-checked normally.
+
+   `passes.constant_expression` provides two entry points sharing
+   the §6.6 vocabulary: `evaluate_integer_constant_expression`
+   (returns `(value, type)` for §6.6.6 sites — case labels today;
+   future enums / array sizes / bitfield widths) and
+   `validate_constant_expression` (the §6.6.3 check without
+   folding, for arbitrary constant-expression contexts — currently
+   no consumers, kept for upcoming features). Today's integer
+   evaluator accepts a `Constant` integer literal optionally
+   wrapped in any number of integer Casts; expanding to Unary /
+   Binary / Conditional folding drops in via additional match
+   arms.
+
    Errors raised (`TypeCheckError`):
    - Function used as a variable / variable called as a function.
    - Wrong call arity.
@@ -518,6 +580,10 @@ takes one AST and returns another (or text for emit):
    - Multiple definitions (function with `defined=True` already, or
      two distinct file-scope `Initial(c)` values for one object).
    - Static-storage initializer isn't a constant expression.
+   - Switch control expression isn't integer-typed.
+   - Case label isn't an integer constant expression.
+   - Two case constants in the same switch share the same value
+     after conversion to the switch's promoted control type.
 
    The function-name table from identifier_resolution and the
    variable-scope table both feed into the symbol table here:
@@ -697,6 +763,23 @@ takes one AST and returns another (or text for emit):
    Jump(_start); Label(_break)`, with the bracketed sections omitted
    when the condition or post-clause slot is empty (a missing
    condition is treated as unconditionally true).
+
+   **Switch lowering.** `SwitchStmt(control, body, label, cases,
+   default_label)` lowers to: evaluate the control once into a
+   typed temp `t`; for each `(case_value, case_label)` in `cases`
+   emit `Binary(Equal, t, case_const, eq_temp)` followed by
+   `JumpIfTrue(eq_temp, case_label)`; emit an unconditional
+   `Jump(default_label or <label>_break)` past the dispatch chain;
+   then translate `body` (which contains `CaseStmt` / `DefaultStmt`
+   nodes that lower to `Label(...)` followed by their inner
+   statement); finally emit `Label(<label>_break)`. Cases fall
+   through unless `break;` (lowered via the regular BreakStmt path
+   to `Jump(<switch>_break)`) is hit. Each case's `case.value` is
+   already a canonicalized integer `Constant` of the switch's
+   promoted control type (see pass 5), so the dispatch comparisons
+   happen at one width. `CaseStmt` / `DefaultStmt` outside the
+   dispatch context just emit their `Label` and recurse — the case-
+   value itself was already consumed at the dispatch chain.
 7. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. The asm
    program shape mirrors TAC: `Program(top_level*)` with
    `Function(name, is_global, params, instructions)` and
@@ -1189,7 +1272,7 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   (`for (i = 0; ...)`, `for (; ...)`). `passes.loop_labeling` mints
   a `.loop@<N>` per iteration statement and stamps it onto the loop
   AST node and onto every `break` / `continue` inside the body; a
-  `break` or `continue` outside any loop raises
+  `break` or `continue` outside any loop / switch raises
   `LoopLabelingError`. `c99_to_tac` derives `_start` / `_continue`
   / `_break` sub-labels from the base by suffix and lays out the
   three loop kinds as documented in pass 6 above. The for-header
@@ -1198,6 +1281,38 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   `a` for the duration of the loop. A missing `for` condition is
   treated as unconditionally true, so the test and its
   `JumpIfFalse` drop out of the lowered TAC entirely
+- `switch (cond) stmt` with `case <const>:` and `default:` labels
+  per C99 §6.8.4.2. The control expression must have integer
+  type (Int / Long / UInt / ULong; Float / Double / Pointer
+  rejected at type-check). Case labels are integer constant
+  expressions per §6.6.6 — `passes.constant_expression`
+  evaluates them and the type checker converts each to the
+  switch's promoted control type modulo width, then validates
+  uniqueness on the converted values (so e.g. `case 256:` in an
+  Int switch wraps to 0 and conflicts with `case 0:`).
+  `passes.loop_labeling` mints `.switch@<N>` per switch and
+  `.case@<N>` / `.default@<N>` per labeled case (collecting
+  them into `SwitchStmt.cases` / `.default_label`), stamps the
+  switch label onto every `break;` inside (preserving any
+  enclosing loop's continue target — a `continue;` inside a
+  switch inside a loop still finds the loop). Rejects: case /
+  default outside any switch, duplicate `default:` within one
+  switch (case-value uniqueness is the type checker's job).
+  `c99_to_tac` lowers the switch to a compare-and-conditional-
+  jump dispatch chain (`Binary(Equal,...)` + `JumpIfTrue` per
+  case), then an unconditional `Jump` to the default label (or
+  to `<switch>_break` if no default), then the body with case /
+  default labels emitted inline at their source positions, and
+  finally `Label(<switch>_break)`. Cases fall through unless a
+  `break;` (lowered to `Jump(<switch>_break)`) is hit. Case
+  bodies can sit inside if / loop / compound bodies (Duff's
+  device) — the labeling pass descends through those preserving
+  the current-switch pointer, only swapping it for nested
+  switches. Today the constant-expression evaluator only
+  accepts `Constant` literals optionally wrapped in integer
+  Casts; a future expansion adds Unary / Binary / Conditional
+  arms (so `case 1+2:` / `case (1<<3):` / `case enum_const:` —
+  once enums land — would work)
 - arbitrary parenthesisation
 
 Lowered all the way to 6502 asm:
@@ -1376,18 +1491,16 @@ d-variants, `f2i` / `f2u` / `f2l` / `f2ul` and their d-variants,
 plus `f2d` / `d2f`) aren't in this repo yet either — `tac_to_asm`
 emits the Calls in advance of the runtime header landing.
 
-Not yet in the pipeline at all: `switch` statements (the loop-
-labeling pass is sole owner of break-targets right now; once
-switch lands its lowering will track its own break-target
-separately), and the runtime header that defines `SSP` / `FP` /
-`HARGS` / `DPTR`, initializes `SSP`, sets the reset vector, and
-provides the runtime helpers `mul8` / `divmod8` / `asl8` / `asr8`
-/ `mul16` / `divmod16` / `asl16` / `asr16` plus the 18
-FP-conversion helpers (`i2f`/`u2f`/`l2f`/`ul2f`, `i2d`/`u2d`/`l2d`/
-`ul2d`, `f2i`/`f2u`/`f2l`/`f2ul`, `d2i`/`d2u`/`d2l`/`d2ul`, `f2d`,
-`d2f`), the FP arithmetic helpers above, and the `icall`
-trampoline (`JMP (DPTR)`) used by `IndirectCall`. `tac_to_asm`
-already emits Calls to all of these, so a program that uses
-`*` / `/` / `%` / `<<` / `>>`, any FP↔int or Float↔Double cast,
-or any indirect call (`fp()` where fp is a function pointer)
-assembles but won't link until those helpers exist.
+Not yet in the pipeline at all: the runtime header that defines
+`SSP` / `FP` / `HARGS` / `DPTR`, initializes `SSP`, sets the
+reset vector, and provides the runtime helpers `mul8` /
+`divmod8` / `asl8` / `asr8` / `mul16` / `divmod16` / `asl16` /
+`asr16` plus the 18 FP-conversion helpers (`i2f`/`u2f`/`l2f`/
+`ul2f`, `i2d`/`u2d`/`l2d`/`ul2d`, `f2i`/`f2u`/`f2l`/`f2ul`, `d2i`/
+`d2u`/`d2l`/`d2ul`, `f2d`, `d2f`), the FP arithmetic helpers
+above, and the `icall` trampoline (`JMP (DPTR)`) used by
+`IndirectCall`. `tac_to_asm` already emits Calls to all of
+these, so a program that uses `*` / `/` / `%` / `<<` / `>>`,
+any FP↔int or Float↔Double cast, or any indirect call (`fp()`
+where fp is a function pointer) assembles but won't link until
+those helpers exist.

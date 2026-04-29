@@ -256,7 +256,21 @@ statement: RETURN exp SEMICOLON                                     -> return_st
          | WHILE LPAREN exp RPAREN statement                        -> while_stmt
          | DO statement WHILE LPAREN exp RPAREN SEMICOLON           -> do_stmt
          | FOR LPAREN for_init exp? SEMICOLON exp? RPAREN statement -> for_stmt
+         | SWITCH LPAREN exp RPAREN statement                       -> switch_stmt
+         | CASE constant_exp COLON statement                        -> case_stmt
+         | DEFAULT COLON statement                                  -> default_stmt
          | SEMICOLON                                                -> null_stmt
+
+// C99 §6.6: a constant-expression is syntactically just a
+// conditional-expression but is constrained semantically per §6.6
+// paragraphs 3–6 (no assignment / inc / dec / function-call / comma
+// operators; integer-constant-expression sites also require integer
+// type and integer operands per §6.6.6). The non-terminal exists so
+// call sites that require a constant expression are self-documenting
+// and share a single validator (see passes/constant_expression.py).
+// The transformer just unwraps the single child — the §6.6 check is
+// purely semantic.
+constant_exp: conditional_exp
 
 // Expression precedence (low to high) via the standard precedence-
 // climbing layout: each level recurses left into itself (for left

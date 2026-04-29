@@ -465,19 +465,141 @@ class TestIntegrationWithParser(unittest.TestCase):
 
 class TestErrors(unittest.TestCase):
     def test_unknown_statement_raises_type_error(self):
+        from passes.loop_labeling import _LabelState
         stub = type("Stub", (c99_ast.Type_statement,), {})
         with self.assertRaises(TypeError):
-            LoopLabeler().label_statement(stub(), current_loop=None)
+            LoopLabeler().label_statement(stub(), _LabelState())
 
     def test_unknown_block_item_raises_type_error(self):
+        from passes.loop_labeling import _LabelState
         stub = type("Stub", (c99_ast.Type_block_item,), {})
         with self.assertRaises(TypeError):
-            LoopLabeler().label_block_item(stub(), current_loop=None)
+            LoopLabeler().label_block_item(stub(), _LabelState())
 
     def test_unknown_block_raises_type_error(self):
+        from passes.loop_labeling import _LabelState
         stub = type("Stub", (c99_ast.Type_block,), {})
         with self.assertRaises(TypeError):
-            LoopLabeler().label_block(stub(), current_loop=None)
+            LoopLabeler().label_block(stub(), _LabelState())
+
+
+class TestSwitchLabeling(unittest.TestCase):
+    """Switch / case / default labeling. End-to-end through the parser
+    so we exercise the actual AST shape, then through label_program
+    so the test pins the labels and case-collection on each
+    SwitchStmt."""
+
+    def _label(self, source: str):
+        prog = parse(source)
+        return label_program(prog).declaration[0].function_decl.body
+
+    def test_switch_break_targets_switch_label(self):
+        body = self._label(
+            "int main(void) { switch (1) { case 0: break; default: ; } }"
+        )
+        sw = body.block_item[0].statement
+        self.assertEqual(sw.label, ".switch@0")
+        case_body = sw.body.block.block_item[0].statement
+        # CaseStmt body is the BreakStmt — switch label is its target.
+        self.assertEqual(
+            case_body.body, c99_ast.BreakStmt(label=".switch@0"),
+        )
+
+    def test_case_and_default_labels_collected(self):
+        body = self._label(
+            "int main(void) { switch (3) { case 0: ; case 5: ; default: ; } }"
+        )
+        sw = body.block_item[0].statement
+        self.assertEqual([c.label for c in sw.cases],
+                         [".case@1", ".case@2"])
+        self.assertEqual(sw.default_label, ".default@3")
+
+    def test_nested_switch_owns_its_own_cases(self):
+        body = self._label(
+            "int main(void) { switch (1) { case 0: switch (2) {"
+            " case 1: ; default: ; } case 9: ; } }"
+        )
+        outer = body.block_item[0].statement
+        # outer case 0 carries the inner switch as its body
+        case0 = outer.body.block.block_item[0].statement
+        inner = case0.body
+        # outer cases shouldn't include any of inner's cases.
+        self.assertEqual(
+            [c.label for c in outer.cases],
+            [".case@1", ".case@5"],
+        )
+        self.assertIsNone(outer.default_label)
+        self.assertEqual(
+            [c.label for c in inner.cases],
+            [".case@3"],
+        )
+        self.assertEqual(inner.default_label, ".default@4")
+
+    def test_continue_in_switch_in_loop_targets_loop(self):
+        body = self._label(
+            "int main(void) { for (;;) switch (1) { case 0: continue; } }"
+        )
+        for_stmt = body.block_item[0].statement
+        sw = for_stmt.body
+        case0 = sw.body.block.block_item[0].statement
+        # continue targets the for-loop, not the switch.
+        self.assertEqual(case0.body,
+                         c99_ast.ContinueStmt(label=".loop@0"))
+
+    def test_break_in_inner_loop_in_switch_targets_loop(self):
+        body = self._label(
+            "int main(void) { switch (1) { case 0:"
+            " for (;;) { break; } } }"
+        )
+        sw = body.block_item[0].statement
+        case0 = sw.body.block.block_item[0].statement
+        for_stmt = case0.body
+        inner = for_stmt.body.block.block_item[0].statement
+        # break targets the inner for, not the switch. Counter is
+        # global so labels are .switch@0 / .case@1 / .loop@2.
+        self.assertEqual(inner, c99_ast.BreakStmt(label=".loop@2"))
+
+    def test_case_outside_switch_raises(self):
+        prog = parse(
+            "int main(void) { for (;;) { case 0: return 0; } return 9; }"
+        )
+        with self.assertRaisesRegex(LoopLabelingError, "case"):
+            label_program(prog)
+
+    def test_default_outside_switch_raises(self):
+        prog = parse("int main(void) { { default: return 0; } }")
+        with self.assertRaisesRegex(LoopLabelingError, "default"):
+            label_program(prog)
+
+    def test_duplicate_default_raises(self):
+        prog = parse(
+            "int main(void) { switch (0) { default: ; default: ; } }"
+        )
+        with self.assertRaisesRegex(LoopLabelingError, "multiple default"):
+            label_program(prog)
+
+    def test_duplicate_default_in_nested_block_raises(self):
+        prog = parse(
+            "int main(void) { switch (0) { case 0: while (1) "
+            "default: ; default: ; } return 0; }"
+        )
+        with self.assertRaisesRegex(LoopLabelingError, "multiple default"):
+            label_program(prog)
+
+    def test_continue_in_switch_no_loop_raises(self):
+        prog = parse(
+            "int main(void) { switch (0) { case 0: continue; } return 0; }"
+        )
+        with self.assertRaisesRegex(LoopLabelingError, "continue"):
+            label_program(prog)
+
+    def test_break_in_switch_no_loop_compiles(self):
+        body = self._label(
+            "int main(void) { switch (0) { case 0: break; } return 0; }"
+        )
+        sw = body.block_item[0].statement
+        case0 = sw.body.block.block_item[0].statement
+        self.assertEqual(case0.body, c99_ast.BreakStmt(label=".switch@0"))
 
 
 if __name__ == "__main__":

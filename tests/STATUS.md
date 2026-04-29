@@ -183,7 +183,6 @@ lands, every entry below flips to passing.
 ### Parser accepts forms it should reject
 
 - **chapter\_9** invalid_parse:
-  - `fun_decl_for_loop.c` — function decl in `for` init slot.
   - `function_returning_function.c` — function returning function type.
 - **chapter\_9** invalid_declarations:
   - `nested_function_definition.c` — function definition inside

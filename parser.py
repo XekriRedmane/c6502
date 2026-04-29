@@ -1001,14 +1001,26 @@ class _ASTBuilder(Transformer):
 
     # `for_init: var_decl | exp? SEMICOLON`. The var_decl alternative
     # already consumes its own SEMICOLON, so it arrives as the only
-    # child (a `Type_var_decl`). The exp-or-empty alternative carries
-    # an explicit SEMICOLON token: zero or one preceding exp child,
-    # then SEMICOLON.
+    # child — a `Type_var_decl` for object decls, or a
+    # `Type_function_decl` if the var_decl rule's declarator composed
+    # to a FunType (forward function declaration, which shares the
+    # `specifier+ declarator ;` prefix with var_decl). Function
+    # declarations aren't legal in for-init per C99 §6.8.5.3 ("only
+    # objects having storage class auto or register"); reject those
+    # explicitly so the function decl doesn't silently get dropped
+    # and the loop parsed with an empty init clause. The exp-or-empty
+    # alternative carries an explicit SEMICOLON token: zero or one
+    # preceding exp child, then SEMICOLON.
     def for_init(self, items):
         if len(items) == 1:
             child = items[0]
             if isinstance(child, c99_ast.Type_var_decl):
                 return c99_ast.InitDecl(var_decl=child)
+            if isinstance(child, c99_ast.Type_function_decl):
+                raise ParserError(
+                    "function declarations aren't permitted in a "
+                    "for-loop initializer (C99 §6.8.5.3)"
+                )
             # Bare SEMICOLON — empty for-init clause.
             return c99_ast.InitExp(exp=None)
         # exp + SEMICOLON.

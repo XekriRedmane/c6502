@@ -57,13 +57,7 @@ _EXPECTED_FAILURES_CODEGEN = frozenset([
 ])
 
 
-# invalid_parse files the parser currently accepts.
-_INVALID_PARSE_NOT_REJECTED_TODAY = frozenset([
-    # Storage class on a function parameter is forbidden by C99
-    # §6.7.5.3.7 / §6.9.1.6.
-    "extern_param.c",
-    "static_param.c",
-])
+_INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()
 
 # invalid_declarations files we currently accept (should reject).
 _INVALID_DECL_NOT_REJECTED_TODAY = frozenset([

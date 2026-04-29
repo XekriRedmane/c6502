@@ -814,7 +814,18 @@ class _ASTBuilder(Transformer):
                 specs.append(it)
             else:
                 rest.append(it)
-        base, _storage = _split_specifiers(specs)
+        base, storage = _split_specifiers(specs)
+        # C99 §6.7.5.3.2: "The only storage-class specifier that shall
+        # occur in a parameter declaration is register." c6502 doesn't
+        # model `register` (the keyword lexes but no parser rule
+        # accepts it), so any storage class reaching here is `static`
+        # or `extern` and is a constraint violation.
+        if storage is not None:
+            raise ParserError(
+                f"storage class "
+                f"{type(storage).__name__.lower()!r} isn't permitted "
+                f"on a function parameter (C99 §6.7.5.3.2)"
+            )
         if not rest:
             return (None, base)
         decl_tree = rest[0]

@@ -61,6 +61,7 @@ module C99 {
         | Binary(binary_operator op, exp left, exp right, data_type?)
         | Assignment(exp lval, exp rval, data_type?)
         | Postfix(incdec_op op, exp operand, data_type?)
+        | Prefix(incdec_op op, exp operand, data_type?)
         | Conditional(exp condition, exp true_clause, exp false_clause, data_type?)
         | FunctionCall(identifier name, exp* args, data_type?)
         | Dereference(exp, data_type?)

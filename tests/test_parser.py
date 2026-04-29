@@ -658,35 +658,30 @@ class TestAssignment(unittest.TestCase):
 
 
 class TestIncrementDecrement(unittest.TestCase):
-    """Prefix `++a` / `--a` desugar at parse time to `a = a ± 1`
-    (same shape as compound assignment). Postfix `a++` / `a--` keep
-    their own AST node because they evaluate to the *old* value of
-    the operand. Postfix binds tighter than prefix and tighter than
-    other unary ops."""
+    """Prefix `++a` / `--a` and postfix `a++` / `a--` each build their
+    own AST node (`Prefix` / `Postfix`). The two are distinct because
+    they have different result semantics — prefix returns the *new*
+    value, postfix returns the *old* value — and because direct nodes
+    let c99_to_tac evaluate the operand's address ONCE for richer
+    lvalues (`Subscript`, `Dereference`), avoiding the side-effect
+    duplication that an `a = a + 1` desugaring would cause for
+    operands like `++arr[--i]`."""
 
-    def test_pre_increment_desugars_to_assignment(self):
+    def test_pre_increment_builds_prefix_node(self):
         self.assertEqual(
             _exp_of("++a"),
-            c99_ast.Assignment(
-                lval=c99_ast.Var(name="a"),
-                rval=c99_ast.Binary(
-                    op=c99_ast.Add(),
-                    left=c99_ast.Var(name="a"),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                ),
+            c99_ast.Prefix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Var(name="a"),
             ),
         )
 
-    def test_pre_decrement_desugars_to_assignment(self):
+    def test_pre_decrement_builds_prefix_node(self):
         self.assertEqual(
             _exp_of("--a"),
-            c99_ast.Assignment(
-                lval=c99_ast.Var(name="a"),
-                rval=c99_ast.Binary(
-                    op=c99_ast.Subtract(),
-                    left=c99_ast.Var(name="a"),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                ),
+            c99_ast.Prefix(
+                op=c99_ast.Decrement(),
+                operand=c99_ast.Var(name="a"),
             ),
         )
 
@@ -723,21 +718,16 @@ class TestIncrementDecrement(unittest.TestCase):
         )
 
     def test_postfix_binds_tighter_than_prefix(self):
-        # `++a++` parses as `++(a++)` — desugared, the prefix becomes
-        # an Assignment whose lval is the Postfix node. (Semantically
-        # invalid C — `a++` isn't an lvalue — but the grammar accepts
-        # it and identifier_resolution will catch it.)
-        post = c99_ast.Postfix(
-            op=c99_ast.Increment(), operand=c99_ast.Var(name="a"),
-        )
+        # `++a++` parses as `++(a++)`. Semantically invalid C
+        # (`a++` isn't an lvalue) but the grammar accepts it and
+        # identifier_resolution catches the bad lvalue.
         self.assertEqual(
             _exp_of("++a++"),
-            c99_ast.Assignment(
-                lval=post,
-                rval=c99_ast.Binary(
-                    op=c99_ast.Add(),
-                    left=post,
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+            c99_ast.Prefix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Postfix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="a"),
                 ),
             ),
         )
@@ -774,22 +764,13 @@ class TestIncrementDecrement(unittest.TestCase):
 
     def test_double_prefix_is_right_associative(self):
         # `++++a` is `++(++a)` — prefix is right-recursive.
-        inner = c99_ast.Assignment(
-            lval=c99_ast.Var(name="a"),
-            rval=c99_ast.Binary(
-                op=c99_ast.Add(),
-                left=c99_ast.Var(name="a"),
-                right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-            ),
-        )
         self.assertEqual(
             _exp_of("++++a"),
-            c99_ast.Assignment(
-                lval=inner,
-                rval=c99_ast.Binary(
-                    op=c99_ast.Add(),
-                    left=inner,
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+            c99_ast.Prefix(
+                op=c99_ast.Increment(),
+                operand=c99_ast.Prefix(
+                    op=c99_ast.Increment(),
+                    operand=c99_ast.Var(name="a"),
                 ),
             ),
         )

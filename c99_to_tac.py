@@ -1450,42 +1450,17 @@ class Translator:
                     ))
                 return dst
             case c99_ast.Postfix(op=op, operand=operand):
-                # `a++` (resp. `a--`) returns the *old* value of `a`
-                # while incrementing (decrementing) it. Capture the
-                # old value into a temp first; only then update `a`.
-                # Returning the temp means later uses of the result
-                # see the old value even after `a` has been mutated.
-                #
-                # Same defense-in-depth lvalue check as Assignment:
-                # identifier_resolution should have already rejected
-                # non-Var operands.
-                if not isinstance(operand, c99_ast.Var):
-                    raise TypeError(
-                        f"postfix operand must be Var (variable_"
-                        f"resolution should have enforced this); "
-                        f"got {operand!r}"
-                    )
-                var = tac_ast.Var(name=operand.name)
-                # Operand's data_type was set by the type checker;
-                # fall back to Int if absent (synthetic test AST).
-                # Both temps (the captured `old` value and the
-                # incremented `new` value) have the operand's type.
-                op_type = operand.data_type or c99_ast.Int()
-                old = tac_ast.Var(
-                    name=self.make_temporary_variable_name(op_type),
+                # `a++` / `a--` returns the *old* value of the operand
+                # while incrementing/decrementing it.
+                return self._translate_incdec(
+                    op, operand, instrs, return_old=True,
                 )
-                instrs.append(tac_ast.Copy(src=var, dst=old))
-                new = tac_ast.Var(
-                    name=self.make_temporary_variable_name(op_type),
+            case c99_ast.Prefix(op=op, operand=operand):
+                # `++a` / `--a` returns the *new* value of the operand
+                # after incrementing/decrementing it.
+                return self._translate_incdec(
+                    op, operand, instrs, return_old=False,
                 )
-                instrs.append(tac_ast.Binary(
-                    op=self.translate_incdec(op),
-                    src1=var,
-                    src2=_tac_const_val(op_type, 1),
-                    dst=new,
-                ))
-                instrs.append(tac_ast.Copy(src=new, dst=var))
-                return old
             case c99_ast.Dereference(exp=inner):
                 # `*p` (read context) — evaluate the pointer
                 # expression, then Load N bytes through the
@@ -1735,6 +1710,91 @@ class Translator:
             result_type=array.data_type,
             instrs=instrs,
         )
+
+    def _translate_incdec(
+        self,
+        op: c99_ast.Type_incdec_op,
+        operand: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+        *,
+        return_old: bool,
+    ) -> tac_ast.Type_val:
+        """Lower `++operand` / `--operand` / `operand++` / `operand--`
+        as a read-modify-write on the operand's storage location.
+
+        Returns the val the surrounding expression evaluates to: the
+        OLD value (Postfix, `return_old=True`) or the NEW value
+        (Prefix, `return_old=False`).
+
+        The operand is one of the three syntactic lvalues
+        identifier_resolution accepts:
+          * `Var(name)` — direct read/write of the named cell.
+          * `Subscript(arr, idx)` — compute the byte address ONCE via
+            `_translate_subscript_address`, Load the old value,
+            Binary the new value, Store back through the same
+            address. Evaluating the address only once is what makes
+            `++arr[--i]` correct: the `--i` side effect fires once.
+          * `Dereference(ptr_exp)` — evaluate the pointer expression
+            ONCE into a val, Load through it, Binary, Store through
+            the same val. Same reasoning.
+
+        For `Var`, no Load/Store is needed — TAC's Binary takes the
+        Var as a val directly, and Copy writes back. The Postfix
+        path additionally captures the pre-mutation value into an
+        `old` temp before updating; the Prefix path skips that.
+
+        The surrounding type-check pass already required the operand
+        to be of an arithmetic / pointer object type (the same as
+        Assignment); the lowering here trusts that and just sizes
+        each temp by the operand's `data_type`."""
+        op_type = operand.data_type or c99_ast.Int()
+        one = _tac_const_val(op_type, 1)
+        binop = self.translate_incdec(op)
+        if isinstance(operand, c99_ast.Var):
+            var = tac_ast.Var(name=operand.name)
+            old: tac_ast.Type_val | None = None
+            if return_old:
+                # Capture the pre-mutation value into `old` BEFORE
+                # minting `new` so the temp numbering matches the
+                # source-order intuition (old gets the lower number).
+                old = tac_ast.Var(
+                    name=self.make_temporary_variable_name(op_type),
+                )
+                instrs.append(tac_ast.Copy(src=var, dst=old))
+            new = tac_ast.Var(
+                name=self.make_temporary_variable_name(op_type),
+            )
+            instrs.append(tac_ast.Binary(
+                op=binop, src1=var, src2=one, dst=new,
+            ))
+            instrs.append(tac_ast.Copy(src=new, dst=var))
+            return old if return_old else new
+        # Subscript / Dereference: compute the lvalue's byte address
+        # exactly once, then Load + Binary + Store through it.
+        if isinstance(operand, c99_ast.Subscript):
+            addr = self._translate_subscript_address(
+                operand.array, operand.index, instrs,
+            )
+        elif isinstance(operand, c99_ast.Dereference):
+            addr = self.translate_exp(operand.exp, instrs)
+        else:
+            raise TypeError(
+                f"increment/decrement operand must be Var, Subscript, "
+                f"or Dereference (identifier_resolution should have "
+                f"enforced this); got {operand!r}"
+            )
+        cur = tac_ast.Var(
+            name=self.make_temporary_variable_name(op_type),
+        )
+        instrs.append(tac_ast.Load(src_ptr=addr, dst=cur))
+        new = tac_ast.Var(
+            name=self.make_temporary_variable_name(op_type),
+        )
+        instrs.append(tac_ast.Binary(
+            op=binop, src1=cur, src2=one, dst=new,
+        ))
+        instrs.append(tac_ast.Store(src=new, dst_ptr=addr))
+        return cur if return_old else new
 
     def translate_short_circuit(
         self,

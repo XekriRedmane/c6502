@@ -324,6 +324,13 @@ class Postfix(Type_exp):
 
 
 @dataclass
+class Prefix(Type_exp):
+    op: Type_incdec_op
+    operand: Type_exp
+    data_type: Type_data_type | None = None
+
+
+@dataclass
 class Conditional(Type_exp):
     condition: Type_exp
     true_clause: Type_exp

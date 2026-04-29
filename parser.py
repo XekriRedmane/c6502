@@ -336,20 +336,6 @@ def _const_for_token(token):
     )
 
 
-def _make_int_const(value):
-    """Factory for synthetic non-negative literals (e.g. the `1`
-    minted by prefix `++a` desugaring). Picks the smallest
-    candidate from the unsuffixed-decimal type list — same rule the
-    parser applies to `1` written in source."""
-    for max_value, cls in _CANDIDATES[("INTEGER_CONSTANT", "decimal")]:
-        if value <= max_value:
-            return cls(int=value)
-    raise ParserError(
-        f"synthetic integer constant {value} out of range "
-        f"(c6502 has no `long long`)"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Declarator walking
 # ---------------------------------------------------------------------------
@@ -1231,28 +1217,21 @@ class _ASTBuilder(Transformer):
     def address_of(self, _amp, inner):
         return c99_ast.AddressOf(exp=inner)
 
-    # Prefix `++a` / `--a` desugar to `a = a ± 1` (same shape as
-    # `a += 1` / `a -= 1`). The lval node is duplicated by reference
-    # — safe today because the only legal lval is a `Var`, which has
-    # no side effect when re-evaluated. Future richer lvalues need a
-    # rewrite that materializes the address into a temp first.
+    # Prefix `++a` / `--a` build their own AST node analogous to
+    # Postfix, instead of desugaring to `a = a ± 1`. A direct node
+    # lets c99_to_tac evaluate the operand's address ONCE before
+    # the read-modify-write — necessary for Subscript / Dereference
+    # operands like `++arr[--i]`, where re-evaluating the operand
+    # would fire `--i`'s side effect twice. The result of a prefix
+    # increment is the *new* value (vs. Postfix which returns the
+    # *old* value), so the two nodes need separate semantics.
     @v_args(inline=True)
     def pre_increment(self, _op, operand):
-        return self._prefix_incdec(c99_ast.Add(), operand)
+        return c99_ast.Prefix(op=c99_ast.Increment(), operand=operand)
 
     @v_args(inline=True)
     def pre_decrement(self, _op, operand):
-        return self._prefix_incdec(c99_ast.Subtract(), operand)
-
-    def _prefix_incdec(self, op, operand):
-        return c99_ast.Assignment(
-            lval=operand,
-            rval=c99_ast.Binary(
-                op=op,
-                left=operand,
-                right=c99_ast.Constant(const=_make_int_const(1)),
-            ),
-        )
+        return c99_ast.Prefix(op=c99_ast.Decrement(), operand=operand)
 
     # Postfix `a++` / `a--` keep their own AST node because they have
     # to return the *old* value of the operand while also mutating

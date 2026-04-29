@@ -224,15 +224,22 @@ takes one AST and returns another (or text for emit):
    desugars `lval OP= rval` to `Assignment(lval, Binary(OP, lval, rval))`
    at parse time. The lval node is duplicated by reference, which is safe
    today because the only legal lval is a `Var` (no side effect when re-
-   evaluated); when richer lvalues land (`*p`, `a[i]`, `s.f`), the rewrite
-   has to materialize the address into a temp so it's evaluated once.
-   Prefix `++a` / `--a` desugar the same way to `a = a ± 1`. Postfix
-   `a++` / `a--` keep their own `Postfix(incdec_op, exp)` AST node
-   because they evaluate to the *old* value of the operand while
-   mutating it — a semantic that can't be expressed by reusing
-   `Assignment` / `Binary` alone. Postfix sits at its own grammar
-   level (`postfix_exp`) one tighter than `unary_exp`, so `-a++`
-   parses as `-(a++)` and `++a++` as `++(a++)`.
+   evaluated); when richer lvalues land in compound assignment (`*p +=
+   1`, `a[i] += 1`, `s.f += 1`), the rewrite has to materialize the
+   address into a temp so it's evaluated once.
+   Prefix `++a` / `--a` and postfix `a++` / `a--` each build their own
+   AST node (`Prefix(incdec_op, exp)` / `Postfix(incdec_op, exp)`)
+   instead of desugaring to assignment. Two reasons: (1) they have
+   different result semantics — prefix returns the *new* value,
+   postfix the *old* value, which can't be expressed by reusing
+   `Assignment` / `Binary` alone; (2) direct nodes let `c99_to_tac`
+   evaluate the operand's address ONCE before the read-modify-write,
+   avoiding the side-effect duplication a desugared
+   `arr[--i] = arr[--i] + 1` would cause for richer lvalues. Postfix
+   sits at its own grammar level (`postfix_exp`) one tighter than
+   `unary_exp`, so `-a++` parses as `-(a++)` and `++a++` as
+   `++(a++)` (the inner `a++` isn't an lvalue, but identifier_
+   resolution rejects that semantically — the grammar accepts it).
    Function calls `f(arg, ...)` sit at the atom level alongside
    constants, parenthesised expressions, and bare identifiers. The
    grammar uses `IDENTIFIER LPAREN arg_list? RPAREN -> function_call`
@@ -286,12 +293,11 @@ takes one AST and returns another (or text for emit):
    `name` is in `_functions` (raises "call to undeclared function"
    if not), recursively resolves the args, and leaves `name` itself
    unchanged. The same lvalue check that gates `Assignment.lval`
-   also gates `Postfix.operand`, so `1++` raises just like
-   `1 = 2`. An `Assignment` additionally checks its lval is a `Var`
-   (not a `Binary`, `Constant`, `Unary`, or nested `Assignment`)
-   and raises "invalid lvalue" otherwise — `1+2=3`, `-a=5`,
-   `(a=b)=c` all fail here. When richer lvalues (`*p`, `a[i]`,
-   `s.f`) land, this check widens to an "is-lvalue" predicate.
+   also gates `Postfix.operand` and `Prefix.operand`, so `1++` and
+   `++1` raise just like `1 = 2`. The accepted lvalue forms are
+   `Var`, `Dereference`, and `Subscript` (the three syntactic
+   lvalues c6502 supports today); anything else raises "invalid
+   lvalue" — `1+2=3`, `-a=5`, `(a=b)=c`, `++1` all fail here.
    **Parameters** are resolved exactly like NONE-linkage local
    variables: `_resolve_params` walks the parameter list, validating
    uniqueness within the list and minting a fresh `@<N>.<orig>` for
@@ -1228,12 +1234,21 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   `<<=`, `>>=` (desugared by the parser to `lval = lval OP rval`, so
   they reuse the same TAC/asm lowerings as their underlying binary op
   followed by a Copy back into the lval)
-- prefix `++a` / `--a` (desugared by the parser to `a = a ± 1`, same
-  shape as a compound assignment — returns the new value)
-- postfix `a++` / `a--` (its own `Postfix(incdec_op, exp)` AST node;
-  `c99_to_tac` lowers it to `Copy(a, %old); Binary(Add/Sub, a, 1, %new);
-  Copy(%new, a)` and returns `%old` so the result is the operand's
-  value *before* the mutation)
+- prefix `++a` / `--a` and postfix `a++` / `a--` — each builds its
+  own AST node (`Prefix` / `Postfix`); `c99_to_tac._translate_incdec`
+  lowers both with a shared read-modify-write path that handles the
+  three syntactic lvalues identifier_resolution accepts (`Var`,
+  `Subscript`, `Dereference`). For `Var` operands the lowering is
+  `Binary(Add/Sub, a, 1, %new); Copy(%new, a)` (postfix additionally
+  prepends `Copy(a, %old)` to capture the pre-mutation value).
+  For `Subscript` / `Dereference` operands the byte address is
+  computed exactly ONCE — via `_translate_subscript_address` for
+  Subscript, `translate_exp` of the pointer expression for
+  Dereference — then `Load + Binary + Store` reuse that single
+  address. Evaluating the address only once is what makes
+  `++arr[--i]` / `(*p++)++` correct: any side effects in the
+  address-computing subexpressions fire once. Postfix returns the
+  old value, prefix the new value
 - `if (cond) stmt` and `if (cond) stmt else stmt` — `c99_to_tac`
   lowers to `JumpIfFalse(cond, end@N)` + body + `Label(end@N)` (no
   else); with else, `JumpIfFalse(cond, else@N)` + then-body +

@@ -1030,15 +1030,15 @@ class TestIntegrationWithParser(unittest.TestCase):
         ))
         self.assertEqual(resolved, expected)
 
-    def test_prefix_rejects_non_var_operand_via_assignment_check(self):
-        # `++1` desugars to `Assignment(Constant(1), Binary(Add,
-        # Constant(1), Constant(1)))`. The Assignment lvalue check
-        # catches it; the error message reflects the assignment
-        # branch, not a separate "prefix" branch.
+    def test_prefix_rejects_non_lvalue_operand(self):
+        # `++1` builds Prefix(Increment, Constant(1)); the Prefix
+        # lvalue check catches the non-lvalue operand directly.
         prog = parse("int main(void) { ++1; return 0; }")
         with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_program(prog)
-        self.assertIn("invalid lvalue in assignment", str(ctx.exception))
+        self.assertIn(
+            "invalid lvalue in prefix", str(ctx.exception),
+        )
 
     def test_compound_assignment_resolves_var_on_both_sides(self):
         # `a += 1` desugars to `a = a + 1` — both occurrences of `a`

@@ -825,6 +825,18 @@ class Resolver:
                 return c99_ast.Postfix(
                     op=op, operand=self.resolve_exp(operand, scope),
                 )
+            case c99_ast.Prefix(op=op, operand=operand):
+                # Same lvalue rule as Postfix / Assignment.
+                if not isinstance(operand, (
+                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                )):
+                    raise IdentifierResolutionError(
+                        f"invalid lvalue in prefix increment/decrement: "
+                        f"{operand!r}"
+                    )
+                return c99_ast.Prefix(
+                    op=op, operand=self.resolve_exp(operand, scope),
+                )
             case c99_ast.Dereference(exp=inner):
                 # `*e` — recurse into the operand. The lvalue check
                 # for `&(*e)` is structural (handled in the AddressOf

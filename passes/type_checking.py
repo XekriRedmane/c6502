@@ -1772,11 +1772,12 @@ class TypeChecker:
                 exp.rval = _convert_to(rv, tl)
                 exp.data_type = tl
                 return tl
-            case c99_ast.Postfix(operand=op):
+            case c99_ast.Postfix(operand=op) | c99_ast.Prefix(operand=op):
                 t = self._check_exp(op)
                 if not _is_object_type(t):
                     raise TypeCheckError(
-                        f"postfix operator on non-object type {t!r}"
+                        f"increment/decrement operator on non-object "
+                        f"type {t!r}"
                     )
                 exp.data_type = t
                 return t

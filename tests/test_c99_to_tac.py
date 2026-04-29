@@ -2554,6 +2554,95 @@ class TestSubscriptLowering(unittest.TestCase):
         self.assertIsInstance(instrs[1], tac_ast.Copy)
 
 
+class TestIncrementDecrementLowering(unittest.TestCase):
+    """Postfix `a++` / `a--` and prefix `++a` / `--a` share a
+    read-modify-write lowering path. For Var operands the operand IS
+    the storage; for Subscript / Dereference operands the address is
+    computed exactly once (via _translate_subscript_address or
+    translate_exp on the pointer expression) and reused for both the
+    Load and the Store, so any side effects in the address
+    computation fire once."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_postfix_on_var_returns_old_value(self):
+        tac = self._tac("int main(void) { int a = 0; a++; return a; }")
+        instrs = tac.top_level[0].instructions
+        # Old value captured into a temp via Copy; new value via
+        # Binary; new written back via Copy.
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertEqual(
+            kinds.count("Copy"), 3,  # init, Copy old, Copy new->var
+        )
+
+    def test_prefix_on_var_returns_new_value(self):
+        # `++a;` — should NOT capture an old value; just Binary +
+        # Copy back. So one fewer Copy than postfix.
+        tac = self._tac("int main(void) { int a = 0; ++a; return a; }")
+        instrs = tac.top_level[0].instructions
+        # init copy + new->var copy = 2 (vs. 3 for postfix).
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertEqual(kinds.count("Copy"), 2)
+
+    def test_postfix_on_subscript_loads_and_stores_through_one_address(self):
+        # `a[3]++;` — compute address once, Load, Binary, Store.
+        # No second address recomputation.
+        tac = self._tac(
+            "int main(void) { int a[10]; a[3]++; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertEqual(kinds.count("Load"), 1)
+        self.assertEqual(kinds.count("Store"), 1)
+        self.assertEqual(kinds.count("GetAddress"), 1)
+
+    def test_prefix_on_subscript_with_side_effecting_index_fires_once(self):
+        # `++a[i++];` — the `i++` postfix on the index must fire
+        # exactly once, even though the subscript is both read and
+        # written. Counting Binary(Add)/Binary(Subtract) involving
+        # `@N.i` is the cleanest assertion: there should be exactly
+        # one (the i++).
+        tac = self._tac(
+            "int main(void) { int a[10]; int i = 0; ++a[i++]; "
+            "return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        # Count Binary ops whose either src references the renamed
+        # `i` (identifier_resolution renames it to `@<N>.i`).
+        i_binaries = [
+            i for i in instrs
+            if isinstance(i, tac_ast.Binary)
+            and any(
+                isinstance(s, tac_ast.Var) and s.name.endswith(".i")
+                for s in (i.src1, i.src2)
+            )
+        ]
+        # Exactly two Binary ops touch `i`: one is the i++ (Add)
+        # that produces the new value of i, and one is the
+        # pointer-arithmetic Add that computes a + i_old. (No
+        # second i++ — the side effect fired only once.) But the
+        # pointer arithmetic uses the captured old value (a temp,
+        # not `i` itself), so we expect exactly ONE Binary that
+        # references `i` directly: the i++ itself.
+        self.assertEqual(len(i_binaries), 1)
+        self.assertIsInstance(i_binaries[0].op, tac_ast.Add)
+
+    def test_postfix_on_dereference(self):
+        # `(*p)++;` — evaluate `p` once, Load, Binary, Store through
+        # the same pointer.
+        tac = self._tac(
+            "int main(void) { int a; int *p = &a; (*p)++; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertGreaterEqual(kinds.count("Load"), 1)
+        self.assertGreaterEqual(kinds.count("Store"), 1)
+
+
 class TestArrayInitList(unittest.TestCase):
     """`int a[N] = {e1, e2, ...}` lowers to GetAddress + a sequence
     of Stores at compile-time offsets into the array's frame slot.

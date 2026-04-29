@@ -71,16 +71,11 @@ _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset([
 # invalid_types files we currently accept (no clean type-check
 # rejection for these specific misuses).
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset([
-    # Assigning one pointer type to another (pointer→pointer with
-    # mismatched referenced types).
-    "assign_wrong_pointer_type.c",
     # Float constant 0.0 assigned to a pointer — only INTEGER null
     # pointer constants are accepted by C99 §6.3.2.3.3.
     "bad_null_pointer_constant.c",
     # Passing a pointer as an int argument (pointer→int direction).
     "pass_pointer_as_int.c",
-    # Returning the wrong pointer type from a function.
-    "return_wrong_pointer_type.c",
 ])
 
 

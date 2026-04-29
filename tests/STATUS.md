@@ -182,21 +182,17 @@ lands, every entry below flips to passing.
 
 ### Type checker accepts some pointer/integer mismatches
 
-Per C99 §6.5.16.1 the only assignable shapes for `T *p = X;` are
+Per C99 §6.5.16.1.1 the only assignable shapes for `T *p = X;` are
 another `T *` of the same type, a void pointer, or a null-pointer
-constant. The integer→pointer case (which requires the integer to
-be a null pointer constant per §6.3.2.3.3) is enforced at every
-implicit-conversion site. The remaining shapes still slip through:
+constant. Integer→pointer (NPC rule, §6.3.2.3.3) and pointer→pointer
+(matching pointee, §6.5.16.1.1) are enforced at every implicit-
+conversion site. These remaining shapes still slip through:
 
 - **chapter\_14** invalid_types:
-  - `assign_wrong_pointer_type.c` — pointer→pointer between
-    incompatible types.
   - `bad_null_pointer_constant.c` — float `0.0` (not an integer
     constant) assigned to a pointer.
   - `pass_pointer_as_int.c` — pointer→int (passing a pointer as
     an `int` argument).
-  - `return_wrong_pointer_type.c` — pointer→pointer mismatch at
-    `return`.
 
 ### Parser accepts forms it should reject
 

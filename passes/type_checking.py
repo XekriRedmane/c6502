@@ -600,25 +600,36 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
     self-describing type and any size-changing conversion is an
     explicit Cast node.
 
-    For implicit integer→pointer conversion C99 §6.5.16.1.1 requires
-    the source to be a null pointer constant — an integer constant
-    expression with value 0 (§6.3.2.3.3). Reject anything else here
-    so a stray `int *p = 1;` (or `int x = 0; int *p = x;`) doesn't
-    silently produce nonsense bytes. Explicit `(int *)x` casts go
-    through the Cast type-check handler and aren't gated by this
-    function."""
+    For implicit conversions to pointer C99 §6.5.16.1.1 only allows:
+      * a compatible pointer type (matching pointee — c6502 has no
+        void-pointer special case);
+      * a null pointer constant — an integer constant expression with
+        value 0 (§6.3.2.3.3).
+    Anything else (non-null integer, mismatched pointer type, FP, ...)
+    is rejected here so it doesn't silently lower to nonsense bytes.
+    Explicit `(int *)x` casts go through the Cast type-check handler
+    and aren't gated by this function."""
     if exp.data_type is not None and _types_equal(exp.data_type, target):
         return exp
-    if (isinstance(target, Pointer)
-            and exp.data_type is not None
-            and _is_integer_type(exp.data_type)
-            and not _is_null_pointer_constant(exp)):
-        raise TypeCheckError(
-            f"cannot implicitly convert non-null integer to pointer "
-            f"type {target!r}; only the null pointer constant (an "
-            f"integer constant expression with value 0) is assignable "
-            f"to a pointer per C99 §6.3.2.3.3"
-        )
+    if isinstance(target, Pointer) and exp.data_type is not None:
+        src = exp.data_type
+        if _is_integer_type(src):
+            if not _is_null_pointer_constant(exp):
+                raise TypeCheckError(
+                    f"cannot implicitly convert non-null integer to "
+                    f"pointer type {target!r}; only the null pointer "
+                    f"constant (an integer constant expression with "
+                    f"value 0) is assignable to a pointer per C99 "
+                    f"§6.3.2.3.3"
+                )
+        elif isinstance(src, Pointer):
+            # Both pointers but the equality short-circuit above
+            # didn't fire, so the pointee types differ.
+            raise TypeCheckError(
+                f"cannot implicitly convert {src!r} to {target!r}; "
+                f"pointer-to-pointer assignment requires matching "
+                f"pointee types per C99 §6.5.16.1.1"
+            )
     cast = c99_ast.Cast(target_type=target, exp=exp, data_type=target)
     return cast
 

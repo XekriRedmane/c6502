@@ -180,19 +180,6 @@ lands, every entry below flips to passing.
 - **chapter\_12:** `valid/extra_credit/switch_uint.c`.
 - **chapter\_14:** `valid/extra_credit/switch_dereferenced_pointer.c`.
 
-### Type checker accepts FP operands of bitwise / mod ops
-
-Per C99 the operands of `&` `|` `^` `<<` `>>` `%` must be integer.
-The type checker doesn't yet reject FP operands for these.
-
-- **chapter\_13** invalid_types/extra_credit:
-  - `bitwise_and.c`, `bitwise_or.c`, `bitwise_shift_double.c`,
-    `bitwise_shift_double_2.c`, `bitwise_xor.c`,
-    `compound_bitwise_and.c`, `compound_bitwise_xor.c`,
-    `compound_left_bitshift.c`, `compound_mod.c`, `compound_mod_2.c`,
-    `compound_right_bitshift.c`
-- **chapter\_13** invalid_types: `mod_double.c`, `mod_double_2.c`.
-
 ### Type checker accepts some pointer/integer mismatches
 
 Per C99 §6.5.16.1 the only assignable shapes for `T *p = X;` are

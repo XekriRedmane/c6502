@@ -17,11 +17,9 @@ so chapter_13 valid tests assemble but won't link. Most failures here
 are still literal-out-of-range (chapter_13 mixes in 8-byte longs),
 not FP gaps.
 
-The type checker doesn't yet reject some bitwise / mod operations on
-FP operands; those invalid_types files are pinned in
-`_NOT_REJECTED_TODAY` so the pin flips when the type check tightens.
 The lexer accepts `1.0e10.0` as two tokens (it has no preprocessing-
-number concept); that file is pinned too.
+number concept); that file is pinned in
+`_INVALID_LEX_NOT_REJECTED_TODAY`.
 """
 
 import shutil
@@ -68,24 +66,7 @@ _INVALID_LEX_NOT_REJECTED_TODAY = frozenset([
     "malformed_exponent.c",
 ])
 
-# Type checker doesn't yet reject `&` / `|` / `^` / `<<` / `>>` / `%`
-# on FP operands. These compile through codegen today; the pin flips
-# when the type check tightens.
-_INVALID_TYPES_NOT_REJECTED_TODAY = frozenset([
-    "extra_credit/bitwise_and.c",
-    "extra_credit/bitwise_or.c",
-    "extra_credit/bitwise_shift_double.c",
-    "extra_credit/bitwise_shift_double_2.c",
-    "extra_credit/bitwise_xor.c",
-    "extra_credit/compound_bitwise_and.c",
-    "extra_credit/compound_bitwise_xor.c",
-    "extra_credit/compound_left_bitshift.c",
-    "extra_credit/compound_mod.c",
-    "extra_credit/compound_mod_2.c",
-    "extra_credit/compound_right_bitshift.c",
-    "mod_double.c",
-    "mod_double_2.c",
-])
+_INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

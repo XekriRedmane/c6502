@@ -1556,6 +1556,39 @@ class TypeChecker:
                         referenced_type=ptr_type.referenced_type,
                     )
                     return exp.data_type
+                # Bitwise / shift / modulo (C99 §6.5.5.2 / §6.5.7.2 /
+                # §6.5.10.2 / §6.5.11.2 / §6.5.12.2): operands must
+                # have integer type. None of the four c6502 integer
+                # types are FP, so rejecting Float / Double on either
+                # side covers the constraint cleanly. Pointer
+                # operands fall through to `_common_type` which is
+                # its own crash today; the chapter_14 pointer-bitwise
+                # tests rely on that path's crash for rejection.
+                if (
+                    isinstance(op, (
+                        c99_ast.Modulo,
+                        c99_ast.BitwiseAnd,
+                        c99_ast.BitwiseOr,
+                        c99_ast.BitwiseXor,
+                        c99_ast.LeftShift,
+                        c99_ast.RightShift,
+                    ))
+                    and (
+                        _is_floating_type(tl) or _is_floating_type(tr)
+                    )
+                ):
+                    op_name = {
+                        c99_ast.Modulo: "%",
+                        c99_ast.BitwiseAnd: "&",
+                        c99_ast.BitwiseOr: "|",
+                        c99_ast.BitwiseXor: "^",
+                        c99_ast.LeftShift: "<<",
+                        c99_ast.RightShift: ">>",
+                    }[type(op)]
+                    raise TypeCheckError(
+                        f"binary '{op_name}' requires integer operands "
+                        f"({tl!r} {op_name} {tr!r})"
+                    )
                 # Usual arithmetic conversions (C99 §6.3.1.8): if
                 # operand types differ, promote the narrower one to
                 # the common type by wrapping it in an implicit

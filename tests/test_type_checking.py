@@ -1506,15 +1506,58 @@ class TestArrays(unittest.TestCase):
             )
         self.assertIn("brace-enclosed initializer", str(ctx.exception))
 
-    def test_extern_array_rejected(self):
-        # `extern T a[N];` would need to defer the static-init to
-        # whichever TU defines the array — c6502's symbol model
-        # doesn't support that yet.
+    def test_extern_array_with_initializer_rejected(self):
+        # Block-scope `extern T a[N] = ...;` is rejected for the same
+        # reason as `extern int x = 5;` at block scope — C99 §6.7.8.5
+        # says block-scope `extern` declarations cannot have an
+        # initializer.
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
-                "int main(void) { extern int a[10]; return 0; }"
+                "int main(void) { extern int a[3] = {1,2,3}; return 0; }"
             )
-        self.assertIn("extern arrays", str(ctx.exception))
+        self.assertIn("initializer", str(ctx.exception))
+
+    def test_extern_array_with_no_prior_creates_external_symbol(self):
+        # Block-scope `extern T a[N];` with no prior file-scope
+        # declaration produces a StaticAttr(NoInitializer, is_global=
+        # True) — the linker resolves the address later.
+        _, symbols = _check(
+            "int main(void) { extern int a[10]; return 0; }"
+        )
+        sym = symbols["a"]
+        self.assertIsInstance(sym.attrs, StaticAttr)
+        self.assertEqual(sym.attrs.initial_value, NoInitializer())
+        self.assertTrue(sym.attrs.is_global)
+        self.assertEqual(
+            sym.type, c99_ast.Array(element_type=Int(), size=10),
+        )
+
+    def test_extern_array_redeclares_file_scope_array(self):
+        # File-scope `int a[3] = {...};` followed by a block-scope
+        # `extern int a[3];` redeclaration — the block-scope decl
+        # merges with the file-scope entry, preserving its initial
+        # value and linkage. The chapter-15 declarators/
+        # equivalent_declarators.c test exercises this exact shape.
+        _, symbols = _check(
+            "int a[3] = {1, 2, 3}; "
+            "int main(void) { extern int a[3]; return a[0]; }"
+        )
+        sym = symbols["a"]
+        self.assertIsInstance(sym.attrs, StaticAttr)
+        self.assertIsInstance(sym.attrs.initial_value, Initial)
+        self.assertEqual(sym.attrs.initial_value.value, (1, 2, 3))
+        self.assertTrue(sym.attrs.is_global)
+
+    def test_extern_array_size_mismatch_rejected(self):
+        # File-scope `int a[3];` then block-scope `extern int a[5];`
+        # — _add_or_merge_static_object's structural type comparison
+        # catches the size mismatch.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int a[3]; "
+                "int main(void) { extern int a[5]; return 0; }"
+            )
+        self.assertIn("incompatible", str(ctx.exception))
 
     def test_static_array_with_init_list(self):
         # Block-scope `static int a[3] = {1, 2, 3};` produces a

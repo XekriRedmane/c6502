@@ -988,18 +988,6 @@ class TypeChecker:
                 f"object {vd.name!r} declared with non-object type "
                 f"{vd.data_type!r}"
             )
-        if (
-            isinstance(vd.data_type, Array)
-            and isinstance(vd.storage_class, c99_ast.Extern)
-        ):
-            # `extern T a[N];` would need to defer the static-init
-            # to whichever TU defines the array — c6502's symbol
-            # model doesn't support that yet. Block-scope `static`
-            # arrays are handled below.
-            raise TypeCheckError(
-                f"extern arrays are not supported yet "
-                f"(declaration of {vd.name!r})"
-            )
         if isinstance(vd.storage_class, c99_ast.Extern):
             if vd.init is not None:
                 raise TypeCheckError(

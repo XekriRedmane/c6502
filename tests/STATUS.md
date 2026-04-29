@@ -177,8 +177,6 @@ preprocessing-number concept and tokenises it as two CONSTANTs
 
 ### chapter\_15 feature gaps the harness pins
 
-- `declarators/equivalent_declarators.c` — `extern` arrays aren't
-  lowered yet.
 - `extra_credit/incr_decr_subscripted_vals.c` — postfix `++`/`--`
   on a `Subscript` lvalue not wired through.
 - `subscripting/simple_subscripts.c` — reverse subscript `i[arr]`

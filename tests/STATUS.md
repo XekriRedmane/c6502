@@ -182,8 +182,6 @@ lands, every entry below flips to passing.
 
 ### Parser accepts forms it should reject
 
-- **chapter\_14** invalid_parse:
-  - `abstract_function_declarator.c`.
 
 ### Type checker accepts out-of-scope extern
 

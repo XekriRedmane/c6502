@@ -781,10 +781,13 @@ class _ASTBuilder(Transformer):
         # through). If an abstract_declarator subtree is present,
         # it's the last item — `_apply_abstract_declarator` composes
         # it into the full type (pointers, arrays, function suffixes).
-        # We then reject the cast if the OUTERMOST composed type is
-        # `Array(...)`: array types aren't lvalues and have no rvalue
-        # conversion, so casting to a bare array is meaningless.
-        # Pointer-to-array (`int (*)[3]`) is allowed.
+        # We then reject any cast target whose composed type isn't
+        # a scalar: per C99 §6.5.4.2 a cast target must be qualified
+        # or unqualified scalar type (or void). Array and function
+        # types are aggregates / function types respectively, neither
+        # scalar. Pointer-to-array and pointer-to-function are fine
+        # (`int (*)[3]` / `int (*)(void)`) — the outer wrapper is a
+        # Pointer, which IS scalar.
         type_specs = [it for it in items if isinstance(it, Token)]
         base = _resolve_data_type(type_specs)
         if len(type_specs) == len(items):
@@ -795,6 +798,8 @@ class _ASTBuilder(Transformer):
         composed = _apply_abstract_declarator(adecl_tree, base)
         if isinstance(composed, c99_ast.Array):
             raise ParserError("cannot cast to an array type")
+        if isinstance(composed, c99_ast.FunType):
+            raise ParserError("cannot cast to a function type")
         return composed
 
     def parameter_declaration(self, items):

@@ -598,9 +598,27 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
     Cast with `target` as its data_type. The wrapper is what TAC /
     codegen will see, so every operand reaching the back end has a
     self-describing type and any size-changing conversion is an
-    explicit Cast node."""
+    explicit Cast node.
+
+    For implicit integer→pointer conversion C99 §6.5.16.1.1 requires
+    the source to be a null pointer constant — an integer constant
+    expression with value 0 (§6.3.2.3.3). Reject anything else here
+    so a stray `int *p = 1;` (or `int x = 0; int *p = x;`) doesn't
+    silently produce nonsense bytes. Explicit `(int *)x` casts go
+    through the Cast type-check handler and aren't gated by this
+    function."""
     if exp.data_type is not None and _types_equal(exp.data_type, target):
         return exp
+    if (isinstance(target, Pointer)
+            and exp.data_type is not None
+            and _is_integer_type(exp.data_type)
+            and not _is_null_pointer_constant(exp)):
+        raise TypeCheckError(
+            f"cannot implicitly convert non-null integer to pointer "
+            f"type {target!r}; only the null pointer constant (an "
+            f"integer constant expression with value 0) is assignable "
+            f"to a pointer per C99 §6.3.2.3.3"
+        )
     cast = c99_ast.Cast(target_type=target, exp=exp, data_type=target)
     return cast
 
@@ -1628,9 +1646,35 @@ class TypeChecker:
                         f"conditional branches must be object types, "
                         f"got {tt!r}, {tf!r}"
                     )
-                # C99 §6.5.15.5: usual arithmetic conversions on the
-                # two branches; result has the common type.
-                common = _common_type(tt, tf)
+                # C99 §6.5.15.6: pointer cases first (since
+                # `_common_type` only knows about arithmetic types).
+                # Both pointers — must be the same type. One pointer
+                # plus a null pointer constant — the pointer wins.
+                # Anything else falls through to the usual arithmetic
+                # conversions.
+                tt_ptr = isinstance(tt, Pointer)
+                tf_ptr = isinstance(tf, Pointer)
+                if tt_ptr or tf_ptr:
+                    if tt_ptr and tf_ptr:
+                        if not _types_equal(tt, tf):
+                            raise TypeCheckError(
+                                f"conditional branches have distinct "
+                                f"pointer types: {tt!r} vs {tf!r}"
+                            )
+                        common = Pointer(referenced_type=tt.referenced_type)
+                    elif tt_ptr and _is_null_pointer_constant(f_clause):
+                        common = Pointer(referenced_type=tt.referenced_type)
+                    elif tf_ptr and _is_null_pointer_constant(t_clause):
+                        common = Pointer(referenced_type=tf.referenced_type)
+                    else:
+                        raise TypeCheckError(
+                            f"conditional branches must both be "
+                            f"arithmetic or both pointer (or pointer "
+                            f"+ null pointer constant); got {tt!r} "
+                            f"vs {tf!r}"
+                        )
+                else:
+                    common = _common_type(tt, tf)
                 exp.true_clause = _convert_to(t_clause, common)
                 exp.false_clause = _convert_to(f_clause, common)
                 exp.data_type = common

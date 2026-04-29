@@ -193,17 +193,23 @@ The type checker doesn't yet reject FP operands for these.
     `compound_right_bitshift.c`
 - **chapter\_13** invalid_types: `mod_double.c`, `mod_double_2.c`.
 
-### Type checker accepts pointer/integer mismatches and bad null-pointer constants
+### Type checker accepts some pointer/integer mismatches
 
 Per C99 §6.5.16.1 the only assignable shapes for `T *p = X;` are
 another `T *` of the same type, a void pointer, or a null-pointer
-constant. The type checker doesn't yet reject the wrong shapes.
+constant. The integer→pointer case (which requires the integer to
+be a null pointer constant per §6.3.2.3.3) is enforced at every
+implicit-conversion site. The remaining shapes still slip through:
 
 - **chapter\_14** invalid_types:
-  - `assign_int_to_pointer.c`, `assign_int_var_to_pointer.c`,
-    `assign_wrong_pointer_type.c`, `bad_null_pointer_constant.c`,
-    `invalid_static_initializer.c`, `pass_pointer_as_int.c`,
-    `return_wrong_pointer_type.c`
+  - `assign_wrong_pointer_type.c` — pointer→pointer between
+    incompatible types.
+  - `bad_null_pointer_constant.c` — float `0.0` (not an integer
+    constant) assigned to a pointer.
+  - `pass_pointer_as_int.c` — pointer→int (passing a pointer as
+    an `int` argument).
+  - `return_wrong_pointer_type.c` — pointer→pointer mismatch at
+    `return`.
 
 ### Parser accepts forms it should reject
 
@@ -239,33 +245,12 @@ preprocessing-number concept and tokenises it as two CONSTANTs
 
 ## Pinned: real bugs
 
-### `_int_width` crash on Pointer
-
-The type checker calls `_int_width` while widening a null pointer
-constant assigned to a pointer; `_int_width` raises `TypeError` for
-non-integer types.
-
-- **chapter\_14:**
-  - `valid/casts/null_pointer_conversion.c`
-
-### `_common_type(Pointer, Pointer)` crash
-
-`_common_type` instantiates `type(a)()` for matching types, but
-`Pointer` requires a `referenced_type` argument. Affects any
-construct (today, a ternary) that asks for the common type of two
-pointers.
-
-- **chapter\_14:**
-  - `valid/dereference/dereference_expression_result.c`
-
 ### chapter\_15 feature gaps the harness pins
 
 - `declarators/equivalent_declarators.c` — `extern` arrays aren't
   lowered yet.
 - `extra_credit/incr_decr_subscripted_vals.c` — postfix `++`/`--`
   on a `Subscript` lvalue not wired through.
-- `pointer_arithmetic/pointer_add.c` — same `_common_type(Pointer,
-  Pointer)` crash as chapter\_14.
 - `subscripting/simple_subscripts.c` — reverse subscript `i[arr]`
   (Int as the array side of `Subscript`) isn't accepted; also
   exercises FP comparisons that aren't lowered yet.

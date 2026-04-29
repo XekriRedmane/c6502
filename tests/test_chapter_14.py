@@ -11,17 +11,15 @@ chapter_14 covers pointer types, the address-of `&` and dereference
 The upstream `valid/libraries/` subdir is multi-TU and isn't applicable.
 
 A handful of valid files use 32+ bit literals (chapter_14 mixes in
-8-byte longs); they're listed in `_INCOMPATIBLE_VALID`. Two real bugs
-are pinned in `_EXPECTED_FAILURES_CODEGEN`:
-  - null_pointer_conversion.c — `_int_width` crashes on Pointer when
-    the type checker tries to widen a null pointer constant.
-  - dereference_expression_result.c — `_common_type(Pointer, Pointer)`
-    crashes on a pointer-typed ternary.
-A `switch` test rounds out the expected-failures.
+8-byte longs); they're listed in `_INCOMPATIBLE_VALID`. One `switch`
+test is pinned in `_EXPECTED_FAILURES_CODEGEN`.
 
 Several invalid_parse and invalid_types files exercise behavior we
-don't yet reject (mostly null-pointer / pointer-type mismatch
-checks); they're pinned in `_NOT_REJECTED_TODAY` per bucket.
+don't yet reject (pointer→pointer type-mismatch, pointer→int passing,
+float-as-null-pointer-constant); they're pinned in
+`_NOT_REJECTED_TODAY` per bucket. The integer→pointer cases were
+fixed by the null-pointer-constant rule (§6.3.2.3.3) and aren't
+listed.
 """
 
 import shutil
@@ -59,12 +57,6 @@ _INCOMPATIBLE_VALID = frozenset([
 
 
 _EXPECTED_FAILURES_CODEGEN = frozenset([
-    # `_int_width` crashes on Pointer when the type checker tries to
-    # widen a null pointer constant assigned to a pointer.
-    "casts/null_pointer_conversion.c",
-    # `_common_type(Pointer, Pointer)` crashes on the ternary
-    # branches inside this file.
-    "dereference/dereference_expression_result.c",
     # `switch` keyword lexes but no grammar rule accepts it.
     "extra_credit/switch_dereferenced_pointer.c",
 ])
@@ -77,15 +69,17 @@ _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset([
 ])
 
 # invalid_types files we currently accept (no clean type-check
-# rejection for the bad pointer assignments / null-pointer-constant
-# misuse / pointer-as-int passing).
+# rejection for these specific misuses).
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset([
-    "assign_int_to_pointer.c",
-    "assign_int_var_to_pointer.c",
+    # Assigning one pointer type to another (pointer→pointer with
+    # mismatched referenced types).
     "assign_wrong_pointer_type.c",
+    # Float constant 0.0 assigned to a pointer — only INTEGER null
+    # pointer constants are accepted by C99 §6.3.2.3.3.
     "bad_null_pointer_constant.c",
-    "invalid_static_initializer.c",
+    # Passing a pointer as an int argument (pointer→int direction).
     "pass_pointer_as_int.c",
+    # Returning the wrong pointer type from a function.
     "return_wrong_pointer_type.c",
 ])
 

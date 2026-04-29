@@ -55,9 +55,6 @@ _EXPECTED_FAILURES_CODEGEN = frozenset([
     "declarators/equivalent_declarators.c",
     # Postfix `++`/`--` on a Subscript lvalue.
     "extra_credit/incr_decr_subscripted_vals.c",
-    # `_common_type(Pointer, Pointer)` crashes on a pointer-typed
-    # ternary (`cond ? p : q`) inside this file.
-    "pointer_arithmetic/pointer_add.c",
     # Reverse subscript `i[arr]` (Int on the array side);
     # also exercises FP comparisons that aren't lowered yet.
     "subscripting/simple_subscripts.c",

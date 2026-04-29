@@ -180,20 +180,6 @@ lands, every entry below flips to passing.
 - **chapter\_12:** `valid/extra_credit/switch_uint.c`.
 - **chapter\_14:** `valid/extra_credit/switch_dereferenced_pointer.c`.
 
-### Type checker accepts some pointer/integer mismatches
-
-Per C99 §6.5.16.1.1 the only assignable shapes for `T *p = X;` are
-another `T *` of the same type, a void pointer, or a null-pointer
-constant. Integer→pointer (NPC rule, §6.3.2.3.3) and pointer→pointer
-(matching pointee, §6.5.16.1.1) are enforced at every implicit-
-conversion site. These remaining shapes still slip through:
-
-- **chapter\_14** invalid_types:
-  - `bad_null_pointer_constant.c` — float `0.0` (not an integer
-    constant) assigned to a pointer.
-  - `pass_pointer_as_int.c` — pointer→int (passing a pointer as
-    an `int` argument).
-
 ### Parser accepts forms it should reject
 
 - **chapter\_9** invalid_parse:

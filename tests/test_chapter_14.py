@@ -14,12 +14,11 @@ A handful of valid files use 32+ bit literals (chapter_14 mixes in
 8-byte longs); they're listed in `_INCOMPATIBLE_VALID`. One `switch`
 test is pinned in `_EXPECTED_FAILURES_CODEGEN`.
 
-Several invalid_parse and invalid_types files exercise behavior we
-don't yet reject (pointer→pointer type-mismatch, pointer→int passing,
-float-as-null-pointer-constant); they're pinned in
-`_NOT_REJECTED_TODAY` per bucket. The integer→pointer cases were
-fixed by the null-pointer-constant rule (§6.3.2.3.3) and aren't
-listed.
+Two invalid_parse files (abstract function declarators) are
+currently accepted by the parser; they're pinned in
+`_INVALID_PARSE_NOT_REJECTED_TODAY`. The invalid_types pin set is
+empty — all cross-type pointer assignment shapes are now rejected
+at the type-check boundary.
 """
 
 import shutil
@@ -68,15 +67,7 @@ _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset([
     "malformed_function_declarator.c",
 ])
 
-# invalid_types files we currently accept (no clean type-check
-# rejection for these specific misuses).
-_INVALID_TYPES_NOT_REJECTED_TODAY = frozenset([
-    # Float constant 0.0 assigned to a pointer — only INTEGER null
-    # pointer constants are accepted by C99 §6.3.2.3.3.
-    "bad_null_pointer_constant.c",
-    # Passing a pointer as an int argument (pointer→int direction).
-    "pass_pointer_as_int.c",
-])
+_INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

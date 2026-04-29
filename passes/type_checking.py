@@ -607,8 +607,10 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
         value 0 (§6.3.2.3.3).
     Anything else (non-null integer, mismatched pointer type, FP, ...)
     is rejected here so it doesn't silently lower to nonsense bytes.
-    Explicit `(int *)x` casts go through the Cast type-check handler
-    and aren't gated by this function."""
+    The mirror rule applies for arithmetic targets: a pointer source
+    is rejected (only an explicit cast can perform pointer→integer
+    or pointer→FP conversion). Explicit `(T)x` casts go through the
+    Cast type-check handler and aren't gated by this function."""
     if exp.data_type is not None and _types_equal(exp.data_type, target):
         return exp
     if isinstance(target, Pointer) and exp.data_type is not None:
@@ -630,6 +632,25 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
                 f"pointer-to-pointer assignment requires matching "
                 f"pointee types per C99 §6.5.16.1.1"
             )
+        else:
+            # Float / Double / anything else — only integer null
+            # pointer constants and matching pointers are assignable.
+            raise TypeCheckError(
+                f"cannot implicitly convert {src!r} to pointer type "
+                f"{target!r}; only an integer null pointer constant or "
+                f"a matching pointer type is assignable per C99 "
+                f"§6.5.16.1.1"
+            )
+    if (_is_arithmetic_type(target)
+            and exp.data_type is not None
+            and isinstance(exp.data_type, Pointer)):
+        # Pointer → integer / FP needs an explicit cast (§6.5.16.1.1
+        # only allows assigning a pointer to a `_Bool` lval, which
+        # c6502 doesn't model).
+        raise TypeCheckError(
+            f"cannot implicitly convert pointer type {exp.data_type!r} "
+            f"to arithmetic type {target!r}; use an explicit cast"
+        )
     cast = c99_ast.Cast(target_type=target, exp=exp, data_type=target)
     return cast
 

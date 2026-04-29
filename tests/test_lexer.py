@@ -1,7 +1,4 @@
-import shutil
-import subprocess
 import unittest
-from pathlib import Path
 
 from lexer import KEYWORDS, SYMBOLS, LexError, TokenKind, tokenize
 
@@ -512,37 +509,6 @@ class TestSampleProgram(unittest.TestCase):
             (TokenKind.SYMBOL, ";"),
             (TokenKind.SYMBOL, "}"),
         ])
-
-
-_INVALID_LEX_DIR = Path(__file__).parent / "invalid_lex"
-
-
-def _preprocess(src: str) -> str:
-    """Strip comments via pcpp (needed because the lexer treats comments
-    as invalid characters — the preprocessor is the upstream stage)."""
-    result = subprocess.run(
-        ["pcpp", "-", "--line-directive"],
-        input=src, capture_output=True, text=True, check=True,
-    )
-    return result.stdout
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
-class TestInvalidLex(unittest.TestCase):
-    """Negative-lex test cases from nlsandler/writing-a-c-compiler-tests.
-
-    Each .c file is passed through pcpp (to strip comments) and then
-    tokenized; the lexer must raise LexError somewhere in the stream.
-    """
-
-    def test_invalid_lex_files(self):
-        paths = sorted(_INVALID_LEX_DIR.glob("*.c"))
-        self.assertGreater(len(paths), 0, f"no .c files in {_INVALID_LEX_DIR}")
-        for path in paths:
-            with self.subTest(file=path.name):
-                src = _preprocess(path.read_text())
-                with self.assertRaises(LexError):
-                    list(tokenize(src))
 
 
 if __name__ == "__main__":

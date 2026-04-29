@@ -15,7 +15,7 @@ and may lag.
 uv sync                                         # create/update the project venv
 uv run python -m unittest                       # run all tests
 uv run python -m unittest tests.test_asm_emit   # run one module
-uv run python -m unittest tests.test_parser.TestValidFiles.test_return_2   # run one test
+uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one test
 
 uv run python compile.py <source.c> --codegen              # C → 6502 asm to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
@@ -1012,14 +1012,22 @@ rather than being split.
 uv run python -m unittest
 ```
 
-`tests/` holds sample programs from nlsandler/writing-a-c-compiler-tests
-(chapter 1), checked in verbatim:
+`tests/chapter_<N>/` holds sample programs from
+nlsandler/writing-a-c-compiler-tests, checked in verbatim, with one
+`tests/test_chapter_<N>.py` harness driving each chapter end-to-end
+through `--codegen`. Each harness has the same shape: per-bucket
+test methods (`valid` must compile, `invalid_lex` / `invalid_parse`
+must reject at the named stage, `invalid_*` semantic buckets must be
+rejected somewhere in the pipeline). Two filter sets thread through:
+`_INCOMPATIBLE_VALID` for files c6502 can't compile under its narrow
+integer / soft-stack model (e.g. literals beyond 16-bit Long, frames
+beyond 253 bytes), and `_EXPECTED_FAILURES_CODEGEN` /
+`_NOT_REJECTED_TODAY` for feature gaps that pin current behavior so
+a regression OR a fix flips the test in either direction.
 
-- `tests/invalid_lex/` — must fail at lex time (exercised by `TestInvalidLex` in `test_lexer.py`).
-- `tests/invalid_parse/` — must lex cleanly but fail at parse time (`TestInvalidParseFiles` in `test_parser.py`).
-- `tests/valid/` — must parse into `int main(void) { return N; }` (`TestValidFiles` in `test_parser.py`).
-
-The file-based test classes skip themselves if `pcpp` isn't on `PATH`.
+Multi-TU `libraries/` subdirs and platform-specific `.s` files aren't
+applicable to c6502 and are skipped at import time. Every harness
+class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
 
 ## Status (what works end-to-end through `--codegen`)
 

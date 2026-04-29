@@ -144,6 +144,16 @@ def _storage_is(sc, kind):
     return sc is not None and isinstance(sc, kind)
 
 
+def _decl_name(decl: c99_ast.Type_declaration) -> str:
+    """Source-level name of a top-level declaration."""
+    match decl:
+        case c99_ast.VarDecl(var_decl=vd):
+            return vd.name
+        case c99_ast.FunctionDecl(function_decl=fd):
+            return fd.name
+    raise TypeError(f"unexpected declaration: {decl!r}")
+
+
 class Resolver:
     """Holds the unique-name counter and the file-scope identifier
     table. One Resolver per program; each NONE-linkage declaration
@@ -164,6 +174,12 @@ class Resolver:
         # consumed when seeding each function body's outer scope and
         # when validating top-level Var / FunctionCall references.
         self._file_scope: dict[str, tuple[str, Linkage]] = {}
+        # Names whose file-scope declarator has been completed in
+        # source order — used to filter `_file_scope_seed` so a
+        # function body only sees prior file-scope identifiers, not
+        # later ones. C99 §6.2.1.4: "The scope of a file-scope
+        # identifier... begins at the point after the declarator..."
+        self._seen_at_file_scope: set[str] = set()
 
     def make_unique(self, original: str) -> str:
         name = f"@{self._counter}.{original}"
@@ -191,9 +207,16 @@ class Resolver:
                     self._register_file_scope(d)
                 # Pass 2: walk each declaration again, this time
                 # resolving initializers, bodies, and parameter scopes.
-                return c99_ast.Program(declaration=[
-                    self._resolve_file_scope_decl(d) for d in decls
-                ])
+                # Mark each name in `_seen_at_file_scope` BEFORE
+                # processing its body / initializer so the declared
+                # name is visible to itself (function self-recursion;
+                # `int x = x;` per C99). Forward references to later
+                # decls aren't visible.
+                new_decls = []
+                for d in decls:
+                    self._seen_at_file_scope.add(_decl_name(d))
+                    new_decls.append(self._resolve_file_scope_decl(d))
+                return c99_ast.Program(declaration=new_decls)
         raise TypeError(f"unexpected program: {prog!r}")
 
     # ------------------------------------------------------------------
@@ -312,14 +335,20 @@ class Resolver:
         raise TypeError(f"unexpected declaration: {decl!r}")
 
     def _file_scope_seed(self) -> _Scope:
-        """Build a `_Scope` view of the file-scope table for use as the
-        outer scope of a function body or as the lookup scope for a
-        file-scope variable's initializer. Every entry comes through
-        as outer-scoped (inner=False) so block declarations can
-        legally shadow it."""
+        """Build a `_Scope` view of the file-scope table for use as
+        the outer scope of a function body or as the lookup scope for
+        a file-scope variable's initializer. Filtered to entries
+        whose declarator has already been completed in source order
+        (C99 §6.2.1.4: "The scope of a file-scope identifier...
+        begins at the point after the declarator..."). Forward refs
+        to later file-scope decls aren't included.
+
+        Every entry comes through as outer-scoped (inner=False) so
+        block declarations can legally shadow it."""
         return {
             name: (resolved, False, link)
             for name, (resolved, link) in self._file_scope.items()
+            if name in self._seen_at_file_scope
         }
 
     # ------------------------------------------------------------------

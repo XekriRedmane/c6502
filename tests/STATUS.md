@@ -180,15 +180,6 @@ lands, every entry below flips to passing.
 - **chapter\_12:** `valid/extra_credit/switch_uint.c`.
 - **chapter\_14:** `valid/extra_credit/switch_dereferenced_pointer.c`.
 
-### Parser accepts forms it should reject
-
-
-### Type checker accepts out-of-scope extern
-
-- **chapter\_10** invalid_declarations:
-  - `out_of_scope_extern_var.c` — `extern int x;` declared in inner
-    block, then `x` referenced after the block ends.
-
 ### Lexer accepts malformed FP exponent
 
 The C standard treats `1.0e10.0` as a single preprocessing-number

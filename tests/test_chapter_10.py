@@ -59,13 +59,7 @@ _EXPECTED_FAILURES_CODEGEN = frozenset([
 
 _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()
 
-# invalid_declarations files we currently accept (should reject).
-_INVALID_DECL_NOT_REJECTED_TODAY = frozenset([
-    # `extern int x;` declared in inner scope, then `x` referenced
-    # in outer scope after the inner block ends. The inner-scope
-    # extern's visibility shouldn't escape the block.
-    "out_of_scope_extern_var.c",
-])
+_INVALID_DECL_NOT_REJECTED_TODAY = frozenset()
 
 
 def _run_codegen_subtest(test, files, root, not_rejected):

@@ -1015,6 +1015,16 @@ class _ASTBuilder(Transformer):
         if len(items) == 1:
             child = items[0]
             if isinstance(child, c99_ast.Type_var_decl):
+                # §6.8.5.3 also bans `static` / `extern` for-init
+                # objects (only auto / register are permitted; in our
+                # model that's `storage_class=None`).
+                if child.storage_class is not None:
+                    raise ParserError(
+                        f"storage class "
+                        f"{type(child.storage_class).__name__.lower()!r} "
+                        f"isn't permitted on a for-loop initializer "
+                        f"(C99 §6.8.5.3 — only auto / register)"
+                    )
                 return c99_ast.InitDecl(var_decl=child)
             if isinstance(child, c99_ast.Type_function_decl):
                 raise ParserError(

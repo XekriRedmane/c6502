@@ -57,11 +57,7 @@ _INCOMPATIBLE_VALID = frozenset([
 # the parser learns to reject them.
 _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()
 
-# invalid_declarations files we currently accept (should reject).
-_INVALID_DECL_NOT_REJECTED_TODAY = frozenset([
-    # Nested function definition (function-body inside another body).
-    "nested_function_definition.c",
-])
+_INVALID_DECL_NOT_REJECTED_TODAY = frozenset()
 
 
 def _run_codegen_subtest(test, files, root, not_rejected):

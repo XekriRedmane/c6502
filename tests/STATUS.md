@@ -182,9 +182,6 @@ lands, every entry below flips to passing.
 
 ### Parser accepts forms it should reject
 
-- **chapter\_9** invalid_declarations:
-  - `nested_function_definition.c` — function definition inside
-    another function body.
 - **chapter\_10** invalid_parse:
   - `extern_param.c`, `static_param.c` — storage class on a function
     parameter.

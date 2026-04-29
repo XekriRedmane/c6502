@@ -861,6 +861,23 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def decl_item(self, declaration):
+        # C99 §6.9.1: function-definitions are an external-declaration
+        # form, only legal at file scope. A `block_item` may carry a
+        # function *forward declaration* (FunctionDecl with body=None)
+        # but never a definition (body present). The grammar allows
+        # both — `block_item: declaration` and `declaration:
+        # function_decl | var_decl`, where `function_decl` is the
+        # body-bearing form — so reject the definition shape here.
+        if (
+            isinstance(declaration, c99_ast.FunctionDecl)
+            and declaration.function_decl.body is not None
+        ):
+            raise ParserError(
+                f"function definition for "
+                f"{declaration.function_decl.name!r} is only legal at "
+                f"file scope; nested function definitions aren't part "
+                f"of standard C (C99 §6.9.1)"
+            )
         return c99_ast.D(declaration=declaration)
 
     @v_args(inline=True)

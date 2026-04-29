@@ -797,9 +797,15 @@ class _ASTBuilder(Transformer):
         adecl_tree = items[-1]
         composed = _apply_abstract_declarator(adecl_tree, base)
         if isinstance(composed, c99_ast.Array):
-            raise ParserError("cannot cast to an array type")
+            raise ParserError(
+                "cannot cast to an array type (C99 §6.5.4.2 — cast "
+                "target must be scalar or void)"
+            )
         if isinstance(composed, c99_ast.FunType):
-            raise ParserError("cannot cast to a function type")
+            raise ParserError(
+                "cannot cast to a function type (C99 §6.5.4.2 — cast "
+                "target must be scalar or void)"
+            )
         return composed
 
     def parameter_declaration(self, items):

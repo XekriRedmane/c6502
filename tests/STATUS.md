@@ -74,8 +74,10 @@ c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
   - `valid/long_expressions/simple.c`
   - `valid/long_expressions/static_long.c`
   - `valid/long_expressions/type_specifiers.c`
+  - `valid/extra_credit/switch_int.c` — case constants beyond 16-bit
+  - `valid/extra_credit/switch_long.c` — same
 - **chapter\_12:**
-  24 files with `unsigned int` literals beyond 16-bit ULong:
+  25 files with `unsigned int` literals beyond 16-bit ULong:
   - `valid/explicit_casts/chained_casts.c`
   - `valid/explicit_casts/extension.c`
   - `valid/explicit_casts/round_trip_casts.c`
@@ -100,6 +102,7 @@ c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
   - `valid/unsigned_expressions/logical.c`
   - `valid/unsigned_expressions/simple.c`
   - `valid/unsigned_expressions/static_variables.c`
+  - `valid/extra_credit/switch_uint.c` — case constants beyond 16-bit
 - **chapter\_13:**
   9 files mixing FP with 8-byte int literals:
   - `valid/explicit_casts/double_to_signed.c`
@@ -112,7 +115,7 @@ c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
   - `valid/implicit_casts/convert_for_assignment.c`
   - `valid/implicit_casts/static_initializers.c`
 - **chapter\_14:**
-  8 files mixing pointers with 8-byte int literals:
+  9 files mixing pointers with 8-byte int literals:
   - `valid/dereference/read_through_pointers.c`
   - `valid/dereference/static_var_indirection.c`
   - `valid/dereference/update_through_pointers.c`
@@ -121,6 +124,8 @@ c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
   - `valid/extra_credit/compound_assign_conversion.c`
   - `valid/extra_credit/compound_bitwise_dereferenced_ptrs.c`
   - `valid/extra_credit/incr_and_decr_through_pointer.c`
+  - `valid/extra_credit/switch_dereferenced_pointer.c` — case
+    constants beyond 16-bit
 - **chapter\_15:**
   - `casts/implicit_and_explicit_conversions.c`
   - `declarators/big_array.c` — array dim 4294967297L
@@ -155,30 +160,6 @@ declare `unsigned int x = N;` with `N >> 255`.
 ---
 
 ## Pinned: feature gaps
-
-### `switch` / `case` / `default` not implemented
-
-The keywords lex but no grammar production accepts them. When switch
-lands, every entry below flips to passing.
-
-- **chapter\_8** (23 files in valid/extra_credit, all listed in
-  `_EXPECTED_FAILURES_CODEGEN`): `case_block.c`, `duffs_device.c`,
-  `loop_in_switch.c`, `switch.c`, `switch_assign_in_condition.c`,
-  `switch_break.c`, `switch_decl.c`, `switch_default.c`,
-  `switch_default_fallthrough.c`, `switch_default_not_last.c`,
-  `switch_default_only.c`, `switch_empty.c`, `switch_fallthrough.c`,
-  `switch_goto_mid_case.c`, `switch_in_loop.c`, `switch_nested_cases.c`,
-  `switch_nested_not_taken.c`, `switch_nested_switch.c`,
-  `switch_no_case.c`, `switch_not_taken.c`, `switch_single_case.c`,
-  `switch_with_continue.c`, `switch_with_continue_2.c`.
-  Plus chapter\_8 invalid_semantics tests using `switch` are accepted
-  with parse-stage rejection rather than the intended semantic-stage
-  rejection — the harness accepts either today.
-- **chapter\_10:** `valid/extra_credit/switch_on_extern.c`,
-  `switch_skip_extern_decl.c`, `switch_skip_static_initializer.c`.
-- **chapter\_11:** `valid/extra_credit/switch_int.c`, `switch_long.c`.
-- **chapter\_12:** `valid/extra_credit/switch_uint.c`.
-- **chapter\_14:** `valid/extra_credit/switch_dereferenced_pointer.c`.
 
 ### Lexer accepts malformed FP exponent
 

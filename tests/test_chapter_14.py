@@ -64,7 +64,6 @@ _EXPECTED_FAILURES_CODEGEN = frozenset([
 # invalid_parse files the parser currently accepts.
 _INVALID_PARSE_NOT_REJECTED_TODAY = frozenset([
     "abstract_function_declarator.c",
-    "malformed_function_declarator.c",
 ])
 
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()

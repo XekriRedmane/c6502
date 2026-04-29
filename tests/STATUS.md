@@ -182,8 +182,6 @@ lands, every entry below flips to passing.
 
 ### Parser accepts forms it should reject
 
-- **chapter\_9** invalid_parse:
-  - `function_returning_function.c` — function returning function type.
 - **chapter\_9** invalid_declarations:
   - `nested_function_definition.c` — function definition inside
     another function body.
@@ -191,7 +189,7 @@ lands, every entry below flips to passing.
   - `extern_param.c`, `static_param.c` — storage class on a function
     parameter.
 - **chapter\_14** invalid_parse:
-  - `abstract_function_declarator.c`, `malformed_function_declarator.c`.
+  - `abstract_function_declarator.c`.
 
 ### Type checker accepts out-of-scope extern
 

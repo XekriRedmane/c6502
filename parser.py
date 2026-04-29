@@ -523,6 +523,12 @@ def _apply_direct_declarator(dd_tree, base_type):
         raise AssertionError(
             f"unexpected direct_declarator function-form children: {children!r}"
         )
+    # C99 §6.7.5.3.1: a function declarator shall not specify a
+    # return type that is a function type or an array type. Catch
+    # this at composition time so e.g. `int foo(void)(void)` and
+    # `int foo(void)[3]` are rejected at parse rather than producing
+    # an unrepresentable FunType(ret=FunType/Array).
+    _check_function_return_type(base_type)
     param_types = [t for (_n, t) in param_pairs]
     new_base = c99_ast.FunType(params=param_types, ret=base_type)
     name, composed, _inner_outer_params = _apply_direct_declarator(
@@ -534,6 +540,23 @@ def _apply_direct_declarator(dd_tree, base_type):
     # belong to the type, not to this declarator's name.)
     param_names = [n for (n, _t) in param_pairs]
     return name, composed, param_names
+
+
+def _check_function_return_type(ret_type):
+    """C99 §6.7.5.3.1: a function declarator's return type can't be
+    a function type or an array type. Used by both
+    `_apply_direct_declarator` and `_apply_direct_abstract_declarator`
+    just before they wrap a return type in a FunType."""
+    if isinstance(ret_type, c99_ast.FunType):
+        raise ParserError(
+            "function declarator cannot specify a function-typed "
+            "return (C99 §6.7.5.3.1)"
+        )
+    if isinstance(ret_type, c99_ast.Array):
+        raise ParserError(
+            "function declarator cannot specify an array return type "
+            "(C99 §6.7.5.3.1)"
+        )
 
 
 def _adjust_param_type(t):
@@ -669,6 +692,7 @@ def _apply_direct_abstract_declarator(dad_tree, base_type):
         and _is_token(children[0], "LPAREN")
         and _is_token(children[-1], "RPAREN")
     ):
+        _check_function_return_type(base_type)
         param_pairs = _parse_function_suffix_middle(children[1:-1])
         param_types = [t for (_n, t) in param_pairs]
         return c99_ast.FunType(params=param_types, ret=base_type)
@@ -694,6 +718,7 @@ def _apply_direct_abstract_declarator(dad_tree, base_type):
             _is_token(children[1], "LPAREN")
             and _is_token(children[-1], "RPAREN")
         ):
+            _check_function_return_type(base_type)
             param_pairs = _parse_function_suffix_middle(children[2:-1])
             param_types = [t for (_n, t) in param_pairs]
             new_base = c99_ast.FunType(params=param_types, ret=base_type)

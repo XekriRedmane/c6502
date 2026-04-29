@@ -55,10 +55,7 @@ _INCOMPATIBLE_VALID = frozenset([
 
 # invalid_parse files the parser currently accepts. Drop entries as
 # the parser learns to reject them.
-_INVALID_PARSE_NOT_REJECTED_TODAY = frozenset([
-    # Function returning a function type — C99 §6.7.5.3.1.
-    "function_returning_function.c",
-])
+_INVALID_PARSE_NOT_REJECTED_TODAY = frozenset()
 
 # invalid_declarations files we currently accept (should reject).
 _INVALID_DECL_NOT_REJECTED_TODAY = frozenset([

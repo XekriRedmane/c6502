@@ -1,0 +1,271 @@
+# Test status
+
+This file enumerates every chapter\_N test from
+nlsandler/writing-a-c-compiler-tests that doesn't pass under c6502
+today, with the reason. Every other test passes.
+
+The harnesses (`tests/test_chapter_<N>.py`) carry these as frozen
+sets — `_INCOMPATIBLE_VALID` (skipped), `_EXPECTED_FAILURES_CODEGEN`
+(must currently fail), and `_NOT_REJECTED_TODAY` (must currently
+not be rejected). Each pinned entry is asserted at its current
+behavior, so a regression OR a fix flips the test in either
+direction and prompts a drop from the list.
+
+Categories below:
+
+- **Permanently incompatible** — c6502's narrow integer / 256-byte-frame
+  / 1-byte-int model fundamentally can't compile these. No fix
+  planned. Skipped at harness time.
+- **Pinned: feature gaps** — features c6502 plans to add (`switch`,
+  proper FP type-checks, etc.). Pinned at current accept/reject
+  behavior.
+- **Pinned: real bugs** — the compiler crashes or wrongly accepts
+  programs the spec rejects. Pinned at current behavior.
+
+Multi-TU `libraries/` subdirs (and platform-specific `.s` files)
+aren't listed: they're skipped at import time, not at harness time.
+
+---
+
+## Permanently incompatible
+
+### Integer literal beyond 16-bit Long range
+
+c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
+8-byte `long`, so any literal whose only fitting type would be
+`long long` / `unsigned long long` is rejected at parse time.
+
+- **chapter\_2:**
+  - `valid/bitwise_int_min.c` — uses INT\_MAX (2147483647)
+  - `valid/negate_int_max.c` — same
+- **chapter\_5:**
+  - `valid/allocate_temps_and_vars.c`
+  - `valid/extra_credit/compound_bitwise_shiftr.c`
+- **chapter\_8:**
+  - `valid/empty_loop_body.c`
+  - `valid/for_absent_post.c`
+- **chapter\_9:**
+  - `valid/stack_arguments/test_for_memory_leaks.c`
+- **chapter\_11:**
+  26 files exercising 8-byte `long` semantics:
+  - `valid/explicit_casts/truncate.c`
+  - `valid/extra_credit/bitshift.c`
+  - `valid/extra_credit/bitwise_long_op.c`
+  - `valid/extra_credit/compound_assign_to_int.c`
+  - `valid/extra_credit/compound_assign_to_long.c`
+  - `valid/extra_credit/compound_bitshift.c`
+  - `valid/extra_credit/compound_bitwise.c`
+  - `valid/extra_credit/increment_long.c`
+  - `valid/implicit_casts/common_type.c`
+  - `valid/implicit_casts/convert_by_assignment.c`
+  - `valid/implicit_casts/convert_function_arguments.c`
+  - `valid/implicit_casts/convert_static_initializer.c`
+  - `valid/implicit_casts/long_constants.c`
+  - `valid/long_expressions/arithmetic_ops.c`
+  - `valid/long_expressions/assign.c`
+  - `valid/long_expressions/comparisons.c`
+  - `valid/long_expressions/large_constants.c`
+  - `valid/long_expressions/logical.c`
+  - `valid/long_expressions/long_and_int_locals.c`
+  - `valid/long_expressions/long_args.c`
+  - `valid/long_expressions/multi_op.c`
+  - `valid/long_expressions/return_long.c`
+  - `valid/long_expressions/rewrite_large_multiply_regression.c`
+  - `valid/long_expressions/simple.c`
+  - `valid/long_expressions/static_long.c`
+  - `valid/long_expressions/type_specifiers.c`
+- **chapter\_12:**
+  24 files with `unsigned int` literals beyond 16-bit ULong:
+  - `valid/explicit_casts/chained_casts.c`
+  - `valid/explicit_casts/extension.c`
+  - `valid/explicit_casts/round_trip_casts.c`
+  - `valid/explicit_casts/same_size_conversion.c`
+  - `valid/explicit_casts/truncate.c`
+  - `valid/extra_credit/bitwise_unsigned_ops.c`
+  - `valid/extra_credit/bitwise_unsigned_shift.c`
+  - `valid/extra_credit/compound_assign_uint.c`
+  - `valid/extra_credit/compound_bitshift.c`
+  - `valid/extra_credit/compound_bitwise.c`
+  - `valid/extra_credit/postfix_precedence.c`
+  - `valid/extra_credit/unsigned_incr_decr.c`
+  - `valid/implicit_casts/common_type.c`
+  - `valid/implicit_casts/convert_by_assignment.c`
+  - `valid/implicit_casts/promote_constants.c`
+  - `valid/implicit_casts/static_initializers.c`
+  - `valid/type_specifiers/unsigned_type_specifiers.c`
+  - `valid/unsigned_expressions/arithmetic_ops.c`
+  - `valid/unsigned_expressions/arithmetic_wraparound.c`
+  - `valid/unsigned_expressions/comparisons.c`
+  - `valid/unsigned_expressions/locals.c`
+  - `valid/unsigned_expressions/logical.c`
+  - `valid/unsigned_expressions/simple.c`
+  - `valid/unsigned_expressions/static_variables.c`
+- **chapter\_13:**
+  9 files mixing FP with 8-byte int literals:
+  - `valid/explicit_casts/double_to_signed.c`
+  - `valid/explicit_casts/double_to_unsigned.c`
+  - `valid/explicit_casts/signed_to_double.c`
+  - `valid/explicit_casts/unsigned_to_double.c`
+  - `valid/extra_credit/compound_assign_implicit_cast.c`
+  - `valid/floating_expressions/logical.c`
+  - `valid/implicit_casts/common_type.c`
+  - `valid/implicit_casts/convert_for_assignment.c`
+  - `valid/implicit_casts/static_initializers.c`
+- **chapter\_14:**
+  8 files mixing pointers with 8-byte int literals:
+  - `valid/dereference/read_through_pointers.c`
+  - `valid/dereference/static_var_indirection.c`
+  - `valid/dereference/update_through_pointers.c`
+  - `valid/extra_credit/bitshift_dereferenced_ptrs.c`
+  - `valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c`
+  - `valid/extra_credit/compound_assign_conversion.c`
+  - `valid/extra_credit/compound_bitwise_dereferenced_ptrs.c`
+  - `valid/extra_credit/incr_and_decr_through_pointer.c`
+- **chapter\_15:**
+  - `casts/implicit_and_explicit_conversions.c`
+  - `declarators/big_array.c` — array dim 4294967297L
+  - `extra_credit/bitwise_subscript.c`
+  - `extra_credit/compound_assign_to_subscripted_val.c`
+  - `extra_credit/compound_bitwise_subscript.c`
+  - `extra_credit/compound_pointer_assignment.c`
+  - `initialization/automatic.c`
+  - `initialization/automatic_nested.c`
+  - `initialization/static.c`
+
+### Frame beyond 253 bytes
+
+c6502's soft-stack frame addresses pseudos as `LDY #off` against
+`(FP),Y`, which caps a function's frame size at 256 bytes (the test
+infrastructure caps at 253 to leave headroom).
+
+- **chapter\_13:**
+  - `valid/function_calls/double_and_int_params_recursive.c`
+- **chapter\_15:**
+  - `extra_credit/incr_and_decr_nested_pointers.c`
+  - `subscripting/addition_subscript_equivalence.c` — array of 3000+ bytes
+
+### 1-byte int can't hold static initializer
+
+c6502's `int` is 1 byte (max 255). The upstream tests sometimes
+declare `unsigned int x = N;` with `N >> 255`.
+
+- **chapter\_12:**
+  - `valid/explicit_casts/rewrite_movz_regression.c` — `unsigned glob = 5000u;`
+
+---
+
+## Pinned: feature gaps
+
+### `switch` / `case` / `default` not implemented
+
+The keywords lex but no grammar production accepts them. When switch
+lands, every entry below flips to passing.
+
+- **chapter\_8** (23 files in valid/extra_credit, all listed in
+  `_EXPECTED_FAILURES_CODEGEN`): `case_block.c`, `duffs_device.c`,
+  `loop_in_switch.c`, `switch.c`, `switch_assign_in_condition.c`,
+  `switch_break.c`, `switch_decl.c`, `switch_default.c`,
+  `switch_default_fallthrough.c`, `switch_default_not_last.c`,
+  `switch_default_only.c`, `switch_empty.c`, `switch_fallthrough.c`,
+  `switch_goto_mid_case.c`, `switch_in_loop.c`, `switch_nested_cases.c`,
+  `switch_nested_not_taken.c`, `switch_nested_switch.c`,
+  `switch_no_case.c`, `switch_not_taken.c`, `switch_single_case.c`,
+  `switch_with_continue.c`, `switch_with_continue_2.c`.
+  Plus chapter\_8 invalid_semantics tests using `switch` are accepted
+  with parse-stage rejection rather than the intended semantic-stage
+  rejection — the harness accepts either today.
+- **chapter\_10:** `valid/extra_credit/switch_on_extern.c`,
+  `switch_skip_extern_decl.c`, `switch_skip_static_initializer.c`.
+- **chapter\_11:** `valid/extra_credit/switch_int.c`, `switch_long.c`.
+- **chapter\_12:** `valid/extra_credit/switch_uint.c`.
+- **chapter\_14:** `valid/extra_credit/switch_dereferenced_pointer.c`.
+
+### Type checker accepts FP operands of bitwise / mod ops
+
+Per C99 the operands of `&` `|` `^` `<<` `>>` `%` must be integer.
+The type checker doesn't yet reject FP operands for these.
+
+- **chapter\_13** invalid_types/extra_credit:
+  - `bitwise_and.c`, `bitwise_or.c`, `bitwise_shift_double.c`,
+    `bitwise_shift_double_2.c`, `bitwise_xor.c`,
+    `compound_bitwise_and.c`, `compound_bitwise_xor.c`,
+    `compound_left_bitshift.c`, `compound_mod.c`, `compound_mod_2.c`,
+    `compound_right_bitshift.c`
+- **chapter\_13** invalid_types: `mod_double.c`, `mod_double_2.c`.
+
+### Type checker accepts pointer/integer mismatches and bad null-pointer constants
+
+Per C99 §6.5.16.1 the only assignable shapes for `T *p = X;` are
+another `T *` of the same type, a void pointer, or a null-pointer
+constant. The type checker doesn't yet reject the wrong shapes.
+
+- **chapter\_14** invalid_types:
+  - `assign_int_to_pointer.c`, `assign_int_var_to_pointer.c`,
+    `assign_wrong_pointer_type.c`, `bad_null_pointer_constant.c`,
+    `invalid_static_initializer.c`, `pass_pointer_as_int.c`,
+    `return_wrong_pointer_type.c`
+
+### Parser accepts forms it should reject
+
+- **chapter\_9** invalid_parse:
+  - `fun_decl_for_loop.c` — function decl in `for` init slot.
+  - `function_returning_function.c` — function returning function type.
+- **chapter\_9** invalid_declarations:
+  - `nested_function_definition.c` — function definition inside
+    another function body.
+- **chapter\_10** invalid_parse:
+  - `extern_param.c`, `static_param.c` — storage class on a function
+    parameter.
+- **chapter\_14** invalid_parse:
+  - `abstract_function_declarator.c`, `malformed_function_declarator.c`.
+
+### Type checker accepts out-of-scope extern
+
+- **chapter\_10** invalid_declarations:
+  - `out_of_scope_extern_var.c` — `extern int x;` declared in inner
+    block, then `x` referenced after the block ends.
+
+### Lexer accepts malformed FP exponent
+
+The C standard treats `1.0e10.0` as a single preprocessing-number
+that can't be converted to a constant. c6502's lexer has no
+preprocessing-number concept and tokenises it as two CONSTANTs
+(`1.0e10` and `.0`).
+
+- **chapter\_13** invalid_lex:
+  - `malformed_exponent.c`
+
+---
+
+## Pinned: real bugs
+
+### `_int_width` crash on Pointer
+
+The type checker calls `_int_width` while widening a null pointer
+constant assigned to a pointer; `_int_width` raises `TypeError` for
+non-integer types.
+
+- **chapter\_14:**
+  - `valid/casts/null_pointer_conversion.c`
+
+### `_common_type(Pointer, Pointer)` crash
+
+`_common_type` instantiates `type(a)()` for matching types, but
+`Pointer` requires a `referenced_type` argument. Affects any
+construct (today, a ternary) that asks for the common type of two
+pointers.
+
+- **chapter\_14:**
+  - `valid/dereference/dereference_expression_result.c`
+
+### chapter\_15 feature gaps the harness pins
+
+- `declarators/equivalent_declarators.c` — `extern` arrays aren't
+  lowered yet.
+- `extra_credit/incr_decr_subscripted_vals.c` — postfix `++`/`--`
+  on a `Subscript` lvalue not wired through.
+- `pointer_arithmetic/pointer_add.c` — same `_common_type(Pointer,
+  Pointer)` crash as chapter\_14.
+- `subscripting/simple_subscripts.c` — reverse subscript `i[arr]`
+  (Int as the array side of `Subscript`) isn't accepted; also
+  exercises FP comparisons that aren't lowered yet.

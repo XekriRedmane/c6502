@@ -1914,38 +1914,44 @@ class TypeChecker:
                     "valid as a variable initializer for an array"
                 )
             case c99_ast.Subscript(array=arr, index=idx):
-                # `a[i]` per C99 §6.5.2.1 is defined as `*(a + i)`.
-                # Validate the operand types here and stamp the
-                # element type as the result; `c99_to_tac` lowers
-                # this node directly via address-arithmetic + Load
-                # (or address-arithmetic + Store on the lvalue path).
+                # `E1[E2]` per C99 §6.5.2.1.2 is defined as
+                # `*((E1)+(E2))`. Because the underlying `+` is
+                # commutative for pointer/integer pairs, the two
+                # operands are symmetric: one must be pointer (or
+                # array, after decay) and the other must be integer,
+                # but either side can be either. So `arr[3]` and
+                # `3[arr]` are equivalent and both valid C.
+                #
+                # Canonicalize back to (pointer, integer) order so
+                # downstream passes (c99_to_tac.translate_pointer_
+                # arithmetic, lvalue stores, AddressOf) see one
+                # uniform shape.
                 self._check_exp(arr)
                 self._check_exp(idx)
-                # Array operand decays to Pointer; a Pointer operand
-                # passes through untouched.
-                exp.array = _decay_if_array(arr)
-                arr = exp.array
-                ta = arr.data_type
-                if not _is_pointer_type(ta):
+                arr = _decay_if_array(arr)
+                idx = _decay_if_array(idx)
+                ta, ti = arr.data_type, idx.data_type
+                if _is_pointer_type(ta) and _is_integer_type(ti):
+                    ptr_exp, int_exp = arr, idx
+                elif _is_pointer_type(ti) and _is_integer_type(ta):
+                    # Reverse subscript `int[ptr]` — swap so
+                    # `exp.array` ends up holding the pointer.
+                    ptr_exp, int_exp = idx, arr
+                else:
                     raise TypeCheckError(
-                        f"subscript operand must be array or pointer, "
-                        f"got {ta!r}"
+                        f"subscript needs a pointer/array operand and "
+                        f"an integer operand; got {ta!r} and {ti!r}"
                     )
-                if isinstance(ta.referenced_type, FunType):
+                if isinstance(ptr_exp.data_type.referenced_type, FunType):
                     raise TypeCheckError(
                         "subscript of pointer-to-function is not "
                         "supported"
                     )
-                ti = idx.data_type
-                if not _is_integer_type(ti):
-                    raise TypeCheckError(
-                        f"subscript index must be an integer, got "
-                        f"{ti!r}"
-                    )
                 # Widen the index to Long so c99_to_tac can use a
                 # uniform 2-byte add to compute the byte address.
-                exp.index = _convert_to(idx, Long())
-                exp.data_type = ta.referenced_type
+                exp.array = ptr_exp
+                exp.index = _convert_to(int_exp, Long())
+                exp.data_type = ptr_exp.data_type.referenced_type
                 return exp.data_type
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — result is `Pointer(operand_type)` per C99

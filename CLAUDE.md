@@ -526,11 +526,16 @@ takes one AST and returns another (or text for emit):
    **Subscript** (`Subscript(array, index)`) is type-checked but
    left in the AST for `c99_to_tac` to lower (rather than rewritten
    here to `Dereference(Binary(Add, decayed, index))`, which would
-   require every parent slot to reassign). The array operand decays
-   to Pointer; the index is widened to Long; the result type is the
-   pointee. Pointer-typed array operands (`p[i]` where `p` is a
-   pointer) skip the decay step but go through the same downstream
-   lowering.
+   require every parent slot to reassign). Per C99 §6.5.2.1.2 the
+   subscript operands are symmetric — `E1[E2]` is defined as
+   `*((E1)+(E2))`, so either side may be the pointer/array and the
+   other side the integer. The type checker accepts both `arr[3]`
+   and `3[arr]`, swapping operands when needed so the canonical
+   AST always has `Subscript.array` holding the pointer side. The
+   array operand decays to Pointer; the index is widened to Long;
+   the result type is the pointee. Pointer-typed array operands
+   (`p[i]` where `p` is a pointer) skip the decay step but go
+   through the same downstream lowering.
 
    **Variable declarations** distinguish two predicates:
    `_is_object_type` (the operand-allowed set: arithmetic types and

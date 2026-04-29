@@ -50,11 +50,7 @@ _INCOMPATIBLE = frozenset([
 # Currently fail through `--codegen`. Each corresponds to a feature gap
 # we plan to close. When a fix lands, drop the entry — the harness
 # asserts each listed file still fails so it can't drift silently.
-_EXPECTED_FAILURES_CODEGEN = frozenset([
-    # Reverse subscript `i[arr]` (Int on the array side);
-    # also exercises FP comparisons that aren't lowered yet.
-    "subscripting/simple_subscripts.c",
-])
+_EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

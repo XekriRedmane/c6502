@@ -785,6 +785,85 @@ class TestTranslateComparisons(unittest.TestCase):
         self.assertTrue(first_labels.isdisjoint(second_labels))
 
 
+class TestTranslateEqualityWideTypes(unittest.TestCase):
+    """== / != on wide types (Float = 4 bytes, Double = 8 bytes).
+    The lowering walks bytes high-to-low; each byte except the last
+    BNEs to a `cmp_differ` label on mismatch. The final low-byte
+    Compare leaves Z holding the answer.
+
+    For FP types this is byte-equality, not IEEE equality — correct
+    for every non-NaN, non-zero value in the test corpus, with the
+    NaN / ±0 caveats documented in `_translate_equality`."""
+
+    def _equality_compares(self, op, src_type, dst_type):
+        """Translate `Binary(op, %0, %1, %dst)` where %0 / %1 have
+        `src_type` and %dst has `dst_type`. Returns the list of
+        Compare instructions emitted (one per byte position)."""
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=src_type(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=src_type(), attrs=LocalAttr())
+        symbols["%dst"] = Symbol(type=dst_type(), attrs=LocalAttr())
+        instr = tac_ast.Binary(
+            op=op, src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        )
+        out = Translator(symbols).translate_instruction(instr)
+        return [i for i in out if isinstance(i, asm_ast.Compare)]
+
+    def test_equal_on_double_compares_all_eight_bytes(self):
+        from c99_ast import Double, Int
+        compares = self._equality_compares(
+            tac_ast.Equal(), Double, Int,
+        )
+        # 8 bytes — one Compare per offset 7..0.
+        self.assertEqual(len(compares), 8)
+        offsets = [c.right.offset for c in compares]
+        self.assertEqual(offsets, [7, 6, 5, 4, 3, 2, 1, 0])
+
+    def test_not_equal_on_float_compares_all_four_bytes(self):
+        from c99_ast import Float, Int
+        compares = self._equality_compares(
+            tac_ast.NotEqual(), Float, Int,
+        )
+        self.assertEqual(len(compares), 4)
+        offsets = [c.right.offset for c in compares]
+        self.assertEqual(offsets, [3, 2, 1, 0])
+
+    def test_double_equal_short_circuits_via_cmp_differ_label(self):
+        # Each byte except the last has a Branch(NE, cmp_differ@N)
+        # immediately after its Compare; the final byte's Compare is
+        # followed by Label(cmp_differ@N).
+        from c99_ast import Double, Int
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=Double(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=Double(), attrs=LocalAttr())
+        symbols["%dst"] = Symbol(type=Int(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.Equal(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        # Count BNE branches targeting any cmp_differ@N label — one
+        # per byte except the last, so 7 for an 8-byte Double.
+        differ_branches = [
+            i for i in out
+            if isinstance(i, asm_ast.Branch)
+            and isinstance(i.cond, asm_ast.NE)
+            and i.target.startswith(".cmp_differ@")
+        ]
+        self.assertEqual(len(differ_branches), 7)
+
+
 class TestTranslatePointerOrdering(unittest.TestCase):
     """Ordering ops on Pointer-typed operands dispatch to the
     unsigned-ordering lowering: per-byte SBC with carry threading,

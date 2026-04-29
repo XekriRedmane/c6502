@@ -175,8 +175,4 @@ preprocessing-number concept and tokenises it as two CONSTANTs
 
 ## Pinned: real bugs
 
-### chapter\_15 feature gaps the harness pins
-
-- `subscripting/simple_subscripts.c` — reverse subscript `i[arr]`
-  (Int as the array side of `Subscript`) isn't accepted; also
-  exercises FP comparisons that aren't lowered yet.
+(none currently)

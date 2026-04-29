@@ -1652,6 +1652,39 @@ class TestArrays(unittest.TestCase):
             )
         self.assertIn("integer", str(ctx.exception))
 
+    def test_reverse_subscript_int_on_array_side_canonicalizes(self):
+        # `3[arr]` is C-equivalent to `arr[3]` per §6.5.2.1.2 (the
+        # underlying `*((E1)+(E2))` definition is symmetric in its
+        # operands). The type checker swaps the operands so
+        # `Subscript.array` always holds the pointer side.
+        prog, _ = _check(
+            "int main(void) { int a[10]; return 3[a]; }"
+        )
+        ret = prog.declaration[0].function_decl.body.block_item[1].statement
+        sub = ret.exp
+        self.assertIsInstance(sub, c99_ast.Subscript)
+        # array side ended up as the (decayed) pointer; index side is
+        # the (Long-widened) integer literal.
+        self.assertIsInstance(sub.array.data_type, c99_ast.Pointer)
+        self.assertEqual(sub.index.data_type, Long())
+        self.assertEqual(sub.data_type, Int())
+
+    def test_reverse_subscript_with_pointer_param(self):
+        # Same canonicalization works when the pointer side is a
+        # function parameter (already Pointer-typed) rather than a
+        # decayed array.
+        _check(
+            "int f(int *p) { return 3[p]; } "
+            "int main(void) { return 0; }"
+        )
+
+    def test_subscript_with_two_pointers_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int *p; int *q; return p[q]; }"
+            )
+        self.assertIn("subscript", str(ctx.exception))
+
     def test_array_param_adjusts_to_pointer_in_symbol_table(self):
         # C99 §6.7.5.3.7: `int foo(int a[3])` adjusts the parameter
         # type to `int *`. The function's FunType records the

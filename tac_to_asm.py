@@ -1233,14 +1233,22 @@ class Translator:
         size: int,
         cond: asm_ast.Type_condition,
     ) -> list[asm_ast.Type_instruction]:
-        """== / != via Compare + Branch + 0/1 select. CMP sets Z=1
-        iff the bytes are equal (no overflow concern), so this is
-        correct for both signed and unsigned at the byte level.
+        """== / != via byte-wise Compare + Branch + 0/1 select. CMP
+        sets Z=1 iff the two bytes are equal (no overflow concern),
+        so this is correct for both signed and unsigned at the byte
+        level. Generalizes to any operand size N (1, 2, 4, 8): walk
+        the bytes from high (N-1) to low (0); on each byte except
+        the last, BNE short-circuits to a "differ" label where
+        Z=0 already encodes "not equal". The final low-byte CMP
+        (no early-exit needed) leaves Z holding the answer.
 
-        For Long, CMP the high bytes first; if they differ, short-
-        circuit to a label (via BNE) — at that label Z is 0, which
-        is what we want for "not equal". Otherwise fall through to
-        the low-byte CMP whose Z is the final answer.
+        FP equality (size 4 / 8): byte-wise comparison matches IEEE
+        754 equality EXCEPT for two known edge cases — NaN compares
+        equal to itself byte-wise but C / IEEE say `NaN != NaN`,
+        and `-0.0` and `+0.0` compare unequal byte-wise but IEEE
+        says they're equal. c6502 has no FP runtime helpers yet, so
+        this is the best we can do inline; correct results for
+        every non-NaN, non-zero FP value the test corpus exercises.
         """
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
@@ -1252,14 +1260,18 @@ class Translator:
             ])
         else:
             differ_label = self.make_label("cmp_differ")
-            # High bytes first — if they differ the answer's "not
-            # equal" without needing to look at the low bytes.
+            # High bytes first — if any byte differs, BNE early-
+            # exits to differ_label without looking at the rest.
+            for k in range(size - 1, 0, -1):
+                out.extend([
+                    asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A),
+                    asm_ast.Compare(
+                        left=_REG_A, right=_byte_at(src2_op, k),
+                    ),
+                    asm_ast.Branch(cond=asm_ast.NE(), target=differ_label),
+                ])
+            # Last byte (offset 0): no early-exit; Z holds the answer.
             out.extend([
-                asm_ast.Mov(src=_byte_at(src1_op, 1), dst=_REG_A),
-                asm_ast.Compare(
-                    left=_REG_A, right=_byte_at(src2_op, 1),
-                ),
-                asm_ast.Branch(cond=asm_ast.NE(), target=differ_label),
                 asm_ast.Mov(src=_byte_at(src1_op, 0), dst=_REG_A),
                 asm_ast.Compare(
                     left=_REG_A, right=_byte_at(src2_op, 0),

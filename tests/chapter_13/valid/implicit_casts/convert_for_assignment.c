@@ -6,15 +6,15 @@
 #endif
 /* Test that we correctly perform conversion as if by assignment */
 
-int check_args(long l, double d) {
+int check_args(long long l, double d) {
     return l == 2 && d == -6.0;
 }
 
 double return_double(void) {
-    /* Implicitly convert this integer to the nearest double,
-     * which is 18446744073709551616.0
+    /* Implicitly convert this integer to a double — the value
+     * fits exactly in c6502's 4-byte unsigned long long.
      */
-    return 18446744073709551586ul;
+    return 4000000000ull;
 }
 
 int check_assignment(double arg) {
@@ -32,7 +32,7 @@ int main(void) {
     }
 
     /* return values */
-    if (return_double() != 18446744073709551616.0) {
+    if (return_double() != 4000000000.0) {
         return 2;
     }
 
@@ -42,9 +42,9 @@ int main(void) {
     }
 
     /* initializer */
-    double d = 18446744073709551586ul; // implicitly convert constant to nearest double
+    double d = 4000000000ull; // implicitly convert constant to double
 
-    if (d != 18446744073709551616.) {
+    if (d != 4000000000.) {
         return 4;
     }
 

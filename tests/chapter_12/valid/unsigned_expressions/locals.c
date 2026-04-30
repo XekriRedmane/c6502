@@ -5,33 +5,33 @@ int main(void) {
      * Identical to chapter 11 long_and_int_locals but with some unsigned integers
      */
 
-    unsigned long a = 8589934592ul; // this number is outside the range of int
+    unsigned long long a = 1000000000ull; // outside the range of long
     int b = -1;
-    long c = -8589934592l; // also outside the range of int
-    unsigned int d = 10u;
+    long long c = -1000000000ll; // outside the range of long
+    unsigned long d = 10ul;
 
     /* Make sure every variable has the right value */
-    if (a != 8589934592ul) {
+    if (a != 1000000000ull) {
         return 1;
     }
     if (b != -1){
         return 2;
     }
-    if (c != -8589934592l) {
+    if (c != -1000000000ll) {
         return 3;
     }
-    if (d != 10u) {
+    if (d != 10ul) {
         return 4;
     }
 
     /* update every variable */
     a = -a;
     b = b - 1;
-    c = c + 8589934594l;
-    d = d * 268435456u; // result is between INT_MAX and UINT_MAX
+    c = c + 1000000002ll;
+    d = d * 26214ul; // result is between LONG_MAX and ULONG_MAX (mod 2^16)
 
     /* Make sure the updated values are correct */
-    if (a != 18446744065119617024ul) {
+    if (a != 3294967296ull) {
         return 5;
     }
     if (b != -2) {
@@ -40,7 +40,8 @@ int main(void) {
     if (c != 2) {
         return 7;
     }
-    if (d != 2684354560u) {
+    // 10 * 26214 = 262140; mod 65536 = 65532
+    if (d != 65532ul) {
         return 8;
     }
 

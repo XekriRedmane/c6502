@@ -39,12 +39,12 @@ int main(void) {
     }
 
     // different types
-    unsigned long ul = 0;
-    unsigned long *ul_ptr = &ul;
+    unsigned long long ul = 0;
+    unsigned long long *ul_ptr = &ul;
     if ((*ul_ptr)--) {
         return 9;
     }
-    if (ul != 18446744073709551615UL) {
+    if (ul != 4294967295ULL) {
         return 10;
     }
 

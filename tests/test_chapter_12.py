@@ -9,10 +9,14 @@ conversions. Five buckets:
   invalid_labels/    — must be rejected somewhere in the pipeline.
   invalid_types/     — must be rejected somewhere in the pipeline.
 
-Most chapter_12 tests use 32+ bit unsigned literals (the upstream
-target's `unsigned int` is 4 bytes; c6502's is 1). Files that don't
-fit go into `_INCOMPATIBLE_VALID`, plus rewrite_movz_regression.c
-which initializes a 1-byte unsigned with 5000.
+chapter_12's `valid/` files were locally rewritten to substitute
+c6502's wider unsigned types for upstream's: `unsigned long`
+(2 bytes here vs 8 upstream) replaces upstream's `unsigned int`
+in ~half the call sites, and `unsigned long long` (4 bytes)
+replaces `unsigned long`. Constants are scaled accordingly. Test
+semantics survive: zero-/sign-extension boundaries, unsigned
+arithmetic wraparound, common-type promotion, static initializers
+across width boundaries.
 """
 
 import shutil
@@ -43,35 +47,7 @@ _SEMANTIC_FAILURES = (
 )
 
 
-_INCOMPATIBLE_VALID = frozenset([
-    "explicit_casts/chained_casts.c",
-    "explicit_casts/extension.c",
-    "explicit_casts/rewrite_movz_regression.c",
-    "explicit_casts/round_trip_casts.c",
-    "explicit_casts/same_size_conversion.c",
-    "explicit_casts/truncate.c",
-    "extra_credit/bitwise_unsigned_ops.c",
-    "extra_credit/bitwise_unsigned_shift.c",
-    "extra_credit/compound_assign_uint.c",
-    "extra_credit/compound_bitshift.c",
-    "extra_credit/compound_bitwise.c",
-    "extra_credit/postfix_precedence.c",
-    "extra_credit/unsigned_incr_decr.c",
-    "implicit_casts/common_type.c",
-    "implicit_casts/convert_by_assignment.c",
-    "implicit_casts/promote_constants.c",
-    "implicit_casts/static_initializers.c",
-    "type_specifiers/unsigned_type_specifiers.c",
-    "unsigned_expressions/arithmetic_ops.c",
-    "unsigned_expressions/arithmetic_wraparound.c",
-    "unsigned_expressions/comparisons.c",
-    "unsigned_expressions/locals.c",
-    "unsigned_expressions/logical.c",
-    "unsigned_expressions/simple.c",
-    "unsigned_expressions/static_variables.c",
-    # Switch test with case constants beyond c6502's 16-bit ULong.
-    "extra_credit/switch_uint.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 _EXPECTED_FAILURES_CODEGEN = frozenset()

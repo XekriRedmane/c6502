@@ -13,184 +13,32 @@ direction and prompts a drop from the list.
 
 Categories below:
 
-- **Permanently incompatible** — c6502's narrow integer / 256-byte-frame
-  / 1-byte-int model fundamentally can't compile these. No fix
-  planned. Skipped at harness time.
-- **Pinned: feature gaps** — features c6502 plans to add (`switch`,
-  proper FP type-checks, etc.). Pinned at current accept/reject
-  behavior.
+- **Pinned: feature gaps** — features c6502 plans to add (preprocessing
+  number lexing, etc.). Pinned at current accept/reject behavior.
 - **Pinned: real bugs** — the compiler crashes or wrongly accepts
   programs the spec rejects. Pinned at current behavior.
 
 Multi-TU `libraries/` subdirs (and platform-specific `.s` files)
 aren't listed: they're skipped at import time, not at harness time.
 
----
+## Locally adapted tests
 
-## Permanently incompatible
+Many upstream files were locally rewritten to fit c6502's narrow
+integer / 256-byte-frame / 1-byte-int model. The adaptations
+substitute c6502's wider types for upstream's:
 
-### Integer literal beyond 16-bit Long range
+- upstream `int`     (4 B) → c6502 `long`     (2 B)
+- upstream `long`    (8 B) → c6502 `long long` (4 B)
+- upstream `unsigned int`  → c6502 `unsigned long`
+- upstream `unsigned long` → c6502 `unsigned long long`
 
-c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
-8-byte `long`, so a 32-bit literal that the test then assigns to /
-returns from / arithmetics on a `long` doesn't fit at runtime —
-even though the literal itself now parses as `long long` (c6502's
-`long long` is 4 bytes). The pinning below stays in place because
-the assumed semantics still mismatch even when the literal accepts.
-
-- **chapter\_2:**
-  - `valid/bitwise_int_min.c` — uses INT\_MAX (2147483647)
-  - `valid/negate_int_max.c` — same
-- **chapter\_5:**
-  - `valid/allocate_temps_and_vars.c`
-  - `valid/extra_credit/compound_bitwise_shiftr.c`
-- **chapter\_8:**
-  - `valid/empty_loop_body.c`
-  - `valid/for_absent_post.c`
-- **chapter\_9:**
-  - `valid/stack_arguments/test_for_memory_leaks.c`
-- **chapter\_11:**
-  26 files exercising 8-byte `long` semantics:
-  - `valid/explicit_casts/truncate.c`
-  - `valid/extra_credit/bitshift.c`
-  - `valid/extra_credit/bitwise_long_op.c`
-  - `valid/extra_credit/compound_assign_to_int.c`
-  - `valid/extra_credit/compound_assign_to_long.c`
-  - `valid/extra_credit/compound_bitshift.c`
-  - `valid/extra_credit/compound_bitwise.c`
-  - `valid/extra_credit/increment_long.c`
-  - `valid/implicit_casts/common_type.c`
-  - `valid/implicit_casts/convert_by_assignment.c`
-  - `valid/implicit_casts/convert_function_arguments.c`
-  - `valid/implicit_casts/convert_static_initializer.c`
-  - `valid/implicit_casts/long_constants.c`
-  - `valid/long_expressions/arithmetic_ops.c`
-  - `valid/long_expressions/assign.c`
-  - `valid/long_expressions/comparisons.c`
-  - `valid/long_expressions/large_constants.c`
-  - `valid/long_expressions/logical.c`
-  - `valid/long_expressions/long_and_int_locals.c`
-  - `valid/long_expressions/long_args.c`
-  - `valid/long_expressions/multi_op.c`
-  - `valid/long_expressions/return_long.c`
-  - `valid/long_expressions/rewrite_large_multiply_regression.c`
-  - `valid/long_expressions/simple.c`
-  - `valid/long_expressions/static_long.c`
-  - `valid/long_expressions/type_specifiers.c`
-  - `valid/extra_credit/switch_int.c` — case constants beyond 16-bit
-  - `valid/extra_credit/switch_long.c` — same
-- **chapter\_12:**
-  25 files with `unsigned int` literals beyond 16-bit ULong:
-  - `valid/explicit_casts/chained_casts.c`
-  - `valid/explicit_casts/extension.c`
-  - `valid/explicit_casts/round_trip_casts.c`
-  - `valid/explicit_casts/same_size_conversion.c`
-  - `valid/explicit_casts/truncate.c`
-  - `valid/extra_credit/bitwise_unsigned_ops.c`
-  - `valid/extra_credit/bitwise_unsigned_shift.c`
-  - `valid/extra_credit/compound_assign_uint.c`
-  - `valid/extra_credit/compound_bitshift.c`
-  - `valid/extra_credit/compound_bitwise.c`
-  - `valid/extra_credit/postfix_precedence.c`
-  - `valid/extra_credit/unsigned_incr_decr.c`
-  - `valid/implicit_casts/common_type.c`
-  - `valid/implicit_casts/convert_by_assignment.c`
-  - `valid/implicit_casts/promote_constants.c`
-  - `valid/implicit_casts/static_initializers.c`
-  - `valid/type_specifiers/unsigned_type_specifiers.c`
-  - `valid/unsigned_expressions/arithmetic_ops.c`
-  - `valid/unsigned_expressions/arithmetic_wraparound.c`
-  - `valid/unsigned_expressions/comparisons.c`
-  - `valid/unsigned_expressions/locals.c`
-  - `valid/unsigned_expressions/logical.c`
-  - `valid/unsigned_expressions/simple.c`
-  - `valid/unsigned_expressions/static_variables.c`
-  - `valid/extra_credit/switch_uint.c` — case constants beyond 16-bit
-- **chapter\_13:**
-  9 files mixing FP with 8-byte int literals:
-  - `valid/explicit_casts/double_to_signed.c`
-  - `valid/explicit_casts/double_to_unsigned.c`
-  - `valid/explicit_casts/signed_to_double.c`
-  - `valid/explicit_casts/unsigned_to_double.c`
-  - `valid/extra_credit/compound_assign_implicit_cast.c`
-  - `valid/floating_expressions/logical.c`
-  - `valid/implicit_casts/common_type.c`
-  - `valid/implicit_casts/convert_for_assignment.c`
-  - `valid/implicit_casts/static_initializers.c`
-- **chapter\_14:**
-  9 files mixing pointers with 8-byte int literals:
-  - `valid/dereference/read_through_pointers.c`
-  - `valid/dereference/static_var_indirection.c`
-  - `valid/dereference/update_through_pointers.c`
-  - `valid/extra_credit/bitshift_dereferenced_ptrs.c`
-  - `valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c`
-  - `valid/extra_credit/compound_assign_conversion.c`
-  - `valid/extra_credit/compound_bitwise_dereferenced_ptrs.c`
-  - `valid/extra_credit/incr_and_decr_through_pointer.c`
-  - `valid/extra_credit/switch_dereferenced_pointer.c` — case
-    constants beyond 16-bit
-- **chapter\_15:**
-  - `casts/implicit_and_explicit_conversions.c`
-  - `declarators/big_array.c` — array dim 4294967297L
-  - `extra_credit/bitwise_subscript.c`
-  - `extra_credit/compound_assign_to_subscripted_val.c`
-  - `extra_credit/compound_bitwise_subscript.c`
-  - `extra_credit/compound_pointer_assignment.c`
-  - `initialization/automatic.c`
-  - `initialization/automatic_nested.c`
-  - `initialization/static.c`
-- **chapter\_16:**
-  - `chars/chained_casts.c` — `unsigned int x = 4294967200u;`
-  - `chars/common_type.c` — `4294967286l`
-  - `chars/convert_by_assignment.c` — `18446744073709551606ul`
-  - `chars/explicit_casts.c` — `17592186044416l`
-  - `chars/return_char.c` — `5369233654l`
-  - `chars/static_initializers.c` — `17592186044416l`
-  - `extra_credit/bitwise_ops_character_constants.c` — `9259400834947493926ul`
-  - `extra_credit/bitwise_ops_chars.c` — `4294966637`
-  - `extra_credit/compound_bitwise_ops_chars.c` — `4296140120l`
-
-### Frame beyond 253 bytes
-
-c6502's soft-stack frame addresses pseudos as `LDY #off` against
-`(FP),Y`, which caps a function's frame size at 256 bytes (the test
-infrastructure caps at 253 to leave headroom).
-
-- **chapter\_13:**
-  - `valid/function_calls/double_and_int_params_recursive.c`
-- **chapter\_15:**
-  - `extra_credit/incr_and_decr_nested_pointers.c`
-  - `subscripting/addition_subscript_equivalence.c` — array of 3000+ bytes
-
-### 1-byte int can't hold static initializer
-
-c6502's `int` is 1 byte (max 255). The upstream tests sometimes
-declare `unsigned int x = N;` with `N >> 255`.
-
-- **chapter\_12:**
-  - `valid/explicit_casts/rewrite_movz_regression.c` — `unsigned glob = 5000u;`
-
-### Switch case promotion needs ≥2-byte int
-
-`promote_switch_cond` expects char→int promotion to widen so that
-case values that differ at int-width but collide at char-width
-(e.g. `case 100` vs. `case 356`) stay distinct. With c6502's
-1-byte int, both wrap to 100.
-
-- **chapter\_16:**
-  - `extra_credit/promote_switch_cond.c`
-
-### pcpp truncates source-embedded control characters
-
-c6502 uses pcpp as the preprocessor; pcpp treats vertical tab
-(0x0B) and form feed (0x0C) as line terminators, so source files
-with literal control characters inside a `'\v'` / `"\f"` body
-get truncated before the lexer sees them. The escape-sequence
-forms (`'\v'`, `"\f"`) work fine.
-
-- **chapter\_16:**
-  - `valid/char_constants/control_characters.c`
-  - `valid/strings_as_initializers/array_init_special_chars.c`
+Literal magnitudes scale accordingly. The chapter-by-chapter
+test semantics (multi-byte arithmetic, common-type promotion,
+sign-/zero-extension, truncation, switch-on-wide-int, etc.) all
+survive — just at narrower widths than upstream. Some files were
+also restructured to split a large frame across helper functions
+(c6502's local frame is capped at ~253 bytes by `LDY` immediate
+addressing).
 
 ---
 

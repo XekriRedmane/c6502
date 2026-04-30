@@ -57,8 +57,8 @@ int test_partial(void) {
 int test_non_constant_and_type_conversion(void) {
     // first let's define some value (that can't be copy propagated
     // or constant-folded away in Part III)
-    extern unsigned int three(void);
-    static int x = 2000;
+    extern unsigned long three(void);
+    static int x = 100;
     int negative_four = -4;
     int *ptr = &negative_four;
 
@@ -67,7 +67,7 @@ int test_non_constant_and_type_conversion(void) {
         {three()},
     };
 
-    if (arr[0][0] != 2000.0 || arr[0][1] != -500.0 || arr[1][0] != 3.0) {
+    if (arr[0][0] != 100.0 || arr[0][1] != -25.0 || arr[1][0] != 3.0) {
         return 0;
     }
 
@@ -79,30 +79,30 @@ int test_non_constant_and_type_conversion(void) {
 }
 
 // helper function for previous test
-unsigned int three(void) {
-    return 3u;
+unsigned long three(void) {
+    return 3ul;
 }
 
 /* Initializing an array must not corrupt other objects on the stack. */
-long one = 1l;
+long long one = 1ll;
 int test_preserve_stack(void) {
     int i = -1;
 
-    /* Initialize with expressions of long type - make sure they're truncated
+    /* Initialize with expressions of long long type - make sure they're truncated
      * before being copied into the array.
      * Also use an array of < 16 bytes so it's not 16-byte aligned, so there are
-     * quadwords that include both array elements and other values.
+     * eightbytes that include both array elements and other values.
      * Also leave last element uninitialized; in assembly, we should set it to
      * zero without overwriting what follows
      */
-    int arr[3][1] = {{one * 2l}, {one + three()}};
-    unsigned int u = 2684366905;
+    int arr[3][1] = {{one * 2ll}, {one + three()}};
+    unsigned long u = 36905;
 
     if (i != -1) {
         return 0;
     }
 
-    if (u != 2684366905) {
+    if (u != 36905) {
         return 0;
     }
 

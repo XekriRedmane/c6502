@@ -10,55 +10,55 @@
 #endif
 #endif
 
-// this is 2^60 + 2^31 + 12
-// should be truncated to 2^31 + 12 (which is 2147483660)
-unsigned int u = 1152921506754330636l;
+// this is 2^25 + 2^15 + 12
+// should be truncated to 2^15 + 12 (which is 32780)
+unsigned long u = 33587212l;
 
-/* This should be initialized to -2147483646,
- * or 2147483650 - 2^32
+/* This should be initialized to -32766,
+ * or 32770 - 2^16
  */
-int i = 2147483650u;
+long i = 32770u;
 
-/* This should be initialized to -9223372036854775716,
- * or 9223372036854775900 - 2^64
+/* This should be initialized to -100,
+ * or 4294967196 - 2^32
  */
-long l = 9223372036854775900u; // note: this has type unsigned long
+long long l = 4294967196u; // note: this has type unsigned long long
 
-// this can be converted to a long with no change in value
-long l2 = 2147483650u;
+// this can be converted to a long long with no change in value
+long long l2 = 32770u;
 
-// any unsigned int can be converted to an unsigned long w/ no change in value
-unsigned long ul = 4294967294u;
+// any unsigned long can be converted to an unsigned long long w/ no change in value
+unsigned long long ul = 65534u;
 
-/* any signed long _literal_ can be converted to an unsigned long w/ no change in value
+/* any signed long long _literal_ can be converted to an unsigned long long w/ no change in value
  * (we don't support negation expressions in constant initializers) */
-unsigned long ul2 = 9223372036854775798l;
+unsigned long long ul2 = 2147483638l;
 
-// truncate ulong 2**63 + 2**31 + 150
-// to int -2**31 + 150 (which is -2147483498)
-int i2 = 9223372039002259606ul;
+// truncate ulong 2**31 + 2**15 + 150
+// to int -2**15 + 150 (which is -32618)
+long i2 = 2147516614ul;
 
-// truncate ulong 2**63 + 2**31 + 150
-// to uint 2**31 + 150 (which is 2147483798)
-unsigned ui2 = 9223372039002259606ul;
+// truncate ulong 2**31 + 2**15 + 150
+// to uint 2**15 + 150 (which is 32918)
+unsigned long ui2 = 2147516614ul;
 
 int main(void)
 {
-    if (u != 2147483660u)
+    if (u != 32780ul)
         return 1;
-    if (i != -2147483646)
+    if (i != -32766)
         return 2;
-    if (l != -9223372036854775716l)
+    if (l != -100ll)
         return 3;
-    if (l2 != 2147483650l)
+    if (l2 != 32770ll)
         return 4;
-    if (ul != 4294967294ul)
+    if (ul != 65534ull)
         return 5;
-    if (ul2 != 9223372036854775798ul)
+    if (ul2 != 2147483638ull)
         return 6;
-    if (i2 != -2147483498)
+    if (i2 != -32618)
         return 7;
-    if (ui2 != 2147483798u)
+    if (ui2 != 32918ul)
         return 8;
     return 0;
 }

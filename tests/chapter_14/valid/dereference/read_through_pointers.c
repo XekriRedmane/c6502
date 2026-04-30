@@ -3,19 +3,19 @@ int main(void) {
 
     // define some variables
     int i = -100;
-    unsigned long ul = 13835058055282163712ul;
+    unsigned long long ul = 3221225472ull;
     double d = 3.5;
 
     //define some pointers to those variables
     int *i_ptr = &i;
-    unsigned long *ul_ptr = &ul;
+    unsigned long long *ul_ptr = &ul;
     double *d_ptr = &d;
 
     // dereference each pointer and read value
     if (*i_ptr != -100) {
         return 1;
     }
-    if (*ul_ptr != 13835058055282163712ul) {
+    if (*ul_ptr != 3221225472ull) {
         return 2;
     }
     if (*d_ptr != 3.5) {
@@ -40,7 +40,7 @@ int main(void) {
     // assign new values to the pointers, then make sure dereferencing them
     // results in the values of the new objects they point to
     int i2 = 1;
-    unsigned long ul2 = 144115196665790464ul;
+    unsigned long long ul2 = 33554432ull;
     double d2 = -33.3;
 
     i_ptr = &i2;
@@ -51,7 +51,7 @@ int main(void) {
     if (*i_ptr != 1) {
         return 7;
     }
-    if (*ul_ptr != 144115196665790464ul) {
+    if (*ul_ptr != 33554432ull) {
         return 8;
     }
     if (*d_ptr != -33.3) {

@@ -10,10 +10,10 @@ chapter_14 covers pointer types, the address-of `&` and dereference
 
 The upstream `valid/libraries/` subdir is multi-TU and isn't applicable.
 
-A handful of valid files use 32+ bit literals (chapter_14 mixes in
-8-byte longs); they're listed in `_INCOMPATIBLE_VALID`, including
-one switch test whose case constants don't fit in c6502's 16-bit
-Long.
+All `valid/` files now compile through `--codegen`. Files that
+originally used 8-byte-long literals were locally rewritten to
+substitute c6502's `long long` (4B) and `unsigned long long`
+(4B), with constants scaled accordingly.
 
 Two invalid_parse files (abstract function declarators) are
 currently accepted by the parser; they're pinned in
@@ -44,18 +44,7 @@ _C14 = _TESTS_DIR / "chapter_14"
 _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
-_INCOMPATIBLE_VALID = frozenset([
-    "dereference/read_through_pointers.c",
-    "dereference/static_var_indirection.c",
-    "dereference/update_through_pointers.c",
-    "extra_credit/bitshift_dereferenced_ptrs.c",
-    "extra_credit/bitwise_ops_with_dereferenced_ptrs.c",
-    "extra_credit/compound_assign_conversion.c",
-    "extra_credit/compound_bitwise_dereferenced_ptrs.c",
-    "extra_credit/incr_and_decr_through_pointer.c",
-    # Switch test with case constants beyond c6502's 16-bit Long.
-    "extra_credit/switch_dereferenced_pointer.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 _EXPECTED_FAILURES_CODEGEN = frozenset()

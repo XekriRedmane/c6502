@@ -34,7 +34,7 @@ int main(void) {
      * wrapping around
      */
     int counter = 0;
-    for (unsigned int index = 10; index < 4294967295U; index = index - 1) {
+    for (unsigned long index = 10; index < 65535UL; index = index - 1) {
         counter = counter + 1;
     }
 

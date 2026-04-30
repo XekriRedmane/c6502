@@ -1,12 +1,12 @@
 /* Test pointers to static objects, and static pointers to automatic objects */
 
-unsigned int w = 4294967295U;
+unsigned long w = 65535UL;
 int x = 10;
-unsigned int y = 4294967295U;
+unsigned long y = 65535UL;
 double *dbl_ptr;
 
-long modify_ptr(long *new_ptr) {
-    static long *p;
+long long modify_ptr(long long *new_ptr) {
+    static long long *p;
     if (new_ptr)
     {
         p = new_ptr;
@@ -39,10 +39,10 @@ int main(void) {
     if (x != 100) {
         return 2;
     }
-    if (w != 4294967295U) {
+    if (w != 65535UL) {
         return 3;
     }
-    if (y != 4294967295U) {
+    if (y != 65535UL) {
         return 4;
     }
     if (dbl_ptr) {
@@ -50,10 +50,10 @@ int main(void) {
     }
 
     // now try updating a pointer that is itself static
-    long l = 1000l;
+    long long l = 1000ll;
 
     // make static pointer in modify_ptr point to l
-    if (modify_ptr(&l) != 1000l) {
+    if (modify_ptr(&l) != 1000ll) {
         return 6;
     }
 

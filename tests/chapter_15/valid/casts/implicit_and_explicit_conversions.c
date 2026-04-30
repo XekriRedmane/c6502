@@ -7,29 +7,29 @@
 #endif
 
 int main(void) {
-    long arr[4] = {-1,-2,-3,-4};
+    long long arr[4] = {-1,-2,-3,-4};
 
-    // (long *) cast here is a no-op, since arr already decays to a pointer to its first element
-    if (arr != (long *) arr) {
+    // (long long *) cast here is a no-op, since arr already decays to a pointer to its first element
+    if (arr != (long long *) arr) {
         return 1;
     }
 
     // taking address with & and explicitly converting to pointer to array
     // both result in address of arr with same type
-    if ((long (*)[4]) arr != &arr) {
+    if ((long long (*)[4]) arr != &arr) {
         return 2;
     }
 
-    // reinterpret arr as an array of unsigned longs
+    // reinterpret arr as an array of unsigned long longs
     // NOTE: effective type rules usually don't let you read an object
     // with an lvalue of different type, but reading signed integer thru
     // corresponding unsigned type, and vice versa, is okay.
-    unsigned long *unsigned_arr = (unsigned long *)arr;
-    if (unsigned_arr[0] != 18446744073709551615UL) {
+    unsigned long long *unsigned_arr = (unsigned long long *)arr;
+    if (unsigned_arr[0] != 4294967295UL) {
         return 3;
     }
 
-    if (unsigned_arr[3] != 18446744073709551612UL) {
+    if (unsigned_arr[3] != 4294967292UL) {
         return 4;
     }
 

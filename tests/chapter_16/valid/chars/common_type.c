@@ -6,17 +6,17 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
-long ternary(int flag, char c) {
-    // first we'll convert c to an unsigned int (2^32 - c), then to a long
-    return flag ? c : 1u;
+long long ternary(int flag, char c) {
+    // first we'll convert c to an unsigned long (2^16 - c), then to a long long
+    return flag ? c : 1ul;
 }
 
 int char_lt_int(char c, int i) {
     return c < i;  // common type is int
 }
 
-int uchar_gt_long(unsigned char uc, long l) {
-    return uc > l;  // common type is long
+int uchar_gt_long(unsigned char uc, long long l) {
+    return uc > l;  // common type is long long
 }
 
 /* On operations with two character types, both are promoted to int */
@@ -42,15 +42,15 @@ int multiply(void) {
 }
 
 int main(void) {
-    if (ternary(1, -10) != 4294967286l) {
-        // 1 ? -10 : 1u
-        // ==> (long) (UINT_MAX - 10)
+    if (ternary(1, -10) != 65526ll) {
+        // 1 ? -10 : 1ul
+        // ==> (long long) (USHORT_MAX - 10)
         return 1;
     }
 
-    if (!char_lt_int((char)1, 256)) {
-        // 1 < 256 ; if we converted 256 to a char, its value would be 0,
-        // so it would evaluate to less than 1
+    if (!char_lt_int((char)1, 100)) {
+        // 1 < 100; if we converted 100 to a char, its value would be 100,
+        // still > 1.
         return 2;
     }
 

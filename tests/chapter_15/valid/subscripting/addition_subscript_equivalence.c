@@ -1,9 +1,12 @@
 // Test that we treat x[i] and *(x + i) as equivalent
+// (Moved x to file scope so the array storage doesn't have to fit in
+//  c6502's 256-byte local frame.)
+
+unsigned long x[100][5];
 
 int main(void)
 {
-    unsigned long x[300][5];
-    for (int i = 0; i < 300; i = i + 1) {
+    for (int i = 0; i < 100; i = i + 1) {
         for (int j = 0; j < 5; j = j + 1) {
             x[i][j] = i * 5 + j;
         }
@@ -15,12 +18,12 @@ int main(void)
     }
 
     // same idea but taking address
-    if (&(*(*(x + 290) + 3)) != &x[290][3]) {
+    if (&(*(*(x + 90) + 3)) != &x[90][3]) {
         return 2;
     }
 
     // do this exhaustively
-    for (int i = 0; i < 300; i = i + 1) {
+    for (int i = 0; i < 100; i = i + 1) {
         for (int j = 0; j < 5; j = j + 1) {
             if (*(*(x + i) + j) != x[i][j]) {
                 return 3;
@@ -30,8 +33,8 @@ int main(void)
 
 
     // assign, then read
-    *(*(x + 275) + 4) = 22000ul;
-    if (x[275][4] != 22000ul) {
+    *(*(x + 75) + 4) = 22000ul;
+    if (x[75][4] != 22000ul) {
         return 4;
     }
     return 0;

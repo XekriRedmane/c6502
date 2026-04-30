@@ -44,19 +44,7 @@ _C13 = _TESTS_DIR / "chapter_13"
 _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
-_INCOMPATIBLE_VALID = frozenset([
-    # Literal out of c6502 integer range, or frame too large.
-    "explicit_casts/double_to_signed.c",
-    "explicit_casts/double_to_unsigned.c",
-    "explicit_casts/signed_to_double.c",
-    "explicit_casts/unsigned_to_double.c",
-    "extra_credit/compound_assign_implicit_cast.c",
-    "floating_expressions/logical.c",
-    "function_calls/double_and_int_params_recursive.c",
-    "implicit_casts/common_type.c",
-    "implicit_casts/convert_for_assignment.c",
-    "implicit_casts/static_initializers.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 # Lexer tokenises `1.0e10.0` as two CONSTANTs (`1.0e10` and `.0`)

@@ -1,72 +1,72 @@
 /* Test truncating wider to narrow types */
-int ulong_to_int(unsigned long ul, int expected) {
-    int result = (int) ul;
+int ulong_to_int(unsigned long long ul, long expected) {
+    long result = (long) ul;
     return (result == expected);
 }
 
-int ulong_to_uint(unsigned long ul, unsigned expected) {
-    return ((unsigned int) ul == expected);
+int ulong_to_uint(unsigned long long ul, unsigned long expected) {
+    return ((unsigned long) ul == expected);
 }
 
-int long_to_uint(long l, unsigned int expected) {
-    return (unsigned int) l == expected;
+int long_to_uint(long long l, unsigned long expected) {
+    return (unsigned long) l == expected;
 }
 
 int main(void) {
-    /* truncate long */
+    /* truncate long long */
 
-    /* 100 is in the range of unsigned int,
-     * so truncating it to an unsigned int
+    /* 100 is in the range of unsigned long,
+     * so truncating it to an unsigned long
      * will preserve its value
      */
-    if (!long_to_uint(100l, 100u)) {
+    if (!long_to_uint(100ll, 100ul)) {
         return 1;
     }
 
-    /* -9223372036854774574 (i.e. -2^63 + 1234) is outside the range of unsigned int,
-     * so add 2^32 to bring it within range */
-    if (!long_to_uint(-9223372036854774574l, 1234u)) {
+    /* -2147482414 (i.e. -2^31 + 1234) is outside the range of unsigned long,
+     * so add 2^16 to bring it within range */
+    if (!long_to_uint(-2147482414ll, 1234ul)) {
         return 2;
     }
 
-    /* truncate unsigned long */
+    /* truncate unsigned long long */
 
-    /* 100 can be cast to an int or unsigned int without changing its value */
-    if (!ulong_to_int(100ul, 100)) {
+    /* 100 can be cast to a long or unsigned long without changing its value */
+    if (!ulong_to_int(100ull, 100l)) {
         return 3;
     }
 
-    if (!ulong_to_uint(100ul, 100u)) {
+    if (!ulong_to_uint(100ull, 100ul)) {
         return 4;
     }
 
-    /* 4294967200 (i.e. 2^32 - 96) can be cast to an unsigned int without changing its value,
-     * but must be reduced modulo 2^32 to cast to a signed int
+    /* 65440 (i.e. 2^16 - 96) can be cast to an unsigned long without changing its value,
+     * but must be reduced modulo 2^16 to cast to a signed long
      */
-    if (!ulong_to_uint(4294967200ul, 4294967200u)) {
+    if (!ulong_to_uint(65440ull, 65440ul)) {
         return 5;
     }
 
-    if (!ulong_to_int(4294967200ul, -96)) {
+    if (!ulong_to_int(65440ull, -96l)) {
         return 6;
     }
 
-    /* 1152921506754330624 (i.e. 2^60 + 2^31) must be reduced modulo 2^32
-     * to represent as a signed or unsigned int
+    /* 98304 (i.e. 2^16 + 2^15) must be reduced modulo 2^16
+     * to represent as a signed or unsigned long
      */
 
-    if (!ulong_to_uint(1152921506754330624ul, 2147483648u)) { // reduce to 2^31
+    if (!ulong_to_uint(98304ull, 32768ul)) { // reduce to 2^15
         return 7;
     }
 
-    if (!ulong_to_int(1152921506754330624ul, -2147483648)){ // reduce to -2^31
+    if (!ulong_to_int(98304ull, -32768l)){ // reduce to -2^15
         return 8;
     }
 
-    /* truncate unsigned long constant that can't
-     * be expressed in 32 bits, to test rewrite rule
+    /* truncate unsigned long long constant that can't
+     * be expressed in 16 bits, to test rewrite rule
      */
-    unsigned int ui = (unsigned int)17179869189ul; // 2^34 + 5
+    unsigned long ui = (unsigned long)65541ull; // 2^16 + 5
     if (ui != 5)
         return 9;
 

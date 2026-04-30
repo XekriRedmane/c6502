@@ -2,11 +2,11 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 int main(void) {
-    unsigned int ui = -1u; // lower 32 bits set
-    unsigned long ul = 9223372036854775808ul; // 2^63, only uppermost bit set
+    unsigned long ui = -1ul; // lower 16 bits set
+    unsigned long long ul = 2147483648ull; // 2^31, only uppermost bit set
 
     /* this expression will:
-     * 1. zero-extend ui. the result will have all 32 lower bits set to 1
+     * 1. zero-extend ui. the result will have all 16 lower bits set to 1
      *    and all upper bits set to 0
      * 2. calculate the bitwise and of this zero-extended value and ul. the result is 0
      */
@@ -14,18 +14,18 @@ int main(void) {
         return 1;
 
     /* this expression will:
-     * 1. zero-extend ui. the result will have all 32 lower bits set to 1
+     * 1. zero-extend ui. the result will have all 16 lower bits set to 1
      *    and all upper bits set to 0
      * 2. calculate the bitwise or of this zero-extended value and ul.
-     *    the result is 2^63 + 2^32 - 1
+     *    the result is 2^31 + 2^16 - 1
      */
-    if ((ui | ul) != 9223372041149743103ul)
+    if ((ui | ul) != 2147549183ull)
         return 2;
 
     signed int i = -1;
     /* this expression will:
      * 1. sign-extend i. the result will have every bit set to 1.
-     * 2. calculate the bitwise and of this zero-extended value and ul.
+     * 2. calculate the bitwise and of this sign-extended value and ul.
      *    the result is equal to ul.
      */
     if ((i & ul) != ul)
@@ -34,7 +34,7 @@ int main(void) {
 
     /* this expression will:
      * 1. sign-extend i. the result will have every bit set to 1.
-     * 2. calculate the bitwise or of this zero-extended value and ul.
+     * 2. calculate the bitwise or of this sign-extended value and ul.
      *    the result will have every bit set
      */
     if ((i | ul) != i)

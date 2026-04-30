@@ -19,9 +19,9 @@ int main(void) {
     }
 
     // make sure we do usual conversion to common type
-    // (result of c ^ 1001u is unsigned int, so we zero-extend it
+    // (result of c ^ 1001ul is unsigned long, so we zero-extend it
     // for next operation)
-    if (((c ^ 1001u) | 360l) != 4294966637) {
+    if (((c ^ 1001ul) | 360ll) != 65517ll) {
         return 3; // fail
     }
 

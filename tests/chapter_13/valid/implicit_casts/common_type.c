@@ -8,18 +8,17 @@
 #endif
 #endif
 
-int lt(double d, long l) {
+int lt(double d, long long l) {
     // l is implicitly converted to a double
     return d < l;
 }
 
 double tern_double_flag(double flag) {
-    /* Ternary expression where controlling condition is a double
+    /* Ternary expression where controlling condition is a double.
      * You do not have to convert second and third operands to double;
      * instead, we convert them to their common type, which is unsigned long,
      * THEN convert that to a double.
-     * Converting -30 to unsigned long gives us 2^64 - 30, or 18446744073709551586.
-     * The nearest double to this result is 18446744073709551616.0
+     * Converting -30 to unsigned long gives us 2^16 - 30 = 65506.
      */
     return (double) (flag ? -30 : 10ul);
 }
@@ -27,9 +26,10 @@ double tern_double_flag(double flag) {
 double tern_double_result(int flag) {
     /* The common type of the two operands is double,
      * so if flag is 0, this will return the nearest representable
-     * double to 9223372036854777850ul, which is 9223372036854777856.0
+     * double to 4000000000ull, which is exactly 4000000000.0
+     * (within mantissa range).
      */
-    return flag ? 5.0 : 9223372036854777850ul;
+    return flag ? 5.0 : 4000000000ull;
 }
 int ten = 10;
 int multiply(void) {
@@ -47,15 +47,16 @@ int multiply(void) {
 int main(void) {
 
     /* Comparison:
-     * we'll implicitly convert the long argument the nearest double,
-     * which is -9007199254751228.0, so these values compare equal
+     * c6502's long long is 4B and fits exactly in a double's
+     * 52-bit mantissa, so the conversion preserves the value
+     * and these compare unequal.
      */
-    if (lt(-9007199254751228.0, -9007199254751227l)) {
+    if (lt(-1000.0, -1000ll)) {
         return 1;
     }
 
     /* Ternary expressions */
-    if (tern_double_flag(20.0) != 18446744073709551586.0) {
+    if (tern_double_flag(20.0) != 65506.0) {
         return 2;
     }
 
@@ -66,7 +67,7 @@ int main(void) {
     if (tern_double_result(1) != 5.0) {
         return 4;
     }
-    if (tern_double_result(0) != 9223372036854777856.0) {
+    if (tern_double_result(0) != 4000000000.0) {
         return 5;
     }
 

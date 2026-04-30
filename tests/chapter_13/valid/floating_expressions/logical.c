@@ -67,7 +67,7 @@ int main(void) {
 
 
     // mix of double and integer operands
-    if (18446744073709551615UL && zero) {
+    if (4294967295ULL && zero) {
         return 11;
     }
 

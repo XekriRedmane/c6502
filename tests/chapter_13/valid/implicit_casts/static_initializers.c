@@ -10,26 +10,17 @@
 // double variables
 
 // can convert from int/uint without rounding
-double d1 = 2147483647;
-double d2 = 4294967295u;
+double d1 = 32767;
+double d2 = 65535u;
 
-/* midway point between 4611686018427388928.0 and 4611686018427389952.0
- * We round ties to even, so round this up to 4611686018427389952.0
+/* All c6502 4-byte integer values fit exactly in a double's
+ * 52-bit mantissa — no rounding needed.
  */
-double d3 = 4611686018427389440l;
-
-/* We'll round this down to 4611686018427389952.0 */
-double d4 = 4611686018427389955l;
-
-/* Using round-to-nearest, this rounds to 9223372036854775808 */
-double d5 = 9223372036854775810ul;
-double d6 = 4611686018427389955ul; // this as the same value as d4 and should round to the same double
-
-/* This is exactly halfway between 9223372036854775808.0 and
- * 9223372036854777856.0 We round ties to even, so this
- * rounds down to 9223372036854775808.0
- */
-double d7 = 9223372036854776832ul;
+double d3 = 1000000000ll;
+double d4 = 1000000000ll;
+double d5 = 4000000000ull;
+double d6 = 1000000000ull;
+double d7 = 4000000000ull;
 
 double uninitialized; // should be initialized to 0.0
 
@@ -37,23 +28,23 @@ double uninitialized; // should be initialized to 0.0
 
 static int i = 4.9; // truncated to 4
 
-int unsigned u = 42949.672923E5; // truncated to 4294967292u
+unsigned long u = 42949.6e3; // truncated to 42949600 mod 2^16 = 42949600 - 655 * 65536 = 12000... actually let's be explicit
 
-// this token is first converted to a double w/ value 4611686018427389952.0,
-// then truncated down to long 4611686018427389952
-long l = 4611686018427389440.;
+// this token is first converted to a double w/ value 1000000000.0,
+// then truncated down to long long 1000000000
+long long l = 1000000000.;
 
-unsigned long ul = 18446744073709549568.;
+unsigned long long ul = 4000000000.;
 
 int main(void) {
-    if (d1 != 2147483647.) {
+    if (d1 != 32767.) {
         return 1;
     }
 
-    if (d2 != 4294967295.) {
+    if (d2 != 65535.) {
         return 2;
     }
-    if (d3 != 4611686018427389952.) {
+    if (d3 != 1000000000.) {
         return 3;
     }
 
@@ -61,7 +52,7 @@ int main(void) {
         return 4;
     }
 
-    if (d5 != 9223372036854775808.) {
+    if (d5 != 4000000000.) {
         return 5;
     }
 
@@ -81,15 +72,18 @@ int main(void) {
         return 9;
     }
 
-    if (u != 4294967292u) {
+    /* 42949.6e3 = 42949600. Truncated to unsigned long (2B) =
+     * 42949600 mod 65536 = 14816 (since 42949600 = 655*65536 + 14816).
+     */
+    if (u != 14816ul) {
         return 10;
     }
 
-    if (l != 4611686018427389952l) {
+    if (l != 1000000000ll) {
         return 11;
     }
 
-    if (ul != 18446744073709549568ul) {
+    if (ul != 4000000000ull) {
         return 12;
     }
 

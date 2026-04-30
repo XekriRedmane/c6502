@@ -57,32 +57,7 @@ _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 # frames too large, or features that need an `int` larger than
 # c6502's 1 byte / a preprocessor that preserves control
 # characters in source / a runtime c6502 doesn't model.
-_INCOMPATIBLE_VALID: frozenset[str] = frozenset([
-    # Literals beyond c6502's widest integer type (ULongLong,
-    # 0..2^32-1). chapter_16 was written against an 8-byte-long /
-    # 4-byte-int model; these don't fit.
-    "chars/chained_casts.c",          # `unsigned int = 4294967200u`
-    "chars/common_type.c",            # `4294967286l`
-    "chars/convert_by_assignment.c",  # `18446744073709551606ul`
-    "chars/explicit_casts.c",         # `17592186044416l`
-    "chars/return_char.c",            # `5369233654l`
-    "chars/static_initializers.c",    # `17592186044416l`
-    "extra_credit/bitwise_ops_character_constants.c",
-    # `9259400834947493926ul`
-    "extra_credit/bitwise_ops_chars.c",        # `4294966637`
-    "extra_credit/compound_bitwise_ops_chars.c",  # `4296140120l`
-    # Tests that require an `int` wider than c6502's 1 byte: the
-    # case-value conversion would have to preserve a 4-byte int
-    # for `case 356` to be distinct from `case 100`.
-    "extra_credit/promote_switch_cond.c",
-    # pcpp truncates source lines at the embedded vertical-tab
-    # / form-feed characters before the lexer sees them, so the
-    # `'\v'` / `"\v\f\t"` literal-control-character forms aren't
-    # recoverable. The escape-sequence forms (`'\v'`, `"\v"`)
-    # work fine.
-    "char_constants/control_characters.c",
-    "strings_as_initializers/array_init_special_chars.c",
-])
+_INCOMPATIBLE_VALID: frozenset[str] = frozenset()
 
 
 # Currently fail through `--codegen` despite being in the valid

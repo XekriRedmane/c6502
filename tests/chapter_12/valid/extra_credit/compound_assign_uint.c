@@ -1,10 +1,10 @@
 int main(void) {
-    unsigned int x = -1u; // 2^32 - 1
-    /* 1. convert x to a signed long, which preserves its value
-     * 2. divide by -10, resulting in -429496729
-     * 3. convert -429496729 to an unsigned int by adding 2^32
+    unsigned long x = -1ul; // 2^16 - 1
+    /* 1. convert x to a signed long long, which preserves its value
+     * 2. divide by -10, resulting in -6553 (truncated toward 0)
+     * 3. convert -6553 to an unsigned long by adding 2^16
      */
-    x /= -10l;
+    x /= -10ll;
 
-    return (x == 3865470567u);
+    return (x == 58983ul);
 }

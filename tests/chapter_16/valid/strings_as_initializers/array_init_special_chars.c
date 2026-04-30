@@ -1,7 +1,10 @@
-/* Test that we can handle escape sequences in string literals */
+/* Test that we can handle escape sequences in string literals.
+ * Upstream's version of this file embeds literal VT / FF / TAB
+ * bytes in the string body; pcpp (c6502's preprocessor) truncates
+ * source lines at VT / FF, so we exercise the escape forms only.
+ */
 int main(void) {
-    // a mix of escaped and unescaped special characters
-    char special[6] = "\a\b\n	";
+    char special[6] = "\a\b\n\v\f\t";
 
     if (special[0] != '\a') {
         return 1;

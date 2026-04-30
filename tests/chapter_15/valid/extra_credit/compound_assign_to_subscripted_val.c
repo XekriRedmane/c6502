@@ -1,6 +1,6 @@
 // Test compound assignment where LHS is a subscript expression
 
-unsigned unsigned_arr[4] = {4294967295U, 4294967294U, 4294967293U, 4294967292U};
+unsigned long unsigned_arr[4] = {65535UL, 65534UL, 65533UL, 65532UL};
 
 int idx = 2;
 long long_idx = 1;
@@ -13,17 +13,18 @@ int main(void) {
         return 1;  // fail
     }
     unsigned_arr[idx] -= 10.0;
-    if (unsigned_arr[idx] != 4294967283U) {
+    if (unsigned_arr[idx] != 65523UL) {
         return 2;  // fail
     }
 
-    unsigned *unsigned_ptr = unsigned_arr + 4;  // pointer one past end
+    unsigned long *unsigned_ptr = unsigned_arr + 4;  // pointer one past end
     unsigned_ptr[long_idx] /= 10;  // pointer to last element, unsigned_arr[3]
-    if (unsigned_arr[3] != 429496729U) {
+    if (unsigned_arr[3] != 6553UL) {
         return 3;  // fail
     }
 
-    // unsigned_arr[2]; 4294967283 * 4294967295 (wraps around)
+    // unsigned_arr[2]; 65523 * 65535 (wraps around mod 2^16)
+    // = 65523 * 65535 = 4293459405; mod 65536 = 4293459405 - 65521*65536 = 13
     unsigned_ptr[long_idx *= 2] *= unsigned_arr[0];
     if (unsigned_arr[2] != 13) {
         return 4;  // fail
@@ -36,7 +37,7 @@ int main(void) {
 
     // validate other three four elements; make sure updating one didn't
     // accidentally clobber its neighbors
-    if (unsigned_arr[0] != 5u) {
+    if (unsigned_arr[0] != 5ul) {
         return 6;  // fail
     }
 
@@ -48,7 +49,7 @@ int main(void) {
         return 8;  // fail
     }
 
-    if (unsigned_arr[3] != 429496729U) {
+    if (unsigned_arr[3] != 6553UL) {
         return 9;  // fail
     }
 

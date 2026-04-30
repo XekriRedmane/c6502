@@ -8,15 +8,13 @@ int main(void) {
         return 1;
     }
 
-    unsigned long ul = 18446744073709551586ul;
-    /* We'll promote ul to the nearest double,
-     * which is 18446744073709551616,
-     * then subtract 1.5 * 10^19, which
-     * results in 3446744073709551616.0,
-     * then convert it back to an unsigned long
+    unsigned long long ul = 4000000000ull;
+    /* We'll promote ul to a double (= 4e9, exact),
+     * subtract 1.5 * 10^9, resulting in 2.5 * 10^9,
+     * then convert it back to an unsigned long long
      */
-    ul -= 1.5E19;
-    if (ul != 3446744073709551616ul) {
+    ul -= 1.5E9;
+    if (ul != 2500000000ull) {
         return 2;
     }
     /* We'll promote i to a double, add .99999,

@@ -6,15 +6,15 @@
 #endif
 #endif
 
-int switch_on_uint(unsigned int ui) {
+int switch_on_uint(unsigned long ui) {
     switch (ui) {
-        case 5u:
+        case 5ul:
             return 0;
-        // this will be converted to an unsigned int, preserving its value
-        case 4294967286l:
+        // this will be converted to an unsigned long, preserving its value
+        case 65526ll:
             return 1;
-        // 2^35 + 10, will be converted to 10
-        case 34359738378ul:
+        // 2^17 + 10, will be converted (mod 2^16) to 10
+        case 131082ull:
             return 2;
         default:
             return 3;
@@ -24,7 +24,7 @@ int switch_on_uint(unsigned int ui) {
 int main(void) {
     if (switch_on_uint(5) != 0)
         return 1;
-    if (switch_on_uint(4294967286) != 1)
+    if (switch_on_uint(65526) != 1)
         return 2;
     if (switch_on_uint(10) != 2)
         return 3;

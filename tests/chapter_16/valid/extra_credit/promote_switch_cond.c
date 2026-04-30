@@ -16,8 +16,11 @@ int main(void) {
             return 1;
         case 100:
             return 0;
-        // not a duplicate of 100, b/c we're not converting cases to char type
-        case 356:
+        // distinct from case 100; in upstream this would be 356 to verify
+        // that case constants stay at int width rather than truncating to
+        // char width, but for c6502 int is the same width as char (1B)
+        // so we just pick another in-range value.
+        case 50:
             return 2;
         default:
             return 3;

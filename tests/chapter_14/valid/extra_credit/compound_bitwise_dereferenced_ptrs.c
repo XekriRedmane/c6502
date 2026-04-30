@@ -2,25 +2,25 @@
 // ones that involve implicit type conversions
 // Same operations as tests/chapter_12/valid/extra_credit/compound_bitwise.c
 
-unsigned long ul = 18446460386757245432ul; // 0xfffe_fdfc_fbfa_f9f8
+unsigned long long ul = 0xfbfaf9f8ull; // 0xfbfa_f9f8
 
 int main(void) {
 
-    unsigned long *ul_ptr = &ul;
+    unsigned long long *ul_ptr = &ul;
     *ul_ptr &= -1000;
-    if (ul != 18446460386757244952ul /* 0xfffe_fdfc_fbfa_f818 */) {
+    if (ul != 0xfbfaf818ull /* 0xfbfa_f818 */) {
         return 1; // fail
     }
-    *ul_ptr |= 4294967040u;
+    *ul_ptr |= 65280ul;
 
-    if (ul != 18446460386824683288ul /* 0xfffe_fdfc_ffff_ff18 */) {
+    if (ul != 0xfbfaff18ull /* 0xfbfa_ff18 */) {
         return 2; // fail
     }
-    int i = 123456;
-    unsigned int ui = 4042322160u; // 0xf0f0_f0f0
-    long l = -252645136; // 0xffff_ffff_f0f0_f0f0
-    unsigned int *ui_ptr = &ui;
-    long *l_ptr = &l;
+    int i = 100;
+    unsigned long ui = 0xf0f0ul; // 0xf0f0
+    long long l = -3856ll; // sign-extended to 4B = 0xfffff0f0
+    unsigned long *ui_ptr = &ui;
+    long long *l_ptr = &l;
     if (*ui_ptr ^= *l_ptr) {
         return 3; // fail
     }
@@ -29,10 +29,10 @@ int main(void) {
     }
 
     // check neighbors
-    if (i != 123456) {
+    if (i != 100) {
         return 5;
     }
-    if (l != -252645136) {
+    if (l != -3856ll) {
         return 6;
     }
 

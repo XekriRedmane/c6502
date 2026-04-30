@@ -30,21 +30,7 @@ _C15_VALID = _TESTS_DIR / "chapter_15" / "valid"
 # or frame too large for the soft stack's single-byte FP offsets.
 # chapter_15 was written against an 8-byte-long, large-memory model;
 # there's no path to making these compile under c6502's targets.
-_INCOMPATIBLE = frozenset([
-    # Literals beyond ULong's 0..65535 range.
-    "casts/implicit_and_explicit_conversions.c",
-    "declarators/big_array.c",
-    "extra_credit/bitwise_subscript.c",
-    "extra_credit/compound_assign_to_subscripted_val.c",
-    "extra_credit/compound_bitwise_subscript.c",
-    "extra_credit/compound_pointer_assignment.c",
-    "initialization/automatic.c",
-    "initialization/automatic_nested.c",
-    "initialization/static.c",
-    # Frame larger than the 253-byte LDY-immediate window.
-    "extra_credit/incr_and_decr_nested_pointers.c",
-    "subscripting/addition_subscript_equivalence.c",
-])
+_INCOMPATIBLE = frozenset()
 
 
 # Currently fail through `--codegen`. Each corresponds to a feature gap

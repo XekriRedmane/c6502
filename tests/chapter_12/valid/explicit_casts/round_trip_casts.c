@@ -3,25 +3,25 @@
  */
 
 // start with a global variable so we can't optimize away casts in Part III
-unsigned long a = 8589934580ul; // 2^33 - 12
+unsigned long long a = 100000ull; // 2^16 + 34464
 
 int main(void) {
 
-    /* because a is too large to fit in an unsigned int,
-     * casting it to unsigned int and back is equivalent to subtracting
-     * 2^32, resulting in 4294967284
+    /* because a is too large to fit in an unsigned long,
+     * casting it to unsigned long and back is equivalent to taking mod 2^16,
+     * resulting in 34464
      */
-    unsigned long b = (unsigned long) (unsigned int) a;
+    unsigned long long b = (unsigned long long) (unsigned long) a;
 
-    if (b != 4294967284ul)
+    if (b != 34464ull)
         return 1;
 
-    /* Casting a to signed int results in -12, and
-     * casting it back to unsigned long results in 2^64 - 12,
-     * or 18446744073709551604
+    /* Casting a to signed long takes the low 16 bits (34464) and reinterprets
+     * as signed (= -31072). Casting it back to unsigned long long gives
+     * 2^32 - 31072 = 4294936224.
      */
-    b = (unsigned long) (signed int) a;
-    if (b != 18446744073709551604ul)
+    b = (unsigned long long) (signed long) a;
+    if (b != 4294936224ull)
         return 2;
 
     return 0;

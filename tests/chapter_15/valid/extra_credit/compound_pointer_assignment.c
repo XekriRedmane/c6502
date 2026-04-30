@@ -39,8 +39,8 @@ int int_array(void) {
     }
 
     // with rval of different types
-    // here, rval is unsigned and wraps around
-    if ((ptr -= (4294967295U + i)) != arr + 2) {
+    // here, rval is unsigned long and wraps around (mod 2^16)
+    if ((ptr -= (65535UL + i)) != arr + 2) {
         return 9;
     }
 
@@ -48,8 +48,8 @@ int int_array(void) {
         return 10;
     }
 
-    long l = 9223372036854775807l;
-    if ((ptr += l - 9223372036854775806l) != arr + 3) {
+    long long l = 2147483647ll;
+    if ((ptr += l - 2147483646ll) != arr + 3) {
         return 11;
     }
 
@@ -98,8 +98,8 @@ int double_array(void) {
     }
 
     // with rval of different types
-    // here, rval is unsigned and wraps around
-    if ((ptr -= (4294967295U + i)) != arr + 2) {
+    // here, rval is unsigned long and wraps around (mod 2^16)
+    if ((ptr -= (65535UL + i)) != arr + 2) {
         return 9;
     }
 
@@ -107,8 +107,8 @@ int double_array(void) {
         return 10;
     }
 
-    long l = 9223372036854775807l;
-    if ((ptr += l - 9223372036854775806l) != arr + 3) {
+    long long l = 2147483647ll;
+    if ((ptr += l - 2147483646ll) != arr + 3) {
         return 11;
     }
 

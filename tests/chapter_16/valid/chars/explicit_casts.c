@@ -34,16 +34,16 @@ int char_to_int(char c) {
     return (int)c;
 }
 
-unsigned int char_to_uint(char c) {
-    return (unsigned int)c;
-}
-
-long char_to_long(char c) {
-    return (long)c;
-}
-
-unsigned long char_to_ulong(char c) {
+unsigned long char_to_uint(char c) {
     return (unsigned long)c;
+}
+
+long long char_to_long(char c) {
+    return (long long)c;
+}
+
+unsigned long long char_to_ulong(char c) {
+    return (unsigned long long)c;
 }
 
 double char_to_double(char c) {
@@ -55,16 +55,16 @@ int schar_to_int(signed char s) {
     return (int)s;
 }
 
-unsigned int schar_to_uint(signed char s) {
-    return (unsigned int)s;
-}
-
-long schar_to_long(signed char s) {
-    return (long)s;
-}
-
-unsigned long schar_to_ulong(signed char s) {
+unsigned long schar_to_uint(signed char s) {
     return (unsigned long)s;
+}
+
+long long schar_to_long(signed char s) {
+    return (long long)s;
+}
+
+unsigned long long schar_to_ulong(signed char s) {
+    return (unsigned long long)s;
 }
 
 double schar_to_double(signed char s) {
@@ -76,16 +76,16 @@ int uchar_to_int(unsigned char u) {
     return (int)u;
 }
 
-unsigned int uchar_to_uint(unsigned char u) {
-    return (unsigned int)u;
-}
-
-long uchar_to_long(unsigned char u) {
-    return (long)u;
-}
-
-unsigned long uchar_to_ulong(unsigned char u) {
+unsigned long uchar_to_uint(unsigned char u) {
     return (unsigned long)u;
+}
+
+long long uchar_to_long(unsigned char u) {
+    return (long long)u;
+}
+
+unsigned long long uchar_to_ulong(unsigned char u) {
+    return (unsigned long long)u;
 }
 
 double uchar_to_double(unsigned char u) {
@@ -97,7 +97,7 @@ char int_to_char(int i) {
     return (char)i;
 }
 
-char uint_to_char(unsigned int u) {
+char uint_to_char(unsigned long u) {
     return (char)u;
 }
 
@@ -106,11 +106,11 @@ char double_to_char(double d) {
 }
 
 // other types to signed char
-signed char long_to_schar(long l) {
+signed char long_to_schar(long long l) {
     return (signed char)l;
 }
 
-signed char ulong_to_schar(unsigned long l) {
+signed char ulong_to_schar(unsigned long long l) {
     return (signed char)l;
 }
 
@@ -119,15 +119,15 @@ unsigned char int_to_uchar(int i) {
     return (unsigned char)i;
 }
 
-unsigned char uint_to_uchar(unsigned int ui) {
+unsigned char uint_to_uchar(unsigned long ui) {
     return (unsigned char)ui;
 }
 
-unsigned char long_to_uchar(long l) {
+unsigned char long_to_uchar(long long l) {
     return (unsigned char)l;
 }
 
-unsigned char ulong_to_uchar(unsigned long ul) {
+unsigned char ulong_to_uchar(unsigned long long ul) {
     return (unsigned char)ul;
 }
 
@@ -160,7 +160,7 @@ int main(void) {
         return 5;
     }
 
-    if (schar_to_uint(sc) != 4294967286u) {
+    if (schar_to_uint(sc) != 65526ul) {
         return 6;
     }
 
@@ -204,7 +204,7 @@ int main(void) {
     }
 
     c = (char)-6;
-    if (uint_to_char(2147483898u) != c) {
+    if (uint_to_char(32762ul) != c) {  // mod 256 = 250 → -6 (signed)
         return 16;
     }
 
@@ -214,29 +214,29 @@ int main(void) {
     }
 
     // other types to schar
-    if (long_to_schar(17592186044416l)) {  // should be null byte
+    if (long_to_schar(65536ll)) {  // mod 256 = 0 → null byte
         return 18;
     }
 
     sc = (signed char)-126;
-    if (ulong_to_schar(9224497936761618562ul) != sc) {
+    if (ulong_to_schar(2147483778ull) != sc) {  // 2^31 + 130; mod 256 = 130 → -126
         return 19;
     }
 
     // other types to uchar
     uc = (unsigned char)200;
-    if (int_to_uchar(-1234488) != uc) {
+    if (int_to_uchar(-56) != uc) {  // -56 + 256 = 200
         return 20;
     }
-    if (uint_to_uchar(4293732808) != uc) {
+    if (uint_to_uchar(65480ul) != uc) {  // mod 256 = 200
         return 21;
     }
 
-    if (long_to_uchar(-36283884951096l) != uc) {
+    if (long_to_uchar(-1073741624ll) != uc) {  // mod 256: -1073741624 = ~2^30; low byte = 200
         return 22;
     }
 
-    if (ulong_to_uchar(9224497936761618632ul) != uc) {
+    if (ulong_to_uchar(4294967240ull) != uc) {  // mod 256 = 200 (= 256 - 56 wrap, but actually 4294967240 mod 256 = 200)
         return 23;
     }
 

@@ -12,15 +12,15 @@
 #endif
 
 char return_char(void) {
-    return 5369233654l;  // this will be truncated to -10
+    return 524278ll  /* 2^19 - 10; truncated to 1B = -10 */;  // this will be truncated to -10
 }
 
 signed char return_schar(void) {
-    return 5369233654l;  // this will be truncated to -10
+    return 524278ll  /* 2^19 - 10; truncated to 1B = -10 */;  // this will be truncated to -10
 }
 
 unsigned char return_uchar(void) {
-    return 5369233654l;  // this will be truncated to 246
+    return 524278ll  /* 2^19 - 10; truncated to 1B = -10 */;  // this will be truncated to 246
 }
 
 int main(void) {

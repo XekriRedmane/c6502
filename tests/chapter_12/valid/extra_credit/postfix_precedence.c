@@ -4,13 +4,13 @@
  */
 
 int main(void) {
-    unsigned int ui = 4294967295U;
+    unsigned long ui = 65535UL;
 
     // First increment, which wraps value of ui around to 0
     // (but note that value of result is ui BEFORE increment)
-    // Then convert to unsigned long, which doesn't change value
+    // Then convert to unsigned long long, which doesn't change value
     // If we cast first, it won't wrap around and value won't be 0
-    if (((unsigned long)ui++) != 4294967295U) {
+    if (((unsigned long long)ui++) != 65535UL) {
         return 1; // fail
     }
     if (ui) {

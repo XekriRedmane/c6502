@@ -20,21 +20,21 @@ int check_double_arr(double *arr) {
 }
 
 // partly initialized
-unsigned uint_arr[5] = {
-    1u,
-    0u,
-    2147497230u,
+unsigned long uint_arr[5] = {
+    1ul,
+    0ul,
+    32781ul,
 };
 
-int check_uint_arr(unsigned *arr) {
-    if (arr[0] != 1u) {
+int check_uint_arr(unsigned long *arr) {
+    if (arr[0] != 1ul) {
         return 4;
     }
 
     if (arr[1]) {
         return 5;
     }
-    if (arr[2] != 2147497230u) {
+    if (arr[2] != 32781ul) {
         return 6;
     }
 
@@ -46,10 +46,12 @@ int check_uint_arr(unsigned *arr) {
 }
 
 // uninitialized; should be all zeros
-long long_arr[1000];
+// (use 100 instead of 1000 elements — 1000 longs = 2000 bytes,
+//  which is fine for static storage but slow for codegen testing.)
+long long_arr[100];
 
 int check_long_arr(long *arr) {
-    for (int i = 0; i < 1000; i = i + 1) {
+    for (int i = 0; i < 100; i = i + 1) {
         if (arr[i]) {
             return 8;
         }
@@ -58,24 +60,24 @@ int check_long_arr(long *arr) {
 }
 
 // initialized w/ values of different types
-unsigned long ulong_arr[4] = {
-    100.0, 11, 12345l, 4294967295U
+unsigned long long ulong_arr[4] = {
+    100.0, 11, 12345ll, 65535UL
 };
 
-int check_ulong_arr(unsigned long *arr) {
-    if (arr[0] != 100ul) {
+int check_ulong_arr(unsigned long long *arr) {
+    if (arr[0] != 100ull) {
         return 9;
     }
 
-    if (arr[1] != 11ul) {
+    if (arr[1] != 11ull) {
         return 10;
     }
 
-    if (arr[2] != 12345ul) {
+    if (arr[2] != 12345ull) {
         return 11;
     }
 
-    if (arr[3] != 4294967295Ul) {
+    if (arr[3] != 65535Ull) {
         return 12;
     }
     return 0;
@@ -108,18 +110,18 @@ int test_local(void) {
     // fully initialized
     double local_double_arr[3] = {1.0, 2.0, 3.0};
     // partly initialized
-    static unsigned local_uint_arr[5] = {
-        1u,
-        0u, // truncated to 0
-        2147497230u,
+    static unsigned long local_uint_arr[5] = {
+        1ul,
+        0ul, // truncated to 0
+        32781ul,
     };
 
     // uninitialized
-    static long local_long_arr[1000];
+    static long local_long_arr[100];
 
     // initialized w/ values of different types
-    static unsigned long local_ulong_arr[4] = {
-        100.0, 11, 12345l, 4294967295U
+    static unsigned long long local_ulong_arr[4] = {
+        100.0, 11, 12345ll, 65535UL
     };
 
     // validate

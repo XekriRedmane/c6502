@@ -2,9 +2,9 @@
 // Same calculations as in tests/chapter_12/valid/extra_credit/bitwise_unsigned_shift.c
 // but through pointers
 
-unsigned int ui = 4294967295; // 2^32 - 1
+unsigned long ui = 65535; // 2^16 - 1
 
-unsigned int *get_ui_ptr(void){
+unsigned long *get_ui_ptr(void){
     return &ui;
 }
 
@@ -13,20 +13,20 @@ int shiftcount = 5;
 int main(void) {
 
     // use dereferenced pointer as left operand
-    if ((*get_ui_ptr() << 2l) != 4294967292) {
+    if ((*get_ui_ptr() << 2ll) != 65532ul) {
         return 1;
     }
 
-    if ((*get_ui_ptr() >> 2) != 1073741823) {
+    if ((*get_ui_ptr() >> 2) != 16383) {
         return 2;
     }
 
     // also use dereferenced pointer as right operand
     int *shiftcount_ptr = &shiftcount;
-    if ((1000000u >> *shiftcount_ptr) != 31250) {
+    if ((1000ul >> *shiftcount_ptr) != 31) {
         return 3;
     }
-    if ((1000000u << *shiftcount_ptr) != 32000000) {
+    if ((1000ul << *shiftcount_ptr) != 32000) {
         return 4;
     }
 

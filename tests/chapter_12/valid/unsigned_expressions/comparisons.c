@@ -1,10 +1,10 @@
 /* Test comparisons of unsigned integers */
 
-unsigned int one_hundred = 100u;
-unsigned int large_uint = 4294967294u; // interpreted as a signed int, this would be -2
+unsigned long one_hundred = 100ul;
+unsigned long large_uint = 65534ul; // interpreted as a signed long, this would be -2
 
-unsigned long one_hundred_ulong = 100ul;
-unsigned long large_ulong = 4294967294ul; // this would have the same value as a signed long
+unsigned long long one_hundred_ulong = 100ull;
+unsigned long long large_ulong = 4294967294ull; // this would have the same value as a signed long long
 
 int main(void) {
     // compare unsigned ints (result would be different if interpreted as signed)

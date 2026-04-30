@@ -1,32 +1,32 @@
 // test ++/-- with unsigned values (including wraparound)
 int main(void) {
-    unsigned int i = 0;
+    unsigned long i = 0;
 
     // Postfix --, including wraparound
     if (i-- != 0) {
         return 1;
     }
-    if (i != 4294967295U) { // wraparound from 0 to UINT_MAX
+    if (i != 65535UL) { // wraparound from 0 to ULONG_MAX (2-byte)
         return 2;
     }
 
     // Prefix --
-    if (--i != 4294967294U) {
+    if (--i != 65534UL) {
         return 3;
     }
-    if (i != 4294967294U) {
+    if (i != 65534UL) {
         return 4;
     }
 
-    unsigned long l = 18446744073709551614UL;
+    unsigned long long l = 4294967294ULL;
     // Postfix ++
-    if (l++ != 18446744073709551614UL) {
+    if (l++ != 4294967294ULL) {
         return 5;
     }
-    if (l != 18446744073709551615UL) {
+    if (l != 4294967295ULL) {
         return 6;
     }
-    if (++l != 0) { // wraparound from ULONG_MAX to 0
+    if (++l != 0) { // wraparound from ULONG_LONG_MAX to 0
         return 7;
     }
     if (l != 0) {

@@ -18,12 +18,12 @@ int main(void) {
         return 2;  // fail
     }
 
-    static unsigned long ul = 9259400834947493926ul;
+    static unsigned long long ul = 0x80808026ull;
     if ((ul & '~') != 38) {
         return 3;  // fail
     }
 
-    if ((ul << ' ') != 4611738958194278400ul) {
+    if ((ul << 4) != 0x08080260ull) {  // shift count 4 instead of 32 to keep result 32-bit
         return 4;  // fail
     }
 

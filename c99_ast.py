@@ -406,6 +406,18 @@ class InitList(Type_exp):
 
 
 @dataclass
+class SizeOfExp(Type_exp):
+    exp: Type_exp
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class SizeOfType(Type_exp):
+    target_type: Type_data_type
+    data_type: Type_data_type | None = None
+
+
+@dataclass
 class Type_unary_operator:
     pass
 

@@ -327,6 +327,19 @@ class StringLifter:
                     items=[self._lift_exp(it) for it in items],
                     data_type=dt,
                 )
+            case c99_ast.SizeOfExp(exp=inner, data_type=dt):
+                # The inner expression is type-checked but not
+                # evaluated; if it contains a String literal, lift
+                # it to a file-scope static like any other String.
+                # The lifted Var carries the same Array(Char, N+1)
+                # type the original String had, so sizeof still
+                # produces the right answer.
+                return c99_ast.SizeOfExp(
+                    exp=self._lift_exp(inner), data_type=dt,
+                )
+            case c99_ast.SizeOfType():
+                # `sizeof (T)` — no sub-expression, no lifting.
+                return exp
         raise TypeError(f"unexpected exp: {exp!r}")
 
     # ------------------------------------------------------------------

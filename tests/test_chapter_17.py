@@ -1,13 +1,12 @@
 """End-to-end harness for the chapter_17 corpus.
 
 chapter_17 covers `void`, `void *`, and `sizeof`. c6502 implements
-the void / void-pointer half of that work; the sizeof half (along
-with anything that needs a real-memory `malloc` / `free` runtime)
-isn't modelled, so a sizeof literal value of 4 / 8 / 1 baked into
-the test source assumes the standard's "int is 4 bytes" / "double
-is 8 bytes" sizing — c6502's storage model uses 1-byte `int` and
-the like, so even if we wired up a `sizeof` operator the literal
-comparisons in upstream's tests would fail.
+all three. The harness only checks that each valid file compiles;
+upstream's tests bake the standard "int is 4 bytes" / "double is 8
+bytes" sizing into runtime comparisons that wouldn't match c6502's
+1-byte-int / 2-byte-long / 4-byte-long-long model, but the runtime
+results aren't checked here — they'd just exit non-zero from main,
+which doesn't affect compilation.
 
 Buckets:
 
@@ -17,9 +16,8 @@ Buckets:
                                pipeline.
 
 `_INCOMPATIBLE_VALID` lists files c6502 fundamentally can't compile
-(uses `sizeof`, `malloc` / runtime memory management, or assumes a
-larger integer model than c6502). Each entry is keyed against the
-per-bucket relative path.
+(literals out of range, runtime features we don't model). Each
+entry is keyed against the per-bucket relative path.
 
 `_NOT_REJECTED_TODAY` per bucket lists files where c6502's current
 acceptance/rejection differs from upstream expectation but the
@@ -46,35 +44,16 @@ _C17 = _TESTS_DIR / "chapter_17"
 _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
-# Permanently incompatible: assumes sizeof or runtime memory
-# management we don't model. The sizeof tests bake the standard
-# "int is 4 bytes" / "double is 8 bytes" into runtime comparisons
-# that wouldn't match c6502's 1-byte-int model even if we
-# implemented sizeof.
+# Permanently incompatible: literals out of c6502's integer range.
+# The harness only checks that each file compiles, not its runtime
+# exit code — sizeof comparisons baked into the corpus assume
+# `sizeof(int) == 4` etc., which would fail at runtime but compile
+# cleanly under c6502's 1-byte-int storage model.
 _INCOMPATIBLE_VALID: frozenset[str] = frozenset({
-    # sizeof — operator not modelled; literal comparisons assume a
-    # different integer model.
-    "sizeof/simple.c",
-    "sizeof/sizeof_array.c",
-    "sizeof/sizeof_basic_types.c",
-    "sizeof/sizeof_consts.c",
+    # sizeof_derived_types: an array literal `int[4294967297L]` —
+    # the size literal is > 2^32 - 1 and doesn't fit any c6502
+    # integer type.
     "sizeof/sizeof_derived_types.c",
-    "sizeof/sizeof_expressions.c",
-    "sizeof/sizeof_not_evaluated.c",
-    "sizeof/sizeof_result_is_ulong.c",
-    "extra_credit/sizeof_bitwise.c",
-    "extra_credit/sizeof_compound.c",
-    "extra_credit/sizeof_compound_bitwise.c",
-    "extra_credit/sizeof_incr.c",
-    # void_pointer — uses malloc / free / calloc / realloc /
-    # aligned_alloc, which need a heap c6502 doesn't model. Some of
-    # these also use sizeof.
-    "void_pointer/simple.c",
-    "void_pointer/array_of_pointers_to_void.c",
-    "void_pointer/common_pointer_type.c",
-    "void_pointer/conversion_by_assignment.c",
-    "void_pointer/explicit_cast.c",
-    "void_pointer/memory_management_functions.c",
 })
 
 

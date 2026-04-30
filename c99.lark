@@ -385,6 +385,8 @@ constant_exp: conditional_exp
           | AMP cast_exp             -> address_of
           | PLUSPLUS unary_exp       -> pre_increment
           | MINUSMINUS unary_exp     -> pre_decrement
+          | SIZEOF LPAREN type_name RPAREN -> sizeof_type
+          | SIZEOF unary_exp         -> sizeof_exp
           | postfix_exp
 ?postfix_exp: postfix_exp PLUSPLUS   -> post_increment
             | postfix_exp MINUSMINUS -> post_decrement

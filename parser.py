@@ -992,21 +992,19 @@ class _ASTBuilder(Transformer):
         return token
 
     def type_name(self, items):
-        # `type_name: type_specifier+ abstract_declarator?` — used
-        # inside cast expressions.
+        # `type_name: type_specifier+ abstract_declarator?` — used in
+        # both cast expressions and `sizeof (T)`.
         #
         # type_specifier tokens land first (the `type_specifier`
         # transformer passes INT / LONG / SIGNED / etc. tokens
         # through). If an abstract_declarator subtree is present,
         # it's the last item — `_apply_abstract_declarator` composes
         # it into the full type (pointers, arrays, function suffixes).
-        # We then reject any cast target whose composed type isn't
-        # a scalar: per C99 §6.5.4.2 a cast target must be qualified
-        # or unqualified scalar type (or void). Array and function
-        # types are aggregates / function types respectively, neither
-        # scalar. Pointer-to-array and pointer-to-function are fine
-        # (`int (*)[3]` / `int (*)(void)`) — the outer wrapper is a
-        # Pointer, which IS scalar.
+        # We do NOT reject array / function targets here even though
+        # they're illegal for casts (C99 §6.5.4.2), because `sizeof`
+        # accepts both forms (`sizeof (int[3])`, `sizeof (int (*)())`).
+        # The cast-target restriction lives in the `cast` transformer
+        # below.
         type_specs = [it for it in items if isinstance(it, Token)]
         base = _resolve_data_type(type_specs)
         if len(type_specs) == len(items):
@@ -1014,18 +1012,7 @@ class _ASTBuilder(Transformer):
             return base
         # Trailing abstract_declarator subtree.
         adecl_tree = items[-1]
-        composed = _apply_abstract_declarator(adecl_tree, base)
-        if isinstance(composed, c99_ast.Array):
-            raise ParserError(
-                "cannot cast to an array type (C99 §6.5.4.2 — cast "
-                "target must be scalar or void)"
-            )
-        if isinstance(composed, c99_ast.FunType):
-            raise ParserError(
-                "cannot cast to a function type (C99 §6.5.4.2 — cast "
-                "target must be scalar or void)"
-            )
-        return composed
+        return _apply_abstract_declarator(adecl_tree, base)
 
     def parameter_declaration(self, items):
         # `parameter_declaration: specifier+ declarator
@@ -1416,7 +1403,21 @@ class _ASTBuilder(Transformer):
     def cast(self, _lp, target_type, _rp, exp):
         # `cast_exp: LPAREN type_name RPAREN cast_exp -> cast`. The
         # `type_name` transformer already resolved the type-specifier
-        # run to a c99_ast Int/Long node; just plug it into the AST.
+        # run to a c99_ast type node; reject the shapes C99 §6.5.4.2
+        # forbids for casts (array / function types) here, where the
+        # type's role IS as a cast target. (Sizeof's other use of
+        # `type_name` accepts both shapes, so the rejection lives at
+        # the cast site rather than inside `type_name`.)
+        if isinstance(target_type, c99_ast.Array):
+            raise ParserError(
+                "cannot cast to an array type (C99 §6.5.4.2 — cast "
+                "target must be scalar or void)"
+            )
+        if isinstance(target_type, c99_ast.FunType):
+            raise ParserError(
+                "cannot cast to a function type (C99 §6.5.4.2 — cast "
+                "target must be scalar or void)"
+            )
         return c99_ast.Cast(target_type=target_type, exp=exp)
 
     @v_args(inline=True)
@@ -1470,6 +1471,21 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def pre_decrement(self, _op, operand):
         return c99_ast.Prefix(op=c99_ast.Decrement(), operand=operand)
+
+    # `sizeof e` and `sizeof (T)` (C99 §6.5.3.4). The two grammar
+    # alternatives feed separate AST variants — the type-name form is
+    # a leaf, the expression form has a sub-expression that the rest
+    # of the pipeline walks for identifier resolution / type
+    # population. Per §6.5.3.4.2 the operand of sizeof is NOT
+    # evaluated, so c99_to_tac will fold the node to a constant
+    # without lowering the inner expression.
+    @v_args(inline=True)
+    def sizeof_exp(self, _sizeof, inner):
+        return c99_ast.SizeOfExp(exp=inner)
+
+    @v_args(inline=True)
+    def sizeof_type(self, _sizeof, _lparen, type_name, _rparen):
+        return c99_ast.SizeOfType(target_type=type_name)
 
     # Postfix `a++` / `a--` keep their own AST node because they have
     # to return the *old* value of the operand while also mutating

@@ -536,6 +536,32 @@ def _is_void_pointer(t: Type) -> bool:
     return isinstance(t, Pointer) and isinstance(t.referenced_type, Void)
 
 
+def _sizeof(t: Type) -> int:
+    """Bytes occupied by a value of type `t` in c6502's storage
+    model. Recursive for Array — `int[3][4]` is 12 bytes,
+    `char[10]` is 10 bytes. Mirrors the helper of the same name in
+    `c99_to_tac` (kept local so type_checking doesn't import the
+    backend); the two stay in sync because they both encode the same
+    storage-model rules. Used by the `sizeof` operator's
+    type-checker. Constraint violations (Void, FunType) raise
+    TypeCheckError — `sizeof` of an incomplete or function type is
+    illegal per C99 §6.5.3.4.1, and any caller that lands here with
+    one of those types has a bug."""
+    if isinstance(t, (Int, UInt, Char, SChar, UChar)):
+        return 1
+    if isinstance(t, (Long, ULong, Pointer)):
+        return 2
+    if isinstance(t, (LongLong, ULongLong, Float)):
+        return 4
+    if isinstance(t, Double):
+        return 8
+    if isinstance(t, Array):
+        return _sizeof(t.element_type) * t.size
+    raise TypeCheckError(
+        f"cannot take sizeof an incomplete or function type: {t!r}"
+    )
+
+
 def _check_well_formed_type(t: Type, *, where: str) -> None:
     """Walk `t` and raise TypeCheckError if any nested Array has an
     incomplete element type (Void or another array of incomplete
@@ -1648,19 +1674,29 @@ class TypeChecker:
         tl: Type, tr: Type,
     ) -> Type:
         """Pick the common type for a `==` / `!=` whose operands
-        include at least one pointer. Three legal shapes per C99
-        §6.5.9 (and the c6502-specific simplification noted in the
-        commit message):
+        include at least one pointer. Legal shapes per C99 §6.5.9.2:
           pointer == same pointer            → that pointer type
+          void * == any object pointer       → void *
+                                              (§6.5.9.2 — "one
+                                              operand is a pointer
+                                              to an object type and
+                                              the other is a pointer
+                                              to a qualified or
+                                              unqualified version of
+                                              void")
           pointer == null pointer constant   → the pointer type
                                               (the 0 is converted)
           null pointer constant == pointer   → mirror of above
-        Anything else (mismatched pointer types, pointer + non-zero
-        integer, pointer + FP) raises. Caller has already
+        Anything else (mismatched non-void pointer types, pointer +
+        non-zero integer, pointer + FP) raises. Caller has already
         established that at least one of `tl` / `tr` is Pointer."""
         l_ptr = _is_pointer_type(tl)
         r_ptr = _is_pointer_type(tr)
         if l_ptr and r_ptr:
+            # `void *` matches any object pointer here, with the
+            # common type being `void *`.
+            if _is_void_pointer(tl) or _is_void_pointer(tr):
+                return Pointer(referenced_type=Void())
             if not _types_equal(tl, tr):
                 raise TypeCheckError(
                     f"comparison of distinct pointer types: "
@@ -2349,6 +2385,57 @@ class TypeChecker:
                     "brace-enclosed initializer (`{...}`) is only "
                     "valid as a variable initializer for an array"
                 )
+            case c99_ast.SizeOfExp(exp=inner):
+                # Type-check the inner expression to populate its
+                # data_types — the type checker doesn't actually
+                # evaluate anything, just validates and stamps
+                # types, so this preserves the C99 §6.5.3.4.2
+                # "operand is not evaluated" rule (the actual
+                # not-evaluated guarantee is enforced in c99_to_tac
+                # by NOT translating the inner). Crucially we do
+                # NOT decay arrays at the top level — sizeof of an
+                # array yields the array size, not the pointer
+                # size (§6.3.2.1.3 explicitly excludes the operand
+                # of sizeof from array decay). _check_exp leaves
+                # the outer node's data_type un-decayed (decay is
+                # only applied as expressions become operands of
+                # other operators), so reading inner.data_type
+                # directly gives the un-decayed type.
+                self._check_exp(inner)
+                inner_t = inner.data_type
+                if inner_t is None:
+                    raise TypeCheckError(
+                        f"sizeof: inner expression has no type"
+                    )
+                if _is_void(inner_t):
+                    raise TypeCheckError(
+                        "sizeof of void expression is illegal "
+                        "(C99 §6.5.3.4.1)"
+                    )
+                if isinstance(inner_t, FunType):
+                    raise TypeCheckError(
+                        "sizeof of a function type is illegal "
+                        "(C99 §6.5.3.4.1)"
+                    )
+                # Result type is `unsigned long` (c6502's size_t).
+                exp.data_type = ULong()
+                return ULong()
+            case c99_ast.SizeOfType(target_type=t):
+                if _is_void(t):
+                    raise TypeCheckError(
+                        "sizeof(void) is illegal — void is an "
+                        "incomplete type (C99 §6.5.3.4.1)"
+                    )
+                if isinstance(t, FunType):
+                    raise TypeCheckError(
+                        "sizeof of a function type is illegal "
+                        "(C99 §6.5.3.4.1)"
+                    )
+                # Reject `sizeof (void[3])` etc. — array element
+                # types must be complete.
+                _check_well_formed_type(t, where="sizeof type")
+                exp.data_type = ULong()
+                return ULong()
             case c99_ast.Subscript(array=arr, index=idx):
                 # `E1[E2]` per C99 §6.5.2.1.2 is defined as
                 # `*((E1)+(E2))`. Because the underlying `+` is

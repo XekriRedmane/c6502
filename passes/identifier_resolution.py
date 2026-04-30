@@ -872,6 +872,24 @@ class Resolver:
                 return c99_ast.InitList(
                     items=[self.resolve_exp(it, scope) for it in items],
                 )
+            case c99_ast.SizeOfExp(exp=inner):
+                # `sizeof e` — even though sizeof's operand is not
+                # *evaluated*, the inner names still need to resolve
+                # so the type checker can stamp data_types on it (and
+                # so we can flag an undeclared identifier here, the
+                # same as any other use). Names introduced inside
+                # `sizeof` (e.g. via a compound assignment) get
+                # resolved like any other expression — the
+                # not-evaluated rule only blocks emitting code, not
+                # binding analysis.
+                return c99_ast.SizeOfExp(
+                    exp=self.resolve_exp(inner, scope),
+                )
+            case c99_ast.SizeOfType():
+                # `sizeof (T)` — no inner expression to resolve;
+                # the target_type is a fully-resolved data_type
+                # built by the parser. Pass through.
+                return exp
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — operand must be an lvalue. The four
                 # syntactic lvalue forms supported today are Var

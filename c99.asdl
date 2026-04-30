@@ -82,6 +82,18 @@ module C99 {
         -- current cut only supports single-dim arrays with scalar
         -- items.
         | InitList(exp* items, data_type?)
+        -- `sizeof e` (operator on an expression) and `sizeof (T)`
+        -- (operator on a type-name). Per C99 §6.5.3.4.2 the
+        -- operand is not evaluated — only its type matters; the
+        -- result is the byte count of the operand's type, of type
+        -- size_t (c6502: `unsigned long`). The two grammar shapes
+        -- get separate AST variants because they need different
+        -- handling in identifier_resolution / string_lifting (the
+        -- expression form has a sub-expression whose names must
+        -- resolve so the type checker can stamp data_types; the
+        -- type-name form is a leaf).
+        | SizeOfExp(exp, data_type?)
+        | SizeOfType(data_type target_type, data_type?)
 
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement

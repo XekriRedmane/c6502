@@ -547,5 +547,155 @@ class TestVoid(unittest.TestCase):
         self.assertIn("pointer", err.lower())
 
 
+class TestSizeof(unittest.TestCase):
+    """sizeof operator. c6502 uses a 1-byte-int / 2-byte-long /
+    4-byte-long-long storage model, so the byte counts here differ
+    from the LP64 sizes the standard's tests assume. Tests check
+    that sizeof produces the right c6502-specific value, that it's
+    a compile-time constant of type unsigned long (ConstLong in
+    TAC), that the operand is NOT evaluated, and that arrays don't
+    decay as the operand of sizeof."""
+
+    def _run(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
+        with patch("sys.stdin", io.StringIO(stdin)), \
+             patch("sys.stdout", new_callable=io.StringIO) as out, \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            rc = main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def _tac(self, src: str) -> str:
+        rc, out, err = self._run(["compile.py", "-", "--tac"], stdin=src)
+        self.assertEqual(rc, 0, msg=err)
+        return out
+
+    def _codegen(self, src: str) -> str:
+        rc, out, err = self._run(["compile.py", "-", "--codegen"], stdin=src)
+        self.assertEqual(rc, 0, msg=err)
+        return out
+
+    def _expect_failure(self, src: str) -> str:
+        try:
+            self._run(["compile.py", "-", "--codegen"], stdin=src)
+        except Exception as e:  # noqa: BLE001
+            return str(e)
+        self.fail(f"expected compilation to fail for: {src!r}")
+
+    def test_sizeof_scalar_types(self):
+        # c6502's storage model: int 1, long 2, long long 4, char 1,
+        # float 4, double 8, pointer 2.
+        out = self._tac(
+            "int main(void) { "
+            "long sizes = sizeof(int) + sizeof(long) + sizeof(long long) "
+            "+ sizeof(char) + sizeof(float) + sizeof(double) "
+            "+ sizeof(int *); "
+            "return 0; }",
+        )
+        # Each sizeof folds to a ConstLong literal (sizeof's result
+        # is unsigned long → TAC ConstLong). Ensure all the expected
+        # constants show up — the runtime additions chain through.
+        for size in (1, 2, 4, 1, 4, 8, 2):
+            self.assertIn(f"int={size}", out)
+
+    def test_sizeof_array_does_not_decay(self):
+        # `sizeof a` for `int a[10]` is 10 (10 elements × 1B/int),
+        # NOT sizeof(int *) = 2. The decay-to-pointer rule is
+        # explicitly suppressed here per C99 §6.3.2.1.3.
+        out = self._tac(
+            "int main(void) { int a[10]; return (int)sizeof a; }",
+        )
+        # Not the pointer width 2 — the array width 10.
+        self.assertIn("int=10", out)
+
+    def test_sizeof_string_literal_does_not_decay(self):
+        # `sizeof "abc"` is 4 (3 chars + null), not 2 (sizeof char *).
+        out = self._tac(
+            'int main(void) { return (int)sizeof "abc"; }',
+        )
+        self.assertIn("int=4", out)
+
+    def test_sizeof_multi_dim_array(self):
+        # `sizeof a` for `long a[3][5]` is 3 * 5 * 2 = 30.
+        out = self._tac(
+            "int main(void) { long a[3][5]; return (int)sizeof a; }",
+        )
+        self.assertIn("int=30", out)
+
+    def test_sizeof_does_not_evaluate_operand(self):
+        # `sizeof (i++)` must NOT emit any inc instructions for `i`.
+        # The TAC for the function body should contain the sizeof
+        # constant but no Binary(Add) and no Copy back into i.
+        out = self._tac(
+            "int main(void) { int i = 0; long s = sizeof (i++); return i; }",
+        )
+        # The sizeof value (1) shows up as a ConstLong.
+        self.assertIn("int=1", out)
+        # The operand `i++` would lower to a Binary(Add) into a
+        # temp + Copy back to i — neither should appear in the TAC.
+        self.assertNotIn("Add(", out)
+
+    def test_sizeof_does_not_evaluate_function_call(self):
+        # `sizeof foo()` must NOT emit a JSR to foo. Only the result
+        # type matters.
+        out = self._codegen(
+            "int foo(void); "
+            "int main(void) { long s = sizeof foo(); return 0; }",
+        )
+        self.assertNotIn("JSR   foo", out)
+
+    def test_sizeof_returns_unsigned_long(self):
+        # Result type of sizeof is ULong. Assigning to a Long
+        # variable is a same-width conversion (no Truncate or
+        # SignExtend). Assigning to an Int truncates.
+        out = self._tac(
+            "int main(void) { "
+            "long l = sizeof(int); int i = sizeof(int); "
+            "return 0; }",
+        )
+        # Long ← ULong is a same-width pointer-style copy: just a
+        # Copy. Int ← ULong narrows: a Truncate.
+        self.assertIn("Truncate(", out)
+
+    def test_sizeof_of_sizeof_is_two(self):
+        # sizeof's result has type unsigned long (size 2 in c6502).
+        out = self._tac(
+            "int main(void) { return (int)sizeof sizeof(int); }",
+        )
+        self.assertIn("int=2", out)
+
+    def test_sizeof_pointer_type_form(self):
+        out = self._tac(
+            "int main(void) { return (int)sizeof(int (*)[100]); }",
+        )
+        # Pointer is 2 bytes regardless of its pointee.
+        self.assertIn("int=2", out)
+
+    def test_sizeof_nested_array_type(self):
+        # sizeof(char[3][6][17][9]) = 3 * 6 * 17 * 9 * 1 = 2754 bytes.
+        out = self._tac(
+            "int main(void) { return (int)sizeof(char[3][6][17][9]); }",
+        )
+        self.assertIn("int=2754", out)
+
+    def test_reject_sizeof_void_type(self):
+        err = self._expect_failure(
+            "int main(void) { return sizeof(void); }",
+        )
+        self.assertIn("void", err.lower())
+
+    def test_reject_sizeof_void_expression(self):
+        err = self._expect_failure(
+            "void f(void); int main(void) { return sizeof f(); }",
+        )
+        self.assertIn("void", err.lower())
+
+    def test_reject_sizeof_function_type(self):
+        # `(int(int))` parses as a type-name `int(int)` which is a
+        # function type — sizeof(function-type) is illegal.
+        err = self._expect_failure(
+            "int main(void) { return sizeof(int(int)); }",
+        )
+        self.assertIn("function", err.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

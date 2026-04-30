@@ -1466,6 +1466,30 @@ class Translator:
                 # `@` and TAC's `%` are both illegal in C identifiers,
                 # so user vars and translator temps can't collide.
                 return tac_ast.Var(name=name)
+            case c99_ast.SizeOfExp(exp=inner):
+                # `sizeof e` — fold to a compile-time constant.
+                # Crucially, do NOT call `translate_exp(inner, instrs)`:
+                # C99 §6.5.3.4.2 says sizeof's operand is not
+                # evaluated, so we mustn't emit any instructions for
+                # it (no inc/dec side effects, no function calls,
+                # no array writes). The type checker has already
+                # stamped inner.data_type with the un-decayed
+                # operand type, which is all we need to compute
+                # the size. Result type is ULong (size_t in c6502).
+                t = inner.data_type
+                assert t is not None, (
+                    "type_checker should have stamped data_type "
+                    f"on sizeof's inner expression: {inner!r}"
+                )
+                return tac_ast.Constant(const=tac_ast.ConstLong(
+                    int=_sizeof(t),
+                ))
+            case c99_ast.SizeOfType(target_type=t):
+                # `sizeof (T)` — direct fold from the type-name.
+                # No inner expression to translate.
+                return tac_ast.Constant(const=tac_ast.ConstLong(
+                    int=_sizeof(t),
+                ))
             case c99_ast.Subscript(array=arr, index=idx):
                 # `a[i]` per C99 §6.5.2.1.2 is `*(a + i)`. The type
                 # checker has already decayed any array operand to a

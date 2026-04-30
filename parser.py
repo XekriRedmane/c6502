@@ -18,6 +18,7 @@ punctuator terminals) are conventionally prefixed with `_`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from lark import Lark, Token, Transformer
@@ -77,12 +78,35 @@ _STORAGE_CLASSES = {
 
 # Token types of every leaf the `specifier` rule can produce. After the
 # `type_specifier` and `specifier` transformer methods unwrap their
-# child trees, every entry on a specifier list is one of these tokens.
+# child trees, every entry on a specifier list is one of these tokens
+# OR a `_TagSpecifier` wrapper for struct/union forms (which expose a
+# matching `.type` attribute so the same predicate logic works on
+# both shapes).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "VOID",
-                           "STATIC", "EXTERN")
+                           "STATIC", "EXTERN",
+                           "STRUCT", "UNION")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                                "FLOAT", "DOUBLE", "CHAR", "VOID")
+                                "FLOAT", "DOUBLE", "CHAR", "VOID",
+                                "STRUCT", "UNION")
+
+
+# A struct/union type specifier produced by the
+# `struct_or_union_specifier` transformer. The wrapper carries the
+# resolved Structure/Union type alongside an optional list of
+# member-declaration pairs (the body, when present). The
+# specifier-list consumers (`_split_specifiers`, `_consume_specifiers`)
+# treat these like tokens for the purpose of pulling specifiers off
+# the front of a parse tree, but `_resolve_data_type` reads the
+# wrapped type directly. The `body` rides through into the
+# enclosing var_decl / function_decl transformer, which surfaces it
+# as a separate `StructDecl` declaration when present.
+@dataclass
+class _TagSpecifier:
+    type: str  # "STRUCT" or "UNION" — same protocol as Token.type
+    tag: str
+    is_union: bool
+    body: list[tuple[str, "c99_ast.Type_data_type"]] | None  # None = reference, [] = empty body (illegal)
 
 
 def _resolve_data_type(type_specs):
@@ -114,7 +138,31 @@ def _resolve_data_type(type_specs):
       * duplicate `int` / `signed` / `unsigned` / `float` /
         `double`                                   — rejected
       * empty list                                 — rejected
+      * `struct foo` / `union foo`                  — Structure(tag) /
+                                                      Union(tag); cannot
+                                                      combine with any
+                                                      other type
+                                                      specifier
     """
+    # Struct/union specifiers don't combine with any other type
+    # specifier (C99 §6.7.2 is exhaustive — the type-specifier list
+    # has to be exactly one of the listed combinations, and a
+    # struct-or-union-specifier IS one such whole combination).
+    tag_specs = [t for t in type_specs if isinstance(t, _TagSpecifier)]
+    if tag_specs:
+        if len(tag_specs) > 1:
+            raise ParserError(
+                "at most one struct or union specifier in a "
+                "declaration"
+            )
+        if len(type_specs) != 1:
+            raise ParserError(
+                "struct/union specifier cannot combine with another "
+                "type specifier"
+            )
+        ts = tag_specs[0]
+        return (c99_ast.Union(tag=ts.tag) if ts.is_union
+                else c99_ast.Structure(tag=ts.tag))
     int_count = sum(1 for t in type_specs if t.type == "INT")
     long_count = sum(1 for t in type_specs if t.type == "LONG")
     signed_count = sum(1 for t in type_specs if t.type == "SIGNED")
@@ -972,10 +1020,15 @@ def _parse_function_suffix_middle(middle):
 
 class _ASTBuilder(Transformer):
     def start(self, items):
-        # `start: declaration*` — items is the list of Type_declaration
-        # nodes already built by `declaration` (each wrapping a
-        # function_decl or var_decl).
-        return c99_ast.Program(declaration=list(items))
+        # `start: declaration*` — items is the list of declaration
+        # values built by `declaration`. Each value is itself a list
+        # of `Type_declaration` nodes (most have one element; an
+        # inline `struct foo { ... } x;` produces two — the StructDecl
+        # for the body and the VarDecl for `x`). Flatten here.
+        flat = []
+        for it in items:
+            flat.extend(it)
+        return c99_ast.Program(declaration=flat)
 
     @v_args(inline=True)
     def specifier(self, token):
@@ -986,26 +1039,43 @@ class _ASTBuilder(Transformer):
         return token
 
     @v_args(inline=True)
-    def type_specifier(self, token):
-        # `type_specifier: INT | LONG`. Inline the single child so the
-        # caller (`specifier` or `type_name`) sees a Token directly.
-        return token
+    def type_specifier(self, child):
+        # `type_specifier: INT | LONG | ... | struct_or_union_specifier`.
+        # The simple-keyword alternatives produce a Token; the
+        # struct/union alternative produces a `_TagSpecifier`. Inline
+        # the single child so the caller (`specifier`, `type_name`,
+        # `specifier_qualifier_list`) sees the leaf directly.
+        return child
 
     def type_name(self, items):
         # `type_name: type_specifier+ abstract_declarator?` — used in
         # both cast expressions and `sizeof (T)`.
         #
-        # type_specifier tokens land first (the `type_specifier`
-        # transformer passes INT / LONG / SIGNED / etc. tokens
-        # through). If an abstract_declarator subtree is present,
-        # it's the last item — `_apply_abstract_declarator` composes
-        # it into the full type (pointers, arrays, function suffixes).
-        # We do NOT reject array / function targets here even though
-        # they're illegal for casts (C99 §6.5.4.2), because `sizeof`
-        # accepts both forms (`sizeof (int[3])`, `sizeof (int (*)())`).
-        # The cast-target restriction lives in the `cast` transformer
+        # Each type_specifier child is either a Token (primitive
+        # specifier) or a `_TagSpecifier` (struct/union). If an
+        # abstract_declarator subtree is present, it's the last item
+        # — `_apply_abstract_declarator` composes it into the full
+        # type (pointers, arrays, function suffixes). We do NOT
+        # reject array / function targets here even though they're
+        # illegal for casts (C99 §6.5.4.2), because `sizeof` accepts
+        # both forms (`sizeof (int[3])`, `sizeof (int (*)())`). The
+        # cast-target restriction lives in the `cast` transformer
         # below.
-        type_specs = [it for it in items if isinstance(it, Token)]
+        type_specs = [
+            it for it in items
+            if isinstance(it, (Token, _TagSpecifier))
+        ]
+        # Inline struct/union *definitions* in a type-name (`(struct
+        # foo { int a; })x`) are legal C99 but semantically obscure
+        # (the tag escapes to the surrounding scope). c6502 rejects
+        # them — the surrounding context (cast / sizeof) has no place
+        # to thread the resulting StructDecl to.
+        for ts in type_specs:
+            if isinstance(ts, _TagSpecifier) and ts.body is not None:
+                raise ParserError(
+                    "struct/union definition isn't permitted inside "
+                    "a type-name (cast / sizeof)"
+                )
         base = _resolve_data_type(type_specs)
         if len(type_specs) == len(items):
             # No abstract_declarator — bare type-specifier list.
@@ -1013,6 +1083,133 @@ class _ASTBuilder(Transformer):
         # Trailing abstract_declarator subtree.
         adecl_tree = items[-1]
         return _apply_abstract_declarator(adecl_tree, base)
+
+    # `struct_or_union_specifier` rule alternatives. Two forms each:
+    #   * `STRUCT IDENTIFIER` — bare reference (or forward decl when
+    #     the surrounding declaration has no declarator).
+    #   * `STRUCT IDENTIFIER LBRACE struct_declaration+ RBRACE` —
+    #     defining form. The body is a list of (member_name,
+    #     member_type) pairs; the surrounding var_decl /
+    #     function_decl / tag_only_decl transformer drains it via
+    #     `_drain_inline_struct_bodies` to surface a StructDecl
+    #     declaration alongside the consuming declaration.
+    def struct_specifier(self, items):
+        return self._make_tag_specifier(items, is_union=False)
+
+    def union_specifier(self, items):
+        return self._make_tag_specifier(items, is_union=True)
+
+    @staticmethod
+    def _make_tag_specifier(items, *, is_union):
+        # items: [STRUCT/UNION token, IDENTIFIER token, (LBRACE,
+        # member_list_items..., RBRACE)?]
+        kw_token = items[0]
+        tag = str(items[1])
+        body = None
+        if len(items) > 2:
+            # Body present. Children between LBRACE and RBRACE are
+            # the lists returned by `struct_declaration`. Each
+            # struct_declaration produces a list of (name, type)
+            # pairs (one per declarator on that line).
+            body = []
+            seen = set()
+            for child in items[3:-1]:
+                # struct_declaration returns a list of pairs.
+                for (mname, mtype) in child:
+                    if mname in seen:
+                        raise ParserError(
+                            f"duplicate member {mname!r} in "
+                            f"struct/union {tag!r}"
+                        )
+                    seen.add(mname)
+                    body.append((mname, mtype))
+            if not body:
+                raise ParserError(
+                    f"struct/union {tag!r} body is empty (C99 "
+                    f"§6.7.2.1.7 — at least one member required)"
+                )
+        return _TagSpecifier(
+            type=str(kw_token.type),
+            tag=tag,
+            is_union=is_union,
+            body=body,
+        )
+
+    def specifier_qualifier_list(self, items):
+        # `(type_specifier | type_qualifier)+` — strip qualifiers
+        # (c6502 doesn't model const / volatile / restrict semantics)
+        # and return the list of type-specifier leaves.
+        out = []
+        for it in items:
+            # type_specifier transformer already inlined to leaf;
+            # type_qualifier rule has its own transformer below
+            # (returns the qualifier token, which we ignore).
+            if hasattr(it, "data") and it.data == "type_qualifier":
+                continue
+            out.append(it)
+        return out
+
+    def type_qualifier(self, items):
+        # Pass through the rule tree so specifier_qualifier_list can
+        # detect and discard it. The Lark Transformer default is to
+        # rebuild a Tree — keep that behavior (don't return a single
+        # leaf) so the qualifier wrapper survives intact for the
+        # filter above.
+        from lark import Tree
+        return Tree("type_qualifier", items)
+
+    def struct_declarator_list(self, items):
+        # `declarator (COMMA declarator)*` — strip COMMA tokens; each
+        # remaining item is a declarator parse Tree.
+        return [it for it in items if not _is_token(it, "COMMA")]
+
+    def struct_declaration(self, items):
+        # `specifier_qualifier_list struct_declarator_list SEMICOLON`.
+        # Returns a list of (member_name, member_type) tuples.
+        type_specs = items[0]
+        decl_trees = items[1]
+        # Reject inline struct/union definitions inside a member's
+        # type-specifier — `struct outer { struct inner { int x; }
+        # nested; };` is legal C99 but rarely-used and not modeled
+        # here (the inner StructDecl would have nowhere to go in the
+        # outer struct's member list).
+        for ts in type_specs:
+            if isinstance(ts, _TagSpecifier) and ts.body is not None:
+                raise ParserError(
+                    "nested struct/union definition inside a member "
+                    "isn't supported — declare the inner type at "
+                    "outer scope first"
+                )
+        base = _resolve_data_type(type_specs)
+        # Per C99 §6.7.2.1.2 a struct member's declarator yields a
+        # type that has to be a complete object type (or, if it's
+        # a flexible array member, the very last member). c6502
+        # rejects flexible array members and incomplete types here
+        # via the type checker; the parser accepts the shape.
+        out = []
+        for decl_tree in decl_trees:
+            name, composed, _outer = _apply_declarator(decl_tree, base)
+            if isinstance(composed, c99_ast.FunType):
+                raise ParserError(
+                    f"struct/union member {name!r} cannot have "
+                    f"function type"
+                )
+            out.append((name, composed))
+        return out
+
+    @v_args(inline=True)
+    def member_dot(self, operand, _dot, identifier):
+        # `postfix_exp DOT IDENTIFIER -> member_dot`. The IDENTIFIER
+        # is a member name (own namespace per C99 §6.2.3) — never a
+        # variable reference, so it doesn't go through Var.
+        return c99_ast.Dot(operand=operand, member=str(identifier))
+
+    @v_args(inline=True)
+    def member_arrow(self, operand, _arrow, identifier):
+        # `postfix_exp ARROW IDENTIFIER -> member_arrow`. Operand
+        # must have pointer-to-struct/union type — the type checker
+        # validates this.
+        return c99_ast.Arrow(operand=operand, member=str(identifier))
 
     def parameter_declaration(self, items):
         # `parameter_declaration: specifier+ declarator
@@ -1031,6 +1228,15 @@ class _ASTBuilder(Transformer):
                 specs.append(it)
             else:
                 rest.append(it)
+        # Inline struct/union *definitions* in a parameter declaration
+        # are legal C99 but obscure (the tag's scope would be the
+        # enclosing function-prototype scope only). c6502 rejects.
+        for s in specs:
+            if isinstance(s, _TagSpecifier) and s.body is not None:
+                raise ParserError(
+                    "struct/union definition isn't permitted in a "
+                    "parameter declaration"
+                )
         base, storage = _split_specifiers(specs)
         # C99 §6.7.5.3.2: "The only storage-class specifier that shall
         # occur in a parameter declaration is register." c6502 doesn't
@@ -1079,44 +1285,55 @@ class _ASTBuilder(Transformer):
 
     def block(self, items):
         # `block: LBRACE block_item* RBRACE`. Non-inline because
-        # block_item* expands to a variable number of children.
-        return c99_ast.Block(block_item=list(items[1:-1]))
+        # block_item* expands to a variable number of children. Each
+        # block_item value is a list — `stmt_item` returns a
+        # one-element list, `decl_item` returns one or more (a single
+        # source-level declaration may produce more than one AST
+        # declaration when a struct body is defined inline). Flatten.
+        flat = []
+        for it in items[1:-1]:
+            flat.extend(it)
+        return c99_ast.Block(block_item=flat)
 
     # Alternatives of `block_item` — wrap a statement / declaration.
     @v_args(inline=True)
     def stmt_item(self, statement):
-        return c99_ast.S(statement=statement)
+        return [c99_ast.S(statement=statement)]
 
     @v_args(inline=True)
-    def decl_item(self, declaration):
+    def decl_item(self, declaration_list):
+        # `declaration` already returns a list of `Type_declaration`
+        # AST nodes (typically one element; two when a struct body is
+        # defined inline alongside an object declaration). Wrap each
+        # in `D` so they're block_item-compatible.
         # C99 §6.9.1: function-definitions are an external-declaration
-        # form, only legal at file scope. A `block_item` may carry a
+        # form, only legal at file scope. A block_item may carry a
         # function *forward declaration* (FunctionDecl with body=None)
-        # but never a definition (body present). The grammar allows
-        # both — `block_item: declaration` and `declaration:
-        # function_decl | var_decl`, where `function_decl` is the
-        # body-bearing form — so reject the definition shape here.
-        if (
-            isinstance(declaration, c99_ast.FunctionDecl)
-            and declaration.function_decl.body is not None
-        ):
-            raise ParserError(
-                f"function definition for "
-                f"{declaration.function_decl.name!r} is only legal at "
-                f"file scope; nested function definitions aren't part "
-                f"of standard C (C99 §6.9.1)"
-            )
-        return c99_ast.D(declaration=declaration)
+        # but never a definition (body present).
+        out = []
+        for d in declaration_list:
+            if (
+                isinstance(d, c99_ast.FunctionDecl)
+                and d.function_decl.body is not None
+            ):
+                raise ParserError(
+                    f"function definition for "
+                    f"{d.function_decl.name!r} is only legal at "
+                    f"file scope; nested function definitions aren't "
+                    f"part of standard C (C99 §6.9.1)"
+                )
+            out.append(c99_ast.D(declaration=d))
+        return out
 
     @v_args(inline=True)
     def declaration(self, child):
         # `declaration: function_decl | var_decl`. Each branch
-        # returns its product type (`Type_function_decl` or
-        # `Type_var_decl`); wrap into the matching declaration sum
-        # constructor here.
-        if isinstance(child, c99_ast.Type_var_decl):
-            return c99_ast.VarDecl(var_decl=child)
-        return c99_ast.FunctionDecl(function_decl=child)
+        # returns a *list* of Type_declaration AST nodes — almost
+        # always one element, but a `var_decl` whose specifier
+        # contained an inline struct/union *definition*
+        # (`struct foo { int a; } x;`) produces two: the StructDecl
+        # for the body, then the VarDecl for `x`.
+        return child
 
     # `initializer` rule alternatives. `init_exp` is `assignment_exp`
     # (a single scalar initializer); the inner exp passes through
@@ -1148,7 +1365,14 @@ class _ASTBuilder(Transformer):
         # a forward function declaration (`int foo(int);` parses as
         # var_decl with a function-typed declarator) — rewrap as
         # Type_function_decl with body=None.
+        #
+        # Returns a list of `Type_declaration` AST nodes. When the
+        # specifier-run included an *inline* struct/union body
+        # (`struct foo { int a; } x;`) the StructDecl for the body
+        # comes FIRST in the returned list, followed by the
+        # VarDecl/FunctionDecl that consumed the type.
         specs, i = _consume_specifiers(items, 0)
+        struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         decl_tree = items[i]
         name, composed, outer_param_names = _apply_declarator(
@@ -1163,19 +1387,77 @@ class _ASTBuilder(Transformer):
                 raise ParserError(
                     "function declaration cannot have an initializer"
                 )
-            return c99_ast.Type_function_decl(
+            tail = c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
                 name=name,
                 params=outer_param_names or [],
                 body=None,
                 data_type=composed,
                 storage_class=storage_class,
+            ))
+        else:
+            tail = c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
+                name=name,
+                init=init,
+                data_type=composed,
+                storage_class=storage_class,
+            ))
+        return struct_decls + [tail]
+
+    def tag_only_decl(self, items):
+        # `var_decl: specifier+ SEMICOLON -> tag_only_decl`. Used for
+        # struct/union forward declarations (`struct foo;`) and
+        # struct/union definitions with no declarator (`struct foo
+        # { int a; };`). Storage classes aren't legal here — `static
+        # struct foo;` is meaningless. Returns a list of
+        # Type_declaration nodes (the StructDecl for the body, plus
+        # any *nested* struct definitions encountered while parsing
+        # the body).
+        specs, i = _consume_specifiers(items, 0)
+        # The semicolon is the last item; nothing else.
+        if i != len(items) - 1:
+            raise AssertionError(
+                f"unexpected children in tag_only_decl: {items!r}"
             )
-        return c99_ast.Type_var_decl(
-            name=name,
-            init=init,
-            data_type=composed,
-            storage_class=storage_class,
-        )
+        struct_decls = _drain_inline_struct_bodies(specs)
+        # Reject any storage-class specifier on a tag-only decl.
+        if any(
+            getattr(s, "type", None) in ("STATIC", "EXTERN")
+            for s in specs
+        ):
+            raise ParserError(
+                "storage-class specifier isn't permitted on a "
+                "struct/union declaration without a declarator"
+            )
+        # The non-storage specifiers should compose to a single
+        # Structure or Union type. Any other shape (e.g. `int;`,
+        # `void;`) is meaningless and rejected per C99 §6.7.2 —
+        # a declaration must declare at least a tag, a member of an
+        # enumeration, or an object/function.
+        non_storage = [s for s in specs if not (
+            getattr(s, "type", None) in ("STATIC", "EXTERN")
+        )]
+        if not non_storage:
+            raise ParserError("empty declaration")
+        ts = _resolve_data_type(non_storage)
+        if not isinstance(ts, (c99_ast.Structure, c99_ast.Union)):
+            raise ParserError(
+                "declaration does not declare anything (a tag, a "
+                "member of an enumeration, or an object/function)"
+            )
+        # If the body had a definition and we already drained it
+        # into struct_decls, we're done. Otherwise this is a forward
+        # declaration — emit a StructDecl with empty members.
+        if struct_decls and struct_decls[-1].struct_decl.tag == ts.tag:
+            # The drained struct decl IS the body; nothing further.
+            return struct_decls
+        # Forward declaration: `struct foo;`. Append an empty-body
+        # StructDecl.
+        forward = c99_ast.StructDecl(struct_decl=c99_ast.Type_struct_decl(
+            tag=ts.tag,
+            is_union=isinstance(ts, c99_ast.Union),
+            members=[],
+        ))
+        return struct_decls + [forward]
 
     def function_decl(self, items):
         # `function_decl: specifier+ declarator block` — function
@@ -1190,7 +1472,11 @@ class _ASTBuilder(Transformer):
         # direct_declarator form has to be the function-suffix shape.
         # Anything else (a plain identifier, a function-pointer
         # variable, ...) means the source isn't a function definition.
+        # Returns a list of Type_declaration AST nodes (typically one
+        # FunctionDecl, plus any inline struct definitions that
+        # appeared in the return-type specifier).
         specs, i = _consume_specifiers(items, 0)
+        struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         decl_tree = items[i]
         name, composed, outer_param_names = _apply_declarator(
@@ -1202,13 +1488,14 @@ class _ASTBuilder(Transformer):
                 f"function definition's declarator must compose to a "
                 f"function type; got {type(composed).__name__}"
             )
-        return c99_ast.Type_function_decl(
+        tail = c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
             name=name,
             params=outer_param_names or [],
             body=block,
             data_type=composed,
             storage_class=storage_class,
-        )
+        ))
+        return struct_decls + [tail]
 
     # Alternatives of `statement` — each named in c99.lark.
     def return_stmt(self, items):
@@ -1289,23 +1576,45 @@ class _ASTBuilder(Transformer):
     def for_init(self, items):
         if len(items) == 1:
             child = items[0]
-            if isinstance(child, c99_ast.Type_var_decl):
+            # var_decl now returns a list of Type_declaration AST
+            # nodes (typically one element). For for-init, the list
+            # MUST be exactly one element AND that element must be a
+            # plain object declaration — no inline struct definitions
+            # (`for (struct foo {int a;} x = ...; ...)` would smuggle
+            # the tag into for-loop scope) and no function decls.
+            if isinstance(child, list):
+                # Reject inline struct definitions.
+                if any(
+                    isinstance(d, c99_ast.StructDecl)
+                    for d in child
+                ):
+                    raise ParserError(
+                        "struct/union definition isn't permitted in a "
+                        "for-loop initializer"
+                    )
+                if len(child) != 1:
+                    raise AssertionError(
+                        f"unexpected multi-decl in for_init: {child!r}"
+                    )
+                inner = child[0]
+                if isinstance(inner, c99_ast.FunctionDecl):
+                    raise ParserError(
+                        "function declarations aren't permitted in a "
+                        "for-loop initializer (C99 §6.8.5.3)"
+                    )
+                # Plain VarDecl — unwrap to the inner Type_var_decl.
+                vd = inner.var_decl
                 # §6.8.5.3 also bans `static` / `extern` for-init
                 # objects (only auto / register are permitted; in our
                 # model that's `storage_class=None`).
-                if child.storage_class is not None:
+                if vd.storage_class is not None:
                     raise ParserError(
                         f"storage class "
-                        f"{type(child.storage_class).__name__.lower()!r} "
+                        f"{type(vd.storage_class).__name__.lower()!r} "
                         f"isn't permitted on a for-loop initializer "
                         f"(C99 §6.8.5.3 — only auto / register)"
                     )
-                return c99_ast.InitDecl(var_decl=child)
-            if isinstance(child, c99_ast.Type_function_decl):
-                raise ParserError(
-                    "function declarations aren't permitted in a "
-                    "for-loop initializer (C99 §6.8.5.3)"
-                )
+                return c99_ast.InitDecl(var_decl=vd)
             # Bare SEMICOLON — empty for-init clause.
             return c99_ast.InitExp(exp=None)
         # exp + SEMICOLON.
@@ -1671,6 +1980,33 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def logical_not(self, _bang):
         return c99_ast.LogicalNot()
+
+
+def _drain_inline_struct_bodies(specs):
+    """Walk a specifier list and produce StructDecl AST nodes for any
+    struct/union specifier that carried an inline body. Mutates each
+    `_TagSpecifier` in place to clear its body (so the same specifier
+    list can be re-used to compute the type via `_resolve_data_type`).
+
+    A specifier is a list of Tokens and `_TagSpecifier` wrappers.
+    Bodies appear at most once per tag in the list; when a body is
+    drained the resulting StructDecl is appended to the output.
+    """
+    out = []
+    for s in specs:
+        if isinstance(s, _TagSpecifier) and s.body is not None:
+            members = [
+                c99_ast.Type_member_decl(name=n, data_type=t)
+                for (n, t) in s.body
+            ]
+            sd = c99_ast.Type_struct_decl(
+                tag=s.tag,
+                is_union=s.is_union,
+                members=members,
+            )
+            out.append(c99_ast.StructDecl(struct_decl=sd))
+            s.body = None  # consumed; further references treat as forward-ref
+    return out
 
 
 _BUILDER = _ASTBuilder()

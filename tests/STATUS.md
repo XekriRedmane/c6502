@@ -65,6 +65,45 @@ rejects it before any sizeof folding gets a chance.
   - `sizeof/sizeof_derived_types.c` — uses the literal
     `4294967297L` (= 2^32 + 1) as an array dimension.
 
+### Struct / union edge cases (chapter 18)
+
+c6502 supports struct and union end-to-end through `--codegen`:
+declarations (file- and block-scope), member access via `.` /
+`->` (including chained / nested), compound initializers, struct
+copy (Var=Var, Var=Member, Member=Var), pointer-to-struct,
+address-of struct member, sizeof on struct/union types, and basic
+unions. Several edge cases of the spec aren't enforced today —
+they are pinned as "not rejected today" in
+`tests/test_chapter_18.py` rather than left as crashes:
+
+- **invalid_struct_tags** (`_INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY`):
+  - `deref_undeclared.c` — dereferencing a pointer-to-incomplete
+    struct in an Expression statement (`*ptr;` where `ptr` is
+    `struct s *` with `struct s` only forward-declared) doesn't
+    raise. The standard rejects it because you can't form an
+    lvalue of incomplete type; we accept it because the result
+    type is just discarded.
+
+- **invalid_types** (`_INVALID_TYPES_NOT_REJECTED_TODAY`):
+  - Block-scope tag shadowing / re-declaration corner cases
+    (`tag_resolution/*`, `union_struct_conflicts/*`,
+    `union_tag_resolution/distinct_union_types.c`).
+  - Struct-as-controlling-expression in `if` / `while`
+    (`scalar_required/struct_controlling_expression.c`,
+    `extra_credit/scalar_required/union_as_controlling_expression.c`).
+  - Operations through incomplete types
+    (`invalid_incomplete_structs/*`).
+
+The chapter\_18 valid test corpus is large (108 programs); roughly
+two dozen compile end-to-end today (the file-scope, scalar-only
+subset of `no_structure_parameters/`). The remainder need
+struct-by-value parameter passing, struct-by-value returns
+(separate ABI exercise), float arithmetic helpers, or 8-byte
+literals beyond `unsigned long long`. Each is treated as an
+expected failure in the harness; the file-by-file lists are in
+`tests/test_chapter_18.py`'s `_VALID_PASSES_TODAY`,
+`_INVALID_TYPES_NOT_REJECTED_TODAY`, etc.
+
 ---
 
 ## Pinned: real bugs

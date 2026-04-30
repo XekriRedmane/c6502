@@ -307,6 +307,15 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         # by `_size_of_name` in `replace_pseudoregisters` (which reads
         # the c99 Array type directly).
         return tac_ast.Long()
+    if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+        # Struct / union types don't have a TAC counterpart — at the
+        # byte level they're just N contiguous bytes that the asm
+        # backend lays out via the symbol-table-driven
+        # `_size_of`/`_size_of_name` helpers. The TAC sum's `Long`
+        # is a stand-in for "address-shaped value" which is the
+        # right shape for any Var-of-struct that gets address-taken
+        # (the value itself isn't operated on as a TAC scalar).
+        return tac_ast.Long()
     if isinstance(t, c99_ast.FunType):
         return tac_ast.FunType(
             params=[_to_tac_data_type(p) for p in t.params],
@@ -507,14 +516,31 @@ def _tac_static_init_for(
     )
 
 
-def _zero_init_value(t: c99_ast.Type_data_type):
+def _zero_init_value(t: c99_ast.Type_data_type, types=None):
     """Default-zero value tree for a Tentative file-scope static. A
     scalar yields `0` (or `0.0` for FP); an array yields a tuple of
-    typed zeros sized to the array (recursive for multi-dim). The
-    type checker uses the same shape for `static T x;` (no init), so
-    `_flat_static_init` consumes both via the same code path."""
+    typed zeros sized to the array (recursive for multi-dim); a
+    struct/union yields a tuple of typed zeros sized to the layout's
+    member list. The type checker uses the same shape for `static T
+    x;` (no init), so `_flat_static_init` consumes both via the
+    same code path."""
     if isinstance(t, c99_ast.Array):
-        return tuple(_zero_init_value(t.element_type) for _ in range(t.size))
+        return tuple(
+            _zero_init_value(t.element_type, types) for _ in range(t.size)
+        )
+    if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+        if types is None:
+            return ()
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            return ()
+        if isinstance(t, c99_ast.Union):
+            if not layout.members:
+                return ()
+            return (_zero_init_value(layout.members[0].type, types),)
+        return tuple(
+            _zero_init_value(m.type, types) for m in layout.members
+        )
     if isinstance(t, (c99_ast.Float, c99_ast.Double)):
         return 0.0
     return 0
@@ -523,6 +549,7 @@ def _zero_init_value(t: c99_ast.Type_data_type):
 def _flat_static_init(
     t: c99_ast.Type_data_type,
     value,
+    types=None,
 ) -> list[tac_ast.Type_static_init]:
     """Lay out a static-storage value tree as a flat list of TAC
     `static_init` items in source-byte order. Scalars produce a
@@ -536,12 +563,13 @@ def _flat_static_init(
     single `ZeroInit(N)` so missing-initializer zero-padding
     (C99 §6.7.8.21) and no-init statics (§6.7.8.10) lay down as
     a `DS.B N` directive instead of N separate `DC.B $00`s."""
-    return _coalesce_zero_inits(_flat_static_init_raw(t, value))
+    return _coalesce_zero_inits(_flat_static_init_raw(t, value, types))
 
 
 def _flat_static_init_raw(
     t: c99_ast.Type_data_type,
     value,
+    types=None,
 ) -> list[tac_ast.Type_static_init]:
     if isinstance(t, c99_ast.Array):
         if not isinstance(value, tuple) or len(value) != t.size:
@@ -566,9 +594,65 @@ def _flat_static_init_raw(
             return [tac_ast.StringInit(str=s, bytes=t.size)]
         out: list[tac_ast.Type_static_init] = []
         for elem in value:
-            out.extend(_flat_static_init_raw(t.element_type, elem))
+            out.extend(_flat_static_init_raw(t.element_type, elem, types))
+        return out
+    if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+        if types is None:
+            return [tac_ast.ZeroInit(bytes=0)]
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            return [tac_ast.ZeroInit(bytes=0)]
+        members = (
+            layout.members[:1]
+            if isinstance(t, c99_ast.Union)
+            else layout.members
+        )
+        out: list[tac_ast.Type_static_init] = []
+        for i, m in enumerate(members):
+            elem_value = (
+                value[i] if isinstance(value, tuple) and i < len(value)
+                else _zero_init_value(m.type, types)
+            )
+            out.extend(_flat_static_init_raw(m.type, elem_value, types))
+        # For unions, pad the layout's storage out to its full size
+        # if the first member is smaller than the union (e.g. union
+        # u { int a; long b; } x = {1}; — first member is 1 byte,
+        # union is 2 bytes → tail-pad 1 zero byte).
+        if isinstance(t, c99_ast.Union) and layout.size > 0:
+            laid_down = sum(_static_init_byte_count(it) for it in out)
+            if laid_down < layout.size:
+                out.append(tac_ast.ZeroInit(bytes=layout.size - laid_down))
         return out
     return [_tac_static_init_for(t, value)]
+
+
+def _static_init_byte_count(it) -> int:
+    """How many bytes does `it` lay down in memory? Used to pad
+    union-typed statics whose first-named-member width is smaller
+    than the union's total size."""
+    if isinstance(it, tac_ast.IntInit):
+        return 1
+    if isinstance(it, tac_ast.UIntInit):
+        return 1
+    if isinstance(it, tac_ast.LongInit):
+        return 2
+    if isinstance(it, tac_ast.ULongInit):
+        return 2
+    if isinstance(it, tac_ast.LongLongInit):
+        return 4
+    if isinstance(it, tac_ast.ULongLongInit):
+        return 4
+    if isinstance(it, tac_ast.FloatInit):
+        return 4
+    if isinstance(it, tac_ast.DoubleInit):
+        return 8
+    if isinstance(it, tac_ast.AddressInit):
+        return 2
+    if isinstance(it, tac_ast.ZeroInit):
+        return it.bytes
+    if isinstance(it, tac_ast.StringInit):
+        return it.bytes
+    raise TypeError(f"unknown static_init: {it!r}")
 
 
 def _zero_byte_count(item: tac_ast.Type_static_init) -> int | None:
@@ -622,7 +706,7 @@ def _coalesce_zero_inits(
     return out
 
 
-def _pointee_size(t: c99_ast.Type_data_type) -> int:
+def _pointee_size(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes per element for `*ptr` where `ptr` has type `t`. Used to
     scale the integer operand in pointer arithmetic — `ptr + n`
     advances by `n * _pointee_size(ptr)` bytes per C99 §6.5.6.8.
@@ -633,7 +717,7 @@ def _pointee_size(t: c99_ast.Type_data_type) -> int:
     Function pointers and non-object types are rejected by the type
     checker before this point."""
     assert isinstance(t, c99_ast.Pointer), f"not a pointer: {t!r}"
-    return _sizeof(t.referenced_type)
+    return _sizeof(t.referenced_type, types)
 
 
 def _is_char_element(t: c99_ast.Type_data_type) -> bool:
@@ -644,10 +728,12 @@ def _is_char_element(t: c99_ast.Type_data_type) -> bool:
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
 
 
-def _sizeof(t: c99_ast.Type_data_type) -> int:
+def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes occupied by a value of type `t` in c6502's storage
     model. Recursive for Array — `int[3][4]` is 12 bytes,
-    `char[10]` is 10 bytes."""
+    `char[10]` is 10 bytes. For Structure / Union, looks up the
+    tag's layout in `types` (the program-wide TypeTable) and reads
+    its `.size`."""
     if isinstance(t, (
         c99_ast.Int, c99_ast.UInt,
         c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
@@ -662,14 +748,33 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     if isinstance(t, c99_ast.Double):
         return 8
     if isinstance(t, c99_ast.Array):
-        return _sizeof(t.element_type) * t.size
+        return _sizeof(t.element_type, types) * t.size
+    if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+        if types is None:
+            raise TypeError(
+                f"cannot size struct/union without TypeTable: {t!r}"
+            )
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            raise TypeError(
+                f"cannot size incomplete struct/union {t!r}"
+            )
+        return layout.size
     raise TypeError(f"cannot size {t!r}")
 
 
 class Translator:
-    def __init__(self, symbols: SymbolTable | None = None) -> None:
+    def __init__(
+        self,
+        symbols: SymbolTable | None = None,
+        types=None,
+    ) -> None:
         self._temp_counter = 0
         self._label_counter = 0
+        # Read-only handle to the type checker's struct/union layout
+        # table. Used by `_sizeof` / `_pointee_size` to size
+        # struct-typed locals, members, and pointee scaling.
+        self._types = types
         # Read-only handle to the type-checker's symbol table. Used
         # twice: to set `is_global` on each TAC Function (lookup keyed
         # by source name, since FunAttr names aren't renamed by
@@ -767,6 +872,10 @@ class Translator:
                 # File-scope variable declarations don't generate TAC
                 # at the AST-walk stage. Their definitions appear via
                 # the symbol-table pass below.
+                return None
+            case c99_ast.StructDecl():
+                # Struct/union declarations are pure type info —
+                # already consumed by the type checker. No TAC.
                 return None
         raise TypeError(f"unexpected declaration: {decl!r}")
 
@@ -881,7 +990,7 @@ class Translator:
             if isinstance(init, Initial):
                 init_value = init.value
             elif isinstance(init, Tentative):
-                init_value = _zero_init_value(sym.type)
+                init_value = _zero_init_value(sym.type, self._types)
             elif isinstance(init, NoInitializer):
                 continue
             else:
@@ -891,7 +1000,7 @@ class Translator:
                 name=name,
                 is_global=sym.attrs.is_global,
                 data_type=data_type,
-                init=_flat_static_init(sym.type, init_value),
+                init=_flat_static_init(sym.type, init_value, self._types),
             ))
         return out
 
@@ -951,7 +1060,21 @@ class Translator:
                     return
                 if vd.init is not None:
                     if isinstance(vd.init, c99_ast.InitList):
-                        self._translate_array_init_list(vd, instrs)
+                        # Dispatch by the variable's declared type.
+                        if isinstance(vd.data_type, c99_ast.Array):
+                            self._translate_array_init_list(vd, instrs)
+                        elif isinstance(
+                            vd.data_type,
+                            (c99_ast.Structure, c99_ast.Union),
+                        ):
+                            self._translate_struct_init_list(
+                                vd, instrs,
+                            )
+                        else:
+                            raise TypeError(
+                                f"InitList for non-aggregate type "
+                                f"{vd.data_type!r}"
+                            )
                     elif isinstance(vd.init, c99_ast.String):
                         # `char arr[N] = "abc";` at block scope —
                         # lay each byte (plus null + zero-pad) into
@@ -959,12 +1082,16 @@ class Translator:
                         # arithmetic path used for InitList.
                         self._translate_string_array_init(vd, instrs)
                     else:
+                        # Plain initializer — including struct = expr
+                        # copies. The Copy lowering reads the dst's
+                        # symbol-table size, so a struct-typed Var on
+                        # both sides fans out to N byte-copies.
                         init_val = self.translate_exp(vd.init, instrs)
                         instrs.append(tac_ast.Copy(
                             src=init_val, dst=tac_ast.Var(name=vd.name),
                         ))
                 return
-            case c99_ast.FunctionDecl():
+            case c99_ast.FunctionDecl() | c99_ast.StructDecl():
                 return
         raise TypeError(f"unexpected declaration: {decl!r}")
 
@@ -1482,13 +1609,13 @@ class Translator:
                     f"on sizeof's inner expression: {inner!r}"
                 )
                 return tac_ast.Constant(const=tac_ast.ConstLong(
-                    int=_sizeof(t),
+                    int=_sizeof(t, self._types),
                 ))
             case c99_ast.SizeOfType(target_type=t):
                 # `sizeof (T)` — direct fold from the type-name.
                 # No inner expression to translate.
                 return tac_ast.Constant(const=tac_ast.ConstLong(
-                    int=_sizeof(t),
+                    int=_sizeof(t, self._types),
                 ))
             case c99_ast.Subscript(array=arr, index=idx):
                 # `a[i]` per C99 §6.5.2.1.2 is `*(a + i)`. The type
@@ -1499,6 +1626,30 @@ class Translator:
                 # it into a fresh element-typed temp.
                 addr = self._translate_subscript_address(
                     arr, idx, instrs,
+                )
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
+                instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
+                return dst
+            case c99_ast.Dot(operand=operand, member=member):
+                # `e.m` — compute the byte address of the member,
+                # then Load N bytes through it. The address path
+                # mirrors the lvalue case (see `_translate_member_
+                # address`).
+                addr = self._translate_dot_address(
+                    operand, member, instrs,
+                )
+                dst = tac_ast.Var(
+                    name=self.make_temporary_variable_name(exp.data_type),
+                )
+                instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
+                return dst
+            case c99_ast.Arrow(operand=operand, member=member):
+                # `p->m` — evaluate the pointer, add the member's
+                # offset, Load.
+                addr = self._translate_arrow_address(
+                    operand, member, instrs,
                 )
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
@@ -1543,10 +1694,26 @@ class Translator:
                         src=rval_val, dst_ptr=addr,
                     ))
                     return rval_val
+                if isinstance(lval, c99_ast.Dot):
+                    addr = self._translate_dot_address(
+                        lval.operand, lval.member, instrs,
+                    )
+                    instrs.append(tac_ast.Store(
+                        src=rval_val, dst_ptr=addr,
+                    ))
+                    return rval_val
+                if isinstance(lval, c99_ast.Arrow):
+                    addr = self._translate_arrow_address(
+                        lval.operand, lval.member, instrs,
+                    )
+                    instrs.append(tac_ast.Store(
+                        src=rval_val, dst_ptr=addr,
+                    ))
+                    return rval_val
                 raise TypeError(
-                    f"assignment lval must be Var, Dereference, or "
-                    f"Subscript (identifier_resolution should have "
-                    f"enforced this); got {lval!r}"
+                    f"assignment lval must be Var, Dereference, "
+                    f"Subscript, Dot, or Arrow (identifier_resolution "
+                    f"should have enforced this); got {lval!r}"
                 )
             case c99_ast.Conditional(
                 condition=cond,
@@ -1704,10 +1871,23 @@ class Translator:
                     return self._translate_subscript_address(
                         inner.array, inner.index, instrs,
                     )
+                if isinstance(inner, c99_ast.Dot):
+                    # `&s.m` — same address arithmetic as the rvalue
+                    # Dot, but skip the trailing Load.
+                    return self._translate_dot_address(
+                        inner.operand, inner.member, instrs,
+                    )
+                if isinstance(inner, c99_ast.Arrow):
+                    # `&p->m` — same address arithmetic as the
+                    # rvalue Arrow, but skip the trailing Load.
+                    return self._translate_arrow_address(
+                        inner.operand, inner.member, instrs,
+                    )
                 raise TypeError(
                     f"address-of operand must be Var, Dereference, "
-                    f"or Subscript (identifier_resolution / array "
-                    f"decay should have enforced this); got {inner!r}"
+                    f"Subscript, Dot, or Arrow (identifier_resolution "
+                    f"/ array decay should have enforced this); got "
+                    f"{inner!r}"
                 )
         raise TypeError(f"unexpected exp: {exp!r}")
 
@@ -1739,7 +1919,7 @@ class Translator:
             # ptr - ptr (the only legal two-pointer additive op; ptr +
             # ptr was rejected by the type checker).
             assert isinstance(op, c99_ast.Subtract)
-            size = _pointee_size(lt)
+            size = _pointee_size(lt, self._types)
             diff = tac_ast.Var(
                 name=self.make_temporary_variable_name(c99_ast.Long()),
             )
@@ -1765,7 +1945,7 @@ class Translator:
             ptr_val, int_val, ptr_type = src1, src2, lt
         else:
             ptr_val, int_val, ptr_type = src2, src1, rt
-        size = _pointee_size(ptr_type)
+        size = _pointee_size(ptr_type, self._types)
         if size != 1:
             scaled = tac_ast.Var(
                 name=self.make_temporary_variable_name(c99_ast.Long()),
@@ -1922,7 +2102,7 @@ class Translator:
         sub-array zero); a None item with a scalar element type
         emits `Store(0-of-elem, addr)`."""
         elem_type = arr_type.element_type
-        elem_size = _sizeof(elem_type)
+        elem_size = _sizeof(elem_type, self._types)
         for i in range(arr_type.size):
             byte_offset = base_offset + i * elem_size
             item = init.items[i] if i < len(init.items) else None
@@ -1947,6 +2127,14 @@ class Translator:
                 self._emit_init_stores(
                     elem_type, sub, base, byte_offset, instrs,
                 )
+            elif isinstance(elem_type, (c99_ast.Structure, c99_ast.Union)):
+                sub = (
+                    item if item is not None
+                    else c99_ast.InitList(items=[], data_type=elem_type)
+                )
+                self._emit_struct_init_stores(
+                    elem_type, sub, base, byte_offset, instrs,
+                )
             else:
                 if item is None:
                     val = _tac_const_val(elem_type, 0)
@@ -1967,6 +2155,210 @@ class Translator:
                         dst=addr,
                     ))
                 instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+
+    def _emit_struct_init_stores(
+        self,
+        struct_type,  # c99_ast.Structure | c99_ast.Union
+        init: c99_ast.InitList,
+        base: tac_ast.Type_val,
+        base_offset: int,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Walk a struct/union initializer, emitting Store instructions
+        for each scalar leaf at `base + (base_offset + member_offset)`
+        bytes. Missing items zero-pad. For unions only the first named
+        member is initialized per C99 §6.7.8.16."""
+        if self._types is None:
+            raise TypeError("struct init lowering requires TypeTable")
+        layout = self._types.get(struct_type.tag)
+        if layout is None or not layout.complete:
+            raise TypeError(f"incomplete struct/union {struct_type!r}")
+        members = (
+            layout.members[:1]
+            if isinstance(struct_type, c99_ast.Union)
+            else layout.members
+        )
+        for i, m in enumerate(members):
+            byte_offset = base_offset + m.byte_offset
+            item = init.items[i] if i < len(init.items) else None
+            mt = m.type
+            if isinstance(mt, c99_ast.Array):
+                if (
+                    isinstance(item, c99_ast.String)
+                    and _is_char_element(mt.element_type)
+                ):
+                    self._emit_string_stores(
+                        item, mt, base, byte_offset, instrs,
+                    )
+                    continue
+                sub = (
+                    item if item is not None
+                    else c99_ast.InitList(items=[], data_type=mt)
+                )
+                self._emit_init_stores(
+                    mt, sub, base, byte_offset, instrs,
+                )
+            elif isinstance(mt, (c99_ast.Structure, c99_ast.Union)):
+                sub = (
+                    item if item is not None
+                    else c99_ast.InitList(items=[], data_type=mt)
+                )
+                self._emit_struct_init_stores(
+                    mt, sub, base, byte_offset, instrs,
+                )
+            else:
+                if item is None:
+                    val = _tac_const_val(mt, 0)
+                else:
+                    val = self.translate_exp(item, instrs)
+                if byte_offset == 0:
+                    addr = base
+                else:
+                    addr = tac_ast.Var(
+                        name=self.make_temporary_variable_name(
+                            c99_ast.Pointer(referenced_type=mt),
+                        ),
+                    )
+                    instrs.append(tac_ast.Binary(
+                        op=tac_ast.Add(),
+                        src1=base,
+                        src2=_tac_const_val(c99_ast.Long(), byte_offset),
+                        dst=addr,
+                    ))
+                instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+
+    def _translate_struct_init_list(
+        self,
+        vd: c99_ast.Type_var_decl,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Lower `struct s x = {e1, e2, ...};` (block-scope only) by
+        computing the address of `x` once and emitting one Store per
+        scalar leaf."""
+        struct_type = vd.data_type
+        assert isinstance(struct_type, (c99_ast.Structure, c99_ast.Union))
+        init = vd.init
+        assert isinstance(init, c99_ast.InitList)
+        base = tac_ast.Var(
+            name=self.make_temporary_variable_name(
+                c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            ),
+        )
+        instrs.append(tac_ast.GetAddress(
+            operand=tac_ast.Var(name=vd.name), dst=base,
+        ))
+        self._emit_struct_init_stores(
+            struct_type, init, base, 0, instrs,
+        )
+
+    def _member_offset(self, struct_type, member: str) -> int:
+        """Look up the byte offset of `member` in `struct_type`'s
+        layout. The type checker has validated existence; this is
+        a straight read."""
+        layout = self._types.get(struct_type.tag)
+        for m in layout.members:
+            if m.name == member:
+                return m.byte_offset
+        raise TypeError(
+            f"struct/union {struct_type.tag!r} has no member "
+            f"{member!r} (type checker should have caught this)"
+        )
+
+    def _add_offset(
+        self,
+        base: tac_ast.Type_val,
+        offset: int,
+        elem_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Return `base + offset` (as a Pointer-typed temp) when
+        `offset != 0`; return `base` itself when `offset == 0`."""
+        if offset == 0:
+            return base
+        addr = tac_ast.Var(
+            name=self.make_temporary_variable_name(
+                c99_ast.Pointer(referenced_type=elem_type),
+            ),
+        )
+        instrs.append(tac_ast.Binary(
+            op=tac_ast.Add(),
+            src1=base,
+            src2=_tac_const_val(c99_ast.Long(), offset),
+            dst=addr,
+        ))
+        return addr
+
+    def _translate_lvalue_address(
+        self,
+        lval: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Compute the byte address of an lvalue expression. Used by
+        the Dot lvalue path to get a base for the parent struct, and
+        by AddressOf for member accesses. Accepts the four addressable
+        forms — Var, Dereference, Subscript, Dot, Arrow."""
+        if isinstance(lval, c99_ast.Var):
+            base = tac_ast.Var(
+                name=self.make_temporary_variable_name(
+                    c99_ast.Pointer(referenced_type=lval.data_type),
+                ),
+            )
+            instrs.append(tac_ast.GetAddress(
+                operand=tac_ast.Var(name=lval.name), dst=base,
+            ))
+            return base
+        if isinstance(lval, c99_ast.Dereference):
+            return self.translate_exp(lval.exp, instrs)
+        if isinstance(lval, c99_ast.Subscript):
+            return self._translate_subscript_address(
+                lval.array, lval.index, instrs,
+            )
+        if isinstance(lval, c99_ast.Dot):
+            return self._translate_dot_address(
+                lval.operand, lval.member, instrs,
+            )
+        if isinstance(lval, c99_ast.Arrow):
+            return self._translate_arrow_address(
+                lval.operand, lval.member, instrs,
+            )
+        raise TypeError(f"not an addressable lvalue: {lval!r}")
+
+    def _translate_dot_address(
+        self,
+        operand: c99_ast.Type_exp,
+        member: str,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Compute the byte address of `e.m`. The operand IS a
+        struct/union lvalue; get its address, add the member's
+        offset."""
+        struct_type = operand.data_type
+        base = self._translate_lvalue_address(operand, instrs)
+        offset = self._member_offset(struct_type, member)
+        m_layout = self._types.get(struct_type.tag)
+        m_type = next(
+            mi.type for mi in m_layout.members if mi.name == member
+        )
+        return self._add_offset(base, offset, m_type, instrs)
+
+    def _translate_arrow_address(
+        self,
+        operand: c99_ast.Type_exp,
+        member: str,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Compute the byte address of `p->m`. Translate the pointer
+        operand, then add the member's offset."""
+        ptr_type = operand.data_type
+        assert isinstance(ptr_type, c99_ast.Pointer)
+        struct_type = ptr_type.referenced_type
+        ptr_val = self.translate_exp(operand, instrs)
+        offset = self._member_offset(struct_type, member)
+        m_layout = self._types.get(struct_type.tag)
+        m_type = next(
+            mi.type for mi in m_layout.members if mi.name == member
+        )
+        return self._add_offset(ptr_val, offset, m_type, instrs)
 
     def _translate_subscript_address(
         self,
@@ -2059,11 +2451,20 @@ class Translator:
             )
         elif isinstance(operand, c99_ast.Dereference):
             addr = self.translate_exp(operand.exp, instrs)
+        elif isinstance(operand, c99_ast.Dot):
+            addr = self._translate_dot_address(
+                operand.operand, operand.member, instrs,
+            )
+        elif isinstance(operand, c99_ast.Arrow):
+            addr = self._translate_arrow_address(
+                operand.operand, operand.member, instrs,
+            )
         else:
             raise TypeError(
                 f"increment/decrement operand must be Var, Subscript, "
-                f"or Dereference (identifier_resolution should have "
-                f"enforced this); got {operand!r}"
+                f"Dereference, Dot, or Arrow "
+                f"(identifier_resolution should have enforced this); "
+                f"got {operand!r}"
             )
         cur = tac_ast.Var(
             name=self.make_temporary_variable_name(op_type),
@@ -2192,16 +2593,18 @@ class Translator:
 def translate_program(
     prog: c99_ast.Type_program,
     symbols: SymbolTable | None = None,
+    types=None,
 ) -> tac_ast.Type_program:
     """Convenience wrapper: builds a fresh Translator per call (so the
-    temporary counter starts at 0 every time). The `symbols` table
-    must be the one produced by `passes.type_checking.check_program`
-    on the same `prog` — it's consumed both for `is_global` lookups
-    on functions and for the StaticVariable enumeration at the end of
-    program translation. The default of `None` is a test convenience;
-    the wrapper will run `check_program` on `prog` to fill it in,
-    which is what the production pipeline does anyway."""
+    temporary counter starts at 0 every time). The `symbols` and
+    `types` tables must be those produced by
+    `passes.type_checking.check_program` on the same `prog` — they're
+    consumed for `is_global` lookups on functions, the StaticVariable
+    enumeration at the end of program translation, and struct/union
+    layout sizing. The default of `None` is a test convenience; the
+    wrapper will run `check_program` on `prog` to fill them in, which
+    is what the production pipeline does anyway."""
     if symbols is None:
         from passes.type_checking import check_program
-        _, symbols = check_program(prog)
-    return Translator(symbols).translate_program(prog)
+        _, symbols, types = check_program(prog)
+    return Translator(symbols, types).translate_program(prog)

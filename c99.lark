@@ -207,7 +207,18 @@ start: declaration*
 // `SEMICOLON` once the declarator has been parsed.
 declaration: function_decl | var_decl
 specifier: type_specifier | STATIC | EXTERN
+// var_decl covers four shapes:
+//   `int x;` / `int x = 1;`           — object declaration with declarator
+//   `int foo(int);`                   — function forward decl (the var_decl
+//                                       transformer rewraps as FunctionDecl
+//                                       when the composed type is FunType)
+//   `struct foo { int a; };`          — struct/union definition (no
+//                                       declarator); becomes a StructDecl
+//   `struct foo;`                     — struct/union forward declaration
+// The struct/union-only forms (no declarator) take the
+// `tag_only_decl` alternative.
 var_decl: specifier+ declarator (ASSIGN initializer)? SEMICOLON
+        | specifier+ SEMICOLON                                  -> tag_only_decl
 
 // Initializer per C99 §6.7.8: either a single assignment-level
 // expression, or a brace-enclosed list of initializers. The list
@@ -220,6 +231,26 @@ initializer: assignment_exp                                      -> init_exp
 function_decl: specifier+ declarator block
 
 type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | VOID
+              | struct_or_union_specifier
+
+// Struct or union specifier (C99 §6.7.2.1). Two shapes:
+//   * defining: `struct tag { member_decl+ }`
+//   * referring: `struct tag` (used in object declarations and
+//                 forward `struct foo;` declarations alike)
+// c6502 requires a tag (anonymous structs not modeled). Member-decl
+// list is non-empty when present — empty bodies (`struct foo {}`)
+// would be illegal per §6.7.2.1.7.
+struct_or_union_specifier: STRUCT IDENTIFIER (LBRACE struct_declaration+ RBRACE)?  -> struct_specifier
+                         | UNION  IDENTIFIER (LBRACE struct_declaration+ RBRACE)?  -> union_specifier
+
+// Struct member declaration (C99 §6.7.2.1.2). Reuses `declarator`
+// from §6.7.5 so members can be pointers, arrays, struct-typed,
+// pointer-to-struct, etc. No bitfields. No anonymous nested
+// definitions (the embedded `struct_or_union_specifier` may only
+// be a tag-reference shape; the type checker enforces this).
+struct_declaration: specifier_qualifier_list struct_declarator_list SEMICOLON
+specifier_qualifier_list: (type_specifier | type_qualifier)+
+struct_declarator_list: declarator (COMMA declarator)*
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
@@ -391,6 +422,8 @@ constant_exp: conditional_exp
 ?postfix_exp: postfix_exp PLUSPLUS   -> post_increment
             | postfix_exp MINUSMINUS -> post_decrement
             | postfix_exp LBRACKET exp RBRACKET -> subscript
+            | postfix_exp DOT IDENTIFIER        -> member_dot
+            | postfix_exp ARROW IDENTIFIER      -> member_arrow
             | atom
 
 // Function call sits at atom level (one form of primary expression

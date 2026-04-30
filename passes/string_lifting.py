@@ -80,6 +80,10 @@ class StringLifter:
             return c99_ast.FunctionDecl(
                 function_decl=self._lift_function_decl(decl.function_decl),
             )
+        if isinstance(decl, c99_ast.StructDecl):
+            # Struct/union declarations carry no expressions; pass
+            # through.
+            return decl
         raise TypeError(f"unexpected declaration: {decl!r}")
 
     def _lift_var_decl(self, vd):
@@ -340,6 +344,14 @@ class StringLifter:
             case c99_ast.SizeOfType():
                 # `sizeof (T)` — no sub-expression, no lifting.
                 return exp
+            case c99_ast.Dot(operand=op, member=m, data_type=dt):
+                return c99_ast.Dot(
+                    operand=self._lift_exp(op), member=m, data_type=dt,
+                )
+            case c99_ast.Arrow(operand=op, member=m, data_type=dt):
+                return c99_ast.Arrow(
+                    operand=self._lift_exp(op), member=m, data_type=dt,
+                )
         raise TypeError(f"unexpected exp: {exp!r}")
 
     # ------------------------------------------------------------------

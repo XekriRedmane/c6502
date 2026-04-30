@@ -29,10 +29,10 @@ from passes.type_checking import (
 
 def _check(src: str):
     """Parse, run identifier resolution, then type-check. Returns
-    `(prog, symbols)` from `check_program`. Most tests need the
-    symbols half so they assert on the table; the prog half is
-    rarely used (type checking doesn't modify the AST)."""
-    return check_program(resolve_identifiers(parse(src)))
+    `(prog, symbols)` — drops the trailing TypeTable since most
+    existing tests don't care about it."""
+    prog, symbols, _types = check_program(resolve_identifiers(parse(src)))
+    return prog, symbols
 
 
 def _check_with_lifting(src: str):
@@ -43,7 +43,10 @@ def _check_with_lifting(src: str):
     Var references that the type checker resolves against the
     file-scope statics it minted."""
     from passes.string_lifting import lift_program as lift_strings
-    return check_program(lift_strings(resolve_identifiers(parse(src))))
+    prog, symbols, _types = check_program(
+        lift_strings(resolve_identifiers(parse(src))),
+    )
+    return prog, symbols
 
 
 class TestSymbolTableContents(unittest.TestCase):
@@ -452,7 +455,8 @@ class TestSwitch(unittest.TestCase):
         ast = resolve_identifiers(ast)
         ast = resolve_labels(ast)
         ast = label_program(ast)
-        return check_program(ast)
+        prog, symbols, _types = check_program(ast)
+        return prog, symbols
 
     def test_basic_switch_passes(self):
         self._check_full(
@@ -551,7 +555,7 @@ class TestProgramReturnedUnchanged(unittest.TestCase):
         prog_in = resolve_identifiers(
             parse("int main(void) { return 0; }"),
         )
-        prog_out, _symbols = check_program(prog_in)
+        prog_out, _symbols, _types = check_program(prog_in)
         self.assertIs(prog_out, prog_in)
 
 

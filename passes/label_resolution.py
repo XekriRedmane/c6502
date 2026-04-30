@@ -76,8 +76,9 @@ class LabelResolver:
         self, decl: c99_ast.Type_declaration,
     ) -> c99_ast.Type_declaration:
         match decl:
-            case c99_ast.VarDecl():
-                # Variable declarations can't host labels.
+            case c99_ast.VarDecl() | c99_ast.StructDecl():
+                # Variable / struct / union declarations can't host
+                # labels.
                 return decl
             case c99_ast.FunctionDecl(function_decl=fd):
                 if fd.body is None:

@@ -1445,9 +1445,39 @@ End-to-end (C source through `compile.py --codegen` to runnable-shape
   `char`/`int`/`signed char`/`unsigned char`/`unsigned int` = 1;
   `long`/`unsigned long`/pointer = 2; `long long`/`unsigned long
   long`/`float` = 4; `double` = 8; arrays multiply through their
-  element. `passes.constant_expression` also folds `sizeof` so it
-  can appear in `case` labels (and any other §6.6.6 site that lands
+  element; struct = sum of member sizes; union = max of member
+  sizes (no padding — c6502 is byte-aligned everywhere).
+  `passes.constant_expression` also folds `sizeof` so it can
+  appear in `case` labels (and any other §6.6.6 site that lands
   later — enum constants, non-VLA array sizes, bit-field widths).
+
+- `struct` and `union` (C99 §6.7.2.1 / §6.5.2.3). File-scope
+  declarations (`struct foo { int a; long b; };`), block-scope
+  declarations, and forward declarations (`struct foo;`).
+  Member access via `.` and `->` (chained / nested forms like
+  `s_ptr->in_array->a` work). Compound initializers
+  (`struct s x = {1, 2, {3, 4, 5}};`). Struct copy via
+  `s1 = s2` / `s1 = other.member` / `*p = small`. Pointer-to-
+  struct, address-of struct member, `sizeof(struct foo)`, and
+  unions. Layout follows c6502's no-padding rule: struct
+  members lay out byte-by-byte in declaration order; union
+  members all pin to offset 0 with size = max(members).
+  `c99_to_tac` lowers each member access to `GetAddress` (or
+  pointer-load) + `Binary(Add, ConstLong(member.offset))` +
+  `Load`/`Store`; struct copy reuses TAC `Copy`'s existing
+  N-byte fan-out via `_size_of`. Static-storage struct/union
+  initializers lay down as a flat sequence of typed `*Init`
+  items in member order, with union statics tail-padding to
+  the union's full size. Tag visibility is per-block (a stack
+  of visible-tag sets pushes on every Compound block, for-
+  header, and function body), so a tag declared in an inner
+  scope isn't visible after the scope exits. References to a
+  yet-undeclared tag auto-introduce a forward declaration in
+  the current scope (the standard's "appearance of `struct foo`
+  in any declaration introduces it" rule). Not yet supported:
+  struct-by-value parameter passing, struct-by-value returns
+  (separate ABI exercise), and block-scope tag shadowing
+  (re-using a tag for a different layout in an inner scope).
 
 Partially supported:
 

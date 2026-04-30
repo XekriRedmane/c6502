@@ -145,6 +145,68 @@ Void = c99_ast.Void
 FunType = c99_ast.FunType
 Pointer = c99_ast.Pointer
 Array = c99_ast.Array
+Structure = c99_ast.Structure
+Union = c99_ast.Union
+
+
+# ---------------------------------------------------------------------------
+# Struct / union layout (parallel to SymbolTable)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MemberInfo:
+    """One row of a struct/union's layout: the member's source-level
+    name, its declared type, and its byte offset from the start of the
+    enclosing struct (always 0 for union members)."""
+    name: str
+    type: Type
+    byte_offset: int
+
+
+@dataclass
+class StructLayout:
+    """Layout for one struct or union tag. `complete=False` means the
+    tag has been declared (`struct foo;`) but no body has been
+    provided yet; `members` is empty and `size==0`. A subsequent
+    declaration with a body upgrades the layout in place."""
+    tag: str
+    is_union: bool
+    members: list[MemberInfo]
+    size: int
+    complete: bool
+
+
+class TypeTable:
+    """Flat program-global table mapping each struct/union tag to its
+    layout. Block-scope tag visibility is tracked separately by the
+    type checker (a stack of visible-tag sets) so a tag declared in
+    an inner block isn't visible after exit, even though its layout
+    sits in this table."""
+
+    def __init__(self) -> None:
+        self._table: dict[str, StructLayout] = {}
+
+    def __contains__(self, tag: str) -> bool:
+        return tag in self._table
+
+    def __getitem__(self, tag: str) -> StructLayout:
+        return self._table[tag]
+
+    def __setitem__(self, tag: str, layout: StructLayout) -> None:
+        self._table[tag] = layout
+
+    def get(self, tag: str) -> StructLayout | None:
+        return self._table.get(tag)
+
+    def items(self):
+        return self._table.items()
+
+    def __len__(self) -> int:
+        return len(self._table)
+
+    def __repr__(self) -> str:
+        return f"TypeTable({self._table!r})"
 
 
 # ---------------------------------------------------------------------------
@@ -374,15 +436,36 @@ def _const_init_value(
     )
 
 
-def _zero_aggregate(t: "Type"):
+def _zero_aggregate(t: "Type", types: "TypeTable | None" = None):
     """Build a default-zero value tree for static-storage object of
     type `t`. Scalars use the matching Python zero (`0` for integer
     / pointer, `0.0` for FP); arrays produce a tuple of size `N`,
-    each element zeroed recursively. Used both for tentative
-    definitions (no init) and for trailing entries missing from a
-    partial array initializer."""
+    each element zeroed recursively; structs / unions produce a
+    tuple keyed positionally by member-declaration order, each
+    member zeroed recursively. Used both for tentative definitions
+    (no init) and for trailing entries missing from a partial array
+    initializer."""
     if isinstance(t, Array):
-        return tuple(_zero_aggregate(t.element_type) for _ in range(t.size))
+        return tuple(_zero_aggregate(t.element_type, types) for _ in range(t.size))
+    if isinstance(t, (Structure, Union)):
+        # Look up layout. For struct: zero each member; the value
+        # tuple has one entry per member in declaration order. For
+        # union: zero only the first member (unions get all-zero
+        # bytes regardless; we use the first-member shape so the
+        # static-init flattening machinery has a uniform tree to
+        # walk).
+        if types is None:
+            return ()
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            return ()
+        if isinstance(t, Union):
+            if not layout.members:
+                return ()
+            return (_zero_aggregate(layout.members[0].type, types),)
+        return tuple(
+            _zero_aggregate(m.type, types) for m in layout.members
+        )
     if isinstance(t, (Float, Double)):
         return 0.0
     return 0
@@ -417,13 +500,15 @@ def _const_init_aggregate(
     var_type: "Type",
     name: str,
     symbols: "SymbolTable | None" = None,
+    types: "TypeTable | None" = None,
 ):
-    """Build a value tree (scalar or nested tuple) for an array
-    static initializer. Scalar leaves run through `_const_init_value`
-    so all the existing constant-expression rules apply (Cast
-    drilling, AddressOf static-storage); array nodes recurse into
-    their `InitList.items`, padding any missing trailing entries
-    with the element type's typed-zero per C99 §6.7.8.21."""
+    """Build a value tree (scalar or nested tuple) for an array /
+    struct / union static initializer. Scalar leaves run through
+    `_const_init_value` so all the existing constant-expression
+    rules apply (Cast drilling, AddressOf static-storage); array /
+    struct nodes recurse into their `InitList.items`, padding any
+    missing trailing entries with the element / member type's
+    typed-zero per C99 §6.7.8.21."""
     if isinstance(var_type, Array):
         # String literal initializing a char-array (at any nesting
         # depth) — `_string_to_value_tuple` lays the bytes down
@@ -443,10 +528,42 @@ def _const_init_aggregate(
         for i in range(var_type.size):
             if i < len(init.items):
                 items.append(_const_init_aggregate(
-                    init.items[i], elem_type, name, symbols,
+                    init.items[i], elem_type, name, symbols, types,
                 ))
             else:
-                items.append(_zero_aggregate(elem_type))
+                items.append(_zero_aggregate(elem_type, types))
+        return tuple(items)
+    if isinstance(var_type, (Structure, Union)):
+        if not isinstance(init, c99_ast.InitList):
+            raise TypeCheckError(
+                f"static struct/union {name!r} requires a brace-"
+                f"enclosed initializer (`{{...}}`)"
+            )
+        if types is None:
+            raise TypeCheckError(
+                f"static struct/union {name!r} initializer requires "
+                f"a TypeTable"
+            )
+        layout = types.get(var_type.tag)
+        if layout is None or not layout.complete:
+            raise TypeCheckError(
+                f"static struct/union {name!r} has incomplete type"
+            )
+        if isinstance(var_type, Union):
+            # Per C99 §6.7.8.16, only the first named member of a
+            # union is initialized when the initializer list isn't
+            # a designated one. We accept at most one item.
+            members = layout.members[:1]
+        else:
+            members = layout.members
+        items: list = []
+        for i, m in enumerate(members):
+            if i < len(init.items):
+                items.append(_const_init_aggregate(
+                    init.items[i], m.type, name, symbols, types,
+                ))
+            else:
+                items.append(_zero_aggregate(m.type, types))
         return tuple(items)
     return _const_init_value(init, name, symbols)
 
@@ -491,7 +608,12 @@ def _is_object_type(t: Type) -> bool:
     (`_decay_if_array` runs before this check), so we exclude Array
     here to keep the post-decay invariant catchable: any leftover
     Array operand is a missed decay site, not legal C. FunType is
-    also excluded — a function isn't an object."""
+    also excluded — a function isn't an object. Structure / Union
+    are object types but they don't reach scalar operand sites
+    (the type checker rejects struct operands on arithmetic ops,
+    bare struct rvalues on most contexts), so they're excluded
+    here too — consumers that legitimately accept structs check
+    explicitly."""
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
             Char, SChar, UChar,
@@ -500,11 +622,18 @@ def _is_object_type(t: Type) -> bool:
 
 
 def _is_complete_object_type(t: Type) -> bool:
-    """Like `_is_object_type` but includes Array. Used at variable-
-    declaration sites where Array IS a legal type for the named
-    object (the array decays only when its name appears in an
-    expression, not when it's being declared)."""
-    return _is_object_type(t) or isinstance(t, Array)
+    """Like `_is_object_type` but includes Array, Structure, and
+    Union. Used at variable-declaration sites where these IS a legal
+    type for the named object (the array / struct decays only when
+    its name appears in certain expression contexts, not when it's
+    being declared)."""
+    return _is_object_type(t) or isinstance(
+        t, (Array, Structure, Union),
+    )
+
+
+def _is_struct_or_union(t: Type) -> bool:
+    return isinstance(t, (Structure, Union))
 
 
 def _is_integer_type(t: Type) -> bool:
@@ -536,17 +665,19 @@ def _is_void_pointer(t: Type) -> bool:
     return isinstance(t, Pointer) and isinstance(t.referenced_type, Void)
 
 
-def _sizeof(t: Type) -> int:
+def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     """Bytes occupied by a value of type `t` in c6502's storage
     model. Recursive for Array — `int[3][4]` is 12 bytes,
-    `char[10]` is 10 bytes. Mirrors the helper of the same name in
-    `c99_to_tac` (kept local so type_checking doesn't import the
-    backend); the two stay in sync because they both encode the same
-    storage-model rules. Used by the `sizeof` operator's
-    type-checker. Constraint violations (Void, FunType) raise
-    TypeCheckError — `sizeof` of an incomplete or function type is
-    illegal per C99 §6.5.3.4.1, and any caller that lands here with
-    one of those types has a bug."""
+    `char[10]` is 10 bytes. For Structure / Union, looks up the
+    tag's layout in `types` and reads its `.size` (raising if the
+    layout is incomplete or `types` is None — sizeof of an
+    incomplete type is illegal per C99 §6.5.3.4.1).
+
+    Mirrors the helper of the same name in `c99_to_tac` (kept local
+    so type_checking doesn't import the backend); the two stay in
+    sync because they both encode the same storage-model rules.
+    Used by the `sizeof` operator's type-checker. Constraint
+    violations (Void, FunType) raise TypeCheckError."""
     if isinstance(t, (Int, UInt, Char, SChar, UChar)):
         return 1
     if isinstance(t, (Long, ULong, Pointer)):
@@ -556,13 +687,27 @@ def _sizeof(t: Type) -> int:
     if isinstance(t, Double):
         return 8
     if isinstance(t, Array):
-        return _sizeof(t.element_type) * t.size
+        return _sizeof(t.element_type, types) * t.size
+    if isinstance(t, (Structure, Union)):
+        if types is None:
+            raise TypeCheckError(
+                f"sizeof of struct/union type {t!r} requires a "
+                f"TypeTable (none provided)"
+            )
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            raise TypeCheckError(
+                f"sizeof of incomplete struct/union type "
+                f"'{'union' if isinstance(t, Union) else 'struct'} "
+                f"{t.tag}' is illegal (C99 §6.5.3.4.1)"
+            )
+        return layout.size
     raise TypeCheckError(
         f"cannot take sizeof an incomplete or function type: {t!r}"
     )
 
 
-def _check_well_formed_type(t: Type, *, where: str) -> None:
+def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = None, require_complete: bool = False, tag_visible=None, auto_introduce=None) -> None:
     """Walk `t` and raise TypeCheckError if any nested Array has an
     incomplete element type (Void or another array of incomplete
     element type), per C99 §6.7.5.2.1: "The element type shall not
@@ -590,10 +735,71 @@ def _check_well_formed_type(t: Type, *, where: str) -> None:
                 f"{where}: array element type cannot be a function "
                 f"type (C99 §6.7.5.2.1)"
             )
-        _check_well_formed_type(t.element_type, where=where)
+        # Array element must be a complete type — for struct
+        # elements that means the tag's body must be visible.
+        _check_well_formed_type(
+            t.element_type, where=where, types=types,
+            require_complete=True, tag_visible=tag_visible,
+            auto_introduce=auto_introduce,
+        )
         return
     if isinstance(t, Pointer):
-        _check_well_formed_type(t.referenced_type, where=where)
+        # Pointer's pointee may be incomplete (`struct foo *p;` is
+        # legal even if `struct foo` only forward-declared) — pass
+        # `require_complete=False` regardless of the caller's flag.
+        _check_well_formed_type(
+            t.referenced_type, where=where, types=types,
+            require_complete=False, tag_visible=tag_visible,
+            auto_introduce=auto_introduce,
+        )
+        return
+    if isinstance(t, (Structure, Union)):
+        if types is None:
+            return  # caller didn't request layout validation
+        layout = types.get(t.tag)
+        # Tag visibility (per the live tag-scope stack). Three cases:
+        # (1) tag never declared anywhere → auto-introduce as a
+        #     forward declaration if `auto_introduce` is provided
+        #     (which it is whenever a TypeChecker is on the stack);
+        #     this implements C99's "appearance of `struct foo`
+        #     in any declaration introduces the tag with incomplete
+        #     type" rule. Required complete still fails.
+        # (2) tag declared somewhere but not visible (popped scope,
+        #     e.g. for-loop body's tag used outside) → reject as
+        #     "not in scope". This is what makes `for_loop_scope.c`
+        #     reject correctly.
+        # (3) tag visible → proceed normally.
+        if tag_visible is not None and not tag_visible(t.tag):
+            if layout is None:
+                # Auto-introduce as a forward declaration in the
+                # current tag scope.
+                if auto_introduce is not None:
+                    auto_introduce(t)
+                    layout = types.get(t.tag)
+                else:
+                    kw = "union" if isinstance(t, Union) else "struct"
+                    raise TypeCheckError(
+                        f"{where}: undeclared type '{kw} {t.tag}'"
+                    )
+            else:
+                kw = "union" if isinstance(t, Union) else "struct"
+                raise TypeCheckError(
+                    f"{where}: '{kw} {t.tag}' is not in scope"
+                )
+        if layout is None:
+            # Caller didn't pass tag_visible (so we couldn't tell if
+            # the tag is in scope) but the tag isn't in the
+            # TypeTable either — it was never declared.
+            kw = "union" if isinstance(t, Union) else "struct"
+            raise TypeCheckError(
+                f"{where}: undeclared type '{kw} {t.tag}'"
+            )
+        if require_complete and not layout.complete:
+            kw = "union" if isinstance(t, Union) else "struct"
+            raise TypeCheckError(
+                f"{where}: incomplete type '{kw} {t.tag}' "
+                f"(C99 §6.7.2.1.8 — type must be complete)"
+            )
         return
     # Int / Long / ... / Char / Float / Double / Void / FunType — all
     # leaves; no nested constraint to check at this level. (FunType's
@@ -892,25 +1098,64 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
 
 
 class TypeChecker:
-    """Walks one program, populating `self.symbols`. The same
-    instance is used for the whole program so the symbol table
-    accumulates across all top-level declarations."""
+    """Walks one program, populating `self.symbols` and `self.types`.
+    The same instance is used for the whole program so both tables
+    accumulate across all top-level declarations.
+
+    Tag visibility is per-block: `_tag_scopes` is a stack of sets,
+    pushed on every new block-scope (Compound bodies, for-headers,
+    function bodies) and popped on exit. The bottom of the stack is
+    the file-scope tag set. A tag must be in some live scope-set for
+    a `Structure(tag)` reference to be valid; the layout itself
+    lives flat in `self.types` so block-scope shadowing isn't
+    supported (it would need per-scope unique tag names; deferred
+    until a use-case demands it)."""
 
     def __init__(self) -> None:
         self.symbols = SymbolTable()
+        self.types = TypeTable()
         # Type the enclosing function should return — set by
         # `_check_function_decl` while walking a body, restored on
         # exit. Used by `_check_statement` to type-check `return`s.
         self._return_type: Type | None = None
+        # Tag visibility stack — outermost (file scope) at index 0.
+        self._tag_scopes: list[set[str]] = [set()]
+
+    def _push_tag_scope(self) -> None:
+        self._tag_scopes.append(set())
+
+    def _pop_tag_scope(self) -> None:
+        self._tag_scopes.pop()
+
+    def _tag_visible(self, tag: str) -> bool:
+        return any(tag in s for s in self._tag_scopes)
+
+    def _record_tag_visible(self, tag: str) -> None:
+        self._tag_scopes[-1].add(tag)
+
+    def _auto_introduce_tag(self, t) -> None:
+        """Add a forward declaration for `t.tag` to the TypeTable
+        and the current tag scope. Used when a Structure / Union
+        reference appears (typically through a Pointer) without
+        a prior declaration — C99's "appearance of `struct foo`
+        in any declaration introduces it" rule. Only called when
+        the tag is genuinely unseen; redundant calls would
+        silently overwrite the existing layout."""
+        is_union = isinstance(t, c99_ast.Union)
+        self.types[t.tag] = StructLayout(
+            tag=t.tag, is_union=is_union,
+            members=[], size=0, complete=False,
+        )
+        self._record_tag_visible(t.tag)
 
     def check_program(
         self, prog: c99_ast.Type_program,
-    ) -> tuple[c99_ast.Type_program, SymbolTable]:
+    ) -> tuple[c99_ast.Type_program, SymbolTable, TypeTable]:
         match prog:
             case c99_ast.Program(declaration=decls):
                 for d in decls:
                     self._check_file_scope_declaration(d)
-                return prog, self.symbols
+                return prog, self.symbols, self.types
         raise TypeError(f"unexpected program: {prog!r}")
 
     # ------------------------------------------------------------------
@@ -925,8 +1170,187 @@ class TypeChecker:
                 self._check_file_scope_var(vd)
             case c99_ast.FunctionDecl(function_decl=fd):
                 self._check_function_decl(fd, file_scope=True)
+            case c99_ast.StructDecl(struct_decl=sd):
+                self._check_struct_decl(sd)
             case _:
                 raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _check_struct_decl(
+        self, sd: c99_ast.Type_struct_decl,
+    ) -> None:
+        """Validate a struct/union declaration and (if it has a body)
+        compute its layout. The tag becomes visible in the current
+        scope. Re-declarations of the same tag in the same scope are
+        legal: a forward decl + a body completes the layout; two
+        bodies for the same tag in the same scope is a redefinition
+        error."""
+        tag = sd.tag
+        is_union = sd.is_union
+        prior = self.types.get(tag)
+        # Visibility: tag enters the current tag scope (whether or
+        # not it was already in some outer scope — a same-spelling
+        # tag declared in the inner scope shadows the outer one for
+        # visibility purposes; the layout in the flat TypeTable is
+        # shared, which is fine for the corpus we target).
+        self._record_tag_visible(tag)
+        if not sd.members:
+            # Forward declaration. Register an incomplete layout if
+            # nothing's been registered yet; otherwise leave the
+            # existing entry alone.
+            if prior is None:
+                self.types[tag] = StructLayout(
+                    tag=tag, is_union=is_union,
+                    members=[], size=0, complete=False,
+                )
+            elif prior.is_union != is_union:
+                kw = "union" if is_union else "struct"
+                pkw = "union" if prior.is_union else "struct"
+                raise TypeCheckError(
+                    f"redeclaration of '{kw} {tag}' as a {pkw}"
+                )
+            return
+        # Definition with a body.
+        if prior is not None:
+            if prior.is_union != is_union:
+                kw = "union" if is_union else "struct"
+                pkw = "union" if prior.is_union else "struct"
+                raise TypeCheckError(
+                    f"redeclaration of '{pkw} {tag}' as a {kw}"
+                )
+            if prior.complete:
+                kw = "union" if is_union else "struct"
+                raise TypeCheckError(
+                    f"redefinition of '{kw} {tag}'"
+                )
+        # Compute the layout. Each member's type must be a complete
+        # object type; in particular, recursive struct types are
+        # rejected unless the recursion is via a Pointer.
+        layout = self._compute_layout(sd)
+        self.types[tag] = layout
+
+    def _compute_layout(
+        self, sd: c99_ast.Type_struct_decl,
+    ) -> StructLayout:
+        members: list[MemberInfo] = []
+        seen: set[str] = set()
+        offset = 0
+        for m in sd.members:
+            if m.name in seen:
+                raise TypeCheckError(
+                    f"duplicate member {m.name!r} in struct/union "
+                    f"{sd.tag!r}"
+                )
+            seen.add(m.name)
+            mtype = m.data_type
+            # Member can't be void, can't be a function type.
+            if isinstance(mtype, Void):
+                raise TypeCheckError(
+                    f"member {m.name!r} of struct/union {sd.tag!r} "
+                    f"cannot have void type"
+                )
+            if isinstance(mtype, FunType):
+                raise TypeCheckError(
+                    f"member {m.name!r} of struct/union {sd.tag!r} "
+                    f"cannot have function type"
+                )
+            # Reject self-recursion via non-pointer (struct foo {
+            # struct foo inner; }) — through a Pointer is fine.
+            if self._contains_self_struct(mtype, sd.tag):
+                raise TypeCheckError(
+                    f"member {m.name!r} of struct/union {sd.tag!r} "
+                    f"recursively contains the same struct/union "
+                    f"type (use a pointer instead)"
+                )
+            _check_well_formed_type(
+                mtype,
+                where=f"member {m.name!r} of struct/union {sd.tag!r}",
+                types=self.types,
+                require_complete=True,
+                tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
+            )
+            msize = _sizeof(mtype, self.types)
+            mem = MemberInfo(
+                name=m.name, type=mtype, byte_offset=offset,
+            )
+            members.append(mem)
+            if sd.is_union:
+                # Union members all live at offset 0; total size is
+                # the maximum of member sizes (so we keep `offset`
+                # at 0 for the next member but track size as max).
+                if msize > offset:
+                    pass  # tracked via final pass below
+            else:
+                offset += msize
+        if sd.is_union:
+            total = max(
+                (_sizeof(m.data_type, self.types) for m in sd.members),
+                default=0,
+            )
+            # Re-stamp every member offset to 0 (defensive — the
+            # construction loop already does this).
+            members = [
+                MemberInfo(name=m.name, type=m.type, byte_offset=0)
+                for m in members
+            ]
+        else:
+            total = offset
+        return StructLayout(
+            tag=sd.tag, is_union=sd.is_union,
+            members=members, size=total, complete=True,
+        )
+
+    def _contains_self_struct(self, t: Type, tag: str) -> bool:
+        """True iff `t` contains a Structure/Union(tag) reference
+        without going through a Pointer. Walks Array element types
+        recursively; stops at Pointer."""
+        if isinstance(t, (Structure, Union)) and t.tag == tag:
+            return True
+        if isinstance(t, Array):
+            return self._contains_self_struct(t.element_type, tag)
+        return False
+
+    def _lookup_member(
+        self, t: Type, member: str, where: str,
+    ) -> MemberInfo:
+        """Resolve a member name against a struct/union type. Raises
+        TypeCheckError on incomplete-type access or missing member."""
+        if not isinstance(t, (Structure, Union)):
+            raise TypeCheckError(
+                f"{where}: operand has non-struct/union type {t!r}"
+            )
+        if not self._tag_visible(t.tag):
+            kw = "union" if isinstance(t, Union) else "struct"
+            raise TypeCheckError(
+                f"{where}: '{kw} {t.tag}' is not in scope"
+            )
+        layout = self.types.get(t.tag)
+        if layout is None or not layout.complete:
+            kw = "union" if isinstance(t, Union) else "struct"
+            raise TypeCheckError(
+                f"{where}: incomplete type '{kw} {t.tag}'"
+            )
+        for m in layout.members:
+            if m.name == member:
+                return m
+        kw = "union" if isinstance(t, Union) else "struct"
+        raise TypeCheckError(
+            f"{where}: '{kw} {t.tag}' has no member named "
+            f"{member!r}"
+        )
+
+    def _check_file_scope_var_well_formed(
+        self, vd: c99_ast.Type_var_decl,
+    ) -> None:
+        require_complete = isinstance(
+            vd.data_type, (Structure, Union, Array),
+        )
+        _check_well_formed_type(
+            vd.data_type, where=f"file-scope object {vd.name!r}",
+            types=self.types, require_complete=require_complete,
+            tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
+        )
 
     def _check_file_scope_var(
         self, vd: c99_ast.Type_var_decl,
@@ -946,8 +1370,19 @@ class TypeChecker:
                 f"file-scope object {vd.name!r} declared with non-"
                 f"object type {vd.data_type!r}"
             )
+        is_extern_decl = isinstance(vd.storage_class, c99_ast.Extern)
+        # `extern` references to struct types may be incomplete (the
+        # definition can live in another TU). Otherwise the type
+        # must be complete.
+        require_complete = (
+            isinstance(vd.data_type, (Structure, Union, Array))
+            and not is_extern_decl
+        )
         _check_well_formed_type(
             vd.data_type, where=f"file-scope object {vd.name!r}",
+            types=self.types, require_complete=require_complete,
+            tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
         )
         is_extern = isinstance(vd.storage_class, c99_ast.Extern)
         if vd.init is None:
@@ -983,8 +1418,24 @@ class TypeChecker:
                     vd.init, vd.data_type, vd.name,
                 )
                 initial = Initial(_const_init_aggregate(
-                    vd.init, vd.data_type, vd.name, self.symbols,
+                    vd.init, vd.data_type, vd.name,
+                    self.symbols, self.types,
                 ))
+        elif isinstance(vd.data_type, (Structure, Union)):
+            # File-scope `struct s x = {1,2,3};` — type-check the
+            # init list against the layout and lift to a value tree.
+            if not isinstance(vd.init, c99_ast.InitList):
+                raise TypeCheckError(
+                    f"file-scope struct/union {vd.name!r} requires "
+                    f"a brace-enclosed initializer (`{{...}}`)"
+                )
+            self._check_struct_init_list(
+                vd.init, vd.data_type, vd.name,
+            )
+            initial = Initial(_const_init_aggregate(
+                vd.init, vd.data_type, vd.name,
+                self.symbols, self.types,
+            ))
         else:
             # Type-check the initializer normally (sets data_type
             # on every node) and convert to the declared type if
@@ -1082,8 +1533,18 @@ class TypeChecker:
             # by the separate void-pointer is-allowed check above)
             # but `void (*foo)[3]` keeps the inner Array(Void, 3)
             # intact and needs the recursive well-formed walk.
+            # Parameters may have struct/union types — the tag must
+            # be declared (and complete, since c6502 doesn't allow
+            # struct-by-value parameter passing yet, only pointer-
+            # to-struct).
+            require_complete = isinstance(
+                p_type, (Structure, Union, Array),
+            )
             _check_well_formed_type(
                 p_type, where=f"parameter of function {fd.name!r}",
+                types=self.types, require_complete=require_complete,
+                tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
             )
         if defined:
             # Walk the body. Parameters share the body's outermost
@@ -1100,7 +1561,17 @@ class TypeChecker:
             saved = self._return_type
             self._return_type = ftype.ret
             assert fd.body is not None
-            self._check_block(fd.body)
+            # Push a tag scope for the function body. (The
+            # function-prototype scope is its own thing per
+            # §6.2.1.4, but c6502 doesn't permit struct/union
+            # definitions in parameter declarations, so the only
+            # tags reaching here are the ones already in the
+            # surrounding scope.)
+            self._push_tag_scope()
+            try:
+                self._check_block(fd.body)
+            finally:
+                self._pop_tag_scope()
             self._return_type = saved
         # `file_scope` flag is currently unused — it'll matter once
         # the language grows constraints that differ between the
@@ -1225,6 +1696,9 @@ class TypeChecker:
             case c99_ast.FunctionDecl(function_decl=fd):
                 self._check_function_decl(fd, file_scope=False)
                 return
+            case c99_ast.StructDecl(struct_decl=sd):
+                self._check_struct_decl(sd)
+                return
         raise TypeError(f"unexpected declaration: {decl!r}")
 
     def _check_block_var(
@@ -1235,8 +1709,18 @@ class TypeChecker:
                 f"object {vd.name!r} declared with non-object type "
                 f"{vd.data_type!r}"
             )
+        # For struct/union object types the tag must be a complete
+        # type at the point of declaration. (Pointers to struct
+        # may point to incomplete types — the well-formed-type walk
+        # passes `require_complete=False` through Pointer.)
+        require_complete = isinstance(
+            vd.data_type, (Structure, Union, Array),
+        )
         _check_well_formed_type(
             vd.data_type, where=f"object {vd.name!r}",
+            types=self.types, require_complete=require_complete,
+            tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
         )
         if isinstance(vd.storage_class, c99_ast.Extern):
             if vd.init is not None:
@@ -1266,7 +1750,7 @@ class TypeChecker:
                 # `static int x;` / `static int a[N];` — zero-
                 # initialize per C99 §6.7.8.10. For arrays, that
                 # means a tuple of typed zeros sized to the array.
-                initial: InitialValue = Initial(_zero_aggregate(vd.data_type))
+                initial: InitialValue = Initial(_zero_aggregate(vd.data_type, self.types))
             elif isinstance(vd.data_type, Array):
                 # `static int a[3] = {1, 2, 3};` — brace-enclosed
                 # initializer required (a bare scalar is illegal).
@@ -1298,8 +1782,23 @@ class TypeChecker:
                         vd.init, vd.data_type, vd.name,
                     )
                     initial = Initial(_const_init_aggregate(
-                        vd.init, vd.data_type, vd.name, self.symbols,
+                        vd.init, vd.data_type, vd.name,
+                        self.symbols, self.types,
                     ))
+            elif isinstance(vd.data_type, (Structure, Union)):
+                # `static struct s x = {1,2};`.
+                if not isinstance(vd.init, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"static struct/union {vd.name!r} requires "
+                        f"a brace-enclosed initializer (`{{...}}`)"
+                    )
+                self._check_struct_init_list(
+                    vd.init, vd.data_type, vd.name,
+                )
+                initial = Initial(_const_init_aggregate(
+                    vd.init, vd.data_type, vd.name,
+                    self.symbols, self.types,
+                ))
             else:
                 # Same flow as the file-scope-static path: type-
                 # check, apply the conversion rule (so a literal of
@@ -1348,6 +1847,26 @@ class TypeChecker:
                     vd.init, vd.data_type, vd.name,
                 )
                 return
+            if isinstance(vd.data_type, (Structure, Union)):
+                # Two valid initializer forms for struct/union:
+                #   `struct s x = {1, 2};`  → InitList per-member
+                #   `struct s x = other;`   → struct copy (other has
+                #                             matching struct type)
+                if isinstance(vd.init, c99_ast.InitList):
+                    self._check_struct_init_list(
+                        vd.init, vd.data_type, vd.name,
+                    )
+                    return
+                # Non-InitList — must be a struct-typed expression
+                # of the matching tag.
+                self._check_exp(vd.init)
+                init_t = vd.init.data_type
+                if not _types_equal(init_t, vd.data_type):
+                    raise TypeCheckError(
+                        f"struct/union {vd.name!r}: initializer has "
+                        f"type {init_t!r}, expected {vd.data_type!r}"
+                    )
+                return
             # Scalar var with InitList init — `int x = {1,2,3};` is
             # rejected (C99 also allows `int x = {5};` but that's a
             # corner we don't need yet).
@@ -1385,6 +1904,85 @@ class TypeChecker:
                 f"room for it)"
             )
         init.data_type = Array(element_type=Char(), size=slen + 1)
+
+    def _check_struct_init_list(
+        self,
+        init: c99_ast.InitList,
+        struct_type: "Type",
+        var_name: str,
+    ) -> None:
+        """Type-check a brace-enclosed initializer for a struct or
+        union. Validates the item count (≤ member count) and converts
+        each item to the matching member's type via `_convert_to`.
+        Mutates `init.items` in place with the converted forms."""
+        layout = self.types.get(struct_type.tag)
+        if layout is None or not layout.complete:
+            kw = "union" if isinstance(struct_type, Union) else "struct"
+            raise TypeCheckError(
+                f"struct/union {var_name!r}: incomplete type "
+                f"'{kw} {struct_type.tag}'"
+            )
+        if isinstance(struct_type, Union):
+            # Per C99 §6.7.8.16, a non-designated initializer for a
+            # union initializes the *first named member*. At most
+            # one item permitted.
+            members = layout.members[:1]
+            if len(init.items) > 1:
+                raise TypeCheckError(
+                    f"too many initializers for union {var_name!r}: "
+                    f"{len(init.items)} given, only one (the first "
+                    f"named member) is permitted without designators"
+                )
+        else:
+            members = layout.members
+            if len(init.items) > len(members):
+                raise TypeCheckError(
+                    f"too many initializers for struct {var_name!r}: "
+                    f"{len(init.items)} given, struct has "
+                    f"{len(members)} member"
+                    f"{'s' if len(members) != 1 else ''}"
+                )
+        for i, item in enumerate(init.items):
+            m = members[i]
+            elem_type = m.type
+            if isinstance(elem_type, Array):
+                # Char-array member initialized by string literal.
+                if (
+                    isinstance(item, c99_ast.String)
+                    and _is_char_element(elem_type.element_type)
+                ):
+                    self._check_string_array_init(
+                        item, elem_type, f"{var_name}.{m.name}",
+                    )
+                    continue
+                if not isinstance(item, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"expected nested initializer (`{{...}}`) "
+                        f"for member {m.name!r} of {var_name!r}; "
+                        f"member type is {elem_type!r}"
+                    )
+                self._check_array_init_list(item, elem_type, var_name)
+            elif isinstance(elem_type, (Structure, Union)):
+                if not isinstance(item, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"expected nested initializer (`{{...}}`) "
+                        f"for member {m.name!r} of {var_name!r}; "
+                        f"member type is {elem_type!r}"
+                    )
+                self._check_struct_init_list(
+                    item, elem_type, f"{var_name}.{m.name}",
+                )
+            else:
+                if isinstance(item, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"unexpected nested initializer for member "
+                        f"{m.name!r} of {var_name!r} (member type is "
+                        f"{elem_type!r}, not aggregate)"
+                    )
+                self._check_exp(item)
+                item = _decay_if_array(item)
+                init.items[i] = _convert_to(item, elem_type)
+        init.data_type = struct_type
 
     def _check_array_init_list(
         self,
@@ -1521,7 +2119,12 @@ class TypeChecker:
                     self._check_statement(else_)
                 return
             case c99_ast.Compound(block=block):
-                self._check_block(block)
+                # New tag-visibility scope for the compound block.
+                self._push_tag_scope()
+                try:
+                    self._check_block(block)
+                finally:
+                    self._pop_tag_scope()
                 return
             case c99_ast.WhileStmt(condition=cond, body=body):
                 self._check_exp(cond)
@@ -1535,12 +2138,20 @@ class TypeChecker:
                 init=init, condition=cond, post_clause=post,
                 body=body,
             ):
-                self._check_for_init(init)
-                if cond is not None:
-                    self._check_exp(cond)
-                if post is not None:
-                    self._check_exp(post)
-                self._check_statement(body)
+                # The for-header opens its own block-scope per C99
+                # §6.8.5.3 (so a struct declared in init / cond /
+                # post isn't visible outside the loop). The body
+                # opens its own nested scope on top via Compound.
+                self._push_tag_scope()
+                try:
+                    self._check_for_init(init)
+                    if cond is not None:
+                        self._check_exp(cond)
+                    if post is not None:
+                        self._check_exp(post)
+                    self._check_statement(body)
+                finally:
+                    self._pop_tag_scope()
                 return
             case c99_ast.LabeledStmt(statement=inner):
                 self._check_statement(inner)
@@ -1645,6 +2256,12 @@ class TypeChecker:
                     )
                 _check_well_formed_type(
                     vd.data_type, where=f"for-init {vd.name!r}",
+                    types=self.types,
+                    require_complete=isinstance(
+                        vd.data_type, (Structure, Union, Array),
+                    ),
+                    tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
                 )
                 self.symbols[vd.name] = Symbol(
                     type=vd.data_type, attrs=LocalAttr(),
@@ -1803,7 +2420,12 @@ class TypeChecker:
                 # Reject malformed cast targets like `(void(*)[3])e`
                 # — the array element type must be complete even
                 # inside a pointer wrapping.
-                _check_well_formed_type(target, where="cast target")
+                _check_well_formed_type(
+                    target, where="cast target",
+                    types=self.types,
+                    tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
+                )
                 self._check_exp(inner)
                 # Decay an array operand before further type-checking
                 # — `(int *)arr` is legal and the cast operates on
@@ -2185,6 +2807,18 @@ class TypeChecker:
                         f"cannot assign to an array (use subscript): "
                         f"{lv!r}"
                     )
+                # Struct / union assignment: legal if the two types
+                # have the same tag and is_union flag. Bypass
+                # `_convert_to` (which doesn't know about struct
+                # types) and the `_decay_if_array` rval path.
+                if isinstance(tl, (Structure, Union)):
+                    if not _types_equal(tl, tr):
+                        raise TypeCheckError(
+                            f"struct/union assignment between "
+                            f"distinct types: {tl!r} = {tr!r}"
+                        )
+                    exp.data_type = tl
+                    return tl
                 # rval array-to-pointer decay (`int *p = arr;` is
                 # the most common case). After decay, the rval is
                 # Pointer-typed and `_convert_to` either no-ops
@@ -2443,8 +3077,15 @@ class TypeChecker:
                         "(C99 §6.5.3.4.1)"
                     )
                 # Reject `sizeof (void[3])` etc. — array element
-                # types must be complete.
-                _check_well_formed_type(t, where="sizeof type")
+                # types must be complete. For struct/union targets
+                # the tag must also be complete and in scope.
+                _check_well_formed_type(
+                    t, where="sizeof type",
+                    types=self.types,
+                    require_complete=isinstance(t, (Structure, Union, Array)),
+                    tag_visible=self._tag_visible,
+                auto_introduce=self._auto_introduce_tag,
+                )
                 exp.data_type = ULong()
                 return ULong()
             case c99_ast.Subscript(array=arr, index=idx):
@@ -2487,6 +3128,42 @@ class TypeChecker:
                 exp.index = _convert_to(int_exp, Long())
                 exp.data_type = ptr_exp.data_type.referenced_type
                 return exp.data_type
+            case c99_ast.Dot(operand=operand, member=member):
+                # `e.m` per C99 §6.5.2.3.1: operand must have struct
+                # or union type; result type is the member's type.
+                self._check_exp(operand)
+                t_op = operand.data_type
+                m = self._lookup_member(
+                    t_op, member, where=f"member access '.{member}'",
+                )
+                exp.data_type = m.type
+                return m.type
+            case c99_ast.Arrow(operand=operand, member=member):
+                # `p->m` per C99 §6.5.2.3.2: operand must have
+                # pointer-to-struct/union type. Result is the
+                # member's type. The pointer is NOT dereferenced
+                # here in the AST sense; the lowering computes
+                # `ptr + offset` and Loads. Array operands decay
+                # to pointer first per C99 §6.3.2.1.3 — that lets
+                # `s_ptr->in_array->a` work, where the inner
+                # `in_array` is a struct member whose type is an
+                # array.
+                self._check_exp(operand)
+                exp.operand = _decay_if_array(operand)
+                operand = exp.operand
+                t_op = operand.data_type
+                if not isinstance(t_op, Pointer):
+                    raise TypeCheckError(
+                        f"member access '->{member}': operand has "
+                        f"non-pointer type {t_op!r}"
+                    )
+                pointee = t_op.referenced_type
+                m = self._lookup_member(
+                    pointee, member,
+                    where=f"member access '->{member}'",
+                )
+                exp.data_type = m.type
+                return m.type
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — result is `Pointer(operand_type)` per C99
                 # §6.5.3.2.3. Lvalue check on `e` lives in
@@ -2524,8 +3201,8 @@ class TypeChecker:
 
 def check_program(
     prog: c99_ast.Type_program,
-) -> tuple[c99_ast.Type_program, SymbolTable]:
+) -> tuple[c99_ast.Type_program, SymbolTable, TypeTable]:
     """Type-check a c99 program. Returns the (unchanged) AST plus
-    the populated SymbolTable. Raises `TypeCheckError` on any type
-    error encountered."""
+    the populated SymbolTable and TypeTable. Raises `TypeCheckError`
+    on any type error encountered."""
     return TypeChecker().check_program(prog)

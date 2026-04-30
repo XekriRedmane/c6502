@@ -86,13 +86,14 @@ def _run_stage(stage: str, source: str) -> str:
     if stage == "resolve":
         return pretty(_resolved(source)) + "\n"
     if stage == "tac":
-        # Thread the symbol table from type_checking into c99_to_tac
-        # so the latter can read function-linkage flags and emit
-        # StaticVariable entries for static-storage objects.
-        prog, symbols = type_check_program(_resolved(source))
-        return pretty(translate_to_tac(prog, symbols)) + "\n"
+        # Thread the symbol + type tables from type_checking into
+        # c99_to_tac so the latter can read function-linkage flags,
+        # emit StaticVariable entries for static-storage objects,
+        # and resolve struct/union sizes.
+        prog, symbols, types = type_check_program(_resolved(source))
+        return pretty(translate_to_tac(prog, symbols, types)) + "\n"
     if stage == "codegen":
-        prog, symbols = type_check_program(_resolved(source))
+        prog, symbols, types = type_check_program(_resolved(source))
         # `replace_pseudoregisters` needs to recognize every static-
         # storage object — including extern references that don't
         # produce a StaticVariable definition here — to avoid
@@ -106,10 +107,11 @@ def _run_stage(stage: str, source: str) -> str:
         )
         return emit_program(replace_pseudoregs(
             translate_to_asm(
-                translate_to_tac(prog, symbols), symbols,
+                translate_to_tac(prog, symbols, types), symbols, types,
             ),
             extra_statics=statics,
             symbols=symbols,
+            types=types,
         ))
     raise AssertionError(f"unknown stage: {stage!r}")
 

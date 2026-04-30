@@ -356,19 +356,51 @@ def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
     raise TypeError(f"can't address byte {k} of {op!r}")
 
 
+def _array_bytes(t, types) -> int:
+    """Total byte count of an Array c99 type, recursing through
+    nested arrays and resolving struct/union member sizes via the
+    TypeTable."""
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt,
+                      c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+        return 1
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+        return 2
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Float)):
+        return 4
+    if isinstance(t, c99_ast.Double):
+        return 8
+    if isinstance(t, c99_ast.Array):
+        return _array_bytes(t.element_type, types) * t.size
+    if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+        if types is None:
+            return 1
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            return 1
+        return layout.size
+    return 1
+
+
 class Translator:
     """One Translator per program (so the `make_label` counter is
     program-global). Holds the type-checker's symbol table so it can
     look up TAC `Var` types and pick the right operand-size dispatch
     for each instruction."""
 
-    def __init__(self, symbols: SymbolTable | None = None) -> None:
+    def __init__(
+        self,
+        symbols: SymbolTable | None = None,
+        types=None,
+    ) -> None:
         self._label_counter = 0
         # Optional — synthetic-AST tests can build a Translator
         # without a symbol table. In that case `_size_of` falls back
         # to `1` (Byte) for any Var whose name isn't found, which
         # matches the Int-only world the existing tests assume.
         self._symbols = symbols
+        # Read-only handle to the type checker's struct/union layout
+        # table. Used by `_size_of` for struct-typed Vars.
+        self._types = types
 
     def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a Var whose c99 symbol type is Pointer.
@@ -424,6 +456,22 @@ class Translator:
                     return 4
                 if isinstance(sym.type, c99_ast.Double):
                     return 8
+                if isinstance(
+                    sym.type, (c99_ast.Structure, c99_ast.Union),
+                ):
+                    if self._types is None:
+                        return 1
+                    layout = self._types.get(sym.type.tag)
+                    if layout is None or not layout.complete:
+                        return 1
+                    return layout.size
+                if isinstance(sym.type, c99_ast.Array):
+                    # Arrays are sized as element-size × count. They
+                    # only reach this dispatch when an array-typed var
+                    # is being moved/loaded as a whole, which is rare
+                    # outside struct copies that happen to embed an
+                    # array member.
+                    return _array_bytes(sym.type, self._types)
                 return 1
         raise TypeError(f"unexpected val: {val!r}")
 
@@ -1655,14 +1703,18 @@ def translate_unop_atoms(
 def translate_program(
     prog: tac_ast.Type_program,
     symbols: SymbolTable | None = None,
+    types=None,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
     `c99_to_tac` produced — the Translator consults it via
     `_size_of` to pick the right size dispatch (1-byte vs 2-byte
-    sequence) for each instruction. Unit-test callers that only
-    exercise Int paths can omit it; the Translator falls back to
-    1-byte (Int) for any name not in the table."""
-    return Translator(symbols).translate_program(prog)
+    sequence) for each instruction. The optional `types` table
+    (also from `passes.type_checking.check_program`) gives
+    `_size_of` access to struct/union layouts. Unit-test callers
+    that only exercise Int paths can omit both; the Translator
+    falls back to 1-byte (Int) for any name not in the symbol
+    table."""
+    return Translator(symbols, types).translate_program(prog)
 
 
 def translate_function(

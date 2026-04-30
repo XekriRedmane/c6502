@@ -144,13 +144,18 @@ def _storage_is(sc, kind):
     return sc is not None and isinstance(sc, kind)
 
 
-def _decl_name(decl: c99_ast.Type_declaration) -> str:
-    """Source-level name of a top-level declaration."""
+def _decl_name(decl: c99_ast.Type_declaration) -> str | None:
+    """Source-level name of a top-level declaration. Returns None for
+    declarations that don't introduce an ordinary identifier (struct/
+    union declarations introduce a *tag* in a separate namespace —
+    handled by the type checker)."""
     match decl:
         case c99_ast.VarDecl(var_decl=vd):
             return vd.name
         case c99_ast.FunctionDecl(function_decl=fd):
             return fd.name
+        case c99_ast.StructDecl():
+            return None
     raise TypeError(f"unexpected declaration: {decl!r}")
 
 
@@ -214,7 +219,9 @@ class Resolver:
                 # decls aren't visible.
                 new_decls = []
                 for d in decls:
-                    self._seen_at_file_scope.add(_decl_name(d))
+                    name = _decl_name(d)
+                    if name is not None:
+                        self._seen_at_file_scope.add(name)
                     new_decls.append(self._resolve_file_scope_decl(d))
                 return c99_ast.Program(declaration=new_decls)
         raise TypeError(f"unexpected program: {prog!r}")
@@ -237,6 +244,11 @@ class Resolver:
                     fd.name, fd.storage_class,
                 )
                 self._record_file_scope(fd.name, linkage)
+            case c99_ast.StructDecl():
+                # Struct/union tags live in a separate namespace
+                # (C99 §6.2.3) handled by the type checker. Nothing
+                # to record here.
+                return
             case _:
                 raise TypeError(f"unexpected declaration: {decl!r}")
 
@@ -332,6 +344,10 @@ class Resolver:
                         fd, file_scope=True,
                     ),
                 )
+            case c99_ast.StructDecl():
+                # Pass through unchanged — the tag/member layout is
+                # the type checker's responsibility.
+                return decl
         raise TypeError(f"unexpected declaration: {decl!r}")
 
     def _file_scope_seed(self) -> _Scope:
@@ -463,6 +479,11 @@ class Resolver:
         scope: _Scope,
     ) -> c99_ast.Type_declaration:
         match decl:
+            case c99_ast.StructDecl():
+                # Block-scope struct/union declarations live in the
+                # type checker's per-block tag scope; the identifier
+                # scope is unaffected. Pass through.
+                return decl
             case c99_ast.VarDecl(var_decl=vd):
                 linkage = self._block_scope_object_linkage(vd, scope)
                 return c99_ast.VarDecl(
@@ -803,6 +824,7 @@ class Resolver:
                 # defined as `*(a + i)`).
                 if not isinstance(lval, (
                     c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                    c99_ast.Dot, c99_ast.Arrow,
                 )):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in assignment: {lval!r}"
@@ -823,10 +845,11 @@ class Resolver:
                 )
             case c99_ast.Postfix(op=op, operand=operand):
                 # Same lvalue rule as Assignment — Var, Dereference,
-                # or Subscript (the three syntactic lvalue forms
-                # supported today).
+                # Subscript, Dot, or Arrow (the syntactic lvalue
+                # forms supported today).
                 if not isinstance(operand, (
                     c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                    c99_ast.Dot, c99_ast.Arrow,
                 )):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in postfix: {operand!r}"
@@ -838,6 +861,7 @@ class Resolver:
                 # Same lvalue rule as Postfix / Assignment.
                 if not isinstance(operand, (
                     c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                    c99_ast.Dot, c99_ast.Arrow,
                 )):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in prefix increment/decrement: "
@@ -906,13 +930,30 @@ class Resolver:
                 # syntactic lvalue restriction.
                 if not isinstance(inner, (
                     c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
-                    c99_ast.String,
+                    c99_ast.String, c99_ast.Dot, c99_ast.Arrow,
                 )):
                     raise IdentifierResolutionError(
                         f"invalid operand of unary '&': {inner!r}"
                     )
                 return c99_ast.AddressOf(
                     exp=self.resolve_exp(inner, scope),
+                )
+            case c99_ast.Dot(operand=operand, member=member):
+                # `e.m` — recurse into the operand for name
+                # resolution. The member is a separate namespace
+                # (per-struct member-name table); the type checker
+                # validates that `m` actually names a member of the
+                # operand's struct/union type.
+                return c99_ast.Dot(
+                    operand=self.resolve_exp(operand, scope),
+                    member=member,
+                )
+            case c99_ast.Arrow(operand=operand, member=member):
+                # `p->m` — same shape as Dot. Operand must have
+                # pointer-to-struct/union type (type checker enforces).
+                return c99_ast.Arrow(
+                    operand=self.resolve_exp(operand, scope),
+                    member=member,
                 )
             case c99_ast.FunctionCall(name=name, args=args):
                 # Same single-namespace lookup as Var. The call is

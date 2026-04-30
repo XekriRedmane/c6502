@@ -171,6 +171,11 @@ class VarDecl(Type_declaration):
     var_decl: Type_var_decl
 
 
+@dataclass
+class StructDecl(Type_declaration):
+    struct_decl: Type_struct_decl
+
+
 @dataclass(kw_only=True)
 class Type_var_decl:
     name: str
@@ -186,6 +191,19 @@ class Type_function_decl:
     body: Type_block | None = None
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
+
+
+@dataclass
+class Type_struct_decl:
+    tag: str
+    is_union: bool
+    members: list[Type_member_decl] = field(default_factory=list)
+
+
+@dataclass
+class Type_member_decl:
+    name: str
+    data_type: Type_data_type
 
 
 @dataclass
@@ -283,6 +301,16 @@ class Pointer(Type_data_type):
 class Array(Type_data_type):
     element_type: Type_data_type
     size: int
+
+
+@dataclass
+class Structure(Type_data_type):
+    tag: str
+
+
+@dataclass
+class Union(Type_data_type):
+    tag: str
 
 
 @dataclass
@@ -414,6 +442,20 @@ class SizeOfExp(Type_exp):
 @dataclass
 class SizeOfType(Type_exp):
     target_type: Type_data_type
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class Dot(Type_exp):
+    operand: Type_exp
+    member: str
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class Arrow(Type_exp):
+    operand: Type_exp
+    member: str
     data_type: Type_data_type | None = None
 
 

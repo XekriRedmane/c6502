@@ -1621,6 +1621,56 @@ Lowered all the way to 6502 asm:
   post-adjustment FunTypes. At a call site, `foo(arr)` triggers
   the regular array-to-pointer decay on the argument so its type
   matches the parameter's adjusted type.
+- Struct and union types per C99 §6.7.2.1 / §6.5.2.3, including:
+  declarations with bodies (`struct foo { int a; long b; };`) at
+  file or block scope, forward declarations (`struct foo;`),
+  member access via `.` and `->` (`s.m`, `p->m`, chained nested
+  forms like `s_ptr->in_array->a`), compound initializers
+  (`struct s x = {1, 2, {3, 4, 5}};`), struct = struct copy via
+  `Copy(src, dst)` byte-fan-out (`s1 = s2`, `s1 = other.member`,
+  `s_ptr->m = small`, etc.), pointer-to-struct
+  (`struct s *p = &x;`), address-of struct member
+  (`int *q = &x.field;`), `sizeof(struct s)` /
+  `sizeof(union u)`, and unions (member access, copy, address-of).
+  Layout follows c6502's "no padding, byte-aligned" rule:
+  `_compute_layout` walks members in source order, accumulating
+  `byte_offset = running_sum` for structs and pinning every
+  member at offset 0 for unions; total size is the sum of member
+  sizes (struct) or the max (union). The c99 data_type variants
+  `Structure(tag)` and `Union(tag)` carry only the tag — full
+  layout (members, offsets, total size) lives in a separate
+  `TypeTable` produced by the type checker, parallel to the
+  `SymbolTable`. Both ride through `c99_to_tac`,
+  `tac_to_asm`, and `replace_pseudoregisters` — each consults
+  the TypeTable via the extended `_sizeof` / `_size_of_name` /
+  `_size_of` helpers when sizing struct-typed Vars, frame slots,
+  and TAC operands. Tag visibility is per-block: a stack of
+  visible-tag sets pushes on every Compound block, for-header,
+  and function body, popping on exit. A `struct foo` reference
+  with no prior declaration auto-introduces a forward declaration
+  in the current scope (C99's "appearance of `struct foo` in any
+  declaration introduces it" rule) — so
+  `struct outer { struct inner *p; };` works without an explicit
+  forward decl of `inner`. Member access lowers in `c99_to_tac`
+  to `GetAddress` (or load through pointer) + optional
+  `Binary(Add, ConstLong(member.offset))` + `Load` (rvalue) /
+  `Store` (lvalue). Compound initializers walk the layout
+  recursively, emitting one `Store` per scalar leaf at
+  `base + member_offset`. Static-storage struct initializers
+  flatten to a typed-init list in member-declaration order via
+  `_flat_static_init_raw`'s Structure/Union arms; union statics
+  pad out to the full union size after the first-member's bytes
+  via a trailing `ZeroInit`. Struct-typed assignment / Copy
+  works at any width through TAC's existing N-byte fan-out
+  (`_translate_copy` reads `_size_of(dst)`). Not yet supported:
+  struct-by-value parameter passing, struct-by-value returns
+  (the calling convention's HARGS / soft-stack arrangement
+  doesn't accommodate arbitrary-width pass-by-value yet — a
+  separate ABI exercise). Block-scope tag shadowing (re-using a
+  tag in an inner scope for a different layout) is also
+  deferred; the flat TypeTable would need per-scope unique tag
+  names. See `tests/STATUS.md` for the chapter\_18 file-by-file
+  status.
 
 Partially supported: unsigned types (`unsigned int`, `unsigned
 long`, `unsigned long long`) parse and propagate through every

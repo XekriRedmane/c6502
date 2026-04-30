@@ -127,23 +127,23 @@ def _operands_in(instr: asm_ast.Type_instruction):
             yield dst
 
 
-def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
+def _size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
     table — Int/UInt/Char/SChar/UChar → 1, Long/ULong → 2,
     LongLong/ULongLong → 4, Float → 4, Double → 8, Pointer → 2
     (the 6502's address width), Array → recursive element size ×
-    count (so `int a[10]` occupies 10 contiguous frame bytes). A
-    None symbol table or an absent entry both default to 1, which
+    count, Structure/Union → layout size (from TypeTable). A None
+    symbol table or an absent entry both default to 1, which
     matches the Int-only world unit tests assume."""
     if symbols is None:
         return 1
     sym = symbols.get(name)
     if sym is None:
         return 1
-    return _sizeof(sym.type)
+    return _sizeof(sym.type, types)
 
 
-def _sizeof(t: c99_ast.Type_data_type) -> int:
+def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes occupied by a value of type `t`. Recursive for Array."""
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return 2
@@ -154,7 +154,14 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     if isinstance(t, c99_ast.Double):
         return 8
     if isinstance(t, c99_ast.Array):
-        return _sizeof(t.element_type) * t.size
+        return _sizeof(t.element_type, types) * t.size
+    if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+        if types is None:
+            return 1
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            return 1
+        return layout.size
     return 1
 
 
@@ -167,10 +174,12 @@ class Replacer:
         params: list[str],
         statics: frozenset[str],
         symbols: SymbolTable | None = None,
+        types=None,
     ) -> None:
         self.params = params
         self.param_set = set(params)
         self.symbols = symbols
+        self.types = types
         # Pseudos whose names appear in `statics` are static-storage
         # objects (file-scope variables and block-scope statics) —
         # they get `Data(name, offset)` not a frame slot.
@@ -203,7 +212,7 @@ class Replacer:
         # and advance the cursor by the symbol's size. FP+1 is the
         # first writable slot (FP itself points at the next-free
         # byte), so the first local lands at offset 1.
-        size = _size_of_name(op.name, self.symbols)
+        size = _size_of_name(op.name, self.symbols, self.types)
         self.local_bases[op.name] = self.local_total + 1
         self.local_total += size
 
@@ -221,7 +230,7 @@ class Replacer:
         cursor = m + 3  # first param's first byte
         for name in self.params:
             self.param_bases[name] = cursor
-            cursor += _size_of_name(name, self.symbols)
+            cursor += _size_of_name(name, self.symbols, self.types)
         self.param_total = cursor - (m + 3)
         return self.param_total, m
 
@@ -343,6 +352,7 @@ def replace_function(
     fn: asm_ast.Function,
     statics: frozenset[str] = frozenset(),
     symbols: SymbolTable | None = None,
+    types=None,
 ) -> asm_ast.Function:
     """Lay out a single function's frame and rewrite Pseudo operands.
 
@@ -361,7 +371,8 @@ def replace_function(
             params=params, instructions=instrs,
         ):
             r = Replacer(
-                params=list(params), statics=statics, symbols=symbols,
+                params=list(params), statics=statics,
+                symbols=symbols, types=types,
             )
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
@@ -396,6 +407,7 @@ def replace_program(
     prog: asm_ast.Type_program,
     extra_statics: frozenset[str] = frozenset(),
     symbols: SymbolTable | None = None,
+    types=None,
 ) -> asm_ast.Type_program:
     """Lay out frames and lower Pseudo operands for every Function in
     `prog`.
@@ -435,7 +447,7 @@ def replace_program(
                     # Nothing to lay out; pass through.
                     new_top.append(tl)
                 else:
-                    new_top.append(replace_function(tl, statics, symbols))
+                    new_top.append(replace_function(tl, statics, symbols, types))
             return asm_ast.Program(top_level=new_top)
         case _:
             raise TypeError(f"unexpected program node: {prog!r}")

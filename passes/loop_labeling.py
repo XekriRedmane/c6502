@@ -137,7 +137,7 @@ class LoopLabeler:
         self, decl: c99_ast.Type_declaration,
     ) -> c99_ast.Type_declaration:
         match decl:
-            case c99_ast.VarDecl():
+            case c99_ast.VarDecl() | c99_ast.StructDecl():
                 return decl
             case c99_ast.FunctionDecl(function_decl=fd):
                 if fd.body is None:

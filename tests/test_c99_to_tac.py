@@ -1688,7 +1688,7 @@ class TestEndToEndSwitch(unittest.TestCase):
         ast = label_loops(
             resolve_labels(resolve_identifiers(parse(src)))
         )
-        ast, syms = check_program(ast)
+        ast, syms, _types = check_program(ast)
         return Translator(syms).translate_program(ast)
 
     def test_dispatch_chain_then_body_then_break(self):
@@ -2025,7 +2025,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def test_int_to_long_cast_emits_sign_extend(self):
@@ -2368,7 +2368,7 @@ class TestTempSymbolTableRegistration(unittest.TestCase):
     def _typecheck_and_lower(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         # Reuse the type-checked program's symbol table — the
         # Translator extends it with each temp it mints.
         translate_program(prog, symbols)
@@ -2428,7 +2428,7 @@ class TestPointerArithmeticLowering(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def _binary_ops(self, instrs):
@@ -2496,7 +2496,7 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         # by symbol-table type that src1 is Pointer-typed.
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(
+        prog, symbols, _types = check_program(_resolved(
             "long main(void) { int a = 0; int *p = &a; "
             "return (long)(1 + p); }"
         ))
@@ -2562,7 +2562,7 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         # sizes it as 2 bytes), not Long.
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(
+        prog, symbols, _types = check_program(_resolved(
             "long main(void) { int a = 0; int *p = &a; "
             "return (long)(p + 1); }"
         ))
@@ -2589,7 +2589,7 @@ class TestSubscriptLowering(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def test_subscript_read_emits_load(self):
@@ -2664,7 +2664,7 @@ class TestIncrementDecrementLowering(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def test_postfix_on_var_returns_old_value(self):
@@ -2749,7 +2749,7 @@ class TestArrayInitList(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def test_full_init_emits_n_stores(self):
@@ -2828,7 +2828,7 @@ class TestAddressOfSubscript(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def test_address_of_int_subscript_no_load(self):
@@ -2910,7 +2910,7 @@ class TestMultiDimArrays(unittest.TestCase):
     def _tac(self, src):
         from compile import _resolved
         from passes.type_checking import check_program
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
     def test_two_dim_subscript_lowers_with_two_scales(self):
@@ -3023,7 +3023,7 @@ class TestArrayFrameLayout(unittest.TestCase):
         from passes.replace_pseudoregisters import replace_program
         from c99_to_tac import translate_program as c99_to_tac_translate
         from tac_to_asm import translate_program as tac_to_asm_translate
-        prog, symbols = check_program(_resolved(src))
+        prog, symbols, _types = check_program(_resolved(src))
         tac = c99_to_tac_translate(prog, symbols)
         asm = tac_to_asm_translate(tac, symbols)
         asm = replace_program(asm, symbols=symbols)

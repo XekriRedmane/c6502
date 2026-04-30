@@ -30,9 +30,16 @@ module C99 {
     -- by the type checker once each value is constant-folded and
     -- converted to the switch's promoted control type).
     switch_case = (exp value, identifier label)
-    declaration = FunctionDecl(function_decl) | VarDecl(var_decl)
+    declaration = FunctionDecl(function_decl) | VarDecl(var_decl) | StructDecl(struct_decl)
     var_decl = (identifier name, exp? init, data_type, storage_class?)
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
+    -- Struct or union declaration. `is_union` distinguishes the two
+    -- (layout differs: struct sums member sizes, union maxes them).
+    -- An empty `members` list means a forward declaration (`struct
+    -- foo;`) — the type checker keeps it incomplete until a later
+    -- declaration with a non-empty body upgrades it.
+    struct_decl = (identifier tag, bool is_union, member_decl* members)
+    member_decl = (identifier name, data_type)
     storage_class = Static | Extern
 
     -- Integer types: Int 1B, Long 2B, LongLong 4B, UInt 1B, ULong 2B,
@@ -56,6 +63,13 @@ module C99 {
         | FunType(data_type* params, data_type ret)
         | Pointer(data_type referenced_type)
         | Array(data_type element_type, int size)
+        -- Struct / union types carry only the tag — the member layout
+        -- (names, types, byte offsets, total size) lives in a separate
+        -- TypeTable produced by the type checker. Two Structure or
+        -- Union types compare equal iff they share a tag, regardless
+        -- of where they were instantiated.
+        | Structure(identifier tag)
+        | Union(identifier tag)
 
     for_init = InitDecl(var_decl) | InitExp(exp?)
 
@@ -94,6 +108,13 @@ module C99 {
         -- type-name form is a leaf).
         | SizeOfExp(exp, data_type?)
         | SizeOfType(data_type target_type, data_type?)
+        -- Member access (C99 §6.5.2.3). `Dot.operand` must have a
+        -- struct/union type; `Arrow.operand` must have a Pointer to
+        -- one. The type checker stamps `data_type` with the member's
+        -- declared type. The result is an lvalue iff the operand is
+        -- (Dot inherits; Arrow always is).
+        | Dot(exp operand, identifier member, data_type?)
+        | Arrow(exp operand, identifier member, data_type?)
 
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement

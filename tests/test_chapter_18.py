@@ -61,6 +61,37 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     # `ptr-->arr` is `ptr-- > arr` — only exercises lexer max-munch
     # for `--` vs. `-->`, doesn't actually declare a struct.
     "extra_credit/other_features/decr_arrow_lexing.c",
+    # The chapter-18 valid programs that compile end-to-end now
+    # that struct support is in. These exercise: file-scope struct
+    # decls, member access (`.` / `->`), compound initializers,
+    # struct address-of and pointer-to-struct, basic struct copies,
+    # and unions (member access, copy, address-of). Programs that
+    # need struct-by-value parameter passing or struct-by-value
+    # return values are NOT in this set yet — those need ABI work
+    # (HARGS / soft-stack adjustments).
+    "extra_credit/other_features/label_tag_member_namespace.c",
+    "extra_credit/semantic_analysis/cast_union_to_void.c",
+    "extra_credit/semantic_analysis/redeclare_union.c",
+    "extra_credit/semantic_analysis/struct_shadows_union.c",
+    "extra_credit/semantic_analysis/union_members_same_type.c",
+    "extra_credit/size_and_offset/compare_union_pointers.c",
+    "extra_credit/union_copy/assign_to_union.c",
+    "no_structure_parameters/parse_and_lex/space_around_struct_member.c",
+    "no_structure_parameters/parse_and_lex/struct_member_looks_like_const.c",
+    "no_structure_parameters/parse_and_lex/trailing_comma.c",
+    "no_structure_parameters/semantic_analysis/cast_struct_to_void.c",
+    "no_structure_parameters/size_and_offset_calculations/member_comparisons.c",
+    "no_structure_parameters/smoke_tests/simple.c",
+    "no_structure_parameters/smoke_tests/static_vs_auto.c",
+    "no_structure_parameters/struct_copy/copy_struct_with_arrow_operator.c",
+    "parameters/pass_args_on_page_boundary.c",
+    "parameters/simple.c",
+    "params_and_returns/ignore_retval.c",
+    "params_and_returns/return_big_struct_on_page_boundary.c",
+    "params_and_returns/return_pointer_in_rax.c",
+    "params_and_returns/return_space_overlap.c",
+    "params_and_returns/return_struct_on_page_boundary.c",
+    "params_and_returns/simple.c",
 })
 
 
@@ -78,8 +109,39 @@ _INVALID_LEX_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "dot_bad_token.c",
 })
 _INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
-_INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
-_INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
+# Type-check edge cases c6502 doesn't reject yet: incomplete-type
+# operations (assignment, dereference, sizeof at the use site, cast
+# through incomplete pointer), struct-as-controlling-expression in
+# `if`/`while`, and tag-shadowing scenarios that would need full
+# scope-aware tag-name disambiguation. The valid programs work fine
+# without these checks — these are diagnostic gaps, not codegen
+# blockers.
+_INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
+    "extra_credit/scalar_required/union_as_controlling_expression.c",
+    "extra_credit/union_struct_conflicts/conflicting_tag_decl_and_use.c",
+    "extra_credit/union_struct_conflicts/conflicting_tag_decl_and_use_self_reference.c",
+    "extra_credit/union_tag_resolution/distinct_union_types.c",
+    "invalid_incomplete_structs/assign_to_incomplete_var.c",
+    "invalid_incomplete_structs/cast_incomplete_struct.c",
+    "invalid_incomplete_structs/deref_incomplete_struct_pointer.c",
+    "invalid_incomplete_structs/incomplete_return_type_funcall.c",
+    "invalid_incomplete_structs/incomplete_struct_full_expr.c",
+    "scalar_required/struct_controlling_expression.c",
+    "tag_resolution/conflicting_fun_ret_types.c",
+    "tag_resolution/distinct_struct_types.c",
+    "tag_resolution/incomplete_shadows_complete.c",
+    "tag_resolution/incomplete_shadows_complete_cast.c",
+    "tag_resolution/shadow_struct.c",
+})
+# `deref_undeclared.c` dereferences a pointer-to-incomplete-struct
+# in an expression statement (`*ptr;`). The standard rejects this
+# because you can't form an lvalue of incomplete type; c6502
+# accepts it because we don't track that constraint at the
+# Dereference site (the result type is just an incomplete
+# struct value that's then discarded).
+_INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
+    "deref_undeclared.c",
+})
 
 
 # Multi-TU `libraries/` subdirs aren't applicable.

@@ -1414,6 +1414,41 @@ End-to-end (C source through `compile.py --codegen` to runnable-shape
   already globally unique by the time they reach TAC).
 - arbitrary parenthesisation
 
+- `switch (e) { case <const>: ... default: ... }` per C99 §6.8.4.2.
+  `passes.loop_labeling` mints a unique `.switch@<N>` per switch and
+  collects the case / default labels into the SwitchStmt; the case-
+  label expression is folded by `passes.constant_expression`
+  (handles integer literals, integer casts, and `sizeof`) and
+  canonicalized to a `Constant` of the switch's promoted control
+  type. `c99_to_tac` lowers the dispatch as a compare-and-
+  conditional-jump chain followed by an unconditional jump to the
+  default label (or to `<switch>_break` if there's no default).
+  Cases fall through unless `break;` (lowered to
+  `Jump(<switch>_break)`) is hit. Duff's-device-style case bodies
+  inside `if` / loop bodies work because `loop_labeling` preserves
+  the enclosing switch's case-collector through those.
+
+- `void` return type, void expressions in their four legal contexts
+  (expression statement, both branches of `?:`, the operand of
+  `(void)`, for-init / for-cont), the bare `return;` form, and
+  falling off the end of a void function. `void *` with implicit
+  conversion to and from any object pointer per C99 §6.3.2.3.1.
+  `c99_to_tac` collapses void Casts / void-result Conditionals /
+  void-returning FunctionCalls so no value temp is allocated; void
+  Ret lowers to a bare epilogue with `save_a=False`.
+
+- `sizeof` operator (both shapes — `sizeof e` and `sizeof (T)`).
+  Result type `unsigned long` (size_t in c6502); folds to a
+  compile-time constant in `c99_to_tac` from the operand's
+  data_type, with the inner expression NOT translated (per C99
+  §6.5.3.4.2). c6502's storage-model sizes:
+  `char`/`int`/`signed char`/`unsigned char`/`unsigned int` = 1;
+  `long`/`unsigned long`/pointer = 2; `long long`/`unsigned long
+  long`/`float` = 4; `double` = 8; arrays multiply through their
+  element. `passes.constant_expression` also folds `sizeof` so it
+  can appear in `case` labels (and any other §6.6.6 site that lands
+  later — enum constants, non-VLA array sizes, bit-field widths).
+
 Partially supported:
 
 - unsigned integer types (`unsigned int`, `unsigned long`)
@@ -1429,19 +1464,16 @@ Partially supported:
 
 Not yet anywhere in the pipeline:
 
-- 16-bit runtime helpers (`mul16` / `divmod16` / `shl16` /
-  `asr16`) needed to lower `*` / `/` / `%` / `<<` / `>>` on
-  2-byte operands (Long or ULong). Until those land,
-  `tac_to_asm` raises `NotImplementedError` on any of those
-  ops with a 2-byte operand.
-- `switch` statements. The loop-labeling pass is sole owner of
-  break-targets right now; once switch lands its lowering will
-  track its own break-target separately.
-- a runtime header that defines `SSP`/`FP` at their ZP addresses,
-  initializes `SSP` to top-of-RAM, sets the reset vector to a
-  stub that calls `main`, and provides `mul8`/`divmod8`/`shl8`/
-  `asr8`. The emitted assembly references these symbols but the
-  header that supplies them isn't in this repo yet.
+- a runtime header that defines `SSP`/`FP`/`HARGS`/`DPTR` at
+  their ZP addresses, initializes `SSP` to top-of-RAM, sets the
+  reset vector to a stub that calls `main`, and provides the
+  arithmetic helpers (`mul8`/`divmod8`/`asl8`/`asr8`,
+  `mul16`/`divmod16`/`asl16`/`asr16`,
+  `mul32`/`divmod32`/`asl32`/`asr32`), the FP arithmetic /
+  conversion family, and the `icall` indirect-call trampoline.
+  `tac_to_asm` already emits `JSR` to all of these — the
+  marshaling is done; what's missing is the implementation that
+  the assembler would link against.
 
 ## Tests
 

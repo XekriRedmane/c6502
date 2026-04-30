@@ -54,6 +54,17 @@ preprocessing-number concept and tokenises it as two CONSTANTs
 - **chapter\_13** invalid_lex:
   - `malformed_exponent.c`
 
+### Integer literals beyond `unsigned long long`
+
+c6502's widest integer type is `unsigned long long` (4 bytes,
+0..2^32 - 1). One chapter 17 sizeof test specifies an array
+type whose size literal exceeds that range, so the parser
+rejects it before any sizeof folding gets a chance.
+
+- **chapter\_17** valid (skipped via `_INCOMPATIBLE_VALID`):
+  - `sizeof/sizeof_derived_types.c` — uses the literal
+    `4294967297L` (= 2^32 + 1) as an array dimension.
+
 ---
 
 ## Pinned: real bugs

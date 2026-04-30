@@ -2135,25 +2135,32 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
 
     def test_file_scope_char_array_string_init_emits_static_with_bytes(self):
         # `char arr[5] = "Hi";` at file scope lands in the static
-        # table as a tuple of byte values; the TAC StaticVariable
-        # init laid down per-byte (with trailing zeros coalesced
-        # into a ZeroInit).
+        # table as a tuple of byte values, then collapses to a
+        # single `StringInit(str="Hi\0\0\0", bytes=5)` (char-element
+        # arrays render via StringInit for compact `dc.b` output).
         tac = self._tac('char arr[5] = "Hi";')
         statics = {
             tl.name: tl for tl in tac.top_level
             if isinstance(tl, tac_ast.StaticVariable)
         }
         self.assertIn("arr", statics)
-        # First two bytes: `H` (72) and `i` (105) as IntInit
-        # (Char-element collapses onto IntInit). Remaining three
-        # zero bytes coalesce into ZeroInit(3).
         self.assertEqual(
             statics["arr"].init,
-            [
-                tac_ast.IntInit(int=ord('H')),
-                tac_ast.IntInit(int=ord('i')),
-                tac_ast.ZeroInit(bytes=3),
-            ],
+            [tac_ast.StringInit(str="Hi\0\0\0", bytes=5)],
+        )
+
+    def test_zero_filled_char_array_emits_zero_init(self):
+        # `char arr[5];` (uninitialized, file-scope) zero-fills,
+        # which collapses to a single `ZeroInit(5)` (more compact
+        # than `StringInit("\0\0\0\0\0", 5)`).
+        tac = self._tac('char arr[5]; int main(void) { return 0; }')
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(
+            statics["arr"].init,
+            [tac_ast.ZeroInit(bytes=5)],
         )
 
     def test_uint_to_unsigned_long_long_cast_emits_zero_extend(self):

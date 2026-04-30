@@ -547,6 +547,21 @@ def _flat_static_init_raw(
                 f"array static init shape mismatch: expected tuple of "
                 f"size {t.size} for {t!r}, got {value!r}"
             )
+        # Char-element arrays (any nesting depth) collapse onto a
+        # single `StringInit(str, bytes=N)` rather than per-byte
+        # `IntInit` items. The two encodings are byte-identical at
+        # the storage level — `dc.b $61, $62, $63` and a single
+        # StringInit-rendered `dc.b $61, $62, $63` lay down the
+        # same memory image — but the StringInit form is more
+        # compact in the listing, especially for long strings.
+        # Also handle the all-zeros case as a `ZeroInit(N)` so the
+        # asm renders a single `ds.b N` (more compact than
+        # `dc.b $00, $00, ...`).
+        if _is_char_element(t.element_type):
+            s = "".join(chr(int(b) & 0xFF) for b in value)
+            if all(c == "\0" for c in s):
+                return [tac_ast.ZeroInit(bytes=t.size)]
+            return [tac_ast.StringInit(str=s, bytes=t.size)]
         out: list[tac_ast.Type_static_init] = []
         for elem in value:
             out.extend(_flat_static_init_raw(t.element_type, elem))

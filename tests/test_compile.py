@@ -696,6 +696,56 @@ class TestSizeof(unittest.TestCase):
         )
         self.assertIn("function", err.lower())
 
+    def test_sizeof_in_case_label(self):
+        # sizeof folds at compile time so it's a valid §6.6.6 integer
+        # constant expression — usable as a case label.
+        out = self._codegen(
+            "int main(int x) { "
+            "switch (x) { "
+            "case sizeof(char): return 1; "
+            "case sizeof(long): return 2; "
+            "case sizeof(int[5]): return 5; "
+            "default: return 0; "
+            "} }",
+        )
+        # Three case-dispatch comparisons: against 1, 2, 5
+        # respectively. The constants get coerced to the switch's
+        # promoted control type (Int — `x` is int) modulo width.
+        self.assertIn("CMP   #$01", out)
+        self.assertIn("CMP   #$02", out)
+        self.assertIn("CMP   #$05", out)
+
+    def test_sizeof_exp_in_case_label(self):
+        # sizeof e form also works — the type checker populates the
+        # inner expression's data_type so the const evaluator can
+        # fold it.
+        out = self._codegen(
+            "int main(int x) { "
+            "long y; long long z; "
+            "switch (x) { "
+            "case sizeof y: return 2; "
+            "case sizeof z: return 4; "
+            "default: return 0; "
+            "} }",
+        )
+        # sizeof(long) = 2, sizeof(long long) = 4.
+        self.assertIn("CMP   #$02", out)
+        self.assertIn("CMP   #$04", out)
+
+    def test_sizeof_case_label_duplicate_detection(self):
+        # `sizeof y` and `sizeof(y+y)` both have type Long → both
+        # equal 2 → duplicate case value, rejected.
+        err = self._expect_failure(
+            "int main(int x) { "
+            "long y; "
+            "switch (x) { "
+            "case sizeof y: return 1; "
+            "case sizeof(y+y): return 2; "
+            "default: return 0; "
+            "} }",
+        )
+        self.assertIn("duplicate", err.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

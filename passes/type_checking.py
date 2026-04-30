@@ -1590,6 +1590,17 @@ class TypeChecker:
         # value (§6.8.4.2.3).
         seen_values: dict[int, str] = {}
         for case in stmt.cases:
+            # Type-check the case value first so any nested SizeOfExp
+            # inside has its inner expression's data_type stamped — the
+            # constant evaluator reads `inner.data_type` to fold
+            # `sizeof e`. For a bare integer literal or a Cast around
+            # one, this is just a no-op type stamp; for sizeof it's
+            # what makes folding possible. We mirror the post-eval
+            # canonicalization (case.value → Constant of promoted
+            # type) below, so any rewriting _check_exp does to
+            # case.value (e.g. wrapping in implicit Cast) gets
+            # overwritten anyway.
+            self._check_exp(case.value)
             try:
                 value, _value_type = (
                     evaluate_integer_constant_expression(case.value)

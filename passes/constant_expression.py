@@ -49,22 +49,32 @@ The validator + integer folder is reusable across:
 
 Today's coverage
 ----------------
-This module accepts the simplest shape that the writing-a-c-compiler-
-tests corpus exercises for case labels: a single `Constant` literal,
-optionally wrapped in any number of `Cast` nodes whose target types
-are integer (introduced by either user-written casts or the type
-checker's implicit conversion to the switch's promoted type). A
-non-integer cast target — float / double / pointer — is rejected as
-non-integer. Anything else (Var, Binary, Unary, Conditional, ...) is
-rejected as "not a constant expression"; expanding to general
-arithmetic on integer constants is a follow-up that drops in via
-recursion into Unary / Binary / Conditional arms.
+This module accepts the shapes that the writing-a-c-compiler-
+tests corpus exercises for case labels: a single `Constant`
+literal, optionally wrapped in any number of `Cast` nodes whose
+target types are integer (introduced by either user-written casts
+or the type checker's implicit conversion to the switch's promoted
+type), and `sizeof` expressions whose result is a compile-time
+known integer. A non-integer cast target — float / double / pointer
+— is rejected as non-integer. Anything else (Var, Binary, Unary,
+Conditional, ...) is rejected as "not a constant expression";
+expanding to general arithmetic on integer constants is a follow-up
+that drops in via recursion into Unary / Binary / Conditional arms.
 
 Integer-typed cast values are converted to the cast's target type
 modulo its width — same rule as the runtime cast lowering in
 c99_to_tac (`Truncate` / `SignExtend` / `ZeroExtend` are byte-level
 operations that boil down to width-modular arithmetic on the source
 integer value).
+
+`sizeof` folds to the byte size of its operand type as an
+`unsigned long` (size_t in c6502). For `sizeof (T)` the type comes
+from the AST node directly; for `sizeof e` the type comes from the
+inner expression's `data_type`, which the type checker must have
+stamped before this evaluator runs (the case-label call site
+type-checks each value first). Per C99 §6.5.3.4.2 the inner is not
+evaluated, so we don't recurse into it for the §6.6.3 forbidden-
+operator check either.
 """
 
 from __future__ import annotations
@@ -95,6 +105,33 @@ _SIGNED = (c99_ast.Int, c99_ast.Long, c99_ast.LongLong)
 def _is_integer_type(t: c99_ast.Type_data_type) -> bool:
     return isinstance(t, (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
                           c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong))
+
+
+def _sizeof(t: c99_ast.Type_data_type) -> int:
+    """Bytes occupied by a value of type `t` in c6502's storage
+    model. Mirrors the helpers of the same name in
+    `passes.type_checking` and `c99_to_tac`; kept local so this
+    module imports nothing from either of those (which would be a
+    cycle in the case of type_checking, since type_checking imports
+    this module). Raises ConstantExpressionError on incomplete /
+    function types — `sizeof(void)` / `sizeof(function-type)` is
+    flagged at the type-check boundary too, but a defense in depth
+    here keeps the const-evaluator honest if a future caller skips
+    the type check."""
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt,
+                      c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+        return 1
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+        return 2
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Float)):
+        return 4
+    if isinstance(t, c99_ast.Double):
+        return 8
+    if isinstance(t, c99_ast.Array):
+        return _sizeof(t.element_type) * t.size
+    raise ConstantExpressionError(
+        f"sizeof of incomplete or function type: {t!r}"
+    )
 
 
 def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
@@ -158,6 +195,12 @@ def evaluate_integer_constant_expression(
       * `Cast(target_type=integer, exp=integer_constant_expression)`
         recursively — the target's signedness/width is applied
         modulo the byte width.
+      * `SizeOfType(target_type=T)` — folds to ULong of the byte
+        size of T. T must be a complete object type.
+      * `SizeOfExp(exp=e)` — folds to ULong of `_sizeof(e.data_type)`.
+        The caller is responsible for type-checking `e` first
+        (otherwise `e.data_type` would be None — the §6.6.6 case-
+        label site does this immediately before calling here).
 
     `Cast(target_type=Float | Double | Pointer | ...)` is rejected
     because §6.6.6 requires integer type. A floating-point
@@ -177,6 +220,17 @@ def evaluate_integer_constant_expression(
                 inner,
             )
             return _coerce_to_integer_type(inner_value, target), target
+        case c99_ast.SizeOfType(target_type=t):
+            return _sizeof(t), c99_ast.ULong()
+        case c99_ast.SizeOfExp(exp=inner):
+            inner_t = inner.data_type
+            if inner_t is None:
+                raise ConstantExpressionError(
+                    "sizeof's inner expression has no data_type — "
+                    "the constant evaluator requires the operand to "
+                    "be type-checked first"
+                )
+            return _sizeof(inner_t), c99_ast.ULong()
     raise ConstantExpressionError(
         f"expression is not an integer constant expression: {exp!r}"
     )
@@ -211,6 +265,15 @@ def validate_constant_expression(exp: c99_ast.Type_exp) -> None:
                 "function call is not allowed in a constant expression"
             )
         case c99_ast.Constant() | c99_ast.Var():
+            return
+        case c99_ast.SizeOfExp() | c99_ast.SizeOfType():
+            # sizeof's operand is "a subexpression that is not
+            # evaluated" per C99 §6.5.3.4.2, so the §6.6.3 forbidden-
+            # operator rule explicitly does NOT apply inside it
+            # (§6.6.3: "except when they are contained within a
+            # subexpression that is not evaluated"). Treat sizeof as
+            # a leaf and don't recurse — `sizeof(i++)` is a valid
+            # constant expression.
             return
         case c99_ast.Cast(exp=inner):
             validate_constant_expression(inner)

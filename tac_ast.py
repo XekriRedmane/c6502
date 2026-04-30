@@ -42,7 +42,7 @@ class Type_instruction:
 
 @dataclass
 class Ret(Type_instruction):
-    val: Type_val
+    val: Type_val | None = None
 
 
 @dataclass
@@ -160,18 +160,18 @@ class Label(Type_instruction):
     name: str
 
 
-@dataclass(kw_only=True)
+@dataclass
 class FunctionCall(Type_instruction):
     name: str
     args: list[Type_val] = field(default_factory=list)
-    dst: Type_val
+    dst: Type_val | None = None
 
 
-@dataclass(kw_only=True)
+@dataclass
 class IndirectCall(Type_instruction):
     ptr: Type_val
     args: list[Type_val] = field(default_factory=list)
-    dst: Type_val
+    dst: Type_val | None = None
 
 
 @dataclass
@@ -336,6 +336,11 @@ class Float(Type_data_type):
 
 @dataclass
 class Double(Type_data_type):
+    pass
+
+
+@dataclass
+class Void(Type_data_type):
     pass
 
 

@@ -377,5 +377,175 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("not known", err)
 
 
+class TestVoid(unittest.TestCase):
+    """Void return type, void expressions, void *. Covers the four
+    contexts where a void expression is permitted (expression
+    statement, both branches of `?:`, the operand of `(void)`, and
+    `for`-init / `for`-continuation), plus the implicit conversions
+    between `void *` and any other pointer type."""
+
+    def _run(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
+        with patch("sys.stdin", io.StringIO(stdin)), \
+             patch("sys.stdout", new_callable=io.StringIO) as out, \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            rc = main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def _codegen(self, src: str) -> str:
+        rc, out, err = self._run(["compile.py", "-", "--codegen"], stdin=src)
+        self.assertEqual(rc, 0, msg=err)
+        return out
+
+    def _expect_failure(self, src: str) -> str:
+        # `main()` lets pipeline exceptions (ParserError,
+        # TypeCheckError, ...) propagate; the chapter harnesses use
+        # the same idiom. Catch broadly so the test can assert on the
+        # message text regardless of which pass raised.
+        try:
+            self._run(["compile.py", "-", "--codegen"], stdin=src)
+        except Exception as e:  # noqa: BLE001
+            return str(e)
+        self.fail(f"expected compilation to fail for: {src!r}")
+
+    def test_codegen_void_function_empty_body(self):
+        # `void f(void) { }` — falling off the end is legal per C99
+        # §6.9.1.12. The TAC translator appends a Ret(val=None); the
+        # asm epilogue collapses to a bare RTS (zero arg/local bytes,
+        # save_a=False).
+        out = self._codegen("void f(void) { }")
+        self.assertIn("f:", out)
+        self.assertIn("SUBROUTINE", out)
+        self.assertIn("RTS", out)
+        # No PHA/PLA — save_a=False on void Ret, and no value is
+        # being staged into A.
+        self.assertNotIn("PHA", out)
+        self.assertNotIn("PLA", out)
+
+    def test_codegen_void_function_explicit_return(self):
+        # `return;` lowers identically to falling off the end.
+        out = self._codegen("void f(void) { return; }")
+        self.assertIn("f:", out)
+        self.assertIn("RTS", out)
+
+    def test_codegen_call_void_function_discards_result(self):
+        # The caller emits `JSR f` with no return-value capture
+        # afterwards (no LDA from A or HARGS into a frame slot).
+        out = self._codegen(
+            "void f(void) { } "
+            "int main(void) { f(); return 0; }",
+        )
+        self.assertIn("JSR   f", out)
+        # Right after the JSR f, the next non-blank line should be
+        # the `LDA #$00` that stages the return-0 — i.e. NOT a
+        # capture sequence.
+        lines = [
+            ln.strip() for ln in out.splitlines()
+            if ln.strip() and not ln.strip().startswith(";")
+        ]
+        idx = lines.index("JSR   f")
+        self.assertEqual(lines[idx + 1], "LDA   #$00")
+
+    def test_codegen_cast_to_void_evaluates_for_side_effects(self):
+        # `(void)(1+2)` — the binary still evaluates (LDA #$01; CLC;
+        # ADC #$02), but its result is dropped.
+        out = self._codegen("int main(void) { (void)(1+2); return 0; }")
+        self.assertIn("LDA   #$01", out)
+        self.assertIn("ADC   #$02", out)
+
+    def test_codegen_void_conditional_no_branch_copies(self):
+        # `flag ? f() : g()` where both branches are void: each
+        # branch is just a JSR; no Copy-to-dst sequence.
+        out = self._codegen(
+            "void f(void); void g(void); "
+            "int main(int flag) { flag ? f() : g(); return 0; }",
+        )
+        self.assertIn("JSR   f", out)
+        self.assertIn("JSR   g", out)
+        self.assertIn(".cond_else@", out)
+        self.assertIn(".cond_end@", out)
+
+    def test_codegen_void_pointer_implicit_conversion(self):
+        # `void *p = ip;` and `ip = p;` are no-op casts at the byte
+        # level (both 2 bytes). The generated asm is just a 2-byte
+        # Copy in each direction.
+        out = self._codegen(
+            "int main(void) { "
+            "void *p; int *ip; ip = (int*)0; p = ip; ip = p; "
+            "return 0; }",
+        )
+        # No JSR to any helper — purely Copy / SignExtend at the
+        # frame.
+        self.assertNotIn("JSR   mul", out)
+
+    def test_codegen_null_pointer_constant_assignable_to_void_pointer(self):
+        # `void *p = 0;` — the integer 0 is a null pointer constant
+        # (C99 §6.3.2.3.3); it should sign-extend to a 2-byte zero
+        # address.
+        out = self._codegen(
+            "int main(void) { void *p = 0; return p == 0; }",
+        )
+        # Equality compare against the 2-byte zero — the LDA #$00 is
+        # the rhs's zero byte and CMP / EOR forms drive the equality.
+        self.assertIn("LDA   #$00", out)
+
+    def test_codegen_void_in_for_init_and_post(self):
+        # The for-init and for-continuation slots are expression-or-
+        # empty; void calls work in both.
+        out = self._codegen(
+            "void f(void); void g(void); "
+            "int main(void) { for (f(); 0; g()) {} return 0; }",
+        )
+        self.assertIn("JSR   f", out)
+        self.assertIn("JSR   g", out)
+
+    def test_reject_return_value_from_void_function(self):
+        err = self._expect_failure("void f(void) { return 1; }")
+        self.assertIn("void", err)
+
+    def test_reject_bare_return_from_non_void_function(self):
+        err = self._expect_failure("int f(void) { return; }")
+        self.assertIn("return", err)
+
+    def test_reject_void_variable(self):
+        err = self._expect_failure(
+            "int main(void) { void x; return 0; }",
+        )
+        self.assertIn("Void", err)
+
+    def test_reject_void_parameter(self):
+        # `int f(void x)` — `void` as a NAMED parameter (vs. the
+        # `int f(void)` empty-params form, which is fine).
+        err = self._expect_failure("int f(void x) { return 0; }")
+        self.assertIn("void", err.lower())
+
+    def test_reject_void_arithmetic(self):
+        err = self._expect_failure(
+            "void f(void); int main(void) { f() + 1; return 0; }",
+        )
+        self.assertIn("Void", err)
+
+    def test_reject_void_as_function_argument(self):
+        err = self._expect_failure(
+            "void f(void); void g(int); "
+            "int main(void) { g(f()); return 0; }",
+        )
+        self.assertIn("void", err.lower())
+
+    def test_reject_void_pointer_arithmetic(self):
+        # `void *p; p + 1;` — sizeof(void) is undefined.
+        err = self._expect_failure(
+            "int main(void) { void *p; p + 1; return 0; }",
+        )
+        self.assertIn("void", err.lower())
+
+    def test_reject_mismatched_pointer_assignment_still_fails(self):
+        # Adding void* shouldn't loosen the matching-pointee rule
+        # for non-void pointer assignments.
+        err = self._expect_failure(
+            "int main(void) { int *ip; long *lp; ip = lp; return 0; }",
+        )
+        self.assertIn("pointer", err.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

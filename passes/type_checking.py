@@ -141,6 +141,7 @@ SChar = c99_ast.SChar
 UChar = c99_ast.UChar
 Float = c99_ast.Float
 Double = c99_ast.Double
+Void = c99_ast.Void
 FunType = c99_ast.FunType
 Pointer = c99_ast.Pointer
 Array = c99_ast.Array
@@ -525,6 +526,55 @@ def _is_array_type(t: Type) -> bool:
     return isinstance(t, Array)
 
 
+def _is_void(t: Type) -> bool:
+    """True iff `t` is the `void` type itself (NOT `void *`)."""
+    return isinstance(t, Void)
+
+
+def _is_void_pointer(t: Type) -> bool:
+    """True iff `t` is `void *`."""
+    return isinstance(t, Pointer) and isinstance(t.referenced_type, Void)
+
+
+def _check_well_formed_type(t: Type, *, where: str) -> None:
+    """Walk `t` and raise TypeCheckError if any nested Array has an
+    incomplete element type (Void or another array of incomplete
+    element type), per C99 §6.7.5.2.1: "The element type shall not
+    be an incomplete or function type."
+
+    Used at every site where a declared or named type is materialized:
+    var declarations, function parameter types, cast targets. The walk
+    descends through Pointer (so `void (*)[3]` is rejected by virtue
+    of the inner `void[3]`) and through Array (multi-dim). FunType is
+    a leaf — its params / ret are validated independently when the
+    function itself is checked, not recursively here.
+
+    `where` is a short label used in the error message so the user
+    knows whether the rejected shape is, say, a parameter or a cast
+    target."""
+    if isinstance(t, Array):
+        if isinstance(t.element_type, Void):
+            raise TypeCheckError(
+                f"{where}: array element type cannot be void (C99 "
+                f"§6.7.5.2.1 — array element must be a complete "
+                f"object type)"
+            )
+        if isinstance(t.element_type, FunType):
+            raise TypeCheckError(
+                f"{where}: array element type cannot be a function "
+                f"type (C99 §6.7.5.2.1)"
+            )
+        _check_well_formed_type(t.element_type, where=where)
+        return
+    if isinstance(t, Pointer):
+        _check_well_formed_type(t.referenced_type, where=where)
+        return
+    # Int / Long / ... / Char / Float / Double / Void / FunType — all
+    # leaves; no nested constraint to check at this level. (FunType's
+    # params and ret get their own well-formedness checks at function-
+    # decl time via `_check_function_decl`.)
+
+
 def _decay_if_array(exp: c99_ast.Type_exp) -> c99_ast.Type_exp:
     """Implement C99 §6.3.2.1.3 array-to-pointer decay. If `exp.data_type`
     is `Array(elem, N)`, wrap `exp` in an implicit `AddressOf` stamped
@@ -734,19 +784,39 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
     self-describing type and any size-changing conversion is an
     explicit Cast node.
 
-    For implicit conversions to pointer C99 §6.5.16.1.1 only allows:
-      * a compatible pointer type (matching pointee — c6502 has no
-        void-pointer special case);
+    For implicit conversions to pointer C99 §6.5.16.1.1 allows:
+      * a compatible pointer type (matching pointee);
+      * a `void *` source converted to any object pointer (and the
+        mirror — any object pointer converted to `void *`), per
+        §6.3.2.3.1: "A pointer to void may be converted to or from
+        a pointer to any object type [...] without an explicit cast.";
       * a null pointer constant — an integer constant expression with
         value 0 (§6.3.2.3.3).
-    Anything else (non-null integer, mismatched pointer type, FP, ...)
-    is rejected here so it doesn't silently lower to nonsense bytes.
-    The mirror rule applies for arithmetic targets: a pointer source
-    is rejected (only an explicit cast can perform pointer→integer
-    or pointer→FP conversion). Explicit `(T)x` casts go through the
-    Cast type-check handler and aren't gated by this function."""
+    Anything else (non-null integer, mismatched non-void pointer type,
+    FP, ...) is rejected here so it doesn't silently lower to nonsense
+    bytes. The mirror rule applies for arithmetic targets: a pointer
+    source is rejected (only an explicit cast can perform pointer→
+    integer or pointer→FP conversion). Explicit `(T)x` casts go
+    through the Cast type-check handler and aren't gated by this
+    function."""
     if exp.data_type is not None and _types_equal(exp.data_type, target):
         return exp
+    # A void source (e.g. the result of a void-returning function call
+    # or a `(void)e` cast) has no value — it can't be implicitly
+    # converted to anything except its own type. The target=Void case
+    # is handled by an explicit `(void)e` cast (which goes through the
+    # Cast type-check, not `_convert_to`), so reaching here with target
+    # void either means a misuse or a missed call site; flag it.
+    if exp.data_type is not None and _is_void(exp.data_type):
+        raise TypeCheckError(
+            f"void expression cannot be converted to {target!r}; void "
+            f"has no value"
+        )
+    if _is_void(target):
+        raise TypeCheckError(
+            f"cannot implicitly convert {exp.data_type!r} to void; "
+            f"use an explicit `(void)expr` cast to discard a value"
+        )
     if isinstance(target, Pointer) and exp.data_type is not None:
         src = exp.data_type
         if _is_integer_type(src):
@@ -760,12 +830,18 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
                 )
         elif isinstance(src, Pointer):
             # Both pointers but the equality short-circuit above
-            # didn't fire, so the pointee types differ.
-            raise TypeCheckError(
-                f"cannot implicitly convert {src!r} to {target!r}; "
-                f"pointer-to-pointer assignment requires matching "
-                f"pointee types per C99 §6.5.16.1.1"
-            )
+            # didn't fire, so the pointee types differ. C99 §6.3.2.3.1
+            # gives `void *` a free conversion to and from any object
+            # pointer; treat it as a no-op cast (same byte width, same
+            # representation).
+            if _is_void_pointer(src) or _is_void_pointer(target):
+                pass  # fall through to the Cast wrapper below
+            else:
+                raise TypeCheckError(
+                    f"cannot implicitly convert {src!r} to {target!r}; "
+                    f"pointer-to-pointer assignment requires matching "
+                    f"pointee types per C99 §6.5.16.1.1"
+                )
         else:
             # Float / Double / anything else — only integer null
             # pointer constants and matching pointers are assignable.
@@ -844,6 +920,9 @@ class TypeChecker:
                 f"file-scope object {vd.name!r} declared with non-"
                 f"object type {vd.data_type!r}"
             )
+        _check_well_formed_type(
+            vd.data_type, where=f"file-scope object {vd.name!r}",
+        )
         is_extern = isinstance(vd.storage_class, c99_ast.Extern)
         if vd.init is None:
             initial: InitialValue = (
@@ -958,6 +1037,28 @@ class TypeChecker:
             defined=defined,
             is_global=is_global,
         )
+        # Per C99 §6.7.5.3.4, a parameter shall not have void type
+        # (the `f(void)` form for empty params is handled by the
+        # parser via a dedicated `LPAREN VOID RPAREN` rule, so any
+        # Void surviving in `ftype.params` here is a real
+        # parameter declaration like `int f(void x)`).
+        for p_type in ftype.params:
+            if _is_void(p_type):
+                raise TypeCheckError(
+                    f"parameter of function {fd.name!r} cannot have "
+                    f"void type (C99 §6.7.5.3.4)"
+                )
+            # Reject `void foo[3]` / `void (*foo)[3]` parameters too —
+            # the array element type must be complete (§6.7.5.2.1).
+            # The parameter-array adjustment (§6.7.5.3.7) only
+            # rewrites the OUTERMOST array suffix to a pointer, so
+            # `void foo[3]` becomes `void *foo` (which is fine — caught
+            # by the separate void-pointer is-allowed check above)
+            # but `void (*foo)[3]` keeps the inner Array(Void, 3)
+            # intact and needs the recursive well-formed walk.
+            _check_well_formed_type(
+                p_type, where=f"parameter of function {fd.name!r}",
+            )
         if defined:
             # Walk the body. Parameters share the body's outermost
             # scope per §6.9.1.7 (so adding them to the symbol table
@@ -1108,6 +1209,9 @@ class TypeChecker:
                 f"object {vd.name!r} declared with non-object type "
                 f"{vd.data_type!r}"
             )
+        _check_well_formed_type(
+            vd.data_type, where=f"object {vd.name!r}",
+        )
         if isinstance(vd.storage_class, c99_ast.Extern):
             if vd.init is not None:
                 raise TypeCheckError(
@@ -1340,7 +1444,6 @@ class TypeChecker:
     ) -> None:
         match stmt:
             case c99_ast.Return(exp=exp):
-                self._check_exp(exp)
                 expected = self._return_type
                 # `expected is None` only happens if `Return` shows
                 # up outside any function body, which the parser
@@ -1349,6 +1452,28 @@ class TypeChecker:
                     raise TypeCheckError(
                         "return statement outside of any function"
                     )
+                # Bare `return;` (no expression). Legal only inside a
+                # void-returning function (C99 §6.8.6.4.1).
+                if exp is None:
+                    if not _is_void(expected):
+                        raise TypeCheckError(
+                            f"`return;` without a value in a function "
+                            f"returning {expected!r}; bare `return;` "
+                            f"is only legal in a void-returning "
+                            f"function (C99 §6.8.6.4.1)"
+                        )
+                    return
+                # `return e;` with an expression. Illegal in a void-
+                # returning function — §6.8.6.4.1: "A return statement
+                # with an expression shall not appear in a function
+                # whose return type is void."
+                if _is_void(expected):
+                    raise TypeCheckError(
+                        f"`return <expr>;` in a void-returning function; "
+                        f"void functions must use bare `return;` (C99 "
+                        f"§6.8.6.4.1)"
+                    )
+                self._check_exp(exp)
                 # Return-value conversion (C99 §6.8.6.4.3): if the
                 # value's type doesn't match the declared return
                 # type, wrap it in an implicit Cast — same shape as
@@ -1481,6 +1606,9 @@ class TypeChecker:
                         f"for-init {vd.name!r} declared with non-"
                         f"object type {vd.data_type!r}"
                     )
+                _check_well_formed_type(
+                    vd.data_type, where=f"for-init {vd.name!r}",
+                )
                 self.symbols[vd.name] = Symbol(
                     type=vd.data_type, attrs=LocalAttr(),
                 )
@@ -1613,13 +1741,22 @@ class TypeChecker:
                 exp.data_type = t
                 return t
             case c99_ast.Cast(target_type=target, exp=inner):
-                if not _is_object_type(target):
+                # Cast targets per C99 §6.5.4.2: scalar (object) types
+                # OR `void` (the discard form `(void)e`). Array and
+                # function types are rejected at the parser, so by
+                # here `target` is one of the legal type-name shapes;
+                # we additionally accept Void here.
+                if not (_is_object_type(target) or _is_void(target)):
                     raise TypeCheckError(
                         f"cast target type must be an object type "
                         f"(Int / Long / LongLong / UInt / ULong / "
-                        f"ULongLong / Float / Double / Pointer), got "
-                        f"{target!r}"
+                        f"ULongLong / Float / Double / Pointer) or "
+                        f"void, got {target!r}"
                     )
+                # Reject malformed cast targets like `(void(*)[3])e`
+                # — the array element type must be complete even
+                # inside a pointer wrapping.
+                _check_well_formed_type(target, where="cast target")
                 self._check_exp(inner)
                 # Decay an array operand before further type-checking
                 # — `(int *)arr` is legal and the cast operates on
@@ -1627,6 +1764,13 @@ class TypeChecker:
                 exp.exp = _decay_if_array(inner)
                 inner = exp.exp
                 inner_type = inner.data_type
+                # `(void)e` accepts any type for `e` (including a
+                # void-typed expression like another void function
+                # call); the result is just discarded. Skip the
+                # operand-shape and pointer/FP-cross checks.
+                if _is_void(target):
+                    exp.data_type = target
+                    return target
                 if not _is_object_type(inner_type):
                     raise TypeCheckError(
                         f"cannot cast non-object type {inner_type!r} "
@@ -1840,9 +1984,10 @@ class TypeChecker:
                     and (_is_pointer_type(tl) or _is_pointer_type(tr))
                 ):
                     op_name = "+" if isinstance(op, c99_ast.Add) else "-"
-                    # Reject pointer-to-function: §6.5.6.2 requires
-                    # "pointer to an object type" for the additive ops,
-                    # and sizeof(function) is undefined.
+                    # Reject pointer-to-function and pointer-to-void:
+                    # §6.5.6.2 requires "pointer to a complete object
+                    # type" for the additive ops, and sizeof(void) /
+                    # sizeof(function) is undefined.
                     for t in (tl, tr):
                         if (
                             isinstance(t, Pointer)
@@ -1851,6 +1996,14 @@ class TypeChecker:
                             raise TypeCheckError(
                                 f"binary '{op_name}' is not defined on "
                                 f"pointer-to-function operands "
+                                f"({tl!r} {op_name} {tr!r})"
+                            )
+                        if isinstance(t, Pointer) and isinstance(
+                            t.referenced_type, Void,
+                        ):
+                            raise TypeCheckError(
+                                f"binary '{op_name}' is not defined on "
+                                f"void pointer operands "
                                 f"({tl!r} {op_name} {tr!r})"
                             )
                     if _is_floating_type(tl) or _is_floating_type(tr):
@@ -2019,6 +2172,18 @@ class TypeChecker:
                         f"increment/decrement operator on non-object "
                         f"type {t!r}"
                     )
+                # `++p` / `--p` / `p++` / `p--` is defined as `p ± 1`
+                # element, which requires a complete pointee — exactly
+                # the §6.5.6.2 constraint Binary `+`/`-` enforces. Void
+                # has no size, so reject (C99 §6.5.2.4.1 / §6.5.3.1.1
+                # require an "object type" operand for ++/--).
+                if isinstance(t, Pointer) and isinstance(
+                    t.referenced_type, Void,
+                ):
+                    raise TypeCheckError(
+                        f"increment/decrement on void pointer is not "
+                        f"defined (sizeof(void) is undefined)"
+                    )
                 exp.data_type = t
                 return t
             case c99_ast.Conditional(
@@ -2035,6 +2200,20 @@ class TypeChecker:
                 exp.false_clause = _decay_if_array(f_clause)
                 t_clause, f_clause = exp.true_clause, exp.false_clause
                 tt, tf = t_clause.data_type, f_clause.data_type
+                # Per C99 §6.5.15.5: "If both the second and third
+                # operands have void type, the result has void type."
+                # No conversion is applied — both branches stay as
+                # they are; the conditional just sequences the side
+                # effects.
+                if _is_void(tt) and _is_void(tf):
+                    exp.data_type = Void()
+                    return Void()
+                if _is_void(tt) or _is_void(tf):
+                    raise TypeCheckError(
+                        f"conditional branches must both be void or "
+                        f"both be value-producing; got {tt!r} vs "
+                        f"{tf!r}"
+                    )
                 if not _is_object_type(tt) or not _is_object_type(tf):
                     raise TypeCheckError(
                         f"conditional branches must be object types, "
@@ -2042,20 +2221,26 @@ class TypeChecker:
                     )
                 # C99 §6.5.15.6: pointer cases first (since
                 # `_common_type` only knows about arithmetic types).
-                # Both pointers — must be the same type. One pointer
-                # plus a null pointer constant — the pointer wins.
-                # Anything else falls through to the usual arithmetic
-                # conversions.
+                # Both pointers — must be the same type, OR one of them
+                # is `void *` (the null-pointer-constant rule from
+                # §6.5.15.6 also applies). One pointer plus a null
+                # pointer constant — the pointer wins. Anything else
+                # falls through to the usual arithmetic conversions.
                 tt_ptr = isinstance(tt, Pointer)
                 tf_ptr = isinstance(tf, Pointer)
                 if tt_ptr or tf_ptr:
                     if tt_ptr and tf_ptr:
-                        if not _types_equal(tt, tf):
+                        # `void *` and any object pointer compose to
+                        # `void *` (C99 §6.5.15.6).
+                        if _is_void_pointer(tt) or _is_void_pointer(tf):
+                            common = Pointer(referenced_type=Void())
+                        elif not _types_equal(tt, tf):
                             raise TypeCheckError(
                                 f"conditional branches have distinct "
                                 f"pointer types: {tt!r} vs {tf!r}"
                             )
-                        common = Pointer(referenced_type=tt.referenced_type)
+                        else:
+                            common = Pointer(referenced_type=tt.referenced_type)
                     elif tt_ptr and _is_null_pointer_constant(f_clause):
                         common = Pointer(referenced_type=tt.referenced_type)
                     elif tf_ptr and _is_null_pointer_constant(t_clause):

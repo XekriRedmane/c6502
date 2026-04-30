@@ -219,7 +219,7 @@ initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
 function_decl: specifier+ declarator block
 
-type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR
+type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | VOID
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
@@ -252,7 +252,7 @@ for_init: var_decl | exp? SEMICOLON
 // continues to parse as a ternary even though `b` is also an
 // IDENTIFIER followed by COLON.
 
-statement: RETURN exp SEMICOLON                                     -> return_stmt
+statement: RETURN exp? SEMICOLON                                    -> return_stmt
          | exp SEMICOLON                                            -> expression_stmt
          | IF LPAREN exp RPAREN statement (ELSE statement)?         -> if_stmt
          | GOTO IDENTIFIER SEMICOLON                                -> goto_stmt

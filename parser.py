@@ -79,10 +79,10 @@ _STORAGE_CLASSES = {
 # `type_specifier` and `specifier` transformer methods unwrap their
 # child trees, every entry on a specifier list is one of these tokens.
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                           "FLOAT", "DOUBLE", "CHAR",
+                           "FLOAT", "DOUBLE", "CHAR", "VOID",
                            "STATIC", "EXTERN")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                                "FLOAT", "DOUBLE", "CHAR")
+                                "FLOAT", "DOUBLE", "CHAR", "VOID")
 
 
 def _resolve_data_type(type_specs):
@@ -122,11 +122,20 @@ def _resolve_data_type(type_specs):
     float_count = sum(1 for t in type_specs if t.type == "FLOAT")
     double_count = sum(1 for t in type_specs if t.type == "DOUBLE")
     char_count = sum(1 for t in type_specs if t.type == "CHAR")
+    void_count = sum(1 for t in type_specs if t.type == "VOID")
     is_fp = float_count > 0 or double_count > 0
     is_integer = (
         int_count > 0 or signed_count > 0 or unsigned_count > 0
         or char_count > 0
     )
+    if void_count > 0:
+        if void_count > 1:
+            raise ParserError("'void' specified more than once")
+        if is_fp or is_integer or long_count > 0:
+            raise ParserError(
+                "'void' cannot combine with any other type specifier"
+            )
+        return c99_ast.Void()
     if is_fp and is_integer:
         raise ParserError(
             "floating type cannot combine with 'int' / 'signed' / "
@@ -776,6 +785,19 @@ def _adjust_param_type(t):
     function being declared, not a parameter), so that adjustment
     isn't needed here."""
     if isinstance(t, c99_ast.Array):
+        # C99 §6.7.5.2.1: even though a parameter array adjusts to a
+        # pointer, the original array declarator must still satisfy
+        # the "element type shall be complete" constraint. After
+        # adjustment the Array is gone, so the type checker can't see
+        # it; reject pre-adjustment here. `void foo[3]` is the
+        # canonical example — the adjusted type `void *foo` would be
+        # valid on its own, but the declared form is not.
+        if isinstance(t.element_type, c99_ast.Void):
+            raise ParserError(
+                "array parameter declarator has incomplete element "
+                "type 'void' (C99 §6.7.5.2.1 — array element must "
+                "be a complete object type)"
+            )
         return c99_ast.Pointer(referenced_type=t.element_type)
     return t
 
@@ -1202,9 +1224,14 @@ class _ASTBuilder(Transformer):
         )
 
     # Alternatives of `statement` — each named in c99.lark.
-    @v_args(inline=True)
-    def return_stmt(self, _return, exp, _semi):
-        return c99_ast.Return(exp=exp)
+    def return_stmt(self, items):
+        # `RETURN exp? SEMICOLON`. With `exp` present, items has 3
+        # children; with the bare `return;` form, items has 2. The
+        # latter is only legal in a void-returning function — type
+        # checking enforces that constraint.
+        if len(items) == 2:
+            return c99_ast.Return(exp=None)
+        return c99_ast.Return(exp=items[1])
 
     @v_args(inline=True)
     def expression_stmt(self, exp, _semi):

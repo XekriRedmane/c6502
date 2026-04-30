@@ -577,7 +577,7 @@ class Translator:
     # ------------------------------------------------------------------
 
     def _translate_ret(
-        self, val: tac_ast.Type_val,
+        self, val: tac_ast.Type_val | None,
     ) -> list[asm_ast.Type_instruction]:
         """Stage the return value, then Ret. Convention by width:
           Int (1B)              → A.
@@ -599,7 +599,13 @@ class Translator:
         `save_a=False` Ret skips the PHA/PLA pair the
         register-path uses; HARGS isn't touched by SSP/FP
         arithmetic. arg_bytes/local_bytes are placeholders patched
-        by replace_pseudoregisters."""
+        by replace_pseudoregisters.
+
+        Void return (`val=None`): no value to stage, so emit only the
+        epilogue. Use `save_a=False` since A doesn't carry anything
+        across the SSP/FP arithmetic — saves a PHA/PLA pair."""
+        if val is None:
+            return [asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False)]
         src_op = translate_val(val)
         size = self._size_of(val)
         if size == 1:
@@ -916,7 +922,7 @@ class Translator:
         self,
         name: str,
         args: list[tac_ast.Type_val],
-        dst: tac_ast.Type_val,
+        dst: tac_ast.Type_val | None,
     ) -> list[asm_ast.Type_instruction]:
         """Caller side of the soft-stack calling convention. Each arg
         occupies size_of(arg_type) consecutive stack bytes (1 for
@@ -949,32 +955,35 @@ class Translator:
                     ))
                 off += sz
         emitted.append(asm_ast.Call(name=name))
-        dst_op = translate_val(dst)
-        dst_size = self._size_of(dst)
-        if dst_size == 1:
-            # Int: from A directly.
-            emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
-        elif dst_size == 2:
-            # Long: A = low (save first, before TXA clobbers it),
-            # then X → A → high.
-            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
-            emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
-            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
-        else:
-            # LongLong / Float (4B) → HARGS+8..11;
-            # Double (8B) → HARGS+16..23. Read it back byte-by-byte
-            # through A.
-            in_off = 8 if dst_size == 4 else 16
-            for k in range(dst_size):
-                emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        # `dst is None` means a void-returning callee: nothing to
+        # capture, the return-value slot stays whatever it was.
+        if dst is not None:
+            dst_op = translate_val(dst)
+            dst_size = self._size_of(dst)
+            if dst_size == 1:
+                # Int: from A directly.
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+            elif dst_size == 2:
+                # Long: A = low (save first, before TXA clobbers it),
+                # then X → A → high.
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
+                emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
+            else:
+                # LongLong / Float (4B) → HARGS+8..11;
+                # Double (8B) → HARGS+16..23. Read it back byte-by-byte
+                # through A.
+                in_off = 8 if dst_size == 4 else 16
+                for k in range(dst_size):
+                    emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
+                    emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
         return emitted
 
     def _translate_indirect_call(
         self,
         ptr: tac_ast.Type_val,
         args: list[tac_ast.Type_val],
-        dst: tac_ast.Type_val,
+        dst: tac_ast.Type_val | None,
     ) -> list[asm_ast.Type_instruction]:
         """Indirect call through a function pointer. Same shape as
         the direct path — caller pushes args onto the soft stack,
@@ -1009,19 +1018,21 @@ class Translator:
         emitted.extend(self._stage_dptr(translate_val(ptr)))
         emitted.append(asm_ast.Call(name=_ICALL))
         # Capture return value — same byte plan as the direct path.
-        dst_op = translate_val(dst)
-        dst_size = self._size_of(dst)
-        if dst_size == 1:
-            emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
-        elif dst_size == 2:
-            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
-            emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
-            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
-        else:
-            in_off = 8 if dst_size == 4 else 16
-            for k in range(dst_size):
-                emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        # `dst is None` means a void-returning callee: skip capture.
+        if dst is not None:
+            dst_op = translate_val(dst)
+            dst_size = self._size_of(dst)
+            if dst_size == 1:
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+            elif dst_size == 2:
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
+                emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
+            else:
+                in_off = 8 if dst_size == 4 else 16
+                for k in range(dst_size):
+                    emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
+                    emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
         return emitted
 
     # ------------------------------------------------------------------

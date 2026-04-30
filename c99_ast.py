@@ -58,7 +58,7 @@ class Type_statement:
 
 @dataclass
 class Return(Type_statement):
-    exp: Type_exp
+    exp: Type_exp | None = None
 
 
 @dataclass
@@ -260,6 +260,11 @@ class SChar(Type_data_type):
 
 @dataclass
 class UChar(Type_data_type):
+    pass
+
+
+@dataclass
+class Void(Type_data_type):
     pass
 
 

@@ -4,7 +4,7 @@ module C99 {
     block = Block(block_item*)
     block_item = S(statement) | D(declaration)
     statement =
-        Return(exp)
+        Return(exp?)
         | Expression(exp)
         | IfStmt(exp condition, statement then_clause, statement? else_clause)
         | Compound(block)
@@ -52,6 +52,7 @@ module C99 {
         | Char
         | SChar
         | UChar
+        | Void
         | FunType(data_type* params, data_type ret)
         | Pointer(data_type referenced_type)
         | Array(data_type element_type, int size)

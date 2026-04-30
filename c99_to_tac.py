@@ -294,6 +294,8 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.Float()
     if isinstance(t, c99_ast.Double):
         return tac_ast.Double()
+    if isinstance(t, c99_ast.Void):
+        return tac_ast.Void()
     if isinstance(t, c99_ast.Pointer):
         return tac_ast.Long()
     if isinstance(t, c99_ast.Array):
@@ -818,9 +820,18 @@ class Translator:
                 if isinstance(fd.data_type, c99_ast.FunType)
                 else c99_ast.Int()
             )
-            instrs.append(tac_ast.Ret(
-                val=_tac_const_val(ret_type, 0),
-            ))
+            # Void return: emit Ret(val=None). The asm epilogue then
+            # skips the value-into-A/X sequence and the
+            # PHA/PLA-bracket. Falling off the end of a void function
+            # is legal (C99 §6.9.1.12); for non-void functions it's
+            # still the implicit-zero-return papering-over a missing
+            # `return`.
+            if isinstance(ret_type, c99_ast.Void):
+                instrs.append(tac_ast.Ret(val=None))
+            else:
+                instrs.append(tac_ast.Ret(
+                    val=_tac_const_val(ret_type, 0),
+                ))
         # `is_global` rides through from the symbol table. Function
         # names aren't renamed by identifier_resolution (linkage
         # forces the source spelling), so the lookup key matches
@@ -964,7 +975,17 @@ class Translator:
     ) -> None:
         match stmt:
             case c99_ast.Return(exp=exp):
-                instrs.append(tac_ast.Ret(val=self.translate_exp(exp, instrs)))
+                # `return;` (no value) lowers to Ret(val=None) — the
+                # asm epilogue skips the value-into-A/X step. `return
+                # e;` evaluates `e` and passes its val to Ret. Type
+                # checking has already enforced that the bare form
+                # only appears in void-returning functions.
+                if exp is None:
+                    instrs.append(tac_ast.Ret(val=None))
+                else:
+                    instrs.append(tac_ast.Ret(
+                        val=self.translate_exp(exp, instrs),
+                    ))
                 return
             case c99_ast.Expression(exp=exp):
                 # Translate for side effects (assignments today; calls
@@ -1251,7 +1272,7 @@ class Translator:
         self,
         exp: c99_ast.Type_exp,
         instrs: list[tac_ast.Type_instruction],
-    ) -> tac_ast.Type_val:
+    ) -> tac_ast.Type_val | None:
         match exp:
             case c99_ast.Constant(const=c):
                 # The c99 and TAC const sums are 1-to-1; just rewrap
@@ -1262,6 +1283,14 @@ class Translator:
                 # boundary at asm emit's `_check_byte`.
                 return tac_ast.Constant(const=_to_tac_const(c))
             case c99_ast.Cast(target_type=target, exp=inner):
+                # `(void)e` (cast-to-void): evaluate `e` for its side
+                # effects, return None — the value is discarded. Any
+                # caller using this result would be a void value in a
+                # non-void context, which the type checker already
+                # forbade.
+                if isinstance(target, c99_ast.Void):
+                    self.translate_exp(inner, instrs)
+                    return None
                 # Lower `Cast` based on the source/target c99 types.
                 # The 6502 has no signedness distinction, so cross-sign
                 # integer casts at the same width are no-ops; FP types
@@ -1509,30 +1538,36 @@ class Translator:
                 #   <eval cond -> cond_val>
                 #   JumpIfFalse(cond_val, cond_else@N)
                 #   <eval true -> t_val>
-                #   Copy(t_val, dst)
+                #   Copy(t_val, dst)         (skipped if void)
                 #   Jump(cond_end@N)
                 #   Label(cond_else@N)
                 #   <eval false -> f_val>
-                #   Copy(f_val, dst)
+                #   Copy(f_val, dst)         (skipped if void)
                 #   Label(cond_end@N)
+                # When both branches have void type (C99 §6.5.15.5),
+                # the conditional has no value — skip the dst temp
+                # and the per-branch Copies; just sequence the side
+                # effects.
                 cond_val = self.translate_exp(cond, instrs)
                 else_label = self.make_label("cond_else")
                 end_label = self.make_label("cond_end")
-                # The two arms have already been promoted to the
-                # common type by the type checker, and the
-                # Conditional's data_type is that common type.
-                dst = tac_ast.Var(
-                    name=self.make_temporary_variable_name(exp.data_type),
+                is_void = isinstance(exp.data_type, c99_ast.Void)
+                dst = (
+                    None if is_void else tac_ast.Var(
+                        name=self.make_temporary_variable_name(exp.data_type),
+                    )
                 )
                 instrs.append(tac_ast.JumpIfFalse(
                     condition=cond_val, target=else_label,
                 ))
                 t_val = self.translate_exp(true_clause, instrs)
-                instrs.append(tac_ast.Copy(src=t_val, dst=dst))
+                if dst is not None:
+                    instrs.append(tac_ast.Copy(src=t_val, dst=dst))
                 instrs.append(tac_ast.Jump(target=end_label))
                 instrs.append(tac_ast.Label(name=else_label))
                 f_val = self.translate_exp(false_clause, instrs)
-                instrs.append(tac_ast.Copy(src=f_val, dst=dst))
+                if dst is not None:
+                    instrs.append(tac_ast.Copy(src=f_val, dst=dst))
                 instrs.append(tac_ast.Label(name=end_label))
                 return dst
             case c99_ast.FunctionCall(name=name, args=args):
@@ -1551,12 +1586,14 @@ class Translator:
                 arg_vals = [
                     self.translate_exp(a, instrs) for a in args
                 ]
-                # The temp captures the call's return value; its
-                # type is the function's declared return type,
-                # which the type checker has stamped on the
-                # FunctionCall node's data_type.
-                dst = tac_ast.Var(
-                    name=self.make_temporary_variable_name(exp.data_type),
+                # Void-returning callees produce no value — emit
+                # FunctionCall with dst=None. The TAC instruction's
+                # asm lowering skips the return-value capture step.
+                is_void = isinstance(exp.data_type, c99_ast.Void)
+                dst = (
+                    None if is_void else tac_ast.Var(
+                        name=self.make_temporary_variable_name(exp.data_type),
+                    )
                 )
                 sym = self._symbols.get(name)
                 if sym is not None and isinstance(sym.type, c99_ast.Pointer):

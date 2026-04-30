@@ -607,7 +607,10 @@ class Resolver:
     ) -> c99_ast.Type_statement:
         match stmt:
             case c99_ast.Return(exp=exp):
-                return c99_ast.Return(exp=self.resolve_exp(exp, scope))
+                resolved_exp = (
+                    self.resolve_exp(exp, scope) if exp is not None else None
+                )
+                return c99_ast.Return(exp=resolved_exp)
             case c99_ast.Expression(exp=exp):
                 return c99_ast.Expression(exp=self.resolve_exp(exp, scope))
             case c99_ast.IfStmt(

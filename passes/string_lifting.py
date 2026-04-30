@@ -165,7 +165,9 @@ class StringLifter:
     def _lift_statement(self, stmt):
         match stmt:
             case c99_ast.Return(exp=e):
-                return c99_ast.Return(exp=self._lift_exp(e))
+                return c99_ast.Return(
+                    exp=self._lift_exp(e) if e is not None else None,
+                )
             case c99_ast.Expression(exp=e):
                 return c99_ast.Expression(exp=self._lift_exp(e))
             case c99_ast.IfStmt(

@@ -4,7 +4,7 @@ module TAC {
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
         | StaticVariable(identifier name, bool is_global, data_type, static_init* init)
     instruction =
-        Ret(val)
+        Ret(val?)
         | SignExtend(val src, val dst)
         | ZeroExtend(val src, val dst)
         | Truncate(val src, val dst)
@@ -34,7 +34,7 @@ module TAC {
         | JumpIfTrue(val condition, identifier target)
         | JumpIfFalse(val condition, identifier target)
         | Label(identifier name)
-        | FunctionCall(identifier name, val* args, val dst)
+        | FunctionCall(identifier name, val* args, val? dst)
         -- Indirect call via a function pointer. `ptr` is a Pointer-
         -- typed val whose 2-byte value is the target function's
         -- address. tac_to_asm stages those bytes into the DPTR
@@ -43,7 +43,7 @@ module TAC {
         -- value capture follow the same soft-stack convention as
         -- direct FunctionCall — the only difference is the call-
         -- site instruction (`JSR icall` instead of `JSR <name>`).
-        | IndirectCall(val ptr, val* args, val dst)
+        | IndirectCall(val ptr, val* args, val? dst)
     val = Constant(const) | Var(identifier name)
     unary_operator = Complement | Negate | LogicalNot
     binary_operator =
@@ -53,7 +53,7 @@ module TAC {
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
     data_type = Int | Long | LongLong | UInt | ULong | ULongLong
-              | Float | Double
+              | Float | Double | Void
               | FunType(data_type* params, data_type ret)
     -- TAC `const` collapses integer signedness onto width (the 6502
     -- has no signedness at the byte level): ConstInt = 1B, ConstLong

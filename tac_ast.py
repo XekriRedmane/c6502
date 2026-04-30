@@ -310,12 +310,22 @@ class Long(Type_data_type):
 
 
 @dataclass
+class LongLong(Type_data_type):
+    pass
+
+
+@dataclass
 class UInt(Type_data_type):
     pass
 
 
 @dataclass
 class ULong(Type_data_type):
+    pass
+
+
+@dataclass
+class ULongLong(Type_data_type):
     pass
 
 
@@ -351,6 +361,11 @@ class ConstLong(Type_const):
 
 
 @dataclass
+class ConstLongLong(Type_const):
+    int: int
+
+
+@dataclass
 class ConstFloat(Type_const):
     float: float
 
@@ -376,12 +391,22 @@ class LongInit(Type_static_init):
 
 
 @dataclass
+class LongLongInit(Type_static_init):
+    int: int
+
+
+@dataclass
 class UIntInit(Type_static_init):
     int: int
 
 
 @dataclass
 class ULongInit(Type_static_init):
+    int: int
+
+
+@dataclass
+class ULongLongInit(Type_static_init):
     int: int
 
 

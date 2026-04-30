@@ -77,22 +77,24 @@ class ConstantExpressionError(Exception):
     (per C99 §6.6) doesn't satisfy the constraints of that section."""
 
 
-# Width / signedness of the four integer types c6502 models. Mirrors
+# Width / signedness of the six integer types c6502 models. Mirrors
 # `passes.type_checking._int_width` / `_is_signed` but kept local so
 # this module can be imported by the type checker without creating a
 # cycle.
 _INT_WIDTH = {
-    c99_ast.Int:   1,
-    c99_ast.UInt:  1,
-    c99_ast.Long:  2,
-    c99_ast.ULong: 2,
+    c99_ast.Int:       1,
+    c99_ast.UInt:      1,
+    c99_ast.Long:      2,
+    c99_ast.ULong:     2,
+    c99_ast.LongLong:  4,
+    c99_ast.ULongLong: 4,
 }
-_SIGNED = (c99_ast.Int, c99_ast.Long)
+_SIGNED = (c99_ast.Int, c99_ast.Long, c99_ast.LongLong)
 
 
 def _is_integer_type(t: c99_ast.Type_data_type) -> bool:
-    return isinstance(t, (c99_ast.Int, c99_ast.Long,
-                          c99_ast.UInt, c99_ast.ULong))
+    return isinstance(t, (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
+                          c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong))
 
 
 def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
@@ -110,10 +112,12 @@ def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
 
 def _const_int_value(c: c99_ast.Type_const) -> int:
     """Pull the integer value out of a `Type_const` integer variant.
-    All four variants store the bit pattern as a non-negative `int`
-    field; the variant tags signedness for downstream consumers."""
+    Every integer variant stores the bit pattern as a non-negative
+    `int` field; the variant tags signedness for downstream consumers."""
     if isinstance(c, (c99_ast.ConstInt, c99_ast.ConstLong,
-                      c99_ast.ConstUInt, c99_ast.ConstULong)):
+                      c99_ast.ConstLongLong,
+                      c99_ast.ConstUInt, c99_ast.ConstULong,
+                      c99_ast.ConstULongLong)):
         return c.int
     raise ConstantExpressionError(
         f"floating constant {c!r} is not an integer constant"
@@ -126,10 +130,14 @@ def _const_type(c: c99_ast.Type_const) -> c99_ast.Type_data_type:
         return c99_ast.Int()
     if isinstance(c, c99_ast.ConstLong):
         return c99_ast.Long()
+    if isinstance(c, c99_ast.ConstLongLong):
+        return c99_ast.LongLong()
     if isinstance(c, c99_ast.ConstUInt):
         return c99_ast.UInt()
     if isinstance(c, c99_ast.ConstULong):
         return c99_ast.ULong()
+    if isinstance(c, c99_ast.ConstULongLong):
+        return c99_ast.ULongLong()
     raise ConstantExpressionError(
         f"non-integer constant {c!r} has no integer type"
     )
@@ -144,8 +152,9 @@ def evaluate_integer_constant_expression(
     `ConstantExpressionError` if `exp` doesn't satisfy §6.6.6.
 
     Today's accepted shapes:
-      * `Constant(ConstInt | ConstLong | ConstUInt | ConstULong)` —
-        the four integer literal variants.
+      * `Constant(ConstInt | ConstLong | ConstLongLong |
+        ConstUInt | ConstULong | ConstULongLong)` —
+        the six integer literal variants.
       * `Cast(target_type=integer, exp=integer_constant_expression)`
         recursively — the target's signedness/width is applied
         modulo the byte width.

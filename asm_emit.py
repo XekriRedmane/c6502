@@ -920,6 +920,16 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
                 # Mask to 16 bits so signed-negative values render as
                 # their two's-complement bit pattern (e.g. -1 → $FFFF).
                 lines.append(_instr_line("dc.w", f"${v & 0xFFFF:04X}"))
+            case asm_ast.LongLongInit(int=v):
+                _check_dword(f"init for {sv.name!r}", v)
+                # Mask to 32 bits so signed-negative values render as
+                # their two's-complement bit pattern. dasm's `dc.l`
+                # lays down 4 little-endian bytes — same byte order
+                # as the soft-stack layout for runtime LongLong
+                # values, so `Data(name, offset=0)` is the low byte.
+                lines.append(_instr_line(
+                    "dc.l", f"${v & 0xFFFFFFFF:08X}",
+                ))
             case asm_ast.FloatInit(float=v):
                 # Pack as IEEE 754 single-precision, little-endian (`<f`).
                 # Reinterpret the 4-byte sequence as a 32-bit unsigned
@@ -966,6 +976,18 @@ def _check_word(label: str, v: int) -> None:
     if not -32768 <= v <= 65535:
         raise ValueError(
             f"{label} {v} out of range for 16-bit (-32768..65535)"
+        )
+
+
+def _check_dword(label: str, v: int) -> None:
+    """Range check for a 4-byte signed/unsigned constant. Accepts
+    -2^31..2^32-1 — covers both the signed LongLong range and the
+    unsigned ULongLong range / two's-complement bit pattern of a
+    negative LongLong. The 32-bit emit then masks to 0xFFFFFFFF."""
+    if not -(1 << 31) <= v <= (1 << 32) - 1:
+        raise ValueError(
+            f"{label} {v} out of range for 32-bit "
+            f"(-2147483648..4294967295)"
         )
 
 

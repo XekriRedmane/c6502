@@ -132,8 +132,10 @@ class TypeCheckError(Exception):
 Type = c99_ast.Type_data_type
 Int = c99_ast.Int
 Long = c99_ast.Long
+LongLong = c99_ast.LongLong
 UInt = c99_ast.UInt
 ULong = c99_ast.ULong
+ULongLong = c99_ast.ULongLong
 Float = c99_ast.Float
 Double = c99_ast.Double
 FunType = c99_ast.FunType
@@ -176,7 +178,7 @@ class AddressInit:
 class Initial(InitialValue):
     """Object declared with an initializer. The value carries the
     constant lifted out of the initializer expression — an `int`
-    for the four integer types, a `float` (Python double-precision)
+    for the six integer types, a `float` (Python double-precision)
     for `Float` / `Double`, or an `AddressInit` for a Pointer-typed
     static initialized with `&otherstatic`. The variable's declared
     type tells codegen which `StaticVariable` width to emit; the
@@ -454,7 +456,10 @@ def _is_object_type(t: Type) -> bool:
     here to keep the post-decay invariant catchable: any leftover
     Array operand is a missed decay site, not legal C. FunType is
     also excluded — a function isn't an object."""
-    return isinstance(t, (Int, Long, UInt, ULong, Float, Double, Pointer))
+    return isinstance(
+        t, (Int, Long, LongLong, UInt, ULong, ULongLong,
+            Float, Double, Pointer),
+    )
 
 
 def _is_complete_object_type(t: Type) -> bool:
@@ -466,7 +471,7 @@ def _is_complete_object_type(t: Type) -> bool:
 
 
 def _is_integer_type(t: Type) -> bool:
-    return isinstance(t, (Int, Long, UInt, ULong))
+    return isinstance(t, (Int, Long, LongLong, UInt, ULong, ULongLong))
 
 
 def _is_floating_type(t: Type) -> bool:
@@ -521,8 +526,8 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
     c = exp.const
     if isinstance(
         c,
-        (c99_ast.ConstInt, c99_ast.ConstLong,
-         c99_ast.ConstUInt, c99_ast.ConstULong),
+        (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
+         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong),
     ):
         return c.int == 0
     return False
@@ -535,20 +540,21 @@ def _is_arithmetic_type(t: Type) -> bool:
     return _is_integer_type(t) or _is_floating_type(t)
 
 
-# Width and signedness predicates for the four integer types. Width
+# Width and signedness predicates for the integer types. Width
 # determines the C99 §6.3.1.1 "rank" (Int and UInt share rank 1;
-# Long and ULong share rank 2 — `long long` and friends would be
-# rank 3 but c6502 doesn't model them).
+# Long and ULong share rank 2; LongLong and ULongLong share rank 3).
 def _int_width(t: Type) -> int:
     if isinstance(t, (Int, UInt)):
         return 1
     if isinstance(t, (Long, ULong)):
         return 2
+    if isinstance(t, (LongLong, ULongLong)):
+        return 4
     raise TypeError(f"_int_width: not an integer object type: {t!r}")
 
 
 def _is_signed(t: Type) -> bool:
-    return isinstance(t, (Int, Long))
+    return isinstance(t, (Int, Long, LongLong))
 
 
 def _coerce_int_to_type(value: int, t: Type) -> int:
@@ -579,6 +585,12 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     if isinstance(t, (Long, ULong)):
         bits = value & 0xFFFF
         return c99_ast.ConstLong(int=bits) if isinstance(t, Long) else c99_ast.ConstULong(int=bits)
+    if isinstance(t, (LongLong, ULongLong)):
+        bits = value & 0xFFFFFFFF
+        return (
+            c99_ast.ConstLongLong(int=bits) if isinstance(t, LongLong)
+            else c99_ast.ConstULongLong(int=bits)
+        )
     raise TypeError(f"_const_for_value: not an integer type: {t!r}")
 
 
@@ -590,17 +602,19 @@ def _common_type(a: Type, b: Type) -> Type:
       * else either operand `Float` → result `Float`
       * else both operands integer → integer rules (below)
 
-    Integer rules, restricted to the four types c6502 models. With
-    ranks 1 (Int/UInt) and 2 (Long/ULong):
+    Integer rules, with ranks 1 (Int/UInt), 2 (Long/ULong), and 3
+    (LongLong/ULongLong):
       * matching types               → that type
       * both signed (or both unsigned) → the higher-rank type wins
       * mixed; unsigned has rank ≥ signed → unsigned wins
       * mixed; signed has higher rank and can represent all of the
         unsigned type's range                → signed wins
-        (Long can represent UInt's 0..255, so Long + UInt → Long)
+        (Long covers UInt's 0..255; LongLong covers UInt's 0..255 and
+        ULong's 0..65535)
       * otherwise → unsigned counterpart of the signed type
-        (no such case arises in c6502 today since Long always
-        represents UInt; kept for forward compatibility.)
+        (only applies when widths are equal but signedness differs at
+        rank 3 — handled by the rank-≥ rule above; kept for forward
+        compatibility.)
 
     Returned types are fresh instances so callers can attach them
     to AST nodes without aliasing."""
@@ -619,11 +633,13 @@ def _common_type(a: Type, b: Type) -> Type:
     signed, unsigned = (a, b) if a_signed else (b, a)
     if _int_width(unsigned) >= _int_width(signed):
         return type(unsigned)()
-    # Signed has the higher rank. The C99 rule asks whether it
-    # can represent every value of the unsigned type. With our
-    # types the only mixed-rank case is Long (signed, rank 2) +
-    # UInt (unsigned, rank 1), and Long's range -32768..32767
-    # spans UInt's 0..255 entirely, so the signed type wins.
+    # Signed has the higher rank. C99 §6.3.1.8 asks whether it can
+    # represent every value of the unsigned type. With c6502's three
+    # widths and unsigned rank strictly less than signed, the signed
+    # type's range always covers the unsigned type's range:
+    #   Long (-32768..32767)         covers UInt (0..255).
+    #   LongLong (-2^31..2^31-1)     covers UInt (0..255) and
+    #                                  ULong (0..65535).
     return type(signed)()
 
 
@@ -1228,9 +1244,9 @@ class TypeChecker:
 
     def _check_switch(self, stmt: c99_ast.SwitchStmt) -> None:
         # C99 §6.8.4.2.1: "The controlling expression of a switch
-        # statement shall have integer type." For c6502 the four
-        # integer types are Int/UInt/Long/ULong; reject Float,
-        # Double, and Pointer.
+        # statement shall have integer type." For c6502 the integer
+        # types are Int/UInt/Long/ULong/LongLong/ULongLong; reject
+        # Float, Double, and Pointer.
         self._check_exp(stmt.control)
         ctrl_type = stmt.control.data_type
         if ctrl_type is None or not _is_integer_type(ctrl_type):
@@ -1238,7 +1254,7 @@ class TypeChecker:
                 f"switch controlling expression must have integer type "
                 f"(got {ctrl_type!r}); C99 §6.8.4.2.1"
             )
-        # Integer promotion (§6.3.1.1). For c6502's four integer
+        # Integer promotion (§6.3.1.1). For c6502's six integer
         # types every type is already at promotion rank ≥ Int, so
         # promotion is a no-op — the promoted type IS the control
         # type. Stash it on the SwitchStmt so c99_to_tac can match
@@ -1388,10 +1404,14 @@ class TypeChecker:
                     t = Int()
                 elif isinstance(c, c99_ast.ConstLong):
                     t = Long()
+                elif isinstance(c, c99_ast.ConstLongLong):
+                    t = LongLong()
                 elif isinstance(c, c99_ast.ConstUInt):
                     t = UInt()
                 elif isinstance(c, c99_ast.ConstULong):
                     t = ULong()
+                elif isinstance(c, c99_ast.ConstULongLong):
+                    t = ULongLong()
                 elif isinstance(c, c99_ast.ConstFloat):
                     t = Float()
                 elif isinstance(c, c99_ast.ConstDouble):
@@ -1404,8 +1424,9 @@ class TypeChecker:
                 if not _is_object_type(target):
                     raise TypeCheckError(
                         f"cast target type must be an object type "
-                        f"(Int / Long / UInt / ULong / Float / "
-                        f"Double / Pointer), got {target!r}"
+                        f"(Int / Long / LongLong / UInt / ULong / "
+                        f"ULongLong / Float / Double / Pointer), got "
+                        f"{target!r}"
                     )
                 self._check_exp(inner)
                 # Decay an array operand before further type-checking

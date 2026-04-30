@@ -35,15 +35,18 @@ module C99 {
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
     storage_class = Static | Extern
 
-    -- Integer types: Int 1B, Long 2B, UInt 1B, ULong 2B (signed
-    -- variants are two's complement, unsigned are bare bit patterns).
-    -- Floating types: Float is IEEE 754 single (4B), Double is IEEE
-    -- 754 double (8B). Long double (16B IEEE 754 quad / extended)
-    -- isn't modelled — the parser rejects it.
+    -- Integer types: Int 1B, Long 2B, LongLong 4B, UInt 1B, ULong 2B,
+    -- ULongLong 4B (signed variants are two's complement, unsigned
+    -- are bare bit patterns). Floating types: Float is IEEE 754
+    -- single (4B), Double is IEEE 754 double (8B). Long double (16B
+    -- IEEE 754 quad / extended) isn't modelled — the parser rejects
+    -- it.
     data_type = Int
         | Long
+        | LongLong
         | UInt
         | ULong
+        | ULongLong
         | Float
         | Double
         | FunType(data_type* params, data_type ret)
@@ -89,6 +92,7 @@ module C99 {
     -- variants store the literal as a Python float — Python's float
     -- is IEEE 754 double, so the single-precision value lays down
     -- losslessly after rounding at lex time.
-    const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int)
+    const = ConstInt(int) | ConstLong(int) | ConstLongLong(int)
+          | ConstUInt(int) | ConstULong(int) | ConstULongLong(int)
           | ConstFloat(float) | ConstDouble(float)
 }

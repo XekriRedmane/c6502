@@ -219,12 +219,22 @@ class Long(Type_data_type):
 
 
 @dataclass
+class LongLong(Type_data_type):
+    pass
+
+
+@dataclass
 class UInt(Type_data_type):
     pass
 
 
 @dataclass
 class ULong(Type_data_type):
+    pass
+
+
+@dataclass
+class ULongLong(Type_data_type):
     pass
 
 
@@ -516,12 +526,22 @@ class ConstLong(Type_const):
 
 
 @dataclass
+class ConstLongLong(Type_const):
+    int: int
+
+
+@dataclass
 class ConstUInt(Type_const):
     int: int
 
 
 @dataclass
 class ConstULong(Type_const):
+    int: int
+
+
+@dataclass
+class ConstULongLong(Type_const):
     int: int
 
 

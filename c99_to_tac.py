@@ -237,14 +237,16 @@ def _break_label(loop_label: str) -> str:
 
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
     """Byte width of an object type. Int / UInt = 1, Long / ULong = 2,
-    Float = 4, Double = 8, Pointer = 2 (the 6502's address width).
-    Used by Cast lowering to decide between SignExtend / ZeroExtend /
-    Truncate / no-op (for integer types) and by various size-driven
-    dispatch sites downstream."""
+    LongLong / ULongLong = 4, Float = 4, Double = 8, Pointer = 2
+    (the 6502's address width). Used by Cast lowering to decide
+    between SignExtend / ZeroExtend / Truncate / no-op (for integer
+    types) and by various size-driven dispatch sites downstream."""
     if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
         return 1
     if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
         return 2
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return 4
     if isinstance(t, c99_ast.Float):
         return 4
     if isinstance(t, c99_ast.Double):
@@ -267,10 +269,14 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.Int()
     if isinstance(t, c99_ast.Long):
         return tac_ast.Long()
+    if isinstance(t, c99_ast.LongLong):
+        return tac_ast.LongLong()
     if isinstance(t, c99_ast.UInt):
         return tac_ast.UInt()
     if isinstance(t, c99_ast.ULong):
         return tac_ast.ULong()
+    if isinstance(t, c99_ast.ULongLong):
+        return tac_ast.ULongLong()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
     if isinstance(t, c99_ast.Double):
@@ -307,10 +313,14 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
         return tac_ast.ConstInt(int=c.int)
     if isinstance(c, c99_ast.ConstLong):
         return tac_ast.ConstLong(int=c.int)
+    if isinstance(c, c99_ast.ConstLongLong):
+        return tac_ast.ConstLongLong(int=c.int)
     if isinstance(c, c99_ast.ConstUInt):
         return tac_ast.ConstInt(int=c.int)
     if isinstance(c, c99_ast.ConstULong):
         return tac_ast.ConstLong(int=c.int)
+    if isinstance(c, c99_ast.ConstULongLong):
+        return tac_ast.ConstLongLong(int=c.int)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(float=c.float)
     if isinstance(c, c99_ast.ConstDouble):
@@ -331,6 +341,8 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
         return tac_ast.ConstInt(int=int(value))
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return tac_ast.ConstLong(int=int(value))
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return tac_ast.ConstLongLong(int=int(value))
     if isinstance(t, c99_ast.Float):
         return tac_ast.ConstFloat(float=float(value))
     if isinstance(t, c99_ast.Double):
@@ -370,6 +382,11 @@ def _fold_fp_cast_constant(
         v = c.int & 0xFF if isinstance(source, c99_ast.UInt) else c.int
     elif isinstance(c, tac_ast.ConstLong):
         v = c.int & 0xFFFF if isinstance(source, c99_ast.ULong) else c.int
+    elif isinstance(c, tac_ast.ConstLongLong):
+        v = (
+            c.int & 0xFFFFFFFF
+            if isinstance(source, c99_ast.ULongLong) else c.int
+        )
     else:
         raise TypeError(f"unexpected TAC const: {c!r}")
     return _tac_const_for(target, v)
@@ -409,10 +426,14 @@ def _tac_static_init_for(
         return tac_ast.IntInit(int=int(value))
     if isinstance(t, c99_ast.Long):
         return tac_ast.LongInit(int=int(value))
+    if isinstance(t, c99_ast.LongLong):
+        return tac_ast.LongLongInit(int=int(value))
     if isinstance(t, c99_ast.UInt):
         return tac_ast.UIntInit(int=int(value))
     if isinstance(t, c99_ast.ULong):
         return tac_ast.ULongInit(int=int(value))
+    if isinstance(t, c99_ast.ULongLong):
+        return tac_ast.ULongLongInit(int=int(value))
     if isinstance(t, c99_ast.Float):
         return tac_ast.FloatInit(float=float(value))
     if isinstance(t, c99_ast.Double):
@@ -492,6 +513,10 @@ def _zero_byte_count(item: tac_ast.Type_static_init) -> int | None:
         return 2
     if isinstance(item, tac_ast.ULongInit) and item.int == 0:
         return 2
+    if isinstance(item, tac_ast.LongLongInit) and item.int == 0:
+        return 4
+    if isinstance(item, tac_ast.ULongLongInit) and item.int == 0:
+        return 4
     if isinstance(item, tac_ast.FloatInit) and item.float == 0.0:
         return 4
     if isinstance(item, tac_ast.DoubleInit) and item.float == 0.0:
@@ -544,6 +569,8 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
         return 1
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return 2
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return 4
     if isinstance(t, c99_ast.Float):
         return 4
     if isinstance(t, c99_ast.Double):
@@ -1152,17 +1179,22 @@ class Translator:
                 # patterns aren't compatible with integers (or with
                 # each other across precisions):
                 #   src == target                         → no-op
-                #   integer same width (Int↔UInt, Long↔ULong)
+                #   integer same width (Int↔UInt, Long↔ULong,
+                #                       LongLong↔ULongLong)
                 #                                         → no-op
-                #   integer 1B → 2B, source signed (Int)  → SignExtend
-                #   integer 1B → 2B, source unsigned      → ZeroExtend
-                #   integer 2B → 1B (any signedness)      → Truncate
+                #   integer narrower → wider, signed src  → SignExtend
+                #   integer narrower → wider, unsigned src → ZeroExtend
+                #   integer wider → narrower (any signedness) → Truncate
                 #   integer → Float / Double              → IntToFloat /
                 #                                           IntToDouble
                 #   Float / Double → integer              → FloatToInt /
                 #                                           DoubleToInt
                 #   Float ↔ Double                        → FloatToDouble /
                 #                                           DoubleToFloat
+                # SignExtend / ZeroExtend / Truncate read the source
+                # and destination widths from the symbol table at
+                # tac_to_asm time, so the same TAC nodes cover every
+                # 1B/2B/4B widening or narrowing.
                 # The source type comes from the inner node's
                 # `data_type`, set by the type checker. If it's
                 # None (synthetic AST that bypassed type-checking —
@@ -1229,7 +1261,10 @@ class Translator:
                     # is identical, so the cast carries no codegen.
                     return inner_val
                 if src_w < tgt_w:
-                    if isinstance(source, (c99_ast.Int, c99_ast.Long)):
+                    if isinstance(
+                        source,
+                        (c99_ast.Int, c99_ast.Long, c99_ast.LongLong),
+                    ):
                         instrs.append(tac_ast.SignExtend(
                             src=inner_val, dst=dst,
                         ))

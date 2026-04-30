@@ -821,6 +821,44 @@ class TestEmitProgram(unittest.TestCase):
         with self.assertRaises(ValueError):
             emit_program(prog)
 
+    def test_static_long_long_renders_dc_l(self):
+        # LongLongInit lays down 4 bytes via dasm's `dc.l` directive —
+        # same byte width as Float, but storing a raw integer rather
+        # than an IEEE 754 single.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="g", is_global=True,
+                init=[asm_ast.LongLongInit(int=1234567890)],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "g:\n   DC.L  $499602D2\n",
+        )
+
+    def test_static_long_long_renders_negative_as_twos_complement(self):
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="g", is_global=False,
+                init=[asm_ast.LongLongInit(int=-1)],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "g:\n   DC.L  $FFFFFFFF\n",
+        )
+
+    def test_static_long_long_init_range_check(self):
+        # The 4-byte cell accepts -2^31..2^32-1; out-of-range raises.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="bad", is_global=False,
+                init=[asm_ast.LongLongInit(int=1 << 32)],
+            ),
+        ])
+        with self.assertRaises(ValueError):
+            emit_program(prog)
+
     def test_static_long_array_renders_per_element_dc_w(self):
         # `long a[3] = {1, 2, 3};` — each element is a 2-byte LongInit.
         prog = asm_ast.Program(top_level=[

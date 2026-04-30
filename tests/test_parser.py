@@ -1537,13 +1537,23 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIsInstance(ret.exp.const, c99_ast.ConstLong)
 
     def test_literal_out_of_range_raises(self):
-        # 32768 doesn't fit `int` (≤127) or `long` (≤32767); per
-        # C99 §6.4.4.1 the next type in the unsuffixed-decimal list
-        # is `long long`, which c6502 doesn't model.
+        # 4294967296 = 2^32 — overshoots even `unsigned long long`,
+        # the widest type c6502 models. Per C99 §6.4.4.1 the
+        # corresponding type list (hex/octal unsuffixed) terminates
+        # at `unsigned long long`, so this is unrepresentable.
         from parser import ParserError
         with self.assertRaises(ParserError) as ctx:
-            parse("int main(void) { return 32768; }")
+            parse("int main(void) { return 0x100000000; }")
         self.assertIn("doesn't fit", str(ctx.exception))
+
+    def test_literal_promotes_to_long_long(self):
+        # 32768 doesn't fit `int` (≤127) or `long` (≤32767); per
+        # C99 §6.4.4.1 the next type in the unsuffixed-decimal list
+        # is `long long` (4 bytes for c6502), which DOES fit.
+        ast = parse("int main(void) { return 32768; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertIsInstance(ret.exp.const, c99_ast.ConstLongLong)
+        self.assertEqual(ret.exp.const.int, 32768)
 
     def test_unsigned_suffix_promotes_to_uint(self):
         # `5U` carries a U suffix; per C99 §6.4.4.1 the type list is
@@ -1554,11 +1564,57 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIsInstance(ret.exp.const, c99_ast.ConstUInt)
         self.assertEqual(ret.exp.const.int, 5)
 
-    def test_long_long_rejected(self):
+    def test_long_long_accepted(self):
+        # `long long` resolves to LongLong (4-byte signed in c6502).
+        ast = parse("long long x;")
+        decl = ast.declaration[0].var_decl
+        self.assertEqual(decl.data_type, c99_ast.LongLong())
+
+    def test_unsigned_long_long_accepted(self):
+        ast = parse("unsigned long long x;")
+        decl = ast.declaration[0].var_decl
+        self.assertEqual(decl.data_type, c99_ast.ULongLong())
+
+    def test_ll_suffix_decimal_is_const_long_long(self):
+        ast = parse("int main(void) { return 5LL; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(ret.exp, c99_ast.Constant(
+            const=c99_ast.ConstLongLong(int=5),
+        ))
+
+    def test_ull_suffix_is_const_ulong_long(self):
+        # `0x10ull` carries U+LL; the unsigned-long-long list is
+        # just `unsigned long long`, so this lands there directly.
+        for src in [
+            "int main(void) { return 5ULL; }",
+            "int main(void) { return 5ull; }",
+            "int main(void) { return 5LLU; }",
+        ]:
+            with self.subTest(src=src):
+                ast = parse(src)
+                ret = (
+                    ast.declaration[0].function_decl
+                    .body.block_item[0].statement
+                )
+                self.assertEqual(ret.exp, c99_ast.Constant(
+                    const=c99_ast.ConstULongLong(int=5),
+                ))
+
+    def test_unsuffixed_value_promotes_through_long_long(self):
+        # 1000000 doesn't fit Int (≤127), Long (≤32767); the next
+        # decimal-unsuffixed type is LongLong, which covers up to
+        # 2^31 - 1.
+        ast = parse("int main(void) { return 1000000; }")
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(ret.exp, c99_ast.Constant(
+            const=c99_ast.ConstLongLong(int=1000000),
+        ))
+
+    def test_three_longs_rejected(self):
         from parser import ParserError
         with self.assertRaises(ParserError) as ctx:
-            parse("long long x;")
-        self.assertIn("long long", str(ctx.exception))
+            parse("long long long x;")
+        self.assertIn("more than twice", str(ctx.exception))
 
     def test_cast_to_long(self):
         ast = parse("int main(void) { return (long)5; }")

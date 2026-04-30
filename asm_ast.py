@@ -50,6 +50,11 @@ class LongInit(Type_static_init):
 
 
 @dataclass
+class LongLongInit(Type_static_init):
+    int: int
+
+
+@dataclass
 class FloatInit(Type_static_init):
     float: float
 

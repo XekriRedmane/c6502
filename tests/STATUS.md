@@ -32,8 +32,11 @@ aren't listed: they're skipped at import time, not at harness time.
 ### Integer literal beyond 16-bit Long range
 
 c6502's `long` is 2 bytes (max 65535). The upstream tests assume an
-8-byte `long`, so any literal whose only fitting type would be
-`long long` / `unsigned long long` is rejected at parse time.
+8-byte `long`, so a 32-bit literal that the test then assigns to /
+returns from / arithmetics on a `long` doesn't fit at runtime —
+even though the literal itself now parses as `long long` (c6502's
+`long long` is 4 bytes). The pinning below stays in place because
+the assumed semantics still mismatch even when the literal accepts.
 
 - **chapter\_2:**
   - `valid/bitwise_int_min.c` — uses INT\_MAX (2147483647)

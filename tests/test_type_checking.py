@@ -12,6 +12,7 @@ from passes.type_checking import (
     Int,
     LocalAttr,
     Long,
+    LongLong,
     NoInitializer,
     StaticAttr,
     Symbol,
@@ -19,6 +20,9 @@ from passes.type_checking import (
     Tentative,
     TypeCheckError,
     TypeChecker,
+    UInt,
+    ULong,
+    ULongLong,
     check_program,
 )
 
@@ -687,6 +691,54 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIsInstance(vd.init, c99_ast.Cast)
         self.assertEqual(vd.init.target_type, Long())
         self.assertIsInstance(vd.init.exp, c99_ast.Constant)
+
+    def test_long_long_addition_promotes_to_long_long(self):
+        # Long + LongLong → LongLong (rank 3 wins). The Long operand
+        # is wrapped in an implicit Cast(LongLong).
+        prog, _ = _check(
+            "long long main(void) { long a = (long)1; "
+            "long long b = 2LL; return a + b; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        ret = items[2].statement
+        # Outer cast back to LongLong (return-conversion no-op since
+        # the binary already is LongLong).
+        binary = ret.exp
+        self.assertIsInstance(binary, c99_ast.Binary)
+        self.assertEqual(binary.data_type, LongLong())
+        self.assertIsInstance(binary.left, c99_ast.Cast)
+        self.assertEqual(binary.left.target_type, LongLong())
+        self.assertIsInstance(binary.right, c99_ast.Var)
+        self.assertEqual(binary.right.data_type, LongLong())
+
+    def test_long_plus_unsigned_long_long_promotes_to_unsigned_long_long(self):
+        # Long (signed, rank 2) + ULongLong (unsigned, rank 3): the
+        # unsigned operand has rank ≥ signed, so the unsigned type
+        # wins per C99 §6.3.1.8.
+        prog, _ = _check(
+            "unsigned long long main(void) { long a = (long)1; "
+            "unsigned long long b = 2ULL; return a + b; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        ret = items[2].statement
+        binary = ret.exp
+        self.assertIsInstance(binary, c99_ast.Binary)
+        self.assertEqual(binary.data_type, ULongLong())
+
+    def test_long_long_plus_uint_promotes_to_long_long(self):
+        # LongLong (signed, rank 3) + UInt (unsigned, rank 1): the
+        # signed type has higher rank AND covers the unsigned type's
+        # full range (LongLong is -2^31..2^31-1, UInt is 0..255), so
+        # the signed type wins.
+        prog, _ = _check(
+            "long long main(void) { unsigned int a = 1U; "
+            "long long b = 2LL; return a + b; }"
+        )
+        items = prog.declaration[0].function_decl.body.block_item
+        ret = items[2].statement
+        binary = ret.exp
+        self.assertIsInstance(binary, c99_ast.Binary)
+        self.assertEqual(binary.data_type, LongLong())
 
     def test_int_long_addition_promotes_to_long(self):
         # `int_a + long_b` performs the usual arithmetic

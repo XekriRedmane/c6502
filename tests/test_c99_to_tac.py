@@ -2078,6 +2078,54 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
             statics["g_int"].init, [tac_ast.IntInit(int=3)],
         )
 
+    def test_long_long_static_carries_long_long_init(self):
+        # `long long g = 1234567890LL;` lays down a typed
+        # LongLongInit (signed 4B). ULongLong gets ULongLongInit.
+        tac = self._tac(
+            "long long g = 1234567890LL; "
+            "unsigned long long u = 4000000000ULL; "
+            "int main(void) { return 0; }"
+        )
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertEqual(statics["g"].data_type, tac_ast.LongLong())
+        self.assertEqual(
+            statics["g"].init, [tac_ast.LongLongInit(int=1234567890)],
+        )
+        self.assertEqual(statics["u"].data_type, tac_ast.ULongLong())
+        self.assertEqual(
+            statics["u"].init,
+            [tac_ast.ULongLongInit(int=4000000000)],
+        )
+
+    def test_int_to_long_long_cast_emits_sign_extend(self):
+        # Int → LongLong widening via the same SignExtend node as
+        # Int → Long; tac_to_asm reads the dst width from the
+        # symbol table to fan out per byte.
+        tac = self._tac(
+            "int main(void) { int x = 5; long long y = (long long)x; "
+            "return (int)y; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertIn("SignExtend", kinds)
+        self.assertIn("Truncate", kinds)
+
+    def test_uint_to_unsigned_long_long_cast_emits_zero_extend(self):
+        # Unsigned narrower → unsigned wider goes through ZeroExtend
+        # instead of SignExtend, because the new high bytes are
+        # unconditionally zero.
+        tac = self._tac(
+            "int main(void) { unsigned int x = 5U; "
+            "unsigned long long y = (unsigned long long)x; "
+            "return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertIn("ZeroExtend", kinds)
+
     def test_tentative_long_resolves_to_zero_init(self):
         # `long x;` at file scope is a tentative definition →
         # zero-initialized at end-of-TU. The zero collapses into a

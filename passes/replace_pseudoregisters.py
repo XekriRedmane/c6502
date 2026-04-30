@@ -129,12 +129,12 @@ def _operands_in(instr: asm_ast.Type_instruction):
 
 def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
-    table — Int/UInt → 1, Long/ULong → 2, Float → 4, Double → 8,
-    Pointer → 2 (the 6502's address width), Array → recursive
-    element size × count (so `int a[10]` occupies 10 contiguous
-    frame bytes). A None symbol table or an absent entry both
-    default to 1, which matches the Int-only world unit tests
-    assume."""
+    table — Int/UInt → 1, Long/ULong → 2, LongLong/ULongLong → 4,
+    Float → 4, Double → 8, Pointer → 2 (the 6502's address width),
+    Array → recursive element size × count (so `int a[10]` occupies
+    10 contiguous frame bytes). A None symbol table or an absent
+    entry both default to 1, which matches the Int-only world unit
+    tests assume."""
     if symbols is None:
         return 1
     sym = symbols.get(name)
@@ -147,6 +147,8 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     """Bytes occupied by a value of type `t`. Recursive for Array."""
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return 2
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return 4
     if isinstance(t, c99_ast.Float):
         return 4
     if isinstance(t, c99_ast.Double):
@@ -315,7 +317,8 @@ class Replacer:
                 # Patch arg_bytes / local_bytes from the function's
                 # totals; carry save_a through unchanged — tac_to_asm
                 # set it based on whether the return value is in
-                # registers (Int / Long) or in HARGS (Float / Double).
+                # registers (Int / Long) or in HARGS (LongLong /
+                # Float / Double).
                 return asm_ast.Ret(
                     arg_bytes=arg_bytes, local_bytes=local_bytes,
                     save_a=save_a,

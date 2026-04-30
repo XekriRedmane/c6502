@@ -864,6 +864,246 @@ class TestTranslateEqualityWideTypes(unittest.TestCase):
         self.assertEqual(len(differ_branches), 7)
 
 
+class TestTranslateLongLong(unittest.TestCase):
+    """4-byte (LongLong / ULongLong) lowering. Most arithmetic falls
+    out of the existing size-parameterized loops; this class anchors
+    the 4-byte-specific shapes — multiply/divide/shift dispatch into
+    the 32-bit helpers, and Sign/Zero/Truncate fan out per byte."""
+
+    def _make_translator(self, vtype, dtype=None):
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=vtype(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=vtype(), attrs=LocalAttr())
+        symbols["%dst"] = Symbol(
+            type=(dtype or vtype)(), attrs=LocalAttr(),
+        )
+        return Translator(symbols)
+
+    def test_long_long_add_chains_four_byte_adcs(self):
+        import c99_ast
+        t = self._make_translator(c99_ast.LongLong)
+        out = t.translate_instruction(tac_ast.Binary(
+            op=tac_ast.Add(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        # Exactly one ClearCarry (before the low byte) and four Adds
+        # (one per byte, threading carry).
+        self.assertEqual(
+            sum(1 for i in out if isinstance(i, asm_ast.ClearCarry)), 1,
+        )
+        self.assertEqual(
+            sum(1 for i in out if isinstance(i, asm_ast.Add)), 4,
+        )
+
+    def test_long_long_multiply_dispatches_to_mul32(self):
+        import c99_ast
+        t = self._make_translator(c99_ast.LongLong)
+        out = t.translate_instruction(tac_ast.Binary(
+            op=tac_ast.Multiply(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        calls = [i for i in out if isinstance(i, asm_ast.Call)]
+        self.assertEqual([c.name for c in calls], ["mul32"])
+
+    def test_unsigned_long_long_divide_dispatches_to_divmod32(self):
+        import c99_ast
+        t = self._make_translator(c99_ast.ULongLong)
+        out = t.translate_instruction(tac_ast.Binary(
+            op=tac_ast.Divide(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        calls = [i for i in out if isinstance(i, asm_ast.Call)]
+        self.assertEqual([c.name for c in calls], ["divmod32"])
+
+    def test_long_long_left_shift_dispatches_to_asl32(self):
+        import c99_ast
+        t = self._make_translator(c99_ast.LongLong)
+        out = t.translate_instruction(tac_ast.Binary(
+            op=tac_ast.LeftShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        calls = [i for i in out if isinstance(i, asm_ast.Call)]
+        self.assertEqual([c.name for c in calls], ["asl32"])
+
+    def test_long_long_equality_walks_four_bytes(self):
+        # _translate_equality already generalizes: walks bytes from
+        # high to low, BNE-short-circuiting on each except the last.
+        import c99_ast
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=c99_ast.LongLong(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=c99_ast.LongLong(), attrs=LocalAttr())
+        symbols["%dst"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.Equal(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        compares = [i for i in out if isinstance(i, asm_ast.Compare)]
+        offsets = [c.right.offset for c in compares]
+        self.assertEqual(offsets, [3, 2, 1, 0])
+
+    def test_long_long_signed_less_than_chains_four_sbcs(self):
+        import c99_ast
+        t = self._make_translator(c99_ast.LongLong, c99_ast.Int)
+        out = t.translate_instruction(tac_ast.Binary(
+            op=tac_ast.LessThan(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Var(name="%1"),
+            dst=tac_ast.Var(name="%dst"),
+        ))
+        # Four SBC (Sub) instructions threading carry across bytes.
+        subs = [i for i in out if isinstance(i, asm_ast.Sub)]
+        self.assertEqual(len(subs), 4)
+
+    def test_zero_extend_int_to_long_long_writes_three_zero_high_bytes(self):
+        import c99_ast
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["@0.x"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        symbols["%0"] = Symbol(
+            type=c99_ast.ULongLong(), attrs=LocalAttr(),
+        )
+        out = Translator(symbols).translate_instruction(
+            tac_ast.ZeroExtend(
+                src=tac_ast.Var(name="@0.x"),
+                dst=tac_ast.Var(name="%0"),
+            )
+        )
+        # Three trailing STAs to dst[1], dst[2], dst[3] from A
+        # (which holds the zero immediate).
+        tail = [
+            asm_ast.Mov(
+                src=asm_ast.Reg(reg=asm_ast.A()),
+                dst=asm_ast.Pseudo(name="%0", offset=k),
+            )
+            for k in range(1, 4)
+        ]
+        self.assertEqual(out[-3:], tail)
+
+    def test_long_long_return_writes_to_hargs_8_through_11(self):
+        # Callee-side: the LongLong (4B) return convention reuses
+        # the Float slot HARGS+8..11. Ret(save_a=False) skips the
+        # epilogue's PHA/PLA pair.
+        import c99_ast
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(
+            type=c99_ast.LongLong(), attrs=LocalAttr(),
+        )
+        out = Translator(symbols).translate_instruction(
+            tac_ast.Ret(val=tac_ast.Var(name="%0"))
+        )
+        # 4 byte-pairs (LDA, STA HARGS+k) plus the Ret.
+        hargs_writes = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "HARGS"
+        ]
+        offsets = [w.dst.offset for w in hargs_writes]
+        self.assertEqual(offsets, [8, 9, 10, 11])
+        ret = [i for i in out if isinstance(i, asm_ast.Ret)]
+        self.assertEqual(len(ret), 1)
+        self.assertFalse(ret[0].save_a)
+
+    def test_function_call_captures_long_long_return_from_hargs_8_through_11(self):
+        # Caller-side: read the 4-byte LongLong return from
+        # HARGS+8..11, byte-by-byte through A. Same code path as
+        # Float return — we just check the destination type-driven
+        # size and offset.
+        import c99_ast
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%dst"] = Symbol(
+            type=c99_ast.LongLong(), attrs=LocalAttr(),
+        )
+        out = Translator(symbols).translate_instruction(
+            tac_ast.FunctionCall(
+                name="ret_ll", args=[],
+                dst=tac_ast.Var(name="%dst"),
+            )
+        )
+        hargs_reads = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.src, asm_ast.Data)
+            and i.src.name == "HARGS"
+        ]
+        offsets = [r.src.offset for r in hargs_reads]
+        self.assertEqual(offsets, [8, 9, 10, 11])
+
+    def test_int_to_long_long_uses_ll2f_helper_when_target_is_float(self):
+        # IntToFloat with LongLong source dispatches to ll2f.
+        import c99_ast
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%src"] = Symbol(
+            type=c99_ast.LongLong(), attrs=LocalAttr(),
+        )
+        symbols["%dst"] = Symbol(
+            type=c99_ast.Float(), attrs=LocalAttr(),
+        )
+        out = Translator(symbols).translate_instruction(
+            tac_ast.IntToFloat(
+                src=tac_ast.Var(name="%src"),
+                dst=tac_ast.Var(name="%dst"),
+            )
+        )
+        calls = [i for i in out if isinstance(i, asm_ast.Call)]
+        self.assertEqual([c.name for c in calls], ["ll2f"])
+
+    def test_unsigned_to_double_uses_ull2d_helper(self):
+        import c99_ast
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        symbols = SymbolTable()
+        symbols["%src"] = Symbol(
+            type=c99_ast.ULongLong(), attrs=LocalAttr(),
+        )
+        symbols["%dst"] = Symbol(
+            type=c99_ast.Double(), attrs=LocalAttr(),
+        )
+        out = Translator(symbols).translate_instruction(
+            tac_ast.IntToDouble(
+                src=tac_ast.Var(name="%src"),
+                dst=tac_ast.Var(name="%dst"),
+            )
+        )
+        calls = [i for i in out if isinstance(i, asm_ast.Call)]
+        self.assertEqual([c.name for c in calls], ["ull2d"])
+
+
 class TestTranslatePointerOrdering(unittest.TestCase):
     """Ordering ops on Pointer-typed operands dispatch to the
     unsigned-ordering lowering: per-byte SBC with carry threading,
@@ -1169,10 +1409,21 @@ class TestSignExtendAndTruncate(unittest.TestCase):
     byte is the low byte)."""
 
     def test_sign_extend_lowers_to_inline_byte_sequence(self):
-        out = translate_instruction(tac_ast.SignExtend(
-            src=tac_ast.Var(name="@0.x"),
-            dst=tac_ast.Var(name="%0"),
-        ))
+        # Int (1B) → Long (2B) widening — the symbol table tells the
+        # Translator how wide the source and destination operands
+        # are, which drives the byte-fan-out.
+        from tac_to_asm import Translator
+        from passes.type_checking import LocalAttr, Symbol, SymbolTable
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["@0.x"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        symbols["%0"] = Symbol(type=c99_ast.Long(), attrs=LocalAttr())
+        out = Translator(symbols=symbols).translate_instruction(
+            tac_ast.SignExtend(
+                src=tac_ast.Var(name="@0.x"),
+                dst=tac_ast.Var(name="%0"),
+            )
+        )
         self.assertEqual(out, [
             asm_ast.Mov(
                 src=asm_ast.Pseudo(name="@0.x", offset=0),
@@ -1200,6 +1451,35 @@ class TestSignExtendAndTruncate(unittest.TestCase):
             ),
         ])
 
+    def test_sign_extend_int_to_long_long(self):
+        # Int (1B) → LongLong (4B) widening: copy the low byte, then
+        # branch on the source's sign and write that fill byte
+        # (`$00` or `$FF`) into all three of the dst's higher bytes.
+        from tac_to_asm import Translator
+        from passes.type_checking import LocalAttr, Symbol, SymbolTable
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["@0.x"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        symbols["%0"] = Symbol(
+            type=c99_ast.LongLong(), attrs=LocalAttr(),
+        )
+        out = Translator(symbols=symbols).translate_instruction(
+            tac_ast.SignExtend(
+                src=tac_ast.Var(name="@0.x"),
+                dst=tac_ast.Var(name="%0"),
+            )
+        )
+        # Three trailing STAs to dst[1], dst[2], dst[3] after the
+        # 0/$FF dispatch.
+        tail_writes = [
+            asm_ast.Mov(
+                src=asm_ast.Reg(reg=asm_ast.A()),
+                dst=asm_ast.Pseudo(name="%0", offset=k),
+            )
+            for k in range(1, 4)
+        ]
+        self.assertEqual(out[-3:], tail_writes)
+
     def test_truncate_lowers_to_byte_mov(self):
         # Memory layout is little-endian, so the source's address
         # already points at the low byte — a single byte Mov
@@ -1212,6 +1492,34 @@ class TestSignExtendAndTruncate(unittest.TestCase):
             src=asm_ast.Pseudo(name="@0.x", offset=0),
             dst=asm_ast.Pseudo(name="%0", offset=0),
         )])
+
+    def test_truncate_long_long_to_long_copies_two_bytes(self):
+        # LongLong (4B) → Long (2B) truncation copies the two low
+        # bytes and discards the source's two high bytes.
+        from tac_to_asm import Translator
+        from passes.type_checking import LocalAttr, Symbol, SymbolTable
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["@0.x"] = Symbol(
+            type=c99_ast.LongLong(), attrs=LocalAttr(),
+        )
+        symbols["%0"] = Symbol(type=c99_ast.Long(), attrs=LocalAttr())
+        out = Translator(symbols=symbols).translate_instruction(
+            tac_ast.Truncate(
+                src=tac_ast.Var(name="@0.x"),
+                dst=tac_ast.Var(name="%0"),
+            )
+        )
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="@0.x", offset=0),
+                dst=asm_ast.Pseudo(name="%0", offset=0),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="@0.x", offset=1),
+                dst=asm_ast.Pseudo(name="%0", offset=1),
+            ),
+        ])
 
 
 class TestStaticVariableTranslation(unittest.TestCase):
@@ -1250,6 +1558,41 @@ class TestStaticVariableTranslation(unittest.TestCase):
             asm_ast.StaticVariable(
                 name="g", is_global=False,
                 init=[asm_ast.LongInit(int=200)],
+            ),
+        ])
+
+    def test_long_long_init_passes_through(self):
+        # LongLongInit (signed 4B) rewraps 1-to-1.
+        prog = tac_ast.Program(top_level=[
+            tac_ast.StaticVariable(
+                name="g", is_global=True,
+                data_type=tac_ast.LongLong(),
+                init=[tac_ast.LongLongInit(int=1234567890)],
+            ),
+        ])
+        out = translate_program(prog)
+        self.assertEqual(out.top_level, [
+            asm_ast.StaticVariable(
+                name="g", is_global=True,
+                init=[asm_ast.LongLongInit(int=1234567890)],
+            ),
+        ])
+
+    def test_ulong_long_init_collapses_to_long_long_init(self):
+        # ULongLongInit collapses to LongLongInit on the asm side,
+        # mirroring UIntInit → IntInit and ULongInit → LongInit.
+        prog = tac_ast.Program(top_level=[
+            tac_ast.StaticVariable(
+                name="g", is_global=False,
+                data_type=tac_ast.ULongLong(),
+                init=[tac_ast.ULongLongInit(int=4000000000)],
+            ),
+        ])
+        out = translate_program(prog)
+        self.assertEqual(out.top_level, [
+            asm_ast.StaticVariable(
+                name="g", is_global=False,
+                init=[asm_ast.LongLongInit(int=4000000000)],
             ),
         ])
 

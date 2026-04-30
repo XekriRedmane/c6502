@@ -52,13 +52,14 @@ module TAC {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
-    data_type = Int | Long | UInt | ULong | Float | Double
+    data_type = Int | Long | LongLong | UInt | ULong | ULongLong
+              | Float | Double
               | FunType(data_type* params, data_type ret)
     -- TAC `const` collapses integer signedness onto width (the 6502
-    -- has no signedness at the byte level), but FP variants stay
-    -- distinct because Float and Double have different IEEE 754 bit
-    -- patterns.
-    const = ConstInt(int) | ConstLong(int)
+    -- has no signedness at the byte level): ConstInt = 1B, ConstLong
+    -- = 2B, ConstLongLong = 4B. FP variants stay distinct because
+    -- Float and Double have different IEEE 754 bit patterns.
+    const = ConstInt(int) | ConstLong(int) | ConstLongLong(int)
           | ConstFloat(float) | ConstDouble(float)
     -- AddressInit lays down a 2-byte word that resolves at link
     -- time to the address `name + offset`. Only used for Pointer-
@@ -81,7 +82,8 @@ module TAC {
     -- statics (§6.7.8.10) into a single instruction. Adjacent
     -- zero-valued typed inits are also coalesced into a single
     -- ZeroInit during c99_to_tac flattening.
-    static_init = IntInit(int) | LongInit(int) | UIntInit(int) | ULongInit(int)
+    static_init = IntInit(int) | LongInit(int) | LongLongInit(int)
+                | UIntInit(int) | ULongInit(int) | ULongLongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)
                 | ZeroInit(int bytes)

@@ -5,15 +5,16 @@ exactly one instruction (with the documented exceptions of `Ret`,
 `FunctionPrologue`, and `AllocateStack`). The 6502 is an 8-bit
 machine, so the IR has no width tagging: every operand is one byte.
 
-`tac_to_asm` is therefore the home of all 16-bit lowering. For each
-TAC instruction whose operands are `Long` (per the symbol table),
-the translator emits a sequence of byte-level asm atoms — typically
-two passes (low byte, high byte) with the 6502's carry flag
+`tac_to_asm` is therefore the home of all multi-byte lowering. For
+each TAC instruction whose operands are wider than 1 byte (Long /
+ULong = 2, LongLong / ULongLong = 4, Float = 4, Double = 8 — per
+the symbol table), the translator emits a sequence of byte-level
+asm atoms — typically one pass per byte with the 6502's carry flag
 threading naturally between them for arithmetic. Multi-byte
 operands are addressed via the `offset` field on `Pseudo` / `Stack`
 / `Frame` / `Data`: `Pseudo(name, offset=0)` is the low byte of
-`name`, `Pseudo(name, offset=1)` the high byte; `Imm`
-constants split into their low/high two's-complement bytes.
+`name`, `Pseudo(name, offset=k)` the (k+1)-th byte; `Imm`
+constants split into their bytes via shift-and-mask.
 
 The Translator class holds a label counter so inline lowerings
 (comparisons, `!`, sign-extension) get unique labels across the
@@ -27,67 +28,73 @@ Mapping highlights (full per-op detail in `translate_binary` /
   Function(name, …)         -> Function(name, …, flat-mapped instrs)
   StaticVariable(name, …)   -> StaticVariable(name, …, init-rewrapped)
   Ret(val)                  -> stage `val` in A (and X for the high
-                               byte of a Long return), then Ret.
-  Copy(src, dst)            -> 1× Mov for Int; 2× Mov (lo, hi) for Long.
-  SignExtend(src, dst)      -> Mov(src, A); Mov(A, dst.lo); Branch(MI,
-                               sx_neg@N); LDA #$00; Jump(sx_done@N);
-                               Label(sx_neg@N); LDA #$FF; Label(sx_done@N);
-                               Mov(A, dst.hi). The framing LDA sets N
-                               based on the source byte's sign; STA
-                               preserves flags so BMI sees the right N.
-  Truncate(src, dst)        -> Mov(src.lo, dst). Memory is little-
-                               endian so the source's offset-0 byte is
-                               the low byte; the high byte is just
-                               discarded.
+                               byte of a Long return), or in HARGS
+                               for wider returns; then Ret.
+  Copy(src, dst)            -> N× Mov per byte for an N-byte type.
+  SignExtend(src, dst)      -> Copy each source byte to the matching
+                               dst byte; the last LDA's N flag is the
+                               sign byte's. BMI dispatches a write of
+                               $00 / $FF into each remaining (high)
+                               dst byte.
+  ZeroExtend(src, dst)      -> Copy each source byte to the matching
+                               dst byte; LDA #$00; STA into each
+                               remaining (high) dst byte.
+  Truncate(src, dst)        -> Copy `_size_of(dst)` low bytes of src
+                               into dst. Memory is little-endian so
+                               offset 0 is the low byte; the source's
+                               high bytes are just discarded.
   Unary(op, src, dst)       -> Mov src→A, atomic op on A, Mov A→dst
-                               (Int). For Long operands the negate /
-                               complement / logical-not lowerings are
-                               byte-pair templates (see translate_unop).
+                               (Int). For multi-byte operands the
+                               negate / complement / logical-not
+                               lowerings fan out per byte (see
+                               translate_unop).
   Binary(Add, …)            -> Int: Mov src1→A; CLC; Add(src2, A);
-                               Mov A→dst.
-                               Long: same pattern, twice in succession,
-                               with no CLC between the low and high
-                               adds — the carry from the low ADC
-                               threads into the high ADC. (LDA only
+                               Mov A→dst. Multi-byte: same pattern,
+                               once per byte, with no CLC after the
+                               low byte — the carry from each ADC
+                               threads into the next. (LDA only
                                affects N/Z, not C.)
   Binary(Subtract, …)       -> Same shape with SetCarry/Sub. The borrow
                                (in 6502 terms, an inverted-carry) also
-                               threads through the high SBC.
+                               threads through each successive SBC.
   Binary(BitwiseAnd/Or/Xor) -> Byte op on each pair of bytes; no carry
                                threading needed (these don't touch C).
   Binary(Equal/NotEqual)    -> Int: Compare + Branch + 0/1 select.
-                               Long: high CMP first; if differ, short-
-                               circuit to a label that will see Z=0;
-                               else fall through to low CMP (whose Z
-                               is the final answer). 0/1 select after.
+                               Multi-byte: walk bytes high→low, BNE
+                               short-circuit on each except the
+                               lowest; the final low-byte CMP's Z is
+                               the answer. 0/1 select after.
   Binary(LessThan/GE/GT/LE) -> Int: SBC with V-correction + Branch.
-                               Long: low SBC then high SBC (carry
-                               threads), V-correction on the high
-                               result, branch on MI/PL. Same operand-
-                               swap trick used for `>` / `<=`.
+                               Multi-byte: chained SBCs (carry threads
+                               low→high), V-correction on the final
+                               high-byte result, branch on MI/PL. Same
+                               operand-swap trick used for `>` / `<=`.
   Binary(Multiply/Divide/   -> Runtime helper Calls. Operands and
     Modulo/LeftShift/         results are exchanged through the
     RightShift)               shared zero-page slot block `HARGS`
-                               (24 bytes); 8-bit operands dispatch
-                               to mul8/divmod8/asl8/asr8, 16-bit
-                               operands to mul16/divmod16/asl16/
-                               asr16. Caller writes inputs into
-                               HARGS+0..N-1, JSRs, reads the result
-                               from a fixed offset later in the
-                               block (see the constants section
-                               for each helper's layout).
+                               (24 bytes). Width-driven helper choice:
+                               8-bit operands dispatch to
+                               mul8/divmod8/asl8/asr8; 16-bit to
+                               mul16/divmod16/asl16/asr16; 32-bit to
+                               mul32/divmod32/asl32/asr32. Caller
+                               writes inputs into HARGS+0..N-1, JSRs,
+                               reads the result from a fixed offset
+                               later in the block (see the constants
+                               section for each helper's layout).
   FunctionCall(name, args,  -> AllocateStack(total_arg_bytes); write
               dst)             each arg's bytes into Stack(off..off+
-                               size-1) in source order; Call name; copy
-                               return value out of A (and X for Long).
+                               size-1) in source order; Call name;
+                               copy return value out (per the
+                               return-value convention below).
   Jump/Label                -> atom-for-atom.
   JumpIfTrue/JumpIfFalse    -> Int: Mov(cond, A); Branch(NE/EQ).
-                               Long: Mov(cond.lo, A); Or(cond.hi, A);
+                               Multi-byte: Mov(cond[0], A); chain
+                               Or(cond[k], A) for k=1..size-1;
                                Branch(NE/EQ). The OR sets Z=1 iff
-                               *both* bytes are zero, which is the
-                               16-bit "is zero" test.
+                               every byte is zero, which is the
+                               whole-value "is zero" test.
   Constant(c)               -> Imm(c.int) (1-byte values direct; for
-                               Long values, callers extract bytes
+                               wider values, callers extract bytes
                                via `_byte_at`).
   Var(name)                 -> Pseudo(name, offset=0). Subsequent
                                `_byte_at(_, k)` calls bump offset to
@@ -98,10 +105,10 @@ Calling convention (callee-side, see also `replace_pseudoregisters`):
     at the lower offset for multi-byte args).
   - Return value rides in registers when small enough to fit, in the
     HARGS zero-page block when not:
-      Int (1B)    → A.
-      Long (2B)   → A = low byte, X = high byte.
-      Float (4B)  → HARGS+8..11.
-      Double (8B) → HARGS+16..23.
+      Int (1B)              → A.
+      Long (2B)             → A = low byte, X = high byte.
+      LongLong / Float (4B) → HARGS+8..11.
+      Double (8B)           → HARGS+16..23.
     The FP slots are deliberately the same as the FP arithmetic
     helpers' output slots, so a function ending in `return a+b;` for
     FP operands needs no epilogue copy. FP returns also skip the
@@ -167,18 +174,26 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 #   u2f      (unsigned 1B → float):   in HARGS+0;     out HARGS+1..4
 #   l2f      (signed 2B → float):     in HARGS+0..1;  out HARGS+2..5
 #   ul2f     (unsigned 2B → float):   in HARGS+0..1;  out HARGS+2..5
+#   ll2f     (signed 4B → float):     in HARGS+0..3;  out HARGS+4..7
+#   ull2f    (unsigned 4B → float):   in HARGS+0..3;  out HARGS+4..7
 #   i2d      (signed 1B → double):    in HARGS+0;     out HARGS+1..8
 #   u2d      (unsigned 1B → double):  in HARGS+0;     out HARGS+1..8
 #   l2d      (signed 2B → double):    in HARGS+0..1;  out HARGS+2..9
 #   ul2d     (unsigned 2B → double):  in HARGS+0..1;  out HARGS+2..9
+#   ll2d     (signed 4B → double):    in HARGS+0..3;  out HARGS+4..11
+#   ull2d    (unsigned 4B → double):  in HARGS+0..3;  out HARGS+4..11
 #   f2i      (float → signed 1B):     in HARGS+0..3;  out HARGS+4
 #   f2u      (float → unsigned 1B):   in HARGS+0..3;  out HARGS+4
 #   f2l      (float → signed 2B):     in HARGS+0..3;  out HARGS+4..5
 #   f2ul     (float → unsigned 2B):   in HARGS+0..3;  out HARGS+4..5
+#   f2ll     (float → signed 4B):     in HARGS+0..3;  out HARGS+4..7
+#   f2ull    (float → unsigned 4B):   in HARGS+0..3;  out HARGS+4..7
 #   d2i      (double → signed 1B):    in HARGS+0..7;  out HARGS+8
 #   d2u      (double → unsigned 1B):  in HARGS+0..7;  out HARGS+8
 #   d2l      (double → signed 2B):    in HARGS+0..7;  out HARGS+8..9
 #   d2ul     (double → unsigned 2B):  in HARGS+0..7;  out HARGS+8..9
+#   d2ll     (double → signed 4B):    in HARGS+0..7;  out HARGS+8..11
+#   d2ull    (double → unsigned 4B):  in HARGS+0..7;  out HARGS+8..11
 #   f2d      (float → double):        in HARGS+0..3;  out HARGS+4..11
 #   d2f      (double → float):        in HARGS+0..7;  out HARGS+8..11
 _HARGS = "HARGS"
@@ -207,32 +222,54 @@ _MUL16 = "mul16"
 _DIVMOD16 = "divmod16"
 _ASL16 = "asl16"
 _ASR16 = "asr16"
+# 32-bit integer helpers. Same "output slots immediately after
+# inputs" convention as the 8/16-bit forms:
+#   mul32    in:  A=HARGS+0..3, B=HARGS+4..7
+#                                       out: result=HARGS+8..15 (64-bit)
+#   divmod32 in:  num=HARGS+0..3, den=HARGS+4..7
+#                                       out: quot=HARGS+8..11,
+#                                            rem=HARGS+12..15
+#   asl32    in:  val=HARGS+0..3, count=HARGS+4 (1 byte)
+#                                       out: result=HARGS+5..8
+#   asr32    same shape as asl32 (signed arithmetic right shift)
+_MUL32 = "mul32"
+_DIVMOD32 = "divmod32"
+_ASL32 = "asl32"
+_ASR32 = "asr32"
 # Conversion helpers, keyed by (source-c99-type, target-c99-type) at
 # the dispatch site. Signedness rides on the c99 type so we can pick
 # i2f / u2f apart even though TAC's integer constants don't carry it.
 _INT_TO_FLOAT = {
-    c99_ast.Int: "i2f",
-    c99_ast.UInt: "u2f",
-    c99_ast.Long: "l2f",
-    c99_ast.ULong: "ul2f",
+    c99_ast.Int:       "i2f",
+    c99_ast.UInt:      "u2f",
+    c99_ast.Long:      "l2f",
+    c99_ast.ULong:     "ul2f",
+    c99_ast.LongLong:  "ll2f",
+    c99_ast.ULongLong: "ull2f",
 }
 _INT_TO_DOUBLE = {
-    c99_ast.Int: "i2d",
-    c99_ast.UInt: "u2d",
-    c99_ast.Long: "l2d",
-    c99_ast.ULong: "ul2d",
+    c99_ast.Int:       "i2d",
+    c99_ast.UInt:      "u2d",
+    c99_ast.Long:      "l2d",
+    c99_ast.ULong:     "ul2d",
+    c99_ast.LongLong:  "ll2d",
+    c99_ast.ULongLong: "ull2d",
 }
 _FLOAT_TO_INT = {
-    c99_ast.Int: "f2i",
-    c99_ast.UInt: "f2u",
-    c99_ast.Long: "f2l",
-    c99_ast.ULong: "f2ul",
+    c99_ast.Int:       "f2i",
+    c99_ast.UInt:      "f2u",
+    c99_ast.Long:      "f2l",
+    c99_ast.ULong:     "f2ul",
+    c99_ast.LongLong:  "f2ll",
+    c99_ast.ULongLong: "f2ull",
 }
 _DOUBLE_TO_INT = {
-    c99_ast.Int: "d2i",
-    c99_ast.UInt: "d2u",
-    c99_ast.Long: "d2l",
-    c99_ast.ULong: "d2ul",
+    c99_ast.Int:       "d2i",
+    c99_ast.UInt:      "d2u",
+    c99_ast.Long:      "d2l",
+    c99_ast.ULong:     "d2ul",
+    c99_ast.LongLong:  "d2ll",
+    c99_ast.ULongLong: "d2ull",
 }
 _FLOAT_TO_DOUBLE = "f2d"
 _DOUBLE_TO_FLOAT = "d2f"
@@ -242,24 +279,30 @@ def _to_asm_static_init(
     init: tac_ast.Type_static_init,
 ) -> asm_ast.Type_static_init:
     """Translate a TAC static_init to its asm counterpart. The asm
-    integer side carries only the two width variants (`IntInit` /
-    `LongInit`), so unsigned variants from TAC collapse onto the
-    matching width: UIntInit → IntInit, ULongInit → LongInit. The
+    integer side carries only the three width variants (`IntInit` /
+    `LongInit` / `LongLongInit`), so unsigned variants from TAC
+    collapse onto the matching width: UIntInit → IntInit,
+    ULongInit → LongInit, ULongLongInit → LongLongInit. The
     integer value passes through unchanged; asm_emit's `_check_byte`
-    (0..255) and `_check_word` (-32768..65535) bound the rendered
-    cell. The FP side keeps Float / Double distinct because their
-    IEEE 754 byte layouts differ — FloatInit is 4 bytes (single),
-    DoubleInit is 8 bytes (double); the float value rides through
-    1-to-1 and asm_emit packs it via `struct.pack` at emit time."""
+    (0..255), `_check_word` (-32768..65535), and `_check_dword`
+    (-2^31..2^32-1) bound the rendered cell. The FP side keeps
+    Float / Double distinct because their IEEE 754 byte layouts
+    differ — FloatInit is 4 bytes (single), DoubleInit is 8 bytes
+    (double); the float value rides through 1-to-1 and asm_emit
+    packs it via `struct.pack` at emit time."""
     match init:
         case tac_ast.IntInit(int=v):
             return asm_ast.IntInit(int=v)
         case tac_ast.LongInit(int=v):
             return asm_ast.LongInit(int=v)
+        case tac_ast.LongLongInit(int=v):
+            return asm_ast.LongLongInit(int=v)
         case tac_ast.UIntInit(int=v):
             return asm_ast.IntInit(int=v)
         case tac_ast.ULongInit(int=v):
             return asm_ast.LongInit(int=v)
+        case tac_ast.ULongLongInit(int=v):
+            return asm_ast.LongLongInit(int=v)
         case tac_ast.FloatInit(float=v):
             return asm_ast.FloatInit(float=v)
         case tac_ast.DoubleInit(float=v):
@@ -326,13 +369,16 @@ class Translator:
 
     def _size_of(self, val: tac_ast.Type_val) -> int:
         """Byte width of a TAC val. Integer types: 1 for Int / UInt,
-        2 for Long / ULong. Floating types: 4 for Float, 8 for
-        Double. Pointer: 2 (the 6502's address width). Constants
-        dispatch on the const variant; Vars look up the symbol-table
-        c99 type. Unknown Vars (synthetic test AST) default to 1."""
+        2 for Long / ULong, 4 for LongLong / ULongLong. Floating
+        types: 4 for Float, 8 for Double. Pointer: 2 (the 6502's
+        address width). Constants dispatch on the const variant;
+        Vars look up the symbol-table c99 type. Unknown Vars
+        (synthetic test AST) default to 1."""
         match val:
             case tac_ast.Constant(const=tac_ast.ConstLong()):
                 return 2
+            case tac_ast.Constant(const=tac_ast.ConstLongLong()):
+                return 4
             case tac_ast.Constant(const=tac_ast.ConstInt()):
                 return 1
             case tac_ast.Constant(const=tac_ast.ConstFloat()):
@@ -351,6 +397,10 @@ class Translator:
                     (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer),
                 ):
                     return 2
+                if isinstance(
+                    sym.type, (c99_ast.LongLong, c99_ast.ULongLong),
+                ):
+                    return 4
                 if isinstance(sym.type, c99_ast.Float):
                     return 4
                 if isinstance(sym.type, c99_ast.Double):
@@ -434,13 +484,20 @@ class Translator:
             case tac_ast.ZeroExtend(src=src, dst=dst):
                 return self._translate_zero_extend(src, dst)
             case tac_ast.Truncate(src=src, dst=dst):
-                # The k-th byte of a 2-byte memory layout is at
-                # base+k (little-endian), so the source's offset-0
-                # byte is the low byte. A Long → Int narrowing just
-                # moves that low byte and discards the high.
+                # Memory is little-endian, so byte k of a multi-byte
+                # value sits at offset+k. A wider→narrower truncation
+                # copies the dst-width worth of low bytes from src and
+                # discards the source's higher bytes.
                 src_op = translate_val(src)
                 dst_op = translate_val(dst)
-                return [asm_ast.Mov(src=_byte_at(src_op, 0), dst=dst_op)]
+                tgt_w = self._size_of(dst)
+                return [
+                    asm_ast.Mov(
+                        src=_byte_at(src_op, k),
+                        dst=_byte_at(dst_op, k),
+                    )
+                    for k in range(tgt_w)
+                ]
             case tac_ast.IntToFloat(src=src, dst=dst):
                 return self._translate_int_to_fp(src, dst, target_double=False)
             case tac_ast.IntToDouble(src=src, dst=dst):
@@ -504,22 +561,26 @@ class Translator:
         self, val: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
         """Stage the return value, then Ret. Convention by width:
-          Int (1B)    → A.
-          Long (2B)   → A = low byte, X = high byte.
-          Float (4B)  → HARGS+8..11.
-          Double (8B) → HARGS+16..23.
-        Integer returns ride in registers because the epilogue's
-        PHA/PLA can preserve A across the SSP/FP arithmetic cheaply
-        (and X isn't touched by that arithmetic). FP returns ride
-        through HARGS at the same offsets the FP arithmetic helpers
-        write to (`fadd` / `fsub` / `fmul` / `fdiv` → HARGS+8..11;
-        `dadd` / `dsub` / `dmul` / `ddiv` → HARGS+16..23), so a
-        function whose body ends in `return a OP b;` for FP operands
-        leaves the result in the right slot already — no epilogue
-        copy. The `save_a=False` Ret skips the PHA/PLA pair the
-        integer path uses; HARGS isn't touched by SSP/FP arithmetic.
-        arg_bytes/local_bytes are placeholders patched by
-        replace_pseudoregisters."""
+          Int (1B)              → A.
+          Long (2B)             → A = low byte, X = high byte.
+          LongLong / Float (4B) → HARGS+8..11.
+          Double (8B)           → HARGS+16..23.
+        1- and 2-byte integer returns ride in registers because the
+        epilogue's PHA/PLA can preserve A across the SSP/FP
+        arithmetic cheaply (and X isn't touched by that arithmetic).
+        Wider returns ride through HARGS — for FP these are the
+        same offsets the arithmetic helpers write to (`fadd` /
+        `fsub` / `fmul` / `fdiv` → HARGS+8..11; `dadd` / `dsub` /
+        `dmul` / `ddiv` → HARGS+16..23), so `return a OP b;` for FP
+        operands leaves the result in the right slot already — no
+        epilogue copy. LongLong (4B integer) reuses the Float
+        return slot HARGS+8..11; types are exclusive per call so
+        the overlap is fine, and `mul32` / `divmod32` write to that
+        same offset for the same no-copy-when-possible reason. The
+        `save_a=False` Ret skips the PHA/PLA pair the
+        register-path uses; HARGS isn't touched by SSP/FP
+        arithmetic. arg_bytes/local_bytes are placeholders patched
+        by replace_pseudoregisters."""
         src_op = translate_val(val)
         size = self._size_of(val)
         if size == 1:
@@ -537,9 +598,9 @@ class Translator:
                 asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             ]
-        # Float / Double: write the src bytes into HARGS at the
-        # precision-matching helper-output offset, then Ret with
-        # save_a=False.
+        # LongLong / Float (4B) → HARGS+8..11; Double (8B) →
+        # HARGS+16..23. Write the src bytes into HARGS, then Ret
+        # with save_a=False.
         out_off = 8 if size == 4 else 16
         seq: list[asm_ast.Type_instruction] = []
         for k in range(size):
@@ -565,44 +626,63 @@ class Translator:
     def _translate_sign_extend(
         self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
-        """Int → Long sign-extension. Load the source byte (sets N
-        based on its sign), store it into the low byte of dst (STA
-        preserves flags), then branch on the original N flag to
-        write 0x00 / 0xFF to the high byte. Two minted labels per
-        use; the Translator's counter keeps them globally unique."""
+        """Signed narrower→wider widening (Int → Long, Int → LongLong,
+        Long → LongLong, etc.). Copy each source byte into the
+        matching dst byte, then dispatch on the source's high-byte
+        sign to write $00 (positive) or $FF (negative) to each of
+        dst's remaining (high) bytes. The last LDA in the byte-copy
+        loop is of the source's high byte, which sets N from its
+        sign; the intervening STAs preserve flags so the BMI below
+        sees the right N. Two minted labels per use; the Translator's
+        counter keeps them globally unique."""
         src_op = translate_val(src)
         dst_op = translate_val(dst)
+        src_w = self._size_of(src)
+        tgt_w = self._size_of(dst)
         neg_label = self.make_label("sx_neg")
         end_label = self.make_label("sx_done")
-        return [
-            asm_ast.Mov(src=src_op, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+        out: list[asm_ast.Type_instruction] = []
+        for k in range(src_w):
+            out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        out.extend([
             asm_ast.Branch(cond=asm_ast.MI(), target=neg_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
             asm_ast.Jump(target=end_label),
             asm_ast.Label(name=neg_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
-        ]
+        ])
+        for k in range(src_w, tgt_w):
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return out
 
     def _translate_zero_extend(
         self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
-        """UInt → ULong (or UInt → Long) zero-extension. Copy the
-        source byte into the dst's low byte, then write a literal 0
-        into the high byte. No branch needed: the new high byte is
-        unconditionally zero, regardless of the source's bit pattern.
-        Routes the source byte through A so memory-to-memory dst
-        layouts work uniformly."""
+        """Unsigned narrower→wider widening (UInt → ULong, UInt →
+        ULongLong, ULong → ULongLong, etc.). Copy each source byte
+        unchanged, then write a literal 0 into each of dst's
+        remaining (high) bytes. No branch needed — the new high
+        bytes are unconditionally zero. Routes each byte through A
+        so memory-to-memory dst layouts work uniformly."""
         src_op = translate_val(src)
         dst_op = translate_val(dst)
-        return [
-            asm_ast.Mov(src=src_op, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
-            asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
-        ]
+        src_w = self._size_of(src)
+        tgt_w = self._size_of(dst)
+        out: list[asm_ast.Type_instruction] = []
+        for k in range(src_w):
+            out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        if src_w < tgt_w:
+            out.append(asm_ast.Mov(
+                src=asm_ast.Imm(value=0x00), dst=_REG_A,
+            ))
+            for k in range(src_w, tgt_w):
+                out.append(asm_ast.Mov(
+                    src=_REG_A, dst=_byte_at(dst_op, k),
+                ))
+        return out
 
     def _int_type_of(
         self, val: tac_ast.Type_val,
@@ -689,47 +769,45 @@ class Translator:
                 + self._unop_atoms(op)
                 + [asm_ast.Mov(src=_REG_A, dst=dst_op)]
             )
-        # Long Negate / Complement.
+        # Multi-byte Negate / Complement (Long, ULong, LongLong,
+        # ULongLong — any size > 1).
         if isinstance(op, tac_ast.Complement):
-            # ~X = X XOR $FFFF. Independent on each byte.
-            return [
-                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
-                asm_ast.Xor(
+            # ~X = X XOR $FF...FF. Each byte is independent — XOR
+            # doesn't touch the carry flag, so byte order doesn't
+            # matter and the loop fans out cleanly.
+            out: list[asm_ast.Type_instruction] = []
+            for k in range(size):
+                out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+                out.append(asm_ast.Xor(
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
                     dst=_REG_A,
-                ),
-                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
-                asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
-                asm_ast.Xor(
-                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
-                    dst=_REG_A,
-                ),
-                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
-            ]
+                ))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+            return out
         if isinstance(op, tac_ast.Negate):
-            # -X = (~X) + 1, two's complement, 16-bit. Complement
-            # both bytes, then a 16-bit ADC #1: low ADC adds 1 with
-            # CLC; high ADC adds 0 to propagate carry.
-            return [
-                # Low byte: complement, then add 1.
-                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
-                asm_ast.Xor(
+            # -X = (~X) + 1, two's complement at the operand width.
+            # Complement each byte; for the low byte, CLC + ADC #1;
+            # for each higher byte, ADC #0 (propagates the carry
+            # from the previous ADC). LDA / EOR preserve C, so the
+            # carry threads naturally across bytes.
+            out2: list[asm_ast.Type_instruction] = []
+            for k in range(size):
+                out2.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+                out2.append(asm_ast.Xor(
                     src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
                     dst=_REG_A,
-                ),
-                asm_ast.ClearCarry(),
-                asm_ast.Add(src=asm_ast.Imm(value=0x01), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
-                # High byte: complement, then add 0 with the carry
-                # from the low ADC. LDA preserves C.
-                asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
-                asm_ast.Xor(
-                    src1=_REG_A, src2=asm_ast.Imm(value=0xFF),
-                    dst=_REG_A,
-                ),
-                asm_ast.Add(src=asm_ast.Imm(value=0x00), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)),
-            ]
+                ))
+                if k == 0:
+                    out2.append(asm_ast.ClearCarry())
+                    out2.append(asm_ast.Add(
+                        src=asm_ast.Imm(value=0x01), dst=_REG_A,
+                    ))
+                else:
+                    out2.append(asm_ast.Add(
+                        src=asm_ast.Imm(value=0x00), dst=_REG_A,
+                    ))
+                out2.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+            return out2
         raise TypeError(f"unexpected unary operator: {op!r}")
 
     def _translate_logical_not(
@@ -739,19 +817,21 @@ class Translator:
         src_val: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
         """!x: 1 if x is zero, 0 otherwise. Result is always Int
-        (1 byte in dst). For a Long source, OR the two bytes first
-        — the result is zero iff both bytes are zero. Then the
-        framing LDA's Z flag drives a Branch(EQ) into a 0/1 select."""
+        (1 byte in dst). For a multi-byte source, OR all the bytes
+        together first — the OR result is zero iff every byte is
+        zero. Then the framing LDA's Z flag drives a Branch(EQ)
+        into a 0/1 select."""
         true_label = self.make_label("lnot_true")
         end_label = self.make_label("lnot_end")
         size = self._size_of(src_val)
         if size == 1:
-            head = [asm_ast.Mov(src=src_op, dst=_REG_A)]
-        else:
-            head = [
-                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
-                asm_ast.Or(src=_byte_at(src_op, 1), dst=_REG_A),
+            head: list[asm_ast.Type_instruction] = [
+                asm_ast.Mov(src=src_op, dst=_REG_A),
             ]
+        else:
+            head = [asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A)]
+            for k in range(1, size):
+                head.append(asm_ast.Or(src=_byte_at(src_op, k), dst=_REG_A))
         return head + [
             asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
@@ -795,9 +875,9 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         """Conditional jump on the truthiness of `cond`. For Int,
         a single Mov sets Z based on the loaded byte and we Branch.
-        For Long, OR the two bytes — the result is zero iff both
-        bytes are zero (i.e. the 16-bit value is zero), and Z
-        reflects that."""
+        For multi-byte conditions (Long, LongLong, …), OR every
+        byte — the result is zero iff every byte is zero (i.e. the
+        whole value is zero), and Z reflects that."""
         cond_op = translate_val(cond)
         size = self._size_of(cond)
         if size == 1:
@@ -805,11 +885,13 @@ class Translator:
                 asm_ast.Mov(src=cond_op, dst=_REG_A),
                 asm_ast.Branch(cond=branch_cond, target=target),
             ]
-        return [
+        out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=_byte_at(cond_op, 0), dst=_REG_A),
-            asm_ast.Or(src=_byte_at(cond_op, 1), dst=_REG_A),
-            asm_ast.Branch(cond=branch_cond, target=target),
         ]
+        for k in range(1, size):
+            out.append(asm_ast.Or(src=_byte_at(cond_op, k), dst=_REG_A))
+        out.append(asm_ast.Branch(cond=branch_cond, target=target))
+        return out
 
     def _translate_function_call(
         self,
@@ -826,10 +908,10 @@ class Translator:
 
         Return value, by dst width (read directly after the JSR,
         before any other helper call clobbers HARGS):
-          Int (1B)    ← A.
-          Long (2B)   ← A = low byte, X = high byte.
-          Float (4B)  ← HARGS+8..11.
-          Double (8B) ← HARGS+16..23.
+          Int (1B)              ← A.
+          Long (2B)             ← A = low byte, X = high byte.
+          LongLong / Float (4B) ← HARGS+8..11.
+          Double (8B)           ← HARGS+16..23.
         See `_translate_ret` for the matching callee-side write.
         """
         # Compute total arg-stack bytes and per-arg base offsets.
@@ -860,9 +942,9 @@ class Translator:
             emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
             emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
         else:
-            # Float (4B) / Double (8B): the callee left the result
-            # in HARGS at the matching helper-output offset. Read it
-            # back byte-by-byte through A.
+            # LongLong / Float (4B) → HARGS+8..11;
+            # Double (8B) → HARGS+16..23. Read it back byte-by-byte
+            # through A.
             in_off = 8 if dst_size == 4 else 16
             for k in range(dst_size):
                 emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
@@ -1034,14 +1116,22 @@ class Translator:
                     setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
                 )
             case tac_ast.Multiply():
-                # 8-bit: mul8 result low byte at HARGS+2 (the high
-                # byte at HARGS+3 is discarded — int*int wraps to int
-                # under C's modular semantics). 16-bit: mul16 result
-                # low half at HARGS+4..5 (the high half at HARGS+6..7
-                # is discarded for the same reason).
-                helper, out_off = (
-                    (_MUL8, 2) if size == 1 else (_MUL16, 4)
-                )
+                # 8-bit:  mul8   result low byte at HARGS+2 (the
+                #                high byte at HARGS+3 is discarded —
+                #                int*int wraps to int under C's
+                #                modular semantics).
+                # 16-bit: mul16  result low half at HARGS+4..5 (the
+                #                high half at HARGS+6..7 is discarded
+                #                for the same reason).
+                # 32-bit: mul32  result low 4 bytes at HARGS+8..11
+                #                (the high 4 bytes at HARGS+12..15
+                #                are discarded for the same reason).
+                if size == 1:
+                    helper, out_off = _MUL8, 2
+                elif size == 2:
+                    helper, out_off = _MUL16, 4
+                else:
+                    helper, out_off = _MUL32, 8
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1049,12 +1139,15 @@ class Translator:
                     dst_op=dst_op,
                 )
             case tac_ast.Divide():
-                # divmod8/divmod16 quotient sits at the byte(s)
+                # divmod8/16/32 quotient sits at the byte(s)
                 # immediately after the inputs; the remainder follows
-                # at the next slot pair (see Modulo below).
-                helper, out_off = (
-                    (_DIVMOD8, 2) if size == 1 else (_DIVMOD16, 4)
-                )
+                # at the next slot run (see Modulo below).
+                if size == 1:
+                    helper, out_off = _DIVMOD8, 2
+                elif size == 2:
+                    helper, out_off = _DIVMOD16, 4
+                else:
+                    helper, out_off = _DIVMOD32, 8
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1062,9 +1155,15 @@ class Translator:
                     dst_op=dst_op,
                 )
             case tac_ast.Modulo():
-                helper, out_off = (
-                    (_DIVMOD8, 3) if size == 1 else (_DIVMOD16, 6)
-                )
+                # Remainder follows the quotient: divmod8 rem at
+                # HARGS+3, divmod16 rem at HARGS+6..7, divmod32 rem
+                # at HARGS+12..15.
+                if size == 1:
+                    helper, out_off = _DIVMOD8, 3
+                elif size == 2:
+                    helper, out_off = _DIVMOD16, 6
+                else:
+                    helper, out_off = _DIVMOD32, 12
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1084,34 +1183,42 @@ class Translator:
                     src1_op, src2_op, dst_op, size,
                 )
             case tac_ast.LeftShift():
-                # asl8: 1B value + 1B count → 1B result at HARGS+2.
+                # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
+                # asl32: 4B value + 1B count → 4B result at HARGS+5.
                 # The type checker promotes both shift operands to a
-                # common type, so for size=2 the count arrives as 2B
-                # — we pass only its low byte (shifts by ≥16 are UB
-                # anyway, so the dropped high byte is irrelevant).
+                # common type, so for size>1 the count arrives wider
+                # than 1 byte — we pass only its low byte (shifts by
+                # ≥ width-in-bits are UB anyway, so the dropped high
+                # bytes are irrelevant).
                 if size == 1:
                     inputs = [(src1_op, 1), (src2_op, 1)]
                     helper, out_off = _ASL8, 2
-                else:
+                elif size == 2:
                     inputs = [(src1_op, 2), (src2_op, 1)]
                     helper, out_off = _ASL16, 3
+                else:
+                    inputs = [(src1_op, 4), (src2_op, 1)]
+                    helper, out_off = _ASL32, 5
                 return _translate_helper_call(
                     inputs=inputs, helper=helper,
                     output_offset=out_off, output_size=size,
                     dst_op=dst_op,
                 )
             case tac_ast.RightShift():
-                # `>>` always goes through the signed asr8/asr16 —
+                # `>>` always goes through the signed asr8/16/32 —
                 # c6502 currently treats every integer as signed for
                 # shift purposes (no logical-right-shift helper wired
                 # up yet). Same input-byte layout as LeftShift.
                 if size == 1:
                     inputs = [(src1_op, 1), (src2_op, 1)]
                     helper, out_off = _ASR8, 2
-                else:
+                elif size == 2:
                     inputs = [(src1_op, 2), (src2_op, 1)]
                     helper, out_off = _ASR16, 3
+                else:
+                    inputs = [(src1_op, 4), (src2_op, 1)]
+                    helper, out_off = _ASR32, 5
                 return _translate_helper_call(
                     inputs=inputs, helper=helper,
                     output_offset=out_off, output_size=size,
@@ -1298,20 +1405,20 @@ class Translator:
         cond: asm_ast.Type_condition,
     ) -> list[asm_ast.Type_instruction]:
         """Signed ordering compare via SBC with V-correction:
-           LDA left.lo; SEC; SBC right.lo
-           [LDA left.hi;       SBC right.hi]   (Long only; carry threads)
+           LDA left[0]; SEC; SBC right[0]
+           LDA left[k];      SBC right[k]   for k in 1..size-1
            BVC novf; EOR #$80; novf:
            B<cond> true; LDA #0; JMP end; true: LDA #1; end: STA dst
 
         The V-correction handles signed overflow: when the
         subtraction overflows, the N flag from SBC is "wrong"
         relative to the mathematical sign of the difference, so
-        EOR #$80 flips it. For Long, we sub the low bytes first
-        (carry threads via the existing carry register) then sub
-        the high bytes; the V flag from the high-byte SBC reflects
-        the 16-bit overflow, and N reflects the 16-bit sign of the
-        result. Caller picks operand order and branch condition to
-        select among <, >=, >, <=."""
+        EOR #$80 flips it. For multi-byte operands, we sub the low
+        bytes first (carry threads via the existing carry register)
+        then sub each higher byte in turn; the V flag from the
+        FINAL (high-byte) SBC reflects the whole value's overflow,
+        and N reflects the whole value's sign. Caller picks operand
+        order and branch condition to select among <, >=, >, <=."""
         novf_label = self.make_label("cmp_novf")
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
@@ -1320,13 +1427,13 @@ class Translator:
             asm_ast.SetCarry(),
             asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A),
         ]
-        if size > 1:
-            # High byte: load with LDA (preserves C from low SBC),
-            # then SBC threads the borrow. Result's N/V reflect the
-            # 16-bit subtraction.
+        for k in range(1, size):
+            # Each subsequent byte: LDA (preserves C from previous
+            # SBC), then SBC threads the borrow. After the loop the
+            # N/V flags reflect the multi-byte subtraction.
             out.extend([
-                asm_ast.Mov(src=_byte_at(left_op, 1), dst=_REG_A),
-                asm_ast.Sub(src=_byte_at(right_op, 1), dst=_REG_A),
+                asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A),
+                asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A),
             ])
         out.extend([
             asm_ast.Branch(cond=asm_ast.VC(), target=novf_label),
@@ -1353,16 +1460,17 @@ class Translator:
         cond: asm_ast.Type_condition,
     ) -> list[asm_ast.Type_instruction]:
         """Unsigned ordering compare via SBC, no V-correction:
-           LDA left.lo; SEC; SBC right.lo
-           [LDA left.hi;       SBC right.hi]   (Long only; carry threads)
+           LDA left[0]; SEC; SBC right[0]
+           LDA left[k];      SBC right[k]   for k in 1..size-1
            B<cond> true; LDA #0; JMP end; true: LDA #1; end: STA dst
 
         After SBC, the carry flag is the unsigned ordering result:
         C=1 means no borrow (left >= right unsigned), C=0 means
-        borrow (left < right unsigned). For Long, the borrow threads
-        through the per-byte SBCs, so the final carry reflects the
-        16-bit unsigned subtraction. Caller picks operand order and
-        BCC/BCS to select among <, >=, >, <=.
+        borrow (left < right unsigned). For multi-byte operands the
+        borrow threads through the per-byte SBCs, so the final
+        carry reflects the whole-value unsigned subtraction. Caller
+        picks operand order and BCC/BCS to select among <, >=, >,
+        <=.
         """
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
@@ -1371,10 +1479,10 @@ class Translator:
             asm_ast.SetCarry(),
             asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A),
         ]
-        if size > 1:
+        for k in range(1, size):
             out.extend([
-                asm_ast.Mov(src=_byte_at(left_op, 1), dst=_REG_A),
-                asm_ast.Sub(src=_byte_at(right_op, 1), dst=_REG_A),
+                asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A),
+                asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A),
             ])
         out.extend([
             asm_ast.Branch(cond=cond, target=true_label),

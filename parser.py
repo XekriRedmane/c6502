@@ -88,24 +88,27 @@ _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
 def _resolve_data_type(type_specs):
     """Map a list of type-specifier tokens to a c99_ast object type.
     Valid combinations follow C99 §6.7.2 (subset c6502 models —
-    no `char`, `short`, `_Bool`, or `long long`):
-      * `int`, `signed`, `signed int`         → Int
-      * `unsigned`, `unsigned int`            → UInt
+    no `char`, `short`, `_Bool`):
+      * `int`, `signed`, `signed int`              → Int
+      * `unsigned`, `unsigned int`                 → UInt
       * `long`, `long int`,
-        `signed long`, `signed long int`      → Long
-      * `unsigned long`, `unsigned long int`  → ULong
-      * `float`                               → Float
-      * `double`                              → Double
-      * `long double`                         — rejected (no long
-                                                 double type)
-      * `long long` (any combination)         — rejected (no long
-                                                 long type)
-      * `signed unsigned` / `unsigned signed` — rejected
+        `signed long`, `signed long int`           → Long
+      * `unsigned long`, `unsigned long int`       → ULong
+      * `long long`, `long long int`,
+        `signed long long`, `signed long long int` → LongLong
+      * `unsigned long long`,
+        `unsigned long long int`                   → ULongLong
+      * `float`                                    → Float
+      * `double`                                   → Double
+      * `long double`                              — rejected (no long
+                                                      double type)
+      * `long long long` (or more `long`s)         — rejected
+      * `signed unsigned` / `unsigned signed`      — rejected
       * `float`/`double` mixed with any of `int` / `long` /
-        `signed` / `unsigned`                 — rejected
+        `signed` / `unsigned`                      — rejected
       * duplicate `int` / `signed` / `unsigned` / `float` /
-        `double`                              — rejected
-      * empty list                            — rejected
+        `double`                                   — rejected
+      * empty list                                 — rejected
     """
     int_count = sum(1 for t in type_specs if t.type == "INT")
     long_count = sum(1 for t in type_specs if t.type == "LONG")
@@ -156,21 +159,20 @@ def _resolve_data_type(type_specs):
             "multiple type specifiers in a declaration "
             "(at most one 'int' is permitted)"
         )
-    if long_count > 1:
+    if long_count > 2:
         raise ParserError(
-            "'long long' is not supported (only 'int' and 'long' are "
-            "modeled today)"
+            "'long' specified more than twice (no integer type wider "
+            "than 'long long')"
         )
     if float_count == 1:
         return c99_ast.Float()
     if double_count == 1:
         return c99_ast.Double()
     is_unsigned = unsigned_count == 1
-    is_long = long_count == 1
-    if is_long and is_unsigned:
-        return c99_ast.ULong()
-    if is_long:
-        return c99_ast.Long()
+    if long_count == 2:
+        return c99_ast.ULongLong() if is_unsigned else c99_ast.LongLong()
+    if long_count == 1:
+        return c99_ast.ULong() if is_unsigned else c99_ast.Long()
     if is_unsigned:
         return c99_ast.UInt()
     return c99_ast.Int()
@@ -226,46 +228,97 @@ def _consume_specifiers(items, start):
 
 # Integer constant typing per C99 §6.4.4.1 paragraph 5: "the type of
 # an integer constant is the first of the corresponding list in which
-# its value can be represented." c6502 models four integer types —
-# int / long / unsigned int / unsigned long — corresponding 1:1 with
-# the four c99_ast `const` variants. There is no `long long`, so any
-# literal whose only fitting type would be `long long` (or
-# `unsigned long long`) is rejected.
+# its value can be represented." c6502 models six integer types —
+# int / long / long long / unsigned int / unsigned long / unsigned
+# long long — corresponding 1:1 with the six c99_ast `const`
+# variants.
 #
 # Type ranges (literals are non-negative — unary minus comes from an
 # operator, applied later):
-#     int            0..127     ConstInt
-#     long           0..32767   ConstLong
-#     unsigned int   0..255     ConstUInt
-#     unsigned long  0..65535   ConstULong
+#     int                 0..127               ConstInt
+#     long                0..32767             ConstLong
+#     long long           0..2147483647        ConstLongLong
+#     unsigned int        0..255               ConstUInt
+#     unsigned long       0..65535             ConstULong
+#     unsigned long long  0..4294967295        ConstULongLong
 _INT_MAX = 127
 _LONG_MAX = 32767
+_LONG_LONG_MAX = 2147483647
 _UINT_MAX = 255
 _ULONG_MAX = 65535
+_ULONG_LONG_MAX = 4294967295
 
 # Per-(token-kind, base) candidate-type list. Each entry is a tuple of
 # (max_value, c99_ast Const class) — pick the first whose max accepts
 # the literal's value. Bases: "decimal" for plain decimal literals,
 # "hex_oct" for hex (0x...) and octal (0...) literals. The C99 table
-# distinguishes the two for the unsuffixed and L-only suffix cases;
-# the U-only and U+L suffix cases share one list across bases.
+# distinguishes the two for the unsuffixed / L / LL cases; the U-only
+# and U+L / U+LL suffix cases share one list across bases.
+#
+# Token-kind splits: LONG_INTEGER and ULONG_INTEGER each cover both
+# the single-L and double-L forms because the lexer doesn't split LL
+# out from L; `_const_for_token` reads `has_ll` to pick the right
+# row. For `LONG_INTEGER + has_ll` (i.e. plain `LL`) we fall through
+# to the "long long" lists; for `ULONG_INTEGER + has_ll` (i.e. `ULL`
+# in any letter order) to the "unsigned long long" lists.
 _INT = c99_ast.ConstInt
 _LONG = c99_ast.ConstLong
+_LONG_LONG = c99_ast.ConstLongLong
 _UINT = c99_ast.ConstUInt
 _ULONG = c99_ast.ConstULong
+_ULONG_LONG = c99_ast.ConstULongLong
 
 _CANDIDATES = {
-    ("INTEGER_CONSTANT", "decimal"): [(_INT_MAX, _INT), (_LONG_MAX, _LONG)],
+    # No suffix: int → long → long long (decimal); add unsigned
+    # rungs at each width on hex/octal per C99.
+    ("INTEGER_CONSTANT", "decimal"): [
+        (_INT_MAX, _INT),
+        (_LONG_MAX, _LONG),
+        (_LONG_LONG_MAX, _LONG_LONG),
+    ],
     ("INTEGER_CONSTANT", "hex_oct"): [
         (_INT_MAX, _INT), (_UINT_MAX, _UINT),
         (_LONG_MAX, _LONG), (_ULONG_MAX, _ULONG),
+        (_LONG_LONG_MAX, _LONG_LONG), (_ULONG_LONG_MAX, _ULONG_LONG),
     ],
-    ("LONG_INTEGER",    "decimal"): [(_LONG_MAX, _LONG)],
-    ("LONG_INTEGER",    "hex_oct"): [(_LONG_MAX, _LONG), (_ULONG_MAX, _ULONG)],
-    ("UINT_INTEGER",    "decimal"): [(_UINT_MAX, _UINT), (_ULONG_MAX, _ULONG)],
-    ("UINT_INTEGER",    "hex_oct"): [(_UINT_MAX, _UINT), (_ULONG_MAX, _ULONG)],
-    ("ULONG_INTEGER",   "decimal"): [(_ULONG_MAX, _ULONG)],
-    ("ULONG_INTEGER",   "hex_oct"): [(_ULONG_MAX, _ULONG)],
+    # `L` suffix: long → long long (decimal); add unsigned rungs at
+    # each width on hex/octal.
+    ("LONG_INTEGER",    "decimal"): [
+        (_LONG_MAX, _LONG),
+        (_LONG_LONG_MAX, _LONG_LONG),
+    ],
+    ("LONG_INTEGER",    "hex_oct"): [
+        (_LONG_MAX, _LONG), (_ULONG_MAX, _ULONG),
+        (_LONG_LONG_MAX, _LONG_LONG), (_ULONG_LONG_MAX, _ULONG_LONG),
+    ],
+    # `LL` suffix: long long (decimal); long long → unsigned long
+    # long (hex/octal).
+    ("LONG_LONG_INTEGER",  "decimal"): [(_LONG_LONG_MAX, _LONG_LONG)],
+    ("LONG_LONG_INTEGER",  "hex_oct"): [
+        (_LONG_LONG_MAX, _LONG_LONG), (_ULONG_LONG_MAX, _ULONG_LONG),
+    ],
+    # `U` suffix: unsigned int → unsigned long → unsigned long long.
+    # (Same list across bases — C99 doesn't split unsigned-only
+    # forms by base.)
+    ("UINT_INTEGER",    "decimal"): [
+        (_UINT_MAX, _UINT), (_ULONG_MAX, _ULONG),
+        (_ULONG_LONG_MAX, _ULONG_LONG),
+    ],
+    ("UINT_INTEGER",    "hex_oct"): [
+        (_UINT_MAX, _UINT), (_ULONG_MAX, _ULONG),
+        (_ULONG_LONG_MAX, _ULONG_LONG),
+    ],
+    # `UL` suffix (any letter order): unsigned long → unsigned
+    # long long.
+    ("ULONG_INTEGER",   "decimal"): [
+        (_ULONG_MAX, _ULONG), (_ULONG_LONG_MAX, _ULONG_LONG),
+    ],
+    ("ULONG_INTEGER",   "hex_oct"): [
+        (_ULONG_MAX, _ULONG), (_ULONG_LONG_MAX, _ULONG_LONG),
+    ],
+    # `ULL` suffix (any letter order): unsigned long long.
+    ("ULONG_LONG_INTEGER", "decimal"): [(_ULONG_LONG_MAX, _ULONG_LONG)],
+    ("ULONG_LONG_INTEGER", "hex_oct"): [(_ULONG_LONG_MAX, _ULONG_LONG)],
 }
 
 
@@ -278,8 +331,9 @@ def _parse_integer_token(text):
         literals, `"decimal"` otherwise. The two bases share suffix
         rules but differ in their unsuffixed / L-suffixed type lists
         (C99 §6.4.4.1 table).
-      * `has_ll` — True if the suffix contains `LL` or `ll`. c6502
-        doesn't model `long long`, so callers reject these.
+      * `has_ll` — True if the suffix contains `LL` or `ll`. Used to
+        pick the long-long candidate row for LONG_INTEGER /
+        ULONG_INTEGER tokens.
     """
     i = len(text)
     while i > 0 and text[i - 1] in "uUlL":
@@ -323,16 +377,22 @@ def _const_for_token(token):
             f"`long double` is not supported (literal {text!r})"
         )
     value, base, has_ll = _parse_integer_token(text)
+    # `has_ll` upgrades a LONG_INTEGER / ULONG_INTEGER token to its
+    # long-long counterpart at dispatch time — the lexer doesn't
+    # split LL out from L (see `_LSUFFIX` in c99.lark), so the
+    # `_CANDIDATES` table keys on the wider name and we route here.
+    kind = token.type
     if has_ll:
-        raise ParserError(
-            f"`long long` is not supported (literal {text!r})"
-        )
-    for max_value, cls in _CANDIDATES[(token.type, base)]:
+        if kind == "LONG_INTEGER":
+            kind = "LONG_LONG_INTEGER"
+        elif kind == "ULONG_INTEGER":
+            kind = "ULONG_LONG_INTEGER"
+    for max_value, cls in _CANDIDATES[(kind, base)]:
         if value <= max_value:
             return cls(int=value)
     raise ParserError(
         f"integer constant {text!r} doesn't fit any supported type "
-        f"(c6502 has no `long long` / `unsigned long long`)"
+        f"(value > 2^32 - 1)"
     )
 
 

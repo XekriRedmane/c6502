@@ -47,10 +47,7 @@ _SEMANTIC_FAILURES = (
 _ANY_REJECTION = _PARSE_FAILURES + _SEMANTIC_FAILURES
 
 
-_INCOMPATIBLE_VALID = frozenset([
-    # Literal '10000000' beyond 16-bit Long range.
-    "stack_arguments/test_for_memory_leaks.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 # invalid_parse files the parser currently accepts. Drop entries as

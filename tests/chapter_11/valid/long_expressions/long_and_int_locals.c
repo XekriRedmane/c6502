@@ -3,19 +3,19 @@ int main(void) {
      * to check that we allocate enough stack space for each of them,
      * and writing to one doesn't clobber another */
 
-    long a = 8589934592l; // this number is outside the range of int
+    long long a = 1000000000ll; // this number is outside the range of int and long
     int b = -1;
-    long c = -8589934592l; // also outside the range of int
+    long long c = -1000000000ll; // also outside the range of int and long
     int d = 10;
 
     /* Make sure every variable has the right value */
-    if (a != 8589934592l) {
+    if (a != 1000000000ll) {
         return 1;
     }
     if (b != -1){
         return 2;
     }
-    if (c != -8589934592l) {
+    if (c != -1000000000ll) {
         return 3;
     }
     if (d != 10) {
@@ -25,11 +25,11 @@ int main(void) {
     /* update every variable */
     a = -a;
     b = b - 1;
-    c = c + 8589934594l;
+    c = c + 1000000002ll;
     d = d + 10;
 
     /* Make sure the updated values are correct */
-    if (a != -8589934592l) {
+    if (a != -1000000000ll) {
         return 5;
     }
     if (b != -2) {

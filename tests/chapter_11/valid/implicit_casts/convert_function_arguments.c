@@ -1,8 +1,8 @@
 /* Test that function arguments, including arguments put on the stack,
  * are converted to the corresponding parameter type */
 
-int foo(long a, int b, int c, int d, long e, int f, long g, int h) {
-    if (a != -1l)
+int foo(long long a, int b, int c, int d, long long e, int f, long long g, int h) {
+    if (a != -1ll)
         return 1;
 
     if (b != 2)
@@ -14,16 +14,16 @@ int foo(long a, int b, int c, int d, long e, int f, long g, int h) {
     if (d != -5)
         return 4;
 
-    if (e != -101l)
+    if (e != -101ll)
         return 5;
 
     if (f != -123)
         return 6;
 
-    if (g != -10l)
+    if (g != -10ll)
         return 7;
 
-    if (h != 1234)
+    if (h != -46)
         return 8;
 
     return 0;
@@ -31,14 +31,12 @@ int foo(long a, int b, int c, int d, long e, int f, long g, int h) {
 
 int main(void) {
     int a = -1;
-    long int b = 4294967298;  // 2^32 + 2, becomes 2 when converted to an int
-    long c = -4294967296;     // -2^32, becoems 0 when converted to int
-    long d =
-        21474836475;  // 2^34 + 2^32 - 5, becomes -5 when converted to an int
+    long long int b = 258;  // 2^8 + 2, becomes 2 when converted to a 1-byte int
+    long long c = -256;     // -2^8, becomes 0 when converted to int
+    long long d = 65787;  // 2^16 + 251, becomes -5 (251 mod 256 = 251 → signed 1B = -5)
     int e = -101;
-    long f = -123;
+    long long f = -123;
     int g = -10;
-    long h = -9223372036854774574;  // -2^63 + 1234, becomes 1234 when converted
-                                    // to an int
+    long long h = 1234;  // mod 256 = 210 → signed 1B int = -46
     return foo(a, b, c, d, e, f, g, h);
 }

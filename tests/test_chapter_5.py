@@ -11,10 +11,10 @@ buckets:
                        label_resolution, loop_labeling,
                        type_checking).
 
-`_INCOMPATIBLE` lists the few `valid/` files that use integer literals
-beyond c6502's 16-bit Long range; chapter_5 was written against an
-8-byte-long, large-memory model and there's no path to making them
-compile here.
+Two `valid/` files (`allocate_temps_and_vars.c` and
+`extra_credit/compound_bitwise_shiftr.c`) were modified locally to
+fit c6502's 1-byte int range — same operator semantics, scaled
+constants.
 """
 
 import shutil
@@ -36,12 +36,7 @@ _TESTS_DIR = Path(__file__).parent
 _C5 = _TESTS_DIR / "chapter_5"
 
 
-# valid/ files using integer literals that don't fit any c6502
-# integer type (c6502's `long` is 2 bytes; chapter_5 assumes 8).
-_INCOMPATIBLE_VALID = frozenset([
-    "allocate_temps_and_vars.c",
-    "extra_credit/compound_bitwise_shiftr.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)

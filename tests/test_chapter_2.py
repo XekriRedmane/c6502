@@ -3,9 +3,11 @@
 chapter_2 covers unary operators (`-`, `~`) and bitwise expressions.
 Two buckets: valid/ and invalid_parse/.
 
-`bitwise_int_min.c` and `negate_int_max.c` use 2147483647 (INT_MAX
-in upstream's 4-byte int world); c6502's `int` is 1 byte. Both go in
-`_INCOMPATIBLE_VALID`.
+`bitwise_int_min.c` and `negate_int_max.c` were modified locally to
+use c6502's 1-byte int range (127 / -127) instead of upstream's
+4-byte int range (2147483647 / -2147483647); they exercise the same
+unary-operator semantics at the boundary of the supported integer
+type.
 """
 
 import shutil
@@ -26,10 +28,7 @@ _C2 = _TESTS_DIR / "chapter_2"
 _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
-_INCOMPATIBLE_VALID = frozenset([
-    "bitwise_int_min.c",
-    "negate_int_max.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

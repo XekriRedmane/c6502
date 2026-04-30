@@ -1,5 +1,5 @@
 int main(void) {
-    int a = -2147483647;
+    int a = -123;
     for (; a % 5 != 0;) {
         a = a + 1;
     }

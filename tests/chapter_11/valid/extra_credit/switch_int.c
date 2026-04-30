@@ -15,11 +15,11 @@ int switch_on_int(int i) {
     switch(i) {
         case 5:
             return 0;
-        // this is 2^33; it will be truncated to int 0
-        case 8589934592l: // case 0:
+        // this is 2^8; it will be truncated to int 0
+        case 256l: // case 0:
             return 1;
-        // this is 2^35 - 1; it will be truncated to -1
-        case 34359738367: // case -1:
+        // this is 2^9 - 1; it will be truncated to -1
+        case 511: // case -1:
             return 2;
         default:
             return 3;
@@ -36,10 +36,10 @@ int main(void) {
         return 2;
     if (switch_on_int(-1) != 2)
         return 3;
-    /* 17179869184 is 2^34; it will be truncated to 0
+    /* 256 is 2^8; it will be truncated to 0
      * when passed as a parameter to switch_on_int
      */
-    if (switch_on_int(17179869184) != 1)
+    if (switch_on_int(256) != 1)
         return 4;
 
     return 0;

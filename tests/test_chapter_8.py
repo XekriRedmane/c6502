@@ -7,8 +7,9 @@ chapter_8 covers iteration statements (`while`, `do`/`while`, `for`),
   invalid_parse/     — must fail at lex or parse.
   invalid_semantics/ — must be rejected somewhere in the pipeline.
 
-Two non-switch files use literals beyond c6502's 16-bit Long range
-and land in `_INCOMPATIBLE_VALID`.
+`empty_loop_body.c` and `for_absent_post.c` were modified locally
+to use 1-byte int constants — same loop / switch semantics, just
+scaled to fit.
 """
 
 import shutil
@@ -40,11 +41,7 @@ _SEMANTIC_FAILURES = (
 _ANY_REJECTION = _PARSE_FAILURES + _SEMANTIC_FAILURES
 
 
-_INCOMPATIBLE_VALID = frozenset([
-    # Literals beyond ULong's 0..65535 range.
-    "empty_loop_body.c",
-    "for_absent_post.c",
-])
+_INCOMPATIBLE_VALID = frozenset()
 
 
 _EXPECTED_FAILURES_CODEGEN = frozenset()

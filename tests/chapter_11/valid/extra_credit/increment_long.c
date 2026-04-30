@@ -1,20 +1,20 @@
-// make sure we support prefix and postfix ++/-- on long variables
+// make sure we support prefix and postfix ++/-- on long long variables
 int main(void) {
-    long x = -9223372036854775807l;
+    long long x = -2147483647ll;
 
     // postfix ++
-    if (x++ != -9223372036854775807l) {
+    if (x++ != -2147483647ll) {
         return 1;
     }
-    if (x != -9223372036854775806l) {
+    if (x != -2147483646ll) {
         return 2;
     }
 
     // prefix --
-    if (--x != -9223372036854775807l) {
+    if (--x != -2147483647ll) {
         return 3;
     }
-    if (x != -9223372036854775807l) {
+    if (x != -2147483647ll) {
         return 4;
     }
 

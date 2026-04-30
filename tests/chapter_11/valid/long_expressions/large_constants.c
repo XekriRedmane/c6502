@@ -8,24 +8,26 @@
 /* Make x a global variable so this test doesn't rely on
  * correct argument passing for longs but won't get optimized away in part III
  */
-long x = 5l;
+long long x = 5ll;
 
 int add_large(void) {
-    // x = 5l
-    x = x + 4294967290l; // this constant is 2^32 - 6
-    return (x == 4294967295l);
+    // x = 5ll
+    x = x + 2147483640ll; // this constant is large (2^31 - 8)
+    return (x == 2147483645ll);
 }
 
 int subtract_large(void) {
-    // x = 4294967295l
-    x = x - 4294967290l;
-    return (x == 5l);
+    // x = 2147483645ll
+    x = x - 2147483640ll;
+    return (x == 5ll);
 }
 
 int multiply_by_large(void) {
     // x = 5
-    x = x * 4294967290l;
-    return (x == 21474836450l);
+    // 200_000_000 is well above 16-bit (65535), so this exercises
+    // the rewrite rule for multi-byte multiply constants.
+    x = x * 200000000ll;
+    return (x == 1000000000ll);
 }
 
 int main(void) {

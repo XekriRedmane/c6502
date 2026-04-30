@@ -411,6 +411,34 @@ def _fold_fp_cast_constant(
     return _tac_const_for(target, v)
 
 
+# Width / signedness predicates for the declared-type modular
+# truncation applied to static-storage integer initializers.
+# The runtime cast lowering in tac_to_asm collapses to width-
+# modular arithmetic for compile-time-known integer values; for
+# static initializers we have to fold that here so the resulting
+# byte pattern fits the cell. Mirrors
+# `passes.type_checking._coerce_int_to_type` but kept local so
+# c99_to_tac doesn't pull in type_checking just for this.
+_TRUNC_BITS = {
+    c99_ast.Int:       8,  c99_ast.UInt:      8,
+    c99_ast.Char:      8,  c99_ast.SChar:     8,  c99_ast.UChar: 8,
+    c99_ast.Long:     16,  c99_ast.ULong:    16,
+    c99_ast.LongLong: 32,  c99_ast.ULongLong: 32,
+}
+
+
+def _truncate_int_for_static(t, value):
+    """Reduce `value` to fit the declared integer type's width as
+    a non-negative bit pattern (the form `IntInit` / `LongInit` /
+    `LongLongInit` carry through asm_emit's `dc.b` / `dc.w` /
+    `dc.l` directives). Negative values wrap to their two's-
+    complement bit pattern at the matching width. Mirrors
+    C99 §6.3.1.3 for assignment of an integer constant to a
+    narrower integer type."""
+    bits = _TRUNC_BITS[type(t)]
+    return int(value) & ((1 << bits) - 1)
+
+
 def _tac_static_init_for(
     t: c99_ast.Type_data_type,
     value: int | float | AddressInit,
@@ -442,25 +470,25 @@ def _tac_static_init_for(
             )
         return tac_ast.AddressInit(name=value.name, offset=value.offset)
     if isinstance(t, c99_ast.Int):
-        return tac_ast.IntInit(int=int(value))
+        return tac_ast.IntInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
         # Char / SChar are 1-byte signed, same byte width and
         # signedness as Int — collapse onto IntInit so asm_emit
         # renders a single `dc.b $XX`.
-        return tac_ast.IntInit(int=int(value))
+        return tac_ast.IntInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.UChar):
         # UChar is 1-byte unsigned, same byte width as UInt.
-        return tac_ast.UIntInit(int=int(value))
+        return tac_ast.UIntInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Long):
-        return tac_ast.LongInit(int=int(value))
+        return tac_ast.LongInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.LongLong):
-        return tac_ast.LongLongInit(int=int(value))
+        return tac_ast.LongLongInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.UInt):
-        return tac_ast.UIntInit(int=int(value))
+        return tac_ast.UIntInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.ULong):
-        return tac_ast.ULongInit(int=int(value))
+        return tac_ast.ULongInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.ULongLong):
-        return tac_ast.ULongLongInit(int=int(value))
+        return tac_ast.ULongLongInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Float):
         return tac_ast.FloatInit(float=float(value))
     if isinstance(t, c99_ast.Double):
@@ -469,7 +497,9 @@ def _tac_static_init_for(
         # Pointer collapses onto Long for static-init purposes —
         # addresses are 2-byte values written as a little-endian
         # 16-bit integer (e.g. NULL = 0x0000).
-        return tac_ast.LongInit(int=int(value))
+        return tac_ast.LongInit(
+            int=_truncate_int_for_static(c99_ast.Long(), value),
+        )
     raise TypeError(
         f"static-storage object can't have non-object type {t!r}"
     )

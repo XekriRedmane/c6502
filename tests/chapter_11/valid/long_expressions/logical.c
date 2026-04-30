@@ -1,28 +1,28 @@
-/* Test long expressions in &&, ||, ! and controlling expressions */
+/* Test long long expressions in &&, ||, ! and controlling expressions */
 
-int not(long l) {
+int not(long long l) {
     return !l;
 }
 
-int if_cond(long l) {
+int if_cond(long long l) {
     if (l) {
         return 1;
     }
     return 0;
 }
 
-int and(long l1, int l2) {
+int and(long long l1, int l2) {
     return l1 && l2;
 }
 
-int or(int l1, long l2) {
+int or(int l1, long long l2) {
     return l1 || l2;
 }
 
 int main(void) {
-    // this would be equal to zero if we only considered lower 32 bits
-    long l = 1152921504606846976l; // 2^60
-    long zero = 0l;
+    // this would be equal to zero if we only considered lower 16 bits
+    long long l = 1073741824ll; // 2^30; low 16 bits == 0
+    long long zero = 0ll;
     if (not(l)) {
         return 1;
     }

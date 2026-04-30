@@ -13,15 +13,15 @@
 #endif
 #endif
 
-int return_truncated_long(long l) {
+int return_truncated_long(long long l) {
     return l;
 }
 
-long return_extended_int(int i) {
+long long return_extended_int(int i) {
     return i;
 }
 
-int truncate_on_assignment(long l, int expected) {
+int truncate_on_assignment(long long l, int expected) {
     int result = l; // implicit conversion truncates l
     return result == expected;
 }
@@ -30,12 +30,12 @@ int main(void) {
 
     // return statements
 
-    /* return_truncated_long will truncate 2^32 + 2 to 2
-     * assigning it to result converts this to a long
+    /* return_truncated_long will truncate 2^8 + 2 to 2 (mod 256);
+     * assigning it to result converts this to a long long
      * but preserves its value.
      */
-    long result = return_truncated_long(4294967298l);
-    if (result != 2l) {
+    long long result = return_truncated_long(258ll);
+    if (result != 2ll) {
         return 1;
     }
 
@@ -47,18 +47,16 @@ int main(void) {
 
     // initializer
 
-    /* This is 2^32 + 2,
-     * it will be truncated to 2 by assignment
-     */
-    int i = 4294967298l;
+    /* This is 2^8 + 2; it will be truncated to 2 by assignment */
+    int i = 258ll;
     if (i != 2) {
         return 3;
     }
 
     // assignment expression
 
-    // 2^34 will be truncated to 0 when assigned to an int
-    if (!truncate_on_assignment(17179869184l, 0)) {
+    // 256 (= 2^8) will be truncated to 0 when assigned to an int
+    if (!truncate_on_assignment(256ll, 0)) {
         return 4;
     }
 

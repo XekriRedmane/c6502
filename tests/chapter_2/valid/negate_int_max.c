@@ -1,4 +1,4 @@
 int main(void) {
-    // 2147483647 is the largest possible value of type int
-    return -2147483647;
+    // 127 is the largest possible value of c6502's 1-byte int
+    return -127;
 }

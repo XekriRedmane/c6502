@@ -2,47 +2,47 @@
 // we type check them correctly
 int main(void) {
 
-    long l = 137438953472l; // 2^37
+    long long l = 131072ll; // 2^17
     int shiftcount = 2;
 
-    if (l >> shiftcount != 34359738368l /* 2 ^ 35 */) {
+    if (l >> shiftcount != 32768ll /* 2 ^ 15 */) {
         return 1;
     }
 
-    if (l << shiftcount != 549755813888 /* 2 ^ 39 */) {
+    if (l << shiftcount != 524288ll /* 2 ^ 19 */) {
         return 2;
     }
 
     // test w/ immediate right operand too
-    if (l << 2 != 549755813888 /* 2 ^ 39 */) {
+    if (l << 2 != 524288ll /* 2 ^ 19 */) {
         return 3;
     }
 
-    // try shift count > 32 (shift count between 32 and 64 is undefined when
-    // shifting an int, well-defined when shifting a long)
-    if ((40l << 40) !=  43980465111040l) {
+    // try shift count > 16 (shift count between 16 and 32 is undefined when
+    // shifting a long, well-defined when shifting a long long)
+    if ((40ll << 20) != 41943040ll) {
         return 4;
     }
 
-    // use long as right shift operand
+    // use long long as right shift operand
     // NOTE: we shouldn't perform usual arithmetic conversions here
     // (result has same type as left operand) but we won't be able to fully
     // validate that until chapter 12
-    long long_shiftcount = 3l;
+    long long long_shiftcount = 3ll;
 
     // declare some variables near i; we'll make sure they aren't clobbered by
     // bit shift operations
     int i_neighbor1 = 0;
-    int i = -2147483645; // -2^31 + 3
+    int i = -125; // -2^7 + 3
     int i_neighbor2 = 0;
 
-    // should be -2^28
-    if (i >> long_shiftcount != -268435456) {
+    // should be -16 (-125 >> 3, arithmetic right shift)
+    if (i >> long_shiftcount != -16) {
         return 5;
     }
 
     i = -1;
-    if (i >> 10l != -1) {
+    if (i >> 3ll != -1) {
         return 6;
     }
 

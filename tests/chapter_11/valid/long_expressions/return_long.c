@@ -1,11 +1,11 @@
-long add(int a, int b) {
-    return (long) a + (long) b;
+long long add(int a, int b) {
+    return (long long) a + (long long) b;
 }
 
 int main(void) {
-    long a = add(2147483645, 2147483645);
-    /* Test returning a long from a function call */
-    if (a == 4294967290l) {
+    long long a = add(125, 125);
+    /* Test returning a long long from a function call */
+    if (a == 250ll) {
         return 1;
     }
     return 0;

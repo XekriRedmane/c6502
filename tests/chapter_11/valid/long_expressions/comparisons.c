@@ -1,36 +1,35 @@
-/* Test comparisons between longs, making sure to exercise all rewrite rules for cmp */
+/* Test comparisons between long longs, making sure to exercise all rewrite rules for cmp */
 
-long l;
-long l2;
+long long l;
+long long l2;
 
 /* Comparisons where both operands are constants */
 int compare_constants(void) {
-    /* Note that if we considered only the lower 32 bits of
-     * each number (or cast them to ints), 255 would be larger,
-     * because 8589934593l == 2^33 + 1.
+    /* Note that if we considered only the lower 16 bits of
+     * each number (or cast them to longs), 255 would be larger,
+     * because 131073ll == 2^17 + 1 (low 16 bits == 1).
      * This exercises the rewrite rule for cmp with two constant operands
      */
-    return 8589934593l > 255l;
+    return 131073ll > 255ll;
 }
 
 int compare_constants_2(void) {
-    /* This exercises the rewrite rule for cmp where src is a large constant
-     * and dst is a constant, because 8589934593 can't fit in an int.
-     */
-    return 255l < 8589934593l;
+    /* Same as above with operands swapped: cmp with two constants. */
+    return 255ll < 131073ll;
 }
 
-int l_geq_2_60(void) {
+int l_geq_2_30(void) {
     /* This exercises the rewrite rule for cmp where src is a large constant
      * and dst is a variable.
-     * 1152921504606846976l == 2^60
+     * 1073741824ll == 2^30
      */
-    return (l >= 1152921504606846976l);
+    return (l >= 1073741824ll);
 }
 
-int uint_max_leq_l(void) {
-    /* The first operand to cmp is a variable and second is a constant (UINT_MAX as a long). */
-    return (4294967295l <= l);
+int ulong_max_leq_l(void) {
+    /* The first operand to cmp is a variable and second is a
+     * constant (ULONG_MAX as a long long). */
+    return (65535ll <= l);
 }
 
 int l_eq_l2(void) {
@@ -48,18 +47,18 @@ int main(void) {
         return 2;
     }
 
-    l = -9223372036854775807l; // LONG_MIN + 1
-    if (l_geq_2_60()) {
+    l = -2147483647ll; // LONG_LONG_MIN + 1
+    if (l_geq_2_30()) {
         return 3;
     }
-    if (uint_max_leq_l()) {
+    if (ulong_max_leq_l()) {
         return 4;
     }
-    l = 1152921504606846976l; // 2^60
-    if (!l_geq_2_60()) {
+    l = 1073741824ll; // 2^30
+    if (!l_geq_2_30()) {
         return 5;
     }
-    if (!uint_max_leq_l()) {
+    if (!ulong_max_leq_l()) {
         return 6;
     }
     l2 = l;

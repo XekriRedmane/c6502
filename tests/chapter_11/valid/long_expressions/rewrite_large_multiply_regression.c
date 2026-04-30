@@ -20,7 +20,7 @@ int check_12_ints(int start, int a, int b, int c, int d, int e, int f, int g,
 
 // use a variable with static storage duration in operations below
 // so they can't be constant folded
-long glob = 5l;
+long long glob = 5ll;
 
 int main(void) {
     // The multiply operation whose result we want to spill;
@@ -28,7 +28,7 @@ int main(void) {
     // pseudos and is tied for fewest uses. NOTE: optimizations must be enabled
     // so we propagate the temporary variable holding the result of this
     // expression instead of copying it into should_spill.
-    long should_spill = glob * 4294967307l;
+    long long should_spill = glob * 200000000ll;
 
     // create 12 pseudos that all interfere w/ imul result and each other;
     // this forces a spill, since only 12 hard registers are available
@@ -72,7 +72,7 @@ int main(void) {
                   twenty_four, 13);
     // use imul result to make it interfere with other pseudos
     // and validate that it wasn't clobbered
-    if (should_spill != 21474836535l) {
+    if (should_spill != 1000000000ll) {
         return -1;
     }
     return 0;  // success

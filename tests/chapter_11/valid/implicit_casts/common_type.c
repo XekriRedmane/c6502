@@ -1,85 +1,86 @@
 /* Test that we correctly find the common type in binary expressions */
 
-long l;
+long long l;
 int i;
 
 int addition(void) {
-    // l = 2147483653
+    // l = 32898  (2^15 + 130; doesn't fit in long)
     // i = 10
 
-    /* The common type of i and l is long, so we should
-     * promote i to a long, then perform addition.
-     * If we instead converted l to an int, its value would be
-     * -2147483643, and the result of i + l would be -2147483633
+    /* The common type of i and l is long long, so we should
+     * promote i to a long long, then perform addition.
+     * If we instead converted l to a long, its value would be
+     * -32638 (32898 wraps to a negative signed long), and the
+     * result of i + l would not be 32908.
      */
-    long result = i + l;
-    return (result == 2147483663l);
+    long long result = i + l;
+    return (result == 32908ll);
 }
 
 int division(void) {
-    // l = 2147483649l
-    // i = 10l
+    // l = 100000ll  (doesn't fit in long; long max is 32767)
+    // i = 10
 
-    /* The common type of i and l is long.
-     * Therefore, we should promote i to a long,
-     * then divide (resulting in 214748364),
-     * then convert back to an int (which can be done without
-     * changing the result's value, since 214748364 is within
-     * the range of int.)
-
-     * If instead we truncated l to an int before performing division,
-     * the result would be -2147483647 / 10, or -214748364.
+    /* The common type of i and l is long long.
+     * Promote i to long long, divide (= 10000), then convert
+     * back to long (which preserves the value, since 10000 is
+     * within the range of long).
+     *
+     * If instead we truncated l to a long before performing
+     * division, the result would be 34464 / 10 = 3446 (since
+     * 100000 mod 65536 = 34464).
      */
-    int int_result = l / i;
-    return (int_result == 214748364);
+    long long_result = l / i;
+    return (long_result == 10000l);
 }
 
 int comparison(void) {
     // i = -100
-    // l = 2147483648, i.e. 2^31
+    // l = 32898ll  (doesn't fit in long; as signed long = -32638)
 
-    /* Make sure we convert i to a long instead of converting l to an int.
-     * If we convert l to an int its value will be -2147483648,
-     * which is smaller than -100.
+    /* Make sure we convert i to long long instead of converting
+     * l down to a smaller type. If we convert l to a long its
+     * value will be -32638 (smaller than -100); to an int its
+     * value will be -126 (also smaller than -100).
      */
     return (i <= l);
 }
 
 int conditional(void) {
-    // l = 8589934592l, i.e. 2^33
+    // l = 1073741824ll, i.e. 2^30
     // i = 10;
 
     /* When a conditional expression includes both int and long branches,
-     * make sure the int type is promoted to a long, rather than the long being
-     * converted to an int
+     * make sure the int type is promoted to a long long, rather
+     * than the long long being converted to an int
      */
-    long result = 1 ? l : i;
-    return (result == 8589934592l);
+    long long result = 1 ? l : i;
+    return (result == 1073741824ll);
 }
 
 int main(void) {
     // Addition
-    l = 2147483653;
+    l = 32898;
     i = 10;
     if (!addition()) {
         return 1;
     }
 
     // Division
-    l = 2147483649l;
+    l = 100000ll;
     if (!division()) {
         return 2;
     }
 
     // Comparison
     i = -100;
-    l = 2147483648; // 2^31
+    l = 32898; // 2^15 + 130
     if (!comparison()) {
         return 3;
     }
 
     // Conditional
-    l = 8589934592l; // 2^33
+    l = 1073741824ll; // 2^30
     i = 10;
     if (!conditional()) {
         return 4;

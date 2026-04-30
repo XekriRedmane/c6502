@@ -79,16 +79,21 @@ _STORAGE_CLASSES = {
 # `type_specifier` and `specifier` transformer methods unwrap their
 # child trees, every entry on a specifier list is one of these tokens.
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                           "FLOAT", "DOUBLE",
+                           "FLOAT", "DOUBLE", "CHAR",
                            "STATIC", "EXTERN")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                                "FLOAT", "DOUBLE")
+                                "FLOAT", "DOUBLE", "CHAR")
 
 
 def _resolve_data_type(type_specs):
     """Map a list of type-specifier tokens to a c99_ast object type.
     Valid combinations follow C99 §6.7.2 (subset c6502 models —
-    no `char`, `short`, `_Bool`):
+    no `short`, `_Bool`):
+      * `char`                                     → Char (signed,
+                                                     -128..127 in
+                                                     c6502)
+      * `signed char`                              → SChar
+      * `unsigned char`                            → UChar
       * `int`, `signed`, `signed int`              → Int
       * `unsigned`, `unsigned int`                 → UInt
       * `long`, `long int`,
@@ -116,14 +121,16 @@ def _resolve_data_type(type_specs):
     unsigned_count = sum(1 for t in type_specs if t.type == "UNSIGNED")
     float_count = sum(1 for t in type_specs if t.type == "FLOAT")
     double_count = sum(1 for t in type_specs if t.type == "DOUBLE")
+    char_count = sum(1 for t in type_specs if t.type == "CHAR")
     is_fp = float_count > 0 or double_count > 0
     is_integer = (
         int_count > 0 or signed_count > 0 or unsigned_count > 0
+        or char_count > 0
     )
     if is_fp and is_integer:
         raise ParserError(
             "floating type cannot combine with 'int' / 'signed' / "
-            "'unsigned'"
+            "'unsigned' / 'char'"
         )
     if float_count > 1:
         raise ParserError("'float' specified more than once")
@@ -151,8 +158,15 @@ def _resolve_data_type(type_specs):
         raise ParserError("'signed' specified more than once")
     if unsigned_count > 1:
         raise ParserError("'unsigned' specified more than once")
+    if char_count > 1:
+        raise ParserError("'char' specified more than once")
+    if char_count == 1 and (int_count > 0 or long_count > 0):
+        raise ParserError(
+            "'char' cannot combine with 'int' / 'long' / 'short'"
+        )
     if not is_fp and (int_count == 0 and long_count == 0
-            and signed_count == 0 and unsigned_count == 0):
+            and signed_count == 0 and unsigned_count == 0
+            and char_count == 0):
         raise ParserError("missing type specifier")
     if int_count > 1:
         raise ParserError(
@@ -169,6 +183,13 @@ def _resolve_data_type(type_specs):
     if double_count == 1:
         return c99_ast.Double()
     is_unsigned = unsigned_count == 1
+    is_signed = signed_count == 1
+    if char_count == 1:
+        if is_unsigned:
+            return c99_ast.UChar()
+        if is_signed:
+            return c99_ast.SChar()
+        return c99_ast.Char()
     if long_count == 2:
         return c99_ast.ULongLong() if is_unsigned else c99_ast.LongLong()
     if long_count == 1:
@@ -349,13 +370,143 @@ def _parse_integer_token(text):
     return int(digits, 0), base, has_ll
 
 
+# Single-character C99 escape sequences (§6.4.4.4 paragraph 4 / §5.2.2).
+# Numeric escapes (\xNN, \NNN) are handled separately in `_decode_escape`.
+_SIMPLE_ESCAPE_VALUES = {
+    "'":  0x27,
+    '"':  0x22,
+    "?":  0x3F,
+    "\\": 0x5C,
+    "a":  0x07,
+    "b":  0x08,
+    "f":  0x0C,
+    "n":  0x0A,
+    "r":  0x0D,
+    "t":  0x09,
+    "v":  0x0B,
+}
+
+
+def _decode_escapes(body: str) -> bytes:
+    """Decode a C99 character / string-literal body — that is, the
+    raw text BETWEEN the surrounding `'` or `"` quotes, with the
+    quotes already stripped — into the byte sequence the literal
+    represents. Returns a `bytes` object whose values are 0..255.
+
+    Handles every escape form the c99.lark grammar accepts:
+      * `\\<simple>` for the simple escapes in `_SIMPLE_ESCAPE_VALUES`
+      * `\\NNN` for octal escapes (1-3 digits per §6.4.4.4)
+      * `\\xHH...` for hex escapes (one or more hex digits per
+        §6.4.4.4 — c6502 truncates to the low 8 bits for char
+        targets, since wider char isn't modelled)
+    `\\u` / `\\U` escapes lex but raise here — c6502 has no wide-
+    char model. Plain unescaped bytes pass through unchanged
+    (the lexer already restricted them to printable ASCII minus
+    the quote / backslash characters).
+    """
+    out = bytearray()
+    i = 0
+    n = len(body)
+    while i < n:
+        c = body[i]
+        if c != "\\":
+            out.append(ord(c) & 0xFF)
+            i += 1
+            continue
+        # Escape: at least one character follows (the lexer
+        # ensures every `\\` is part of a recognized escape).
+        i += 1
+        if i >= n:
+            raise ParserError(
+                f"trailing backslash in literal body {body!r}"
+            )
+        e = body[i]
+        if e in _SIMPLE_ESCAPE_VALUES:
+            out.append(_SIMPLE_ESCAPE_VALUES[e])
+            i += 1
+            continue
+        if e == "x":
+            # `\xH+` — one or more hex digits per §6.4.4.4.
+            i += 1
+            j = i
+            while j < n and body[j] in "0123456789abcdefABCDEF":
+                j += 1
+            if j == i:
+                raise ParserError(
+                    f"empty \\x escape in literal body {body!r}"
+                )
+            value = int(body[i:j], 16) & 0xFF
+            out.append(value)
+            i = j
+            continue
+        if e in "01234567":
+            # Octal escape: 1-3 octal digits per §6.4.4.4.
+            j = i
+            while j < min(i + 3, n) and body[j] in "01234567":
+                j += 1
+            value = int(body[i:j], 8) & 0xFF
+            out.append(value)
+            i = j
+            continue
+        if e in "uU":
+            raise ParserError(
+                "Unicode escapes (\\u / \\U) are not supported "
+                "(c6502 has no wide-char model)"
+            )
+        raise ParserError(f"unrecognized escape \\{e} in literal")
+    return bytes(out)
+
+
+def _decode_char_constant(token) -> int:
+    """Map a CHAR_CONSTANT token (text like `'a'`, `'\\n'`,
+    `'\\x41'`) to the integer value of the contained character.
+    Per the user's choice the result rides as a `ConstInt` rather
+    than a typed `ConstChar` — the type checker promotes char-typed
+    contexts itself, and `'a'` is conventionally an `int` in C
+    anyway (§6.4.4.4.10: "An integer character constant has type
+    int")."""
+    text = str(token)
+    # Strip the optional leading L (wide-char prefix; c6502 doesn't
+    # model wide chars, so we accept the lex but treat as narrow).
+    if text.startswith("L"):
+        text = text[1:]
+    # Strip surrounding single quotes.
+    body = text[1:-1]
+    decoded = _decode_escapes(body)
+    if len(decoded) != 1:
+        # Multi-character constants (e.g. `'ab'`) lex but their
+        # value is implementation-defined per §6.4.4.4.10. c6502
+        # rejects rather than picking an arbitrary encoding.
+        raise ParserError(
+            f"multi-character character constant {token!s} is not "
+            f"supported"
+        )
+    return decoded[0]
+
+
+def _decode_string_literal(token) -> bytes:
+    """Map a single STRING_LITERAL token to its byte sequence
+    (excluding the null terminator — that's added during static-
+    storage layout, not at parse time, so adjacent literals can
+    concatenate cleanly: `"ab" "cd"` → "abcd" before adding `\\0`)."""
+    text = str(token)
+    if text.startswith("L"):
+        text = text[1:]
+    body = text[1:-1]
+    return _decode_escapes(body)
+
+
 def _const_for_token(token):
     """Map a Lark constant token to a c99_ast `Type_const` node.
     Integer literals follow C99 §6.4.4.1 paragraph 5 (first variant
     in the per-(suffix, base) candidate list whose range fits the
     value); floating literals follow C99 §6.4.4.2 (suffix uniquely
-    determines the type — no value-fitting rule)."""
+    determines the type — no value-fitting rule); character
+    literals lex via CHAR_CONSTANT and ride as a `ConstInt` carrying
+    the byte value (§6.4.4.4.10)."""
     text = str(token)
+    if token.type == "CHAR_CONSTANT":
+        return c99_ast.ConstInt(int=_decode_char_constant(token))
     if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
         # Strip a trailing `f`/`F` before parsing — Python's
         # `float()` doesn't recognise C suffixes.
@@ -1315,6 +1466,24 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def paren(self, _lp, inner, _rp):
         return inner
+
+    # `STRING_LITERAL+` — one or more adjacent string-literal
+    # tokens. Per C99 §6.4.5.5 adjacent string literals are
+    # concatenated at translation phase 6 (compile-time), so we do
+    # the join here at parse time and emit a single `String` AST
+    # node carrying the concatenated raw bytes (each character a
+    # value 0..255 in a Python str — c6502 doesn't model wide
+    # chars). The string's null terminator is added later, during
+    # static-storage layout — keeping it out of the parsed value
+    # makes concatenation trivial.
+    def str_literal(self, items):
+        joined = bytearray()
+        for token in items:
+            joined.extend(_decode_string_literal(token))
+        # Encode bytes as a Python str using Latin-1 so each byte
+        # becomes one code point — round-trips byte-perfectly when
+        # the type checker / lifter / codegen iterate the str.
+        return c99_ast.String(str=bytes(joined).decode("latin-1"))
 
     # `IDENTIFIER LPAREN arg_list? RPAREN` — a function call. With
     # no arguments, items is [IDENT, LPAREN, RPAREN] (3); with an

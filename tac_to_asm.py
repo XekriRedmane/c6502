@@ -246,6 +246,14 @@ _INT_TO_FLOAT = {
     c99_ast.ULong:     "ul2f",
     c99_ast.LongLong:  "ll2f",
     c99_ast.ULongLong: "ull2f",
+    # Char types share width and signedness with Int / UInt, so
+    # they re-use the same helpers. Integer-promotion in
+    # type_checking lifts char operands to Int / UInt before
+    # arithmetic, but a direct `(double)c` cast bypasses
+    # promotion and hits this dispatch with a Char source.
+    c99_ast.Char:      "i2f",
+    c99_ast.SChar:     "i2f",
+    c99_ast.UChar:     "u2f",
 }
 _INT_TO_DOUBLE = {
     c99_ast.Int:       "i2d",
@@ -254,6 +262,9 @@ _INT_TO_DOUBLE = {
     c99_ast.ULong:     "ul2d",
     c99_ast.LongLong:  "ll2d",
     c99_ast.ULongLong: "ull2d",
+    c99_ast.Char:      "i2d",
+    c99_ast.SChar:     "i2d",
+    c99_ast.UChar:     "u2d",
 }
 _FLOAT_TO_INT = {
     c99_ast.Int:       "f2i",
@@ -262,6 +273,9 @@ _FLOAT_TO_INT = {
     c99_ast.ULong:     "f2ul",
     c99_ast.LongLong:  "f2ll",
     c99_ast.ULongLong: "f2ull",
+    c99_ast.Char:      "f2i",
+    c99_ast.SChar:     "f2i",
+    c99_ast.UChar:     "f2u",
 }
 _DOUBLE_TO_INT = {
     c99_ast.Int:       "d2i",
@@ -270,6 +284,9 @@ _DOUBLE_TO_INT = {
     c99_ast.ULong:     "d2ul",
     c99_ast.LongLong:  "d2ll",
     c99_ast.ULongLong: "d2ull",
+    c99_ast.Char:      "d2i",
+    c99_ast.SChar:     "d2i",
+    c99_ast.UChar:     "d2u",
 }
 _FLOAT_TO_DOUBLE = "f2d"
 _DOUBLE_TO_FLOAT = "d2f"
@@ -309,6 +326,8 @@ def _to_asm_static_init(
             return asm_ast.DoubleInit(float=v)
         case tac_ast.AddressInit(name=n, offset=off):
             return asm_ast.AddressInit(name=n, offset=off)
+        case tac_ast.StringInit(str=s, bytes=b):
+            return asm_ast.StringInit(str=s, bytes=b)
         case tac_ast.ZeroInit(bytes=b):
             return asm_ast.ZeroInit(bytes=b)
     raise TypeError(f"unexpected static_init: {init!r}")
@@ -368,12 +387,12 @@ class Translator:
         return isinstance(sym.type, c99_ast.Pointer)
 
     def _size_of(self, val: tac_ast.Type_val) -> int:
-        """Byte width of a TAC val. Integer types: 1 for Int / UInt,
-        2 for Long / ULong, 4 for LongLong / ULongLong. Floating
-        types: 4 for Float, 8 for Double. Pointer: 2 (the 6502's
-        address width). Constants dispatch on the const variant;
-        Vars look up the symbol-table c99 type. Unknown Vars
-        (synthetic test AST) default to 1."""
+        """Byte width of a TAC val. Integer types: 1 for Int / UInt
+        / Char / SChar / UChar, 2 for Long / ULong, 4 for LongLong
+        / ULongLong. Floating types: 4 for Float, 8 for Double.
+        Pointer: 2 (the 6502's address width). Constants dispatch
+        on the const variant; Vars look up the symbol-table c99
+        type. Unknown Vars (synthetic test AST) default to 1."""
         match val:
             case tac_ast.Constant(const=tac_ast.ConstLong()):
                 return 2

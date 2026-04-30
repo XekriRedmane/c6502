@@ -129,12 +129,12 @@ def _operands_in(instr: asm_ast.Type_instruction):
 
 def _size_of_name(name: str, symbols: SymbolTable | None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
-    table — Int/UInt → 1, Long/ULong → 2, LongLong/ULongLong → 4,
-    Float → 4, Double → 8, Pointer → 2 (the 6502's address width),
-    Array → recursive element size × count (so `int a[10]` occupies
-    10 contiguous frame bytes). A None symbol table or an absent
-    entry both default to 1, which matches the Int-only world unit
-    tests assume."""
+    table — Int/UInt/Char/SChar/UChar → 1, Long/ULong → 2,
+    LongLong/ULongLong → 4, Float → 4, Double → 8, Pointer → 2
+    (the 6502's address width), Array → recursive element size ×
+    count (so `int a[10]` occupies 10 contiguous frame bytes). A
+    None symbol table or an absent entry both default to 1, which
+    matches the Int-only world unit tests assume."""
     if symbols is None:
         return 1
     sym = symbols.get(name)

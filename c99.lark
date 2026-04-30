@@ -55,14 +55,21 @@ _BIG_U_ESC: /\\U[0-9a-fA-F]{8}/
 _ESCAPE: _SIMPLE_ESC | _OCT_ESC | _HEX_ESC | _U_ESC | _BIG_U_ESC
 
 // -- Character constant (docs/chars_grammar.txt) --
-// Printable ASCII minus ' (0x27) and \ (0x5C). Using \] (instead of \x5D)
-// because Lark translates \x5D to a bare ], which would close the class early.
-_C_CHAR: /[\x20-\x26\x28-\x5B\]-\x7E]/ | _ESCAPE
-CHARACTER_CONSTANT: /L?'/ _C_CHAR+ /'/
+// Printable ASCII minus ' (0x27) and \ (0x5C), plus the C99 §5.2.1
+// "white-space characters" \t (0x09), \v (0x0B), \f (0x0C). Using
+// \] (instead of \x5D) because Lark translates \x5D to a bare ],
+// which would close the class early. Newlines (\x0A LF, \x0D CR)
+// are NOT accepted inside character literals — that mirrors the
+// C99 grammar's "any member of the source character set except the
+// single-quote ', backslash \, or new-line character" rule, and
+// catches missing closing quotes.
+_C_CHAR: /[\x09\x0B\x0C\x20-\x26\x28-\x5B\]-\x7E]/ | _ESCAPE
+CHAR_CONSTANT: /L?'/ _C_CHAR+ /'/
 
 // -- String literal (docs/strings_grammar.txt) --
-// Printable ASCII minus " (0x22) and \ (0x5C). Same \] trick as _C_CHAR.
-_S_CHAR: /[\x20\x21\x23-\x5B\]-\x7E]/ | _ESCAPE
+// Printable ASCII minus " (0x22) and \ (0x5C), plus \t / \v / \f.
+// Newlines rejected for the same reason as _C_CHAR.
+_S_CHAR: /[\x09\x0B\x0C\x20\x21\x23-\x5B\]-\x7E]/ | _ESCAPE
 STRING_LITERAL: /L?"/ _S_CHAR* /"/
 
 // -- Error-catching terminals for malformed numerics.
@@ -212,7 +219,7 @@ initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
 function_decl: specifier+ declarator block
 
-type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE
+type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR
 
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
@@ -408,6 +415,7 @@ constant_exp: conditional_exp
 
 ?atom: const                       -> constant
      | LPAREN exp RPAREN                      -> paren
+     | STRING_LITERAL+                        -> str_literal
      | LPAREN exp RPAREN LPAREN arg_list? RPAREN -> indirect_function_call
      | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
      | IDENTIFIER                             -> identifier
@@ -418,6 +426,7 @@ const: INTEGER_CONSTANT
      | DOUBLE_CONSTANT
      | FLOAT_CONSTANT
      | LONG_DOUBLE_CONSTANT
+     | CHAR_CONSTANT
 
 unop: MINUS                         -> negate
     | TILDE                         -> complement
@@ -568,7 +577,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | BOOL | COMPLEX | IMAGINARY
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
-         | CHARACTER_CONSTANT
+         | CHAR_CONSTANT
          | STRING_LITERAL | IDENTIFIER | INVALID_NUMBER
          | ELLIPSIS | LSHIFT_ASSIGN | RSHIFT_ASSIGN
          | ARROW | PLUSPLUS | MINUSMINUS | LSHIFT | RSHIFT

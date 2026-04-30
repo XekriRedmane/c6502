@@ -43,6 +43,7 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from passes.identifier_resolution import resolve_program as resolve_identifiers
+from passes.string_lifting import lift_program as lift_strings
 from passes.type_checking import (
     StaticAttr,
     check_program as type_check_program,
@@ -51,9 +52,23 @@ from c99_to_tac import translate_program as translate_to_tac
 
 
 def _resolved(source: str):
-    """Run parse + the three name-resolution passes. Used by every
-    stage from `--resolve` onward."""
-    return label_loops(resolve_labels(resolve_identifiers(parse(source))))
+    """Run parse + name resolution + string lifting. Order matters:
+      1. parse — c99 AST
+      2. identifier_resolution — user names get unique
+         `@N.<orig>` rewrites; string literals pass through.
+      3. string_lifting — every non-direct-array-init String
+         becomes a `Var(.str@N)` referring to a fresh file-scope
+         static (prepended to the program's declaration list).
+         Runs AFTER identifier_resolution so the lifted names use
+         a disjoint character (`.`) and don't get re-renamed.
+      4. label_resolution — user `goto` labels mangle to
+         `.<funcname>@<orig>`.
+      5. loop_labeling — iteration / switch / case / default
+         labels get `.loop@<N>` etc.
+    """
+    return label_loops(resolve_labels(lift_strings(
+        resolve_identifiers(parse(source)),
+    )))
 
 
 def _format_tokens(source: str) -> str:

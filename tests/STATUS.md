@@ -139,6 +139,16 @@ the assumed semantics still mismatch even when the literal accepts.
   - `initialization/automatic.c`
   - `initialization/automatic_nested.c`
   - `initialization/static.c`
+- **chapter\_16:**
+  - `chars/chained_casts.c` — `unsigned int x = 4294967200u;`
+  - `chars/common_type.c` — `4294967286l`
+  - `chars/convert_by_assignment.c` — `18446744073709551606ul`
+  - `chars/explicit_casts.c` — `17592186044416l`
+  - `chars/return_char.c` — `5369233654l`
+  - `chars/static_initializers.c` — `17592186044416l`
+  - `extra_credit/bitwise_ops_character_constants.c` — `9259400834947493926ul`
+  - `extra_credit/bitwise_ops_chars.c` — `4294966637`
+  - `extra_credit/compound_bitwise_ops_chars.c` — `4296140120l`
 
 ### Frame beyond 253 bytes
 
@@ -159,6 +169,28 @@ declare `unsigned int x = N;` with `N >> 255`.
 
 - **chapter\_12:**
   - `valid/explicit_casts/rewrite_movz_regression.c` — `unsigned glob = 5000u;`
+
+### Switch case promotion needs ≥2-byte int
+
+`promote_switch_cond` expects char→int promotion to widen so that
+case values that differ at int-width but collide at char-width
+(e.g. `case 100` vs. `case 356`) stay distinct. With c6502's
+1-byte int, both wrap to 100.
+
+- **chapter\_16:**
+  - `extra_credit/promote_switch_cond.c`
+
+### pcpp truncates source-embedded control characters
+
+c6502 uses pcpp as the preprocessor; pcpp treats vertical tab
+(0x0B) and form feed (0x0C) as line terminators, so source files
+with literal control characters inside a `'\v'` / `"\f"` body
+get truncated before the lexer sees them. The escape-sequence
+forms (`'\v'`, `"\f"`) work fine.
+
+- **chapter\_16:**
+  - `valid/char_constants/control_characters.c`
+  - `valid/strings_as_initializers/array_init_special_chars.c`
 
 ---
 

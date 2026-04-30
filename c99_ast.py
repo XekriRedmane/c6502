@@ -248,6 +248,21 @@ class Double(Type_data_type):
     pass
 
 
+@dataclass
+class Char(Type_data_type):
+    pass
+
+
+@dataclass
+class SChar(Type_data_type):
+    pass
+
+
+@dataclass
+class UChar(Type_data_type):
+    pass
+
+
 @dataclass(kw_only=True)
 class FunType(Type_data_type):
     params: list[Type_data_type] = field(default_factory=list)
@@ -289,6 +304,11 @@ class Type_exp:
 class Constant(Type_exp):
     const: Type_const
     data_type: Type_data_type | None = None
+
+
+@dataclass
+class String(Type_exp):
+    str: str
 
 
 @dataclass
@@ -553,3 +573,13 @@ class ConstFloat(Type_const):
 @dataclass
 class ConstDouble(Type_const):
     float: float
+
+
+@dataclass
+class ConstChar(Type_const):
+    int: int
+
+
+@dataclass
+class ConstUChar(Type_const):
+    int: int

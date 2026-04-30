@@ -50,7 +50,7 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains nine passes, each a separate module that
+`compile.py --codegen` chains ten passes, each a separate module that
 takes one AST and returns another (or text for emit):
 
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar
@@ -71,12 +71,21 @@ takes one AST and returns another (or text for emit):
    function_decl's `params` array; their *types* live in parallel
    on `data_type.params`.
 
-   The type vocabulary is six integer types, two floating types,
+   The type vocabulary is nine integer types, two floating types,
    plus pointers and function types. Integers: `Int()` is 1-byte
    signed (-128..127), `Long()` is 2-byte signed (-32768..32767),
    `LongLong()` is 4-byte signed (-2^31..2^31-1), `UInt()` is
    1-byte unsigned (0..255), `ULong()` is 2-byte unsigned
-   (0..65535), `ULongLong()` is 4-byte unsigned (0..2^32-1).
+   (0..65535), `ULongLong()` is 4-byte unsigned (0..2^32-1),
+   `Char()` is 1-byte signed (-128..127, same range as Int —
+   plain `char` is signed in c6502), `SChar()` is `signed char`
+   (1-byte signed), `UChar()` is `unsigned char` (1-byte
+   unsigned). Char/SChar/UChar are distinct types from Int/UInt
+   even though they share width and signedness — C99 §6.3.1.1.2
+   integer-promotes them to int (or unsigned int) at every
+   operand position, so they only carry their distinct identity
+   through declarations and addresses; arithmetic always happens
+   at Int/UInt width or wider.
    Floating: `Float()` is IEEE 754 single (4 bytes), `Double()`
    is IEEE 754 double (8 bytes). `long double` (16-byte IEEE 754
    quad / extended) isn't modelled — the parser rejects it.
@@ -139,11 +148,13 @@ takes one AST and returns another (or text for emit):
    `signed [int]` → Int; `unsigned [int]` → UInt; `long [int]` /
    `signed long [int]` → Long; `unsigned long [int]` → ULong;
    `long long [int]` / `signed long long [int]` → LongLong;
-   `unsigned long long [int]` → ULongLong; `float` → Float;
-   `double` → Double), rejecting multiple type specifiers,
+   `unsigned long long [int]` → ULongLong; `char` → Char;
+   `signed char` → SChar; `unsigned char` → UChar; `float` →
+   Float; `double` → Double), rejecting multiple type specifiers,
    multiple storage classes, missing type, three or more `long`s,
-   `long double`, `signed unsigned`, and any FP/integer specifier
-   mix (`int float`, `unsigned double`, etc.).
+   `char` combined with `int` / `long` / `short`, `long double`,
+   `signed unsigned`, and any FP/integer specifier mix (`int
+   float`, `unsigned double`, etc.).
    A `<block>` is `{ <block_item>* }` (its own AST product type
    `Block(block_item*)` so a function body is `Function(name,
    Block([...]))`). A block item is a declaration (`var_decl` or
@@ -352,7 +363,24 @@ takes one AST and returns another (or text for emit):
    through unchanged — they live in separate namespaces and are
    owned by later passes (label_resolution for user labels;
    loop_labeling for break / continue / case / default).
-3. `passes.label_resolution.resolve_program` — `c99_ast` → `c99_ast`.
+3. `passes.string_lifting.lift_program` — `c99_ast` → `c99_ast`.
+   Hoists every `String` literal whose context is NOT a direct
+   char-array initializer (`char arr[N] = "abc";` keeps its
+   String inline) into a fresh file-scope `static char[N+1]`
+   declaration, replacing the original `String` with a `Var`
+   referencing the new declaration. The minted name is
+   `.str@<N>` (leading `.` and `@` keep it disjoint from any
+   user identifier and from translator-minted labels). After
+   lifting, every other use of a string literal — `&"abc"`,
+   `"abc"[1]`, `char *p = "abc"`, `return "abc";` — works
+   through the same mechanisms as any other file-scope char
+   array (decay to `char *`, AddressOf-of-array, subscript,
+   ...) without per-pass special cases. Runs AFTER
+   identifier_resolution so the lifted names use a disjoint
+   character (`.`) and don't get re-renamed; runs BEFORE
+   label_resolution / loop_labeling / type_checking so those
+   passes see the rewritten AST.
+4. `passes.label_resolution.resolve_program` — `c99_ast` → `c99_ast`.
    Validates labeled statements (C99 §6.8.1) and `goto` targets
    (§6.8.6). Two walks per function: (a) collect every `LabeledStmt`,
    minting a unique name `.<funcname>@<orig>` per label and rejecting
@@ -372,7 +400,7 @@ takes one AST and returns another (or text for emit):
    C99 §6.8.6 also forbids jumping into the scope of a variably-
    modified-type identifier; c6502 has no VLAs, so that constraint
    is vacuously satisfied.
-4. `passes.loop_labeling.label_program` — `c99_ast` → `c99_ast`.
+5. `passes.loop_labeling.label_program` — `c99_ast` → `c99_ast`.
    Mints a unique label per iteration statement (`.loop@<N>`) and
    per `switch` statement (`.switch@<N>`), stamping it onto that
    statement's `label` field. While walking the body, the pass
@@ -409,7 +437,7 @@ takes one AST and returns another (or text for emit):
    appending suffixes (`_start`, `_continue`, `_break`) to the
    loop's base label; switches use only the `_break` suffix (the
    dispatch chain emits the case / default labels directly).
-5. `passes.type_checking.check_program` — `(c99_ast, SymbolTable)`.
+6. `passes.type_checking.check_program` — `(c99_ast, SymbolTable)`.
    Walks the AST once and produces a `SymbolTable` (a `dict[str,
    Symbol]` keyed by resolved identifier name). The data-type
    classes (`Int`, `Long`, `LongLong`, `UInt`, `ULong`, `ULongLong`,
@@ -445,15 +473,30 @@ takes one AST and returns another (or text for emit):
    Postfix inherit the inner operand's type, except `!` which
    always yields Int per §6.5.3.3.5.
 
+   **Integer promotion** (C99 §6.3.1.1.2) runs FIRST at each
+   operand position of an arithmetic / bitwise / comparison /
+   shift operator (and on the operand of unary `-` / `~`).
+   Char-typed operands promote to `Int` (when Int can represent
+   the source's range) or `UInt` (otherwise, which in c6502
+   means UChar — Int -128..127 doesn't cover UChar 0..255):
+   * SChar / Char → Int (same range and signedness; same-width
+     no-op Cast that c99_to_tac elides at lowering)
+   * UChar       → UInt
+   Other integer types already have rank ≥ Int and pass through
+   unchanged.
+
    **Implicit conversions** apply C99 §6.3.1.8's usual arithmetic
-   conversions. Floating types dominate per §6.3.1.8.1:
+   conversions to the post-promotion operand types. Floating
+   types dominate per §6.3.1.8.1:
    * either operand `Double` → result `Double`
    * else either operand `Float` → result `Float`
    * else both operands integer → integer rules (below)
 
    Integer rules, keyed by C99 §6.3.1.1 conversion rank (`Int` and
    `UInt` are rank 1; `Long` and `ULong` are rank 2; `LongLong`
-   and `ULongLong` are rank 3):
+   and `ULongLong` are rank 3 — char types are below Int but never
+   participate in the common-type computation, since integer
+   promotion has already lifted them to Int / UInt):
    * matching types → that type
    * both signed (or both unsigned) → the higher-rank type wins
      (Int+Long → Long, Long+LongLong → LongLong, UInt+ULongLong →
@@ -502,7 +545,7 @@ takes one AST and returns another (or text for emit):
    implicit `Cast(Long)` (matching the pointer's 2-byte width), so
    by the time TAC sees the Binary every operand is 2 bytes wide.
    The actual scaling by `sizeof(pointee)` lives in `c99_to_tac` —
-   see step 6 below. Rejected at the type-check boundary:
+   see step 7 below. Rejected at the type-check boundary:
    `ptr + ptr`, `int - ptr` (which catches `0 - p`), `ptr ±
    floating`, `ptr - ptr` with mismatched pointer types, and any
    additive op on a function pointer (§6.5.6.2 requires "pointer
@@ -620,7 +663,7 @@ takes one AST and returns another (or text for emit):
    `dict` is enough — no nested scopes. Functions are pre-registered
    from their definitions before each body is checked, so a body
    can self-recurse without a forward declaration.
-6. `c99_to_tac.translate_program` — `(c99_ast, SymbolTable)` →
+7. `c99_to_tac.translate_program` — `(c99_ast, SymbolTable)` →
    `tac_ast`. The TAC program shape is `Program(top_level*)` where
    each `top_level` is `Function(name, is_global, params,
    instructions)` or `StaticVariable(name, is_global, data_type,
@@ -818,7 +861,7 @@ takes one AST and returns another (or text for emit):
    happen at one width. `CaseStmt` / `DefaultStmt` outside the
    dispatch context just emit their `Label` and recurse — the case-
    value itself was already consumed at the dispatch chain.
-7. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. The asm
+8. `tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. The asm
    program shape mirrors TAC: `Program(top_level*)` with
    `Function(name, is_global, params, instructions)` and
    `StaticVariable(name, is_global, init)`. Each TAC `Function`
@@ -976,7 +1019,7 @@ takes one AST and returns another (or text for emit):
    `asm_ast.Call` (no `AllocateStack`); they exchange operands
    through the `HARGS` zero-page block instead of the soft stack,
    so they bypass the user-function calling convention entirely.
-8. `passes.replace_pseudoregisters.replace_program` — replaces every
+9. `passes.replace_pseudoregisters.replace_program` — replaces every
    `Pseudo(name, offset)` operand with a `Frame(offset)` (or
    `Data(name, offset)` for static-storage references) and lays
    out the function's stack frame. Takes the type-checker's
@@ -1005,7 +1048,7 @@ takes one AST and returns another (or text for emit):
    local_bytes=M)` and patches every `Ret(...)` with the same N/M,
    so the emitter has the dimensions it needs for the prologue's
    space-allocation step and the epilogue's SSP-rewind.
-9. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text.
+10. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text.
    **Atomic IR**: every node maps to one 6502 instruction, except
    `Ret` and `FunctionPrologue` (multi-step compound nodes
    documented above) and `AllocateStack(N)` which expands to the
@@ -1032,7 +1075,7 @@ takes one AST and returns another (or text for emit):
    `Data(name, offset=7)` the high byte of a Double static.
 
 `Pseudo` operands at emit time are an error — they must have been resolved by
-step 8 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
+step 9 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
 are TAC-only concepts;
 `tac_to_asm` lowers each to a sequence of `Mov`s into the shared
 zero-page block `HARGS` (`$04`–`$1B`), a `Call` to the appropriate
@@ -1040,7 +1083,7 @@ runtime helper (`mul8`/`divmod8`/`asl8`/`asr8` for 1-byte operands,
 `mul16`/`divmod16`/`asl16`/`asr16` for 2-byte operands,
 `mul32`/`divmod32`/`asl32`/`asr32` for 4-byte operands), and `Mov`s
 reading the result back out at a helper-specific offset within HARGS
-(see step 7's per-helper layout table). Right shift always dispatches
+(see step 8's per-helper layout table). Right shift always dispatches
 to the signed `asr` variant because c6502 currently treats all
 integers as signed. The unary `LogicalNot` is lowered inline (no runtime helper):
 `Mov src→A; Branch(EQ, true); Mov 0→A; Jump end; true: Mov 1→A; end:
@@ -1077,7 +1120,7 @@ and keeps return addresses out of the way during frame teardown.
 
 Reserved zero-page: `$00`/`$01` = `SSP` (soft stack pointer, low/high),
 `$02`/`$03` = `FP` (frame pointer), `$04`–`$1B` = `HARGS` (24-byte
-runtime-helper exchange block — see step 7 of the pipeline for each
+runtime-helper exchange block — see step 8 of the pipeline for each
 helper's per-byte layout; the block is sized for the largest helper,
 `dadd`/`dsub`/`dmul`/`ddiv`, with 16 bytes of inputs + 8 of output). `SSP` and `FP` both point at the
 **next-free byte** and grow downward. SSP/FP access is always
@@ -1188,10 +1231,11 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   Nested blocks open a new variable-resolution scope (per-block
   clone with outer-vs-inner flagging — see pass 2); shadowing
   across blocks is legal, redeclaration in the same block is not.
-- All six integer types (`int`, `long`, `long long`,
-  `unsigned int`, `unsigned long`, `unsigned long long`) and
-  explicit casts among them parse, type-check, and lower all the
-  way through to 6502 asm. 16- and 32-bit arithmetic (`+`, `-`,
+- All nine integer types (`int`, `long`, `long long`,
+  `unsigned int`, `unsigned long`, `unsigned long long`,
+  `char`, `signed char`, `unsigned char`) and explicit casts
+  among them parse, type-check, and lower all the way through
+  to 6502 asm. 16- and 32-bit arithmetic (`+`, `-`,
   bitwise ops, comparisons, equality, sign-extension on widening
   signed casts, zero-extension on widening unsigned casts,
   truncation on narrowing casts) is expanded into byte-level
@@ -1244,6 +1288,37 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   `ConstLongLong(100000)` because the unsuffixed-decimal list
   goes `int → long → long long`). Literals exceeding the widest
   type's range (`unsigned long long`, 2^32 - 1) are rejected.
+- character constants (`'a'`, `'\n'`, `'\x41'`, `'\101'`) per
+  C99 §6.4.4.4: lex-time as `CHAR_CONSTANT`, parser decodes
+  the body via `_decode_escapes` (handles every simple escape
+  in C99 plus `\xHH` and octal `\NNN` escapes; rejects multi-
+  character constants and `\u`/`\U` Unicode escapes), and
+  emits a `Constant(ConstInt(value))` carrying the byte
+  value. (The const variant is `ConstInt` rather than
+  `ConstChar` per C99 §6.4.4.4.10's "An integer character
+  constant has type int".)
+- string literals (`"abc"`, `"a\nb"`) per C99 §6.4.5: lex-
+  time as `STRING_LITERAL+` (the grammar accepts adjacent
+  literals), the parser concatenates per §6.4.5.5 ("In
+  translation phase 6, the multibyte character sequences
+  specified by any sequence of adjacent character and
+  identically-prefixed string literal tokens are concatenated
+  into a single multibyte character sequence"), and emits a
+  single `String(str=joined_bytes)` AST node. The
+  `passes.string_lifting` pass then hoists every String that
+  ISN'T a direct char-array initializer into a fresh file-
+  scope `static char[N+1] .str@<N>` declaration, replacing
+  the original String node with a `Var(.str@<N>)`. After
+  lifting, every other use of a string literal — `&"abc"`,
+  `"abc"[1]`, `char *p = "abc"`, `return "abc";` — works
+  through the same mechanisms as any other file-scope char
+  array. `char arr[N] = "abc";` keeps its String inline; the
+  type checker validates `len(s) <= N` per §6.7.8.14 (with
+  the null terminator elided when `N == len(s)`); the static
+  init lays down `s[0..len-1]` followed by zero-pad to N
+  (block-scope auto-storage uses per-byte Stores, file-scope
+  static lays the bytes down as `IntInit` items in the
+  initializer list).
 - floating constants per C99 §6.4.4.2: lex-time split into
   `DOUBLE_CONSTANT` (no suffix) / `FLOAT_CONSTANT` (`f`/`F`) /
   `LONG_DOUBLE_CONSTANT` (`l`/`L`); parser maps each to its

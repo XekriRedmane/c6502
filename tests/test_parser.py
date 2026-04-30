@@ -1616,6 +1616,93 @@ class TestLongAndCasts(unittest.TestCase):
             parse("long long long x;")
         self.assertIn("more than twice", str(ctx.exception))
 
+
+class TestCharAndStringLiterals(unittest.TestCase):
+    """Char specifiers (char, signed char, unsigned char), char
+    constants `'a'`, and string literals `"abc"`. Char literals
+    ride as ConstInt (per the user's choice — C99 §6.4.4.4.10
+    matches: "An integer character constant has type int"). String
+    literals build a `String` AST node."""
+
+    def test_char_specifier_resolves_to_char(self):
+        ast = parse("char x;")
+        self.assertEqual(
+            ast.declaration[0].var_decl.data_type, c99_ast.Char(),
+        )
+
+    def test_signed_char_specifier_resolves_to_schar(self):
+        ast = parse("signed char x;")
+        self.assertEqual(
+            ast.declaration[0].var_decl.data_type, c99_ast.SChar(),
+        )
+
+    def test_unsigned_char_specifier_resolves_to_uchar(self):
+        ast = parse("unsigned char x;")
+        self.assertEqual(
+            ast.declaration[0].var_decl.data_type, c99_ast.UChar(),
+        )
+
+    def test_char_int_combination_rejected(self):
+        from parser import ParserError
+        with self.assertRaises(ParserError):
+            parse("char int x;")
+        with self.assertRaises(ParserError):
+            parse("char long x;")
+
+    def test_simple_char_literal_is_const_int(self):
+        ast = parse("char x = 'a';")
+        self.assertEqual(
+            ast.declaration[0].var_decl.init,
+            c99_ast.Constant(const=c99_ast.ConstInt(int=97)),
+        )
+
+    def test_simple_escape_decodes(self):
+        # \n = 0x0A, \\ = 0x5C, \' = 0x27, \t = 0x09.
+        for src, val in [
+            ("char x = '\\n';",  0x0A),
+            ("char x = '\\\\';", 0x5C),
+            ("char x = '\\'';",  0x27),
+            ("char x = '\\t';",  0x09),
+            ("char x = '\\0';",  0x00),
+        ]:
+            with self.subTest(src=src):
+                ast = parse(src)
+                self.assertEqual(
+                    ast.declaration[0].var_decl.init.const,
+                    c99_ast.ConstInt(int=val),
+                )
+
+    def test_hex_escape_decodes(self):
+        ast = parse("char x = '\\x41';")
+        self.assertEqual(
+            ast.declaration[0].var_decl.init.const,
+            c99_ast.ConstInt(int=0x41),
+        )
+
+    def test_octal_escape_decodes(self):
+        ast = parse("char x = '\\101';")
+        self.assertEqual(
+            ast.declaration[0].var_decl.init.const,
+            c99_ast.ConstInt(int=0o101),
+        )
+
+    def test_string_literal_decodes_bytes(self):
+        ast = parse('int main(void) { return "abc"[0]; }')
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertIsInstance(ret.exp.array, c99_ast.String)
+        self.assertEqual(ret.exp.array.str, "abc")
+
+    def test_adjacent_string_literals_concatenate(self):
+        ast = parse('int main(void) { return "abc" "def" "ghi"[0]; }')
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(ret.exp.array.str, "abcdefghi")
+
+    def test_string_literal_with_escapes(self):
+        # `"a\\nb"` — three bytes: 'a', '\n', 'b'.
+        ast = parse('int main(void) { return "a\\nb"[0]; }')
+        ret = ast.declaration[0].function_decl.body.block_item[0].statement
+        self.assertEqual(ret.exp.array.str, "a\nb")
+
     def test_cast_to_long(self):
         ast = parse("int main(void) { return (long)5; }")
         ret = ast.declaration[0].function_decl.body.block_item[0].statement

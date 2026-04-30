@@ -236,12 +236,16 @@ def _break_label(loop_label: str) -> str:
 # debug / linker purposes.
 
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
-    """Byte width of an object type. Int / UInt = 1, Long / ULong = 2,
-    LongLong / ULongLong = 4, Float = 4, Double = 8, Pointer = 2
-    (the 6502's address width). Used by Cast lowering to decide
-    between SignExtend / ZeroExtend / Truncate / no-op (for integer
-    types) and by various size-driven dispatch sites downstream."""
-    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+    """Byte width of an object type. Char / SChar / UChar / Int /
+    UInt = 1, Long / ULong = 2, LongLong / ULongLong = 4, Float =
+    4, Double = 8, Pointer = 2 (the 6502's address width). Used by
+    Cast lowering to decide between SignExtend / ZeroExtend /
+    Truncate / no-op (for integer types) and by various size-
+    driven dispatch sites downstream."""
+    if isinstance(t, (
+        c99_ast.Int, c99_ast.UInt,
+        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+    )):
         return 1
     if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
         return 2
@@ -277,6 +281,15 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.ULong()
     if isinstance(t, c99_ast.ULongLong):
         return tac_ast.ULongLong()
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
+        # Char / SChar collapse onto TAC Int for size purposes —
+        # they share a 1-byte width and signed semantics. Codegen
+        # consults the c99 symbol table directly when it needs to
+        # distinguish them (e.g. integer-promotion target picks).
+        return tac_ast.Int()
+    if isinstance(t, c99_ast.UChar):
+        # UChar collapses onto TAC UInt — 1-byte unsigned.
+        return tac_ast.UInt()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
     if isinstance(t, c99_ast.Double):
@@ -321,6 +334,9 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
         return tac_ast.ConstLong(int=c.int)
     if isinstance(c, c99_ast.ConstULongLong):
         return tac_ast.ConstLongLong(int=c.int)
+    if isinstance(c, (c99_ast.ConstChar, c99_ast.ConstUChar)):
+        # 1-byte char constants collapse onto TAC's 1-byte int.
+        return tac_ast.ConstInt(int=c.int)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(float=c.float)
     if isinstance(c, c99_ast.ConstDouble):
@@ -337,7 +353,10 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
     as Long; addresses are unsigned-ish 2-byte values). Used by the
     synthetic-constant call sites (postfix `+1`, short-circuit 0/1,
     implicit `return 0`)."""
-    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+    if isinstance(t, (
+        c99_ast.Int, c99_ast.UInt,
+        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+    )):
         return tac_ast.ConstInt(int=int(value))
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return tac_ast.ConstLong(int=int(value))
@@ -424,6 +443,14 @@ def _tac_static_init_for(
         return tac_ast.AddressInit(name=value.name, offset=value.offset)
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(int=int(value))
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
+        # Char / SChar are 1-byte signed, same byte width and
+        # signedness as Int — collapse onto IntInit so asm_emit
+        # renders a single `dc.b $XX`.
+        return tac_ast.IntInit(int=int(value))
+    if isinstance(t, c99_ast.UChar):
+        # UChar is 1-byte unsigned, same byte width as UInt.
+        return tac_ast.UIntInit(int=int(value))
     if isinstance(t, c99_ast.Long):
         return tac_ast.LongInit(int=int(value))
     if isinstance(t, c99_ast.LongLong):
@@ -562,10 +589,22 @@ def _pointee_size(t: c99_ast.Type_data_type) -> int:
     return _sizeof(t.referenced_type)
 
 
+def _is_char_element(t: c99_ast.Type_data_type) -> bool:
+    """True iff `t` is one of the three char element types (Char /
+    SChar / UChar). Mirrors `passes.type_checking._is_char_element`
+    but kept local so c99_to_tac doesn't pull in type_checking
+    just for this predicate."""
+    return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
+
+
 def _sizeof(t: c99_ast.Type_data_type) -> int:
     """Bytes occupied by a value of type `t` in c6502's storage
-    model. Recursive for Array — `int[3][4]` is 12 bytes."""
-    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+    model. Recursive for Array — `int[3][4]` is 12 bytes,
+    `char[10]` is 10 bytes."""
+    if isinstance(t, (
+        c99_ast.Int, c99_ast.UInt,
+        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+    )):
         return 1
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
         return 2
@@ -857,6 +896,12 @@ class Translator:
                 if vd.init is not None:
                     if isinstance(vd.init, c99_ast.InitList):
                         self._translate_array_init_list(vd, instrs)
+                    elif isinstance(vd.init, c99_ast.String):
+                        # `char arr[N] = "abc";` at block scope —
+                        # lay each byte (plus null + zero-pad) into
+                        # the array's storage via the same address-
+                        # arithmetic path used for InitList.
+                        self._translate_string_array_init(vd, instrs)
                     else:
                         init_val = self.translate_exp(vd.init, instrs)
                         instrs.append(tac_ast.Copy(
@@ -1670,6 +1715,91 @@ class Translator:
         ))
         self._emit_init_stores(arr_type, init, base, 0, instrs)
 
+    def _emit_string_stores(
+        self,
+        s_node: c99_ast.String,
+        arr_type: c99_ast.Array,
+        base: tac_ast.Type_val,
+        base_offset: int,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Lay each byte of `s_node.str` (zero-pad to `arr_type.size`)
+        down at `base + base_offset + k`. Used by the nested
+        char-array case of `_emit_init_stores` when an inner
+        `String` initializes a `char[N]` sub-aggregate (e.g.
+        `signed char a[3][4] = {{...}, "efgh", "ijk"}`)."""
+        n = arr_type.size
+        s = s_node.str
+        elem_type = arr_type.element_type
+        for i in range(n):
+            byte = ord(s[i]) & 0xFF if i < len(s) else 0
+            val = _tac_const_val(elem_type, byte)
+            offset = base_offset + i
+            if offset == 0:
+                addr = base
+            else:
+                addr = tac_ast.Var(
+                    name=self.make_temporary_variable_name(
+                        c99_ast.Pointer(referenced_type=elem_type),
+                    ),
+                )
+                instrs.append(tac_ast.Binary(
+                    op=tac_ast.Add(),
+                    src1=base,
+                    src2=_tac_const_val(c99_ast.Long(), offset),
+                    dst=addr,
+                ))
+            instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+
+    def _translate_string_array_init(
+        self,
+        vd: c99_ast.Type_var_decl,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """`char arr[N] = "abc";` at block scope. Per C99 §6.7.8.14
+        the bytes of the literal initialize the leading elements;
+        any remaining elements are zero-initialized (which
+        includes the null terminator when there's room — when
+        `N == len`, the terminator is elided). Lay each byte down
+        via the same `GetAddress` + `Store` pattern as the InitList
+        path, with the constant value coming from the string."""
+        arr_type = vd.data_type
+        assert isinstance(arr_type, c99_ast.Array)
+        assert isinstance(vd.init, c99_ast.String)
+        n = arr_type.size
+        s = vd.init.str
+        elem_type = arr_type.element_type
+        # Single base address for the array's storage. Pointer-to-
+        # Int as the temp's c99 type (size dispatch on the Store
+        # itself comes from the value's TAC type, which is Int
+        # 1B for every byte we lay down).
+        base = tac_ast.Var(
+            name=self.make_temporary_variable_name(
+                c99_ast.Pointer(referenced_type=c99_ast.Int()),
+            ),
+        )
+        instrs.append(tac_ast.GetAddress(
+            operand=tac_ast.Var(name=vd.name), dst=base,
+        ))
+        for i in range(n):
+            byte = ord(s[i]) & 0xFF if i < len(s) else 0
+            val = _tac_const_val(elem_type, byte)
+            if i == 0:
+                addr = base
+            else:
+                addr = tac_ast.Var(
+                    name=self.make_temporary_variable_name(
+                        c99_ast.Pointer(referenced_type=elem_type),
+                    ),
+                )
+                instrs.append(tac_ast.Binary(
+                    op=tac_ast.Add(),
+                    src1=base,
+                    src2=_tac_const_val(c99_ast.Long(), i),
+                    dst=addr,
+                ))
+            instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+
     def _emit_init_stores(
         self,
         arr_type: c99_ast.Array,
@@ -1693,6 +1823,17 @@ class Translator:
             if isinstance(elem_type, c99_ast.Array):
                 # Recurse into the sub-array. A missing item is a
                 # logically-empty InitList — every leaf zeroes.
+                # A `String` item at a char-array sub-element type
+                # is the §6.7.8.14 string-as-char-array form; emit
+                # per-byte stores at this offset.
+                if (
+                    isinstance(item, c99_ast.String)
+                    and _is_char_element(elem_type.element_type)
+                ):
+                    self._emit_string_stores(
+                        item, elem_type, base, byte_offset, instrs,
+                    )
+                    continue
                 sub = (
                     item if item is not None
                     else c99_ast.InitList(items=[], data_type=elem_type)

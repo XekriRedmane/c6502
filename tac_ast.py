@@ -427,5 +427,11 @@ class AddressInit(Type_static_init):
 
 
 @dataclass
+class StringInit(Type_static_init):
+    str: str
+    bytes: int
+
+
+@dataclass
 class ZeroInit(Type_static_init):
     bytes: int

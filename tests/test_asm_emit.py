@@ -821,6 +821,60 @@ class TestEmitProgram(unittest.TestCase):
         with self.assertRaises(ValueError):
             emit_program(prog)
 
+    def test_static_string_init_renders_dc_b_bytes(self):
+        # StringInit lays down `bytes` byte cells: the first
+        # len(str) hold the bytes of `str`, any remaining cells
+        # are zero-padded. asm_emit renders as `dc.b $XX, $XX, …`
+        # — raw hex bytes, sidesteps any string-quoting concerns.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="s", is_global=False,
+                init=[asm_ast.StringInit(str="abc", bytes=4)],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "s:\n   DC.B  $61, $62, $63, $00\n",
+        )
+
+    def test_static_string_init_no_terminator_when_bytes_equals_len(self):
+        # `bytes == len(str)` — the array has no room for the
+        # null terminator, so it's elided.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="s", is_global=False,
+                init=[asm_ast.StringInit(str="abc", bytes=3)],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "s:\n   DC.B  $61, $62, $63\n",
+        )
+
+    def test_static_string_init_extra_padding(self):
+        # `bytes > len(str) + 1` — extra trailing zero-pad on top
+        # of the conventional null terminator.
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="s", is_global=False,
+                init=[asm_ast.StringInit(str="hi", bytes=5)],
+            ),
+        ])
+        self.assertEqual(
+            emit_program(prog),
+            "s:\n   DC.B  $68, $69, $00, $00, $00\n",
+        )
+
+    def test_static_string_init_bytes_lt_len_raises(self):
+        prog = asm_ast.Program(top_level=[
+            asm_ast.StaticVariable(
+                name="s", is_global=False,
+                init=[asm_ast.StringInit(str="abcdef", bytes=3)],
+            ),
+        ])
+        with self.assertRaises(ValueError):
+            emit_program(prog)
+
     def test_static_long_long_renders_dc_l(self):
         # LongLongInit lays down 4 bytes via dasm's `dc.l` directive —
         # same byte width as Float, but storing a raw integer rather

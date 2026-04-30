@@ -24,9 +24,15 @@ module ASM {
     -- runs and for any consecutive zero-valued typed inits — the
     -- byte count is the only thing that matters for the resulting
     -- memory image.
+    -- StringInit lays down `bytes` byte cells: the first len(str)
+    -- hold the bytes of `str` (each character 0..255); any
+    -- remaining cells are zero-padded. asm_emit renders as one or
+    -- more `dc.b $XX, $XX, …` lines. See tac.asdl for the
+    -- bytes-vs-len(str) cases.
     static_init = IntInit(int) | LongInit(int) | LongLongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)
+                | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)
 
     -- Ret's `save_a` flag controls whether the epilogue brackets the

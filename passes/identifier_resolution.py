@@ -755,6 +755,12 @@ class Resolver:
                 # `const` is a `Type_const` (ConstInt or ConstLong) —
                 # an inert value, not an identifier. Pass through.
                 return c99_ast.Constant(const=c)
+            case c99_ast.String(str=s):
+                # String literals carry no identifiers — their byte
+                # contents are inert. Pass through. Lifting (the
+                # next pass over the AST) replaces non-array-init
+                # Strings with Var references to file-scope statics.
+                return c99_ast.String(str=s)
             case c99_ast.Cast(target_type=t, exp=inner):
                 # The target type is plain syntax (Int / Long / FunType
                 # nodes); only the inner expression has identifiers to
@@ -864,17 +870,22 @@ class Resolver:
                     items=[self.resolve_exp(it, scope) for it in items],
                 )
             case c99_ast.AddressOf(exp=inner):
-                # `&e` — operand must be an lvalue. The three
+                # `&e` — operand must be an lvalue. The four
                 # syntactic lvalue forms supported today are Var
                 # (`&x`), Dereference (`&*p`, equivalent to `p` per
-                # C99 §6.5.3.2.3), and Subscript (`&a[i]`, equivalent
-                # to `a + i` per the same paragraph). The type
-                # checker enforces additional constraints (operand
-                # must denote an object, not a function or `register`
-                # storage); here we just enforce the syntactic
-                # lvalue restriction.
+                # C99 §6.5.3.2.3), Subscript (`&a[i]`, equivalent
+                # to `a + i` per the same paragraph), and String
+                # literal (`&"abc"`, an lvalue per §6.4.5.6 — its
+                # static-storage object is what `&` takes the
+                # address of; the lifting pass later replaces the
+                # String with a Var referencing that object). The
+                # type checker enforces additional constraints
+                # (operand must denote an object, not a function or
+                # `register` storage); here we just enforce the
+                # syntactic lvalue restriction.
                 if not isinstance(inner, (
                     c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
+                    c99_ast.String,
                 )):
                     raise IdentifierResolutionError(
                         f"invalid operand of unary '&': {inner!r}"

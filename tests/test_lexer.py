@@ -310,10 +310,22 @@ class TestCharacterConstants(unittest.TestCase):
                     list(tokenize(s))
 
     def test_non_printable_ascii_is_error(self):
-        for s in ["'\t'", "'\x01'", "'\x7f'"]:
+        # Tab / vertical tab / form feed are valid inside char
+        # literals per C99 §5.2.1's source character set; only
+        # other non-printable bytes (control chars below 0x20
+        # other than \t \v \f, plus DEL 0x7F) raise.
+        for s in ["'\x01'", "'\x7f'"]:
             with self.subTest(s=repr(s)):
                 with self.assertRaises(LexError):
                     list(tokenize(s))
+
+    def test_whitespace_chars_in_literal_accepted(self):
+        # \t (0x09), \v (0x0B), \f (0x0C) are accepted inline per
+        # C99 §5.2.1's source character set.
+        for s in ["'\t'", "'\x0b'", "'\x0c'"]:
+            with self.subTest(s=repr(s)):
+                kinds = [k for k, _ in kinds_vals(s)]
+                self.assertEqual(kinds, [TokenKind.CONSTANT])
 
     def test_non_ascii_is_error(self):
         with self.assertRaises(LexError):
@@ -384,10 +396,18 @@ class TestStringLiterals(unittest.TestCase):
                     list(tokenize(s))
 
     def test_non_printable_is_error(self):
-        for s in ['"a\tb"', '"a\x01b"', '"a\x7fb"']:
+        # Tab / vertical tab / form feed are valid inside string
+        # literals per C99 §5.2.1; other non-printables raise.
+        for s in ['"a\x01b"', '"a\x7fb"']:
             with self.subTest(s=repr(s)):
                 with self.assertRaises(LexError):
                     list(tokenize(s))
+
+    def test_whitespace_chars_in_string_accepted(self):
+        for s in ['"a\tb"', '"a\x0bb"', '"a\x0cb"']:
+            with self.subTest(s=repr(s)):
+                kinds = [k for k, _ in kinds_vals(s)]
+                self.assertEqual(kinds, [TokenKind.STRING_LITERAL])
 
     def test_non_ascii_is_error(self):
         with self.assertRaises(LexError):

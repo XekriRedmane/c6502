@@ -2113,6 +2113,49 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         self.assertIn("SignExtend", kinds)
         self.assertIn("Truncate", kinds)
 
+    def test_block_scope_char_array_string_init_emits_per_byte_stores(self):
+        # `char arr[5] = "Hi";` at block scope lays each byte
+        # ('H', 'i', 0, 0, 0) down via Store through a single
+        # GetAddress base — same shape as the InitList path.
+        tac = self._tac(
+            'int main(void) { char arr[5] = "Hi"; return 0; }'
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        # 1× GetAddress, 5× Store (no per-byte Add for the first;
+        # 4× Add for the offset bytes).
+        self.assertEqual(kinds.count("GetAddress"), 1)
+        self.assertEqual(kinds.count("Store"), 5)
+        # The five Store source values are 'H', 'i', 0, 0, 0.
+        store_vals = [
+            i.src.const.int for i in instrs
+            if isinstance(i, tac_ast.Store)
+        ]
+        self.assertEqual(store_vals, [ord('H'), ord('i'), 0, 0, 0])
+
+    def test_file_scope_char_array_string_init_emits_static_with_bytes(self):
+        # `char arr[5] = "Hi";` at file scope lands in the static
+        # table as a tuple of byte values; the TAC StaticVariable
+        # init laid down per-byte (with trailing zeros coalesced
+        # into a ZeroInit).
+        tac = self._tac('char arr[5] = "Hi";')
+        statics = {
+            tl.name: tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.StaticVariable)
+        }
+        self.assertIn("arr", statics)
+        # First two bytes: `H` (72) and `i` (105) as IntInit
+        # (Char-element collapses onto IntInit). Remaining three
+        # zero bytes coalesce into ZeroInit(3).
+        self.assertEqual(
+            statics["arr"].init,
+            [
+                tac_ast.IntInit(int=ord('H')),
+                tac_ast.IntInit(int=ord('i')),
+                tac_ast.ZeroInit(bytes=3),
+            ],
+        )
+
     def test_uint_to_unsigned_long_long_cast_emits_zero_extend(self):
         # Unsigned narrower → unsigned wider goes through ZeroExtend
         # instead of SignExtend, because the new high bytes are

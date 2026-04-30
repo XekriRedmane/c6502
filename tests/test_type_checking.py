@@ -35,6 +35,17 @@ def _check(src: str):
     return check_program(resolve_identifiers(parse(src)))
 
 
+def _check_with_lifting(src: str):
+    """Like `_check`, but additionally runs string-lifting between
+    identifier-resolution and type-check — required for any test
+    that exercises a string literal outside a direct char-array
+    initializer, since the lifting pass replaces such Strings with
+    Var references that the type checker resolves against the
+    file-scope statics it minted."""
+    from passes.string_lifting import lift_program as lift_strings
+    return check_program(lift_strings(resolve_identifiers(parse(src))))
+
+
 class TestSymbolTableContents(unittest.TestCase):
     """The symbol table is the primary product of the pass — the AST
     isn't modified, so every observable result of a successful run
@@ -1997,6 +2008,103 @@ class TestArrays(unittest.TestCase):
         # The array operand here is the bare Var(p) — no AddressOf
         # wrapper since p was already pointer-typed.
         self.assertIsInstance(ret_exp.array, c99_ast.Var)
+
+
+class TestCharAndString(unittest.TestCase):
+    """Char-typed locals/params/literals plus string-literal
+    initializers and decay."""
+
+    def test_char_local_records_in_symbol_table(self):
+        # identifier_resolution numbers automatic-storage names
+        # sequentially, so the three locals end up `@0.c`, `@1.s`,
+        # `@2.u`.
+        from passes.type_checking import Char, SChar, UChar
+        _, symbols = _check(
+            "int main(void) { char c = 'a'; signed char s = 'b'; "
+            "unsigned char u = 'c'; return c + s + u; }"
+        )
+        self.assertEqual(symbols["@0.c"].type, Char())
+        self.assertEqual(symbols["@1.s"].type, SChar())
+        self.assertEqual(symbols["@2.u"].type, UChar())
+
+    def test_char_array_with_string_init(self):
+        # `char arr[4] = "abc";` — the type checker stamps the
+        # static-storage initial value as a tuple of byte values
+        # ('a','b','c',0). At file scope this is a static.
+        _, symbols = _check('char arr[4] = "abc";')
+        sym = symbols["arr"]
+        self.assertEqual(sym.attrs.initial_value, Initial(value=(
+            ord('a'), ord('b'), ord('c'), 0,
+        )))
+
+    def test_char_array_string_too_long_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check('char arr[3] = "abcd";')
+        self.assertIn("string literal", str(ctx.exception))
+
+    def test_char_array_no_room_for_terminator(self):
+        # `char arr[3] = "abc";` — exactly fills, terminator
+        # elided per C99 §6.7.8.14.
+        _, symbols = _check('char arr[3] = "abc";')
+        self.assertEqual(
+            symbols["arr"].attrs.initial_value,
+            Initial(value=(ord('a'), ord('b'), ord('c'))),
+        )
+
+    def test_char_pointer_init_with_string(self):
+        # `static char *p = "abc";` — the lifter hoists the String
+        # to a static, and `p` becomes a pointer to that static.
+        _, symbols = _check_with_lifting('static char *p = "abc";')
+        # The lifted .str@0 lays the string bytes down.
+        self.assertEqual(
+            symbols[".str@0"].attrs.initial_value,
+            Initial(value=(ord('a'), ord('b'), ord('c'), 0)),
+        )
+        # `p` carries an AddressInit pointing at .str@0.
+        from passes.type_checking import AddressInit
+        self.assertEqual(
+            symbols["p"].attrs.initial_value,
+            Initial(value=AddressInit(name=".str@0", offset=0)),
+        )
+
+    def test_char_promotes_to_int_in_arithmetic(self):
+        # `char c; c + c` — both operands integer-promote to Int
+        # before the add. The Binary's data_type is Int.
+        prog, _ = _check(
+            "int main(void) { char c = 'a'; return c + c; }"
+        )
+        ret = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        # ret is a Binary; both children are Casts(Int, Var(c)).
+        self.assertEqual(ret.data_type, Int())
+        self.assertIsInstance(ret.left, c99_ast.Cast)
+        self.assertEqual(ret.left.target_type, Int())
+        self.assertIsInstance(ret.right, c99_ast.Cast)
+        self.assertEqual(ret.right.target_type, Int())
+
+    def test_uchar_promotes_to_uint_when_int_cant_cover(self):
+        # In c6502 `int` is 1-byte signed (-128..127), so it can't
+        # hold the full UChar range (0..255). UChar therefore
+        # integer-promotes to UInt rather than Int (§6.3.1.1.2).
+        from passes.type_checking import UInt
+        prog, _ = _check(
+            "int main(void) { unsigned char u = 'a'; return u + u; }"
+        )
+        ret = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        # The Binary's data_type ends up Int (return-type cast),
+        # but the promoted operands are UInt.
+        # Drill into the inner Binary (after the outer return-cast).
+        # `return u + u;` — the binary itself yields UInt, then the
+        # return-conversion wraps in Cast(Int, ...).
+        self.assertIsInstance(ret, c99_ast.Cast)
+        self.assertEqual(ret.target_type, Int())
+        binary = ret.exp
+        self.assertEqual(binary.data_type, UInt())
 
 
 if __name__ == "__main__":

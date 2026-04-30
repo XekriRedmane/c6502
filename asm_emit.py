@@ -953,6 +953,32 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
                 # just with a symbolic value instead of a literal.
                 operand = target if off == 0 else f"{target}+{off}"
                 lines.append(_instr_line("dc.w", operand))
+            case asm_ast.StringInit(str=s, bytes=n):
+                # Lay down `n` byte cells: the first len(s) hold the
+                # bytes of `s` (each character 0..255), any remaining
+                # cells are zero-padded. We render as raw hex bytes
+                # (`dc.b $XX, $XX, ...`) instead of dasm's string
+                # form (`dc.b "..."`) — the raw form sidesteps any
+                # ambiguity around embedded NULs / non-printable
+                # bytes / quote handling, at the cost of a slightly
+                # less readable listing for pure-text strings. We
+                # group up to 16 bytes per line for compactness.
+                if n < len(s):
+                    raise ValueError(
+                        f"StringInit for {sv.name!r}: bytes={n} less "
+                        f"than string length {len(s)}"
+                    )
+                bytes_seq = (
+                    [ord(c) & 0xFF for c in s]
+                    + [0] * (n - len(s))
+                )
+                _LINE_WIDTH = 16
+                for start in range(0, n, _LINE_WIDTH):
+                    chunk = bytes_seq[start:start + _LINE_WIDTH]
+                    lines.append(_instr_line(
+                        "dc.b",
+                        ", ".join(f"${b:02X}" for b in chunk),
+                    ))
             case asm_ast.ZeroInit(bytes=n):
                 # Run of `n` zero bytes — dasm's `ds.b` reserves
                 # storage initialized to zero, so we don't have to

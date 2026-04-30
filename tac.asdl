@@ -82,9 +82,21 @@ module TAC {
     -- statics (§6.7.8.10) into a single instruction. Adjacent
     -- zero-valued typed inits are also coalesced into a single
     -- ZeroInit during c99_to_tac flattening.
+    -- StringInit lays down `bytes` consecutive byte cells: the
+    -- first len(str) hold the bytes of `str`; any remaining cells
+    -- are zero-padded. So `bytes >= len(str)`. When `bytes ==
+    -- len(str) + 1` exactly, this is the conventional null-
+    -- terminated form (`char a[4] = "abc"` → str="abc", bytes=4);
+    -- when `bytes == len(str)`, the terminator was elided because
+    -- the destination has no room for it (`char a[3] = "abc"`);
+    -- when `bytes > len(str) + 1`, the trailing slots are extra
+    -- zero-pad (`char a[5] = "abc"` → str="abc", bytes=5). The
+    -- string itself stores its raw 8-bit bytes as a Python str
+    -- (each character in 0..255).
     static_init = IntInit(int) | LongInit(int) | LongLongInit(int)
                 | UIntInit(int) | ULongInit(int) | ULongLongInit(int)
                 | FloatInit(float) | DoubleInit(float)
                 | AddressInit(identifier name, int offset)
+                | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)
 }

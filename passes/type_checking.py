@@ -136,6 +136,9 @@ LongLong = c99_ast.LongLong
 UInt = c99_ast.UInt
 ULong = c99_ast.ULong
 ULongLong = c99_ast.ULongLong
+Char = c99_ast.Char
+SChar = c99_ast.SChar
+UChar = c99_ast.UChar
 Float = c99_ast.Float
 Double = c99_ast.Double
 FunType = c99_ast.FunType
@@ -384,6 +387,30 @@ def _zero_aggregate(t: "Type"):
     return 0
 
 
+def _is_char_element(t: "Type") -> bool:
+    """True iff `t` is one of the three char element types (Char /
+    SChar / UChar). Used to decide whether a string-literal
+    initializer is admissible for an array's element type per
+    C99 §6.7.8.14."""
+    return isinstance(t, (Char, SChar, UChar))
+
+
+def _string_to_value_tuple(s: str, n: int) -> tuple:
+    """Convert a string-literal body (one Python code point per
+    byte, 0..255) into the value tuple of length `n` that the
+    static-storage initializer machinery expects: ints for the
+    string's bytes, then a null terminator if there's room, then
+    typed-zero pad to `n`. Caller has already ensured `len(s) <=
+    n`. When `len(s) == n` the null terminator is elided per
+    §6.7.8.14 footnote 138 ("If the array is of size N+1 ... the
+    array elements following the null character are unspecified."
+    — when there's no extra room, the null is omitted)."""
+    out = [ord(c) & 0xFF for c in s]
+    while len(out) < n:
+        out.append(0)
+    return tuple(out)
+
+
 def _const_init_aggregate(
     init: c99_ast.Type_exp,
     var_type: "Type",
@@ -397,6 +424,14 @@ def _const_init_aggregate(
     their `InitList.items`, padding any missing trailing entries
     with the element type's typed-zero per C99 §6.7.8.21."""
     if isinstance(var_type, Array):
+        # String literal initializing a char-array (at any nesting
+        # depth) — `_string_to_value_tuple` lays the bytes down
+        # with zero-pad to the array's size.
+        if (
+            isinstance(init, c99_ast.String)
+            and _is_char_element(var_type.element_type)
+        ):
+            return _string_to_value_tuple(init.str, var_type.size)
         if not isinstance(init, c99_ast.InitList):
             raise TypeCheckError(
                 f"static array {name!r} requires a brace-enclosed "
@@ -458,6 +493,7 @@ def _is_object_type(t: Type) -> bool:
     also excluded — a function isn't an object."""
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
+            Char, SChar, UChar,
             Float, Double, Pointer),
     )
 
@@ -471,7 +507,10 @@ def _is_complete_object_type(t: Type) -> bool:
 
 
 def _is_integer_type(t: Type) -> bool:
-    return isinstance(t, (Int, Long, LongLong, UInt, ULong, ULongLong))
+    return isinstance(
+        t, (Int, Long, LongLong, UInt, ULong, ULongLong,
+            Char, SChar, UChar),
+    )
 
 
 def _is_floating_type(t: Type) -> bool:
@@ -527,7 +566,8 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
     if isinstance(
         c,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
-         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong),
+         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
+         c99_ast.ConstChar, c99_ast.ConstUChar),
     ):
         return c.int == 0
     return False
@@ -540,11 +580,16 @@ def _is_arithmetic_type(t: Type) -> bool:
     return _is_integer_type(t) or _is_floating_type(t)
 
 
-# Width and signedness predicates for the integer types. Width
-# determines the C99 §6.3.1.1 "rank" (Int and UInt share rank 1;
-# Long and ULong share rank 2; LongLong and ULongLong share rank 3).
+# Width and signedness predicates for the integer types. Width is
+# the byte-size in c6502's storage model (1 / 2 / 4); rank, used
+# for the C99 §6.3.1.1 promotion / common-type rules, places
+# Char/SChar/UChar BELOW Int by C99 §6.3.1.1.1 paragraph 3 — even
+# though they share a width with Int/UInt, char-typed operands
+# always integer-promote to int (or unsigned int) before
+# arithmetic. So char rank 0; Int/UInt rank 1; Long/ULong rank 2;
+# LongLong/ULongLong rank 3.
 def _int_width(t: Type) -> int:
-    if isinstance(t, (Int, UInt)):
+    if isinstance(t, (Int, UInt, Char, SChar, UChar)):
         return 1
     if isinstance(t, (Long, ULong)):
         return 2
@@ -554,7 +599,34 @@ def _int_width(t: Type) -> int:
 
 
 def _is_signed(t: Type) -> bool:
-    return isinstance(t, (Int, Long, LongLong))
+    # Plain `char` is signed in c6502 (-128..127), matching `signed
+    # char`. Per C99 §6.2.5.15 the choice is implementation-defined.
+    return isinstance(t, (Int, Long, LongLong, Char, SChar))
+
+
+def _promote_integer(t: Type) -> Type:
+    """C99 §6.3.1.1.2 integer promotion. Char/SChar/UChar promote
+    to int (or unsigned int when int can't represent every value
+    of the source type). For c6502:
+      * SChar / Char (-128..127)  → Int (-128..127): exact range
+        match, promotes to Int.
+      * UChar (0..255)            → Int (-128..127) can't cover
+        the full UChar range, so promotes to UInt (0..255).
+    Every other integer type already has rank ≥ Int, so promotion
+    is a no-op for them. Floating types pass through unchanged.
+
+    The promotion is conventionally applied at every operand
+    position of an arithmetic / bitwise / comparison / shift
+    operator, plus the operand of unary `+`, `-`, `~`. The result
+    of `_convert_to(exp, _promote_integer(exp.data_type))` either
+    returns `exp` unchanged (already promoted) or wraps it in a
+    same-width Cast — the Cast lowering elides same-width casts
+    in c99_to_tac, so the runtime cost is zero."""
+    if isinstance(t, (Char, SChar)):
+        return Int()
+    if isinstance(t, UChar):
+        return UInt()
+    return t
 
 
 def _coerce_int_to_type(value: int, t: Type) -> int:
@@ -582,6 +654,17 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     if isinstance(t, (Int, UInt)):
         bits = value & 0xFF
         return c99_ast.ConstInt(int=bits) if isinstance(t, Int) else c99_ast.ConstUInt(int=bits)
+    if isinstance(t, (Char, SChar, UChar)):
+        # ConstChar / ConstUChar exist in the AST but the parser
+        # routes char literals through ConstInt per the user's
+        # choice. Reaching this branch means a char-typed switch
+        # case got coerced to its declared char width — return a
+        # typed ConstChar / ConstUChar so the AST stays self-
+        # describing if anything inspects it.
+        bits = value & 0xFF
+        if isinstance(t, UChar):
+            return c99_ast.ConstUChar(int=bits)
+        return c99_ast.ConstChar(int=bits)
     if isinstance(t, (Long, ULong)):
         bits = value & 0xFFFF
         return c99_ast.ConstLong(int=bits) if isinstance(t, Long) else c99_ast.ConstULong(int=bits)
@@ -771,17 +854,32 @@ class TypeChecker:
             # block-scope `static` array path: validate the init list
             # and lift its constant values into a typed-zero-padded
             # value tuple.
-            if not isinstance(vd.init, c99_ast.InitList):
-                raise TypeCheckError(
-                    f"file-scope array {vd.name!r} requires a brace-"
-                    f"enclosed initializer (`{{...}}`)"
+            #
+            # Char-array initialization with a string literal
+            # (`char arr[N] = "abc";`) is the §6.7.8.14 special
+            # case — see `_check_string_array_init`.
+            if (
+                isinstance(vd.init, c99_ast.String)
+                and _is_char_element(vd.data_type.element_type)
+            ):
+                self._check_string_array_init(
+                    vd.init, vd.data_type, vd.name,
                 )
-            self._check_array_init_list(
-                vd.init, vd.data_type, vd.name,
-            )
-            initial = Initial(_const_init_aggregate(
-                vd.init, vd.data_type, vd.name, self.symbols,
-            ))
+                initial = Initial(_string_to_value_tuple(
+                    vd.init.str, vd.data_type.size,
+                ))
+            else:
+                if not isinstance(vd.init, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"file-scope array {vd.name!r} requires a "
+                        f"brace-enclosed initializer (`{{...}}`)"
+                    )
+                self._check_array_init_list(
+                    vd.init, vd.data_type, vd.name,
+                )
+                initial = Initial(_const_init_aggregate(
+                    vd.init, vd.data_type, vd.name, self.symbols,
+                ))
         else:
             # Type-check the initializer normally (sets data_type
             # on every node) and convert to the declared type if
@@ -792,6 +890,12 @@ class TypeChecker:
             # mismatched case. `_const_init_value` then drills
             # through any Cast wrappers to the underlying integer.
             self._check_exp(vd.init)
+            # Array-to-pointer decay — `static char *p = arr;`
+            # (where `arr` is char[]) and the same shape after
+            # string lifting (`static char *p = .str@0;`) both
+            # need the rval to decay before the pointer-target
+            # conversion.
+            vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
             initial = Initial(
                 _const_init_value(vd.init, vd.name, self.symbols),
@@ -1041,17 +1145,31 @@ class TypeChecker:
                 # `_const_init_aggregate` then walks the same tree
                 # to extract a Python value tuple for the symbol
                 # table, padding missing trailing entries.
-                if not isinstance(vd.init, c99_ast.InitList):
-                    raise TypeCheckError(
-                        f"static array {vd.name!r} requires a brace-"
-                        f"enclosed initializer (`{{...}}`)"
+                #
+                # Char-array string-literal init (`static char a[N]
+                # = "abc";`) takes its own §6.7.8.14 path.
+                if (
+                    isinstance(vd.init, c99_ast.String)
+                    and _is_char_element(vd.data_type.element_type)
+                ):
+                    self._check_string_array_init(
+                        vd.init, vd.data_type, vd.name,
                     )
-                self._check_array_init_list(
-                    vd.init, vd.data_type, vd.name,
-                )
-                initial = Initial(_const_init_aggregate(
-                    vd.init, vd.data_type, vd.name, self.symbols,
-                ))
+                    initial = Initial(_string_to_value_tuple(
+                        vd.init.str, vd.data_type.size,
+                    ))
+                else:
+                    if not isinstance(vd.init, c99_ast.InitList):
+                        raise TypeCheckError(
+                            f"static array {vd.name!r} requires a "
+                            f"brace-enclosed initializer (`{{...}}`)"
+                        )
+                    self._check_array_init_list(
+                        vd.init, vd.data_type, vd.name,
+                    )
+                    initial = Initial(_const_init_aggregate(
+                        vd.init, vd.data_type, vd.name, self.symbols,
+                    ))
             else:
                 # Same flow as the file-scope-static path: type-
                 # check, apply the conversion rule (so a literal of
@@ -1080,6 +1198,17 @@ class TypeChecker:
             if isinstance(vd.data_type, Array):
                 # Arrays must use a brace-enclosed initializer list
                 # (`int a[3] = {1, 2, 3};`); a bare scalar is illegal.
+                # The char-array + string-literal special case
+                # (`char a[N] = "abc";`) takes its own §6.7.8.14
+                # path — c99_to_tac then emits per-byte stores.
+                if (
+                    isinstance(vd.init, c99_ast.String)
+                    and _is_char_element(vd.data_type.element_type)
+                ):
+                    self._check_string_array_init(
+                        vd.init, vd.data_type, vd.name,
+                    )
+                    return
                 if not isinstance(vd.init, c99_ast.InitList):
                     raise TypeCheckError(
                         f"array {vd.name!r} requires a brace-enclosed "
@@ -1100,6 +1229,32 @@ class TypeChecker:
             self._check_exp(vd.init)
             vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
+
+    def _check_string_array_init(
+        self,
+        init: c99_ast.String,
+        arr_type: Array,
+        name: str,
+    ) -> None:
+        """Validate `char arr[N] = "abc";` per C99 §6.7.8.14.
+        The literal body has length `len(init.str)` (no terminator);
+        the standard allows up to `len(s) + 1` bytes (with the null)
+        when N >= len+1, and exactly len bytes (no null) when
+        N == len. N < len is a constraint violation. After
+        validation the type checker stamps the String with its
+        Array(Char, len+1) data_type so any inspecting consumer
+        sees a self-describing tree."""
+        slen = len(init.str)
+        if slen > arr_type.size:
+            raise TypeCheckError(
+                f"string literal initializer for array {name!r} has "
+                f"{slen} bytes but the declared array size is "
+                f"{arr_type.size} (C99 §6.7.8.14 requires the "
+                f"literal length to be ≤ the array size, with the "
+                f"null terminator omitted when the array has no "
+                f"room for it)"
+            )
+        init.data_type = Array(element_type=Char(), size=slen + 1)
 
     def _check_array_init_list(
         self,
@@ -1133,9 +1288,26 @@ class TypeChecker:
         elem_type = arr_type.element_type
         for i, item in enumerate(init.items):
             if isinstance(elem_type, Array):
-                # Each item must itself be a nested InitList — the
-                # flat form (`{1,2,3,4,5,6}` for `int[2][3]`) isn't
+                # Each item must itself be a nested InitList — or
+                # a String when the sub-array's element type is a
+                # char type (C99 §6.7.8.14: a char-array can also
+                # be initialized by a string literal at any
+                # nesting level). The flat form
+                # (`{1,2,3,4,5,6}` for `int[2][3]`) isn't
                 # supported.
+                if (
+                    isinstance(item, c99_ast.String)
+                    and _is_char_element(elem_type.element_type)
+                ):
+                    self._check_string_array_init(
+                        item, elem_type, f"{var_name}[{i}]",
+                    )
+                    # Replace the String with a typed-zero-padded
+                    # value tuple in init.items so the static-
+                    # storage path (`_const_init_aggregate`) can
+                    # walk it uniformly.
+                    init.items[i] = item
+                    continue
                 if not isinstance(item, c99_ast.InitList):
                     raise TypeCheckError(
                         f"expected nested initializer (`{{...}}`) "
@@ -1412,12 +1584,32 @@ class TypeChecker:
                     t = ULong()
                 elif isinstance(c, c99_ast.ConstULongLong):
                     t = ULongLong()
+                elif isinstance(c, c99_ast.ConstChar):
+                    t = SChar()
+                elif isinstance(c, c99_ast.ConstUChar):
+                    t = UChar()
                 elif isinstance(c, c99_ast.ConstFloat):
                     t = Float()
                 elif isinstance(c, c99_ast.ConstDouble):
                     t = Double()
                 else:
                     raise TypeError(f"unexpected const: {c!r}")
+                exp.data_type = t
+                return t
+            case c99_ast.String(str=s):
+                # A string literal has type `char[N+1]` per C99
+                # §6.4.5.6: the array has one element per source byte
+                # plus a trailing null terminator, with element type
+                # `char`. Most String nodes have already been hoisted
+                # to a file-scope static by `passes.string_lifting`
+                # before we land here — the surviving Strings are the
+                # ones that DIRECTLY initialize a char[] var_decl
+                # (`char arr[10] = "abc";`), and the type checker
+                # validates them in `_check_init` rather than as
+                # operand exps. The Array type we stamp here lets
+                # any leftover bare String go through `_decay_if_array`
+                # cleanly if a future caller ever forgets the lift.
+                t = Array(element_type=Char(), size=len(s) + 1)
                 exp.data_type = t
                 return t
             case c99_ast.Cast(target_type=target, exp=inner):
@@ -1469,7 +1661,15 @@ class TypeChecker:
                 exp.data_type = sym.type
                 return sym.type
             case c99_ast.Unary(op=op, exp=inner):
-                t = self._check_exp(inner)
+                self._check_exp(inner)
+                # Array-to-pointer decay (C99 §6.3.2.1.3): `!arr`,
+                # `!"abc"` etc. coerce the array to a pointer first
+                # so the resulting Pointer-typed operand satisfies
+                # the scalar-operand requirement of `!` (and so
+                # `&arr` / `*arr` callers don't reach this branch
+                # — they have their own dedicated AST nodes).
+                exp.exp = _decay_if_array(exp.exp)
+                t = exp.exp.data_type
                 if not _is_object_type(t):
                     raise TypeCheckError(
                         f"unary operator on non-object type {t!r}"
@@ -1502,8 +1702,17 @@ class TypeChecker:
                         f"unary '~' requires integer operand, got "
                         f"{type(t).__name__}"
                     )
+                # Integer promotion (C99 §6.3.1.1.2 + §6.5.3.3.4):
+                # the operand of `-` / `~` / `+` is integer-promoted.
+                # `!` doesn't promote — its operand is just compared
+                # to zero, and the result is always int.
+                if isinstance(op, (c99_ast.Negate, c99_ast.Complement)):
+                    promoted = _promote_integer(t)
+                    if not _types_equal(promoted, t):
+                        exp.exp = _convert_to(exp.exp, promoted)
+                        t = promoted
                 # `!x` always yields an int. `-x` and `~x` preserve
-                # type.
+                # type (after promotion).
                 if isinstance(op, c99_ast.LogicalNot):
                     result = Int()
                 else:
@@ -1730,6 +1939,16 @@ class TypeChecker:
                         f"binary '{op_name}' requires integer operands "
                         f"({tl!r} {op_name} {tr!r})"
                     )
+                # Integer promotion (C99 §6.3.1.1.2): char-typed
+                # operands promote to int (or unsigned int) before
+                # the usual arithmetic conversions run. For c6502
+                # this is a same-width Cast (SChar/Char → Int,
+                # UChar → UInt), elided to a no-op by c99_to_tac's
+                # cast lowering.
+                exp.left = _convert_to(lhs, _promote_integer(tl))
+                exp.right = _convert_to(rhs, _promote_integer(tr))
+                lhs, rhs = exp.left, exp.right
+                tl, tr = lhs.data_type, rhs.data_type
                 # Usual arithmetic conversions (C99 §6.3.1.8): if
                 # operand types differ, promote the narrower one to
                 # the common type by wrapping it in an implicit
@@ -1849,6 +2068,17 @@ class TypeChecker:
                             f"vs {tf!r}"
                         )
                 else:
+                    # Integer promotion (C99 §6.3.1.1.2) before the
+                    # usual arithmetic conversions, same as in Binary.
+                    exp.true_clause = _convert_to(
+                        t_clause, _promote_integer(tt),
+                    )
+                    exp.false_clause = _convert_to(
+                        f_clause, _promote_integer(tf),
+                    )
+                    t_clause = exp.true_clause
+                    f_clause = exp.false_clause
+                    tt, tf = t_clause.data_type, f_clause.data_type
                     common = _common_type(tt, tf)
                 exp.true_clause = _convert_to(t_clause, common)
                 exp.false_clause = _convert_to(f_clause, common)

@@ -1699,10 +1699,26 @@ Lowered all the way to 6502 asm:
   temporary lifetime; you can read it but not assign through
   it).
 
-  Block-scope tag shadowing (re-using a tag in an inner scope
-  for a different layout) is deferred; the flat TypeTable would
-  need per-scope unique tag names. See `tests/STATUS.md` for the
-  chapter\_18 file-by-file status.
+  **Block-scope tag shadowing** is supported via per-scope tag
+  renaming in `passes.identifier_resolution`. File-scope tags
+  keep their source name; block-scope tag declarations get a
+  fresh `@<N>.<source>` rename, recorded in a `_TagScope` that
+  clones-and-flips on every Compound block / for-header /
+  function body (parallel to the variable scope). Every
+  Structure/Union AST node's tag is rewritten to its scope-
+  resolved name, so the type checker's flat TypeTable keys on
+  globally-unique names — two different block-scope `struct s`
+  declarations end up as distinct `@N.s` and `@M.s` entries.
+  Auto-introduction (per C99 §6.7.2.3 paragraph 5: "appearance
+  of a struct/union specifier in a declarator introduces the
+  tag with incomplete type into the current scope") happens
+  inside `_resolve_type` — a Structure/Union reference whose
+  tag isn't in any visible scope mints a fresh resolved name in
+  the current scope. The type checker's error messages strip
+  the `@<N>.` prefix so users see their source-level tag
+  spelling.
+
+  See `tests/STATUS.md` for the chapter\_18 file-by-file status.
 
 Partially supported: unsigned types (`unsigned int`, `unsigned
 long`, `unsigned long long`) parse and propagate through every

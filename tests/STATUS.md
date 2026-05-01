@@ -95,17 +95,16 @@ they are pinned as "not rejected today" in
     (`invalid_incomplete_structs/*`).
 
 The chapter\_18 valid test corpus is large (108 programs);
-~40 compile end-to-end today, covering the
-`no_structure_parameters/` subset plus the
-struct-by-value parameter-passing and sret return tests in
-`parameters/` and `params_and_returns/`. Remaining failures are
-mostly: (a) Float / Double arithmetic (no FP runtime helpers
-yet), (b) literals beyond `unsigned long long` (the widest
-integer type c6502 models), (c) block-scope tag shadowing where
-a tag is reused for a different layout in an inner scope (would
-need per-scope unique tag-name minting). Each is treated as an
-expected failure in the harness; the file-by-file lists are in
-`tests/test_chapter_18.py`'s `_VALID_PASSES_TODAY`,
+~46 compile end-to-end today, covering all of
+`no_structure_parameters/`, `parameters/`, and `params_and_returns/`
+(struct-by-value parameter passing and sret returns), plus tag
+shadowing / namespacing / static-struct cases. Remaining
+failures are mostly: (a) Float / Double arithmetic (no FP
+runtime helpers yet), (b) literals beyond `unsigned long long`
+(the widest integer type c6502 models), (c) very large frames
+exceeding the 253-byte LDY-immediate limit. Each is treated as
+an expected failure in the harness; the file-by-file lists are
+in `tests/test_chapter_18.py`'s `_VALID_PASSES_TODAY`,
 `_INVALID_TYPES_NOT_REJECTED_TODAY`, etc.
 
 **Struct-by-value calling convention**: arguments are pushed

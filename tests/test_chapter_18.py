@@ -70,6 +70,8 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     # return values are NOT in this set yet — those need ABI work
     # (HARGS / soft-stack adjustments).
     "extra_credit/other_features/label_tag_member_namespace.c",
+    "extra_credit/other_features/struct_decl_in_switch_statement.c",
+    "extra_credit/semantic_analysis/decl_shadows_decl.c",
     "extra_credit/semantic_analysis/cast_union_to_void.c",
     "extra_credit/semantic_analysis/redeclare_union.c",
     "extra_credit/semantic_analysis/struct_shadows_union.c",
@@ -77,11 +79,14 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     "extra_credit/size_and_offset/compare_union_pointers.c",
     "extra_credit/size_and_offset/union_sizes.c",
     "extra_credit/semantic_analysis/union_self_pointer.c",
+    "extra_credit/semantic_analysis/union_shadows_struct.c",
     "extra_credit/member_access/nested_union_access.c",
     "extra_credit/union_copy/assign_to_union.c",
     "extra_credit/union_copy/copy_non_scalar_members.c",
     "extra_credit/union_copy/unions_in_conditionals.c",
     "no_structure_parameters/scalar_member_access/linked_list.c",
+    "no_structure_parameters/scalar_member_access/static_structs.c",
+    "no_structure_parameters/semantic_analysis/namespaces.c",
     "no_structure_parameters/parse_and_lex/postfix_precedence.c",
     "no_structure_parameters/parse_and_lex/space_around_struct_member.c",
     "no_structure_parameters/parse_and_lex/struct_member_looks_like_const.c",
@@ -135,20 +140,12 @@ _INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 # blockers.
 _INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "extra_credit/scalar_required/union_as_controlling_expression.c",
-    "extra_credit/union_struct_conflicts/conflicting_tag_decl_and_use.c",
-    "extra_credit/union_struct_conflicts/conflicting_tag_decl_and_use_self_reference.c",
-    "extra_credit/union_tag_resolution/distinct_union_types.c",
     "invalid_incomplete_structs/assign_to_incomplete_var.c",
     "invalid_incomplete_structs/cast_incomplete_struct.c",
     "invalid_incomplete_structs/deref_incomplete_struct_pointer.c",
     "invalid_incomplete_structs/incomplete_return_type_funcall.c",
     "invalid_incomplete_structs/incomplete_struct_full_expr.c",
     "scalar_required/struct_controlling_expression.c",
-    "tag_resolution/conflicting_fun_ret_types.c",
-    "tag_resolution/distinct_struct_types.c",
-    "tag_resolution/incomplete_shadows_complete.c",
-    "tag_resolution/incomplete_shadows_complete_cast.c",
-    "tag_resolution/shadow_struct.c",
 })
 # `deref_undeclared.c` dereferences a pointer-to-incomplete-struct
 # in an expression statement (`*ptr;`). The standard rejects this

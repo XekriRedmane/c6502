@@ -1493,9 +1493,16 @@ End-to-end (C source through `compile.py --codegen` to runnable-shape
   `f().m = …` and `(c?a:b).m = …` because the operand isn't
   an lvalue.
 
-  Block-scope tag shadowing (re-using a tag for a different
-  layout in an inner scope) is deferred — the flat TypeTable
-  would need per-scope unique tag names.
+  **Block-scope tag shadowing**: file-scope tags keep their
+  source name; block-scope tag declarations get a fresh
+  `@<N>.<source>` rename in identifier_resolution's tag scope,
+  so two different block-scope `struct s` definitions land in
+  the type checker's TypeTable as distinct `@N.s` and `@M.s`.
+  Same clone-and-flip pattern as the variable scope — outer
+  tags are shadowed when an inner block declares the same
+  source tag, restored when the block exits. Forward
+  references to as-yet-undeclared tags auto-introduce a
+  forward declaration in the current scope per C99 §6.7.2.3.
 
 Partially supported:
 

@@ -756,6 +756,11 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
     if isinstance(t, (Structure, Union)):
         if types is None:
             return  # caller didn't request layout validation
+        # Strip the resolver-minted `@<N>.` prefix when rendering
+        # error messages so the user sees their source spelling.
+        display_tag = t.tag
+        if display_tag.startswith("@") and "." in display_tag:
+            display_tag = display_tag.split(".", 1)[1]
         layout = types.get(t.tag)
         # Tag visibility (per the live tag-scope stack). Three cases:
         # (1) tag never declared anywhere → auto-introduce as a
@@ -779,12 +784,12 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
                 else:
                     kw = "union" if isinstance(t, Union) else "struct"
                     raise TypeCheckError(
-                        f"{where}: undeclared type '{kw} {t.tag}'"
+                        f"{where}: undeclared type '{kw} {display_tag}'"
                     )
             else:
                 kw = "union" if isinstance(t, Union) else "struct"
                 raise TypeCheckError(
-                    f"{where}: '{kw} {t.tag}' is not in scope"
+                    f"{where}: '{kw} {display_tag}' is not in scope"
                 )
         if layout is None:
             # Caller didn't pass tag_visible (so we couldn't tell if
@@ -792,12 +797,21 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
             # TypeTable either — it was never declared.
             kw = "union" if isinstance(t, Union) else "struct"
             raise TypeCheckError(
-                f"{where}: undeclared type '{kw} {t.tag}'"
+                f"{where}: undeclared type '{kw} {display_tag}'"
+            )
+        # Tag-kind disagreement (`struct foo` referenced where the
+        # in-scope `foo` was declared `union foo` or vice versa).
+        if layout.is_union != isinstance(t, Union):
+            kw = "union" if isinstance(t, Union) else "struct"
+            pkw = "union" if layout.is_union else "struct"
+            raise TypeCheckError(
+                f"{where}: tag {display_tag!r} declared as '{pkw}' "
+                f"but used as '{kw}'"
             )
         if require_complete and not layout.complete:
             kw = "union" if isinstance(t, Union) else "struct"
             raise TypeCheckError(
-                f"{where}: incomplete type '{kw} {t.tag}' "
+                f"{where}: incomplete type '{kw} {display_tag}' "
                 f"(C99 §6.7.2.1.8 — type must be complete)"
             )
         return

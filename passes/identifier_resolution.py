@@ -134,6 +134,18 @@ class Linkage(Enum):
 _Scope = dict[str, tuple[str, bool, Linkage]]
 
 
+# Tag scope value: (resolved_tag, inner_flag). Mirrors `_Scope`'s
+# inner-vs-outer pattern but tags don't carry linkage (every tag is
+# either at file scope, where the resolved name == source name, or
+# at block scope, where the resolved name is `@<N>.<source>`). Used
+# to rewrite every Structure/Union AST type-node so the tag's
+# spelling uniquely identifies the layout — block-scope tag
+# shadowing then falls out: same source name in two different
+# blocks resolves to two different `@<N>.<source>` entries in the
+# type checker's flat TypeTable.
+_TagScope = dict[str, tuple[str, bool]]
+
+
 class IdentifierResolutionError(Exception):
     """Raised for duplicate declarations or uses of undeclared names."""
 
@@ -213,11 +225,98 @@ class Resolver:
         # later ones. C99 §6.2.1.4: "The scope of a file-scope
         # identifier... begins at the point after the declarator..."
         self._seen_at_file_scope: set[str] = set()
+        # File-scope tag bindings. Tags at file scope keep their
+        # source name (linker doesn't see tags, but later passes
+        # benefit from a stable spelling — the type checker's
+        # TypeTable keys on these names directly). Block-scope
+        # tags get a fresh `@<N>.<orig>` rename so two different
+        # block-scope tags with the same source name don't
+        # collide in the flat TypeTable. File-scope tags use the
+        # `_TagScope` shape uniformly with block scopes — the
+        # `inner` flag stays True throughout the file-scope walk
+        # since file scope is the outermost.
+        self._file_scope_tags: _TagScope = {}
+        # The active tag scope — initially the file-scope dict, but
+        # `_enter_tag_scope` swaps in a fresh clone whenever a new
+        # block / function body / for-header is entered, restoring
+        # the prior scope on exit. `_resolve_type` reads this
+        # directly so callers don't have to thread it through.
+        self._current_tag_scope: _TagScope = self._file_scope_tags
 
     def make_unique(self, original: str) -> str:
         name = f"@{self._counter}.{original}"
         self._counter += 1
         return name
+
+    def _resolve_type(
+        self,
+        t: c99_ast.Type_data_type,
+    ) -> c99_ast.Type_data_type:
+        """Walk a c99 type tree, replacing every Structure / Union
+        tag with its scope-resolved counterpart drawn from
+        `self._current_tag_scope`. When a tag is referenced before
+        any prior declaration, auto-introduces it in the current
+        scope (file or block) and binds it to a freshly minted
+        resolved name (file scope: keep source; block scope:
+        `@<N>.<source>`). Implements C99 §6.7.2.3 paragraph 5:
+        "the appearance of a struct/union specifier in a
+        declarator introduces the tag with incomplete type into
+        the current scope."
+        """
+        scope = self._current_tag_scope
+        if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
+            entry = scope.get(t.tag)
+            if entry is None:
+                resolved = self._introduce_tag(t.tag)
+            else:
+                resolved = entry[0]
+            cls = type(t)
+            return cls(tag=resolved)
+        if isinstance(t, c99_ast.Pointer):
+            return c99_ast.Pointer(
+                referenced_type=self._resolve_type(t.referenced_type),
+            )
+        if isinstance(t, c99_ast.Array):
+            return c99_ast.Array(
+                element_type=self._resolve_type(t.element_type),
+                size=t.size,
+            )
+        if isinstance(t, c99_ast.FunType):
+            return c99_ast.FunType(
+                params=[self._resolve_type(p) for p in t.params],
+                ret=self._resolve_type(t.ret),
+            )
+        return t  # primitives carry no tag
+
+    def _introduce_tag(self, source_tag: str) -> str:
+        """Mint a resolved tag name for a freshly-introduced tag,
+        record it in `self._current_tag_scope` as inner-flagged,
+        and return the resolved name. File-scope tags keep their
+        source spelling; block-scope tags get `@<N>.<source>`.
+        """
+        scope = self._current_tag_scope
+        if scope is self._file_scope_tags:
+            resolved = source_tag
+        else:
+            resolved = f"@{self._counter}.{source_tag}"
+            self._counter += 1
+        scope[source_tag] = (resolved, True)
+        return resolved
+
+    def _enter_tag_scope(self) -> _TagScope:
+        """Push a fresh inner tag scope (clone-and-flip of the
+        current scope) and return the prior scope for caller-side
+        save / restore. Caller must wrap usage in try/finally and
+        restore via `self._current_tag_scope = prior`."""
+        prior = self._current_tag_scope
+        # Clone every entry as outer-scoped (inner=False) so a
+        # same-source-tag declaration in this block legally
+        # shadows the outer one.
+        self._current_tag_scope = {
+            n: (resolved, False)
+            for n, (resolved, _) in prior.items()
+        }
+        return prior
 
     # ------------------------------------------------------------------
     # Top-level program walk
@@ -354,6 +453,9 @@ class Resolver:
                 # globals/functions are valid because everything has
                 # already been registered in pass 1.
                 seed_scope = self._file_scope_seed()
+                # Tag scope is currently `_file_scope_tags`; resolve
+                # any Structure/Union refs in the type against it.
+                new_data_type = self._resolve_type(vd.data_type)
                 new_init = (
                     self.resolve_exp(vd.init, seed_scope)
                     if vd.init is not None else None
@@ -362,7 +464,7 @@ class Resolver:
                     var_decl=c99_ast.Type_var_decl(
                         name=vd.name,
                         init=new_init,
-                        data_type=vd.data_type,
+                        data_type=new_data_type,
                         storage_class=vd.storage_class,
                     ),
                 )
@@ -372,11 +474,46 @@ class Resolver:
                         fd, file_scope=True,
                     ),
                 )
-            case c99_ast.StructDecl():
-                # Pass through unchanged — the tag/member layout is
-                # the type checker's responsibility.
-                return decl
+            case c99_ast.StructDecl(struct_decl=sd):
+                return c99_ast.StructDecl(
+                    struct_decl=self._resolve_struct_decl(sd),
+                )
         raise TypeError(f"unexpected declaration: {decl!r}")
+
+    def _resolve_struct_decl(
+        self, sd: c99_ast.Type_struct_decl,
+    ) -> c99_ast.Type_struct_decl:
+        """Resolve a struct/union declaration's tag and member
+        types against the current tag scope. The tag is recorded
+        in the current scope before member walking, so a self-
+        referential pointer member (`struct n { struct n *next;
+        };`) resolves to the same tag rather than auto-introducing
+        a fresh one."""
+        scope = self._current_tag_scope
+        existing = scope.get(sd.tag)
+        if existing is not None and existing[1]:
+            # Same-block redeclaration — keep the same resolved
+            # name. The type checker handles forward + body merge
+            # and forward + forward idempotence.
+            resolved = existing[0]
+        else:
+            # Fresh introduction in this scope (shadowing any
+            # outer-scope same-source binding).
+            resolved = self._introduce_tag(sd.tag)
+        # Walk members AFTER the tag is recorded so self-
+        # references resolve to the same name.
+        new_members = [
+            c99_ast.Type_member_decl(
+                name=m.name,
+                data_type=self._resolve_type(m.data_type),
+            )
+            for m in sd.members
+        ]
+        return c99_ast.Type_struct_decl(
+            tag=resolved,
+            is_union=sd.is_union,
+            members=new_members,
+        )
 
     def _file_scope_seed(self) -> _Scope:
         """Build a `_Scope` view of the file-scope table for use as
@@ -411,7 +548,16 @@ class Resolver:
         block-scope function declarations; `file_scope` only affects
         whether the function body's outermost scope is seeded from
         `_file_scope` (definitions only appear at file scope today;
-        the flag is a future-proofing courtesy)."""
+        the flag is a future-proofing courtesy).
+
+        The function's `data_type` (FunType wrapping the param /
+        return types) is walked here against the surrounding tag
+        scope so any Structure/Union refs resolve correctly. The
+        body, if present, gets its own tag scope clone — a
+        struct/union declared inside the body isn't visible to the
+        signature.
+        """
+        new_data_type = self._resolve_type(fd.data_type)
         new_params, param_scope = self._resolve_params(fd.params)
         new_body: c99_ast.Type_block | None
         if fd.body is None:
@@ -428,19 +574,27 @@ class Resolver:
             seed: _Scope = self._file_scope_seed() if file_scope else {}
             for p_orig, p_resolved in zip(fd.params, new_params):
                 seed[p_orig] = (p_resolved, True, Linkage.NONE)
-            match fd.body:
-                case c99_ast.Block(block_item=items):
-                    new_body = c99_ast.Block(block_item=[
-                        self.resolve_block_item(item, seed)
-                        for item in items
-                    ])
-                case _:
-                    raise TypeError(f"unexpected body: {fd.body!r}")
+            # Push a fresh tag scope for the body — outer tags
+            # (file-scope or surrounding block) carry through as
+            # outer-scoped, so an inner `struct s` redeclaration
+            # legally shadows them.
+            prior_tag_scope = self._enter_tag_scope()
+            try:
+                match fd.body:
+                    case c99_ast.Block(block_item=items):
+                        new_body = c99_ast.Block(block_item=[
+                            self.resolve_block_item(item, seed)
+                            for item in items
+                        ])
+                    case _:
+                        raise TypeError(f"unexpected body: {fd.body!r}")
+            finally:
+                self._current_tag_scope = prior_tag_scope
         return c99_ast.Type_function_decl(
             name=fd.name,
             params=new_params,
             body=new_body,
-            data_type=fd.data_type,
+            data_type=new_data_type,
             storage_class=fd.storage_class,
         )
 
@@ -473,16 +627,22 @@ class Resolver:
     ) -> c99_ast.Type_block:
         # Entering a new block: clone the parent scope, flipping every
         # entry's inner-scoped flag to False. Linkage tags ride along
-        # unchanged.
+        # unchanged. Tag scope gets the same clone-and-flip via
+        # `_enter_tag_scope`.
         local: _Scope = {
             name: (resolved, False, link)
             for name, (resolved, _, link) in parent_scope.items()
         }
-        match block:
-            case c99_ast.Block(block_item=items):
-                return c99_ast.Block(block_item=[
-                    self.resolve_block_item(item, local) for item in items
-                ])
+        prior_tag_scope = self._enter_tag_scope()
+        try:
+            match block:
+                case c99_ast.Block(block_item=items):
+                    return c99_ast.Block(block_item=[
+                        self.resolve_block_item(item, local)
+                        for item in items
+                    ])
+        finally:
+            self._current_tag_scope = prior_tag_scope
         raise TypeError(f"unexpected block: {block!r}")
 
     def resolve_block_item(
@@ -507,11 +667,14 @@ class Resolver:
         scope: _Scope,
     ) -> c99_ast.Type_declaration:
         match decl:
-            case c99_ast.StructDecl():
-                # Block-scope struct/union declarations live in the
-                # type checker's per-block tag scope; the identifier
-                # scope is unaffected. Pass through.
-                return decl
+            case c99_ast.StructDecl(struct_decl=sd):
+                # Block-scope struct/union: tag enters the current
+                # block's tag scope (renamed `@<N>.<source>`); type
+                # checker reads the resolved tag from the rewritten
+                # AST.
+                return c99_ast.StructDecl(
+                    struct_decl=self._resolve_struct_decl(sd),
+                )
             case c99_ast.VarDecl(var_decl=vd):
                 linkage = self._block_scope_object_linkage(vd, scope)
                 return c99_ast.VarDecl(
@@ -629,6 +792,10 @@ class Resolver:
                 # `int a = 5; { int a = a; }` reads the inner
                 # uninitialized `a`.
                 self._record_block_decl(name, resolved, linkage, scope)
+                # Walk the declared type against the current tag
+                # scope, rewriting any Structure / Union refs to
+                # their resolved tags.
+                new_data_type = self._resolve_type(vd.data_type)
                 # `extern int x = ...;` is a tentative-definition / one-
                 # def-rule concern best handled by the type checker; we
                 # let the initializer resolve normally.
@@ -638,7 +805,7 @@ class Resolver:
                 return c99_ast.Type_var_decl(
                     name=resolved,
                     init=new_init,
-                    data_type=vd.data_type,
+                    data_type=new_data_type,
                     storage_class=vd.storage_class,
                 )
         raise TypeError(f"unexpected var_decl: {vd!r}")
@@ -748,21 +915,27 @@ class Resolver:
                 # C99 §6.8.5.3: the for-header opens its own block-
                 # scope. Mechanics match Compound: clone the parent
                 # scope flipping all entries to outer-scoped, then
-                # resolve init/cond/post/body in the clone.
+                # resolve init/cond/post/body in the clone. Tags
+                # also get a fresh scope — a struct/union declared
+                # in the for-init isn't visible after the loop.
                 for_scope: _Scope = {
                     n: (resolved, False, link)
                     for n, (resolved, _, link) in scope.items()
                 }
-                new_init = self.resolve_for_init(init, for_scope)
-                new_cond = (
-                    self.resolve_exp(cond, for_scope)
-                    if cond is not None else None
-                )
-                new_post = (
-                    self.resolve_exp(post, for_scope)
-                    if post is not None else None
-                )
-                new_body = self.resolve_statement(body, for_scope)
+                prior_tag_scope = self._enter_tag_scope()
+                try:
+                    new_init = self.resolve_for_init(init, for_scope)
+                    new_cond = (
+                        self.resolve_exp(cond, for_scope)
+                        if cond is not None else None
+                    )
+                    new_post = (
+                        self.resolve_exp(post, for_scope)
+                        if post is not None else None
+                    )
+                    new_body = self.resolve_statement(body, for_scope)
+                finally:
+                    self._current_tag_scope = prior_tag_scope
                 return c99_ast.ForStmt(
                     init=new_init,
                     condition=new_cond,
@@ -814,11 +987,11 @@ class Resolver:
                 # Strings with Var references to file-scope statics.
                 return c99_ast.String(str=s)
             case c99_ast.Cast(target_type=t, exp=inner):
-                # The target type is plain syntax (Int / Long / FunType
-                # nodes); only the inner expression has identifiers to
-                # resolve.
+                # Resolve the target type's tag refs against the
+                # current tag scope, AND resolve identifiers in
+                # the inner expression.
                 return c99_ast.Cast(
-                    target_type=t,
+                    target_type=self._resolve_type(t),
                     exp=self.resolve_exp(inner, scope),
                 )
             case c99_ast.Var(name=name):
@@ -926,11 +1099,13 @@ class Resolver:
                 return c99_ast.SizeOfExp(
                     exp=self.resolve_exp(inner, scope),
                 )
-            case c99_ast.SizeOfType():
-                # `sizeof (T)` — no inner expression to resolve;
-                # the target_type is a fully-resolved data_type
-                # built by the parser. Pass through.
-                return exp
+            case c99_ast.SizeOfType(target_type=t):
+                # `sizeof (T)` — no inner expression to resolve, but
+                # the target_type may contain Structure/Union refs
+                # whose tags need scope resolution.
+                return c99_ast.SizeOfType(
+                    target_type=self._resolve_type(t),
+                )
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — operand must be an lvalue. The four
                 # syntactic lvalue forms supported today are Var

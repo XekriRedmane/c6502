@@ -90,13 +90,8 @@ for this bucket.
 
 ## Chapter 18 — `invalid_types` (currently not rejected)
 
-Diagnostic gaps — additional check sites would need to be added
-for struct-as-controlling-expression, and for the four
-incomplete-type use sites listed.
+Diagnostic gaps — c6502 doesn't enforce the C99 §6.8.4.1 / §6.8.5
+"controlling expression must be scalar" constraint.
 
 - `extra_credit/scalar_required/union_as_controlling_expression.c`
-- `invalid_incomplete_structs/assign_to_incomplete_var.c`
-- `invalid_incomplete_structs/cast_incomplete_struct.c`
-- `invalid_incomplete_structs/incomplete_return_type_funcall.c`
-- `invalid_incomplete_structs/incomplete_struct_full_expr.c`
 - `scalar_required/struct_controlling_expression.c`

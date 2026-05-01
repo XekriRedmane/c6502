@@ -1162,6 +1162,29 @@ class TypeChecker:
         )
         self._record_tag_visible(t.tag)
 
+    def _require_complete_value(
+        self, exp: c99_ast.Type_exp, where: str,
+    ) -> None:
+        """If `exp.data_type` is an incomplete struct/union type,
+        reject — used at sites that materialize the value of an
+        expression (assignment lval/rval, cast operand, function-
+        call return, expression statement, for-init expression).
+        C99 §6.7.2.1.8 forbids reading or writing the value of an
+        incomplete-typed object: its size and layout are unknown
+        until the type is completed. Sites that take the address
+        of an expression (`&v`, `sizeof v` once v has incomplete
+        type — though sizeof has its own check) DON'T materialize
+        the value, so they bypass this helper."""
+        t = exp.data_type
+        if isinstance(t, (Structure, Union)):
+            layout = self.types.get(t.tag)
+            if layout is None or not layout.complete:
+                kw = "union" if isinstance(t, Union) else "struct"
+                raise TypeCheckError(
+                    f"{where}: incomplete type '{kw} {t.tag}' "
+                    f"(C99 §6.7.2.1.8)"
+                )
+
     def check_program(
         self, prog: c99_ast.Type_program,
     ) -> tuple[c99_ast.Type_program, SymbolTable, TypeTable]:
@@ -2182,6 +2205,12 @@ class TypeChecker:
                 return
             case c99_ast.Expression(exp=exp):
                 self._check_exp(exp)
+                # `e;` evaluates `e` and discards the result —
+                # incomplete struct/union values can't be
+                # materialized.
+                self._require_complete_value(
+                    exp, "expression statement",
+                )
                 return
             case c99_ast.IfStmt(
                 condition=cond, then_clause=then_, else_clause=else_,
@@ -2384,6 +2413,12 @@ class TypeChecker:
             case c99_ast.InitExp(exp=exp):
                 if exp is not None:
                     self._check_exp(exp)
+                    # Same as Expression statement — the value is
+                    # evaluated and discarded, so an incomplete
+                    # struct/union expression isn't usable here.
+                    self._require_complete_value(
+                        exp, "for-init expression",
+                    )
                 return
         raise TypeError(f"unexpected for_init: {init!r}")
 
@@ -2524,6 +2559,11 @@ class TypeChecker:
                 exp.exp = _decay_if_array(inner)
                 inner = exp.exp
                 inner_type = inner.data_type
+                # The operand of a cast is evaluated even for the
+                # `(void)e` discard form (C99 §6.3.2.2.1), so its
+                # value must be representable — which rules out
+                # incomplete struct/union types.
+                self._require_complete_value(inner, "cast operand")
                 # `(void)e` accepts any type for `e` (including a
                 # void-typed expression like another void function
                 # call); the result is just discarded. Skip the
@@ -2888,6 +2928,11 @@ class TypeChecker:
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
+                # Both sides materialize the struct's bytes (the lval
+                # is overwritten, the rval read), so neither may
+                # have incomplete struct/union type.
+                self._require_complete_value(lv, "assignment lval")
+                self._require_complete_value(rv, "assignment rval")
                 # Arrays aren't assignable as a whole (C99 §6.5.16.1
                 # constraint: lval must be a "modifiable lvalue", and
                 # an array isn't one). Subscript / Dereference lvals
@@ -3099,6 +3144,24 @@ class TypeChecker:
                         f"argument{plural}, expected "
                         f"{len(fn_type.params)}"
                     )
+                # The function's return type must be complete (or
+                # void) at the call site (C99 §6.5.2.2.1: the called
+                # function must return "void or a complete object
+                # type"). A forward declaration with an incomplete
+                # struct/union return is allowed, but actually
+                # calling it requires the type to be completed first.
+                if isinstance(fn_type.ret, (Structure, Union)):
+                    layout = self.types.get(fn_type.ret.tag)
+                    if layout is None or not layout.complete:
+                        kw = (
+                            "union" if isinstance(fn_type.ret, Union)
+                            else "struct"
+                        )
+                        raise TypeCheckError(
+                            f"call to {name!r}: incomplete return "
+                            f"type '{kw} {fn_type.ret.tag}' "
+                            f"(C99 §6.5.2.2.1)"
+                        )
                 # Argument conversion (C99 §6.5.2.2.7): each argument
                 # is converted, as if by assignment, to the type of
                 # the corresponding parameter. Mutate `args` in place

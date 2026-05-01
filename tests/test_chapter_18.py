@@ -139,19 +139,12 @@ _INVALID_LEX_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "dot_bad_token.c",
 })
 _INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
-# Type-check edge cases c6502 doesn't reject yet: incomplete-type
-# operations (assignment, dereference, sizeof at the use site, cast
-# through incomplete pointer), struct-as-controlling-expression in
-# `if`/`while`, and tag-shadowing scenarios that would need full
-# scope-aware tag-name disambiguation. The valid programs work fine
-# without these checks — these are diagnostic gaps, not codegen
-# blockers.
+# Type-check edge cases c6502 doesn't reject yet: struct-as-
+# controlling-expression in `if` / `while`. The valid programs
+# work fine without these checks — these are diagnostic gaps,
+# not codegen blockers.
 _INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "extra_credit/scalar_required/union_as_controlling_expression.c",
-    "invalid_incomplete_structs/assign_to_incomplete_var.c",
-    "invalid_incomplete_structs/cast_incomplete_struct.c",
-    "invalid_incomplete_structs/incomplete_return_type_funcall.c",
-    "invalid_incomplete_structs/incomplete_struct_full_expr.c",
     "scalar_required/struct_controlling_expression.c",
 })
 _INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset()

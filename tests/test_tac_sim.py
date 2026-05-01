@@ -27,12 +27,12 @@ def _compile_to_tac(source: str):
     )))
     prog, symbols, types = type_check_program(resolved)
     tac = translate_to_tac(prog, symbols, types)
-    return tac, symbols
+    return tac, symbols, types
 
 
 def _run(source: str, fn: str = "main", args: list[int] | None = None) -> int:
-    tac, symbols = _compile_to_tac(source)
-    sim = Simulator(tac, symbols)
+    tac, symbols, types = _compile_to_tac(source)
+    sim = Simulator(tac, symbols, types)
     return sim.call(fn, args or [])
 
 
@@ -220,8 +220,8 @@ class TestTacSimMemory(unittest.TestCase):
         int g = 99;
         int main(void) { return g; }
         """
-        tac, symbols = _compile_to_tac(src)
-        sim = Simulator(tac, symbols)
+        tac, symbols, types = _compile_to_tac(src)
+        sim = Simulator(tac, symbols, types)
         self.assertEqual(sim.call("main", []), 99)
         self.assertEqual(sim.read_static("g"), 99)
 
@@ -238,8 +238,8 @@ class TestTacSimMemory(unittest.TestCase):
         int bump(void) { counter = counter + 1; return counter; }
         int main(void) { return 0; }
         """
-        tac, symbols = _compile_to_tac(src)
-        sim = Simulator(tac, symbols)
+        tac, symbols, types = _compile_to_tac(src)
+        sim = Simulator(tac, symbols, types)
         self.assertEqual(sim.call("bump", []), 1)
         self.assertEqual(sim.call("bump", []), 2)
         self.assertEqual(sim.call("bump", []), 3)
@@ -254,8 +254,8 @@ class TestTacSimMemory(unittest.TestCase):
         }
         int main(void) { return 0; }
         """
-        tac, symbols = _compile_to_tac(src)
-        sim = Simulator(tac, symbols)
+        tac, symbols, types = _compile_to_tac(src)
+        sim = Simulator(tac, symbols, types)
         self.assertEqual(sim.call("next", []), 11)
         self.assertEqual(sim.call("next", []), 12)
 
@@ -411,8 +411,8 @@ class TestTacSimFP(unittest.TestCase):
         float g = 2.5f;
         int main(void) { g = g + 0.5f; return 0; }
         """
-        tac, symbols = _compile_to_tac(src)
-        sim = Simulator(tac, symbols)
+        tac, symbols, types = _compile_to_tac(src)
+        sim = Simulator(tac, symbols, types)
         sim.call("main", [])
         self.assertEqual(sim.read_static("g"), _f32("3.0"))
 
@@ -492,6 +492,130 @@ class TestTacSimIndirectCall(unittest.TestCase):
         long main(void) { return fp(7); }
         """
         self.assertEqual(_run(src), 49)
+
+
+class TestTacSimStructs(unittest.TestCase):
+    """Struct / union pass-by-value, sret returns, member access."""
+
+    def test_struct_sret_return(self):
+        src = """
+        struct point { int x; int y; };
+        struct point make_point(void) {
+            struct point p;
+            p.x = 3;
+            p.y = 4;
+            return p;
+        }
+        int main(void) {
+            struct point q = make_point();
+            return q.x + q.y;
+        }
+        """
+        self.assertEqual(_run(src), 7)
+
+    def test_struct_pass_by_value(self):
+        src = """
+        struct point { int x; int y; };
+        int sum_pt(struct point p) { return p.x + p.y; }
+        int main(void) {
+            struct point q;
+            q.x = 10;
+            q.y = 32;
+            return sum_pt(q);
+        }
+        """
+        self.assertEqual(_run(src), 42)
+
+    def test_struct_pass_by_value_does_not_mutate_caller(self):
+        # The callee receives its own copy — mutations don't escape.
+        src = """
+        struct box { long v; };
+        long zero_it(struct box b) { b.v = 0; return b.v; }
+        long main(void) {
+            struct box k;
+            k.v = 99;
+            zero_it(k);
+            return k.v;
+        }
+        """
+        self.assertEqual(_run(src), 99)
+
+    def test_struct_assignment_copies_bytes(self):
+        src = """
+        struct vec { long a; long b; long c; };
+        long main(void) {
+            struct vec u;
+            u.a = 1; u.b = 2; u.c = 3;
+            struct vec v;
+            v = u;
+            v.a = 100;
+            return u.a + v.a + v.b + v.c;
+        }
+        """
+        # u.a stays 1 (assignment was a copy), v.a became 100,
+        # v.b == 2, v.c == 3. Total 1 + 100 + 2 + 3 = 106.
+        self.assertEqual(_run(src), 106)
+
+    def test_struct_with_pointer_member(self):
+        src = """
+        struct ref { int *p; };
+        int main(void) {
+            int x = 17;
+            struct ref r;
+            r.p = &x;
+            *r.p = 99;
+            return x;
+        }
+        """
+        self.assertEqual(_run(src), 99)
+
+    def test_nested_struct_member_access(self):
+        src = """
+        struct inner { int a; int b; };
+        struct outer { struct inner i; int c; };
+        int main(void) {
+            struct outer o;
+            o.i.a = 1;
+            o.i.b = 2;
+            o.c = 3;
+            return o.i.a + o.i.b + o.c;
+        }
+        """
+        self.assertEqual(_run(src), 6)
+
+    def test_struct_returned_then_passed(self):
+        # f() returns a struct; g(f()) passes that struct by value.
+        # Tests that the return slot's bytes feed cleanly into the
+        # next call's struct-arg copy.
+        src = """
+        struct pair { int x; int y; };
+        struct pair make(int a, int b) {
+            struct pair p;
+            p.x = a;
+            p.y = b;
+            return p;
+        }
+        int sum(struct pair p) { return p.x + p.y; }
+        int main(void) { return sum(make(20, 22)); }
+        """
+        self.assertEqual(_run(src), 42)
+
+    def test_union_member_overlay(self):
+        # Union members all sit at offset 0; writing one overwrites
+        # the bytes of the other (within the shared width).
+        src = """
+        union u { int b; long w; };
+        long main(void) {
+            union u v;
+            v.w = 0;
+            v.b = 5;
+            return v.w;
+        }
+        """
+        # Writing 5 to the 1-byte int member then reading the 2-byte
+        # long member: low byte is 5, high byte is whatever was
+        # there (we wrote 0 first, so it's 0). Result: 5.
+        self.assertEqual(_run(src), 5)
 
 
 if __name__ == "__main__":

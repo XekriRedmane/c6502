@@ -19,7 +19,8 @@ FunctionCall, IndirectCall, Ret, integer cast nodes (SignExtend
 IntToDouble / FloatToInt / DoubleToInt / FloatToDouble /
 DoubleToFloat), GetAddress / Load / Store, StaticVariable
 initialization (including AddressInit, StringInit, ZeroInit,
-FloatInit, DoubleInit). NOT YET: struct sret returns.
+FloatInit, DoubleInit), struct / union pass-by-value and sret
+returns (when a TypeTable is provided to the constructor).
 
 Intended use: exercise C semantics without depending on the
 (still-landing) 6502 runtime helpers, and pin TAC behavior as a
@@ -46,6 +47,7 @@ from passes.type_checking import (
     StaticAttr,
     SymbolTable,
     Type,
+    TypeTable,
     UChar,
     UInt,
     ULong,
@@ -111,10 +113,24 @@ def _to_signed(u: int, width: int) -> int:
     return u - 2 * half if u >= half else u
 
 
-def _sizeof(t: Type) -> int:
-    """Bytes occupied by an object of type `t`. Recursive for Array."""
+def _is_aggregate(t: Type) -> bool:
+    return isinstance(t, (c99_ast.Structure, c99_ast.Union))
+
+
+def _sizeof(t: Type, types: TypeTable | None = None) -> int:
+    """Bytes occupied by an object of type `t`. Recursive for Array;
+    Structure / Union require a TypeTable."""
     if isinstance(t, c99_ast.Array):
-        return _sizeof(t.element_type) * t.size
+        return _sizeof(t.element_type, types) * t.size
+    if _is_aggregate(t):
+        if types is None:
+            raise TacSimError(
+                f"cannot size aggregate type without TypeTable: {t!r}"
+            )
+        layout = types.get(t.tag)
+        if layout is None or not layout.complete:
+            raise TacSimError(f"incomplete aggregate type: {t.tag!r}")
+        return layout.size
     _, width, _ = _type_info(t)
     return width
 
@@ -189,9 +205,15 @@ class Simulator:
     finer-grained access.
     """
 
-    def __init__(self, program: tac_ast.Program, symbols: SymbolTable) -> None:
+    def __init__(
+        self,
+        program: tac_ast.Program,
+        symbols: SymbolTable,
+        types: TypeTable | None = None,
+    ) -> None:
         self.program = program
         self.symbols = symbols
+        self.types = types
         self.memory = Memory()
 
         self._functions: dict[str, tac_ast.Function] = {
@@ -297,21 +319,25 @@ class Simulator:
         # — params first because they get values right now;
         # other locals get zero-initialized regions on first
         # access (Memory's sparse-zero default handles that).
+        # Aggregate-typed (struct / union) params are always
+        # memory-resident: their value in `args` is the source
+        # struct's address, and we copy `size` bytes from there
+        # into a freshly allocated region for the callee.
         taken = self._address_taken[fn.name]
-        for pname in fn.params:
+        for pname, raw in zip(fn.params, args):
             sym = self.symbols[pname]
+            if _is_aggregate(sym.type):
+                size = _sizeof(sym.type, self.types)
+                addr = self.memory.allocate(size)
+                frame.local_addr[pname] = addr
+                self._memcpy(addr, raw, size)
+                continue
             _, w, _ = _type_info(sym.type)
+            masked = raw & _mask(w)
             if pname in taken:
                 addr = self.memory.allocate(w)
                 frame.local_addr[pname] = addr
-        # Other address-taken locals (non-params) get allocated
-        # lazily below, on first read or write.
-        for pname, raw in zip(fn.params, args):
-            sym = self.symbols[pname]
-            _, w, _ = _type_info(sym.type)
-            masked = raw & _mask(w)
-            if pname in frame.local_addr:
-                self.memory.store(frame.local_addr[pname], masked, w)
+                self.memory.store(addr, masked, w)
             else:
                 frame.env[pname] = masked
         ret = self._run(frame)
@@ -323,6 +349,13 @@ class Simulator:
             # Return value is the raw IEEE 754 bit pattern.
             return ret.value
         return _to_signed(ret.value, ret.width) if signed else ret.value
+
+    def _memcpy(self, dst: int, src: int, size: int) -> None:
+        """Copy `size` bytes from `src` to `dst`. Source bytes
+        outside the populated region read as 0 (matches Memory's
+        sparse-zero default)."""
+        for i in range(size):
+            self.memory.bytes[dst + i] = self.memory.bytes.get(src + i, 0)
 
     def read_static(self, name: str) -> int:
         """Read the current value of a scalar static variable as a
@@ -367,8 +400,16 @@ class Simulator:
                     frame.pc = self._labels[frame.function.name][t]
 
             case tac_ast.Copy(src=s, dst=d):
-                v, _ = self._read(frame, s)
-                self._write(frame, d, v)
+                if self._is_aggregate_var(d):
+                    src_addr = self._address_of(frame, s)
+                    dst_addr = self._address_of(frame, d)
+                    self._memcpy(
+                        dst_addr, src_addr,
+                        _sizeof(self.symbols[d.name].type, self.types),
+                    )
+                else:
+                    v, _ = self._read(frame, s)
+                    self._write(frame, d, v)
 
             case tac_ast.Unary(op=op, src=s, dst=d):
                 v, ta = self._read(frame, s)
@@ -426,9 +467,17 @@ class Simulator:
                 self._write(frame, d, self.memory.load(ptr, w))
 
             case tac_ast.Store(src=s, dst_ptr=p):
-                v, (_, w, _) = self._read(frame, s)
-                ptr, _ = self._read(frame, p)
-                self.memory.store(ptr, v, w)
+                if self._is_aggregate_var(s):
+                    src_addr = self._address_of(frame, s)
+                    dst_addr, _ = self._read(frame, p)
+                    self._memcpy(
+                        dst_addr, src_addr,
+                        _sizeof(self.symbols[s.name].type, self.types),
+                    )
+                else:
+                    v, (_, w, _) = self._read(frame, s)
+                    ptr, _ = self._read(frame, p)
+                    self.memory.store(ptr, v, w)
 
             case tac_ast.Ret(val=None):
                 return _Return(None, 0)
@@ -438,7 +487,7 @@ class Simulator:
                 return _Return(vu, w)
 
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
-                py_args = [self._read(frame, a)[0] for a in args]
+                py_args = [self._read_call_arg(frame, a) for a in args]
                 rv = self.call(name, py_args)
                 self._capture_return(frame, dst, rv)
 
@@ -449,7 +498,7 @@ class Simulator:
                     raise TacSimError(
                         f"IndirectCall to unknown address {addr:#x}"
                     )
-                py_args = [self._read(frame, a)[0] for a in args]
+                py_args = [self._read_call_arg(frame, a) for a in args]
                 rv = self.call(fn_name, py_args)
                 self._capture_return(frame, dst, rv)
 
@@ -459,6 +508,21 @@ class Simulator:
                 )
 
         return None
+
+    def _is_aggregate_var(self, val) -> bool:
+        return (
+            isinstance(val, tac_ast.Var)
+            and _is_aggregate(self.symbols[val.name].type)
+        )
+
+    def _read_call_arg(self, frame: _Frame, val) -> int:
+        """For struct-typed args, the "value" passed across the call
+        is the source struct's address — the callee then memcpys
+        from there into a fresh region. For scalars, return the
+        ordinary unsigned-int value."""
+        if self._is_aggregate_var(val):
+            return self._address_of(frame, val)
+        return self._read(frame, val)[0]
 
     def _capture_return(self, frame: _Frame, dst, rv) -> None:
         """Common tail of FunctionCall / IndirectCall: write the
@@ -500,7 +564,7 @@ class Simulator:
         sym = self.symbols.get(name)
         if sym is None:
             raise TacSimError(f"unknown var: {name!r}")
-        size = _sizeof(sym.type)
+        size = _sizeof(sym.type, self.types)
         addr = self.memory.allocate(size)
         frame.local_addr[name] = addr
         if name in frame.env:

@@ -2746,6 +2746,79 @@ class TestIncrementDecrementLowering(unittest.TestCase):
         self.assertGreaterEqual(kinds.count("Load"), 1)
         self.assertGreaterEqual(kinds.count("Store"), 1)
 
+    def test_postfix_on_long_pointer_var_scales_by_pointee_size(self):
+        # `long *p; p++;` — must route through
+        # translate_pointer_arithmetic so the increment scales by
+        # sizeof(*p) = 2 (long is 2 bytes). Otherwise `p` would
+        # advance by 1 byte and dereference the high half of the
+        # current element.
+        tac = self._tac(
+            "long main(void) { long a = (long)0; long *p = &a; "
+            "p++; return (long)p; }"
+        )
+        binaries = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+        ]
+        muls = [b for b in binaries if isinstance(b.op, tac_ast.Multiply)]
+        # Exactly one Multiply: 1 * sizeof(long) = 1 * 2.
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+        )
+
+    def test_postfix_on_pointer_to_array_scales_by_array_size(self):
+        # `int (*p)[10]; p++;` — sizeof(*p) = sizeof(int[10]) = 10
+        # bytes (1-byte int * 10), so the increment must Multiply
+        # the implicit 1 by 10 before adding to `p`.
+        tac = self._tac(
+            "int main(void) { int a[10]; int (*p)[10] = &a; "
+            "p++; return 0; }"
+        )
+        muls = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(value=10)),
+        )
+
+    def test_prefix_on_pointer_var_emits_pointer_arithmetic(self):
+        # Same as the postfix test but for prefix `++p`.
+        tac = self._tac(
+            "long main(void) { long a = (long)0; long *p = &a; "
+            "++p; return (long)p; }"
+        )
+        muls = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+            and isinstance(i.op, tac_ast.Multiply)
+        ]
+        self.assertEqual(len(muls), 1)
+        self.assertEqual(
+            muls[0].src2,
+            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+        )
+
+    def test_postfix_on_int_pointer_no_scaling(self):
+        # `int *p; p++;` — sizeof(int) is 1, so no Multiply. Just an
+        # Add of the pointer and the constant 1.
+        tac = self._tac(
+            "int main(void) { int a; int *p = &a; p++; return 0; }"
+        )
+        binaries = [
+            i for i in tac.top_level[0].instructions
+            if isinstance(i, tac_ast.Binary)
+        ]
+        muls = [b for b in binaries if isinstance(b.op, tac_ast.Multiply)]
+        adds = [b for b in binaries if isinstance(b.op, tac_ast.Add)]
+        self.assertEqual(len(muls), 0)
+        self.assertEqual(len(adds), 1)
+
 
 class TestArrayInitList(unittest.TestCase):
     """`int a[N] = {e1, e2, ...}` lowers to GetAddress + a sequence

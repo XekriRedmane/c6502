@@ -2577,8 +2577,6 @@ class Translator:
         Assignment); the lowering here trusts that and just sizes
         each temp by the operand's `data_type`."""
         op_type = operand.data_type or c99_ast.Int()
-        one = _tac_const_val(op_type, 1)
-        binop = self.translate_incdec(op)
         if isinstance(operand, c99_ast.Var):
             var = tac_ast.Var(name=operand.name)
             old: tac_ast.Type_val | None = None
@@ -2590,12 +2588,7 @@ class Translator:
                     name=self.make_temporary_variable_name(op_type),
                 )
                 instrs.append(tac_ast.Copy(src=var, dst=old))
-            new = tac_ast.Var(
-                name=self.make_temporary_variable_name(op_type),
-            )
-            instrs.append(tac_ast.Binary(
-                op=binop, src1=var, src2=one, dst=new,
-            ))
+            new = self._emit_incdec_step(op, var, op_type, instrs)
             instrs.append(tac_ast.Copy(src=new, dst=var))
             return old if return_old else new
         # Subscript / Dereference: compute the lvalue's byte address
@@ -2625,14 +2618,49 @@ class Translator:
             name=self.make_temporary_variable_name(op_type),
         )
         instrs.append(tac_ast.Load(src_ptr=addr, dst=cur))
+        new = self._emit_incdec_step(op, cur, op_type, instrs)
+        instrs.append(tac_ast.Store(src=new, dst_ptr=addr))
+        return cur if return_old else new
+
+    def _emit_incdec_step(
+        self,
+        op: c99_ast.Type_incdec_op,
+        src: tac_ast.Type_val,
+        op_type: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Compute `src ± 1` (per `op`) at the operand's type.
+
+        For pointer operands routes through
+        `translate_pointer_arithmetic` so the increment scales by
+        `sizeof(*ptr)` per C99 §6.5.6.8 — synthesising the same
+        Cast(Long)-widened-1 the type checker would have produced
+        for an explicit `ptr + 1`. For arithmetic operands emits a
+        plain `Binary(Add | Subtract, src, 1)`."""
+        if isinstance(op_type, c99_ast.Pointer):
+            c99_op: c99_ast.Type_binary_operator = (
+                c99_ast.Add() if isinstance(op, c99_ast.Increment)
+                else c99_ast.Subtract()
+            )
+            return self.translate_pointer_arithmetic(
+                op=c99_op,
+                src1=src,
+                src2=_tac_const_val(c99_ast.Long(), 1),
+                lt=op_type,
+                rt=c99_ast.Long(),
+                result_type=op_type,
+                instrs=instrs,
+            )
         new = tac_ast.Var(
             name=self.make_temporary_variable_name(op_type),
         )
         instrs.append(tac_ast.Binary(
-            op=binop, src1=cur, src2=one, dst=new,
+            op=self.translate_incdec(op),
+            src1=src,
+            src2=_tac_const_val(op_type, 1),
+            dst=new,
         ))
-        instrs.append(tac_ast.Store(src=new, dst_ptr=addr))
-        return cur if return_old else new
+        return new
 
     def translate_short_circuit(
         self,

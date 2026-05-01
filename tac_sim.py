@@ -14,12 +14,12 @@ LongLong / ULongLong / Char / SChar / UChar), Pointer, Float,
 Double; arithmetic + bitwise + comparison + shift on integers;
 arithmetic + comparison + Negate + LogicalNot on FP (via
 fp_arith); control flow with FP-aware truthiness; Copy,
-FunctionCall, Ret, integer cast nodes (SignExtend / ZeroExtend /
-Truncate), FP cast nodes (IntToFloat / IntToDouble / FloatToInt
-/ DoubleToInt / FloatToDouble / DoubleToFloat), GetAddress /
-Load / Store, StaticVariable initialization (including
-AddressInit, StringInit, ZeroInit, FloatInit, DoubleInit). NOT
-YET: IndirectCall, struct sret returns.
+FunctionCall, IndirectCall, Ret, integer cast nodes (SignExtend
+/ ZeroExtend / Truncate), FP cast nodes (IntToFloat /
+IntToDouble / FloatToInt / DoubleToInt / FloatToDouble /
+DoubleToFloat), GetAddress / Load / Store, StaticVariable
+initialization (including AddressInit, StringInit, ZeroInit,
+FloatInit, DoubleInit). NOT YET: struct sret returns.
 
 Intended use: exercise C semantics without depending on the
 (still-landing) 6502 runtime helpers, and pin TAC behavior as a
@@ -220,15 +220,28 @@ class Simulator:
                     taken.add(ins.operand.name)
             self._address_taken[fn.name] = taken
 
-        # Static-storage layout: pass 1 allocates an address per
-        # StaticVariable; pass 2 lays down init bytes (so
-        # AddressInit references resolve to already-allocated
-        # statics).
+        # Static-storage and function-address layout:
+        #   pass 1: allocate an address per StaticVariable (sizes
+        #     known up front from each item's _init_size).
+        #   pass 2: allocate a fake 2-byte address per function so
+        #     `&foo` → GetAddress and IndirectCall(ptr) →
+        #     function-name lookup work without a real code segment.
+        #     The bytes themselves stay zero — only the address is
+        #     used as an identity token.
+        #   pass 3: lay down static init bytes — runs after function
+        #     addresses are known so AddressInit("foo", _) for a
+        #     file-scope function pointer can resolve.
         self._static_addr: dict[str, int] = {}
         for top in program.top_level:
             if isinstance(top, tac_ast.StaticVariable):
                 size = sum(_init_size(i) for i in top.init)
                 self._static_addr[top.name] = self.memory.allocate(size)
+        self._function_addr: dict[str, int] = {}
+        self._addr_to_function: dict[int, str] = {}
+        for fn_name in self._functions:
+            addr = self.memory.allocate(2)
+            self._function_addr[fn_name] = addr
+            self._addr_to_function[addr] = fn_name
         for top in program.top_level:
             if isinstance(top, tac_ast.StaticVariable):
                 self._lay_down_static(top)
@@ -249,6 +262,8 @@ class Simulator:
                     self.memory.store(addr, b, 8); addr += 8
                 case tac_ast.AddressInit(name=n, offset=off):
                     target = self._static_addr.get(n)
+                    if target is None:
+                        target = self._function_addr.get(n)
                     if target is None:
                         raise TacSimError(f"AddressInit references unknown {n!r}")
                     self.memory.store(addr, target + off, 2); addr += 2
@@ -425,8 +440,18 @@ class Simulator:
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
                 py_args = [self._read(frame, a)[0] for a in args]
                 rv = self.call(name, py_args)
-                if dst is not None and rv is not None:
-                    self._write(frame, dst, rv & _mask(self._dst_width(dst)))
+                self._capture_return(frame, dst, rv)
+
+            case tac_ast.IndirectCall(ptr=p, args=args, dst=dst):
+                addr, _ = self._read(frame, p)
+                fn_name = self._addr_to_function.get(addr)
+                if fn_name is None:
+                    raise TacSimError(
+                        f"IndirectCall to unknown address {addr:#x}"
+                    )
+                py_args = [self._read(frame, a)[0] for a in args]
+                rv = self.call(fn_name, py_args)
+                self._capture_return(frame, dst, rv)
 
             case _:
                 raise TacSimError(
@@ -434,6 +459,15 @@ class Simulator:
                 )
 
         return None
+
+    def _capture_return(self, frame: _Frame, dst, rv) -> None:
+        """Common tail of FunctionCall / IndirectCall: write the
+        callee's return value into `dst` (if both are present).
+        Mirrors the soft-stack convention's return-value capture
+        — a no-op for void-returning callees or expression-stmt
+        calls that drop the result."""
+        if dst is not None and rv is not None:
+            self._write(frame, dst, rv & _mask(self._dst_width(dst)))
 
     @staticmethod
     def _is_truthy(value: int, ta: tuple[bool, int, bool]) -> bool:
@@ -450,6 +484,11 @@ class Simulator:
         if not isinstance(val, tac_ast.Var):
             raise TacSimError(f"GetAddress operand must be a Var, got {val}")
         name = val.name
+        # Function names: addresses live in a parallel reverse map
+        # so IndirectCall can recover the target function name from
+        # the runtime pointer value.
+        if name in self._function_addr:
+            return self._function_addr[name]
         if name in self._static_addr:
             return self._static_addr[name]
         if name in frame.local_addr:

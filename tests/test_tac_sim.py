@@ -424,5 +424,75 @@ class TestTacSimFP(unittest.TestCase):
         self.assertEqual(_run(src), _f64("3.14"))
 
 
+class TestTacSimIndirectCall(unittest.TestCase):
+    """Function pointers + IndirectCall. Uses explicit &fn since
+    c6502 doesn't yet do bare-name function-to-pointer decay."""
+
+    def test_call_through_pointer(self):
+        src = """
+        int twice(int x) { return x + x; }
+        int main(void) {
+            int (*fp)(int) = &twice;
+            return fp(21);
+        }
+        """
+        self.assertEqual(_run(src), 42)
+
+    def test_pointer_dispatch_picks_target(self):
+        src = """
+        int add1(int x) { return x + 1; }
+        int add100(int x) { return x + 100; }
+        int main(void) {
+            int (*fp)(int);
+            fp = &add1;
+            int a = fp(5);
+            fp = &add100;
+            int b = fp(5);
+            return a + b;
+        }
+        """
+        # 6 + 105 = 111. Out of int's signed 1-byte range — wraps
+        # to 111 - 256 = -145, but 111 fits since int is -128..127
+        # only at 1 byte... wait int is 1 byte signed -128..127.
+        # 111 fits. But +1 produced 6, +100 produced 105; both OK.
+        # Sum: 6 + 105 = 111, which fits in signed 1-byte. Final
+        # return value: 111.
+        self.assertEqual(_run(src), 111)
+
+    def test_pointer_to_void_function(self):
+        # Void-returning indirect call with a side effect on a
+        # static variable.
+        src = """
+        int counter = 0;
+        void bump(void) { counter = counter + 7; }
+        int main(void) {
+            void (*fp)(void) = &bump;
+            fp();
+            fp();
+            return counter;
+        }
+        """
+        self.assertEqual(_run(src), 14)
+
+    def test_indirect_call_returning_long(self):
+        src = """
+        long big(long x) { return x * x; }
+        long main(void) {
+            long (*fp)(long) = &big;
+            return fp(100);
+        }
+        """
+        self.assertEqual(_run(src), 10000)
+
+    def test_function_pointer_round_trip_via_static(self):
+        # Pointer stored in a file-scope static, then used.
+        src = """
+        long square(long x) { return x * x; }
+        long (*fp)(long) = &square;
+        long main(void) { return fp(7); }
+        """
+        self.assertEqual(_run(src), 49)
+
+
 if __name__ == "__main__":
     unittest.main()

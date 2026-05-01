@@ -1333,5 +1333,130 @@ class TestFoldSignednessAware(unittest.TestCase):
                          tac_ast.Copy(src=_cui(255), dst=_var("x")))
 
 
+class TestFoldCopy(unittest.TestCase):
+    """Copy(Constant, Var) where the source variant disagrees with
+    the dst's c99 type. Same-width signed↔unsigned casts get elided
+    in `c99_to_tac` (the bit pattern is identical), so a same-width
+    cast feeding into an Assignment can leave a Copy whose constant
+    variant doesn't match the dst — this fold canonicalizes it."""
+
+    def test_signed_to_unsigned_same_width(self) -> None:
+        # `unsigned int x = (unsigned int)1;` lowers to
+        # Copy(ConstInt(1), Var(x)) with x typed UInt; the cast was
+        # elided. Fold rewraps as ConstUInt(1).
+        symbols = _symtab(x=c99_ast.UInt())
+        out = _fold_one(
+            tac_ast.Copy(src=_ci(1), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cui(1), dst=_var("x")))
+
+    def test_signed_to_unsigned_negative_canonicalizes(self) -> None:
+        # ConstInt(-1) bit pattern 0xFF reinterpreted as ConstUInt:
+        # value 255.
+        symbols = _symtab(x=c99_ast.UInt())
+        out = _fold_one(
+            tac_ast.Copy(src=_ci(-1), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+
+    def test_unsigned_to_signed_high_bit_set(self) -> None:
+        # ConstUInt(200) bit pattern 0xC8 reinterpreted as ConstInt:
+        # signed 8-bit value -56.
+        symbols = _symtab(x=c99_ast.Int())
+        out = _fold_one(
+            tac_ast.Copy(src=_cui(200), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(-56), dst=_var("x")))
+
+    def test_signed_long_to_unsigned_long(self) -> None:
+        symbols = _symtab(x=c99_ast.ULong())
+        out = _fold_one(
+            tac_ast.Copy(src=_cl(-1), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cul(0xFFFF), dst=_var("x")))
+
+    def test_signed_long_long_to_unsigned_long_long(self) -> None:
+        symbols = _symtab(x=c99_ast.ULongLong())
+        out = _fold_one(
+            tac_ast.Copy(src=_cll(-1), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cull(0xFFFFFFFF), dst=_var("x")))
+
+    def test_char_dst_variant_is_int(self) -> None:
+        # `char` maps to ConstInt (same width and signedness as Int —
+        # plain char is signed in c6502). A ConstUInt source is
+        # rewrapped as ConstInt.
+        symbols = _symtab(x=c99_ast.Char())
+        out = _fold_one(
+            tac_ast.Copy(src=_cui(200), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(-56), dst=_var("x")))
+
+    def test_uchar_dst_variant_is_uint(self) -> None:
+        symbols = _symtab(x=c99_ast.UChar())
+        out = _fold_one(
+            tac_ast.Copy(src=_ci(-1), dst=_var("x")),
+            symbols=symbols,
+        )
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+
+    def test_matching_variant_unchanged(self) -> None:
+        # Variant already matches the dst's c99 type — nothing to do.
+        instr = tac_ast.Copy(src=_ci(7), dst=_var("x"))
+        out = _fold_one(instr, symbols=_symtab(x=c99_ast.Int()))
+        self.assertEqual(out[0], instr)
+
+    def test_skip_without_symbols(self) -> None:
+        # No symbol table → no way to know the dst's type. Bail.
+        instr = tac_ast.Copy(src=_ci(1), dst=_var("x"))
+        out = _fold_one(instr)
+        self.assertEqual(out[0], instr)
+
+    def test_skip_unknown_var(self) -> None:
+        # Symbol table doesn't know `x`. Bail rather than guess.
+        instr = tac_ast.Copy(src=_ci(1), dst=_var("x"))
+        out = _fold_one(instr, symbols=_symtab())
+        self.assertEqual(out[0], instr)
+
+    def test_skip_with_var_src(self) -> None:
+        # Non-Constant src — Copy isn't carrying a foldable constant.
+        instr = tac_ast.Copy(src=_var("y"), dst=_var("x"))
+        out = _fold_one(instr, symbols=_symtab(
+            x=c99_ast.UInt(), y=c99_ast.Int(),
+        ))
+        self.assertEqual(out[0], instr)
+
+    def test_skip_fp_dst(self) -> None:
+        # Float-typed dsts don't have a signedness — Copy of an FP
+        # constant carries no signedness ambiguity, and Copy of an
+        # integer constant into a Float dst shouldn't reach this pass
+        # anyway (c99_to_tac would emit IntToFloat). Either way: no
+        # fold.
+        instr = tac_ast.Copy(src=_cf("1.0"), dst=_var("x"))
+        out = _fold_one(instr, symbols=_symtab(x=c99_ast.Float()))
+        self.assertEqual(out[0], instr)
+
+    def test_skip_width_mismatch(self) -> None:
+        # A width-changing Copy shouldn't reach this pass (c99_to_tac
+        # emits SignExtend / ZeroExtend / Truncate for those). Bail
+        # rather than silently widening or narrowing.
+        instr = tac_ast.Copy(src=_ci(1), dst=_var("x"))
+        out = _fold_one(instr, symbols=_symtab(x=c99_ast.Long()))
+        self.assertEqual(out[0], instr)
+
+
 if __name__ == "__main__":
     unittest.main()

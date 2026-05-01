@@ -1,15 +1,19 @@
 """TAC constant folding pass.
 
 For `Unary` / `Binary` whose every val operand is a `Constant`, for
-`JumpIfTrue` / `JumpIfFalse` whose condition is a `Constant`, and for
+`JumpIfTrue` / `JumpIfFalse` whose condition is a `Constant`, for
 the integer-width and FP conversion casts (`SignExtend`,
 `ZeroExtend`, `Truncate`, `IntToFloat`, `IntToDouble`, `FloatToInt`,
 `DoubleToInt`, `FloatToDouble`, `DoubleToFloat`) whose source is a
-`Constant`, evaluate the operation in Python with arithmetic that
-matches what the 6502 lowering would compute, then rewrite the
-instruction:
+`Constant`, and for `Copy` whose source is a `Constant` whose variant
+disagrees with the dst Var's c99 type, evaluate the operation in
+Python with arithmetic that matches what the 6502 lowering would
+compute, then rewrite the instruction:
 
   - Unary / Binary / cast → Copy(Constant(result), dst)  (preserves dst)
+  - Copy(Constant(c), dst) → Copy(Constant(rewrapped), dst), where
+    rewrapped is `c` reinterpreted at the dst variant's signedness
+    (same bit pattern; only `.value`'s number form changes)
   - JumpIfTrue(true)   /  JumpIfFalse(false)      → Jump(target)
   - JumpIfTrue(false)  /  JumpIfFalse(true)       → dropped
 
@@ -59,6 +63,19 @@ operand precision):
     truthy iff it compares unequal to 0. Both ±0 are falsy; NaN is
     truthy (NaN != 0 by definition). `LogicalNot` follows the
     same rule.
+
+Copy folds:
+
+  - `Copy(Constant(c), Var(name))` where `c`'s variant differs from
+    the dst's c99 type's variant — but the bit widths match —
+    rewraps `c` to the dst's variant. Same-width signed↔unsigned
+    casts get elided in `c99_to_tac` (the bit pattern is identical),
+    so a `(unsigned int)1` initializer for a `unsigned int` Var
+    leaves a `Copy(Constant(ConstInt(1)), Var(uint_x))`; this fold
+    canonicalizes the constant to `ConstUInt(1)` so downstream
+    consumers see one unambiguous variant per Var. Width-mismatched
+    Copies (which shouldn't reach this pass — c99_to_tac emits
+    SignExtend / ZeroExtend / Truncate for those) are left alone.
 
 Cast / conversion folds:
 
@@ -187,6 +204,14 @@ def _fold(
             dst=dst,
         ):
             res = _fold_binary(op, c1, c2)
+            if res is None:
+                return instr
+            return tac_ast.Copy(src=tac_ast.Constant(const=res), dst=dst)
+        case tac_ast.Copy(
+            src=tac_ast.Constant(const=c),
+            dst=dst,
+        ):
+            res = _fold_copy(c, dst, symbols)
             if res is None:
                 return instr
             return tac_ast.Copy(src=tac_ast.Constant(const=res), dst=dst)
@@ -320,6 +345,30 @@ def _fold_widen(
     else:
         value = c.value & ((1 << src_bits) - 1)
     return _wrap_int(dst_variant, value)
+
+
+def _fold_copy(
+    c: tac_ast.Type_const, dst: tac_ast.Type_val, symbols,
+) -> tac_ast.Type_const | None:
+    """Fold a Copy whose src is an integer Constant whose variant
+    doesn't match the dst Var's c99 type. Same-width signed↔unsigned
+    casts are elided in `c99_to_tac` (the bit pattern is the same),
+    so the source variant can disagree with the dst's. Rewrapping
+    keeps the bit pattern and recanonicalizes `.value`. Returns None
+    when there's nothing to do — non-integer source, no symbol table,
+    dst's c99 type isn't an integer kind we recognize, variants
+    already match, or the bit widths disagree (a width-changing Copy
+    shouldn't reach this pass)."""
+    if not _is_integer_const(c):
+        return None
+    dst_variant = _dst_int_variant(dst, symbols)
+    if dst_variant is None:
+        return None
+    if dst_variant is type(c):
+        return None
+    if _INTEGER_CONST_BITS[dst_variant] != _INTEGER_CONST_BITS[type(c)]:
+        return None
+    return _wrap_int(dst_variant, c.value)
 
 
 def _fold_truncate(

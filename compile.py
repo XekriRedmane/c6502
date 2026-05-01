@@ -19,6 +19,10 @@ exactly one of:
   --codegen  go all the way to 6502 assembly text. Type checking
              runs first.
 
+`--optimize` (orthogonal to the stage flag) runs the TAC-level
+optimizer to a fixed point between TAC translation and the next
+stage. Effective for `--tac` and `--codegen`; ignored otherwise.
+
 Output goes to stdout by default, or to the file named by `-o`. With
 `--codegen`, the output file (if any) must have a `.asm` suffix.
 
@@ -41,6 +45,7 @@ from preprocessor import preprocess
 from pretty import pretty
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
+from passes.optimization import optimize_program as optimize_tac
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from passes.identifier_resolution import resolve_program as resolve_identifiers
 from passes.string_lifting import lift_program as lift_strings
@@ -78,7 +83,7 @@ def _format_tokens(source: str) -> str:
     return "".join(out)
 
 
-def _run_stage(stage: str, source: str) -> str:
+def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
     if stage == "lex":
         return _format_tokens(source)
     if stage == "parse":
@@ -91,7 +96,10 @@ def _run_stage(stage: str, source: str) -> str:
         # emit StaticVariable entries for static-storage objects,
         # and resolve struct/union sizes.
         prog, symbols, types = type_check_program(_resolved(source))
-        return pretty(translate_to_tac(prog, symbols, types)) + "\n"
+        tac = translate_to_tac(prog, symbols, types)
+        if optimize:
+            tac = optimize_tac(tac)
+        return pretty(tac) + "\n"
     if stage == "codegen":
         prog, symbols, types = type_check_program(_resolved(source))
         # `replace_pseudoregisters` needs to recognize every static-
@@ -105,10 +113,11 @@ def _run_stage(stage: str, source: str) -> str:
             name for name, sym in symbols.items()
             if isinstance(sym.attrs, StaticAttr)
         )
+        tac = translate_to_tac(prog, symbols, types)
+        if optimize:
+            tac = optimize_tac(tac)
         return emit_program(replace_pseudoregs(
-            translate_to_asm(
-                translate_to_tac(prog, symbols, types), symbols, types,
-            ),
+            translate_to_asm(tac, symbols, types),
             extra_statics=statics,
             symbols=symbols,
             types=types,
@@ -134,6 +143,11 @@ def main(argv: list[str]) -> int:
                         const="tac", help="stop after TAC translation")
     stages.add_argument("--codegen", dest="stage", action="store_const",
                         const="codegen", help="emit 6502 assembly")
+    ap.add_argument("--optimize", dest="optimize", action="store_true",
+                    help="run TAC-level optimization passes (constant "
+                         "folding, unreachable-code elimination, copy "
+                         "propagation, dead-store elimination) to a "
+                         "fixed point. Applies to --tac and --codegen.")
     args, pcpp_args = ap.parse_known_args(argv[1:])
 
     if (args.stage == "codegen"
@@ -151,7 +165,9 @@ def main(argv: list[str]) -> int:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
 
-    text = _run_stage(args.stage, preprocess(source, pcpp_args))
+    text = _run_stage(
+        args.stage, preprocess(source, pcpp_args), args.optimize,
+    )
 
     if args.output is not None:
         with open(args.output, "w", encoding="utf-8") as f:

@@ -155,5 +155,143 @@ class TestTacSim(unittest.TestCase):
         self.assertEqual(_run(src), 0x34)
 
 
+class TestTacSimMemory(unittest.TestCase):
+    """Memory-resident locals, statics, pointers, arrays."""
+
+    def test_address_of_local_then_deref(self):
+        src = """
+        int main(void) {
+            int x = 7;
+            int *p = &x;
+            return *p;
+        }
+        """
+        self.assertEqual(_run(src), 7)
+
+    def test_pointer_store_writes_through(self):
+        src = """
+        int main(void) {
+            int x = 1;
+            int *p = &x;
+            *p = 42;
+            return x;
+        }
+        """
+        self.assertEqual(_run(src), 42)
+
+    def test_array_subscript_read(self):
+        src = """
+        long main(void) {
+            long a[4];
+            a[0] = 10; a[1] = 20; a[2] = 30; a[3] = 40;
+            return a[2];
+        }
+        """
+        self.assertEqual(_run(src), 30)
+
+    def test_array_initializer_list(self):
+        src = """
+        long sum(void) {
+            long a[5] = {1, 2, 3, 4, 5};
+            long s = 0;
+            long i = 0;
+            while (i < 5) { s = s + a[i]; i = i + 1; }
+            return s;
+        }
+        long main(void) { return sum(); }
+        """
+        self.assertEqual(_run(src), 15)
+
+    def test_pointer_arithmetic(self):
+        # ptr + i scales by sizeof(*ptr). Long is 2 bytes — verify
+        # that p+1 lands on the next element, not the next byte.
+        src = """
+        long main(void) {
+            long a[3] = {100, 200, 300};
+            long *p = a;
+            return *(p + 2);
+        }
+        """
+        self.assertEqual(_run(src), 300)
+
+    def test_file_scope_static_initialized(self):
+        src = """
+        int g = 99;
+        int main(void) { return g; }
+        """
+        tac, symbols = _compile_to_tac(src)
+        sim = Simulator(tac, symbols)
+        self.assertEqual(sim.call("main", []), 99)
+        self.assertEqual(sim.read_static("g"), 99)
+
+    def test_file_scope_static_tentative_zero(self):
+        src = """
+        long g;
+        long main(void) { return g; }
+        """
+        self.assertEqual(_run(src), 0)
+
+    def test_static_persists_across_calls(self):
+        src = """
+        int counter = 0;
+        int bump(void) { counter = counter + 1; return counter; }
+        int main(void) { return 0; }
+        """
+        tac, symbols = _compile_to_tac(src)
+        sim = Simulator(tac, symbols)
+        self.assertEqual(sim.call("bump", []), 1)
+        self.assertEqual(sim.call("bump", []), 2)
+        self.assertEqual(sim.call("bump", []), 3)
+        self.assertEqual(sim.read_static("counter"), 3)
+
+    def test_block_scope_static_keeps_value(self):
+        src = """
+        int next(void) {
+            static int n = 10;
+            n = n + 1;
+            return n;
+        }
+        int main(void) { return 0; }
+        """
+        tac, symbols = _compile_to_tac(src)
+        sim = Simulator(tac, symbols)
+        self.assertEqual(sim.call("next", []), 11)
+        self.assertEqual(sim.call("next", []), 12)
+
+    def test_pointer_to_static_via_addressinit(self):
+        # `int *q = &g;` at file scope lays down an AddressInit
+        # whose 2 bytes resolve to the address of `g`.
+        src = """
+        int g = 77;
+        int *q = &g;
+        int main(void) { return *q; }
+        """
+        self.assertEqual(_run(src), 77)
+
+    def test_string_literal_subscript(self):
+        # String literals get lifted to file-scope static char[]
+        # by passes.string_lifting; subscripting reads the bytes.
+        src = """
+        int main(void) {
+            char *s = "hello";
+            return s[1];
+        }
+        """
+        self.assertEqual(_run(src), ord("e"))
+
+    def test_address_taken_param(self):
+        # A param whose address is taken inside the body needs to
+        # be allocated in memory at frame entry (not env), with
+        # its argument value laid down as bytes.
+        src = """
+        long deref(long x) {
+            long *p = &x;
+            return *p + 1;
+        }
+        long main(void) { return deref(41); }
+        """
+        self.assertEqual(_run(src), 42)
+
+
 if __name__ == "__main__":
     unittest.main()

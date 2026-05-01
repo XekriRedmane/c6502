@@ -1,34 +1,47 @@
 """TAC simulator: runs TAC programs in Python.
 
 Each TAC instruction maps to a Python operation that mirrors the
-6502 lowering's bit-level semantics — operand values live in the
+6502 lowering's bit-level semantics. Scalar values live in the
 environment as unsigned N-byte ints (the byte-pattern view, same
-as what the soft stack would hold), and signedness is re-applied
-only at instructions where it matters (Divide, Modulo, ordering
-comparisons, RightShift, SignExtend).
+as what the soft stack would hold). Signedness is re-applied only
+at instructions where it matters (Divide, Modulo, ordering
+comparisons, RightShift, SignExtend). Address-taken locals and
+static-storage variables live in a flat byte-addressed memory
+map and are read / written through their addresses.
 
-Minimal scope (this module): integer types, arithmetic, control
-flow, Copy, FunctionCall, Ret, Cast nodes (SignExtend / ZeroExtend
-/ Truncate). NOT YET: Load/Store/GetAddress, Float/Double, IntToFP
-conversions, StaticVariable, IndirectCall.
+Scope (this module): integer types (Int / UInt / Long / ULong /
+LongLong / ULongLong / Char / SChar / UChar), Pointer, arithmetic
++ bitwise + comparison + shift, control flow, Copy, FunctionCall,
+Ret, cast nodes (SignExtend / ZeroExtend / Truncate), GetAddress
+/ Load / Store, StaticVariable initialization (including
+AddressInit, StringInit, ZeroInit, and FloatInit / DoubleInit
+byte-level layout). NOT YET: Float / Double arithmetic and
+runtime FP-conversion ops (IntToFloat, FloatToInt, ...),
+IndirectCall, struct sret returns.
 
-Intended use: exercise C semantics without depending on the (still-
-landing) 6502 runtime helpers, and pin TAC behavior as a fixed
-point against future TAC optimization passes — same input
+Intended use: exercise C semantics without depending on the
+(still-landing) 6502 runtime helpers, and pin TAC behavior as a
+fixed point against future TAC optimization passes — same input
 program should yield the same simulator trace before and after
 any TAC-level transform.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+import c99_ast
 import tac_ast
 from passes.type_checking import (
+    Char,
     Int,
     Long,
     LongLong,
+    Pointer,
+    SChar,
+    StaticAttr,
     SymbolTable,
     Type,
+    UChar,
     UInt,
     ULong,
     ULongLong,
@@ -39,12 +52,19 @@ class TacSimError(Exception):
     pass
 
 
+# Scalar type → (signed, width_bytes). Pointer is treated as
+# unsigned (addresses are inherently unsigned in the runtime
+# model). Char-types match c6502's "plain char is signed" rule.
 _INT_TYPES: dict[type, tuple[bool, int]] = {
     Int: (True, 1),
-    Long: (True, 2),
-    LongLong: (True, 4),
+    Char: (True, 1),
+    SChar: (True, 1),
     UInt: (False, 1),
+    UChar: (False, 1),
+    Long: (True, 2),
     ULong: (False, 2),
+    Pointer: (False, 2),
+    LongLong: (True, 4),
     ULongLong: (False, 4),
 }
 
@@ -77,10 +97,62 @@ def _to_signed(u: int, width: int) -> int:
     return u - 2 * half if u >= half else u
 
 
+def _sizeof(t: Type) -> int:
+    """Bytes occupied by an object of type `t`. Recursive for Array."""
+    if isinstance(t, c99_ast.Array):
+        return _sizeof(t.element_type) * t.size
+    return _type_info(t)[1]
+
+
+def _init_size(init: tac_ast.Type_static_init) -> int:
+    """Bytes laid down by a single static_init item."""
+    match init:
+        case tac_ast.IntInit() | tac_ast.UIntInit():           return 1
+        case tac_ast.LongInit() | tac_ast.ULongInit():         return 2
+        case tac_ast.LongLongInit() | tac_ast.ULongLongInit(): return 4
+        case tac_ast.FloatInit():                              return 4
+        case tac_ast.DoubleInit():                             return 8
+        case tac_ast.AddressInit():                            return 2
+        case tac_ast.StringInit(bytes=n):                      return n
+        case tac_ast.ZeroInit(bytes=n):                        return n
+    raise TacSimError(f"unsupported static_init: {type(init).__name__}")
+
+
+class Memory:
+    """Sparse byte-addressed memory. Reads of unset addresses return 0
+    (treats untouched memory as zero, which matches BSS semantics
+    closely enough for simulation; the simulator doesn't try to be
+    strict about uninitialized reads)."""
+
+    def __init__(self, base: int = 0x1000) -> None:
+        self.bytes: dict[int, int] = {}
+        self.next_addr: int = base
+
+    def allocate(self, size: int) -> int:
+        addr = self.next_addr
+        self.next_addr += size
+        return addr
+
+    def store(self, addr: int, value: int, width: int) -> None:
+        for i in range(width):
+            self.bytes[addr + i] = (value >> (8 * i)) & 0xFF
+
+    def load(self, addr: int, width: int) -> int:
+        v = 0
+        for i in range(width):
+            v |= self.bytes.get(addr + i, 0) << (8 * i)
+        return v
+
+    def write_bytes(self, addr: int, data: bytes) -> None:
+        for i, b in enumerate(data):
+            self.bytes[addr + i] = b
+
+
 @dataclass
 class _Frame:
     function: tac_ast.Function
-    env: dict[str, int]
+    env: dict[str, int] = field(default_factory=dict)
+    local_addr: dict[str, int] = field(default_factory=dict)
     pc: int = 0
 
 
@@ -95,11 +167,18 @@ class Simulator:
 
     >>> sim = Simulator(tac_program, symbols)
     >>> sim.call("main", [])
+
+    After a call, static variables can be inspected with
+    `sim.read_static(name)` (returns a Python int, signed if the
+    type is signed) or `sim.memory.load(addr, width)` for
+    finer-grained access.
     """
 
     def __init__(self, program: tac_ast.Program, symbols: SymbolTable) -> None:
         self.program = program
         self.symbols = symbols
+        self.memory = Memory()
+
         self._functions: dict[str, tac_ast.Function] = {
             t.name: t
             for t in program.top_level
@@ -113,6 +192,66 @@ class Simulator:
             }
             for fn in self._functions.values()
         }
+        # Address-taken locals: each function's set of param /
+        # local names that ever appear as the operand of GetAddress
+        # in that function's body.
+        self._address_taken: dict[str, set[str]] = {}
+        for fn in self._functions.values():
+            taken: set[str] = set()
+            for ins in fn.instructions:
+                if isinstance(ins, tac_ast.GetAddress) and isinstance(
+                    ins.operand, tac_ast.Var
+                ):
+                    taken.add(ins.operand.name)
+            self._address_taken[fn.name] = taken
+
+        # Static-storage layout: pass 1 allocates an address per
+        # StaticVariable; pass 2 lays down init bytes (so
+        # AddressInit references resolve to already-allocated
+        # statics).
+        self._static_addr: dict[str, int] = {}
+        for top in program.top_level:
+            if isinstance(top, tac_ast.StaticVariable):
+                size = sum(_init_size(i) for i in top.init)
+                self._static_addr[top.name] = self.memory.allocate(size)
+        for top in program.top_level:
+            if isinstance(top, tac_ast.StaticVariable):
+                self._lay_down_static(top)
+
+    def _lay_down_static(self, sv: tac_ast.StaticVariable) -> None:
+        addr = self._static_addr[sv.name]
+        for item in sv.init:
+            match item:
+                case tac_ast.IntInit(value=v) | tac_ast.UIntInit(value=v):
+                    self.memory.store(addr, v, 1); addr += 1
+                case tac_ast.LongInit(value=v) | tac_ast.ULongInit(value=v):
+                    self.memory.store(addr, v, 2); addr += 2
+                case tac_ast.LongLongInit(value=v) | tac_ast.ULongLongInit(value=v):
+                    self.memory.store(addr, v, 4); addr += 4
+                case tac_ast.FloatInit(bits=b):
+                    self.memory.store(addr, b, 4); addr += 4
+                case tac_ast.DoubleInit(bits=b):
+                    self.memory.store(addr, b, 8); addr += 8
+                case tac_ast.AddressInit(name=n, offset=off):
+                    target = self._static_addr.get(n)
+                    if target is None:
+                        raise TacSimError(f"AddressInit references unknown {n!r}")
+                    self.memory.store(addr, target + off, 2); addr += 2
+                case tac_ast.StringInit(str=s, bytes=n):
+                    raw = s.encode("latin-1")
+                    self.memory.write_bytes(addr, raw)
+                    # Zero-pad the rest.
+                    for i in range(len(raw), n):
+                        self.memory.bytes[addr + i] = 0
+                    addr += n
+                case tac_ast.ZeroInit(bytes=n):
+                    for i in range(n):
+                        self.memory.bytes[addr + i] = 0
+                    addr += n
+                case _:
+                    raise TacSimError(
+                        f"unsupported static_init: {type(item).__name__}"
+                    )
 
     def call(self, name: str, args: list[int]) -> int | None:
         fn = self._functions.get(name)
@@ -122,16 +261,46 @@ class Simulator:
             raise TacSimError(
                 f"{name}: expected {len(fn.params)} args, got {len(args)}"
             )
-        env: dict[str, int] = {}
+        frame = _Frame(fn)
+        # Allocate memory for any address-taken local in this
+        # function. Params and other locals share the same set
+        # — params first because they get values right now;
+        # other locals get zero-initialized regions on first
+        # access (Memory's sparse-zero default handles that).
+        taken = self._address_taken[fn.name]
+        for pname in fn.params:
+            sym = self.symbols[pname]
+            _, w = _type_info(sym.type)
+            if pname in taken:
+                addr = self.memory.allocate(w)
+                frame.local_addr[pname] = addr
+        # Other address-taken locals (non-params) get allocated
+        # lazily below, on first read or write.
         for pname, raw in zip(fn.params, args):
-            _, w = _type_info(self.symbols[pname].type)
-            env[pname] = raw & _mask(w)
-        ret = self._run(_Frame(fn, env))
+            sym = self.symbols[pname]
+            _, w = _type_info(sym.type)
+            masked = raw & _mask(w)
+            if pname in frame.local_addr:
+                self.memory.store(frame.local_addr[pname], masked, w)
+            else:
+                frame.env[pname] = masked
+        ret = self._run(frame)
         if ret.value is None:
             return None
         ret_type = self.symbols[name].type.ret
         signed, _ = _type_info(ret_type)
         return _to_signed(ret.value, ret.width) if signed else ret.value
+
+    def read_static(self, name: str) -> int:
+        """Read the current value of a scalar static variable as a
+        Python int (signed if the declared type is signed)."""
+        sym = self.symbols.get(name)
+        if sym is None or not isinstance(sym.attrs, StaticAttr):
+            raise TacSimError(f"not a static variable: {name!r}")
+        addr = self._static_addr[name]
+        signed, w = _type_info(sym.type)
+        raw = self.memory.load(addr, w)
+        return _to_signed(raw, w) if signed else raw
 
     def _run(self, frame: _Frame) -> _Return:
         ins_list = frame.function.instructions
@@ -183,6 +352,20 @@ class Simulator:
                 vu, _ = self._read(frame, s)
                 self._write(frame, d, vu & _mask(self._dst_width(d)))
 
+            case tac_ast.GetAddress(operand=op, dst=d):
+                addr = self._address_of(frame, op)
+                self._write(frame, d, addr)
+
+            case tac_ast.Load(src_ptr=p, dst=d):
+                ptr, _ = self._read(frame, p)
+                w = self._dst_width(d)
+                self._write(frame, d, self.memory.load(ptr, w))
+
+            case tac_ast.Store(src=s, dst_ptr=p):
+                v, (_, w) = self._read(frame, s)
+                ptr, _ = self._read(frame, p)
+                self.memory.store(ptr, v, w)
+
             case tac_ast.Ret(val=None):
                 return _Return(None, 0)
 
@@ -203,13 +386,42 @@ class Simulator:
 
         return None
 
+    def _address_of(self, frame: _Frame, val: tac_ast.Type_val) -> int:
+        if not isinstance(val, tac_ast.Var):
+            raise TacSimError(f"GetAddress operand must be a Var, got {val}")
+        name = val.name
+        if name in self._static_addr:
+            return self._static_addr[name]
+        if name in frame.local_addr:
+            return frame.local_addr[name]
+        # Lazy allocation for address-taken locals: the pre-pass
+        # marked the name; we allocate on first GetAddress. If the
+        # local already had an env value (rare — usually the first
+        # mention is the GetAddress itself), migrate it into memory.
+        sym = self.symbols.get(name)
+        if sym is None:
+            raise TacSimError(f"unknown var: {name!r}")
+        size = _sizeof(sym.type)
+        addr = self.memory.allocate(size)
+        frame.local_addr[name] = addr
+        if name in frame.env:
+            _, w = _type_info(sym.type)
+            self.memory.store(addr, frame.env[name], w)
+            del frame.env[name]
+        return addr
+
     def _read(self, frame: _Frame, val) -> tuple[int, tuple[bool, int]]:
         match val:
             case tac_ast.Constant(const=c):
                 signed, w, vu = _const_info(c)
                 return vu, (signed, w)
             case tac_ast.Var(name=n):
-                signed, w = _type_info(self.symbols[n].type)
+                sym = self.symbols[n]
+                signed, w = _type_info(sym.type)
+                if isinstance(sym.attrs, StaticAttr):
+                    return self.memory.load(self._static_addr[n], w), (signed, w)
+                if n in frame.local_addr:
+                    return self.memory.load(frame.local_addr[n], w), (signed, w)
                 if n not in frame.env:
                     raise TacSimError(f"uninitialized var: {n}")
                 return frame.env[n], (signed, w)
@@ -218,8 +430,15 @@ class Simulator:
     def _write(self, frame: _Frame, val, raw: int) -> None:
         if not isinstance(val, tac_ast.Var):
             raise TacSimError(f"can only write to Var, got {type(val).__name__}")
-        _, w = _type_info(self.symbols[val.name].type)
-        frame.env[val.name] = raw & _mask(w)
+        sym = self.symbols[val.name]
+        _, w = _type_info(sym.type)
+        masked = raw & _mask(w)
+        if isinstance(sym.attrs, StaticAttr):
+            self.memory.store(self._static_addr[val.name], masked, w)
+        elif val.name in frame.local_addr:
+            self.memory.store(frame.local_addr[val.name], masked, w)
+        else:
+            frame.env[val.name] = masked
 
     def _dst_width(self, val) -> int:
         if not isinstance(val, tac_ast.Var):

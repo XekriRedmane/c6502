@@ -1474,10 +1474,28 @@ End-to-end (C source through `compile.py --codegen` to runnable-shape
   scope isn't visible after the scope exits. References to a
   yet-undeclared tag auto-introduce a forward declaration in
   the current scope (the standard's "appearance of `struct foo`
-  in any declaration introduces it" rule). Not yet supported:
-  struct-by-value parameter passing, struct-by-value returns
-  (separate ABI exercise), and block-scope tag shadowing
-  (re-using a tag for a different layout in an inner scope).
+  in any declaration introduces it" rule).
+
+  **Struct-by-value parameter passing**: a struct argument
+  contributes `sizeof(struct)` bytes to the caller's soft-stack
+  arg block. Callee reads them via `Frame(M+3+offset)`. No new
+  mechanism beyond the existing per-byte arg-write loop.
+
+  **Struct-by-value returns** use an sret convention: the
+  caller allocates a return slot in its frame, passes its
+  address as a hidden first parameter (`.sret.<funcname>`,
+  `Pointer(struct)`-typed). `return e;` lowers to
+  `Store(e, .sret) + Ret(None)`. The function call expression's
+  result IS the slot — `f().m` reads through it directly, and
+  `dst = f();` Copies it into `dst` without any extra
+  intermediate. The slot has temporary lifetime: you can read
+  through `f().m` but the structural lvalue check rejects
+  `f().m = …` and `(c?a:b).m = …` because the operand isn't
+  an lvalue.
+
+  Block-scope tag shadowing (re-using a tag for a different
+  layout in an inner scope) is deferred — the flat TypeTable
+  would need per-scope unique tag names.
 
 Partially supported:
 

@@ -144,6 +144,34 @@ def _storage_is(sc, kind):
     return sc is not None and isinstance(sc, kind)
 
 
+def _is_lvalue(exp) -> bool:
+    """Structural lvalue predicate (C99 §6.3.2.1.1). True for the
+    forms that name a storage location: Var, Dereference (`*p`),
+    Subscript (`a[i]` ≡ `*(a+i)`), Arrow (`p->m` ≡ `(*p).m` —
+    always an lvalue regardless of `p`'s lvalue-ness, since the
+    pointer is dereferenced), Dot (`s.m` — lvalue iff `s` is),
+    String (the static-storage object the lifter mints).
+
+    Returns False for FunctionCall, Conditional, Binary, etc. —
+    these produce rvalues. `f().m` is NOT an lvalue because `f()`
+    isn't; the standard calls this a "non-lvalue structure" with
+    temporary lifetime, and it can be read but not assigned to.
+    """
+    if isinstance(exp, c99_ast.Var):
+        return True
+    if isinstance(exp, c99_ast.Dereference):
+        return True
+    if isinstance(exp, c99_ast.Subscript):
+        return True
+    if isinstance(exp, c99_ast.Arrow):
+        return True
+    if isinstance(exp, c99_ast.Dot):
+        return _is_lvalue(exp.operand)
+    if isinstance(exp, c99_ast.String):
+        return True
+    return False
+
+
 def _decl_name(decl: c99_ast.Type_declaration) -> str | None:
     """Source-level name of a top-level declaration. Returns None for
     declarations that don't introduce an ordinary identifier (struct/
@@ -822,10 +850,7 @@ class Resolver:
                 # Per C99 §6.3.2.1.1, the result of a unary `*` is an
                 # lvalue and so is the result of `[]` (`a[i]` is
                 # defined as `*(a + i)`).
-                if not isinstance(lval, (
-                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
-                    c99_ast.Dot, c99_ast.Arrow,
-                )):
+                if not _is_lvalue(lval):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in assignment: {lval!r}"
                     )
@@ -844,13 +869,8 @@ class Resolver:
                     false_clause=self.resolve_exp(false_clause, scope),
                 )
             case c99_ast.Postfix(op=op, operand=operand):
-                # Same lvalue rule as Assignment — Var, Dereference,
-                # Subscript, Dot, or Arrow (the syntactic lvalue
-                # forms supported today).
-                if not isinstance(operand, (
-                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
-                    c99_ast.Dot, c99_ast.Arrow,
-                )):
+                # Same lvalue rule as Assignment — see `_is_lvalue`.
+                if not _is_lvalue(operand):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in postfix: {operand!r}"
                     )
@@ -859,10 +879,7 @@ class Resolver:
                 )
             case c99_ast.Prefix(op=op, operand=operand):
                 # Same lvalue rule as Postfix / Assignment.
-                if not isinstance(operand, (
-                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
-                    c99_ast.Dot, c99_ast.Arrow,
-                )):
+                if not _is_lvalue(operand):
                     raise IdentifierResolutionError(
                         f"invalid lvalue in prefix increment/decrement: "
                         f"{operand!r}"
@@ -928,10 +945,7 @@ class Resolver:
                 # (operand must denote an object, not a function or
                 # `register` storage); here we just enforce the
                 # syntactic lvalue restriction.
-                if not isinstance(inner, (
-                    c99_ast.Var, c99_ast.Dereference, c99_ast.Subscript,
-                    c99_ast.String, c99_ast.Dot, c99_ast.Arrow,
-                )):
+                if not _is_lvalue(inner):
                     raise IdentifierResolutionError(
                         f"invalid operand of unary '&': {inner!r}"
                     )

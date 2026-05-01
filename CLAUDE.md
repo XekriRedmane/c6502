@@ -1662,15 +1662,47 @@ Lowered all the way to 6502 asm:
   pad out to the full union size after the first-member's bytes
   via a trailing `ZeroInit`. Struct-typed assignment / Copy
   works at any width through TAC's existing N-byte fan-out
-  (`_translate_copy` reads `_size_of(dst)`). Not yet supported:
-  struct-by-value parameter passing, struct-by-value returns
-  (the calling convention's HARGS / soft-stack arrangement
-  doesn't accommodate arbitrary-width pass-by-value yet — a
-  separate ABI exercise). Block-scope tag shadowing (re-using a
-  tag in an inner scope for a different layout) is also
-  deferred; the flat TypeTable would need per-scope unique tag
-  names. See `tests/STATUS.md` for the chapter\_18 file-by-file
-  status.
+  (`_translate_copy` reads `_size_of(dst)`).
+
+  **Struct-by-value parameter passing** uses the existing soft-
+  stack arg block: a struct param contributes `sizeof(struct)`
+  bytes to the caller's arg-byte count. The caller writes each
+  byte into `Stack(1)..Stack(N)`; the callee reads them via
+  `Frame(M+3+offset)`. No new mechanism — the existing per-byte
+  `Mov` emission with `_byte_at` and `_size_of` handles
+  arbitrary-width vals uniformly.
+
+  **Struct-by-value returns** use an sret-style convention.
+  `c99_to_tac._translate_function` detects a Structure/Union
+  return type and prepends a hidden first parameter
+  `.sret.<funcname>` of type `Pointer(struct)` to the TAC
+  function's params; the c99 symbol table gets a matching
+  `LocalAttr` entry. `Return(e)` for a struct-returning function
+  lowers to `Store(e, .sret.<funcname>) + Ret(None)` — the
+  callee writes the return bytes through the caller's pointer
+  and produces no scalar result. At call sites
+  (`c99_to_tac.translate_exp`'s FunctionCall arm), if the callee
+  returns Structure/Union the caller mints a fresh struct-typed
+  local for the return slot, emits `GetAddress(slot, addr)`,
+  prepends `addr` as the first arg, and the FunctionCall TAC
+  instruction has `dst=None`. The "result" of the
+  FunctionCall expression is the slot Var itself, which
+  downstream consumers (Assignment Copy, Dot/Arrow chained
+  member access, `f().m`) treat as any other addressable
+  struct lvalue. `_translate_lvalue_address` falls back for
+  rvalue struct expressions (FunctionCall, Conditional) by
+  translating them to a Var (the slot) and `GetAddress`-ing
+  that — uniform with the canonical Var case. The structural
+  lvalue check (`_is_lvalue`) in identifier_resolution treats
+  `Dot.operand` as an lvalue iff the operand is — so
+  `(c?a:b).m = …` and `f().m = …` are rejected (the slot has
+  temporary lifetime; you can read it but not assign through
+  it).
+
+  Block-scope tag shadowing (re-using a tag in an inner scope
+  for a different layout) is deferred; the flat TypeTable would
+  need per-scope unique tag names. See `tests/STATUS.md` for the
+  chapter\_18 file-by-file status.
 
 Partially supported: unsigned types (`unsigned int`, `unsigned
 long`, `unsigned long long`) parse and propagate through every

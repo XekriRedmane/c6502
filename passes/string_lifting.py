@@ -113,10 +113,14 @@ class StringLifter:
         # Direct char-array init — keep the String inline. The
         # init may be the bare `String(...)` or a Cast wrapping
         # one (the parser doesn't wrap String in casts today, but
-        # be tolerant).
-        if (
-            isinstance(init, c99_ast.String)
-            and self._is_char_array(declared_type)
+        # be tolerant). When `declared_type is None` we're
+        # recursing inside a struct/union InitList where the
+        # exact member type isn't known here, so any direct
+        # String item is presumed to be initializing a char-array
+        # member; the type checker validates that downstream.
+        if isinstance(init, c99_ast.String) and (
+            declared_type is None
+            or self._is_char_array(declared_type)
         ):
             return init
         if (
@@ -134,6 +138,41 @@ class StringLifter:
             new_items = [
                 self._lift_init(it, elem_type) for it in init.items
             ]
+            return c99_ast.InitList(
+                items=new_items, data_type=init.data_type,
+            )
+        if (
+            isinstance(init, c99_ast.InitList)
+            and isinstance(
+                declared_type, (c99_ast.Structure, c99_ast.Union),
+            )
+        ):
+            # Struct/union compound init — the lifter doesn't have
+            # the layout, so we can't dispatch by member type. But
+            # we DO know that any String item directly inside the
+            # InitList must be initializing a char-array member
+            # (the type checker validates this), so leave Strings
+            # inline. Nested InitLists recurse with `declared_type
+            # = None` so their inner Strings get the same
+            # treatment uniformly down the tree.
+            new_items = [
+                self._lift_init(it, None) for it in init.items
+            ]
+            return c99_ast.InitList(
+                items=new_items, data_type=init.data_type,
+            )
+        if isinstance(init, c99_ast.InitList) and declared_type is None:
+            # Aggregate-init item that we don't have type info for
+            # (recursing inside a struct init). Leave Strings
+            # inline; lift everything else.
+            new_items = []
+            for it in init.items:
+                if isinstance(it, c99_ast.String):
+                    new_items.append(it)
+                elif isinstance(it, c99_ast.InitList):
+                    new_items.append(self._lift_init(it, None))
+                else:
+                    new_items.append(self._lift_exp(it))
             return c99_ast.InitList(
                 items=new_items, data_type=init.data_type,
             )

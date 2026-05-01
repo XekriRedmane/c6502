@@ -1222,6 +1222,17 @@ class TypeChecker:
                 raise TypeCheckError(
                     f"redefinition of '{kw} {tag}'"
                 )
+        # Register a forward-declared layout BEFORE computing the
+        # final one, so self-referential members (`struct linked_list
+        # { struct linked_list *next; };`) can resolve their pointee
+        # type through the in-progress declaration. The pointer's
+        # well-formedness check passes `require_complete=False`, so
+        # the incomplete entry is enough.
+        if prior is None:
+            self.types[tag] = StructLayout(
+                tag=tag, is_union=is_union,
+                members=[], size=0, complete=False,
+            )
         # Compute the layout. Each member's type must be a complete
         # object type; in particular, recursive struct types are
         # rejected unless the recursion is via a Pointer.
@@ -1546,6 +1557,25 @@ class TypeChecker:
                 tag_visible=self._tag_visible,
                 auto_introduce=self._auto_introduce_tag,
             )
+        # The return type also has to be well-formed. For function
+        # *definitions* a struct/union return must be complete
+        # (the body may compute the bytes, but it can't write a
+        # zero-sized object); a forward declaration can name an
+        # incomplete struct in its return type as long as no
+        # caller tries to use the result before the type is
+        # completed.
+        ret_t = ftype.ret
+        require_ret_complete = (
+            defined
+            and isinstance(ret_t, (Structure, Union))
+        )
+        _check_well_formed_type(
+            ret_t, where=f"return type of function {fd.name!r}",
+            types=self.types,
+            require_complete=require_ret_complete,
+            tag_visible=self._tag_visible,
+            auto_introduce=self._auto_introduce_tag,
+        )
         if defined:
             # Walk the body. Parameters share the body's outermost
             # scope per §6.9.1.7 (so adding them to the symbol table
@@ -2043,6 +2073,18 @@ class TypeChecker:
                         f"type is {elem_type!r}"
                     )
                 self._check_array_init_list(item, elem_type, var_name)
+            elif isinstance(elem_type, (Structure, Union)):
+                # Array of structs / unions: each item is a nested
+                # InitList for the element struct.
+                if not isinstance(item, c99_ast.InitList):
+                    raise TypeCheckError(
+                        f"expected nested initializer (`{{...}}`) "
+                        f"at index {i} of {var_name!r}; element "
+                        f"type is {elem_type!r}"
+                    )
+                self._check_struct_init_list(
+                    item, elem_type, f"{var_name}[{i}]",
+                )
             else:
                 if isinstance(item, c99_ast.InitList):
                     raise TypeCheckError(
@@ -2103,9 +2145,20 @@ class TypeChecker:
                 # type, wrap it in an implicit Cast — same shape as
                 # Assignment / FunctionCall arg conversion. Array
                 # decay applies here too — `int *foo() { return arr;
-                # }` is the standard idiom.
+                # }` is the standard idiom. Struct/union returns
+                # bypass `_convert_to` (no Cast for struct types);
+                # the value's type must match exactly.
                 exp = _decay_if_array(exp)
-                stmt.exp = _convert_to(exp, expected)
+                if isinstance(expected, (Structure, Union)):
+                    if not _types_equal(exp.data_type, expected):
+                        raise TypeCheckError(
+                            f"return value type {exp.data_type!r} "
+                            f"doesn't match declared return type "
+                            f"{expected!r}"
+                        )
+                    stmt.exp = exp
+                else:
+                    stmt.exp = _convert_to(exp, expected)
                 return
             case c99_ast.Expression(exp=exp):
                 self._check_exp(exp)
@@ -2895,6 +2948,30 @@ class TypeChecker:
                         f"both be value-producing; got {tt!r} vs "
                         f"{tf!r}"
                     )
+                # Struct / union: both branches must have matching
+                # struct/union type (C99 §6.5.15.6's "both operands
+                # have compatible structure or union types"). The
+                # type must also be complete — branches of an
+                # incomplete struct have no value (you can't copy
+                # zero bytes meaningfully). No conversion — the
+                # result IS that struct type.
+                if _is_struct_or_union(tt) or _is_struct_or_union(tf):
+                    if not (_is_struct_or_union(tt)
+                            and _is_struct_or_union(tf)
+                            and _types_equal(tt, tf)):
+                        raise TypeCheckError(
+                            f"conditional branches must have matching "
+                            f"struct/union type; got {tt!r} vs {tf!r}"
+                        )
+                    layout = self.types.get(tt.tag)
+                    if layout is None or not layout.complete:
+                        kw = "union" if isinstance(tt, Union) else "struct"
+                        raise TypeCheckError(
+                            f"conditional branches have incomplete "
+                            f"type '{kw} {tt.tag}'"
+                        )
+                    exp.data_type = tt
+                    return tt
                 if not _is_object_type(tt) or not _is_object_type(tf):
                     raise TypeCheckError(
                         f"conditional branches must be object types, "
@@ -2995,7 +3072,20 @@ class TypeChecker:
                 ):
                     self._check_exp(arg)
                     arg = _decay_if_array(arg)
-                    args[i] = _convert_to(arg, expected)
+                    # Struct / union args bypass `_convert_to` (which
+                    # doesn't model struct conversion). The arg's
+                    # type must match the parameter's struct/union
+                    # type exactly.
+                    if isinstance(expected, (Structure, Union)):
+                        if not _types_equal(arg.data_type, expected):
+                            raise TypeCheckError(
+                                f"argument {i} of {name!r}: type "
+                                f"{arg.data_type!r} doesn't match "
+                                f"parameter type {expected!r}"
+                            )
+                        args[i] = arg
+                    else:
+                        args[i] = _convert_to(arg, expected)
                 exp.data_type = fn_type.ret
                 return fn_type.ret
             case c99_ast.Dereference(exp=inner):

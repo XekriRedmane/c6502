@@ -789,6 +789,12 @@ class Translator:
         # that exercises `translate_program` or `_translate_function`
         # must pass a real symbol table — those paths read FunAttr.
         self._symbols = symbols if symbols is not None else SymbolTable()
+        # Set by `_translate_function` while walking a struct-returning
+        # function's body — the resolved name of the hidden sret param
+        # (a `Pointer(struct)` holding the caller's return slot
+        # address). Read by the Return arm to redirect `return e;` to
+        # a `Store(e, sret)` + `Ret(None)`.
+        self._sret_param: str | None = None
 
     def make_temporary_variable_name(
         self, t: c99_ast.Type_data_type | None = None,
@@ -911,8 +917,33 @@ class Translator:
         self, fd: c99_ast.Type_function_decl,
     ) -> tac_ast.Function:
         assert fd.body is not None
-        instrs: list[tac_ast.Type_instruction] = []
-        self.translate_block(fd.body, instrs)
+        ret_type = (
+            fd.data_type.ret
+            if isinstance(fd.data_type, c99_ast.FunType)
+            else c99_ast.Int()
+        )
+        # If this function returns a struct/union, mint a hidden
+        # first parameter that holds the address of the caller's
+        # return slot. The body's `return e;` lowers to
+        # `Store(e, sret) + Ret(None)` (see `translate_statement`
+        # Return arm). The sret param goes in front of the user
+        # params at the TAC level — caller-side code in the
+        # `FunctionCall` arm matches by prepending the slot's
+        # address as the first arg.
+        sret_param: str | None = None
+        if isinstance(ret_type, (c99_ast.Structure, c99_ast.Union)):
+            sret_param = f".sret.{fd.name}"
+            self._symbols[sret_param] = Symbol(
+                type=c99_ast.Pointer(referenced_type=ret_type),
+                attrs=LocalAttr(),
+            )
+        prior_sret = self._sret_param
+        self._sret_param = sret_param
+        try:
+            instrs: list[tac_ast.Type_instruction] = []
+            self.translate_block(fd.body, instrs)
+        finally:
+            self._sret_param = prior_sret
         # If the body didn't end in a Return, fall off the end
         # with an implicit `return 0`. C99 §5.1.2.2.3 specifies
         # this for `main`; we apply it generally so every TAC
@@ -924,18 +955,15 @@ class Translator:
         # return type so a Long-returning function gets a
         # ConstLong(0) and an Int-returning one gets ConstInt(0).
         if not instrs or not isinstance(instrs[-1], tac_ast.Ret):
-            ret_type = (
-                fd.data_type.ret
-                if isinstance(fd.data_type, c99_ast.FunType)
-                else c99_ast.Int()
-            )
             # Void return: emit Ret(val=None). The asm epilogue then
             # skips the value-into-A/X sequence and the
             # PHA/PLA-bracket. Falling off the end of a void function
             # is legal (C99 §6.9.1.12); for non-void functions it's
             # still the implicit-zero-return papering-over a missing
-            # `return`.
-            if isinstance(ret_type, c99_ast.Void):
+            # `return`. Struct-returning functions land here too —
+            # the body's last `return` already wrote to *sret, so
+            # falling off is also a Ret(None).
+            if isinstance(ret_type, c99_ast.Void) or sret_param is not None:
                 instrs.append(tac_ast.Ret(val=None))
             else:
                 instrs.append(tac_ast.Ret(
@@ -956,11 +984,15 @@ class Translator:
         # Parameter names ride through to TAC verbatim — they were
         # already renamed to `@<N>.<orig>` by identifier resolution,
         # and TAC `Var(@<N>.<orig>)` references in the body see the
-        # same names.
+        # same names. For struct-returning functions, the hidden
+        # sret param goes first.
+        params = list(fd.params)
+        if sret_param is not None:
+            params = [sret_param] + params
         return tac_ast.Function(
             name=fd.name,
             is_global=is_global,
-            params=list(fd.params),
+            params=params,
             instructions=instrs,
         )
 
@@ -1107,7 +1139,20 @@ class Translator:
                 # e;` evaluates `e` and passes its val to Ret. Type
                 # checking has already enforced that the bare form
                 # only appears in void-returning functions.
+                #
+                # Struct/union return: the function's TAC signature
+                # has a hidden `.sret.<name>` first parameter holding
+                # the caller's return-slot address. We Store the
+                # struct value through that pointer, then emit
+                # Ret(None) — no scalar return value.
                 if exp is None:
+                    instrs.append(tac_ast.Ret(val=None))
+                elif self._sret_param is not None:
+                    val = self.translate_exp(exp, instrs)
+                    instrs.append(tac_ast.Store(
+                        src=val,
+                        dst_ptr=tac_ast.Var(name=self._sret_param),
+                    ))
                     instrs.append(tac_ast.Ret(val=None))
                 else:
                     instrs.append(tac_ast.Ret(
@@ -1781,6 +1826,38 @@ class Translator:
                 # FunctionCall with dst=None. The TAC instruction's
                 # asm lowering skips the return-value capture step.
                 is_void = isinstance(exp.data_type, c99_ast.Void)
+                # Struct/union return: c6502's calling convention is
+                # sret — the caller allocates a return slot, passes
+                # its address as the (hidden) first arg, and the
+                # callee writes the bytes through that pointer. The
+                # FunctionCall expression's "result" is the slot
+                # itself (a struct-typed Var), which downstream
+                # consumers (Assignment Copy, Dot, Arrow, …) treat
+                # like any other addressable struct lvalue.
+                ret_t = exp.data_type
+                if isinstance(ret_t, (c99_ast.Structure, c99_ast.Union)):
+                    slot_name = self.make_temporary_variable_name(ret_t)
+                    slot = tac_ast.Var(name=slot_name)
+                    addr = tac_ast.Var(
+                        name=self.make_temporary_variable_name(
+                            c99_ast.Pointer(referenced_type=ret_t),
+                        ),
+                    )
+                    instrs.append(tac_ast.GetAddress(
+                        operand=slot, dst=addr,
+                    ))
+                    arg_vals = [addr] + arg_vals
+                    sym = self._symbols.get(name)
+                    if sym is not None and isinstance(sym.type, c99_ast.Pointer):
+                        instrs.append(tac_ast.IndirectCall(
+                            ptr=tac_ast.Var(name=name),
+                            args=arg_vals, dst=None,
+                        ))
+                    else:
+                        instrs.append(tac_ast.FunctionCall(
+                            name=name, args=arg_vals, dst=None,
+                        ))
+                    return slot
                 dst = (
                     None if is_void else tac_ast.Var(
                         name=self.make_temporary_variable_name(exp.data_type),
@@ -2295,8 +2372,14 @@ class Translator:
     ) -> tac_ast.Type_val:
         """Compute the byte address of an lvalue expression. Used by
         the Dot lvalue path to get a base for the parent struct, and
-        by AddressOf for member accesses. Accepts the four addressable
-        forms — Var, Dereference, Subscript, Dot, Arrow."""
+        by AddressOf for member accesses. Accepts the canonical
+        addressable forms (Var / Dereference / Subscript / Dot /
+        Arrow) plus rvalue struct/union expressions like
+        `f().x` or `(c ? a : b).x` — translating those produces a
+        struct-typed temp Var (the sret slot for FunctionCall, the
+        per-Conditional dst slot for Conditional), which IS
+        addressable.
+        """
         if isinstance(lval, c99_ast.Var):
             base = tac_ast.Var(
                 name=self.make_temporary_variable_name(
@@ -2321,6 +2404,26 @@ class Translator:
             return self._translate_arrow_address(
                 lval.operand, lval.member, instrs,
             )
+        # Struct / union rvalue expressions whose result lands in a
+        # temp slot — `f().m`, `(c?a:b).m`. Translate the
+        # expression to materialize the slot, then GetAddress on
+        # the resulting Var.
+        if isinstance(
+            lval.data_type, (c99_ast.Structure, c99_ast.Union),
+        ):
+            val = self.translate_exp(lval, instrs)
+            if not isinstance(val, tac_ast.Var):
+                raise TypeError(
+                    f"struct rvalue translation didn't produce a "
+                    f"Var: {val!r}"
+                )
+            base = tac_ast.Var(
+                name=self.make_temporary_variable_name(
+                    c99_ast.Pointer(referenced_type=lval.data_type),
+                ),
+            )
+            instrs.append(tac_ast.GetAddress(operand=val, dst=base))
+            return base
         raise TypeError(f"not an addressable lvalue: {lval!r}")
 
     def _translate_dot_address(

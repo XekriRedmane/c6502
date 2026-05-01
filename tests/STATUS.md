@@ -94,15 +94,29 @@ they are pinned as "not rejected today" in
   - Operations through incomplete types
     (`invalid_incomplete_structs/*`).
 
-The chapter\_18 valid test corpus is large (108 programs); roughly
-two dozen compile end-to-end today (the file-scope, scalar-only
-subset of `no_structure_parameters/`). The remainder need
-struct-by-value parameter passing, struct-by-value returns
-(separate ABI exercise), float arithmetic helpers, or 8-byte
-literals beyond `unsigned long long`. Each is treated as an
+The chapter\_18 valid test corpus is large (108 programs);
+~40 compile end-to-end today, covering the
+`no_structure_parameters/` subset plus the
+struct-by-value parameter-passing and sret return tests in
+`parameters/` and `params_and_returns/`. Remaining failures are
+mostly: (a) Float / Double arithmetic (no FP runtime helpers
+yet), (b) literals beyond `unsigned long long` (the widest
+integer type c6502 models), (c) block-scope tag shadowing where
+a tag is reused for a different layout in an inner scope (would
+need per-scope unique tag-name minting). Each is treated as an
 expected failure in the harness; the file-by-file lists are in
 `tests/test_chapter_18.py`'s `_VALID_PASSES_TODAY`,
 `_INVALID_TYPES_NOT_REJECTED_TODAY`, etc.
+
+**Struct-by-value calling convention**: arguments are pushed
+byte-by-byte onto the soft-stack arg block (a struct param
+contributes `sizeof(struct)` bytes; callee reads via
+`Frame(M+3+offset)`). Returns use sret: the caller allocates a
+return slot, passes its address as a hidden first parameter
+`.sret.<funcname>`; `return e;` lowers to
+`Store(e, .sret) + Ret(None)`; the FunctionCall expression's
+"result" is the slot itself (treated as a temporary-lifetime
+lvalue for read-only member access).
 
 ---
 

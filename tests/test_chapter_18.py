@@ -75,23 +75,40 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     "extra_credit/semantic_analysis/struct_shadows_union.c",
     "extra_credit/semantic_analysis/union_members_same_type.c",
     "extra_credit/size_and_offset/compare_union_pointers.c",
+    "extra_credit/size_and_offset/union_sizes.c",
+    "extra_credit/semantic_analysis/union_self_pointer.c",
+    "extra_credit/member_access/nested_union_access.c",
     "extra_credit/union_copy/assign_to_union.c",
+    "extra_credit/union_copy/copy_non_scalar_members.c",
+    "extra_credit/union_copy/unions_in_conditionals.c",
+    "no_structure_parameters/scalar_member_access/linked_list.c",
+    "no_structure_parameters/parse_and_lex/postfix_precedence.c",
     "no_structure_parameters/parse_and_lex/space_around_struct_member.c",
     "no_structure_parameters/parse_and_lex/struct_member_looks_like_const.c",
     "no_structure_parameters/parse_and_lex/trailing_comma.c",
     "no_structure_parameters/semantic_analysis/cast_struct_to_void.c",
     "no_structure_parameters/size_and_offset_calculations/member_comparisons.c",
+    "no_structure_parameters/size_and_offset_calculations/member_offsets.c",
+    "no_structure_parameters/size_and_offset_calculations/sizeof_exps.c",
+    "no_structure_parameters/size_and_offset_calculations/sizeof_type.c",
     "no_structure_parameters/smoke_tests/simple.c",
     "no_structure_parameters/smoke_tests/static_vs_auto.c",
+    "no_structure_parameters/struct_copy/copy_struct.c",
+    "no_structure_parameters/struct_copy/copy_struct_through_pointer.c",
     "no_structure_parameters/struct_copy/copy_struct_with_arrow_operator.c",
+    "no_structure_parameters/struct_copy/copy_struct_with_dot_operator.c",
+    "no_structure_parameters/struct_copy/stack_clobber.c",
     "parameters/pass_args_on_page_boundary.c",
     "parameters/simple.c",
+    "parameters/stack_clobber.c",
+    "params_and_returns/stack_clobber.c",
     "params_and_returns/ignore_retval.c",
     "params_and_returns/return_big_struct_on_page_boundary.c",
     "params_and_returns/return_pointer_in_rax.c",
     "params_and_returns/return_space_overlap.c",
     "params_and_returns/return_struct_on_page_boundary.c",
     "params_and_returns/simple.c",
+    "params_and_returns/temporary_lifetime.c",
 })
 
 
@@ -165,7 +182,9 @@ class TestChapter18Valid(unittest.TestCase):
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = preprocess(
+                    path.read_text(), ["-I", str(path.parent)],
+                )
                 if rel in _VALID_PASSES_TODAY:
                     _run_stage("codegen", source)
                 else:
@@ -187,7 +206,9 @@ class TestChapter18InvalidLex(unittest.TestCase):
         for path in files:
             rel = str(path.relative_to(_C18 / "invalid_lex"))
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = preprocess(
+                    path.read_text(), ["-I", str(path.parent)],
+                )
                 if rel in _INVALID_LEX_NOT_REJECTED_TODAY:
                     list(tokenize(source))
                 else:
@@ -203,7 +224,9 @@ class TestChapter18InvalidParse(unittest.TestCase):
         for path in files:
             rel = str(path.relative_to(_C18 / "invalid_parse"))
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = preprocess(
+                    path.read_text(), ["-I", str(path.parent)],
+                )
                 if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
                     parse(source)
                 else:
@@ -219,7 +242,9 @@ class TestChapter18InvalidTypes(unittest.TestCase):
         for path in files:
             rel = str(path.relative_to(_C18 / "invalid_types"))
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = preprocess(
+                    path.read_text(), ["-I", str(path.parent)],
+                )
                 if rel in _INVALID_TYPES_NOT_REJECTED_TODAY:
                     _run_stage("codegen", source)
                 else:
@@ -235,7 +260,9 @@ class TestChapter18InvalidStructTags(unittest.TestCase):
         for path in files:
             rel = str(path.relative_to(_C18 / "invalid_struct_tags"))
             with self.subTest(file=rel):
-                source = preprocess(path.read_text(), [])
+                source = preprocess(
+                    path.read_text(), ["-I", str(path.parent)],
+                )
                 if rel in _INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY:
                     _run_stage("codegen", source)
                 else:

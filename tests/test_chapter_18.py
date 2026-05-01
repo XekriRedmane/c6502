@@ -139,14 +139,7 @@ _INVALID_LEX_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "dot_bad_token.c",
 })
 _INVALID_PARSE_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
-# Type-check edge cases c6502 doesn't reject yet: struct-as-
-# controlling-expression in `if` / `while`. The valid programs
-# work fine without these checks — these are diagnostic gaps,
-# not codegen blockers.
-_INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
-    "extra_credit/scalar_required/union_as_controlling_expression.c",
-    "scalar_required/struct_controlling_expression.c",
-})
+_INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 _INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 
 

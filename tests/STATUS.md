@@ -88,10 +88,3 @@ for this bucket.
 
 - `dot_bad_token.c`
 
-## Chapter 18 — `invalid_types` (currently not rejected)
-
-Diagnostic gaps — c6502 doesn't enforce the C99 §6.8.4.1 / §6.8.5
-"controlling expression must be scalar" constraint.
-
-- `extra_credit/scalar_required/union_as_controlling_expression.c`
-- `scalar_required/struct_controlling_expression.c`

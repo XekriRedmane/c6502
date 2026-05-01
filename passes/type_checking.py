@@ -1162,6 +1162,28 @@ class TypeChecker:
         )
         self._record_tag_visible(t.tag)
 
+    def _require_scalar_controlling(
+        self, exp: c99_ast.Type_exp, where: str,
+    ) -> None:
+        """The controlling expression of an `if` / `while` / `do` /
+        `for` / `?:` shall have scalar type (C99 §6.8.4.1.1 /
+        §6.8.5.2 / §6.5.15.2). Scalar = arithmetic + pointer; struct
+        / union / void are rejected. Arrays decay to pointers in
+        operand context (§6.3.2.1.3) and are accepted here."""
+        t = exp.data_type
+        if isinstance(t, Array):
+            return
+        if not _is_object_type(t):
+            kind = type(t).__name__
+            tag = ""
+            if isinstance(t, (Structure, Union)):
+                kw = "union" if isinstance(t, Union) else "struct"
+                tag = f" '{kw} {t.tag}'"
+            raise TypeCheckError(
+                f"{where}: controlling expression must have scalar "
+                f"type, got {kind}{tag} (C99 §6.8.4.1)"
+            )
+
     def _require_complete_value(
         self, exp: c99_ast.Type_exp, where: str,
     ) -> None:
@@ -2216,6 +2238,7 @@ class TypeChecker:
                 condition=cond, then_clause=then_, else_clause=else_,
             ):
                 self._check_exp(cond)
+                self._require_scalar_controlling(cond, "`if` condition")
                 self._check_statement(then_)
                 if else_ is not None:
                     self._check_statement(else_)
@@ -2230,11 +2253,17 @@ class TypeChecker:
                 return
             case c99_ast.WhileStmt(condition=cond, body=body):
                 self._check_exp(cond)
+                self._require_scalar_controlling(
+                    cond, "`while` condition",
+                )
                 self._check_statement(body)
                 return
             case c99_ast.DoWhileStmt(body=body, condition=cond):
                 self._check_statement(body)
                 self._check_exp(cond)
+                self._require_scalar_controlling(
+                    cond, "`do`-`while` condition",
+                )
                 return
             case c99_ast.ForStmt(
                 init=init, condition=cond, post_clause=post,
@@ -2249,6 +2278,9 @@ class TypeChecker:
                     self._check_for_init(init)
                     if cond is not None:
                         self._check_exp(cond)
+                        self._require_scalar_controlling(
+                            cond, "`for` condition",
+                        )
                     if post is not None:
                         self._check_exp(post)
                     self._check_statement(body)
@@ -3009,6 +3041,9 @@ class TypeChecker:
                 false_clause=f_clause,
             ):
                 self._check_exp(cond)
+                self._require_scalar_controlling(
+                    cond, "`?:` condition",
+                )
                 self._check_exp(t_clause)
                 self._check_exp(f_clause)
                 # Decay each branch independently — `cond ? arr : ptr`

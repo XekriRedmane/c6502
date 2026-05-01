@@ -76,13 +76,6 @@ immediate addressing can reach.
 
 - `no_structure_parameters/scalar_member_access/nested_struct.c`
 
-### Struct initializer in for-loop init slot
-
-- `no_structure_parameters/semantic_analysis/resolve_tags.c` —
-  `for (struct s loop_struct = {10}; ...)`. The for-init declaration
-  path treats the brace-enclosed initializer as an InitList for a
-  scalar and rejects it.
-
 ## Chapter 18 — `invalid_lex` (currently not rejected)
 
 c6502's lexer has no preprocessing-number concept, so `.1l` (a

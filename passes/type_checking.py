@@ -2351,6 +2351,24 @@ class TypeChecker:
                             vd.init, vd.data_type, vd.name,
                         )
                         return
+                    if isinstance(vd.data_type, (Structure, Union)):
+                        # Same two forms accepted by block-scope var
+                        # decls: brace-enclosed compound initializer
+                        # or a struct-typed copy.
+                        if isinstance(vd.init, c99_ast.InitList):
+                            self._check_struct_init_list(
+                                vd.init, vd.data_type, vd.name,
+                            )
+                            return
+                        self._check_exp(vd.init)
+                        init_t = vd.init.data_type
+                        if not _types_equal(init_t, vd.data_type):
+                            raise TypeCheckError(
+                                f"struct/union {vd.name!r}: "
+                                f"initializer has type {init_t!r}, "
+                                f"expected {vd.data_type!r}"
+                            )
+                        return
                     if isinstance(vd.init, c99_ast.InitList):
                         raise TypeCheckError(
                             f"scalar variable {vd.name!r} cannot "

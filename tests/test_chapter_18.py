@@ -120,6 +120,8 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     "no_structure_parameters/semantic_analysis/incomplete_structs.c",
     "parameters/incomplete_param_type.c",
     "params_and_returns/return_incomplete_type.c",
+    # Compound initializer for a struct-typed for-init declaration.
+    "no_structure_parameters/semantic_analysis/resolve_tags.c",
 })
 
 

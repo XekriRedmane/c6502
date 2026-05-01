@@ -1424,10 +1424,26 @@ class Translator:
                 # for-init is restricted to variable declarations
                 # (C99 §6.8.5), so we lower the var_decl directly
                 # rather than going through the wider declaration
-                # dispatcher.
+                # dispatcher. Same dispatch as block-scope vars:
+                # InitList for array/struct/union, String for char-
+                # array, plain expression otherwise (including
+                # struct-copy init).
                 if vd.init is not None:
                     if isinstance(vd.init, c99_ast.InitList):
-                        self._translate_array_init_list(vd, instrs)
+                        if isinstance(vd.data_type, c99_ast.Array):
+                            self._translate_array_init_list(vd, instrs)
+                        elif isinstance(
+                            vd.data_type,
+                            (c99_ast.Structure, c99_ast.Union),
+                        ):
+                            self._translate_struct_init_list(vd, instrs)
+                        else:
+                            raise TypeError(
+                                f"InitList for non-aggregate type "
+                                f"{vd.data_type!r}"
+                            )
+                    elif isinstance(vd.init, c99_ast.String):
+                        self._translate_string_array_init(vd, instrs)
                     else:
                         init_val = self.translate_exp(vd.init, instrs)
                         instrs.append(tac_ast.Copy(

@@ -142,20 +142,11 @@ _INVALID_TYPES_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
     "extra_credit/scalar_required/union_as_controlling_expression.c",
     "invalid_incomplete_structs/assign_to_incomplete_var.c",
     "invalid_incomplete_structs/cast_incomplete_struct.c",
-    "invalid_incomplete_structs/deref_incomplete_struct_pointer.c",
     "invalid_incomplete_structs/incomplete_return_type_funcall.c",
     "invalid_incomplete_structs/incomplete_struct_full_expr.c",
     "scalar_required/struct_controlling_expression.c",
 })
-# `deref_undeclared.c` dereferences a pointer-to-incomplete-struct
-# in an expression statement (`*ptr;`). The standard rejects this
-# because you can't form an lvalue of incomplete type; c6502
-# accepts it because we don't track that constraint at the
-# Dereference site (the result type is just an incomplete
-# struct value that's then discarded).
-_INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset({
-    "deref_undeclared.c",
-})
+_INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY: frozenset[str] = frozenset()
 
 
 # Multi-TU `libraries/` subdirs aren't applicable.

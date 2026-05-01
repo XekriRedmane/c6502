@@ -3120,6 +3120,25 @@ class TypeChecker:
                         f"{type(t_inner).__name__}"
                     )
                 pointee = t_inner.referenced_type
+                # Pointer to incomplete struct/union: dereferencing
+                # the value isn't well-defined (no size, no member
+                # layout, no addressable storage). The `&*p ≡ p`
+                # identity (C99 §6.5.3.2.3) is the one shape where
+                # an incomplete pointee is OK; the AddressOf arm
+                # below sidesteps this check by translating
+                # `&Dereference(p)` directly without recursing into
+                # the inner Dereference's type-check.
+                if isinstance(pointee, (Structure, Union)):
+                    layout = self.types.get(pointee.tag)
+                    if layout is None or not layout.complete:
+                        kw = "union" if isinstance(pointee, Union) else "struct"
+                        display = pointee.tag
+                        if display.startswith("@") and "." in display:
+                            display = display.split(".", 1)[1]
+                        raise TypeCheckError(
+                            f"dereference of pointer to incomplete "
+                            f"type '{kw} {display}' is not permitted"
+                        )
                 exp.data_type = pointee
                 return pointee
             case c99_ast.InitList():
@@ -3288,6 +3307,21 @@ class TypeChecker:
                         result = Pointer(referenced_type=sym.type)
                         exp.data_type = result
                         return result
+                # `&*p ≡ p` per C99 §6.5.3.2.3 — type-check the
+                # inner pointer expression directly, bypassing the
+                # Dereference's incomplete-pointee guard. Without
+                # this, `&*p` on a pointer-to-incomplete-struct
+                # would wrongly fail. We still stamp the
+                # Dereference's data_type so any downstream walker
+                # that inspects it sees a self-describing tree.
+                if isinstance(inner, c99_ast.Dereference):
+                    ptr_type = self._check_exp(inner.exp)
+                    if isinstance(ptr_type, Pointer):
+                        inner.data_type = ptr_type.referenced_type
+                        exp.data_type = ptr_type
+                        return ptr_type
+                    # Non-pointer operand of `*` — let the regular
+                    # Dereference path raise its standard error.
                 t_inner = self._check_exp(inner)
                 # `&arr` for an array — type per C99 §6.5.3.2.3 is
                 # `Pointer(Array(elem, N))`. `_to_tac_data_type`

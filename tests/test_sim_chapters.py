@@ -47,6 +47,33 @@ _TESTS_DIR = Path(__file__).parent
 # Hard-coded expected `main()` return values, hand-traced for each
 # program under c6502's narrower type model (int = 1 byte signed).
 EXPECTED_RETURNS: dict[str, int] = {
+    # --- chapter 9: function definitions, calls, parameters
+    "chapter_9/valid/no_arguments/forward_decl.c": 3,
+    "chapter_9/valid/no_arguments/function_shadows_variable.c": 11,
+    "chapter_9/valid/no_arguments/multiple_declarations.c": 3,
+    "chapter_9/valid/no_arguments/no_return_value.c": 3,
+    "chapter_9/valid/no_arguments/precedence.c": 0,
+    "chapter_9/valid/no_arguments/use_function_in_expression.c": 21,
+    "chapter_9/valid/no_arguments/variable_shadows_function.c": 7,
+    "chapter_9/valid/arguments_in_registers/dont_clobber_edx.c": 1,
+    "chapter_9/valid/arguments_in_registers/expression_args.c": 2,
+    "chapter_9/valid/arguments_in_registers/fibonacci.c": 8,
+    "chapter_9/valid/arguments_in_registers/forward_decl_multi_arg.c": 1,
+    "chapter_9/valid/arguments_in_registers/param_shadows_local_var.c": 20,
+    "chapter_9/valid/arguments_in_registers/parameter_shadows_function.c": 3,
+    "chapter_9/valid/arguments_in_registers/parameter_shadows_own_function.c": 2,
+    "chapter_9/valid/arguments_in_registers/parameters_are_preserved.c": 1,
+    "chapter_9/valid/arguments_in_registers/single_arg.c": 6,
+    "chapter_9/valid/stack_arguments/lots_of_arguments.c": 1,
+    "chapter_9/valid/stack_arguments/test_for_memory_leaks.c": 1,
+
+    # --- chapter 9 extra_credit
+    "chapter_9/valid/extra_credit/compound_assign_function_result.c": 1,
+    "chapter_9/valid/extra_credit/dont_clobber_ecx.c": 1,
+    "chapter_9/valid/extra_credit/goto_label_multiple_functions.c": 5,
+    "chapter_9/valid/extra_credit/goto_shared_name.c": 1,
+    "chapter_9/valid/extra_credit/label_naming_scheme.c": 0,
+
     # --- chapter 10: storage classes, file-scope variables, linkage
     "chapter_10/valid/distinct_local_and_extern.c": 7,
     "chapter_10/valid/extern_block_scope_variable.c": 3,
@@ -76,6 +103,12 @@ EXPECTED_RETURNS: dict[str, int] = {
 # doesn't model. Listed so additions to chapter_<N>/valid/ surface
 # as deliberate decisions rather than silent gaps.
 SKIPPED: dict[str, str] = {
+    "chapter_9/valid/arguments_in_registers/hello_world.c":
+        "depends on putchar (no libc)",
+    "chapter_9/valid/stack_arguments/call_putchar.c":
+        "depends on putchar (no libc)",
+    "chapter_9/valid/stack_arguments/stack_alignment.c":
+        "depends on .s sidecars (even_arguments / odd_arguments)",
     "chapter_10/valid/push_arg_on_page_boundary.c":
         "depends on an extern int defined in a .s sidecar",
     "chapter_10/valid/static_local_multiple_scopes.c":

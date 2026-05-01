@@ -58,6 +58,17 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_10/valid/static_variables_in_expressions.c": 0,
     "chapter_10/valid/tentative_definition.c": 5,
     "chapter_10/valid/type_before_storage_class.c": 7,
+
+    # --- chapter 10 extra_credit
+    "chapter_10/valid/extra_credit/bitwise_ops_file_scope_vars.c": 0,
+    "chapter_10/valid/extra_credit/compound_assignment_static_var.c": 0,
+    "chapter_10/valid/extra_credit/goto_skip_static_initializer.c": 10,
+    "chapter_10/valid/extra_credit/increment_global_vars.c": 0,
+    "chapter_10/valid/extra_credit/label_file_scope_var_same_name.c": 0,
+    "chapter_10/valid/extra_credit/label_static_var_same_name.c": 5,
+    "chapter_10/valid/extra_credit/switch_on_extern.c": 0,
+    "chapter_10/valid/extra_credit/switch_skip_extern_decl.c": 0,
+    "chapter_10/valid/extra_credit/switch_skip_static_initializer.c": 10,
 }
 
 

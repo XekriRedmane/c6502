@@ -133,9 +133,12 @@ class TestFoldUnary(unittest.TestCase):
         out = _fold_one(instr)
         self.assertEqual(out[0], instr)
 
-    def test_unary_on_float_unchanged(self) -> None:
+    def test_unary_complement_on_float_unchanged(self) -> None:
+        # Bitwise complement is integer-only in C; the type checker
+        # rejects ~3.14f, but constant_folding stays defensive and
+        # leaves the instruction alone.
         instr = tac_ast.Unary(
-            op=tac_ast.Negate(), src=_cf("1.5"), dst=_var("x"),
+            op=tac_ast.Complement(), src=_cf("1.5"), dst=_var("x"),
         )
         out = _fold_one(instr)
         self.assertEqual(out[0], instr)
@@ -256,9 +259,19 @@ class TestFoldBinaryArith(unittest.TestCase):
         out = _fold_one(instr)
         self.assertEqual(out[0], instr)
 
-    def test_binary_on_float_unchanged(self) -> None:
+    def test_modulo_on_float_unchanged(self) -> None:
+        # `%` is integer-only in C; the type checker rejects FP
+        # operands, but constant_folding stays defensive.
         instr = tac_ast.Binary(
-            op=tac_ast.Add(), src1=_cf("1.0"), src2=_cf("2.0"),
+            op=tac_ast.Modulo(), src1=_cf("1.0"), src2=_cf("2.0"),
+            dst=_var("x"),
+        )
+        out = _fold_one(instr)
+        self.assertEqual(out[0], instr)
+
+    def test_bitwise_on_float_unchanged(self) -> None:
+        instr = tac_ast.Binary(
+            op=tac_ast.BitwiseAnd(), src1=_cf("1.0"), src2=_cf("2.0"),
             dst=_var("x"),
         )
         out = _fold_one(instr)
@@ -428,10 +441,7 @@ class TestFoldJumpIf(unittest.TestCase):
         self.assertEqual(constant_fold(fn).instructions,
                          [tac_ast.Jump(target="L"), _ret()])
 
-    def test_jump_if_on_float_unchanged(self) -> None:
-        instr = tac_ast.JumpIfTrue(condition=_cf("1.0"), target="L")
-        fn = _fn(instr, _ret())
-        self.assertEqual(constant_fold(fn).instructions, [instr, _ret()])
+    # FP truthiness coverage lives below in TestFoldJumpIfFP.
 
 
 class TestProgramShape(unittest.TestCase):
@@ -469,6 +479,332 @@ class TestProgramShape(unittest.TestCase):
         ]
         fn = _fn(*instrs)
         self.assertEqual(constant_fold(fn).instructions, instrs)
+
+
+def _cd(s: str) -> tac_ast.Constant:
+    """Build a TAC ConstDouble from a decimal string. Goes through
+    fp_arith so the bit pattern matches what the parser would
+    produce from `s` written verbatim in source code."""
+    return tac_ast.Constant(const=tac_ast.ConstDouble(
+        bits=fp_arith.double_string_to_bits(s),
+    ))
+
+
+class TestFoldFPUnary(unittest.TestCase):
+
+    def test_negate_single(self) -> None:
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.Negate(), src=_cf("1.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cf("-1.0"), dst=_var("x")))
+
+    def test_negate_double(self) -> None:
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.Negate(), src=_cd("3.14"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cd("-3.14"), dst=_var("x")))
+
+    def test_negate_positive_zero_yields_negative_zero(self) -> None:
+        # Sign-bit flip — exact, no rounding. +0 → -0 (different
+        # bit pattern, even though they compare equal).
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.Negate(), src=_cf("0.0"), dst=_var("x"),
+        ))
+        expected_bits = fp_arith.single_string_to_bits("-0.0")
+        self.assertEqual(out[0], tac_ast.Copy(
+            src=tac_ast.Constant(
+                const=tac_ast.ConstFloat(bits=expected_bits),
+            ),
+            dst=_var("x"),
+        ))
+
+    def test_logical_not_zero_single(self) -> None:
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.LogicalNot(), src=_cf("0.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_logical_not_negative_zero_single(self) -> None:
+        # ±0 both compare equal to 0, so both are falsy and
+        # `!` returns 1.
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.LogicalNot(), src=_cf("-0.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_logical_not_nonzero_single(self) -> None:
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.LogicalNot(), src=_cf("1.5"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(0), dst=_var("x")))
+
+    def test_logical_not_nan_is_truthy(self) -> None:
+        # NaN compares unequal to 0, so it's truthy → `!nan` = 0.
+        nan = tac_ast.Constant(const=tac_ast.ConstFloat(
+            bits=fp_arith.single_string_to_bits("nan"),
+        ))
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.LogicalNot(), src=nan, dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(0), dst=_var("x")))
+
+    def test_logical_not_double_returns_int(self) -> None:
+        out = _fold_one(tac_ast.Unary(
+            op=tac_ast.LogicalNot(), src=_cd("0.0"), dst=_var("x"),
+        ))
+        # Result is ConstInt regardless of operand precision.
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+
+class TestFoldFPArithmetic(unittest.TestCase):
+
+    def test_single_add(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Add(),
+            src1=_cf("1.0"), src2=_cf("2.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cf("3.0"), dst=_var("x")))
+
+    def test_single_add_rounds_at_single_precision(self) -> None:
+        # 0.1f + 0.2f rounds to a single-precision result that
+        # differs from doing the same addition at double precision.
+        # Pin the exact single-precision bit pattern.
+        a_bits = fp_arith.single_string_to_bits("0.1")
+        b_bits = fp_arith.single_string_to_bits("0.2")
+        expected = fp_arith.single_add(a_bits, b_bits)
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Add(),
+            src1=_cf("0.1"), src2=_cf("0.2"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0], tac_ast.Copy(
+            src=tac_ast.Constant(
+                const=tac_ast.ConstFloat(bits=expected),
+            ),
+            dst=_var("x"),
+        ))
+
+    def test_double_sub(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Subtract(),
+            src1=_cd("5.0"), src2=_cd("2.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cd("3.0"), dst=_var("x")))
+
+    def test_single_mul(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Multiply(),
+            src1=_cf("1.5"), src2=_cf("2.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cf("3.0"), dst=_var("x")))
+
+    def test_double_div(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Divide(),
+            src1=_cd("1.0"), src2=_cd("2.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cd("0.5"), dst=_var("x")))
+
+    def test_single_overflow_to_inf(self) -> None:
+        # A finite-times-finite that overflows single precision
+        # rounds to +inf rather than raising.
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Multiply(),
+            src1=_cf("1e20"), src2=_cf("1e20"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cf("inf"), dst=_var("x")))
+
+    def test_single_div_by_zero_yields_inf(self) -> None:
+        # 1.0 / 0.0 = +inf in IEEE 754 — well-defined, so we fold.
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Divide(),
+            src1=_cf("1.0"), src2=_cf("0.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_cf("inf"), dst=_var("x")))
+
+    def test_single_zero_div_zero_yields_nan(self) -> None:
+        # 0.0 / 0.0 is NaN — also well-defined, also folded.
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Divide(),
+            src1=_cf("0.0"), src2=_cf("0.0"), dst=_var("x"),
+        ))
+        # Compare bit patterns: any NaN is fine, but it must have
+        # the NaN exponent (all-ones) and a nonzero mantissa.
+        result_bits = out[0].src.const.bits
+        self.assertEqual((result_bits >> 23) & 0xFF, 0xFF,
+                         msg=f"expected NaN exponent, got 0x{result_bits:08X}")
+        self.assertNotEqual(result_bits & 0x7FFFFF, 0,
+                            msg="expected nonzero mantissa for NaN")
+
+    def test_single_inf_minus_inf_is_nan(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Subtract(),
+            src1=_cf("inf"), src2=_cf("inf"), dst=_var("x"),
+        ))
+        result_bits = out[0].src.const.bits
+        self.assertEqual((result_bits >> 23) & 0xFF, 0xFF)
+        self.assertNotEqual(result_bits & 0x7FFFFF, 0)
+
+    def test_mismatched_fp_precision_unchanged(self) -> None:
+        # ConstFloat + ConstDouble shouldn't happen post-type-check
+        # (the type checker promotes to a common precision), but we
+        # bail rather than guess.
+        instr = tac_ast.Binary(
+            op=tac_ast.Add(), src1=_cf("1.0"), src2=_cd("2.0"),
+            dst=_var("x"),
+        )
+        out = _fold_one(instr)
+        self.assertEqual(out[0], instr)
+
+
+class TestFoldFPComparison(unittest.TestCase):
+
+    def test_equal_true(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Equal(),
+            src1=_cf("1.5"), src2=_cf("1.5"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_equal_signed_zero(self) -> None:
+        # IEEE 754: +0 == -0.
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Equal(),
+            src1=_cf("0.0"), src2=_cf("-0.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_equal_nan_yields_zero(self) -> None:
+        # NaN ≠ everything, including itself.
+        nan = tac_ast.Constant(const=tac_ast.ConstFloat(
+            bits=fp_arith.single_string_to_bits("nan"),
+        ))
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.Equal(), src1=nan, src2=nan, dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(0), dst=_var("x")))
+
+    def test_not_equal_nan_yields_one(self) -> None:
+        nan = tac_ast.Constant(const=tac_ast.ConstFloat(
+            bits=fp_arith.single_string_to_bits("nan"),
+        ))
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.NotEqual(), src1=nan, src2=nan, dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_less_than_double(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.LessThan(),
+            src1=_cd("1.0"), src2=_cd("2.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_relational_against_nan_returns_zero(self) -> None:
+        # Per IEEE 754: any of <, >, <=, >= against NaN is unordered
+        # → false (0).
+        nan = tac_ast.Constant(const=tac_ast.ConstFloat(
+            bits=fp_arith.single_string_to_bits("nan"),
+        ))
+        for op_cls in (tac_ast.LessThan, tac_ast.GreaterThan,
+                       tac_ast.LessOrEqual, tac_ast.GreaterOrEqual):
+            with self.subTest(op=op_cls.__name__):
+                out = _fold_one(tac_ast.Binary(
+                    op=op_cls(), src1=nan, src2=_cf("1.0"),
+                    dst=_var("x"),
+                ))
+                self.assertEqual(out[0],
+                                 tac_ast.Copy(src=_ci(0), dst=_var("x")))
+
+    def test_less_or_equal_boundary(self) -> None:
+        out = _fold_one(tac_ast.Binary(
+            op=tac_ast.LessOrEqual(),
+            src1=_cf("3.0"), src2=_cf("3.0"), dst=_var("x"),
+        ))
+        self.assertEqual(out[0],
+                         tac_ast.Copy(src=_ci(1), dst=_var("x")))
+
+    def test_mismatched_precision_unchanged(self) -> None:
+        instr = tac_ast.Binary(
+            op=tac_ast.Equal(), src1=_cf("1.0"), src2=_cd("1.0"),
+            dst=_var("x"),
+        )
+        out = _fold_one(instr)
+        self.assertEqual(out[0], instr)
+
+
+class TestFoldJumpIfFP(unittest.TestCase):
+
+    def test_jump_if_true_zero_dropped(self) -> None:
+        fn = _fn(
+            tac_ast.JumpIfTrue(condition=_cf("0.0"), target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions, [_ret()])
+
+    def test_jump_if_true_negative_zero_dropped(self) -> None:
+        # -0.0 compares equal to 0 → falsy → not taken.
+        fn = _fn(
+            tac_ast.JumpIfTrue(condition=_cf("-0.0"), target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions, [_ret()])
+
+    def test_jump_if_true_nonzero_replaced(self) -> None:
+        fn = _fn(
+            tac_ast.JumpIfTrue(condition=_cf("1.5"), target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions,
+                         [tac_ast.Jump(target="L"), _ret()])
+
+    def test_jump_if_true_nan_replaced(self) -> None:
+        # NaN ≠ 0 → truthy → jump taken.
+        nan = tac_ast.Constant(const=tac_ast.ConstFloat(
+            bits=fp_arith.single_string_to_bits("nan"),
+        ))
+        fn = _fn(
+            tac_ast.JumpIfTrue(condition=nan, target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions,
+                         [tac_ast.Jump(target="L"), _ret()])
+
+    def test_jump_if_false_zero_replaced(self) -> None:
+        fn = _fn(
+            tac_ast.JumpIfFalse(condition=_cf("0.0"), target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions,
+                         [tac_ast.Jump(target="L"), _ret()])
+
+    def test_jump_if_false_nan_dropped(self) -> None:
+        # NaN is truthy, so JumpIfFalse drops.
+        nan = tac_ast.Constant(const=tac_ast.ConstDouble(
+            bits=fp_arith.double_string_to_bits("nan"),
+        ))
+        fn = _fn(
+            tac_ast.JumpIfFalse(condition=nan, target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions, [_ret()])
 
 
 if __name__ == "__main__":

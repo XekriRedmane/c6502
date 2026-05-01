@@ -335,20 +335,20 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
     Double have different IEEE 754 bit patterns), so ConstFloat /
     ConstDouble round-trip 1-to-1."""
     if isinstance(c, c99_ast.ConstInt):
-        return tac_ast.ConstInt(value=c.int)
+        return tac_ast.ConstInt(value=c.value)
     if isinstance(c, c99_ast.ConstLong):
-        return tac_ast.ConstLong(value=c.int)
+        return tac_ast.ConstLong(value=c.value)
     if isinstance(c, c99_ast.ConstLongLong):
-        return tac_ast.ConstLongLong(value=c.int)
+        return tac_ast.ConstLongLong(value=c.value)
     if isinstance(c, c99_ast.ConstUInt):
-        return tac_ast.ConstInt(value=c.int)
+        return tac_ast.ConstInt(value=c.value)
     if isinstance(c, c99_ast.ConstULong):
-        return tac_ast.ConstLong(value=c.int)
+        return tac_ast.ConstLong(value=c.value)
     if isinstance(c, c99_ast.ConstULongLong):
-        return tac_ast.ConstLongLong(value=c.int)
+        return tac_ast.ConstLongLong(value=c.value)
     if isinstance(c, (c99_ast.ConstChar, c99_ast.ConstUChar)):
         # 1-byte char constants collapse onto TAC's 1-byte int.
-        return tac_ast.ConstInt(value=c.int)
+        return tac_ast.ConstInt(value=c.value)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(bits=c.bits)
     if isinstance(c, c99_ast.ConstDouble):
@@ -501,25 +501,25 @@ def _tac_static_init_for(
             )
         return tac_ast.AddressInit(name=value.name, offset=value.offset)
     if isinstance(t, c99_ast.Int):
-        return tac_ast.IntInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
         # Char / SChar are 1-byte signed, same byte width and
         # signedness as Int — collapse onto IntInit so asm_emit
         # renders a single `dc.b $XX`.
-        return tac_ast.IntInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.UChar):
         # UChar is 1-byte unsigned, same byte width as UInt.
-        return tac_ast.UIntInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.UIntInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Long):
-        return tac_ast.LongInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.LongInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.LongLong):
-        return tac_ast.LongLongInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.LongLongInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.UInt):
-        return tac_ast.UIntInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.UIntInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.ULong):
-        return tac_ast.ULongInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.ULongInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.ULongLong):
-        return tac_ast.ULongLongInit(int=_truncate_int_for_static(t, value))
+        return tac_ast.ULongLongInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Float):
         # `value` is already the IEEE 754 single bit pattern: the
         # type checker's `_const_init_value` coerces FP-typed
@@ -535,7 +535,7 @@ def _tac_static_init_for(
         # addresses are 2-byte values written as a little-endian
         # 16-bit integer (e.g. NULL = 0x0000).
         return tac_ast.LongInit(
-            int=_truncate_int_for_static(c99_ast.Long(), value),
+            value=_truncate_int_for_static(c99_ast.Long(), value),
         )
     raise TypeError(
         f"static-storage object can't have non-object type {t!r}"
@@ -691,17 +691,17 @@ def _zero_byte_count(item: tac_ast.Type_static_init) -> int | None:
     expression check rejects) qualify. AddressInit never qualifies
     — `&name` is symbolic, resolved by the assembler at link time
     to an address that may or may not be zero."""
-    if isinstance(item, tac_ast.IntInit) and item.int == 0:
+    if isinstance(item, tac_ast.IntInit) and item.value == 0:
         return 1
-    if isinstance(item, tac_ast.UIntInit) and item.int == 0:
+    if isinstance(item, tac_ast.UIntInit) and item.value == 0:
         return 1
-    if isinstance(item, tac_ast.LongInit) and item.int == 0:
+    if isinstance(item, tac_ast.LongInit) and item.value == 0:
         return 2
-    if isinstance(item, tac_ast.ULongInit) and item.int == 0:
+    if isinstance(item, tac_ast.ULongInit) and item.value == 0:
         return 2
-    if isinstance(item, tac_ast.LongLongInit) and item.int == 0:
+    if isinstance(item, tac_ast.LongLongInit) and item.value == 0:
         return 4
-    if isinstance(item, tac_ast.ULongLongInit) and item.int == 0:
+    if isinstance(item, tac_ast.ULongLongInit) and item.value == 0:
         return 4
     if isinstance(item, tac_ast.FloatInit) and item.bits == 0:
         return 4

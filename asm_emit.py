@@ -875,7 +875,7 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
     The list is in source-byte order, so successive items lay
     down sequentially under the variable's label:
 
-        # scalar, e.g. IntInit(int=N)
+        # scalar, e.g. IntInit(value=N)
         <name>:
             dc.b $XX
 
@@ -910,15 +910,15 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
     lines: list[str] = [f"{sv.name}:"]
     for item in sv.init:
         match item:
-            case asm_ast.IntInit(int=v):
+            case asm_ast.IntInit(value=v):
                 _check_byte(f"init for {sv.name!r}", v)
                 lines.append(_instr_line("dc.b", f"${v:02X}"))
-            case asm_ast.LongInit(int=v):
+            case asm_ast.LongInit(value=v):
                 _check_word(f"init for {sv.name!r}", v)
                 # Mask to 16 bits so signed-negative values render as
                 # their two's-complement bit pattern (e.g. -1 → $FFFF).
                 lines.append(_instr_line("dc.w", f"${v & 0xFFFF:04X}"))
-            case asm_ast.LongLongInit(int=v):
+            case asm_ast.LongLongInit(value=v):
                 _check_dword(f"init for {sv.name!r}", v)
                 # Mask to 32 bits so signed-negative values render as
                 # their two's-complement bit pattern. dasm's `dc.l`

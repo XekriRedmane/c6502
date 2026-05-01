@@ -517,7 +517,7 @@ class TestSwitch(unittest.TestCase):
         self.assertEqual(
             sw.cases[0].value,
             c99_ast.Constant(
-                const=c99_ast.ConstInt(int=5),
+                const=c99_ast.ConstInt(value=5),
                 data_type=Int(),
             ),
         )
@@ -1160,7 +1160,7 @@ class TestLongAndCasts(unittest.TestCase):
                             params=[], ret=c99_ast.Int(),
                         ),
                         exp=c99_ast.Constant(
-                            const=c99_ast.ConstInt(int=0),
+                            const=c99_ast.ConstInt(value=0),
                         ),
                     )),
                 )]),
@@ -1911,10 +1911,10 @@ class TestArrays(unittest.TestCase):
                     statement=c99_ast.Return(exp=c99_ast.InitList(
                         items=[
                             c99_ast.Constant(
-                                const=c99_ast.ConstInt(int=1),
+                                const=c99_ast.ConstInt(value=1),
                             ),
                             c99_ast.Constant(
-                                const=c99_ast.ConstInt(int=2),
+                                const=c99_ast.ConstInt(value=2),
                             ),
                         ],
                     )),

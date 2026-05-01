@@ -41,17 +41,17 @@ class Type_static_init:
 
 @dataclass
 class IntInit(Type_static_init):
-    int: int
+    value: int
 
 
 @dataclass
 class LongInit(Type_static_init):
-    int: int
+    value: int
 
 
 @dataclass
 class LongLongInit(Type_static_init):
-    int: int
+    value: int
 
 
 @dataclass

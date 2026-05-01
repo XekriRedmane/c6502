@@ -15,8 +15,8 @@ class TestPretty(unittest.TestCase):
         self.assertEqual(pretty("hi"), "'hi'")
 
     def test_leaf_dataclass(self):
-        got = pretty(c99_ast.ConstInt(int=42))
-        self.assertEqual(got, "ConstInt(\n  int=42,\n)")
+        got = pretty(c99_ast.ConstInt(value=42))
+        self.assertEqual(got, "ConstInt(\n  value=42,\n)")
 
     def test_empty_dataclass_inline(self):
         @dataclass
@@ -29,14 +29,14 @@ class TestPretty(unittest.TestCase):
         # a list-of-FunctionDecl and indents one level deeper.
         # `Type_function_decl` carries `params`, `body`, `data_type`
         # (here a FunType), and `storage_class`. Constants are wrapped:
-        # `Constant(const=ConstInt(int=...))`.
+        # `Constant(const=ConstInt(value=...))`.
         node = c99_ast.Program(
             declaration=[c99_ast.FunctionDecl(
                 function_decl=c99_ast.Type_function_decl(
                     name="main",
                     params=[],
                     body=c99_ast.Return(exp=c99_ast.Constant(
-                        const=c99_ast.ConstInt(int=0),
+                        const=c99_ast.ConstInt(value=0),
                     )),
                     data_type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
                     storage_class=None,
@@ -53,7 +53,7 @@ class TestPretty(unittest.TestCase):
                     body=Return(
                       exp=Constant(
                         const=ConstInt(
-                          int=0,
+                          value=0,
                         ),
                         data_type=None,
                       ),
@@ -109,7 +109,7 @@ class TestPretty(unittest.TestCase):
                 function_decl=c99_ast.Type_function_decl(
                     name="main",
                     body=c99_ast.Return(exp=c99_ast.Constant(
-                        const=c99_ast.ConstInt(int=42),
+                        const=c99_ast.ConstInt(value=42),
                     )),
                     data_type=c99_ast.FunType(params=[], ret=c99_ast.Int()),
                     storage_class=None,

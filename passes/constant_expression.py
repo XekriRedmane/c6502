@@ -155,7 +155,7 @@ def _const_int_value(c: c99_ast.Type_const) -> int:
                       c99_ast.ConstLongLong,
                       c99_ast.ConstUInt, c99_ast.ConstULong,
                       c99_ast.ConstULongLong)):
-        return c.int
+        return c.value
     raise ConstantExpressionError(
         f"floating constant {c!r} is not an integer constant"
     )

@@ -596,32 +596,32 @@ class Type_const:
 
 @dataclass
 class ConstInt(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstLong(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstLongLong(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstUInt(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstULong(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstULongLong(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
@@ -636,9 +636,9 @@ class ConstDouble(Type_const):
 
 @dataclass
 class ConstChar(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstUChar(Type_const):
-    int: int
+    value: int

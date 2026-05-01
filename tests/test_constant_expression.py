@@ -10,15 +10,15 @@ from passes.constant_expression import (
 
 
 def _const_int(v: int) -> c99_ast.Type_exp:
-    return c99_ast.Constant(const=c99_ast.ConstInt(int=v))
+    return c99_ast.Constant(const=c99_ast.ConstInt(value=v))
 
 
 def _const_long(v: int) -> c99_ast.Type_exp:
-    return c99_ast.Constant(const=c99_ast.ConstLong(int=v))
+    return c99_ast.Constant(const=c99_ast.ConstLong(value=v))
 
 
 def _const_uint(v: int) -> c99_ast.Type_exp:
-    return c99_ast.Constant(const=c99_ast.ConstUInt(int=v))
+    return c99_ast.Constant(const=c99_ast.ConstUInt(value=v))
 
 
 def _const_float(s: str) -> c99_ast.Type_exp:

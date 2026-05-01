@@ -33,11 +33,11 @@ class TestCompileDriver(unittest.TestCase):
         # since the grammar collapsed function definitions into the
         # generic declaration shape.
         self.assertIn("FunctionDecl(", out)
-        # Constants are wrapped as `Constant(const=ConstInt(int=N))`
-        # / `ConstLong(int=N)` per the new c99 AST.
+        # Constants are wrapped as `Constant(const=ConstInt(value=N))`
+        # / `ConstLong(value=N)` per the c99 AST.
         self.assertIn("Constant(", out)
         self.assertIn("ConstInt(", out)
-        self.assertIn("int=42", out)
+        self.assertIn("value=42", out)
 
     def test_tac_stdin_prints_tac_ast(self):
         rc, out, _ = self._run(

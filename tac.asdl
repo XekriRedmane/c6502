@@ -95,8 +95,8 @@ module TAC {
     -- zero-pad (`char a[5] = "abc"` → str="abc", bytes=5). The
     -- string itself stores its raw 8-bit bytes as a Python str
     -- (each character in 0..255).
-    static_init = IntInit(int) | LongInit(int) | LongLongInit(int)
-                | UIntInit(int) | ULongInit(int) | ULongLongInit(int)
+    static_init = IntInit(int value) | LongInit(int value) | LongLongInit(int value)
+                | UIntInit(int value) | ULongInit(int value) | ULongLongInit(int value)
                 | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)
                 | StringInit(string str, int bytes)

@@ -339,7 +339,7 @@ class TestStaticVariableLowering(unittest.TestCase):
 
     def test_pseudo_for_static_becomes_data(self):
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="g", is_global=True, init=asm_ast.IntInit(int=5)),
+            asm_ast.StaticVariable(name="g", is_global=True, init=asm_ast.IntInit(value=5)),
             asm_ast.Function(
                 name="main", is_global=True, params=[],
                 instructions=[
@@ -352,7 +352,7 @@ class TestStaticVariableLowering(unittest.TestCase):
         # The StaticVariable rides through unchanged; the Pseudo for
         # `g` becomes `Data(g)`.
         self.assertEqual(out.top_level[0],
-                         asm_ast.StaticVariable(name="g", is_global=True, init=asm_ast.IntInit(int=5)))
+                         asm_ast.StaticVariable(name="g", is_global=True, init=asm_ast.IntInit(value=5)))
         fn = out.top_level[1]
         # Index 0 is the FunctionPrologue prepended by the pass.
         self.assertEqual(
@@ -363,7 +363,7 @@ class TestStaticVariableLowering(unittest.TestCase):
         # `g` is a static; `t` is a local. M should be 1 (just `t`),
         # not 2 — the static doesn't take a frame slot.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(int=0)),
+            asm_ast.StaticVariable(name="g", is_global=False, init=asm_ast.IntInit(value=0)),
             asm_ast.Function(
                 name="main", is_global=True, params=[],
                 instructions=[

@@ -38,7 +38,7 @@ class TestTranslateExp(unittest.TestCase):
     def test_constant_returns_tac_constant_emits_nothing(self):
         t = Translator()
         instrs: list = []
-        result = t.translate_exp(c99_ast.Constant(const=c99_ast.ConstInt(int=42)), instrs)
+        result = t.translate_exp(c99_ast.Constant(const=c99_ast.ConstInt(value=42)), instrs)
         self.assertEqual(result, tac_ast.Constant(const=tac_ast.ConstInt(value=42)))
         self.assertEqual(instrs, [])
 
@@ -48,7 +48,7 @@ class TestTranslateExp(unittest.TestCase):
         result = t.translate_exp(
             c99_ast.Unary(
                 op=c99_ast.Negate(),
-                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
             ),
             instrs,
         )
@@ -70,7 +70,7 @@ class TestTranslateExp(unittest.TestCase):
                 op=c99_ast.Negate(),
                 exp=c99_ast.Unary(
                     op=c99_ast.Complement(),
-                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
                 ),
             ),
             instrs,
@@ -95,8 +95,8 @@ class TestTranslateExp(unittest.TestCase):
         result = t.translate_exp(
             c99_ast.Binary(
                 op=c99_ast.Add(),
-                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
             ),
             instrs,
         )
@@ -137,8 +137,8 @@ class TestTranslateExp(unittest.TestCase):
                 t.translate_exp(
                     c99_ast.Binary(
                         op=c99_op,
-                        left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                        right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                        left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                        right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                     ),
                     instrs,
                 )
@@ -155,7 +155,7 @@ class TestTranslateExp(unittest.TestCase):
                 t = Translator()
                 instrs: list = []
                 t.translate_exp(
-                    c99_ast.Unary(op=c99_op, exp=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+                    c99_ast.Unary(op=c99_op, exp=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
                     instrs,
                 )
                 self.assertEqual(instrs[0].op, tac_op)
@@ -172,11 +172,11 @@ class TestTranslateExp(unittest.TestCase):
                 op=c99_ast.Add(),
                 left=c99_ast.Unary(
                     op=c99_ast.Negate(),
-                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 ),
                 right=c99_ast.Unary(
                     op=c99_ast.Negate(),
-                    exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    exp=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 ),
             ),
             instrs,
@@ -221,7 +221,7 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
         result = t.translate_exp(
             c99_ast.Assignment(
                 lval=c99_ast.Var(name="@0.a"),
-                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
             ),
             instrs,
         )
@@ -263,8 +263,8 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
                 lval=c99_ast.Var(name="@0.a"),
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 ),
             ),
             instrs,
@@ -298,7 +298,7 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
                 lval=c99_ast.Var(name="@1.b"),
                 rval=c99_ast.Assignment(
                     lval=c99_ast.Var(name="@0.a"),
-                    rval=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
                 ),
             ),
             instrs,
@@ -325,8 +325,8 @@ class TestTranslateVarAndAssignment(unittest.TestCase):
         with self.assertRaises(TypeError) as ctx:
             t.translate_exp(
                 c99_ast.Assignment(
-                    lval=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                    rval=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    lval=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 ),
                 [],
             )
@@ -373,7 +373,7 @@ class TestTranslateBlockItems(unittest.TestCase):
         instrs: list = []
         t.translate_declaration(
             c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
-                name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
                 data_type=c99_ast.Int(),
             )),
             instrs,
@@ -395,8 +395,8 @@ class TestTranslateBlockItems(unittest.TestCase):
                 name="@0.x",
                 init=c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 ),
                 data_type=c99_ast.Int(),
             )),
@@ -426,7 +426,7 @@ class TestTranslateBlockItems(unittest.TestCase):
         t.translate_statement(
             c99_ast.Expression(exp=c99_ast.Assignment(
                 lval=c99_ast.Var(name="@0.a"),
-                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
             )),
             instrs,
         )
@@ -458,7 +458,7 @@ class TestTranslateBlockItems(unittest.TestCase):
         t.translate_block_item(
             c99_ast.D(declaration=c99_ast.VarDecl(
                 var_decl=c99_ast.Type_var_decl(
-                    name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(int=7)),
+                    name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(value=7)),
                     data_type=c99_ast.Int(),
                 ),
             )),
@@ -485,8 +485,8 @@ class TestTranslateIfStatement(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=2))),
                 else_clause=None,
             ),
             instrs,
@@ -508,9 +508,9 @@ class TestTranslateIfStatement(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
-                else_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=3))),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=2))),
+                else_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=3))),
             ),
             instrs,
         )
@@ -536,11 +536,11 @@ class TestTranslateIfStatement(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 then_clause=c99_ast.IfStmt(
-                    condition=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    condition=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                     then_clause=c99_ast.Return(
-                        exp=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
+                        exp=c99_ast.Constant(const=c99_ast.ConstInt(value=3)),
                     ),
                     else_clause=None,
                 ),
@@ -604,7 +604,7 @@ class TestTranslateGotoAndLabeled(unittest.TestCase):
         t.translate_statement(
             c99_ast.LabeledStmt(
                 label=".main@foo",
-                statement=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0))),
+                statement=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=0))),
             ),
             instrs,
         )
@@ -678,7 +678,7 @@ class TestTranslateCompound(unittest.TestCase):
             c99_ast.Compound(block=c99_ast.Block(block_item=[
                 c99_ast.D(declaration=c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
-                        name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                        name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                         data_type=c99_ast.Int(),
                     ),
                 )),
@@ -715,7 +715,7 @@ class TestTranslateCompound(unittest.TestCase):
                 c99_ast.S(statement=c99_ast.Compound(
                     block=c99_ast.Block(block_item=[
                         c99_ast.S(statement=c99_ast.Return(
-                            exp=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                            exp=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                         )),
                     ]),
                 )),
@@ -735,7 +735,7 @@ class TestTranslateCompound(unittest.TestCase):
             c99_ast.S(statement=c99_ast.Compound(
                 block=c99_ast.Block(block_item=[
                     c99_ast.S(statement=c99_ast.Return(
-                        exp=c99_ast.Constant(const=c99_ast.ConstInt(int=7)),
+                        exp=c99_ast.Constant(const=c99_ast.ConstInt(value=7)),
                     )),
                 ]),
             )),
@@ -757,7 +757,7 @@ class TestTranslateCompound(unittest.TestCase):
             block=c99_ast.Block(block_item=[
                 c99_ast.D(declaration=c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
-                        name="@1.x", init=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                        name="@1.x", init=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                         data_type=c99_ast.Int(),
                     ),
                 )),
@@ -778,11 +778,11 @@ class TestTranslateCompound(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 then_clause=c99_ast.Compound(
                     block=c99_ast.Block(block_item=[
                         c99_ast.S(statement=c99_ast.Return(
-                            exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                            exp=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                         )),
                     ]),
                 ),
@@ -812,9 +812,9 @@ class TestTranslateConditional(unittest.TestCase):
         instrs: list = []
         val = t.translate_exp(
             c99_ast.Conditional(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
-                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                true_clause=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
+                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(value=3)),
             ),
             instrs,
         )
@@ -847,13 +847,13 @@ class TestTranslateConditional(unittest.TestCase):
         instrs: list = []
         t.translate_exp(
             c99_ast.Conditional(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 true_clause=c99_ast.Conditional(
-                    condition=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
-                    true_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
-                    false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=4)),
+                    condition=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
+                    true_clause=c99_ast.Constant(const=c99_ast.ConstInt(value=3)),
+                    false_clause=c99_ast.Constant(const=c99_ast.ConstInt(value=4)),
                 ),
-                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                false_clause=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
             ),
             instrs,
         )
@@ -889,7 +889,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.D(declaration=c99_ast.VarDecl(
                 var_decl=c99_ast.Type_var_decl(
-                    name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                    name="@0.x", init=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
                     data_type=c99_ast.Int(),
                 ),
             )),
@@ -914,7 +914,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         # would be dead code — skip it.
         fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.S(statement=c99_ast.Return(
-                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=7)),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(value=7)),
             )),
         ]))
         self.assertEqual(
@@ -927,7 +927,7 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         # Ret — no implicit zero-return appended.
         fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.S(statement=c99_ast.Return(
-                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=7)),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(value=7)),
             )),
             c99_ast.S(statement=c99_ast.Null()),
         ]))
@@ -941,13 +941,13 @@ class TestTranslateFunctionFallThrough(unittest.TestCase):
         fn = c99_ast.Function(name="main", body=c99_ast.Block(block_item=[
             c99_ast.D(declaration=c99_ast.VarDecl(
                 var_decl=c99_ast.Type_var_decl(
-                    name="@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    name="@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                     data_type=c99_ast.Int(),
                 ),
             )),
             c99_ast.D(declaration=c99_ast.VarDecl(
                 var_decl=c99_ast.Type_var_decl(
-                    name="@1.b", init=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    name="@1.b", init=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                     data_type=c99_ast.Int(),
                 ),
             )),
@@ -978,7 +978,7 @@ class TestTranslateProgram(unittest.TestCase):
         prog = _c99_program_of(c99_ast.Function(
             name="main",
             body=c99_ast.Block(block_item=[c99_ast.S(statement=c99_ast.Return(
-                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=42)),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(value=42)),
             ))]),
         ))
         self.assertEqual(
@@ -997,7 +997,7 @@ class TestTranslateProgram(unittest.TestCase):
                 body=c99_ast.Block(block_item=[c99_ast.S(
                     statement=c99_ast.Return(exp=c99_ast.Unary(
                         op=c99_ast.Negate(),
-                        exp=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                        exp=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
                     )),
                 )]),
             )))
@@ -1123,7 +1123,7 @@ class TestTranslateProgram(unittest.TestCase):
             t.translate_exp(
                 c99_ast.Postfix(
                     op=c99_ast.Increment(),
-                    operand=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    operand=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 ),
                 [],
             )
@@ -1232,7 +1232,7 @@ class TestTranslateLoops(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.WhileStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 body=c99_ast.Null(),
                 label=".loop@0",
             ),
@@ -1256,7 +1256,7 @@ class TestTranslateLoops(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.WhileStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 body=c99_ast.Compound(block=c99_ast.Block(block_item=[
                     c99_ast.S(statement=c99_ast.BreakStmt(label=".loop@0")),
                     c99_ast.S(statement=c99_ast.ContinueStmt(label=".loop@0")),
@@ -1285,7 +1285,7 @@ class TestTranslateLoops(unittest.TestCase):
         t.translate_statement(
             c99_ast.DoWhileStmt(
                 body=c99_ast.Null(),
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 label=".loop@0",
             ),
             instrs,
@@ -1309,7 +1309,7 @@ class TestTranslateLoops(unittest.TestCase):
         t.translate_statement(
             c99_ast.DoWhileStmt(
                 body=c99_ast.ContinueStmt(label=".loop@0"),
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 label=".loop@0",
             ),
             instrs,
@@ -1358,9 +1358,9 @@ class TestTranslateLoops(unittest.TestCase):
             c99_ast.ForStmt(
                 init=c99_ast.InitExp(exp=c99_ast.Assignment(
                     lval=c99_ast.Var(name="i"),
-                    rval=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(value=0)),
                 )),
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 post_clause=c99_ast.Postfix(
                     op=c99_ast.Increment(),
                     operand=c99_ast.Var(name="i"),
@@ -1415,7 +1415,7 @@ class TestTranslateLoops(unittest.TestCase):
         t.translate_statement(
             c99_ast.ForStmt(
                 init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
-                    name="i", init=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
+                    name="i", init=c99_ast.Constant(const=c99_ast.ConstInt(value=0)),
                     data_type=c99_ast.Int(),
                 )),
                 condition=None,
@@ -1499,7 +1499,7 @@ class TestTranslateLoops(unittest.TestCase):
         t.translate_statement(
             c99_ast.ForStmt(
                 init=c99_ast.InitExp(exp=None),
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 post_clause=None,
                 body=c99_ast.Null(),
                 label=".loop@0",
@@ -1580,10 +1580,10 @@ class TestTranslateNestedLoops(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.WhileStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 body=c99_ast.Compound(block=c99_ast.Block(block_item=[
                     c99_ast.S(statement=c99_ast.WhileStmt(
-                        condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                        condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                         body=c99_ast.BreakStmt(label=".loop@1"),
                         label=".loop@1",
                     )),
@@ -1773,7 +1773,7 @@ class TestTranslateFunctionCall(unittest.TestCase):
         result = t.translate_exp(
             c99_ast.FunctionCall(
                 name="f",
-                args=[c99_ast.Constant(const=c99_ast.ConstInt(int=1)), c99_ast.Constant(const=c99_ast.ConstInt(int=2))],
+                args=[c99_ast.Constant(const=c99_ast.ConstInt(value=1)), c99_ast.Constant(const=c99_ast.ConstInt(value=2))],
             ),
             instrs,
         )
@@ -1801,8 +1801,8 @@ class TestTranslateFunctionCall(unittest.TestCase):
                 name="f",
                 args=[c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 )],
             ),
             instrs,
@@ -1833,11 +1833,11 @@ class TestTranslateFunctionCall(unittest.TestCase):
                 args=[
                     c99_ast.FunctionCall(
                         name="g",
-                        args=[c99_ast.Constant(const=c99_ast.ConstInt(int=1))],
+                        args=[c99_ast.Constant(const=c99_ast.ConstInt(value=1))],
                     ),
                     c99_ast.FunctionCall(
                         name="g",
-                        args=[c99_ast.Constant(const=c99_ast.ConstInt(int=2))],
+                        args=[c99_ast.Constant(const=c99_ast.ConstInt(value=2))],
                     ),
                 ],
             ),
@@ -2072,11 +2072,11 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["g_long"].data_type, tac_ast.Long())
         self.assertEqual(
-            statics["g_long"].init, [tac_ast.LongInit(int=7)],
+            statics["g_long"].init, [tac_ast.LongInit(value=7)],
         )
         self.assertEqual(statics["g_int"].data_type, tac_ast.Int())
         self.assertEqual(
-            statics["g_int"].init, [tac_ast.IntInit(int=3)],
+            statics["g_int"].init, [tac_ast.IntInit(value=3)],
         )
 
     def test_long_long_static_carries_long_long_init(self):
@@ -2093,12 +2093,12 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["g"].data_type, tac_ast.LongLong())
         self.assertEqual(
-            statics["g"].init, [tac_ast.LongLongInit(int=1234567890)],
+            statics["g"].init, [tac_ast.LongLongInit(value=1234567890)],
         )
         self.assertEqual(statics["u"].data_type, tac_ast.ULongLong())
         self.assertEqual(
             statics["u"].init,
-            [tac_ast.ULongLongInit(int=4000000000)],
+            [tac_ast.ULongLongInit(value=4000000000)],
         )
 
     def test_int_to_long_long_cast_emits_sign_extend(self):
@@ -2215,7 +2215,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(
             statics["@0.a"].init,
-            [tac_ast.IntInit(int=1), tac_ast.ZeroInit(bytes=4)],
+            [tac_ast.IntInit(value=1), tac_ast.ZeroInit(bytes=4)],
         )
 
     def test_multi_dim_array_init_with_zero_holes(self):
@@ -2234,10 +2234,10 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         self.assertEqual(
             statics["@0.a"].init,
             [
-                tac_ast.LongInit(int=100),
+                tac_ast.LongInit(value=100),
                 tac_ast.ZeroInit(bytes=2),    # a[0][1] hole
-                tac_ast.LongInit(int=200),
-                tac_ast.LongInit(int=300),
+                tac_ast.LongInit(value=200),
+                tac_ast.LongInit(value=300),
                 tac_ast.ZeroInit(bytes=4),    # a[2] entirely missing
             ],
         )
@@ -2256,7 +2256,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(
             statics["@0.a"].init,
-            [tac_ast.IntInit(int=1), tac_ast.ZeroInit(bytes=4)],
+            [tac_ast.IntInit(value=1), tac_ast.ZeroInit(bytes=4)],
         )
 
     def test_address_init_does_not_merge_with_zeros(self):

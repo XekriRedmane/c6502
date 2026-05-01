@@ -1534,14 +1534,14 @@ class TestStaticVariableTranslation(unittest.TestCase):
             tac_ast.StaticVariable(
                 name="g", is_global=True,
                 data_type=tac_ast.Int(),
-                init=[tac_ast.IntInit(int=42)],
+                init=[tac_ast.IntInit(value=42)],
             ),
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
             asm_ast.StaticVariable(
                 name="g", is_global=True,
-                init=[asm_ast.IntInit(int=42)],
+                init=[asm_ast.IntInit(value=42)],
             ),
         ])
 
@@ -1550,14 +1550,14 @@ class TestStaticVariableTranslation(unittest.TestCase):
             tac_ast.StaticVariable(
                 name="g", is_global=False,
                 data_type=tac_ast.Long(),
-                init=[tac_ast.LongInit(int=200)],
+                init=[tac_ast.LongInit(value=200)],
             ),
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
             asm_ast.StaticVariable(
                 name="g", is_global=False,
-                init=[asm_ast.LongInit(int=200)],
+                init=[asm_ast.LongInit(value=200)],
             ),
         ])
 
@@ -1567,14 +1567,14 @@ class TestStaticVariableTranslation(unittest.TestCase):
             tac_ast.StaticVariable(
                 name="g", is_global=True,
                 data_type=tac_ast.LongLong(),
-                init=[tac_ast.LongLongInit(int=1234567890)],
+                init=[tac_ast.LongLongInit(value=1234567890)],
             ),
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
             asm_ast.StaticVariable(
                 name="g", is_global=True,
-                init=[asm_ast.LongLongInit(int=1234567890)],
+                init=[asm_ast.LongLongInit(value=1234567890)],
             ),
         ])
 
@@ -1585,14 +1585,14 @@ class TestStaticVariableTranslation(unittest.TestCase):
             tac_ast.StaticVariable(
                 name="g", is_global=False,
                 data_type=tac_ast.ULongLong(),
-                init=[tac_ast.ULongLongInit(int=4000000000)],
+                init=[tac_ast.ULongLongInit(value=4000000000)],
             ),
         ])
         out = translate_program(prog)
         self.assertEqual(out.top_level, [
             asm_ast.StaticVariable(
                 name="g", is_global=False,
-                init=[asm_ast.LongLongInit(int=4000000000)],
+                init=[asm_ast.LongLongInit(value=4000000000)],
             ),
         ])
 
@@ -1623,9 +1623,9 @@ class TestStaticVariableTranslation(unittest.TestCase):
                 name="a", is_global=False,
                 data_type=tac_ast.Long(),  # arrays collapse to Long
                 init=[
-                    tac_ast.IntInit(int=1),
-                    tac_ast.IntInit(int=2),
-                    tac_ast.IntInit(int=3),
+                    tac_ast.IntInit(value=1),
+                    tac_ast.IntInit(value=2),
+                    tac_ast.IntInit(value=3),
                 ],
             ),
         ])
@@ -1634,9 +1634,9 @@ class TestStaticVariableTranslation(unittest.TestCase):
             asm_ast.StaticVariable(
                 name="a", is_global=False,
                 init=[
-                    asm_ast.IntInit(int=1),
-                    asm_ast.IntInit(int=2),
-                    asm_ast.IntInit(int=3),
+                    asm_ast.IntInit(value=1),
+                    asm_ast.IntInit(value=2),
+                    asm_ast.IntInit(value=3),
                 ],
             ),
         ])

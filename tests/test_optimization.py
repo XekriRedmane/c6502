@@ -111,7 +111,7 @@ class TestOptimizeProgram(unittest.TestCase):
                 name="g",
                 is_global=True,
                 data_type=tac_ast.Int(),
-                init=[tac_ast.IntInit(int=5)],
+                init=[tac_ast.IntInit(value=5)],
             ),
             _fn(_ret()),
         ])
@@ -123,7 +123,7 @@ class TestOptimizeProgram(unittest.TestCase):
                 name="g",
                 is_global=True,
                 data_type=tac_ast.Long(),
-                init=[tac_ast.LongInit(int=0)],
+                init=[tac_ast.LongInit(value=0)],
             ),
         ])
         self.assertEqual(optimize_program(prog), prog)

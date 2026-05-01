@@ -307,18 +307,18 @@ def _to_asm_static_init(
     (double); the bit pattern (an unsigned int) rides through 1-to-1
     and asm_emit lays the bytes down directly."""
     match init:
-        case tac_ast.IntInit(int=v):
-            return asm_ast.IntInit(int=v)
-        case tac_ast.LongInit(int=v):
-            return asm_ast.LongInit(int=v)
-        case tac_ast.LongLongInit(int=v):
-            return asm_ast.LongLongInit(int=v)
-        case tac_ast.UIntInit(int=v):
-            return asm_ast.IntInit(int=v)
-        case tac_ast.ULongInit(int=v):
-            return asm_ast.LongInit(int=v)
-        case tac_ast.ULongLongInit(int=v):
-            return asm_ast.LongLongInit(int=v)
+        case tac_ast.IntInit(value=v):
+            return asm_ast.IntInit(value=v)
+        case tac_ast.LongInit(value=v):
+            return asm_ast.LongInit(value=v)
+        case tac_ast.LongLongInit(value=v):
+            return asm_ast.LongLongInit(value=v)
+        case tac_ast.UIntInit(value=v):
+            return asm_ast.IntInit(value=v)
+        case tac_ast.ULongInit(value=v):
+            return asm_ast.LongInit(value=v)
+        case tac_ast.ULongLongInit(value=v):
+            return asm_ast.LongLongInit(value=v)
         case tac_ast.FloatInit(bits=b):
             return asm_ast.FloatInit(bits=b)
         case tac_ast.DoubleInit(bits=b):

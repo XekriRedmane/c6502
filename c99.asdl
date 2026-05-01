@@ -132,8 +132,8 @@ module C99 {
     -- `fp_arith` from the source string at parse time. We never go
     -- through Python's `float`, so single-precision narrowing happens
     -- at the source-text boundary with correct round-to-nearest-even.
-    const = ConstInt(int) | ConstLong(int) | ConstLongLong(int)
-          | ConstUInt(int) | ConstULong(int) | ConstULongLong(int)
+    const = ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
+          | ConstUInt(int value) | ConstULong(int value) | ConstULongLong(int value)
           | ConstFloat(int bits) | ConstDouble(int bits)
-          | ConstChar(int) | ConstUChar(int)
+          | ConstChar(int value) | ConstUChar(int value)
 }

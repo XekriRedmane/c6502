@@ -380,7 +380,7 @@ def _coerce_init_const_value(
     src_type = _const_source_type(c)
     raw = c.bits if isinstance(
         c, (c99_ast.ConstFloat, c99_ast.ConstDouble),
-    ) else c.int
+    ) else c.value
     return _coerce_init_value(raw, src_type, target_type)
 
 
@@ -952,7 +952,7 @@ def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
          c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
          c99_ast.ConstChar, c99_ast.ConstUChar),
     ):
-        return c.int == 0
+        return c.value == 0
     return False
 
 
@@ -1036,7 +1036,7 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     complement bit pattern at the matching width."""
     if isinstance(t, (Int, UInt)):
         bits = value & 0xFF
-        return c99_ast.ConstInt(int=bits) if isinstance(t, Int) else c99_ast.ConstUInt(int=bits)
+        return c99_ast.ConstInt(value=bits) if isinstance(t, Int) else c99_ast.ConstUInt(value=bits)
     if isinstance(t, (Char, SChar, UChar)):
         # ConstChar / ConstUChar exist in the AST but the parser
         # routes char literals through ConstInt per the user's
@@ -1046,16 +1046,16 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
         # describing if anything inspects it.
         bits = value & 0xFF
         if isinstance(t, UChar):
-            return c99_ast.ConstUChar(int=bits)
-        return c99_ast.ConstChar(int=bits)
+            return c99_ast.ConstUChar(value=bits)
+        return c99_ast.ConstChar(value=bits)
     if isinstance(t, (Long, ULong)):
         bits = value & 0xFFFF
-        return c99_ast.ConstLong(int=bits) if isinstance(t, Long) else c99_ast.ConstULong(int=bits)
+        return c99_ast.ConstLong(value=bits) if isinstance(t, Long) else c99_ast.ConstULong(value=bits)
     if isinstance(t, (LongLong, ULongLong)):
         bits = value & 0xFFFFFFFF
         return (
-            c99_ast.ConstLongLong(int=bits) if isinstance(t, LongLong)
-            else c99_ast.ConstULongLong(int=bits)
+            c99_ast.ConstLongLong(value=bits) if isinstance(t, LongLong)
+            else c99_ast.ConstULongLong(value=bits)
         )
     raise TypeError(f"_const_for_value: not an integer type: {t!r}")
 

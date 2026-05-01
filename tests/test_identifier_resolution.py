@@ -100,14 +100,14 @@ class TestDeclarations(unittest.TestCase):
 
     def test_initializer_is_resolved(self):
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=3))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=3))),
             _decl("b", init=c99_ast.Var(name="a")),
         )
         resolved = resolve_function(fn)
         self.assertEqual(
             resolved,
             _function(
-                _decl("@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=3))),
+                _decl("@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=3))),
                 _decl("@1.b", init=c99_ast.Var(name="@0.a")),
             ),
         )
@@ -166,10 +166,10 @@ class TestExpressionResolution(unittest.TestCase):
         self.assertIn("'x'", str(ctx.exception))
 
     def test_constant_is_preserved(self):
-        fn = _function(_ret(c99_ast.Constant(const=c99_ast.ConstInt(int=42))))
+        fn = _function(_ret(c99_ast.Constant(const=c99_ast.ConstInt(value=42))))
         self.assertEqual(
             resolve_function(fn),
-            _function(_ret(c99_ast.Constant(const=c99_ast.ConstInt(int=42)))),
+            _function(_ret(c99_ast.Constant(const=c99_ast.ConstInt(value=42)))),
         )
 
     def test_unary_recurses(self):
@@ -269,10 +269,10 @@ class TestExpressionResolution(unittest.TestCase):
         fn = _function(_expr(c99_ast.Assignment(
             lval=c99_ast.Binary(
                 op=c99_ast.Add(),
-                left=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                right=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
             ),
-            rval=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
+            rval=c99_ast.Constant(const=c99_ast.ConstInt(value=3)),
         )))
         with self.assertRaises(IdentifierResolutionError) as ctx:
             resolve_function(fn)
@@ -280,8 +280,8 @@ class TestExpressionResolution(unittest.TestCase):
 
     def test_constant_on_left_is_rejected(self):
         fn = _function(_expr(c99_ast.Assignment(
-            lval=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
-            rval=c99_ast.Constant(const=c99_ast.ConstInt(int=3)),
+            lval=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
+            rval=c99_ast.Constant(const=c99_ast.ConstInt(value=3)),
         )))
         with self.assertRaises(IdentifierResolutionError):
             resolve_function(fn)
@@ -294,7 +294,7 @@ class TestExpressionResolution(unittest.TestCase):
                 lval=c99_ast.Unary(
                     op=c99_ast.Negate(), exp=c99_ast.Var(name="a"),
                 ),
-                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
             )),
         )
         with self.assertRaises(IdentifierResolutionError):
@@ -488,22 +488,22 @@ class TestStatementPassthrough(unittest.TestCase):
 
     def test_mixed_block_items_are_handled_in_order(self):
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
             _null(),
             _expr(c99_ast.Assignment(
                 lval=c99_ast.Var(name="a"),
-                rval=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
             )),
             _ret(c99_ast.Var(name="a")),
         )
         self.assertEqual(
             resolve_function(fn),
             _function(
-                _decl("@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+                _decl("@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
                 _null(),
                 _expr(c99_ast.Assignment(
                     lval=c99_ast.Var(name="@0.a"),
-                    rval=c99_ast.Constant(const=c99_ast.ConstInt(int=2)),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 )),
                 _ret(c99_ast.Var(name="@0.a")),
             ),
@@ -527,9 +527,9 @@ class TestNestedScopes(unittest.TestCase):
         # The inner `a` shadows the outer one; both get fresh unique
         # names. The outer `a` is untouched after the inner block.
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
             _compound(
-                _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
+                _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=2))),
             ),
         )
         resolved = resolve_function(fn)
@@ -549,7 +549,7 @@ class TestNestedScopes(unittest.TestCase):
         # int a = 1;
         # { return a; }    // resolves to outer @0.a
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
             _compound(
                 _ret(c99_ast.Var(name="a")),
             ),
@@ -570,7 +570,7 @@ class TestNestedScopes(unittest.TestCase):
         #                  // means; matches the same rule the outer
         #                  // self-init test exercises).
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=5))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=5))),
             _compound(
                 _decl("a", init=c99_ast.Var(name="a")),
             ),
@@ -591,9 +591,9 @@ class TestNestedScopes(unittest.TestCase):
         # { int a = 2; }   // shadow
         # return a;        // resolves to outer @0.a, not the inner one
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
             _compound(
-                _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
+                _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=2))),
             ),
             _ret(c99_ast.Var(name="a")),
         )
@@ -680,9 +680,9 @@ class TestNestedScopes(unittest.TestCase):
         #   { return a; }      // resolves to @1.a (innermost visible)
         # }
         fn = _function(
-            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=1))),
+            _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=1))),
             _compound(
-                _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
+                _decl("a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=2))),
                 _compound(
                     _ret(c99_ast.Var(name="a")),
                 ),
@@ -951,7 +951,7 @@ class TestIntegrationWithParser(unittest.TestCase):
         prog = parse("int main(void) { int a = 5; return a; }")
         resolved = resolve_program(prog)
         expected = _program(_function(
-            _decl("@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(int=5))),
+            _decl("@0.a", init=c99_ast.Constant(const=c99_ast.ConstInt(value=5))),
             _ret(c99_ast.Var(name="@0.a")),
         ))
         self.assertEqual(resolved, expected)
@@ -1052,7 +1052,7 @@ class TestIntegrationWithParser(unittest.TestCase):
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
                     left=c99_ast.Var(name="@0.a"),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 ),
             )),
             _ret(c99_ast.Var(name="@0.a")),
@@ -1163,7 +1163,7 @@ class TestFunctionLinkage(unittest.TestCase):
             [c99_ast.Binary(
                 op=c99_ast.Add(),
                 left=c99_ast.Var(name="@1.a"),
-                right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
             )],
         )
 
@@ -1280,7 +1280,7 @@ class TestParameterResolution(unittest.TestCase):
             c99_ast.Binary(
                 op=c99_ast.Add(),
                 left=c99_ast.Var(name="@0.x"),
-                right=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                right=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
             ),
         )
 

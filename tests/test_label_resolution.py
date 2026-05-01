@@ -69,13 +69,13 @@ class TestLabelRewriting(unittest.TestCase):
     def test_label_is_rewritten_with_function_prefix(self):
         # `foo: return 0;` -> label becomes `.main@foo`.
         fn = _function(_labeled("foo", c99_ast.Return(
-            exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
+            exp=c99_ast.Constant(const=c99_ast.ConstInt(value=0)),
         )))
         resolved = resolve_function(fn)
         self.assertEqual(
             resolved,
             _function(_labeled(".main@foo", c99_ast.Return(
-                exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0)),
+                exp=c99_ast.Constant(const=c99_ast.ConstInt(value=0)),
             ))),
         )
 
@@ -99,7 +99,7 @@ class TestLabelRewriting(unittest.TestCase):
         # to a label that appears later still resolves.
         fn = _function(
             _goto("end"),
-            _labeled("end", c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=0)))),
+            _labeled("end", c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=0)))),
         )
         # Should not raise.
         resolve_function(fn)
@@ -134,7 +134,7 @@ class TestDuplicateLabels(unittest.TestCase):
         # function.
         fn = _function(
             c99_ast.S(statement=c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 then_clause=c99_ast.LabeledStmt(
                     label="x", statement=c99_ast.Null(),
                 ),
@@ -165,7 +165,7 @@ class TestUndefinedGoto(unittest.TestCase):
     def test_goto_inside_if_branch_to_nonexistent_label_raises(self):
         fn = _function(
             c99_ast.S(statement=c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 then_clause=c99_ast.Goto(label="missing"),
                 else_clause=None,
             )),
@@ -180,7 +180,7 @@ class TestLabelsInIfStatements(unittest.TestCase):
         # visible from outside it (function-wide visibility).
         fn = _function(
             c99_ast.S(statement=c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 then_clause=c99_ast.LabeledStmt(
                     label="foo", statement=c99_ast.Null(),
                 ),
@@ -205,7 +205,7 @@ class TestLabelsInIfStatements(unittest.TestCase):
         fn = _function(
             _labeled("foo", c99_ast.Null()),
             c99_ast.S(statement=c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 then_clause=c99_ast.Goto(label="foo"),
                 else_clause=None,
             )),
@@ -288,7 +288,7 @@ class TestLabelsInLoops(unittest.TestCase):
         # before that pass runs); label_resolution mustn't touch them.
         fn = _function(
             c99_ast.S(statement=c99_ast.WhileStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 body=c99_ast.Compound(block=c99_ast.Block(block_item=[
                     c99_ast.S(statement=c99_ast.BreakStmt(label="")),
                     c99_ast.S(statement=c99_ast.ContinueStmt(label="")),
@@ -312,7 +312,7 @@ class TestLabelsInLoops(unittest.TestCase):
         # field, label_resolution must leave it alone.
         fn = _function(
             c99_ast.S(statement=c99_ast.WhileStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 body=c99_ast.Null(),
                 label=".main@loop_3",
             )),
@@ -331,16 +331,16 @@ class TestPassthrough(unittest.TestCase):
 
     def test_function_without_labels_or_gotos(self):
         fn = _function(
-            _ret(c99_ast.Constant(const=c99_ast.ConstInt(int=42))),
+            _ret(c99_ast.Constant(const=c99_ast.ConstInt(value=42))),
         )
         self.assertEqual(resolve_function(fn), fn)
 
     def test_nested_if_without_labels(self):
         fn = _function(
             c99_ast.S(statement=c99_ast.IfStmt(
-                condition=c99_ast.Constant(const=c99_ast.ConstInt(int=1)),
-                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=2))),
-                else_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(int=3))),
+                condition=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                then_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=2))),
+                else_clause=c99_ast.Return(exp=c99_ast.Constant(const=c99_ast.ConstInt(value=3))),
             )),
         )
         self.assertEqual(resolve_function(fn), fn)
@@ -351,7 +351,7 @@ class TestPassthrough(unittest.TestCase):
         # (...)))` — the same shape identifier_resolution produces.
         decl = c99_ast.D(declaration=c99_ast.VarDecl(
             var_decl=c99_ast.Type_var_decl(
-                name="x", init=c99_ast.Constant(const=c99_ast.ConstInt(int=5)),
+                name="x", init=c99_ast.Constant(const=c99_ast.ConstInt(value=5)),
                 data_type=c99_ast.Int(),
             ),
         ))

@@ -735,7 +735,7 @@ class TestEmitProgram(unittest.TestCase):
         # `$`. The label sits in column 1; the `DC.B` directive in
         # the opcode column.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.IntInit(int=5)]),
+            asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.IntInit(value=5)]),
         ])
         self.assertEqual(emit_program(prog), "g:\n   DC.B  $05\n")
 
@@ -743,7 +743,7 @@ class TestEmitProgram(unittest.TestCase):
         # File-scope `int x;` (tentative) resolves to init=0; emits
         # `DC.B $00`. Same shape as an explicit `int x = 0;`.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="x", is_global=True, init=[asm_ast.IntInit(int=0)]),
+            asm_ast.StaticVariable(name="x", is_global=True, init=[asm_ast.IntInit(value=0)]),
         ])
         self.assertEqual(emit_program(prog), "x:\n   DC.B  $00\n")
 
@@ -758,7 +758,7 @@ class TestEmitProgram(unittest.TestCase):
                     asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
                 ],
             ),
-            asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.IntInit(int=7)]),
+            asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.IntInit(value=7)]),
         ])
         self.assertEqual(
             emit_program(prog),
@@ -771,7 +771,7 @@ class TestEmitProgram(unittest.TestCase):
         # init must fit in a byte. The check uses `_check_byte`
         # internally so out-of-range values raise.
         prog = asm_ast.Program(top_level=[
-            asm_ast.StaticVariable(name="bad", is_global=False, init=[asm_ast.IntInit(int=256)]),
+            asm_ast.StaticVariable(name="bad", is_global=False, init=[asm_ast.IntInit(value=256)]),
         ])
         with self.assertRaises(ValueError):
             emit_program(prog)
@@ -783,9 +783,9 @@ class TestEmitProgram(unittest.TestCase):
             asm_ast.StaticVariable(
                 name="a", is_global=False,
                 init=[
-                    asm_ast.IntInit(int=1),
-                    asm_ast.IntInit(int=2),
-                    asm_ast.IntInit(int=3),
+                    asm_ast.IntInit(value=1),
+                    asm_ast.IntInit(value=2),
+                    asm_ast.IntInit(value=3),
                 ],
             ),
         ])
@@ -801,7 +801,7 @@ class TestEmitProgram(unittest.TestCase):
             asm_ast.StaticVariable(
                 name="a", is_global=False,
                 init=[
-                    asm_ast.IntInit(int=1),
+                    asm_ast.IntInit(value=1),
                     asm_ast.ZeroInit(bytes=4),
                 ],
             ),
@@ -882,7 +882,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="g", is_global=True,
-                init=[asm_ast.LongLongInit(int=1234567890)],
+                init=[asm_ast.LongLongInit(value=1234567890)],
             ),
         ])
         self.assertEqual(
@@ -894,7 +894,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="g", is_global=False,
-                init=[asm_ast.LongLongInit(int=-1)],
+                init=[asm_ast.LongLongInit(value=-1)],
             ),
         ])
         self.assertEqual(
@@ -907,7 +907,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="bad", is_global=False,
-                init=[asm_ast.LongLongInit(int=1 << 32)],
+                init=[asm_ast.LongLongInit(value=1 << 32)],
             ),
         ])
         with self.assertRaises(ValueError):
@@ -919,9 +919,9 @@ class TestEmitProgram(unittest.TestCase):
             asm_ast.StaticVariable(
                 name="a", is_global=False,
                 init=[
-                    asm_ast.LongInit(int=1),
-                    asm_ast.LongInit(int=2),
-                    asm_ast.LongInit(int=3),
+                    asm_ast.LongInit(value=1),
+                    asm_ast.LongInit(value=2),
+                    asm_ast.LongInit(value=3),
                 ],
             ),
         ])

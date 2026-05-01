@@ -564,7 +564,7 @@ def _const_for_token(token):
     the byte value (§6.4.4.4.10)."""
     text = str(token)
     if token.type == "CHAR_CONSTANT":
-        return c99_ast.ConstInt(int=_decode_char_constant(token))
+        return c99_ast.ConstInt(value=_decode_char_constant(token))
     if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
         # Strip a trailing `f`/`F` before parsing — fp_arith doesn't
         # know about C suffixes.
@@ -604,7 +604,7 @@ def _const_for_token(token):
             kind = "ULONG_LONG_INTEGER"
     for max_value, cls in _CANDIDATES[(kind, base)]:
         if value <= max_value:
-            return cls(int=value)
+            return cls(value=value)
     raise ParserError(
         f"integer constant {text!r} doesn't fit any supported type "
         f"(value > 2^32 - 1)"
@@ -751,11 +751,11 @@ def _apply_direct_declarator(dd_tree, base_type):
             raise NotImplementedError(
                 "array size must be an integer constant"
             )
-        if c.int <= 0:
+        if c.value <= 0:
             raise ParserError("array size must be positive")
         # Wrap base_type in an Array; recurse with the wrapped type
         # so any further suffixes (deeper in inner_dd) compose on top.
-        new_base = c99_ast.Array(element_type=base_type, size=c.int)
+        new_base = c99_ast.Array(element_type=base_type, size=c.value)
         return _apply_direct_declarator(inner_dd, new_base)
     # 4) Function suffix — `inner_dd LPAREN body? RPAREN` where body
     #    is a parameter_type_list, VOID, an identifier_list, or
@@ -887,9 +887,9 @@ def _array_size_from_suffix(suffix):
         raise NotImplementedError(
             "array size must be an integer constant"
         )
-    if c.int <= 0:
+    if c.value <= 0:
         raise ParserError("array size must be positive")
-    return c.int
+    return c.value
 
 
 def _apply_abstract_declarator(adecl_tree, base_type):

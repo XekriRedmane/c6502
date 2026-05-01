@@ -30,27 +30,34 @@ from passes.optimization.unreachable_code_elimination import (
 )
 
 
-def optimize_program(prog: tac_ast.Program) -> tac_ast.Program:
+def optimize_program(
+    prog: tac_ast.Program, symbols=None,
+) -> tac_ast.Program:
     """Optimize each function in `prog`. StaticVariable top-levels
-    pass through unchanged."""
+    pass through unchanged. `symbols` is the type checker's
+    SymbolTable, threaded into per-pass calls that need it (today
+    only constant folding, for the cast-node folds — see that
+    module's docstring)."""
     return tac_ast.Program(top_level=[
-        _optimize_top_level(t) for t in prog.top_level
+        _optimize_top_level(t, symbols) for t in prog.top_level
     ])
 
 
 def _optimize_top_level(
-    t: tac_ast.Type_top_level,
+    t: tac_ast.Type_top_level, symbols,
 ) -> tac_ast.Type_top_level:
     if isinstance(t, tac_ast.Function):
-        return optimize_function(t)
+        return optimize_function(t, symbols=symbols)
     return t
 
 
-def optimize_function(fn: tac_ast.Function) -> tac_ast.Function:
+def optimize_function(
+    fn: tac_ast.Function, *, symbols=None,
+) -> tac_ast.Function:
     """Run the four-pass cycle on `fn` to a fixed point."""
     while True:
         prev = fn
-        fn = constant_fold(fn)
+        fn = constant_fold(fn, symbols=symbols)
         fn = eliminate_unreachable_code(fn)
         fn = copy_propagate(fn)
         fn = eliminate_dead_stores(fn)

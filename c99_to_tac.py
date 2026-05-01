@@ -326,14 +326,14 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
 
 
 def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
-    """Translate a c99 const to its TAC counterpart. TAC collapses
-    integer signedness onto width (the 6502 has no signedness at the
-    byte level), so ConstUInt(v) becomes TAC ConstInt(v) (1 byte)
-    and ConstULong(v) becomes TAC ConstLong(v) (2 bytes); the integer
-    value passes through unchanged because downstream `_byte_at` masks
-    each byte with `& 0xFF`. FP variants stay distinct (Float and
-    Double have different IEEE 754 bit patterns), so ConstFloat /
-    ConstDouble round-trip 1-to-1."""
+    """Translate a c99 const to its TAC counterpart. TAC carries the
+    full integer kind (width × signedness) on each variant, so the
+    mapping is 1-to-1 on the integer side — c99 ConstUInt → TAC
+    ConstUInt, etc. The 1-byte char variants (ConstChar / ConstUChar)
+    collapse onto TAC's 1-byte int variants per C99 §6.3.1.1.2 (char
+    types integer-promote to int / unsigned int): ConstChar onto
+    ConstInt (plain `char` is signed in c6502), ConstUChar onto
+    ConstUInt. FP variants ride through 1-to-1."""
     if isinstance(c, c99_ast.ConstInt):
         return tac_ast.ConstInt(value=c.value)
     if isinstance(c, c99_ast.ConstLong):
@@ -341,14 +341,20 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
     if isinstance(c, c99_ast.ConstLongLong):
         return tac_ast.ConstLongLong(value=c.value)
     if isinstance(c, c99_ast.ConstUInt):
-        return tac_ast.ConstInt(value=c.value)
+        return tac_ast.ConstUInt(value=c.value)
     if isinstance(c, c99_ast.ConstULong):
-        return tac_ast.ConstLong(value=c.value)
+        return tac_ast.ConstULong(value=c.value)
     if isinstance(c, c99_ast.ConstULongLong):
-        return tac_ast.ConstLongLong(value=c.value)
-    if isinstance(c, (c99_ast.ConstChar, c99_ast.ConstUChar)):
-        # 1-byte char constants collapse onto TAC's 1-byte int.
+        return tac_ast.ConstULongLong(value=c.value)
+    if isinstance(c, c99_ast.ConstChar):
+        # Plain `char` / `signed char` → 1-byte signed int per C99
+        # §6.3.1.1.2 integer promotion (char types promote to int).
         return tac_ast.ConstInt(value=c.value)
+    if isinstance(c, c99_ast.ConstUChar):
+        # `unsigned char` → 1-byte unsigned int via the same
+        # promotion rule (§6.3.1.1.2: when int can't represent the
+        # source's range, promote to unsigned int).
+        return tac_ast.ConstUInt(value=c.value)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(bits=c.bits)
     if isinstance(c, c99_ast.ConstDouble):
@@ -357,23 +363,23 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
 
 
 def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Type_const:
-    """Build a TAC const matching `t`'s width (and, for FP, its
-    precision). TAC collapses integer signedness onto width — UInt
-    and Int both produce ConstInt; ULong and Long both produce
-    ConstLong (see `_to_tac_const`) — but Float / Double remain
-    distinct. Pointer collapses onto ConstLong (same 2-byte width
-    as Long; addresses are unsigned-ish 2-byte values). Used by the
-    synthetic-constant call sites (postfix `+1`, short-circuit 0/1,
-    implicit `return 0`)."""
-    if isinstance(t, (
-        c99_ast.Int, c99_ast.UInt,
-        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
-    )):
+    """Build a TAC const matching `t`'s width and signedness (and,
+    for FP, its precision). Pointer collapses onto ConstULong (same
+    2-byte width as ULong; addresses are 16-bit unsigned). Used by
+    the synthetic-constant call sites (postfix `+1`, short-circuit
+    0/1, implicit `return 0`)."""
+    if isinstance(t, (c99_ast.Int, c99_ast.Char, c99_ast.SChar)):
         return tac_ast.ConstInt(value=int(value))
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+    if isinstance(t, (c99_ast.UInt, c99_ast.UChar)):
+        return tac_ast.ConstUInt(value=int(value))
+    if isinstance(t, c99_ast.Long):
         return tac_ast.ConstLong(value=int(value))
-    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+    if isinstance(t, (c99_ast.ULong, c99_ast.Pointer)):
+        return tac_ast.ConstULong(value=int(value))
+    if isinstance(t, c99_ast.LongLong):
         return tac_ast.ConstLongLong(value=int(value))
+    if isinstance(t, c99_ast.ULongLong):
+        return tac_ast.ConstULongLong(value=int(value))
     if isinstance(t, c99_ast.Float):
         return tac_ast.ConstFloat(bits=fp_arith.int_to_single_bits(int(value)))
     if isinstance(t, c99_ast.Double):
@@ -391,24 +397,20 @@ def _tac_const_val(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Con
 
 
 def _fold_fp_cast_constant(
-    source: c99_ast.Type_data_type,
     target: c99_ast.Type_data_type,
     c: tac_ast.Type_const,
 ) -> tac_ast.Type_const:
     """Compile-time fold of a Cast whose operand is a Constant and
     whose source-or-target is FP. Returns a TAC const of `target`'s
-    type. We have to do this work in `c99_to_tac` (rather than the
-    runtime helper-call path) because TAC's `const` collapses integer
-    signedness onto width — by the time `tac_to_asm` sees the constant,
-    it can't tell `Int` from `UInt`. Here `source` is the c99 type
-    (still distinguishing signed and unsigned), so we can pick the
-    right interpretation: an unsigned integer source masks any
-    negative TAC int back to its unsigned bit pattern (e.g.
-    ConstInt(-1) viewed as UInt → 255) before converting; FP sources
-    use their bit pattern via `fp_arith` to avoid Python float
-    intermediaries. C99 §6.3.1.4 requires FP→integer truncation
-    toward zero, which `single_bits_to_int` / `double_bits_to_int`
-    provide."""
+    type. The operand's signedness is encoded in its TAC variant
+    (Const{Int,Long,LongLong} → signed, Const{UInt,ULong,ULongLong}
+    → unsigned), so we can pick the right interpretation locally:
+    an unsigned variant masks the value back to its non-negative
+    bit pattern (e.g. ConstUInt(-1) → 255) before converting; signed
+    variants pass through. FP sources use their bit pattern via
+    `fp_arith` to avoid Python float intermediaries. C99 §6.3.1.4
+    requires FP→integer truncation toward zero, which
+    `single_bits_to_int` / `double_bits_to_int` provide."""
     # FP source: bits → target via fp_arith.
     if isinstance(c, tac_ast.ConstFloat):
         if isinstance(target, c99_ast.Float):
@@ -426,17 +428,23 @@ def _fold_fp_cast_constant(
                 bits=fp_arith.double_bits_to_single_bits(c.bits),
             )
         return _tac_const_for(target, fp_arith.double_bits_to_int(c.bits))
-    # Integer source: unsigned-mask first per C99 §6.3.1.4, then
-    # delegate to _tac_const_for which handles int → FP via fp_arith.
+    # Integer source: signedness rides on the variant. For unsigned
+    # variants, mask to the source's bit-pattern range so a negative
+    # TAC int (canonicalized at the variant's width) becomes its
+    # non-negative twin before being handed to fp_arith's int → FP
+    # conversion via _tac_const_for.
     if isinstance(c, tac_ast.ConstInt):
-        v = c.value & 0xFF if isinstance(source, c99_ast.UInt) else c.value
+        v = c.value
+    elif isinstance(c, tac_ast.ConstUInt):
+        v = c.value & 0xFF
     elif isinstance(c, tac_ast.ConstLong):
-        v = c.value & 0xFFFF if isinstance(source, c99_ast.ULong) else c.value
+        v = c.value
+    elif isinstance(c, tac_ast.ConstULong):
+        v = c.value & 0xFFFF
     elif isinstance(c, tac_ast.ConstLongLong):
-        v = (
-            c.value & 0xFFFFFFFF
-            if isinstance(source, c99_ast.ULongLong) else c.value
-        )
+        v = c.value
+    elif isinstance(c, tac_ast.ConstULongLong):
+        v = c.value & 0xFFFFFFFF
     else:
         raise TypeError(f"unexpected TAC const: {c!r}")
     return _tac_const_for(target, v)
@@ -1554,13 +1562,13 @@ class Translator:
                 if src_fp or tgt_fp:
                     # FP-involving cast. If the source is a compile-
                     # time Constant, fold it in Python here — that
-                    # avoids a runtime helper call AND sidesteps the
-                    # signedness-erasure of TAC integer consts (see
-                    # `_fold_fp_cast_constant` for why).
+                    # avoids a runtime helper call. Signedness rides
+                    # on the operand's TAC variant, so the fold needs
+                    # only the target type to pick the result variant.
                     if isinstance(inner_val, tac_ast.Constant):
                         return tac_ast.Constant(
                             const=_fold_fp_cast_constant(
-                                source, target, inner_val.const,
+                                target, inner_val.const,
                             ),
                         )
                     # Otherwise the source is a Var — tac_to_asm picks
@@ -1697,13 +1705,13 @@ class Translator:
                     "type_checker should have stamped data_type "
                     f"on sizeof's inner expression: {inner!r}"
                 )
-                return tac_ast.Constant(const=tac_ast.ConstLong(
+                return tac_ast.Constant(const=tac_ast.ConstULong(
                     value=_sizeof(t, self._types),
                 ))
             case c99_ast.SizeOfType(target_type=t):
                 # `sizeof (T)` — direct fold from the type-name.
                 # No inner expression to translate.
-                return tac_ast.Constant(const=tac_ast.ConstLong(
+                return tac_ast.Constant(const=tac_ast.ConstULong(
                     value=_sizeof(t, self._types),
                 ))
             case c99_ast.Subscript(array=arr, index=idx):

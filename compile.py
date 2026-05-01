@@ -98,7 +98,7 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
         prog, symbols, types = type_check_program(_resolved(source))
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
-            tac = optimize_tac(tac)
+            tac = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":
         prog, symbols, types = type_check_program(_resolved(source))
@@ -115,7 +115,7 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
         )
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
-            tac = optimize_tac(tac)
+            tac = optimize_tac(tac, symbols)
         return emit_program(replace_pseudoregs(
             translate_to_asm(tac, symbols, types),
             extra_statics=statics,

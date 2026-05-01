@@ -225,6 +225,18 @@ def double_is_zero(bits: int) -> bool:
     return bool(a == 0)
 
 
+def single_is_finite(bits: int) -> bool:
+    """True iff the single-precision value is neither NaN nor ±inf."""
+    a = np.uint32(bits & _SINGLE_MASK).view(np.float32)
+    return bool(np.isfinite(a))
+
+
+def double_is_finite(bits: int) -> bool:
+    """True iff the double-precision value is neither NaN nor ±inf."""
+    a = np.uint64(bits & _DOUBLE_MASK).view(np.float64)
+    return bool(np.isfinite(a))
+
+
 def single_is_truthy(bits: int) -> bool:
     """C99 §6.3.1.2 controlling-expression truthiness: the value is
     truthy iff it compares unequal to 0. NaN is truthy (NaN != 0);

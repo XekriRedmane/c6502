@@ -688,19 +688,30 @@ takes one AST and returns another (or text for emit):
    The c99 and TAC ASDLs declare parallel `data_type` sums (Int /
    Long / LongLong / UInt / ULong / ULongLong / Float / Double /
    FunType), so translating data_type is a one-to-one rewrap
-   (`_to_tac_data_type`). The TAC `const` sum collapses integer
-   signedness onto width — `_to_tac_const` maps `ConstUInt(v) →
-   ConstInt(v)`, `ConstULong(v) → ConstLong(v)`, and
-   `ConstULongLong(v) → ConstLongLong(v)` because the 6502 doesn't
-   care about signedness at the byte level — but keeps Float and
-   Double distinct (their IEEE 754 byte patterns differ). The
-   integer value passes through unchanged; downstream `_byte_at`
-   masks each byte with `& 0xFF`, so the bit pattern is preserved
-   regardless of how the integer is interpreted. The TAC
-   `static_init` sum keeps signedness alongside width on the
-   integer side (IntInit / LongInit / LongLongInit / UIntInit /
-   ULongInit / ULongLongInit) and precision on the FP side
-   (FloatInit / DoubleInit) — `_tac_static_init_for(t, v)`
+   (`_to_tac_data_type`). The TAC `const` sum carries each
+   integer's full c99 type — width AND signedness — across six
+   variants: ConstInt / ConstLong / ConstLongLong on the signed
+   side, ConstUInt / ConstULong / ConstULongLong on the unsigned
+   side. `_to_tac_const` is a 1-to-1 map per variant; `ConstChar`
+   / `ConstUChar` collapse onto `ConstInt` / `ConstUInt`
+   respectively (per C99 §6.3.1.1.2 char-types-promote-to-int).
+   The 6502 doesn't care about signedness at the byte level for
+   `+` / `-` / `&` / `|` / `^` / `<<` / `==` / `!=`, so those op
+   lowerings dispatch only on width; the places where signedness
+   matters at codegen — `<` / `>` / `<=` / `>=`, right shift,
+   int↔FP conversion — read the operand variant's signedness for
+   Constants and the symbol-table c99 type for Vars, and dispatch
+   accordingly (`asr*` vs. `lsr*` for right shift; V-corrected
+   MI/PL vs. BCC/BCS for ordering; i2f vs. u2f vs. l2f vs. ul2f
+   etc. for FP conversion). The integer value passes through
+   `_to_tac_const` unchanged; downstream `_byte_at` masks each
+   byte with `& 0xFF`, so the bit pattern is preserved regardless
+   of how the integer is interpreted. FP variants stay distinct
+   (Float and Double have different IEEE 754 bit patterns). The
+   TAC `static_init` sum likewise keeps signedness alongside width
+   on the integer side (IntInit / LongInit / LongLongInit /
+   UIntInit / ULongInit / ULongLongInit) and precision on the FP
+   side (FloatInit / DoubleInit) — `_tac_static_init_for(t, v)`
    dispatches on the declared type and coerces the raw value
    (`int(v)` for integer variants, `float(v)` for FP variants),
    so an integer literal initializing a `double` static lays down
@@ -709,9 +720,11 @@ takes one AST and returns another (or text for emit):
    `_tac_const_for(t, v)` and `_tac_const_val(t, v)` build typed
    constants for the synthetic-constant call sites (postfix `+1`,
    short-circuit 0/1, implicit `return 0`); they dispatch by type
-   — `Int`/`UInt` → `ConstInt(v)`, `Long`/`ULong` → `ConstLong(v)`,
-   `LongLong`/`ULongLong` → `ConstLongLong(v)`, `Float` →
-   `ConstFloat(v)`, `Double` → `ConstDouble(v)`.
+   — `Int` → `ConstInt(v)`, `UInt` → `ConstUInt(v)`, `Long` →
+   `ConstLong(v)`, `ULong` / `Pointer` → `ConstULong(v)`,
+   `LongLong` → `ConstLongLong(v)`, `ULongLong` →
+   `ConstULongLong(v)`, `Float` → `ConstFloat(v)`, `Double` →
+   `ConstDouble(v)`.
 
    **Cast lowering.** `Cast(target, exp)` lowers based on the byte
    widths of the source and target c99 types; same-width casts
@@ -909,13 +922,17 @@ takes one AST and returns another (or text for emit):
    for 1-byte types (Int / UInt), 2 for 2-byte (Long / ULong), 4
    for 4-byte (LongLong / ULongLong / Float), 8 for Double — by
    reading the symbol table for Vars and the const variant for
-   Constants (TAC `const` collapses integer sign onto width, but
-   Float / Double stay distinct). Each per-instruction lowering
-   keys off this size; the size-parameterized loops naturally
-   generalize across 1, 2, and 4 byte widths with carry threading
-   where appropriate. Signedness only matters
-   for ordering comparisons and shifts; everywhere else the byte
-   sequences are identical. Examples:
+   Constants (each TAC integer const variant carries width AND
+   signedness; this helper only reads width). Each per-instruction
+   lowering keys off this size; the size-parameterized loops
+   naturally generalize across 1, 2, and 4 byte widths with carry
+   threading where appropriate. Signedness only matters for
+   ordering comparisons, right shift, and int↔FP conversion;
+   everywhere else the byte sequences are identical. The signedness
+   dispatch reads the operand: const variant for Constants,
+   symbol-table c99 type for Vars (via `_is_unsigned_val` for
+   ordering / right shift, `_int_type_of` for FP-conversion helper
+   selection). Examples:
    - `Copy(src, dst)`: 1 Mov for Int, 2 Movs (lo, hi) for Long.
    - `Binary(Add, …)` Long: `Mov src1.lo→A; CLC; Add(src2.lo, A);
      Mov A→dst.lo; Mov src1.hi→A; Add(src2.hi, A); Mov A→dst.hi`.
@@ -940,31 +957,39 @@ takes one AST and returns another (or text for emit):
      `ddiv`, which need 16 bytes in + 8 bytes out); integer helpers
      use only the low 8 bytes.
      Caller writes inputs into `HARGS+0..N-1`, JSRs the helper
-     (mul8/divmod8/asl8/asr8 for 1-byte operands; mul16/divmod16/
-     asl16/asr16 for 2-byte; mul32/divmod32/asl32/asr32 for
-     4-byte), and reads the result from a fixed offset later in
-     the block. Inputs survive the call. Per-helper layout
-     (inputs → outputs):
+     (mul8/divmod8/asl8/asr8/lsr8 for 1-byte operands;
+     mul16/divmod16/asl16/asr16/lsr16 for 2-byte;
+     mul32/divmod32/asl32/asr32/lsr32 for 4-byte), and reads the
+     result from a fixed offset later in the block. Inputs survive
+     the call. Per-helper layout (inputs → outputs):
        mul8     A:`+0`, B:`+1`              → product:`+2..+3` (16-bit)
        divmod8  num:`+0`, den:`+1`          → quot:`+2`, rem:`+3`
        asl8/    val:`+0`, count:`+1`        → result:`+2`
-        asr8
+        asr8/
+        lsr8
        mul16    A:`+0..+1`, B:`+2..+3`      → product:`+4..+7` (32-bit)
        divmod16 num:`+0..+1`, den:`+2..+3`  → quot:`+4..+5`,
                                               rem:`+6..+7`
        asl16/   val:`+0..+1`, count:`+2`    → result:`+3..+4`
-        asr16    (1-byte count: shifts ≥16 are UB, so the high byte
-                  of a promoted-to-Long count is dropped)
+        asr16/   (1-byte count: shifts ≥16 are UB, so the high byte
+        lsr16     of a promoted-to-Long count is dropped)
        mul32    A:`+0..+3`, B:`+4..+7`      → product:`+8..+15` (64-bit)
        divmod32 num:`+0..+3`, den:`+4..+7`  → quot:`+8..+11`,
                                               rem:`+12..+15`
        asl32/   val:`+0..+3`, count:`+4`    → result:`+5..+8`
-        asr32    (1-byte count: shifts ≥32 are UB)
-     `RightShift` always dispatches to the signed `asr` variant —
-     c6502 currently treats every integer as signed for shift
-     purposes. The 16- and 32-bit helpers themselves aren't in
-     the repo yet; the lowerings emit calls to them in advance of
-     the runtime header landing.
+        asr32/   (1-byte count: shifts ≥32 are UB)
+        lsr32
+     `RightShift` dispatches by operand signedness: signed operands
+     route to `asr*` (arithmetic, sign-preserving), unsigned to
+     `lsr*` (logical, zero-fill). Signedness for Constants comes
+     from the const variant (Const{Int,Long,LongLong} → signed,
+     Const{UInt,ULong,ULongLong} → unsigned); for Vars, from the
+     symbol-table c99 type. The 16- and 32-bit helpers themselves
+     aren't in the repo yet; the lowerings emit calls to them in
+     advance of the runtime header landing. (8-bit signed `>>` of
+     `signed char` is rare in practice — `signed char` integer-
+     promotes to `int` before `>>`, so the 8-bit `asr8` helper is
+     mostly a placeholder.)
 
    **Cast lowering.** SignExtend / ZeroExtend / Truncate read the
    source and destination operand widths from the symbol table at
@@ -1720,17 +1745,20 @@ Lowered all the way to 6502 asm:
 
   See `tests/STATUS.md` for the chapter\_18 file-by-file status.
 
-Partially supported: unsigned types (`unsigned int`, `unsigned
-long`, `unsigned long long`) parse and propagate through every
-pass — values lay down correctly, mixed-type arithmetic promotes
-per C99 §6.3.1.8, and explicit casts lower to `SignExtend` /
-`ZeroExtend` / `Truncate` / no-op as appropriate. What still acts
-signed: `<` / `>` / `<=` / `>=` use the V-corrected `SBC` +
-`BMI`/`BPL` sequence regardless of operand signedness, and `>>`
-always emits `JSR asr8` / `JSR asr16` / `JSR asr32` (signed
-arithmetic right shift) — neither has the unsigned variant
-(`BCC`/`BCS` ordering, `JSR lsr8` / `JSR lsr16` / `JSR lsr32` for
-unsigned right shift) wired up yet.
+Unsigned types (`unsigned int`, `unsigned long`, `unsigned long
+long`) parse, type-check, and lower end-to-end. Values lay down
+correctly, mixed-type arithmetic promotes per C99 §6.3.1.8,
+explicit casts lower through `SignExtend` / `ZeroExtend` /
+`Truncate` (or are elided for same-width casts), `<` / `>` /
+`<=` / `>=` dispatch to the unsigned BCC/BCS-based per-byte SBC
+sequence (no V-correction), and `>>` dispatches to `lsr8` /
+`lsr16` / `lsr32` (logical right shift, zero-fill). Signedness
+rides on the operand: the const variant for Constants
+(Const{UInt,ULong,ULongLong} → unsigned), the symbol-table c99
+type for Vars. The `lsr*` helpers themselves aren't in the repo
+yet — see the runtime-header status note below; the lowerings
+emit calls to them in advance of the runtime header landing,
+same status as `mul*` / `divmod*` / `asl*` / `asr*`.
 
 Long-long types (`long long`, `unsigned long long`) parse and
 propagate through every pass — `LongLong` / `ULongLong` are
@@ -1770,8 +1798,9 @@ emits the Calls in advance of the runtime header landing.
 Not yet in the pipeline at all: the runtime header that defines
 `SSP` / `FP` / `HARGS` / `DPTR`, initializes `SSP`, sets the
 reset vector, and provides the runtime helpers `mul8` /
-`divmod8` / `asl8` / `asr8` / `mul16` / `divmod16` / `asl16` /
-`asr16` / `mul32` / `divmod32` / `asl32` / `asr32` plus the 26
+`divmod8` / `asl8` / `asr8` / `lsr8` / `mul16` / `divmod16` /
+`asl16` / `asr16` / `lsr16` / `mul32` / `divmod32` / `asl32` /
+`asr32` / `lsr32` plus the 26
 FP-conversion helpers (`i2f`/`u2f`/`l2f`/`ul2f`/`ll2f`/`ull2f`,
 `i2d`/`u2d`/`l2d`/`ul2d`/`ll2d`/`ull2d`, `f2i`/`f2u`/`f2l`/`f2ul`/
 `f2ll`/`f2ull`, `d2i`/`d2u`/`d2l`/`d2ul`/`d2ll`/`d2ull`, `f2d`,

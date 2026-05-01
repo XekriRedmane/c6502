@@ -1,4 +1,4 @@
-# Generated from tac.asdl. Do not edit.
+# Generated from /project/c6502/tac.asdl. Do not edit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -367,6 +367,21 @@ class ConstLong(Type_const):
 
 @dataclass
 class ConstLongLong(Type_const):
+    value: int
+
+
+@dataclass
+class ConstUInt(Type_const):
+    value: int
+
+
+@dataclass
+class ConstULong(Type_const):
+    value: int
+
+
+@dataclass
+class ConstULongLong(Type_const):
     value: int
 
 

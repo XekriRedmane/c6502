@@ -1,35 +1,46 @@
 """TAC constant folding pass.
 
-For `Unary` / `Binary` whose every val operand is a `Constant`, and
-for `JumpIfTrue` / `JumpIfFalse` whose condition is a `Constant`,
-evaluate the operation in Python with arithmetic that matches what
-the 6502 lowering would compute, then rewrite the instruction:
+For `Unary` / `Binary` whose every val operand is a `Constant`, for
+`JumpIfTrue` / `JumpIfFalse` whose condition is a `Constant`, and for
+the integer-width and FP conversion casts (`SignExtend`,
+`ZeroExtend`, `Truncate`, `IntToFloat`, `IntToDouble`, `FloatToInt`,
+`DoubleToInt`, `FloatToDouble`, `DoubleToFloat`) whose source is a
+`Constant`, evaluate the operation in Python with arithmetic that
+matches what the 6502 lowering would compute, then rewrite the
+instruction:
 
-  - Unary / Binary  → Copy(Constant(result), dst)  (preserves dst)
+  - Unary / Binary / cast → Copy(Constant(result), dst)  (preserves dst)
   - JumpIfTrue(true)   /  JumpIfFalse(false)      → Jump(target)
   - JumpIfTrue(false)  /  JumpIfFalse(true)       → dropped
 
 Integer width and signedness, matching `tac_to_asm`:
 
-  - Integer constants carry width via the `const` variant: ConstInt
-    is 8 bits, ConstLong 16, ConstLongLong 32.
-  - Each integer fold result is masked to the result variant's bit
-    width and reinterpreted as a two's-complement signed integer in
-    that width — so `~0` and `-1` produce the same `ConstInt(-1)`,
-    keeping the optimizer's structural-equality fixed-point check
-    well-behaved.
-  - Arithmetic / bitwise Binary ops: result variant matches src1
-    (equal to src2 post the type checker's usual arithmetic
-    conversions). Shift ops: result variant matches src1; the
-    count operand (src2) is read at its own width and bounds-
-    checked separately.
-  - Comparison Binary ops always yield ConstInt and interpret
-    operands as signed — c6502's V-corrected SBC sequence is used
-    for every integer ordering today, so unsigned wrap-around above
-    the half-width threshold isn't honored at codegen and shouldn't
-    be honored here either.
-  - Right shifts fold arithmetically (sign-preserving) — matches
-    `tac_to_asm`'s `asr8` / `asr16` / `asr32` dispatch.
+  - Integer constants carry width AND signedness via the `const`
+    variant: Const{Int,UInt} are 8 bits, Const{Long,ULong} 16,
+    Const{LongLong,ULongLong} 32. Signed variants store their value
+    as a two's-complement signed integer in [-2^(n-1), 2^(n-1)-1];
+    unsigned variants store the unsigned bit pattern in [0, 2^n - 1].
+    Both representations canonicalize the same bit pattern, but the
+    `.value` field's number form differs — keeping the optimizer's
+    structural-equality fixed-point check well-behaved.
+  - Arithmetic / bitwise Binary ops (`+`, `-`, `*`, `&`, `|`, `^`,
+    `<<`): result variant matches src1 (equal to src2 post the type
+    checker's usual arithmetic conversions). Same bit-pattern result
+    regardless of signedness, so the operand interpretation only
+    affects `.value` canonicalization.
+  - Division / modulo: signed operands use truncation-toward-zero
+    (C99 §6.5.5.6); unsigned operands use Python's `//` and `%`
+    (which match unsigned non-negative arithmetic).
+  - Comparison Binary ops always yield ConstInt (per C99 §6.5.8.6:
+    `<` / `>` / etc. return int). Operand interpretation follows
+    the operand variants' signedness — signed operands use signed
+    comparison (matching `tac_to_asm`'s V-corrected SBC + MI/PL
+    sequence), unsigned operands use unsigned (matching the BCC/BCS-
+    based per-byte SBC sequence).
+  - Right shifts: signed operands fold arithmetically (sign-
+    preserving — matches `asr8` / `asr16` / `asr32`); unsigned
+    operands fold logically (zero-fill — matches `lsr8` / `lsr16` /
+    `lsr32`). Left shifts are signedness-agnostic (same bit pattern).
   - `Unary(LogicalNot)` always yields ConstInt regardless of the
     source operand's variant (per C99 §6.5.3.3.5: `!` returns int).
 
@@ -49,6 +60,32 @@ operand precision):
     truthy (NaN != 0 by definition). `LogicalNot` follows the
     same rule.
 
+Cast / conversion folds:
+
+  - `SignExtend` / `ZeroExtend` / `Truncate` need the dst's TAC
+    variant (width AND signedness) to canonicalize the result;
+    that comes from the symbol table's c99 type for the dst Var.
+    Without a symbol table, these aren't folded. Source signedness
+    is encoded in the choice of node (SignExtend vs. ZeroExtend
+    for widening) and in the source's const variant; truncation is
+    signedness-agnostic at the bit level (just keeps low bytes).
+  - `FloatToDouble` / `DoubleToFloat` need no symbol-table lookup
+    — both source and target precisions are determined by the
+    node class itself.
+  - `IntToFloat` / `IntToDouble` read signedness off the source's
+    const variant (Const{Int,Long,LongLong} → signed source,
+    Const{UInt,ULong,ULongLong} → unsigned source). Both fold to
+    a non-negative bit pattern via fp_arith's int-to-bits helpers.
+    Compile-time-known FP casts of constants in the source program
+    already get folded earlier in `c99_to_tac` (see
+    `_fold_fp_cast_constant`); the only IntToFloat / IntToDouble
+    nodes reaching this pass come from copy-propagating a constant
+    into a Var-sourced cast.
+  - `FloatToInt` / `DoubleToInt` truncate toward zero per C99
+    §6.3.1.4 and store at the dst's TAC width / signedness. Bails
+    on NaN / ±inf (UB per the standard; the runtime helpers'
+    behavior isn't pinned yet).
+
 Cases left unfolded:
 
   - `Divide` / `Modulo` (integer) with a zero divisor: undefined;
@@ -67,6 +104,7 @@ Cases left unfolded:
 
 from __future__ import annotations
 
+import c99_ast
 import fp_arith
 import tac_ast
 
@@ -78,13 +116,43 @@ _INTEGER_CONST_BITS: dict[type, int] = {
     tac_ast.ConstInt: 8,
     tac_ast.ConstLong: 16,
     tac_ast.ConstLongLong: 32,
+    tac_ast.ConstUInt: 8,
+    tac_ast.ConstULong: 16,
+    tac_ast.ConstULongLong: 32,
+}
+
+_UNSIGNED_INT_VARIANTS: tuple[type, ...] = (
+    tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
+)
+
+# Inverse: TAC integer const variant for a given (bits, signed) pair.
+# Width-changing folds (SignExtend / ZeroExtend / Truncate, FP→Int)
+# pick the dst variant by reading both width and signedness off the
+# dst's c99 type.
+_INTEGER_VARIANT_FOR: dict[tuple[int, bool], type] = {
+    (8, True):  tac_ast.ConstInt,
+    (16, True):  tac_ast.ConstLong,
+    (32, True):  tac_ast.ConstLongLong,
+    (8, False): tac_ast.ConstUInt,
+    (16, False): tac_ast.ConstULong,
+    (32, False): tac_ast.ConstULongLong,
 }
 
 
-def constant_fold(fn: tac_ast.Function) -> tac_ast.Function:
+def constant_fold(
+    fn: tac_ast.Function,
+    *,
+    symbols=None,
+) -> tac_ast.Function:
+    """Constant-fold each instruction. `symbols` is the type checker's
+    SymbolTable (or any mapping with `.get(name) -> Symbol | None`).
+    It's required to fold the integer-width casts (`SignExtend` /
+    `ZeroExtend` / `Truncate`) and FP→integer conversions, since
+    those need the dst Var's c99 type to pick the result variant /
+    width. FP↔FP and the safe Int→FP folds work without it."""
     out: list[tac_ast.Type_instruction] = []
     for instr in fn.instructions:
-        folded = _fold(instr)
+        folded = _fold(instr, symbols)
         if folded is not None:
             out.append(folded)
     return tac_ast.Function(
@@ -97,6 +165,7 @@ def constant_fold(fn: tac_ast.Function) -> tac_ast.Function:
 
 def _fold(
     instr: tac_ast.Type_instruction,
+    symbols,
 ) -> tac_ast.Type_instruction | None:
     """Return the rewritten instruction, the original instruction if
     nothing folds, or None to drop the instruction (only happens for
@@ -135,11 +204,189 @@ def _fold(
             if tv is None:
                 return instr
             return None if tv else tac_ast.Jump(target=t)
+    if isinstance(instr, _CONVERSION_NODES) and isinstance(
+        instr.src, tac_ast.Constant,
+    ):
+        res = _fold_conversion(instr, instr.src.const, symbols)
+        if res is not None:
+            return tac_ast.Copy(
+                src=tac_ast.Constant(const=res), dst=instr.dst,
+            )
     return instr
+
+
+# Cast / conversion instructions that share a (src, dst) shape and
+# carry no extra fields. Listed once so `_fold` can dispatch with a
+# single isinstance check.
+_CONVERSION_NODES = (
+    tac_ast.SignExtend, tac_ast.ZeroExtend, tac_ast.Truncate,
+    tac_ast.IntToFloat, tac_ast.IntToDouble,
+    tac_ast.FloatToInt, tac_ast.DoubleToInt,
+    tac_ast.FloatToDouble, tac_ast.DoubleToFloat,
+)
+
+
+def _fold_conversion(
+    instr: tac_ast.Type_instruction,
+    c: tac_ast.Type_const,
+    symbols,
+) -> tac_ast.Type_const | None:
+    """Try to fold a cast/conversion whose src is the Constant `c`.
+    Returns the new const (the rest of `Copy(Constant(...), dst)`
+    is built by the caller), or None if we can't fold."""
+    match instr:
+        case tac_ast.SignExtend(dst=dst):
+            return _fold_widen(c, dst, symbols, sign_extend=True)
+        case tac_ast.ZeroExtend(dst=dst):
+            return _fold_widen(c, dst, symbols, sign_extend=False)
+        case tac_ast.Truncate(dst=dst):
+            return _fold_truncate(c, dst, symbols)
+        case tac_ast.FloatToDouble():
+            if not isinstance(c, tac_ast.ConstFloat):
+                return None
+            return tac_ast.ConstDouble(
+                bits=fp_arith.single_bits_to_double_bits(c.bits),
+            )
+        case tac_ast.DoubleToFloat():
+            if not isinstance(c, tac_ast.ConstDouble):
+                return None
+            return tac_ast.ConstFloat(
+                bits=fp_arith.double_bits_to_single_bits(c.bits),
+            )
+        case tac_ast.IntToFloat():
+            return _fold_int_to_fp(c, target_double=False)
+        case tac_ast.IntToDouble():
+            return _fold_int_to_fp(c, target_double=True)
+        case tac_ast.FloatToInt(dst=dst):
+            return _fold_fp_to_int(c, dst, symbols, source_double=False)
+        case tac_ast.DoubleToInt(dst=dst):
+            return _fold_fp_to_int(c, dst, symbols, source_double=True)
+    return None
+
+
+def _dst_int_variant(
+    dst: tac_ast.Type_val, symbols,
+) -> type | None:
+    """Look up the dst Var's TAC integer variant (one of the six
+    integer const classes), or None if the symbol table isn't
+    available, the operand isn't a Var, or the c99 type isn't an
+    integer kind. Width-changing integer casts and FP→integer
+    conversions use this to pick the result variant."""
+    if symbols is None or not isinstance(dst, tac_ast.Var):
+        return None
+    sym = symbols.get(dst.name)
+    if sym is None:
+        return None
+    t = sym.type
+    if isinstance(t, (c99_ast.Int, c99_ast.Char, c99_ast.SChar)):
+        return tac_ast.ConstInt
+    if isinstance(t, (c99_ast.UInt, c99_ast.UChar)):
+        return tac_ast.ConstUInt
+    if isinstance(t, c99_ast.Long):
+        return tac_ast.ConstLong
+    if isinstance(t, c99_ast.ULong):
+        return tac_ast.ConstULong
+    if isinstance(t, c99_ast.LongLong):
+        return tac_ast.ConstLongLong
+    if isinstance(t, c99_ast.ULongLong):
+        return tac_ast.ConstULongLong
+    return None
+
+
+def _fold_widen(
+    c: tac_ast.Type_const, dst: tac_ast.Type_val, symbols,
+    *, sign_extend: bool,
+) -> tac_ast.Type_const | None:
+    """Fold SignExtend (sign_extend=True) or ZeroExtend (False) of an
+    integer constant. The source's TAC variant gives us the source
+    width AND signedness for canonicalization; the dst's symbol-table
+    type gives us the target variant. SignExtend treats the source
+    as signed at its width; ZeroExtend masks it to the source's
+    unsigned bit pattern."""
+    if not _is_integer_const(c):
+        return None
+    dst_variant = _dst_int_variant(dst, symbols)
+    if dst_variant is None:
+        return None
+    src_bits = _INTEGER_CONST_BITS[type(c)]
+    tgt_bits = _INTEGER_CONST_BITS[dst_variant]
+    if tgt_bits <= src_bits:
+        # Widening cast must strictly widen — c99_to_tac only emits
+        # SignExtend / ZeroExtend when src_w < tgt_w. Bail rather
+        # than reinterpret as a same-width or narrowing cast.
+        return None
+    if sign_extend:
+        value = _to_signed(c.value, src_bits)
+    else:
+        value = c.value & ((1 << src_bits) - 1)
+    return _wrap_int(dst_variant, value)
+
+
+def _fold_truncate(
+    c: tac_ast.Type_const, dst: tac_ast.Type_val, symbols,
+) -> tac_ast.Type_const | None:
+    """Fold Truncate of an integer constant: keep the low dst-width
+    bytes, canonicalize at the dst variant's signedness."""
+    if not _is_integer_const(c):
+        return None
+    dst_variant = _dst_int_variant(dst, symbols)
+    if dst_variant is None:
+        return None
+    src_bits = _INTEGER_CONST_BITS[type(c)]
+    tgt_bits = _INTEGER_CONST_BITS[dst_variant]
+    if tgt_bits >= src_bits:
+        # Truncate must strictly narrow.
+        return None
+    return _wrap_int(dst_variant, c.value)
+
+
+def _fold_int_to_fp(
+    c: tac_ast.Type_const, *, target_double: bool,
+) -> tac_ast.Type_const | None:
+    """Fold IntToFloat / IntToDouble of an integer constant.
+    Signedness rides on the operand's variant — Const{Int,Long,
+    LongLong} interpret as signed, Const{UInt,ULong,ULongLong} as
+    unsigned — so the conversion is unambiguous."""
+    if not _is_integer_const(c):
+        return None
+    value = _operand_value(c)
+    if target_double:
+        return tac_ast.ConstDouble(bits=fp_arith.int_to_double_bits(value))
+    return tac_ast.ConstFloat(bits=fp_arith.int_to_single_bits(value))
+
+
+def _fold_fp_to_int(
+    c: tac_ast.Type_const, dst: tac_ast.Type_val, symbols,
+    *, source_double: bool,
+) -> tac_ast.Type_const | None:
+    """Fold FloatToInt / DoubleToInt: truncate toward zero per C99
+    §6.3.1.4, store at the dst's TAC variant. Bails on NaN / ±inf —
+    the C standard makes those UB and the runtime helpers' behavior
+    isn't pinned."""
+    if source_double:
+        if not isinstance(c, tac_ast.ConstDouble):
+            return None
+        if not fp_arith.double_is_finite(c.bits):
+            return None
+        value = fp_arith.double_bits_to_int(c.bits)
+    else:
+        if not isinstance(c, tac_ast.ConstFloat):
+            return None
+        if not fp_arith.single_is_finite(c.bits):
+            return None
+        value = fp_arith.single_bits_to_int(c.bits)
+    dst_variant = _dst_int_variant(dst, symbols)
+    if dst_variant is None:
+        return None
+    return _wrap_int(dst_variant, value)
 
 
 def _is_integer_const(c: tac_ast.Type_const) -> bool:
     return isinstance(c, tuple(_INTEGER_CONST_BITS.keys()))
+
+
+def _is_unsigned_const(c: tac_ast.Type_const) -> bool:
+    return isinstance(c, _UNSIGNED_INT_VARIANTS)
 
 
 def _to_signed(value: int, bits: int) -> int:
@@ -153,10 +400,28 @@ def _to_signed(value: int, bits: int) -> int:
     return value
 
 
+def _operand_value(c: tac_ast.Type_const) -> int:
+    """Read the integer value of `c` interpreted at its variant's
+    signedness — signed variants are signed-canonicalized, unsigned
+    variants are masked to non-negative. Used by the per-op folds
+    that interpret operands (comparison, FP conversion, right shift,
+    truncated division/modulo)."""
+    bits = _INTEGER_CONST_BITS[type(c)]
+    if _is_unsigned_const(c):
+        return c.value & ((1 << bits) - 1)
+    return _to_signed(c.value, bits)
+
+
 def _wrap_int(variant: type, value: int) -> tac_ast.Type_const:
     """Build a const of `variant` from an unbounded Python int,
-    canonicalized to the variant's signed range."""
+    canonicalized to the variant's natural range — signed-
+    canonicalized for ConstInt / ConstLong / ConstLongLong, unsigned
+    bit pattern for ConstUInt / ConstULong / ConstULongLong. The
+    bit pattern is identical either way; only the `.value` field's
+    number form differs."""
     bits = _INTEGER_CONST_BITS[variant]
+    if variant in _UNSIGNED_INT_VARIANTS:
+        return variant(value=value & ((1 << bits) - 1))
     return variant(value=_to_signed(value, bits))
 
 
@@ -192,12 +457,14 @@ def _fold_unary(
         return None
     # Negate works on integers and FP; `Complement` (~) is
     # integer-only — the C grammar forbids `~` on FP, so we don't
-    # define a meaning for FP here.
+    # define a meaning for FP here. Bit-pattern result is identical
+    # for signed and unsigned operands (the bits negate / complement
+    # the same way modulo 2^width); the operand variant only
+    # determines how `.value` is canonicalized in the result.
     if isinstance(op, tac_ast.Negate):
         if _is_integer_const(c):
             variant = type(c)
-            bits = _INTEGER_CONST_BITS[variant]
-            return _wrap_int(variant, -_to_signed(c.value, bits))
+            return _wrap_int(variant, -_operand_value(c))
         if isinstance(c, tac_ast.ConstFloat):
             return tac_ast.ConstFloat(bits=fp_arith.single_negate(c.bits))
         if isinstance(c, tac_ast.ConstDouble):
@@ -207,8 +474,7 @@ def _fold_unary(
         if not _is_integer_const(c):
             return None
         variant = type(c)
-        bits = _INTEGER_CONST_BITS[variant]
-        return _wrap_int(variant, ~_to_signed(c.value, bits))
+        return _wrap_int(variant, ~_operand_value(c))
     return None
 
 
@@ -240,15 +506,22 @@ def _fold_binary(
             return fp_result
 
     # Integer arithmetic / bitwise: src1 and src2 share the result
-    # variant.
+    # variant. Add / Sub / Mul / And / Or / Xor produce the same
+    # bit pattern for signed and unsigned operands, so we interpret
+    # both as signed for the Python-level math and let `_wrap_int`
+    # canonicalize per the result variant. Divide / Modulo split:
+    # signed operands use truncation toward zero (C99 §6.5.5.6);
+    # unsigned operands use Python's `//` and `%` (matching unsigned
+    # non-negative arithmetic, which is what the future `udiv*` /
+    # `umod*` helpers will compute).
     if not _is_integer_const(c1) or not _is_integer_const(c2):
         return None
     if type(c1) is not type(c2):
         return None
     variant = type(c1)
-    bits = _INTEGER_CONST_BITS[variant]
-    a = _to_signed(c1.value, bits)
-    b = _to_signed(c2.value, bits)
+    unsigned = _is_unsigned_const(c1)
+    a = _operand_value(c1)
+    b = _operand_value(c2)
     match op:
         case tac_ast.Add():
             return _wrap_int(variant, a + b)
@@ -259,10 +532,14 @@ def _fold_binary(
         case tac_ast.Divide():
             if b == 0:
                 return None
+            if unsigned:
+                return _wrap_int(variant, a // b)
             return _wrap_int(variant, _trunc_div(a, b))
         case tac_ast.Modulo():
             if b == 0:
                 return None
+            if unsigned:
+                return _wrap_int(variant, a % b)
             return _wrap_int(variant, _trunc_mod(a, b))
         case tac_ast.BitwiseAnd():
             return _wrap_int(variant, a & b)
@@ -351,21 +628,32 @@ def _fold_shift(
         return None
     variant = type(c1)
     bits = _INTEGER_CONST_BITS[variant]
-    a = _to_signed(c1.value, bits)
     # The count's width is its own variant's width — can differ
-    # from the value's width.
-    count = _to_signed(c2.value, _INTEGER_CONST_BITS[type(c2)])
+    # from the value's width. The count is always interpreted as a
+    # non-negative integer (a negative count is UB per §6.5.7.3),
+    # so an unsigned operand-value reading works for both signed
+    # and unsigned count variants.
+    count = _operand_value(c2)
     if count < 0 or count >= bits:
-        # C99 §6.5.7.3: undefined. The c6502 helpers (asl8/16/32 and
-        # asr8/16/32) explicitly document this case as UB too.
+        # C99 §6.5.7.3: undefined. The c6502 helpers (asl8/16/32
+        # and asr8/16/32) explicitly document this case as UB too.
         return None
     match op:
         case tac_ast.LeftShift():
-            return _wrap_int(variant, a << count)
+            # Bit pattern is the same for signed / unsigned shifts.
+            # Use the operand's signed value to keep small literal
+            # printouts simple; `_wrap_int` canonicalizes per the
+            # variant's signedness.
+            return _wrap_int(variant, _operand_value(c1) << count)
         case tac_ast.RightShift():
-            # Arithmetic right shift — matches asr*. Python's `>>`
+            if _is_unsigned_const(c1):
+                # Logical right shift — matches `lsr*`. Operand value
+                # is already non-negative, so Python's `>>` zero-fills
+                # naturally.
+                return _wrap_int(variant, _operand_value(c1) >> count)
+            # Arithmetic right shift — matches `asr*`. Python's `>>`
             # is sign-preserving on negative ints already.
-            return _wrap_int(variant, a >> count)
+            return _wrap_int(variant, _to_signed(c1.value, bits) >> count)
     return None
 
 
@@ -383,9 +671,12 @@ def _fold_comparison(
         return _fp_comparison_result(op, ord_)
     if not _is_integer_const(c1):
         return None
-    bits = _INTEGER_CONST_BITS[type(c1)]
-    a = _to_signed(c1.value, bits)
-    b = _to_signed(c2.value, bits)
+    # Operand interpretation follows the variant's signedness —
+    # signed for Const{Int,Long,LongLong}, unsigned for
+    # Const{UInt,ULong,ULongLong}. Matches `tac_to_asm`'s ordering
+    # dispatch (V-corrected MI/PL for signed, BCC/BCS for unsigned).
+    a = _operand_value(c1)
+    b = _operand_value(c2)
     match op:
         case tac_ast.Equal():
             r = a == b

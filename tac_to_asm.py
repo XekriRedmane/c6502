@@ -217,10 +217,12 @@ _MUL8 = "mul8"
 _DIVMOD8 = "divmod8"
 _ASL8 = "asl8"
 _ASR8 = "asr8"
+_LSR8 = "lsr8"
 _MUL16 = "mul16"
 _DIVMOD16 = "divmod16"
 _ASL16 = "asl16"
 _ASR16 = "asr16"
+_LSR16 = "lsr16"
 # 32-bit integer helpers. Same "output slots immediately after
 # inputs" convention as the 8/16-bit forms:
 #   mul32    in:  A=HARGS+0..3, B=HARGS+4..7
@@ -231,13 +233,17 @@ _ASR16 = "asr16"
 #   asl32    in:  val=HARGS+0..3, count=HARGS+4 (1 byte)
 #                                       out: result=HARGS+5..8
 #   asr32    same shape as asl32 (signed arithmetic right shift)
+#   lsr32    same shape as asr32 (logical right shift — zero-fill)
 _MUL32 = "mul32"
 _DIVMOD32 = "divmod32"
 _ASL32 = "asl32"
 _ASR32 = "asr32"
+_LSR32 = "lsr32"
 # Conversion helpers, keyed by (source-c99-type, target-c99-type) at
-# the dispatch site. Signedness rides on the c99 type so we can pick
-# i2f / u2f apart even though TAC's integer constants don't carry it.
+# the dispatch site. Signedness rides on the const variant for
+# Constant operands and on the symbol-table c99 type for Var
+# operands; the dispatch picks i2f / u2f / l2f / ul2f / ll2f / ull2f
+# accordingly.
 _INT_TO_FLOAT = {
     c99_ast.Int:       "i2f",
     c99_ast.UInt:      "u2f",
@@ -404,7 +410,7 @@ class Translator:
     def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a Var whose c99 symbol type is Pointer.
         Constants never qualify — TAC's `const` sum has no pointer
-        variant (Pointer collapses onto Long for sizing). Used by
+        variant (Pointer collapses onto ULong for sizing). Used by
         the ordering-op dispatch to pick unsigned vs. signed
         comparison: pointers are 16-bit unsigned addresses, so
         unsigned ordering is the only sensible interpretation."""
@@ -417,20 +423,54 @@ class Translator:
             return False
         return isinstance(sym.type, c99_ast.Pointer)
 
+    def _is_unsigned_val(self, val: tac_ast.Type_val) -> bool:
+        """True iff `val` is an unsigned integer or pointer. Constants
+        dispatch on the unsigned variant of the const sum; Vars look
+        up their c99 type and check for an unsigned integer kind or
+        Pointer (pointers are 16-bit unsigned addresses). Used by
+        ordering and right-shift dispatch — `<` / `>` / `<=` / `>=`
+        on unsigned operands route to BCC/BCS-based per-byte SBC
+        sequences (no V-correction); `>>` on unsigned operands
+        routes to the `lsr*` runtime helpers (logical shift) instead
+        of `asr*` (arithmetic shift)."""
+        match val:
+            case tac_ast.Constant(const=(
+                tac_ast.ConstUInt() | tac_ast.ConstULong()
+                | tac_ast.ConstULongLong()
+            )):
+                return True
+            case tac_ast.Constant():
+                return False
+            case tac_ast.Var(name=name):
+                if self._symbols is None:
+                    return False
+                sym = self._symbols.get(name)
+                if sym is None:
+                    return False
+                return isinstance(sym.type, (
+                    c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
+                    c99_ast.UChar, c99_ast.Pointer,
+                ))
+        return False
+
     def _size_of(self, val: tac_ast.Type_val) -> int:
         """Byte width of a TAC val. Integer types: 1 for Int / UInt
         / Char / SChar / UChar, 2 for Long / ULong, 4 for LongLong
         / ULongLong. Floating types: 4 for Float, 8 for Double.
         Pointer: 2 (the 6502's address width). Constants dispatch
-        on the const variant; Vars look up the symbol-table c99
-        type. Unknown Vars (synthetic test AST) default to 1."""
+        on the const variant (each variant carries width and
+        signedness; this helper only reads width); Vars look up
+        the symbol-table c99 type. Unknown Vars (synthetic test
+        AST) default to 1."""
         match val:
-            case tac_ast.Constant(const=tac_ast.ConstLong()):
-                return 2
-            case tac_ast.Constant(const=tac_ast.ConstLongLong()):
-                return 4
-            case tac_ast.Constant(const=tac_ast.ConstInt()):
+            case tac_ast.Constant(const=tac_ast.ConstInt() | tac_ast.ConstUInt()):
                 return 1
+            case tac_ast.Constant(const=tac_ast.ConstLong() | tac_ast.ConstULong()):
+                return 2
+            case tac_ast.Constant(
+                const=tac_ast.ConstLongLong() | tac_ast.ConstULongLong(),
+            ):
+                return 4
             case tac_ast.Constant(const=tac_ast.ConstFloat()):
                 return 4
             case tac_ast.Constant(const=tac_ast.ConstDouble()):
@@ -1173,13 +1213,17 @@ class Translator:
         src2_op = translate_val(src2)
         dst_op = translate_val(dst)
         size = self._size_of(src1)
-        # Ordering ops on pointer operands use unsigned comparison
-        # — pointers are 16-bit unsigned addresses, so the V-corrected
-        # signed sequence would mis-rank addresses ≥ $8000 as
-        # "negative". Type-checking forces both operands to be
-        # pointers when one is, so checking either side suffices.
-        pointer_cmp = (
-            self._is_pointer_val(src1) or self._is_pointer_val(src2)
+        # Ordering and right-shift dispatch unsigned vs. signed. The
+        # type checker promoted both operands to a common type before
+        # this point, so `_is_unsigned_val(src1)` and
+        # `_is_unsigned_val(src2)` agree — checking one suffices.
+        # Unsigned ordering uses BCC/BCS-based per-byte SBC sequences
+        # (no V-correction); the signed path uses the V-corrected
+        # MI/PL sequence. Pointers are 16-bit unsigned addresses, so
+        # they take the unsigned path too — that's the case
+        # `_is_unsigned_val` already handled before we generalized.
+        unsigned_cmp = (
+            self._is_unsigned_val(src1) or self._is_unsigned_val(src2)
         )
         match op:
             case tac_ast.Add():
@@ -1283,19 +1327,24 @@ class Translator:
                     dst_op=dst_op,
                 )
             case tac_ast.RightShift():
-                # `>>` always goes through the signed asr8/16/32 —
-                # c6502 currently treats every integer as signed for
-                # shift purposes (no logical-right-shift helper wired
-                # up yet). Same input-byte layout as LeftShift.
+                # `>>` is arithmetic on signed operands (asr*) and
+                # logical on unsigned operands (lsr*) per C99
+                # §6.5.7.5. Signedness rides on the operand: const
+                # variant for Constants, symbol-table c99 type for
+                # Vars. Same input-byte layout as LeftShift.
+                if self._is_unsigned_val(src1):
+                    helpers = (_LSR8, _LSR16, _LSR32)
+                else:
+                    helpers = (_ASR8, _ASR16, _ASR32)
                 if size == 1:
                     inputs = [(src1_op, 1), (src2_op, 1)]
-                    helper, out_off = _ASR8, 2
+                    helper, out_off = helpers[0], 2
                 elif size == 2:
                     inputs = [(src1_op, 2), (src2_op, 1)]
-                    helper, out_off = _ASR16, 3
+                    helper, out_off = helpers[1], 3
                 else:
                     inputs = [(src1_op, 4), (src2_op, 1)]
-                    helper, out_off = _ASR32, 5
+                    helper, out_off = helpers[2], 5
                 return _translate_helper_call(
                     inputs=inputs, helper=helper,
                     output_offset=out_off, output_size=size,
@@ -1313,7 +1362,7 @@ class Translator:
                 # src1 < src2: compute src1 - src2, branch on MI
                 # (signed) or CC (unsigned, i.e. carry clear after
                 # SBC means a borrow occurred = left < right).
-                if pointer_cmp:
+                if unsigned_cmp:
                     return self._translate_unsigned_ordering(
                         src1_op, src2_op, dst_op, size, asm_ast.CC(),
                     )
@@ -1323,7 +1372,7 @@ class Translator:
             case tac_ast.GreaterOrEqual():
                 # src1 >= src2: branch on PL (signed) or CS
                 # (unsigned, no borrow).
-                if pointer_cmp:
+                if unsigned_cmp:
                     return self._translate_unsigned_ordering(
                         src1_op, src2_op, dst_op, size, asm_ast.CS(),
                     )
@@ -1333,7 +1382,7 @@ class Translator:
             case tac_ast.GreaterThan():
                 # src1 > src2 <=> src2 < src1. Same operand-swap
                 # trick as the signed form.
-                if pointer_cmp:
+                if unsigned_cmp:
                     return self._translate_unsigned_ordering(
                         src2_op, src1_op, dst_op, size, asm_ast.CC(),
                     )
@@ -1342,7 +1391,7 @@ class Translator:
                 )
             case tac_ast.LessOrEqual():
                 # src1 <= src2 <=> src2 >= src1.
-                if pointer_cmp:
+                if unsigned_cmp:
                     return self._translate_unsigned_ordering(
                         src2_op, src1_op, dst_op, size, asm_ast.CS(),
                     )
@@ -1668,12 +1717,16 @@ def _translate_helper_call(
 def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
     """Translate a TAC val to its asm operand form. Constants
     become `Imm(value)`, where `value` is the bit-pattern integer
-    of any width (1 byte for ConstInt, 2 for ConstLong, 4 for
-    ConstFloat's IEEE 754 single, 8 for ConstDouble's IEEE 754
-    double); the caller splits multi-byte values into bytes via
-    `_byte_at`. FP constants already carry their bits as an int
-    (produced by `fp_arith` from the source string at parse time),
-    so they ride through unchanged here.
+    of any width (1 byte for Const{Int,UInt}, 2 for Const{Long,
+    ULong}, 4 for Const{LongLong,ULongLong} or ConstFloat's IEEE
+    754 single, 8 for ConstDouble's IEEE 754 double); the caller
+    splits multi-byte values into bytes via `_byte_at`. The op
+    lowerings that don't care about signedness — Add / Sub / And
+    / Or / Xor / `==` / `!=` — read only the bit pattern; ones
+    that DO (ordering, right shift, int↔FP conversion) dispatch
+    on the const variant separately. FP constants already carry
+    their bits as an int (produced by `fp_arith` from the source
+    string at parse time), so they ride through unchanged here.
     Vars become `Pseudo(name, offset=0)`; callers that need to
     address higher bytes bump the offset via `_byte_at`."""
     match val:

@@ -55,13 +55,22 @@ module TAC {
     data_type = Int | Long | LongLong | UInt | ULong | ULongLong
               | Float | Double | Void
               | FunType(data_type* params, data_type ret)
-    -- TAC `const` collapses integer signedness onto width (the 6502
-    -- has no signedness at the byte level): ConstInt = 1B, ConstLong
-    -- = 2B, ConstLongLong = 4B. FP variants stay distinct because
-    -- Float and Double have different IEEE 754 bit patterns; their
-    -- payload is the bit pattern as an unsigned integer (32-bit for
-    -- ConstFloat, 64-bit for ConstDouble).
+    -- TAC `const` carries each integer's full c99 type (width AND
+    -- signedness): the signed side is ConstInt = 1B, ConstLong = 2B,
+    -- ConstLongLong = 4B; the unsigned side is ConstUInt = 1B,
+    -- ConstULong = 2B, ConstULongLong = 4B. The 6502 doesn't care
+    -- about signedness at the byte level for `+` / `-` / `&` / `|` /
+    -- `^` / `<<` / `==` / `!=` (signed and unsigned operands produce
+    -- identical bit patterns from identical inputs), so those op
+    -- lowerings dispatch only on width. The places where signedness
+    -- matters at codegen — `<` / `>` / `<=` / `>=`, right shift,
+    -- int↔FP conversion — read the const variant's signedness to
+    -- pick between signed and unsigned helper / sequence. FP variants
+    -- stay distinct because Float and Double have different IEEE 754
+    -- bit patterns; their payload is the bit pattern as an unsigned
+    -- integer (32-bit for ConstFloat, 64-bit for ConstDouble).
     const = ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
+          | ConstUInt(int value) | ConstULong(int value) | ConstULongLong(int value)
           | ConstFloat(int bits) | ConstDouble(int bits)
     -- AddressInit lays down a 2-byte word that resolves at link
     -- time to the address `name + offset`. Only used for Pointer-

@@ -442,6 +442,39 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_12/valid/extra_credit/postfix_precedence.c": 0,
     "chapter_12/valid/extra_credit/switch_uint.c": 0,
     "chapter_12/valid/extra_credit/unsigned_incr_decr.c": 0,
+
+    # --- chapter 13: floating-point (Float / Double)
+    "chapter_13/valid/constants/constant_doubles.c": 0,
+    "chapter_13/valid/constants/round_constants.c": 0,
+    "chapter_13/valid/explicit_casts/cvttsd2si_rewrite.c": 0,
+    "chapter_13/valid/explicit_casts/double_to_signed.c": 0,
+    "chapter_13/valid/explicit_casts/double_to_unsigned.c": 0,
+    "chapter_13/valid/explicit_casts/rewrite_cvttsd2si_regression.c": 0,
+    "chapter_13/valid/explicit_casts/signed_to_double.c": 0,
+    "chapter_13/valid/explicit_casts/unsigned_to_double.c": 0,
+    "chapter_13/valid/floating_expressions/arithmetic_ops.c": 0,
+    "chapter_13/valid/floating_expressions/comparisons.c": 0,
+    "chapter_13/valid/floating_expressions/logical.c": 0,
+    "chapter_13/valid/floating_expressions/loop_controlling_expression.c": 100,
+    "chapter_13/valid/floating_expressions/simple.c": 1,
+    "chapter_13/valid/floating_expressions/static_initialized_double.c": 0,
+    "chapter_13/valid/function_calls/double_and_int_parameters.c": 0,
+    "chapter_13/valid/function_calls/double_and_int_params_recursive.c": 0,
+    "chapter_13/valid/function_calls/double_parameters.c": 0,
+    "chapter_13/valid/function_calls/push_xmm.c": 0,
+    "chapter_13/valid/function_calls/return_double.c": 1,
+    "chapter_13/valid/function_calls/use_arg_after_fun_call.c": 4,
+    "chapter_13/valid/implicit_casts/common_type.c": 0,
+    "chapter_13/valid/implicit_casts/complex_arithmetic_common_type.c": 1,
+    "chapter_13/valid/implicit_casts/convert_for_assignment.c": 0,
+    # static_initializers.c: 42949.6e3 = 42949600.0 truncates to ulong
+    # (2B) as 42949600 mod 65536 = 23520, not the upstream's 14816.
+    "chapter_13/valid/implicit_casts/static_initializers.c": 10,
+    "chapter_13/valid/special_values/infinity.c": 0,
+    "chapter_13/valid/special_values/subnormal_not_zero.c": 0,
+    "chapter_13/valid/extra_credit/compound_assign.c": 0,
+    "chapter_13/valid/extra_credit/compound_assign_implicit_cast.c": 0,
+    "chapter_13/valid/extra_credit/incr_and_decr.c": 0,
 }
 
 
@@ -461,6 +494,16 @@ SKIPPED: dict[str, str] = {
         "depends on putchar (no libc)",
     "chapter_10/valid/static_recursive_call.c":
         "depends on putchar (no libc)",
+    "chapter_13/valid/extra_credit/nan.c":
+        "depends on double_isnan (libc/runtime helper)",
+    "chapter_13/valid/extra_credit/nan_compound_assign.c":
+        "depends on double_isnan",
+    "chapter_13/valid/extra_credit/nan_incr_and_decr.c":
+        "depends on double_isnan",
+    "chapter_13/valid/function_calls/standard_library_call.c":
+        "depends on libc fma + ldexp",
+    "chapter_13/valid/special_values/negative_zero.c":
+        "depends on libc copysign",
 }
 
 

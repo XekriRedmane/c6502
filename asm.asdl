@@ -5,8 +5,10 @@ module ASM {
         | StaticVariable(identifier name, bool is_global, static_init* init)
     -- IntInit / LongInit lay down 1 / 2 little-endian bytes of an
     -- integer value. FloatInit / DoubleInit lay down 4 / 8 little-
-    -- endian bytes of an IEEE 754 single / double — asm_emit packs
-    -- the float into bytes via Python's struct.pack at emit time.
+    -- endian bytes of an IEEE 754 single / double; the value is the
+    -- bit pattern as an unsigned integer (32 bits for FloatInit,
+    -- 64 bits for DoubleInit), so asm_emit can lay the bytes down
+    -- directly without any FP narrowing at emit time.
     -- AddressInit lays down a 2-byte little-endian word equal to
     -- the address `name + offset` — resolved at link time by the
     -- assembler. Used for Pointer-typed statics initialized with
@@ -30,7 +32,7 @@ module ASM {
     -- more `dc.b $XX, $XX, …` lines. See tac.asdl for the
     -- bytes-vs-len(str) cases.
     static_init = IntInit(int) | LongInit(int) | LongLongInit(int)
-                | FloatInit(float) | DoubleInit(float)
+                | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)
                 | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)

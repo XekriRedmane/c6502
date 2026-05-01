@@ -1,6 +1,7 @@
 import unittest
 
 import c99_ast
+import fp_arith
 import tac_ast
 from parser import parse
 from c99_to_tac import Translator, translate_program
@@ -2341,7 +2342,12 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(
             statics["@0.a"].init,
-            [tac_ast.FloatInit(float=1.5), tac_ast.ZeroInit(bytes=8)],
+            [
+                tac_ast.FloatInit(
+                    bits=fp_arith.single_string_to_bits("1.5"),
+                ),
+                tac_ast.ZeroInit(bytes=8),
+            ],
         )
 
     def test_long_returning_function_implicit_zero_uses_const_long(self):

@@ -106,6 +106,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import c99_ast
+import fp_arith
 from passes.constant_expression import (
     ConstantExpressionError,
     evaluate_integer_constant_expression,
@@ -367,14 +368,90 @@ def _linkage_to_is_global(linkage: Linkage) -> bool:
     return linkage is Linkage.EXTERNAL
 
 
+def _coerce_init_const_value(
+    c: c99_ast.Type_const, target_type: "Type",
+) -> int:
+    """Map a c99 Constant's payload into `target_type`'s natural
+    static-init form: a numeric int for integer / char target types
+    (callers mask to width later), or an IEEE 754 bit pattern int
+    for Float / Double targets. The constant's own type is inferred
+    from its variant; the conversion goes through `fp_arith` whenever
+    a Float / Double boundary is crossed."""
+    src_type = _const_source_type(c)
+    raw = c.bits if isinstance(
+        c, (c99_ast.ConstFloat, c99_ast.ConstDouble),
+    ) else c.int
+    return _coerce_init_value(raw, src_type, target_type)
+
+
+def _coerce_init_value(
+    value: int, source_type: "Type", target_type: "Type",
+) -> int:
+    """Convert `value` (in `source_type`'s natural static-init form)
+    into `target_type`'s natural form. Same-type conversions are a
+    no-op; integer / integer pass through unbounded (callers mask to
+    width); int ↔ FP routes through `fp_arith` so we never see a
+    Python float."""
+    if _types_equal(source_type, target_type):
+        return value
+    src_is_fp = isinstance(source_type, (Float, Double))
+    tgt_is_fp = isinstance(target_type, (Float, Double))
+    if src_is_fp and tgt_is_fp:
+        # FP → FP precision change.
+        if isinstance(source_type, Float):
+            return fp_arith.single_bits_to_double_bits(value)
+        return fp_arith.double_bits_to_single_bits(value)
+    if not src_is_fp and tgt_is_fp:
+        # Integer numeric value → IEEE 754 bits at target precision.
+        if isinstance(target_type, Float):
+            return fp_arith.int_to_single_bits(int(value))
+        return fp_arith.int_to_double_bits(int(value))
+    if src_is_fp and not tgt_is_fp:
+        # IEEE 754 bits → integer numeric value, truncate toward
+        # zero per C99 §6.3.1.4. Caller masks to the target type's
+        # width as part of the static_init build.
+        if isinstance(source_type, Float):
+            return fp_arith.single_bits_to_int(value)
+        return fp_arith.double_bits_to_int(value)
+    # Integer → integer: pass through unbounded; the static_init
+    # builder applies the target-width mask.
+    return value
+
+
+def _const_source_type(c: c99_ast.Type_const) -> "Type":
+    """Map a c99 const variant to its data type, for the
+    static-init coercion path."""
+    if isinstance(c, c99_ast.ConstInt):
+        return Int()
+    if isinstance(c, c99_ast.ConstUInt):
+        return UInt()
+    if isinstance(c, c99_ast.ConstLong):
+        return Long()
+    if isinstance(c, c99_ast.ConstULong):
+        return ULong()
+    if isinstance(c, c99_ast.ConstLongLong):
+        return LongLong()
+    if isinstance(c, c99_ast.ConstULongLong):
+        return ULongLong()
+    if isinstance(c, c99_ast.ConstFloat):
+        return Float()
+    if isinstance(c, c99_ast.ConstDouble):
+        return Double()
+    if isinstance(c, c99_ast.ConstChar):
+        return Char()
+    if isinstance(c, c99_ast.ConstUChar):
+        return UChar()
+    raise TypeError(f"unexpected c99 const: {c!r}")
+
+
 def _const_init_value(
-    exp: c99_ast.Type_exp, name: str,
+    exp: c99_ast.Type_exp, target_type: "Type", name: str,
     symbols: SymbolTable | None = None,
-) -> int | float | AddressInit:
+) -> int | AddressInit:
     """Static-storage initializers must be compile-time constant
     expressions (C99 §6.7.8.4). After `_check_exp` and the
     initializer-conversion rule have run, the AST shape is one of:
-      * a `Constant(...)` — drills to its int / float value.
+      * a `Constant(...)` — drills to its int / bits value.
       * a `Cast` (possibly nested) wrapping any of these — produced
         by `_convert_to` for narrowing/widening initializers, or
         explicitly written by the user.
@@ -384,13 +461,18 @@ def _const_init_value(
         an `AddressInit` and let codegen emit `DC.W name` so the
         assembler resolves the symbol at link time.
 
-    Integer- and float-shaped values pass through to `int` / `float`
-    Python values; the address-of shape returns an `AddressInit`.
-    The Cast target's type tells codegen the storage width when
-    laying out the StaticVariable; the raw value passes through,
-    and the declared-type-driven conversion (e.g. int constant
-    initializer for a Float static) happens in c99_to_tac when it
-    builds the typed `*Init` node.
+    The returned value is in `target_type`'s natural form:
+      * integer types → Python int (numeric value, unbounded — the
+        caller masks to the type's width when laying out the cell).
+      * Float / Double → Python int holding the IEEE 754 bit pattern
+        (32 or 64 bits respectively).
+      * Pointer (with AddressOf operand) → AddressInit.
+
+    Cast wrappers apply their conversion in turn, so the final value
+    accounts for every cast in the chain (e.g., `(int)(float)0x100`
+    routes through float, losing precision in the int→float→int
+    round-trip). Integer / FP conversions go through `fp_arith` to
+    avoid Python float intermediaries.
 
     `symbols` is consulted when an AddressOf shape is detected, to
     confirm the operand is a static-storage object or a function
@@ -399,11 +481,14 @@ def _const_init_value(
     """
     match exp:
         case c99_ast.Constant(const=c):
-            if isinstance(c, (c99_ast.ConstFloat, c99_ast.ConstDouble)):
-                return c.float
-            return c.int
-        case c99_ast.Cast(exp=inner):
-            return _const_init_value(inner, name, symbols)
+            return _coerce_init_const_value(c, target_type)
+        case c99_ast.Cast(target_type=cast_target, exp=inner):
+            inner_val = _const_init_value(
+                inner, cast_target, name, symbols,
+            )
+            return _coerce_init_value(
+                inner_val, cast_target, target_type,
+            )
         case c99_ast.AddressOf(exp=inner):
             # Only `&name` (a bare Var operand) is a constant
             # expression — `&*p` and other forms aren't (they
@@ -467,7 +552,9 @@ def _zero_aggregate(t: "Type", types: "TypeTable | None" = None):
             _zero_aggregate(m.type, types) for m in layout.members
         )
     if isinstance(t, (Float, Double)):
-        return 0.0
+        # IEEE 754 +0.0 has all-zero bits, so the same `0` works as
+        # the bit-pattern representation for both Float and Double.
+        return 0
     return 0
 
 
@@ -565,7 +652,7 @@ def _const_init_aggregate(
             else:
                 items.append(_zero_aggregate(m.type, types))
         return tuple(items)
-    return _const_init_value(init, name, symbols)
+    return _const_init_value(init, var_type, name, symbols)
 
 
 def _types_equal(a: Type, b: Type) -> bool:
@@ -1524,7 +1611,9 @@ class TypeChecker:
             vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
             initial = Initial(
-                _const_init_value(vd.init, vd.name, self.symbols),
+                _const_init_value(
+                    vd.init, vd.data_type, vd.name, self.symbols,
+                ),
             )
         # Recover linkage from the storage class.
         if isinstance(vd.storage_class, c99_ast.Static):
@@ -1903,7 +1992,9 @@ class TypeChecker:
                 self._check_exp(vd.init)
                 vd.init = _convert_to(vd.init, vd.data_type)
                 initial = Initial(
-                    _const_init_value(vd.init, vd.name, self.symbols),
+                    _const_init_value(
+                        vd.init, vd.data_type, vd.name, self.symbols,
+                    ),
                 )
             self.symbols[vd.name] = Symbol(
                 type=vd.data_type,

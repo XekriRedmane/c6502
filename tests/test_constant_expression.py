@@ -1,6 +1,7 @@
 import unittest
 
 import c99_ast
+import fp_arith
 from passes.constant_expression import (
     ConstantExpressionError,
     evaluate_integer_constant_expression,
@@ -20,8 +21,10 @@ def _const_uint(v: int) -> c99_ast.Type_exp:
     return c99_ast.Constant(const=c99_ast.ConstUInt(int=v))
 
 
-def _const_float(v: float) -> c99_ast.Type_exp:
-    return c99_ast.Constant(const=c99_ast.ConstFloat(float=v))
+def _const_float(s: str) -> c99_ast.Type_exp:
+    return c99_ast.Constant(const=c99_ast.ConstFloat(
+        bits=fp_arith.single_string_to_bits(s),
+    ))
 
 
 class TestEvaluateIntegerConstantExpression(unittest.TestCase):
@@ -72,7 +75,7 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
 
     def test_floating_constant_rejected(self):
         with self.assertRaises(ConstantExpressionError):
-            evaluate_integer_constant_expression(_const_float(1.0))
+            evaluate_integer_constant_expression(_const_float("1.0"))
 
     def test_cast_to_float_rejected(self):
         exp = c99_ast.Cast(target_type=c99_ast.Float(), exp=_const_int(1))

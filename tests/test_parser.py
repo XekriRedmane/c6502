@@ -3,6 +3,7 @@ import unittest
 from lark.exceptions import UnexpectedInput
 
 import c99_ast
+import fp_arith
 from parser import ParserError, parse
 
 
@@ -1846,7 +1847,9 @@ class TestFloatingTypesAndConstants(unittest.TestCase):
         self.assertEqual(vd.data_type, c99_ast.Double())
         self.assertEqual(
             vd.init,
-            c99_ast.Constant(const=c99_ast.ConstDouble(float=3.14)),
+            c99_ast.Constant(const=c99_ast.ConstDouble(
+                bits=fp_arith.double_string_to_bits("3.14"),
+            )),
         )
 
     def test_float_var_decl(self):
@@ -1855,7 +1858,9 @@ class TestFloatingTypesAndConstants(unittest.TestCase):
         self.assertEqual(vd.data_type, c99_ast.Float())
         self.assertEqual(
             vd.init,
-            c99_ast.Constant(const=c99_ast.ConstFloat(float=2.5)),
+            c99_ast.Constant(const=c99_ast.ConstFloat(
+                bits=fp_arith.single_string_to_bits("2.5"),
+            )),
         )
 
     def test_unsuffixed_literal_is_const_double(self):

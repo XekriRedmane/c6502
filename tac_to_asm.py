@@ -118,7 +118,6 @@ Calling convention (callee-side, see also `replace_pseudoregisters`):
 
 from __future__ import annotations
 
-import struct
 
 import asm_ast
 import c99_ast
@@ -305,8 +304,8 @@ def _to_asm_static_init(
     (-2^31..2^32-1) bound the rendered cell. The FP side keeps
     Float / Double distinct because their IEEE 754 byte layouts
     differ — FloatInit is 4 bytes (single), DoubleInit is 8 bytes
-    (double); the float value rides through 1-to-1 and asm_emit
-    packs it via `struct.pack` at emit time."""
+    (double); the bit pattern (an unsigned int) rides through 1-to-1
+    and asm_emit lays the bytes down directly."""
     match init:
         case tac_ast.IntInit(int=v):
             return asm_ast.IntInit(int=v)
@@ -320,10 +319,10 @@ def _to_asm_static_init(
             return asm_ast.LongInit(int=v)
         case tac_ast.ULongLongInit(int=v):
             return asm_ast.LongLongInit(int=v)
-        case tac_ast.FloatInit(float=v):
-            return asm_ast.FloatInit(float=v)
-        case tac_ast.DoubleInit(float=v):
-            return asm_ast.DoubleInit(float=v)
+        case tac_ast.FloatInit(bits=b):
+            return asm_ast.FloatInit(bits=b)
+        case tac_ast.DoubleInit(bits=b):
+            return asm_ast.DoubleInit(bits=b)
         case tac_ast.AddressInit(name=n, offset=off):
             return asm_ast.AddressInit(name=n, offset=off)
         case tac_ast.StringInit(str=s, bytes=b):
@@ -1672,18 +1671,16 @@ def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
     of any width (1 byte for ConstInt, 2 for ConstLong, 4 for
     ConstFloat's IEEE 754 single, 8 for ConstDouble's IEEE 754
     double); the caller splits multi-byte values into bytes via
-    `_byte_at`. FP constants pack to a non-negative bit pattern
-    here (via `struct.pack`) so the same shift-and-mask byte
-    extraction in `_byte_at` works without special-casing FP.
+    `_byte_at`. FP constants already carry their bits as an int
+    (produced by `fp_arith` from the source string at parse time),
+    so they ride through unchanged here.
     Vars become `Pseudo(name, offset=0)`; callers that need to
     address higher bytes bump the offset via `_byte_at`."""
     match val:
-        case tac_ast.Constant(const=tac_ast.ConstFloat(float=v)):
-            (bits,) = struct.unpack("<I", struct.pack("<f", v))
-            return asm_ast.Imm(value=bits)
-        case tac_ast.Constant(const=tac_ast.ConstDouble(float=v)):
-            (bits,) = struct.unpack("<Q", struct.pack("<d", v))
-            return asm_ast.Imm(value=bits)
+        case tac_ast.Constant(const=tac_ast.ConstFloat(bits=b)):
+            return asm_ast.Imm(value=b)
+        case tac_ast.Constant(const=tac_ast.ConstDouble(bits=b)):
+            return asm_ast.Imm(value=b)
         case tac_ast.Constant(const=c):
             return asm_ast.Imm(value=c.int)
         case tac_ast.Var(name=n):

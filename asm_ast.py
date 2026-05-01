@@ -56,12 +56,12 @@ class LongLongInit(Type_static_init):
 
 @dataclass
 class FloatInit(Type_static_init):
-    float: float
+    bits: int
 
 
 @dataclass
 class DoubleInit(Type_static_init):
-    float: float
+    bits: int
 
 
 @dataclass

@@ -26,6 +26,7 @@ from lark.exceptions import VisitError
 from lark.visitors import v_args
 
 import c99_ast
+import fp_arith
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
@@ -565,21 +566,27 @@ def _const_for_token(token):
     if token.type == "CHAR_CONSTANT":
         return c99_ast.ConstInt(int=_decode_char_constant(token))
     if token.type in ("DOUBLE_CONSTANT", "FLOAT_CONSTANT"):
-        # Strip a trailing `f`/`F` before parsing — Python's
-        # `float()` doesn't recognise C suffixes.
+        # Strip a trailing `f`/`F` before parsing — fp_arith doesn't
+        # know about C suffixes.
         body = text[:-1] if token.type == "FLOAT_CONSTANT" else text
         if body.startswith(("0x", "0X")):
-            # Hex floats (`0x1.0p3`) lex but Python's `float()`
-            # can't parse them; rejected here until we wire up a
-            # manual conversion.
+            # Hex floats (`0x1.0p3`) lex but neither Python nor
+            # numpy parses the C hex-float syntax; rejected here
+            # until we wire up a manual conversion.
             raise ParserError(
                 f"hex floating literal {text!r} is not supported"
             )
-        cls = (
-            c99_ast.ConstDouble if token.type == "DOUBLE_CONSTANT"
-            else c99_ast.ConstFloat
+        # Convert the source string directly to an IEEE 754 bit
+        # pattern via fp_arith — no Python float intermediary, so
+        # single-precision narrowing happens with correct
+        # round-to-nearest-even at the source-text boundary.
+        if token.type == "DOUBLE_CONSTANT":
+            return c99_ast.ConstDouble(
+                bits=fp_arith.double_string_to_bits(body),
+            )
+        return c99_ast.ConstFloat(
+            bits=fp_arith.single_string_to_bits(body),
         )
-        return cls(float=float(body))
     if token.type == "LONG_DOUBLE_CONSTANT":
         raise ParserError(
             f"`long double` is not supported (literal {text!r})"

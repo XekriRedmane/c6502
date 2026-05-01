@@ -936,7 +936,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="half", is_global=False,
-                init=[asm_ast.FloatInit(float=0.5)],
+                init=[asm_ast.FloatInit(bits=0x3F000000)],
             ),
         ])
         self.assertEqual(emit_program(prog), "half:\n   DC.L  $3F000000\n")
@@ -949,7 +949,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="half_d", is_global=False,
-                init=[asm_ast.DoubleInit(float=0.5)],
+                init=[asm_ast.DoubleInit(bits=0x3FE0000000000000)],
             ),
         ])
         self.assertEqual(
@@ -964,7 +964,7 @@ class TestEmitProgram(unittest.TestCase):
         prog = asm_ast.Program(top_level=[
             asm_ast.StaticVariable(
                 name="pi", is_global=False,
-                init=[asm_ast.DoubleInit(float=3.14)],
+                init=[asm_ast.DoubleInit(bits=0x40091EB851EB851F)],
             ),
         ])
         self.assertEqual(

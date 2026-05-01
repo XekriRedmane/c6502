@@ -127,11 +127,13 @@ module C99 {
         | LogicalAnd | LogicalOr
     -- Integer const variants store a non-negative int literal value
     -- (negation is a separate unary-minus operator). Float / Double
-    -- variants store the literal as a Python float — Python's float
-    -- is IEEE 754 double, so the single-precision value lays down
-    -- losslessly after rounding at lex time.
+    -- variants carry the IEEE 754 bit pattern as an unsigned integer
+    -- (32 bits for ConstFloat, 64 bits for ConstDouble), produced by
+    -- `fp_arith` from the source string at parse time. We never go
+    -- through Python's `float`, so single-precision narrowing happens
+    -- at the source-text boundary with correct round-to-nearest-even.
     const = ConstInt(int) | ConstLong(int) | ConstLongLong(int)
           | ConstUInt(int) | ConstULong(int) | ConstULongLong(int)
-          | ConstFloat(float) | ConstDouble(float)
+          | ConstFloat(int bits) | ConstDouble(int bits)
           | ConstChar(int) | ConstUChar(int)
 }

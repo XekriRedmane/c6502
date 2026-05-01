@@ -128,7 +128,6 @@ keyed off operand size), and `Mov`s reading the result back out.)
 
 from __future__ import annotations
 
-import struct
 
 import asm_ast
 
@@ -892,11 +891,10 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
     (low byte at the symbol's address, high byte at the higher
     addresses). For DoubleInit we emit two `dc.l`s — low half then
     high half — because dasm has no native 8-byte directive. The
-    float value is packed into IEEE 754 bytes here via
-    `struct.pack`; the resulting little-endian bytes are repacked
-    as 32-bit big-endian-displayed dwords for the dc.l constants
-    (the assembler converts them back to little-endian on output,
-    so the in-memory layout matches the original bytes exactly).
+    `FloatInit.bits` / `DoubleInit.bits` payload is already the IEEE
+    754 bit pattern (produced from the source string by `fp_arith`
+    at parse time and threaded through unchanged), so we just split
+    it into 32-bit halves and emit them.
 
     Out-of-range values raise via `_check_byte` / `_check_word`.
 
@@ -930,19 +928,18 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
                 lines.append(_instr_line(
                     "dc.l", f"${v & 0xFFFFFFFF:08X}",
                 ))
-            case asm_ast.FloatInit(float=v):
-                # Pack as IEEE 754 single-precision, little-endian (`<f`).
-                # Reinterpret the 4-byte sequence as a 32-bit unsigned
-                # int (also little-endian) so dasm's `dc.l` lays the
-                # exact same byte sequence down.
-                (word,) = struct.unpack("<I", struct.pack("<f", v))
-                lines.append(_instr_line("dc.l", f"${word:08X}"))
-            case asm_ast.DoubleInit(float=v):
-                # Pack as IEEE 754 double-precision, little-endian.
-                # Reinterpret the 8-byte sequence as two little-endian
-                # 32-bit unsigned ints (low then high half) and emit
-                # one `dc.l` per half.
-                lo, hi = struct.unpack("<II", struct.pack("<d", v))
+            case asm_ast.FloatInit(bits=b):
+                # IEEE 754 single bit pattern (32-bit). dasm's `dc.l`
+                # lays down 4 little-endian bytes, matching the
+                # soft-stack layout for runtime FP values.
+                lines.append(_instr_line("dc.l", f"${b & 0xFFFFFFFF:08X}"))
+            case asm_ast.DoubleInit(bits=b):
+                # IEEE 754 double bit pattern (64-bit). Split into
+                # two little-endian 32-bit halves (low then high) and
+                # emit one `dc.l` per half — dasm has no native
+                # 8-byte directive.
+                lo = b & 0xFFFFFFFF
+                hi = (b >> 32) & 0xFFFFFFFF
                 lines.append(_instr_line("dc.l", f"${lo:08X}"))
                 lines.append(_instr_line("dc.l", f"${hi:08X}"))
             case asm_ast.AddressInit(name=target, offset=off):

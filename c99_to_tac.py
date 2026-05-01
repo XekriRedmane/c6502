@@ -185,6 +185,7 @@ flow *is* the semantics):
 from __future__ import annotations
 
 import c99_ast
+import fp_arith
 import tac_ast
 from passes.type_checking import (
     AddressInit,
@@ -349,9 +350,9 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
         # 1-byte char constants collapse onto TAC's 1-byte int.
         return tac_ast.ConstInt(int=c.int)
     if isinstance(c, c99_ast.ConstFloat):
-        return tac_ast.ConstFloat(float=c.float)
+        return tac_ast.ConstFloat(bits=c.bits)
     if isinstance(c, c99_ast.ConstDouble):
-        return tac_ast.ConstDouble(float=c.float)
+        return tac_ast.ConstDouble(bits=c.bits)
     raise TypeError(f"unexpected c99 const: {c!r}")
 
 
@@ -374,9 +375,9 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
         return tac_ast.ConstLongLong(int=int(value))
     if isinstance(t, c99_ast.Float):
-        return tac_ast.ConstFloat(float=float(value))
+        return tac_ast.ConstFloat(bits=fp_arith.int_to_single_bits(int(value)))
     if isinstance(t, c99_ast.Double):
-        return tac_ast.ConstDouble(float=float(value))
+        return tac_ast.ConstDouble(bits=fp_arith.int_to_double_bits(int(value)))
     raise TypeError(
         f"cannot build a TAC const for non-object type {t!r}"
     )
@@ -401,14 +402,33 @@ def _fold_fp_cast_constant(
     signedness onto width — by the time `tac_to_asm` sees the constant,
     it can't tell `Int` from `UInt`. Here `source` is the c99 type
     (still distinguishing signed and unsigned), so we can pick the
-    right interpretation: an unsigned source masks any negative TAC
-    int back to its unsigned bit pattern (e.g. ConstInt(-1) viewed as
-    UInt → 255) before converting. C99 §6.3.1.4 requires FP→integer
-    truncation toward zero, which is also Python's `int(float)`
-    semantics."""
-    if isinstance(c, (tac_ast.ConstFloat, tac_ast.ConstDouble)):
-        v: int | float = c.float
-    elif isinstance(c, tac_ast.ConstInt):
+    right interpretation: an unsigned integer source masks any
+    negative TAC int back to its unsigned bit pattern (e.g.
+    ConstInt(-1) viewed as UInt → 255) before converting; FP sources
+    use their bit pattern via `fp_arith` to avoid Python float
+    intermediaries. C99 §6.3.1.4 requires FP→integer truncation
+    toward zero, which `single_bits_to_int` / `double_bits_to_int`
+    provide."""
+    # FP source: bits → target via fp_arith.
+    if isinstance(c, tac_ast.ConstFloat):
+        if isinstance(target, c99_ast.Float):
+            return tac_ast.ConstFloat(bits=c.bits)
+        if isinstance(target, c99_ast.Double):
+            return tac_ast.ConstDouble(
+                bits=fp_arith.single_bits_to_double_bits(c.bits),
+            )
+        return _tac_const_for(target, fp_arith.single_bits_to_int(c.bits))
+    if isinstance(c, tac_ast.ConstDouble):
+        if isinstance(target, c99_ast.Double):
+            return tac_ast.ConstDouble(bits=c.bits)
+        if isinstance(target, c99_ast.Float):
+            return tac_ast.ConstFloat(
+                bits=fp_arith.double_bits_to_single_bits(c.bits),
+            )
+        return _tac_const_for(target, fp_arith.double_bits_to_int(c.bits))
+    # Integer source: unsigned-mask first per C99 §6.3.1.4, then
+    # delegate to _tac_const_for which handles int → FP via fp_arith.
+    if isinstance(c, tac_ast.ConstInt):
         v = c.int & 0xFF if isinstance(source, c99_ast.UInt) else c.int
     elif isinstance(c, tac_ast.ConstLong):
         v = c.int & 0xFFFF if isinstance(source, c99_ast.ULong) else c.int
@@ -501,9 +521,15 @@ def _tac_static_init_for(
     if isinstance(t, c99_ast.ULongLong):
         return tac_ast.ULongLongInit(int=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Float):
-        return tac_ast.FloatInit(float=float(value))
+        # `value` is already the IEEE 754 single bit pattern: the
+        # type checker's `_const_init_value` coerces FP-typed
+        # initializers to their target type's natural form, so by
+        # the time we get here, an integer literal initializing
+        # this static (`float x = 3;`) has already been routed
+        # through `fp_arith.int_to_single_bits` upstream.
+        return tac_ast.FloatInit(bits=int(value))
     if isinstance(t, c99_ast.Double):
-        return tac_ast.DoubleInit(float=float(value))
+        return tac_ast.DoubleInit(bits=int(value))
     if isinstance(t, c99_ast.Pointer):
         # Pointer collapses onto Long for static-init purposes —
         # addresses are 2-byte values written as a little-endian
@@ -542,7 +568,9 @@ def _zero_init_value(t: c99_ast.Type_data_type, types=None):
             _zero_init_value(m.type, types) for m in layout.members
         )
     if isinstance(t, (c99_ast.Float, c99_ast.Double)):
-        return 0.0
+        # IEEE 754 +0.0 (single or double) has all-zero bits, so
+        # the same `0` is the right representation for both.
+        return 0
     return 0
 
 
@@ -675,9 +703,9 @@ def _zero_byte_count(item: tac_ast.Type_static_init) -> int | None:
         return 4
     if isinstance(item, tac_ast.ULongLongInit) and item.int == 0:
         return 4
-    if isinstance(item, tac_ast.FloatInit) and item.float == 0.0:
+    if isinstance(item, tac_ast.FloatInit) and item.bits == 0:
         return 4
-    if isinstance(item, tac_ast.DoubleInit) and item.float == 0.0:
+    if isinstance(item, tac_ast.DoubleInit) and item.bits == 0:
         return 8
     if isinstance(item, tac_ast.ZeroInit):
         return item.bytes

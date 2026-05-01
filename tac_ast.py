@@ -372,12 +372,12 @@ class ConstLongLong(Type_const):
 
 @dataclass
 class ConstFloat(Type_const):
-    float: float
+    bits: int
 
 
 @dataclass
 class ConstDouble(Type_const):
-    float: float
+    bits: int
 
 
 @dataclass
@@ -417,12 +417,12 @@ class ULongLongInit(Type_static_init):
 
 @dataclass
 class FloatInit(Type_static_init):
-    float: float
+    bits: int
 
 
 @dataclass
 class DoubleInit(Type_static_init):
-    float: float
+    bits: int
 
 
 @dataclass

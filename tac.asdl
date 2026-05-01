@@ -58,9 +58,11 @@ module TAC {
     -- TAC `const` collapses integer signedness onto width (the 6502
     -- has no signedness at the byte level): ConstInt = 1B, ConstLong
     -- = 2B, ConstLongLong = 4B. FP variants stay distinct because
-    -- Float and Double have different IEEE 754 bit patterns.
+    -- Float and Double have different IEEE 754 bit patterns; their
+    -- payload is the bit pattern as an unsigned integer (32-bit for
+    -- ConstFloat, 64-bit for ConstDouble).
     const = ConstInt(int) | ConstLong(int) | ConstLongLong(int)
-          | ConstFloat(float) | ConstDouble(float)
+          | ConstFloat(int bits) | ConstDouble(int bits)
     -- AddressInit lays down a 2-byte word that resolves at link
     -- time to the address `name + offset`. Only used for Pointer-
     -- typed statics initialized with `&otherstatic` (C99 §6.6.7
@@ -95,7 +97,7 @@ module TAC {
     -- (each character in 0..255).
     static_init = IntInit(int) | LongInit(int) | LongLongInit(int)
                 | UIntInit(int) | ULongInit(int) | ULongLongInit(int)
-                | FloatInit(float) | DoubleInit(float)
+                | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)
                 | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)

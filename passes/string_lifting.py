@@ -53,6 +53,17 @@ class StringLifter:
     def __init__(self) -> None:
         self._counter = 0
         self._lifted: list[c99_ast.Type_declaration] = []
+        # Map of resolved struct/union tag → member types in
+        # declaration order. Used by `_lift_init` to dispatch each
+        # item of a struct/union InitList to its corresponding
+        # member type, so a String going to a non-char-array
+        # member (e.g. `char *msg`) gets lifted while one going to
+        # a `char arr[N]` member stays inline. Built incrementally
+        # as the lifter walks declarations top-down — by the time
+        # we see a struct compound initializer the struct's body
+        # has necessarily been declared earlier (you can't
+        # initialize an incomplete struct).
+        self._struct_members: dict[str, list] = {}
 
     def lift_program(
         self, prog: c99_ast.Type_program,
@@ -81,8 +92,14 @@ class StringLifter:
                 function_decl=self._lift_function_decl(decl.function_decl),
             )
         if isinstance(decl, c99_ast.StructDecl):
-            # Struct/union declarations carry no expressions; pass
-            # through.
+            # Struct/union declarations carry no expressions; record
+            # the layout (so later compound initializers can dispatch
+            # by member type) and pass the node through.
+            sd = decl.struct_decl
+            if sd.members:
+                self._struct_members[sd.tag] = [
+                    m.data_type for m in sd.members
+                ]
             return decl
         raise TypeError(f"unexpected declaration: {decl!r}")
 
@@ -147,17 +164,29 @@ class StringLifter:
                 declared_type, (c99_ast.Structure, c99_ast.Union),
             )
         ):
-            # Struct/union compound init — the lifter doesn't have
-            # the layout, so we can't dispatch by member type. But
-            # we DO know that any String item directly inside the
-            # InitList must be initializing a char-array member
-            # (the type checker validates this), so leave Strings
-            # inline. Nested InitLists recurse with `declared_type
-            # = None` so their inner Strings get the same
-            # treatment uniformly down the tree.
-            new_items = [
-                self._lift_init(it, None) for it in init.items
-            ]
+            # Struct/union compound init. If we have the struct's
+            # layout in `_struct_members` (populated when the
+            # StructDecl was walked earlier in the program), dispatch
+            # each item to the matching member type so a String
+            # going to a `char *` member gets lifted while one going
+            # to a `char arr[N]` member stays inline. For unions only
+            # the first member is initialized by a non-designated
+            # InitList (C99 §6.7.8.16). If the layout is unknown
+            # (forward-declared but never completed — the type
+            # checker rejects this later) fall back to None for the
+            # member type so each item is treated conservatively.
+            members = self._struct_members.get(declared_type.tag)
+            if members is not None and isinstance(
+                declared_type, c99_ast.Union,
+            ):
+                members = members[:1]
+            new_items = []
+            for i, it in enumerate(init.items):
+                m_type = (
+                    members[i] if members is not None and i < len(members)
+                    else None
+                )
+                new_items.append(self._lift_init(it, m_type))
             return c99_ast.InitList(
                 items=new_items, data_type=init.data_type,
             )

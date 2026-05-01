@@ -76,19 +76,6 @@ immediate addressing can reach.
 
 - `no_structure_parameters/scalar_member_access/nested_struct.c`
 
-### Incomplete struct/union as parameter / return type at declaration site
-
-These programs forward-declare a function whose parameter or return
-type is an incomplete struct/union, then complete the type before
-defining or calling the function (legal under C99 §6.7.2.1.8 — the
-type only needs to be complete at the point of definition or call).
-c6502 rejects at the declaration site.
-
-- `extra_credit/semantic_analysis/incomplete_union_types.c`
-- `no_structure_parameters/semantic_analysis/incomplete_structs.c`
-- `parameters/incomplete_param_type.c`
-- `params_and_returns/return_incomplete_type.c`
-
 ### Struct initializer in for-loop init slot
 
 - `no_structure_parameters/semantic_analysis/resolve_tags.c` —

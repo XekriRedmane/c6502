@@ -114,6 +114,12 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     "params_and_returns/return_struct_on_page_boundary.c",
     "params_and_returns/simple.c",
     "params_and_returns/temporary_lifetime.c",
+    # Forward declarations whose parameter or return type is an
+    # incomplete struct/union, completed before any call/definition.
+    "extra_credit/semantic_analysis/incomplete_union_types.c",
+    "no_structure_parameters/semantic_analysis/incomplete_structs.c",
+    "parameters/incomplete_param_type.c",
+    "params_and_returns/return_incomplete_type.c",
 })
 
 

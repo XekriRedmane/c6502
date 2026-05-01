@@ -1559,11 +1559,17 @@ class TypeChecker:
             # but `void (*foo)[3]` keeps the inner Array(Void, 3)
             # intact and needs the recursive well-formed walk.
             # Parameters may have struct/union types — the tag must
-            # be declared (and complete, since c6502 doesn't allow
-            # struct-by-value parameter passing yet, only pointer-
-            # to-struct).
-            require_complete = isinstance(
-                p_type, (Structure, Union, Array),
+            # be declared. For a function *definition* the type must
+            # also be complete (the body needs to know its size to
+            # access it); a forward declaration can name an
+            # incomplete struct/union as long as the type is
+            # completed before any caller tries to use it (C99
+            # §6.7.2.1.8). Array element types must always be
+            # complete; the outermost array suffix is rewritten to a
+            # pointer by the parameter adjustment, so a surviving
+            # Array here is an inner array (`int (*a)[3]`).
+            require_complete = isinstance(p_type, Array) or (
+                defined and isinstance(p_type, (Structure, Union))
             )
             _check_well_formed_type(
                 p_type, where=f"parameter of function {fd.name!r}",
@@ -3089,8 +3095,19 @@ class TypeChecker:
                     # Struct / union args bypass `_convert_to` (which
                     # doesn't model struct conversion). The arg's
                     # type must match the parameter's struct/union
-                    # type exactly.
+                    # type exactly, and the type must be complete at
+                    # the call site (C99 §6.7.2.1.8 — the function
+                    # may be forward-declared with an incomplete
+                    # type, but its caller can't materialize the
+                    # value to pass).
                     if isinstance(expected, (Structure, Union)):
+                        kw = "union" if isinstance(expected, Union) else "struct"
+                        layout = self.types.get(expected.tag)
+                        if layout is None or not layout.complete:
+                            raise TypeCheckError(
+                                f"argument {i} of {name!r}: cannot pass "
+                                f"incomplete type '{kw} {expected.tag}'"
+                            )
                         if not _types_equal(arg.data_type, expected):
                             raise TypeCheckError(
                                 f"argument {i} of {name!r}: type "

@@ -47,6 +47,72 @@ _TESTS_DIR = Path(__file__).parent
 # Hard-coded expected `main()` return values, hand-traced for each
 # program under c6502's narrower type model (int = 1 byte signed).
 EXPECTED_RETURNS: dict[str, int] = {
+    # --- chapter 8: loops (for / while / do-while), break, continue, switch
+    "chapter_8/valid/break.c": 1,
+    "chapter_8/valid/break_immediate.c": 1,
+    "chapter_8/valid/continue.c": 1,
+    "chapter_8/valid/continue_empty_post.c": 30,
+    "chapter_8/valid/do_while.c": 16,
+    "chapter_8/valid/do_while_break_immediate.c": 10,
+    "chapter_8/valid/empty_expression.c": 0,
+    "chapter_8/valid/empty_loop_body.c": 45,
+    # for.c, for_absent_condition.c rely on int truncation since
+    # the source uses values > 127 — the result under c6502 is
+    # what falls out of 1-byte signed arithmetic, not the wider
+    # int answer the upstream tests assume.
+    "chapter_8/valid/for.c": 0,
+    "chapter_8/valid/for_absent_condition.c": 0,
+    "chapter_8/valid/for_absent_post.c": 0,
+    "chapter_8/valid/for_decl.c": 101,
+    "chapter_8/valid/for_decl_no_init.c": 2,
+    "chapter_8/valid/for_nested_shadow.c": 1,
+    "chapter_8/valid/for_shadow.c": 1,
+    "chapter_8/valid/multi_break.c": 1,
+    "chapter_8/valid/multi_continue_same_loop.c": 1,
+    # nested_break.c: ans accumulates 250, wraps to -6 in 1-byte int
+    "chapter_8/valid/nested_break.c": -6,
+    "chapter_8/valid/nested_continue.c": 24,
+    "chapter_8/valid/nested_loop.c": 1,
+    "chapter_8/valid/null_for_header.c": 4,
+    "chapter_8/valid/while.c": 6,
+
+    # --- chapter 8 extra_credit
+    "chapter_8/valid/extra_credit/case_block.c": 1,
+    # compound_assignment_controlling_expression.c: sum reaches 200
+    # which wraps to -56 in 1-byte int, so sum==200 is false and the
+    # final && check returns 0
+    "chapter_8/valid/extra_credit/compound_assignment_controlling_expression.c": 0,
+    "chapter_8/valid/extra_credit/compound_assignment_for_loop.c": 1,
+    "chapter_8/valid/extra_credit/duffs_device.c": 1,
+    "chapter_8/valid/extra_credit/goto_bypass_condition.c": 10,
+    "chapter_8/valid/extra_credit/goto_bypass_init_exp.c": 1,
+    "chapter_8/valid/extra_credit/goto_bypass_post_exp.c": 11,
+    "chapter_8/valid/extra_credit/label_loop_body.c": 1,
+    "chapter_8/valid/extra_credit/label_loops_breaks_and_continues.c": 12,
+    "chapter_8/valid/extra_credit/loop_header_postfix_and_prefix.c": 1,
+    "chapter_8/valid/extra_credit/loop_in_switch.c": 123,
+    "chapter_8/valid/extra_credit/post_exp_incr.c": 21,
+    "chapter_8/valid/extra_credit/switch.c": 3,
+    "chapter_8/valid/extra_credit/switch_assign_in_condition.c": 2,
+    "chapter_8/valid/extra_credit/switch_break.c": 10,
+    "chapter_8/valid/extra_credit/switch_decl.c": 1,
+    "chapter_8/valid/extra_credit/switch_default.c": 22,
+    "chapter_8/valid/extra_credit/switch_default_fallthrough.c": 0,
+    "chapter_8/valid/extra_credit/switch_default_not_last.c": 0,
+    "chapter_8/valid/extra_credit/switch_default_only.c": 1,
+    "chapter_8/valid/extra_credit/switch_empty.c": 12,
+    "chapter_8/valid/extra_credit/switch_fallthrough.c": 6,
+    "chapter_8/valid/extra_credit/switch_goto_mid_case.c": 1,
+    "chapter_8/valid/extra_credit/switch_in_loop.c": 1,
+    "chapter_8/valid/extra_credit/switch_nested_cases.c": 1,
+    "chapter_8/valid/extra_credit/switch_nested_not_taken.c": 2,
+    "chapter_8/valid/extra_credit/switch_nested_switch.c": 1,
+    "chapter_8/valid/extra_credit/switch_no_case.c": 4,
+    "chapter_8/valid/extra_credit/switch_not_taken.c": 1,
+    "chapter_8/valid/extra_credit/switch_single_case.c": 1,
+    "chapter_8/valid/extra_credit/switch_with_continue.c": 5,
+    "chapter_8/valid/extra_credit/switch_with_continue_2.c": 5,
+
     # --- chapter 9: function definitions, calls, parameters
     "chapter_9/valid/no_arguments/forward_decl.c": 3,
     "chapter_9/valid/no_arguments/function_shadows_variable.c": 11,

@@ -475,6 +475,79 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_13/valid/extra_credit/compound_assign.c": 0,
     "chapter_13/valid/extra_credit/compound_assign_implicit_cast.c": 0,
     "chapter_13/valid/extra_credit/incr_and_decr.c": 0,
+
+    # --- chapter 14: pointers and dereference
+    "chapter_14/valid/casts/cast_between_pointer_types.c": 0,
+    "chapter_14/valid/casts/null_pointer_conversion.c": 0,
+    # pointer_int_casts.c: i=128 doesn't fit in c6502's 1-byte int
+    # (truncates to -128), so int_to_pointer() returns 0 and the
+    # first if(!...) returns 1
+    "chapter_14/valid/casts/pointer_int_casts.c": 1,
+    "chapter_14/valid/comparisons/compare_pointers.c": 0,
+    "chapter_14/valid/comparisons/compare_to_null.c": 0,
+    "chapter_14/valid/comparisons/pointers_as_conditions.c": 0,
+    "chapter_14/valid/declarators/abstract_declarators.c": 0,
+    "chapter_14/valid/declarators/declarators.c": 0,
+    "chapter_14/valid/declarators/declare_pointer_in_for_loop.c": 5,
+    "chapter_14/valid/dereference/address_of_dereference.c": 0,
+    "chapter_14/valid/dereference/dereference_expression_result.c": 0,
+    "chapter_14/valid/dereference/multilevel_indirection.c": 0,
+    "chapter_14/valid/dereference/read_through_pointers.c": 0,
+    "chapter_14/valid/dereference/simple.c": 3,
+    "chapter_14/valid/dereference/static_var_indirection.c": 0,
+    "chapter_14/valid/dereference/update_through_pointers.c": 0,
+    "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": 1,
+    "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": 0,
+    # compound_assign_conversion.c: same narrow-int divergence as
+    # chapter_12 — final compound `*i_ptr -= *ul_ptr` truncates to a
+    # different value than upstream's expected -73
+    "chapter_14/valid/extra_credit/compound_assign_conversion.c": 4,
+    "chapter_14/valid/extra_credit/compound_assign_through_pointer.c": 0,
+    "chapter_14/valid/extra_credit/compound_bitwise_dereferenced_ptrs.c": 0,
+    "chapter_14/valid/extra_credit/incr_and_decr_through_pointer.c": 0,
+    "chapter_14/valid/extra_credit/switch_dereferenced_pointer.c": 0,
+    "chapter_14/valid/function_calls/address_of_argument.c": 0,
+    "chapter_14/valid/function_calls/return_pointer.c": 0,
+    "chapter_14/valid/function_calls/update_value_through_pointer_parameter.c": 0,
+
+    # --- chapter 15: arrays, subscripting, pointer arithmetic
+    "chapter_15/valid/casts/cast_array_of_pointers.c": 1,
+    "chapter_15/valid/casts/implicit_and_explicit_conversions.c": 0,
+    "chapter_15/valid/casts/multi_dim_casts.c": 0,
+    "chapter_15/valid/declarators/array_as_argument.c": 0,
+    "chapter_15/valid/declarators/big_array.c": 0,
+    "chapter_15/valid/declarators/equivalent_declarators.c": 0,
+    "chapter_15/valid/declarators/for_loop_array.c": 0,
+    "chapter_15/valid/declarators/return_nested_array.c": 0,
+    "chapter_15/valid/extra_credit/bitwise_subscript.c": 0,
+    "chapter_15/valid/extra_credit/compound_assign_and_increment.c": 2,
+    "chapter_15/valid/extra_credit/compound_assign_array_of_pointers.c": 2,
+    "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": 0,
+    "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": 4,
+    "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": 2,
+    "chapter_15/valid/extra_credit/compound_lval_evaluated_once.c": 0,
+    "chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c": 0,
+    "chapter_15/valid/extra_credit/compound_pointer_assignment.c": 0,
+    "chapter_15/valid/extra_credit/incr_and_decr_nested_pointers.c": 2,
+    "chapter_15/valid/extra_credit/incr_and_decr_pointers.c": 1,
+    "chapter_15/valid/extra_credit/incr_decr_subscripted_vals.c": 0,
+    "chapter_15/valid/extra_credit/postfix_prefix_precedence.c": 0,
+    "chapter_15/valid/initialization/automatic.c": 0,
+    "chapter_15/valid/initialization/automatic_nested.c": 0,
+    "chapter_15/valid/initialization/static.c": 0,
+    "chapter_15/valid/initialization/trailing_comma_initializer.c": 3,
+    "chapter_15/valid/pointer_arithmetic/add_dereference_and_assign.c": 0,
+    "chapter_15/valid/pointer_arithmetic/compare.c": 0,
+    "chapter_15/valid/pointer_arithmetic/pointer_add.c": 0,
+    "chapter_15/valid/pointer_arithmetic/pointer_diff.c": 0,
+    "chapter_15/valid/subscripting/addition_subscript_equivalence.c": 0,
+    "chapter_15/valid/subscripting/array_of_pointers_to_arrays.c": 0,
+    "chapter_15/valid/subscripting/complex_operands.c": 0,
+    "chapter_15/valid/subscripting/simple.c": 3,
+    "chapter_15/valid/subscripting/simple_subscripts.c": 0,
+    "chapter_15/valid/subscripting/subscript_nested.c": 0,
+    "chapter_15/valid/subscripting/subscript_pointer.c": 0,
+    "chapter_15/valid/subscripting/subscript_precedence.c": 1,
 }
 
 
@@ -504,6 +577,12 @@ SKIPPED: dict[str, str] = {
         "depends on libc fma + ldexp",
     "chapter_13/valid/special_values/negative_zero.c":
         "depends on libc copysign",
+    "chapter_14/valid/extra_credit/eval_compound_lhs_once.c":
+        "depends on putchar (no libc)",
+    "chapter_15/valid/initialization/static_nested.c":
+        "long_arr[30][50][40] is 120000 bytes — exceeds c6502's 16-bit "
+        "(64KB) address space, so pointer arithmetic wraps and hits "
+        "stale bytes from other statics",
 }
 
 

@@ -1,0 +1,510 @@
+{
+  "constant_folding/all_types/extra_credit/cast_nan_not_executed.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/extra_credit/fold_bitwise_long.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/extra_credit/fold_bitwise_unsigned.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/extra_credit/fold_nan.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/extra_credit/return_nan.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_cast_from_double.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_cast_to_double.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_conditional_jump.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_double.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_double_cast_exception.c": {
+    "return_code": 32
+  },
+  "constant_folding/all_types/fold_extensions_and_copies.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_long.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_truncate.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_uint.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/fold_ulong.c": {
+    "return_code": 0
+  },
+  "constant_folding/all_types/negative_zero.c": {
+    "return_code": 0
+  },
+  "constant_folding/int_only/extra_credit/fold_bitwise.c": {
+    "return_code": 0
+  },
+  "constant_folding/int_only/fold_binary.c": {
+    "return_code": 0
+  },
+  "constant_folding/int_only/fold_conditional_jump.c": {
+    "return_code": 0
+  },
+  "constant_folding/int_only/fold_control_flow.c": {
+    "return_code": 0
+  },
+  "constant_folding/int_only/fold_exception.c": {
+    "return_code": 0
+  },
+  "constant_folding/int_only/fold_unary.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/alias_analysis.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/char_type_conversion.c": {
+    "return_code": 1,
+    "stdout": "CBA@"
+  },
+  "copy_propagation/all_types/copy_struct.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/dont_propagate/copy_to_offset.c": {
+    "return_code": 3
+  },
+  "copy_propagation/all_types/dont_propagate/dont_propagate_addr_of.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/dont_propagate/static_are_aliased.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/dont_propagate/store_kills_aliased.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/dont_propagate/type_conversion.c": {
+    "return_code": 1
+  },
+  "copy_propagation/all_types/dont_propagate/zero_neg_zero_different.c": {
+    "return_code": 1
+  },
+  "copy_propagation/all_types/extra_credit/copy_union.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/extra_credit/dont_propagate/update_union_member.c": {
+    "return_code": 3
+  },
+  "copy_propagation/all_types/extra_credit/dont_propagate/update_union_member_2.c": {
+    "return_code": 200
+  },
+  "copy_propagation/all_types/extra_credit/pointer_compound_assignment.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/extra_credit/pointer_incr.c": {
+    "return_code": 2
+  },
+  "copy_propagation/all_types/extra_credit/redundant_nan_copy.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/extra_credit/redundant_union_copy.c": {
+    "return_code": 1
+  },
+  "copy_propagation/all_types/funcall_kills_aliased.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/pointer_arithmetic.c": {
+    "return_code": 2
+  },
+  "copy_propagation/all_types/propagate_all_types.c": {
+    "return_code": 1
+  },
+  "copy_propagation/all_types/propagate_into_type_conversions.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/propagate_null_pointer.c": {
+    "return_code": 1
+  },
+  "copy_propagation/all_types/redundant_double_copies.c": {
+    "return_code": 0
+  },
+  "copy_propagation/all_types/redundant_struct_copies.c": {
+    "return_code": 1
+  },
+  "copy_propagation/all_types/store_doesnt_kill.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/constant_propagation.c": {
+    "return_code": 6
+  },
+  "copy_propagation/int_only/different_paths_same_copy.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/different_source_values_same_copy.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/dont_propagate/add_all_blocks_to_worklist.c": {
+    "return_code": 100
+  },
+  "copy_propagation/int_only/dont_propagate/dest_killed.c": {
+    "return_code": 4
+  },
+  "copy_propagation/int_only/dont_propagate/listing_19_14.c": {
+    "return_code": 101
+  },
+  "copy_propagation/int_only/dont_propagate/multi_values.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/dont_propagate/no_copies_reach_entry.c": {
+    "return_code": 4
+  },
+  "copy_propagation/int_only/dont_propagate/one_reaching_copy.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/dont_propagate/source_killed.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/dont_propagate/source_killed_on_one_path.c": {
+    "return_code": 0,
+    "stdout": "DA"
+  },
+  "copy_propagation/int_only/dont_propagate/static_dst_killed.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/dont_propagate/static_src_killed.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/extra_credit/dont_propagate/decr_kills_dest.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/extra_credit/dont_propagate/switch_fallthrough.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/extra_credit/goto_define.c": {
+    "return_code": 20
+  },
+  "copy_propagation/int_only/extra_credit/prefix_result.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/extra_credit/propagate_from_default.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/extra_credit/propagate_into_case.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/fig_19_8.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/init_all_copies.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/kill_and_add_copies.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/killed_then_redefined.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/multi_path_no_kill.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/nested_loops.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/propagate_into_complex_expressions.c": {
+    "return_code": 1
+  },
+  "copy_propagation/int_only/propagate_params.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/propagate_static.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/propagate_static_var.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/propagate_var.c": {
+    "return_code": 0
+  },
+  "copy_propagation/int_only/redundant_copies.c": {
+    "return_code": 20
+  },
+  "dead_store_elimination/all_types/aliased_dead_at_exit.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/all_types/copy_to_dead_struct.c": {
+    "return_code": 4
+  },
+  "dead_store_elimination/all_types/delete_dead_pt_ii_instructions.c": {
+    "return_code": 5
+  },
+  "dead_store_elimination/all_types/dont_elim/copytooffset_doesnt_kill.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/all_types/dont_elim/funcall_generates_aliased.c": {
+    "return_code": 4
+  },
+  "dead_store_elimination/all_types/dont_elim/load_generates_aliased.c": {
+    "return_code": 10
+  },
+  "dead_store_elimination/all_types/dont_elim/never_kill_store.c": {
+    "return_code": 4
+  },
+  "dead_store_elimination/all_types/dont_elim/recognize_all_uses.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/all_types/dont_elim/use_and_update.c": {
+    "return_code": 1
+  },
+  "dead_store_elimination/all_types/extra_credit/compound_assign_to_dead_struct_member.c": {
+    "return_code": 15
+  },
+  "dead_store_elimination/all_types/extra_credit/copy_to_dead_union.c": {
+    "return_code": 10
+  },
+  "dead_store_elimination/all_types/extra_credit/decr_struct_member.c": {
+    "return_code": 15
+  },
+  "dead_store_elimination/all_types/extra_credit/dont_elim/copy_generates_union.c": {
+    "return_code": 1
+  },
+  "dead_store_elimination/all_types/extra_credit/dont_elim/incr_through_pointer.c": {
+    "return_code": 1
+  },
+  "dead_store_elimination/all_types/extra_credit/dont_elim/type_punning.c": {
+    "return_code": 180
+  },
+  "dead_store_elimination/all_types/getaddr_doesnt_gen.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/dead_store_static_var.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/delete_arithmetic_ops.c": {
+    "return_code": 5
+  },
+  "dead_store_elimination/int_only/dont_elim/add_all_to_worklist.c": {
+    "return_code": 0,
+    "stdout": "ML"
+  },
+  "dead_store_elimination/int_only/dont_elim/dont_remove_funcall.c": {
+    "return_code": 0,
+    "stdout": "C"
+  },
+  "dead_store_elimination/int_only/dont_elim/loop.c": {
+    "return_code": 1
+  },
+  "dead_store_elimination/int_only/dont_elim/nested_loops.c": {
+    "return_code": 0,
+    "stdout": "DKHEB"
+  },
+  "dead_store_elimination/int_only/dont_elim/recognize_all_uses.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/dont_elim/self_copy.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/dont_elim/static_vars_at_exit.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/dont_elim/static_vars_fun.c": {
+    "return_code": 5
+  },
+  "dead_store_elimination/int_only/dont_elim/used_one_path.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/elim_second_copy.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/extra_credit/dead_compound_assignment.c": {
+    "return_code": 10
+  },
+  "dead_store_elimination/int_only/extra_credit/dead_incr_decr.c": {
+    "return_code": 10
+  },
+  "dead_store_elimination/int_only/extra_credit/dont_elim/incr_and_dead_store.c": {
+    "return_code": 11
+  },
+  "dead_store_elimination/int_only/fig_19_11.c": {
+    "return_code": 0
+  },
+  "dead_store_elimination/int_only/initialize_blocks_with_empty_set.c": {
+    "return_code": 1
+  },
+  "dead_store_elimination/int_only/loop_dead_store.c": {
+    "return_code": 0,
+    "stdout": "CHNTZ"
+  },
+  "dead_store_elimination/int_only/simple.c": {
+    "return_code": 3
+  },
+  "dead_store_elimination/int_only/static_not_always_live.c": {
+    "return_code": 23
+  },
+  "unreachable_code_elimination/and_clause.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/constant_if_else.c": {
+    "return_code": 45
+  },
+  "unreachable_code_elimination/dead_after_if_else.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/dead_after_return.c": {
+    "return_code": 2
+  },
+  "unreachable_code_elimination/dead_blocks_with_predecessors.c": {
+    "return_code": 5
+  },
+  "unreachable_code_elimination/dead_branch_inside_loop.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/dead_for_loop.c": {
+    "return_code": 10
+  },
+  "unreachable_code_elimination/empty.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/empty_block.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/extra_credit/dead_before_first_switch_case.c": {
+    "return_code": 1
+  },
+  "unreachable_code_elimination/extra_credit/dead_in_switch_body.c": {
+    "return_code": 10
+  },
+  "unreachable_code_elimination/extra_credit/goto_skips_over_code.c": {
+    "return_code": 10
+  },
+  "unreachable_code_elimination/extra_credit/remove_unused_label.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/extra_credit/unreachable_switch_body.c": {
+    "return_code": 0
+  },
+  "unreachable_code_elimination/infinite_loop.c": {
+    "return_code": 11
+  },
+  "unreachable_code_elimination/keep_final_jump.c": {
+    "return_code": 17
+  },
+  "unreachable_code_elimination/or_clause.c": {
+    "return_code": 1
+  },
+  "unreachable_code_elimination/remove_conditional_jumps.c": {
+    "return_code": 1
+  },
+  "unreachable_code_elimination/remove_jump_keep_label.c": {
+    "return_code": 10
+  },
+  "unreachable_code_elimination/remove_useless_starting_label.c": {
+    "return_code": 99
+  },
+  "whole_pipeline/all_types/alias_analysis_change.c": {
+    "return_code": 0,
+    "stdout": "A"
+  },
+  "whole_pipeline/all_types/extra_credit/eval_nan_condition.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/fold_compound_assign_all_types.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/fold_compound_bitwise_assign_all_types.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/fold_incr_decr_chars.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/fold_incr_decr_doubles.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/fold_incr_decr_unsigned.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/fold_negative_long_bitshift.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/extra_credit/nan.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_cast_from_double.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_cast_to_double.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_char_condition.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_extension_and_truncation.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_infinity.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_negative_values.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/fold_negative_zero.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/integer_promotions.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/listing_19_5_more_types.c": {
+    "return_code": 9
+  },
+  "whole_pipeline/all_types/propagate_into_copyfromoffset.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/propagate_into_copytooffset.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/propagate_into_load.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/propagate_into_store.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/all_types/signed_unsigned_conversion.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/dead_condition.c": {
+    "return_code": 10
+  },
+  "whole_pipeline/int_only/elim_and_copy_prop.c": {
+    "return_code": 10
+  },
+  "whole_pipeline/int_only/extra_credit/compound_assign_exceptions.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/extra_credit/evaluate_switch.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/extra_credit/fold_bitwise_compound_assignment.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/extra_credit/fold_compound_assignment.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/extra_credit/fold_incr_and_decr.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/extra_credit/fold_negative_bitshift.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/int_min.c": {
+    "return_code": 0
+  },
+  "whole_pipeline/int_only/listing_19_5.c": {
+    "return_code": 9
+  },
+  "whole_pipeline/int_only/remainder_test.c": {
+    "return_code": 0
+  }
+}

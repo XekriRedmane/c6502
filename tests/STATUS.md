@@ -6,17 +6,11 @@ today, with the reason. Every other test passes.
 
 The harnesses (`tests/test_chapter_<N>.py`) carry these as frozen
 sets — `_INCOMPATIBLE_VALID` (skipped), `_EXPECTED_FAILURES_CODEGEN`
-(must currently fail), and `_NOT_REJECTED_TODAY` (must currently
-not be rejected). Each pinned entry is asserted at its current
-behavior, so a regression OR a fix flips the test in either
-direction and prompts a drop from the list.
-
-Categories below:
-
-- **Pinned: feature gaps** — features c6502 plans to add (preprocessing
-  number lexing, etc.). Pinned at current accept/reject behavior.
-- **Pinned: real bugs** — the compiler crashes or wrongly accepts
-  programs the spec rejects. Pinned at current behavior.
+or its chapter-18 inverse `_VALID_PASSES_TODAY` (must currently
+fail / pass), and `_NOT_REJECTED_TODAY` (must currently not be
+rejected). Each pinned entry is asserted at its current behavior,
+so a regression OR a fix flips the test in either direction and
+prompts a drop from the list.
 
 Multi-TU `libraries/` subdirs (and platform-specific `.s` files)
 aren't listed: they're skipped at import time, not at harness time.
@@ -32,120 +26,97 @@ substitute c6502's wider types for upstream's:
 - upstream `unsigned int`  → c6502 `unsigned long`
 - upstream `unsigned long` → c6502 `unsigned long long`
 
-Literal magnitudes scale accordingly. The chapter-by-chapter
-test semantics (multi-byte arithmetic, common-type promotion,
-sign-/zero-extension, truncation, switch-on-wide-int, etc.) all
-survive — just at narrower widths than upstream. Some files were
-also restructured to split a large frame across helper functions
+Literal magnitudes scale accordingly. Some files were also
+restructured to split a large frame across helper functions
 (c6502's local frame is capped at ~253 bytes by `LDY` immediate
 addressing).
 
 ---
 
-## Pinned: feature gaps
-
-### Lexer accepts malformed FP exponent
+## Chapter 13 — malformed FP exponent (`invalid_lex`)
 
 The C standard treats `1.0e10.0` as a single preprocessing-number
 that can't be converted to a constant. c6502's lexer has no
 preprocessing-number concept and tokenises it as two CONSTANTs
 (`1.0e10` and `.0`).
 
-- **chapter\_13** invalid_lex:
-  - `malformed_exponent.c`
+- `malformed_exponent.c`
+
+## Chapter 17 — sizeof literal beyond `unsigned long long` (`valid`, skipped)
+
+c6502's widest integer type is `unsigned long long` (4 bytes,
+0..2^32 - 1).
+
+- `sizeof/sizeof_derived_types.c` — uses the literal `4294967297L`
+  (= 2^32 + 1) as an array dimension; the parser rejects it before
+  any sizeof folding gets a chance.
+
+## Chapter 18 — `valid` (must currently fail at codegen)
 
 ### Integer literals beyond `unsigned long long`
 
-c6502's widest integer type is `unsigned long long` (4 bytes,
-0..2^32 - 1). One chapter 17 sizeof test specifies an array
-type whose size literal exceeds that range, so the parser
-rejects it before any sizeof folding gets a chance.
+Same pre-existing limitation as the chapter 17 sizeof case above —
+the parser rejects literals > 2^32 - 1.
 
-- **chapter\_17** valid (skipped via `_INCOMPATIBLE_VALID`):
-  - `sizeof/sizeof_derived_types.c` — uses the literal
-    `4294967297L` (= 2^32 + 1) as an array dimension.
+- `extra_credit/member_access/static_union_access.c`
+- `extra_credit/member_access/union_init_and_member_access.c`
+- `extra_credit/member_access/union_temp_lifetime.c`
+- `extra_credit/other_features/bitwise_ops_struct_members.c`
+- `extra_credit/other_features/compound_assign_struct_members.c`
+- `extra_credit/other_features/incr_struct_members.c`
+- `extra_credit/semantic_analysis/union_namespace.c`
+- `extra_credit/union_copy/copy_thru_pointer.c`
+- `no_structure_parameters/scalar_member_access/arrow.c`
+- `no_structure_parameters/scalar_member_access/dot.c`
 
-### Struct / union (chapter 18)
+### Frame > 253 bytes
 
-c6502 supports struct and union end-to-end through `--codegen`:
+`replace_pseudoregisters` lays out a frame larger than `LDY`
+immediate addressing can reach.
 
-- declarations (file- and block-scope), forward declarations,
-  forward references through pointers (auto-introduce per C99
-  §6.7.2.3.5)
-- member access via `.` / `->` (chained, nested, address-of)
-- compound initializers (with nested struct / array members,
-  string literal initialisers for char-array members)
-- struct copy in every direction (Var=Var, Var=Member,
-  Member=Var, Member=Member, Var=Conditional, Var=FunctionCall)
-- pointer-to-struct, address-of struct member, sizeof on
-  struct/union types
-- block-scope tag shadowing — file-scope tags keep their source
-  name; block-scope tag declarations get an `@<N>.<source>`
-  rename in `passes.identifier_resolution`'s tag scope, so two
-  unrelated `struct s` declarations in different inner blocks
-  land in the type checker's TypeTable as distinct entries
-- struct-by-value parameter passing — a struct argument
-  contributes `sizeof(struct)` bytes to the caller's soft-stack
-  arg block; callee reads via `Frame(M+3+offset)`. No new
-  mechanism, the existing per-byte arg-write loop covers any
-  width
-- struct-by-value returns via sret — caller allocates a
-  return slot, passes its address as a hidden first parameter
-  `.sret.<funcname>`; `return e;` lowers to
-  `Store(e, .sret) + Ret(None)`; the FunctionCall expression's
-  "result" is the slot itself (treated as a temporary-lifetime
-  lvalue: `f().m` reads through it but assignment via
-  `f().m = …` is rejected by the structural lvalue check)
-- unions — member access, copy, address-of, including unions
-  containing arrays / structs
+- `no_structure_parameters/scalar_member_access/nested_struct.c`
 
-Diagnostic gaps (`_INVALID_TYPES_NOT_REJECTED_TODAY` in
-`tests/test_chapter_18.py`):
+### Incomplete struct/union as parameter / return type at declaration site
 
-- Struct-as-controlling-expression in `if` / `while`
-  (`scalar_required/struct_controlling_expression.c`,
-  `extra_credit/scalar_required/union_as_controlling_expression.c`)
-- A few `invalid_incomplete_structs/*` cases: assignment to
-  an incomplete-typed variable, cast-to-incomplete-struct,
-  incomplete struct as a function-call return type, and
-  incomplete struct in a full expression. The base
-  "dereference of pointer to incomplete" case IS rejected;
-  these others would need additional check sites.
+These programs forward-declare a function whose parameter or return
+type is an incomplete struct/union, then complete the type before
+defining or calling the function (legal under C99 §6.7.2.1.8 — the
+type only needs to be complete at the point of definition or call).
+c6502 rejects at the declaration site.
 
-Of the 108 valid chapter\_18 programs, 46 compile end-to-end
-today — covering all of `no_structure_parameters/`,
-`parameters/`, and `params_and_returns/`, plus most of
-`extra_credit/{semantic_analysis,member_access,size_and_offset,
-union_copy}/`. The remaining failures are unrelated to struct
-support per se:
+- `extra_credit/semantic_analysis/incomplete_union_types.c`
+- `no_structure_parameters/semantic_analysis/incomplete_structs.c`
+- `parameters/incomplete_param_type.c`
+- `params_and_returns/return_incomplete_type.c`
 
-- **FP arithmetic** — many tests (especially
-  `scalar_member_access/{dot,arrow}.c`, `nested_struct.c`)
-  exercise `double` / `float` operands. The arithmetic helpers
-  aren't in the runtime yet.
-- **Integer literals beyond `unsigned long long`** — chapter 18
-  uses 8-byte hex literals like `0xFFFFFFFFFFFFFFFFUL` in a
-  handful of `union_init_and_member_access.c` /
-  `compound_assign_struct_members.c` / `bitwise_ops_struct_
-  members.c` / `incr_struct_members.c` style tests. Same
-  pre-existing limitation as the chapter 17 sizeof case above.
-- **253-byte frame limit** — `nested_struct.c` builds a frame
-  larger than the LDY-immediate addressing window.
-- **A few extra_credit features** that need other work
-  (typedef-style alias declarations the grammar doesn't
-  accept).
+### Struct initializer in for-loop init slot
 
-The file-by-file split is in `tests/test_chapter_18.py`'s
-`_VALID_PASSES_TODAY` (the explicit must-compile set; everything
-else fails at codegen and is checked-via-`assertRaises`),
-`_INVALID_TYPES_NOT_REJECTED_TODAY`,
-`_INVALID_LEX_NOT_REJECTED_TODAY`,
-`_INVALID_PARSE_NOT_REJECTED_TODAY`,
-`_INVALID_STRUCT_TAGS_NOT_REJECTED_TODAY` (currently empty —
-all `invalid_struct_tags/` files now correctly reject).
+- `no_structure_parameters/semantic_analysis/resolve_tags.c` —
+  `for (struct s loop_struct = {10}; ...)`. The for-init declaration
+  path treats the brace-enclosed initializer as an InitList for a
+  scalar and rejects it.
 
----
+## Chapter 18 — `invalid_lex` (currently not rejected)
 
-## Pinned: real bugs
+c6502's lexer has no preprocessing-number concept, so `.1l` (a
+DOT followed by a valid LONG_INTEGER) lexes cleanly even though
+the standard would reject the whole sequence as one ill-formed
+pp-number. The companion case `.0foo` IS caught by c6502's
+`INVALID_NUMBER` regex. The file does fail at parse time because
+of the surrounding struct keyword, but that's at the wrong stage
+for this bucket.
 
-(none currently)
+- `dot_bad_token.c`
+
+## Chapter 18 — `invalid_types` (currently not rejected)
+
+Diagnostic gaps — additional check sites would need to be added
+for struct-as-controlling-expression, and for the four
+incomplete-type use sites listed.
+
+- `extra_credit/scalar_required/union_as_controlling_expression.c`
+- `invalid_incomplete_structs/assign_to_incomplete_var.c`
+- `invalid_incomplete_structs/cast_incomplete_struct.c`
+- `invalid_incomplete_structs/incomplete_return_type_funcall.c`
+- `invalid_incomplete_structs/incomplete_struct_full_expr.c`
+- `scalar_required/struct_controlling_expression.c`

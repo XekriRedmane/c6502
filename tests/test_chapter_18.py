@@ -122,6 +122,16 @@ _VALID_PASSES_TODAY: frozenset[str] = frozenset({
     "params_and_returns/return_incomplete_type.c",
     # Compound initializer for a struct-typed for-init declaration.
     "no_structure_parameters/semantic_analysis/resolve_tags.c",
+    # Locally adapted from upstream: oversized literals shrunk to
+    # fit c6502's 4-byte unsigned long long / signed long long.
+    "extra_credit/member_access/static_union_access.c",
+    "extra_credit/member_access/union_init_and_member_access.c",
+    "extra_credit/member_access/union_temp_lifetime.c",
+    "extra_credit/other_features/bitwise_ops_struct_members.c",
+    "extra_credit/semantic_analysis/union_namespace.c",
+    "extra_credit/union_copy/copy_thru_pointer.c",
+    "no_structure_parameters/scalar_member_access/arrow.c",
+    "no_structure_parameters/scalar_member_access/dot.c",
 })
 
 

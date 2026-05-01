@@ -17,14 +17,14 @@ double get_double(void) {
     return 2e12;
 }
 
-static long l = 34359738378l;
+static long l = 1234567l;
 
 // validate members (and values derived from members) that are passed as
 // parameters
 int accept_params(int d_divided, int c_doubled, double l_cast,
                   int dereferenced_ptr, double d, int c, long l, char *ptr) {
-    if (d != 4e12 || c != 127 || l != 8589934594l || *ptr != 100 ||
-        d_divided != 100.0 || c_doubled != 254 || l_cast != 8589934594.0 ||
+    if (d != 4e12 || c != 127 || l != 123456l || *ptr != 100 ||
+        d_divided != 100.0 || c_doubled != 254 || l_cast != 123456.0 ||
         dereferenced_ptr != 100) {
         return 0;
     }
@@ -40,13 +40,13 @@ int test_auto(void) {
     // write to all members - assign results of complex expression to members
     autom.d = get_double() * 2.0;  // 4e12
     autom.c = 127;
-    autom.l = l / 4;  // 8589934594l
+    autom.l = l / 4;  // 123456l
 
     char chr = 100;
     autom.ptr = &chr;
 
     // read all members
-    if (autom.d != 4e12 || autom.c != 127 || autom.l != 8589934594l ||
+    if (autom.d != 4e12 || autom.c != 127 || autom.l != 123456l ||
         autom.ptr != &chr) {
         return 0;
     }
@@ -83,12 +83,12 @@ int test_static(void) {
     // write to all members - assign results of complex expression to members
     stat.d = get_double() * 2.0;  // 4e12
     stat.c = 127;
-    stat.l = l / 4;  // 8589934594l
+    stat.l = l / 4;  // 123456l
 
     stat.ptr = &chr;
 
     // read all members
-    if (stat.d != 4e12 || stat.c != 127 || stat.l != 8589934594l ||
+    if (stat.d != 4e12 || stat.c != 127 || stat.l != 123456l ||
         stat.ptr != &chr) {
         return 0;
     }

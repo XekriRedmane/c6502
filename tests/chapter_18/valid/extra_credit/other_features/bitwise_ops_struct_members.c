@@ -14,9 +14,9 @@ struct outer {
 
 int main(void) {
     struct inner i = {'a', 100000u};
-    struct outer o = {9223372036854775810ul, &i, 100, {-80, 4294967295U}};
+    struct outer o = {2147483650ul, &i, 100, {-80, 4294967295U}};
 
-    if ((i.b | o.l) != 9223372036854775907ul) {
+    if ((i.b | o.l) != 2147483747ul) {
         return 1;  // fail
     }
 
@@ -28,7 +28,7 @@ int main(void) {
         return 3;  // fail
     }
 
-    if ((o.l >> 26) != 137438953472ul) {
+    if ((o.l >> 26) != 32ul) {
         return 4;  // fail
     }
 

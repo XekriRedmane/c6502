@@ -19,7 +19,7 @@ double get_double(void) {
     return 2e12;
 }
 
-static long l = 34359738378l;
+static long l = 1234567l;
 
 // validate members (and values derived from members) that are passed as
 // parameters
@@ -129,13 +129,13 @@ int test_exp_result_member(void) {
     struct four_members s1;
     s1.d = 10.0;
     s1.c = 99;
-    s1.l = 9223372036854775807l;
+    s1.l = 2147483647l;
     s1.ptr = 0;
 
     struct four_members s2;
     s2.d = 12.0;
     s2.c = 98;
-    s2.l = -9223372036854775807l;
+    s2.l = -2147483647l;
     s2.ptr = 0;
 
     struct four_members *s1_ptr = &s1;
@@ -159,7 +159,7 @@ int test_exp_result_member(void) {
     // assign to result_ptr and access member through assignment expression
     if ((result_ptr = s2_ptr)->d != 12.0 ||
         // make sure we can now read other members of s2 through result_ptr too
-        result_ptr->l != -9223372036854775807l) {
+        result_ptr->l != -2147483647l) {
         return 0;
     }
 

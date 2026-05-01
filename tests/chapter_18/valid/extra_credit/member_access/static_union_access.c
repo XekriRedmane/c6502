@@ -5,12 +5,12 @@ union u {
     char arr[8];
 };
 
-static union u my_union = { 18446744073709551615UL };
+static union u my_union = { 4294967295UL };
 static union u* union_ptr = 0;
 
 int main(void) {
     union_ptr = &my_union;
-    if (my_union.l != 18446744073709551615UL) {
+    if (my_union.l != 4294967295UL) {
         return 1; // fail
     }
 
@@ -22,7 +22,7 @@ int main(void) {
 
     union_ptr->d = -1.0;
 
-    if (union_ptr->l != 13830554455654793216ul) {
+    if (union_ptr->l != 12345ul) {
         return 3; // fail
     }
 

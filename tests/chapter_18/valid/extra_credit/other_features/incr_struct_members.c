@@ -16,7 +16,7 @@ void *calloc(unsigned long nmemb, unsigned long size);
 int main(void) {
     struct outer my_struct = {
         // l
-        9223372036854775900ul,
+        2147483740ul,
         // in_ptr
         calloc(3, sizeof (struct inner)),
         // array
@@ -25,7 +25,7 @@ int main(void) {
     struct outer *my_struct_ptr = &my_struct;
 
     // prefix ++
-    if (++my_struct.l != 9223372036854775901ul) {
+    if (++my_struct.l != 2147483741ul) {
         return 1; // fail
     }
 
@@ -46,7 +46,7 @@ int main(void) {
 
     // validate current state of my_struct - make sure we performed updates
     // and didn't clobber anything
-    if (my_struct_ptr->l != 9223372036854775901ul) {
+    if (my_struct_ptr->l != 2147483741ul) {
         return 5; // fail
     }
 

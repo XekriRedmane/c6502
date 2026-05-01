@@ -17,8 +17,8 @@ int get_flag(void) {
 }
 
 int main(void) {
-    union has_array union1 = {9876543210l};
-    union has_array union2 = {1234567890l};
+    union has_array union1 = {1234567890l};
+    union has_array union2 = {987654321l};
 
     // first access member in union1
     if ((get_flag() ? union1 : union2).s.arr[0] != -22) {

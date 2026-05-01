@@ -16,7 +16,7 @@ int test_shared_member_names(void) {
     };
 
     union u1 var1 = {10};
-    union u2 var2 = {-9223372036854775807l - 1}; // LONG_MIN
+    union u2 var2 = {-2147483647l - 1}; // LLONG_MIN
     struct s var3 = {{-1, -2}};
     if (var1.a != 10 || var2.a != -0.0 || var3.a[0] != -1) {
         return 0;

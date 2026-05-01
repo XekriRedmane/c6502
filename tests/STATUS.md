@@ -53,27 +53,17 @@ c6502's widest integer type is `unsigned long long` (4 bytes,
 
 ## Chapter 18 — `valid` (must currently fail at codegen)
 
-### Integer literals beyond `unsigned long long`
-
-Same pre-existing limitation as the chapter 17 sizeof case above —
-the parser rejects literals > 2^32 - 1.
-
-- `extra_credit/member_access/static_union_access.c`
-- `extra_credit/member_access/union_init_and_member_access.c`
-- `extra_credit/member_access/union_temp_lifetime.c`
-- `extra_credit/other_features/bitwise_ops_struct_members.c`
-- `extra_credit/other_features/compound_assign_struct_members.c`
-- `extra_credit/other_features/incr_struct_members.c`
-- `extra_credit/semantic_analysis/union_namespace.c`
-- `extra_credit/union_copy/copy_thru_pointer.c`
-- `no_structure_parameters/scalar_member_access/arrow.c`
-- `no_structure_parameters/scalar_member_access/dot.c`
-
 ### Frame > 253 bytes
 
 `replace_pseudoregisters` lays out a frame larger than `LDY`
-immediate addressing can reach.
+immediate addressing can reach. The two `*_struct_members.c`
+programs would fit if `main` were split across helper functions
+(reducing per-frame size); the literals were already locally
+adapted to fit c6502's 4-byte integers, so this is the only
+remaining gap.
 
+- `extra_credit/other_features/compound_assign_struct_members.c`
+- `extra_credit/other_features/incr_struct_members.c`
 - `no_structure_parameters/scalar_member_access/nested_struct.c`
 
 ## Chapter 18 — `invalid_lex` (currently not rejected)

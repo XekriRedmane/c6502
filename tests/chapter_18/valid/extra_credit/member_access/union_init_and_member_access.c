@@ -25,7 +25,7 @@ int main(void) {
     }
 
     // read through other members
-    if (ptr->ul != 18446744073709551615UL) {
+    if (ptr->ul != 4294967295UL) {
         return 3; // fail
     }
 

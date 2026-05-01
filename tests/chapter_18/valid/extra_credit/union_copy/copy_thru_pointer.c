@@ -30,7 +30,7 @@ int test_copy_to_pointer(void) {
 // case 2: x = *y
 int test_copy_from_pointer(void) {
     // define/initialize a union object containing a struct
-    struct simple_struct my_struct = { 8223372036854775807l, 20e3, 2147483650u };
+    struct simple_struct my_struct = { 2000000000l, 20e3, 2147483650u };
     static union has_struct my_union;
     my_union.s = my_struct;
 
@@ -42,7 +42,7 @@ int test_copy_from_pointer(void) {
     union has_struct another_union = *union_ptr;
 
     // validate
-    if (another_union.s.l != 8223372036854775807l || another_union.s.d != 20e3 || another_union.s.u != 2147483650u) {
+    if (another_union.s.l != 2000000000l || another_union.s.d != 20e3 || another_union.s.u != 2147483650u) {
         return 0; // fail
     }
 

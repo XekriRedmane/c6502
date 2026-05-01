@@ -35,7 +35,7 @@ from passes.optimization.unreachable_code_elimination import (
 
 
 def _ret(v: int = 0) -> tac_ast.Ret:
-    return tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=v)))
+    return tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(value=v)))
 
 
 def _fn(*instrs, name: str = "main", params=()) -> tac_ast.Function:
@@ -55,13 +55,13 @@ class TestStubPassesAreIdentity(unittest.TestCase):
     def setUp(self) -> None:
         self.fn = _fn(
             tac_ast.Copy(
-                src=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
                 dst=tac_ast.Var(name="x"),
             ),
             tac_ast.Binary(
                 op=tac_ast.Add(),
                 src1=tac_ast.Var(name="x"),
-                src2=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
                 dst=tac_ast.Var(name="y"),
             ),
             _ret(),
@@ -93,7 +93,7 @@ class TestOptimizeFunction(unittest.TestCase):
     def test_terminates_on_function_with_body(self) -> None:
         fn = _fn(
             tac_ast.Copy(
-                src=tac_ast.Constant(const=tac_ast.ConstInt(int=7)),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(value=7)),
                 dst=tac_ast.Var(name="t0"),
             ),
             tac_ast.Ret(val=tac_ast.Var(name="t0")),

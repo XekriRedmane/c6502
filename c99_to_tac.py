@@ -335,20 +335,20 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
     Double have different IEEE 754 bit patterns), so ConstFloat /
     ConstDouble round-trip 1-to-1."""
     if isinstance(c, c99_ast.ConstInt):
-        return tac_ast.ConstInt(int=c.int)
+        return tac_ast.ConstInt(value=c.int)
     if isinstance(c, c99_ast.ConstLong):
-        return tac_ast.ConstLong(int=c.int)
+        return tac_ast.ConstLong(value=c.int)
     if isinstance(c, c99_ast.ConstLongLong):
-        return tac_ast.ConstLongLong(int=c.int)
+        return tac_ast.ConstLongLong(value=c.int)
     if isinstance(c, c99_ast.ConstUInt):
-        return tac_ast.ConstInt(int=c.int)
+        return tac_ast.ConstInt(value=c.int)
     if isinstance(c, c99_ast.ConstULong):
-        return tac_ast.ConstLong(int=c.int)
+        return tac_ast.ConstLong(value=c.int)
     if isinstance(c, c99_ast.ConstULongLong):
-        return tac_ast.ConstLongLong(int=c.int)
+        return tac_ast.ConstLongLong(value=c.int)
     if isinstance(c, (c99_ast.ConstChar, c99_ast.ConstUChar)):
         # 1-byte char constants collapse onto TAC's 1-byte int.
-        return tac_ast.ConstInt(int=c.int)
+        return tac_ast.ConstInt(value=c.int)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(bits=c.bits)
     if isinstance(c, c99_ast.ConstDouble):
@@ -369,11 +369,11 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
         c99_ast.Int, c99_ast.UInt,
         c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
     )):
-        return tac_ast.ConstInt(int=int(value))
+        return tac_ast.ConstInt(value=int(value))
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
-        return tac_ast.ConstLong(int=int(value))
+        return tac_ast.ConstLong(value=int(value))
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
-        return tac_ast.ConstLongLong(int=int(value))
+        return tac_ast.ConstLongLong(value=int(value))
     if isinstance(t, c99_ast.Float):
         return tac_ast.ConstFloat(bits=fp_arith.int_to_single_bits(int(value)))
     if isinstance(t, c99_ast.Double):
@@ -429,13 +429,13 @@ def _fold_fp_cast_constant(
     # Integer source: unsigned-mask first per C99 §6.3.1.4, then
     # delegate to _tac_const_for which handles int → FP via fp_arith.
     if isinstance(c, tac_ast.ConstInt):
-        v = c.int & 0xFF if isinstance(source, c99_ast.UInt) else c.int
+        v = c.value & 0xFF if isinstance(source, c99_ast.UInt) else c.value
     elif isinstance(c, tac_ast.ConstLong):
-        v = c.int & 0xFFFF if isinstance(source, c99_ast.ULong) else c.int
+        v = c.value & 0xFFFF if isinstance(source, c99_ast.ULong) else c.value
     elif isinstance(c, tac_ast.ConstLongLong):
         v = (
-            c.int & 0xFFFFFFFF
-            if isinstance(source, c99_ast.ULongLong) else c.int
+            c.value & 0xFFFFFFFF
+            if isinstance(source, c99_ast.ULongLong) else c.value
         )
     else:
         raise TypeError(f"unexpected TAC const: {c!r}")
@@ -1698,13 +1698,13 @@ class Translator:
                     f"on sizeof's inner expression: {inner!r}"
                 )
                 return tac_ast.Constant(const=tac_ast.ConstLong(
-                    int=_sizeof(t, self._types),
+                    value=_sizeof(t, self._types),
                 ))
             case c99_ast.SizeOfType(target_type=t):
                 # `sizeof (T)` — direct fold from the type-name.
                 # No inner expression to translate.
                 return tac_ast.Constant(const=tac_ast.ConstLong(
-                    int=_sizeof(t, self._types),
+                    value=_sizeof(t, self._types),
                 ))
             case c99_ast.Subscript(array=arr, index=idx):
                 # `a[i]` per C99 §6.5.2.1.2 is `*(a + i)`. The type

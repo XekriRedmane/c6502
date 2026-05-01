@@ -157,7 +157,7 @@ def _wrap_int(variant: type, value: int) -> tac_ast.Type_const:
     """Build a const of `variant` from an unbounded Python int,
     canonicalized to the variant's signed range."""
     bits = _INTEGER_CONST_BITS[variant]
-    return variant(int=_to_signed(value, bits))
+    return variant(value=_to_signed(value, bits))
 
 
 def _truth_value(c: tac_ast.Type_const) -> bool | None:
@@ -165,7 +165,7 @@ def _truth_value(c: tac_ast.Type_const) -> bool | None:
     to 0). For FP, ±0 are falsy and NaN is truthy. Returns None for
     constants we can't classify."""
     if _is_integer_const(c):
-        return c.int != 0
+        return c.value != 0
     if isinstance(c, tac_ast.ConstFloat):
         return fp_arith.single_is_truthy(c.bits)
     if isinstance(c, tac_ast.ConstDouble):
@@ -180,14 +180,14 @@ def _fold_unary(
     # always yields ConstInt (per C99 §6.5.3.3.5).
     if isinstance(op, tac_ast.LogicalNot):
         if _is_integer_const(c):
-            return tac_ast.ConstInt(int=1 if c.int == 0 else 0)
+            return tac_ast.ConstInt(value=1 if c.value == 0 else 0)
         if isinstance(c, tac_ast.ConstFloat):
             return tac_ast.ConstInt(
-                int=1 if fp_arith.single_is_zero(c.bits) else 0,
+                value=1 if fp_arith.single_is_zero(c.bits) else 0,
             )
         if isinstance(c, tac_ast.ConstDouble):
             return tac_ast.ConstInt(
-                int=1 if fp_arith.double_is_zero(c.bits) else 0,
+                value=1 if fp_arith.double_is_zero(c.bits) else 0,
             )
         return None
     # Negate works on integers and FP; `Complement` (~) is
@@ -197,7 +197,7 @@ def _fold_unary(
         if _is_integer_const(c):
             variant = type(c)
             bits = _INTEGER_CONST_BITS[variant]
-            return _wrap_int(variant, -_to_signed(c.int, bits))
+            return _wrap_int(variant, -_to_signed(c.value, bits))
         if isinstance(c, tac_ast.ConstFloat):
             return tac_ast.ConstFloat(bits=fp_arith.single_negate(c.bits))
         if isinstance(c, tac_ast.ConstDouble):
@@ -208,7 +208,7 @@ def _fold_unary(
             return None
         variant = type(c)
         bits = _INTEGER_CONST_BITS[variant]
-        return _wrap_int(variant, ~_to_signed(c.int, bits))
+        return _wrap_int(variant, ~_to_signed(c.value, bits))
     return None
 
 
@@ -247,8 +247,8 @@ def _fold_binary(
         return None
     variant = type(c1)
     bits = _INTEGER_CONST_BITS[variant]
-    a = _to_signed(c1.int, bits)
-    b = _to_signed(c2.int, bits)
+    a = _to_signed(c1.value, bits)
+    b = _to_signed(c2.value, bits)
     match op:
         case tac_ast.Add():
             return _wrap_int(variant, a + b)
@@ -351,10 +351,10 @@ def _fold_shift(
         return None
     variant = type(c1)
     bits = _INTEGER_CONST_BITS[variant]
-    a = _to_signed(c1.int, bits)
+    a = _to_signed(c1.value, bits)
     # The count's width is its own variant's width — can differ
     # from the value's width.
-    count = _to_signed(c2.int, _INTEGER_CONST_BITS[type(c2)])
+    count = _to_signed(c2.value, _INTEGER_CONST_BITS[type(c2)])
     if count < 0 or count >= bits:
         # C99 §6.5.7.3: undefined. The c6502 helpers (asl8/16/32 and
         # asr8/16/32) explicitly document this case as UB too.
@@ -384,8 +384,8 @@ def _fold_comparison(
     if not _is_integer_const(c1):
         return None
     bits = _INTEGER_CONST_BITS[type(c1)]
-    a = _to_signed(c1.int, bits)
-    b = _to_signed(c2.int, bits)
+    a = _to_signed(c1.value, bits)
+    b = _to_signed(c2.value, bits)
     match op:
         case tac_ast.Equal():
             r = a == b
@@ -401,7 +401,7 @@ def _fold_comparison(
             r = a >= b
         case _:
             return None
-    return tac_ast.ConstInt(int=1 if r else 0)
+    return tac_ast.ConstInt(value=1 if r else 0)
 
 
 def _fp_comparison_result(
@@ -427,4 +427,4 @@ def _fp_comparison_result(
             r = order in ("gt", "eq")
         case _:
             return None
-    return tac_ast.ConstInt(int=1 if r else 0)
+    return tac_ast.ConstInt(value=1 if r else 0)

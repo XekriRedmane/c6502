@@ -594,7 +594,7 @@ class TestSizeof(unittest.TestCase):
         # is unsigned long → TAC ConstLong). Ensure all the expected
         # constants show up — the runtime additions chain through.
         for size in (1, 2, 4, 1, 4, 8, 2):
-            self.assertIn(f"int={size}", out)
+            self.assertIn(f"value={size}", out)
 
     def test_sizeof_array_does_not_decay(self):
         # `sizeof a` for `int a[10]` is 10 (10 elements × 1B/int),
@@ -604,21 +604,21 @@ class TestSizeof(unittest.TestCase):
             "int main(void) { int a[10]; return (int)sizeof a; }",
         )
         # Not the pointer width 2 — the array width 10.
-        self.assertIn("int=10", out)
+        self.assertIn("value=10", out)
 
     def test_sizeof_string_literal_does_not_decay(self):
         # `sizeof "abc"` is 4 (3 chars + null), not 2 (sizeof char *).
         out = self._tac(
             'int main(void) { return (int)sizeof "abc"; }',
         )
-        self.assertIn("int=4", out)
+        self.assertIn("value=4", out)
 
     def test_sizeof_multi_dim_array(self):
         # `sizeof a` for `long a[3][5]` is 3 * 5 * 2 = 30.
         out = self._tac(
             "int main(void) { long a[3][5]; return (int)sizeof a; }",
         )
-        self.assertIn("int=30", out)
+        self.assertIn("value=30", out)
 
     def test_sizeof_does_not_evaluate_operand(self):
         # `sizeof (i++)` must NOT emit any inc instructions for `i`.
@@ -628,7 +628,7 @@ class TestSizeof(unittest.TestCase):
             "int main(void) { int i = 0; long s = sizeof (i++); return i; }",
         )
         # The sizeof value (1) shows up as a ConstLong.
-        self.assertIn("int=1", out)
+        self.assertIn("value=1", out)
         # The operand `i++` would lower to a Binary(Add) into a
         # temp + Copy back to i — neither should appear in the TAC.
         self.assertNotIn("Add(", out)
@@ -660,21 +660,21 @@ class TestSizeof(unittest.TestCase):
         out = self._tac(
             "int main(void) { return (int)sizeof sizeof(int); }",
         )
-        self.assertIn("int=2", out)
+        self.assertIn("value=2", out)
 
     def test_sizeof_pointer_type_form(self):
         out = self._tac(
             "int main(void) { return (int)sizeof(int (*)[100]); }",
         )
         # Pointer is 2 bytes regardless of its pointee.
-        self.assertIn("int=2", out)
+        self.assertIn("value=2", out)
 
     def test_sizeof_nested_array_type(self):
         # sizeof(char[3][6][17][9]) = 3 * 6 * 17 * 9 * 1 = 2754 bytes.
         out = self._tac(
             "int main(void) { return (int)sizeof(char[3][6][17][9]); }",
         )
-        self.assertIn("int=2754", out)
+        self.assertIn("value=2754", out)
 
     def test_reject_sizeof_void_type(self):
         err = self._expect_failure(

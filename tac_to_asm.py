@@ -93,7 +93,7 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                Branch(NE/EQ). The OR sets Z=1 iff
                                every byte is zero, which is the
                                whole-value "is zero" test.
-  Constant(c)               -> Imm(c.int) (1-byte values direct; for
+  Constant(c)               -> Imm(c.value) (1-byte values direct; for
                                wider values, callers extract bytes
                                via `_byte_at`).
   Var(name)                 -> Pseudo(name, offset=0). Subsequent
@@ -1682,7 +1682,7 @@ def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
         case tac_ast.Constant(const=tac_ast.ConstDouble(bits=b)):
             return asm_ast.Imm(value=b)
         case tac_ast.Constant(const=c):
-            return asm_ast.Imm(value=c.int)
+            return asm_ast.Imm(value=c.value)
         case tac_ast.Var(name=n):
             return asm_ast.Pseudo(name=n, offset=0)
     raise TypeError(f"unexpected val node: {val!r}")

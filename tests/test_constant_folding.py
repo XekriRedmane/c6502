@@ -30,15 +30,15 @@ from passes.optimization.constant_folding import constant_fold
 
 
 def _ci(v: int) -> tac_ast.Constant:
-    return tac_ast.Constant(const=tac_ast.ConstInt(int=v))
+    return tac_ast.Constant(const=tac_ast.ConstInt(value=v))
 
 
 def _cl(v: int) -> tac_ast.Constant:
-    return tac_ast.Constant(const=tac_ast.ConstLong(int=v))
+    return tac_ast.Constant(const=tac_ast.ConstLong(value=v))
 
 
 def _cll(v: int) -> tac_ast.Constant:
-    return tac_ast.Constant(const=tac_ast.ConstLongLong(int=v))
+    return tac_ast.Constant(const=tac_ast.ConstLongLong(value=v))
 
 
 def _cf(s: str) -> tac_ast.Constant:
@@ -52,7 +52,7 @@ def _var(name: str) -> tac_ast.Var:
 
 
 def _ret() -> tac_ast.Ret:
-    return tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=0)))
+    return tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(value=0)))
 
 
 def _fn(*instrs) -> tac_ast.Function:

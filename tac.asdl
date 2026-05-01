@@ -61,7 +61,7 @@ module TAC {
     -- Float and Double have different IEEE 754 bit patterns; their
     -- payload is the bit pattern as an unsigned integer (32-bit for
     -- ConstFloat, 64-bit for ConstDouble).
-    const = ConstInt(int) | ConstLong(int) | ConstLongLong(int)
+    const = ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
           | ConstFloat(int bits) | ConstDouble(int bits)
     -- AddressInit lays down a 2-byte word that resolves at link
     -- time to the address `name + offset`. Only used for Pointer-

@@ -19,7 +19,7 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 class TestTranslateVal(unittest.TestCase):
     def test_constant_becomes_imm(self):
         self.assertEqual(
-            translate_val(tac_ast.Constant(const=tac_ast.ConstInt(int=42))),
+            translate_val(tac_ast.Constant(const=tac_ast.ConstInt(value=42))),
             asm_ast.Imm(value=42),
         )
 
@@ -87,7 +87,7 @@ class TestTranslateUnopAtoms(unittest.TestCase):
 class TestTranslateInstruction(unittest.TestCase):
     def test_ret_emits_mov_to_a_then_ret(self):
         self.assertEqual(
-            translate_instruction(tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=7)))),
+            translate_instruction(tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(value=7)))),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
@@ -109,7 +109,7 @@ class TestTranslateInstruction(unittest.TestCase):
         # into A. save_a=True so the epilogue PHA/PLA preserves A.
         self.assertEqual(
             translate_instruction(
-                tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstLong(int=0x1234)))
+                tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstLong(value=0x1234)))
             ),
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=0x12), dst=_REG_A),
@@ -227,7 +227,7 @@ class TestTranslateInstruction(unittest.TestCase):
         # -> Mov(A, dst).
         instr = tac_ast.Unary(
             op=tac_ast.Negate(),
-            src=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
+            src=tac_ast.Constant(const=tac_ast.ConstInt(value=5)),
             dst=tac_ast.Var(name="%0"),
         )
         self.assertEqual(
@@ -288,7 +288,7 @@ class TestTranslateInstruction(unittest.TestCase):
         # Mov(src1, A) -> ClearCarry -> Add(src2, A) -> Mov(A, dst).
         instr = tac_ast.Binary(
             op=tac_ast.Add(),
-            src1=tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
+            src1=tac_ast.Constant(const=tac_ast.ConstInt(value=3)),
             src2=tac_ast.Var(name="%0"),
             dst=tac_ast.Var(name="%1"),
         )
@@ -307,7 +307,7 @@ class TestTranslateInstruction(unittest.TestCase):
         instr = tac_ast.Binary(
             op=tac_ast.Subtract(),
             src1=tac_ast.Var(name="%0"),
-            src2=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=5)),
             dst=tac_ast.Var(name="%1"),
         )
         self.assertEqual(
@@ -326,7 +326,7 @@ class TestTranslateInstruction(unittest.TestCase):
         # HARGS+3 is discarded, since int*int truncates to int).
         instr = tac_ast.Binary(
             op=tac_ast.Multiply(),
-            src1=tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
+            src1=tac_ast.Constant(const=tac_ast.ConstInt(value=3)),
             src2=tac_ast.Var(name="%0"),
             dst=tac_ast.Var(name="%1"),
         )
@@ -350,7 +350,7 @@ class TestTranslateInstruction(unittest.TestCase):
         instr = tac_ast.Binary(
             op=tac_ast.Divide(),
             src1=tac_ast.Var(name="%0"),
-            src2=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=5)),
             dst=tac_ast.Var(name="%1"),
         )
         self.assertEqual(
@@ -372,7 +372,7 @@ class TestTranslateInstruction(unittest.TestCase):
         instr = tac_ast.Binary(
             op=tac_ast.BitwiseAnd(),
             src1=tac_ast.Var(name="%0"),
-            src2=tac_ast.Constant(const=tac_ast.ConstInt(int=15)),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=15)),
             dst=tac_ast.Var(name="%1"),
         )
         self.assertEqual(
@@ -387,7 +387,7 @@ class TestTranslateInstruction(unittest.TestCase):
     def test_binary_bitwise_or_lowered(self):
         instr = tac_ast.Binary(
             op=tac_ast.BitwiseOr(),
-            src1=tac_ast.Constant(const=tac_ast.ConstInt(int=-16)),
+            src1=tac_ast.Constant(const=tac_ast.ConstInt(value=-16)),
             src2=tac_ast.Var(name="%0"),
             dst=tac_ast.Var(name="%1"),
         )
@@ -428,7 +428,7 @@ class TestTranslateInstruction(unittest.TestCase):
         instr = tac_ast.Binary(
             op=tac_ast.LeftShift(),
             src1=tac_ast.Var(name="%0"),
-            src2=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
             dst=tac_ast.Var(name="%1"),
         )
         self.assertEqual(
@@ -450,8 +450,8 @@ class TestTranslateInstruction(unittest.TestCase):
         # (sign-preserving) rather than a logical-right-shift helper.
         instr = tac_ast.Binary(
             op=tac_ast.RightShift(),
-            src1=tac_ast.Constant(const=tac_ast.ConstInt(int=64)),
-            src2=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+            src1=tac_ast.Constant(const=tac_ast.ConstInt(value=64)),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
             dst=tac_ast.Var(name="%0"),
         )
         self.assertEqual(
@@ -472,8 +472,8 @@ class TestTranslateInstruction(unittest.TestCase):
         # slot pair after the quotient (HARGS+3 for divmod8).
         instr = tac_ast.Binary(
             op=tac_ast.Modulo(),
-            src1=tac_ast.Constant(const=tac_ast.ConstInt(int=17)),
-            src2=tac_ast.Constant(const=tac_ast.ConstInt(int=5)),
+            src1=tac_ast.Constant(const=tac_ast.ConstInt(value=17)),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=5)),
             dst=tac_ast.Var(name="%0"),
         )
         self.assertEqual(
@@ -500,7 +500,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
     def test_copy_constant_to_var_becomes_single_mov(self):
         self.assertEqual(
             translate_instruction(tac_ast.Copy(
-                src=tac_ast.Constant(const=tac_ast.ConstInt(int=0)),
+                src=tac_ast.Constant(const=tac_ast.ConstInt(value=0)),
                 dst=tac_ast.Var(name="%0"),
             )),
             [asm_ast.Mov(
@@ -537,7 +537,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
     def test_jump_if_true_constant_stages_through_a_then_bne(self):
         self.assertEqual(
             translate_instruction(tac_ast.JumpIfTrue(
-                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
                 target=".or_true@0",
             )),
             [
@@ -561,7 +561,7 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
     def test_jump_if_false_constant_stages_through_a_then_beq(self):
         self.assertEqual(
             translate_instruction(tac_ast.JumpIfFalse(
-                condition=tac_ast.Constant(const=tac_ast.ConstInt(int=0)),
+                condition=tac_ast.Constant(const=tac_ast.ConstInt(value=0)),
                 target=".and_false@0",
             )),
             [
@@ -592,21 +592,21 @@ class TestTranslateShortCircuitAtoms(unittest.TestCase):
             is_global=True,
             instructions=[
                 tac_ast.JumpIfFalse(
-                    condition=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                    condition=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
                     target=".and_false@0",
                 ),
                 tac_ast.JumpIfFalse(
-                    condition=tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
+                    condition=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
                     target=".and_false@0",
                 ),
                 tac_ast.Copy(
-                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Jump(target=".and_end@1"),
                 tac_ast.Label(name=".and_false@0"),
                 tac_ast.Copy(
-                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=0)),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(value=0)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Label(name=".and_end@1"),
@@ -659,7 +659,7 @@ class TestTranslateComparisons(unittest.TestCase):
 
     @staticmethod
     def _src2():
-        return tac_ast.Constant(const=tac_ast.ConstInt(int=5))
+        return tac_ast.Constant(const=tac_ast.ConstInt(value=5))
 
     @staticmethod
     def _dst():
@@ -1234,7 +1234,7 @@ class TestTranslateFunction(unittest.TestCase):
             instructions=[
                 tac_ast.Unary(
                     op=tac_ast.Negate(),
-                    src=tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
+                    src=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
                     dst=tac_ast.Var(name="%0"),
                 ),
                 tac_ast.Ret(val=tac_ast.Var(name="%0")),
@@ -1291,7 +1291,7 @@ class TestTranslateFunctionCall(unittest.TestCase):
         # emitter handles Imm→Stack as LDA imm + LDY off + STA).
         instrs = translate_instruction(tac_ast.FunctionCall(
             name="f",
-            args=[tac_ast.Constant(const=tac_ast.ConstInt(int=42))],
+            args=[tac_ast.Constant(const=tac_ast.ConstInt(value=42))],
             dst=tac_ast.Var(name="@0.t"),
         ))
         self.assertEqual(instrs, [
@@ -1332,9 +1332,9 @@ class TestTranslateFunctionCall(unittest.TestCase):
         instrs = translate_instruction(tac_ast.FunctionCall(
             name="f",
             args=[
-                tac_ast.Constant(const=tac_ast.ConstInt(int=1)),
-                tac_ast.Constant(const=tac_ast.ConstInt(int=2)),
-                tac_ast.Constant(const=tac_ast.ConstInt(int=3)),
+                tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
+                tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
+                tac_ast.Constant(const=tac_ast.ConstInt(value=3)),
             ],
             dst=tac_ast.Var(name="@0.t"),
         ))
@@ -1366,7 +1366,7 @@ class TestTranslateProgram(unittest.TestCase):
                 name="main",
                 is_global=True,
                 params=[],
-                instructions=[tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(int=42)))],
+                instructions=[tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstInt(value=42)))],
             )],
         )
         expected = asm_ast.Program(

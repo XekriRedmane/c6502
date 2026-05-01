@@ -357,17 +357,17 @@ class Type_const:
 
 @dataclass
 class ConstInt(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstLong(Type_const):
-    int: int
+    value: int
 
 
 @dataclass
 class ConstLongLong(Type_const):
-    int: int
+    value: int
 
 
 @dataclass

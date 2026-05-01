@@ -10,14 +10,16 @@ static-storage variables live in a flat byte-addressed memory
 map and are read / written through their addresses.
 
 Scope (this module): integer types (Int / UInt / Long / ULong /
-LongLong / ULongLong / Char / SChar / UChar), Pointer, arithmetic
-+ bitwise + comparison + shift, control flow, Copy, FunctionCall,
-Ret, cast nodes (SignExtend / ZeroExtend / Truncate), GetAddress
-/ Load / Store, StaticVariable initialization (including
-AddressInit, StringInit, ZeroInit, and FloatInit / DoubleInit
-byte-level layout). NOT YET: Float / Double arithmetic and
-runtime FP-conversion ops (IntToFloat, FloatToInt, ...),
-IndirectCall, struct sret returns.
+LongLong / ULongLong / Char / SChar / UChar), Pointer, Float,
+Double; arithmetic + bitwise + comparison + shift on integers;
+arithmetic + comparison + Negate + LogicalNot on FP (via
+fp_arith); control flow with FP-aware truthiness; Copy,
+FunctionCall, Ret, integer cast nodes (SignExtend / ZeroExtend /
+Truncate), FP cast nodes (IntToFloat / IntToDouble / FloatToInt
+/ DoubleToInt / FloatToDouble / DoubleToFloat), GetAddress /
+Load / Store, StaticVariable initialization (including
+AddressInit, StringInit, ZeroInit, FloatInit, DoubleInit). NOT
+YET: IndirectCall, struct sret returns.
 
 Intended use: exercise C semantics without depending on the
 (still-landing) 6502 runtime helpers, and pin TAC behavior as a
@@ -30,9 +32,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import c99_ast
+import fp_arith
 import tac_ast
 from passes.type_checking import (
     Char,
+    Double,
+    Float,
     Int,
     Long,
     LongLong,
@@ -52,39 +57,48 @@ class TacSimError(Exception):
     pass
 
 
-# Scalar type → (signed, width_bytes). Pointer is treated as
-# unsigned (addresses are inherently unsigned in the runtime
+# Scalar type → (signed, width_bytes, is_fp). Pointer is treated
+# as unsigned (addresses are inherently unsigned in the runtime
 # model). Char-types match c6502's "plain char is signed" rule.
-_INT_TYPES: dict[type, tuple[bool, int]] = {
-    Int: (True, 1),
-    Char: (True, 1),
-    SChar: (True, 1),
-    UInt: (False, 1),
-    UChar: (False, 1),
-    Long: (True, 2),
-    ULong: (False, 2),
-    Pointer: (False, 2),
-    LongLong: (True, 4),
-    ULongLong: (False, 4),
+# For FP types `signed` is irrelevant (FP dispatch never consults
+# it — sign / unsigned splits don't apply); width selects single
+# vs. double precision.
+_TYPE_INFO: dict[type, tuple[bool, int, bool]] = {
+    Int:       (True,  1, False),
+    Char:      (True,  1, False),
+    SChar:     (True,  1, False),
+    UInt:      (False, 1, False),
+    UChar:     (False, 1, False),
+    Long:      (True,  2, False),
+    ULong:     (False, 2, False),
+    Pointer:   (False, 2, False),
+    LongLong:  (True,  4, False),
+    ULongLong: (False, 4, False),
+    Float:     (False, 4, True),
+    Double:    (False, 8, True),
 }
 
 
-def _type_info(t: Type) -> tuple[bool, int]:
-    info = _INT_TYPES.get(type(t))
+def _type_info(t: Type) -> tuple[bool, int, bool]:
+    info = _TYPE_INFO.get(type(t))
     if info is None:
         raise TacSimError(f"unsupported type in simulator: {type(t).__name__}")
     return info
 
 
-def _const_info(c: tac_ast.Type_const) -> tuple[bool, int, int]:
-    """(signed, width_bytes, unsigned_value) for a TAC integer constant."""
+def _const_info(c: tac_ast.Type_const) -> tuple[bool, int, bool, int]:
+    """(signed, width_bytes, is_fp, unsigned_value) for a TAC constant.
+
+    For FP variants the value is the IEEE 754 bit pattern."""
     match c:
-        case tac_ast.ConstInt(value=v):       return (True,  1, v & 0xFF)
-        case tac_ast.ConstLong(value=v):      return (True,  2, v & 0xFFFF)
-        case tac_ast.ConstLongLong(value=v):  return (True,  4, v & 0xFFFFFFFF)
-        case tac_ast.ConstUInt(value=v):      return (False, 1, v & 0xFF)
-        case tac_ast.ConstULong(value=v):     return (False, 2, v & 0xFFFF)
-        case tac_ast.ConstULongLong(value=v): return (False, 4, v & 0xFFFFFFFF)
+        case tac_ast.ConstInt(value=v):       return (True,  1, False, v & 0xFF)
+        case tac_ast.ConstLong(value=v):      return (True,  2, False, v & 0xFFFF)
+        case tac_ast.ConstLongLong(value=v):  return (True,  4, False, v & 0xFFFFFFFF)
+        case tac_ast.ConstUInt(value=v):      return (False, 1, False, v & 0xFF)
+        case tac_ast.ConstULong(value=v):     return (False, 2, False, v & 0xFFFF)
+        case tac_ast.ConstULongLong(value=v): return (False, 4, False, v & 0xFFFFFFFF)
+        case tac_ast.ConstFloat(bits=b):      return (False, 4, True,  b & 0xFFFFFFFF)
+        case tac_ast.ConstDouble(bits=b):     return (False, 8, True,  b & 0xFFFFFFFFFFFFFFFF)
     raise TacSimError(f"unsupported const variant: {type(c).__name__}")
 
 
@@ -101,7 +115,8 @@ def _sizeof(t: Type) -> int:
     """Bytes occupied by an object of type `t`. Recursive for Array."""
     if isinstance(t, c99_ast.Array):
         return _sizeof(t.element_type) * t.size
-    return _type_info(t)[1]
+    _, width, _ = _type_info(t)
+    return width
 
 
 def _init_size(init: tac_ast.Type_static_init) -> int:
@@ -270,7 +285,7 @@ class Simulator:
         taken = self._address_taken[fn.name]
         for pname in fn.params:
             sym = self.symbols[pname]
-            _, w = _type_info(sym.type)
+            _, w, _ = _type_info(sym.type)
             if pname in taken:
                 addr = self.memory.allocate(w)
                 frame.local_addr[pname] = addr
@@ -278,7 +293,7 @@ class Simulator:
         # lazily below, on first read or write.
         for pname, raw in zip(fn.params, args):
             sym = self.symbols[pname]
-            _, w = _type_info(sym.type)
+            _, w, _ = _type_info(sym.type)
             masked = raw & _mask(w)
             if pname in frame.local_addr:
                 self.memory.store(frame.local_addr[pname], masked, w)
@@ -288,18 +303,24 @@ class Simulator:
         if ret.value is None:
             return None
         ret_type = self.symbols[name].type.ret
-        signed, _ = _type_info(ret_type)
+        signed, _, is_fp = _type_info(ret_type)
+        if is_fp:
+            # Return value is the raw IEEE 754 bit pattern.
+            return ret.value
         return _to_signed(ret.value, ret.width) if signed else ret.value
 
     def read_static(self, name: str) -> int:
         """Read the current value of a scalar static variable as a
-        Python int (signed if the declared type is signed)."""
+        Python int (signed if the declared type is signed). For FP
+        statics, returns the IEEE 754 bit pattern."""
         sym = self.symbols.get(name)
         if sym is None or not isinstance(sym.attrs, StaticAttr):
             raise TacSimError(f"not a static variable: {name!r}")
         addr = self._static_addr[name]
-        signed, w = _type_info(sym.type)
+        signed, w, is_fp = _type_info(sym.type)
         raw = self.memory.load(addr, w)
+        if is_fp:
+            return raw
         return _to_signed(raw, w) if signed else raw
 
     def _run(self, frame: _Frame) -> _Return:
@@ -323,11 +344,11 @@ class Simulator:
                 frame.pc = self._labels[frame.function.name][t]
 
             case tac_ast.JumpIfTrue(condition=c, target=t):
-                if self._read(frame, c)[0] != 0:
+                if self._is_truthy(*self._read(frame, c)):
                     frame.pc = self._labels[frame.function.name][t]
 
             case tac_ast.JumpIfFalse(condition=c, target=t):
-                if self._read(frame, c)[0] == 0:
+                if not self._is_truthy(*self._read(frame, c)):
                     frame.pc = self._labels[frame.function.name][t]
 
             case tac_ast.Copy(src=s, dst=d):
@@ -335,8 +356,8 @@ class Simulator:
                 self._write(frame, d, v)
 
             case tac_ast.Unary(op=op, src=s, dst=d):
-                v, (_, w) = self._read(frame, s)
-                self._write(frame, d, self._eval_unary(op, v, w))
+                v, ta = self._read(frame, s)
+                self._write(frame, d, self._eval_unary(op, v, ta))
 
             case tac_ast.Binary(op=op, src1=a, src2=b, dst=d):
                 va, ta = self._read(frame, a)
@@ -344,13 +365,41 @@ class Simulator:
                 self._write(frame, d, self._eval_binary(op, va, vb, ta))
 
             case tac_ast.SignExtend(src=s, dst=d):
-                vu, (_, w_src) = self._read(frame, s)
+                vu, (_, w_src, _) = self._read(frame, s)
                 vs = _to_signed(vu, w_src)
                 self._write(frame, d, vs & _mask(self._dst_width(d)))
 
             case tac_ast.ZeroExtend(src=s, dst=d) | tac_ast.Truncate(src=s, dst=d):
                 vu, _ = self._read(frame, s)
                 self._write(frame, d, vu & _mask(self._dst_width(d)))
+
+            case tac_ast.IntToFloat(src=s, dst=d):
+                vu, (signed, w, _) = self._read(frame, s)
+                v_int = _to_signed(vu, w) if signed else vu
+                self._write(frame, d, fp_arith.int_to_single_bits(v_int))
+
+            case tac_ast.IntToDouble(src=s, dst=d):
+                vu, (signed, w, _) = self._read(frame, s)
+                v_int = _to_signed(vu, w) if signed else vu
+                self._write(frame, d, fp_arith.int_to_double_bits(v_int))
+
+            case tac_ast.FloatToInt(src=s, dst=d):
+                vu, _ = self._read(frame, s)
+                v_int = fp_arith.single_bits_to_int(vu)
+                self._write(frame, d, v_int & _mask(self._dst_width(d)))
+
+            case tac_ast.DoubleToInt(src=s, dst=d):
+                vu, _ = self._read(frame, s)
+                v_int = fp_arith.double_bits_to_int(vu)
+                self._write(frame, d, v_int & _mask(self._dst_width(d)))
+
+            case tac_ast.FloatToDouble(src=s, dst=d):
+                vu, _ = self._read(frame, s)
+                self._write(frame, d, fp_arith.single_bits_to_double_bits(vu))
+
+            case tac_ast.DoubleToFloat(src=s, dst=d):
+                vu, _ = self._read(frame, s)
+                self._write(frame, d, fp_arith.double_bits_to_single_bits(vu))
 
             case tac_ast.GetAddress(operand=op, dst=d):
                 addr = self._address_of(frame, op)
@@ -362,7 +411,7 @@ class Simulator:
                 self._write(frame, d, self.memory.load(ptr, w))
 
             case tac_ast.Store(src=s, dst_ptr=p):
-                v, (_, w) = self._read(frame, s)
+                v, (_, w, _) = self._read(frame, s)
                 ptr, _ = self._read(frame, p)
                 self.memory.store(ptr, v, w)
 
@@ -370,7 +419,7 @@ class Simulator:
                 return _Return(None, 0)
 
             case tac_ast.Ret(val=v):
-                vu, (_, w) = self._read(frame, v)
+                vu, (_, w, _) = self._read(frame, v)
                 return _Return(vu, w)
 
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
@@ -385,6 +434,17 @@ class Simulator:
                 )
 
         return None
+
+    @staticmethod
+    def _is_truthy(value: int, ta: tuple[bool, int, bool]) -> bool:
+        """C99 §6.3.1.2 truthiness — non-zero for integers; for FP,
+        anything that compares unequal to 0 (so NaN is truthy and
+        -0.0 is falsy, both via fp_arith)."""
+        _, w, is_fp = ta
+        if is_fp:
+            return (fp_arith.double_is_truthy(value) if w == 8
+                    else fp_arith.single_is_truthy(value))
+        return value != 0
 
     def _address_of(self, frame: _Frame, val: tac_ast.Type_val) -> int:
         if not isinstance(val, tac_ast.Var):
@@ -405,33 +465,34 @@ class Simulator:
         addr = self.memory.allocate(size)
         frame.local_addr[name] = addr
         if name in frame.env:
-            _, w = _type_info(sym.type)
+            _, w, _ = _type_info(sym.type)
             self.memory.store(addr, frame.env[name], w)
             del frame.env[name]
         return addr
 
-    def _read(self, frame: _Frame, val) -> tuple[int, tuple[bool, int]]:
+    def _read(self, frame: _Frame, val) -> tuple[int, tuple[bool, int, bool]]:
         match val:
             case tac_ast.Constant(const=c):
-                signed, w, vu = _const_info(c)
-                return vu, (signed, w)
+                signed, w, is_fp, vu = _const_info(c)
+                return vu, (signed, w, is_fp)
             case tac_ast.Var(name=n):
                 sym = self.symbols[n]
-                signed, w = _type_info(sym.type)
+                ti = _type_info(sym.type)
+                _, w, _ = ti
                 if isinstance(sym.attrs, StaticAttr):
-                    return self.memory.load(self._static_addr[n], w), (signed, w)
+                    return self.memory.load(self._static_addr[n], w), ti
                 if n in frame.local_addr:
-                    return self.memory.load(frame.local_addr[n], w), (signed, w)
+                    return self.memory.load(frame.local_addr[n], w), ti
                 if n not in frame.env:
                     raise TacSimError(f"uninitialized var: {n}")
-                return frame.env[n], (signed, w)
+                return frame.env[n], ti
         raise TacSimError(f"unsupported val: {type(val).__name__}")
 
     def _write(self, frame: _Frame, val, raw: int) -> None:
         if not isinstance(val, tac_ast.Var):
             raise TacSimError(f"can only write to Var, got {type(val).__name__}")
         sym = self.symbols[val.name]
-        _, w = _type_info(sym.type)
+        _, w, _ = _type_info(sym.type)
         masked = raw & _mask(w)
         if isinstance(sym.attrs, StaticAttr):
             self.memory.store(self._static_addr[val.name], masked, w)
@@ -443,12 +504,25 @@ class Simulator:
     def _dst_width(self, val) -> int:
         if not isinstance(val, tac_ast.Var):
             raise TacSimError(f"expected Var as dst, got {type(val).__name__}")
-        _, w = _type_info(self.symbols[val.name].type)
+        _, w, _ = _type_info(self.symbols[val.name].type)
         return w
 
     @staticmethod
-    def _eval_unary(op, v_u: int, w: int) -> int:
+    def _eval_unary(op, v_u: int, ta: tuple[bool, int, bool]) -> int:
+        _, w, is_fp = ta
         m = _mask(w)
+        if is_fp:
+            match op:
+                case tac_ast.Negate():
+                    return (fp_arith.double_negate(v_u) if w == 8
+                            else fp_arith.single_negate(v_u))
+                case tac_ast.LogicalNot():
+                    truthy = (fp_arith.double_is_truthy(v_u) if w == 8
+                              else fp_arith.single_is_truthy(v_u))
+                    return 0 if truthy else 1
+                case tac_ast.Complement():
+                    raise TacSimError("Complement is not defined for FP types")
+            raise TacSimError(f"unsupported FP unary op: {type(op).__name__}")
         match op:
             case tac_ast.Negate():     return (-_to_signed(v_u, w)) & m
             case tac_ast.Complement(): return (~v_u) & m
@@ -456,9 +530,12 @@ class Simulator:
         raise TacSimError(f"unsupported unary op: {type(op).__name__}")
 
     @staticmethod
-    def _eval_binary(op, a_u: int, b_u: int, ta: tuple[bool, int]) -> int:
-        signed, w = ta
+    def _eval_binary(op, a_u: int, b_u: int, ta: tuple[bool, int, bool]) -> int:
+        signed, w, is_fp = ta
         m = _mask(w)
+
+        if is_fp:
+            return Simulator._eval_binary_fp(op, a_u, b_u, w)
 
         if isinstance(op, tac_ast.Equal):
             return 1 if a_u == b_u else 0
@@ -514,3 +591,37 @@ class Simulator:
                 return (a_u % b_u) & m
 
         raise TacSimError(f"unsupported binary op: {type(op).__name__}")
+
+    @staticmethod
+    def _eval_binary_fp(op, a_bits: int, b_bits: int, w: int) -> int:
+        """FP arithmetic / comparison dispatch via fp_arith. `w` selects
+        single (4) vs. double (8) precision. Comparison results are
+        always 1-byte 0/1 (Int)."""
+        if isinstance(op, (tac_ast.Equal, tac_ast.NotEqual,
+                           tac_ast.LessThan, tac_ast.GreaterThan,
+                           tac_ast.LessOrEqual, tac_ast.GreaterOrEqual)):
+            tag = (fp_arith.double_compare(a_bits, b_bits) if w == 8
+                   else fp_arith.single_compare(a_bits, b_bits))
+            # Per C99 §6.5.8.5: `==` is true iff both equal (false on
+            # unordered); ordering relations are false on unordered.
+            # `!=` is the negation of `==`, so it's true on unordered.
+            match op:
+                case tac_ast.Equal():          return 1 if tag == "eq" else 0
+                case tac_ast.NotEqual():       return 0 if tag == "eq" else 1
+                case tac_ast.LessThan():       return 1 if tag == "lt" else 0
+                case tac_ast.GreaterThan():    return 1 if tag == "gt" else 0
+                case tac_ast.LessOrEqual():    return 1 if tag in ("lt", "eq") else 0
+                case tac_ast.GreaterOrEqual(): return 1 if tag in ("gt", "eq") else 0
+        if w == 8:
+            match op:
+                case tac_ast.Add():      return fp_arith.double_add(a_bits, b_bits)
+                case tac_ast.Subtract(): return fp_arith.double_sub(a_bits, b_bits)
+                case tac_ast.Multiply(): return fp_arith.double_mul(a_bits, b_bits)
+                case tac_ast.Divide():   return fp_arith.double_div(a_bits, b_bits)
+        else:
+            match op:
+                case tac_ast.Add():      return fp_arith.single_add(a_bits, b_bits)
+                case tac_ast.Subtract(): return fp_arith.single_sub(a_bits, b_bits)
+                case tac_ast.Multiply(): return fp_arith.single_mul(a_bits, b_bits)
+                case tac_ast.Divide():   return fp_arith.single_div(a_bits, b_bits)
+        raise TacSimError(f"unsupported FP binary op: {type(op).__name__}")

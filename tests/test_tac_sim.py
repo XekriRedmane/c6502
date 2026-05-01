@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import unittest
 
+import fp_arith
 from c99_to_tac import translate_program as translate_to_tac
 from parser import parse
 from passes.identifier_resolution import resolve_program as resolve_identifiers
@@ -291,6 +292,136 @@ class TestTacSimMemory(unittest.TestCase):
         long main(void) { return deref(41); }
         """
         self.assertEqual(_run(src), 42)
+
+
+def _f32(s: str) -> int:
+    return fp_arith.single_string_to_bits(s)
+
+
+def _f64(s: str) -> int:
+    return fp_arith.double_string_to_bits(s)
+
+
+class TestTacSimFP(unittest.TestCase):
+    """Float and Double arithmetic / comparison / casts. Functions
+    that return Float / Double come back as raw IEEE 754 bit
+    patterns — tests compare those bits to the bit pattern of an
+    expected decimal literal via fp_arith."""
+
+    def test_float_add_exact(self):
+        # 1.0 + 2.0 = 3.0 exactly in IEEE 754.
+        src = "float main(void) { return 1.0f + 2.0f; }"
+        self.assertEqual(_run(src), _f32("3.0"))
+
+    def test_float_mul_half(self):
+        # 3.0 * 0.5 = 1.5 exactly.
+        src = "float main(void) { return 3.0f * 0.5f; }"
+        self.assertEqual(_run(src), _f32("1.5"))
+
+    def test_double_div(self):
+        # 7.0 / 2.0 = 3.5 exactly.
+        src = "double main(void) { return 7.0 / 2.0; }"
+        self.assertEqual(_run(src), _f64("3.5"))
+
+    def test_float_subtract(self):
+        src = "float main(void) { return 5.5f - 2.25f; }"
+        self.assertEqual(_run(src), _f32("3.25"))
+
+    def test_float_negate(self):
+        src = "float main(void) { float x = 1.5f; return -x; }"
+        self.assertEqual(_run(src), _f32("-1.5"))
+
+    def test_float_compare_lt(self):
+        src = "int main(void) { float a = 1.5f; float b = 2.5f; return a < b; }"
+        self.assertEqual(_run(src), 1)
+
+    def test_float_compare_gt(self):
+        src = "int main(void) { float a = 1.5f; float b = 2.5f; return a > b; }"
+        self.assertEqual(_run(src), 0)
+
+    def test_float_eq_zero_signs(self):
+        # +0.0 == -0.0 by IEEE 754 §6.5.8.5.
+        src = "int main(void) { float pz = 0.0f; float nz = -0.0f; return pz == nz; }"
+        self.assertEqual(_run(src), 1)
+
+    def test_int_to_double_cast(self):
+        # (double)42 → 42.0
+        src = "double main(void) { int x = 42; return (double)x; }"
+        self.assertEqual(_run(src), _f64("42.0"))
+
+    def test_double_to_int_truncates_toward_zero(self):
+        # (int)3.7 → 3 (not 4 — truncates, not rounds).
+        src = "int main(void) { double x = 3.7; return (int)x; }"
+        self.assertEqual(_run(src), 3)
+        # And -3.7 → -3 (toward zero, not -4).
+        src2 = "int main(void) { double x = -3.7; return (int)x; }"
+        self.assertEqual(_run(src2), -3)
+
+    def test_float_to_double_widening(self):
+        # Cast 1.5f to double — losslessly representable.
+        src = "double main(void) { float x = 1.5f; return (double)x; }"
+        self.assertEqual(_run(src), _f64("1.5"))
+
+    def test_double_to_float_narrowing(self):
+        # 1.5 narrows exactly. Use a value that's representable in
+        # single precision so we get an exact bit match.
+        src = "float main(void) { double x = 1.5; return (float)x; }"
+        self.assertEqual(_run(src), _f32("1.5"))
+
+    def test_unsigned_to_double(self):
+        # 0xFFFFFFFF as ULongLong → 4294967295.0 exactly representable
+        # in double (0x41EFFFFFFFE00000)... no wait, 4294967295 is not
+        # exactly representable in double. Use a smaller value.
+        src = """
+        double main(void) {
+            unsigned long x = 65535u;
+            return (double)x;
+        }
+        """
+        # 65535 is exactly representable.
+        self.assertEqual(_run(src), _f64("65535.0"))
+
+    def test_signed_negative_to_double(self):
+        src = """
+        double main(void) {
+            int x = -1;
+            return (double)x;
+        }
+        """
+        self.assertEqual(_run(src), _f64("-1.0"))
+
+    def test_float_truthiness_negative_zero_is_false(self):
+        # IEEE 754 §6.3.1.2: -0.0 compares equal to 0, so it's falsy.
+        # !x should be 1 here.
+        src = "int main(void) { float x = -0.0f; return !x; }"
+        self.assertEqual(_run(src), 1)
+
+    def test_float_truthiness_nonzero_branches(self):
+        # 1.5 is truthy, the if-true branch runs.
+        src = """
+        int main(void) {
+            float x = 1.5f;
+            if (x) return 11; else return 22;
+        }
+        """
+        self.assertEqual(_run(src), 11)
+
+    def test_static_float_persists(self):
+        src = """
+        float g = 2.5f;
+        int main(void) { g = g + 0.5f; return 0; }
+        """
+        tac, symbols = _compile_to_tac(src)
+        sim = Simulator(tac, symbols)
+        sim.call("main", [])
+        self.assertEqual(sim.read_static("g"), _f32("3.0"))
+
+    def test_static_double_initializer(self):
+        src = """
+        double pi = 3.14;
+        double main(void) { return pi; }
+        """
+        self.assertEqual(_run(src), _f64("3.14"))
 
 
 if __name__ == "__main__":

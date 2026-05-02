@@ -103,19 +103,21 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
-    def test_ret_long_constant_loads_high_into_x_low_into_a(self):
-        # 2-byte returns: high byte routed through A → X first (so A
-        # is free for the low byte at the call point), then low byte
-        # into A. save_a=True so the epilogue PHA/PLA preserves A.
+    def test_ret_long_constant_writes_to_hargs_0_through_1(self):
+        # 2-byte returns: write the two bytes (low, high) of the
+        # value into HARGS+0..1 byte-by-byte through A. save_a=False
+        # because no register holds return data (HARGS isn't touched
+        # by the SSP/FP arithmetic), so the epilogue skips PHA/PLA.
         self.assertEqual(
             translate_instruction(
                 tac_ast.Ret(val=tac_ast.Constant(const=tac_ast.ConstLong(value=0x1234)))
             ),
             [
-                asm_ast.Mov(src=asm_ast.Imm(value=0x12), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
                 asm_ast.Mov(src=asm_ast.Imm(value=0x34), dst=_REG_A),
-                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
+                asm_ast.Mov(src=asm_ast.Imm(value=0x12), dst=_REG_A),
+                asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
+                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False),
             ],
         )
 

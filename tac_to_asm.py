@@ -196,6 +196,19 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 #   f2d      (float → double):        in HARGS+0..3;  out HARGS+4..11
 #   d2f      (double → float):        in HARGS+0..7;  out HARGS+8..11
 _HARGS = "HARGS"
+# Return-slot HARGS offset, keyed by return-type width in bytes.
+# 1-byte returns ride in A and don't appear here; everything else
+# lives in a fixed HARGS offset that both the callee's Ret and the
+# caller's FunctionCall capture agree on. Long / ULong / Pointer (2B)
+# share HARGS+0..1 — different from the helper outputs at
+# HARGS+2..7, so capturing a Long return doesn't conflict with the
+# HARGS layout for `mul8`/`divmod8`/`asl8`/`asr8`/`lsr8`. LongLong /
+# Float (4B) sit in the FP-arithmetic helpers' output slot at
+# HARGS+8..11 (and `mul32`/`divmod32`'s output slot too, so a
+# function ending `return a OP b;` for those types skips the epilogue
+# copy). Double (8B) sits in HARGS+16..23 — the FP-double helpers'
+# output slot.
+_RET_HARGS_OFFSET = {2: 0, 4: 8, 8: 16}
 # DPTR is the dereference / scratch indirect-pointer pair. Reserved
 # at zero-page `$1C`/`$1D` (right after HARGS). Used by Load /
 # Store TAC ops: caller writes the 2-byte target address into
@@ -668,29 +681,36 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         """Stage the return value, then Ret. Convention by width:
           Int (1B)              → A.
-          Long (2B)             → A = low byte, X = high byte.
+          Long / ULong /
+            Pointer (2B)        → HARGS+0..1.
           LongLong / Float (4B) → HARGS+8..11.
           Double (8B)           → HARGS+16..23.
-        1- and 2-byte integer returns ride in registers because the
-        epilogue's PHA/PLA can preserve A across the SSP/FP
-        arithmetic cheaply (and X isn't touched by that arithmetic).
-        Wider returns ride through HARGS — for FP these are the
-        same offsets the arithmetic helpers write to (`fadd` /
-        `fsub` / `fmul` / `fdiv` → HARGS+8..11; `dadd` / `dsub` /
-        `dmul` / `ddiv` → HARGS+16..23), so `return a OP b;` for FP
-        operands leaves the result in the right slot already — no
-        epilogue copy. LongLong (4B integer) reuses the Float
-        return slot HARGS+8..11; types are exclusive per call so
-        the overlap is fine, and `mul32` / `divmod32` write to that
-        same offset for the same no-copy-when-possible reason. The
-        `save_a=False` Ret skips the PHA/PLA pair the
-        register-path uses; HARGS isn't touched by SSP/FP
-        arithmetic. arg_bytes/local_bytes are placeholders patched
-        by replace_pseudoregisters.
+        Only the 1-byte case rides in a register; everything wider
+        lives in zero-page HARGS slots. The epilogue's PHA/PLA
+        wrap (controlled by `save_a`) preserves A for the Int case;
+        wider returns set `save_a=False` since their result isn't in
+        any register the SSP/FP arithmetic touches. Slots:
+        FP arithmetic helpers `fadd`/`fsub`/`fmul`/`fdiv` write to
+        HARGS+8..11; `dadd`/`dsub`/`dmul`/`ddiv` write to
+        HARGS+16..23 — so `return a OP b;` for FP operands leaves
+        the result in the right slot already, no epilogue copy.
+        LongLong (4B integer) reuses the Float return slot
+        HARGS+8..11; types are exclusive per call so the overlap
+        is fine, and `mul32`/`divmod32` write to that same offset
+        for the same no-copy-when-possible reason. Long uses
+        HARGS+0..1, the same slot `mul8`/`divmod8` use for inputs
+        — fine for the same reason: types and timing don't overlap.
 
-        Void return (`val=None`): no value to stage, so emit only the
-        epilogue. Use `save_a=False` since A doesn't carry anything
-        across the SSP/FP arithmetic — saves a PHA/PLA pair."""
+        HARGS is caller-saved by the existing helper convention, so
+        the caller has to capture the return value immediately after
+        the JSR, before any other helper call clobbers it.
+
+        arg_bytes/local_bytes are placeholders patched by
+        replace_pseudoregisters.
+
+        Void return (`val=None`): no value to stage, just the
+        epilogue. `save_a=False` since A carries nothing meaningful
+        across the SSP/FP arithmetic."""
         if val is None:
             return [asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False)]
         src_op = translate_val(val)
@@ -700,20 +720,10 @@ class Translator:
                 asm_ast.Mov(src=src_op, dst=_REG_A),
                 asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
             ]
-        if size == 2:
-            # Long: load high byte into X via A, then low byte into
-            # A. We do high first so A holds low at the call point
-            # — same convention as mul8.
-            return [
-                asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A),
-                asm_ast.Mov(src=_REG_A, dst=_REG_X),
-                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
-                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
-            ]
-        # LongLong / Float (4B) → HARGS+8..11; Double (8B) →
-        # HARGS+16..23. Write the src bytes into HARGS, then Ret
-        # with save_a=False.
-        out_off = 8 if size == 4 else 16
+        # All wider returns: write src bytes into the HARGS slot for
+        # this width (Long → +0..1, LongLong/Float → +8..11, Double
+        # → +16..23) and Ret with save_a=False.
+        out_off = _RET_HARGS_OFFSET[size]
         seq: list[asm_ast.Type_instruction] = []
         for k in range(size):
             seq.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
@@ -1021,7 +1031,8 @@ class Translator:
         Return value, by dst width (read directly after the JSR,
         before any other helper call clobbers HARGS):
           Int (1B)              ← A.
-          Long (2B)             ← A = low byte, X = high byte.
+          Long / ULong /
+            Pointer (2B)        ← HARGS+0..1.
           LongLong / Float (4B) ← HARGS+8..11.
           Double (8B)           ← HARGS+16..23.
         See `_translate_ret` for the matching callee-side write.
@@ -1050,17 +1061,11 @@ class Translator:
             if dst_size == 1:
                 # Int: from A directly.
                 emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
-            elif dst_size == 2:
-                # Long: A = low (save first, before TXA clobbers it),
-                # then X → A → high.
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
-                emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
             else:
-                # LongLong / Float (4B) → HARGS+8..11;
-                # Double (8B) → HARGS+16..23. Read it back byte-by-byte
-                # through A.
-                in_off = 8 if dst_size == 4 else 16
+                # Wider returns: read back byte-by-byte through A
+                # from the HARGS slot for this width. 2B at +0..1,
+                # 4B at +8..11, 8B at +16..23.
+                in_off = _RET_HARGS_OFFSET[dst_size]
                 for k in range(dst_size):
                     emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
                     emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
@@ -1111,12 +1116,8 @@ class Translator:
             dst_size = self._size_of(dst)
             if dst_size == 1:
                 emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
-            elif dst_size == 2:
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
-                emitted.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
             else:
-                in_off = 8 if dst_size == 4 else 16
+                in_off = _RET_HARGS_OFFSET[dst_size]
                 for k in range(dst_size):
                     emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
                     emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))

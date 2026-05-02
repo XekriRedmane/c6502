@@ -892,11 +892,11 @@ def _ret_size(arg_bytes: int, local_bytes: int, save_a: bool) -> int:
         size = 2 + 2 + 2 + 2  # LDA + STA + LDA + STA
     else:
         size = 1 + 2 + 2 + 2 + 2 + 2 + 2
-    # Restore FP from slot at FP+M+1 / FP+M+2 via HW-stack scratch
-    # (PHA/PLA, not TAX/STX — see asm_emit._emit_restore_fp_from_slot
-    # for why X has to survive). LDY #M+1; LDA (FP),Y; PHA; INY;
-    # LDA (FP),Y; STA FP+1; PLA; STA FP.
-    size += 2 + 2 + 1 + 1 + 2 + 2 + 1 + 2
+    # Restore FP from slot at FP+M+1 / FP+M+2 via X scratch:
+    # LDY #M+1; LDA (FP),Y; TAX; INY; LDA (FP),Y; STA FP+1; STX FP.
+    # X is free to clobber because no return convention puts data
+    # there (1B → A, 2B/4B/8B → HARGS).
+    size += 2 + 2 + 1 + 1 + 2 + 2 + 2
     # PHA + PLA wrap if save_a; trailing RTS.
     if save_a:
         size += 1 + 1
@@ -931,15 +931,15 @@ def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> bytes:
         out += _emit_zp("LDA", fp + 1)
         out += bytes([_IMM["ADC"], hi])
         out += _emit_zp("STA", ssp + 1)
-    # Restore FP from slot.
+    # Restore FP from slot. TAX/STX scratch is fine — no return
+    # convention uses X.
     out += bytes([_IMM["LDY"], local_bytes + 1])
     out += bytes([_INDY["LDA"], fp])
-    out += bytes([_IMPLIED["PHA"]])
+    out += bytes([_IMPLIED["TAX"]])
     out += bytes([_IMPLIED["INY"]])
     out += bytes([_INDY["LDA"], fp])
     out += _emit_zp("STA", fp + 1)
-    out += bytes([_IMPLIED["PLA"]])
-    out += _emit_zp("STA", fp)
+    out += _emit_zp("STX", fp)
     if save_a:
         out += bytes([_IMPLIED["PLA"]])
     out += bytes([_IMPLIED["RTS"]])

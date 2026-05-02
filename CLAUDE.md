@@ -1290,20 +1290,20 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   sequences by `tac_to_asm` — each operand's type drives the
   dispatch via the symbol table. 2-byte-typed locals / params /
   temporaries occupy 2 contiguous frame bytes, 4-byte-typed ones
-  occupy 4. 2-byte return values come back with low byte in A and
-  high byte in X (two-register Long return so the outer epilogue
-  PHA/PLA only needs to save A; the SSP/FP arithmetic doesn't
-  touch X, and the FP-restore stashes its 1-byte scratch through
-  an inner PHA/PLA on the HW stack instead of TAX/STX, so X
-  survives the epilogue intact). LongLong (4B), Float (4B), and Double (8B) returns
-  come back through HARGS instead — `HARGS+8..11` for LongLong /
-  Float and `HARGS+16..23` for Double, matching the FP arithmetic
-  helpers' output slots so a function ending in `return a OP b;`
-  for FP operands needs no epilogue copy. LongLong shares the
-  Float slot because types are exclusive per call and `mul32` /
-  `divmod32` write their 4-byte results to that offset. These
-  HARGS-returning paths flip `Ret(save_a=False)` so the epilogue
-  skips the PHA/PLA pair — the SSP/FP arithmetic doesn't touch
+  occupy 4. Only 1-byte returns ride in a register (A); every wider
+  return type lives in a fixed `HARGS` zero-page slot. Long / ULong
+  / Pointer (2B) → `HARGS+0..1`, LongLong / Float (4B) →
+  `HARGS+8..11`, Double (8B) → `HARGS+16..23`. The 4B and 8B
+  offsets match the FP arithmetic helpers' output slots so a
+  function ending in `return a OP b;` for FP operands needs no
+  epilogue copy. LongLong shares the Float slot because types are
+  exclusive per call and `mul32` / `divmod32` write their 4-byte
+  results to that offset. The 2B slot at `HARGS+0..1` is the same
+  byte range `mul8` / `divmod8` use for inputs — also fine, since
+  return-setup happens after any helper call has consumed its
+  inputs. All HARGS-resident returns flip `Ret(save_a=False)` so
+  the epilogue skips the PHA/PLA pair — the SSP/FP arithmetic
+  doesn't touch
   HARGS. See README's "Return-value convention" subsection.
   Mixed-type arithmetic goes through C99 §6.3.1.8's usual
   arithmetic conversions in `passes.type_checking` — `long +

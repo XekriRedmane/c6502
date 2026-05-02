@@ -14,34 +14,48 @@ Numbers are at the time of the simulator's first run:
    ~  out-of-Int-range files (separate count below) hit the
       Long-return bug and aren't yet routed through the sim
 
-## 1. Long-return convention is broken (Long, ULong, Pointer) — FIXED
+## 1. Long-return convention is broken (Long, ULong, Pointer) — FIXED via convention change
 
-**Status:** fixed in `asm_emit._emit_restore_fp_from_slot`. The
-TAX/STX scratch was replaced with PHA/PLA (HW-stack scratch) so X
-survives the FP-restore. The inner PHA/PLA nests cleanly inside the
-outer `save_a=True` PHA/PLA bracket because LIFO ordering puts the
-inner pop (saved-FP-low) before the outer pop (return-A). One extra
-byte per epilogue vs. the TAX/STX form. `sim/assembler.py`'s `_emit_ret`
-mirrors the change; `tests/test_asm_emit.py`'s epilogue golden tests
-were updated to match.
+**Status:** the underlying problem (the epilogue's `TAX`/`STX`
+clobbering X) was first patched by stashing the FP-restore's 1-byte
+scratch through `PHA`/`PLA` on the HW stack — the X-clobber
+finding's "concrete fix" path. That patch later got rolled back as
+part of a larger change: **2-byte returns no longer ride in
+registers at all.** Long / ULong / Pointer return values now live
+in `HARGS+0..1`, matching the way 4-byte (LongLong / Float at
+`HARGS+8..11`) and 8-byte (Double at `HARGS+16..23`) returns
+already worked. The 1-byte (Int) path is unchanged.
 
-The fix unblocked 10 in-Int-range chapter cases that were going
-through pointer-typed temps in the body (`Pointer` is 2 bytes, same
-as Long), bringing the asm-sim chapter pass count from 402 → 412.
+The convention change makes the X register free to clobber in the
+FP-restore (no return data lives there anymore), so the
+`_emit_restore_fp_from_slot` is back to the simpler `TAX`/`STX`
+form. The 10 chapter cases that the X-clobber fix had unblocked
+stay unblocked under the new convention — pointer-typed temps in
+the body now go through HARGS for return, which works the same
+end-to-end. The asm-sim chapter pass count is 412 / 517 in-Int-range
+cases.
 
-The wider-than-Int (Long-range) cases that depend on a working 2-byte
-return still don't fully run because of finding 7 below
-(`SignExtend` lowering tests `BMI` after the STA's LDY clobbers N).
+The wider-than-Int (long-range) chapter cases that depend on a
+working 2-byte return still don't all flow through cleanly because
+of finding 7 below (`SignExtend` lowering tests `BMI` after the
+STA's LDY clobbers N). The 2-byte return path itself is now correct;
+verified directly via `sim/harness.py`'s `return_long()` helper
+(reads `HARGS+0..1` from memory).
 
 Original notes for context:
 
-CLAUDE.md and `asm.asdl`'s `Ret` doc say a 2-byte return travels with
-the low byte in `A` and the high byte in `X`, and that `X isn't
-touched by the SSP/FP arithmetic`. In practice, the epilogue's
-FP-restore step used `TAX` as a 1-byte scratch — destroying the
-return high byte. The body had loaded the return high byte into X
-just before the epilogue began. `PHA`/`PLA` brackets the SSP/FP
-arithmetic to preserve A, but nothing protected X.
+CLAUDE.md and `asm.asdl`'s `Ret` doc said a 2-byte return travelled
+with the low byte in `A` and the high byte in `X`, and that
+`X isn't touched by the SSP/FP arithmetic`. In practice, the
+epilogue's FP-restore step used `TAX` as a 1-byte scratch —
+destroying the return high byte. The body had loaded the return high
+byte into X just before the epilogue began. `PHA`/`PLA` brackets
+the SSP/FP arithmetic to preserve A, but nothing protected X. The
+convention change side-stepped the fundamental tension: register-
+based returns are tempting (no memory traffic) but fragile against
+any later codegen pass that wants X as scratch. Memory-based
+returns are uniform across all wider types and don't constrain the
+register file.
 
 ## 2. Branch out of range (`branch_oor`, 40 chapter files)
 

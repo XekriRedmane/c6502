@@ -2251,17 +2251,19 @@ class TestPointerDeclarations(unittest.TestCase):
 
     def test_pointer_function_returns_long_style(self):
         # A function returning `int *` uses the same 2-byte return
-        # convention as `long`: low byte in A, high byte in X. The
-        # callee's epilogue PHAs A across the SSP/FP arithmetic.
+        # convention as `long`: bytes written to HARGS+0..1.
+        # No PHA/PLA wrap (save_a=False) since no register holds the
+        # return.
         from compile import _run_stage
         text = _run_stage(
             "codegen",
             "int *foo(int *p) { return p; }\n"
             "int main(void) { return 0; }\n",
         )
-        # The return sequence stages high byte through X first
-        # (load high → A → X → load low → A → return).
         self.assertIn("foo:", text)
+        # The return sequence writes the two bytes into HARGS+0/+1.
+        self.assertIn("STA   HARGS\n", text)
+        self.assertIn("STA   HARGS+1\n", text)
         # Prologue allocates 0 local bytes (pointer param sits in
         # the caller's pushed args, not in our locals).
         self.assertIn("prologue: 2 arg bytes, 0 local bytes", text)
@@ -3040,7 +3042,7 @@ class TestIndirectCall(unittest.TestCase):
         self.assertIn("JSR   icall", text)
 
     def test_indirect_call_long_return(self):
-        # Indirect call returning Long uses the same A=lo / X=hi
+        # Indirect call returning Long uses the same HARGS+0..1
         # convention as a direct call — the `JSR icall` is
         # transparent.
         text = self._codegen(
@@ -3052,9 +3054,10 @@ class TestIndirectCall(unittest.TestCase):
             "}\n"
         )
         self.assertIn("JSR   icall", text)
-        # After the JSR, the caller stores A then transfers X→A
-        # for the high byte.
-        self.assertIn("TXA", text)
+        # After the JSR, the caller reads back HARGS+0 (low) and
+        # HARGS+1 (high) into the destination slot.
+        self.assertIn("LDA   HARGS", text)
+        self.assertIn("LDA   HARGS+1", text)
 
     def test_indirect_call_through_runtime_assigned_pointer(self):
         # The function pointer doesn't have to be initialized at

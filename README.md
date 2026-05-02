@@ -801,32 +801,35 @@ direct call (soft-stack args, register / `HARGS` return).
 
 #### Return-value convention
 
-Return values use registers when they fit and `HARGS` when they
-don't. The size cutoff is dictated by what the epilogue can
-preserve cheaply — see "Calling convention" below; the `PHA` step
-that bridges the SSP/FP arithmetic only saves `A`, which works
-fine for one or two bytes but isn't extensible to four or eight.
+Only 1-byte returns ride in a register; everything wider lives in a
+fixed `HARGS` zero-page slot. The 1-byte case rides in `A` because
+the epilogue's `PHA`/`PLA` can preserve it cheaply across the
+SSP/FP arithmetic.
 
 | return type | location                                                |
 | ----------- | ------------------------------------------------------- |
-| `int` / `unsigned int` (1B)   | `A`                                   |
-| `long` / `unsigned long` (2B) | `A`=low byte, `X`=high byte           |
-| `float` (4B)                  | `HARGS+8..11`                         |
-| `double` (8B)                 | `HARGS+16..23`                        |
+| `int` / `unsigned int` / `char` (1B)              | `A`                |
+| `long` / `unsigned long` / pointer (2B)           | `HARGS+0..1`       |
+| `long long` / `unsigned long long` / `float` (4B) | `HARGS+8..11`      |
+| `double` (8B)                                     | `HARGS+16..23`     |
 
-The FP slots **deliberately overlap with the FP arithmetic helpers'
-output slots**: a function whose body is `return a + b;` for FP
-operands ends with a helper call (`fadd` / `dadd` / etc.) that has
-already left the result in the right place — no extra copy needed
-in the epilogue. The same alignment makes `return a * b;`,
-`return (float)i;`, `return (double)f;` and so on epilogue-free.
+The 4B and 8B slots **deliberately overlap with the FP arithmetic
+helpers' output slots**: a function whose body is `return a + b;`
+for FP operands ends with a helper call (`fadd` / `dadd` / etc.)
+that has already left the result in the right place — no extra
+copy needed in the epilogue. `mul32` / `divmod32` write to the
+same 4B slot, so `return a * b;` for `long long` operands skips
+the epilogue copy too. The 2B slot at `HARGS+0..1` overlaps the
+`mul8` / `divmod8` *input* slot, but timing doesn't conflict —
+return-setup happens after any helper call has consumed its
+inputs.
 
 Because `HARGS` is caller-saved (any helper call may clobber it),
-an FP return value sits in HARGS only across the `RTS` boundary —
-the caller reads it back out immediately after the `JSR`, before
-issuing any other helper call. The SSP/FP arithmetic in the
-epilogue doesn't touch HARGS, so the FP return path skips the
-`PHA` / `PLA` pair the integer path uses.
+a HARGS-resident return value sits in `HARGS` only across the
+`RTS` boundary — the caller reads it back out immediately after
+the `JSR`, before issuing any other helper call. The SSP/FP
+arithmetic in the epilogue doesn't touch `HARGS`, so the
+HARGS-return path skips the `PHA`/`PLA` pair the 1-byte path uses.
 
 Unary `!` lowers inline rather than through a helper — see "Unary
 `!` lowering" below.
@@ -1142,12 +1145,11 @@ body that follows.)
    STA   SSP+1
    LDY   #$03                   ; restore caller FP from FP+3 (low) / FP+4 (high).
    LDA   (FP),Y                 ; FP still points at our frame here, so (FP),Y reads the
-   PHA                          ; right bytes. Stash the low byte through the HW stack across
-   INY                          ; the high read; writing FP between the two LDAs would corrupt
-   LDA   (FP),Y                 ; the indirect base. Using TAX/STX would clobber X — Long /
-   STA   FP+1                   ; Pointer returns put the high byte in X, and the convention
-   PLA                          ; needs X to survive the epilogue. The inner PHA/PLA nests
-   STA   FP                     ; cleanly inside the outer PHA/PLA via LIFO.
+   TAX                          ; right bytes. Stash the low byte in X across the high
+   INY                          ; read; writing FP between the two LDAs would corrupt
+   LDA   (FP),Y                 ; the indirect base. X is free to clobber — no return
+   STA   FP+1                   ; convention puts data there (1B → A, 2B/4B/8B → HARGS).
+   STX   FP
    PLA                          ; restore return value (in A)
    RTS
 ```

@@ -101,8 +101,12 @@ class SimResult:
 
     def return_long(self) -> int:
         """Return value as an unsigned 2-byte integer (Long / ULong /
-        Pointer): A holds the low byte, X the high."""
-        return (self.a & 0xFF) | ((self.x & 0xFF) << 8)
+        Pointer): bytes read from HARGS+0..1 — the slot that 2-byte
+        returns land in per the calling convention."""
+        return (
+            self.memory[rt_mod.HARGS + 0]
+            | (self.memory[rt_mod.HARGS + 1] << 8)
+        )
 
     def return_long_signed(self) -> int:
         v = self.return_long()

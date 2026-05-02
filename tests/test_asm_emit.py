@@ -516,12 +516,11 @@ class TestEmitRet(unittest.TestCase):
 
     def test_locals_only_full_epilogue(self):
         # M=3, N=0: SSP = FP + (M+N+2) = FP + 5; saved FP at FP+M+1=4
-        # (low) / FP+M+2=5 (high), read via (FP),Y. The low byte is
-        # stashed via PHA/PLA on the HW stack rather than TAX/STX so
-        # the X register survives the epilogue (Long / Pointer
-        # returns put the high byte in X). The inner PHA/PLA nests
-        # inside the outer save_a=True PHA/PLA bracket; LIFO order
-        # makes that safe.
+        # (low) / FP+M+2=5 (high), read via (FP),Y with X as scratch.
+        # X is free to clobber: 1-byte returns ride in A (preserved
+        # by the outer PHA/PLA), 2/4/8-byte returns ride in HARGS.
+        # A leading blank line + `; epilogue` comment mark where the
+        # boilerplate starts.
         self.assertEqual(
             emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3, save_a=True)),
             [
@@ -539,29 +538,27 @@ class TestEmitRet(unittest.TestCase):
                 # restore caller FP from FP+4 (low) / FP+5 (high)
                 "   LDY   #$04",
                 "   LDA   (FP),Y",
-                "   PHA",
+                "   TAX",
                 "   INY",
                 "   LDA   (FP),Y",
                 "   STA   FP+1",
-                "   PLA",
-                "   STA   FP",
+                "   STX   FP",
                 "   PLA",
                 "   RTS",
             ],
         )
 
     def test_save_a_false_skips_pha_pla(self):
-        # FP-return path: same SSP/FP rewind, but no outer PHA/PLA
-        # wrap. The return value lives in HARGS, which the rewind
-        # doesn't touch, so there's nothing to preserve in A. The
-        # inner PHA/PLA in the FP-restore (HW-stack scratch) is still
-        # there.
+        # Wider-return path: same SSP/FP rewind, no PHA/PLA wrap.
+        # The return value lives in HARGS (Long / Pointer at +0..1,
+        # LongLong / Float at +8..11, Double at +16..23), which the
+        # rewind doesn't touch, so there's nothing to preserve in A.
         self.assertEqual(
             emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3, save_a=False)),
             [
                 "",
                 "   ; epilogue",
-                # SSP = FP + 5 (no outer PHA before)
+                # SSP = FP + 5 (no PHA before)
                 "   CLC",
                 "   LDA   FP",
                 "   ADC   #$05",
@@ -571,13 +568,12 @@ class TestEmitRet(unittest.TestCase):
                 "   STA   SSP+1",
                 "   LDY   #$04",
                 "   LDA   (FP),Y",
-                "   PHA",
+                "   TAX",
                 "   INY",
                 "   LDA   (FP),Y",
                 "   STA   FP+1",
-                "   PLA",
-                "   STA   FP",
-                # RTS directly, no outer PLA
+                "   STX   FP",
+                # RTS directly, no PLA
                 "   RTS",
             ],
         )

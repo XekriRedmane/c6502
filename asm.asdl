@@ -39,11 +39,12 @@ module ASM {
 
     -- Ret's `save_a` flag controls whether the epilogue brackets the
     -- SSP/FP arithmetic with PHA/PLA to preserve A across the
-    -- 16-bit add. Integer returns (Int → A; Long → A=lo, X=hi)
-    -- need this; FP returns leave their result in HARGS instead, so
-    -- A doesn't carry anything important across the arithmetic and
-    -- the epilogue can skip the PHA/PLA pair (`save_a=False`). The
-    -- flag has no effect when arg_bytes + local_bytes == 0 (the
+    -- 16-bit add. Only 1-byte returns ride in A and need this;
+    -- everything wider (Long / Pointer at HARGS+0..1, LongLong /
+    -- Float at HARGS+8..11, Double at HARGS+16..23) leaves its
+    -- result in HARGS — the SSP/FP arithmetic doesn't touch HARGS,
+    -- so the epilogue can skip the PHA/PLA pair (`save_a=False`).
+    -- The flag has no effect when arg_bytes + local_bytes == 0 (the
     -- collapsed epilogue is just `RTS` either way).
     instruction =
         Mov(operand src, operand dst)

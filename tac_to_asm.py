@@ -478,6 +478,30 @@ class Translator:
             return False
         return isinstance(sym.type, c99_ast.Pointer)
 
+    def _is_fp_val(self, val: tac_ast.Type_val) -> bool:
+        """True iff `val` is a floating-point operand (Float or
+        Double). Used by Unary(Negate) to dispatch between
+        bit-pattern sign-flip (FP) and two's-complement (integer);
+        FP types' bit patterns aren't structured for arithmetic
+        negate but their sign bit lives at bit 7 of the top byte
+        per IEEE 754, so a single EOR there does the right thing.
+
+        Constants dispatch on the const variant (`ConstFloat` /
+        `ConstDouble`); Vars look up their c99 type."""
+        if isinstance(val, tac_ast.Constant):
+            return isinstance(
+                val.const,
+                (tac_ast.ConstFloat, tac_ast.ConstDouble),
+            )
+        if isinstance(val, tac_ast.Var):
+            if self._symbols is None:
+                return False
+            sym = self._symbols.get(val.name)
+            if sym is None:
+                return False
+            return isinstance(sym.type, (c99_ast.Float, c99_ast.Double))
+        return False
+
     def _is_unsigned_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is an unsigned integer or pointer. Constants
         dispatch on the unsigned variant of the const sum; Vars look
@@ -958,11 +982,30 @@ class Translator:
                 out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
             return out
         if isinstance(op, tac_ast.Negate):
-            # -X = (~X) + 1, two's complement at the operand width.
-            # Complement each byte; for the low byte, CLC + ADC #1;
-            # for each higher byte, ADC #0 (propagates the carry
-            # from the previous ADC). LDA / EOR preserve C, so the
-            # carry threads naturally across bytes.
+            if self._is_fp_val(src):
+                # IEEE 754 negate: just flip the sign bit (bit 7 of
+                # the top byte) and copy every other byte unchanged.
+                # The mantissa and exponent stay put — only the sign
+                # changes, which is what `-x` means for FP. Two's-
+                # complement-style negate would scramble the
+                # representation since FP isn't a contiguous binary
+                # numeral.
+                out_fp: list[asm_ast.Type_instruction] = []
+                for k in range(size - 1):
+                    out_fp.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+                    out_fp.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+                out_fp.append(asm_ast.Mov(src=_byte_at(src_op, size - 1), dst=_REG_A))
+                out_fp.append(asm_ast.Xor(
+                    src1=_REG_A, src2=asm_ast.Imm(value=0x80),
+                    dst=_REG_A,
+                ))
+                out_fp.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, size - 1)))
+                return out_fp
+            # Integer Negate: -X = (~X) + 1, two's complement at the
+            # operand width. Complement each byte; for the low byte,
+            # CLC + ADC #1; for each higher byte, ADC #0 (propagates
+            # the carry from the previous ADC). LDA / EOR preserve C,
+            # so the carry threads naturally across bytes.
             out2: list[asm_ast.Type_instruction] = []
             for k in range(size):
                 out2.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))

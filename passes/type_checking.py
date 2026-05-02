@@ -2984,12 +2984,14 @@ class TypeChecker:
                     return exp.data_type
                 # Bitwise / shift / modulo (C99 §6.5.5.2 / §6.5.7.2 /
                 # §6.5.10.2 / §6.5.11.2 / §6.5.12.2): operands must
-                # have integer type. None of the four c6502 integer
-                # types are FP, so rejecting Float / Double on either
-                # side covers the constraint cleanly. Pointer
-                # operands fall through to `_common_type` which is
-                # its own crash today; the chapter_14 pointer-bitwise
-                # tests rely on that path's crash for rejection.
+                # have integer type. Reject Float / Double directly.
+                # Pointer operands for non-shift bitwise / modulo
+                # ops fall through to `_common_type` which crashes
+                # on Pointer; the chapter_14 pointer-bitwise tests
+                # rely on that path's crash for rejection. Shifts
+                # are special — they skip `_common_type` (per the
+                # branch below), so Pointer-typed shift operands
+                # need an explicit rejection here.
                 if (
                     isinstance(op, (
                         c99_ast.Modulo,
@@ -3001,6 +3003,15 @@ class TypeChecker:
                     ))
                     and (
                         _is_floating_type(tl) or _is_floating_type(tr)
+                        or (
+                            isinstance(op, (
+                                c99_ast.LeftShift, c99_ast.RightShift,
+                            ))
+                            and (
+                                isinstance(tl, c99_ast.Pointer)
+                                or isinstance(tr, c99_ast.Pointer)
+                            )
+                        )
                     )
                 ):
                     op_name = {
@@ -3025,6 +3036,20 @@ class TypeChecker:
                 exp.right = _convert_to(rhs, _promote_integer(tr))
                 lhs, rhs = exp.left, exp.right
                 tl, tr = lhs.data_type, rhs.data_type
+                # Shifts (C99 §6.5.7.3): the integer promotions are
+                # performed on each operand independently (already
+                # done above) and the result type is the type of the
+                # promoted LEFT operand — NOT the common type. Skip
+                # the usual arithmetic conversions; the right
+                # operand keeps its independently-promoted type.
+                # Tac_to_asm passes only the right operand's low
+                # byte to the asl/asr/lsr helpers (a shift count of
+                # ≥ width-bits is UB), so the right's wider-than-
+                # left width — say `ulong << longlong` — doesn't
+                # matter at codegen.
+                if isinstance(op, (c99_ast.LeftShift, c99_ast.RightShift)):
+                    exp.data_type = tl
+                    return tl
                 # Usual arithmetic conversions (C99 §6.3.1.8): if
                 # operand types differ, promote the narrower one to
                 # the common type by wrapping it in an implicit
@@ -3033,10 +3058,10 @@ class TypeChecker:
                 common = _common_type(tl, tr)
                 exp.left = _convert_to(lhs, common)
                 exp.right = _convert_to(rhs, common)
-                # Result type: arithmetic / bitwise / shift ops yield
-                # the common type; comparison and logical-and/or
-                # always yield int regardless of operand type
-                # (§6.5.3.3.5 / §6.5.8.6 / §6.5.13.3 / §6.5.14.3).
+                # Result type: arithmetic / bitwise ops yield the
+                # common type; comparison and logical-and/or always
+                # yield int regardless of operand type (§6.5.3.3.5 /
+                # §6.5.8.6 / §6.5.13.3 / §6.5.14.3).
                 if isinstance(op, (
                     c99_ast.Equal, c99_ast.NotEqual,
                     c99_ast.LessThan, c99_ast.GreaterThan,

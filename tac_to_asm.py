@@ -1202,21 +1202,28 @@ class Translator:
         sequence shape: Int → today's single-byte sequences; Long →
         per-byte sequences with carry threading where needed.
 
-        The type checker promotes both operands to the common type
-        before this point, so `_size_of(src1) == _size_of(src2)` is
-        an invariant. The result type matches the operand type for
-        arithmetic / bitwise / shift, and is always Int for
-        comparisons (the size dispatch keys off the operand size,
-        not the result size, since that's what determines the
-        sequence shape)."""
+        For arithmetic / bitwise / comparison ops the type checker
+        promotes both operands to the common type, so
+        `_size_of(src1) == _size_of(src2)` and `size` reads from
+        either side. Shifts are the exception: per C99 §6.5.7.3 the
+        right operand promotes independently, so its width may
+        differ from the left's; the shift helpers consume only the
+        right's low byte, so this `size` reads from `src1` (the
+        left, which IS the result width). The result type matches
+        the operand type for arithmetic / bitwise / shift, and is
+        always Int for comparisons (the size dispatch keys off the
+        operand size, not the result size, since that's what
+        determines the sequence shape)."""
         src1_op = translate_val(src1)
         src2_op = translate_val(src2)
         dst_op = translate_val(dst)
         size = self._size_of(src1)
-        # Ordering and right-shift dispatch unsigned vs. signed. The
-        # type checker promoted both operands to a common type before
-        # this point, so `_is_unsigned_val(src1)` and
+        # Ordering and right-shift dispatch unsigned vs. signed. For
+        # comparisons the type checker promoted both operands to a
+        # common type, so `_is_unsigned_val(src1)` and
         # `_is_unsigned_val(src2)` agree — checking one suffices.
+        # Right-shift's signedness is keyed off the left only per
+        # C99 §6.5.7.5 (the right's signedness is irrelevant).
         # Unsigned ordering uses BCC/BCS-based per-byte SBC sequences
         # (no V-correction); the signed path uses the V-corrected
         # MI/PL sequence. Pointers are 16-bit unsigned addresses, so
@@ -1307,11 +1314,14 @@ class Translator:
                 # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
                 # asl32: 4B value + 1B count → 4B result at HARGS+5.
-                # The type checker promotes both shift operands to a
-                # common type, so for size>1 the count arrives wider
-                # than 1 byte — we pass only its low byte (shifts by
-                # ≥ width-in-bits are UB anyway, so the dropped high
-                # bytes are irrelevant).
+                # Per C99 §6.5.7.3 the result type — and so the
+                # value side's width — is the promoted left
+                # operand's type; the right operand promotes
+                # independently and might be a different width. We
+                # only pass its low byte (shifts ≥ width-in-bits are
+                # UB), so the right's actual width doesn't matter.
+                # `size` here is `_size_of(src1)`, i.e. the value
+                # side's width.
                 if size == 1:
                     inputs = [(src1_op, 1), (src2_op, 1)]
                     helper, out_off = _ASL8, 2
@@ -1331,7 +1341,9 @@ class Translator:
                 # logical on unsigned operands (lsr*) per C99
                 # §6.5.7.5. Signedness rides on the operand: const
                 # variant for Constants, symbol-table c99 type for
-                # Vars. Same input-byte layout as LeftShift.
+                # Vars. Same input-byte layout as LeftShift; `size`
+                # comes from the left operand per §6.5.7.3, the
+                # right contributes only its low byte.
                 if self._is_unsigned_val(src1):
                     helpers = (_LSR8, _LSR16, _LSR32)
                 else:

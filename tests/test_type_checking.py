@@ -2088,6 +2088,68 @@ class TestCharAndString(unittest.TestCase):
         self.assertIsInstance(ret.right, c99_ast.Cast)
         self.assertEqual(ret.right.target_type, Int())
 
+    def test_shift_result_type_is_promoted_left_only(self):
+        # C99 §6.5.7.3: shifts skip the usual arithmetic
+        # conversions; each operand integer-promotes
+        # independently and the result type is the type of the
+        # promoted LEFT operand. `ulong << longlong` must yield
+        # ulong, NOT the common type long long. Without this the
+        # ulong wraparound modulo 2^16 is lost — c6502 was
+        # (incorrectly) computing the shift at long-long width
+        # and hitting the bitwise_unsigned_shift.c test failure.
+        prog, _ = _check(
+            "int main(void) { unsigned long u = -1ul; "
+            "return (int)(u << 2ll); }"
+        )
+        # Drill into the Binary inside the return's Cast.
+        ret = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        # `return (int)(u << 2ll);` — outer Cast(Int) then Binary.
+        self.assertIsInstance(ret, c99_ast.Cast)
+        binary = ret.exp
+        self.assertIsInstance(binary, c99_ast.Binary)
+        self.assertIsInstance(binary.op, c99_ast.LeftShift)
+        # The Binary's data_type IS the promoted left's type.
+        self.assertEqual(binary.data_type, ULong())
+        # And the operands keep their independently-promoted
+        # types — the right is NOT cast down to ULong.
+        self.assertEqual(binary.left.data_type, ULong())
+        self.assertEqual(binary.right.data_type, LongLong())
+
+    def test_shift_signed_left_long_unsigned_right_keeps_signedness(self):
+        # `long_signed << unsigned_long` — left's signed type
+        # rides through. The `_translate_signedness_dispatch` for
+        # `>>` reads the LEFT only (per C99 §6.5.7.5), so the
+        # right's signedness is irrelevant.
+        prog, _ = _check(
+            "int main(void) { long s = (long)1; "
+            "return (int)(s << 2ul); }"
+        )
+        ret = (
+            prog.declaration[0].function_decl.body.block_item[1]
+            .statement.exp
+        )
+        binary = ret.exp
+        self.assertEqual(binary.data_type, Long())
+
+    def test_pointer_shift_rejected(self):
+        # C99 §6.5.7.2 — shift operands must have integer type;
+        # pointers must be rejected. Before the §6.5.7.3 fix this
+        # used to hit `_common_type`'s Pointer-crash by accident,
+        # which was fragile; now we reject explicitly.
+        with self.assertRaises(TypeCheckError):
+            _check(
+                "int main(void) { int a; int *p = &a; "
+                "return (int)(p << 1); }"
+            )
+        with self.assertRaises(TypeCheckError):
+            _check(
+                "int main(void) { int a; int *p = &a; "
+                "return (int)(p >> 1); }"
+            )
+
     def test_uchar_promotes_to_uint_when_int_cant_cover(self):
         # In c6502 `int` is 1-byte signed (-128..127), so it can't
         # hold the full UChar range (0..255). UChar therefore

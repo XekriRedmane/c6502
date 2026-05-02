@@ -431,11 +431,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_12/valid/unsigned_expressions/simple.c": 1,
     "chapter_12/valid/unsigned_expressions/static_variables.c": 1,
     "chapter_12/valid/extra_credit/bitwise_unsigned_ops.c": 0,
-    # bitwise_unsigned_shift.c: c6502 promotes shift operands to a
-    # common type (non-standard per C99 §6.5.7), so `ui << 2ll`
-    # widens to long long instead of staying ulong, breaking the
-    # wraparound the test expects. Pin at the c6502-specific result.
-    "chapter_12/valid/extra_credit/bitwise_unsigned_shift.c": 1,
+    "chapter_12/valid/extra_credit/bitwise_unsigned_shift.c": 0,
     "chapter_12/valid/extra_credit/compound_assign_uint.c": 1,
     "chapter_12/valid/extra_credit/compound_bitshift.c": 0,
     "chapter_12/valid/extra_credit/compound_bitwise.c": 0,
@@ -496,7 +492,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_14/valid/dereference/simple.c": 3,
     "chapter_14/valid/dereference/static_var_indirection.c": 0,
     "chapter_14/valid/dereference/update_through_pointers.c": 0,
-    "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": 1,
+    "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": 0,
     "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": 0,
     # compound_assign_conversion.c: same narrow-int divergence as
     # chapter_12 — final compound `*i_ptr -= *ul_ptr` truncates to a
@@ -571,7 +567,12 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/chars/rewrite_movz_regression.c": 0,
     "chapter_16/valid/chars/static_initializers.c": 0,
     "chapter_16/valid/chars/type_specifiers.c": 0,
-    "chapter_16/valid/extra_credit/bitshift_chars.c": 4,
+    # bitshift_chars.c relies on upstream's `unsigned char → int`
+    # integer promotion (int = 4 bytes covers uchar's 0..255). c6502
+    # promotes `unsigned char → unsigned int` instead (its 1-byte int
+    # can't hold 255), so check #5 — `(-(uc << 5u) >> 5u) != -255l`
+    # — sees `uc << 5u` typed as uint and produces 1, not -255.
+    "chapter_16/valid/extra_credit/bitshift_chars.c": 5,
     "chapter_16/valid/extra_credit/bitwise_ops_character_constants.c": 0,
     "chapter_16/valid/extra_credit/bitwise_ops_chars.c": 3,
     "chapter_16/valid/extra_credit/char_consts_as_cases.c": 0,

@@ -162,7 +162,13 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 #
 # 16-bit helpers:
 #   mul16     in:  A=HARGS+0..1, B=HARGS+2..3
-#                                       out: result=HARGS+4..7 (32-bit)
+#                                       out: result=HARGS+4..5 (2B,
+#                                            low half of A*B; the
+#                                            high half is discarded
+#                                            because long*long wraps
+#                                            to long under §6.5.5.4
+#                                            modular semantics).
+#                                            HARGS+6..7 are free.
 #   udivmod16 in:  num=HARGS+0..1, den=HARGS+2..3   (unsigned)
 #                                       out: quot=HARGS+4..5,
 #                                            rem=HARGS+6..7
@@ -263,7 +269,14 @@ _LSR16 = "lsr16"
 # 32-bit integer helpers. Same "output slots immediately after
 # inputs" convention as the 8/16-bit forms:
 #   mul32     in:  A=HARGS+0..3, B=HARGS+4..7
-#                                       out: result=HARGS+8..15 (64-bit)
+#                                       out: result=HARGS+8..11 (4B,
+#                                            low half of A*B; the
+#                                            high half is discarded
+#                                            because longlong*longlong
+#                                            wraps to longlong under
+#                                            §6.5.5.4 modular
+#                                            semantics). HARGS+12..15
+#                                            are free.
 #   udivmod32 in:  num=HARGS+0..3, den=HARGS+4..7   (unsigned)
 #                                       out: quot=HARGS+8..11,
 #                                            rem=HARGS+12..15
@@ -1283,20 +1296,15 @@ class Translator:
                     setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
                 )
             case tac_ast.Multiply():
-                # 8-bit:  mul8   result at HARGS+2 (1 byte). mul8
-                #                produces only the low byte directly
-                #                — int*int wraps to int under C's
-                #                modular semantics, so the high byte
-                #                isn't useful. HARGS+3 is free.
-                # 16-bit: mul16  result low half at HARGS+4..5 (the
-                #                high half at HARGS+6..7 is discarded
-                #                — same modular-wrap reason; the
-                #                helper still computes and writes
-                #                the high half today, but `tac_to_asm`
-                #                only reads the low half).
-                # 32-bit: mul32  result low 4 bytes at HARGS+8..11
-                #                (the high 4 bytes at HARGS+12..15
-                #                are discarded for the same reason).
+                # All three mul* helpers produce a same-width result
+                # (1 / 2 / 4 bytes) in the low slot of their output
+                # area; the high half of A*B is discarded because C's
+                # int / long / long-long multiplication all wrap
+                # under §6.5.5.4 modular semantics. HARGS+3,
+                # HARGS+6..7, HARGS+12..15 are correspondingly free.
+                # 8-bit:  mul8   result at HARGS+2 (1B).
+                # 16-bit: mul16  result at HARGS+4..5 (2B).
+                # 32-bit: mul32  result at HARGS+8..11 (4B).
                 if size == 1:
                     helper, out_off = _MUL8, 2
                 elif size == 2:

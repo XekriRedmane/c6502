@@ -240,12 +240,14 @@ def _fp_unimplemented(name: str) -> Hook:
 # binary diffs of test outputs stay small as the table grows.
 
 _HELPERS: list[tuple[str, Hook]] = [
-    # 1-byte integer. mul8 returns only the low byte of the
-    # product (1 byte at HARGS+2) — the high byte would have to be
-    # discarded by the caller anyway because C `int*int` wraps to
-    # int under modular semantics, and `tac_to_asm` only reads
-    # `output_size = 1` for size=1 multiplies. Saves a byte of
-    # output traffic and frees HARGS+3 for other uses.
+    # Integer mul / divmod / shift helpers. Each `mul*` returns
+    # only the low N bytes of the product (i.e. the result at the
+    # operand width) — same modular-wrap argument as for mul8: C's
+    # int-times-int wraps to int under §6.5.5.4 semantics, and
+    # `tac_to_asm` only reads `output_size = N` bytes regardless.
+    # The high half is freed (HARGS+3 for mul8, HARGS+6..7 for
+    # mul16, HARGS+12..15 for mul32) for other uses.
+    # 1-byte integer
     ("mul8",      _make_mul(1, 1)),
     ("udivmod8",  _make_udivmod(1)),
     ("sdivmod8",  _make_sdivmod(1)),
@@ -253,14 +255,14 @@ _HELPERS: list[tuple[str, Hook]] = [
     ("asr8",      _make_asr(1)),
     ("lsr8",      _make_lsr(1)),
     # 2-byte integer
-    ("mul16",     _make_mul(2, 4)),
+    ("mul16",     _make_mul(2, 2)),
     ("udivmod16", _make_udivmod(2)),
     ("sdivmod16", _make_sdivmod(2)),
     ("asl16",     _make_asl(2)),
     ("asr16",     _make_asr(2)),
     ("lsr16",     _make_lsr(2)),
     # 4-byte integer
-    ("mul32",     _make_mul(4, 8)),
+    ("mul32",     _make_mul(4, 4)),
     ("udivmod32", _make_udivmod(4)),
     ("sdivmod32", _make_sdivmod(4)),
     ("asl32",     _make_asl(4)),

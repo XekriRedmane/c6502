@@ -994,13 +994,17 @@ takes one AST and returns another (or text for emit):
        asl8/      val:`+0`, count:`+1`        → result:`+2`
         asr8/
         lsr8
-       mul16      A:`+0..+1`, B:`+2..+3`      → product:`+4..+7` (32-bit)
+       mul16      A:`+0..+1`, B:`+2..+3`      → product:`+4..+5` (2 bytes;
+                                                 low half of A*B,
+                                                 high half discarded)
        udivmod16/ num:`+0..+1`, den:`+2..+3`  → quot:`+4..+5`,
         sdivmod16                              rem:`+6..+7`
        asl16/     val:`+0..+1`, count:`+2`    → result:`+3..+4`
         asr16/     (1-byte count: shifts ≥16 are UB, so the high byte
         lsr16      of a promoted-to-Long count is dropped)
-       mul32      A:`+0..+3`, B:`+4..+7`      → product:`+8..+15` (64-bit)
+       mul32      A:`+0..+3`, B:`+4..+7`      → product:`+8..+11` (4 bytes;
+                                                 low half of A*B,
+                                                 high half discarded)
        udivmod32/ num:`+0..+3`, den:`+4..+7`  → quot:`+8..+11`,
         sdivmod32                              rem:`+12..+15`
        asl32/     val:`+0..+3`, count:`+4`    → result:`+5..+8`

@@ -130,30 +130,50 @@ Hits two struct-heavy chapter-18 tests:
       regularly exceed 254 local bytes with, this might be the
       pragmatic choice.
 
-## 3. Signed `divmod` not implemented in the runtime helpers (~10
-   `wrong_value` cases)
+## 3. Signed `divmod` not implemented in the runtime helpers — FIXED
 
-**Status:** real ambiguity; the c6502 pipeline doesn't distinguish
-signed from unsigned divmod today.
+**Status:** fixed in two phases. (1) `tac_to_asm`'s Divide / Modulo
+arms now dispatch by operand signedness, mirroring the existing
+`asr*` / `lsr*` split — `sdivmod{8,16,32}` for signed, `udivmod{8,16,32}`
+for unsigned, both gated by `_is_unsigned_val(src1)`. (2) `udivmod8`
+and `sdivmod8` exist as real 6502 assembly in
+`sim/runtime_helpers.py`; the simulator assembles them into the
+program image at `$E000+` and the user's `JSR udivmod8` lands on the
+real 6502 routine instead of a Python trap. The 16- and 32-bit
+variants stay as Python hooks for now (same algorithm, scaled
+byte-widths — they'll move to real asm when needed).
 
-`tac_to_asm` emits a single `divmod{8,16,32}` helper for both signed
-and unsigned `/` and `%` (see `tac_to_asm.py:1273-1300`). The
-simulator's hook does unsigned division; signed operands give wrong
-results for negative numerators. The chapter file
-`chapter_3/valid/div_neg.c` (`(-12)/5`) is the canonical case.
+The split unblocked 6 chapter cases (`chapter_3/valid/div_neg.c`,
+`chapter_5/valid/exp_then_declaration.c`, plus 4 others in
+chapter 11/12/15 that depend on signed `/` or `%`). Asm-sim SKIPS:
+47 → 41.
 
-**Fix sketch.** Mirror the right-shift split (`asr*` / `lsr*`):
-introduce `sdivmod{8,16,32}` and `udivmod{8,16,32}`, route from
-`tac_to_asm`'s Divide / Modulo arms based on the operand's symbol-
-table c99 type (the same `_is_unsigned_val` predicate already used
-for ordering / right shift). The simulator's hook factory becomes two
-families instead of one — both straightforward Python.
+`udivmod8` is a 30-byte shift-and-subtract long-division routine;
+`sdivmod8` is a 70-byte wrapper that absolute-values its inputs,
+calls `udivmod8`, and sign-corrects the quotient and remainder per
+C99 §6.5.5.6 (trunc-toward-zero, remainder takes dividend's sign).
 
-C99 §6.5.5.6 specifies signed `/` truncates toward zero and `a%b`
-satisfies `(a/b)*b + a%b == a`. Python's `//` floors and `%` matches
-(both round toward minus infinity), so the signed hook needs an
-explicit sign-correction pass — fold the result toward zero, then
-recompute the remainder.
+`tests/test_runtime_helpers.py` covers each helper with hand-built
+C programs, including the C99 round-trip identity
+`(a/b)*b + (a%b) == a` across all four sign combinations. The
+8-bit signed `INT_MIN / -1` overflow case is also covered.
+
+To implement memory-mode helpers cleanly, this commit also extended
+the asm IR's `ASL` / `LSR` / `ROL` / `ROR` and `Inc` / `Dec` to
+accept `Data` operands (zp / abs addressing on the 6502); the only
+mode the IR doesn't support is indirect-Y, which the 6502 itself
+doesn't have for the shift family. Soft-stack `Stack` / `Frame`
+operands still need the load-shift-store pattern.
+
+Original notes for context:
+
+`tac_to_asm` originally emitted a single `divmod{8,16,32}` helper for
+both signed and unsigned `/` and `%` (see `tac_to_asm.py:1273-1300`).
+The simulator's hook did unsigned division; signed operands gave
+wrong results for negative numerators. C99 §6.5.5.6 specifies signed
+`/` truncates toward zero and `a%b` satisfies `(a/b)*b + a%b == a`,
+which Python's floor-div doesn't match for negatives — the new
+`sdivmod*` hook does the explicit sign-correction.
 
 ## 4. Sign-extend / wider-than-int arithmetic (~50 `wrong_value` cases)
 

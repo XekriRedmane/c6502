@@ -76,10 +76,13 @@ Hook = Callable[[bytearray], None]
 class Runtime:
     """Bundles everything the harness needs to run a user program:
     helper symbol → address bindings (to merge into the assembler's
-    symbol table), trap-address → hook bindings (to intercept PC), and
-    the boot-stub bytes (to install in memory)."""
+    symbol table), trap-address → hook bindings (to intercept PC for
+    Python-implemented helpers), and the bytes / origin of the
+    real-asm helpers (to lay down in the memory image)."""
     symbols: dict[str, int] = field(default_factory=dict)
     hooks: dict[int, Hook] = field(default_factory=dict)
+    helper_image: bytes = b""
+    helper_origin: int = 0
     boot_addr: int = BOOT_ADDR
     ssp_init: int = SSP_INIT
 
@@ -302,12 +305,62 @@ _HELPERS: list[tuple[str, Hook]] = [
 
 
 def build_runtime() -> Runtime:
-    """Build a Runtime with default helper symbol/address bindings."""
-    rt = Runtime()
-    for i, (name, fn) in enumerate(_HELPERS):
-        addr = TRAP_BASE + i * TRAP_STRIDE
-        rt.symbols[name] = addr
-        rt.hooks[addr] = fn
+    """Build a Runtime with helper bindings.
+
+    Helpers split into two pools:
+      - Real-asm helpers (`runtime_helpers.ASM_IMPLEMENTED`):
+        assembled into `helper_image` at `TRAP_BASE` (= $E000), with
+        their resolved addresses recorded in `symbols`. Real 6502
+        code runs when the user program JSRs to one of these names.
+      - Python-hook helpers (everything in `_HELPERS` not in the
+        asm-implemented set): assigned trap addresses past the end of
+        the assembled image, with `hooks` recording the Python
+        implementation. The harness intercepts PC at a trap address
+        and calls the hook in lieu of fetching opcodes.
+
+    Both pools share the same `symbols` table, so user code links
+    uniformly via the helper name regardless of which pool fulfills
+    it. Adding a helper to `runtime_helpers.ASM_IMPLEMENTED` flips
+    it from Python to real asm without any changes elsewhere."""
+    from sim.runtime_helpers import ASM_IMPLEMENTED, all_helper_functions
+    from sim.assembler import assemble
+    import asm_ast
+
+    rt = Runtime(helper_origin=TRAP_BASE)
+
+    # Assemble the real-asm helpers into a contiguous chunk at
+    # TRAP_BASE. The resulting symbol table maps each helper's name
+    # to its real address.
+    asm_set = set(ASM_IMPLEMENTED)
+    if asm_set:
+        prog = asm_ast.Program(top_level=list(all_helper_functions()))
+        assembled = assemble(prog, origin=TRAP_BASE)
+        for name in asm_set:
+            if name not in assembled.symbols:
+                raise RuntimeError(
+                    f"helper {name!r} declared in ASM_IMPLEMENTED "
+                    "but not present in assembled output"
+                )
+            rt.symbols[name] = assembled.symbols[name]
+        # Slice exactly the helper region (origin → code_end) into
+        # `helper_image`; `install_runtime` lays it down at
+        # `helper_origin`.
+        rt.helper_image = bytes(
+            assembled.image[TRAP_BASE:assembled.code_end]
+        )
+        trap_cursor = assembled.code_end
+    else:
+        trap_cursor = TRAP_BASE
+
+    # Python-trap addresses for the rest. Round trap_cursor up to the
+    # next 16-byte boundary so trap addresses stay readable.
+    trap_cursor = (trap_cursor + 0xF) & ~0xF
+    for name, fn in _HELPERS:
+        if name in asm_set:
+            continue
+        rt.symbols[name] = trap_cursor
+        rt.hooks[trap_cursor] = fn
+        trap_cursor += TRAP_STRIDE
     return rt
 
 
@@ -344,12 +397,17 @@ def build_boot_stub(main_addr: int) -> bytes:
 def install_runtime(
     image: bytearray, runtime: Runtime, main_addr: int,
 ) -> None:
-    """Lay down the boot stub and the reset vector. The trap addresses
-    themselves don't get any bytes — the harness intercepts PC at
-    those addresses before any opcode is fetched there."""
+    """Lay down the boot stub, the reset vector, and the assembled
+    helper image (if any). Trap addresses for Python-hook helpers
+    don't get any bytes — the harness intercepts PC at those
+    addresses before any opcode is fetched there."""
     boot = build_boot_stub(main_addr)
     image[runtime.boot_addr:runtime.boot_addr + len(boot)] = boot
     # Reset vector at $FFFC/$FFFD points at the boot stub. The 6502
     # fetches PC from this on power-on / RESET.
     image[RESET_VECTOR] = runtime.boot_addr & 0xFF
     image[RESET_VECTOR + 1] = (runtime.boot_addr >> 8) & 0xFF
+    # Real-asm helpers (assembled into runtime.helper_image).
+    if runtime.helper_image:
+        end = runtime.helper_origin + len(runtime.helper_image)
+        image[runtime.helper_origin:end] = runtime.helper_image

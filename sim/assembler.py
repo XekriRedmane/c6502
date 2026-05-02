@@ -63,6 +63,8 @@ _ZP = {
     "ADC": 0x65, "SBC": 0xE5,
     "AND": 0x25, "ORA": 0x05, "EOR": 0x45,
     "CMP": 0xC5, "CPX": 0xE4, "CPY": 0xC4,
+    "ASL": 0x06, "LSR": 0x46, "ROL": 0x26, "ROR": 0x66,
+    "INC": 0xE6, "DEC": 0xC6,
 }
 
 # Absolute addressing (3 bytes: opcode + lo + hi)
@@ -73,6 +75,8 @@ _ABS = {
     "AND": 0x2D, "ORA": 0x0D, "EOR": 0x4D,
     "CMP": 0xCD, "CPX": 0xEC, "CPY": 0xCC,
     "JMP": 0x4C, "JSR": 0x20,
+    "ASL": 0x0E, "LSR": 0x4E, "ROL": 0x2E, "ROR": 0x6E,
+    "INC": 0xEE, "DEC": 0xCE,
 }
 
 # Indirect-Y (zp),Y (2 bytes: opcode + zp byte)
@@ -277,13 +281,15 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return _compare_size(left, right)
         case asm_ast.ClearCarry() | asm_ast.SetCarry():
             return 1
-        case asm_ast.Inc() | asm_ast.Dec():
-            return 1
+        case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
+            return _inc_dec_size(dst)
         case asm_ast.Push() | asm_ast.Pop():
             return 1
-        case (asm_ast.ArithmeticShiftLeft() | asm_ast.LogicalShiftRight()
-              | asm_ast.RotateLeft() | asm_ast.RotateRight()):
-            return 1
+        case (asm_ast.ArithmeticShiftLeft(dst=dst)
+              | asm_ast.LogicalShiftRight(dst=dst)
+              | asm_ast.RotateLeft(dst=dst)
+              | asm_ast.RotateRight(dst=dst)):
+            return _shift_size(dst)
         case asm_ast.Call():
             return 3   # JSR abs
         case asm_ast.Jump():
@@ -403,9 +409,9 @@ def _emit_instr(
         case asm_ast.SetCarry():
             return bytes([_IMPLIED["SEC"]])
         case asm_ast.Inc(dst=dst):
-            return _emit_inc_dec(dst, "Inc")
+            return _emit_inc_dec(dst, "Inc", syms)
         case asm_ast.Dec(dst=dst):
-            return _emit_inc_dec(dst, "Dec")
+            return _emit_inc_dec(dst, "Dec", syms)
         case asm_ast.Push(src=src):
             if not _is_reg_a(src):
                 raise AssemblerError(f"Push src must be Reg(A); got {src!r}")
@@ -415,17 +421,13 @@ def _emit_instr(
                 raise AssemblerError(f"Pop dst must be Reg(A); got {dst!r}")
             return bytes([_IMPLIED["PLA"]])
         case asm_ast.ArithmeticShiftLeft(dst=dst):
-            _check_dst_a(dst, "ASL")
-            return bytes([_IMPLIED["ASL_A"]])
+            return _emit_shift("ASL", dst, syms)
         case asm_ast.LogicalShiftRight(dst=dst):
-            _check_dst_a(dst, "LSR")
-            return bytes([_IMPLIED["LSR_A"]])
+            return _emit_shift("LSR", dst, syms)
         case asm_ast.RotateLeft(dst=dst):
-            _check_dst_a(dst, "ROL")
-            return bytes([_IMPLIED["ROL_A"]])
+            return _emit_shift("ROL", dst, syms)
         case asm_ast.RotateRight(dst=dst):
-            _check_dst_a(dst, "ROR")
-            return bytes([_IMPLIED["ROR_A"]])
+            return _emit_shift("ROR", dst, syms)
         case asm_ast.Call(name=name):
             return _emit_jsr(name, syms)
         case asm_ast.Jump(target=target):
@@ -797,15 +799,54 @@ def _emit_compare(
     raise AssemblerError(f"unsupported Compare right: {right!r}")
 
 
-# -------- inc/dec --------
+# -------- inc/dec / shifts --------
 
 
-def _emit_inc_dec(op: asm_ast.Type_operand, name: str) -> bytes:
+def _inc_dec_size(dst: asm_ast.Type_operand) -> int:
+    """1 byte for register-mode INX/INY/DEX/DEY; 2 / 3 bytes for the
+    memory-mode INC/DEC on a `Data` operand (zp / abs)."""
+    if _is_reg_x(dst) or _is_reg_y(dst):
+        return 1
+    if isinstance(dst, asm_ast.Data):
+        return 2 if _data_fits_zp(dst) else 3
+    raise AssemblerError(f"Inc/Dec dst unsupported: {dst!r}")
+
+
+def _shift_size(dst: asm_ast.Type_operand) -> int:
+    """1 byte for accumulator-mode ASL/LSR/ROL/ROR on `Reg(A)`; 2 / 3
+    bytes for the memory-mode forms on a `Data` operand."""
+    if _is_reg_a(dst):
+        return 1
+    if isinstance(dst, asm_ast.Data):
+        return 2 if _data_fits_zp(dst) else 3
+    raise AssemblerError(f"Shift dst unsupported: {dst!r}")
+
+
+def _emit_inc_dec(
+    op: asm_ast.Type_operand, name: str, syms: dict[str, int],
+) -> bytes:
     if _is_reg_x(op):
         return bytes([_IMPLIED["INX" if name == "Inc" else "DEX"]])
     if _is_reg_y(op):
         return bytes([_IMPLIED["INY" if name == "Inc" else "DEY"]])
-    raise AssemblerError(f"{name} dst must be Reg(X) or Reg(Y); got {op!r}")
+    if isinstance(op, asm_ast.Data):
+        opcode = "INC" if name == "Inc" else "DEC"
+        return _emit_zp_or_abs(opcode, _resolve_data_addr(op, syms))
+    raise AssemblerError(
+        f"{name} dst must be Reg(X), Reg(Y), or Data; got {op!r}"
+    )
+
+
+def _emit_shift(
+    opcode: str, dst: asm_ast.Type_operand, syms: dict[str, int],
+) -> bytes:
+    """`ASL A`/`LSR A`/`ROL A`/`ROR A` for Reg(A); `<op> name+off`
+    for `Data` (zp or abs depending on the resolved address)."""
+    if _is_reg_a(dst):
+        return bytes([_IMPLIED[opcode + "_A"]])
+    if isinstance(dst, asm_ast.Data):
+        return _emit_zp_or_abs(opcode, _resolve_data_addr(dst, syms))
+    raise AssemblerError(f"{opcode} dst must be Reg(A) or Data; got {dst!r}")
 
 
 # -------- jumps and branches --------

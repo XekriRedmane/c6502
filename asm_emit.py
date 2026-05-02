@@ -52,8 +52,11 @@ must be lowered into atoms by an earlier pass before reaching emit.
 
 Atomic arithmetic / flag instructions:
   - `ClearCarry` -> `CLC`; `SetCarry` -> `SEC`.
-  - `Inc(dst)` / `Dec(dst)`: `dst` must be `Reg(X)` or `Reg(Y)` ->
-    `INX`/`INY`/`DEX`/`DEY`. (Plain 6502 has no INA/DEA.)
+  - `Inc(dst)` / `Dec(dst)`: `dst` is `Reg(X)`, `Reg(Y)`, or `Data` —
+    `INX`/`INY`/`DEX`/`DEY` for the registers, `INC name+off` /
+    `DEC name+off` for memory (used by the runtime helpers to
+    increment HARGS slots in place; plain 6502 has no INA/DEA, so
+    register-A inc/dec goes through `CLC; ADC #1` etc.).
   - `Push(src)` -> `PHA` (src must be `Reg(A)`).
   - `Pop(dst)`  -> `PLA` (dst must be `Reg(A)`).
   - `Xor(src1, src2, dst)` -> `EOR <src>`. dst must be `Reg(A)`; one
@@ -62,15 +65,17 @@ Atomic arithmetic / flag instructions:
     LDY indirect-Y like Add/Sub. Carry / sign flags are not affected.
   - `And(src, dst)` -> `AND <src>`; same operand shape as `Add`.
   - `Or(src, dst)`  -> `ORA <src>`; same operand shape as `Add`.
-  - `ArithmeticShiftLeft(dst)` -> `ASL A`. dst must be `Reg(A)`.
-  - `LogicalShiftRight(dst)`   -> `LSR A`. dst must be `Reg(A)`.
-  - `RotateLeft(dst)`          -> `ROL A`. dst must be `Reg(A)`.
-  - `RotateRight(dst)`         -> `ROR A`. dst must be `Reg(A)`.
-    The 6502 has accumulator and memory addressing modes for these,
-    but no indirect-Y mode — so soft-stack values can't be shifted in
-    place; codegen has to load to A, shift, then store. Memory dst
-    support could be added later for in-place shifts of zero-page
-    locations (useful for 16-bit shift sequences with carry).
+  - `ArithmeticShiftLeft(dst)` -> `ASL A` (dst=`Reg(A)`) or
+    `ASL name+off` (dst=`Data`).
+  - `LogicalShiftRight(dst)`   -> `LSR A` / `LSR name+off`.
+  - `RotateLeft(dst)`          -> `ROL A` / `ROL name+off`.
+  - `RotateRight(dst)`         -> `ROR A` / `ROR name+off`.
+    The 6502 has accumulator and absolute / zero-page addressing for
+    these, but no indirect-Y mode — so soft-stack values (`Stack`,
+    `Frame`) can't be shifted in place; codegen has to load to A,
+    shift, then store. The `Data` form is used by the runtime
+    helpers to shift HARGS slots in place (saves the load / store
+    overhead in tight inner loops).
   - `Add(src, dst)` -> `ADC <src>` (src is `Imm`/`Stack`/`Frame`, dst
     `Reg(A)`). Carry must already be set up by a preceding `ClearCarry`.
     Stack/Frame sources emit an LDY pair plus the ADC (the LDY is
@@ -553,26 +558,41 @@ def _emit_acc_logic(
 def _emit_acc_shift(
     opcode: str, op_name: str, dst: asm_ast.Type_operand,
 ) -> list[str]:
-    """Common emit for ASL/LSR/ROL/ROR. The 6502 supports both
-    accumulator and memory addressing for these, but soft-stack
-    operands live behind indirect-Y which isn't a supported mode for
-    the shift family — so today the only legal dst is Reg(A)."""
+    """Common emit for ASL/LSR/ROL/ROR. The 6502 has accumulator and
+    absolute / zero-page addressing modes (no indirect-Y), so:
+      - `Reg(A)` → `ASL A` / `LSR A` / `ROL A` / `ROR A`
+      - `Data(name, off)` → `ASL name+off` etc. — dasm picks zp or
+        abs based on the resolved address. Used by the runtime
+        helpers to shift HARGS slots in place; soft-stack `Stack` /
+        `Frame` operands aren't supported (indirect-Y isn't a
+        shift addressing mode)."""
     _reject_pseudo(dst)
-    if not _is_reg_a(dst):
-        raise ValueError(f"{op_name} dst must be Reg(A), got {dst!r}")
-    return [_instr_line(opcode, "A")]
+    if _is_reg_a(dst):
+        return [_instr_line(opcode, "A")]
+    if isinstance(dst, asm_ast.Data):
+        return [_instr_line(opcode, _data_addr(dst))]
+    raise ValueError(
+        f"{op_name} dst must be Reg(A) or Data, got {dst!r}"
+    )
 
 
 def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
+    """`INX` / `INY` for X/Y, or `INC name+off` for a `Data` operand
+    (the 6502 has memory-mode INC in zp / abs / zp,X / abs,X — we
+    only emit the abs / zp form here, since `Data` is the only
+    memory operand we accept for the shift family). Soft-stack
+    operands aren't supported (no indirect-Y)."""
     _reject_pseudo(dst)
     match dst:
         case asm_ast.Reg(reg=asm_ast.X()):
             return [_instr_line("INX")]
         case asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("INY")]
+        case asm_ast.Data():
+            return [_instr_line("INC", _data_addr(dst))]
         case _:
             raise ValueError(
-                f"Inc dst must be Reg(X) or Reg(Y), got {dst!r}"
+                f"Inc dst must be Reg(X), Reg(Y), or Data, got {dst!r}"
             )
 
 
@@ -583,9 +603,11 @@ def _emit_dec(dst: asm_ast.Type_operand) -> list[str]:
             return [_instr_line("DEX")]
         case asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("DEY")]
+        case asm_ast.Data():
+            return [_instr_line("DEC", _data_addr(dst))]
         case _:
             raise ValueError(
-                f"Dec dst must be Reg(X) or Reg(Y), got {dst!r}"
+                f"Dec dst must be Reg(X), Reg(Y), or Data, got {dst!r}"
             )
 
 

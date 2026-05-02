@@ -229,6 +229,11 @@ def _fold(
             if tv is None:
                 return instr
             return None if tv else tac_ast.Jump(target=t)
+        case tac_ast.Phi(dst=dst, args=args) if args:
+            res = _fold_phi(args, dst)
+            if res is not None:
+                return res
+            return instr
     if isinstance(instr, _CONVERSION_NODES) and isinstance(
         instr.src, tac_ast.Constant,
     ):
@@ -249,6 +254,35 @@ _CONVERSION_NODES = (
     tac_ast.FloatToInt, tac_ast.DoubleToInt,
     tac_ast.FloatToDouble, tac_ast.DoubleToFloat,
 )
+
+
+def _fold_phi(
+    args: list[tac_ast.Type_phi_arg],
+    dst: tac_ast.Type_val,
+) -> tac_ast.Type_instruction | None:
+    """If every PhiArg has the same `source` (whether all the same
+    Constant or all the same Var), the Phi just copies that source
+    into dst. Returns the rewritten Copy or None if the Phi's
+    sources don't all agree.
+
+    Distinct constants → leave alone (the Phi genuinely merges
+    different values). The single-arg case is folded by UCE's
+    `_fold_singleton_phis` to keep the rules in one place."""
+    first = args[0].source
+    for a in args[1:]:
+        if not _vals_equal(a.source, first):
+            return None
+    return tac_ast.Copy(src=first, dst=dst)
+
+
+def _vals_equal(a: tac_ast.Type_val, b: tac_ast.Type_val) -> bool:
+    """Structural equality on Type_val: matching Constants compare by
+    const variant + value; matching Vars compare by name."""
+    if isinstance(a, tac_ast.Constant) and isinstance(b, tac_ast.Constant):
+        return a.const == b.const
+    if isinstance(a, tac_ast.Var) and isinstance(b, tac_ast.Var):
+        return a.name == b.name
+    return False
 
 
 def _fold_conversion(

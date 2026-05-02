@@ -47,10 +47,14 @@ def _fn(*instrs, name: str = "main", params=()) -> tac_ast.Function:
     )
 
 
-class TestStubPassesAreIdentity(unittest.TestCase):
-    """Every pass currently returns its input verbatim. These tests
-    pin that contract so a future implementation that breaks it
-    surfaces here rather than silently corrupting the AST."""
+class TestPassesAcceptInputs(unittest.TestCase):
+    """Each pass at minimum must accept arbitrary well-formed input
+    without crashing. Behavioral correctness for each pass lives in
+    its own test module (test_constant_folding.py,
+    test_unreachable_code_elimination.py, test_ssa.py, ...). What
+    we pin here is just that the per-pass entry points are
+    structurally well-formed so the optimizer driver doesn't
+    explode mid-cycle."""
 
     def setUp(self) -> None:
         self.fn = _fn(
@@ -64,33 +68,44 @@ class TestStubPassesAreIdentity(unittest.TestCase):
                 src2=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
                 dst=tac_ast.Var(name="y"),
             ),
-            _ret(),
+            tac_ast.Ret(val=tac_ast.Var(name="y")),
         )
 
-    def test_constant_folding_identity(self) -> None:
-        self.assertEqual(constant_fold(self.fn), self.fn)
+    def test_constant_folding_runs(self) -> None:
+        out = constant_fold(self.fn)
+        self.assertIsInstance(out, tac_ast.Function)
 
-    def test_unreachable_code_identity(self) -> None:
-        self.assertEqual(eliminate_unreachable_code(self.fn), self.fn)
+    def test_unreachable_code_runs(self) -> None:
+        out = eliminate_unreachable_code(self.fn)
+        self.assertIsInstance(out, tac_ast.Function)
 
-    def test_copy_propagation_identity(self) -> None:
-        self.assertEqual(copy_propagate(self.fn), self.fn)
+    def test_copy_propagation_runs(self) -> None:
+        out = copy_propagate(self.fn)
+        self.assertIsInstance(out, tac_ast.Function)
 
-    def test_dead_store_identity(self) -> None:
-        self.assertEqual(eliminate_dead_stores(self.fn), self.fn)
+    def test_dead_store_runs(self) -> None:
+        out = eliminate_dead_stores(self.fn)
+        self.assertIsInstance(out, tac_ast.Function)
 
 
 class TestOptimizeFunction(unittest.TestCase):
-    """Driver invariants. Stub passes mean one cycle is enough to
-    reach fixed point — what we're really pinning is that the loop
-    terminates and that the output matches the input under structural
-    equality."""
+    """Driver invariants — `optimize_function` terminates and the
+    SSA-in/de-SSA bracket only kicks in when a SymbolTable is
+    supplied (so legacy callers without one see the simple cycle)."""
 
     def test_terminates_on_empty_function(self) -> None:
         fn = _fn(_ret())
+        # No `symbols` → SSA pipeline skipped; cycle still runs.
         self.assertEqual(optimize_function(fn), fn)
 
     def test_terminates_on_function_with_body(self) -> None:
+        # Without a symbol table, SSA construction is skipped and
+        # the SSA-aware passes (copy propagation, dead-store
+        # elimination) become no-ops, since they have no safe way
+        # to identify which Vars are SSA single-def. So the
+        # function passes through structurally unchanged here —
+        # what we're pinning is just that the driver's loop
+        # terminates without exploding.
         fn = _fn(
             tac_ast.Copy(
                 src=tac_ast.Constant(const=tac_ast.ConstInt(value=7)),

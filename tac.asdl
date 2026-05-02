@@ -44,6 +44,17 @@ module TAC {
         -- direct FunctionCall — the only difference is the call-
         -- site instruction (`JSR icall` instead of `JSR <name>`).
         | IndirectCall(val ptr, val* args, val? dst)
+        -- Phi node for SSA form. `dst` is the merged-value Var.
+        -- `args` is one entry per predecessor block, each tagging the
+        -- predecessor by the label of its leading `Label` instruction
+        -- — so SSA construction must ensure every block on the path
+        -- to a Phi-bearing block has a leading Label (a fresh one is
+        -- minted if the block didn't already have one). Phi
+        -- instructions only exist between SSA construction and
+        -- destruction; `tac_to_asm` has no lowering for them and
+        -- raises if one reaches it.
+        | Phi(val dst, phi_arg* args)
+    phi_arg = PhiArg(identifier pred_label, val source)
     val = Constant(const) | Var(identifier name)
     unary_operator = Complement | Negate | LogicalNot
     binary_operator =

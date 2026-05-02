@@ -30,6 +30,10 @@ from passes.optimization.cfg import (
     EXIT_ID,
     build_cfg,
     cfg_to_function,
+    dominance_frontiers,
+    dominator_tree_children,
+    immediate_dominators,
+    reverse_postorder,
 )
 
 
@@ -309,6 +313,142 @@ class TestCFGToFunction(unittest.TestCase):
             tac_ast.Label(name="L1"),
             _ret(0),
         ])
+
+
+class TestDominance(unittest.TestCase):
+    """Spot-check Cooper/Harvey/Kennedy's dominance and Cytron's DF
+    on small CFG topologies. Each test names the upstream paper's
+    canonical shape so the expected idom / DF values are easy to
+    audit against the literature."""
+
+    def test_straight_line_each_dominates_next(self) -> None:
+        # ENTRY → B0 → B1 → B2 (Ret) → EXIT.
+        fn = _fn(
+            _copy(1, "x"),
+            tac_ast.Label(name="L1"),
+            _copy(2, "y"),
+            tac_ast.Label(name="L2"),
+            _ret(0),
+        )
+        cfg = build_cfg(fn)
+        b0, b1, b2 = cfg.block_order
+        idom = immediate_dominators(cfg)
+        self.assertEqual(idom[ENTRY_ID], ENTRY_ID)
+        self.assertEqual(idom[b0], ENTRY_ID)
+        self.assertEqual(idom[b1], b0)
+        self.assertEqual(idom[b2], b1)
+        self.assertEqual(idom[EXIT_ID], b2)
+        # No joins → all DFs empty.
+        df = dominance_frontiers(cfg)
+        for b, frontier in df.items():
+            self.assertEqual(frontier, set(), f"DF[{b}] should be empty")
+
+    def test_diamond_join_in_df(self) -> None:
+        # if/else diamond:  cond → then / else → join → ret.
+        # The join block lives in DF of both then- and else-arms.
+        fn = _fn(
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Var(name="c"), target="L_else",
+            ),
+            _copy(1, "y"),  # then-arm
+            tac_ast.Jump(target="L_join"),
+            tac_ast.Label(name="L_else"),
+            _copy(2, "y"),  # else-arm
+            tac_ast.Label(name="L_join"),
+            _ret(0),
+        )
+        cfg = build_cfg(fn)
+        b_cond, b_then, b_else, b_join = cfg.block_order
+        idom = immediate_dominators(cfg)
+        self.assertEqual(idom[b_cond], ENTRY_ID)
+        # Both arms are dominated by b_cond, not by each other.
+        self.assertEqual(idom[b_then], b_cond)
+        self.assertEqual(idom[b_else], b_cond)
+        # Join is also dominated by b_cond — neither arm strictly
+        # dominates the join (each can be skipped).
+        self.assertEqual(idom[b_join], b_cond)
+        df = dominance_frontiers(cfg)
+        self.assertEqual(df[b_then], {b_join})
+        self.assertEqual(df[b_else], {b_join})
+        # b_cond doesn't have b_join in its DF — it strictly
+        # dominates b_join.
+        self.assertEqual(df[b_cond], set())
+
+    def test_loop_back_edge_in_df(self) -> None:
+        # do { x = 1; } while (c);  — back-edge from the body's
+        # tail to the loop head. The loop head appears in DF of
+        # itself (because the back-edge is from a node it dominates).
+        fn = _fn(
+            tac_ast.Label(name="head"),
+            _copy(1, "x"),
+            tac_ast.JumpIfTrue(
+                condition=tac_ast.Var(name="c"), target="head",
+            ),
+            _ret(0),
+        )
+        cfg = build_cfg(fn)
+        b_loop, b_after = cfg.block_order
+        idom = immediate_dominators(cfg)
+        self.assertEqual(idom[b_loop], ENTRY_ID)
+        self.assertEqual(idom[b_after], b_loop)
+        df = dominance_frontiers(cfg)
+        # The loop block has two predecessors (ENTRY and itself), so
+        # the back-edge from itself contributes b_loop to DF[b_loop].
+        self.assertIn(b_loop, df[b_loop])
+
+    def test_dominator_tree_children_inverts_idom(self) -> None:
+        fn = _fn(
+            tac_ast.JumpIfFalse(
+                condition=tac_ast.Var(name="c"), target="L_else",
+            ),
+            _copy(1, "y"),
+            tac_ast.Jump(target="L_join"),
+            tac_ast.Label(name="L_else"),
+            _copy(2, "y"),
+            tac_ast.Label(name="L_join"),
+            _ret(0),
+        )
+        cfg = build_cfg(fn)
+        b_cond, b_then, b_else, b_join = cfg.block_order
+        idom = immediate_dominators(cfg)
+        children = dominator_tree_children(idom)
+        # ENTRY's only child (in the dom tree) is b_cond.
+        self.assertEqual(children[ENTRY_ID], [b_cond])
+        # b_cond strictly dominates both arms and the join — none of
+        # them strictly dominate each other, so all three are b_cond's
+        # immediate children. EXIT is a child of b_join (whose Ret is
+        # EXIT's only predecessor edge). Order isn't fixed; compare
+        # as sets.
+        self.assertEqual(
+            set(children[b_cond]), {b_then, b_else, b_join},
+        )
+        self.assertEqual(children[b_join], [EXIT_ID])
+        # Leaves of the dom tree have no children.
+        self.assertEqual(children[b_then], [])
+        self.assertEqual(children[b_else], [])
+        self.assertEqual(children[EXIT_ID], [])
+
+    def test_unreachable_block_excluded_from_dominance(self) -> None:
+        # An unreachable block doesn't appear in idom / DF at all.
+        fn = _fn(
+            _ret(0),
+            _copy(1, "x"),  # unreachable
+            _ret(1),
+        )
+        cfg = build_cfg(fn)
+        b_live, b_dead = cfg.block_order
+        idom = immediate_dominators(cfg)
+        self.assertNotIn(b_dead, idom)
+        self.assertIn(b_live, idom)
+        df = dominance_frontiers(cfg)
+        self.assertNotIn(b_dead, df)
+
+    def test_reverse_postorder_starts_at_entry(self) -> None:
+        fn = _fn(_copy(1, "x"), _ret(0))
+        cfg = build_cfg(fn)
+        rpo = reverse_postorder(cfg)
+        self.assertEqual(rpo[0], ENTRY_ID)
+        self.assertEqual(rpo[-1], EXIT_ID)
 
 
 if __name__ == "__main__":

@@ -156,3 +156,123 @@ def cfg_to_function(fn: tac_ast.Function, cfg: CFG) -> tac_ast.Function:
         params=list(fn.params),
         instructions=out,
     )
+
+
+# ---------------------------------------------------------------------------
+# Dominance analysis
+# ---------------------------------------------------------------------------
+#
+# Cooper, Harvey, Kennedy, "A Simple, Fast Dominance Algorithm" (2006).
+# An iterative dataflow algorithm — converges in two passes over a
+# reverse-postorder traversal for typical reducible CFGs and never
+# more than O(N^2) for pathological cases. Plenty fast for c6502's
+# function sizes.
+#
+# Definitions:
+#   `B dominates A` iff every path from ENTRY to A passes through B.
+#   `B = idom(A)` iff B dominates A and no other dominator of A
+#                  (other than A itself) is dominated by B.
+#   `DF(B)` (dominance frontier) is the set of blocks `X` such that
+#                  B dominates a predecessor of X but does not strictly
+#                  dominate X — i.e. the "exits" of B's dominance
+#                  region. Phi nodes for a variable defined in B go at
+#                  the iterated DF of B's definition blocks (Cytron
+#                  et al. 1991).
+#
+# All functions exclude unreachable blocks from their result — only
+# blocks reachable from ENTRY appear in the returned dicts.
+
+
+def reverse_postorder(cfg: CFG) -> list[int]:
+    """DFS-from-ENTRY postorder, reversed. The order each block
+    appears at puts every dominator of a block before it, which is
+    what makes Cooper's algorithm converge in one iteration on
+    reducible flow graphs."""
+    visited: set[int] = {ENTRY_ID}
+    postorder: list[int] = []
+    stack: list[tuple[int, list[int], int]] = [
+        (ENTRY_ID, list(cfg.blocks[ENTRY_ID].successors), 0),
+    ]
+    while stack:
+        bid, succs, i = stack[-1]
+        if i >= len(succs):
+            postorder.append(bid)
+            stack.pop()
+            continue
+        stack[-1] = (bid, succs, i + 1)
+        nxt = succs[i]
+        if nxt not in visited:
+            visited.add(nxt)
+            stack.append((nxt, list(cfg.blocks[nxt].successors), 0))
+    postorder.reverse()
+    return postorder
+
+
+def immediate_dominators(cfg: CFG) -> dict[int, int]:
+    """Map each reachable block to its immediate dominator.
+    `idom[ENTRY_ID] == ENTRY_ID` is a sentinel — ENTRY has no
+    dominator outside itself."""
+    rpo = reverse_postorder(cfg)
+    rpo_index = {b: i for i, b in enumerate(rpo)}
+    idom: dict[int, int] = {ENTRY_ID: ENTRY_ID}
+
+    def intersect(a: int, b: int) -> int:
+        finger1, finger2 = a, b
+        while finger1 != finger2:
+            while rpo_index[finger1] > rpo_index[finger2]:
+                finger1 = idom[finger1]
+            while rpo_index[finger2] > rpo_index[finger1]:
+                finger2 = idom[finger2]
+        return finger1
+
+    changed = True
+    while changed:
+        changed = False
+        for b in rpo:
+            if b == ENTRY_ID:
+                continue
+            preds = [
+                p for p in cfg.blocks[b].predecessors if p in rpo_index
+            ]
+            processed = [p for p in preds if p in idom]
+            if not processed:
+                continue
+            new_idom = processed[0]
+            for p in processed[1:]:
+                new_idom = intersect(p, new_idom)
+            if idom.get(b) != new_idom:
+                idom[b] = new_idom
+                changed = True
+    return idom
+
+
+def dominator_tree_children(idom: dict[int, int]) -> dict[int, list[int]]:
+    """Invert `idom` to a parent → children map. ENTRY's self-edge
+    is filtered out so a tree walker doesn't recurse forever."""
+    children: dict[int, list[int]] = {b: [] for b in idom}
+    for b, p in idom.items():
+        if b == p:
+            continue
+        children[p].append(b)
+    return children
+
+
+def dominance_frontiers(cfg: CFG) -> dict[int, set[int]]:
+    """Compute DF[B] for every reachable block B, via the standard
+    Cytron walk: for each block X with multiple predecessors, every
+    predecessor P contributes X to DF[runner] for runner = P,
+    idom[P], idom[idom[P]], ... up to (but not including) idom[X]."""
+    idom = immediate_dominators(cfg)
+    df: dict[int, set[int]] = {b: set() for b in idom}
+    for b in idom:
+        if b == ENTRY_ID:
+            continue
+        preds = [p for p in cfg.blocks[b].predecessors if p in idom]
+        if len(preds) < 2:
+            continue
+        for p in preds:
+            runner = p
+            while runner != idom[b]:
+                df[runner].add(b)
+                runner = idom[runner]
+    return df

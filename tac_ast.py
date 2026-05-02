@@ -1,4 +1,4 @@
-# Generated from /project/c6502/tac.asdl. Do not edit.
+# Generated from tac.asdl. Do not edit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -172,6 +172,23 @@ class IndirectCall(Type_instruction):
     ptr: Type_val
     args: list[Type_val] = field(default_factory=list)
     dst: Type_val | None = None
+
+
+@dataclass
+class Phi(Type_instruction):
+    dst: Type_val
+    args: list[Type_phi_arg] = field(default_factory=list)
+
+
+@dataclass
+class Type_phi_arg:
+    pass
+
+
+@dataclass
+class PhiArg(Type_phi_arg):
+    pred_label: str
+    source: Type_val
 
 
 @dataclass

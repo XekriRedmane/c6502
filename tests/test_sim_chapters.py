@@ -614,7 +614,6 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_18/valid/extra_credit/other_features/struct_decl_in_switch_statement.c": 50,
     "chapter_18/valid/extra_credit/semantic_analysis/cast_union_to_void.c": 0,
     "chapter_18/valid/extra_credit/semantic_analysis/decl_shadows_decl.c": 0,
-    "chapter_18/valid/extra_credit/semantic_analysis/incomplete_union_types.c": 1,
     "chapter_18/valid/extra_credit/semantic_analysis/redeclare_union.c": 1,
     "chapter_18/valid/extra_credit/semantic_analysis/union_members_same_type.c": 0,
     "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": 0,
@@ -742,6 +741,8 @@ SKIPPED: dict[str, str] = {
         "multi-TU + libc malloc",
     "chapter_17/valid/libraries/test_for_memory_leaks_client.c":
         "multi-TU + libc malloc",
+    "chapter_18/valid/extra_credit/semantic_analysis/incomplete_union_types.c":
+        "depends on libc calloc + puts (test 2 invokes both)",
 }
 
 

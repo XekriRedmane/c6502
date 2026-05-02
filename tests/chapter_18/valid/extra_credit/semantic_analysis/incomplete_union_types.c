@@ -25,7 +25,9 @@ int test_block_scope_forward_decl(void) {
     union u* u_ptr = 0;  // define a pointer to that union type
 
     union u {
-        long x;
+        long long x;  // c6502 adaptation: widened from `long` (2B,
+                      // max 32767) to `long long` (4B) so the
+                      // -100000000l initializer survives.
         char y;
     };  // complete the type
 

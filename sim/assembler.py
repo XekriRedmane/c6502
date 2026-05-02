@@ -224,6 +224,38 @@ def assemble(
 _zp_data_names: frozenset[str] = frozenset()
 
 
+# -------- public size API --------
+
+
+# Default zero-page Data names for `instruction_size` — the runtime
+# header's reserved names (HARGS, SSP, FP, DPTR). Their resolved
+# addresses are all < 0x100, so a Data reference to one of them
+# encodes in zp mode.
+_DEFAULT_ZP_NAMES = frozenset(DEFAULT_ZP_SYMBOLS)
+
+
+def instruction_size(
+    instr: asm_ast.Type_instruction,
+    *,
+    zp_names: frozenset[str] | None = None,
+) -> int:
+    """Byte size for `instr` under the same encoding rules `assemble`
+    uses. `zp_names` is the set of Data-operand names that resolve to
+    zero-page addresses; if omitted, defaults to the runtime header
+    names (`HARGS`, `SSP`, `FP`, `DPTR`).
+
+    Public wrapper around the internal `_instr_size`, which threads
+    its zp-set through a module-level binding because that's how
+    pass 1 / pass 2 of `assemble` share state."""
+    global _zp_data_names
+    saved = _zp_data_names
+    _zp_data_names = _DEFAULT_ZP_NAMES if zp_names is None else zp_names
+    try:
+        return _instr_size(instr)
+    finally:
+        _zp_data_names = saved
+
+
 # -------- size helpers --------
 
 

@@ -44,6 +44,7 @@ from parser import parse
 from preprocessor import preprocess
 from pretty import pretty
 from passes.label_resolution import resolve_program as resolve_labels
+from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.optimization import optimize_program as optimize_tac
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
@@ -116,12 +117,12 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
             tac = optimize_tac(tac, symbols)
-        return emit_program(replace_pseudoregs(
+        return emit_program(expand_long_branches(replace_pseudoregs(
             translate_to_asm(tac, symbols, types),
             extra_statics=statics,
             symbols=symbols,
             types=types,
-        ))
+        )))
     raise AssertionError(f"unknown stage: {stage!r}")
 
 

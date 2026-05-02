@@ -35,6 +35,7 @@ from passes.identifier_resolution import resolve_program as resolve_identifiers
 from passes.string_lifting import lift_program as lift_strings
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
+from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from c99_to_tac import translate_program as translate_to_tac
@@ -68,9 +69,9 @@ def compile_to_asm(source: str) -> tuple[asm_ast.Program, dict, dict]:
     statics = frozenset(
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
-    asm = replace_pseudoregs(
+    asm = expand_long_branches(replace_pseudoregs(
         asm0, extra_statics=statics, symbols=syms, types=types,
-    )
+    ))
     return asm, syms, types
 
 

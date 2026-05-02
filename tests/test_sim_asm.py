@@ -10,12 +10,13 @@ TAC simulator stays green.
 through the asm sim, with one of these category strings as the reason
 so future fixes can mass-flip them when a class of issue is closed:
 
-  branch_oor          The function is large enough that some `Bxx`
-                      branch's target is more than 127 bytes away;
-                      the 6502's 8-bit signed displacement can't
-                      reach. Real codegen / encoding issue: TAC→asm
-                      should synthesize a `B!xx skip; JMP target`
-                      pair when the short form won't fit.
+  frame_too_large     The function's `local_bytes` exceeds 253 — the
+                      `LDY #(M+2)` immediate that addresses the
+                      saved-FP slot in the prologue / epilogue can't
+                      hold a value > 255. Hits a couple of struct-
+                      heavy chapter-18 tests; needs a different frame
+                      layout (non-LDY-immediate addressing, or split
+                      large frames into multiple sub-frames) to fix.
 
   fp_unimpl           The program calls one of the FP conversion /
                       arithmetic helpers (`i2f`, `d2l`, `fadd`, …),
@@ -29,22 +30,9 @@ so future fixes can mass-flip them when a class of issue is closed:
                       real link in c6502 doesn't exist either —
                       these would need a libc stub.
 
-  long_return         Expected return value is outside c6502's 1-byte
-                      `int` range (-128..127), so `main` returns a
-                      wider type. Today the asm epilogue's FP-restore
-                      step does `TAX` as scratch, clobbering the
-                      high byte of a 2-byte return. Real codegen
-                      bug: the epilogue needs a different scratch
-                      (e.g. a zero-page byte) so X survives.
-
   wrong_value         Program runs to BRK but the value in A doesn't
-                      match. Most cases here boil down to (a) signed
-                      div/mod hitting our unsigned-only divmod hook
-                      (the runtime helpers don't distinguish signed
-                      vs. unsigned today), (b) widening / narrowing
-                      / sign-extend interactions, or (c) other
-                      typing edge cases worth investigating one by
-                      one. Each surfaces a real finding.
+                      match. Each one's a real finding worth
+                      investigating.
 
 The `_PASSING` set is the complement: chapter files that currently
 produce the expected return through the asm simulator. The test asserts
@@ -80,49 +68,14 @@ _DEFAULT_MAX_CYCLES = 5_000_000
 # script in `scripts/regen_sim_asm_skips.py` (TODO if/when that lands)
 # or do an ad-hoc bisect in a REPL.
 SKIPS: dict[str, str] = {
-    # --- branch_oor (40): Bxx target > 127 bytes from the branch ---
-    "chapter_8/valid/extra_credit/duffs_device.c": "branch_oor",
-    "chapter_8/valid/extra_credit/switch_in_loop.c": "branch_oor",
-    "chapter_8/valid/extra_credit/switch_nested_switch.c": "branch_oor",
-    "chapter_8/valid/multi_continue_same_loop.c": "branch_oor",
-    "chapter_8/valid/nested_break.c": "branch_oor",
-    "chapter_8/valid/nested_continue.c": "branch_oor",
-    "chapter_9/valid/stack_arguments/test_for_memory_leaks.c": "branch_oor",
-    "chapter_11/valid/long_expressions/type_specifiers.c": "branch_oor",
-    "chapter_13/valid/floating_expressions/loop_controlling_expression.c": "branch_oor",
-    "chapter_13/valid/function_calls/double_and_int_params_recursive.c": "branch_oor",
-    "chapter_13/valid/implicit_casts/convert_for_assignment.c": "branch_oor",
-    "chapter_14/valid/extra_credit/switch_dereferenced_pointer.c": "branch_oor",
-    "chapter_15/valid/declarators/array_as_argument.c": "branch_oor",
-    "chapter_15/valid/declarators/equivalent_declarators.c": "branch_oor",
-    "chapter_15/valid/declarators/for_loop_array.c": "branch_oor",
-    "chapter_15/valid/extra_credit/compound_assign_and_increment.c": "branch_oor",
-    "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": "branch_oor",
-    "chapter_15/valid/extra_credit/postfix_prefix_precedence.c": "branch_oor",
-    "chapter_15/valid/initialization/automatic.c": "branch_oor",
-    "chapter_15/valid/initialization/automatic_nested.c": "branch_oor",
-    "chapter_15/valid/initialization/static.c": "branch_oor",
-    "chapter_15/valid/pointer_arithmetic/pointer_add.c": "branch_oor",
-    "chapter_15/valid/subscripting/addition_subscript_equivalence.c": "branch_oor",
-    "chapter_16/valid/chars/convert_by_assignment.c": "branch_oor",
-    "chapter_16/valid/chars/partial_initialization.c": "branch_oor",
-    "chapter_16/valid/chars/return_char.c": "branch_oor",
-    "chapter_16/valid/strings_as_initializers/literals_and_compound_initializers.c": "branch_oor",
-    "chapter_16/valid/strings_as_initializers/partial_initialize_via_string.c": "branch_oor",
-    "chapter_18/valid/extra_credit/member_access/static_union_access.c": "branch_oor",
-    "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": "branch_oor",
-    "chapter_18/valid/extra_credit/other_features/struct_decl_in_switch_statement.c": "branch_oor",
-    "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": "branch_oor",
-    "chapter_18/valid/no_structure_parameters/scalar_member_access/arrow.c": "branch_oor",
-    "chapter_18/valid/no_structure_parameters/scalar_member_access/dot.c": "branch_oor",
-    "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c": "branch_oor",
-    "chapter_18/valid/no_structure_parameters/semantic_analysis/namespaces.c": "branch_oor",
-    "chapter_18/valid/no_structure_parameters/smoke_tests/static_vs_auto.c": "branch_oor",
-    "chapter_18/valid/parameters/pass_args_on_page_boundary.c": "branch_oor",
-    "chapter_18/valid/parameters/simple.c": "branch_oor",
-    "chapter_18/valid/params_and_returns/simple.c": "branch_oor",
+    # --- extern_unresolved (5): calls a name we don't link.
+    "chapter_17/valid/sizeof/sizeof_not_evaluated.c": "extern_unresolved",
+    "chapter_18/valid/no_structure_parameters/scalar_member_access/arrow.c": "extern_unresolved",
+    "chapter_18/valid/parameters/pass_args_on_page_boundary.c": "extern_unresolved",
+    "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": "extern_unresolved",
+    "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": "extern_unresolved",
 
-    # --- fp_unimpl (12): program calls an FP helper the sim doesn't
+    # --- fp_unimpl (17): program calls an FP helper the sim doesn't
     # have. Today neither simulator nor real runtime implements these.
     "chapter_13/valid/explicit_casts/cvttsd2si_rewrite.c": "fp_unimpl",
     "chapter_13/valid/explicit_casts/double_to_signed.c": "fp_unimpl",
@@ -130,22 +83,28 @@ SKIPS: dict[str, str] = {
     "chapter_13/valid/explicit_casts/rewrite_cvttsd2si_regression.c": "fp_unimpl",
     "chapter_13/valid/explicit_casts/signed_to_double.c": "fp_unimpl",
     "chapter_13/valid/explicit_casts/unsigned_to_double.c": "fp_unimpl",
+    "chapter_13/valid/function_calls/double_and_int_params_recursive.c": "fp_unimpl",
     "chapter_13/valid/function_calls/push_xmm.c": "fp_unimpl",
     "chapter_13/valid/function_calls/use_arg_after_fun_call.c": "fp_unimpl",
     "chapter_13/valid/implicit_casts/common_type.c": "fp_unimpl",
     "chapter_13/valid/implicit_casts/complex_arithmetic_common_type.c": "fp_unimpl",
+    "chapter_13/valid/implicit_casts/convert_for_assignment.c": "fp_unimpl",
     "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": "fp_unimpl",
+    "chapter_15/valid/initialization/automatic_nested.c": "fp_unimpl",
     "chapter_16/valid/char_constants/char_constant_operations.c": "fp_unimpl",
+    "chapter_18/valid/extra_credit/other_features/struct_decl_in_switch_statement.c": "fp_unimpl",
+    "chapter_18/valid/params_and_returns/simple.c": "fp_unimpl",
 
-    # --- extern_unresolved (3): calls a name we don't link.
-    "chapter_17/valid/sizeof/sizeof_not_evaluated.c": "extern_unresolved",
-    "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": "extern_unresolved",
-    "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": "extern_unresolved",
+    # --- frame_too_large (2): function's local_bytes > 253, can't
+    # fit `LDY #(M+2)` in the prologue / epilogue's saved-FP slot
+    # addressing.
+    "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": "frame_too_large",
+    "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c": "frame_too_large",
 
-    # --- wrong_value (19): runs to BRK with the wrong A. Most of
-    # what's left after fixing the SignExtend N-clobber bug
-    # concentrates in chapter_13 (FP) and a few signed-div / pointer
-    # / char edge cases. Each is a real signal worth digging into.
+    # --- wrong_value (23): runs to BRK with the wrong A. Most are
+    # in chapter 13 (FP) — programs that don't call an FP helper but
+    # depend on FP semantics for their answer — with a sprinkle of
+    # signed-div / pointer / char edge cases.
     "chapter_3/valid/div_neg.c": "wrong_value",
     "chapter_5/valid/exp_then_declaration.c": "wrong_value",
     "chapter_11/valid/long_expressions/arithmetic_ops.c": "wrong_value",
@@ -155,15 +114,19 @@ SKIPS: dict[str, str] = {
     "chapter_13/valid/extra_credit/compound_assign_implicit_cast.c": "wrong_value",
     "chapter_13/valid/extra_credit/incr_and_decr.c": "wrong_value",
     "chapter_13/valid/floating_expressions/arithmetic_ops.c": "wrong_value",
+    "chapter_13/valid/floating_expressions/loop_controlling_expression.c": "wrong_value",
     "chapter_13/valid/floating_expressions/simple.c": "wrong_value",
     "chapter_13/valid/floating_expressions/static_initialized_double.c": "wrong_value",
     "chapter_13/valid/special_values/infinity.c": "wrong_value",
     "chapter_13/valid/special_values/subnormal_not_zero.c": "wrong_value",
     "chapter_14/valid/dereference/static_var_indirection.c": "wrong_value",
     "chapter_14/valid/extra_credit/compound_assign_conversion.c": "wrong_value",
+    "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": "wrong_value",
+    "chapter_15/valid/pointer_arithmetic/pointer_add.c": "wrong_value",
     "chapter_15/valid/pointer_arithmetic/pointer_diff.c": "wrong_value",
     "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
     "chapter_16/valid/strings_as_initializers/test_alignment.c": "wrong_value",
+    "chapter_18/valid/extra_credit/member_access/static_union_access.c": "wrong_value",
     "chapter_18/valid/params_and_returns/ignore_retval.c": "wrong_value",
 }
 

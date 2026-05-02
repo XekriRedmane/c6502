@@ -57,34 +57,78 @@ any later codegen pass that wants X as scratch. Memory-based
 returns are uniform across all wider types and don't constrain the
 register file.
 
-## 2. Branch out of range (`branch_oor`, 40 chapter files)
+## 2. Branch out of range (`branch_oor`) — FIXED
 
-**Status:** real codegen / encoding issue.
+**Status:** fixed by adding `passes/long_branches.py`, which runs after
+`replace_pseudoregisters` and before either `asm_emit.emit_program`
+or `sim.assembler.assemble`. The pass walks each function, computes
+label addresses (using the public `instruction_size` helper added to
+`sim/assembler.py`), identifies any `Branch(cond, target)` whose
+displacement exceeds ±127 bytes, and rewrites each as:
+
+```
+Branch(inverted_cond, .lb_skip@N)   ; 2 bytes
+Jump(target)                         ; 3 bytes
+Label(.lb_skip@N)
+```
+
+Iterates to fixed point per function — each expansion grows the
+function by 3 bytes, which can push other still-short branches over
+their windows. Termination is guaranteed because expansion only ever
+increases distances. Wired into both `compile.py`'s codegen path
+(for the dasm-text output) and `sim/harness.py`'s `compile_to_asm`
+(for the simulator), so both targets see the same expanded program.
+
+The fix unblocked 27 chapter cases (every `branch_oor` entry that
+wasn't actually a separate frame-too-large issue — see finding 8).
+Asm-sim chapter SKIPS: 74 → 47.
+
+`tests/test_long_branches.py` covers the basic shapes: short
+branches pass through unchanged, over-long forward and backward
+branches get rewritten, the iteration converges, and unknown targets
+raise.
+
+Original notes for context:
 
 The 6502's `Bxx` opcodes carry a signed 8-bit displacement
-(`-128..+127`). Functions large enough to push a label past 127 bytes
-from a branch site can't encode the branch in one instruction. The
-in-process assembler refuses with `branch to <label> out of range:
-disp=<d>` — the same outcome dasm would give on the text output.
+(`-128..+127`). Functions large enough to push a label past 127
+bytes from a branch site couldn't encode the branch in one
+instruction; the in-process assembler refused with `branch to
+<label> out of range: disp=<d>`, the same outcome dasm would give
+on the text output. The expansion is +3 bytes per long branch, so
+short branches are still 2 bytes — only the over-long ones pay the
+cost.
 
-**Fix sketch.** In `tac_to_asm` (or a small post-pass on `asm_ast`),
-when emitting a `Branch(cond, target)` whose displacement at lowering
-time would exceed ±127 bytes, expand to:
+## 8. Frame too large (`frame_too_large`, 2 chapter files)
 
-```
-B<inverted_cond>  +5            ; 2 bytes
-JMP target                      ; 3 bytes
-```
+**Status:** real codegen issue, surfaced after the long-branch fix.
 
-The expansion is 5 bytes vs. 2, and it changes addresses, so the
-expansion has to iterate to a fixed point: identify too-far branches
-under current sizing, expand them, recompute sizes, repeat. The
-single-direction nature of the change (short → long, never the other
-way) guarantees termination.
+The prologue / epilogue address the saved-FP slot via `LDY #(M+1)`
+followed by `LDA (SSP),Y` / `STA (SSP),Y`. The `LDY` immediate is a
+single byte, so `M+1 ≤ 255`, i.e. `local_bytes ≤ 254`. `asm_emit`
+checks this with `_check_local_bytes(m)` and raises
+`local_bytes <m> out of range (expected 0..253)`.
 
-The simulator could install the same expansion in its assembler, but
-that would mask the bug from the asm-text pipeline that targets
-`dasm`. Better to fix it once in `tac_to_asm` so both targets benefit.
+Hits two struct-heavy chapter-18 tests:
+`compound_assign_struct_members.c` (657 local bytes) and
+`scalar_member_access/nested_struct.c` (449 local bytes).
+
+**Fix sketches:**
+
+  (a) Use a 16-bit indirect addressing for the saved-FP slot —
+      stage `SSP+M+1` into a zero-page pointer pair, then
+      `LDA (PTR),Y` with `Y=0`. Costs ~6 bytes per prologue and
+      epilogue but unblocks any frame size up to 64KB.
+
+  (b) Split large frames: allocate the first 254 bytes via the
+      existing FP machinery and the rest via a secondary frame
+      pointer (or via a chunk addressed through DPTR). More work,
+      but fits the existing addressing-mode envelope.
+
+  (c) Reject at compile time with a clear error and ask the user
+      to refactor — until c6502 has structs that real programs
+      regularly exceed 254 local bytes with, this might be the
+      pragmatic choice.
 
 ## 3. Signed `divmod` not implemented in the runtime helpers (~10
    `wrong_value` cases)

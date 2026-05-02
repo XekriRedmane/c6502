@@ -173,6 +173,147 @@ class TestMul32(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestShifts8(unittest.TestCase):
+    """8-bit asl / asr / lsr — count loops in X."""
+
+    def _i(self, src: str) -> int:
+        res = run_c_program(src)
+        return _signed_byte(res.a)
+
+    def test_asl_count_zero(self) -> None:
+        self.assertEqual(self._i("int main(void) { return 42 << 0; }"), 42)
+
+    def test_asl_basic(self) -> None:
+        self.assertEqual(self._i("int main(void) { return 3 << 2; }"), 12)
+
+    def test_asl_into_sign_bit(self) -> None:
+        # 1 << 7 = $80 = -128 (signed view).
+        self.assertEqual(self._i("int main(void) { return 1 << 7; }"), -128)
+
+    def test_asl_count_at_width_zeros_out(self) -> None:
+        # 1 << 8 is UB; the helper just keeps shifting in 0s, so
+        # after 8 iterations the value is 0. Matches the Python hook.
+        self.assertEqual(self._i("int main(void) { return 1 << 8; }"), 0)
+
+    def test_lsr_via_unsigned_int(self) -> None:
+        # `>>` on `unsigned int` routes to lsr8.
+        self.assertEqual(
+            self._i(
+                "int main(void) { unsigned int x = 100; "
+                "return (int)(x >> 2); }"
+            ),
+            25,
+        )
+
+    def test_asr_negative_sign_fill(self) -> None:
+        # (-100) >> 1 = -50 (sign-extended).
+        self.assertEqual(
+            self._i("int main(void) { return (-100) >> 1; }"), -50,
+        )
+
+    def test_asr_negative_saturates_to_minus_one(self) -> None:
+        # (-1) >> any → -1 (the sign keeps filling).
+        self.assertEqual(
+            self._i("int main(void) { return (-1) >> 4; }"), -1,
+        )
+        self.assertEqual(
+            self._i("int main(void) { return (-1) >> 7; }"), -1,
+        )
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestShifts16(unittest.TestCase):
+    """16-bit asl / asr / lsr — multi-byte ROR/ROL chain."""
+
+    def _long(self, src: str) -> int:
+        res = run_c_program(src)
+        v = res.return_long()
+        return v - 0x10000 if v & 0x8000 else v
+
+    def test_asl_carry_chain(self) -> None:
+        # 1 << 8 = 0x100 — exercises ASL low → ROL high.
+        self.assertEqual(self._long("long main(void) { return 1L << 8; }"), 256)
+
+    def test_asl_into_sign_bit(self) -> None:
+        # 1 << 15 = 0x8000 = -32768 (signed view).
+        self.assertEqual(
+            self._long("long main(void) { return 1L << 15; }"), -32768,
+        )
+
+    def test_asl_count_at_width(self) -> None:
+        self.assertEqual(self._long("long main(void) { return 1L << 16; }"), 0)
+
+    def test_lsr(self) -> None:
+        self.assertEqual(
+            self._long(
+                "long main(void) { unsigned long x = 32000UL; "
+                "return (long)(x >> 4); }"
+            ),
+            2000,
+        )
+
+    def test_asr_negative(self) -> None:
+        self.assertEqual(
+            self._long("long main(void) { return (-32000L) >> 4; }"), -2000,
+        )
+
+    def test_asr_positive(self) -> None:
+        self.assertEqual(
+            self._long("long main(void) { return 0x7FFFL >> 14; }"), 1,
+        )
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestShifts32(unittest.TestCase):
+    """32-bit asl / asr / lsr — 4-byte ROR/ROL chain."""
+
+    def _ll(self, src: str) -> int:
+        res = run_c_program(src)
+        v = _read_longlong(res.memory)
+        return v - 0x100000000 if v & 0x80000000 else v
+
+    def test_asl_into_high_byte(self) -> None:
+        self.assertEqual(
+            self._ll("long long main(void) { return 1LL << 16; }"),
+            65536,
+        )
+
+    def test_asl_into_sign_bit(self) -> None:
+        # 1 << 31 = 0x80000000 = -2147483648.
+        self.assertEqual(
+            self._ll("long long main(void) { return 1LL << 31; }"),
+            -2_147_483_648,
+        )
+
+    def test_lsr_extracts_high_half(self) -> None:
+        # 0x12345678 >> 16 = 0x1234.
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { long long x = 0x12345678LL; "
+                "return x >> 16; }"
+            ),
+            0x1234,
+        )
+
+    def test_asr_negative_sign_fill(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return ((long long)(-1)) >> 8; }"
+            ),
+            -1,
+        )
+
+    def test_asr_large_count_saturates(self) -> None:
+        # (-1) >> 31 still = -1 (sign keeps filling all 32 bits).
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return ((long long)(-1)) >> 31; }"
+            ),
+            -1,
+        )
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestUdivmod8(unittest.TestCase):
     """Unsigned 8-bit divmod. The chapter test corpus only exercises
     `int` divisions (signed), so the unsigned helper picks up

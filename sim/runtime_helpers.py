@@ -16,10 +16,11 @@ emit on `Data` operands — added alongside this module — is what
 allows these to be expressed cleanly without going through A.
 
 Currently implemented: `mul8`, `mul16`, `mul32`, `udivmod8`,
-`sdivmod8`. The 16- and 32-bit divmods stay as Python hooks in
-`sim/runtime.py` until they're written here (same shift-and-subtract
-algorithm as udivmod8, scaled byte-widths plus a sign-correction
-wrapper for sdivmod16 / sdivmod32).
+`sdivmod8`, plus the full shift family `asl{8,16,32}` /
+`asr{8,16,32}` / `lsr{8,16,32}`. The 16- and 32-bit divmods stay
+as Python hooks in `sim/runtime.py` until they're written here
+(same shift-and-subtract algorithm as udivmod8, scaled byte-widths
+plus a sign-correction wrapper for sdivmod16 / sdivmod32).
 """
 
 from __future__ import annotations
@@ -234,6 +235,267 @@ def mul32_function() -> a.Function:
     )
 
 
+def asl8_function() -> a.Function:
+    """8-bit shift left.
+
+    val=HARGS+0, count=HARGS+1, result=HARGS+2 (1 byte). Loops
+    `count` times applying `ASL A`. Counts ≥ 8 are UB per C99
+    §6.5.7.4 but produce the natural 0 result here (each ASL shifts
+    a 0 in; after 8 iterations the value is 0 regardless of input).
+    """
+    loop = ".asl8_loop"
+    done = ".asl8_done"
+    return a.Function(
+        name="asl8", is_global=True, params=[],
+        instructions=[
+            a.Mov(src=_hargs(0), dst=_REG_A),
+            a.Mov(src=_hargs(1), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.ArithmeticShiftLeft(dst=_REG_A),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Mov(src=_REG_A, dst=_hargs(2)),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def lsr8_function() -> a.Function:
+    """8-bit logical shift right (zero-fill). val=HARGS+0,
+    count=HARGS+1, result=HARGS+2."""
+    loop = ".lsr8_loop"
+    done = ".lsr8_done"
+    return a.Function(
+        name="lsr8", is_global=True, params=[],
+        instructions=[
+            a.Mov(src=_hargs(0), dst=_REG_A),
+            a.Mov(src=_hargs(1), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.LogicalShiftRight(dst=_REG_A),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Mov(src=_REG_A, dst=_hargs(2)),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def asr8_function() -> a.Function:
+    """8-bit arithmetic shift right (sign-fill). val=HARGS+0,
+    count=HARGS+1, result=HARGS+2.
+
+    Each iteration: `CMP #$80` sets carry to A's bit 7 (true iff
+    A >= $80, i.e. the sign bit), then `ROR A` rotates right with
+    that carry filling bit 7 — preserving sign. Negative inputs
+    saturate to `$FF` after enough iterations, positive inputs to
+    `$00`. Same UB semantics for count ≥ 8 as the other 8-bit
+    shifts, but the natural saturation matches what the Python
+    hook does too."""
+    loop = ".asr8_loop"
+    done = ".asr8_done"
+    return a.Function(
+        name="asr8", is_global=True, params=[],
+        instructions=[
+            a.Mov(src=_hargs(0), dst=_REG_A),
+            a.Mov(src=_hargs(1), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.Compare(left=_REG_A, right=_imm(0x80)),
+            a.RotateRight(dst=_REG_A),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Mov(src=_REG_A, dst=_hargs(2)),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def asl16_function() -> a.Function:
+    """16-bit shift left. val=HARGS+0..1, count=HARGS+2,
+    result=HARGS+3..4. Each iteration: `ASL low ; ROL high`."""
+    loop = ".asl16_loop"
+    done = ".asl16_done"
+    return a.Function(
+        name="asl16", is_global=True, params=[],
+        instructions=[
+            # result := val
+            a.Mov(src=_hargs(0), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(3)),
+            a.Mov(src=_hargs(1), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(4)),
+            # X = count
+            a.Mov(src=_hargs(2), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.ArithmeticShiftLeft(dst=_hargs(3)),
+            a.RotateLeft(dst=_hargs(4)),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def lsr16_function() -> a.Function:
+    """16-bit logical shift right (zero-fill). Each iteration:
+    `LSR high ; ROR low` — the LSR shifts a 0 into bit 7 of high;
+    the ROR rotates the carry (= bit 0 of high) into bit 7 of low."""
+    loop = ".lsr16_loop"
+    done = ".lsr16_done"
+    return a.Function(
+        name="lsr16", is_global=True, params=[],
+        instructions=[
+            # result := val
+            a.Mov(src=_hargs(0), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(3)),
+            a.Mov(src=_hargs(1), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(4)),
+            a.Mov(src=_hargs(2), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.LogicalShiftRight(dst=_hargs(4)),
+            a.RotateRight(dst=_hargs(3)),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def asr16_function() -> a.Function:
+    """16-bit arithmetic shift right (sign-fill). Each iteration:
+    capture sign of high byte into C (`LDA high ; ASL A` puts bit 7
+    in C; A is scratch), then `ROR high ; ROR low` chains the sign
+    fill from C through to bit 7 of high, then bit 0 of high to
+    bit 7 of low."""
+    loop = ".asr16_loop"
+    done = ".asr16_done"
+    return a.Function(
+        name="asr16", is_global=True, params=[],
+        instructions=[
+            # result := val (HARGS+3..4)
+            a.Mov(src=_hargs(0), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(3)),
+            a.Mov(src=_hargs(1), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(4)),
+            a.Mov(src=_hargs(2), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            # Capture sign: A := high byte, ASL puts bit 7 in C.
+            a.Mov(src=_hargs(4), dst=_REG_A),
+            a.ArithmeticShiftLeft(dst=_REG_A),
+            # Sign-rotate: ROR high (C → bit 7), then ROR low.
+            a.RotateRight(dst=_hargs(4)),
+            a.RotateRight(dst=_hargs(3)),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def asl32_function() -> a.Function:
+    """32-bit shift left. val=HARGS+0..3, count=HARGS+4,
+    result=HARGS+5..8. Each iteration: ASL low; ROL each higher
+    byte chained through C."""
+    loop = ".asl32_loop"
+    done = ".asl32_done"
+    init: list[a.Type_instruction] = []
+    for k in range(4):
+        init += [
+            a.Mov(src=_hargs(k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(5 + k)),
+        ]
+    return a.Function(
+        name="asl32", is_global=True, params=[],
+        instructions=[
+            *init,
+            a.Mov(src=_hargs(4), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.ArithmeticShiftLeft(dst=_hargs(5)),
+            a.RotateLeft(dst=_hargs(6)),
+            a.RotateLeft(dst=_hargs(7)),
+            a.RotateLeft(dst=_hargs(8)),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def lsr32_function() -> a.Function:
+    """32-bit logical shift right (zero-fill). Each iteration: LSR
+    top byte; ROR each lower byte chained through C."""
+    loop = ".lsr32_loop"
+    done = ".lsr32_done"
+    init: list[a.Type_instruction] = []
+    for k in range(4):
+        init += [
+            a.Mov(src=_hargs(k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(5 + k)),
+        ]
+    return a.Function(
+        name="lsr32", is_global=True, params=[],
+        instructions=[
+            *init,
+            a.Mov(src=_hargs(4), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.LogicalShiftRight(dst=_hargs(8)),
+            a.RotateRight(dst=_hargs(7)),
+            a.RotateRight(dst=_hargs(6)),
+            a.RotateRight(dst=_hargs(5)),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def asr32_function() -> a.Function:
+    """32-bit arithmetic shift right (sign-fill). Each iteration:
+    capture top-byte's bit 7 into C via `LDA top ; ASL A`, then ROR
+    chain from top to low."""
+    loop = ".asr32_loop"
+    done = ".asr32_done"
+    init: list[a.Type_instruction] = []
+    for k in range(4):
+        init += [
+            a.Mov(src=_hargs(k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(5 + k)),
+        ]
+    return a.Function(
+        name="asr32", is_global=True, params=[],
+        instructions=[
+            *init,
+            a.Mov(src=_hargs(4), dst=_REG_X),
+            a.Branch(cond=a.EQ(), target=done),
+            a.Label(name=loop),
+            a.Mov(src=_hargs(8), dst=_REG_A),
+            a.ArithmeticShiftLeft(dst=_REG_A),
+            a.RotateRight(dst=_hargs(8)),
+            a.RotateRight(dst=_hargs(7)),
+            a.RotateRight(dst=_hargs(6)),
+            a.RotateRight(dst=_hargs(5)),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Label(name=done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
 def udivmod8_function() -> a.Function:
     """8-bit unsigned divmod via shift-and-subtract long division.
 
@@ -368,6 +630,9 @@ def sdivmod8_function() -> a.Function:
 ASM_IMPLEMENTED: tuple[str, ...] = (
     "mul8", "mul16", "mul32",
     "udivmod8", "sdivmod8",
+    "asl8", "asr8", "lsr8",
+    "asl16", "asr16", "lsr16",
+    "asl32", "asr32", "lsr32",
 )
 
 
@@ -381,4 +646,13 @@ def all_helper_functions() -> list[a.Function]:
         mul32_function(),
         udivmod8_function(),
         sdivmod8_function(),
+        asl8_function(),
+        asr8_function(),
+        lsr8_function(),
+        asl16_function(),
+        asr16_function(),
+        lsr16_function(),
+        asl32_function(),
+        asr32_function(),
+        lsr32_function(),
     ]

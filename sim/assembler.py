@@ -602,6 +602,12 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
     # memory -> Reg(A): load.
     if _is_memory(src) and _is_reg_a(dst):
         return _load_mem_to_a_size(src)
+    # Data -> Reg(X) / Reg(Y): direct LDX / LDY (zp or abs). Same
+    # encoding length as memory -> Reg(A) for the Data form.
+    if isinstance(src, asm_ast.Data) and isinstance(dst, asm_ast.Reg) and (
+        isinstance(dst.reg, (asm_ast.X, asm_ast.Y))
+    ):
+        return 2 if _data_fits_zp(src) else 3
     # Reg(A) -> memory: store.
     if _is_reg_a(src) and _is_memory(dst):
         return _store_a_to_mem_size(dst)
@@ -694,6 +700,12 @@ def _emit_mov(
     # memory -> Reg(A).
     if _is_memory(src) and _is_reg_a(dst):
         return _emit_load_mem_to_a(src, syms)
+    # Data -> Reg(X) / Reg(Y) — zp/abs LDX/LDY direct.
+    if isinstance(src, asm_ast.Data) and isinstance(dst, asm_ast.Reg):
+        if isinstance(dst.reg, asm_ast.X):
+            return _emit_zp_or_abs("LDX", _resolve_data_addr(src, syms))
+        if isinstance(dst.reg, asm_ast.Y):
+            return _emit_zp_or_abs("LDY", _resolve_data_addr(src, syms))
     # Reg(A) -> memory.
     if _is_reg_a(src) and _is_memory(dst):
         return _emit_store_a_to_mem(dst, syms)

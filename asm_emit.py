@@ -406,6 +406,17 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
         )
     if _is_memory_operand(src) and _is_reg_a(dst):
         return _emit_memop_load(src)
+    # Data → Reg(X) / Reg(Y). The 6502 has `LDX zp/abs` and
+    # `LDY zp/abs` natively, so we can load HARGS slots into X or Y
+    # without going through A. (Stack / Frame / Indirect operands
+    # don't get this path because LDX/LDY don't have an indirect-Y
+    # mode.) Used by the runtime helpers' loop-count and scratch
+    # loads.
+    if isinstance(src, asm_ast.Data) and isinstance(dst, asm_ast.Reg):
+        if isinstance(dst.reg, asm_ast.X):
+            return [_instr_line("LDX", _data_addr(src))]
+        if isinstance(dst.reg, asm_ast.Y):
+            return [_instr_line("LDY", _data_addr(src))]
     if _is_reg_a(src) and _is_memory_operand(dst):
         return _emit_memop_store(dst)
     if _is_memory_operand(src) and _is_memory_operand(dst):

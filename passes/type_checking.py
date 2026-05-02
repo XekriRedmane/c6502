@@ -984,22 +984,23 @@ def _int_width(t: Type) -> int:
 
 
 def _is_signed(t: Type) -> bool:
-    # Plain `char` is signed in c6502 (-128..127), matching `signed
+    # Plain `char` is unsigned in c6502 (0..255), matching `unsigned
     # char`. Per C99 §6.2.5.15 the choice is implementation-defined.
-    return isinstance(t, (Int, Long, LongLong, Char, SChar))
+    return isinstance(t, (Int, Long, LongLong, SChar))
 
 
 def _promote_integer(t: Type) -> Type:
     """C99 §6.3.1.1.2 integer promotion. Char/SChar/UChar promote
     to int (or unsigned int when int can't represent every value
     of the source type). For c6502 with Int = 16 bits:
-      * SChar / Char (-128..127)  → Int (-32768..32767): Int's range
-        covers the full source range, promotes to Int.
-      * UChar (0..255)            → Int (-32768..32767): Int's range
-        also covers the full UChar range, so promotes to Int (NOT
-        UInt — this is the key difference from c6502's earlier
-        narrow-Int model where UChar's 0..255 wouldn't fit in an
-        8-bit Int).
+      * SChar (-128..127)         → Int (-32768..32767): Int's range
+        covers the full source range, promotes to Int via SignExtend.
+      * Char / UChar (0..255)     → Int (-32768..32767): Int's range
+        also covers 0..255, so plain `char` (which c6502 treats as
+        unsigned) and `unsigned char` both promote to Int via
+        ZeroExtend (NOT UInt — this is the key difference from
+        c6502's earlier narrow-Int model where UChar's 0..255
+        wouldn't fit in an 8-bit Int).
     Every other integer type already has rank ≥ Int, so promotion
     is a no-op for them. Floating types pass through unchanged.
 
@@ -1045,11 +1046,13 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
         # choice. Reaching this branch means a char-typed switch
         # case got coerced to its declared char width — return a
         # typed ConstChar / ConstUChar so the AST stays self-
-        # describing if anything inspects it.
+        # describing if anything inspects it. Plain `char` is
+        # unsigned in c6502, so it routes to ConstUChar alongside
+        # `unsigned char`; only `signed char` produces ConstChar.
         bits = value & 0xFF
-        if isinstance(t, UChar):
-            return c99_ast.ConstUChar(value=bits)
-        return c99_ast.ConstChar(value=bits)
+        if isinstance(t, SChar):
+            return c99_ast.ConstChar(value=bits)
+        return c99_ast.ConstUChar(value=bits)
     if isinstance(t, (Long, ULong)):
         bits = value & 0xFFFF
         return c99_ast.ConstLong(value=bits) if isinstance(t, Long) else c99_ast.ConstULong(value=bits)

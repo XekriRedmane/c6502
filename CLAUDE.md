@@ -79,12 +79,15 @@ takes one AST and returns another (or text for emit):
    8-byte signed (-2^63..2^63-1), `UInt()` is 2-byte unsigned
    (0..65535), `ULong()` is 4-byte unsigned (0..2^32-1),
    `ULongLong()` is 8-byte unsigned (0..2^64-1), `Char()` is
-   1-byte signed (-128..127; plain `char` is signed in c6502),
-   `SChar()` is `signed char` (1-byte signed), `UChar()` is
-   `unsigned char` (1-byte unsigned). Char/SChar/UChar are
-   distinct types from Int/UInt — C99 §6.3.1.1.2 integer-promotes
-   them all to `int` (because Int's 16-bit range covers UChar's
-   0..255), so arithmetic always happens at Int width or wider.
+   1-byte unsigned (0..255; plain `char` is unsigned in c6502 per
+   C99 §6.2.5.15's implementation-defined choice — same byte
+   semantics as `unsigned char`), `SChar()` is `signed char`
+   (1-byte signed, -128..127), `UChar()` is `unsigned char`
+   (1-byte unsigned, 0..255). Char/SChar/UChar are distinct types
+   from Int/UInt — C99 §6.3.1.1.2 integer-promotes them all to
+   `int` (because Int's 16-bit range covers both signed and
+   unsigned char), so arithmetic always happens at Int width or
+   wider.
    Floating: `Float()` is IEEE 754 single (4 bytes), `Double()`
    is IEEE 754 double (8 bytes). `long double` (16-byte IEEE 754
    quad / extended) isn't modelled — the parser rejects it.

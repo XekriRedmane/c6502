@@ -337,9 +337,10 @@ def _dst_int_variant(
     if sym is None:
         return None
     t = sym.type
-    if isinstance(t, (c99_ast.Int, c99_ast.Char, c99_ast.SChar)):
+    if isinstance(t, (c99_ast.Int, c99_ast.SChar)):
         return tac_ast.ConstInt
-    if isinstance(t, (c99_ast.UInt, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.UInt, c99_ast.Char, c99_ast.UChar)):
+        # Plain `char` is unsigned in c6502.
         return tac_ast.ConstUInt
     if isinstance(t, c99_ast.Long):
         return tac_ast.ConstLong

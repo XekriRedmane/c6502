@@ -283,15 +283,17 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         return tac_ast.ULong()
     if isinstance(t, c99_ast.ULongLong):
         return tac_ast.ULongLong()
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
-        # Char / SChar are 1-byte signed. TAC has no 1-byte data_type
+    if isinstance(t, c99_ast.SChar):
+        # SChar is 1-byte signed. TAC has no 1-byte data_type
         # variant; codegen reads the c99 symbol table when it needs
         # to size a Var, so the TAC tag here only matters for the
         # signedness-driven dispatch paths (`<` / `>=`, right shift,
         # int↔FP) — collapse onto signed `Int`.
         return tac_ast.Int()
-    if isinstance(t, c99_ast.UChar):
-        # UChar is 1-byte unsigned — collapse onto unsigned `UInt`.
+    if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
+        # Plain Char and UChar are 1-byte unsigned in c6502 (per
+        # C99 §6.2.5.15's implementation-defined choice for plain
+        # char) — collapse onto unsigned `UInt`.
         return tac_ast.UInt()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
@@ -357,13 +359,15 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
 def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Type_const:
     """Build a TAC const matching `t`'s width and signedness (and,
     for FP, its precision). Pointer collapses onto ConstUInt (same
-    2-byte width; addresses are 16-bit unsigned). Char / SChar use
-    ConstChar (1-byte signed); UChar uses ConstUChar (1-byte
-    unsigned). Used by the synthetic-constant call sites (postfix
-    `+1`, short-circuit 0/1, implicit `return 0`)."""
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
+    2-byte width; addresses are 16-bit unsigned). SChar uses
+    ConstChar (1-byte signed); plain Char and UChar use ConstUChar
+    (1-byte unsigned) — plain `char` is unsigned in c6502 per the
+    §6.2.5.15 implementation-defined choice. Used by the synthetic-
+    constant call sites (postfix `+1`, short-circuit 0/1, implicit
+    `return 0`)."""
+    if isinstance(t, c99_ast.SChar):
         return tac_ast.ConstChar(value=int(value))
-    if isinstance(t, c99_ast.UChar):
+    if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
         return tac_ast.ConstUChar(value=int(value))
     if isinstance(t, c99_ast.Int):
         return tac_ast.ConstInt(value=int(value))
@@ -505,9 +509,11 @@ def _tac_static_init_for(
                 f"typed static; got declared type {t!r}"
             )
         return tac_ast.AddressInit(name=value.name, offset=value.offset)
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
+    if isinstance(t, c99_ast.SChar):
         return tac_ast.CharInit(value=_truncate_int_for_static(t, value))
-    if isinstance(t, c99_ast.UChar):
+    if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
+        # Plain `char` is unsigned in c6502 — same byte semantics
+        # as `unsigned char`.
         return tac_ast.UCharInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
@@ -1581,17 +1587,19 @@ class Translator:
                         (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
                     )
                     if char_src:
+                        # Plain Char and UChar are unsigned in c6502;
+                        # only SChar is signed.
+                        src_unsigned = isinstance(
+                            source, (c99_ast.Char, c99_ast.UChar),
+                        )
                         widened_t = (
-                            c99_ast.UInt()
-                            if isinstance(source, c99_ast.UChar)
-                            else c99_ast.Int()
+                            c99_ast.UInt() if src_unsigned else c99_ast.Int()
                         )
                         widened = tac_ast.Var(
                             name=self.make_temporary_variable_name(widened_t),
                         )
                         node_cls = (
-                            tac_ast.ZeroExtend
-                            if isinstance(source, c99_ast.UChar)
+                            tac_ast.ZeroExtend if src_unsigned
                             else tac_ast.SignExtend
                         )
                         instrs.append(node_cls(src=inner_val, dst=widened))
@@ -1599,10 +1607,13 @@ class Translator:
                         source = widened_t
                         src_fp = False
                     if char_tgt:
+                        # Plain Char and UChar route through UInt
+                        # (unsigned 2B); SChar through Int.
+                        tgt_unsigned = isinstance(
+                            target, (c99_ast.Char, c99_ast.UChar),
+                        )
                         narrow_t = (
-                            c99_ast.UInt()
-                            if isinstance(target, c99_ast.UChar)
-                            else c99_ast.Int()
+                            c99_ast.UInt() if tgt_unsigned else c99_ast.Int()
                         )
                         intermediate = tac_ast.Var(
                             name=self.make_temporary_variable_name(narrow_t),
@@ -1656,7 +1667,7 @@ class Translator:
                     if isinstance(
                         source,
                         (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
-                         c99_ast.Char, c99_ast.SChar),
+                         c99_ast.SChar),
                     ):
                         instrs.append(tac_ast.SignExtend(
                             src=inner_val, dst=dst,
@@ -1664,7 +1675,9 @@ class Translator:
                     else:
                         # Unsigned source → wider type: zero-fill
                         # the new high byte rather than replicating
-                        # the sign bit.
+                        # the sign bit. Plain `Char` and `UChar`
+                        # both take this path (plain char is
+                        # unsigned in c6502).
                         instrs.append(tac_ast.ZeroExtend(
                             src=inner_val, dst=dst,
                         ))

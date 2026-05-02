@@ -1392,17 +1392,17 @@ class TestFoldCopy(unittest.TestCase):
         self.assertEqual(out[0],
                          tac_ast.Copy(src=_cull(0xFFFFFFFF), dst=_var("x")))
 
-    def test_char_dst_variant_is_int(self) -> None:
-        # `char` maps to ConstInt (same width and signedness as Int —
-        # plain char is signed in c6502). A ConstUInt source is
-        # rewrapped as ConstInt.
+    def test_char_dst_variant_is_uint(self) -> None:
+        # `char` maps to ConstUInt — plain char is unsigned in c6502
+        # per C99 §6.2.5.15's implementation-defined choice (matches
+        # `unsigned char` semantics).
         symbols = _symtab(x=c99_ast.Char())
         out = _fold_one(
-            tac_ast.Copy(src=_cui(200), dst=_var("x")),
+            tac_ast.Copy(src=_ci(-1), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(-56), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
 
     def test_uchar_dst_variant_is_uint(self) -> None:
         symbols = _symtab(x=c99_ast.UChar())

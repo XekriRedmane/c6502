@@ -567,7 +567,7 @@ class Translator:
                     return False
                 return isinstance(sym.type, (
                     c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
-                    c99_ast.UChar, c99_ast.Pointer,
+                    c99_ast.Char, c99_ast.UChar, c99_ast.Pointer,
                 ))
         return False
 

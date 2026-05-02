@@ -537,7 +537,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/char_constants/escape_sequences.c": 0,
     # 'c' = 99
     "chapter_16/valid/char_constants/return_char_constant.c": 99,
-    "chapter_16/valid/chars/access_through_char_pointer.c": 6,
+    "chapter_16/valid/chars/access_through_char_pointer.c": 3,
     "chapter_16/valid/chars/chained_casts.c": 0,
     "chapter_16/valid/chars/char_arguments.c": 0,
     "chapter_16/valid/chars/char_expressions.c": 0,
@@ -548,10 +548,10 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/chars/convert_by_assignment.c": 2,
     "chapter_16/valid/chars/explicit_casts.c": 6,
     "chapter_16/valid/chars/integer_promotion.c": 0,
-    "chapter_16/valid/chars/partial_initialization.c": 0,
-    "chapter_16/valid/chars/return_char.c": 0,
+    "chapter_16/valid/chars/partial_initialization.c": 4,
+    "chapter_16/valid/chars/return_char.c": 1,
     "chapter_16/valid/chars/rewrite_movz_regression.c": 0,
-    "chapter_16/valid/chars/static_initializers.c": 0,
+    "chapter_16/valid/chars/static_initializers.c": 3,
     "chapter_16/valid/chars/type_specifiers.c": 0,
     # bitshift_chars.c relies on upstream's `unsigned char → int`
     # integer promotion (int = 4 bytes covers uchar's 0..255). c6502
@@ -559,12 +559,12 @@ EXPECTED_RETURNS: dict[str, int] = {
     # can't hold 255), so check #5 — `(-(uc << 5u) >> 5u) != -255l`
     # — sees `uc << 5u` typed as uint and produces 1, not -255.
     "chapter_16/valid/extra_credit/bitshift_chars.c": 5,
-    "chapter_16/valid/extra_credit/bitwise_ops_character_constants.c": 4,
-    "chapter_16/valid/extra_credit/bitwise_ops_chars.c": 3,
+    "chapter_16/valid/extra_credit/bitwise_ops_character_constants.c": 2,
+    "chapter_16/valid/extra_credit/bitwise_ops_chars.c": 2,
     "chapter_16/valid/extra_credit/char_consts_as_cases.c": 0,
-    "chapter_16/valid/extra_credit/compound_assign_chars.c": 0,
+    "chapter_16/valid/extra_credit/compound_assign_chars.c": 1,
     "chapter_16/valid/extra_credit/compound_bitwise_ops_chars.c": 6,
-    "chapter_16/valid/extra_credit/incr_decr_chars.c": 0,
+    "chapter_16/valid/extra_credit/incr_decr_chars.c": 5,
     "chapter_16/valid/extra_credit/incr_decr_unsigned_chars.c": 0,
     "chapter_16/valid/extra_credit/promote_switch_cond.c": 0,
     # promote_switch_cond_2.c: tests that `case 33554632:` for a
@@ -576,7 +576,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     # `c = -56`, and the test returns 1 instead of 0. This is a
     # fundamental int-width incompatibility, not a type-checker
     # bug.
-    "chapter_16/valid/extra_credit/promote_switch_cond_2.c": 0,
+    "chapter_16/valid/extra_credit/promote_switch_cond_2.c": 1,
     "chapter_16/valid/extra_credit/switch_on_char_const.c": 0,
     "chapter_16/valid/strings_as_initializers/array_init_special_chars.c": 0,
     "chapter_16/valid/strings_as_initializers/literals_and_compound_initializers.c": 0,
@@ -603,11 +603,11 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_17/valid/void/void_function.c": 0,
 
     # --- chapter 18: structs and unions
-    "chapter_18/valid/extra_credit/member_access/static_union_access.c": 3,
+    "chapter_18/valid/extra_credit/member_access/static_union_access.c": 2,
     "chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c": 3,
-    "chapter_18/valid/extra_credit/member_access/union_temp_lifetime.c": 0,
+    "chapter_18/valid/extra_credit/member_access/union_temp_lifetime.c": 1,
     "chapter_18/valid/extra_credit/other_features/bitwise_ops_struct_members.c": 0,
-    "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": 0,
+    "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": 10,
     "chapter_18/valid/extra_credit/other_features/decr_arrow_lexing.c": 0,
     "chapter_18/valid/extra_credit/other_features/label_tag_member_namespace.c": 10,
     "chapter_18/valid/extra_credit/other_features/struct_decl_in_switch_statement.c": 50,
@@ -620,7 +620,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_18/valid/extra_credit/semantic_analysis/union_shadows_struct.c": 0,
     "chapter_18/valid/extra_credit/size_and_offset/compare_union_pointers.c": 0,
     "chapter_18/valid/extra_credit/union_copy/assign_to_union.c": 0,
-    "chapter_18/valid/extra_credit/union_copy/unions_in_conditionals.c": 0,
+    "chapter_18/valid/extra_credit/union_copy/unions_in_conditionals.c": 1,
     "chapter_18/valid/no_structure_parameters/parse_and_lex/postfix_precedence.c": 1,
     "chapter_18/valid/no_structure_parameters/parse_and_lex/space_around_struct_member.c": 1,
     "chapter_18/valid/no_structure_parameters/parse_and_lex/struct_member_looks_like_const.c": 3,
@@ -635,9 +635,9 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_18/valid/parameters/pass_args_on_page_boundary.c": 0,
     "chapter_18/valid/parameters/simple.c": 0,
     "chapter_18/valid/params_and_returns/ignore_retval.c": 0,
-    "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": 0,
+    "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": 1,
     "chapter_18/valid/params_and_returns/return_incomplete_type.c": 0,
-    "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": 0,
+    "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": 2,
     "chapter_18/valid/params_and_returns/simple.c": 0,
     "chapter_18/valid/params_and_returns/temporary_lifetime.c": 0,
 }

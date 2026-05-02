@@ -61,12 +61,14 @@ class TacSimError(Exception):
 
 # Scalar type → (signed, width_bytes, is_fp). Pointer is treated
 # as unsigned (addresses are inherently unsigned in the runtime
-# model). Char-types match c6502's "plain char is signed" rule.
+# model). Char-types match c6502's "plain char is unsigned" rule
+# (the C99 §6.2.5.15 implementation-defined choice — only `signed
+# char` is signed in c6502; plain `char` matches `unsigned char`).
 # For FP types `signed` is irrelevant (FP dispatch never consults
 # it — sign / unsigned splits don't apply); width selects single
 # vs. double precision.
 _TYPE_INFO: dict[type, tuple[bool, int, bool]] = {
-    Char:      (True,  1, False),
+    Char:      (False, 1, False),
     SChar:     (True,  1, False),
     UChar:     (False, 1, False),
     Int:       (True,  2, False),

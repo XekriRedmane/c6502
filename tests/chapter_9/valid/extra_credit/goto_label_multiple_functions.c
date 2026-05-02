@@ -10,5 +10,5 @@ int main(void) {
     goto label;
     return 0;
     label:
-        return foo();
+        return !(foo() == 5);
 }

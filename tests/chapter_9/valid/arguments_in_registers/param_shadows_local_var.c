@@ -3,7 +3,7 @@ int main(void) {
     // a function declaration is a separate scope,
     // so parameter 'a' doesn't conflict with variable 'a' above
     int f(int a);
-    return f(a);
+    return !(f(a) == 20);
 }
 
 int f(int a) {

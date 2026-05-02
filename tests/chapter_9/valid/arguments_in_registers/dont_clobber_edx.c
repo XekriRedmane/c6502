@@ -7,5 +7,5 @@ int x(int a, int b, int c, int d, int e, int f) {
 
 int main(void) {
     int a = 4;
-    return x(1, 2, 3, 4, 5, 24 / a);
+    return !x(1, 2, 3, 4, 5, 24 / a);
 }

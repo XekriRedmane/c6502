@@ -8,5 +8,5 @@ int sub(int a, int b) {
 int main(void) {
     /* Make sure we can evaluate expressions passed as arguments */
     int sum = sub(1 + 2, 1);
-    return sum;
+    return !(sum == 2);
 }

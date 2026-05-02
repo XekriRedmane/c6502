@@ -3,5 +3,5 @@ int twice(int x){
 }
 
 int main(void) {
-    return twice(3);
+    return !(twice(3) == 6);
 }

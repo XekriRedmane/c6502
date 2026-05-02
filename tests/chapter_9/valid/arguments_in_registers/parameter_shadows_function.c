@@ -7,5 +7,5 @@ int b(int a) {
 }
 
 int main(void) {
-    return a() + b(2);
+    return !(a() + b(2) == 3);
 }

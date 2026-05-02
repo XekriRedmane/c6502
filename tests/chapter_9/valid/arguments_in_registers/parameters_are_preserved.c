@@ -15,5 +15,5 @@ int f(int a, int b, int c, int d) {
 }
 
 int main(void) {
-    return f(1, 2, 3, 4);
+    return !(f(1, 2, 3, 4) == 1);
 }

@@ -1,7 +1,7 @@
 int foo(int a, int b);
 
 int main(void) {
-    return foo(2, 1);
+    return !(foo(2, 1) == 1);
 }
 
 /* Multiple declarations of a function

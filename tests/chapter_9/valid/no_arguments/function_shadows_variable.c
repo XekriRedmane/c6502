@@ -7,7 +7,7 @@ int main(void) {
         bar = foo();
     }
     /* Variable foo becomes visible again */
-    return foo + bar;
+    return !(foo + bar == 11);
 }
 
 int foo(void) {

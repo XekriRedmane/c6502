@@ -11,7 +11,7 @@ int lots_of_args(int a, int b, int c, int d, int e, int f, int g, int h, int i, 
 int main(void) {
     int ret = 0;
     for (int i = 0; i < 8; i = i + 1) {
-        ret = lots_of_args(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ret, 13, 14, 15);
+        ret = lots_of_args(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ret /*=l*/, 13, 14, 15 /*=o*/);
     }
-    return ret == 120;
+    return !(ret == 120);
 }

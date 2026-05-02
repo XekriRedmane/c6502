@@ -8,5 +8,5 @@ int fib(int n) {
 
 int main(void) {
     int n = 6;
-    return fib(n);
+    return !(fib(n) == 8);
 }

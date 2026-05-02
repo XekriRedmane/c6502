@@ -12,5 +12,5 @@ int foo(void) {
 int main(void) {
     /* This is well-defined because we call foo but don't use its return value */
     foo();
-    return 3;
+    return 0;
 }

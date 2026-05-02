@@ -6,7 +6,7 @@ int main(void) {
         int foo  = 3;
         x = x + foo;
     }
-    return x;
+    return !(x == 7);
 }
 
 int foo(void) {

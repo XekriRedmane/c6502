@@ -8,5 +8,5 @@ int foo(void) {
 }
 
 int main(void) {
-    return foo();
+    return !(foo() == 1);
 }

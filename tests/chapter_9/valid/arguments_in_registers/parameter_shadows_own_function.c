@@ -3,5 +3,5 @@ int a(int a) {
 }
 
 int main(void) {
-    return a(1);
+    return !(a(1) == 2);
 }

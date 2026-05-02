@@ -5,5 +5,5 @@ int foo(void) {
 int main(void) {
     int x = 3;
     x -= foo();
-    return x;
+    return !(x == 1);
 }

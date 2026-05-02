@@ -28,7 +28,7 @@ double uninitialized; // should be initialized to 0.0
 
 static int i = 4.9; // truncated to 4
 
-unsigned long u = 42949.6e3; // truncated to 42949600 mod 2^16 = 42949600 - 655 * 65536 = 12000... actually let's be explicit
+unsigned long u = 42949.6e3; // truncated to 42949600 mod 2^16 = 23520 (since 42949600 = 655 * 65536 + 23520)
 
 // this token is first converted to a double w/ value 1000000000.0,
 // then truncated down to long long 1000000000
@@ -73,9 +73,9 @@ int main(void) {
     }
 
     /* 42949.6e3 = 42949600. Truncated to unsigned long (2B) =
-     * 42949600 mod 65536 = 14816 (since 42949600 = 655*65536 + 14816).
+     * 42949600 mod 65536 = 23520 (since 42949600 = 655*65536 + 23520).
      */
-    if (u != 14816ul) {
+    if (u != 23520ul) {
         return 10;
     }
 

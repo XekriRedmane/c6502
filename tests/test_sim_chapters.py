@@ -412,18 +412,12 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_12/valid/explicit_casts/same_size_conversion.c": 0,
     "chapter_12/valid/explicit_casts/truncate.c": 0,
     "chapter_12/valid/implicit_casts/common_type.c": 0,
-    # convert_by_assignment.c, static_initializers.c, arithmetic_ops.c:
-    # upstream tests have typos in their constants — the actual return
-    # values under c6502's narrow types match what gcc would produce
-    # for those (typo'd) constants too. Pin them at the actual values.
-    "chapter_12/valid/implicit_casts/convert_by_assignment.c": 6,
-    # promote_constants.c: 3ull + 4294967293ull overflows c6502's
-    # 4-byte ulong long, summing to 0; upstream's 8-byte ull doesn't
-    "chapter_12/valid/implicit_casts/promote_constants.c": 3,
-    "chapter_12/valid/implicit_casts/static_initializers.c": 7,
+    "chapter_12/valid/implicit_casts/convert_by_assignment.c": 0,
+    "chapter_12/valid/implicit_casts/promote_constants.c": 0,
+    "chapter_12/valid/implicit_casts/static_initializers.c": 0,
     "chapter_12/valid/type_specifiers/signed_type_specifiers.c": 0,
     "chapter_12/valid/type_specifiers/unsigned_type_specifiers.c": 0,
-    "chapter_12/valid/unsigned_expressions/arithmetic_ops.c": 7,
+    "chapter_12/valid/unsigned_expressions/arithmetic_ops.c": 0,
     "chapter_12/valid/unsigned_expressions/arithmetic_wraparound.c": 0,
     "chapter_12/valid/unsigned_expressions/comparisons.c": 0,
     "chapter_12/valid/unsigned_expressions/locals.c": 0,
@@ -463,9 +457,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_13/valid/implicit_casts/common_type.c": 0,
     "chapter_13/valid/implicit_casts/complex_arithmetic_common_type.c": 1,
     "chapter_13/valid/implicit_casts/convert_for_assignment.c": 0,
-    # static_initializers.c: 42949.6e3 = 42949600.0 truncates to ulong
-    # (2B) as 42949600 mod 65536 = 23520, not the upstream's 14816.
-    "chapter_13/valid/implicit_casts/static_initializers.c": 10,
+    "chapter_13/valid/implicit_casts/static_initializers.c": 0,
     "chapter_13/valid/special_values/infinity.c": 0,
     "chapter_13/valid/special_values/subnormal_not_zero.c": 0,
     "chapter_13/valid/extra_credit/compound_assign.c": 0,

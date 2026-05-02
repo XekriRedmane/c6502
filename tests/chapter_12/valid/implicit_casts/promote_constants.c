@@ -35,7 +35,7 @@ int main(void) {
     /* constants with ull suffix are always treated as unsigned long long, not unsigned long
      * If these constants were interpreted as unsigned longs, addition would wrap around to 0
      */
-    if (!(3ull + 4294967293ull)) {
+    if (!(3ull + 65533ull)) {
         return 3;
     }
 

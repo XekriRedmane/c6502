@@ -36,11 +36,11 @@ unsigned long long ul2 = 2147483638l;
 
 // truncate ulong 2**31 + 2**15 + 150
 // to int -2**15 + 150 (which is -32618)
-long i2 = 2147516614ul;
+long i2 = 2147516566ul;
 
 // truncate ulong 2**31 + 2**15 + 150
 // to uint 2**15 + 150 (which is 32918)
-unsigned long ui2 = 2147516614ul;
+unsigned long ui2 = 2147516566ul;
 
 int main(void)
 {

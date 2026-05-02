@@ -75,7 +75,7 @@ int main(void) {
     /* truncate 2^25 + 2^15 + 100 to long, -2^15 + 100
      * then sign-extend, preserving its value
      */
-    long long l = return_truncated_ulong(33587812ul);
+    long long l = return_truncated_ulong(33587300ul);
     if (l != -32668l) {
         return 6;
     }

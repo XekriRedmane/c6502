@@ -63,11 +63,11 @@ int division_by_literal(void) {
 
 int remaind(void) {
     // ul_a = 100
-    // ul_b = 4294967285
+    // ul_b = 4294967205 (= 2^32 - 91)
 
     /* ul_b % ul_a is 5.
-     * If you interpreted these as signed values, ul_b would be -11
-     * and ul_b % ul_a would also be -11.
+     * If you interpreted these as signed values, ul_b would be -91
+     * and ul_b % ul_a would also be -91.
      */
 
     return (ul_b % ul_a == 5ull);
@@ -115,7 +115,7 @@ int main(void) {
     }
 
     ul_a = 100ull;
-    ul_b = 4294967285ull;
+    ul_b = 4294967205ull;
     if (!remaind()) {
         return 7;
     }

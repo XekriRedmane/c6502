@@ -725,7 +725,7 @@ in `tac_to_asm` knows the layout for every helper it emits.
 
 | helper      | inputs                                       | output                          |
 | ----------- | -------------------------------------------- | ------------------------------- |
-| `mul8`      | `A=HARGS+0`, `B=HARGS+1` (1B each)           | `result=HARGS+2..3` (2B)        |
+| `mul8`      | `A=HARGS+0`, `B=HARGS+1` (1B each)           | `result=HARGS+2` (1B, low byte) |
 | `udivmod8`  | `num=HARGS+0`, `den=HARGS+1` (1B each)       | `quot=HARGS+2`, `rem=HARGS+3`   |
 | `sdivmod8`  | (same shape as `udivmod8`; trunc-toward-zero) | `quot=HARGS+2`, `rem=HARGS+3`   |
 | `asl8`      | `val=HARGS+0`, `count=HARGS+1` (1B each)     | `result=HARGS+2` (1B)           |
@@ -741,10 +741,12 @@ in `tac_to_asm` knows the layout for every helper it emits.
 The dispatch picks the 8-bit, 16-bit, or 32-bit helper from the
 operand width, and the signed / unsigned variant from the operand
 type via `_is_unsigned_val` — same machinery `>>` uses to pick
-between `asr*` and `lsr*`. `mul*` produces double-width results,
-but the lowering reads only the low half: C multiplication wraps on
-overflow, so the high half is discarded; one helper covers signed
-and unsigned because the bit pattern of the low half is identical.
+between `asr*` and `lsr*`. `mul8` produces a 1-byte result directly
+(the low byte of `A*B`); `mul16` and `mul32` still produce double-
+width results today, but the lowering reads only the low half. C
+multiplication wraps on overflow, so the high half is discarded
+either way; one helper covers signed and unsigned because the bit
+pattern of the low half is identical.
 
 **FP arithmetic helpers** (Float = 4B IEEE 754 single, Double = 8B
 IEEE 754 double):

@@ -143,8 +143,14 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 # output); integer helpers use only the low 8 bytes.
 #
 # 8-bit helpers:
-#   mul8     in:  A=HARGS+0, B=HARGS+1   out: result.lo=HARGS+2,
-#                                              result.hi=HARGS+3
+#   mul8     in:  A=HARGS+0, B=HARGS+1   out: result=HARGS+2 (1 byte)
+#                                       — the low byte of A*B; the
+#                                       high byte would have to be
+#                                       discarded anyway because C
+#                                       int-times-int wraps to int
+#                                       under §6.5.5.4 modular
+#                                       semantics, and `tac_to_asm`
+#                                       reads only the low byte.
 #   udivmod8 in:  num=HARGS+0, den=HARGS+1   (unsigned floor-divide)
 #                                       out: quot=HARGS+2, rem=HARGS+3
 #   sdivmod8 same shape as udivmod8, but trunc-toward-zero per C99
@@ -1277,13 +1283,17 @@ class Translator:
                     setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
                 )
             case tac_ast.Multiply():
-                # 8-bit:  mul8   result low byte at HARGS+2 (the
-                #                high byte at HARGS+3 is discarded —
-                #                int*int wraps to int under C's
-                #                modular semantics).
+                # 8-bit:  mul8   result at HARGS+2 (1 byte). mul8
+                #                produces only the low byte directly
+                #                — int*int wraps to int under C's
+                #                modular semantics, so the high byte
+                #                isn't useful. HARGS+3 is free.
                 # 16-bit: mul16  result low half at HARGS+4..5 (the
                 #                high half at HARGS+6..7 is discarded
-                #                for the same reason).
+                #                — same modular-wrap reason; the
+                #                helper still computes and writes
+                #                the high half today, but `tac_to_asm`
+                #                only reads the low half).
                 # 32-bit: mul32  result low 4 bytes at HARGS+8..11
                 #                (the high 4 bytes at HARGS+12..15
                 #                are discarded for the same reason).

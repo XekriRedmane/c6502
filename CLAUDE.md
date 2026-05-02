@@ -984,7 +984,11 @@ takes one AST and returns another (or text for emit):
      right-shift split: signed `/` and `%` route to `sdivmod*`
      (trunc-toward-zero per C99 §6.5.5.6), unsigned to `udivmod*`
      (floor-divide). Per-helper layout (inputs → outputs):
-       mul8       A:`+0`, B:`+1`              → product:`+2..+3` (16-bit)
+       mul8       A:`+0`, B:`+1`              → product:`+2` (1 byte;
+                                                 low byte of A*B,
+                                                 high byte discarded
+                                                 because int*int
+                                                 wraps to int)
        udivmod8/  num:`+0`, den:`+1`          → quot:`+2`, rem:`+3`
         sdivmod8
        asl8/      val:`+0`, count:`+1`        → result:`+2`

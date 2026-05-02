@@ -240,8 +240,13 @@ def _fp_unimplemented(name: str) -> Hook:
 # binary diffs of test outputs stay small as the table grows.
 
 _HELPERS: list[tuple[str, Hook]] = [
-    # 1-byte integer
-    ("mul8",      _make_mul(1, 2)),
+    # 1-byte integer. mul8 returns only the low byte of the
+    # product (1 byte at HARGS+2) — the high byte would have to be
+    # discarded by the caller anyway because C `int*int` wraps to
+    # int under modular semantics, and `tac_to_asm` only reads
+    # `output_size = 1` for size=1 multiplies. Saves a byte of
+    # output traffic and frees HARGS+3 for other uses.
+    ("mul8",      _make_mul(1, 1)),
     ("udivmod8",  _make_udivmod(1)),
     ("sdivmod8",  _make_sdivmod(1)),
     ("asl8",      _make_asl(1)),

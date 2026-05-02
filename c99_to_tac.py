@@ -1655,7 +1655,8 @@ class Translator:
                 if src_w < tgt_w:
                     if isinstance(
                         source,
-                        (c99_ast.Int, c99_ast.Long, c99_ast.LongLong),
+                        (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
+                         c99_ast.Char, c99_ast.SChar),
                     ):
                         instrs.append(tac_ast.SignExtend(
                             src=inner_val, dst=dst,

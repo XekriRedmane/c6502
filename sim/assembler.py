@@ -316,14 +316,21 @@ def _emit_init(
     """Lay down the bytes of a static_init item in source byte order
     (little-endian for the multi-byte numeric variants)."""
     match item:
-        case asm_ast.IntInit(value=v):
+        case asm_ast.CharInit(value=v):
             if not -128 <= v <= 0xFF:
-                raise AssemblerError(f"IntInit {v} out of range")
+                raise AssemblerError(f"CharInit {v} out of range")
             return bytes([v & 0xFF])
-        case asm_ast.LongInit(value=v):
-            v &= 0xFFFF
+        case asm_ast.IntInit(value=v):
+            if not -32768 <= v <= 0xFFFF:
+                raise AssemblerError(f"IntInit {v} out of range")
             return bytes([v & 0xFF, (v >> 8) & 0xFF])
-        case asm_ast.LongLongInit(value=v) | asm_ast.FloatInit(bits=v):
+        case asm_ast.LongInit(value=v):
+            v &= 0xFFFFFFFF
+            return bytes([(v >> (i * 8)) & 0xFF for i in range(4)])
+        case asm_ast.LongLongInit(value=v):
+            v &= 0xFFFFFFFFFFFFFFFF
+            return bytes([(v >> (i * 8)) & 0xFF for i in range(8)])
+        case asm_ast.FloatInit(bits=v):
             v &= 0xFFFFFFFF
             return bytes([(v >> (i * 8)) & 0xFF for i in range(4)])
         case asm_ast.DoubleInit(bits=v):
@@ -350,13 +357,13 @@ def _emit_init(
 
 def _init_size(item: asm_ast.Type_static_init) -> int:
     match item:
-        case asm_ast.IntInit():
+        case asm_ast.CharInit():
             return 1
-        case asm_ast.LongInit():
+        case asm_ast.IntInit():
             return 2
-        case asm_ast.LongLongInit() | asm_ast.FloatInit():
+        case asm_ast.LongInit() | asm_ast.FloatInit():
             return 4
-        case asm_ast.DoubleInit():
+        case asm_ast.LongLongInit() | asm_ast.DoubleInit():
             return 8
         case asm_ast.AddressInit():
             return 2

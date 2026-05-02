@@ -952,10 +952,13 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
         match item:
             case asm_ast.CharInit(value=v):
                 # 1-byte cell — for Char/SChar/UChar statics. Accepts
-                # the unsigned bit pattern; signed -128..-1 wraps to
-                # 128..255 in the caller. asm_emit's _check_byte
-                # ranges 0..255.
-                _check_byte(f"init for {sv.name!r}", v & 0xFF)
+                # signed -128..127 or unsigned 0..255 (the bit
+                # pattern is the same after masking).
+                if not -128 <= v <= 0xFF:
+                    raise ValueError(
+                        f"init for {sv.name!r} {v} out of range "
+                        f"for 1-byte (-128..255)"
+                    )
                 lines.append(_instr_line("dc.b", f"${v & 0xFF:02X}"))
             case asm_ast.IntInit(value=v):
                 # 2-byte cell — for Int/UInt statics. Mask to 16 bits

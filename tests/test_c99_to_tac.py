@@ -2180,8 +2180,8 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
     def test_tentative_long_resolves_to_zero_init(self):
         # `long x;` at file scope is a tentative definition →
         # zero-initialized at end-of-TU. The zero collapses into a
-        # `ZeroInit(2)` rather than a typed `LongInit(0)` so codegen
-        # can emit `DS.B 2`.
+        # `ZeroInit(4)` rather than a typed `LongInit(0)` so codegen
+        # can emit `DS.B 4`.
         tac = self._tac("long x; int main(void) { return 0; }")
         statics = {
             tl.name: tl for tl in tac.top_level
@@ -2189,7 +2189,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["x"].data_type, tac_ast.Long())
         self.assertEqual(
-            statics["x"].init, [tac_ast.ZeroInit(bytes=2)],
+            statics["x"].init, [tac_ast.ZeroInit(bytes=4)],
         )
 
     def test_tentative_int_resolves_to_zero_init(self):
@@ -2200,12 +2200,12 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(statics["x"].data_type, tac_ast.Int())
         self.assertEqual(
-            statics["x"].init, [tac_ast.ZeroInit(bytes=1)],
+            statics["x"].init, [tac_ast.ZeroInit(bytes=2)],
         )
 
     def test_array_partial_init_coalesces_trailing_zeros(self):
-        # `int a[5] = {1};` → IntInit(1) followed by 4 zero bytes
-        # (one ZeroInit aggregating four IntInit(0) elements).
+        # `int a[5] = {1};` → IntInit(1) followed by 8 zero bytes
+        # (one ZeroInit aggregating four 2-byte IntInit(0) elements).
         tac = self._tac(
             "int main(void) { static int a[5] = {1}; return 0; }"
         )
@@ -2215,13 +2215,13 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(
             statics["@0.a"].init,
-            [tac_ast.IntInit(value=1), tac_ast.ZeroInit(bytes=4)],
+            [tac_ast.IntInit(value=1), tac_ast.ZeroInit(bytes=8)],
         )
 
     def test_multi_dim_array_init_with_zero_holes(self):
         # `long a[3][2] = {{100}, {200, 300}}` — c6502 longs are
-        # 2 bytes, so the holes are 2 bytes (a[0][1]) and 4 bytes
-        # (entire a[2]).
+        # 4 bytes, so the holes are 4 bytes (a[0][1]) and 8 bytes
+        # (entire a[2] = 2 elems × 4 bytes).
         tac = self._tac(
             "int main(void) { "
             "static long a[3][2] = {{100}, {200, 300}}; "
@@ -2235,17 +2235,18 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
             statics["@0.a"].init,
             [
                 tac_ast.LongInit(value=100),
-                tac_ast.ZeroInit(bytes=2),    # a[0][1] hole
+                tac_ast.ZeroInit(bytes=4),    # a[0][1] hole
                 tac_ast.LongInit(value=200),
                 tac_ast.LongInit(value=300),
-                tac_ast.ZeroInit(bytes=4),    # a[2] entirely missing
+                tac_ast.ZeroInit(bytes=8),    # a[2] entirely missing
             ],
         )
 
     def test_user_written_zeros_also_coalesce(self):
         # The coalescing is value-driven, not source-tagged: an
         # explicit `{1, 0, 0, 0, 0}` produces the same byte layout
-        # as `{1}`, so it folds the same way.
+        # as `{1}`, so it folds the same way. Int is 2 bytes, so
+        # the four trailing zeros fold to ZeroInit(8).
         tac = self._tac(
             "int main(void) { "
             "static int a[5] = {1, 0, 0, 0, 0}; return 0; }"
@@ -2256,7 +2257,7 @@ class TestCastAndStaticVariableTypes(unittest.TestCase):
         }
         self.assertEqual(
             statics["@0.a"].init,
-            [tac_ast.IntInit(value=1), tac_ast.ZeroInit(bytes=4)],
+            [tac_ast.IntInit(value=1), tac_ast.ZeroInit(bytes=8)],
         )
 
     def test_address_init_does_not_merge_with_zeros(self):
@@ -2443,14 +2444,13 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         produces)."""
         return [i for i in instrs if isinstance(i, tac_ast.Binary)]
 
-    def test_int_ptr_plus_int_no_scaling(self):
-        # `int *p + 1` — sizeof(int) is 1, so no Multiply is emitted.
-        # The constant 1 is wrapped in an implicit Cast(Long) by the
-        # type checker (to match the pointer's 2-byte width); that
-        # Cast lowers into a SignExtend producing a Long-typed temp,
-        # which then becomes the Add's src2.
+    def test_char_ptr_plus_int_no_scaling(self):
+        # `char *p + 1` — sizeof(char) is 1, so no Multiply is
+        # emitted. The constant 1 is widened to Int (the 2-byte
+        # type matching pointer width) by the type checker; that
+        # Int-typed val becomes the Add's src2 directly.
         tac = self._tac(
-            "long main(void) { int a = 0; int *p = &a; "
+            "long main(void) { char a = 0; char *p = &a; "
             "return (long)(p + 1); }"
         )
         binaries = self._binary_ops(tac.top_level[0].instructions)
@@ -2459,11 +2459,11 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         self.assertEqual(len(adds), 1)
         self.assertEqual(len(muls), 0)
 
-    def test_long_ptr_plus_int_scales_by_two(self):
-        # `long *p + 1` — sizeof(long) is 2, so the int gets
-        # multiplied by 2 first, then added to the pointer.
+    def test_int_ptr_plus_int_scales_by_two(self):
+        # `int *p + 1` — sizeof(int) is 2, so the int gets multiplied
+        # by 2 first, then added to the pointer.
         tac = self._tac(
-            "long main(void) { long a = (long)0; long *p = &a; "
+            "long main(void) { int a = 0; int *p = &a; "
             "return (long)(p + 1); }"
         )
         binaries = self._binary_ops(tac.top_level[0].instructions)
@@ -2471,10 +2471,10 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         adds = [b for b in binaries if isinstance(b.op, tac_ast.Add)]
         self.assertEqual(len(muls), 1)
         self.assertEqual(len(adds), 1)
-        # Multiply's src2 is the size constant (2 for long).
+        # Multiply's src2 is the size constant (2 for int).
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
         )
         # The Add consumes the multiply's dst as its scaled operand.
         self.assertEqual(adds[0].src2, muls[0].dst)
@@ -2492,7 +2492,7 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=8)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=8)),
         )
 
     def test_int_plus_int_ptr_swaps_operand_order(self):
@@ -2531,11 +2531,11 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         self.assertEqual(len(subs), 1)
         self.assertEqual(len(adds), 0)
 
-    def test_int_ptr_minus_int_ptr_subtracts_no_divide(self):
-        # `int *p - int *q` — sizeof(int) is 1, so the byte-difference
-        # IS the element count; no Divide is emitted.
+    def test_char_ptr_minus_char_ptr_subtracts_no_divide(self):
+        # `char *p - char *q` — sizeof(char) is 1, so the byte-
+        # difference IS the element count; no Divide is emitted.
         tac = self._tac(
-            "long main(void) { int a = 0; int *p = &a; int *q = &a; "
+            "long main(void) { char a = 0; char *p = &a; char *q = &a; "
             "return p - q; }"
         )
         binaries = self._binary_ops(tac.top_level[0].instructions)
@@ -2544,20 +2544,20 @@ class TestPointerArithmeticLowering(unittest.TestCase):
         self.assertEqual(len(subs), 1)
         self.assertEqual(len(divs), 0)
 
-    def test_long_ptr_minus_long_ptr_subtracts_then_divides_by_two(self):
+    def test_int_ptr_minus_int_ptr_subtracts_then_divides_by_two(self):
         tac = self._tac(
-            "long main(void) { long a = (long)0; "
-            "long *p = &a; long *q = &a; return p - q; }"
+            "long main(void) { int a = 0; "
+            "int *p = &a; int *q = &a; return p - q; }"
         )
         binaries = self._binary_ops(tac.top_level[0].instructions)
         subs = [b for b in binaries if isinstance(b.op, tac_ast.Subtract)]
         divs = [b for b in binaries if isinstance(b.op, tac_ast.Divide)]
         self.assertEqual(len(subs), 1)
         self.assertEqual(len(divs), 1)
-        # Divisor is sizeof(long) = 2.
+        # Divisor is sizeof(int) = 2.
         self.assertEqual(
             divs[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
         )
         # The Divide's src1 is the Sub's dst (chained byte-difference
         # → element-count).
@@ -2626,11 +2626,11 @@ class TestSubscriptLowering(unittest.TestCase):
         # dereference, but `5` is a Constant.)
         self.assertNotIn("Load", kinds)
 
-    def test_long_subscript_scales_by_two(self):
-        # `long a[10]; ... a[3]` — sizeof(long) = 2, so the index
-        # gets a Multiply by 2 before the Add.
+    def test_int_subscript_scales_by_two(self):
+        # `int a[10]; ... a[3]` — sizeof(int) = 2, so the index gets
+        # a Multiply by 2 before the Add.
         tac = self._tac(
-            "long main(void) { long a[10]; return a[3]; }"
+            "int main(void) { int a[10]; return a[3]; }"
         )
         instrs = tac.top_level[0].instructions
         muls = [
@@ -2641,7 +2641,7 @@ class TestSubscriptLowering(unittest.TestCase):
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
         )
 
     def test_array_decay_in_pointer_init(self):
@@ -2746,14 +2746,14 @@ class TestIncrementDecrementLowering(unittest.TestCase):
         self.assertGreaterEqual(kinds.count("Load"), 1)
         self.assertGreaterEqual(kinds.count("Store"), 1)
 
-    def test_postfix_on_long_pointer_var_scales_by_pointee_size(self):
-        # `long *p; p++;` — must route through
+    def test_postfix_on_int_pointer_var_scales_by_pointee_size(self):
+        # `int *p; p++;` — must route through
         # translate_pointer_arithmetic so the increment scales by
-        # sizeof(*p) = 2 (long is 2 bytes). Otherwise `p` would
-        # advance by 1 byte and dereference the high half of the
-        # current element.
+        # sizeof(*p) = 2 (int is 2 bytes after the C99 width
+        # refresh). Otherwise `p` would advance by 1 byte and
+        # dereference the high half of the current element.
         tac = self._tac(
-            "long main(void) { long a = (long)0; long *p = &a; "
+            "long main(void) { int a = 0; int *p = &a; "
             "p++; return (long)p; }"
         )
         binaries = [
@@ -2761,19 +2761,19 @@ class TestIncrementDecrementLowering(unittest.TestCase):
             if isinstance(i, tac_ast.Binary)
         ]
         muls = [b for b in binaries if isinstance(b.op, tac_ast.Multiply)]
-        # Exactly one Multiply: 1 * sizeof(long) = 1 * 2.
+        # Exactly one Multiply: 1 * sizeof(int) = 1 * 2.
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
         )
 
     def test_postfix_on_pointer_to_array_scales_by_array_size(self):
-        # `int (*p)[10]; p++;` — sizeof(*p) = sizeof(int[10]) = 10
-        # bytes (1-byte int * 10), so the increment must Multiply
+        # `char (*p)[10]; p++;` — sizeof(*p) = sizeof(char[10]) = 10
+        # bytes (1-byte char * 10), so the increment must Multiply
         # the implicit 1 by 10 before adding to `p`.
         tac = self._tac(
-            "int main(void) { int a[10]; int (*p)[10] = &a; "
+            "int main(void) { char a[10]; char (*p)[10] = &a; "
             "p++; return 0; }"
         )
         muls = [
@@ -2784,13 +2784,13 @@ class TestIncrementDecrementLowering(unittest.TestCase):
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=10)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=10)),
         )
 
     def test_prefix_on_pointer_var_emits_pointer_arithmetic(self):
         # Same as the postfix test but for prefix `++p`.
         tac = self._tac(
-            "long main(void) { long a = (long)0; long *p = &a; "
+            "long main(void) { int a = 0; int *p = &a; "
             "++p; return (long)p; }"
         )
         muls = [
@@ -2801,14 +2801,14 @@ class TestIncrementDecrementLowering(unittest.TestCase):
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
         )
 
-    def test_postfix_on_int_pointer_no_scaling(self):
-        # `int *p; p++;` — sizeof(int) is 1, so no Multiply. Just an
-        # Add of the pointer and the constant 1.
+    def test_postfix_on_char_pointer_no_scaling(self):
+        # `char *p; p++;` — sizeof(char) is 1, so no Multiply. Just
+        # an Add of the pointer and the constant 1.
         tac = self._tac(
-            "int main(void) { int a; int *p = &a; p++; return 0; }"
+            "int main(void) { char a; char *p = &a; p++; return 0; }"
         )
         binaries = [
             i for i in tac.top_level[0].instructions
@@ -2959,9 +2959,9 @@ class TestArrayInitList(unittest.TestCase):
         self.assertEqual(first.operand, tac_ast.Var(name="@0.a"))
 
     def test_long_array_init_uses_long_offsets(self):
-        # `long a[3] = {1L, 2L, 3L}` — each element occupies 2 bytes,
-        # so the address Adds use offsets 2 and 4 (the first
-        # element's address is the base; no Add for it).
+        # `long a[3] = {1L, 2L, 3L}` — each element occupies 4 bytes
+        # post-refactor, so the address Adds use offsets 4 and 8
+        # (the first element's address is the base; no Add for it).
         tac = self._tac(
             "int main(void) { long a[3] = {1L, 2L, 3L}; return 0; }"
         )
@@ -2970,10 +2970,10 @@ class TestArrayInitList(unittest.TestCase):
             if isinstance(i, tac_ast.Binary)
             and isinstance(i.op, tac_ast.Add)
         ]
-        # Two Adds: base+2 (for index 1) and base+4 (for index 2).
+        # Two Adds: base+4 (for index 1) and base+8 (for index 2).
         self.assertEqual(len(adds), 2)
         offsets = sorted(a.src2.const.value for a in adds)
-        self.assertEqual(offsets, [2, 4])
+        self.assertEqual(offsets, [4, 8])
 
 
 class TestAddressOfSubscript(unittest.TestCase):
@@ -2989,25 +2989,25 @@ class TestAddressOfSubscript(unittest.TestCase):
         prog, symbols, _types = check_program(_resolved(src))
         return translate_program(prog, symbols)
 
-    def test_address_of_int_subscript_no_load(self):
-        # `int *p; &p[3]` — sizeof(int)=1, so no Multiply; one Add
+    def test_address_of_char_subscript_no_load(self):
+        # `char *p; &p[3]` — sizeof(char)=1, so no Multiply; one Add
         # for the scaled index; no Load (we want the address, not
         # the value).
         tac = self._tac(
-            "long main(void) { int x = 0; int *p = &x; "
-            "int *q = &p[3]; return (long)q; }"
+            "long main(void) { char x = 0; char *p = &x; "
+            "char *q = &p[3]; return (long)q; }"
         )
         instrs = tac.top_level[0].instructions
         kinds = [type(i).__name__ for i in instrs]
         # No Load anywhere — `&p[3]` is just an address calculation.
         self.assertNotIn("Load", kinds)
 
-    def test_address_of_long_subscript_emits_scale(self):
-        # `long *p; &p[3]` — sizeof(long)=2, so a Multiply scales
-        # the index by 2; one Add adds it to the base; no Load.
+    def test_address_of_int_subscript_emits_scale(self):
+        # `int *p; &p[3]` — sizeof(int)=2, so a Multiply scales the
+        # index by 2; one Add adds it to the base; no Load.
         tac = self._tac(
-            "long main(void) { long x = 0L; long *p = &x; "
-            "long *q = &p[3]; return (long)q; }"
+            "long main(void) { int x = 0; int *p = &x; "
+            "int *q = &p[3]; return (long)q; }"
         )
         muls = [
             i for i in tac.top_level[0].instructions
@@ -3017,7 +3017,7 @@ class TestAddressOfSubscript(unittest.TestCase):
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
         )
         # No Load.
         loads = [
@@ -3032,9 +3032,9 @@ class TestAddressOfSubscript(unittest.TestCase):
         # sizeof(*p), add to p". Compare the two functions to verify.
         tac = self._tac(
             "int main(void) { "
-            "long x = 0L; long *p = &x; "
-            "long *q1 = &p[3]; "
-            "long *q2 = p + 3; "
+            "int x = 0; int *p = &x; "
+            "int *q1 = &p[3]; "
+            "int *q2 = p + 3; "
             "return 0; }"
         )
         instrs = tac.top_level[0].instructions
@@ -3048,11 +3048,11 @@ class TestAddressOfSubscript(unittest.TestCase):
         # Two scales (one per init), two adds (one per init).
         self.assertEqual(len(muls), 2)
         self.assertEqual(len(adds), 2)
-        # Both Multiply scales are by 2.
+        # Both Multiply scales are by 2 (sizeof(int)).
         for m in muls:
             self.assertEqual(
                 m.src2,
-                tac_ast.Constant(const=tac_ast.ConstLong(value=2)),
+                tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
             )
 
 
@@ -3072,11 +3072,11 @@ class TestMultiDimArrays(unittest.TestCase):
         return translate_program(prog, symbols)
 
     def test_two_dim_subscript_lowers_with_two_scales(self):
-        # `int a[3][4]; a[i][j]` — outer dimension scales by
-        # sizeof(int[4]) = 4, inner by sizeof(int) = 1 (no scale
+        # `char a[3][4]; a[i][j]` — outer dimension scales by
+        # sizeof(char[4]) = 4, inner by sizeof(char) = 1 (no scale
         # emitted at the inner level since size 1).
         tac = self._tac(
-            "int main(void) { int a[3][4]; return a[1][2]; }"
+            "char main(void) { char a[3][4]; return a[1][2]; }"
         )
         instrs = tac.top_level[0].instructions
         muls = [
@@ -3085,23 +3085,23 @@ class TestMultiDimArrays(unittest.TestCase):
             and isinstance(i.op, tac_ast.Multiply)
         ]
         # Exactly one Multiply — for the outer dimension's index 1 ×
-        # sizeof(int[4]) = 4. The inner index doesn't need a Multiply
-        # because sizeof(int) is 1.
+        # sizeof(char[4]) = 4. The inner index doesn't need a Multiply
+        # because sizeof(char) is 1.
         self.assertEqual(len(muls), 1)
         self.assertEqual(
             muls[0].src2,
-            tac_ast.Constant(const=tac_ast.ConstLong(value=4)),
+            tac_ast.Constant(const=tac_ast.ConstInt(value=4)),
         )
-        # Final Load is for sizeof(int) = 1 byte (size dispatched
+        # Final Load is for sizeof(char) = 1 byte (size dispatched
         # by the dst's type).
         loads = [i for i in instrs if isinstance(i, tac_ast.Load)]
         self.assertEqual(len(loads), 1)
 
-    def test_two_dim_long_subscript_scales_outer_by_six(self):
-        # `long a[2][3]; a[i][j]` — outer dimension scales by
-        # sizeof(long[3]) = 6, inner by sizeof(long) = 2.
+    def test_two_dim_int_subscript_scales_outer_by_six(self):
+        # `int a[2][3]; a[i][j]` — outer dimension scales by
+        # sizeof(int[3]) = 6, inner by sizeof(int) = 2.
         tac = self._tac(
-            "long main(void) { long a[2][3]; return a[1][2]; }"
+            "int main(void) { int a[2][3]; return a[1][2]; }"
         )
         muls = [
             i for i in tac.top_level[0].instructions
@@ -3151,11 +3151,11 @@ class TestMultiDimArrays(unittest.TestCase):
             )
 
     def test_two_dim_init_uses_correct_byte_offsets(self):
-        # `long a[2][3] = {{1L,2L,3L},{4L,5L,6L}};` — sizeof(long)=2,
-        # so leaves are at offsets 0, 2, 4, 6, 8, 10.
+        # `int a[2][3] = {{1,2,3},{4,5,6}};` — sizeof(int)=2, so
+        # leaves are at offsets 0, 2, 4, 6, 8, 10.
         tac = self._tac(
             "int main(void) { "
-            "long a[2][3] = {{1L,2L,3L},{4L,5L,6L}}; return 0; }"
+            "int a[2][3] = {{1,2,3},{4,5,6}}; return 0; }"
         )
         adds = [
             i for i in tac.top_level[0].instructions
@@ -3191,33 +3191,33 @@ class TestArrayFrameLayout(unittest.TestCase):
         )
         return prologue.local_bytes
 
-    def test_int_array_takes_at_least_count_bytes(self):
-        # `int a[10]` — 10 bytes for the array, plus pointer-typed
+    def test_char_array_takes_at_least_count_bytes(self):
+        # `char a[10]` — 10 bytes for the array, plus pointer-typed
         # temps from the address arithmetic. Just check the array's
         # contribution is included (>= 10 bytes total).
         n = self._local_bytes(
-            "int main(void) { int a[10]; a[0] = 1; return 0; }"
+            "int main(void) { char a[10]; a[0] = 1; return 0; }"
         )
         self.assertGreaterEqual(n, 10)
 
-    def test_long_array_takes_at_least_two_x_count_bytes(self):
-        # `long a[5]` — 10 bytes for the array (5 × sizeof(long)).
+    def test_int_array_takes_at_least_two_x_count_bytes(self):
+        # `int a[5]` — 10 bytes for the array (5 × sizeof(int)).
         n = self._local_bytes(
-            "long main(void) { long a[5]; a[0] = (long)1; return (long)0; }"
+            "int main(void) { int a[5]; a[0] = 1; return 0; }"
         )
         self.assertGreaterEqual(n, 10)
 
     def test_arrays_of_different_sizes_differ_by_size_difference(self):
         # `int a[10]` vs. `int a[20]` — same body shape, only the
         # array size differs. The `local_bytes` difference must be
-        # exactly 10 bytes (the extra elements).
+        # exactly 20 bytes (the extra 10 elements × 2 bytes each).
         small = self._local_bytes(
             "int main(void) { int a[10]; a[0] = 1; return 0; }"
         )
         big = self._local_bytes(
             "int main(void) { int a[20]; a[0] = 1; return 0; }"
         )
-        self.assertEqual(big - small, 10)
+        self.assertEqual(big - small, 20)
 
 
 if __name__ == "__main__":

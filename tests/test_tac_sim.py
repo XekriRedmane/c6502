@@ -46,11 +46,12 @@ class TestTacSim(unittest.TestCase):
         self.assertEqual(_run("int main(void) { return -7 % 2; }"), -1)
 
     def test_long_overflow_wraps(self):
-        # Long is 2 bytes signed, range -32768..32767. 30000 + 30000
-        # overflows to -5536 in two's complement.
+        # Long is 4 bytes signed, range -2^31..2^31-1. 2_000_000_000
+        # + 2_000_000_000 = 4_000_000_000, which overflows signed
+        # 32-bit to 4_000_000_000 - 2^32 = -294_967_296.
         self.assertEqual(
-            _run("long main(void) { long a = 30000; return a + a; }"),
-            -5536,
+            _run("long main(void) { long a = 2000000000; return a + a; }"),
+            -294967296,
         )
 
     def test_unsigned_compare(self):
@@ -66,10 +67,11 @@ class TestTacSim(unittest.TestCase):
         self.assertEqual(_run(src), 1)
 
     def test_signed_compare(self):
-        # As `int` (signed 1-byte), 200 wraps to -56, which is < 1.
+        # As `int` (signed 2-byte), 50000 wraps to -15536, which is
+        # < 1.
         src = """
         int main(void) {
-            int a = 200;
+            int a = 50000;
             int b = 1;
             return a > b;
         }
@@ -146,14 +148,14 @@ class TestTacSim(unittest.TestCase):
         self.assertEqual(_run(src), -1)
 
     def test_truncate(self):
-        # Long 4660 (0x1234) truncated to int = 0x34 = 52.
+        # Long 0x12345678 truncated to int (2 bytes) = 0x5678 = 22136.
         src = """
         int main(void) {
-            long x = 4660;
+            long x = 305419896L;
             return (int) x;
         }
         """
-        self.assertEqual(_run(src), 0x34)
+        self.assertEqual(_run(src), 0x5678)
 
 
 class TestTacSimMemory(unittest.TestCase):

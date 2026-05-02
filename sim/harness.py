@@ -91,17 +91,19 @@ class SimResult:
     memory: bytearray       # full 64KiB snapshot
     timed_out: bool = False
 
-    def return_int(self) -> int:
-        """Return value as an unsigned 1-byte integer (Int / UInt)."""
+    def return_char(self) -> int:
+        """Return value as an unsigned 1-byte integer (Char / SChar /
+        UChar): the value sits in A on RTS per the calling
+        convention."""
         return self.a & 0xFF
 
-    def return_int_signed(self) -> int:
+    def return_char_signed(self) -> int:
         """Return value as a signed 1-byte integer."""
         v = self.a & 0xFF
         return v - 0x100 if v & 0x80 else v
 
-    def return_long(self) -> int:
-        """Return value as an unsigned 2-byte integer (Long / ULong /
+    def return_int(self) -> int:
+        """Return value as an unsigned 2-byte integer (Int / UInt /
         Pointer): bytes read from HARGS+0..1 — the slot that 2-byte
         returns land in per the calling convention."""
         return (
@@ -109,19 +111,35 @@ class SimResult:
             | (self.memory[rt_mod.HARGS + 1] << 8)
         )
 
-    def return_long_signed(self) -> int:
-        v = self.return_long()
+    def return_int_signed(self) -> int:
+        v = self.return_int()
         return v - 0x10000 if v & 0x8000 else v
 
-    def return_longlong(self) -> int:
-        """Return value as an unsigned 4-byte integer (LongLong /
-        ULongLong / Float bit pattern). Read from HARGS+8..11 — the
-        FP-result slot, where 4-byte returns land per the calling
-        convention."""
+    def return_long(self) -> int:
+        """Return value as an unsigned 4-byte integer (Long / ULong /
+        Float bit pattern). Read from HARGS+8..11 — the FP-result
+        slot, where 4-byte returns land per the calling convention."""
         v = 0
         for i in range(4):
             v |= self.memory[rt_mod.HARGS + 8 + i] << (i * 8)
         return v
+
+    def return_long_signed(self) -> int:
+        v = self.return_long()
+        return v - 0x100000000 if v & 0x80000000 else v
+
+    def return_longlong(self) -> int:
+        """Return value as an unsigned 8-byte integer (LongLong /
+        ULongLong / Double bit pattern). Read from HARGS+16..23 —
+        the 8-byte slot per the calling convention."""
+        v = 0
+        for i in range(8):
+            v |= self.memory[rt_mod.HARGS + 16 + i] << (i * 8)
+        return v
+
+    def return_longlong_signed(self) -> int:
+        v = self.return_longlong()
+        return v - (1 << 64) if v & (1 << 63) else v
 
 
 class Simulation:

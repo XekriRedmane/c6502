@@ -138,15 +138,16 @@ class TestCompileDriver(unittest.TestCase):
 
     def test_codegen_file_scope_static_variable(self):
         # `static int g = 7;` at file scope → INTERNAL linkage,
-        # Initial(7). The asm emits the variable as a labeled DC.B,
-        # and references inside main use absolute addressing (LDA g).
+        # Initial(7). The asm emits the variable as a labeled DC.W
+        # (Int = 2 bytes post C99 width refresh), and references
+        # inside main use absolute addressing (LDA g).
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="static int g = 7; int main(void) { return g; }",
         )
         self.assertEqual(rc, 0)
         self.assertIn("g:", out)
-        self.assertIn("DC.B  $07", out)
+        self.assertIn("DC.W  $0007", out)
         self.assertIn("LDA   g", out)
 
     def test_codegen_block_scope_static_zero_initialized(self):
@@ -155,14 +156,13 @@ class TestCompileDriver(unittest.TestCase):
         # unique `@N.x`, default-zero-initialized, lowered to a
         # StaticVariable at top level. References inside main use
         # absolute addressing against that mangled name. The zero
-        # init lays down as `DS.B 1` (zero-run) rather than
-        # `DC.B $00`.
+        # init lays down as `DS.B 2` (zero-run for the 2-byte Int).
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="int main(void) { static int x; return x; }",
         )
         self.assertEqual(rc, 0)
-        self.assertIn("DS.B  1", out)
+        self.assertIn("DS.B  2", out)
         # The mangled label appears (the exact name is brittle to
         # the unique-counter so we just check for the prefix).
         self.assertIn("@0.x:", out)
@@ -171,14 +171,14 @@ class TestCompileDriver(unittest.TestCase):
     def test_codegen_file_scope_tentative_definition(self):
         # `int x;` at file scope is a tentative definition; type-
         # checking resolves it to a zeroed StaticVariable, and
-        # c99_to_tac emits the zero as a 1-byte `ZeroInit`.
+        # c99_to_tac emits the zero as a 2-byte `ZeroInit`.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin="int x; int main(void) { return x; }",
         )
         self.assertEqual(rc, 0)
         self.assertIn("x:", out)
-        self.assertIn("DS.B  1", out)
+        self.assertIn("DS.B  2", out)
         self.assertIn("LDA   x", out)
 
     def test_codegen_extern_no_initializer_emits_nothing(self):
@@ -196,7 +196,8 @@ class TestCompileDriver(unittest.TestCase):
     def test_codegen_static_multi_dim_array_init(self):
         # `static int nested[3][2] = {{1,2},{3,4},{5,6}};` lays
         # the bytes down in source order: 1, 2, 3, 4, 5, 6 — six
-        # consecutive DC.B directives under the variable's label.
+        # consecutive DC.W directives (Int = 2 bytes) under the
+        # variable's label.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin=(
@@ -209,19 +210,20 @@ class TestCompileDriver(unittest.TestCase):
         # Find the variable's section by the mangled label.
         idx = out.index("@0.nested:")
         section = out[idx:].splitlines()
-        # The first 7 lines are the label and 6 DC.Bs (other code
+        # The first 7 lines are the label and 6 DC.Ws (other code
         # may follow after).
         self.assertEqual(section[0], "@0.nested:")
-        self.assertEqual(section[1], "   DC.B  $01")
-        self.assertEqual(section[2], "   DC.B  $02")
-        self.assertEqual(section[3], "   DC.B  $03")
-        self.assertEqual(section[4], "   DC.B  $04")
-        self.assertEqual(section[5], "   DC.B  $05")
-        self.assertEqual(section[6], "   DC.B  $06")
+        self.assertEqual(section[1], "   DC.W  $0001")
+        self.assertEqual(section[2], "   DC.W  $0002")
+        self.assertEqual(section[3], "   DC.W  $0003")
+        self.assertEqual(section[4], "   DC.W  $0004")
+        self.assertEqual(section[5], "   DC.W  $0005")
+        self.assertEqual(section[6], "   DC.W  $0006")
 
     def test_codegen_static_array_partial_init_zero_pads(self):
         # `static int a[5] = {1, 2};` zero-pads the trailing slots.
-        # The 3 trailing IntInit(0)s coalesce into one `DS.B 3`.
+        # Each int is 2 bytes, so the 3 trailing IntInit(0)s
+        # coalesce into one `DS.B 6`.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin=(
@@ -233,15 +235,15 @@ class TestCompileDriver(unittest.TestCase):
         idx = out.index("@0.a:")
         section = out[idx:].splitlines()
         self.assertEqual(section[1:4], [
-            "   DC.B  $01",
-            "   DC.B  $02",
-            "   DS.B  3",
+            "   DC.W  $0001",
+            "   DC.W  $0002",
+            "   DS.B  6",
         ])
 
     def test_codegen_static_multi_dim_array_zero_holes(self):
         # `static long a[3][2] = {{100}, {200, 300}};` — a[0][1]
-        # is missing (one Long zero = 2 bytes), and the entire a[2]
-        # row is missing (two Longs = 4 bytes). The two zero gaps
+        # is missing (one Long zero = 4 bytes), and the entire a[2]
+        # row is missing (two Longs = 8 bytes). The two zero gaps
         # are independent (they bracket the {200,300} row), so they
         # emit as two separate `DS.B`s.
         rc, out, _ = self._run(
@@ -256,16 +258,16 @@ class TestCompileDriver(unittest.TestCase):
         idx = out.index("@0.a:")
         section = out[idx:].splitlines()
         self.assertEqual(section[1:6], [
-            "   DC.W  $0064",   # a[0][0] = 100
-            "   DS.B  2",       # a[0][1] = 0  (zero pad)
-            "   DC.W  $00C8",   # a[1][0] = 200
-            "   DC.W  $012C",   # a[1][1] = 300
-            "   DS.B  4",       # a[2][0] / a[2][1] = 0,0  (zero pad)
+            "   DC.L  $00000064",  # a[0][0] = 100
+            "   DS.B  4",          # a[0][1] = 0  (zero pad)
+            "   DC.L  $000000C8",  # a[1][0] = 200
+            "   DC.L  $0000012C",  # a[1][1] = 300
+            "   DS.B  8",          # a[2][0] / a[2][1] = 0,0  (zero pad)
         ])
 
     def test_codegen_file_scope_long_array_init(self):
         # File-scope `long a[3] = {1, 2, 3};` — each element is a
-        # 2-byte LongInit, so we get three DC.W directives.
+        # 4-byte LongInit, so we get three DC.L directives.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin=(
@@ -277,9 +279,9 @@ class TestCompileDriver(unittest.TestCase):
         idx = out.index("a:")
         section = out[idx:].splitlines()
         self.assertEqual(section[1:4], [
-            "   DC.W  $0001",
-            "   DC.W  $0002",
-            "   DC.W  $0003",
+            "   DC.L  $00000001",
+            "   DC.L  $00000002",
+            "   DC.L  $00000003",
         ])
 
     def test_pcpp_strips_comments(self):
@@ -597,11 +599,11 @@ class TestSizeof(unittest.TestCase):
             self.assertIn(f"value={size}", out)
 
     def test_sizeof_array_does_not_decay(self):
-        # `sizeof a` for `int a[10]` is 10 (10 elements × 1B/int),
-        # NOT sizeof(int *) = 2. The decay-to-pointer rule is
+        # `sizeof a` for `char a[10]` is 10 (10 elements × 1B/char),
+        # NOT sizeof(char *) = 2. The decay-to-pointer rule is
         # explicitly suppressed here per C99 §6.3.2.1.3.
         out = self._tac(
-            "int main(void) { int a[10]; return (int)sizeof a; }",
+            "int main(void) { char a[10]; return (int)sizeof a; }",
         )
         # Not the pointer width 2 — the array width 10.
         self.assertIn("value=10", out)
@@ -614,11 +616,12 @@ class TestSizeof(unittest.TestCase):
         self.assertIn("value=4", out)
 
     def test_sizeof_multi_dim_array(self):
-        # `sizeof a` for `long a[3][5]` is 3 * 5 * 2 = 30.
+        # `sizeof a` for `long a[3][5]` is 3 * 5 * 4 = 60 (long is
+        # 4 bytes post the C99 width refresh).
         out = self._tac(
             "int main(void) { long a[3][5]; return (int)sizeof a; }",
         )
-        self.assertIn("value=30", out)
+        self.assertIn("value=60", out)
 
     def test_sizeof_does_not_evaluate_operand(self):
         # `sizeof (i++)` must NOT emit any inc instructions for `i`.
@@ -627,8 +630,8 @@ class TestSizeof(unittest.TestCase):
         out = self._tac(
             "int main(void) { int i = 0; long s = sizeof (i++); return i; }",
         )
-        # The sizeof value (1) shows up as a ConstLong.
-        self.assertIn("value=1", out)
+        # The sizeof value (2 — Int is 2 bytes) shows up.
+        self.assertIn("value=2", out)
         # The operand `i++` would lower to a Binary(Add) into a
         # temp + Copy back to i — neither should appear in the TAC.
         self.assertNotIn("Add(", out)
@@ -655,12 +658,13 @@ class TestSizeof(unittest.TestCase):
         # Copy. Int ← ULong narrows: a Truncate.
         self.assertIn("Truncate(", out)
 
-    def test_sizeof_of_sizeof_is_two(self):
-        # sizeof's result has type unsigned long (size 2 in c6502).
+    def test_sizeof_of_sizeof_is_four(self):
+        # sizeof's result has type unsigned long (size 4 in c6502
+        # post the C99 width refresh).
         out = self._tac(
             "int main(void) { return (int)sizeof sizeof(int); }",
         )
-        self.assertIn("value=2", out)
+        self.assertIn("value=4", out)
 
     def test_sizeof_pointer_type_form(self):
         out = self._tac(

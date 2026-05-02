@@ -1503,40 +1503,43 @@ class TestLongAndCasts(unittest.TestCase):
         ))
 
     def test_large_literal_is_const_long(self):
-        ast = parse("int main(void) { return 200; }")
+        # 200000 doesn't fit `int` (≤32767); the next type in the
+        # unsuffixed-decimal list is `long`, which covers up to
+        # 2^31 - 1.
+        ast = parse("int main(void) { return 200000; }")
         ret = ast.declaration[0].function_decl.body.block_item[0].statement
         self.assertEqual(ret.exp, c99_ast.Constant(
-            const=c99_ast.ConstLong(value=200),
+            const=c99_ast.ConstLong(value=200000),
         ))
 
     def test_int_max_boundary(self):
-        # 127 is the maximum signed-1-byte value; still ConstInt.
-        # 128 forces ConstLong.
-        ast = parse("int main(void) { return 127; }")
+        # 32767 is the maximum signed-2-byte value; still ConstInt.
+        # 32768 forces ConstLong.
+        ast = parse("int main(void) { return 32767; }")
         ret = ast.declaration[0].function_decl.body.block_item[0].statement
         self.assertIsInstance(ret.exp.const, c99_ast.ConstInt)
-        ast = parse("int main(void) { return 128; }")
+        ast = parse("int main(void) { return 32768; }")
         ret = ast.declaration[0].function_decl.body.block_item[0].statement
         self.assertIsInstance(ret.exp.const, c99_ast.ConstLong)
 
     def test_literal_out_of_range_raises(self):
-        # 4294967296 = 2^32 — overshoots even `unsigned long long`,
-        # the widest type c6502 models. Per C99 §6.4.4.1 the
-        # corresponding type list (hex/octal unsuffixed) terminates
-        # at `unsigned long long`, so this is unrepresentable.
+        # 2^64 — overshoots even `unsigned long long`, the widest
+        # type c6502 models. Per C99 §6.4.4.1 the corresponding
+        # type list (hex/octal unsuffixed) terminates at `unsigned
+        # long long`, so this is unrepresentable.
         from parser import ParserError
         with self.assertRaises(ParserError) as ctx:
-            parse("int main(void) { return 0x100000000; }")
+            parse("int main(void) { return 0x10000000000000000; }")
         self.assertIn("doesn't fit", str(ctx.exception))
 
     def test_literal_promotes_to_long_long(self):
-        # 32768 doesn't fit `int` (≤127) or `long` (≤32767); per
+        # 2^31 doesn't fit `int` (≤32767) or `long` (≤2^31-1); per
         # C99 §6.4.4.1 the next type in the unsuffixed-decimal list
-        # is `long long` (4 bytes for c6502), which DOES fit.
-        ast = parse("int main(void) { return 32768; }")
+        # is `long long` (8 bytes for c6502), which DOES fit.
+        ast = parse("int main(void) { return 2147483648; }")
         ret = ast.declaration[0].function_decl.body.block_item[0].statement
         self.assertIsInstance(ret.exp.const, c99_ast.ConstLongLong)
-        self.assertEqual(ret.exp.const.value, 32768)
+        self.assertEqual(ret.exp.const.value, 2147483648)
 
     def test_unsigned_suffix_promotes_to_uint(self):
         # `5U` carries a U suffix; per C99 §6.4.4.1 the type list is
@@ -1584,13 +1587,13 @@ class TestLongAndCasts(unittest.TestCase):
                 ))
 
     def test_unsuffixed_value_promotes_through_long_long(self):
-        # 1000000 doesn't fit Int (≤127), Long (≤32767); the next
+        # 2^32 doesn't fit Int (≤32767) or Long (≤2^31-1); the next
         # decimal-unsuffixed type is LongLong, which covers up to
-        # 2^31 - 1.
-        ast = parse("int main(void) { return 1000000; }")
+        # 2^63 - 1.
+        ast = parse("int main(void) { return 4294967296; }")
         ret = ast.declaration[0].function_decl.body.block_item[0].statement
         self.assertEqual(ret.exp, c99_ast.Constant(
-            const=c99_ast.ConstLongLong(value=1000000),
+            const=c99_ast.ConstLongLong(value=4294967296),
         ))
 
     def test_three_longs_rejected(self):
@@ -2557,15 +2560,17 @@ class TestPointerIntegerCasts(unittest.TestCase):
             "}\n"
         )
 
-    def test_int_to_pointer_sign_extends(self):
-        # `(int *)a` — Int (1B, signed) → Pointer (2B). Goes
+    def test_char_to_pointer_sign_extends(self):
+        # `(int *)c` — Char (1B, signed) → Pointer (2B). Goes
         # through the SignExtend path: the low byte is the source's
         # value, the high byte is 0x00 if the source is non-negative
         # and 0xFF if it's negative. Verify by looking for the
-        # sign-extend label landmarks.
+        # sign-extend label landmarks. (Post the C99 width refresh,
+        # Int is 2B same as Pointer — no extension needed there;
+        # but Char is still 1B and needs the per-byte fan-out.)
         text = self._codegen(
             "int main(void) {\n"
-            "  int a; int *p;\n"
+            "  signed char a; int *p;\n"
             "  a = 5;\n"
             "  p = (int *)a;\n"
             "  return 0;\n"
@@ -3011,7 +3016,8 @@ class TestIndirectCall(unittest.TestCase):
     def test_indirect_call_with_args(self):
         # `fp(5)` — args still ride on the soft stack the same as
         # for a direct call. Only the call-site `JSR` target
-        # differs.
+        # differs. Post the C99 width refresh, an int arg occupies
+        # 2 bytes, so the stack-alloc subtracts 2.
         text = self._codegen(
             "int foo(int x) { return x + 1; }\n"
             "int main(void) {\n"
@@ -3022,8 +3028,8 @@ class TestIndirectCall(unittest.TestCase):
         self.assertIn("JSR   icall", text)
         # The `5` lands in A right before the soft-stack write.
         self.assertIn("LDA   #$05", text)
-        # Allocate-stack for the 1-byte arg (SSP -= 1).
-        self.assertIn("SBC   #$01", text)
+        # Allocate-stack for the 2-byte int arg (SSP -= 2).
+        self.assertIn("SBC   #$02", text)
 
     def test_direct_and_indirect_call_in_same_function(self):
         # Direct call `foo(...)` keeps the existing `JSR foo`

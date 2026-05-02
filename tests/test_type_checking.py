@@ -498,12 +498,13 @@ class TestSwitch(unittest.TestCase):
             )
 
     def test_duplicate_case_after_promotion_rejected(self):
-        # 256 wraps to 0 modulo c6502's 1-byte int, so it duplicates
-        # case 0.
+        # 65536 wraps to 0 modulo c6502's 2-byte int, so it
+        # duplicates case 0 (post the C99 width refresh — the
+        # mod-256 wrap of the old 1-byte int doesn't apply).
         with self.assertRaisesRegex(TypeCheckError, "duplicate case"):
             self._check_full(
                 "int main(void) { switch (3) { case 0: return 0;"
-                " case 256: return 1; } return 9; }"
+                " case 65536: return 1; } return 9; }"
             )
 
     def test_case_value_canonicalized_to_promoted_type(self):
@@ -681,10 +682,11 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIsInstance(vd.init.exp, c99_ast.Constant)
 
     def test_int_init_with_long_literal_inserts_cast(self):
-        # `int x = 200;` — 200 doesn't fit in signed 1 byte so it's
-        # a ConstLong; the initializer gets wrapped in Cast(Int).
+        # `int x = 100000;` — 100000 doesn't fit in signed 2 bytes
+        # (max 32767), so it parses as a ConstLong; the initializer
+        # gets wrapped in Cast(Int) for the assignment.
         prog, _ = _check(
-            "int main(void) { int x = 200; return 0; }"
+            "int main(void) { int x = 100000; return 0; }"
         )
         items = prog.declaration[0].function_decl.body.block_item
         vd = items[0].declaration.var_decl
@@ -1212,44 +1214,53 @@ class TestPointerArithmetic(unittest.TestCase):
         self.assertIsInstance(bin_exp, c99_ast.Binary)
         self.assertEqual(bin_exp.data_type, Pointer(referenced_type=Int()))
 
-    def test_pointer_minus_pointer_yields_long(self):
-        # Both pointers are int*, result is the byte-difference / 1
-        # (c6502's ptrdiff_t is Long).
+    def test_pointer_minus_pointer_yields_int(self):
+        # Both pointers are int*, result is the byte-difference /
+        # sizeof(int) (c6502's ptrdiff_t is Int — 2 bytes signed,
+        # matching the 16-bit pointer width post C99 width refresh).
         prog, _ = _check(
             "long main(void) { int a = 0; int *p = &a; int *q = &a; "
             "return p - q; }"
         )
-        bin_exp = _ret_binary(prog)
+        # The return value goes through a Cast to long — unwrap it
+        # to find the underlying Binary.
+        ret_exp = _ret_binary(prog)
+        bin_exp = ret_exp.exp if isinstance(ret_exp, c99_ast.Cast) else ret_exp
         self.assertIsInstance(bin_exp, c99_ast.Binary)
-        self.assertEqual(bin_exp.data_type, Long())
+        self.assertEqual(bin_exp.data_type, Int())
 
-    def test_int_operand_widened_to_long(self):
+    def test_int_operand_widened_to_int(self):
         # The integer operand of pointer arithmetic gets widened to
-        # Long via an implicit Cast — pointers are 2 bytes wide, so
+        # Int via an implicit Cast — pointers are 2 bytes wide, so
         # the underlying byte-level add operates at one width.
+        # (Pre C99 width refresh this widened to Long; now Long is
+        # 4 bytes — too wide for pointer arithmetic — so the new
+        # 2-byte type is `Int`.)
         prog, _ = _check(
             "long main(void) { int a = 0; int *p = &a; return (long)(p + 1); }"
         )
         bin_exp = _ret_binary(prog).exp
         self.assertIsInstance(bin_exp, c99_ast.Binary)
-        # Right operand was `1` (Int); now wrapped in Cast(Long).
-        self.assertIsInstance(bin_exp.right, c99_ast.Cast)
-        self.assertEqual(bin_exp.right.target_type, Long())
+        # Right operand was `1` (Int); already Int width — same-type
+        # identity means no Cast wrap.
+        self.assertIsInstance(bin_exp.right, c99_ast.Constant)
+        self.assertEqual(bin_exp.right.data_type, Int())
         # Left operand `p` is the pointer, unchanged.
         from c99_ast import Pointer
         self.assertEqual(bin_exp.left.data_type, Pointer(referenced_type=Int()))
 
-    def test_long_operand_passes_through(self):
-        # If the integer operand is already Long, no implicit Cast is
-        # inserted (matches `_convert_to`'s same-type identity).
+    def test_long_operand_truncated_to_int(self):
+        # If the integer operand is Long (4 bytes), it gets converted
+        # to Int (2 bytes) for pointer arithmetic — _convert_to
+        # wraps it in a Cast(Int).
         prog, _ = _check(
             "long main(void) { int a = 0; int *p = &a; long n = (long)1; "
             "return (long)(p + n); }"
         )
         bin_exp = _ret_binary(prog).exp
         self.assertIsInstance(bin_exp, c99_ast.Binary)
-        self.assertIsInstance(bin_exp.right, c99_ast.Var)
-        self.assertEqual(bin_exp.right.data_type, Long())
+        self.assertIsInstance(bin_exp.right, c99_ast.Cast)
+        self.assertEqual(bin_exp.right.target_type, Int())
 
     def test_pointer_to_long_arithmetic_yields_pointer_to_long(self):
         # The pointer's referenced_type is preserved across the
@@ -1493,9 +1504,10 @@ class TestArrays(unittest.TestCase):
             ret_exp.array.data_type, Pointer(referenced_type=Int()),
         )
 
-    def test_subscript_index_widened_to_long(self):
-        # The index gets a Cast(Long) wrapper so the underlying
-        # pointer arithmetic operates at one width.
+    def test_subscript_index_already_int(self):
+        # The literal `3` parses as ConstInt (2 bytes — same width
+        # as a pointer post C99 width refresh), so the conversion
+        # to Int is a same-type no-op and no Cast wrapper appears.
         prog, _ = _check(
             "int main(void) { int a[10]; return a[3]; }"
         )
@@ -1503,8 +1515,8 @@ class TestArrays(unittest.TestCase):
             prog.declaration[0].function_decl.body.block_item[1]
             .statement.exp
         )
-        self.assertIsInstance(ret_exp.index, c99_ast.Cast)
-        self.assertEqual(ret_exp.index.target_type, Long())
+        self.assertIsInstance(ret_exp.index, c99_ast.Constant)
+        self.assertEqual(ret_exp.index.data_type, Int())
 
     def test_pointer_init_from_array_decays(self):
         # `int *p = a;` — the rval `a` (array) decays to `&a` (pointer
@@ -1541,18 +1553,22 @@ class TestArrays(unittest.TestCase):
             binary.data_type, Pointer(referenced_type=Int()),
         )
 
-    def test_array_minus_array_yields_long(self):
+    def test_array_minus_array_yields_int(self):
         # `a - b` where both are `int[N]` — both decay to `int *`,
-        # then ptr - ptr yields Long (ptrdiff_t).
+        # then ptr - ptr yields Int (c6502's ptrdiff_t — 2-byte
+        # signed, matching pointer width).
         prog, _ = _check(
             "long main(void) { int a[10]; int b[10]; return a - b; }"
         )
-        ret_exp = (
+        # `a - b` is wrapped in an outer Cast to long for the
+        # return; unwrap to find the underlying Binary.
+        outer = (
             prog.declaration[0].function_decl.body.block_item[2]
             .statement.exp
         )
-        self.assertIsInstance(ret_exp, c99_ast.Binary)
-        self.assertEqual(ret_exp.data_type, Long())
+        bin_exp = outer.exp if isinstance(outer, c99_ast.Cast) else outer
+        self.assertIsInstance(bin_exp, c99_ast.Binary)
+        self.assertEqual(bin_exp.data_type, Int())
 
     def test_assigning_to_array_rejected(self):
         with self.assertRaises(TypeCheckError) as ctx:
@@ -1728,9 +1744,10 @@ class TestArrays(unittest.TestCase):
         sub = ret.exp
         self.assertIsInstance(sub, c99_ast.Subscript)
         # array side ended up as the (decayed) pointer; index side is
-        # the (Long-widened) integer literal.
+        # an Int (the literal was already 2 bytes wide, matching
+        # the post-refactor 2-byte Int / pointer width).
         self.assertIsInstance(sub.array.data_type, c99_ast.Pointer)
-        self.assertEqual(sub.index.data_type, Long())
+        self.assertEqual(sub.index.data_type, Int())
         self.assertEqual(sub.data_type, Int())
 
     def test_reverse_subscript_with_pointer_param(self):
@@ -2147,11 +2164,12 @@ class TestCharAndString(unittest.TestCase):
                 "return (int)(p >> 1); }"
             )
 
-    def test_uchar_promotes_to_uint_when_int_cant_cover(self):
-        # In c6502 `int` is 1-byte signed (-128..127), so it can't
-        # hold the full UChar range (0..255). UChar therefore
-        # integer-promotes to UInt rather than Int (§6.3.1.1.2).
-        from passes.type_checking import UInt
+    def test_uchar_promotes_to_int_now_that_int_covers_full_range(self):
+        # Post the C99 width refresh, `int` is 2 bytes signed
+        # (-32768..32767), which DOES cover the full UChar range
+        # (0..255). UChar therefore integer-promotes to Int (per
+        # §6.3.1.1.2's "if int can represent all values of the
+        # source type, the value is converted to int").
         prog, _ = _check(
             "int main(void) { unsigned char u = 'a'; return u + u; }"
         )
@@ -2159,15 +2177,10 @@ class TestCharAndString(unittest.TestCase):
             prog.declaration[0].function_decl.body.block_item[1]
             .statement.exp
         )
-        # The Binary's data_type ends up Int (return-type cast),
-        # but the promoted operands are UInt.
-        # Drill into the inner Binary (after the outer return-cast).
-        # `return u + u;` — the binary itself yields UInt, then the
-        # return-conversion wraps in Cast(Int, ...).
-        self.assertIsInstance(ret, c99_ast.Cast)
-        self.assertEqual(ret.target_type, Int())
-        binary = ret.exp
-        self.assertEqual(binary.data_type, UInt())
+        # `return u + u;` — the binary yields Int directly (no
+        # outer return-conversion since the binary is already Int).
+        self.assertIsInstance(ret, c99_ast.Binary)
+        self.assertEqual(ret.data_type, Int())
 
 
 if __name__ == "__main__":

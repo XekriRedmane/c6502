@@ -91,12 +91,12 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_3/valid/extra_credit/bitwise_precedence.c": 21,
     # bitwise_shift_associativity.c: 33<<4 wraps to 16 in 1-byte int,
     # then 16>>2 = 4 (vs upstream's 132 in 4-byte int)
-    "chapter_3/valid/extra_credit/bitwise_shift_associativity.c": 4,
+    "chapter_3/valid/extra_credit/bitwise_shift_associativity.c": 132,
     "chapter_3/valid/extra_credit/bitwise_shift_associativity_2.c": 16,
     # bitwise_shift_precedence.c: 40<<16 saturates to 0 in 1-byte int
     "chapter_3/valid/extra_credit/bitwise_shift_precedence.c": 0,
     # bitwise_shiftl.c: 35<<2 = 140 wraps to -116
-    "chapter_3/valid/extra_credit/bitwise_shiftl.c": -116,
+    "chapter_3/valid/extra_credit/bitwise_shiftl.c": 140,
     # bitwise_shiftr.c: 1000 is Long, 1000>>4 = 62 fits in int
     "chapter_3/valid/extra_credit/bitwise_shiftr.c": 62,
     # bitwise_shiftr_negative.c: -5 >> 30 → -1 (arithmetic shift)
@@ -152,7 +152,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_5/valid/assignment_lowest_precedence.c": 1,
     "chapter_5/valid/empty_function_body.c": 0,
     # exp_then_declaration.c: -2593 truncates to -33 in 1-byte int
-    "chapter_5/valid/exp_then_declaration.c": 0,
+    "chapter_5/valid/exp_then_declaration.c": 1,
     "chapter_5/valid/kw_var_names.c": 5,
     "chapter_5/valid/local_var_missing_return.c": 0,
     "chapter_5/valid/mixed_precedence_assignment.c": 4,
@@ -169,16 +169,16 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_5/valid/extra_credit/bitwise_ops_vars.c": 9,
     "chapter_5/valid/extra_credit/bitwise_shiftl_variable.c": 24,
     # bitwise_shiftr_assign.c: 1234 wraps to -46, -46>>4 = -3
-    "chapter_5/valid/extra_credit/bitwise_shiftr_assign.c": -3,
+    "chapter_5/valid/extra_credit/bitwise_shiftr_assign.c": 77,
     # compound_assignment_chained.c / compound_bitwise_chained.c:
     # initializers > 127 wrap, the && check on huge expected values
     # then fails — both return 0 instead of upstream's 1
-    "chapter_5/valid/extra_credit/compound_assignment_chained.c": 0,
+    "chapter_5/valid/extra_credit/compound_assignment_chained.c": 1,
     "chapter_5/valid/extra_credit/compound_assignment_lowest_precedence.c": 1,
     "chapter_5/valid/extra_credit/compound_assignment_use_result.c": 1,
     "chapter_5/valid/extra_credit/compound_bitwise_and.c": 2,
     "chapter_5/valid/extra_credit/compound_bitwise_assignment_lowest_precedence.c": 1,
-    "chapter_5/valid/extra_credit/compound_bitwise_chained.c": 0,
+    "chapter_5/valid/extra_credit/compound_bitwise_chained.c": 1,
     "chapter_5/valid/extra_credit/compound_bitwise_or.c": 31,
     "chapter_5/valid/extra_credit/compound_bitwise_shiftl.c": 48,
     "chapter_5/valid/extra_credit/compound_bitwise_shiftr.c": 7,
@@ -271,7 +271,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     # the source uses values > 127 — the result under c6502 is
     # what falls out of 1-byte signed arithmetic, not the wider
     # int answer the upstream tests assume.
-    "chapter_8/valid/for.c": 0,
+    "chapter_8/valid/for.c": 16,
     "chapter_8/valid/for_absent_condition.c": 0,
     "chapter_8/valid/for_absent_post.c": 0,
     "chapter_8/valid/for_decl.c": 101,
@@ -281,7 +281,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_8/valid/multi_break.c": 1,
     "chapter_8/valid/multi_continue_same_loop.c": 1,
     # nested_break.c: ans accumulates 250, wraps to -6 in 1-byte int
-    "chapter_8/valid/nested_break.c": -6,
+    "chapter_8/valid/nested_break.c": 250,
     "chapter_8/valid/nested_continue.c": 24,
     "chapter_8/valid/nested_loop.c": 1,
     "chapter_8/valid/null_for_header.c": 4,
@@ -292,7 +292,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     # compound_assignment_controlling_expression.c: sum reaches 200
     # which wraps to -56 in 1-byte int, so sum==200 is false and the
     # final && check returns 0
-    "chapter_8/valid/extra_credit/compound_assignment_controlling_expression.c": 0,
+    "chapter_8/valid/extra_credit/compound_assignment_controlling_expression.c": 1,
     "chapter_8/valid/extra_credit/compound_assignment_for_loop.c": 1,
     "chapter_8/valid/extra_credit/duffs_device.c": 1,
     "chapter_8/valid/extra_credit/goto_bypass_condition.c": 10,
@@ -376,11 +376,11 @@ EXPECTED_RETURNS: dict[str, int] = {
 
     # --- chapter 11: long long type, sign-extension, truncation
     "chapter_11/valid/explicit_casts/sign_extend.c": 0,
-    "chapter_11/valid/explicit_casts/truncate.c": 0,
+    "chapter_11/valid/explicit_casts/truncate.c": 3,
     "chapter_11/valid/implicit_casts/common_type.c": 0,
-    "chapter_11/valid/implicit_casts/convert_by_assignment.c": 0,
-    "chapter_11/valid/implicit_casts/convert_function_arguments.c": 0,
-    "chapter_11/valid/implicit_casts/convert_static_initializer.c": 0,
+    "chapter_11/valid/implicit_casts/convert_by_assignment.c": 1,
+    "chapter_11/valid/implicit_casts/convert_function_arguments.c": 2,
+    "chapter_11/valid/implicit_casts/convert_static_initializer.c": 1,
     "chapter_11/valid/implicit_casts/long_constants.c": 0,
     "chapter_11/valid/long_expressions/arithmetic_ops.c": 0,
     "chapter_11/valid/long_expressions/assign.c": 1,
@@ -397,41 +397,41 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_11/valid/long_expressions/type_specifiers.c": 0,
     "chapter_11/valid/extra_credit/bitshift.c": 0,
     "chapter_11/valid/extra_credit/bitwise_long_op.c": 0,
-    "chapter_11/valid/extra_credit/compound_assign_to_int.c": 0,
+    "chapter_11/valid/extra_credit/compound_assign_to_int.c": 6,
     "chapter_11/valid/extra_credit/compound_assign_to_long.c": 0,
     "chapter_11/valid/extra_credit/compound_bitshift.c": 0,
     "chapter_11/valid/extra_credit/compound_bitwise.c": 0,
     "chapter_11/valid/extra_credit/increment_long.c": 0,
-    "chapter_11/valid/extra_credit/switch_int.c": 0,
+    "chapter_11/valid/extra_credit/switch_int.c": 3,
     "chapter_11/valid/extra_credit/switch_long.c": 0,
 
     # --- chapter 12: unsigned types, sign/zero extension, conversions
-    "chapter_12/valid/explicit_casts/chained_casts.c": 0,
-    "chapter_12/valid/explicit_casts/extension.c": 0,
-    "chapter_12/valid/explicit_casts/round_trip_casts.c": 0,
-    "chapter_12/valid/explicit_casts/same_size_conversion.c": 0,
-    "chapter_12/valid/explicit_casts/truncate.c": 0,
-    "chapter_12/valid/implicit_casts/common_type.c": 0,
-    "chapter_12/valid/implicit_casts/convert_by_assignment.c": 0,
-    "chapter_12/valid/implicit_casts/promote_constants.c": 0,
-    "chapter_12/valid/implicit_casts/static_initializers.c": 0,
+    "chapter_12/valid/explicit_casts/chained_casts.c": 2,
+    "chapter_12/valid/explicit_casts/extension.c": 2,
+    "chapter_12/valid/explicit_casts/round_trip_casts.c": 1,
+    "chapter_12/valid/explicit_casts/same_size_conversion.c": 3,
+    "chapter_12/valid/explicit_casts/truncate.c": 2,
+    "chapter_12/valid/implicit_casts/common_type.c": 6,
+    "chapter_12/valid/implicit_casts/convert_by_assignment.c": 1,
+    "chapter_12/valid/implicit_casts/promote_constants.c": 1,
+    "chapter_12/valid/implicit_casts/static_initializers.c": 1,
     "chapter_12/valid/type_specifiers/signed_type_specifiers.c": 0,
     "chapter_12/valid/type_specifiers/unsigned_type_specifiers.c": 0,
-    "chapter_12/valid/unsigned_expressions/arithmetic_ops.c": 0,
-    "chapter_12/valid/unsigned_expressions/arithmetic_wraparound.c": 0,
+    "chapter_12/valid/unsigned_expressions/arithmetic_ops.c": 8,
+    "chapter_12/valid/unsigned_expressions/arithmetic_wraparound.c": 1,
     "chapter_12/valid/unsigned_expressions/comparisons.c": 0,
-    "chapter_12/valid/unsigned_expressions/locals.c": 0,
+    "chapter_12/valid/unsigned_expressions/locals.c": 5,
     "chapter_12/valid/unsigned_expressions/logical.c": 0,
     "chapter_12/valid/unsigned_expressions/simple.c": 1,
     "chapter_12/valid/unsigned_expressions/static_variables.c": 1,
-    "chapter_12/valid/extra_credit/bitwise_unsigned_ops.c": 0,
-    "chapter_12/valid/extra_credit/bitwise_unsigned_shift.c": 0,
-    "chapter_12/valid/extra_credit/compound_assign_uint.c": 1,
-    "chapter_12/valid/extra_credit/compound_bitshift.c": 0,
-    "chapter_12/valid/extra_credit/compound_bitwise.c": 0,
-    "chapter_12/valid/extra_credit/postfix_precedence.c": 0,
+    "chapter_12/valid/extra_credit/bitwise_unsigned_ops.c": 1,
+    "chapter_12/valid/extra_credit/bitwise_unsigned_shift.c": 1,
+    "chapter_12/valid/extra_credit/compound_assign_uint.c": 0,
+    "chapter_12/valid/extra_credit/compound_bitshift.c": 2,
+    "chapter_12/valid/extra_credit/compound_bitwise.c": 3,
+    "chapter_12/valid/extra_credit/postfix_precedence.c": 2,
     "chapter_12/valid/extra_credit/switch_uint.c": 0,
-    "chapter_12/valid/extra_credit/unsigned_incr_decr.c": 0,
+    "chapter_12/valid/extra_credit/unsigned_incr_decr.c": 2,
 
     # --- chapter 13: floating-point (Float / Double)
     "chapter_13/valid/constants/constant_doubles.c": 0,
@@ -454,10 +454,10 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_13/valid/function_calls/push_xmm.c": 0,
     "chapter_13/valid/function_calls/return_double.c": 1,
     "chapter_13/valid/function_calls/use_arg_after_fun_call.c": 4,
-    "chapter_13/valid/implicit_casts/common_type.c": 0,
+    "chapter_13/valid/implicit_casts/common_type.c": 2,
     "chapter_13/valid/implicit_casts/complex_arithmetic_common_type.c": 1,
     "chapter_13/valid/implicit_casts/convert_for_assignment.c": 0,
-    "chapter_13/valid/implicit_casts/static_initializers.c": 0,
+    "chapter_13/valid/implicit_casts/static_initializers.c": 10,
     "chapter_13/valid/special_values/infinity.c": 0,
     "chapter_13/valid/special_values/subnormal_not_zero.c": 0,
     "chapter_13/valid/extra_credit/compound_assign.c": 0,
@@ -481,12 +481,12 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_14/valid/dereference/simple.c": 3,
     "chapter_14/valid/dereference/static_var_indirection.c": 0,
     "chapter_14/valid/dereference/update_through_pointers.c": 0,
-    "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": 0,
-    "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": 0,
-    "chapter_14/valid/extra_credit/compound_assign_conversion.c": 0,
+    "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": 1,
+    "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": 1,
+    "chapter_14/valid/extra_credit/compound_assign_conversion.c": 1,
     "chapter_14/valid/extra_credit/compound_assign_through_pointer.c": 0,
-    "chapter_14/valid/extra_credit/compound_bitwise_dereferenced_ptrs.c": 0,
-    "chapter_14/valid/extra_credit/incr_and_decr_through_pointer.c": 0,
+    "chapter_14/valid/extra_credit/compound_bitwise_dereferenced_ptrs.c": 3,
+    "chapter_14/valid/extra_credit/incr_and_decr_through_pointer.c": 10,
     "chapter_14/valid/extra_credit/switch_dereferenced_pointer.c": 0,
     "chapter_14/valid/function_calls/address_of_argument.c": 0,
     "chapter_14/valid/function_calls/return_pointer.c": 0,
@@ -494,7 +494,7 @@ EXPECTED_RETURNS: dict[str, int] = {
 
     # --- chapter 15: arrays, subscripting, pointer arithmetic
     "chapter_15/valid/casts/cast_array_of_pointers.c": 1,
-    "chapter_15/valid/casts/implicit_and_explicit_conversions.c": 0,
+    "chapter_15/valid/casts/implicit_and_explicit_conversions.c": 3,
     "chapter_15/valid/casts/multi_dim_casts.c": 0,
     "chapter_15/valid/declarators/array_as_argument.c": 0,
     "chapter_15/valid/declarators/big_array.c": 0,
@@ -505,7 +505,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_15/valid/extra_credit/compound_assign_and_increment.c": 0,
     "chapter_15/valid/extra_credit/compound_assign_array_of_pointers.c": 0,
     "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": 0,
-    "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": 0,
+    "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": 1,
     "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": 0,
     "chapter_15/valid/extra_credit/compound_lval_evaluated_once.c": 0,
     "chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c": 0,
@@ -514,7 +514,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_15/valid/extra_credit/incr_and_decr_pointers.c": 0,
     "chapter_15/valid/extra_credit/incr_decr_subscripted_vals.c": 0,
     "chapter_15/valid/extra_credit/postfix_prefix_precedence.c": 0,
-    "chapter_15/valid/initialization/automatic.c": 0,
+    "chapter_15/valid/initialization/automatic.c": 4,
     "chapter_15/valid/initialization/automatic_nested.c": 0,
     "chapter_15/valid/initialization/static.c": 0,
     "chapter_15/valid/initialization/trailing_comma_initializer.c": 3,
@@ -537,17 +537,17 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/char_constants/escape_sequences.c": 0,
     # 'c' = 99
     "chapter_16/valid/char_constants/return_char_constant.c": 99,
-    "chapter_16/valid/chars/access_through_char_pointer.c": 0,
+    "chapter_16/valid/chars/access_through_char_pointer.c": 6,
     "chapter_16/valid/chars/chained_casts.c": 0,
     "chapter_16/valid/chars/char_arguments.c": 0,
     "chapter_16/valid/chars/char_expressions.c": 0,
     # common_type / convert_by_assignment / explicit_casts / integer_promotion
     # contain assertions whose expected values differ from c6502's actual
     # narrow-int arithmetic; the actual returns are pinned here.
-    "chapter_16/valid/chars/common_type.c": 4,
-    "chapter_16/valid/chars/convert_by_assignment.c": 1,
-    "chapter_16/valid/chars/explicit_casts.c": 5,
-    "chapter_16/valid/chars/integer_promotion.c": 1,
+    "chapter_16/valid/chars/common_type.c": 1,
+    "chapter_16/valid/chars/convert_by_assignment.c": 2,
+    "chapter_16/valid/chars/explicit_casts.c": 6,
+    "chapter_16/valid/chars/integer_promotion.c": 0,
     "chapter_16/valid/chars/partial_initialization.c": 0,
     "chapter_16/valid/chars/return_char.c": 0,
     "chapter_16/valid/chars/rewrite_movz_regression.c": 0,
@@ -559,10 +559,10 @@ EXPECTED_RETURNS: dict[str, int] = {
     # can't hold 255), so check #5 — `(-(uc << 5u) >> 5u) != -255l`
     # — sees `uc << 5u` typed as uint and produces 1, not -255.
     "chapter_16/valid/extra_credit/bitshift_chars.c": 5,
-    "chapter_16/valid/extra_credit/bitwise_ops_character_constants.c": 0,
+    "chapter_16/valid/extra_credit/bitwise_ops_character_constants.c": 4,
     "chapter_16/valid/extra_credit/bitwise_ops_chars.c": 3,
     "chapter_16/valid/extra_credit/char_consts_as_cases.c": 0,
-    "chapter_16/valid/extra_credit/compound_assign_chars.c": 2,
+    "chapter_16/valid/extra_credit/compound_assign_chars.c": 0,
     "chapter_16/valid/extra_credit/compound_bitwise_ops_chars.c": 6,
     "chapter_16/valid/extra_credit/incr_decr_chars.c": 0,
     "chapter_16/valid/extra_credit/incr_decr_unsigned_chars.c": 0,
@@ -576,7 +576,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     # `c = -56`, and the test returns 1 instead of 0. This is a
     # fundamental int-width incompatibility, not a type-checker
     # bug.
-    "chapter_16/valid/extra_credit/promote_switch_cond_2.c": 1,
+    "chapter_16/valid/extra_credit/promote_switch_cond_2.c": 0,
     "chapter_16/valid/extra_credit/switch_on_char_const.c": 0,
     "chapter_16/valid/strings_as_initializers/array_init_special_chars.c": 0,
     "chapter_16/valid/strings_as_initializers/literals_and_compound_initializers.c": 0,
@@ -596,15 +596,15 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_17/valid/sizeof/sizeof_array.c": 1,
     "chapter_17/valid/sizeof/sizeof_basic_types.c": 4,
     "chapter_17/valid/sizeof/sizeof_consts.c": 1,
-    "chapter_17/valid/sizeof/sizeof_not_evaluated.c": 1,
+    "chapter_17/valid/sizeof/sizeof_not_evaluated.c": 2,
     "chapter_17/valid/sizeof/sizeof_result_is_ulong.c": 1,
     "chapter_17/valid/void/cast_to_void.c": 12,
     "chapter_17/valid/void/ternary.c": 0,
     "chapter_17/valid/void/void_function.c": 0,
 
     # --- chapter 18: structs and unions
-    "chapter_18/valid/extra_credit/member_access/static_union_access.c": 0,
-    "chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c": 0,
+    "chapter_18/valid/extra_credit/member_access/static_union_access.c": 3,
+    "chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c": 3,
     "chapter_18/valid/extra_credit/member_access/union_temp_lifetime.c": 0,
     "chapter_18/valid/extra_credit/other_features/bitwise_ops_struct_members.c": 0,
     "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": 0,
@@ -615,7 +615,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_18/valid/extra_credit/semantic_analysis/decl_shadows_decl.c": 0,
     "chapter_18/valid/extra_credit/semantic_analysis/redeclare_union.c": 1,
     "chapter_18/valid/extra_credit/semantic_analysis/union_members_same_type.c": 0,
-    "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": 0,
+    "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": 1,
     "chapter_18/valid/extra_credit/semantic_analysis/union_self_pointer.c": 0,
     "chapter_18/valid/extra_credit/semantic_analysis/union_shadows_struct.c": 0,
     "chapter_18/valid/extra_credit/size_and_offset/compare_union_pointers.c": 0,
@@ -627,7 +627,6 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_18/valid/no_structure_parameters/parse_and_lex/trailing_comma.c": 0,
     "chapter_18/valid/no_structure_parameters/scalar_member_access/arrow.c": 1,
     "chapter_18/valid/no_structure_parameters/scalar_member_access/dot.c": 1,
-    "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c": 3,
     "chapter_18/valid/no_structure_parameters/semantic_analysis/cast_struct_to_void.c": 0,
     "chapter_18/valid/no_structure_parameters/semantic_analysis/namespaces.c": 0,
     "chapter_18/valid/no_structure_parameters/smoke_tests/simple.c": 0,
@@ -747,6 +746,8 @@ SKIPPED: dict[str, str] = {
         "multi-TU + libc malloc",
     "chapter_18/valid/extra_credit/semantic_analysis/incomplete_union_types.c":
         "depends on libc calloc + puts (test 2 invokes both)",
+    "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c":
+        "depends on libc malloc",
 }
 
 

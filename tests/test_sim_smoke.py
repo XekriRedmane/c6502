@@ -30,9 +30,9 @@ class TestBasics(unittest.TestCase):
             "int main(void) { return 0; }").return_int(), 0)
 
     def test_negative_return(self) -> None:
-        # -1 → 0xFF; signed view = -1.
-        self.assertEqual(_signed_byte(run_c_program(
-            "int main(void) { return -1; }").a), -1)
+        # -1 → 0xFFFF; signed view = -1.
+        self.assertEqual(run_c_program(
+            "int main(void) { return -1; }").return_int_signed(), -1)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
@@ -60,8 +60,8 @@ class TestArithmetic(unittest.TestCase):
             "int main(void) { return 100 % 7; }").return_int(), 2)
 
     def test_unary_neg(self) -> None:
-        self.assertEqual(_signed_byte(run_c_program(
-            "int main(void) { int x = 7; return -x; }").a), -7)
+        self.assertEqual(run_c_program(
+            "int main(void) { int x = 7; return -x; }").return_int_signed(), -7)
 
     def test_bitwise(self) -> None:
         self.assertEqual(run_c_program(

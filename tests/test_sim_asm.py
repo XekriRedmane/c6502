@@ -119,7 +119,6 @@ SKIPS: dict[str, str] = {
     "chapter_14/valid/extra_credit/compound_assign_conversion.c": "wrong_value",
     "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": "wrong_value",
     "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
-    "chapter_16/valid/strings_as_initializers/test_alignment.c": "wrong_value",
     "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": "wrong_value",
     "chapter_18/valid/params_and_returns/ignore_retval.c": "wrong_value",
 }

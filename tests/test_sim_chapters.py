@@ -582,7 +582,6 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/strings_as_initializers/literals_and_compound_initializers.c": 0,
     "chapter_16/valid/strings_as_initializers/partial_initialize_via_string.c": 0,
     "chapter_16/valid/strings_as_initializers/simple.c": 99,
-    "chapter_16/valid/strings_as_initializers/test_alignment.c": 3,
     "chapter_16/valid/strings_as_lvalues/cast_string_pointer.c": 0,
     "chapter_16/valid/strings_as_lvalues/empty_string.c": 0,
     "chapter_16/valid/strings_as_lvalues/pointer_operations.c": 0,
@@ -681,6 +680,11 @@ SKIPPED: dict[str, str] = {
         "depends on extern int defined in .s sidecar",
     "chapter_16/valid/strings_as_initializers/adjacent_strings_in_initializer.c":
         "depends on libc strcmp",
+    "chapter_16/valid/strings_as_initializers/test_alignment.c":
+        "tests static / auto char arrays >= 16 bytes are 16-byte "
+        "aligned; c6502 doesn't enforce alignment for any storage "
+        "(statics laid down sequentially from origin, autos packed "
+        "byte-by-byte on the soft stack)",
     "chapter_16/valid/strings_as_initializers/terminating_null_bytes.c":
         "depends on libc strcmp",
     "chapter_16/valid/strings_as_initializers/transfer_by_eightbyte.c":

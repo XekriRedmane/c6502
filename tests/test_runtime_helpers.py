@@ -447,5 +447,208 @@ class TestSdivmod8(unittest.TestCase):
                 self._assert(src, expected)
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestUdivmod16(unittest.TestCase):
+    """16-bit unsigned divmod via shift-and-subtract."""
+
+    def _long(self, src: str) -> int:
+        res = run_c_program(src)
+        v = res.return_long()
+        return v - 0x10000 if v & 0x8000 else v
+
+    def test_basic(self) -> None:
+        self.assertEqual(
+            self._long(
+                "long main(void) { unsigned long x = 1000UL; "
+                "unsigned long y = 7UL; return (long)(x / y); }"
+            ),
+            142,
+        )
+        self.assertEqual(
+            self._long(
+                "long main(void) { unsigned long x = 1000UL; "
+                "unsigned long y = 7UL; return (long)(x % y); }"
+            ),
+            6,
+        )
+
+    def test_zero_dividend(self) -> None:
+        self.assertEqual(
+            self._long(
+                "long main(void) { unsigned long x = 0UL; "
+                "unsigned long y = 12345UL; return (long)(x / y); }"
+            ),
+            0,
+        )
+
+    def test_dividend_smaller_than_divisor(self) -> None:
+        self.assertEqual(
+            self._long(
+                "long main(void) { unsigned long x = 100UL; "
+                "unsigned long y = 1000UL; return (long)(x / y); }"
+            ),
+            0,
+        )
+        self.assertEqual(
+            self._long(
+                "long main(void) { unsigned long x = 100UL; "
+                "unsigned long y = 1000UL; return (long)(x % y); }"
+            ),
+            100,
+        )
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestSdivmod16(unittest.TestCase):
+    """16-bit signed divmod with C99 trunc-toward-zero."""
+
+    def _long(self, src: str) -> int:
+        res = run_c_program(src)
+        v = res.return_long()
+        return v - 0x10000 if v & 0x8000 else v
+
+    def test_pos_pos(self) -> None:
+        self.assertEqual(
+            self._long("long main(void) { return 1000L / 7L; }"), 142,
+        )
+        self.assertEqual(
+            self._long("long main(void) { return 1000L % 7L; }"), 6,
+        )
+
+    def test_neg_pos(self) -> None:
+        self.assertEqual(
+            self._long("long main(void) { return (-1000L) / 7L; }"), -142,
+        )
+        self.assertEqual(
+            self._long("long main(void) { return (-1000L) % 7L; }"), -6,
+        )
+
+    def test_pos_neg(self) -> None:
+        self.assertEqual(
+            self._long("long main(void) { return 1000L / (-7L); }"), -142,
+        )
+        self.assertEqual(
+            self._long("long main(void) { return 1000L % (-7L); }"), 6,
+        )
+
+    def test_neg_neg(self) -> None:
+        self.assertEqual(
+            self._long("long main(void) { return (-1000L) / (-7L); }"), 142,
+        )
+        self.assertEqual(
+            self._long("long main(void) { return (-1000L) % (-7L); }"), -6,
+        )
+
+    def test_int_min_neg_one(self) -> None:
+        # Long INT16_MIN / -1 overflows in C; bit pattern wraps to
+        # INT16_MIN as the result of the negate (since -(-32768) =
+        # 32768 mod 65536 = -32768 in two's complement).
+        self.assertEqual(
+            self._long("long main(void) { return (-32768L) / (-1L); }"),
+            -32768,
+        )
+
+    def test_round_trip_identity(self) -> None:
+        # (a / b) * b + (a % b) == a for representative values.
+        for a in (-30000, -1000, -7, 0, 7, 1000, 30000):
+            for b in (-100, -7, -1, 1, 7, 100):
+                src = (
+                    f"long main(void) {{ long a = {a}L; long b = {b}L; "
+                    "return (a / b) * b + (a % b); }"
+                )
+                self.assertEqual(self._long(src), a, msg=src)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestUdivmod32(unittest.TestCase):
+    """32-bit unsigned divmod."""
+
+    def _ll(self, src: str) -> int:
+        res = run_c_program(src)
+        v = _read_longlong(res.memory)
+        return v - 0x100000000 if v & 0x80000000 else v
+
+    def test_basic(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { unsigned long long x = 1000000ULL; "
+                "unsigned long long y = 7ULL; return (long long)(x / y); }"
+            ),
+            142857,
+        )
+
+    def test_large_unsigned(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { unsigned long long x = 0xFFFFFFFFULL; "
+                "unsigned long long y = 0x10000ULL; "
+                "return (long long)(x / y); }"
+            ),
+            0xFFFF,
+        )
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestSdivmod32(unittest.TestCase):
+    """32-bit signed divmod."""
+
+    def _ll(self, src: str) -> int:
+        res = run_c_program(src)
+        v = _read_longlong(res.memory)
+        return v - 0x100000000 if v & 0x80000000 else v
+
+    def test_pos_pos(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return 1000000LL / 7LL; }"
+            ),
+            142857,
+        )
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return 1000000LL % 7LL; }"
+            ),
+            1,
+        )
+
+    def test_neg_pos(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return (-1000000LL) / 7LL; }"
+            ),
+            -142857,
+        )
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return (-1000000LL) % 7LL; }"
+            ),
+            -1,
+        )
+
+    def test_pos_neg(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return 1000000LL / (-7LL); }"
+            ),
+            -142857,
+        )
+
+    def test_neg_neg(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return (-1000000LL) / (-7LL); }"
+            ),
+            142857,
+        )
+
+    def test_zero_dividend(self) -> None:
+        self.assertEqual(
+            self._ll(
+                "long long main(void) { return 0LL / 12345LL; }"
+            ),
+            0,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -54,6 +54,43 @@ def _negate_a() -> list[a.Type_instruction]:
     ]
 
 
+def _copy_n_via_a(src_off: int, dst_off: int, n: int) -> list[a.Type_instruction]:
+    """Emit `n` LDA / STA pairs to copy `n` bytes from
+    HARGS+src_off..src_off+n-1 to HARGS+dst_off..dst_off+n-1."""
+    out: list[a.Type_instruction] = []
+    for k in range(n):
+        out += [
+            a.Mov(src=_hargs(src_off + k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(dst_off + k)),
+        ]
+    return out
+
+
+def _negate_n_inplace(off: int, n: int) -> list[a.Type_instruction]:
+    """Emit a multi-byte two's-complement negate of HARGS+off..off+n-1.
+
+    Algorithm: invert each byte (EOR #$FF), then add 1 to the low
+    byte and propagate carry through the higher bytes. The first
+    byte uses CLC + ADC #$01; subsequent bytes use ADC #$00 with
+    the carry from the previous chained add. EOR doesn't touch C,
+    so the carry survives the LDA / EOR pairs between ADCs."""
+    out: list[a.Type_instruction] = [
+        a.Mov(src=_hargs(off), dst=_REG_A),
+        a.Xor(src1=_REG_A, src2=_imm(0xFF), dst=_REG_A),
+        a.ClearCarry(),
+        a.Add(src=_imm(0x01), dst=_REG_A),
+        a.Mov(src=_REG_A, dst=_hargs(off)),
+    ]
+    for k in range(1, n):
+        out += [
+            a.Mov(src=_hargs(off + k), dst=_REG_A),
+            a.Xor(src1=_REG_A, src2=_imm(0xFF), dst=_REG_A),
+            a.Add(src=_imm(0x00), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(off + k)),
+        ]
+    return out
+
+
 def mul8_function() -> a.Function:
     """8-bit unsigned multiply, low-byte result via shift-and-add.
 
@@ -623,6 +660,233 @@ def sdivmod8_function() -> a.Function:
     )
 
 
+def udivmod16_function() -> a.Function:
+    """16-bit unsigned divmod via shift-and-subtract long division.
+
+    Inputs at HARGS+0..1 (num) and HARGS+2..3 (den); outputs at
+    HARGS+4..5 (quot) and HARGS+6..7 (rem). Scratch at HARGS+8 to
+    hold the tentative rem.lo across the multi-byte SBC chain (we
+    can't keep it in a register because the SBC of the high byte
+    needs A as scratch).
+
+    Algorithm: 16 iterations of "shift the combined 32-bit
+    (rem:quot) value left by 1, then if rem >= den subtract den
+    from rem and set quot's bit 0." The shift moves num's MSBs up
+    through the combined value into rem one bit per iteration; the
+    space left at quot's LSB by the ASL gets overwritten by INC
+    quot.lo when we commit. Inputs at HARGS+0..3 are read once at
+    the start (copied to HARGS+4..5 as the working dividend / future
+    quot) and never written, so they survive the call."""
+    loop = ".udivmod16_loop"
+    skip = ".udivmod16_skip"
+    return a.Function(
+        name="udivmod16", is_global=True, params=[],
+        instructions=[
+            # quot := num
+            *_copy_n_via_a(0, 4, 2),
+            # rem := 0
+            a.Mov(src=_imm(0), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(6)),
+            a.Mov(src=_REG_A, dst=_hargs(7)),
+            a.Mov(src=_imm(16), dst=_REG_X),
+            a.Label(name=loop),
+            # 32-bit shift left of (rem:quot).
+            a.ArithmeticShiftLeft(dst=_hargs(4)),
+            a.RotateLeft(dst=_hargs(5)),
+            a.RotateLeft(dst=_hargs(6)),
+            a.RotateLeft(dst=_hargs(7)),
+            # Tentative rem - den.
+            a.SetCarry(),
+            a.Mov(src=_hargs(6), dst=_REG_A),
+            a.Sub(src=_hargs(2), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(8)),  # tentative rem.lo
+            a.Mov(src=_hargs(7), dst=_REG_A),
+            a.Sub(src=_hargs(3), dst=_REG_A),
+            a.Branch(cond=a.CC(), target=skip),
+            # Commit: rem := tentative; A still has tentative rem.hi.
+            a.Mov(src=_REG_A, dst=_hargs(7)),
+            a.Mov(src=_hargs(8), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(6)),
+            a.Inc(dst=_hargs(4)),  # set quot bit 0
+            a.Label(name=skip),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def sdivmod16_function() -> a.Function:
+    """16-bit signed divmod with C99 §6.5.5.6 trunc-toward-zero.
+
+    Stashes original n.hi and d.hi at HARGS+9 and HARGS+10 (slots
+    not touched by udivmod16), absolute-values both inputs in
+    place, calls udivmod16, sign-corrects the quotient and remainder,
+    and re-negates the inputs to restore them. Negation is its own
+    inverse mod 2^16, so re-negating after the divide cleanly
+    restores the originals."""
+    n_pos = ".sdivmod16_n_pos"
+    d_pos = ".sdivmod16_d_pos"
+    quot_pos = ".sdivmod16_quot_pos"
+    rem_pos = ".sdivmod16_rem_pos"
+    n_done = ".sdivmod16_n_done"
+    d_done = ".sdivmod16_d_done"
+    return a.Function(
+        name="sdivmod16", is_global=True, params=[],
+        instructions=[
+            # Stash original n.hi at HARGS+9 (sign-test slot).
+            a.Mov(src=_hargs(1), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(9)),
+            a.Branch(cond=a.PL(), target=n_pos),
+            *_negate_n_inplace(0, 2),
+            a.Label(name=n_pos),
+            # Stash original d.hi at HARGS+10.
+            a.Mov(src=_hargs(3), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(10)),
+            a.Branch(cond=a.PL(), target=d_pos),
+            *_negate_n_inplace(2, 2),
+            a.Label(name=d_pos),
+            # Unsigned divide on absolute values.
+            a.Call(name="udivmod16"),
+            # Sign-correct quot if sign(n) XOR sign(d) is negative.
+            a.Mov(src=_hargs(9), dst=_REG_A),
+            a.Xor(src1=_REG_A, src2=_hargs(10), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=quot_pos),
+            *_negate_n_inplace(4, 2),
+            a.Label(name=quot_pos),
+            # Sign-correct rem if n was negative.
+            a.Mov(src=_hargs(9), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=rem_pos),
+            *_negate_n_inplace(6, 2),
+            a.Label(name=rem_pos),
+            # Restore original inputs by re-negating those that were
+            # originally negative (negation is its own inverse).
+            a.Mov(src=_hargs(9), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=n_done),
+            *_negate_n_inplace(0, 2),
+            a.Label(name=n_done),
+            a.Mov(src=_hargs(10), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=d_done),
+            *_negate_n_inplace(2, 2),
+            a.Label(name=d_done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def udivmod32_function() -> a.Function:
+    """32-bit unsigned divmod via shift-and-subtract long division.
+
+    Inputs at HARGS+0..3 (num) and HARGS+4..7 (den); outputs at
+    HARGS+8..11 (quot) and HARGS+12..15 (rem). Scratch at
+    HARGS+16..19 holds the tentative rem across the multi-byte SBC
+    chain.
+
+    Same algorithm as udivmod16 scaled to 4-byte values: 32
+    iterations, 8-byte (rem:quot) shift left, 4-byte SBC for the
+    tentative rem - den, conditional commit. Inputs at HARGS+0..7
+    are read-only and survive the call."""
+    loop = ".udivmod32_loop"
+    skip = ".udivmod32_skip"
+
+    sbc_chain: list[a.Type_instruction] = [a.SetCarry()]
+    for k in range(4):
+        sbc_chain += [
+            a.Mov(src=_hargs(12 + k), dst=_REG_A),
+            a.Sub(src=_hargs(4 + k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(16 + k)),
+        ]
+    commit: list[a.Type_instruction] = []
+    for k in range(4):
+        commit += [
+            a.Mov(src=_hargs(16 + k), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(12 + k)),
+        ]
+    commit.append(a.Inc(dst=_hargs(8)))
+
+    return a.Function(
+        name="udivmod32", is_global=True, params=[],
+        instructions=[
+            # quot := num (4 bytes)
+            *_copy_n_via_a(0, 8, 4),
+            # rem := 0 (4 bytes)
+            a.Mov(src=_imm(0), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(12)),
+            a.Mov(src=_REG_A, dst=_hargs(13)),
+            a.Mov(src=_REG_A, dst=_hargs(14)),
+            a.Mov(src=_REG_A, dst=_hargs(15)),
+            a.Mov(src=_imm(32), dst=_REG_X),
+            a.Label(name=loop),
+            # 64-bit shift left of (rem:quot).
+            a.ArithmeticShiftLeft(dst=_hargs(8)),
+            a.RotateLeft(dst=_hargs(9)),
+            a.RotateLeft(dst=_hargs(10)),
+            a.RotateLeft(dst=_hargs(11)),
+            a.RotateLeft(dst=_hargs(12)),
+            a.RotateLeft(dst=_hargs(13)),
+            a.RotateLeft(dst=_hargs(14)),
+            a.RotateLeft(dst=_hargs(15)),
+            *sbc_chain,
+            a.Branch(cond=a.CC(), target=skip),
+            *commit,
+            a.Label(name=skip),
+            a.Dec(dst=_REG_X),
+            a.Branch(cond=a.NE(), target=loop),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
+def sdivmod32_function() -> a.Function:
+    """32-bit signed divmod with C99 §6.5.5.6 trunc-toward-zero.
+
+    Same shape as sdivmod16: stash sign info (top byte of each
+    input) at HARGS+20 / HARGS+21 — slots not touched by
+    udivmod32's scratch at HARGS+16..19 — abs-value the inputs in
+    place, JSR udivmod32, sign-correct outputs, and re-negate
+    inputs to restore."""
+    n_pos = ".sdivmod32_n_pos"
+    d_pos = ".sdivmod32_d_pos"
+    quot_pos = ".sdivmod32_quot_pos"
+    rem_pos = ".sdivmod32_rem_pos"
+    n_done = ".sdivmod32_n_done"
+    d_done = ".sdivmod32_d_done"
+    return a.Function(
+        name="sdivmod32", is_global=True, params=[],
+        instructions=[
+            a.Mov(src=_hargs(3), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(20)),
+            a.Branch(cond=a.PL(), target=n_pos),
+            *_negate_n_inplace(0, 4),
+            a.Label(name=n_pos),
+            a.Mov(src=_hargs(7), dst=_REG_A),
+            a.Mov(src=_REG_A, dst=_hargs(21)),
+            a.Branch(cond=a.PL(), target=d_pos),
+            *_negate_n_inplace(4, 4),
+            a.Label(name=d_pos),
+            a.Call(name="udivmod32"),
+            a.Mov(src=_hargs(20), dst=_REG_A),
+            a.Xor(src1=_REG_A, src2=_hargs(21), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=quot_pos),
+            *_negate_n_inplace(8, 4),
+            a.Label(name=quot_pos),
+            a.Mov(src=_hargs(20), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=rem_pos),
+            *_negate_n_inplace(12, 4),
+            a.Label(name=rem_pos),
+            a.Mov(src=_hargs(20), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=n_done),
+            *_negate_n_inplace(0, 4),
+            a.Label(name=n_done),
+            a.Mov(src=_hargs(21), dst=_REG_A),
+            a.Branch(cond=a.PL(), target=d_done),
+            *_negate_n_inplace(4, 4),
+            a.Label(name=d_done),
+            a.Ret(arg_bytes=0, local_bytes=0, save_a=False),
+        ],
+    )
+
+
 # Names of the helpers we have real asm for. `sim/runtime.py` reads
 # this list and does NOT install Python hooks for these names — the
 # real asm runs instead, assembled into the program image alongside
@@ -630,6 +894,8 @@ def sdivmod8_function() -> a.Function:
 ASM_IMPLEMENTED: tuple[str, ...] = (
     "mul8", "mul16", "mul32",
     "udivmod8", "sdivmod8",
+    "udivmod16", "sdivmod16",
+    "udivmod32", "sdivmod32",
     "asl8", "asr8", "lsr8",
     "asl16", "asr16", "lsr16",
     "asl32", "asr32", "lsr32",
@@ -646,6 +912,10 @@ def all_helper_functions() -> list[a.Function]:
         mul32_function(),
         udivmod8_function(),
         sdivmod8_function(),
+        udivmod16_function(),
+        sdivmod16_function(),
+        udivmod32_function(),
+        sdivmod32_function(),
         asl8_function(),
         asr8_function(),
         lsr8_function(),

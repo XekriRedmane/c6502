@@ -1291,9 +1291,11 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   dispatch via the symbol table. 2-byte-typed locals / params /
   temporaries occupy 2 contiguous frame bytes, 4-byte-typed ones
   occupy 4. 2-byte return values come back with low byte in A and
-  high byte in X (two-register Long return so the epilogue
-  PHA/PLA only needs to save A; X isn't touched by the SSP/FP
-  arithmetic). LongLong (4B), Float (4B), and Double (8B) returns
+  high byte in X (two-register Long return so the outer epilogue
+  PHA/PLA only needs to save A; the SSP/FP arithmetic doesn't
+  touch X, and the FP-restore stashes its 1-byte scratch through
+  an inner PHA/PLA on the HW stack instead of TAX/STX, so X
+  survives the epilogue intact). LongLong (4B), Float (4B), and Double (8B) returns
   come back through HARGS instead — `HARGS+8..11` for LongLong /
   Float and `HARGS+16..23` for Double, matching the FP arithmetic
   helpers' output slots so a function ending in `return a OP b;`

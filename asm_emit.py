@@ -33,13 +33,17 @@ Soft-stack convention (see README "Function stack frame layout"):
     M + 2)` in one shot (the +2 is the saved-FP slot; the result is
     the caller's pre-arg-push SSP, so the caller needs no per-call
     cleanup). Then reads the saved FP via `(FP),Y` with `Y=M+1`
-    (low) and `Y=M+2` (high), stashing the low byte in X across the
-    high read so we don't corrupt the FP register's role as the
-    indirect base mid-read. Closes with `PLA, RTS` (when save_a=True)
-    or just `RTS` (when save_a=False — FP returns leave the result
-    in HARGS, which the SSP/FP arithmetic doesn't touch, so there's
-    nothing to preserve in A across the rewind). For `N+M == 0` it
-    just emits `RTS` regardless of save_a.
+    (low) and `Y=M+2` (high), stashing the low byte through a
+    PHA/PLA pair on the hardware stack so X survives the FP-restore
+    — the calling convention puts the high byte of a 2-byte return
+    in X, and a TAX-as-scratch trick would clobber it. The inner
+    PHA/PLA nests inside the outer save_a=True PHA/PLA bracket;
+    LIFO order makes that safe (inner pop = saved-FP-low, outer
+    pop = return-A). Closes with `PLA, RTS` (when save_a=True) or
+    just `RTS` (when save_a=False — FP / LongLong returns leave
+    their result in HARGS, which the SSP/FP arithmetic doesn't
+    touch, so there's nothing to preserve in A across the rewind).
+    For `N+M == 0` it just emits `RTS` regardless of save_a.
 
 One-instruction-per-node rule. With the exceptions of `Ret` and
 `FunctionPrologue` (the multi-step compound nodes documented above),
@@ -461,19 +465,28 @@ def _emit_save_fp_into_slot(m: int) -> list[str]:
 
 def _emit_restore_fp_from_slot(m: int) -> list[str]:
     """Read the 2 bytes at `FP+M+1` / `FP+M+2` back into the FP
-    register. Uses X as a 1-byte scratch for the low byte: we can't
-    write to FP between the two reads because `(FP),Y` uses both
-    bytes of FP as the indirect base. Clobbers A, X, Y. Requires
-    `M <= 253`."""
+    register. We can't write to FP between the two reads because
+    `(FP),Y` uses both bytes of FP as the indirect base, so the low
+    byte has to be stashed somewhere. We push it through the hardware
+    stack (PHA/PLA) rather than `TAX`/`STX` so X survives the
+    epilogue — the calling convention puts the high byte of a 2-byte
+    return in X, and X being clobbered here would wreck Long /
+    Pointer returns. The PHA/PLA is just one byte wider than the
+    original TAX/STX pair (a wash on a Long-returning function vs.
+    leaving the high byte broken), and it nests cleanly inside the
+    outer save_a=True PHA/PLA bracket — LIFO order means the
+    inner pop (FP low) precedes the outer pop (return A). Clobbers
+    A and Y. Requires `M <= 253`."""
     _check_local_bytes(m)
     return [
         _instr_line("LDY", f"#${m + 1:02X}"),
         _instr_line("LDA", f"({_FP}),Y"),
-        _instr_line("TAX"),
+        _instr_line("PHA"),
         _instr_line("INY"),
         _instr_line("LDA", f"({_FP}),Y"),
         _instr_line("STA", f"{_FP}+1"),
-        _instr_line("STX", _FP),
+        _instr_line("PLA"),
+        _instr_line("STA", _FP),
     ]
 
 

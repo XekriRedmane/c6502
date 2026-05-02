@@ -1142,12 +1142,13 @@ body that follows.)
    STA   SSP+1
    LDY   #$03                   ; restore caller FP from FP+3 (low) / FP+4 (high).
    LDA   (FP),Y                 ; FP still points at our frame here, so (FP),Y reads the
-   TAX                          ; right bytes. Stash the low byte in X across the high
-   INY                          ; read; writing FP between the two LDAs would corrupt
-   LDA   (FP),Y                 ; the indirect base.
-   STA   FP+1
-   STX   FP
-   PLA                          ; restore return value
+   PHA                          ; right bytes. Stash the low byte through the HW stack across
+   INY                          ; the high read; writing FP between the two LDAs would corrupt
+   LDA   (FP),Y                 ; the indirect base. Using TAX/STX would clobber X — Long /
+   STA   FP+1                   ; Pointer returns put the high byte in X, and the convention
+   PLA                          ; needs X to survive the epilogue. The inner PHA/PLA nests
+   STA   FP                     ; cleanly inside the outer PHA/PLA via LIFO.
+   PLA                          ; restore return value (in A)
    RTS
 ```
 

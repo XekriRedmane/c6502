@@ -141,7 +141,7 @@ SKIPS: dict[str, str] = {
     "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": "extern_unresolved",
     "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": "extern_unresolved",
 
-    # --- wrong_value (61): runs to BRK with the wrong A. Most are
+    # --- wrong_value (51): runs to BRK with the wrong A. Most are
     # signed-div/mod, sign-extend, or wider-than-int arithmetic
     # findings. Each is a real signal worth digging into.
     "chapter_3/valid/div_neg.c": "wrong_value",
@@ -170,19 +170,11 @@ SKIPS: dict[str, str] = {
     "chapter_13/valid/floating_expressions/static_initialized_double.c": "wrong_value",
     "chapter_13/valid/special_values/infinity.c": "wrong_value",
     "chapter_13/valid/special_values/subnormal_not_zero.c": "wrong_value",
-    "chapter_14/valid/casts/null_pointer_conversion.c": "wrong_value",
-    "chapter_14/valid/comparisons/compare_to_null.c": "wrong_value",
-    "chapter_14/valid/comparisons/pointers_as_conditions.c": "wrong_value",
-    "chapter_14/valid/declarators/declarators.c": "wrong_value",
-    "chapter_14/valid/dereference/dereference_expression_result.c": "wrong_value",
     "chapter_14/valid/dereference/static_var_indirection.c": "wrong_value",
-    "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": "wrong_value",
     "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": "wrong_value",
     "chapter_14/valid/extra_credit/compound_assign_conversion.c": "wrong_value",
     "chapter_14/valid/extra_credit/compound_bitwise_dereferenced_ptrs.c": "wrong_value",
-    "chapter_14/valid/function_calls/return_pointer.c": "wrong_value",
     "chapter_15/valid/casts/implicit_and_explicit_conversions.c": "wrong_value",
-    "chapter_15/valid/declarators/return_nested_array.c": "wrong_value",
     "chapter_15/valid/extra_credit/compound_assign_array_of_pointers.c": "wrong_value",
     "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": "wrong_value",
     "chapter_15/valid/extra_credit/compound_lval_evaluated_once.c": "wrong_value",
@@ -193,11 +185,9 @@ SKIPS: dict[str, str] = {
     "chapter_15/valid/pointer_arithmetic/compare.c": "wrong_value",
     "chapter_15/valid/pointer_arithmetic/pointer_diff.c": "wrong_value",
     "chapter_15/valid/subscripting/array_of_pointers_to_arrays.c": "wrong_value",
-    "chapter_15/valid/subscripting/simple_subscripts.c": "wrong_value",
     "chapter_15/valid/subscripting/subscript_nested.c": "wrong_value",
     "chapter_16/valid/char_constants/char_constant_operations.c": "wrong_value",
     "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
-    "chapter_16/valid/chars/char_expressions.c": "wrong_value",
     "chapter_16/valid/chars/common_type.c": "wrong_value",
     "chapter_16/valid/chars/explicit_casts.c": "wrong_value",
     "chapter_16/valid/extra_credit/compound_bitwise_ops_chars.c": "wrong_value",

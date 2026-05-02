@@ -545,13 +545,13 @@ EXPECTED_RETURNS: dict[str, int] = {
     # contain assertions whose expected values differ from c6502's actual
     # narrow-int arithmetic; the actual returns are pinned here.
     "chapter_16/valid/chars/common_type.c": 0,
-    "chapter_16/valid/chars/convert_by_assignment.c": 2,
-    "chapter_16/valid/chars/explicit_casts.c": 6,
+    "chapter_16/valid/chars/convert_by_assignment.c": 0,
+    "chapter_16/valid/chars/explicit_casts.c": 0,
     "chapter_16/valid/chars/integer_promotion.c": 0,
-    "chapter_16/valid/chars/partial_initialization.c": 4,
-    "chapter_16/valid/chars/return_char.c": 1,
+    "chapter_16/valid/chars/partial_initialization.c": 0,
+    "chapter_16/valid/chars/return_char.c": 0,
     "chapter_16/valid/chars/rewrite_movz_regression.c": 0,
-    "chapter_16/valid/chars/static_initializers.c": 3,
+    "chapter_16/valid/chars/static_initializers.c": 0,
     "chapter_16/valid/chars/type_specifiers.c": 0,
     # bitshift_chars.c relies on upstream's `unsigned char → int`
     # integer promotion (int = 4 bytes covers uchar's 0..255). c6502

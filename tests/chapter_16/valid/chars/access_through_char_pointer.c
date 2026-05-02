@@ -5,12 +5,11 @@
 
 int main(void) {
 
-    // inspect the four bytes of a long (in c6502, `long` is 4 bytes
-    // — `int` is only 2, so it can't satisfy the test's premise).
-    // Use `signed char *` for the byte pointer because plain `char`
-    // is unsigned in c6502, and the test compares bytes against
-    // negative values like -128 / -1.
+    // inspect the four bytes of a long (in c6502 `int` is 2 bytes;
+    // `long` is the 4-byte type the test wants).
     long x = 100;
+    // Use `signed char *` because plain char is unsigned in c6502
+    // and the test compares bytes against negative values.
     signed char *byte_ptr = (signed char *) &x;
 
     if (byte_ptr[0] != 100) {
@@ -34,7 +33,9 @@ int main(void) {
         }
     }
 
-    // finally, let's look at an array
+    // finally, let's look at an array — upstream's `unsigned int`
+    // is 4 bytes per element, c6502's is 2; use `unsigned long` for
+    // 4-byte elements (so each row really is 8 bytes).
     unsigned long array[3][2][1] = {
         {{-1}, {-1}},
         {{-1}, {-1}},

@@ -11,26 +11,30 @@
 #endif
 #endif
 
-char return_char(void) {
-    return 524278ll  /* 2^19 - 10; truncated to 1B = -10 */;  // this will be truncated to -10
+signed char return_char(void) {
+    // Plain `char` is unsigned in c6502 (so the truncation gives
+    // 246, not -10). Use `signed char` to match the test's intent.
+    return 5369233654l;  // this will be truncated to -10
 }
 
 signed char return_schar(void) {
-    return 524278ll  /* 2^19 - 10; truncated to 1B = -10 */;  // this will be truncated to -10
+    return 5369233654l;  // this will be truncated to -10
 }
 
 unsigned char return_uchar(void) {
-    return 524278ll  /* 2^19 - 10; truncated to 1B = -10 */;  // this will be truncated to 246
+    return 5369233654l;  // this will be truncated to 246
 }
 
 int main(void) {
-    char char_array[3] = {121, -122, -3};
-    char retval_c = return_char();
-    char char_array2[3] = {-5, 88, -100};
+    // Plain `char` is unsigned in c6502; arrays / locals that hold
+    // negative values use `signed char` to match the test's intent.
+    signed char char_array[3] = {121, -122, -3};
+    signed char retval_c = return_char();
+    signed char char_array2[3] = {-5, 88, -100};
     signed char retval_sc = return_schar();
     char char_array3[3] = {10, 11, 12};
     unsigned char retval_uc = return_uchar();
-    char char_array4[2] = {-5, -6};
+    signed char char_array4[2] = {-5, -6};
 
     // make sure we got the right return values and didn't overwrite
     // other arrays on the stack

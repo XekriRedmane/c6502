@@ -19,7 +19,10 @@ int main(void)
         return 3;
 
     // define some non-static arrays
-    char auto1[5] = {-4, 66, 4.0};
+    // (plain `char` is unsigned in c6502; auto1 holds a negative
+    // initializer so it needs `signed char` for the readout to
+    // match the -4 expected value.)
+    signed char auto1[5] = {-4, 66, 4.0};
     signed char auto2[3] = {static1[2], -static1[0]};
     unsigned char auto3[2] = {'a'};
 

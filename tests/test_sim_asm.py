@@ -80,6 +80,7 @@ SKIPS: dict[str, str] = {
     # several previously-fitting frames over the limit.
     "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": "frame_too_large",
     "chapter_16/valid/char_constants/char_constant_operations.c": "frame_too_large",
+    "chapter_16/valid/chars/convert_by_assignment.c": "frame_too_large",
     "chapter_16/valid/chars/explicit_casts.c": "frame_too_large",
     "chapter_16/valid/extra_credit/compound_assign_chars.c": "frame_too_large",
     "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": "frame_too_large",

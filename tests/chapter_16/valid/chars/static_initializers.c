@@ -10,21 +10,32 @@
 #endif
 #endif
 
-/* Replaced 8-byte / 4-byte upstream constants with c6502-friendly values
- * that, mod 256, give the same signed / unsigned 1-byte result. */
+char from_long = 17592186044416l;
 
-char from_long = 65536ll;          // mod 256 = 0
 char from_double = 15.6;
-char from_uint = 65409ul;          // mod 256 = 129 → signed 1B = -127
-char from_ulong = 65546ull;        // mod 256 = 10
-signed char schar_from_long = 65539ll;     // mod 256 = 3
-signed char schar_from_uint = 65530ul;     // mod 256 = 250 → signed 1B = -6
-signed char schar_from_ulong = 65546ull;   // mod 256 = 10
+
+// Plain `char` is unsigned in c6502; this initializer truncates
+// to 0x81 which the test reads as -127, so use `signed char`.
+signed char from_uint = 2147483777u;
+
+char from_ulong = 9223372037928517642ul;
+
+signed char schar_from_long = 17592186044419l;
+
+signed char schar_from_uint = 2147483898u;
+
+signed char schar_from_ulong = 9223372037928517642ul;
+
 signed char schar_from_double = 1e-10;
+
 unsigned char uchar_from_int = 13526;
-unsigned char uchar_from_uint = 65530ul;       // mod 256 = 250
-unsigned char uchar_from_long = 65786ll;       // mod 256 = 250
-unsigned char uchar_from_ulong = 65546ull;     // mod 256 = 10
+
+unsigned char uchar_from_uint = 2147483898u;
+
+unsigned char uchar_from_long = 1101659111674l;
+
+unsigned char uchar_from_ulong = 9223372037928517642ul;
+
 unsigned char uchar_from_double = 77.7;
 
 int main(void) {

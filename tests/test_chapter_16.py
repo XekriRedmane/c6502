@@ -62,6 +62,7 @@ _INCOMPATIBLE_VALID: frozenset[str] = frozenset({
     # Frames > 253 bytes — int = 2B, plus extensive char-array
     # locals push these past the soft-stack frame-size limit.
     "char_constants/char_constant_operations.c",
+    "chars/convert_by_assignment.c",
     "chars/explicit_casts.c",
     "extra_credit/compound_assign_chars.c",
 })

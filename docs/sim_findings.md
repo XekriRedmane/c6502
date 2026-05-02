@@ -222,15 +222,19 @@ What's still missing:
     non-trivial port (probably 1500+ lines of asm) but well-known
     territory; the algorithms are align-exponents, add/subtract
     mantissas, normalize, round.
-  - **FP comparisons.** TAC→asm's `==` / `!=` / `<` / `>` for FP
-    operands today lowers to bit-pattern compare via inline
-    `Compare`/`Sub` + branch atoms — same as for integers. That's
-    wrong for IEEE 754 (which treats `±0` as equal and orders NaN
-    weirdly). Three tests still fail here:
-    `chapter_13/.../infinity.c` (negative-infinity ordering),
+  - **FP equality (`==` / `!=`).** Still lowered inline as
+    bit-pattern compare (same shape as the integer path). That's
+    wrong for IEEE 754's `±0`-equality (the two zeros have
+    different bit patterns) and `NaN != NaN` (byte-equal NaNs
+    compare equal). One test still fails here:
     `chapter_18/.../union_namespace.c` (`var2.a != -0.0`).
-    Fix path: dispatch FP comparisons to a helper (or inline a
-    proper IEEE 754 compare in `tac_to_asm`).
+    FP ordering (`<` / `<=` / `>` / `>=`) now dispatches to
+    helpers `flt` / `fle` / `dlt` / `dle` (Python hooks via host
+    floats today; asm versions pending the runtime header), with
+    `>` / `>=` reusing `<` / `<=` via operand swap — NaN-safe
+    because both directions yield false when either operand is
+    NaN. Fix path for equality: same helper-dispatch pattern,
+    plus a special-case for `±0`.
 
 ## 6. Externs we don't link (`extern_unresolved`, 3 cases)
 

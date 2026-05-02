@@ -72,32 +72,30 @@ takes one AST and returns another (or text for emit):
    on `data_type.params`.
 
    The type vocabulary is nine integer types, two floating types,
-   plus pointers and function types. Integers: `Int()` is 1-byte
-   signed (-128..127), `Long()` is 2-byte signed (-32768..32767),
-   `LongLong()` is 4-byte signed (-2^31..2^31-1), `UInt()` is
-   1-byte unsigned (0..255), `ULong()` is 2-byte unsigned
-   (0..65535), `ULongLong()` is 4-byte unsigned (0..2^32-1),
-   `Char()` is 1-byte signed (-128..127, same range as Int —
-   plain `char` is signed in c6502), `SChar()` is `signed char`
-   (1-byte signed), `UChar()` is `unsigned char` (1-byte
-   unsigned). Char/SChar/UChar are distinct types from Int/UInt
-   even though they share width and signedness — C99 §6.3.1.1.2
-   integer-promotes them to int (or unsigned int) at every
-   operand position, so they only carry their distinct identity
-   through declarations and addresses; arithmetic always happens
-   at Int/UInt width or wider.
+   plus pointers and function types. Widths follow C99's minimum
+   ranges per §5.2.4.2.1 — Int is 16 bits, Long is 32 bits, LongLong
+   is 64 bits. Integers: `Int()` is 2-byte signed (-32768..32767),
+   `Long()` is 4-byte signed (-2^31..2^31-1), `LongLong()` is
+   8-byte signed (-2^63..2^63-1), `UInt()` is 2-byte unsigned
+   (0..65535), `ULong()` is 4-byte unsigned (0..2^32-1),
+   `ULongLong()` is 8-byte unsigned (0..2^64-1), `Char()` is
+   1-byte signed (-128..127; plain `char` is signed in c6502),
+   `SChar()` is `signed char` (1-byte signed), `UChar()` is
+   `unsigned char` (1-byte unsigned). Char/SChar/UChar are
+   distinct types from Int/UInt — C99 §6.3.1.1.2 integer-promotes
+   them all to `int` (because Int's 16-bit range covers UChar's
+   0..255), so arithmetic always happens at Int width or wider.
    Floating: `Float()` is IEEE 754 single (4 bytes), `Double()`
    is IEEE 754 double (8 bytes). `long double` (16-byte IEEE 754
    quad / extended) isn't modelled — the parser rejects it.
    `Pointer(referenced_type)` is a 2-byte address (the 6502's
    address width); declared with `*` in the declarator, e.g. `int
-   *p;`. At the byte level a pointer is indistinguishable from a
-   `Long`, so `_to_tac_data_type` collapses `Pointer` onto TAC
-   `Long` and the size-dispatch in `tac_to_asm` /
-   `replace_pseudoregisters` treats Pointer as 2-byte; the c99
-   symbol table preserves the Pointer type for later passes
-   (cast dispatch, dereference / address-of lowering when those
-   land).
+   *p;`. Pointer is its own TAC variant (`tac_ast.Pointer`) because
+   2-byte pointers no longer match any integer width — Int is now
+   2 bytes too, but conceptually distinct, and the symbol table
+   preserves the Pointer type for the rare codegen sites that
+   inspect it (signedness checks for unsigned ordering, pointer-
+   arithmetic scaling).
 
    The lexer splits integer literals into four terminals
    by suffix (`INTEGER_CONSTANT` for no suffix, `LONG_INTEGER` for

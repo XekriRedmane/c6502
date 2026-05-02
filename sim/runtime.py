@@ -11,7 +11,7 @@ assembler's symbol table before the user program is assembled, so
 `Call("mul16")` resolves to `JSR $E0XX`.
 
 Memory map:
-  $0000-$001F  zero page (SSP/FP/HARGS/DPTR)
+  $0000-$0027  zero page (SSP/FP/HARGS/DPTR)
   $0100-$01FF  6502 hardware stack
   $0600-$06FF  boot stub
   $0800-...    program code + statics (assembler.origin)
@@ -40,10 +40,11 @@ wrong results — there's no signed/unsigned routing in `tac_to_asm`
 today, so this is an open question for the eventual real runtime, not
 a simulator-specific limitation.
 
-FP helpers (`i2f`, `u2f`, `f2i`, `f2d`, etc.) are registered with trap
-addresses for symbol resolution but their hooks raise
-NotImplementedError if called — programs that use FP arithmetic will
-fault loudly instead of silently producing garbage.
+FP helpers (`i2f` / `u2f` / `f2i` / `f2d` / `fadd` / etc., plus the
+ordering helpers `flt` / `fle` / `dlt` / `dle`) are implemented as
+Python hooks that delegate to the host's IEEE 754 unit via
+`struct.pack` / `struct.unpack`. Real 6502 implementations are
+pending the runtime header.
 """
 
 from __future__ import annotations
@@ -55,8 +56,10 @@ from typing import Callable
 # Zero-page reservations.
 SSP = 0x00       # SSP+1 = $01
 FP = 0x02        # FP+1 = $03
-HARGS = 0x04     # spans $04..$1B (24 bytes)
-DPTR = 0x1C      # DPTR+1 = $1D
+HARGS = 0x04     # spans $04..$23 (32 bytes — sized for the largest
+                 # helper, udivmod64 / sdivmod64 with 16 input bytes
+                 # + 16 output bytes; dadd / ddiv etc. only use 24)
+DPTR = 0x24      # DPTR+1 = $25
 
 # Boot stub address and SSP initial value.
 BOOT_ADDR = 0x0600
@@ -327,6 +330,27 @@ def _fp_to_int(fp_size: int, int_size: int, signed: bool) -> Hook:
     return hook
 
 
+def _fp_compare(in_size: int, lt: bool) -> Hook:
+    """FP ordering: `flt`/`fle` (in_size=4) or `dlt`/`dle` (in_size=8).
+    Reads two FP operands at HARGS+0..N-1 and HARGS+N..2N-1, and
+    writes a single 0/1 byte to the FP-result slot (HARGS+8 for
+    Float, HARGS+16 for Double) — same slot the matching FP
+    arithmetic helpers use. `lt=True` does `a < b`; `lt=False` does
+    `a <= b`. NaN operands make every ordering comparison false per
+    IEEE 754 §5.11, which Python's `<` and `<=` already honour."""
+    fmt = "<f" if in_size == 4 else "<d"
+    out_off = 8 if in_size == 4 else 16
+
+    def hook(mem: bytearray) -> None:
+        a = _struct.unpack(fmt, bytes(mem[HARGS:HARGS + in_size]))[0]
+        b = _struct.unpack(
+            fmt, bytes(mem[HARGS + in_size:HARGS + 2 * in_size])
+        )[0]
+        result = (a < b) if lt else (a <= b)
+        mem[HARGS + out_off] = 1 if result else 0
+    return hook
+
+
 def _f2d_hook() -> Hook:
     """Float (4B) → Double (8B). Input HARGS+0..3, output HARGS+4..11."""
     def hook(mem: bytearray) -> None:
@@ -380,34 +404,49 @@ _HELPERS: list[tuple[str, Hook]] = [
     ("asl32",     _make_asl(4)),
     ("asr32",     _make_asr(4)),
     ("lsr32",     _make_lsr(4)),
-    # FP integer→float (output at HARGS + int_size, fp_size = 4)
-    ("i2f",   _int_to_fp(int_size=1, signed=True,  fp_size=4)),
-    ("u2f",   _int_to_fp(int_size=1, signed=False, fp_size=4)),
-    ("l2f",   _int_to_fp(int_size=2, signed=True,  fp_size=4)),
-    ("ul2f",  _int_to_fp(int_size=2, signed=False, fp_size=4)),
-    ("ll2f",  _int_to_fp(int_size=4, signed=True,  fp_size=4)),
-    ("ull2f", _int_to_fp(int_size=4, signed=False, fp_size=4)),
+    # 8-byte integer (LongLong / ULongLong). HARGS layout for
+    # udivmod64 / sdivmod64: num=HARGS+0..7, den=HARGS+8..15,
+    # quot=HARGS+16..23, rem=HARGS+24..31. mul64 uses HARGS+0..15
+    # for inputs and HARGS+16..23 for the truncated 8-byte result;
+    # the high half of the full 16-byte product is discarded under
+    # §6.5.5.4 modular semantics.
+    ("mul64",     _make_mul(8, 8)),
+    ("udivmod64", _make_udivmod(8)),
+    ("sdivmod64", _make_sdivmod(8)),
+    ("asl64",     _make_asl(8)),
+    ("asr64",     _make_asr(8)),
+    ("lsr64",     _make_lsr(8)),
+    # FP integer→float (output at HARGS + int_size, fp_size = 4).
+    # int_size matches c6502's C99-conformant widths: char = 1B (no
+    # FP helper — c99_to_tac decomposes char↔FP through Int / UInt),
+    # int = 2B, long = 4B, long long = 8B.
+    ("i2f",   _int_to_fp(int_size=2, signed=True,  fp_size=4)),
+    ("u2f",   _int_to_fp(int_size=2, signed=False, fp_size=4)),
+    ("l2f",   _int_to_fp(int_size=4, signed=True,  fp_size=4)),
+    ("ul2f",  _int_to_fp(int_size=4, signed=False, fp_size=4)),
+    ("ll2f",  _int_to_fp(int_size=8, signed=True,  fp_size=4)),
+    ("ull2f", _int_to_fp(int_size=8, signed=False, fp_size=4)),
     # FP integer→double (output at HARGS + int_size, fp_size = 8)
-    ("i2d",   _int_to_fp(int_size=1, signed=True,  fp_size=8)),
-    ("u2d",   _int_to_fp(int_size=1, signed=False, fp_size=8)),
-    ("l2d",   _int_to_fp(int_size=2, signed=True,  fp_size=8)),
-    ("ul2d",  _int_to_fp(int_size=2, signed=False, fp_size=8)),
-    ("ll2d",  _int_to_fp(int_size=4, signed=True,  fp_size=8)),
-    ("ull2d", _int_to_fp(int_size=4, signed=False, fp_size=8)),
+    ("i2d",   _int_to_fp(int_size=2, signed=True,  fp_size=8)),
+    ("u2d",   _int_to_fp(int_size=2, signed=False, fp_size=8)),
+    ("l2d",   _int_to_fp(int_size=4, signed=True,  fp_size=8)),
+    ("ul2d",  _int_to_fp(int_size=4, signed=False, fp_size=8)),
+    ("ll2d",  _int_to_fp(int_size=8, signed=True,  fp_size=8)),
+    ("ull2d", _int_to_fp(int_size=8, signed=False, fp_size=8)),
     # FP float→integer (input HARGS+0..3, output starts at HARGS+4)
-    ("f2i",   _fp_to_int(fp_size=4, int_size=1, signed=True)),
-    ("f2u",   _fp_to_int(fp_size=4, int_size=1, signed=False)),
-    ("f2l",   _fp_to_int(fp_size=4, int_size=2, signed=True)),
-    ("f2ul",  _fp_to_int(fp_size=4, int_size=2, signed=False)),
-    ("f2ll",  _fp_to_int(fp_size=4, int_size=4, signed=True)),
-    ("f2ull", _fp_to_int(fp_size=4, int_size=4, signed=False)),
+    ("f2i",   _fp_to_int(fp_size=4, int_size=2, signed=True)),
+    ("f2u",   _fp_to_int(fp_size=4, int_size=2, signed=False)),
+    ("f2l",   _fp_to_int(fp_size=4, int_size=4, signed=True)),
+    ("f2ul",  _fp_to_int(fp_size=4, int_size=4, signed=False)),
+    ("f2ll",  _fp_to_int(fp_size=4, int_size=8, signed=True)),
+    ("f2ull", _fp_to_int(fp_size=4, int_size=8, signed=False)),
     # FP double→integer (input HARGS+0..7, output starts at HARGS+8)
-    ("d2i",   _fp_to_int(fp_size=8, int_size=1, signed=True)),
-    ("d2u",   _fp_to_int(fp_size=8, int_size=1, signed=False)),
-    ("d2l",   _fp_to_int(fp_size=8, int_size=2, signed=True)),
-    ("d2ul",  _fp_to_int(fp_size=8, int_size=2, signed=False)),
-    ("d2ll",  _fp_to_int(fp_size=8, int_size=4, signed=True)),
-    ("d2ull", _fp_to_int(fp_size=8, int_size=4, signed=False)),
+    ("d2i",   _fp_to_int(fp_size=8, int_size=2, signed=True)),
+    ("d2u",   _fp_to_int(fp_size=8, int_size=2, signed=False)),
+    ("d2l",   _fp_to_int(fp_size=8, int_size=4, signed=True)),
+    ("d2ul",  _fp_to_int(fp_size=8, int_size=4, signed=False)),
+    ("d2ll",  _fp_to_int(fp_size=8, int_size=8, signed=True)),
+    ("d2ull", _fp_to_int(fp_size=8, int_size=8, signed=False)),
     # FP cross-precision
     ("f2d", _f2d_hook()),
     ("d2f", _d2f_hook()),
@@ -420,6 +459,12 @@ _HELPERS: list[tuple[str, Hook]] = [
     ("dsub", _fp_arith(8, "-")),
     ("dmul", _fp_arith(8, "*")),
     ("ddiv", _fp_arith(8, "/")),
+    # FP ordering. `>` and `>=` reuse `<` / `<=` with operand swap
+    # at the lowering site; only the two direct forms have helpers.
+    ("flt", _fp_compare(4, lt=True)),
+    ("fle", _fp_compare(4, lt=False)),
+    ("dlt", _fp_compare(8, lt=True)),
+    ("dle", _fp_compare(8, lt=False)),
 ]
 
 

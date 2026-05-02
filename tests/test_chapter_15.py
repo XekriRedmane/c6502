@@ -36,7 +36,10 @@ _INCOMPATIBLE = frozenset()
 # Currently fail through `--codegen`. Each corresponds to a feature gap
 # we plan to close. When a fix lands, drop the entry — the harness
 # asserts each listed file still fails so it can't drift silently.
-_EXPECTED_FAILURES_CODEGEN = frozenset()
+_EXPECTED_FAILURES_CODEGEN = frozenset({
+    # Frame > 253 bytes after the C99 width refresh (Int = 2B etc.).
+    "extra_credit/compound_bitwise_subscript.c",
+})
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")

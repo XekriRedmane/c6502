@@ -102,8 +102,8 @@ _BRANCH = {
 DEFAULT_ZP_SYMBOLS = {
     "SSP": 0x00,    # SSP+1 = $01
     "FP": 0x02,     # FP+1  = $03
-    "HARGS": 0x04,  # spans $04..$1B (24 bytes)
-    "DPTR": 0x1C,   # DPTR+1 = $1D
+    "HARGS": 0x04,  # spans $04..$23 (32 bytes)
+    "DPTR": 0x24,   # DPTR+1 = $25
 }
 
 

@@ -48,7 +48,11 @@ _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 # don't compile because of struct are pinned in
 # `_EXPECTED_FAILURES_CODEGEN` instead (so they auto-flip when
 # struct support lands).
-_INCOMPATIBLE_VALID: frozenset[str] = frozenset()
+_INCOMPATIBLE_VALID: frozenset[str] = frozenset({
+    # Frame > 253 bytes after the C99 width refresh.
+    "no_structure_parameters/scalar_member_access/arrow.c",
+    "no_structure_parameters/size_and_offset_calculations/member_offsets.c",
+})
 
 
 # A handful of `valid/` files don't actually need struct support to

@@ -54,6 +54,8 @@ _INCOMPATIBLE_VALID: frozenset[str] = frozenset({
     # the size literal is > 2^32 - 1 and doesn't fit any c6502
     # integer type.
     "sizeof/sizeof_derived_types.c",
+    # Frame > 253 bytes after the C99 width refresh.
+    "void_pointer/conversion_by_assignment.c",
 })
 
 

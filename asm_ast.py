@@ -40,6 +40,11 @@ class Type_static_init:
 
 
 @dataclass
+class CharInit(Type_static_init):
+    value: int
+
+
+@dataclass
 class IntInit(Type_static_init):
     value: int
 

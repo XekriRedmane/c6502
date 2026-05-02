@@ -237,21 +237,20 @@ def _break_label(loop_label: str) -> str:
 # debug / linker purposes.
 
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
-    """Byte width of an object type. Char / SChar / UChar / Int /
-    UInt = 1, Long / ULong = 2, LongLong / ULongLong = 4, Float =
-    4, Double = 8, Pointer = 2 (the 6502's address width). Used by
-    Cast lowering to decide between SignExtend / ZeroExtend /
-    Truncate / no-op (for integer types) and by various size-
+    """Byte width of an object type. Char / SChar / UChar = 1,
+    Int / UInt = 2, Long / ULong = 4, LongLong / ULongLong = 8,
+    Float = 4, Double = 8, Pointer = 2 (the 6502's address width).
+    Used by Cast lowering to decide between SignExtend / ZeroExtend
+    / Truncate / no-op (for integer types) and by various size-
     driven dispatch sites downstream."""
-    if isinstance(t, (
-        c99_ast.Int, c99_ast.UInt,
-        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
-    )):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
         return 2
-    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
         return 4
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return 8
     if isinstance(t, c99_ast.Float):
         return 4
     if isinstance(t, c99_ast.Double):
@@ -262,14 +261,16 @@ def _byte_width_of(t: c99_ast.Type_data_type) -> int:
 
 
 def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
-    """Translate a c99 data_type to its TAC counterpart. The TAC
-    type sum has no Pointer variant — at the byte level, a 2-byte
-    address is indistinguishable from a 2-byte integer on the 6502
-    — so Pointer collapses onto `Long` (same width, same byte
-    semantics). The c99 symbol table still carries Pointer for
-    later passes that care (cast dispatch, dereference / address-of
-    lowering when those land), but downstream TAC ops just see a
-    2-byte unsigned-ish value."""
+    """Translate a c99 data_type to its TAC counterpart. Pointer is
+    its own TAC variant (2 bytes — narrower than Long's 4) so it no
+    longer aliases an integer type. Char / SChar / UChar collapse
+    onto Int / UInt's signedness on TAC, but the c99 symbol table
+    preserves their distinct identity so the byte-width helpers
+    that read it directly still see the 1-byte width. Array /
+    Structure / Union all collapse onto `Pointer` — TAC vals of
+    those types are always operated on through their address, not
+    their payload, so the variant is just an "address-shaped"
+    placeholder; the c99 symbol table is what sizes the storage."""
     if isinstance(t, c99_ast.Int):
         return tac_ast.Int()
     if isinstance(t, c99_ast.Long):
@@ -283,13 +284,14 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
     if isinstance(t, c99_ast.ULongLong):
         return tac_ast.ULongLong()
     if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
-        # Char / SChar collapse onto TAC Int for size purposes —
-        # they share a 1-byte width and signed semantics. Codegen
-        # consults the c99 symbol table directly when it needs to
-        # distinguish them (e.g. integer-promotion target picks).
+        # Char / SChar are 1-byte signed. TAC has no 1-byte data_type
+        # variant; codegen reads the c99 symbol table when it needs
+        # to size a Var, so the TAC tag here only matters for the
+        # signedness-driven dispatch paths (`<` / `>=`, right shift,
+        # int↔FP) — collapse onto signed `Int`.
         return tac_ast.Int()
     if isinstance(t, c99_ast.UChar):
-        # UChar collapses onto TAC UInt — 1-byte unsigned.
+        # UChar is 1-byte unsigned — collapse onto unsigned `UInt`.
         return tac_ast.UInt()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
@@ -298,25 +300,21 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
     if isinstance(t, c99_ast.Void):
         return tac_ast.Void()
     if isinstance(t, c99_ast.Pointer):
-        return tac_ast.Long()
+        return tac_ast.Pointer()
     if isinstance(t, c99_ast.Array):
         # Arrays decay to pointers everywhere they're used as values,
-        # so a TAC `Var` with array c99 type would only show up as the
-        # operand of a `GetAddress` — which doesn't dispatch on its
-        # operand's TAC type. Collapse to Long for consistency with
-        # Pointer; the actual byte width of the storage is computed
-        # by `_size_of_name` in `replace_pseudoregisters` (which reads
-        # the c99 Array type directly).
-        return tac_ast.Long()
+        # so a TAC `Var` with array c99 type would only show up as
+        # the operand of a `GetAddress` — which doesn't dispatch on
+        # its operand's TAC type. Use `Pointer` (the address-shaped
+        # placeholder); the actual byte width of the storage comes
+        # from the c99 Array type via `_size_of_name`.
+        return tac_ast.Pointer()
     if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
-        # Struct / union types don't have a TAC counterpart — at the
-        # byte level they're just N contiguous bytes that the asm
-        # backend lays out via the symbol-table-driven
-        # `_size_of`/`_size_of_name` helpers. The TAC sum's `Long`
-        # is a stand-in for "address-shaped value" which is the
-        # right shape for any Var-of-struct that gets address-taken
-        # (the value itself isn't operated on as a TAC scalar).
-        return tac_ast.Long()
+        # Struct / union vals are always operated on through their
+        # address — `Pointer` is the right address-shaped placeholder.
+        # The c99 symbol table's `Structure` / `Union` is what sizes
+        # the actual storage via the layout table.
+        return tac_ast.Pointer()
     if isinstance(t, c99_ast.FunType):
         return tac_ast.FunType(
             params=[_to_tac_data_type(p) for p in t.params],
@@ -329,11 +327,10 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
     """Translate a c99 const to its TAC counterpart. TAC carries the
     full integer kind (width × signedness) on each variant, so the
     mapping is 1-to-1 on the integer side — c99 ConstUInt → TAC
-    ConstUInt, etc. The 1-byte char variants (ConstChar / ConstUChar)
-    collapse onto TAC's 1-byte int variants per C99 §6.3.1.1.2 (char
-    types integer-promote to int / unsigned int): ConstChar onto
-    ConstInt (plain `char` is signed in c6502), ConstUChar onto
-    ConstUInt. FP variants ride through 1-to-1."""
+    ConstUInt, etc. ConstChar / ConstUChar map to TAC ConstChar /
+    ConstUChar (1-byte signed / unsigned), distinct from
+    ConstInt / ConstUInt (now 2 bytes after the C99 width refresh).
+    FP variants ride through 1-to-1."""
     if isinstance(c, c99_ast.ConstInt):
         return tac_ast.ConstInt(value=c.value)
     if isinstance(c, c99_ast.ConstLong):
@@ -347,14 +344,9 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
     if isinstance(c, c99_ast.ConstULongLong):
         return tac_ast.ConstULongLong(value=c.value)
     if isinstance(c, c99_ast.ConstChar):
-        # Plain `char` / `signed char` → 1-byte signed int per C99
-        # §6.3.1.1.2 integer promotion (char types promote to int).
-        return tac_ast.ConstInt(value=c.value)
+        return tac_ast.ConstChar(value=c.value)
     if isinstance(c, c99_ast.ConstUChar):
-        # `unsigned char` → 1-byte unsigned int via the same
-        # promotion rule (§6.3.1.1.2: when int can't represent the
-        # source's range, promote to unsigned int).
-        return tac_ast.ConstUInt(value=c.value)
+        return tac_ast.ConstUChar(value=c.value)
     if isinstance(c, c99_ast.ConstFloat):
         return tac_ast.ConstFloat(bits=c.bits)
     if isinstance(c, c99_ast.ConstDouble):
@@ -364,17 +356,22 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
 
 def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Type_const:
     """Build a TAC const matching `t`'s width and signedness (and,
-    for FP, its precision). Pointer collapses onto ConstULong (same
-    2-byte width as ULong; addresses are 16-bit unsigned). Used by
-    the synthetic-constant call sites (postfix `+1`, short-circuit
-    0/1, implicit `return 0`)."""
-    if isinstance(t, (c99_ast.Int, c99_ast.Char, c99_ast.SChar)):
+    for FP, its precision). Pointer collapses onto ConstUInt (same
+    2-byte width; addresses are 16-bit unsigned). Char / SChar use
+    ConstChar (1-byte signed); UChar uses ConstUChar (1-byte
+    unsigned). Used by the synthetic-constant call sites (postfix
+    `+1`, short-circuit 0/1, implicit `return 0`)."""
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
+        return tac_ast.ConstChar(value=int(value))
+    if isinstance(t, c99_ast.UChar):
+        return tac_ast.ConstUChar(value=int(value))
+    if isinstance(t, c99_ast.Int):
         return tac_ast.ConstInt(value=int(value))
-    if isinstance(t, (c99_ast.UInt, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.UInt, c99_ast.Pointer)):
         return tac_ast.ConstUInt(value=int(value))
     if isinstance(t, c99_ast.Long):
         return tac_ast.ConstLong(value=int(value))
-    if isinstance(t, (c99_ast.ULong, c99_ast.Pointer)):
+    if isinstance(t, c99_ast.ULong):
         return tac_ast.ConstULong(value=int(value))
     if isinstance(t, c99_ast.LongLong):
         return tac_ast.ConstLongLong(value=int(value))
@@ -459,10 +456,10 @@ def _fold_fp_cast_constant(
 # `passes.type_checking._coerce_int_to_type` but kept local so
 # c99_to_tac doesn't pull in type_checking just for this.
 _TRUNC_BITS = {
-    c99_ast.Int:       8,  c99_ast.UInt:      8,
     c99_ast.Char:      8,  c99_ast.SChar:     8,  c99_ast.UChar: 8,
-    c99_ast.Long:     16,  c99_ast.ULong:    16,
-    c99_ast.LongLong: 32,  c99_ast.ULongLong: 32,
+    c99_ast.Int:      16,  c99_ast.UInt:     16,
+    c99_ast.Long:     32,  c99_ast.ULong:    32,
+    c99_ast.LongLong: 64,  c99_ast.ULongLong: 64,
 }
 
 
@@ -508,24 +505,20 @@ def _tac_static_init_for(
                 f"typed static; got declared type {t!r}"
             )
         return tac_ast.AddressInit(name=value.name, offset=value.offset)
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
+        return tac_ast.CharInit(value=_truncate_int_for_static(t, value))
+    if isinstance(t, c99_ast.UChar):
+        return tac_ast.UCharInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar)):
-        # Char / SChar are 1-byte signed, same byte width and
-        # signedness as Int — collapse onto IntInit so asm_emit
-        # renders a single `dc.b $XX`.
-        return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
-    if isinstance(t, c99_ast.UChar):
-        # UChar is 1-byte unsigned, same byte width as UInt.
+    if isinstance(t, c99_ast.UInt):
         return tac_ast.UIntInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Long):
         return tac_ast.LongInit(value=_truncate_int_for_static(t, value))
-    if isinstance(t, c99_ast.LongLong):
-        return tac_ast.LongLongInit(value=_truncate_int_for_static(t, value))
-    if isinstance(t, c99_ast.UInt):
-        return tac_ast.UIntInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.ULong):
         return tac_ast.ULongInit(value=_truncate_int_for_static(t, value))
+    if isinstance(t, c99_ast.LongLong):
+        return tac_ast.LongLongInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.ULongLong):
         return tac_ast.ULongLongInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Float):
@@ -539,11 +532,11 @@ def _tac_static_init_for(
     if isinstance(t, c99_ast.Double):
         return tac_ast.DoubleInit(bits=int(value))
     if isinstance(t, c99_ast.Pointer):
-        # Pointer collapses onto Long for static-init purposes —
-        # addresses are 2-byte values written as a little-endian
-        # 16-bit integer (e.g. NULL = 0x0000).
-        return tac_ast.LongInit(
-            value=_truncate_int_for_static(c99_ast.Long(), value),
+        # Pointer is 2-byte, same width as UInt — emit as UIntInit
+        # for the unsigned 16-bit address bit pattern (e.g. NULL =
+        # 0x0000).
+        return tac_ast.UIntInit(
+            value=_truncate_int_for_static(c99_ast.UInt(), value),
         )
     raise TypeError(
         f"static-storage object can't have non-object type {t!r}"
@@ -666,18 +659,14 @@ def _static_init_byte_count(it) -> int:
     """How many bytes does `it` lay down in memory? Used to pad
     union-typed statics whose first-named-member width is smaller
     than the union's total size."""
-    if isinstance(it, tac_ast.IntInit):
+    if isinstance(it, (tac_ast.CharInit, tac_ast.UCharInit)):
         return 1
-    if isinstance(it, tac_ast.UIntInit):
-        return 1
-    if isinstance(it, tac_ast.LongInit):
+    if isinstance(it, (tac_ast.IntInit, tac_ast.UIntInit)):
         return 2
-    if isinstance(it, tac_ast.ULongInit):
-        return 2
-    if isinstance(it, tac_ast.LongLongInit):
+    if isinstance(it, (tac_ast.LongInit, tac_ast.ULongInit)):
         return 4
-    if isinstance(it, tac_ast.ULongLongInit):
-        return 4
+    if isinstance(it, (tac_ast.LongLongInit, tac_ast.ULongLongInit)):
+        return 8
     if isinstance(it, tac_ast.FloatInit):
         return 4
     if isinstance(it, tac_ast.DoubleInit):
@@ -693,24 +682,20 @@ def _static_init_byte_count(it) -> int:
 
 def _zero_byte_count(item: tac_ast.Type_static_init) -> int | None:
     """Byte count of `item` if its in-memory bytes are all zero,
-    else None. Integer-zero items (Int / UInt / Long / ULong) and
-    `+0.0` FP items (`-0.0` isn't representable in c6502 statics —
-    the parser routes negation through `Unary`, which the constant-
-    expression check rejects) qualify. AddressInit never qualifies
-    — `&name` is symbolic, resolved by the assembler at link time
-    to an address that may or may not be zero."""
-    if isinstance(item, tac_ast.IntInit) and item.value == 0:
+    else None. Integer-zero items and `+0.0` FP items (`-0.0` isn't
+    representable in c6502 statics — the parser routes negation
+    through `Unary`, which the constant-expression check rejects)
+    qualify. AddressInit never qualifies — `&name` is symbolic,
+    resolved by the assembler at link time to an address that may
+    or may not be zero."""
+    if isinstance(item, (tac_ast.CharInit, tac_ast.UCharInit)) and item.value == 0:
         return 1
-    if isinstance(item, tac_ast.UIntInit) and item.value == 0:
-        return 1
-    if isinstance(item, tac_ast.LongInit) and item.value == 0:
+    if isinstance(item, (tac_ast.IntInit, tac_ast.UIntInit)) and item.value == 0:
         return 2
-    if isinstance(item, tac_ast.ULongInit) and item.value == 0:
-        return 2
-    if isinstance(item, tac_ast.LongLongInit) and item.value == 0:
+    if isinstance(item, (tac_ast.LongInit, tac_ast.ULongInit)) and item.value == 0:
         return 4
-    if isinstance(item, tac_ast.ULongLongInit) and item.value == 0:
-        return 4
+    if isinstance(item, (tac_ast.LongLongInit, tac_ast.ULongLongInit)) and item.value == 0:
+        return 8
     if isinstance(item, tac_ast.FloatInit) and item.bits == 0:
         return 4
     if isinstance(item, tac_ast.DoubleInit) and item.bits == 0:
@@ -746,12 +731,13 @@ def _pointee_size(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes per element for `*ptr` where `ptr` has type `t`. Used to
     scale the integer operand in pointer arithmetic — `ptr + n`
     advances by `n * _pointee_size(ptr)` bytes per C99 §6.5.6.8.
-    The widths match the rest of the c6502 type model: Int/UInt = 1,
-    Long/ULong = 2, Pointer = 2 (the 6502's address width), Float = 4,
-    Double = 8, Array = elem_size * count (so a `(int (*)[10]) + 1`
-    advances by 10 bytes — needed once multi-dim arrays land).
-    Function pointers and non-object types are rejected by the type
-    checker before this point."""
+    The widths match the rest of the c6502 type model: Char/SChar/
+    UChar = 1, Int/UInt = 2, Long/ULong = 4, LongLong/ULongLong = 8,
+    Pointer = 2 (the 6502's address width), Float = 4, Double = 8,
+    Array = elem_size * count (so a `(int (*)[10]) + 1` advances by
+    20 bytes — needed once multi-dim arrays land).  Function
+    pointers and non-object types are rejected by the type checker
+    before this point."""
     assert isinstance(t, c99_ast.Pointer), f"not a pointer: {t!r}"
     return _sizeof(t.referenced_type, types)
 
@@ -766,19 +752,18 @@ def _is_char_element(t: c99_ast.Type_data_type) -> bool:
 
 def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes occupied by a value of type `t` in c6502's storage
-    model. Recursive for Array — `int[3][4]` is 12 bytes,
+    model. Recursive for Array — `int[3][4]` is 24 bytes (Int = 2),
     `char[10]` is 10 bytes. For Structure / Union, looks up the
     tag's layout in `types` (the program-wide TypeTable) and reads
     its `.size`."""
-    if isinstance(t, (
-        c99_ast.Int, c99_ast.UInt,
-        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
-    )):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
         return 2
-    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
         return 4
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return 8
     if isinstance(t, c99_ast.Float):
         return 4
     if isinstance(t, c99_ast.Double):
@@ -1571,10 +1556,74 @@ class Translator:
                                 target, inner_val.const,
                             ),
                         )
+                    # Char-typed sides go through Int / UInt as a
+                    # routing intermediate. The runtime FP-conversion
+                    # helpers come in three integer widths (2B / 4B /
+                    # 8B) keyed off the c99 type — there's no 1-byte
+                    # variant. Char↔FP integer-promotes through
+                    # Int / UInt at the type-checking level for
+                    # arithmetic; for explicit casts (`(double)c` /
+                    # `(char)d`) we synthesize the same path here:
+                    #   `(double)char_src` → SignExtend char→Int,
+                    #                         then IntToDouble(Int).
+                    #   `(double)uchar_src` → ZeroExtend uchar→UInt,
+                    #                          then IntToDouble(UInt).
+                    #   `(char)double_src` → DoubleToInt (Int dst),
+                    #                         then Truncate(Int→Char).
+                    #   `(uchar)double_src` → DoubleToInt (UInt dst),
+                    #                          then Truncate(UInt→UChar).
+                    char_src = isinstance(
+                        source,
+                        (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+                    )
+                    char_tgt = isinstance(
+                        target,
+                        (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+                    )
+                    if char_src:
+                        widened_t = (
+                            c99_ast.UInt()
+                            if isinstance(source, c99_ast.UChar)
+                            else c99_ast.Int()
+                        )
+                        widened = tac_ast.Var(
+                            name=self.make_temporary_variable_name(widened_t),
+                        )
+                        node_cls = (
+                            tac_ast.ZeroExtend
+                            if isinstance(source, c99_ast.UChar)
+                            else tac_ast.SignExtend
+                        )
+                        instrs.append(node_cls(src=inner_val, dst=widened))
+                        inner_val = widened
+                        source = widened_t
+                        src_fp = False
+                    if char_tgt:
+                        narrow_t = (
+                            c99_ast.UInt()
+                            if isinstance(target, c99_ast.UChar)
+                            else c99_ast.Int()
+                        )
+                        intermediate = tac_ast.Var(
+                            name=self.make_temporary_variable_name(narrow_t),
+                        )
+                        node_cls = (
+                            tac_ast.FloatToInt
+                            if isinstance(source, c99_ast.Float)
+                            else tac_ast.DoubleToInt
+                        )
+                        instrs.append(node_cls(
+                            src=inner_val, dst=intermediate,
+                        ))
+                        instrs.append(tac_ast.Truncate(
+                            src=intermediate, dst=dst,
+                        ))
+                        return dst
                     # Otherwise the source is a Var — tac_to_asm picks
-                    # the right helper (signed vs. unsigned, 1B vs. 2B
-                    # for integer side; Float vs. Double for FP side)
-                    # by looking up src/dst types in the symbol table.
+                    # the right helper (signed vs. unsigned, 2B vs.
+                    # 4B vs. 8B for integer side; Float vs. Double for
+                    # FP side) by looking up src/dst types in the
+                    # symbol table.
                     if src_fp and tgt_fp:
                         # Float ↔ Double cross-precision (same-precision
                         # was caught by the source == target check).
@@ -2047,8 +2096,10 @@ class Translator:
           ptr - ptr     — Subtract the two 2-byte pointers, then divide
                           the byte-difference by sizeof(pointee) to get
                           an element count. Skip the divide when
-                          sizeof(pointee) == 1. Result is Long.
-        The type checker's already widened any int operand to Long, so
+                          sizeof(pointee) == 1. Result is Int (the
+                          standard's ptrdiff_t — 2 bytes signed,
+                          matches pointer width on the 6502).
+        The type checker's already widened any int operand to Int, so
         every value reaching this method is 2 bytes wide and the
         arithmetic happens at one width."""
         l_ptr = isinstance(lt, c99_ast.Pointer)
@@ -2059,7 +2110,7 @@ class Translator:
             assert isinstance(op, c99_ast.Subtract)
             size = _pointee_size(lt, self._types)
             diff = tac_ast.Var(
-                name=self.make_temporary_variable_name(c99_ast.Long()),
+                name=self.make_temporary_variable_name(c99_ast.Int()),
             )
             instrs.append(tac_ast.Binary(
                 op=tac_ast.Subtract(), src1=src1, src2=src2, dst=diff,
@@ -2067,17 +2118,18 @@ class Translator:
             if size == 1:
                 return diff
             quot = tac_ast.Var(
-                name=self.make_temporary_variable_name(c99_ast.Long()),
+                name=self.make_temporary_variable_name(c99_ast.Int()),
             )
             instrs.append(tac_ast.Binary(
                 op=tac_ast.Divide(),
                 src1=diff,
-                src2=_tac_const_val(c99_ast.Long(), size),
+                src2=_tac_const_val(c99_ast.Int(), size),
                 dst=quot,
             ))
             return quot
-        # ptr ± int. The type checker widened the int operand to Long
-        # and rejected int - ptr, so the only remaining shapes are
+        # ptr ± int. The type checker widened the int operand to Int
+        # (a 2-byte type, matching pointer width) and rejected
+        # int - ptr, so the only remaining shapes are
         # ptr_lhs ± int_rhs and int_lhs + ptr_rhs.
         if l_ptr:
             ptr_val, int_val, ptr_type = src1, src2, lt
@@ -2086,12 +2138,12 @@ class Translator:
         size = _pointee_size(ptr_type, self._types)
         if size != 1:
             scaled = tac_ast.Var(
-                name=self.make_temporary_variable_name(c99_ast.Long()),
+                name=self.make_temporary_variable_name(c99_ast.Int()),
             )
             instrs.append(tac_ast.Binary(
                 op=tac_ast.Multiply(),
                 src1=int_val,
-                src2=_tac_const_val(c99_ast.Long(), size),
+                src2=_tac_const_val(c99_ast.Int(), size),
                 dst=scaled,
             ))
             int_val = scaled
@@ -2170,7 +2222,7 @@ class Translator:
                 instrs.append(tac_ast.Binary(
                     op=tac_ast.Add(),
                     src1=base,
-                    src2=_tac_const_val(c99_ast.Long(), offset),
+                    src2=_tac_const_val(c99_ast.Int(), offset),
                     dst=addr,
                 ))
             instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
@@ -2219,7 +2271,7 @@ class Translator:
                 instrs.append(tac_ast.Binary(
                     op=tac_ast.Add(),
                     src1=base,
-                    src2=_tac_const_val(c99_ast.Long(), i),
+                    src2=_tac_const_val(c99_ast.Int(), i),
                     dst=addr,
                 ))
             instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
@@ -2289,7 +2341,7 @@ class Translator:
                     instrs.append(tac_ast.Binary(
                         op=tac_ast.Add(),
                         src1=base,
-                        src2=_tac_const_val(c99_ast.Long(), byte_offset),
+                        src2=_tac_const_val(c99_ast.Int(), byte_offset),
                         dst=addr,
                     ))
                 instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
@@ -2360,7 +2412,7 @@ class Translator:
                     instrs.append(tac_ast.Binary(
                         op=tac_ast.Add(),
                         src1=base,
-                        src2=_tac_const_val(c99_ast.Long(), byte_offset),
+                        src2=_tac_const_val(c99_ast.Int(), byte_offset),
                         dst=addr,
                     ))
                 instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
@@ -2421,7 +2473,7 @@ class Translator:
         instrs.append(tac_ast.Binary(
             op=tac_ast.Add(),
             src1=base,
-            src2=_tac_const_val(c99_ast.Long(), offset),
+            src2=_tac_const_val(c99_ast.Int(), offset),
             dst=addr,
         ))
         return addr
@@ -2654,9 +2706,9 @@ class Translator:
             return self.translate_pointer_arithmetic(
                 op=c99_op,
                 src1=src,
-                src2=_tac_const_val(c99_ast.Long(), 1),
+                src2=_tac_const_val(c99_ast.Int(), 1),
                 lt=op_type,
-                rt=c99_ast.Long(),
+                rt=c99_ast.Int(),
                 result_type=op_type,
                 instrs=instrs,
             )
@@ -2783,7 +2835,7 @@ class Translator:
                 src1=lval_val,
                 src2=rval_val,
                 lt=lv_type,
-                rt=rval_exp.data_type or c99_ast.Long(),
+                rt=rval_exp.data_type or c99_ast.Int(),
                 result_type=lv_type,
                 instrs=instrs,
             )

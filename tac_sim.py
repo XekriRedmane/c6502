@@ -66,17 +66,17 @@ class TacSimError(Exception):
 # it — sign / unsigned splits don't apply); width selects single
 # vs. double precision.
 _TYPE_INFO: dict[type, tuple[bool, int, bool]] = {
-    Int:       (True,  1, False),
     Char:      (True,  1, False),
     SChar:     (True,  1, False),
-    UInt:      (False, 1, False),
     UChar:     (False, 1, False),
-    Long:      (True,  2, False),
-    ULong:     (False, 2, False),
+    Int:       (True,  2, False),
+    UInt:      (False, 2, False),
     Pointer:   (False, 2, False),
-    LongLong:  (True,  4, False),
-    ULongLong: (False, 4, False),
+    Long:      (True,  4, False),
+    ULong:     (False, 4, False),
     Float:     (False, 4, True),
+    LongLong:  (True,  8, False),
+    ULongLong: (False, 8, False),
     Double:    (False, 8, True),
 }
 
@@ -93,12 +93,14 @@ def _const_info(c: tac_ast.Type_const) -> tuple[bool, int, bool, int]:
 
     For FP variants the value is the IEEE 754 bit pattern."""
     match c:
-        case tac_ast.ConstInt(value=v):       return (True,  1, False, v & 0xFF)
-        case tac_ast.ConstLong(value=v):      return (True,  2, False, v & 0xFFFF)
-        case tac_ast.ConstLongLong(value=v):  return (True,  4, False, v & 0xFFFFFFFF)
-        case tac_ast.ConstUInt(value=v):      return (False, 1, False, v & 0xFF)
-        case tac_ast.ConstULong(value=v):     return (False, 2, False, v & 0xFFFF)
-        case tac_ast.ConstULongLong(value=v): return (False, 4, False, v & 0xFFFFFFFF)
+        case tac_ast.ConstChar(value=v):      return (True,  1, False, v & 0xFF)
+        case tac_ast.ConstUChar(value=v):     return (False, 1, False, v & 0xFF)
+        case tac_ast.ConstInt(value=v):       return (True,  2, False, v & 0xFFFF)
+        case tac_ast.ConstUInt(value=v):      return (False, 2, False, v & 0xFFFF)
+        case tac_ast.ConstLong(value=v):      return (True,  4, False, v & 0xFFFFFFFF)
+        case tac_ast.ConstULong(value=v):     return (False, 4, False, v & 0xFFFFFFFF)
+        case tac_ast.ConstLongLong(value=v):  return (True,  8, False, v & 0xFFFFFFFFFFFFFFFF)
+        case tac_ast.ConstULongLong(value=v): return (False, 8, False, v & 0xFFFFFFFFFFFFFFFF)
         case tac_ast.ConstFloat(bits=b):      return (False, 4, True,  b & 0xFFFFFFFF)
         case tac_ast.ConstDouble(bits=b):     return (False, 8, True,  b & 0xFFFFFFFFFFFFFFFF)
     raise TacSimError(f"unsupported const variant: {type(c).__name__}")
@@ -138,9 +140,10 @@ def _sizeof(t: Type, types: TypeTable | None = None) -> int:
 def _init_size(init: tac_ast.Type_static_init) -> int:
     """Bytes laid down by a single static_init item."""
     match init:
-        case tac_ast.IntInit() | tac_ast.UIntInit():           return 1
-        case tac_ast.LongInit() | tac_ast.ULongInit():         return 2
-        case tac_ast.LongLongInit() | tac_ast.ULongLongInit(): return 4
+        case tac_ast.CharInit() | tac_ast.UCharInit():         return 1
+        case tac_ast.IntInit() | tac_ast.UIntInit():           return 2
+        case tac_ast.LongInit() | tac_ast.ULongInit():         return 4
+        case tac_ast.LongLongInit() | tac_ast.ULongLongInit(): return 8
         case tac_ast.FloatInit():                              return 4
         case tac_ast.DoubleInit():                             return 8
         case tac_ast.AddressInit():                            return 2
@@ -272,12 +275,14 @@ class Simulator:
         addr = self._static_addr[sv.name]
         for item in sv.init:
             match item:
-                case tac_ast.IntInit(value=v) | tac_ast.UIntInit(value=v):
+                case tac_ast.CharInit(value=v) | tac_ast.UCharInit(value=v):
                     self.memory.store(addr, v, 1); addr += 1
-                case tac_ast.LongInit(value=v) | tac_ast.ULongInit(value=v):
+                case tac_ast.IntInit(value=v) | tac_ast.UIntInit(value=v):
                     self.memory.store(addr, v, 2); addr += 2
-                case tac_ast.LongLongInit(value=v) | tac_ast.ULongLongInit(value=v):
+                case tac_ast.LongInit(value=v) | tac_ast.ULongInit(value=v):
                     self.memory.store(addr, v, 4); addr += 4
+                case tac_ast.LongLongInit(value=v) | tac_ast.ULongLongInit(value=v):
+                    self.memory.store(addr, v, 8); addr += 8
                 case tac_ast.FloatInit(bits=b):
                     self.memory.store(addr, b, 4); addr += 4
                 case tac_ast.DoubleInit(bits=b):

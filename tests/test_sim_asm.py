@@ -79,13 +79,10 @@ SKIPS: dict[str, str] = {
     "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": "frame_too_large",
     "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c": "frame_too_large",
 
-    # --- wrong_value (3): runs to BRK with the wrong A. The
-    # remaining ones depend on FP comparison ops (which today lower
-    # inline as bit-pattern compare and don't honour IEEE 754's
-    # ±0-equality / ordering rules) or on memory layout assumptions
-    # that c6502 doesn't enforce.
-    "chapter_13/valid/special_values/infinity.c": "wrong_value",
-    "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
+    # --- wrong_value (1): runs to BRK with the wrong A. Depends on
+    # FP `==` / `!=` (still lowered inline as bit-pattern compare
+    # today, so `±0` compare unequal even though IEEE 754 says
+    # they're equal — only ordering routes through the helper).
     "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": "wrong_value",
 }
 

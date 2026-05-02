@@ -63,24 +63,44 @@ module TAC {
         | LeftShift | RightShift
         | Equal | NotEqual
         | LessThan | GreaterThan | LessOrEqual | GreaterOrEqual
+    -- TAC's `data_type` sum covers c99's object-typed scalar
+    -- categories. Pointer is its own variant because a 6502 address
+    -- (2 bytes) is narrower than `Long` (4 bytes) under the
+    -- C99-conformant integer widths c6502 uses, so it can no longer
+    -- collapse onto an integer variant. Pointer has no payload —
+    -- its byte width is uniformly 2, and the pointee's size only
+    -- matters during pointer-arithmetic scaling, which is computed
+    -- from the c99 symbol table before TAC sees the operands.
+    -- Char / SChar / UChar (1 byte each) collapse onto `Int` /
+    -- `UInt` because c6502's char-types share signedness with their
+    -- promoted integer counterparts; the c99 symbol table preserves
+    -- the distinct char identity for the byte-width sizing helpers
+    -- that read it directly. Array / Structure / Union also collapse
+    -- onto `Pointer` (an "address-shaped" placeholder) — TAC vals
+    -- typed as those are always operated on through their address,
+    -- not their payload, so codegen never reads the variant for
+    -- size; the c99 symbol table is the source of truth.
     data_type = Int | Long | LongLong | UInt | ULong | ULongLong
-              | Float | Double | Void
+              | Float | Double | Void | Pointer
               | FunType(data_type* params, data_type ret)
     -- TAC `const` carries each integer's full c99 type (width AND
-    -- signedness): the signed side is ConstInt = 1B, ConstLong = 2B,
-    -- ConstLongLong = 4B; the unsigned side is ConstUInt = 1B,
-    -- ConstULong = 2B, ConstULongLong = 4B. The 6502 doesn't care
-    -- about signedness at the byte level for `+` / `-` / `&` / `|` /
-    -- `^` / `<<` / `==` / `!=` (signed and unsigned operands produce
-    -- identical bit patterns from identical inputs), so those op
-    -- lowerings dispatch only on width. The places where signedness
-    -- matters at codegen — `<` / `>` / `<=` / `>=`, right shift,
-    -- int↔FP conversion — read the const variant's signedness to
-    -- pick between signed and unsigned helper / sequence. FP variants
-    -- stay distinct because Float and Double have different IEEE 754
-    -- bit patterns; their payload is the bit pattern as an unsigned
-    -- integer (32-bit for ConstFloat, 64-bit for ConstDouble).
-    const = ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
+    -- signedness): the signed side is ConstInt = 2B, ConstLong = 4B,
+    -- ConstLongLong = 8B; the unsigned side is ConstUInt = 2B,
+    -- ConstULong = 4B, ConstULongLong = 8B. ConstChar (1B signed)
+    -- and ConstUChar (1B unsigned) cover the char-typed constants.
+    -- The 6502 doesn't care about signedness at the byte level for
+    -- `+` / `-` / `&` / `|` / `^` / `<<` / `==` / `!=` (signed and
+    -- unsigned operands produce identical bit patterns from
+    -- identical inputs), so those op lowerings dispatch only on
+    -- width. The places where signedness matters at codegen — `<` /
+    -- `>` / `<=` / `>=`, right shift, int↔FP conversion — read the
+    -- const variant's signedness to pick between signed and
+    -- unsigned helper / sequence. FP variants stay distinct because
+    -- Float and Double have different IEEE 754 bit patterns; their
+    -- payload is the bit pattern as an unsigned integer (32-bit for
+    -- ConstFloat, 64-bit for ConstDouble).
+    const = ConstChar(int value) | ConstUChar(int value)
+          | ConstInt(int value) | ConstLong(int value) | ConstLongLong(int value)
           | ConstUInt(int value) | ConstULong(int value) | ConstULongLong(int value)
           | ConstFloat(int bits) | ConstDouble(int bits)
     -- AddressInit lays down a 2-byte word that resolves at link
@@ -115,7 +135,15 @@ module TAC {
     -- zero-pad (`char a[5] = "abc"` → str="abc", bytes=5). The
     -- string itself stores its raw 8-bit bytes as a Python str
     -- (each character in 0..255).
-    static_init = IntInit(int value) | LongInit(int value) | LongLongInit(int value)
+    -- Static-init variants are width-tagged on the integer side:
+    -- CharInit / UCharInit are 1 byte (for Char / SChar / UChar),
+    -- IntInit / UIntInit are 2 bytes, LongInit / ULongInit are
+    -- 4 bytes, LongLongInit / ULongLongInit are 8 bytes. asm_emit
+    -- collapses the unsigned variants onto the same shared-width
+    -- variant on the asm side and renders them via the appropriate
+    -- dasm directive (dc.b / dc.w / dc.l).
+    static_init = CharInit(int value) | UCharInit(int value)
+                | IntInit(int value) | LongInit(int value) | LongLongInit(int value)
                 | UIntInit(int value) | ULongInit(int value) | ULongLongInit(int value)
                 | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)

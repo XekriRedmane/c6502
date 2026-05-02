@@ -129,12 +129,12 @@ def _operands_in(instr: asm_ast.Type_instruction):
 
 def _size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
-    table — Int/UInt/Char/SChar/UChar → 1, Long/ULong → 2,
-    LongLong/ULongLong → 4, Float → 4, Double → 8, Pointer → 2
+    table — Char/SChar/UChar → 1, Int/UInt → 2, Long/ULong → 4,
+    LongLong/ULongLong → 8, Float → 4, Double → 8, Pointer → 2
     (the 6502's address width), Array → recursive element size ×
     count, Structure/Union → layout size (from TypeTable). A None
     symbol table or an absent entry both default to 1, which
-    matches the Int-only world unit tests assume."""
+    matches the unit-test backstop for synthetic ASTs."""
     if symbols is None:
         return 1
     sym = symbols.get(name)
@@ -145,13 +145,13 @@ def _size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
 
 def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes occupied by a value of type `t`. Recursive for Array."""
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+        return 1
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
         return 2
-    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Float)):
         return 4
-    if isinstance(t, c99_ast.Float):
-        return 4
-    if isinstance(t, c99_ast.Double):
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
     if isinstance(t, c99_ast.Array):
         return _sizeof(t.element_type, types) * t.size

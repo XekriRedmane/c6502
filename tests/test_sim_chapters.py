@@ -9,15 +9,14 @@ simulator runs the program end-to-end (parse → resolve → string
 lift → label resolve → loop label → type-check → c99_to_tac →
 simulator) to verify.
 
-Values are pinned to c6502's semantics, not "real" C. In particular
-`int` is 1 byte signed (-128..127), so any program whose return
-value exceeds 127 needs a wider return type to be representable
-here. Listed files have all been hand-traced.
+Values are pinned to c6502's semantics — C99-conformant minimum
+widths (int = 2 bytes signed, long = 4 bytes signed, long long =
+8 bytes signed). Listed files have all been hand-traced.
 
 To add a file: trace its `main()` return value under c6502's
-narrower type model, add the (relative-path, value) entry, and
-run the suite. If the simulator disagrees, either the trace is
-off or there's a real pipeline bug.
+type model, add the (relative-path, value) entry, and run the
+suite. If the simulator disagrees, either the trace is off or
+there's a real pipeline bug.
 
 Files in chapter_<N>/valid/ that depend on stdio (putchar/printf),
 multi-TU resolution (.s sidecars), or other c6502 unknowns are
@@ -45,7 +44,8 @@ _TESTS_DIR = Path(__file__).parent
 
 
 # Hard-coded expected `main()` return values, hand-traced for each
-# program under c6502's narrower type model (int = 1 byte signed).
+# program under c6502's type model (int = 2B signed, long = 4B
+# signed, long long = 8B signed — C99-conformant minimums).
 EXPECTED_RETURNS: dict[str, int] = {
     # --- chapter 1: minimal `int main(void) { return N; }`
     "chapter_1/valid/multi_digit.c": 100,
@@ -537,7 +537,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/char_constants/escape_sequences.c": 0,
     # 'c' = 99
     "chapter_16/valid/char_constants/return_char_constant.c": 99,
-    "chapter_16/valid/chars/access_through_char_pointer.c": 6,
+    "chapter_16/valid/chars/access_through_char_pointer.c": 0,
     "chapter_16/valid/chars/chained_casts.c": 0,
     "chapter_16/valid/chars/char_arguments.c": 0,
     "chapter_16/valid/chars/char_expressions.c": 0,

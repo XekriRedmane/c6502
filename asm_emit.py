@@ -950,24 +950,39 @@ def emit_static_variable(sv: asm_ast.StaticVariable) -> list[str]:
     lines: list[str] = [f"{sv.name}:"]
     for item in sv.init:
         match item:
+            case asm_ast.CharInit(value=v):
+                # 1-byte cell — for Char/SChar/UChar statics. Accepts
+                # the unsigned bit pattern; signed -128..-1 wraps to
+                # 128..255 in the caller. asm_emit's _check_byte
+                # ranges 0..255.
+                _check_byte(f"init for {sv.name!r}", v & 0xFF)
+                lines.append(_instr_line("dc.b", f"${v & 0xFF:02X}"))
             case asm_ast.IntInit(value=v):
-                _check_byte(f"init for {sv.name!r}", v)
-                lines.append(_instr_line("dc.b", f"${v:02X}"))
-            case asm_ast.LongInit(value=v):
+                # 2-byte cell — for Int/UInt statics. Mask to 16 bits
+                # so signed-negative values render as their two's-
+                # complement bit pattern (e.g. -1 → $FFFF).
                 _check_word(f"init for {sv.name!r}", v)
-                # Mask to 16 bits so signed-negative values render as
-                # their two's-complement bit pattern (e.g. -1 → $FFFF).
                 lines.append(_instr_line("dc.w", f"${v & 0xFFFF:04X}"))
-            case asm_ast.LongLongInit(value=v):
+            case asm_ast.LongInit(value=v):
+                # 4-byte cell — for Long/ULong statics. Mask to 32
+                # bits so signed-negative values render as their
+                # two's-complement bit pattern. dasm's `dc.l` lays
+                # down 4 little-endian bytes.
                 _check_dword(f"init for {sv.name!r}", v)
-                # Mask to 32 bits so signed-negative values render as
-                # their two's-complement bit pattern. dasm's `dc.l`
-                # lays down 4 little-endian bytes — same byte order
-                # as the soft-stack layout for runtime LongLong
-                # values, so `Data(name, offset=0)` is the low byte.
                 lines.append(_instr_line(
                     "dc.l", f"${v & 0xFFFFFFFF:08X}",
                 ))
+            case asm_ast.LongLongInit(value=v):
+                # 8-byte cell — for LongLong/ULongLong statics.
+                # dasm has no native 8-byte directive, so split into
+                # two `dc.l` halves (low then high) — same little-
+                # endian layout as the soft-stack model.
+                _check_qword(f"init for {sv.name!r}", v)
+                masked = v & 0xFFFFFFFFFFFFFFFF
+                lo = masked & 0xFFFFFFFF
+                hi = (masked >> 32) & 0xFFFFFFFF
+                lines.append(_instr_line("dc.l", f"${lo:08X}"))
+                lines.append(_instr_line("dc.l", f"${hi:08X}"))
             case asm_ast.FloatInit(bits=b):
                 # IEEE 754 single bit pattern (32-bit). dasm's `dc.l`
                 # lays down 4 little-endian bytes, matching the
@@ -1044,13 +1059,25 @@ def _check_word(label: str, v: int) -> None:
 
 def _check_dword(label: str, v: int) -> None:
     """Range check for a 4-byte signed/unsigned constant. Accepts
-    -2^31..2^32-1 — covers both the signed LongLong range and the
-    unsigned ULongLong range / two's-complement bit pattern of a
-    negative LongLong. The 32-bit emit then masks to 0xFFFFFFFF."""
+    -2^31..2^32-1 — covers both the signed Long range and the
+    unsigned ULong range / two's-complement bit pattern of a
+    negative Long. The 32-bit emit then masks to 0xFFFFFFFF."""
     if not -(1 << 31) <= v <= (1 << 32) - 1:
         raise ValueError(
             f"{label} {v} out of range for 32-bit "
             f"(-2147483648..4294967295)"
+        )
+
+
+def _check_qword(label: str, v: int) -> None:
+    """Range check for an 8-byte signed/unsigned constant. Accepts
+    -2^63..2^64-1 — covers both the signed LongLong range and the
+    unsigned ULongLong range / two's-complement bit pattern of a
+    negative LongLong. The 64-bit emit then masks to 0xFFFFFFFFFFFFFFFF."""
+    if not -(1 << 63) <= v <= (1 << 64) - 1:
+        raise ValueError(
+            f"{label} {v} out of range for 64-bit "
+            f"(-9223372036854775808..18446744073709551615)"
         )
 
 

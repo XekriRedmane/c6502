@@ -54,10 +54,17 @@ _PARSE_FAILURES = (LexError, ParserError, UnexpectedInput)
 
 
 # Permanently incompatible: literals out of c6502's range,
-# frames too large, or features that need an `int` larger than
-# c6502's 1 byte / a preprocessor that preserves control
-# characters in source / a runtime c6502 doesn't model.
-_INCOMPATIBLE_VALID: frozenset[str] = frozenset()
+# frames too large for the 256-byte indirect-Y addressing limit,
+# or features that need types beyond c6502's range / a preprocessor
+# that preserves control characters in source / a runtime c6502
+# doesn't model.
+_INCOMPATIBLE_VALID: frozenset[str] = frozenset({
+    # Frames > 253 bytes — int = 2B, plus extensive char-array
+    # locals push these past the soft-stack frame-size limit.
+    "char_constants/char_constant_operations.c",
+    "chars/explicit_casts.c",
+    "extra_credit/compound_assign_chars.c",
+})
 
 
 # Currently fail through `--codegen` despite being in the valid

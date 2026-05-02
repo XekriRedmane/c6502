@@ -754,7 +754,7 @@ def _is_void_pointer(t: Type) -> bool:
 
 def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     """Bytes occupied by a value of type `t` in c6502's storage
-    model. Recursive for Array — `int[3][4]` is 12 bytes,
+    model. Recursive for Array — `int[3][4]` is 24 bytes (Int = 2),
     `char[10]` is 10 bytes. For Structure / Union, looks up the
     tag's layout in `types` and reads its `.size` (raising if the
     layout is incomplete or `types` is None — sizeof of an
@@ -765,13 +765,13 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     sync because they both encode the same storage-model rules.
     Used by the `sizeof` operator's type-checker. Constraint
     violations (Void, FunType) raise TypeCheckError."""
-    if isinstance(t, (Int, UInt, Char, SChar, UChar)):
+    if isinstance(t, (Char, SChar, UChar)):
         return 1
-    if isinstance(t, (Long, ULong, Pointer)):
+    if isinstance(t, (Int, UInt, Pointer)):
         return 2
-    if isinstance(t, (LongLong, ULongLong, Float)):
+    if isinstance(t, (Long, ULong, Float)):
         return 4
-    if isinstance(t, Double):
+    if isinstance(t, (LongLong, ULongLong, Double)):
         return 8
     if isinstance(t, Array):
         return _sizeof(t.element_type, types) * t.size
@@ -972,12 +972,14 @@ def _is_arithmetic_type(t: Type) -> bool:
 # arithmetic. So char rank 0; Int/UInt rank 1; Long/ULong rank 2;
 # LongLong/ULongLong rank 3.
 def _int_width(t: Type) -> int:
-    if isinstance(t, (Int, UInt, Char, SChar, UChar)):
+    if isinstance(t, (Char, SChar, UChar)):
         return 1
-    if isinstance(t, (Long, ULong)):
+    if isinstance(t, (Int, UInt)):
         return 2
-    if isinstance(t, (LongLong, ULongLong)):
+    if isinstance(t, (Long, ULong)):
         return 4
+    if isinstance(t, (LongLong, ULongLong)):
+        return 8
     raise TypeError(f"_int_width: not an integer object type: {t!r}")
 
 
@@ -990,25 +992,25 @@ def _is_signed(t: Type) -> bool:
 def _promote_integer(t: Type) -> Type:
     """C99 §6.3.1.1.2 integer promotion. Char/SChar/UChar promote
     to int (or unsigned int when int can't represent every value
-    of the source type). For c6502:
-      * SChar / Char (-128..127)  → Int (-128..127): exact range
-        match, promotes to Int.
-      * UChar (0..255)            → Int (-128..127) can't cover
-        the full UChar range, so promotes to UInt (0..255).
+    of the source type). For c6502 with Int = 16 bits:
+      * SChar / Char (-128..127)  → Int (-32768..32767): Int's range
+        covers the full source range, promotes to Int.
+      * UChar (0..255)            → Int (-32768..32767): Int's range
+        also covers the full UChar range, so promotes to Int (NOT
+        UInt — this is the key difference from c6502's earlier
+        narrow-Int model where UChar's 0..255 wouldn't fit in an
+        8-bit Int).
     Every other integer type already has rank ≥ Int, so promotion
     is a no-op for them. Floating types pass through unchanged.
 
     The promotion is conventionally applied at every operand
     position of an arithmetic / bitwise / comparison / shift
     operator, plus the operand of unary `+`, `-`, `~`. The result
-    of `_convert_to(exp, _promote_integer(exp.data_type))` either
-    returns `exp` unchanged (already promoted) or wraps it in a
-    same-width Cast — the Cast lowering elides same-width casts
-    in c99_to_tac, so the runtime cost is zero."""
-    if isinstance(t, (Char, SChar)):
+    of `_convert_to(exp, _promote_integer(exp.data_type))` wraps
+    `exp` in a SignExtend / ZeroExtend Cast (1B → 2B); c99_to_tac
+    lowers those to byte-level inline sequences."""
+    if isinstance(t, (Char, SChar, UChar)):
         return Int()
-    if isinstance(t, UChar):
-        return UInt()
     return t
 
 
@@ -2905,9 +2907,11 @@ class TypeChecker:
                 # referenced_type). The four legal forms:
                 #   ptr + int / int + ptr  → ptr (offset by N elements)
                 #   ptr - int              → ptr (offset by -N elements)
-                #   ptr - ptr (same type)  → Long (element count;
+                #   ptr - ptr (same type)  → Int (element count;
                 #                            c6502's stand-in for the
-                #                            standard's ptrdiff_t)
+                #                            standard's ptrdiff_t —
+                #                            Int is 2 bytes signed,
+                #                            matches pointer width)
                 # Anything else (ptr + ptr, int - ptr, ptr ± FP,
                 # mismatched ptr - ptr, pointer-to-function
                 # arithmetic) is a constraint violation.
@@ -2962,10 +2966,11 @@ class TypeChecker:
                         # subtract is a normal 2-byte op. The result
                         # is a byte-difference that c99_to_tac will
                         # divide by sizeof(pointee) to yield the
-                        # element count. Result type is Long
-                        # (c6502's ptrdiff_t).
-                        exp.data_type = Long()
-                        return Long()
+                        # element count. Result type is Int (c6502's
+                        # ptrdiff_t — 2 bytes signed, matches the
+                        # 16-bit address width).
+                        exp.data_type = Int()
+                        return Int()
                     # Exactly one operand is a pointer; the other must
                     # be integer. ptr + int / int + ptr / ptr - int are
                     # legal; int - ptr is not.
@@ -2975,15 +2980,19 @@ class TypeChecker:
                             f"binary '-' between integer and pointer "
                             f"is not defined ({tl!r} - {tr!r})"
                         )
-                    # Widen the integer operand to Long so the
-                    # underlying byte-level add lines up with the
-                    # pointer's 2-byte width. c99_to_tac scales this
-                    # widened value by sizeof(pointee) before the add.
+                    # Widen the integer operand to Int (a 2-byte
+                    # type) so the underlying byte-level add lines up
+                    # with the pointer's 2-byte width. c99_to_tac
+                    # scales this widened value by sizeof(pointee)
+                    # before the add. Pre-refactor this widened to
+                    # Long; after the C99 width refresh Long is 4
+                    # bytes — wider than a pointer — so we widen to
+                    # Int (which is now exactly 2 bytes).
                     if int_is_left:
-                        exp.left = _convert_to(lhs, Long())
+                        exp.left = _convert_to(lhs, Int())
                         ptr_type = tr
                     else:
-                        exp.right = _convert_to(rhs, Long())
+                        exp.right = _convert_to(rhs, Int())
                         ptr_type = tl
                     # Result is the pointer type — fresh instance per
                     # the same convention as `_common_type`.
@@ -3144,9 +3153,10 @@ class TypeChecker:
                             )
                 # Pointer arithmetic: `ptr += int` / `ptr -= int`
                 # (C99 §6.5.16.2 — same as `ptr + int` / `ptr - int`).
-                # Widen the integer rval to Long; lval stays pointer.
-                # No intermediate type — c99_to_tac dispatches on
-                # the pointer-arith path before consulting it.
+                # Widen the integer rval to Int (the 2-byte type
+                # matching pointer width); lval stays pointer. No
+                # intermediate type — c99_to_tac dispatches on the
+                # pointer-arith path before consulting it.
                 if (
                     isinstance(op, (c99_ast.Add, c99_ast.Subtract))
                     and isinstance(tl, c99_ast.Pointer)
@@ -3156,7 +3166,7 @@ class TypeChecker:
                             f"pointer compound +/- requires integer "
                             f"rhs ({tl!r}, {tr!r})"
                         )
-                    exp.rval = _convert_to(rv, c99_ast.Long())
+                    exp.rval = _convert_to(rv, c99_ast.Int())
                     exp.intermediate_type = tl
                     exp.data_type = tl
                     return tl
@@ -3598,10 +3608,11 @@ class TypeChecker:
                         "subscript of pointer-to-function is not "
                         "supported"
                     )
-                # Widen the index to Long so c99_to_tac can use a
-                # uniform 2-byte add to compute the byte address.
+                # Widen the index to Int (the 2-byte type matching
+                # pointer width) so c99_to_tac can use a uniform
+                # 2-byte add to compute the byte address.
                 exp.array = ptr_exp
-                exp.index = _convert_to(int_exp, Long())
+                exp.index = _convert_to(int_exp, Int())
                 exp.data_type = ptr_exp.data_type.referenced_type
                 return exp.data_type
             case c99_ast.Dot(operand=operand, member=member):

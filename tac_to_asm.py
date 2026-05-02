@@ -294,6 +294,25 @@ _SDIVMOD32 = "sdivmod32"
 _ASL32 = "asl32"
 _ASR32 = "asr32"
 _LSR32 = "lsr32"
+# 64-bit integer helpers (LongLong / ULongLong). HARGS layout:
+#   mul64     in:  A=HARGS+0..7, B=HARGS+8..15
+#                                       out: result=HARGS+16..23 (8B,
+#                                            low half of A*B; high
+#                                            half discarded under
+#                                            §6.5.5.4 modular wrap)
+#   udivmod64 in:  num=HARGS+0..7, den=HARGS+8..15
+#                                       out: quot=HARGS+16..23,
+#                                            rem=HARGS+24..31
+#   sdivmod64 same shape as udivmod64, but trunc-toward-zero
+#   asl64     in:  val=HARGS+0..7, count=HARGS+8 (1 byte)
+#                                       out: result=HARGS+9..16
+#   asr64 / lsr64 same shape (asr signed, lsr unsigned)
+_MUL64 = "mul64"
+_UDIVMOD64 = "udivmod64"
+_SDIVMOD64 = "sdivmod64"
+_ASL64 = "asl64"
+_ASR64 = "asr64"
+_LSR64 = "lsr64"
 # FP arithmetic helpers. Single (4B) family: A=HARGS+0..3,
 # B=HARGS+4..7, result=HARGS+8..11. Double (8B) family:
 # A=HARGS+0..7, B=HARGS+8..15, result=HARGS+16..23. The result slot
@@ -302,9 +321,14 @@ _LSR32 = "lsr32"
 # ending in `return a OP b;` for FP operands needs no epilogue
 # copy. Both families come in three variants per op (add/sub/mul/
 # div) plus the cross-precision conversions f2d / d2f handled
-# elsewhere; comparison ops don't go through helpers (lowered
-# inline as bit-pattern compare today, with no IEEE 754 ±0
-# equivalence — see docs/sim_findings.md).
+# elsewhere. Ordering comparisons go through helpers too — `flt` /
+# `fle` / `dlt` / `dle` take the same A=HARGS+0..N-1, B=HARGS+N..2N-1
+# input layout as the arithmetic family and write a single 0/1
+# byte to the result slot (HARGS+8 for float, HARGS+16 for double).
+# `>` and `>=` reuse `<` / `<=` with operand swap, the same trick
+# the integer signed-ordering path uses. Equality (`==` / `!=`) is
+# still lowered inline as bit-pattern compare — wrong for `±0`
+# equivalence per IEEE 754, kept that way until the corpus needs it.
 _FADD = "fadd"
 _FSUB = "fsub"
 _FMUL = "fmul"
@@ -313,26 +337,25 @@ _DADD = "dadd"
 _DSUB = "dsub"
 _DMUL = "dmul"
 _DDIV = "ddiv"
+_FLT = "flt"
+_FLE = "fle"
+_DLT = "dlt"
+_DLE = "dle"
 # Conversion helpers, keyed by (source-c99-type, target-c99-type) at
 # the dispatch site. Signedness rides on the const variant for
 # Constant operands and on the symbol-table c99 type for Var
 # operands; the dispatch picks i2f / u2f / l2f / ul2f / ll2f / ull2f
 # accordingly.
 _INT_TO_FLOAT = {
-    c99_ast.Int:       "i2f",
-    c99_ast.UInt:      "u2f",
-    c99_ast.Long:      "l2f",
-    c99_ast.ULong:     "ul2f",
-    c99_ast.LongLong:  "ll2f",
-    c99_ast.ULongLong: "ull2f",
-    # Char types share width and signedness with Int / UInt, so
-    # they re-use the same helpers. Integer-promotion in
-    # type_checking lifts char operands to Int / UInt before
-    # arithmetic, but a direct `(double)c` cast bypasses
-    # promotion and hits this dispatch with a Char source.
-    c99_ast.Char:      "i2f",
-    c99_ast.SChar:     "i2f",
-    c99_ast.UChar:     "u2f",
+    c99_ast.Int:       "i2f",   # 2-byte signed   → 4-byte single
+    c99_ast.UInt:      "u2f",   # 2-byte unsigned → 4-byte single
+    c99_ast.Long:      "l2f",   # 4-byte signed
+    c99_ast.ULong:     "ul2f",  # 4-byte unsigned
+    c99_ast.LongLong:  "ll2f",  # 8-byte signed
+    c99_ast.ULongLong: "ull2f", # 8-byte unsigned
+    # Char-typed FP casts get decomposed at c99_to_tac time
+    # (Char → Int/UInt → FP), so char-typed sources never reach
+    # this dispatch.
 }
 _INT_TO_DOUBLE = {
     c99_ast.Int:       "i2d",
@@ -341,9 +364,6 @@ _INT_TO_DOUBLE = {
     c99_ast.ULong:     "ul2d",
     c99_ast.LongLong:  "ll2d",
     c99_ast.ULongLong: "ull2d",
-    c99_ast.Char:      "i2d",
-    c99_ast.SChar:     "i2d",
-    c99_ast.UChar:     "u2d",
 }
 _FLOAT_TO_INT = {
     c99_ast.Int:       "f2i",
@@ -352,9 +372,6 @@ _FLOAT_TO_INT = {
     c99_ast.ULong:     "f2ul",
     c99_ast.LongLong:  "f2ll",
     c99_ast.ULongLong: "f2ull",
-    c99_ast.Char:      "f2i",
-    c99_ast.SChar:     "f2i",
-    c99_ast.UChar:     "f2u",
 }
 _DOUBLE_TO_INT = {
     c99_ast.Int:       "d2i",
@@ -363,9 +380,6 @@ _DOUBLE_TO_INT = {
     c99_ast.ULong:     "d2ul",
     c99_ast.LongLong:  "d2ll",
     c99_ast.ULongLong: "d2ull",
-    c99_ast.Char:      "d2i",
-    c99_ast.SChar:     "d2i",
-    c99_ast.UChar:     "d2u",
 }
 _FLOAT_TO_DOUBLE = "f2d"
 _DOUBLE_TO_FLOAT = "d2f"
@@ -375,18 +389,25 @@ def _to_asm_static_init(
     init: tac_ast.Type_static_init,
 ) -> asm_ast.Type_static_init:
     """Translate a TAC static_init to its asm counterpart. The asm
-    integer side carries only the three width variants (`IntInit` /
-    `LongInit` / `LongLongInit`), so unsigned variants from TAC
-    collapse onto the matching width: UIntInit → IntInit,
-    ULongInit → LongInit, ULongLongInit → LongLongInit. The
-    integer value passes through unchanged; asm_emit's `_check_byte`
-    (0..255), `_check_word` (-32768..65535), and `_check_dword`
-    (-2^31..2^32-1) bound the rendered cell. The FP side keeps
-    Float / Double distinct because their IEEE 754 byte layouts
-    differ — FloatInit is 4 bytes (single), DoubleInit is 8 bytes
-    (double); the bit pattern (an unsigned int) rides through 1-to-1
-    and asm_emit lays the bytes down directly."""
+    integer side carries four width variants — CharInit (1B),
+    IntInit (2B), LongInit (4B), LongLongInit (8B). Unsigned
+    variants from TAC collapse onto the matching signed-name width
+    on the asm side (the 6502 doesn't care about signedness at the
+    byte level): UCharInit → CharInit, UIntInit → IntInit,
+    ULongInit → LongInit, ULongLongInit → LongLongInit. The integer
+    value passes through unchanged; asm_emit's `_check_byte`
+    (0..255), `_check_word` (-32768..65535), `_check_dword`
+    (-2^31..2^32-1), and `_check_qword` (-2^63..2^64-1) bound the
+    rendered cell. The FP side keeps Float / Double distinct because
+    their IEEE 754 byte layouts differ — FloatInit is 4 bytes
+    (single), DoubleInit is 8 bytes (double); the bit pattern (an
+    unsigned int) rides through 1-to-1 and asm_emit lays the bytes
+    down directly."""
     match init:
+        case tac_ast.CharInit(value=v):
+            return asm_ast.CharInit(value=v)
+        case tac_ast.UCharInit(value=v):
+            return asm_ast.CharInit(value=v)
         case tac_ast.IntInit(value=v):
             return asm_ast.IntInit(value=v)
         case tac_ast.LongInit(value=v):
@@ -439,14 +460,13 @@ def _array_bytes(t, types) -> int:
     """Total byte count of an Array c99 type, recursing through
     nested arrays and resolving struct/union member sizes via the
     TypeTable."""
-    if isinstance(t, (c99_ast.Int, c99_ast.UInt,
-                      c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
         return 2
-    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Float)):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Float)):
         return 4
-    if isinstance(t, c99_ast.Double):
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
     if isinstance(t, c99_ast.Array):
         return _array_bytes(t.element_type, types) * t.size
@@ -533,8 +553,8 @@ class Translator:
         of `asr*` (arithmetic shift)."""
         match val:
             case tac_ast.Constant(const=(
-                tac_ast.ConstUInt() | tac_ast.ConstULong()
-                | tac_ast.ConstULongLong()
+                tac_ast.ConstUChar() | tac_ast.ConstUInt()
+                | tac_ast.ConstULong() | tac_ast.ConstULongLong()
             )):
                 return True
             case tac_ast.Constant():
@@ -552,8 +572,8 @@ class Translator:
         return False
 
     def _size_of(self, val: tac_ast.Type_val) -> int:
-        """Byte width of a TAC val. Integer types: 1 for Int / UInt
-        / Char / SChar / UChar, 2 for Long / ULong, 4 for LongLong
+        """Byte width of a TAC val. Integer types: 1 for Char / SChar
+        / UChar, 2 for Int / UInt, 4 for Long / ULong, 8 for LongLong
         / ULongLong. Floating types: 4 for Float, 8 for Double.
         Pointer: 2 (the 6502's address width). Constants dispatch
         on the const variant (each variant carries width and
@@ -561,14 +581,18 @@ class Translator:
         the symbol-table c99 type. Unknown Vars (synthetic test
         AST) default to 1."""
         match val:
-            case tac_ast.Constant(const=tac_ast.ConstInt() | tac_ast.ConstUInt()):
+            case tac_ast.Constant(
+                const=tac_ast.ConstChar() | tac_ast.ConstUChar(),
+            ):
                 return 1
-            case tac_ast.Constant(const=tac_ast.ConstLong() | tac_ast.ConstULong()):
+            case tac_ast.Constant(const=tac_ast.ConstInt() | tac_ast.ConstUInt()):
                 return 2
+            case tac_ast.Constant(const=tac_ast.ConstLong() | tac_ast.ConstULong()):
+                return 4
             case tac_ast.Constant(
                 const=tac_ast.ConstLongLong() | tac_ast.ConstULongLong(),
             ):
-                return 4
+                return 8
             case tac_ast.Constant(const=tac_ast.ConstFloat()):
                 return 4
             case tac_ast.Constant(const=tac_ast.ConstDouble()):
@@ -582,13 +606,22 @@ class Translator:
                     return 1
                 if isinstance(
                     sym.type,
-                    (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer),
+                    (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+                ):
+                    return 1
+                if isinstance(
+                    sym.type,
+                    (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer),
                 ):
                     return 2
                 if isinstance(
-                    sym.type, (c99_ast.LongLong, c99_ast.ULongLong),
+                    sym.type, (c99_ast.Long, c99_ast.ULong),
                 ):
                     return 4
+                if isinstance(
+                    sym.type, (c99_ast.LongLong, c99_ast.ULongLong),
+                ):
+                    return 8
                 if isinstance(sym.type, c99_ast.Float):
                     return 4
                 if isinstance(sym.type, c99_ast.Double):
@@ -977,7 +1010,9 @@ class Translator:
         # `!x` always yields Int (per the type checker), even for a
         # Long operand. Other unary ops preserve type.
         if isinstance(op, tac_ast.LogicalNot):
-            return self._translate_logical_not(src_op, dst_op, src)
+            return self._translate_logical_not(
+                src_op, dst_op, src, self._size_of(dst),
+            )
         size = self._size_of(src)
         if size == 1:
             return (
@@ -1045,17 +1080,38 @@ class Translator:
             return out2
         raise TypeError(f"unexpected unary operator: {op!r}")
 
+    def _store_compare_result(
+        self,
+        out: list[asm_ast.Type_instruction],
+        dst_op: asm_ast.Type_operand,
+        dst_size: int,
+    ) -> None:
+        """Append the final 0/1-store + zero-fill for a comparison or
+        logical-not result. The 0/1 byte sits in A; this writes it to
+        dst's low byte and zero-fills dst's high bytes (so the full
+        Int-sized result is well-defined). All comparisons and
+        logical-not return Int (`dst_size` = Int's width = 2 bytes
+        post-refactor)."""
+        out.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+        for k in range(1, dst_size):
+            out.append(asm_ast.Mov(
+                src=asm_ast.Imm(value=0), dst=_byte_at(dst_op, k),
+            ))
+
     def _translate_logical_not(
         self,
         src_op: asm_ast.Type_operand,
         dst_op: asm_ast.Type_operand,
         src_val: tac_ast.Type_val,
+        dst_size: int,
     ) -> list[asm_ast.Type_instruction]:
         """!x: 1 if x is zero, 0 otherwise. Result is always Int
-        (1 byte in dst). For a multi-byte source, OR all the bytes
-        together first — the OR result is zero iff every byte is
-        zero. Then the framing LDA's Z flag drives a Branch(EQ)
-        into a 0/1 select."""
+        (`dst_size` bytes — 2 post-refactor). For a multi-byte
+        source, OR all the bytes together first — the OR result is
+        zero iff every byte is zero. Then the framing LDA's Z flag
+        drives a Branch(EQ) into a 0/1 select. The high bytes of
+        dst are zero-filled so the full Int-sized result is
+        well-defined."""
         true_label = self.make_label("lnot_true")
         end_label = self.make_label("lnot_end")
         size = self._size_of(src_val)
@@ -1067,15 +1123,16 @@ class Translator:
             head = [asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A)]
             for k in range(1, size):
                 head.append(asm_ast.Or(src=_byte_at(src_op, k), dst=_REG_A))
-        return head + [
+        out: list[asm_ast.Type_instruction] = head + [
             asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Jump(target=end_label),
             asm_ast.Label(name=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=dst_op),
         ]
+        self._store_compare_result(out, dst_op, dst_size)
+        return out
 
     def _unop_atoms(
         self, op: tac_ast.Type_unary_operator,
@@ -1332,6 +1389,11 @@ class Translator:
         src2_op = translate_val(src2)
         dst_op = translate_val(dst)
         size = self._size_of(src1)
+        # dst_size is for comparison-result zero-extension: comparisons
+        # always return Int (2 bytes post-refactor) but the helpers /
+        # inline 0/1 select only write 1 byte; the high byte(s) need
+        # zero-fill so the full Int-cell is well-defined.
+        dst_size = self._size_of(dst)
         # Ordering and right-shift dispatch unsigned vs. signed. For
         # comparisons the type checker promoted both operands to a
         # common type, so `_is_unsigned_val(src1)` and
@@ -1394,21 +1456,25 @@ class Translator:
                     setup=asm_ast.SetCarry(), op_cls=asm_ast.Sub,
                 )
             case tac_ast.Multiply():
-                # All three mul* helpers produce a same-width result
-                # (1 / 2 / 4 bytes) in the low slot of their output
-                # area; the high half of A*B is discarded because C's
-                # int / long / long-long multiplication all wrap
-                # under §6.5.5.4 modular semantics. HARGS+3,
-                # HARGS+6..7, HARGS+12..15 are correspondingly free.
+                # All four mul* helpers produce a same-width result
+                # (1 / 2 / 4 / 8 bytes) in the low slot of their
+                # output area; the high half of A*B is discarded
+                # because C's int / long / long-long multiplication
+                # all wrap under §6.5.5.4 modular semantics. HARGS+3,
+                # HARGS+6..7, HARGS+12..15, HARGS+24..31 are
+                # correspondingly free.
                 # 8-bit:  mul8   result at HARGS+2 (1B).
                 # 16-bit: mul16  result at HARGS+4..5 (2B).
                 # 32-bit: mul32  result at HARGS+8..11 (4B).
+                # 64-bit: mul64  result at HARGS+16..23 (8B).
                 if size == 1:
                     helper, out_off = _MUL8, 2
                 elif size == 2:
                     helper, out_off = _MUL16, 4
-                else:
+                elif size == 4:
                     helper, out_off = _MUL32, 8
+                else:
+                    helper, out_off = _MUL64, 16
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1424,15 +1490,17 @@ class Translator:
                 # operands share a common type, so checking either
                 # one's signedness is enough.
                 if self._is_unsigned_val(src1):
-                    helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32)
+                    helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32, _UDIVMOD64)
                 else:
-                    helpers = (_SDIVMOD8, _SDIVMOD16, _SDIVMOD32)
+                    helpers = (_SDIVMOD8, _SDIVMOD16, _SDIVMOD32, _SDIVMOD64)
                 if size == 1:
                     helper, out_off = helpers[0], 2
                 elif size == 2:
                     helper, out_off = helpers[1], 4
-                else:
+                elif size == 4:
                     helper, out_off = helpers[2], 8
+                else:
+                    helper, out_off = helpers[3], 16
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1443,17 +1511,19 @@ class Translator:
                 # `%` dispatches the same way as `/`. The remainder
                 # follows the quotient in the helper's output area:
                 # 8-bit rem at HARGS+3, 16-bit rem at HARGS+6..7,
-                # 32-bit rem at HARGS+12..15.
+                # 32-bit rem at HARGS+12..15, 64-bit rem at HARGS+24..31.
                 if self._is_unsigned_val(src1):
-                    helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32)
+                    helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32, _UDIVMOD64)
                 else:
-                    helpers = (_SDIVMOD8, _SDIVMOD16, _SDIVMOD32)
+                    helpers = (_SDIVMOD8, _SDIVMOD16, _SDIVMOD32, _SDIVMOD64)
                 if size == 1:
                     helper, out_off = helpers[0], 3
                 elif size == 2:
                     helper, out_off = helpers[1], 6
-                else:
+                elif size == 4:
                     helper, out_off = helpers[2], 12
+                else:
+                    helper, out_off = helpers[3], 24
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1476,6 +1546,7 @@ class Translator:
                 # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
                 # asl32: 4B value + 1B count → 4B result at HARGS+5.
+                # asl64: 8B value + 1B count → 8B result at HARGS+9.
                 # Per C99 §6.5.7.3 the result type — and so the
                 # value side's width — is the promoted left
                 # operand's type; the right operand promotes
@@ -1490,9 +1561,12 @@ class Translator:
                 elif size == 2:
                     inputs = [(src1_op, 2), (src2_op, 1)]
                     helper, out_off = _ASL16, 3
-                else:
+                elif size == 4:
                     inputs = [(src1_op, 4), (src2_op, 1)]
                     helper, out_off = _ASL32, 5
+                else:
+                    inputs = [(src1_op, 8), (src2_op, 1)]
+                    helper, out_off = _ASL64, 9
                 return _translate_helper_call(
                     inputs=inputs, helper=helper,
                     output_offset=out_off, output_size=size,
@@ -1507,18 +1581,21 @@ class Translator:
                 # comes from the left operand per §6.5.7.3, the
                 # right contributes only its low byte.
                 if self._is_unsigned_val(src1):
-                    helpers = (_LSR8, _LSR16, _LSR32)
+                    helpers = (_LSR8, _LSR16, _LSR32, _LSR64)
                 else:
-                    helpers = (_ASR8, _ASR16, _ASR32)
+                    helpers = (_ASR8, _ASR16, _ASR32, _ASR64)
                 if size == 1:
                     inputs = [(src1_op, 1), (src2_op, 1)]
                     helper, out_off = helpers[0], 2
                 elif size == 2:
                     inputs = [(src1_op, 2), (src2_op, 1)]
                     helper, out_off = helpers[1], 3
-                else:
+                elif size == 4:
                     inputs = [(src1_op, 4), (src2_op, 1)]
                     helper, out_off = helpers[2], 5
+                else:
+                    inputs = [(src1_op, 8), (src2_op, 1)]
+                    helper, out_off = helpers[3], 9
                 return _translate_helper_call(
                     inputs=inputs, helper=helper,
                     output_offset=out_off, output_size=size,
@@ -1526,51 +1603,69 @@ class Translator:
                 )
             case tac_ast.Equal():
                 return self._translate_equality(
-                    src1_op, src2_op, dst_op, size, asm_ast.EQ(),
+                    src1_op, src2_op, dst_op, size, asm_ast.EQ(), dst_size,
                 )
             case tac_ast.NotEqual():
                 return self._translate_equality(
-                    src1_op, src2_op, dst_op, size, asm_ast.NE(),
+                    src1_op, src2_op, dst_op, size, asm_ast.NE(), dst_size,
                 )
             case tac_ast.LessThan():
                 # src1 < src2: compute src1 - src2, branch on MI
                 # (signed) or CC (unsigned, i.e. carry clear after
                 # SBC means a borrow occurred = left < right).
+                if fp:
+                    return self._translate_fp_ordering(
+                        src1_op, src2_op, dst_op, size, dst_size, lt=True,
+                    )
                 if unsigned_cmp:
                     return self._translate_unsigned_ordering(
-                        src1_op, src2_op, dst_op, size, asm_ast.CC(),
+                        src1_op, src2_op, dst_op, size, asm_ast.CC(), dst_size,
                     )
                 return self._translate_signed_ordering(
-                    src1_op, src2_op, dst_op, size, asm_ast.MI(),
+                    src1_op, src2_op, dst_op, size, asm_ast.MI(), dst_size,
                 )
             case tac_ast.GreaterOrEqual():
                 # src1 >= src2: branch on PL (signed) or CS
                 # (unsigned, no borrow).
+                if fp:
+                    # a >= b <=> b <= a (NaN-safe: both forms yield
+                    # false when either operand is NaN).
+                    return self._translate_fp_ordering(
+                        src2_op, src1_op, dst_op, size, dst_size, lt=False,
+                    )
                 if unsigned_cmp:
                     return self._translate_unsigned_ordering(
-                        src1_op, src2_op, dst_op, size, asm_ast.CS(),
+                        src1_op, src2_op, dst_op, size, asm_ast.CS(), dst_size,
                     )
                 return self._translate_signed_ordering(
-                    src1_op, src2_op, dst_op, size, asm_ast.PL(),
+                    src1_op, src2_op, dst_op, size, asm_ast.PL(), dst_size,
                 )
             case tac_ast.GreaterThan():
                 # src1 > src2 <=> src2 < src1. Same operand-swap
                 # trick as the signed form.
+                if fp:
+                    return self._translate_fp_ordering(
+                        src2_op, src1_op, dst_op, size, dst_size, lt=True,
+                    )
                 if unsigned_cmp:
                     return self._translate_unsigned_ordering(
-                        src2_op, src1_op, dst_op, size, asm_ast.CC(),
+                        src2_op, src1_op, dst_op, size, asm_ast.CC(), dst_size,
                     )
                 return self._translate_signed_ordering(
-                    src2_op, src1_op, dst_op, size, asm_ast.MI(),
+                    src2_op, src1_op, dst_op, size, asm_ast.MI(), dst_size,
                 )
             case tac_ast.LessOrEqual():
                 # src1 <= src2 <=> src2 >= src1.
+                if fp:
+                    return self._translate_fp_ordering(
+                        src1_op, src2_op, dst_op, size, dst_size, lt=False,
+                    )
                 if unsigned_cmp:
                     return self._translate_unsigned_ordering(
-                        src2_op, src1_op, dst_op, size, asm_ast.CS(),
+                        src2_op, src1_op, dst_op, size, asm_ast.CS(), dst_size,
                     )
                 return self._translate_signed_ordering(
-                    src2_op, src1_op, dst_op, size, asm_ast.PL(),
+                    src2_op, src1_op, dst_op, size, asm_ast.PL(), dst_size,
                 )
         raise TypeError(f"unexpected binary operator: {op!r}")
 
@@ -1639,6 +1734,7 @@ class Translator:
         dst_op: asm_ast.Type_operand,
         size: int,
         cond: asm_ast.Type_condition,
+        dst_size: int,
     ) -> list[asm_ast.Type_instruction]:
         """== / != via byte-wise Compare + Branch + 0/1 select. CMP
         sets Z=1 iff the two bytes are equal (no overflow concern),
@@ -1692,8 +1788,8 @@ class Translator:
             asm_ast.Label(name=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=dst_op),
         ])
+        self._store_compare_result(out, dst_op, dst_size)
         return out
 
     def _translate_signed_ordering(
@@ -1703,6 +1799,7 @@ class Translator:
         dst_op: asm_ast.Type_operand,
         size: int,
         cond: asm_ast.Type_condition,
+        dst_size: int,
     ) -> list[asm_ast.Type_instruction]:
         """Signed ordering compare via SBC with V-correction:
            LDA left[0]; SEC; SBC right[0]
@@ -1747,8 +1844,8 @@ class Translator:
             asm_ast.Label(name=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=dst_op),
         ])
+        self._store_compare_result(out, dst_op, dst_size)
         return out
 
     def _translate_unsigned_ordering(
@@ -1758,6 +1855,7 @@ class Translator:
         dst_op: asm_ast.Type_operand,
         size: int,
         cond: asm_ast.Type_condition,
+        dst_size: int,
     ) -> list[asm_ast.Type_instruction]:
         """Unsigned ordering compare via SBC, no V-correction:
            LDA left[0]; SEC; SBC right[0]
@@ -1791,8 +1889,51 @@ class Translator:
             asm_ast.Label(name=true_label),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
             asm_ast.Label(name=end_label),
-            asm_ast.Mov(src=_REG_A, dst=dst_op),
         ])
+        self._store_compare_result(out, dst_op, dst_size)
+        return out
+
+    def _translate_fp_ordering(
+        self,
+        left_op: asm_ast.Type_operand,
+        right_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+        dst_size: int,
+        *,
+        lt: bool,
+    ) -> list[asm_ast.Type_instruction]:
+        """FP `<` (lt=True) or `<=` (lt=False) via runtime helper.
+        Bit-pattern compare doesn't honour IEEE 754 ordering for
+        negative values (the encoding's monotonicity reverses
+        across the sign bit), and signed-int compare goes wrong on
+        ±inf / NaN edges, so ordering routes through `flt`/`fle`
+        (Float, 4B) or `dlt`/`dle` (Double, 8B). Each helper takes
+        A=HARGS+0..N-1, B=HARGS+N..2N-1 and writes a single 0/1
+        byte to the FP-result slot — HARGS+8 for Float, HARGS+16
+        for Double — matching the FP arithmetic family's layout.
+        Caller swaps operands for `>` (→ `<` reversed) and `>=`
+        (→ `<=` reversed); under IEEE 754 swap is NaN-safe since
+        both directions produce false when either operand is NaN.
+        """
+        if size == 4:
+            helper = _FLT if lt else _FLE
+            out_off = 8
+        else:
+            helper = _DLT if lt else _DLE
+            out_off = 16
+        out = _translate_helper_call(
+            inputs=[(left_op, size), (right_op, size)],
+            helper=helper,
+            output_offset=out_off, output_size=1,
+            dst_op=dst_op,
+        )
+        # Helper writes only 1 byte; zero-fill the rest of dst's
+        # Int-sized cell so the full result is well-defined.
+        for k in range(1, dst_size):
+            out.append(asm_ast.Mov(
+                src=asm_ast.Imm(value=0), dst=_byte_at(dst_op, k),
+            ))
         return out
 
     def translate_unop_atoms(

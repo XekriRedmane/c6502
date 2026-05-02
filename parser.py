@@ -314,18 +314,18 @@ def _consume_specifiers(items, start):
 #
 # Type ranges (literals are non-negative — unary minus comes from an
 # operator, applied later):
-#     int                 0..127               ConstInt
-#     long                0..32767             ConstLong
-#     long long           0..2147483647        ConstLongLong
-#     unsigned int        0..255               ConstUInt
-#     unsigned long       0..65535             ConstULong
-#     unsigned long long  0..4294967295        ConstULongLong
-_INT_MAX = 127
-_LONG_MAX = 32767
-_LONG_LONG_MAX = 2147483647
-_UINT_MAX = 255
-_ULONG_MAX = 65535
-_ULONG_LONG_MAX = 4294967295
+#     int                 0..32767                       ConstInt
+#     long                0..2147483647                  ConstLong
+#     long long           0..9223372036854775807         ConstLongLong
+#     unsigned int        0..65535                       ConstUInt
+#     unsigned long       0..4294967295                  ConstULong
+#     unsigned long long  0..18446744073709551615        ConstULongLong
+_INT_MAX = 32767
+_LONG_MAX = 2147483647
+_LONG_LONG_MAX = 9223372036854775807
+_UINT_MAX = 65535
+_ULONG_MAX = 4294967295
+_ULONG_LONG_MAX = 18446744073709551615
 
 # Per-(token-kind, base) candidate-type list. Each entry is a tuple of
 # (max_value, c99_ast Const class) — pick the first whose max accepts

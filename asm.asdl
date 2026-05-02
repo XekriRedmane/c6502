@@ -3,12 +3,13 @@ module ASM {
     top_level =
         Function(identifier name, bool is_global, identifier* params, instruction* instructions)
         | StaticVariable(identifier name, bool is_global, static_init* init)
-    -- IntInit / LongInit lay down 1 / 2 little-endian bytes of an
-    -- integer value. FloatInit / DoubleInit lay down 4 / 8 little-
-    -- endian bytes of an IEEE 754 single / double; the value is the
-    -- bit pattern as an unsigned integer (32 bits for FloatInit,
-    -- 64 bits for DoubleInit), so asm_emit can lay the bytes down
-    -- directly without any FP narrowing at emit time.
+    -- CharInit / IntInit / LongInit / LongLongInit lay down 1 / 2 /
+    -- 4 / 8 little-endian bytes of an integer value. FloatInit /
+    -- DoubleInit lay down 4 / 8 little-endian bytes of an IEEE 754
+    -- single / double; the value is the bit pattern as an unsigned
+    -- integer (32 bits for FloatInit, 64 bits for DoubleInit), so
+    -- asm_emit can lay the bytes down directly without any FP
+    -- narrowing at emit time.
     -- AddressInit lays down a 2-byte little-endian word equal to
     -- the address `name + offset` — resolved at link time by the
     -- assembler. Used for Pointer-typed statics initialized with
@@ -31,7 +32,8 @@ module ASM {
     -- remaining cells are zero-padded. asm_emit renders as one or
     -- more `dc.b $XX, $XX, …` lines. See tac.asdl for the
     -- bytes-vs-len(str) cases.
-    static_init = IntInit(int value) | LongInit(int value) | LongLongInit(int value)
+    static_init = CharInit(int value)
+                | IntInit(int value) | LongInit(int value) | LongLongInit(int value)
                 | FloatInit(int bits) | DoubleInit(int bits)
                 | AddressInit(identifier name, int offset)
                 | StringInit(string str, int bytes)
@@ -39,13 +41,14 @@ module ASM {
 
     -- Ret's `save_a` flag controls whether the epilogue brackets the
     -- SSP/FP arithmetic with PHA/PLA to preserve A across the
-    -- 16-bit add. Only 1-byte returns ride in A and need this;
-    -- everything wider (Long / Pointer at HARGS+0..1, LongLong /
-    -- Float at HARGS+8..11, Double at HARGS+16..23) leaves its
-    -- result in HARGS — the SSP/FP arithmetic doesn't touch HARGS,
-    -- so the epilogue can skip the PHA/PLA pair (`save_a=False`).
-    -- The flag has no effect when arg_bytes + local_bytes == 0 (the
-    -- collapsed epilogue is just `RTS` either way).
+    -- 16-bit add. Only 1-byte returns (Char / SChar / UChar) ride in
+    -- A and need this; everything wider (Int / UInt / Pointer at
+    -- HARGS+0..1, Long / ULong / Float at HARGS+8..11, LongLong /
+    -- ULongLong / Double at HARGS+16..23) leaves its result in HARGS
+    -- — the SSP/FP arithmetic doesn't touch HARGS, so the epilogue
+    -- can skip the PHA/PLA pair (`save_a=False`). The flag has no
+    -- effect when arg_bytes + local_bytes == 0 (the collapsed
+    -- epilogue is just `RTS` either way).
     instruction =
         Mov(operand src, operand dst)
         | Ret(int arg_bytes, int local_bytes, bool save_a)
@@ -87,12 +90,14 @@ module ASM {
     -- Pseudo(name, offset): a stand-in operand minted by tac_to_asm
     -- for any TAC value that doesn't yet have a concrete address.
     -- The `offset` selects which byte of a multi-byte value this
-    -- reference is (0 = low, 1 = high for a Long); single-byte
-    -- values use `offset=0`. The replace_pseudoregisters pass reads
-    -- the symbol-table type for `name` to size each pseudo (1 byte
-    -- for Int, 2 bytes for Long), allocates that many consecutive
-    -- frame slots, and resolves Pseudo(name, offset=k) to the byte
-    -- at slot+k.
+    -- reference is (0 = low, 1 = next, …; high byte at offset =
+    -- size - 1). Single-byte values use `offset=0`. The
+    -- replace_pseudoregisters pass reads the symbol-table type for
+    -- `name` to size each pseudo (1 byte for Char/SChar/UChar, 2
+    -- bytes for Int/UInt/Pointer, 4 bytes for Long/ULong/Float,
+    -- 8 bytes for LongLong/ULongLong/Double), allocates that many
+    -- consecutive frame slots, and resolves Pseudo(name, offset=k)
+    -- to the byte at slot+k.
     --
     -- Data(name, offset): the byte at the absolute address `name +
     -- offset`. Used for references to static-storage objects (file-

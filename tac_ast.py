@@ -361,6 +361,11 @@ class Void(Type_data_type):
     pass
 
 
+@dataclass
+class Pointer(Type_data_type):
+    pass
+
+
 @dataclass(kw_only=True)
 class FunType(Type_data_type):
     params: list[Type_data_type] = field(default_factory=list)
@@ -370,6 +375,16 @@ class FunType(Type_data_type):
 @dataclass
 class Type_const:
     pass
+
+
+@dataclass
+class ConstChar(Type_const):
+    value: int
+
+
+@dataclass
+class ConstUChar(Type_const):
+    value: int
 
 
 @dataclass
@@ -415,6 +430,16 @@ class ConstDouble(Type_const):
 @dataclass
 class Type_static_init:
     pass
+
+
+@dataclass
+class CharInit(Type_static_init):
+    value: int
+
+
+@dataclass
+class UCharInit(Type_static_init):
+    value: int
 
 
 @dataclass

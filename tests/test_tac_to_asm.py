@@ -1402,13 +1402,14 @@ class TestErrors(unittest.TestCase):
 
 
 class TestSignExtendAndTruncate(unittest.TestCase):
-    """SignExtend lowers to an inline byte sequence: load the source
-    byte (which sets N based on its sign), store it as the low byte
-    of dst (STA preserves flags), then branch on the original N flag
-    to write 0x00 / 0xFF to the high byte. Truncate lowers to a
-    single byte Mov from the source's low byte (the high byte is
-    discarded — memory is little-endian, so the source's offset-0
-    byte is the low byte)."""
+    """SignExtend lowers to an inline byte sequence: load each source
+    byte and store it as the matching dst byte, refresh the N flag
+    from A via `ORA #$00` (the trailing STA's `LDY #off` clobbers N
+    for soft-stack stores), then branch on N to write 0x00 / 0xFF to
+    each of dst's high bytes. Truncate lowers to a single byte Mov
+    from the source's low byte (the high byte is discarded — memory
+    is little-endian, so the source's offset-0 byte is the low
+    byte)."""
 
     def test_sign_extend_lowers_to_inline_byte_sequence(self):
         # Int (1B) → Long (2B) widening — the symbol table tells the
@@ -1434,6 +1435,12 @@ class TestSignExtendAndTruncate(unittest.TestCase):
             asm_ast.Mov(
                 src=asm_ast.Reg(reg=asm_ast.A()),
                 dst=asm_ast.Pseudo(name="%0", offset=0),
+            ),
+            # ORA #$00 refreshes N from A — the previous STA's
+            # `LDY #off` clobbered it for soft-stack stores.
+            asm_ast.Or(
+                src=asm_ast.Imm(value=0x00),
+                dst=asm_ast.Reg(reg=asm_ast.A()),
             ),
             asm_ast.Branch(cond=asm_ast.MI(), target=".sx_neg@0"),
             asm_ast.Mov(

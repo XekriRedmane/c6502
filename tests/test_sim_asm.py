@@ -122,7 +122,7 @@ SKIPS: dict[str, str] = {
     "chapter_18/valid/parameters/simple.c": "branch_oor",
     "chapter_18/valid/params_and_returns/simple.c": "branch_oor",
 
-    # --- fp_unimpl (11): program calls an FP helper the sim doesn't
+    # --- fp_unimpl (12): program calls an FP helper the sim doesn't
     # have. Today neither simulator nor real runtime implements these.
     "chapter_13/valid/explicit_casts/cvttsd2si_rewrite.c": "fp_unimpl",
     "chapter_13/valid/explicit_casts/double_to_signed.c": "fp_unimpl",
@@ -135,32 +135,21 @@ SKIPS: dict[str, str] = {
     "chapter_13/valid/implicit_casts/common_type.c": "fp_unimpl",
     "chapter_13/valid/implicit_casts/complex_arithmetic_common_type.c": "fp_unimpl",
     "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": "fp_unimpl",
+    "chapter_16/valid/char_constants/char_constant_operations.c": "fp_unimpl",
 
     # --- extern_unresolved (3): calls a name we don't link.
     "chapter_17/valid/sizeof/sizeof_not_evaluated.c": "extern_unresolved",
     "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": "extern_unresolved",
     "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": "extern_unresolved",
 
-    # --- wrong_value (51): runs to BRK with the wrong A. Most are
-    # signed-div/mod, sign-extend, or wider-than-int arithmetic
-    # findings. Each is a real signal worth digging into.
+    # --- wrong_value (19): runs to BRK with the wrong A. Most of
+    # what's left after fixing the SignExtend N-clobber bug
+    # concentrates in chapter_13 (FP) and a few signed-div / pointer
+    # / char edge cases. Each is a real signal worth digging into.
     "chapter_3/valid/div_neg.c": "wrong_value",
     "chapter_5/valid/exp_then_declaration.c": "wrong_value",
-    "chapter_8/valid/extra_credit/compound_assignment_controlling_expression.c": "wrong_value",
-    "chapter_11/valid/explicit_casts/sign_extend.c": "wrong_value",
-    "chapter_11/valid/extra_credit/bitwise_long_op.c": "wrong_value",
-    "chapter_11/valid/extra_credit/compound_assign_to_long.c": "wrong_value",
-    "chapter_11/valid/extra_credit/compound_bitwise.c": "wrong_value",
-    "chapter_11/valid/implicit_casts/convert_function_arguments.c": "wrong_value",
     "chapter_11/valid/long_expressions/arithmetic_ops.c": "wrong_value",
-    "chapter_12/valid/explicit_casts/chained_casts.c": "wrong_value",
-    "chapter_12/valid/explicit_casts/extension.c": "wrong_value",
-    "chapter_12/valid/explicit_casts/round_trip_casts.c": "wrong_value",
-    "chapter_12/valid/extra_credit/bitwise_unsigned_ops.c": "wrong_value",
     "chapter_12/valid/extra_credit/compound_assign_uint.c": "wrong_value",
-    "chapter_12/valid/extra_credit/compound_bitwise.c": "wrong_value",
-    "chapter_12/valid/implicit_casts/common_type.c": "wrong_value",
-    "chapter_12/valid/implicit_casts/convert_by_assignment.c": "wrong_value",
     "chapter_13/valid/constants/constant_doubles.c": "wrong_value",
     "chapter_13/valid/extra_credit/compound_assign.c": "wrong_value",
     "chapter_13/valid/extra_credit/compound_assign_implicit_cast.c": "wrong_value",
@@ -171,29 +160,10 @@ SKIPS: dict[str, str] = {
     "chapter_13/valid/special_values/infinity.c": "wrong_value",
     "chapter_13/valid/special_values/subnormal_not_zero.c": "wrong_value",
     "chapter_14/valid/dereference/static_var_indirection.c": "wrong_value",
-    "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": "wrong_value",
     "chapter_14/valid/extra_credit/compound_assign_conversion.c": "wrong_value",
-    "chapter_14/valid/extra_credit/compound_bitwise_dereferenced_ptrs.c": "wrong_value",
-    "chapter_15/valid/casts/implicit_and_explicit_conversions.c": "wrong_value",
-    "chapter_15/valid/extra_credit/compound_assign_array_of_pointers.c": "wrong_value",
-    "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": "wrong_value",
-    "chapter_15/valid/extra_credit/compound_lval_evaluated_once.c": "wrong_value",
-    "chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c": "wrong_value",
-    "chapter_15/valid/extra_credit/compound_pointer_assignment.c": "wrong_value",
-    "chapter_15/valid/extra_credit/incr_and_decr_nested_pointers.c": "wrong_value",
-    "chapter_15/valid/extra_credit/incr_decr_subscripted_vals.c": "wrong_value",
-    "chapter_15/valid/pointer_arithmetic/compare.c": "wrong_value",
     "chapter_15/valid/pointer_arithmetic/pointer_diff.c": "wrong_value",
-    "chapter_15/valid/subscripting/array_of_pointers_to_arrays.c": "wrong_value",
-    "chapter_15/valid/subscripting/subscript_nested.c": "wrong_value",
-    "chapter_16/valid/char_constants/char_constant_operations.c": "wrong_value",
     "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
-    "chapter_16/valid/chars/common_type.c": "wrong_value",
-    "chapter_16/valid/chars/explicit_casts.c": "wrong_value",
-    "chapter_16/valid/extra_credit/compound_bitwise_ops_chars.c": "wrong_value",
-    "chapter_16/valid/extra_credit/incr_decr_chars.c": "wrong_value",
     "chapter_16/valid/strings_as_initializers/test_alignment.c": "wrong_value",
-    "chapter_18/valid/extra_credit/union_copy/assign_to_union.c": "wrong_value",
     "chapter_18/valid/params_and_returns/ignore_retval.c": "wrong_value",
 }
 

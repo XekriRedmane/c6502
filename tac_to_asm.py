@@ -752,11 +752,19 @@ class Translator:
         Long → LongLong, etc.). Copy each source byte into the
         matching dst byte, then dispatch on the source's high-byte
         sign to write $00 (positive) or $FF (negative) to each of
-        dst's remaining (high) bytes. The last LDA in the byte-copy
-        loop is of the source's high byte, which sets N from its
-        sign; the intervening STAs preserve flags so the BMI below
-        sees the right N. Two minted labels per use; the Translator's
-        counter keeps them globally unique."""
+        dst's remaining (high) bytes. Two minted labels per use; the
+        Translator's counter keeps them globally unique.
+
+        N-flag refresh via `ORA #$00`. The intuition would be that
+        the last LDA in the byte-copy loop sets N from the source's
+        high byte, and the trailing STA preserves flags — but `STA`
+        to a Stack / Frame / Indirect operand emits as
+        `LDY #off; STA (PTR),Y`, and the LDY part DOES update N/Z
+        from its (almost always positive) immediate. So the BMI
+        without a refresh ends up testing the LDY's immediate, not
+        the source's sign. We emit `ORA #$00` (which preserves A but
+        re-establishes N from A's bit 7) right before the BMI to
+        force-correct the flag. Costs 2 extra bytes per SignExtend."""
         src_op = translate_val(src)
         dst_op = translate_val(dst)
         src_w = self._size_of(src)
@@ -768,6 +776,7 @@ class Translator:
             out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
             out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
         out.extend([
+            asm_ast.Or(src=asm_ast.Imm(value=0x00), dst=_REG_A),
             asm_ast.Branch(cond=asm_ast.MI(), target=neg_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
             asm_ast.Jump(target=end_label),

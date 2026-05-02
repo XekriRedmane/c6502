@@ -157,67 +157,39 @@ the assembler level too. Worth a tiny libc stub eventually
 (`exit`/`puts`/`putchar`/`malloc` would unlock ~30 more chapter files,
 including some currently in `SKIPPED` upstream).
 
-## 7. SignExtend lowering tests `BMI` after `LDY` clobbers `N`
+## 7. SignExtend lowering tests `BMI` after `LDY` clobbers `N` — FIXED
 
-**Status:** real bug; surfaced while verifying finding 1's fix.
+**Status:** fixed in `tac_to_asm._translate_sign_extend` by inserting
+`Or(Imm(0), A)` immediately before the `Branch(MI, ...)`. `ORA #$00`
+preserves A but updates N/Z from A's bit 7, refreshing the N flag
+that the trailing `STA`'s `LDY #off` clobbered for soft-stack
+operands. Costs 2 bytes per SignExtend; chosen over the alternative
+(reorder so BMI runs before any STA, with the high-byte STA
+duplicated in each branch arm) because it's a smaller diff and
+keeps the byte-copy loop uniform.
 
-`tac_to_asm._translate_sign_extend` (around line 738) lowers
-`SignExtend(src, dst)` as: copy each source byte through A into the
-matching dst byte, then `BMI sx_neg` to dispatch on the sign of the
-last (high) byte loaded:
+The fix flipped 31 chapter cases from `wrong_value` to passing,
+including most of chapter 11/12/14/15/16's compound-assignment,
+explicit-cast, and char-arithmetic tests. The asm-sim chapter pass
+count jumped 412 → 443 (517 - 74 still-skipping). What's left in
+`wrong_value` (19 cases) concentrates in chapter 13 (FP) and a few
+signed-div / pointer-diff / char-pointer edge cases that need
+individual diagnosis.
 
-```python
-for k in range(src_w):
-    out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
-    out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
-out.extend([
-    asm_ast.Branch(cond=asm_ast.MI(), target=neg_label),
-    ...
-])
-```
+Original notes for context:
 
-The comment claims "the intervening STAs preserve flags so the BMI
-below sees the right N." That's true for `STA abs` but **not** for
-the indirect-Y form `LDY #off; STA (PTR),Y` that `asm_emit` lowers
-soft-stack stores into — the `LDY` updates N/Z based on its
-immediate. So when `dst` is a Frame / Stack / Indirect operand, the
-`LDY` between the last source-byte LDA and the BMI clobbers N, and
-the branch tests the LDY's immediate (almost always positive for
-small offsets) instead of the source's sign bit. Result: negative
-sources sign-extend to `$00...00` instead of `$FF...FF`.
-
-Reproducer: `long main(void) { long x = -1; return x; }` —
-`-1` lowers to a negate-of-1 sign-extended to Long; the high bytes
-end up `$00` and the `return_long_signed()` reads `255` instead of
-`-1`. (Chapter `chapter_3/valid/div_neg.c` and several
-`chapter_11/12/14`'s `wrong_value` skips also flow through this.)
-
-**Fix sketch.** Reorder the lowering so the BMI happens immediately
-after the high-byte load, with no STA in between. One arrangement:
-
-```
-# Copy the low (src_w-1) source bytes to dst — N doesn't matter.
-for k in range(src_w - 1):
-    out.append(Mov(src.k, A))
-    out.append(Mov(A, dst.k))
-# Load the high byte (sets N from its sign).
-out.append(Mov(src.hi, A))
-# Test sign now, BEFORE any STA's LDY clobbers N.
-out.append(Branch(MI, sx_neg))
-out.append(Mov(A, dst.hi))                # positive: store original high
-out.append(Mov(Imm(0x00), A))             # A = sign-fill byte
-out.append(Jump(sx_done))
-out.append(Label(sx_neg))
-out.append(Mov(A, dst.hi))                # negative: store original high
-out.append(Mov(Imm(0xFF), A))
-out.append(Label(sx_done))
-# Sign-fill the rest.
-for k in range(src_w, tgt_w):
-    out.append(Mov(A, dst.k))
-```
-
-The `STA dst.hi` is duplicated (once per branch), which is the cost
-of moving it inside the conditional — but it's two instructions
-total, not many bytes, and it removes the N-clobber dependency on
-addressing-mode lowering. Alternative: use `ORA #$00` to re-establish
-N from A after the STA, at the cost of 2 bytes.
+`tac_to_asm._translate_sign_extend` lowered `SignExtend(src, dst)`
+as: copy each source byte through A into the matching dst byte,
+then `BMI sx_neg` to dispatch on the sign of the last (high) byte
+loaded. The original comment claimed "the intervening STAs preserve
+flags so the BMI below sees the right N." That's true for `STA abs`
+but **not** for the indirect-Y form `LDY #off; STA (PTR),Y` that
+`asm_emit` lowers soft-stack stores into — the `LDY` updates N/Z
+based on its immediate. So when `dst` was a Frame / Stack /
+Indirect operand, the `LDY` between the last source-byte LDA and
+the BMI clobbered N, and the branch tested the LDY's immediate
+(almost always positive for small offsets) instead of the source's
+sign bit. Negative sources sign-extended to `$00...00` instead of
+`$FF...FF`. Reproducer:
+`long main(void) { long x = -1; return x; }` — used to return 255,
+now returns -1.

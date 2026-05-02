@@ -3227,19 +3227,10 @@ class TypeChecker:
                 # the right operand is converted to the type of the
                 # assignment expression. Implemented by wrapping the
                 # rval in an implicit Cast when its type doesn't
-                # already match the lval's. This covers compound
-                # assignments too — `int_x += long_y` parses as
-                # `int_x = int_x + long_y`, the Binary promotes both
-                # operands to Long and yields Long, then this branch
-                # narrows the Long result back to Int via an
-                # implicit (int) cast — same semantics as the
-                # explicit `int_x = (int)((long)int_x + long_y)`.
-                # Note we don't re-check `_is_object_type(tl)` here:
-                # identifier_resolution already enforces that the
-                # lval is a Var, and Var lookups in `_check_exp`
-                # raise "function used as variable" if the type
-                # isn't an object type, so `tl` is always Int or
-                # Long by the time we land here.
+                # already match the lval's. Compound assignments
+                # have their own CompoundAssignment AST node and
+                # don't reach this branch — they're handled above
+                # with their own intermediate-type tracking.
                 exp.rval = _convert_to(rv, tl)
                 exp.data_type = tl
                 return tl

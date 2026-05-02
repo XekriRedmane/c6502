@@ -244,12 +244,24 @@ takes one AST and returns another (or text for emit):
    assignment rule (and then fails the lvalue check).
    The ten compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`,
    `^=`, `<<=`, `>>=`) share a single `compound_assign` builder that
-   desugars `lval OP= rval` to `Assignment(lval, Binary(OP, lval, rval))`
-   at parse time. The lval node is duplicated by reference, which is safe
-   today because the only legal lval is a `Var` (no side effect when re-
-   evaluated); when richer lvalues land in compound assignment (`*p +=
-   1`, `a[i] += 1`, `s.f += 1`), the rewrite has to materialize the
-   address into a temp so it's evaluated once.
+   builds a `CompoundAssignment(op, lval, rval, intermediate_type?,
+   data_type?)` AST node — NOT a parse-time desugar to `Assignment(lval,
+   Binary(OP, lval, rval))`. The explicit node is what lets c99_to_tac
+   evaluate the lval's address ONCE before the read-modify-write, which
+   matters for Subscript / Dereference / Dot / Arrow lvals whose address-
+   computing subexpressions have side effects (`arr[i++] += 1`,
+   `(*p++)++`, `ptr++[idx++] *= 3`); a desugar would duplicate the lval
+   and fire those side effects twice. The type checker stamps two types
+   on the node: `intermediate_type` is the binop's working type — common-
+   of-promoted for arithmetic / bitwise per §6.3.1.8, promoted-left alone
+   for shifts per §6.5.7.3 (right operand promotes independently),
+   pointer-itself for `ptr += int` (which routes through
+   `translate_pointer_arithmetic` in c99_to_tac for sizeof-pointee
+   scaling) — and `data_type` is the lval's type, the result of the
+   compound assign expression. c99_to_tac's `_translate_compound_assign`
+   computes the lval's address once, Loads at the lval type, casts to
+   intermediate_type, applies the binop, casts back to lval's type, and
+   Stores. Var lvals skip the Load/Store (the Var IS the storage).
    Prefix `++a` / `--a` and postfix `a++` / `a--` each build their own
    AST node (`Prefix(incdec_op, exp)` / `Postfix(incdec_op, exp)`)
    instead of desugaring to assignment. Two reasons: (1) they have
@@ -517,9 +529,16 @@ takes one AST and returns another (or text for emit):
    same `_convert_to` helper runs at every place C99 specifies a
    conversion:
    - **Binary** operands (§6.3.1.8): both promoted to the common
-     type before the op.
+     type before the op (except shifts — see below).
+   - **Shift operands** (§6.5.7.3): each operand integer-promotes
+     independently; the result type is the promoted left operand's
+     type. The right keeps its own promoted type — c99_to_tac's
+     shift-helper path passes only its low byte to asl/asr/lsr.
    - **Assignment** rval (§6.5.16.1): converted to lval's type.
-     Compound assignments inherit this via parser desugaring.
+   - **CompoundAssignment** (§6.5.16.2): rval converted to the
+     intermediate type stamped on the node (common-of-promoted, or
+     promoted-left for shifts); the lval-load and binop-result
+     casts to/from the lval's type are emitted by c99_to_tac.
    - **FunctionCall** args (§6.5.2.2.7): each arg converted to the
      corresponding parameter's type.
    - **Return** value (§6.8.6.4.3): converted to the enclosing
@@ -1104,13 +1123,17 @@ step 9 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
 are TAC-only concepts;
 `tac_to_asm` lowers each to a sequence of `Mov`s into the shared
 zero-page block `HARGS` (`$04`–`$1B`), a `Call` to the appropriate
-runtime helper (`mul8`/`divmod8`/`asl8`/`asr8` for 1-byte operands,
-`mul16`/`divmod16`/`asl16`/`asr16` for 2-byte operands,
-`mul32`/`divmod32`/`asl32`/`asr32` for 4-byte operands), and `Mov`s
-reading the result back out at a helper-specific offset within HARGS
-(see step 8's per-helper layout table). Right shift always dispatches
-to the signed `asr` variant because c6502 currently treats all
-integers as signed. The unary `LogicalNot` is lowered inline (no runtime helper):
+runtime helper (`mul8`/`divmod8`/`asl8`/`asr8`/`lsr8` for 1-byte
+operands, `mul16`/`divmod16`/`asl16`/`asr16`/`lsr16` for 2-byte
+operands, `mul32`/`divmod32`/`asl32`/`asr32`/`lsr32` for 4-byte
+operands), and `Mov`s reading the result back out at a helper-specific
+offset within HARGS (see step 8's per-helper layout table). Right
+shift dispatches to `asr*` (arithmetic, sign-preserving) for signed
+operands and `lsr*` (logical, zero-fill) for unsigned, keyed off the
+LEFT operand's signedness per C99 §6.5.7.5. Per §6.5.7.3 the result
+type — and so the helper width — is the promoted left operand's
+type; the right operand promotes independently and contributes only
+its low byte to the count. The unary `LogicalNot` is lowered inline (no runtime helper):
 `Mov src→A; Branch(EQ, true); Mov 0→A; Jump end; true: Mov 1→A; end:
 Mov A→dst`. The framing `Mov(src, A)` already sets Z via `LDA`, so no
 `Compare` is needed before the branch.
@@ -1398,9 +1421,16 @@ class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
   are atom-for-atom. No runtime helper and no TAC binop — the control
   flow *is* the semantics)
 - compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-  `<<=`, `>>=` (desugared by the parser to `lval = lval OP rval`, so
-  they reuse the same TAC/asm lowerings as their underlying binary op
-  followed by a Copy back into the lval)
+  `<<=`, `>>=` (each builds a `CompoundAssignment` AST node;
+  `c99_to_tac._translate_compound_assign` evaluates the lval's address
+  ONCE — same machinery as Prefix / Postfix — then emits Load + cast-to-
+  intermediate-type + Binary + cast-back-to-lval-type + Store, reusing
+  the underlying binop's TAC / asm lowering. Var lvals skip the Load /
+  Store and read/write the var directly. The `intermediate_type` is the
+  binop's working type — common-of-promoted for arithmetic / bitwise,
+  promoted-left-only for shifts (§6.5.7.3); pointer arithmetic
+  `ptr += int` routes through `translate_pointer_arithmetic` for
+  sizeof-pointee scaling)
 - prefix `++a` / `--a` and postfix `a++` / `a--` — each builds its
   own AST node (`Prefix` / `Postfix`); `c99_to_tac._translate_incdec`
   lowers both with a shared read-modify-write path that handles the
@@ -1568,10 +1598,13 @@ Lowered all the way to 6502 asm:
   declarator and are accepted; the parser still rejects casts whose
   composed top-level type is `Array(...)` itself. Rejected: array
   assignment (`a = b`), `extern` arrays (would need cross-TU init
-  deferral). Pre-increment / compound assignment on subscripts
-  (`++a[i]`, `a[i] += 1`) work via the parser's desugaring to
-  `a[i] = a[i] + 1`; postfix on a subscript (`a[i]++`) isn't
-  wired through.
+  deferral). Pre/postfix increment and compound assignment on
+  subscripts (`++a[i]`, `a[i]++`, `a[i] += 1`, `arr[i++] *= 3`)
+  all evaluate the subscript's address exactly once — the Prefix
+  / Postfix / CompoundAssignment AST nodes route through
+  `_translate_subscript_address` for the address and then Load +
+  Binary + Store, so any side effects in the index subexpression
+  fire only once.
 - File-scope and block-scope `static` arrays with constant
   initializer lists: `int a[3] = {1,2,3};` at file scope, or
   `static int nested[3][2] = {{1,2},{3,4},{5,6}};` inside a

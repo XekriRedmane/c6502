@@ -1754,12 +1754,14 @@ class Translator:
                 instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
                 return dst
             case c99_ast.Assignment(lval=lval, rval=rval):
-                # identifier_resolution accepts two lval shapes:
-                # `Var(name)` (a named storage cell) and
-                # `Dereference(ptr_exp)` (a store-through-pointer).
-                # Anything else gets rejected upstream; the runtime
-                # check here is belt-and-braces in case a later
-                # refactor lets a non-lvalue slip through.
+                # identifier_resolution accepts five lval shapes:
+                # `Var(name)` (named storage cell), `Dereference(p)`
+                # (store through pointer), `Subscript(arr, idx)`
+                # (array element), and `Dot` / `Arrow` (struct
+                # member by value or pointer). Anything else gets
+                # rejected upstream; the runtime fall-through here
+                # is belt-and-braces in case a later refactor lets
+                # a non-lvalue slip through.
                 rval_val = self.translate_exp(rval, instrs)
                 if isinstance(lval, c99_ast.Var):
                     dst = tac_ast.Var(name=lval.name)

@@ -467,10 +467,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     # --- chapter 14: pointers and dereference
     "chapter_14/valid/casts/cast_between_pointer_types.c": 0,
     "chapter_14/valid/casts/null_pointer_conversion.c": 0,
-    # pointer_int_casts.c: i=128 doesn't fit in c6502's 1-byte int
-    # (truncates to -128), so int_to_pointer() returns 0 and the
-    # first if(!...) returns 1
-    "chapter_14/valid/casts/pointer_int_casts.c": 1,
+    "chapter_14/valid/casts/pointer_int_casts.c": 0,
     "chapter_14/valid/comparisons/compare_pointers.c": 0,
     "chapter_14/valid/comparisons/compare_to_null.c": 0,
     "chapter_14/valid/comparisons/pointers_as_conditions.c": 0,
@@ -486,10 +483,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_14/valid/dereference/update_through_pointers.c": 0,
     "chapter_14/valid/extra_credit/bitshift_dereferenced_ptrs.c": 0,
     "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": 0,
-    # compound_assign_conversion.c: same narrow-int divergence as
-    # chapter_12 — final compound `*i_ptr -= *ul_ptr` truncates to a
-    # different value than upstream's expected -73
-    "chapter_14/valid/extra_credit/compound_assign_conversion.c": 4,
+    "chapter_14/valid/extra_credit/compound_assign_conversion.c": 0,
     "chapter_14/valid/extra_credit/compound_assign_through_pointer.c": 0,
     "chapter_14/valid/extra_credit/compound_bitwise_dereferenced_ptrs.c": 0,
     "chapter_14/valid/extra_credit/incr_and_decr_through_pointer.c": 0,
@@ -509,10 +503,10 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_15/valid/declarators/return_nested_array.c": 0,
     "chapter_15/valid/extra_credit/bitwise_subscript.c": 0,
     "chapter_15/valid/extra_credit/compound_assign_and_increment.c": 2,
-    "chapter_15/valid/extra_credit/compound_assign_array_of_pointers.c": 2,
+    "chapter_15/valid/extra_credit/compound_assign_array_of_pointers.c": 0,
     "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": 0,
     "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": 4,
-    "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": 2,
+    "chapter_15/valid/extra_credit/compound_bitwise_subscript.c": 0,
     "chapter_15/valid/extra_credit/compound_lval_evaluated_once.c": 0,
     "chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c": 0,
     "chapter_15/valid/extra_credit/compound_pointer_assignment.c": 0,

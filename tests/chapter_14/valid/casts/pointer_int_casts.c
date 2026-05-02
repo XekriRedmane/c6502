@@ -11,8 +11,11 @@
 // NOTE: converting an integer to a pointer is undefined behavior
 // if the resulting pointer is misaligned. These integers' values
 // are divisible by 8, so it's safe to cast them to any pointer type.
-int i = 128;
-long l = 128l;
+// (c6502 adaptation: 128 doesn't fit in c6502's 1-byte signed int,
+// so we use 8 — still 8-aligned, still meaningful for the
+// int↔pointer round-trip exercise in cast_int_round_trip.)
+int i = 8;
+long l = 8l;
 
 int int_to_pointer(void) {
     int *a = (int *) i;
@@ -24,8 +27,11 @@ int pointer_to_int(void) {
     static long l;
     long *ptr = &l;
     unsigned long ptr_as_long = (unsigned long) ptr;
-    /* This will be divisible by eight, since long is eight byte-aligned */
-    return (ptr_as_long % 8 == 0);
+    /* Upstream checked `% 8 == 0` since long is 8-byte-aligned on
+     * x86-64; c6502's long is 2 bytes and statics don't have any
+     * fixed alignment, so we just check that the cast produces a
+     * usable non-null pointer-as-int. */
+    return (ptr_as_long != 0);
 }
 
 /* Casts between pointer types and 64-bit integer types should round-trip.
@@ -54,7 +60,7 @@ int cast_ulong_round_trip(void) {
 int cast_int_round_trip(void) {
     double *a = (double *)i;
     int i2 = (int) a;
-    return (i2 == 128);
+    return (i2 == 8);
 }
 
 int main(void) {

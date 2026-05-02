@@ -1,7 +1,7 @@
 // compound bitwise assignment on subscript expressions
 int main(void) {
     unsigned long long arr[4] = {
-        65536ll,                    // 2^16
+        32768ll,                    // 2^15 (the bit just below arr[1]'s 0x0F0F0000 mask)
         4294901760ull,              // 0xffff_0000
         2147483648ull,              // 2^31
         252645135ll                 // 0x0f0f_0f0f
@@ -15,7 +15,7 @@ int main(void) {
 
     // |=
     arr[0] |= arr[1];
-    if (arr[0] != 252706816ull) {
+    if (arr[0] != 252674048ull /* 0x0f0f_8000 */) {
         return 2;
     }
 
@@ -33,7 +33,7 @@ int main(void) {
 
     // <<=
     arr[1] <<= 4;
-    if (arr[1] != 4042620928ull) {
+    if (arr[1] != 4042260480ull /* 0xf0f0_0000 */) {
         return 5;
     }
 

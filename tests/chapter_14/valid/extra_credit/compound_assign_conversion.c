@@ -33,11 +33,10 @@ int main(void) {
     // convert i to common type (ull), perform operation, then
     // convert back to int
     *i_ptr -= *ul_ptr;
-    /* i (sign-ext to ull) = 0xffffffff = 4294967286 (-10 as 32-bit unsigned).
-     * 4294967286 - 2147483647 = 2147483639. Truncated to int (1B) =
-     * 2147483639 mod 256 = ?  2147483639 = 8388998*256 + 183, so mod = 183;
-     * signed 1B = 183 - 256 = -73. */
-    if (i != -73) {
+    /* i sign-extended to ull = 4294967286 (-10 as 32-bit unsigned).
+     * 4294967286 - 2147483647 = 2147483639 = 0x7FFFFFF7.
+     * Truncated to int (1B) = low byte 0xF7 = -9 signed. */
+    if (i != -9) {
         return 4; // fail
     }
 

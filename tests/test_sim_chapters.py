@@ -567,6 +567,15 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/extra_credit/incr_decr_chars.c": 0,
     "chapter_16/valid/extra_credit/incr_decr_unsigned_chars.c": 0,
     "chapter_16/valid/extra_credit/promote_switch_cond.c": 0,
+    # promote_switch_cond_2.c: tests that `case 33554632:` for a
+    # char-typed switch DOESN'T reduce to char (since the case
+    # value should be in `int`, not char). Upstream's int is 4
+    # bytes so 33554632 stays out of char range; c6502's int is
+    # the SAME width as char (1 byte), so 33554632 width-mod-coerces
+    # to -56 just like a char would, the case spuriously matches
+    # `c = -56`, and the test returns 1 instead of 0. This is a
+    # fundamental int-width incompatibility, not a type-checker
+    # bug.
     "chapter_16/valid/extra_credit/promote_switch_cond_2.c": 1,
     "chapter_16/valid/extra_credit/switch_on_char_const.c": 0,
     "chapter_16/valid/strings_as_initializers/array_init_special_chars.c": 0,

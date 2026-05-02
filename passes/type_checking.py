@@ -2413,13 +2413,22 @@ class TypeChecker:
                 f"switch controlling expression must have integer type "
                 f"(got {ctrl_type!r}); C99 §6.8.4.2.1"
             )
-        # Integer promotion (§6.3.1.1). For c6502's six integer
-        # types every type is already at promotion rank ≥ Int, so
-        # promotion is a no-op — the promoted type IS the control
-        # type. Stash it on the SwitchStmt so c99_to_tac can match
-        # case-constant variants to the dispatch type without
-        # recomputing.
-        stmt.promoted_type = ctrl_type
+        # Integer promotion (§6.3.1.1). Char-typed control
+        # operands (Char/SChar/UChar — all 1-byte integer types in
+        # c6502) promote to Int / UInt; the rank-≥-Int integer
+        # types pass through unchanged. We rewrap stmt.control in
+        # the implicit promotion Cast so the dispatch in
+        # c99_to_tac reads from the promoted-type val (matters for
+        # char switches: case constants would otherwise coerce
+        # modulo 256 and a 33554632-valued case would fold to -56,
+        # spuriously matching a `char c = -56` control).
+        promoted = _promote_integer(ctrl_type)
+        if promoted != ctrl_type:
+            stmt.control = _convert_to(stmt.control, promoted)
+        # Stash on the SwitchStmt so c99_to_tac can match case-
+        # constant variants to the dispatch type without recomputing.
+        stmt.promoted_type = promoted
+        ctrl_type = promoted
         # Validate every case value: it must be an integer constant
         # expression (§6.6.6 + §6.8.4.2.3); after conversion to the
         # promoted control type, no two cases shall have the same

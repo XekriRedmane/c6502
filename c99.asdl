@@ -82,6 +82,29 @@ module C99 {
         | Unary(unary_operator op, exp, data_type?)
         | Binary(binary_operator op, exp left, exp right, data_type?)
         | Assignment(exp lval, exp rval, data_type?)
+        -- Compound assignment `lval OP= rval` (C99 §6.5.16.2). Kept
+        -- as its own AST node — rather than desugared to `Assignment
+        -- (lval, Binary(OP, lval, rval))` — so c99_to_tac can
+        -- evaluate the lval's address ONCE before the read-modify-
+        -- write. Desugaring at parse time was safe when the only
+        -- legal lval was a `Var` (no side effect on re-eval), but
+        -- Subscript / Dereference / Dot / Arrow lvals with side
+        -- effects in the address computation (`arr[i++] += 1`,
+        -- `(*p)++`, `ptr++[idx++] *= 3`) would fire those side
+        -- effects twice under the desugar.
+        -- `intermediate_type` is the binop's working type — the
+        -- common type of the promoted lval and promoted rval for
+        -- arithmetic / bitwise ops, or the promoted lval's type
+        -- alone for shifts (per §6.5.7.3 the right operand's type
+        -- doesn't influence the result). c99_to_tac casts the
+        -- loaded lval to this type before the binop and casts the
+        -- binop result back to the lval's type for the store.
+        -- `data_type` is the lval's type (what the expression as a
+        -- whole evaluates to).
+        | CompoundAssignment(
+            binary_operator op, exp lval, exp rval,
+            data_type? intermediate_type, data_type?
+        )
         | Postfix(incdec_op op, exp operand, data_type?)
         | Prefix(incdec_op op, exp operand, data_type?)
         | Conditional(exp condition, exp true_clause, exp false_clause, data_type?)

@@ -359,6 +359,15 @@ class StringLifter:
                     lval=self._lift_exp(lv), rval=self._lift_exp(rv),
                     data_type=dt,
                 )
+            case c99_ast.CompoundAssignment(
+                op=op, lval=lv, rval=rv,
+                intermediate_type=it, data_type=dt,
+            ):
+                return c99_ast.CompoundAssignment(
+                    op=op, lval=self._lift_exp(lv),
+                    rval=self._lift_exp(rv),
+                    intermediate_type=it, data_type=dt,
+                )
             case c99_ast.Postfix(op=op, operand=o, data_type=dt):
                 return c99_ast.Postfix(
                     op=op, operand=self._lift_exp(o), data_type=dt,

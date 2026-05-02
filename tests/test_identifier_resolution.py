@@ -1040,20 +1040,17 @@ class TestIntegrationWithParser(unittest.TestCase):
             "invalid lvalue in prefix", str(ctx.exception),
         )
 
-    def test_compound_assignment_resolves_var_on_both_sides(self):
-        # `a += 1` desugars to `a = a + 1` — both occurrences of `a`
-        # must resolve to the same unique name.
+    def test_compound_assignment_resolves_var(self):
+        # `a += 1` builds a CompoundAssignment whose lval `a` resolves
+        # to the renamed unique name.
         prog = parse("int main(void) { int a; a += 1; return a; }")
         resolved = resolve_program(prog)
         expected = _program(_function(
             _decl("@0.a"),
-            _expr(c99_ast.Assignment(
+            _expr(c99_ast.CompoundAssignment(
+                op=c99_ast.Add(),
                 lval=c99_ast.Var(name="@0.a"),
-                rval=c99_ast.Binary(
-                    op=c99_ast.Add(),
-                    left=c99_ast.Var(name="@0.a"),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
-                ),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
             )),
             _ret(c99_ast.Var(name="@0.a")),
         ))

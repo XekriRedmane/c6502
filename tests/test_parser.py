@@ -568,8 +568,8 @@ class TestAssignment(unittest.TestCase):
             ),
         )
 
-    def test_each_compound_op_desugars(self):
-        # Every `a OP= 1` rewrites to `Assignment(a, Binary(OP, a, 1))`.
+    def test_each_compound_op_builds_compoundassignment(self):
+        # Every `a OP= 1` builds a CompoundAssignment AST node.
         cases = [
             ("+=",  c99_ast.Add()),
             ("-=",  c99_ast.Subtract()),
@@ -586,74 +586,56 @@ class TestAssignment(unittest.TestCase):
             with self.subTest(sym=sym):
                 self.assertEqual(
                     _exp_of(f"a {sym} 1"),
-                    c99_ast.Assignment(
+                    c99_ast.CompoundAssignment(
+                        op=op,
                         lval=c99_ast.Var(name="a"),
-                        rval=c99_ast.Binary(
-                            op=op,
-                            left=c99_ast.Var(name="a"),
-                            right=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
-                        ),
+                        rval=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                     ),
                 )
 
     def test_compound_assign_is_right_associative(self):
-        # `a += b += 1` parses as `a += (b += 1)`, then desugars to
-        # `a = a + (b = b + 1)`. The inner Assignment is the rval-side
-        # operand of the outer Add.
+        # `a += b += 1` parses as `a += (b += 1)` — the inner
+        # CompoundAssignment is the rval slot of the outer.
         self.assertEqual(
             _exp_of("a += b += 1"),
-            c99_ast.Assignment(
+            c99_ast.CompoundAssignment(
+                op=c99_ast.Add(),
                 lval=c99_ast.Var(name="a"),
-                rval=c99_ast.Binary(
+                rval=c99_ast.CompoundAssignment(
                     op=c99_ast.Add(),
-                    left=c99_ast.Var(name="a"),
-                    right=c99_ast.Assignment(
-                        lval=c99_ast.Var(name="b"),
-                        rval=c99_ast.Binary(
-                            op=c99_ast.Add(),
-                            left=c99_ast.Var(name="b"),
-                            right=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
-                        ),
-                    ),
+                    lval=c99_ast.Var(name="b"),
+                    rval=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
                 ),
             ),
         )
 
     def test_compound_assign_rhs_is_full_expression(self):
         # The rval slot is `assignment_exp`, which means a full binary
-        # expression goes in unparenthesized — `a += 1 + 2` desugars
-        # to `a = a + (1 + 2)`, NOT `(a + 1) + 2`. Right-recursion at
-        # the assignment level keeps the rval intact.
+        # expression goes in unparenthesized — `a += 1 + 2` parses to
+        # `a += (1 + 2)`. Right-recursion at the assignment level keeps
+        # the rval intact (NOT `(a + 1) + 2`).
         self.assertEqual(
             _exp_of("a += 1 + 2"),
-            c99_ast.Assignment(
+            c99_ast.CompoundAssignment(
+                op=c99_ast.Add(),
                 lval=c99_ast.Var(name="a"),
                 rval=c99_ast.Binary(
                     op=c99_ast.Add(),
-                    left=c99_ast.Var(name="a"),
-                    right=c99_ast.Binary(
-                        op=c99_ast.Add(),
-                        left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
-                        right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
-                    ),
+                    left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
+                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
                 ),
             ),
         )
 
     def test_compound_assign_invalid_lhs_still_parses(self):
         # `1 += 2` parses (LHS is `logical_or_exp`, which Constant
-        # satisfies) — identifier_resolution is what rejects it. The
-        # desugared AST is `Assignment(Constant(1), Binary(Add,
-        # Constant(1), Constant(2)))`.
+        # satisfies) — identifier_resolution is what rejects it.
         self.assertEqual(
             _exp_of("1 += 2"),
-            c99_ast.Assignment(
+            c99_ast.CompoundAssignment(
+                op=c99_ast.Add(),
                 lval=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
-                rval=c99_ast.Binary(
-                    op=c99_ast.Add(),
-                    left=c99_ast.Constant(const=c99_ast.ConstInt(value=1)),
-                    right=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
-                ),
+                rval=c99_ast.Constant(const=c99_ast.ConstInt(value=2)),
             ),
         )
 

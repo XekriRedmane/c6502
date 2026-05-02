@@ -255,6 +255,10 @@ def validate_constant_expression(exp: c99_ast.Type_exp) -> None:
             raise ConstantExpressionError(
                 "assignment is not allowed in a constant expression"
             )
+        case c99_ast.CompoundAssignment():
+            raise ConstantExpressionError(
+                "compound assignment is not allowed in a constant expression"
+            )
         case c99_ast.Postfix():
             raise ConstantExpressionError(
                 "postfix increment/decrement is not allowed in a "

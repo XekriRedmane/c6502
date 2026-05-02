@@ -1031,6 +1031,19 @@ class Resolver:
                     lval=self.resolve_exp(lval, scope),
                     rval=self.resolve_exp(rval, scope),
                 )
+            case c99_ast.CompoundAssignment(
+                op=op, lval=lval, rval=rval,
+            ):
+                # Same lvalue rule as Assignment / Postfix / Prefix.
+                if not _is_lvalue(lval):
+                    raise IdentifierResolutionError(
+                        f"invalid lvalue in compound assignment: {lval!r}"
+                    )
+                return c99_ast.CompoundAssignment(
+                    op=op,
+                    lval=self.resolve_exp(lval, scope),
+                    rval=self.resolve_exp(rval, scope),
+                )
             case c99_ast.Conditional(
                 condition=cond,
                 true_clause=true_clause,

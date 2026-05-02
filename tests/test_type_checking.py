@@ -869,27 +869,24 @@ class TestLongAndCasts(unittest.TestCase):
         self.assertIsInstance(assign.rval, c99_ast.Var)
         self.assertEqual(assign.rval.data_type, Int())
 
-    def test_compound_assignment_to_int_narrows_long_result(self):
-        # `int_x += long_y;` desugars to `int_x = int_x + long_y;`.
-        # The Binary promotes both operands to Long (result Long),
-        # then the Assignment narrows the rval back to Int with an
-        # implicit Cast. Net effect: same as
-        # `int_x = (int)((long)int_x + long_y);`.
+    def test_compound_assignment_to_int_promotes_intermediate_to_long(self):
+        # `int_x += long_y;` builds a CompoundAssignment whose
+        # `intermediate_type` is Long (the binop's working type) and
+        # whose `data_type` is Int (the lval's type — what the
+        # expression evaluates to). The rval is cast to Long
+        # explicitly so c99_to_tac reads it at the binop width.
         prog, _ = _check(
             "int main(void) { int a = 0; long b = (long)2; "
             "a += b; return a; }"
         )
         items = prog.declaration[0].function_decl.body.block_item
         assign = items[2].statement.exp
-        self.assertIsInstance(assign, c99_ast.Assignment)
+        self.assertIsInstance(assign, c99_ast.CompoundAssignment)
         self.assertEqual(assign.data_type, Int())
-        # The rval (a Binary that produced Long) is now wrapped in
-        # an implicit Cast(Int).
-        self.assertIsInstance(assign.rval, c99_ast.Cast)
-        self.assertEqual(assign.rval.target_type, Int())
-        # The Binary inside the Cast still has data_type Long.
-        self.assertIsInstance(assign.rval.exp, c99_ast.Binary)
-        self.assertEqual(assign.rval.exp.data_type, Long())
+        self.assertEqual(assign.intermediate_type, Long())
+        # rval (`b`, type Long) is at the intermediate type already
+        # and isn't wrapped in any extra cast.
+        self.assertEqual(assign.rval.data_type, Long())
 
     def test_call_arg_widens_with_implicit_cast(self):
         # `foo(int_lit)` where foo's param is Long — the int literal

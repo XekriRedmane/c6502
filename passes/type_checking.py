@@ -3082,6 +3082,110 @@ class TypeChecker:
                     result = common
                 exp.data_type = result
                 return result
+            case c99_ast.CompoundAssignment(op=op, lval=lv, rval=rv):
+                # Compound assignment `lval OP= rval`: type-check
+                # both sides, then apply the binop type rule
+                # (integer promotion, plus the usual arithmetic
+                # conversions for non-shifts; shifts skip the
+                # arithmetic conversions per §6.5.7.3) to find the
+                # *intermediate* type at which the binop happens.
+                # The rval gets cast to that intermediate type so
+                # c99_to_tac can read it directly; the lval keeps
+                # its own type, and c99_to_tac casts the loaded
+                # value to intermediate before the binop and casts
+                # the binop result back to the lval's type before
+                # the store. The expression's data_type is the
+                # lval's type — the result of `lval OP= rval` is
+                # the new value of lval, with lval's type.
+                tl = self._check_exp(lv)
+                tr = self._check_exp(rv)
+                self._require_complete_value(lv, "compound assignment lval")
+                self._require_complete_value(rv, "compound assignment rval")
+                if isinstance(tl, Array):
+                    raise TypeCheckError(
+                        f"cannot use compound assignment on an array: "
+                        f"{lv!r}"
+                    )
+                if isinstance(tl, (Structure, Union)):
+                    raise TypeCheckError(
+                        f"compound assignment is not defined for "
+                        f"struct/union types ({tl!r})"
+                    )
+                # rval array decay (lval can't be an array — caught
+                # above). rval might be `arr` decaying to pointer.
+                rv = _decay_if_array(rv)
+                exp.rval = rv
+                tr = rv.data_type
+                # Type constraints by op kind (mirror the Binary
+                # rule in this same `_check_exp`):
+                #   - Modulo / bitwise / shift require integer
+                #     operands; reject Float / Double.
+                #   - Shifts additionally reject Pointer (the
+                #     non-shift bitwise / modulo paths route
+                #     through `_common_type` which crashes on
+                #     Pointer; shifts skip `_common_type`, so
+                #     they need an explicit Pointer reject here).
+                if isinstance(op, (
+                    c99_ast.Modulo, c99_ast.BitwiseAnd, c99_ast.BitwiseOr,
+                    c99_ast.BitwiseXor, c99_ast.LeftShift, c99_ast.RightShift,
+                )):
+                    if _is_floating_type(tl) or _is_floating_type(tr):
+                        raise TypeCheckError(
+                            f"compound `{op!r}` requires integer "
+                            f"operands ({tl!r}, {tr!r})"
+                        )
+                    if isinstance(op, (c99_ast.LeftShift, c99_ast.RightShift)):
+                        if isinstance(tl, c99_ast.Pointer) or isinstance(
+                            tr, c99_ast.Pointer,
+                        ):
+                            raise TypeCheckError(
+                                f"compound shift requires integer "
+                                f"operands ({tl!r}, {tr!r})"
+                            )
+                # Pointer arithmetic: `ptr += int` / `ptr -= int`
+                # (C99 §6.5.16.2 — same as `ptr + int` / `ptr - int`).
+                # Widen the integer rval to Long; lval stays pointer.
+                # No intermediate type — c99_to_tac dispatches on
+                # the pointer-arith path before consulting it.
+                if (
+                    isinstance(op, (c99_ast.Add, c99_ast.Subtract))
+                    and isinstance(tl, c99_ast.Pointer)
+                ):
+                    if not _is_integer_type(tr):
+                        raise TypeCheckError(
+                            f"pointer compound +/- requires integer "
+                            f"rhs ({tl!r}, {tr!r})"
+                        )
+                    exp.rval = _convert_to(rv, c99_ast.Long())
+                    exp.intermediate_type = tl
+                    exp.data_type = tl
+                    return tl
+                # Integer promotion on each operand independently.
+                tl_p = _promote_integer(tl)
+                tr_p = _promote_integer(tr)
+                # Shifts: intermediate type = promoted left.
+                # The right keeps its independently-promoted type;
+                # c99_to_tac's helper-call shift path passes only
+                # the right's low byte to the asl/asr/lsr helpers.
+                if isinstance(op, (c99_ast.LeftShift, c99_ast.RightShift)):
+                    if tr != tr_p:
+                        exp.rval = _convert_to(rv, tr_p)
+                    exp.intermediate_type = tl_p
+                    exp.data_type = tl
+                    return tl
+                # Other arithmetic / bitwise: usual arithmetic
+                # conversions to the common type. The rval is cast
+                # to the common type so c99_to_tac reads it at that
+                # width directly.
+                common = _common_type(tl_p, tr_p)
+                exp.rval = _convert_to(rv, common)
+                # Result type is the lval's type — the binop result
+                # gets converted back to lval's type for the
+                # storage write (handled in c99_to_tac via a cast
+                # at lowering time).
+                exp.intermediate_type = common
+                exp.data_type = tl
+                return tl
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)

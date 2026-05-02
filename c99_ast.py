@@ -380,6 +380,15 @@ class Assignment(Type_exp):
 
 
 @dataclass
+class CompoundAssignment(Type_exp):
+    op: Type_binary_operator
+    lval: Type_exp
+    rval: Type_exp
+    intermediate_type: Type_data_type | None = None
+    data_type: Type_data_type | None = None
+
+
+@dataclass
 class Postfix(Type_exp):
     op: Type_incdec_op
     operand: Type_exp

@@ -1742,18 +1742,16 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def compound_assign(self, lval, op_token, rval):
-        # `lval OP= rval` desugars at parse time to `lval = lval OP rval`.
-        # The lval node is duplicated as a tree reference (Assignment.lval
-        # and Binary.left point at the same Python object). That's safe
-        # today because the only legal lval is a `Var`, which has no
-        # side effect when re-evaluated. When richer lvalues (`*p`,
-        # `a[i]`, `s.f`) land, this rewrite has to materialize the
-        # address into a temp instead so the lval is evaluated once.
+        # `lval OP= rval` builds a `CompoundAssignment` AST node
+        # rather than desugaring to `lval = lval OP rval`. The
+        # explicit node lets c99_to_tac evaluate the lval's address
+        # ONCE before the read-modify-write — necessary for
+        # Subscript / Dereference / Dot / Arrow lvals whose address
+        # computation has side effects (e.g. `arr[i++] += 1`,
+        # `(*p++)++`, `ptr++[idx++] *= 3`), where re-evaluating the
+        # lval would fire those side effects twice.
         op_cls = _COMPOUND_ASSIGN_OPS[op_token.type]
-        return c99_ast.Assignment(
-            lval=lval,
-            rval=c99_ast.Binary(op=op_cls(), left=lval, right=rval),
-        )
+        return c99_ast.CompoundAssignment(op=op_cls(), lval=lval, rval=rval)
 
     @v_args(inline=True)
     def unary(self, op, inner):

@@ -1812,6 +1812,13 @@ class Translator:
                     f"Subscript, Dot, or Arrow (identifier_resolution "
                     f"should have enforced this); got {lval!r}"
                 )
+            case c99_ast.CompoundAssignment(
+                op=op, lval=lval, rval=rval,
+                intermediate_type=it,
+            ):
+                return self._translate_compound_assign(
+                    op, lval, rval, it, instrs,
+                )
             case c99_ast.Conditional(
                 condition=cond,
                 true_clause=true_clause,
@@ -2661,6 +2668,203 @@ class Translator:
             dst=new,
         ))
         return new
+
+    def _translate_compound_assign(
+        self,
+        op: c99_ast.Type_binary_operator,
+        lval: c99_ast.Type_exp,
+        rval: c99_ast.Type_exp,
+        intermediate_type: c99_ast.Type_data_type | None,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Lower `lval OP= rval` as a read-modify-write on lval's
+        storage location, with the binop happening at the
+        intermediate type the type checker stamped on `rval`.
+
+        For Subscript / Dereference / Dot / Arrow lvals the address
+        is computed exactly ONCE so any side effects in the
+        address-computing subexpressions (`arr[i++] += 1`,
+        `(*p++)++`, `ptr++[idx++] *= 3`) fire only once. For Var
+        lvals there's no address — the Var is read and written in
+        place.
+
+        Type rules (mirroring the Binary type-check):
+          * The lval has its own type T.
+          * The rval was cast by the type checker to the
+            intermediate type C — so `rval.data_type` IS C.
+          * The lval's loaded value must also be brought to C
+            before the binop; we wrap it in a synthetic Cast
+            (which lowers to SignExtend / ZeroExtend / Truncate /
+            no-op as appropriate).
+          * The binop result has type C (or the promoted-left for
+            shifts; same thing here since shift's intermediate IS
+            the promoted left).
+          * The binop result is then cast back to T for the
+            store.
+
+        Pointer arithmetic (`ptr += int` / `ptr -= int`) is
+        special-cased: route through `translate_pointer_arithmetic`
+        so the integer rval gets scaled by sizeof(pointee) before
+        the add/sub.
+
+        The returned val is the new value of lval, at type T —
+        this lets `b = (a += 5)` chain correctly."""
+        lv_type = lval.data_type or c99_ast.Int()
+        if intermediate_type is None:
+            intermediate_type = lv_type
+        is_pointer_arith = (
+            isinstance(op, (c99_ast.Add, c99_ast.Subtract))
+            and isinstance(lv_type, c99_ast.Pointer)
+        )
+        if isinstance(lval, c99_ast.Var):
+            lval_var = tac_ast.Var(name=lval.name)
+            new_val = self._compute_compound_step(
+                op, lval_var, lv_type, rval,
+                intermediate_type, is_pointer_arith, instrs,
+            )
+            instrs.append(tac_ast.Copy(src=new_val, dst=lval_var))
+            return new_val
+        # Subscript / Dereference / Dot / Arrow: compute the
+        # lvalue's byte address exactly once, then Load + binop +
+        # Store through it.
+        if isinstance(lval, c99_ast.Subscript):
+            addr = self._translate_subscript_address(
+                lval.array, lval.index, instrs,
+            )
+        elif isinstance(lval, c99_ast.Dereference):
+            addr = self.translate_exp(lval.exp, instrs)
+        elif isinstance(lval, c99_ast.Dot):
+            addr = self._translate_dot_address(
+                lval.operand, lval.member, instrs,
+            )
+        elif isinstance(lval, c99_ast.Arrow):
+            addr = self._translate_arrow_address(
+                lval.operand, lval.member, instrs,
+            )
+        else:
+            raise TypeError(
+                f"compound-assignment lval must be Var, Subscript, "
+                f"Dereference, Dot, or Arrow (identifier_resolution "
+                f"should have enforced this); got {lval!r}"
+            )
+        cur = tac_ast.Var(
+            name=self.make_temporary_variable_name(lv_type),
+        )
+        instrs.append(tac_ast.Load(src_ptr=addr, dst=cur))
+        new_val = self._compute_compound_step(
+            op, cur, lv_type, rval, intermediate_type,
+            is_pointer_arith, instrs,
+        )
+        instrs.append(tac_ast.Store(src=new_val, dst_ptr=addr))
+        return new_val
+
+    def _compute_compound_step(
+        self,
+        op: c99_ast.Type_binary_operator,
+        lval_val: tac_ast.Type_val,
+        lv_type: c99_ast.Type_data_type,
+        rval_exp: c99_ast.Type_exp,
+        intermediate_type: c99_ast.Type_data_type,
+        is_pointer_arith: bool,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Compute `(T)((C)lval_val OP rval)` and return the
+        resulting val of type T (the lval's type). Used by both
+        the Var and address-based branches of
+        `_translate_compound_assign`."""
+        rval_val = self.translate_exp(rval_exp, instrs)
+        if is_pointer_arith:
+            # ptr += int — route through translate_pointer_arithmetic
+            # so the rval is scaled by sizeof(pointee).
+            return self.translate_pointer_arithmetic(
+                op=op,
+                src1=lval_val,
+                src2=rval_val,
+                lt=lv_type,
+                rt=rval_exp.data_type or c99_ast.Long(),
+                result_type=lv_type,
+                instrs=instrs,
+            )
+        # Cast loaded lval value to intermediate type if they differ.
+        lval_val_at_inter = self._emit_widen_or_narrow(
+            lval_val, lv_type, intermediate_type, instrs,
+        )
+        # Apply the binop at the intermediate type.
+        binop_dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(intermediate_type),
+        )
+        instrs.append(tac_ast.Binary(
+            op=self.translate_binop(op),
+            src1=lval_val_at_inter,
+            src2=rval_val,
+            dst=binop_dst,
+        ))
+        # Convert binop result back to lval's type.
+        return self._emit_widen_or_narrow(
+            binop_dst, intermediate_type, lv_type, instrs,
+        )
+
+    def _emit_widen_or_narrow(
+        self,
+        src_val: tac_ast.Type_val,
+        src_type: c99_ast.Type_data_type,
+        dst_type: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Cast `src_val` (typed `src_type`) to `dst_type`,
+        emitting the appropriate TAC cast node. Returns the new
+        val of type `dst_type`. Mirrors the Cast lowering in
+        translate_exp's c99_ast.Cast case — covers integer↔integer
+        (SignExtend / ZeroExtend / Truncate / no-op), integer↔FP
+        (IntToFloat / IntToDouble / FloatToInt / DoubleToInt), and
+        Float↔Double (FloatToDouble / DoubleToFloat)."""
+        if src_type == dst_type:
+            return src_val
+        src_fp = isinstance(src_type, (c99_ast.Float, c99_ast.Double))
+        dst_fp = isinstance(dst_type, (c99_ast.Float, c99_ast.Double))
+        if src_fp or dst_fp:
+            dst = tac_ast.Var(
+                name=self.make_temporary_variable_name(dst_type),
+            )
+            if src_fp and dst_fp:
+                node_cls = (
+                    tac_ast.FloatToDouble
+                    if isinstance(src_type, c99_ast.Float)
+                    else tac_ast.DoubleToFloat
+                )
+            elif src_fp:
+                node_cls = (
+                    tac_ast.FloatToInt
+                    if isinstance(src_type, c99_ast.Float)
+                    else tac_ast.DoubleToInt
+                )
+            else:
+                node_cls = (
+                    tac_ast.IntToFloat
+                    if isinstance(dst_type, c99_ast.Float)
+                    else tac_ast.IntToDouble
+                )
+            instrs.append(node_cls(src=src_val, dst=dst))
+            return dst
+        src_w = _byte_width_of(src_type)
+        dst_w = _byte_width_of(dst_type)
+        if src_w == dst_w:
+            # Same byte width, just different signedness — no codegen.
+            return src_val
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(dst_type),
+        )
+        if src_w < dst_w:
+            if isinstance(
+                src_type,
+                (c99_ast.Int, c99_ast.Long, c99_ast.LongLong),
+            ):
+                instrs.append(tac_ast.SignExtend(src=src_val, dst=dst))
+            else:
+                instrs.append(tac_ast.ZeroExtend(src=src_val, dst=dst))
+        else:
+            instrs.append(tac_ast.Truncate(src=src_val, dst=dst))
+        return dst
 
     def translate_short_circuit(
         self,

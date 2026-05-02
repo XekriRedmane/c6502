@@ -2820,6 +2820,85 @@ class TestIncrementDecrementLowering(unittest.TestCase):
         self.assertEqual(len(adds), 1)
 
 
+class TestCompoundAssignmentLowering(unittest.TestCase):
+    """`lval OP= rval` lowers as a read-modify-write on lval's
+    storage location, with the lval's address evaluated EXACTLY
+    ONCE so any side effects in the address-computing
+    subexpressions fire only once. Previously the parser desugared
+    to `Assignment(lval, Binary(OP, lval, rval))` with the lval
+    duplicated by reference, which fired side effects in things
+    like `arr[i++] += 1` twice. The CompoundAssignment AST node
+    avoids that by lowering to a single address computation +
+    Load + Binary + Store."""
+
+    def _tac(self, src):
+        from compile import _resolved
+        from passes.type_checking import check_program
+        prog, symbols, _types = check_program(_resolved(src))
+        return translate_program(prog, symbols)
+
+    def test_compound_on_var_emits_no_load(self):
+        # `int a; a += 1;` — Var lvals don't need Load/Store; just a
+        # Binary in place plus a Copy back into the var.
+        tac = self._tac(
+            "int main(void) { int a = 0; a += 1; return a; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertEqual(kinds.count("Load"), 0)
+        self.assertEqual(kinds.count("Store"), 0)
+
+    def test_compound_on_subscript_one_load_for_the_compound(self):
+        # `arr[i] += 1;` — the compound emits exactly one Load (for
+        # the read of arr[i]). The init `int arr[3] = {1,2,3};`
+        # contributes its own 3 Stores but no Load, so a total of 1
+        # Load instruction in the function.
+        tac = self._tac(
+            "int main(void) { int arr[3] = {1, 2, 3}; int i = 0; "
+            "arr[i] += 1; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        loads = [i for i in instrs if isinstance(i, tac_ast.Load)]
+        self.assertEqual(len(loads), 1)
+
+    def test_compound_on_subscript_with_side_effecting_index_fires_once(self):
+        # `arr[i++] += 1;` — the `i++` postfix MUST fire only once
+        # despite the read+write structure. Counting Binary(Add)/Sub
+        # ops involving the renamed `i` variable: exactly one (the
+        # i++ itself); the compound's address computation reuses the
+        # captured old-i value rather than re-evaluating i++.
+        tac = self._tac(
+            "int main(void) { int arr[3] = {1, 2, 3}; int i = 0; "
+            "arr[i++] += 1; return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        # Count Binary ops where one operand is a Var ending in `.i`
+        # (identifier_resolution renamed local `i` to `@<N>.i`).
+        i_binaries = [
+            i for i in instrs
+            if isinstance(i, tac_ast.Binary)
+            and any(
+                isinstance(s, tac_ast.Var) and s.name.endswith(".i")
+                for s in (i.src1, i.src2)
+            )
+        ]
+        # Exactly one: the postfix `i++` (Add of `@N.i` + 1).
+        self.assertEqual(len(i_binaries), 1)
+        self.assertIsInstance(i_binaries[0].op, tac_ast.Add)
+
+    def test_compound_on_dereference_evaluates_pointer_once(self):
+        # `(*p) += 1;` — Load through p, Binary, Store through p. p
+        # is evaluated once.
+        tac = self._tac(
+            "int main(void) { int a; int *p = &a; (*p) += 1; "
+            "return 0; }"
+        )
+        instrs = tac.top_level[0].instructions
+        kinds = [type(i).__name__ for i in instrs]
+        self.assertGreaterEqual(kinds.count("Load"), 1)
+        self.assertGreaterEqual(kinds.count("Store"), 1)
+
+
 class TestArrayInitList(unittest.TestCase):
     """`int a[N] = {e1, e2, ...}` lowers to GetAddress + a sequence
     of Stores at compile-time offsets into the array's frame slot.

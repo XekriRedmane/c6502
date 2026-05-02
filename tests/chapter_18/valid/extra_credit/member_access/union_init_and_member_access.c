@@ -25,7 +25,11 @@ int main(void) {
     }
 
     // read through other members
-    if (ptr->ul != 4294967295UL) {
+    // After ptr->l = -1l, bytes 0-1 of the union are 0xFF, 0xFF.
+    // c6502's `unsigned long` is 2 bytes, so ul reads back ULONG_MAX
+    // = 65535 (vs upstream's 8-byte 18446744073709551615 → adapter
+    // had typo'd 4294967295, which fits ulong long but not ulong).
+    if (ptr->ul != 65535UL) {
         return 3; // fail
     }
 

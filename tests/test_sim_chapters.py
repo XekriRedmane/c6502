@@ -604,9 +604,9 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_17/valid/void/void_function.c": 0,
 
     # --- chapter 18: structs and unions
-    "chapter_18/valid/extra_credit/member_access/static_union_access.c": 1,
-    "chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c": 3,
-    "chapter_18/valid/extra_credit/member_access/union_temp_lifetime.c": 1,
+    "chapter_18/valid/extra_credit/member_access/static_union_access.c": 0,
+    "chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c": 0,
+    "chapter_18/valid/extra_credit/member_access/union_temp_lifetime.c": 0,
     "chapter_18/valid/extra_credit/other_features/bitwise_ops_struct_members.c": 1,
     "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": 6,
     "chapter_18/valid/extra_credit/other_features/decr_arrow_lexing.c": 0,

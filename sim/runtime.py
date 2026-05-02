@@ -222,7 +222,7 @@ def _make_asr(value_size: int) -> Hook:
     return hook
 
 
-# -------- FP helpers (placeholders) --------
+# -------- FP helpers --------
 
 
 def _fp_unimplemented(name: str) -> Hook:
@@ -230,6 +230,118 @@ def _fp_unimplemented(name: str) -> Hook:
         raise NotImplementedError(
             f"FP helper {name!r} is not implemented in the simulator yet"
         )
+    return hook
+
+
+# IEEE 754 single / double (float / double) arithmetic helpers,
+# implemented via Python's built-in float — i.e. via the host's
+# native FP unit. These are stand-ins until the actual 6502 asm
+# implementations land in `sim/runtime_helpers.py`. They give
+# end-to-end FP correctness for the chapter tests today; the asm
+# versions are what'll let real c6502 binaries run.
+import struct as _struct
+
+
+def _fp_arith(in_size: int, op: str) -> Hook:
+    """Read two `in_size`-byte IEEE 754 operands from HARGS+0..N-1
+    and HARGS+N..2N-1, compute `A op B` via Python float, and write
+    the `in_size`-byte result to the matching FP-result slot
+    (HARGS+8..11 for Float, HARGS+16..23 for Double — the same slot
+    the FP-returning calling convention uses for its return).
+    `op` is one of `+`, `-`, `*`, `/`."""
+    fmt = "<f" if in_size == 4 else "<d"
+    out_off = 8 if in_size == 4 else 16
+
+    def hook(mem: bytearray) -> None:
+        a = _struct.unpack(fmt, bytes(mem[HARGS:HARGS + in_size]))[0]
+        b = _struct.unpack(
+            fmt, bytes(mem[HARGS + in_size:HARGS + 2 * in_size])
+        )[0]
+        if op == "+":
+            r = a + b
+        elif op == "-":
+            r = a - b
+        elif op == "*":
+            r = a * b
+        elif op == "/":
+            # Division by zero: produce IEEE 754 ±inf or NaN. Python's
+            # plain `/` would raise ZeroDivisionError; emulate IEEE
+            # behavior explicitly.
+            if b == 0.0:
+                if a == 0.0:
+                    r = float("nan")
+                elif a < 0.0:
+                    r = float("-inf")
+                else:
+                    r = float("inf")
+            else:
+                r = a / b
+        else:
+            raise ValueError(f"unknown FP op {op!r}")
+        packed = _struct.pack(fmt, r)
+        mem[HARGS + out_off:HARGS + out_off + in_size] = packed
+    return hook
+
+
+def _int_to_fp(int_size: int, signed: bool, fp_size: int) -> Hook:
+    """Read an `int_size`-byte integer (signed or unsigned per
+    `signed`) at HARGS+0..int_size-1 and write its `fp_size`-byte
+    FP representation to HARGS+int_size..int_size+fp_size-1.
+
+    The output offset matches the helper's documented layout:
+    output starts immediately after the input slot. e.g.
+      i2f:  in HARGS+0,    out HARGS+1..4
+      l2d:  in HARGS+0..1, out HARGS+2..9
+      ll2f: in HARGS+0..3, out HARGS+4..7
+    """
+    fmt = "<f" if fp_size == 4 else "<d"
+
+    def hook(mem: bytearray) -> None:
+        raw = _read_int(mem, HARGS + 0, int_size)
+        if signed:
+            raw = _signed(raw, int_size)
+        packed = _struct.pack(fmt, float(raw))
+        mem[HARGS + int_size:HARGS + int_size + fp_size] = packed
+    return hook
+
+
+def _fp_to_int(fp_size: int, int_size: int, signed: bool) -> Hook:
+    """Read an `fp_size`-byte FP value at HARGS+0..fp_size-1 and
+    truncate to an `int_size`-byte integer at HARGS+fp_size..
+    fp_size+int_size-1. Truncation is toward zero per C99 §6.3.1.4;
+    NaN / Inf and out-of-range values are UB and produce 0 here."""
+    fmt = "<f" if fp_size == 4 else "<d"
+    mask = (1 << (int_size * 8)) - 1
+
+    def hook(mem: bytearray) -> None:
+        v = _struct.unpack(fmt, bytes(mem[HARGS:HARGS + fp_size]))[0]
+        try:
+            i = int(v)   # truncates toward zero
+        except (OverflowError, ValueError):
+            i = 0
+        # Two's-complement wrap; signedness rides on how the caller
+        # interprets the bytes. Bit pattern is identical for the two
+        # cases since we mask to the integer's width.
+        i &= mask
+        _write_int(mem, HARGS + fp_size, i, int_size)
+    return hook
+
+
+def _f2d_hook() -> Hook:
+    """Float (4B) → Double (8B). Input HARGS+0..3, output HARGS+4..11."""
+    def hook(mem: bytearray) -> None:
+        v = _struct.unpack("<f", bytes(mem[HARGS:HARGS + 4]))[0]
+        packed = _struct.pack("<d", v)
+        mem[HARGS + 4:HARGS + 12] = packed
+    return hook
+
+
+def _d2f_hook() -> Hook:
+    """Double (8B) → Float (4B). Input HARGS+0..7, output HARGS+8..11."""
+    def hook(mem: bytearray) -> None:
+        v = _struct.unpack("<d", bytes(mem[HARGS:HARGS + 8]))[0]
+        packed = _struct.pack("<f", v)
+        mem[HARGS + 8:HARGS + 12] = packed
     return hook
 
 
@@ -268,46 +380,46 @@ _HELPERS: list[tuple[str, Hook]] = [
     ("asl32",     _make_asl(4)),
     ("asr32",     _make_asr(4)),
     ("lsr32",     _make_lsr(4)),
-    # FP integer→float
-    ("i2f",  _fp_unimplemented("i2f")),
-    ("u2f",  _fp_unimplemented("u2f")),
-    ("l2f",  _fp_unimplemented("l2f")),
-    ("ul2f", _fp_unimplemented("ul2f")),
-    ("ll2f", _fp_unimplemented("ll2f")),
-    ("ull2f", _fp_unimplemented("ull2f")),
-    # FP integer→double
-    ("i2d",  _fp_unimplemented("i2d")),
-    ("u2d",  _fp_unimplemented("u2d")),
-    ("l2d",  _fp_unimplemented("l2d")),
-    ("ul2d", _fp_unimplemented("ul2d")),
-    ("ll2d", _fp_unimplemented("ll2d")),
-    ("ull2d", _fp_unimplemented("ull2d")),
-    # FP float→integer
-    ("f2i",  _fp_unimplemented("f2i")),
-    ("f2u",  _fp_unimplemented("f2u")),
-    ("f2l",  _fp_unimplemented("f2l")),
-    ("f2ul", _fp_unimplemented("f2ul")),
-    ("f2ll", _fp_unimplemented("f2ll")),
-    ("f2ull", _fp_unimplemented("f2ull")),
-    # FP double→integer
-    ("d2i",  _fp_unimplemented("d2i")),
-    ("d2u",  _fp_unimplemented("d2u")),
-    ("d2l",  _fp_unimplemented("d2l")),
-    ("d2ul", _fp_unimplemented("d2ul")),
-    ("d2ll", _fp_unimplemented("d2ll")),
-    ("d2ull", _fp_unimplemented("d2ull")),
+    # FP integer→float (output at HARGS + int_size, fp_size = 4)
+    ("i2f",   _int_to_fp(int_size=1, signed=True,  fp_size=4)),
+    ("u2f",   _int_to_fp(int_size=1, signed=False, fp_size=4)),
+    ("l2f",   _int_to_fp(int_size=2, signed=True,  fp_size=4)),
+    ("ul2f",  _int_to_fp(int_size=2, signed=False, fp_size=4)),
+    ("ll2f",  _int_to_fp(int_size=4, signed=True,  fp_size=4)),
+    ("ull2f", _int_to_fp(int_size=4, signed=False, fp_size=4)),
+    # FP integer→double (output at HARGS + int_size, fp_size = 8)
+    ("i2d",   _int_to_fp(int_size=1, signed=True,  fp_size=8)),
+    ("u2d",   _int_to_fp(int_size=1, signed=False, fp_size=8)),
+    ("l2d",   _int_to_fp(int_size=2, signed=True,  fp_size=8)),
+    ("ul2d",  _int_to_fp(int_size=2, signed=False, fp_size=8)),
+    ("ll2d",  _int_to_fp(int_size=4, signed=True,  fp_size=8)),
+    ("ull2d", _int_to_fp(int_size=4, signed=False, fp_size=8)),
+    # FP float→integer (input HARGS+0..3, output starts at HARGS+4)
+    ("f2i",   _fp_to_int(fp_size=4, int_size=1, signed=True)),
+    ("f2u",   _fp_to_int(fp_size=4, int_size=1, signed=False)),
+    ("f2l",   _fp_to_int(fp_size=4, int_size=2, signed=True)),
+    ("f2ul",  _fp_to_int(fp_size=4, int_size=2, signed=False)),
+    ("f2ll",  _fp_to_int(fp_size=4, int_size=4, signed=True)),
+    ("f2ull", _fp_to_int(fp_size=4, int_size=4, signed=False)),
+    # FP double→integer (input HARGS+0..7, output starts at HARGS+8)
+    ("d2i",   _fp_to_int(fp_size=8, int_size=1, signed=True)),
+    ("d2u",   _fp_to_int(fp_size=8, int_size=1, signed=False)),
+    ("d2l",   _fp_to_int(fp_size=8, int_size=2, signed=True)),
+    ("d2ul",  _fp_to_int(fp_size=8, int_size=2, signed=False)),
+    ("d2ll",  _fp_to_int(fp_size=8, int_size=4, signed=True)),
+    ("d2ull", _fp_to_int(fp_size=8, int_size=4, signed=False)),
     # FP cross-precision
-    ("f2d", _fp_unimplemented("f2d")),
-    ("d2f", _fp_unimplemented("d2f")),
+    ("f2d", _f2d_hook()),
+    ("d2f", _d2f_hook()),
     # FP arithmetic
-    ("fadd", _fp_unimplemented("fadd")),
-    ("fsub", _fp_unimplemented("fsub")),
-    ("fmul", _fp_unimplemented("fmul")),
-    ("fdiv", _fp_unimplemented("fdiv")),
-    ("dadd", _fp_unimplemented("dadd")),
-    ("dsub", _fp_unimplemented("dsub")),
-    ("dmul", _fp_unimplemented("dmul")),
-    ("ddiv", _fp_unimplemented("ddiv")),
+    ("fadd", _fp_arith(4, "+")),
+    ("fsub", _fp_arith(4, "-")),
+    ("fmul", _fp_arith(4, "*")),
+    ("fdiv", _fp_arith(4, "/")),
+    ("dadd", _fp_arith(8, "+")),
+    ("dsub", _fp_arith(8, "-")),
+    ("dmul", _fp_arith(8, "*")),
+    ("ddiv", _fp_arith(8, "/")),
 ]
 
 

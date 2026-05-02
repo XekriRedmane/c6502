@@ -198,17 +198,39 @@ Anything left should be triaged individually. A first pass:
   - `chapter_16/valid/chars/explicit_casts.c` — char-type promotion
     edge cases. Likely independent.
 
-## 5. FP helpers not implemented (`fp_unimpl`, 11 cases)
+## 5. FP helpers — partially landed
 
-**Status:** scope marker, not a bug.
+**Status:** Python-hook implementations done; real 6502 asm pending.
 
-The simulator registers trap addresses for the 26 FP conversion
-helpers (`i2f`, `d2l`, etc.) and the 8 FP arithmetic helpers
-(`fadd` ... `ddiv`), but each hook raises `NotImplementedError`. The
-real 6502 helpers don't exist either — `tac_to_asm` emits
-`JSR <helper>` calls in advance of the runtime header landing. Once
-either side is implemented, the simulator's hook factory in
-`sim/runtime.py:_HELPERS` is the place to fill in.
+`sim/runtime.py` now has working hook implementations for all 8 FP
+arithmetic helpers (`fadd`/`fsub`/`fmul`/`fdiv` and the d-variants)
+plus all 26 conversion helpers (`i2f`/`d2l`/`f2d`/etc.) — they
+delegate to Python's built-in float arithmetic via `struct.pack` /
+`struct.unpack`. Plus `tac_to_asm` now dispatches FP `+`/`-`/`*`/
+`/` to the matching helper instead of doing broken multi-byte
+integer ADC.
+
+This lets the simulator run real FP through the host's IEEE 754
+unit. The asm-sim chapter SKIPS dropped 40 → 10 — every chapter_13
+case that doesn't depend on FP comparison passes now, and several
+chapter_14/15/16/18 cases that incidentally use FP do too.
+
+What's still missing:
+  - **Real 6502 asm for the FP helpers.** The hooks are stand-ins;
+    actual c6502 binaries would JSR a helper that doesn't exist.
+    Implementing IEEE 754 single / double arithmetic in 6502 is a
+    non-trivial port (probably 1500+ lines of asm) but well-known
+    territory; the algorithms are align-exponents, add/subtract
+    mantissas, normalize, round.
+  - **FP comparisons.** TAC→asm's `==` / `!=` / `<` / `>` for FP
+    operands today lowers to bit-pattern compare via inline
+    `Compare`/`Sub` + branch atoms — same as for integers. That's
+    wrong for IEEE 754 (which treats `±0` as equal and orders NaN
+    weirdly). Three tests still fail here:
+    `chapter_13/.../infinity.c` (negative-infinity ordering),
+    `chapter_18/.../union_namespace.c` (`var2.a != -0.0`).
+    Fix path: dispatch FP comparisons to a helper (or inline a
+    proper IEEE 754 compare in `tac_to_asm`).
 
 ## 6. Externs we don't link (`extern_unresolved`, 3 cases)
 

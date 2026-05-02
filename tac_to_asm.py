@@ -294,6 +294,25 @@ _SDIVMOD32 = "sdivmod32"
 _ASL32 = "asl32"
 _ASR32 = "asr32"
 _LSR32 = "lsr32"
+# FP arithmetic helpers. Single (4B) family: A=HARGS+0..3,
+# B=HARGS+4..7, result=HARGS+8..11. Double (8B) family:
+# A=HARGS+0..7, B=HARGS+8..15, result=HARGS+16..23. The result slot
+# is the same one the matching FP-returning function uses (LongLong
+# / Float at HARGS+8..11, Double at HARGS+16..23), so a function
+# ending in `return a OP b;` for FP operands needs no epilogue
+# copy. Both families come in three variants per op (add/sub/mul/
+# div) plus the cross-precision conversions f2d / d2f handled
+# elsewhere; comparison ops don't go through helpers (lowered
+# inline as bit-pattern compare today, with no IEEE 754 ±0
+# equivalence — see docs/sim_findings.md).
+_FADD = "fadd"
+_FSUB = "fsub"
+_FMUL = "fmul"
+_FDIV = "fdiv"
+_DADD = "dadd"
+_DSUB = "dsub"
+_DMUL = "dmul"
+_DDIV = "ddiv"
 # Conversion helpers, keyed by (source-c99-type, target-c99-type) at
 # the dispatch site. Signedness rides on the const variant for
 # Constant operands and on the symbol-table c99 type for Var
@@ -1327,6 +1346,42 @@ class Translator:
         unsigned_cmp = (
             self._is_unsigned_val(src1) or self._is_unsigned_val(src2)
         )
+        # FP arithmetic dispatch. After C99 §6.3.1.8 promotions both
+        # operands have the same FP type when `+` / `-` / `*` / `/`
+        # is FP; checking either side's `_is_fp_val` is sufficient.
+        # Float (4B) routes to fadd/fsub/fmul/fdiv with output at
+        # HARGS+8..11; Double (8B) routes to dadd/dsub/dmul/ddiv
+        # with output at HARGS+16..23. The FP unary Negate is
+        # handled as a sign-bit flip in `_translate_unary` (no
+        # helper call); FP comparisons are still lowered inline
+        # today (bit-pattern compare, see finding in
+        # docs/sim_findings.md).
+        fp = self._is_fp_val(src1) or self._is_fp_val(src2)
+        if fp and isinstance(op, (
+            tac_ast.Add, tac_ast.Subtract,
+            tac_ast.Multiply, tac_ast.Divide,
+        )):
+            if size == 4:
+                # Float
+                helper_map = {
+                    tac_ast.Add: _FADD, tac_ast.Subtract: _FSUB,
+                    tac_ast.Multiply: _FMUL, tac_ast.Divide: _FDIV,
+                }
+                out_off = 8
+            else:
+                # Double (size == 8)
+                helper_map = {
+                    tac_ast.Add: _DADD, tac_ast.Subtract: _DSUB,
+                    tac_ast.Multiply: _DMUL, tac_ast.Divide: _DDIV,
+                }
+                out_off = 16
+            helper = helper_map[type(op)]
+            return _translate_helper_call(
+                inputs=[(src1_op, size), (src2_op, size)],
+                helper=helper,
+                output_offset=out_off, output_size=size,
+                dst_op=dst_op,
+            )
         match op:
             case tac_ast.Add():
                 return self._translate_add_sub(

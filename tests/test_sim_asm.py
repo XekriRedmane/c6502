@@ -18,12 +18,10 @@ so future fixes can mass-flip them when a class of issue is closed:
                       layout (non-LDY-immediate addressing, or split
                       large frames into multiple sub-frames) to fix.
 
-  fp_unimpl           The program calls one of the FP conversion /
-                      arithmetic helpers (`i2f`, `d2l`, `fadd`, …),
-                      which the simulator's runtime stub registers
-                      but doesn't implement. No real runtime helper
-                      either yet, so this is a scope marker more
-                      than a bug.
+  (FP helpers are now implemented as Python hooks via host floats —
+  the asm-sim chapter walk no longer trips over `fp_unimpl`. The
+  asm versions are tracked separately as runtime work; until they
+  land, the sim runs FP via the host's float unit.)
 
   extern_unresolved   Program calls an external symbol the simulator
                       doesn't link (libc-style `exit`, etc.). A
@@ -75,52 +73,20 @@ SKIPS: dict[str, str] = {
     "chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c": "extern_unresolved",
     "chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c": "extern_unresolved",
 
-    # --- fp_unimpl (17): program calls an FP helper the sim doesn't
-    # have. Today neither simulator nor real runtime implements these.
-    "chapter_13/valid/explicit_casts/cvttsd2si_rewrite.c": "fp_unimpl",
-    "chapter_13/valid/explicit_casts/double_to_signed.c": "fp_unimpl",
-    "chapter_13/valid/explicit_casts/double_to_unsigned.c": "fp_unimpl",
-    "chapter_13/valid/explicit_casts/rewrite_cvttsd2si_regression.c": "fp_unimpl",
-    "chapter_13/valid/explicit_casts/signed_to_double.c": "fp_unimpl",
-    "chapter_13/valid/explicit_casts/unsigned_to_double.c": "fp_unimpl",
-    "chapter_13/valid/function_calls/double_and_int_params_recursive.c": "fp_unimpl",
-    "chapter_13/valid/function_calls/push_xmm.c": "fp_unimpl",
-    "chapter_13/valid/function_calls/use_arg_after_fun_call.c": "fp_unimpl",
-    "chapter_13/valid/implicit_casts/common_type.c": "fp_unimpl",
-    "chapter_13/valid/implicit_casts/complex_arithmetic_common_type.c": "fp_unimpl",
-    "chapter_13/valid/implicit_casts/convert_for_assignment.c": "fp_unimpl",
-    "chapter_15/valid/extra_credit/compound_assign_to_subscripted_val.c": "fp_unimpl",
-    "chapter_15/valid/initialization/automatic_nested.c": "fp_unimpl",
-    "chapter_16/valid/char_constants/char_constant_operations.c": "fp_unimpl",
-    "chapter_18/valid/extra_credit/other_features/struct_decl_in_switch_statement.c": "fp_unimpl",
-    "chapter_18/valid/params_and_returns/simple.c": "fp_unimpl",
-
     # --- frame_too_large (2): function's local_bytes > 253, can't
     # fit `LDY #(M+2)` in the prologue / epilogue's saved-FP slot
     # addressing.
     "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": "frame_too_large",
     "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c": "frame_too_large",
 
-    # --- wrong_value (17): runs to BRK with the wrong A. Most are
-    # in chapter 13 (FP) — programs that don't call an FP helper but
-    # depend on FP semantics for their answer — with a sprinkle of
-    # pointer / char edge cases.
-    "chapter_13/valid/constants/constant_doubles.c": "wrong_value",
-    "chapter_13/valid/extra_credit/compound_assign.c": "wrong_value",
-    "chapter_13/valid/extra_credit/compound_assign_implicit_cast.c": "wrong_value",
-    "chapter_13/valid/extra_credit/incr_and_decr.c": "wrong_value",
-    "chapter_13/valid/floating_expressions/arithmetic_ops.c": "wrong_value",
-    "chapter_13/valid/floating_expressions/loop_controlling_expression.c": "wrong_value",
-    "chapter_13/valid/floating_expressions/simple.c": "wrong_value",
-    "chapter_13/valid/floating_expressions/static_initialized_double.c": "wrong_value",
+    # --- wrong_value (3): runs to BRK with the wrong A. The
+    # remaining ones depend on FP comparison ops (which today lower
+    # inline as bit-pattern compare and don't honour IEEE 754's
+    # ±0-equality / ordering rules) or on memory layout assumptions
+    # that c6502 doesn't enforce.
     "chapter_13/valid/special_values/infinity.c": "wrong_value",
-    "chapter_13/valid/special_values/subnormal_not_zero.c": "wrong_value",
-    "chapter_14/valid/dereference/static_var_indirection.c": "wrong_value",
-    "chapter_14/valid/extra_credit/compound_assign_conversion.c": "wrong_value",
-    "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": "wrong_value",
     "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
     "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": "wrong_value",
-    "chapter_18/valid/params_and_returns/ignore_retval.c": "wrong_value",
 }
 
 

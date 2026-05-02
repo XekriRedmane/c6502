@@ -1,4 +1,16 @@
 // Compound assignment operations with structure members
+//
+// c6502 adaptation:
+//   * `unsigned long l` widened to `unsigned long long l` (c6502's
+//     ulong is 2B; needs to hold 4294967295, the c6502 analog of
+//     upstream's 18446744073709551615 = ULONG_MAX).
+//   * `int bar` widened to `long bar` (c6502's int is 1B; needs to
+//     hold 2000).
+//   * Check 6's expected value adjusted from 1615 to 1295: the
+//     upstream comment "(2^64-1) % 2000 = 1615" doesn't apply
+//     here. After scaling to c6502's 4-byte unsigned long long max
+//     (2^32-1 = 4294967295), the mod is 4294967295 % 2000 = 1295.
+//     Check 11 re-asserts that same value, also updated.
 struct inner {
     double a;
     char b;
@@ -6,10 +18,10 @@ struct inner {
 };
 
 struct outer {
-    unsigned long l;
+    unsigned long long l;
     struct inner *in_ptr;
     struct inner in_array[4];
-    int bar;
+    long bar;
 };
 
 int main(void) {
@@ -52,8 +64,9 @@ int main(void) {
     }
 
     // %=
-    (&o)->l %= o.bar;  // 18446744073709551615 % 2000 = 1615
-    if (o.l != 1615) {
+    (&o)->l %= o.bar;  // 4294967295 % 2000 = 1295 (c6502 analog of
+                       // upstream's 18446744073709551615 % 2000 = 1615)
+    if (o.l != 1295) {
         return 6;  // fail
     }
 
@@ -77,7 +90,7 @@ int main(void) {
         return 10;  // fail
     }
 
-    if (o.l != 1615) {
+    if (o.l != 1295) {
         return 11;  // fail
     }
 

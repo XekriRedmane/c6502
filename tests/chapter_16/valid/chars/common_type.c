@@ -6,12 +6,12 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
-long long ternary(int flag, char c) {
+long long ternary(int flag, signed char c) {
     // first we'll convert c to an unsigned long (2^16 - c), then to a long long
     return flag ? c : 1ul;
 }
 
-int char_lt_int(char c, int i) {
+int char_lt_int(signed char c, int i) {
     return c < i;  // common type is int
 }
 
@@ -20,11 +20,11 @@ int uchar_gt_long(unsigned char uc, long long l) {
 }
 
 /* On operations with two character types, both are promoted to int */
-int char_lt_uchar(char c, unsigned char u) {
+int char_lt_uchar(signed char c, unsigned char u) {
     return c < u;
 }
 
-int signed_char_le_char(signed char s, char c) {
+int signed_char_le_char(signed char s, signed char c) {
     return s <= c;
 }
 
@@ -59,8 +59,8 @@ int main(void) {
         return 3;
     }
 
-    char c = -1;
-    unsigned char u = 2;
+    signed char c = -1;
+    char u = 2;
     if (!char_lt_uchar(c, u)) {
         // we convert both c and u to int; we DON'T convert c to an unsigned
         // char!

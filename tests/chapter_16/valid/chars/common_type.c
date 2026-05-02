@@ -6,9 +6,9 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
-long long ternary(int flag, signed char c) {
-    // first we'll convert c to an unsigned long (2^16 - c), then to a long long
-    return flag ? c : 1ul;
+long ternary(int flag, signed char c) {
+    // first we'll convert c to an unsigned int (2^16 - c), then to a long
+    return flag ? c : 1u;
 }
 
 int char_lt_int(signed char c, int i) {
@@ -42,9 +42,9 @@ int multiply(void) {
 }
 
 int main(void) {
-    if (ternary(1, -10) != 65526ll) {
+    if (ternary(1, -10) != 65526l) {
         // 1 ? -10 : 1ul
-        // ==> (long long) (USHORT_MAX - 10)
+        // ==> (long) (UINT_MAX - 10)
         return 1;
     }
 

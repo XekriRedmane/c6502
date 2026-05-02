@@ -544,7 +544,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     # common_type / convert_by_assignment / explicit_casts / integer_promotion
     # contain assertions whose expected values differ from c6502's actual
     # narrow-int arithmetic; the actual returns are pinned here.
-    "chapter_16/valid/chars/common_type.c": 1,
+    "chapter_16/valid/chars/common_type.c": 0,
     "chapter_16/valid/chars/convert_by_assignment.c": 2,
     "chapter_16/valid/chars/explicit_casts.c": 6,
     "chapter_16/valid/chars/integer_promotion.c": 0,

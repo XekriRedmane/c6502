@@ -5,9 +5,13 @@
 
 int main(void) {
 
-    // inspect the four bytes of an int
-    int x = 100;
-    char *byte_ptr = (char *) &x;
+    // inspect the four bytes of a long (in c6502, `long` is 4 bytes
+    // — `int` is only 2, so it can't satisfy the test's premise).
+    // Use `signed char *` for the byte pointer because plain `char`
+    // is unsigned in c6502, and the test compares bytes against
+    // negative values like -128 / -1.
+    long x = 100;
+    signed char *byte_ptr = (signed char *) &x;
 
     if (byte_ptr[0] != 100) {
         return 1;
@@ -19,7 +23,7 @@ int main(void) {
 
     // now inspect a double -- only upper bit should be set
     double d = -0.0; // 0x8000_0000_0000_0000
-    byte_ptr = (char *) &d;
+    byte_ptr = (signed char *) &d;
     if (byte_ptr[7] != -128) {
         return 3;
     }
@@ -31,13 +35,13 @@ int main(void) {
     }
 
     // finally, let's look at an array
-    unsigned int array[3][2][1] = {
+    unsigned long array[3][2][1] = {
         {{-1}, {-1}},
         {{-1}, {-1}},
-        {{4294901760u}} // 0xffff_0000
+        {{4294901760ul}} // 0xffff_0000
     };
-    byte_ptr = (char *) array;
-    byte_ptr = byte_ptr + 16; // each row is 8 bytes since it has 2 ints
+    byte_ptr = (signed char *) array;
+    byte_ptr = byte_ptr + 16; // each row is 8 bytes since it has 2 longs
     if (byte_ptr[0] || byte_ptr[1]) {
         return 5;
     }

@@ -537,7 +537,7 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/char_constants/escape_sequences.c": 0,
     # 'c' = 99
     "chapter_16/valid/char_constants/return_char_constant.c": 99,
-    "chapter_16/valid/chars/access_through_char_pointer.c": 3,
+    "chapter_16/valid/chars/access_through_char_pointer.c": 0,
     "chapter_16/valid/chars/chained_casts.c": 0,
     "chapter_16/valid/chars/char_arguments.c": 0,
     "chapter_16/valid/chars/char_expressions.c": 0,

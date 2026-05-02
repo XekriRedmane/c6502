@@ -87,11 +87,6 @@ SKIPS: dict[str, str] = {
 
     # --- wrong_value: asm sim disagrees with TAC sim. Each is a
     # codegen bug worth tracking down separately.
-    # access_through_char_pointer: probes byte-by-byte layout of
-    # int / double / array — the test's premise (sizeof(int) == 4)
-    # doesn't hold on c6502 (sizeof(int) == 2 post-refactor), so
-    # OOB reads of byte_ptr[2..3] differ between TAC and asm sims.
-    "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
     "chapter_16/valid/extra_credit/bitshift_chars.c": "wrong_value",
     "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": "wrong_value",
 }

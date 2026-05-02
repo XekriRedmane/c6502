@@ -74,13 +74,18 @@ Mapping highlights (full per-op detail in `translate_binary` /
     RightShift)               shared zero-page slot block `HARGS`
                                (24 bytes). Width-driven helper choice:
                                8-bit operands dispatch to
-                               mul8/divmod8/asl8/asr8; 16-bit to
-                               mul16/divmod16/asl16/asr16; 32-bit to
-                               mul32/divmod32/asl32/asr32. Caller
-                               writes inputs into HARGS+0..N-1, JSRs,
-                               reads the result from a fixed offset
-                               later in the block (see the constants
-                               section for each helper's layout).
+                               mul8/{u,s}divmod8/asl8/{a,l}sr8; 16-bit
+                               to mul16/{u,s}divmod16/asl16/{a,l}sr16;
+                               32-bit to mul32/{u,s}divmod32/asl32/
+                               {a,l}sr32. The signedness split on
+                               `/`/`%` and `>>` rides on the operand
+                               type — `_is_unsigned_val(src1)` picks
+                               between `udivmod*`/`sdivmod*` and
+                               `lsr*`/`asr*`. Caller writes inputs
+                               into HARGS+0..N-1, JSRs, reads the
+                               result from a fixed offset later in
+                               the block (see the constants section
+                               for each helper's layout).
   FunctionCall(name, args,  -> AllocateStack(total_arg_bytes); write
               dst)             each arg's bytes into Stack(off..off+
                                size-1) in source order; Call name;
@@ -140,21 +145,25 @@ _REG_X = asm_ast.Reg(reg=asm_ast.X())
 # 8-bit helpers:
 #   mul8     in:  A=HARGS+0, B=HARGS+1   out: result.lo=HARGS+2,
 #                                              result.hi=HARGS+3
-#   divmod8  in:  num=HARGS+0, den=HARGS+1
+#   udivmod8 in:  num=HARGS+0, den=HARGS+1   (unsigned floor-divide)
 #                                       out: quot=HARGS+2, rem=HARGS+3
+#   sdivmod8 same shape as udivmod8, but trunc-toward-zero per C99
+#                                       §6.5.5.6 (sign of `n%d` matches
+#                                       sign of `n`)
 #   asl8     in:  val=HARGS+0, count=HARGS+1
 #                                       out: result=HARGS+2
 #   asr8     same shape as asl8 (signed arithmetic right shift)
 #
 # 16-bit helpers:
-#   mul16    in:  A=HARGS+0..1, B=HARGS+2..3
+#   mul16     in:  A=HARGS+0..1, B=HARGS+2..3
 #                                       out: result=HARGS+4..7 (32-bit)
-#   divmod16 in:  num=HARGS+0..1, den=HARGS+2..3
+#   udivmod16 in:  num=HARGS+0..1, den=HARGS+2..3   (unsigned)
 #                                       out: quot=HARGS+4..5,
 #                                            rem=HARGS+6..7
-#   asl16    in:  val=HARGS+0..1, count=HARGS+2 (1 byte)
+#   sdivmod16 same shape as udivmod16, but trunc-toward-zero
+#   asl16     in:  val=HARGS+0..1, count=HARGS+2 (1 byte)
 #                                       out: result=HARGS+3..4
-#   asr16    same shape as asl16
+#   asr16     same shape as asl16
 #
 # FP arithmetic helpers (not implemented yet; layout reserved):
 #   fadd/fsub/fmul/fdiv  in:  A=HARGS+0..3, B=HARGS+4..7
@@ -227,28 +236,42 @@ _DPTR = "DPTR"
 # arithmetic helpers.
 _ICALL = "icall"
 _MUL8 = "mul8"
-_DIVMOD8 = "divmod8"
+# divmod splits by signedness, parallel to asr / lsr for right shift.
+# `udivmod*` floor-divides two unsigned values; `sdivmod*` truncates-
+# toward-zero and produces a remainder with the dividend's sign per
+# C99 §6.5.5.6. Both write quotient at HARGS + 2 * width and remainder
+# at HARGS + 3 * width. `tac_to_asm`'s Divide / Modulo arms pick
+# between them via the operand-signedness predicate `_is_unsigned_val`
+# — same machinery `RightShift` uses to pick between `asr*` / `lsr*`.
+_UDIVMOD8 = "udivmod8"
+_SDIVMOD8 = "sdivmod8"
 _ASL8 = "asl8"
 _ASR8 = "asr8"
 _LSR8 = "lsr8"
 _MUL16 = "mul16"
-_DIVMOD16 = "divmod16"
+_UDIVMOD16 = "udivmod16"
+_SDIVMOD16 = "sdivmod16"
 _ASL16 = "asl16"
 _ASR16 = "asr16"
 _LSR16 = "lsr16"
 # 32-bit integer helpers. Same "output slots immediately after
 # inputs" convention as the 8/16-bit forms:
-#   mul32    in:  A=HARGS+0..3, B=HARGS+4..7
+#   mul32     in:  A=HARGS+0..3, B=HARGS+4..7
 #                                       out: result=HARGS+8..15 (64-bit)
-#   divmod32 in:  num=HARGS+0..3, den=HARGS+4..7
+#   udivmod32 in:  num=HARGS+0..3, den=HARGS+4..7   (unsigned)
 #                                       out: quot=HARGS+8..11,
 #                                            rem=HARGS+12..15
-#   asl32    in:  val=HARGS+0..3, count=HARGS+4 (1 byte)
+#   sdivmod32 same shape as udivmod32, but trunc-toward-zero
+#   asl32     in:  val=HARGS+0..3, count=HARGS+4 (1 byte)
 #                                       out: result=HARGS+5..8
-#   asr32    same shape as asl32 (signed arithmetic right shift)
-#   lsr32    same shape as asr32 (logical right shift — zero-fill)
+#   asr32     same shape as asl32 (signed arithmetic right shift)
+#   lsr32     same shape as asr32 (logical right shift — zero-fill)
 _MUL32 = "mul32"
-_DIVMOD32 = "divmod32"
+# `udivmod32` floor-divides; `sdivmod32` truncates toward zero. Same
+# split as 8-bit and 16-bit; same HARGS layout. See _UDIVMOD8 above
+# for the C99 semantics.
+_UDIVMOD32 = "udivmod32"
+_SDIVMOD32 = "sdivmod32"
 _ASL32 = "asl32"
 _ASR32 = "asr32"
 _LSR32 = "lsr32"
@@ -1277,15 +1300,23 @@ class Translator:
                     dst_op=dst_op,
                 )
             case tac_ast.Divide():
-                # divmod8/16/32 quotient sits at the byte(s)
-                # immediately after the inputs; the remainder follows
-                # at the next slot run (see Modulo below).
-                if size == 1:
-                    helper, out_off = _DIVMOD8, 2
-                elif size == 2:
-                    helper, out_off = _DIVMOD16, 4
+                # `/` dispatches by operand signedness: signed →
+                # `sdivmod*`, unsigned → `udivmod*`. Quotient sits at
+                # HARGS + 2 * width (immediately after the inputs);
+                # remainder follows at HARGS + 3 * width (see Modulo
+                # below). After the C99 §6.3.1.8 promotions both
+                # operands share a common type, so checking either
+                # one's signedness is enough.
+                if self._is_unsigned_val(src1):
+                    helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32)
                 else:
-                    helper, out_off = _DIVMOD32, 8
+                    helpers = (_SDIVMOD8, _SDIVMOD16, _SDIVMOD32)
+                if size == 1:
+                    helper, out_off = helpers[0], 2
+                elif size == 2:
+                    helper, out_off = helpers[1], 4
+                else:
+                    helper, out_off = helpers[2], 8
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,
@@ -1293,15 +1324,20 @@ class Translator:
                     dst_op=dst_op,
                 )
             case tac_ast.Modulo():
-                # Remainder follows the quotient: divmod8 rem at
-                # HARGS+3, divmod16 rem at HARGS+6..7, divmod32 rem
-                # at HARGS+12..15.
-                if size == 1:
-                    helper, out_off = _DIVMOD8, 3
-                elif size == 2:
-                    helper, out_off = _DIVMOD16, 6
+                # `%` dispatches the same way as `/`. The remainder
+                # follows the quotient in the helper's output area:
+                # 8-bit rem at HARGS+3, 16-bit rem at HARGS+6..7,
+                # 32-bit rem at HARGS+12..15.
+                if self._is_unsigned_val(src1):
+                    helpers = (_UDIVMOD8, _UDIVMOD16, _UDIVMOD32)
                 else:
-                    helper, out_off = _DIVMOD32, 12
+                    helpers = (_SDIVMOD8, _SDIVMOD16, _SDIVMOD32)
+                if size == 1:
+                    helper, out_off = helpers[0], 3
+                elif size == 2:
+                    helper, out_off = helpers[1], 6
+                else:
+                    helper, out_off = helpers[2], 12
                 return _translate_helper_call(
                     inputs=[(src1_op, size), (src2_op, size)],
                     helper=helper,

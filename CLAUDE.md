@@ -976,27 +976,31 @@ takes one AST and returns another (or text for emit):
      `ddiv`, which need 16 bytes in + 8 bytes out); integer helpers
      use only the low 8 bytes.
      Caller writes inputs into `HARGS+0..N-1`, JSRs the helper
-     (mul8/divmod8/asl8/asr8/lsr8 for 1-byte operands;
-     mul16/divmod16/asl16/asr16/lsr16 for 2-byte;
-     mul32/divmod32/asl32/asr32/lsr32 for 4-byte), and reads the
-     result from a fixed offset later in the block. Inputs survive
-     the call. Per-helper layout (inputs → outputs):
-       mul8     A:`+0`, B:`+1`              → product:`+2..+3` (16-bit)
-       divmod8  num:`+0`, den:`+1`          → quot:`+2`, rem:`+3`
-       asl8/    val:`+0`, count:`+1`        → result:`+2`
+     (mul8 / udivmod8 / sdivmod8 / asl8 / asr8 / lsr8 for 1-byte
+     operands; the 16-bit and 32-bit families have the same names
+     with the suffix changed to 16 or 32), and reads the result
+     from a fixed offset later in the block. Inputs survive the
+     call. The signed/unsigned divmod split mirrors the asr/lsr
+     right-shift split: signed `/` and `%` route to `sdivmod*`
+     (trunc-toward-zero per C99 §6.5.5.6), unsigned to `udivmod*`
+     (floor-divide). Per-helper layout (inputs → outputs):
+       mul8       A:`+0`, B:`+1`              → product:`+2..+3` (16-bit)
+       udivmod8/  num:`+0`, den:`+1`          → quot:`+2`, rem:`+3`
+        sdivmod8
+       asl8/      val:`+0`, count:`+1`        → result:`+2`
         asr8/
         lsr8
-       mul16    A:`+0..+1`, B:`+2..+3`      → product:`+4..+7` (32-bit)
-       divmod16 num:`+0..+1`, den:`+2..+3`  → quot:`+4..+5`,
-                                              rem:`+6..+7`
-       asl16/   val:`+0..+1`, count:`+2`    → result:`+3..+4`
-        asr16/   (1-byte count: shifts ≥16 are UB, so the high byte
-        lsr16     of a promoted-to-Long count is dropped)
-       mul32    A:`+0..+3`, B:`+4..+7`      → product:`+8..+15` (64-bit)
-       divmod32 num:`+0..+3`, den:`+4..+7`  → quot:`+8..+11`,
-                                              rem:`+12..+15`
-       asl32/   val:`+0..+3`, count:`+4`    → result:`+5..+8`
-        asr32/   (1-byte count: shifts ≥32 are UB)
+       mul16      A:`+0..+1`, B:`+2..+3`      → product:`+4..+7` (32-bit)
+       udivmod16/ num:`+0..+1`, den:`+2..+3`  → quot:`+4..+5`,
+        sdivmod16                              rem:`+6..+7`
+       asl16/     val:`+0..+1`, count:`+2`    → result:`+3..+4`
+        asr16/     (1-byte count: shifts ≥16 are UB, so the high byte
+        lsr16      of a promoted-to-Long count is dropped)
+       mul32      A:`+0..+3`, B:`+4..+7`      → product:`+8..+15` (64-bit)
+       udivmod32/ num:`+0..+3`, den:`+4..+7`  → quot:`+8..+11`,
+        sdivmod32                              rem:`+12..+15`
+       asl32/     val:`+0..+3`, count:`+4`    → result:`+5..+8`
+        asr32/     (1-byte count: shifts ≥32 are UB)
         lsr32
      `RightShift` dispatches by operand signedness: signed operands
      route to `asr*` (arithmetic, sign-preserving), unsigned to

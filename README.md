@@ -723,22 +723,28 @@ in `tac_to_asm` knows the layout for every helper it emits.
 
 **Integer helpers** (the `8` / `16` suffix is the operand width):
 
-| helper     | inputs                                       | output                          |
-| ---------- | -------------------------------------------- | ------------------------------- |
-| `mul8`     | `A=HARGS+0`, `B=HARGS+1` (1B each)           | `result=HARGS+2..3` (2B)        |
-| `divmod8`  | `num=HARGS+0`, `den=HARGS+1` (1B each)       | `quot=HARGS+2`, `rem=HARGS+3`   |
-| `asl8`     | `val=HARGS+0`, `count=HARGS+1` (1B each)     | `result=HARGS+2` (1B)           |
-| `asr8`     | (same shape as `asl8`; signed right shift)   | `result=HARGS+2` (1B)           |
-| `mul16`    | `A=HARGS+0..1`, `B=HARGS+2..3` (2B each)     | `result=HARGS+4..7` (4B)        |
-| `divmod16` | `num=HARGS+0..1`, `den=HARGS+2..3`           | `quot=HARGS+4..5`, `rem=HARGS+6..7` |
-| `asl16`    | `val=HARGS+0..1` (2B), `count=HARGS+2` (1B)  | `result=HARGS+3..4` (2B)        |
-| `asr16`    | (same shape as `asl16`)                      | `result=HARGS+3..4` (2B)        |
+| helper      | inputs                                       | output                          |
+| ----------- | -------------------------------------------- | ------------------------------- |
+| `mul8`      | `A=HARGS+0`, `B=HARGS+1` (1B each)           | `result=HARGS+2..3` (2B)        |
+| `udivmod8`  | `num=HARGS+0`, `den=HARGS+1` (1B each)       | `quot=HARGS+2`, `rem=HARGS+3`   |
+| `sdivmod8`  | (same shape as `udivmod8`; trunc-toward-zero) | `quot=HARGS+2`, `rem=HARGS+3`   |
+| `asl8`      | `val=HARGS+0`, `count=HARGS+1` (1B each)     | `result=HARGS+2` (1B)           |
+| `asr8`      | (same shape as `asl8`; signed right shift)   | `result=HARGS+2` (1B)           |
+| `lsr8`      | (same shape as `asl8`; logical right shift)  | `result=HARGS+2` (1B)           |
+| `mul16`     | `A=HARGS+0..1`, `B=HARGS+2..3` (2B each)     | `result=HARGS+4..7` (4B)        |
+| `udivmod16` | `num=HARGS+0..1`, `den=HARGS+2..3`           | `quot=HARGS+4..5`, `rem=HARGS+6..7` |
+| `sdivmod16` | (same shape as `udivmod16`; trunc-toward-zero) | `quot=HARGS+4..5`, `rem=HARGS+6..7` |
+| `asl16`     | `val=HARGS+0..1` (2B), `count=HARGS+2` (1B)  | `result=HARGS+3..4` (2B)        |
+| `asr16`     | (same shape as `asl16`)                      | `result=HARGS+3..4` (2B)        |
+| `lsr16`     | (same shape as `asl16`)                      | `result=HARGS+3..4` (2B)        |
 
-The dispatch picks the 8-bit or 16-bit helper from the operand
-width. `>>` always picks the signed `asr` variant — c6502 currently
-treats every integer as signed for shifts. `mul8` / `mul16` produce
-double-width results, but the lowering reads only the low half: C
-multiplication wraps on overflow, so the high half is discarded.
+The dispatch picks the 8-bit, 16-bit, or 32-bit helper from the
+operand width, and the signed / unsigned variant from the operand
+type via `_is_unsigned_val` — same machinery `>>` uses to pick
+between `asr*` and `lsr*`. `mul*` produces double-width results,
+but the lowering reads only the low half: C multiplication wraps on
+overflow, so the high half is discarded; one helper covers signed
+and unsigned because the bit pattern of the low half is identical.
 
 **FP arithmetic helpers** (Float = 4B IEEE 754 single, Double = 8B
 IEEE 754 double):

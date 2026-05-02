@@ -345,10 +345,12 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
-    def test_binary_divide_lowered_to_divmod8_call(self):
-        # divmod8: dividend → HARGS+0, divisor → HARGS+1, Call,
+    def test_binary_divide_lowered_to_sdivmod8_call(self):
+        # sdivmod8: dividend → HARGS+0, divisor → HARGS+1, Call,
         # quotient (HARGS+2) → dst. Remainder at HARGS+3 is unused
-        # for `/` (Modulo reads it; see below).
+        # for `/` (Modulo reads it; see below). Operand %0 has no
+        # symbol-table entry here, so `_is_unsigned_val` defaults to
+        # False — signed dispatch.
         instr = tac_ast.Binary(
             op=tac_ast.Divide(),
             src1=tac_ast.Var(name="%0"),
@@ -362,7 +364,7 @@ class TestTranslateInstruction(unittest.TestCase):
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
-                asm_ast.Call(name="divmod8"),
+                asm_ast.Call(name="sdivmod8"),
                 asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%1", offset=0)),
             ],
@@ -469,9 +471,11 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
-    def test_binary_modulo_lowered_to_divmod8_remainder(self):
+    def test_binary_modulo_lowered_to_sdivmod8_remainder(self):
         # Same input layout as Divide; the remainder lives at the
-        # slot pair after the quotient (HARGS+3 for divmod8).
+        # slot pair after the quotient (HARGS+3 for sdivmod8). Both
+        # operands are signed `ConstInt`, so `_is_unsigned_val`
+        # returns False and the signed helper is selected.
         instr = tac_ast.Binary(
             op=tac_ast.Modulo(),
             src1=tac_ast.Constant(const=tac_ast.ConstInt(value=17)),
@@ -485,7 +489,7 @@ class TestTranslateInstruction(unittest.TestCase):
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
                 asm_ast.Mov(src=asm_ast.Imm(value=5), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
-                asm_ast.Call(name="divmod8"),
+                asm_ast.Call(name="sdivmod8"),
                 asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=3), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%0", offset=0)),
             ],
@@ -915,7 +919,7 @@ class TestTranslateLongLong(unittest.TestCase):
         calls = [i for i in out if isinstance(i, asm_ast.Call)]
         self.assertEqual([c.name for c in calls], ["mul32"])
 
-    def test_unsigned_long_long_divide_dispatches_to_divmod32(self):
+    def test_unsigned_long_long_divide_dispatches_to_udivmod32(self):
         import c99_ast
         t = self._make_translator(c99_ast.ULongLong)
         out = t.translate_instruction(tac_ast.Binary(
@@ -925,7 +929,7 @@ class TestTranslateLongLong(unittest.TestCase):
             dst=tac_ast.Var(name="%dst"),
         ))
         calls = [i for i in out if isinstance(i, asm_ast.Call)]
-        self.assertEqual([c.name for c in calls], ["divmod32"])
+        self.assertEqual([c.name for c in calls], ["udivmod32"])
 
     def test_long_long_left_shift_dispatches_to_asl32(self):
         import c99_ast

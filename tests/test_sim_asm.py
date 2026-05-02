@@ -101,14 +101,10 @@ SKIPS: dict[str, str] = {
     "chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c": "frame_too_large",
     "chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c": "frame_too_large",
 
-    # --- wrong_value (23): runs to BRK with the wrong A. Most are
+    # --- wrong_value (17): runs to BRK with the wrong A. Most are
     # in chapter 13 (FP) — programs that don't call an FP helper but
     # depend on FP semantics for their answer — with a sprinkle of
-    # signed-div / pointer / char edge cases.
-    "chapter_3/valid/div_neg.c": "wrong_value",
-    "chapter_5/valid/exp_then_declaration.c": "wrong_value",
-    "chapter_11/valid/long_expressions/arithmetic_ops.c": "wrong_value",
-    "chapter_12/valid/extra_credit/compound_assign_uint.c": "wrong_value",
+    # pointer / char edge cases.
     "chapter_13/valid/constants/constant_doubles.c": "wrong_value",
     "chapter_13/valid/extra_credit/compound_assign.c": "wrong_value",
     "chapter_13/valid/extra_credit/compound_assign_implicit_cast.c": "wrong_value",
@@ -122,8 +118,6 @@ SKIPS: dict[str, str] = {
     "chapter_14/valid/dereference/static_var_indirection.c": "wrong_value",
     "chapter_14/valid/extra_credit/compound_assign_conversion.c": "wrong_value",
     "chapter_15/valid/extra_credit/compound_assign_to_nested_subscript.c": "wrong_value",
-    "chapter_15/valid/pointer_arithmetic/pointer_add.c": "wrong_value",
-    "chapter_15/valid/pointer_arithmetic/pointer_diff.c": "wrong_value",
     "chapter_16/valid/chars/access_through_char_pointer.c": "wrong_value",
     "chapter_16/valid/strings_as_initializers/test_alignment.c": "wrong_value",
     "chapter_18/valid/extra_credit/member_access/static_union_access.c": "wrong_value",

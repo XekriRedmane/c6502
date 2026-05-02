@@ -130,7 +130,7 @@ def _make_mul(in_size: int, out_size: int) -> Hook:
     return hook
 
 
-def _make_divmod(in_size: int) -> Hook:
+def _make_udivmod(in_size: int) -> Hook:
     """Unsigned divide of two `in_size`-byte values. Quotient at HARGS
     + 2*in_size, remainder at HARGS + 3*in_size. Division by zero
     raises (matches C99's UB but at least won't silently produce
@@ -139,8 +139,37 @@ def _make_divmod(in_size: int) -> Hook:
         n = _read_int(mem, HARGS + 0, in_size)
         d = _read_int(mem, HARGS + in_size, in_size)
         if d == 0:
-            raise RuntimeError(f"divmod{in_size * 8}: division by zero")
+            raise RuntimeError(f"udivmod{in_size * 8}: division by zero")
         q = n // d
+        r = n - q * d
+        _write_int(mem, HARGS + 2 * in_size, q, in_size)
+        _write_int(mem, HARGS + 3 * in_size, r, in_size)
+    return hook
+
+
+def _make_sdivmod(in_size: int) -> Hook:
+    """Signed divide of two `in_size`-byte values per C99 §6.5.5.6:
+    `/` truncates toward zero, and `%` returns a remainder with the
+    same sign as the dividend (so `(a/b)*b + a%b == a` always
+    holds). Quotient at HARGS+2*in_size, remainder at HARGS+3*in_size.
+    Python's `//` floors, so we sign-correct: floor-div agrees with
+    trunc-div when the result is non-negative; when negative we
+    bump by 1 toward zero and adjust the remainder to match."""
+    def hook(mem: bytearray) -> None:
+        n_raw = _read_int(mem, HARGS + 0, in_size)
+        d_raw = _read_int(mem, HARGS + in_size, in_size)
+        if d_raw == 0:
+            raise RuntimeError(f"sdivmod{in_size * 8}: division by zero")
+        n = _signed(n_raw, in_size)
+        d = _signed(d_raw, in_size)
+        # C trunc-toward-zero: q = trunc(n / d), r = n - q * d.
+        # Python's int division rounds toward negative infinity; the
+        # `int` builtin on a float rounds toward zero, but for exact
+        # arithmetic we use the explicit construction below to avoid
+        # FP precision issues for wide types.
+        q = abs(n) // abs(d)
+        if (n < 0) ^ (d < 0):
+            q = -q
         r = n - q * d
         _write_int(mem, HARGS + 2 * in_size, q, in_size)
         _write_int(mem, HARGS + 3 * in_size, r, in_size)
@@ -209,23 +238,26 @@ def _fp_unimplemented(name: str) -> Hook:
 
 _HELPERS: list[tuple[str, Hook]] = [
     # 1-byte integer
-    ("mul8",     _make_mul(1, 2)),
-    ("divmod8",  _make_divmod(1)),
-    ("asl8",     _make_asl(1)),
-    ("asr8",     _make_asr(1)),
-    ("lsr8",     _make_lsr(1)),
+    ("mul8",      _make_mul(1, 2)),
+    ("udivmod8",  _make_udivmod(1)),
+    ("sdivmod8",  _make_sdivmod(1)),
+    ("asl8",      _make_asl(1)),
+    ("asr8",      _make_asr(1)),
+    ("lsr8",      _make_lsr(1)),
     # 2-byte integer
-    ("mul16",    _make_mul(2, 4)),
-    ("divmod16", _make_divmod(2)),
-    ("asl16",    _make_asl(2)),
-    ("asr16",    _make_asr(2)),
-    ("lsr16",    _make_lsr(2)),
+    ("mul16",     _make_mul(2, 4)),
+    ("udivmod16", _make_udivmod(2)),
+    ("sdivmod16", _make_sdivmod(2)),
+    ("asl16",     _make_asl(2)),
+    ("asr16",     _make_asr(2)),
+    ("lsr16",     _make_lsr(2)),
     # 4-byte integer
-    ("mul32",    _make_mul(4, 8)),
-    ("divmod32", _make_divmod(4)),
-    ("asl32",    _make_asl(4)),
-    ("asr32",    _make_asr(4)),
-    ("lsr32",    _make_lsr(4)),
+    ("mul32",     _make_mul(4, 8)),
+    ("udivmod32", _make_udivmod(4)),
+    ("sdivmod32", _make_sdivmod(4)),
+    ("asl32",     _make_asl(4)),
+    ("asr32",     _make_asr(4)),
+    ("lsr32",     _make_lsr(4)),
     # FP integer→float
     ("i2f",  _fp_unimplemented("i2f")),
     ("u2f",  _fp_unimplemented("u2f")),

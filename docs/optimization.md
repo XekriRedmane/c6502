@@ -723,6 +723,155 @@ the prologue saves whichever ZP bytes the function uses from
 $C0-$FF, restoring them in the epilogue, so the caller's view of
 those bytes survives the call.
 
+### The actual 6502 assembly
+
+Here's the output of
+`compile.py - --codegen --optimize` on the C source above:
+
+```
+main:
+   SUBROUTINE
+
+   ; prologue: 2 arg bytes, 0 local bytes
+   SEC
+   LDA   SSP
+   SBC   #$02
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDY   #$01
+   LDA   FP
+   STA   (SSP),Y
+   INY
+   LDA   FP+1
+   STA   (SSP),Y
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+
+.main@ssa_block@0:
+   LDY   #$03                 ; load param n (low byte) from FP+3
+   LDA   (FP),Y
+   CLC
+   ADC   #$01                 ; n + 1
+   STA   $8A                  ; a.1 lo  → ZP $8A
+   LDY   #$04                 ; load param n (high byte) from FP+4
+   LDA   (FP),Y
+   ADC   #$00
+   STA   $8B                  ; a.1 hi  → ZP $8B
+   LDA   #$00                 ; b.2 = 0 (init)
+   STA   $88                  ;   b.2 lo → ZP $88
+   LDA   #$00
+   STA   $89                  ;   b.2 hi → ZP $89
+   LDA   #$00                 ; i.2 = 0 (init)
+   STA   $86                  ;   i.2 lo → ZP $86
+   LDA   #$00
+   STA   $87                  ;   i.2 hi → ZP $87
+.loop@0_start:
+   LDA   $86                  ; cond.1 = i.2 < n  (signed compare)
+   SEC
+   LDY   #$03
+   SBC   (FP),Y               ; subtract n's low byte from i.2 lo
+   LDA   $87
+   LDY   #$04
+   SBC   (FP),Y               ; subtract n's high byte from i.2 hi (with borrow)
+   BVC   .cmp_novf@0          ; correct N flag for signed overflow
+   EOR   #$80
+.cmp_novf@0:
+   BMI   .cmp_true@1          ; if signed result negative → i.2 < n
+   LDA   #$00
+   JMP   .cmp_end@2
+.cmp_true@1:
+   LDA   #$01
+.cmp_end@2:
+   STA   $82                  ; cond.1 lo → ZP $82
+   LDA   #$00
+   STA   $83                  ; cond.1 hi → ZP $83
+   LDA   $82                  ; if !cond.1 goto .loop_break
+   ORA   $83
+   BEQ   .loop@0_break
+   LDA   $88                  ; b.3 = b.2 + a.1
+   CLC
+   ADC   $8A
+   STA   $84                  ;   b.3 lo → ZP $84
+   LDA   $89
+   ADC   $8B
+   STA   $85                  ;   b.3 hi → ZP $85
+.loop@0_continue:
+   LDA   $86                  ; %temp = i.2 + 1  (the i+1 computation)
+   CLC
+   ADC   #$01
+   STA   $82                  ;   %temp reuses ZP $82 (cond.1's slot —
+   LDA   $87                  ;   they don't interfere)
+   ADC   #$00
+   STA   $83
+   LDA   $84                  ; de-SSA Copy: b.2 ← b.3
+   STA   $88
+   LDA   $85
+   STA   $89
+   LDA   $82                  ; de-SSA Copy: i.2 ← %temp
+   STA   $86                  ; (topo-sorted: read i.2 before overwriting)
+   LDA   $83
+   STA   $87
+   JMP   .loop@0_start
+.loop@0_break:
+   LDA   $88                  ; return b.2 (via HARGS, the 2-byte return slot)
+   STA   HARGS
+   LDA   $89
+   STA   HARGS+1
+
+   ; epilogue
+   CLC                        ; SSP = FP + 4 (rewind: M=0, N=2, +2 saved-FP)
+   LDA   FP
+   ADC   #$04
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$01                 ; restore caller FP from saved-FP slot
+   LDA   (FP),Y
+   TAX
+   INY
+   LDA   (FP),Y
+   STA   FP+1
+   STX   FP
+   RTS
+```
+
+A few things to notice:
+
+- **No callee-saved overhead.** `local_bytes = 0` and there are
+  no save/restore sequences, because this function has no `int*`-
+  taken args, no function calls, and no values that span calls.
+  Every regalloc-eligible variable went into caller-saved
+  ($80-$BF) and there was nothing to preserve across.
+
+- **All ZP loads use the fast addressing mode.** Every variable
+  read in the loop body is a 3-cycle `LDA $XX`. With `--codegen`
+  alone (no `--optimize`), every one would be the 8-cycle `LDY
+  #off; LDA (FP),Y` sequence. The loop runs roughly 2.5× faster
+  in cycles per iteration.
+
+- **Slots are reused across non-interfering values.** ZP $82/$83
+  holds `cond.1` first, then later holds the temp for `i + 1`.
+  The interference graph said they're never live at the same
+  point, so they can share.
+
+- **Param `n` stays in the frame.** The two `LDA (FP),Y` reads
+  inside the loop are param accesses — params arrive on the
+  soft stack and `replace_pseudoregisters` keeps them there
+  regardless of any color regalloc may have assigned. (Future
+  work: copy hot params into ZP at the prologue.)
+
+- **The de-SSA Copies sort correctly.** Look at the sequence at
+  the bottom of the loop body: first `Copy(b.3, b.2)` (writing
+  ZP $88/$89), then `Copy(%temp, i.2)`. The `i.2` read for the
+  comparison happened at the TOP of the loop, well before this
+  point — so overwriting i.2 here is safe. Topological sort on
+  the parallel-copy set is what guarantees this.
+
 ---
 
 ## Inspecting intermediate results

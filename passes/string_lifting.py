@@ -214,6 +214,7 @@ class StringLifter:
             name=fd.name, params=fd.params,
             body=self._lift_block(fd.body),
             data_type=fd.data_type, storage_class=fd.storage_class,
+            abi_annotation=fd.abi_annotation,
         )
 
     # ------------------------------------------------------------------

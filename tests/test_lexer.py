@@ -18,7 +18,9 @@ class TestKeywords(unittest.TestCase):
                 self.assertEqual(kinds_vals(kw), [(TokenKind.KEYWORD, kw)])
 
     def test_keyword_count(self):
-        self.assertEqual(len(KEYWORDS), 37)
+        # 37 standard C99 keywords + `__attribute__` (GCC-style
+        # extension used to attach ABI annotations).
+        self.assertEqual(len(KEYWORDS), 38)
 
 
 class TestIdentifiers(unittest.TestCase):

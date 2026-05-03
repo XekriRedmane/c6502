@@ -305,6 +305,29 @@ def _consume_specifiers(items, start):
     return specs, i
 
 
+_KNOWN_ABI_ANNOTATIONS = frozenset({"zp_abi"})
+
+
+def _consume_attribute_clause(items, start):
+    """If `items[start]` is a transformed attribute_clause result
+    (a string — the annotation name), return `(annotation, start+1)`.
+    Otherwise the optional `attribute_clause?` in the grammar didn't
+    fire, and we return `(None, start)`.
+
+    Lark's `Token` class subclasses `str`, so `isinstance(_, str)`
+    alone would incorrectly match specifier tokens. The
+    `attribute_clause` transformer returns a plain `str`; we
+    distinguish by checking that the value lacks the `.type`
+    attribute Tokens carry."""
+    if (
+        start < len(items)
+        and isinstance(items[start], str)
+        and not hasattr(items[start], "type")
+    ):
+        return items[start], start + 1
+    return None, start
+
+
 # Integer constant typing per C99 §6.4.4.1 paragraph 5: "the type of
 # an integer constant is the first of the corresponding list in which
 # its value can be represented." c6502 models six integer types —
@@ -1342,6 +1365,20 @@ class _ASTBuilder(Transformer):
         # for the body, then the VarDecl for `x`.
         return child
 
+    def attribute_clause(self, items):
+        # `attribute_clause: ATTRIBUTE LPAREN LPAREN IDENTIFIER
+        # RPAREN RPAREN`. The interesting child is the IDENTIFIER
+        # (items[3]); the rest are punctuation. Reject any annotation
+        # name we don't recognize — typos shouldn't silently
+        # miscompile.
+        name = items[3].value
+        if name not in _KNOWN_ABI_ANNOTATIONS:
+            raise ParserError(
+                f"unknown attribute name: {name!r}; expected one of "
+                f"{sorted(_KNOWN_ABI_ANNOTATIONS)}",
+            )
+        return name
+
     # `initializer` rule alternatives. `init_exp` is `assignment_exp`
     # (a single scalar initializer); the inner exp passes through
     # unchanged. `init_list` is `{ initializer (, initializer)* ,? }`
@@ -1364,13 +1401,14 @@ class _ASTBuilder(Transformer):
         return c99_ast.InitList(items=children)
 
     def var_decl(self, items):
-        # `var_decl: specifier+ declarator (ASSIGN exp)? SEMICOLON`.
-        # Layout: <specs...> declarator [ASSIGN exp] SEMICOLON. The
-        # specifiers give the BASE type; the declarator wraps it
-        # with pointer / function modifiers and names the identifier.
-        # If the resulting composed_type is FunType, this is actually
-        # a forward function declaration (`int foo(int);` parses as
-        # var_decl with a function-typed declarator) — rewrap as
+        # `var_decl: attribute_clause? specifier+ declarator (ASSIGN
+        # exp)? SEMICOLON`. Optional attribute-clause rides at index 0
+        # if the grammar matched it. The specifiers give the BASE
+        # type; the declarator wraps it with pointer / function
+        # modifiers and names the identifier. If the resulting
+        # composed_type is FunType, this is actually a forward
+        # function declaration (`int foo(int);` parses as var_decl
+        # with a function-typed declarator) — rewrap as
         # Type_function_decl with body=None.
         #
         # Returns a list of `Type_declaration` AST nodes. When the
@@ -1378,7 +1416,8 @@ class _ASTBuilder(Transformer):
         # (`struct foo { int a; } x;`) the StructDecl for the body
         # comes FIRST in the returned list, followed by the
         # VarDecl/FunctionDecl that consumed the type.
-        specs, i = _consume_specifiers(items, 0)
+        abi_annotation, i = _consume_attribute_clause(items, 0)
+        specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         decl_tree = items[i]
@@ -1400,8 +1439,15 @@ class _ASTBuilder(Transformer):
                 body=None,
                 data_type=composed,
                 storage_class=storage_class,
+                abi_annotation=abi_annotation,
             ))
         else:
+            if abi_annotation is not None:
+                raise ParserError(
+                    f"`__attribute__(({abi_annotation}))` is only "
+                    f"valid on function declarations; saw it on "
+                    f"object declaration `{name}`",
+                )
             tail = c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
                 name=name,
                 init=init,
@@ -1411,15 +1457,23 @@ class _ASTBuilder(Transformer):
         return struct_decls + [tail]
 
     def tag_only_decl(self, items):
-        # `var_decl: specifier+ SEMICOLON -> tag_only_decl`. Used for
-        # struct/union forward declarations (`struct foo;`) and
-        # struct/union definitions with no declarator (`struct foo
-        # { int a; };`). Storage classes aren't legal here — `static
-        # struct foo;` is meaningless. Returns a list of
+        # `var_decl: attribute_clause? specifier+ SEMICOLON ->
+        # tag_only_decl`. Used for struct/union forward declarations
+        # (`struct foo;`) and struct/union definitions with no
+        # declarator (`struct foo { int a; };`). Storage classes
+        # aren't legal here — `static struct foo;` is meaningless.
+        # Attribute clauses are also not legal here — there's no
+        # function declaration to attach them to. Returns a list of
         # Type_declaration nodes (the StructDecl for the body, plus
         # any *nested* struct definitions encountered while parsing
         # the body).
-        specs, i = _consume_specifiers(items, 0)
+        abi_annotation, i = _consume_attribute_clause(items, 0)
+        if abi_annotation is not None:
+            raise ParserError(
+                f"`__attribute__(({abi_annotation}))` is only valid "
+                f"on function declarations",
+            )
+        specs, i = _consume_specifiers(items, i)
         # The semicolon is the last item; nothing else.
         if i != len(items) - 1:
             raise AssertionError(
@@ -1467,13 +1521,13 @@ class _ASTBuilder(Transformer):
         return struct_decls + [forward]
 
     def function_decl(self, items):
-        # `function_decl: specifier+ declarator block` — function
-        # *definition* path (body present). Forward declarations land
-        # in `var_decl` above (the grammar lets `int foo(int);` parse
-        # as var_decl with a function-typed declarator, since both
-        # rules share the `specifier+ declarator` prefix and the
-        # trailing `(ASSIGN exp)? SEMICOLON` matches the no-init,
-        # no-body case).
+        # `function_decl: attribute_clause? specifier+ declarator
+        # block` — function *definition* path (body present). Forward
+        # declarations land in `var_decl` above (the grammar lets
+        # `int foo(int);` parse as var_decl with a function-typed
+        # declarator, since both rules share the `specifier+ declarator`
+        # prefix and the trailing `(ASSIGN exp)? SEMICOLON` matches
+        # the no-init, no-body case).
         #
         # The declarator must compose to a FunType — its outermost
         # direct_declarator form has to be the function-suffix shape.
@@ -1482,7 +1536,8 @@ class _ASTBuilder(Transformer):
         # Returns a list of Type_declaration AST nodes (typically one
         # FunctionDecl, plus any inline struct definitions that
         # appeared in the return-type specifier).
-        specs, i = _consume_specifiers(items, 0)
+        abi_annotation, i = _consume_attribute_clause(items, 0)
+        specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         decl_tree = items[i]
@@ -1501,6 +1556,7 @@ class _ASTBuilder(Transformer):
             body=block,
             data_type=composed,
             storage_class=storage_class,
+            abi_annotation=abi_annotation,
         ))
         return struct_decls + [tail]
 

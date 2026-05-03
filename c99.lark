@@ -131,6 +131,12 @@ BOOL: "_Bool"
 COMPLEX: "_Complex"
 IMAGINARY: "_Imaginary"
 
+// GCC-style attribute annotation. The only recognized form today is
+// `__attribute__((<name>))`, with `<name>` being a plain IDENTIFIER.
+// Used to attach an ABI annotation (e.g. `zp_abi`) to a function
+// declaration; see docs/leaf_zp_abi.md.
+ATTRIBUTE: "__attribute__"
+
 // -- Identifier (placeholder alphabet, pending a grammar) --
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 
@@ -207,6 +213,12 @@ start: declaration*
 // `SEMICOLON` once the declarator has been parsed.
 declaration: function_decl | var_decl
 specifier: type_specifier | STATIC | EXTERN
+// Optional GCC-style attribute prefix on a declaration (function or
+// var). Today the only legal annotation name is `zp_abi`; the
+// transformer rejects any other name. Attribute appears BEFORE the
+// declaration specifiers; placing it after the declarator (also
+// legal in GCC) is not supported.
+attribute_clause: ATTRIBUTE LPAREN LPAREN IDENTIFIER RPAREN RPAREN
 // var_decl covers four shapes:
 //   `int x;` / `int x = 1;`           — object declaration with declarator
 //   `int foo(int);`                   — function forward decl (the var_decl
@@ -217,8 +229,8 @@ specifier: type_specifier | STATIC | EXTERN
 //   `struct foo;`                     — struct/union forward declaration
 // The struct/union-only forms (no declarator) take the
 // `tag_only_decl` alternative.
-var_decl: specifier+ declarator (ASSIGN initializer)? SEMICOLON
-        | specifier+ SEMICOLON                                  -> tag_only_decl
+var_decl: attribute_clause? specifier+ declarator (ASSIGN initializer)? SEMICOLON
+        | attribute_clause? specifier+ SEMICOLON                -> tag_only_decl
 
 // Initializer per C99 §6.7.8: either a single assignment-level
 // expression, or a brace-enclosed list of initializers. The list
@@ -228,7 +240,7 @@ var_decl: specifier+ declarator (ASSIGN initializer)? SEMICOLON
 // grammar leaves room without a future grammar bump.
 initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
-function_decl: specifier+ declarator block
+function_decl: attribute_clause? specifier+ declarator block
 
 type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | VOID
               | struct_or_union_specifier
@@ -609,7 +621,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | COMPLEX | IMAGINARY
+         | BOOL | COMPLEX | IMAGINARY | ATTRIBUTE
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT

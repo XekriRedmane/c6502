@@ -161,6 +161,7 @@ class LoopLabeler:
             body=self.label_block(fd.body, _LabelState()),
             data_type=fd.data_type,
             storage_class=fd.storage_class,
+            abi_annotation=fd.abi_annotation,
         )
 
     def label_function(

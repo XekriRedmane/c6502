@@ -596,6 +596,7 @@ class Resolver:
             body=new_body,
             data_type=new_data_type,
             storage_class=fd.storage_class,
+            abi_annotation=fd.abi_annotation,
         )
 
     def _resolve_params(

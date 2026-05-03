@@ -31,8 +31,15 @@ module C99 {
     -- converted to the switch's promoted control type).
     switch_case = (exp value, identifier label)
     declaration = FunctionDecl(function_decl) | VarDecl(var_decl) | StructDecl(struct_decl)
-    var_decl = (identifier name, exp? init, data_type, storage_class?)
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?)
+    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation)
+    -- abi_annotation carries the value of any
+    -- `__attribute__((<name>))` prefix on the declaration.
+    -- Currently the only recognized name is "zp_abi" — used
+    -- by the leaf-ZP-ABI optimization to mark a function as
+    -- a candidate for caller-saved-ZP parameter passing
+    -- (see docs/leaf_zp_abi.md). Unknown names are rejected
+    -- at parse time. None when no annotation was given.
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation)
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct

@@ -104,6 +104,7 @@ class LabelResolver:
             body=self._rewrite_block(fd.body, labels),
             data_type=fd.data_type,
             storage_class=fd.storage_class,
+            abi_annotation=fd.abi_annotation,
         )
 
     def resolve_function(

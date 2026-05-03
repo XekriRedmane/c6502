@@ -18,6 +18,7 @@ KEYWORDS = frozenset({
     "signed", "sizeof", "static", "struct", "switch", "typedef", "union",
     "unsigned", "void", "volatile", "while",
     "_Bool", "_Complex", "_Imaginary",
+    "__attribute__",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with
@@ -113,11 +114,12 @@ _LARK = Lark.open(
 
 
 # Each keyword has its own terminal in c99.lark. Terminal names are the
-# keyword uppercased with any leading underscore stripped (e.g. `_Bool` →
-# `BOOL`). Derived here so changes to KEYWORDS flow through automatically;
-# c99.lark still has to be edited by hand to match.
+# keyword uppercased with leading AND trailing underscores stripped
+# (e.g. `_Bool` → `BOOL`, `__attribute__` → `ATTRIBUTE`). Derived here
+# so changes to KEYWORDS flow through automatically; c99.lark still
+# has to be edited by hand to match.
 def _keyword_terminal(kw: str) -> str:
-    return kw.lstrip("_").upper()
+    return kw.strip("_").upper()
 
 
 _TERMINAL_TO_KIND = {_keyword_terminal(kw): TokenKind.KEYWORD for kw in KEYWORDS}

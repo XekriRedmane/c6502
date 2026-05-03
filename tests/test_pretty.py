@@ -63,6 +63,7 @@ class TestPretty(unittest.TestCase):
                       ret=Int(),
                     ),
                     storage_class=None,
+                    abi_annotation=None,
                   ),
                 ),
               ],

@@ -47,10 +47,22 @@ there, M=0 and the function has no frame at all.
 ## Scope (what's in / what's out)
 
 **In:**
-- Leaf functions only (functions whose body contains no
-  `FunctionCall` / `IndirectCall` TAC instruction).
-- Per-function ABI choice — the function's signature carries
-  its convention, every caller in the program agrees.
+- ABI is **chosen by the programmer** via
+  `__attribute__((zp_abi))` on the function declaration and/or
+  definition. Without the annotation, the function uses the
+  soft-stack ABI (the existing convention). This makes the
+  decision explicit, lets headers propagate the contract across
+  translation units, and avoids the indirect-call ABI ambiguity
+  that automatic selection can't safely resolve.
+- The compiler **validates** the annotation: a `zp_abi`
+  function must have an empty call set in its body (no
+  `FunctionCall` / `IndirectCall`), must not have its address
+  taken anywhere in the program, and must have a parameter byte
+  total that fits the configured ZP window. Any of these
+  violated → compile-time error with a clear message.
+- Per-function ABI — the annotation rides on the function
+  declaration, every caller in the program agrees by reading
+  the same declaration.
 - All-or-nothing per function — the function's parameters all
   go via ZP, or all go via the soft stack. No mixing.
 - Sharing the whole caller-saved range ($80–$BF default). The
@@ -59,21 +71,25 @@ there, M=0 and the function has no frame at all.
   writes; interference between the two is handled by liveness.
 
 **Out (not in this design):**
-- Non-leaf functions. Any function that calls (directly or
-  indirectly) another function keeps the soft-stack ABI. This
-  includes recursive functions and functions that participate
-  in mutual recursion. Cross-TU compilation can't tell whether
-  an extern declaration's body contains a call, so the
-  conservative answer is "treat any function we can't see the
-  body of as non-leaf."
+- Automatic ABI selection. The programmer's annotation is
+  authoritative. (We considered automatic leaf-detection but
+  rejected it: it can't decide consistently for an indirect
+  call site, and silently downgrading a leaf to soft-stack
+  when its address gets taken later in the file leads to
+  surprising re-compilations.)
 - Mixed-ABI parameter passing within a single function. We
   don't pass the first 2 params in ZP and the rest on the
   stack. Either everything fits in ZP and the function is a
   ZP-ABI function, or it's soft-stack-ABI.
-- Cross-TU sharing of `static` / hidden ABI. Today c6502 is
-  single-TU; once that changes, an `__attribute__` will be
-  used to declare the ABI a function expects so callers in
-  another TU can match.
+- Cross-TU enforcement beyond header propagation. The
+  annotation must appear on the function declaration in any
+  shared header so all TUs that see the declaration agree on
+  the ABI. A definition in TU A annotated `zp_abi` paired
+  with a declaration in TU B without the annotation will
+  miscompile silently — the convention requires programmer
+  discipline at the header level. (When separate compilation
+  lands, name-mangling at link time is the natural belt-and-
+  suspenders enforcement; see "Cross-TU and `extern`" below.)
 
 ---
 
@@ -139,17 +155,29 @@ The function's ABI is the combination of:
 
 ## Selection rules
 
-The ABI-selection pass walks every `Function` top-level and
-classifies each as:
+Selection is **driven by the programmer's annotation**, not by
+automatic body analysis. Default ABI is soft-stack. A function
+becomes ZP-ABI only when explicitly marked.
 
-| Function shape | ParamLayout |
+| Function annotation | ParamLayout |
 |---|---|
-| Has any `FunctionCall` or `IndirectCall` in body | `SoftStackLayout` |
-| Address taken anywhere in the program | `SoftStackLayout` |
-| `extern` declaration (no body in this TU) | `SoftStackLayout` |
-| Marked `__attribute__((softstack))` (annotation) | `SoftStackLayout` |
-| Total param byte count exceeds available ZP window | `SoftStackLayout` |
-| Otherwise (leaf, address-not-taken, fits) | `ZpLayout` |
+| (none) | `SoftStackLayout` |
+| `__attribute__((zp_abi))` | `ZpLayout` *(after validation)* |
+
+When a function carries the `zp_abi` annotation, the compiler
+validates that:
+
+1. **No nested calls.** The body contains zero `FunctionCall`
+   and zero `IndirectCall` instructions.
+2. **Address not taken.** No `GetAddress(operand=Var(name=fn))`
+   or `Var(name=fn)` reference appears anywhere in the program.
+3. **Params fit.** Total parameter byte count is no greater
+   than the available ZP window.
+
+Any violation is a compile-time error with a clear message
+naming the specific check that failed (e.g. *"function `foo`
+declared `__attribute__((zp_abi))` but its body contains a
+call to `bar`"*).
 
 The "available ZP window" is configurable but defaults to the
 caller-saved region $80–$BF (64 bytes). At the design level
@@ -157,11 +185,17 @@ this is a per-program scalar; at the implementation level it
 threads through the same `Pool` object the asm-level regalloc
 uses, so the two stay in sync.
 
-The annotation `__attribute__((softstack))` lets a programmer
-force soft-stack ABI on a function that would otherwise qualify
-— useful for cross-TU declarations once separate compilation
-lands. (Implementation deferred until then; the design reserves
-the syntax.)
+For declarations and definitions of the SAME function, the
+annotation must appear on whichever the programmer wants to be
+authoritative — typically both the header declaration and the
+definition. If the annotation appears on EITHER, the compiler
+treats the function as `zp_abi`. If it appears on BOTH, they
+must agree (they trivially do — there's only one form). A
+declaration WITHOUT the annotation paired with a definition
+WITH it (or vice versa) is currently NOT diagnosed within the
+single TU; it will silently miscompile if other TUs see only
+the unannotated declaration. Header propagation is the
+programmer's responsibility.
 
 ---
 
@@ -429,27 +463,36 @@ c6502 currently compiles a single TU (the program is one
 
 ---
 
-## Annotation syntax (deferred)
+## Annotation syntax
 
-When separate compilation arrives, function declarations can
-carry an ABI annotation. The proposed syntax:
+Function declarations and definitions can carry the annotation:
 
 ```c
-__attribute__((softstack)) int f(int a, int b);
-__attribute__((zp_abi))    int g(int x);
+__attribute__((zp_abi)) int g(int x);
+
+__attribute__((zp_abi))
+int g(int x) {
+    return x + 1;
+}
 ```
 
-Semantics:
-- `softstack`: forces SoftStackLayout regardless of body
-  shape. Useful for cross-TU declarations to match a
-  definition compiled with a known ABI.
-- `zp_abi`: forces ZpLayout. The function is REJECTED if its
-  body contains a call (we can't safely make it a ZP-ABI
-  caller without recursion-proof guarantees), or if its
-  params don't fit in the ZP window.
+The annotation slot accepts the GCC syntax `__attribute__((<name>))`
+with `zp_abi` as the only currently-recognized name. Unknown
+attribute names are rejected at parse time (a stricter posture
+than GCC's "warn and ignore" — we'd rather catch typos than
+miscompile).
 
-Without an annotation, the auto-pick rule applies (leaf →
-ZP-ABI iff fits, else SoftStack).
+Position: the annotation may appear before the declaration
+specifiers (as shown above). Other GCC-supported positions
+(after the declarator, after the parameter list) are not
+parsed today; we can add them as needed.
+
+The declaration form (`__attribute__((zp_abi)) int g(int x);`)
+goes in headers shared between TUs. Including the header makes
+every TU's view of `g` a ZP-ABI function. The definition
+either repeats the annotation (recommended for clarity) or
+relies on the declaration's annotation already in scope at the
+time of definition.
 
 ---
 
@@ -460,38 +503,51 @@ step ends with a verification gate (chapter sim corpus + new
 focused tests). The chapter sim corpus is the primary backstop;
 each step must leave it green.
 
-### Step F0: leaf classification
+### Step F1a: parser support for `__attribute__((zp_abi))`
 
-Add `passes/leaf_analysis.py`. Walk every TAC `Function` in the
-program. Compute `set[str]` of leaf function names: those with
-zero `FunctionCall` / `IndirectCall` instructions AND whose
-name is not the operand of `GetAddress` anywhere in the
-program. `extern` declarations without a body are NOT in the
-set (treated as non-leaf).
+Extend the C99 grammar (`c99.lark`) to recognize the
+`__attribute__((<name>))` prefix on declarations. Add an
+`abi_annotation` field to `Type_function_decl` and
+`Type_var_decl` in `c99.asdl`. Regenerate `c99_ast.py`. Update
+the parser transformer to populate the field.
 
-Verifiable: unit tests on synthetic TAC programs. Test cases:
-- empty function → leaf.
-- function with only arithmetic → leaf.
-- function calling another → non-leaf.
-- address-taken function → non-leaf.
-- nested function pointers → all reachable functions non-leaf.
+Reject unknown attribute names at parse time (stricter than
+GCC's warn-and-ignore — typos shouldn't silently miscompile).
 
-### Step F1: ParamLayout type and ABI-selection pass
+Verifiable: unit tests on synthetic C source with and without
+the annotation, asserting the parsed AST carries the field
+correctly. Existing test corpus stays green (no annotation in
+any existing test source).
+
+### Step F1b: ParamLayout type and ABI-selection / validation pass
 
 Define `ParamLayout` as a discriminated union (`SoftStackLayout`
 / `ZpLayout(addrs)`). Add `passes/abi_selection.py` that takes
-the TAC program, the leaf set from F0, and a Pool (for the ZP
-window), and returns a `dict[str, ParamLayout]`.
+the TAC program, the c99 AST (for the `abi_annotation`), and a
+Pool (for the ZP window). Returns `dict[str, ParamLayout]`.
 
-Selection logic:
-- Non-leaf → SoftStackLayout.
-- Leaf with byte count > pool size → SoftStackLayout.
-- Leaf that fits → ZpLayout(addrs sequentially from
-  pool.start).
+Selection logic — driven entirely by the annotation:
+- Function annotated `zp_abi` is validated:
+  - body must contain zero `FunctionCall` / `IndirectCall`
+    (otherwise compile-time error: *"function `foo` declared
+    `zp_abi` but contains a call to `bar`"*),
+  - function name must not appear as a Var anywhere in the
+    program (otherwise: *"function `foo` declared `zp_abi`
+    but its address is taken"*),
+  - param byte total ≤ pool size (otherwise: *"parameters of
+    `foo` exceed the ZP window"*).
+  When all three pass: `ZpLayout(addrs sequentially from
+  pool.start)`.
+- No annotation → `SoftStackLayout`.
 
-Verifiable: unit tests on synthetic TAC programs, asserting
-the output dict matches expectations. Default pool gives
-ZpLayout to leaves with up to 64 byte-size params.
+The body-shape checks (no-calls, not-address-taken) live
+inside `passes/abi_selection.py` — they're not factored out
+as a separate "leaf analysis" pass, because nothing else in
+the pipeline needs them.
+
+Verifiable: unit tests on the validation logic (each error
+case + the happy path). Default pool gives ZpLayout to
+annotated functions with up to 64 byte-size params.
 
 ### Step F2: tac_to_asm consumes the ABI for call-site lowering
 
@@ -581,15 +637,25 @@ Verification:
   programs and checks the output's prologue/epilogue
   presence.
 
-### Step F7 (deferred until separate compilation): annotation syntax
+### Step F7 (future): name-mangling for cross-TU enforcement
 
-When c6502 grows multi-TU support:
-- Parser accepts `__attribute__((softstack))` and
-  `__attribute__((zp_abi))` on function declarations.
-- The c99 AST gains a `FunctionDecl.abi_annotation` field.
-- `passes.abi_selection` reads the annotation and overrides
-  the auto-pick rule. Forced `zp_abi` on a non-leaf or
-  oversized-param function is rejected with a clear error.
+When c6502 grows multi-TU support, the annotation in headers
+gives header-propagation enforcement: every TU including the
+header sees the same annotation and uses the same ABI. To
+add belt-and-suspenders link-time enforcement against a TU
+that bypassed the header:
+
+- A `zp_abi` function's symbol name encodes the ABI (e.g.,
+  `foo` → `__zp_foo`).
+- A reference to `foo` (without the annotation in scope) emits
+  an unresolved external `foo`. The link fails. A reference
+  to `foo` with the annotation in scope emits an unresolved
+  external `__zp_foo`, matching the definition's mangled name.
+- Address-of `foo` from a context that doesn't see the
+  annotation references the unmangled name; the linker also
+  fails to resolve it.
+
+Out of scope for the current single-TU implementation.
 
 ---
 

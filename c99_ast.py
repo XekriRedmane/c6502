@@ -182,6 +182,7 @@ class Type_var_decl:
     init: Type_exp | None = None
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
+    abi_annotation: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -191,6 +192,7 @@ class Type_function_decl:
     body: Type_block | None = None
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
+    abi_annotation: str | None = None
 
 
 @dataclass

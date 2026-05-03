@@ -7,8 +7,23 @@ program` but operates on `asm_ast.Program` with `Pseudo` operands
 
 Step 7 shape:
 
-    fn → to_ssa → byte_dce → liveness + interference + regalloc
-       → from_ssa → fn'
+    fn → to_ssa
+       → [copy_propagate → backward_copy_propagate → byte_dce]*
+       → liveness + interference + regalloc → from_ssa → fn'
+
+The `[...]*` bracket runs to a fixed point. Each pass enables the
+others:
+  * `copy_propagate` substitutes uses of a copy's `dst` with its
+    `src`, leaving the original `Mov` dead.
+  * `backward_copy_propagate` collapses a `Pseudo P` whose only
+    role is bridging `Mov(Reg(A), P); ...; Mov(P, Reg(A));
+    Mov(Reg(A), D)` round-trips, redirecting `P`'s def to write
+    `D` directly.
+  * `byte_dce` drops the now-unused defs.
+
+Mirrors the TAC optimizer's constant-fold / UCE / copy-prop / DSE
+fixed-point bracket, with the asm-level passes in place of the
+TAC ones.
 
 The per-function `Coloring` is returned alongside the program
 (empty entries for functions where regalloc found nothing
@@ -24,7 +39,11 @@ from __future__ import annotations
 import asm_ast
 from passes.optimization.register_allocation import Coloring
 from passes.optimization_asm.apply_coloring import apply_coloring
+from passes.optimization_asm.backward_copy_propagation import (
+    backward_copy_propagate,
+)
 from passes.optimization_asm.byte_dce import byte_dce
+from passes.optimization_asm.copy_propagation import copy_propagate
 from passes.optimization_asm.interference import build_interference
 from passes.optimization_asm.liveness import compute_liveness
 from passes.optimization_asm.regalloc import color_graph
@@ -123,11 +142,21 @@ def _optimize_function(
     blocked_addrs: set[int],
 ) -> tuple[asm_ast.Function, Coloring]:
     fn = to_ssa(fn, statics=statics)
-    # Step 6: byte-granular DCE drops Movs / Phis whose dst Pseudo
-    # is unused. Iterates to a fixed point internally. Statics
-    # are passed through so writes to them stay live (other
-    # functions may read them).
-    fn = byte_dce(fn, statics=statics)
+    # Step 6: SSA-aware forward + backward copy propagation +
+    # byte-granular DCE, iterated to a fixed point. Forward
+    # substitutes uses with the copy's source; backward collapses
+    # `Pseudo → Reg(A) → memory` round-trips into a single direct
+    # write; byte-DCE drops Movs whose dst is no longer read.
+    # Each pass can expose work for the others. Statics are
+    # passed through all three so external-visibility writes
+    # stay live.
+    while True:
+        prev = fn
+        fn = copy_propagate(fn, statics=statics)
+        fn = backward_copy_propagate(fn, statics=statics)
+        fn = byte_dce(fn, statics=statics)
+        if fn.instructions == prev.instructions:
+            break
     # Step 7: byte-granular regalloc on the still-SSA function.
     # The chordal property of SSA interference graphs makes greedy
     # PEO coloring optimal at unit width. `blocked_addrs` carries

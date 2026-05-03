@@ -42,20 +42,25 @@ ASDL source.
 to strip comments, then runs to the stage requested by exactly one
 mutually-exclusive flag:
 
-| flag        | output                                                        |
-| ----------- | ------------------------------------------------------------- |
-| `--lex`     | one `line:col<TAB>kind<TAB>value` line per token              |
-| `--parse`   | `pretty(c99_ast)` — the parsed AST                            |
-| `--resolve` | `pretty(c99_ast)` after the three resolution passes (user     |
-|             | variables → `@N.orig`; goto labels → `.<funcname>@<orig>`;    |
-|             | loops → `.loop@N`, with break/continue stamped to match)      |
-| `--tac`     | `pretty(tac_ast)` — three-address-code IR                     |
-| `--codegen` | 6502 assembly text                                            |
+| flag         | output                                                        |
+| ------------ | ------------------------------------------------------------- |
+| `--lex`      | one `line:col<TAB>kind<TAB>value` line per token              |
+| `--parse`    | `pretty(c99_ast)` — the parsed AST                            |
+| `--resolve`  | `pretty(c99_ast)` after the three resolution passes (user     |
+|              | variables → `@N.orig`; goto labels → `.<funcname>@<orig>`;    |
+|              | loops → `.loop@N`, with break/continue stamped to match)      |
+| `--tac`      | `pretty(tac_ast)` — three-address-code IR                     |
+| `--codegen`  | 6502 assembly text                                            |
+| `--optimize` | modifier (orthogonal to the stage flags). With `--tac`, shows |
+|              | post-optimization TAC; with `--codegen`, emits asm where      |
+|              | promotable SSA values are register-allocated to ZP slots.     |
+|              | See `docs/optimization.md` for the pipeline.                  |
 
 ```sh
 uv run python compile.py <source.c> --codegen              # to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to file
 uv run python compile.py - --tac < source.c                # stdin
+uv run python compile.py - --codegen --optimize < src.c    # with regalloc
 ```
 
 Notes:
@@ -63,6 +68,14 @@ Notes:
 - With `--codegen`, the `-o` filename must end in `.asm`.
 - The other stages (`--lex`, `--parse`, `--resolve`, `--tac`) accept any
   output filename, or default to stdout.
+- `--optimize` runs the SSA-bracketed optimizer (constant folding,
+  unreachable-code elimination, copy propagation, dead-store
+  elimination) plus register allocation. Promotable SSA values
+  lower to `ZP(addr, offset)` operands using the configurable ZP
+  pool (default `$80-$FF`, split caller/callee at `$C0`); spilled
+  / address-taken / parameter values continue to use frame
+  storage. Roughly 3× faster per access in the loop body for
+  hot variables.
 - The comment-stripping step uses pcpp via the Python API (see
   `preprocessor.py`); pcpp is a project dependency, no shelling out.
 - Any flag `compile.py` doesn't recognize is forwarded to the
@@ -79,13 +92,17 @@ uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 `parser.py`, `passes/identifier_resolution.py`,
 `passes/label_resolution.py`, `passes/loop_labeling.py`,
 `passes/type_checking.py`, `c99_to_tac.py`, `tac_to_asm.py`,
-`passes/replace_pseudoregisters.py`, `asm_emit.py`) is library-only
-and used as an import.
+`passes/optimization/*`, `passes/replace_pseudoregisters.py`,
+`asm_emit.py`) is library-only and used as an import.
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains nine passes. Each is a separate module
-that takes an AST and returns an AST (or text, for emit):
+`compile.py --codegen` chains ten passes. Each is a separate module
+that takes an AST and returns an AST (or text, for emit). With
+`--optimize`, a TAC-level optimizer (SSA construction, fixed-point
+loop, register allocation, SSA destruction) runs between
+`c99_to_tac` and `tac_to_asm`; see the "Optimization pipeline"
+section below.
 
 1. **`parser.parse`** (`parser.py`) — C99 source → `c99_ast`.
    Lark/LALR parser using the grammar in `c99.lark`. A translation
@@ -101,28 +118,33 @@ that takes an AST and returns an AST (or text, for emit):
    `long long`, `signed unsigned`, missing type specifier) raise
    `ParserError` from `_split_specifiers`.
 
-   The integer types are `Int()` (1-byte signed, -128..127),
-   `Long()` (2-byte signed, -32768..32767), `UInt()` (1-byte
-   unsigned, 0..255), and `ULong()` (2-byte unsigned, 0..65535).
-   The lexer splits integer literals into four terminals by suffix
-   (`INTEGER_CONSTANT` for no suffix, `LONG_INTEGER` for `L`/`LL`,
-   `UINT_INTEGER` for `U` only, `ULONG_INTEGER` for combined `U+L`
-   in either order); the parser's `_const_for_token` then maps each
-   (token-kind, base) pair to its C99 §6.4.4.1 paragraph 5 type
-   list and picks the first variant whose range fits the value
-   (`ConstInt` / `ConstLong` / `ConstUInt` / `ConstULong`). The
-   unsuffixed-decimal list is `int → long → long long`, the
-   unsuffixed-hex/octal list is `int → unsigned int → long →
-   unsigned long → long long → unsigned long long`, and the U / L
-   / UL suffix variants restrict to the unsigned-only / long-and-
-   above / unsigned-long-and-above sub-lists respectively. Any
-   literal whose only fitting type would be `long long` or
-   `unsigned long long` is rejected (c6502 doesn't model them);
-   the `LL`/`ll` suffix lexes but the parser rejects it for the
-   same reason. A `function_decl`'s `data_type` is `FunType(
-   params, ret)`, built from the per-param type-specifier runs and
-   the return-type specifiers; the param *names* live on the
-   function_decl's `params` array, parallel to `data_type.params`.
+   c6502 follows the C99 minimum widths (§5.2.4.2.1). The integer
+   types are `Char()` / `SChar()` / `UChar()` (1 byte each;
+   `Char` is unsigned per c6502's implementation-defined choice
+   per §6.2.5.15), `Int()` (2-byte signed, -32768..32767),
+   `UInt()` (2-byte unsigned, 0..65535), `Long()` (4-byte
+   signed), `ULong()` (4-byte unsigned), `LongLong()` (8-byte
+   signed), and `ULongLong()` (8-byte unsigned). Floating types
+   are `Float()` (IEEE 754 single, 4 bytes) and `Double()` (IEEE
+   754 double, 8 bytes); `long double` isn't modelled. Pointers
+   are `Pointer(referenced_type)` and are 2 bytes wide (the
+   6502's address width). The lexer splits integer literals into
+   four terminals by suffix (`INTEGER_CONSTANT` for no suffix,
+   `LONG_INTEGER` for `L`/`LL`, `UINT_INTEGER` for `U` only,
+   `ULONG_INTEGER` for combined `U+L` in either order); the
+   parser's `_const_for_token` then maps each (token-kind, base,
+   has_ll) tuple to its C99 §6.4.4.1 paragraph 5 type list and
+   picks the first variant whose range fits the value (`ConstInt`
+   / `ConstLong` / `ConstLongLong` / `ConstUInt` / `ConstULong` /
+   `ConstULongLong`). Floating literals split into three
+   terminals (`DOUBLE_CONSTANT`, `FLOAT_CONSTANT`,
+   `LONG_DOUBLE_CONSTANT`); the parser rejects the `long double`
+   variant. A literal whose value exceeds `unsigned long long`
+   (the widest c6502 type, 2^64 - 1) is rejected. A
+   `function_decl`'s `data_type` is `FunType(params, ret)`,
+   built from the per-param type-specifier runs and the return-
+   type specifiers; the param *names* live on the function_decl's
+   `params` array, parallel to `data_type.params`.
 
    A function `body` is a `Block` of `block_item`s; each item is a
    declaration (`int x;`, `long x = 5;`, `unsigned int u = 200U;`,
@@ -565,6 +587,81 @@ that takes an AST and returns an AST (or text, for emit):
 
 The intermediate stages are inspectable via `compile.py`'s
 `--lex`, `--parse`, `--resolve`, `--tac`, `--codegen` flags.
+`--optimize` is orthogonal and threads through `--tac` and
+`--codegen`.
+
+## Optimization pipeline (`--optimize`)
+
+When `--optimize` is on, `compile.py` inserts the optimizer
+(`passes/optimization/optimizer.py`) between c99_to_tac and
+tac_to_asm. The optimizer takes `(prog, symbols)` and returns
+`(optimized_prog, colorings)` where `colorings: dict[func_name,
+Coloring]` is consumed by `replace_pseudoregisters` to map
+promotable SSA values to zero-page slots.
+
+Per-function shape:
+
+```
+fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
+              build liveness → build interference → color_graph →
+              from_ssa → fn'
+```
+
+The five phases:
+
+1. **`to_ssa`** renames promotable Vars (block-scope locals,
+   parameters, and TAC temps that are LocalAttr scalars and never
+   address-taken) to `<orig>.<N>` so each name has exactly one
+   definition. Inserts `Phi(dst, args=[(pred_label, src), ...])`
+   nodes at iterated dominance frontiers (Cytron 1991), pruned
+   by liveness.
+
+2. **The fixed-point loop** rotates four passes until no pass
+   makes a structural change. Each pass enables the others:
+   `constant_fold` evaluates compile-time-known arithmetic at the
+   correct width (Int 16-bit, Long 32-bit, LongLong 64-bit
+   wraparound matches what the 6502 lowering would compute);
+   `eliminate_unreachable_code` (UCE) drops dead blocks, prunes
+   stale Phi args after dropped jumps, folds singleton Phis,
+   removes useless jumps and labels; `copy_propagate` substitutes
+   `Copy(src, dst)` everywhere `dst` is used (sound only in SSA);
+   `eliminate_dead_stores` drops pure defs whose dst is unused.
+
+3. **Register allocation** runs while still in SSA form (the
+   chordal property is what makes greedy coloring optimal):
+   `liveness.py` computes per-block + per-instruction liveness;
+   `interference.py` builds the chordal interference graph with
+   per-node width (1/2/4/8 bytes) and a `lives_across_call` bit;
+   `pool.py` defines the configurable caller/callee-saved ZP
+   partition (default `Pool(start=0x80)` → caller `[$80, $C0)`,
+   callee `[$C0, $100)`); `register_allocation.py` colors via
+   width-aware greedy allocation in dom-tree-PEO. Cross-call
+   live values prefer callee-saved (the function's
+   prologue/epilogue save+restore them); other values prefer
+   caller-saved (no overhead).
+
+4. **`from_ssa`** lowers each Phi to one Copy per PhiArg in the
+   matching predecessor block, **topologically sorted** so a
+   Copy's dst isn't read by a later Copy (fixes the "lost copy"
+   problem when copy propagation collapses Phi sources to other
+   Phi dsts). Cycles (e.g. `a, b = b, a`) are broken with a
+   fresh `<funcname>.cycle_tmp@N` Var registered in the symbol
+   table.
+
+5. After `from_ssa`, the function is regular non-SSA TAC ready
+   for `tac_to_asm` and the rest of the pipeline. The Coloring
+   flows through `compile.py` into `replace_pseudoregisters`,
+   which lowers colored Pseudos to `ZP(addr, offset)` operands
+   (direct zero-page addressing, ~3× faster than the
+   indirect-Y `(FP),Y` path) and reserves frame slots
+   `FP+1..FP+S` for callee-saved bytes the function uses
+   (saved by the prologue, restored by the epilogue).
+
+`docs/optimization.md` is the from-scratch tour with a worked
+end-to-end example and the actual asm output. The chapter
+`tests/test_sim_asm_optimized.py` runs chapters 1-12 through
+`--optimize` end-to-end via the asm simulator and asserts return
+values match.
 
 ## Lexer and parser as APIs
 
@@ -593,25 +690,37 @@ tagging anywhere on the IR. Compound concepts like `Unary` are
 strictly TAC nodes — `tac_to_asm` lowers them into atoms before
 they reach the asm AST.
 
-16-bit (`Long`) operations don't appear at the asm IR level either:
+Multi-byte operations don't appear at the asm IR level either:
 `tac_to_asm` expands them into byte-level sequences (typically a
 low-byte pass + a high-byte pass with the carry flag threading
 between them) before producing asm. Per-byte addressing is the
 job of the `offset` field on `Pseudo` / `Stack` / `Frame` /
-`Data` operands — `Pseudo(name, offset=0)` is the low byte (or the
-only byte of a 1-byte type), `Pseudo(name, offset=1)` the high
-byte of a 2-byte type. `replace_pseudoregisters` allocates
-contiguous frame slots per pseudo (1 byte for Int / UInt, 2 for
-Long / ULong) and resolves each Pseudo's offset against its
-slot's base.
+`Data` / `ZP` operands — `Pseudo(name, offset=0)` is the low
+byte (or the only byte of a 1-byte type), `Pseudo(name,
+offset=1)` the high byte of a 2-byte type, etc. up to
+`offset=7` for the high byte of a Double.
+
+`replace_pseudoregisters` resolves each Pseudo to one of four
+operand kinds based on the name: `Data(name, offset)` for
+static-storage objects (link-time absolute addressing); `Frame
+(offset)` for parameters and uncolored / spilled / address-taken
+locals (FP-relative indirect-Y); `ZP(addr, offset)` for
+register-allocated locals when `--optimize` is on (direct
+zero-page addressing); and a callee-save area at `FP+1..FP+S`
+that the prologue saves into and the epilogue restores from.
 
 Output formatting: labels at column 1, opcodes at column 4, operands
 at column 10. Each function emits `<name>:` on one line, the
 `SUBROUTINE` directive on the next, a blank line, then instructions.
 Each `StaticVariable` emits as `<name>:` on one line, then either
-`DC.B $XX` (for `IntInit(v)`) or `DC.W $XXXX` (for `LongInit(v)`,
-masked to 16 bits so signed-negative values render as two's-
-complement; dasm's `DC.W` lays the bytes down little-endian).
+`DC.B $XX` (for `CharInit(v)` / `UCharInit(v)`), `DC.W $XXXX`
+(for `IntInit(v)` / `UIntInit(v)`, masked to 16 bits),
+`DC.L $WWWWWWWW` (for `LongInit` / `ULongInit` / `FloatInit`,
+masked to 32 bits or packed via `struct.pack` for FP), or two
+`DC.L`s for `LongLongInit` / `ULongLongInit` / `DoubleInit` (8
+bytes — dasm has no native 8-byte directive). All multi-byte
+directives lay bytes down little-endian, matching the soft-stack
+memory model.
 
 | asm node                                       | 6502 emission                          |
 | ---------------------------------------------- | -------------------------------------- |

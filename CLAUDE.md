@@ -20,6 +20,7 @@ uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one te
 uv run python compile.py <source.c> --codegen              # C → 6502 asm to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
 uv run python compile.py - --tac < source.c                # read stdin, stop after TAC
+uv run python compile.py - --codegen --optimize < src.c    # with TAC-level optimizer
 ```
 
 `compile.py` is the only CLI; every other module is library-only. Flags it doesn't
@@ -31,6 +32,13 @@ Stage-selection flags (mutually exclusive, one required with `compile.py`):
 `--lex`, `--parse`, `--resolve`, `--tac`, `--codegen`. `--resolve` runs
 the three name-resolution passes (identifier resolution, label resolution,
 loop labeling) in that order.
+
+Modifier flag: `--optimize` (orthogonal to the stage flags; applies to
+`--tac` and `--codegen`). Runs the SSA-bracketed optimizer pipeline
+(constant folding, unreachable-code elimination, copy propagation,
+dead-store elimination) plus register allocation that maps promotable
+SSA values to zero-page slots. See the "Optimization pipeline"
+section below and `docs/optimization.md` for the full walk-through.
 
 ## Regenerating AST modules
 
@@ -1077,44 +1085,73 @@ takes one AST and returns another (or text for emit):
    through the `HARGS` zero-page block instead of the soft stack,
    so they bypass the user-function calling convention entirely.
 9. `passes.replace_pseudoregisters.replace_program` — replaces every
-   `Pseudo(name, offset)` operand with a `Frame(offset)` (or
-   `Data(name, offset)` for static-storage references) and lays
-   out the function's stack frame. Takes the type-checker's
-   SymbolTable so it can size each pseudo by its declared type:
-   1 byte for `Int` / `UInt` / unknown, 2 for `Long` / `ULong`,
-   4 for `LongLong` / `ULongLong` / `Float`, 8 for `Double`.
+   `Pseudo(name, offset)` operand with a concrete addressing-mode
+   operand and lays out the function's stack frame. Takes the
+   type-checker's SymbolTable so it can size each pseudo by its
+   declared type: 1 byte for `Char` / `SChar` / `UChar` /
+   unknown, 2 for `Int` / `UInt` / `Pointer`, 4 for `Long` /
+   `ULong` / `Float`, 8 for `LongLong` / `ULongLong` / `Double`.
+   Optionally takes a `colorings: dict[func_name, Coloring]` from
+   the optimizer when `--optimize` is on; without it, every
+   pseudo goes to Frame as before.
+
    Walks each function twice:
+   - **Pre-step:** if a `Coloring` is supplied, derive the set
+     of zero-page byte addresses the function uses from the
+     callee-saved pool (every byte of every colored value that
+     falls in `coloring.pool.callee_saved()`). These bytes get
+     reserved at the bottom of the frame (`FP+1..FP+S`); locals
+     shift up by S to leave room. The prologue saves them; the
+     epilogue restores them.
    - **Pass 1 (discovery):** mint a *base* offset (the offset of
      byte 0) for every Pseudo name that *isn't* in the function's
-     `params` and isn't in the program's static-storage set.
-     Locals get sequential base offsets in source-encounter order,
-     each advancing the cursor by `_size_of_name(name)`. After the
-     walk, M = total local bytes.
+     `params`, isn't in the program's static-storage set, and
+     isn't colored. Locals get sequential base offsets in source-
+     encounter order, each advancing the cursor by `size_of_name
+     (name)`. After the walk, M = total local bytes (including
+     the S-byte callee-save area).
    - **Finalize:** compute param base offsets analogously. The
      first param's first byte is at `Frame(M + 3)`; each subsequent
      param starts after the previous one's bytes. The 2-byte gap
      at M+1, M+2 holds the saved caller FP.
-   - **Pass 2 (replacement):** rewrite each Pseudo operand. A
-     name in the static set becomes `Data(name, offset=k)`
-     (absolute addressing, asm_emit renders as `LDA name+k`). A
-     name in the local or param maps becomes `Frame(base + k)`
-     where `k` is the Pseudo's `offset` field — so `Pseudo(name,
-     offset=1)` accesses the high byte of a Long that was
-     allocated 2 contiguous bytes starting at `base`.
+   - **Pass 2 (replacement):** rewrite each Pseudo operand. The
+     decision order is: static → `Data(name, offset)` (absolute,
+     link-time address); param → `Frame(...)` (calling convention
+     wins even if regalloc colored it); colored local →
+     `ZP(addr, offset)` (the ZP byte from `coloring.assignments`
+     plus the Pseudo's offset); ordinary local (uncolored,
+     spilled, or address-taken) → `Frame(base + offset)`.
    The pass also prepends `FunctionPrologue(arg_bytes=N,
-   local_bytes=M)` and patches every `Ret(...)` with the same N/M,
-   so the emitter has the dimensions it needs for the prologue's
-   space-allocation step and the epilogue's SSP-rewind.
+   local_bytes=M, callee_saved_addrs=[...])` and patches every
+   `Ret(...)` with the same N/M and the same addrs list, so the
+   emitter has the dimensions it needs for the prologue's space-
+   allocation step, the save/restore sequences, and the
+   epilogue's SSP-rewind.
 10. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text.
    **Atomic IR**: every node maps to one 6502 instruction, except
    `Ret` and `FunctionPrologue` (multi-step compound nodes
    documented above) and `AllocateStack(N)` which expands to the
    16-bit `SSP -= N` sequence (SEC; LDA SSP; SBC #lo; STA SSP; LDA
-   SSP+1; SBC #hi; STA SSP+1). Multi-function programs emit each
-   function's body in source order separated by a single blank
-   line. `Data(name, offset)` operands render as `LDA name` for
-   offset 0 (the common case) and `LDA name+offset` otherwise —
-   the assembler resolves the symbol+offset to a fixed address.
+   SSP+1; SBC #hi; STA SSP+1). The prologue additionally emits
+   `LDA $XX; LDY #(i+1); STA (FP),Y` per callee-saved address
+   listed on `FunctionPrologue.callee_saved_addrs` (after FP
+   setup); the epilogue's matching `LDY #(i+1); LDA (FP),Y; STA
+   $XX` runs BEFORE the SSP/FP teardown.
+
+   Multi-function programs emit each function's body in source
+   order separated by a single blank line.
+
+   `Data(name, offset)` operands render as `LDA name` for offset
+   0 (the common case) and `LDA name+offset` otherwise — the
+   assembler resolves the symbol+offset to a fixed address.
+   `ZP(address, offset)` operands fold both at emit time into
+   `LDA $XX` (where XX = address + offset), giving direct zero-
+   page addressing for regalloc-assigned locals. `ZP` is legal
+   everywhere `Data` is (Mov, Add/Sub, Compare, Inc/Dec, ASL/LSR,
+   direct LDX/LDY shortcut). The self-Mov peephole inside
+   `_emit_mov` returns `[]` when `src == dst` — drops the redundant
+   `LDA $XX; STA $XX` pairs that arise when regalloc gives a Phi
+   src and dst the same color.
    Top-level `StaticVariable(name, _, init)` emits as `<name>:`
    followed by `DC.B $XX` for `IntInit(int=v)`, `DC.W $XXXX` for
    `LongInit(int=v)`, `DC.L $WWWWWWWW` for `LongLongInit(int=v)`
@@ -1172,6 +1209,114 @@ lowerings mint fresh labels per use and need a counter that persists across
 the whole program. Module-level wrappers (`translate_program`, etc.) each
 construct a fresh `Translator`.
 
+## Optimization pipeline (`--optimize`)
+
+When `--optimize` is on, `compile.py` inserts `optimize_program`
+(in `passes/optimization/optimizer.py`) between c99_to_tac and
+tac_to_asm. The optimizer takes `(prog, symbols)` and returns
+`(optimized_prog, colorings)` where `colorings` is a
+`dict[func_name, Coloring]` consumed downstream by
+`replace_pseudoregisters`. Per-function shape:
+
+```
+fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
+              build liveness → build interference → color_graph →
+              from_ssa → fn'
+```
+
+`docs/optimization.md` is the from-scratch tour. The brief version:
+
+1. **`to_ssa`** (`passes/optimization/ssa_construction.py`) renames
+   promotable Vars (LocalAttr + scalar + non-address-taken) to
+   `<orig>.<N>` so each name has exactly one definition. Inserts
+   `Phi(dst, args=[(pred_label, source), ...])` nodes at iterated
+   dominance frontiers (Cytron 1991), pruned by liveness — only
+   blocks where the var is live-in get a Phi. Address-taken
+   locals, statics, aggregates, and function names pass through
+   unchanged. SSA-minted labels (preheader / block labels) are
+   scoped per-function: `.<funcname>@ssa_block@N` and
+   `.<funcname>@ssa_preheader@N`, so two functions in the same
+   program don't collide in the asm namespace.
+
+2. **Fixed-point loop** rotates four passes until no pass makes a
+   structural change (`fn == prev`). Each pass enables the others:
+   - `constant_fold` (`constant_folding.py`): folds Unary, Binary,
+     comparison, integer-width / FP conversion casts, conditional
+     jumps with constant conditions, and Phis whose every arg
+     agrees. Width-correct: arithmetic wraps at the operand's
+     declared width (Int 16-bit, Long 32-bit, LongLong 64-bit;
+     unsigned variants the same widths). Wraparound matches what
+     the 6502 lowering computes at runtime.
+   - `eliminate_unreachable_code` (`unreachable_code_elimination.py`):
+     drops unreachable blocks (forward DFS from ENTRY); prunes Phi
+     args whose `pred_label` is no longer an actual predecessor
+     (catches the case where constant folding dropped a conditional
+     jump); folds singleton Phis to Copies; drops useless jumps and
+     useless labels.
+   - `copy_propagate` (`copy_propagation.py`): SSA-aware. For
+     `Copy(src, dst)`, replaces every use of `dst` with `src`
+     (chains too). Sound only in SSA where each name has one def.
+   - `eliminate_dead_stores` (`dead_store_elimination.py`):
+     SSA-aware. Drops pure defs whose dst doesn't appear as a use
+     anywhere. `FunctionCall` / `IndirectCall` keep the call (side
+     effects) but drop the dst when unused.
+
+3. **Register allocation** runs while the function is in SSA form
+   (the chordal property is what makes greedy coloring optimal):
+   - `liveness.py` computes per-block live-in/live-out + lazy
+     per-instruction queries. Phi sources contribute to the
+     matching predecessor's live_out (the future de-SSA Copy reads
+     them there); Phi dsts contribute to every predecessor's
+     live_out (the future de-SSA Copy writes them, so they need
+     to interfere with anything else live across the predecessor).
+   - `interference.py` builds the chordal interference graph: each
+     node carries a width (1/2/4/8 bytes from the symbol table)
+     and a `lives_across_call` bit (true iff live at any
+     `FunctionCall` / `IndirectCall`). Statics, function names,
+     and address-taken locals are filtered out — regalloc only
+     colors LocalAttr scalars.
+   - `pool.py` carries the caller/callee-saved partition of the
+     ZP register pool. Default `Pool(start=0x80)` splits
+     `[0x80, 0xFF]` into caller-saved `[0x80, 0xC0)` and
+     callee-saved `[0xC0, 0x100)` (64 bytes each). The starting
+     address must be even and is configurable.
+   - `register_allocation.py` colors via greedy width-aware
+     allocation in dom-tree-PEO. Cross-call values prefer
+     callee-saved (the function's prologue/epilogue save+restore
+     them); non-cross-call values prefer caller-saved (no
+     overhead). Falls back to the other pool when the preferred
+     is full; spills to frame when neither fits.
+
+4. **`from_ssa`** (`ssa_destruction.py`) lowers each Phi to one
+   Copy per PhiArg in the matching predecessor block, before the
+   terminator. Within each predecessor's parallel-copy set, Copies
+   are **topologically sorted** so a Copy's dst isn't read by a
+   later Copy — fixes the "lost copy" problem that arises when
+   copy propagation makes one Phi's source equal to another Phi's
+   dst at the same block. Cycles (e.g. `a, b = b, a`) are broken
+   with a fresh `<funcname>.cycle_tmp@N` Var, registered in the
+   symbol table with the cycle members' type. The temp gets a
+   frame slot via `replace_pseudoregisters` later (regalloc
+   already ran).
+
+5. After `from_ssa`, the function is regular non-SSA TAC ready for
+   `tac_to_asm` and the rest of the pipeline. The Coloring flows
+   through `compile.py` into `replace_pseudoregisters`, which
+   lowers colored Pseudos to `ZP(addr, offset)` operands and
+   reserves frame slots at `FP+1..FP+S` for callee-saved bytes
+   the function uses (saved by the prologue, restored by the
+   epilogue).
+
+`StaticVariable` top-levels pass through the optimizer unchanged
+(their `init` is constant byte layout, not control flow).
+`optimize_function` without `symbols` (legacy unit-test path)
+skips both SSA and regalloc and returns `(fn, None)`.
+
+The MVP doesn't yet do move coalescing (Phi src/dst sharing a
+color is left to chance + the self-Mov peephole), and a few opts
+remain future work — see the "What's not done yet" section at the
+end of `docs/optimization.md`.
+
 ## Function stack frame (soft stack)
 
 Arguments and locals live on a **soft data stack** in main RAM, separate from
@@ -1220,8 +1365,12 @@ annotated sample prologue/epilogue.
   still emits `LDY #o; LDA (PTR),Y`.
 - `PTR` is `SSP` for `Stack` operands, `FP` for `Frame` operands.
   Stack/Frame offsets and immediates are `0..255` (single byte).
-- Unknown reg combinations for `Mov` (e.g. `Reg(X) → Reg(Y)`, `Reg(A) → Reg(A)`)
-  raise — there's no direct transfer instruction.
+- Unsupported reg combinations for `Mov` raise (e.g. `Reg(X) → Reg(Y)`,
+  `Reg(Y) → Reg(X)` — no direct transfer instruction). Same-register
+  pairs (`Reg(A) → Reg(A)` etc.) and same-operand `Mov(src, dst)`
+  with `src == dst` go through the self-Mov peephole and emit `[]`
+  (the peephole catches the self-copies that arise when regalloc
+  gives a Phi src and dst the same color).
 - `ArithmeticShiftLeft` (ASL), `LogicalShiftRight` (LSR), `RotateLeft`
   (ROL), and `RotateRight` (ROR) currently only accept `Reg(A)` as `dst`.
   The 6502's shift/rotate family has accumulator and absolute/zero-page
@@ -1858,3 +2007,20 @@ already emits Calls to all of these, so a program that uses
 `*` / `/` / `%` / `<<` / `>>`, any FP↔int or Float↔Double cast,
 or any indirect call (`fp()` where fp is a function pointer)
 assembles but won't link until those helpers exist.
+
+`--optimize` runs end-to-end (see "Optimization pipeline"
+section above): SSA construction → fixed-point loop (constant
+folding, UCE, copy prop, DSE) → register allocation onto ZP
+(default `$80-$FF`, configurable via `Pool(start=...)`, split
+caller/callee at `$C0`) → SSA destruction with topologically
+sorted parallel copies (cycles broken with a fresh temp).
+Promotable SSA values lower to `ZP(addr, offset)` operands —
+direct zero-page addressing, ~3× faster per access than the
+unoptimized indirect-Y `(FP),Y` path. Spilled / address-taken /
+parameter Pseudos continue to use Frame slots. Cross-call live
+values get callee-saved colors and the function's
+prologue/epilogue save+restore them around the body. Verified
+end-to-end via the asm sim: `tests/test_sim_asm_optimized.py`
+runs the chapter_1..12 corpus through `--optimize` and asserts
+program return values match the unoptimized expectations. See
+`docs/optimization.md` for the full walk-through.

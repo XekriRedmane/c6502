@@ -242,16 +242,18 @@ def _rewrite(
 
 def _excluded_names(fn: asm_ast.Function) -> set[str]:
     """Pseudo names that asm-SSA construction skipped: address-taken
-    targets (`LoadAddress.src`) and read-modify-write targets
-    (`Inc / Dec / ASL / LSR / ROL / ROR.dst`). Their values can
-    change without an SSA-versioned def, so they're unsafe both as
-    copy dsts AND as copy srcs."""
+    (`LoadAddress.src`), 2-byte address holders (`LoadAddress.dst`),
+    and read-modify-write targets (`Inc / Dec / ASL / LSR / ROL /
+    ROR.dst`). Their values can change without an SSA-versioned def,
+    so they're unsafe both as copy dsts AND as copy srcs."""
     excluded: set[str] = set()
     for instr in fn.instructions:
         match instr:
-            case asm_ast.LoadAddress(src=src):
+            case asm_ast.LoadAddress(src=src, dst=dst):
                 if isinstance(src, asm_ast.Pseudo):
                     excluded.add(src.name)
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
             case (
                 asm_ast.Inc(dst=dst)
                 | asm_ast.Dec(dst=dst)

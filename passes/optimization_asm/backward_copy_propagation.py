@@ -532,16 +532,19 @@ def _all_operands(
 
 
 def _excluded_names(fn: asm_ast.Function) -> set[str]:
-    """Pseudo names that aren't in SSA form: address-taken targets
-    (`LoadAddress.src`) and read-modify-write targets
-    (`Inc / Dec / ASL / LSR / ROL / ROR.dst`). Same set used by
-    `ssa_construction` and `copy_propagation`."""
+    """Pseudo names that aren't in SSA form: address-taken
+    (`LoadAddress.src`), 2-byte address holders (`LoadAddress.dst`),
+    and read-modify-write targets (`Inc / Dec / ASL / LSR / ROL /
+    ROR.dst`). Same set used by `ssa_construction` and
+    `copy_propagation`."""
     excluded: set[str] = set()
     for instr in fn.instructions:
         match instr:
-            case asm_ast.LoadAddress(src=src):
+            case asm_ast.LoadAddress(src=src, dst=dst):
                 if isinstance(src, asm_ast.Pseudo):
                     excluded.add(src.name)
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
             case (
                 asm_ast.Inc(dst=dst)
                 | asm_ast.Dec(dst=dst)

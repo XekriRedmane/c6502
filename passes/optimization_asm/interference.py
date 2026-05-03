@@ -126,9 +126,17 @@ def _excluded_names(fn: asm_ast.Function) -> set[str]:
     referenced: dict[str, set[int]] = defaultdict(set)
     for instr in fn.instructions:
         match instr:
-            case asm_ast.LoadAddress(src=src):
+            case asm_ast.LoadAddress(src=src, dst=dst):
+                # Both src and dst exclude. src is address-taken;
+                # dst holds a 2-byte address whose high byte is
+                # implicitly stored at storage_base+1 (see emit's
+                # `_shift_offset(dst, 1)`) — versioning byte 0 alone
+                # would let regalloc place another value at byte 1's
+                # implicit storage location.
                 if isinstance(src, asm_ast.Pseudo):
                     excluded.add(src.name)
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
             case (
                 asm_ast.Inc(dst=dst)
                 | asm_ast.Dec(dst=dst)

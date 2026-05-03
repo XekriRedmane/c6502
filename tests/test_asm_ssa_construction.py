@@ -160,7 +160,13 @@ class TestAsmToSsaDiamond(unittest.TestCase):
 class TestAsmToSsaExclusions(unittest.TestCase):
     def test_address_taken_name_not_renamed(self) -> None:
         # %p has its address taken via LoadAddress; reads/writes of
-        # %p stay at the original name and offset.
+        # %p stay at the original name and offset. LoadAddress.dst
+        # (`%addr`) ALSO stays unversioned — it holds a 2-byte
+        # address whose high byte is implicitly written at
+        # storage_base+1, which the byte-granular SSA layer can't
+        # version (the IR mentions only offset 0). Keeping the
+        # whole name multi-byte-coherent forces it to a contiguous
+        # 2-byte Frame slot in `replace_pseudoregisters_bare_exit`.
         fn = _fn(
             _mov(_imm(0xAA), _ps("%p", 0)),
             asm_ast.LoadAddress(src=_ps("%p"), dst=_ps("%addr")),
@@ -175,15 +181,15 @@ class TestAsmToSsaExclusions(unittest.TestCase):
                     self.assertEqual(i.dst.offset, 0)
                 if isinstance(i.src, asm_ast.Pseudo) and i.src.name == "%p":
                     self.assertEqual(i.src.offset, 0)
-        # %addr (LoadAddress.dst) IS promotable (not address-taken
-        # itself), so it gets versioned.
+        # %addr (LoadAddress.dst) is also EXCLUDED from versioning —
+        # see the docstring on `_excluded_names` for why.
         defs = [
             i for i in out.instructions
             if isinstance(i, asm_ast.LoadAddress)
         ]
         self.assertEqual(len(defs), 1)
         self.assertIsInstance(defs[0].dst, asm_ast.Pseudo)
-        self.assertTrue(defs[0].dst.name.startswith("%addr.b0.v"))
+        self.assertEqual(defs[0].dst.name, "%addr")
 
     def test_inc_target_not_renamed(self) -> None:
         # Inc on %x — defensive: not promoted even though Inc isn't

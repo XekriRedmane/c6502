@@ -186,14 +186,30 @@ def _block_label(blk: BasicBlock) -> str:
 def _excluded_names(fn: asm_ast.Function) -> set[str]:
     """Pseudo names that must keep their original spelling and
     multi-byte coherence — not eligible for byte-granular SSA.
-    Address-taken (LoadAddress.src) and read-modify-write target
-    (Inc/Dec/ASL/LSR/ROL/ROR.dst) operands."""
+    Includes:
+
+    * `LoadAddress.src` — address-taken; its bytes have to stay
+      contiguous at one storage location.
+    * `LoadAddress.dst` — the pointer-typed local that holds the
+      address. The instruction writes TWO bytes (low + high) to its
+      dst's storage, but the IR only mentions byte 0 in its operand
+      (the byte 1 write is implicit in the emit's `_shift_offset(dst,
+      1)`). Versioning byte 0 alone leaves byte 1 as an invisible
+      side effect, which regalloc could silently overlap with another
+      SSA value. Excluding the whole name forces it into a contiguous
+      2-byte Frame slot instead.
+    * Read-modify-write targets (Inc / Dec / ASL / LSR / ROL / ROR
+      `.dst`) — single-operand RMW doesn't decompose cleanly into
+      separate SSA versions. Defensive: today's `tac_to_asm` doesn't
+      emit these forms with Pseudo dsts."""
     excluded: set[str] = set()
     for instr in fn.instructions:
         match instr:
-            case asm_ast.LoadAddress(src=src):
+            case asm_ast.LoadAddress(src=src, dst=dst):
                 if isinstance(src, asm_ast.Pseudo):
                     excluded.add(src.name)
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
             case (
                 asm_ast.Inc(dst=dst)
                 | asm_ast.Dec(dst=dst)

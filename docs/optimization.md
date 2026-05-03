@@ -874,6 +874,337 @@ A few things to notice:
 
 ---
 
+## The same example through `--optimize-asm`
+
+Same C source. The early stages (parse, resolve, type-check,
+`c99_to_tac`) run identically. The fork begins INSIDE
+`optimize_tac`: `--optimize-asm` calls it with
+`do_regalloc=False`, so the TAC fixed-point loop and `from_ssa`
+run, but TAC-level register allocation is skipped. The TAC
+arriving at `tac_to_asm` has every local as a Pseudo with no
+Coloring assigned.
+
+### After `tac_to_asm` (`bare_exit=True`)
+
+Same byte-level fan-out as the legacy path, but two differences:
+
+- Each function ends with a bare `asm_ast.Return(save_a=False)`
+  atom (vs the compound `Ret(arg_bytes=0, local_bytes=0,
+  save_a=False)`). The save_a flag is False because Int returns
+  larger than 1 byte (Int=2 bytes here) ride in HARGS — the
+  staging Mov pair `STA HARGS / STA HARGS+1` doesn't go through
+  A across the SSP/FP arithmetic.
+- No `FunctionPrologue` is prepended. The frame setup decision
+  is deferred to `prologue_synthesis` after register allocation
+  has decided what (if anything) needs spilling.
+
+Every multi-byte TAC operation fans out per-byte. The Long-style
+`Binary(Add, b.2, a.1, b.3)` becomes:
+
+```
+Mov(Pseudo(b.2, 0), Reg(A))     ; load b.2 byte 0 into A
+ClearCarry
+Add(Pseudo(a.1, 0), Reg(A))     ; A += a.1 byte 0
+Mov(Reg(A), Pseudo(b.3, 0))     ; store b.3 byte 0
+Mov(Pseudo(b.2, 1), Reg(A))     ; load b.2 byte 1 (LDA only sets N/Z, C survives)
+Add(Pseudo(a.1, 1), Reg(A))     ; A += a.1 byte 1 + carry from prior ADC
+Mov(Reg(A), Pseudo(b.3, 1))     ; store b.3 byte 1
+```
+
+Every Pseudo references either offset 0 or offset 1 (Int = 2
+bytes in c6502).
+
+### After asm-level `to_ssa`
+
+This is where the byte-level versioning happens. Each
+`(Pseudo name, byte offset)` pair becomes its own SSA
+variable, with its own Phis at iterated dominance frontiers.
+The renamed Pseudo encodes the byte position in its name, with
+`offset = 0`:
+
+```
+Pseudo("@2.b.2", 0)   →   Pseudo("@2.b.2.b0.v1", 0)
+Pseudo("@2.b.2", 1)   →   Pseudo("@2.b.2.b1.v1", 0)
+Pseudo("@3.i.2", 0)   →   Pseudo("@3.i.2.b0.v1", 0)
+Pseudo("@3.i.2", 1)   →   Pseudo("@3.i.2.b1.v1", 0)
+```
+
+The TAC names like `@2.b.2` and `@3.i.2` come from
+identifier_resolution's `@N.<orig>` rewrites (the `.2` is a TAC
+SSA version stamped earlier, kept after TAC's `from_ssa`). The
+`.b0.v1` / `.b1.v1` suffixes are asm-level SSA's own additions.
+
+The loop top gets one Phi per `(name, offset)` pair, since the
+loop merges the entry-edge initial values with the back-edge
+post-iteration values. Both `b` and `i` are 2-byte Ints, so
+that's 4 byte-level Phis at the loop top:
+
+```
+.loop_start:
+  Phi(@2.b.2.b0.v2, [(.preheader, @2.b.2.b0.v1), (.continue, @2.b.2.b0.v3)])
+  Phi(@2.b.2.b1.v2, [(.preheader, @2.b.2.b1.v1), (.continue, @2.b.2.b1.v3)])
+  Phi(@3.i.2.b0.v2, [(.preheader, @3.i.2.b0.v1), (.continue, @3.i.2.b0.v3)])
+  Phi(@3.i.2.b1.v2, [(.preheader, @3.i.2.b1.v1), (.continue, @3.i.2.b1.v3)])
+  ...
+```
+
+`a.1` doesn't change inside the loop, so neither of its bytes
+gets a Phi.
+
+### After `byte_dce`
+
+Every byte of every value is read at some point in this program
+— `b` and `i` are both used in 2-byte arithmetic (`b + a`,
+`i + 1`) and in the 2-byte signed comparison `i < n`. So
+`byte_dce` finds nothing to drop here.
+
+(For an example where it WOULD drop something: `(long)y`
+followed downstream by `(int)y` truncating back. The
+`SignExtend` lowering writes 4 bytes; only the low 2 are read;
+bytes 2 and 3 of the Long are independently dead and removed,
+shrinking M from 6 to 4 frame bytes on the typical case.)
+
+### After `liveness + interference + color_graph`
+
+Each byte-versioned name is a 1-byte interference graph node.
+Inside the loop, this clique is mutually live:
+
+- `a.1.b0`, `a.1.b1` (loop-invariant, read every iteration)
+- `@2.b.2.b0.v2`, `@2.b.2.b1.v2` (Phi dsts at loop top)
+- `@3.i.2.b0.v2`, `@3.i.2.b1.v2` (Phi dsts at loop top)
+
+So those 6 nodes get 6 distinct colors. The actual assignments
+the chordal-PEO greedy allocator picks (caller-saved pool first,
+since none of these is cross-call):
+
+| Name                      | Color |
+|---------------------------|-------|
+| `%0.1.b0.v1` (= a.1 byte 0) | `$87` |
+| `%0.1.b1.v1` (= a.1 byte 1) | `$86` |
+| `@2.b.2.{b0,b1}.{v1,v2,v3}` | `$83` / `$82` |
+| `@3.i.2.{b0,b1}.v1`        | `$81` / `$80` |
+| `@3.i.2.{b0,b1}.v2`        | `$85` / `$84` |
+| `@3.i.2.{b0,b1}.v3`        | `$81` / `$80` |
+| `%1.1.{b0,b1}.v1` (cond)   | `$81` / `$80` |
+| `%3.1.{b0,b1}.v1` (i+1)    | `$81` / `$80` |
+
+Two interesting placements:
+
+- **Every version of `b.2` shares one ZP pair.** v1 (initial),
+  v2 (Phi dst), v3 (back-edge `b + a` result) all live in
+  `$83/$82`. The de-SSA Movs `Mov(b.v1, b.v2)` and
+  `Mov(b.v3, b.v2)` after `apply_coloring` become
+  `Mov(ZP($83), ZP($83))` self-Movs, which `asm_emit`'s
+  peephole drops. The accumulator stays in place across
+  iterations without explicit copy moves.
+
+- **`cond.1`, `i+1` temp, and `i.v1` / `i.v3` all share
+  `$81/$80`.** Their lifetimes don't overlap: `cond.1` dies
+  when the conditional branch consumes it, the `i+1` temp
+  lives only between increment and store-back, and `i.v3`
+  lives only on the back-edge into `i.v2`. That's classic
+  caller-saved slot reuse for short-lived values.
+
+Total ZP byte usage: 8 bytes (`$80`–`$87`) = 4 pairs.
+
+### After `apply_coloring`
+
+Every Pseudo whose name is in `coloring.assignments` becomes
+a `ZP(addr, 0)` operand. Param `n` (the only uncolored Pseudo
+in this function) keeps its Pseudo form for
+`replace_pseudoregisters` to lower to Frame addressing later.
+Phi nodes still exist, but their `dst` and each
+`args[i].source` are now ZP for the colored names.
+
+### After `from_ssa`
+
+Phi destruction inserts Movs on each predecessor edge. The
+back-edge `.continue → .loop_start` ends with `JMP` (no
+flag-sensitive terminator), so no critical-edge split — Movs
+go directly before the JMP. Same for the entry-edge from
+preheader.
+
+The parallel-copy ordering uses storage keys, not SSA names,
+so it sees through `apply_coloring`'s rewrite. For b's Phi:
+each lowered Mov is `Mov(ZP($83), ZP($83))` (b.v1 → b.v2 on
+the entry edge, b.v3 → b.v2 on the back edge) — a self-Mov
+collapsed by `asm_emit`'s peephole. For i's Phi: each lowered
+Mov is `Mov(ZP($81), ZP($85))` (and the byte-1 mate) — a real
+LDA/STA pair.
+
+### After `replace_pseudoregisters_bare_exit` + `prologue_synthesis`
+
+Param `n` (the only remaining Pseudo) gets Frame addressing
+at offset M+3=3, M+4=4 (M=0, so the param starts right after
+the saved-FP slot at FP+3). Synthesis checks N=2 (param `n` is
+2 bytes) and M=0 (no Frame locals) and no callee-saved bytes
+— but `N > 0` so it still needs the saved-FP slot. It prepends
+`FunctionPrologue(N=2, M=0, [])` and rewrites the bare
+`Return(save_a=False)` to a full
+`Ret(N=2, M=0, save_a=False, [])`.
+
+### The actual 6502 assembly
+
+Output of `compile.py - --codegen --optimize-asm` on the same
+C source:
+
+```
+main:
+   SUBROUTINE
+
+   ; prologue: 2 arg bytes, 0 local bytes
+   SEC
+   LDA   SSP
+   SBC   #$02
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDA   FP
+   LDY   #$01
+   STA   (SSP),Y
+   LDA   FP+1
+   LDY   #$02
+   STA   (SSP),Y
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+
+.main@asm_ssa_preheader@0:
+.main@ssa_block@0:
+   LDY   #$03                  ; load param n byte 0 from FP+3
+   LDA   (FP),Y
+   CLC
+   ADC   #$01                  ; n + 1
+   STA   $87                   ; a.1 byte 0 → ZP $87
+   LDY   #$04                  ; load param n byte 1 from FP+4
+   LDA   (FP),Y
+   ADC   #$00
+   STA   $86                   ; a.1 byte 1 → ZP $86
+   LDA   #$00                  ; b.2.v1 = 0 (init)
+   STA   $83                   ;   b byte 0 → ZP $83 (shared by all b versions)
+   LDA   #$00
+   STA   $82                   ;   b byte 1 → ZP $82
+   LDA   #$00                  ; i.2.v1 = 0 (init)
+   STA   $81                   ;   i.v1 byte 0 → ZP $81
+   LDA   #$00
+   STA   $80                   ;   i.v1 byte 1 → ZP $80
+   LDA   $81                   ; entry-edge Phi Mov: i.v2.b0 ← i.v1.b0
+   STA   $85                   ;   $81 (i.v1) → $85 (i.v2)
+   LDA   $80                   ; entry-edge Phi Mov: i.v2.b1 ← i.v1.b1
+   STA   $84                   ; (b's entry-edge Movs collapse to self-
+                               ;  Movs at $83/$82 → dropped)
+.loop@0_start:
+   LDA   $85                   ; cond = i.2 < n  (signed compare)
+   SEC
+   LDY   #$03
+   SBC   (FP),Y                ;   subtract n's low byte
+   LDA   $84
+   LDY   #$04
+   SBC   (FP),Y                ;   subtract n's high byte (with borrow)
+   BVC   .cmp_novf@0           ;   V-correction for signed overflow
+.main@asm_ssa_block@0:
+   EOR   #$80
+.cmp_novf@0:
+   BMI   .cmp_true@1           ;   if signed result negative → i < n
+.main@asm_ssa_block@1:
+   LDA   #$00
+   JMP   .cmp_end@2
+.cmp_true@1:
+   LDA   #$01
+.cmp_end@2:
+   STA   $81                   ; cond byte 0 → $81 (reuses i.v1's slot)
+   LDA   #$00
+   STA   $80                   ; cond byte 1 → $80
+   LDA   $81                   ; if !cond goto .loop_break
+   ORA   $80
+   BEQ   .loop@0_break
+.main@asm_ssa_block@2:
+   LDA   $83                   ; b.3 = b.2 + a.1
+   CLC
+   ADC   $87
+   STA   $83                   ;   b.3 byte 0 → $83 (overwrites b.2 in place)
+   LDA   $82
+   ADC   $86
+   STA   $82                   ;   b.3 byte 1 → $82
+.loop@0_continue:
+   LDA   $85                   ; i+1 temp = i.2 + 1
+   CLC
+   ADC   #$01
+   STA   $81                   ;   temp byte 0 → $81 (reuses cond's slot)
+   LDA   $84
+   ADC   #$00
+   STA   $80
+   LDA   $81                   ; back-edge Phi Mov: i.v2 ← i.v3
+   STA   $85                   ;   $81 (i.v3) → $85 (i.v2)
+   LDA   $80
+   STA   $84
+   JMP   .loop@0_start
+.loop@0_break:
+   LDA   $83                   ; return b.2 (via HARGS, the 2-byte return slot)
+   STA   HARGS
+   LDA   $82
+   STA   HARGS+1
+
+   ; epilogue
+   CLC                         ; SSP = FP + 4 (rewind: M=0, N=2, +2 saved-FP)
+   LDA   FP
+   ADC   #$04
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$01
+   LDA   (FP),Y
+   TAX
+   LDY   #$02
+   LDA   (FP),Y
+   STA   FP+1
+   TXA
+   STA   FP
+   RTS
+```
+
+A few things to notice:
+
+- **Same prologue / epilogue shape as `--optimize`.** N=2, M=0,
+  no callee-saved bytes — synthesis decided a frame is still
+  needed (N>0 means params arrive on the soft stack and need
+  FP-relative addressing) but there's no extra ZP-byte
+  preservation work. Identical structurally to what
+  `--optimize` emits for the same case.
+
+- **Fewer ZP bytes used than `--optimize`.** This run uses 8
+  bytes (`$80`–`$87`) vs `--optimize`'s 10 bytes (`$82`–`$8B`).
+  The difference is `b.2` and `b.3`: `--optimize` colors them
+  separately ($88/$89 vs $84/$85); `--optimize-asm` colors
+  every version of `@2.b.2` to one pair ($83/$82) because
+  the byte-versioned SSA exposes that they're the same
+  value chain across iterations and the collapsed Phi Movs
+  let them physically share a slot. That's coalescing-by-
+  accident, riding on the apply_coloring + storage-key
+  parallel-copy interaction.
+
+- **One extra synthetic block label.** The
+  `.main@asm_ssa_preheader@0:` line is minted by
+  `_maybe_prepend_preheader` so the loop top has a real
+  labeled predecessor on the entry edge for Phi
+  destruction. It carries no instructions and no flow
+  effect — it's just a marker that the assembler resolves
+  to the same address as the immediately following block.
+
+- **Different Mov placements at the loop edges.** The
+  entry-edge Phi Movs `LDA $81; STA $85; LDA $80; STA $84`
+  appear at the END of the entry block (just before flow
+  reaches the loop test); the back-edge Phi Movs appear
+  inside `.loop@0_continue` just before the `JMP
+  .loop@0_start`. The corresponding `--optimize` output
+  inlines its de-SSA Copies in the same positions, just
+  with different ZP slots picked.
+
+---
+
 ## Inspecting intermediate results
 
 Several `compile.py` flags let you peek at what the optimizer is

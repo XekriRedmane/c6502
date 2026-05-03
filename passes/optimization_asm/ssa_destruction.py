@@ -301,7 +301,13 @@ def _order_parallel_copies(
 ) -> list[asm_ast.Mov]:
     """Topologically sort `movs` so that each Mov's dst isn't read
     by any later Mov in the output. Cycles get broken by a fresh
-    temp Pseudo."""
+    temp Pseudo.
+
+    Operand identity is checked via `_storage_key` — an opaque
+    handle that distinguishes by physical location, not by SSA
+    name. This catches cycles introduced by `apply_coloring`
+    (where two SSA-distinct names end up at the same `ZP` address)
+    that name-equality would miss."""
     if len(movs) <= 1:
         return list(movs)
 
@@ -310,18 +316,14 @@ def _order_parallel_copies(
     while pending:
         ready_idx = None
         for i, m in enumerate(pending):
-            if not isinstance(m.dst, asm_ast.Pseudo):
-                # Non-Pseudo dsts (Reg, Stack, ...) can't be read as
-                # a Pseudo src by another Mov, so they're trivially
-                # ready.
+            d_key = _storage_key(m.dst)
+            if d_key is None:
+                # Dst storage doesn't alias anything — trivially
+                # ready (won't be read as a src by another Mov).
                 ready_idx = i
                 break
-            d_name = m.dst.name
-            d_offset = m.dst.offset
             blocks_other = any(
-                isinstance(other.src, asm_ast.Pseudo)
-                and other.src.name == d_name
-                and other.src.offset == d_offset
+                _storage_key(other.src) == d_key
                 for j, other in enumerate(pending) if j != i
             )
             if not blocks_other:
@@ -330,34 +332,76 @@ def _order_parallel_copies(
         if ready_idx is not None:
             out.append(pending.pop(ready_idx))
             continue
-        # All remaining Movs form a cycle. Break by saving one Mov's
-        # dst to a fresh temp and rewriting any pending Mov that
-        # read that dst to instead read the temp.
+        # All remaining Movs form a cycle. Break by saving one
+        # Mov's dst to a fresh temp Pseudo and rewriting any
+        # pending Mov whose src aliases that dst to read the temp
+        # instead. The temp is a fresh Pseudo that
+        # `replace_pseudoregisters_bare_exit` will lay down as a
+        # 1-byte Frame slot (it isn't in the coloring, so it
+        # doesn't share storage with anyone).
         chosen = pending[0]
-        if not isinstance(chosen.dst, asm_ast.Pseudo):
-            # Defensive — Phi-derived parallel Movs always have
-            # Pseudo dsts. Fall back to source order.
+        d_key = _storage_key(chosen.dst)
+        if d_key is None:
             out.extend(pending)
             break
         cycle_counter[0] += 1
         tmp_name = f".{fn_name}@asm_cycle_tmp@{cycle_counter[0]}"
         tmp = asm_ast.Pseudo(name=tmp_name, offset=0)
-        # Save: tmp <- chosen.dst (the OLD value of dst).
-        out.append(asm_ast.Mov(
-            src=asm_ast.Pseudo(
-                name=chosen.dst.name, offset=chosen.dst.offset,
-            ),
-            dst=tmp,
-        ))
-        d_name = chosen.dst.name
-        d_offset = chosen.dst.offset
+        # Save: tmp <- chosen.dst's CURRENT value. Read from
+        # chosen.dst's storage (we need a SOURCE operand of that
+        # storage; for Pseudo it's Pseudo(name, offset); for ZP
+        # it's ZP(addr, 0)).
+        out.append(asm_ast.Mov(src=_clone_op(chosen.dst), dst=tmp))
         for j, other in enumerate(pending):
             if (
                 j != 0
-                and isinstance(other.src, asm_ast.Pseudo)
-                and other.src.name == d_name
-                and other.src.offset == d_offset
+                and _storage_key(other.src) == d_key
             ):
                 pending[j] = asm_ast.Mov(src=tmp, dst=other.dst)
-        # Loop continues; chosen Mov is now eligible for emission.
     return out
+
+
+def _storage_key(op: asm_ast.Type_operand):
+    """Hashable handle distinguishing operands by physical storage
+    location. Two operands sharing a storage key alias each other.
+
+    Returns `None` for operands that can't be aliased by any other
+    operand (Imm, ImmLabelLow/High) — they're never SOURCES of a
+    parallel-copy cycle."""
+    if isinstance(op, asm_ast.Pseudo):
+        return ('Pseudo', op.name, op.offset)
+    if isinstance(op, asm_ast.ZP):
+        return ('ZP', op.address + op.offset)
+    if isinstance(op, asm_ast.Reg):
+        return ('Reg', type(op.reg).__name__)
+    if isinstance(op, asm_ast.Stack):
+        return ('Stack', op.offset)
+    if isinstance(op, asm_ast.Frame):
+        return ('Frame', op.offset)
+    if isinstance(op, asm_ast.Data):
+        return ('Data', op.name, op.offset)
+    if isinstance(op, asm_ast.Indirect):
+        return ('Indirect', op.offset)
+    return None
+
+
+def _clone_op(op: asm_ast.Type_operand) -> asm_ast.Type_operand:
+    """Build a fresh source-position operand from any operand kind.
+    For most operands a structural copy works; the cycle-break
+    logic uses this to read from the current value of a dst-shaped
+    operand."""
+    if isinstance(op, asm_ast.Pseudo):
+        return asm_ast.Pseudo(name=op.name, offset=op.offset)
+    if isinstance(op, asm_ast.ZP):
+        return asm_ast.ZP(address=op.address, offset=op.offset)
+    if isinstance(op, asm_ast.Reg):
+        return asm_ast.Reg(reg=op.reg)
+    if isinstance(op, asm_ast.Stack):
+        return asm_ast.Stack(offset=op.offset)
+    if isinstance(op, asm_ast.Frame):
+        return asm_ast.Frame(offset=op.offset)
+    if isinstance(op, asm_ast.Data):
+        return asm_ast.Data(name=op.name, offset=op.offset)
+    if isinstance(op, asm_ast.Indirect):
+        return asm_ast.Indirect(offset=op.offset)
+    return op

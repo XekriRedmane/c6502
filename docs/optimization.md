@@ -950,15 +950,13 @@ exposes byte-granular structure that's invisible at TAC, and a
 late, asm-aware regalloc can color individual bytes (rather than
 whole multi-byte values like the TAC-level allocator does today).
 
-Status: under construction. The architectural skeleton is in
-place — the asm-SSA round-trip, the bare-exit emission, the
-post-regalloc prologue synthesis — but the byte-level optimizations
-and asm-level regalloc that justify the architecture are not yet
-implemented. Today `--optimize-asm` produces correct code (the
-chapter_1..12 sim corpus passes through it) but the generated
-6502 is currently *worse* than `--optimize`'s, because TAC regalloc
-is off and asm regalloc isn't yet on. Steps 6 and 7 in the build
-plan close that gap.
+Status: byte-level DCE and byte-granular regalloc are now both
+in place. `--optimize-asm` is sim-correct on the chapter_1..12
+corpus and produces output that places live values in ZP slots
+the same way `--optimize` does — with the bonus that byte-level
+DCE drops dead high-byte work that the TAC-level pipeline can't
+see (e.g. a `(long)y` cast whose result is later truncated back
+to int).
 
 ### How it differs from `--optimize`
 
@@ -1081,6 +1079,80 @@ Parallel-copy ordering and cycle-breaking work the same as in the
 TAC version (topological sort; mint a fresh
 `.<funcname>@asm_cycle_tmp@<N>` Pseudo to break a cycle).
 
+### Byte-level DCE (`passes/optimization_asm/byte_dce.py`)
+
+Runs between `to_ssa` and `from_ssa`. Drops `Mov` and `Phi`
+instructions whose Pseudo dst is never used as a source anywhere
+else in the function. Iterates to a fixed point so dropping one
+Mov can free its source's def for removal next round.
+
+What it catches that TAC-level DSE doesn't: byte-level dead
+writes. After asm-SSA versioning, byte 0 of a value and byte 3
+of the same value are independent variables. A common case:
+`(long)y` followed downstream by `(int)y` — the SignExtend writes
+all 4 bytes of the Long, but only the low 2 bytes are read. Bytes
+2 and 3 are independently dead and droppable. The `_translate_
+sign_extend` helper produces a sequence ending in `LDA #$00 / LDA
+#$FF; STA byte_2; STA byte_3`; byte-DCE removes the two STAs (and
+the synthesis pass shrinks the frame accordingly — local_bytes
+goes from 6 to 4 on a typical Int → Long → Int round trip).
+
+Conservative by design — only `Mov` and `Phi` defs are
+considered. `LoadAddress` stays even with an unused dst (so its
+src Pseudo's frame slot still gets allocated by
+`replace_pseudoregisters`); `Pop` stays (stack side effect);
+`Add/Sub/And/Or/Xor` with Pseudo dsts (rare in current
+emissions) stay because they double as carry-flag and N/Z
+producers. Statics are never dropped — writes to file-scope
+globals are observable to other functions.
+
+### Asm-level regalloc (`passes/optimization_asm/{liveness,interference,regalloc}.py`)
+
+Byte-granular, runs while still in SSA form. Mirrors the TAC
+register allocator's structure but on the asm CFG and with each
+node 1 byte wide (since asm-SSA already split multi-byte values).
+
+```
+liveness        — backward dataflow over Pseudo names. Phi
+                  sources are predecessor-edge contributions;
+                  Phi dsts are killed at block entry.
+interference    — chordal graph; nodes are colorable Pseudo
+                  names (= byte-versioned SSA names that aren't
+                  in any of the excluded sets).
+regalloc        — PEO + greedy fit. Cross-call values prefer
+                  callee-saved ($C0-$FF); others prefer caller-
+                  saved ($80-$BF). Spills land in `Coloring.
+                  spilled` and fall through to Frame allocation
+                  in `replace_pseudoregisters_bare_exit`.
+```
+
+The colorable-name filter in `interference.py` excludes:
+* statics (file-scope storage)
+* address-taken (`LoadAddress.src`)
+* params (calling convention dictates Frame addressing)
+* RMW targets (`Inc/Dec/ASL/LSR/ROL/ROR.dst` — defensive)
+* any name with non-zero-offset Pseudo references (= unversioned
+  multi-byte name, not eligible for 1-byte coloring)
+
+### Apply-coloring + `from_ssa` cycle hazard
+
+A subtle interaction: when two SSA-distinct names get assigned
+the same physical ZP slot via coloring, the Phi destruction's
+parallel-copy ordering must detect that as a cycle even though
+the names are different. The original TAC `from_ssa` cycle check
+compared by SSA name and missed this case.
+
+Fix: between regalloc and `from_ssa`, run `apply_coloring`, which
+substitutes every `Pseudo(name, offset)` whose name is in
+`coloring.assignments` with the corresponding `ZP(addr+offset, 0)`
+operand. After this rewrite, Phi destruction sees Movs whose
+sources and dsts are ZP operands, and its cycle detector compares
+by physical-storage key (`Pseudo` name+offset for unrenamed
+Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
+2-cycle at the ZP level — like `Mov ZP($A) → ZP($B)` paired with
+`Mov ZP($B) → ZP($A)` — is correctly broken via a fresh
+`.<funcname>@asm_cycle_tmp@<N>` Pseudo.
+
 ### What's done at the asm-opt layer
 
 | Step | Status |
@@ -1092,10 +1164,10 @@ TAC version (topological sort; mint a fresh
 | 5a. Asm-level CFG + dominance | Done |
 | 5b. Same | Done |
 | 5c. `to_ssa` (Phi placement + byte-granular renaming) | Done |
-| 5d. `from_ssa` (Phi → Mov, critical-edge splitting, parallel-copy ordering, cycle break) | Done |
+| 5d. `from_ssa` (Phi → Mov, critical-edge splitting, parallel-copy ordering by storage key, cycle break) | Done |
 | 5e. Wire round-trip into `--optimize-asm`; chapter sim corpus passes | Done |
-| 6. Byte-level optimizations (DCE on dead high bytes; peepholes) | Pending |
-| 7. Asm-level byte-granular regalloc | Pending |
+| 6. Byte-level DCE (drops dead high-byte work) | Done |
+| 7. Asm-level byte-granular regalloc | Done |
 
 ### Files at a glance (asm-opt layer)
 
@@ -1104,5 +1176,10 @@ TAC version (topological sort; mint a fresh
 | `passes/prologue_synthesis.py` | Inserts `FunctionPrologue` and rewrites `Return` → `Ret` based on per-function `FrameDims`; collapses no-frame functions to bare RTS. |
 | `passes/optimization_asm/cfg.py` | Asm-level basic-block CFG, idom, dominance frontiers — same shape as the TAC version. |
 | `passes/optimization_asm/ssa_construction.py` | `to_ssa(fn, statics=...)` — byte-granular Phi placement + name versioning. |
-| `passes/optimization_asm/ssa_destruction.py` | `from_ssa(fn)` — critical-edge splitting + Phi → Mov + parallel-copy ordering. |
-| `passes/optimization_asm/optimizer.py` | Per-function driver; round-trip hub for steps 6 and 7. |
+| `passes/optimization_asm/byte_dce.py` | Drops Movs / Phis whose Pseudo dst is unused. |
+| `passes/optimization_asm/liveness.py` | Backward dataflow over Pseudo names. |
+| `passes/optimization_asm/interference.py` | Chordal graph; filters non-colorable names. |
+| `passes/optimization_asm/regalloc.py` | PEO + greedy 1-byte coloring. |
+| `passes/optimization_asm/apply_coloring.py` | Substitutes colored `Pseudo` operands with `ZP` operands so `from_ssa` can detect physical-slot cycles. |
+| `passes/optimization_asm/ssa_destruction.py` | `from_ssa(fn)` — critical-edge splitting + Phi → Mov + parallel-copy ordering by storage key. |
+| `passes/optimization_asm/optimizer.py` | Per-function driver; threads to_ssa → byte_dce → regalloc → apply_coloring → from_ssa. |

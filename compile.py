@@ -159,12 +159,12 @@ def _run_stage(
             asm0 = translate_to_asm(
                 tac, symbols, types, bare_exit=True,
             )
-            asm0 = asm_opt.optimize_program(
+            asm0, asm_colorings = asm_opt.optimize_program(
                 asm0, extra_statics=statics,
             )
             asm1, dims_by_fn = replace_pseudoregs_bare_exit(
                 asm0, extra_statics=statics, symbols=symbols,
-                types=types, colorings={},
+                types=types, colorings=asm_colorings,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             return emit_program(lower_to_asm2(

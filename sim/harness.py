@@ -97,16 +97,16 @@ def compile_to_asm(
     )
     if optimize_asm:
         # Asm-level path: TAC opts without regalloc, then asm-level
-        # SSA round-trip on Pseudos. See compile.py for the full
-        # pipeline shape.
+        # SSA round-trip + byte-granular regalloc. See compile.py
+        # for the full pipeline shape.
         tac, _ = optimize_tac(tac, syms, do_regalloc=False)
         asm0 = translate_to_asm(tac, syms, types, bare_exit=True)
-        asm0 = asm_opt.optimize_program(
+        asm0, asm_colorings = asm_opt.optimize_program(
             asm0, extra_statics=statics,
         )
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,
-            types=types, colorings={},
+            types=types, colorings=asm_colorings,
         )
         asm = expand_long_branches(synthesize_prologue(asm1, dims_by_fn))
         return asm, syms, types

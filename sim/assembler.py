@@ -990,9 +990,12 @@ def _prologue_size(
         return 0
     # Allocate locals + 2-byte saved-FP slot.
     size = _ssp_sub_size(local_bytes + 2)
-    # Save caller's FP into the slot at SSP+M+1 / SSP+M+2.
-    # LDY #M+1; LDA FP; STA (SSP),Y; INY; LDA FP+1; STA (SSP),Y
-    size += 2 + 2 + 2 + 1 + 2 + 2
+    # Save caller's FP into the slot at SSP+M+1 / SSP+M+2 via two
+    # self-contained Mov(Reg(A), Stack(...)) atoms — each one
+    # re-loads Y. (Matches `passes.asm_to_asm2._save_fp_into_slot`,
+    # which dropped the INY trick the old in-emit expansion used.)
+    # LDA FP; LDY #M+1; STA (SSP),Y; LDA FP+1; LDY #M+2; STA (SSP),Y
+    size += 2 + 2 + 2 + 2 + 2 + 2
     # Set FP = SSP: LDA SSP; STA FP; LDA SSP+1; STA FP+1
     size += 2 + 2 + 2 + 2
     # Per callee-saved byte: LDA $addr (2) + LDY #off (2) + STA (FP),Y (2)
@@ -1012,14 +1015,16 @@ def _emit_prologue(
     fp = DEFAULT_ZP_SYMBOLS["FP"]
     out = bytearray()
     out += _emit_ssp_sub(local_bytes + 2)
-    # LDY #M+1; LDA FP; STA (SSP),Y
-    out += bytes([_IMM["LDY"], local_bytes + 1])
+    # Save caller's FP into the slot at SSP+M+1 / SSP+M+2 via two
+    # self-contained STA-(SSP),Y stores — each one re-loads Y, as
+    # in `passes.asm_to_asm2._save_fp_into_slot`. (No INY trick.)
+    # LDA FP; LDY #M+1; STA (SSP),Y
     out += _emit_zp("LDA", fp)
+    out += bytes([_IMM["LDY"], local_bytes + 1])
     out += bytes([_INDY["STA"], ssp])
-    # INY
-    out += bytes([_IMPLIED["INY"]])
-    # LDA FP+1; STA (SSP),Y
+    # LDA FP+1; LDY #M+2; STA (SSP),Y
     out += _emit_zp("LDA", fp + 1)
+    out += bytes([_IMM["LDY"], local_bytes + 2])
     out += bytes([_INDY["STA"], ssp])
     # FP = SSP
     out += _emit_zp("LDA", ssp)
@@ -1051,11 +1056,16 @@ def _ret_size(
         size = 2 + 2 + 2 + 2  # LDA + STA + LDA + STA
     else:
         size = 1 + 2 + 2 + 2 + 2 + 2 + 2
-    # Restore FP from slot at FP+M+1 / FP+M+2 via X scratch:
-    # LDY #M+1; LDA (FP),Y; TAX; INY; LDA (FP),Y; STA FP+1; STX FP.
-    # X is free to clobber because no return convention puts data
-    # there (1B → A, 2B/4B/8B → HARGS).
-    size += 2 + 2 + 1 + 1 + 2 + 2 + 2
+    # Restore FP from slot at FP+M+1 / FP+M+2 via X scratch — naive
+    # form (matches `passes.asm_to_asm2._restore_fp_from_slot`,
+    # which dropped the INY+STX trick the old in-emit expansion
+    # used). The low byte goes through X via TAX/TXA so it
+    # survives across the high read / high store; X is free to
+    # clobber because no return convention puts data there.
+    # LDY #M+1; LDA (FP),Y; TAX;
+    # LDY #M+2; LDA (FP),Y; STA FP+1;
+    # TXA;      STA FP.
+    size += 2 + 2 + 1 + 2 + 2 + 2 + 1 + 2
     # Per callee-saved byte restore: LDY #off (2) + LDA (FP),Y (2) + STA $addr (2)
     size += len(callee_saved_addrs) * 6
     # PHA + PLA wrap if save_a; trailing RTS.
@@ -1105,15 +1115,19 @@ def _emit_ret(
         out += _emit_zp("LDA", fp + 1)
         out += bytes([_IMM["ADC"], hi])
         out += _emit_zp("STA", ssp + 1)
-    # Restore FP from slot. TAX/STX scratch is fine — no return
-    # convention uses X.
+    # Restore FP from slot — naive form (no INY/STX trick). Each
+    # indirect-Y read is its own LDY+LDA pair; the low byte goes
+    # through X via TAX/TXA so it survives the high read and the
+    # final store. X is free to clobber — no return convention
+    # uses it. (Matches `passes.asm_to_asm2._restore_fp_from_slot`.)
     out += bytes([_IMM["LDY"], local_bytes + 1])
     out += bytes([_INDY["LDA"], fp])
     out += bytes([_IMPLIED["TAX"]])
-    out += bytes([_IMPLIED["INY"]])
+    out += bytes([_IMM["LDY"], local_bytes + 2])
     out += bytes([_INDY["LDA"], fp])
     out += _emit_zp("STA", fp + 1)
-    out += _emit_zp("STX", fp)
+    out += bytes([_IMPLIED["TXA"]])
+    out += _emit_zp("STA", fp)
     if save_a:
         out += bytes([_IMPLIED["PLA"]])
     out += bytes([_IMPLIED["RTS"]])

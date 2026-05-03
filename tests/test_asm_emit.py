@@ -1,6 +1,10 @@
 import unittest
 
-import asm_ast
+# asm_emit consumes asm2_ast (the strictly-atomic IR after
+# `passes.asm_to_asm2` has lowered the asm_ast compound nodes).
+# Tests construct asm2_ast nodes; the alias avoids touching
+# every reference in this large test file.
+import asm2_ast as asm_ast
 from asm_emit import (
     emit_function,
     emit_instruction,
@@ -352,7 +356,7 @@ class TestEmitFunctionWithLabels(unittest.TestCase):
             asm_ast.Branch(cond=asm_ast.NE(), target="L_skip"),
             asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
             asm_ast.Label(name="L_skip"),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+            asm_ast.Return(),
         ])
         self.assertEqual(
             emit_function(fn),
@@ -384,32 +388,6 @@ class TestEmitFunctionWithLabels(unittest.TestCase):
         )
 
 
-class TestEmitRejectsPseudo(unittest.TestCase):
-    """Pseudo operands must be eliminated before emit; reaching the
-    emitter with one indicates the pseudo->stack pass didn't run."""
-
-    def _assert_pseudo_error(self, instr):
-        with self.assertRaises(ValueError) as cm:
-            emit_instruction(instr)
-        self.assertIn("Pseudo", str(cm.exception))
-
-    def test_mov_with_pseudo_src(self):
-        self._assert_pseudo_error(
-            asm_ast.Mov(src=asm_ast.Pseudo(name="t", offset=0), dst=_reg(_A))
-        )
-
-    def test_mov_with_pseudo_dst(self):
-        self._assert_pseudo_error(
-            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=asm_ast.Pseudo(name="t", offset=0))
-        )
-
-    def test_mov_with_pseudo_on_both_sides(self):
-        self._assert_pseudo_error(
-            asm_ast.Mov(src=asm_ast.Pseudo(name="a", offset=0),
-                        dst=asm_ast.Pseudo(name="b", offset=0))
-        )
-
-
 class TestEmitInstruction(unittest.TestCase):
     def test_unknown_instruction_raises(self):
         stub = type("Stub", (asm_ast.Type_instruction,), {})
@@ -417,268 +395,12 @@ class TestEmitInstruction(unittest.TestCase):
             emit_instruction(stub())
 
 
-class TestEmitAllocateStack(unittest.TestCase):
-    """`AllocateStack(N)` is the caller-side soft-stack frame
-    allocation: SSP -= N (16-bit). Reuses the same `_emit_ssp_sub`
-    helper that drives the prologue, so the byte sequence matches
-    what the prologue's local-allocation step produces."""
-
-    def test_zero_emits_nothing(self):
-        # SSP -= 0 is a no-op; the helper emits an empty list and
-        # the call site doesn't bracket it with anything (no comment,
-        # no blank). Calls with no args go straight to JSR.
-        self.assertEqual(
-            emit_instruction(asm_ast.AllocateStack(bytes=0)), [],
-        )
-
-    def test_one_emits_16bit_sub_one(self):
-        # SSP -= 1: SEC, LDA SSP, SBC #$01, STA SSP, LDA SSP+1,
-        # SBC #$00, STA SSP+1. (The high-byte SBC propagates the
-        # borrow even when only the low byte changes.)
-        self.assertEqual(
-            emit_instruction(asm_ast.AllocateStack(bytes=1)),
-            [
-                "   SEC",
-                "   LDA   SSP",
-                "   SBC   #$01",
-                "   STA   SSP",
-                "   LDA   SSP+1",
-                "   SBC   #$00",
-                "   STA   SSP+1",
-            ],
-        )
-
-    def test_high_byte_set_when_amount_exceeds_byte(self):
-        # SSP -= 0x0100: low byte SBC's #$00, high byte SBC's #$01.
-        out = emit_instruction(asm_ast.AllocateStack(bytes=0x0100))
-        self.assertIn("   SBC   #$00", out)
-        self.assertIn("   SBC   #$01", out)
-
-
-class TestEmitFunctionPrologue(unittest.TestCase):
-    def test_zero_emits_nothing(self):
-        # No locals (and no args yet) means no FP setup is needed.
-        self.assertEqual(emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=0)), [])
-
-    def test_amt_one_emits_full_prologue(self):
-        # SSP -= (M+2) = 3, then write FP into the slot at SSP+2/+3,
-        # then FP = SSP. A leading `; prologue: ...` comment and
-        # trailing blank line mark the boilerplate region.
-        self.assertEqual(
-            emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1)),
-            [
-                "   ; prologue: 0 arg bytes, 1 local bytes",
-                # SSP -= 3
-                "   SEC",
-                "   LDA   SSP",
-                "   SBC   #$03",
-                "   STA   SSP",
-                "   LDA   SSP+1",
-                "   SBC   #$00",
-                "   STA   SSP+1",
-                # save caller FP into slot at SSP+2 (low) / SSP+3 (high)
-                "   LDY   #$02",
-                "   LDA   FP",
-                "   STA   (SSP),Y",
-                "   INY",
-                "   LDA   FP+1",
-                "   STA   (SSP),Y",
-                # FP = SSP
-                "   LDA   SSP",
-                "   STA   FP",
-                "   LDA   SSP+1",
-                "   STA   FP+1",
-                "",
-            ],
-        )
-
-    def test_prologue_header_reports_arg_and_local_bytes(self):
-        # The header text embeds both field values so a reader can
-        # see the frame shape without inspecting the asm below.
-        out = emit_instruction(
-            asm_ast.FunctionPrologue(arg_bytes=4, local_bytes=2)
-        )
-        self.assertEqual(
-            out[0], "   ; prologue: 4 arg bytes, 2 local bytes",
-        )
-        # And the trailing blank separator is always the last element.
-        self.assertEqual(out[-1], "")
-
-    def test_max_amt_253_uses_max_ldy(self):
-        # M=253 -> save-FP at SSP+254 (low) and SSP+255 (high) — the
-        # largest offsets LDY #imm + INY can address.
-        out = emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=253))
-        # First line of the SSP-= sub is the only one whose immediate
-        # depends on M+2 = 255.
-        self.assertIn("   SBC   #$FF", out)
-        # The save-FP block uses LDY #$FE then INY (-> $FF).
-        self.assertIn("   LDY   #$FE", out)
-
-    def test_amt_too_large_for_ldy_raises(self):
-        # M = 254 would need LDY #$FF then INY -> $00, which would
-        # overwrite the wrong byte. Pass should reject.
-        with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=254))
-
-    def test_local_bytes_out_of_range_raises(self):
-        for lb in [-1, 0x10000, 100000]:
-            with self.subTest(local_bytes=lb):
-                with self.assertRaises(ValueError):
-                    emit_instruction(
-                        asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=lb)
-                    )
-
-    def test_callee_saved_addrs_emit_save_sequence(self):
-        # With callee_saved_addrs=[0xC0, 0xC1], the prologue emits the
-        # standard FP setup followed by save sequences for each addr.
-        out = emit_instruction(asm_ast.FunctionPrologue(
-            arg_bytes=0, local_bytes=2,
-            callee_saved_addrs=[0xC0, 0xC1],
-        ))
-        # The first save: LDA $C0; LDY #$01; STA (FP),Y.
-        self.assertIn("   LDA   $C0", out)
-        # The second save: LDA $C1; LDY #$02; STA (FP),Y.
-        self.assertIn("   LDA   $C1", out)
-        # The first save's STA target should appear after its LDA.
-        idx_lda_c0 = out.index("   LDA   $C0")
-        idx_ldy_01 = out.index("   LDY   #$01", idx_lda_c0)
-        self.assertGreater(idx_ldy_01, idx_lda_c0)
-
-
-class TestEmitRet(unittest.TestCase):
-    def test_zero_dimensions_just_rts(self):
-        # No args and no locals — nothing to dealloc, no FP to restore.
-        self.assertEqual(
-            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True)),
-            ["   RTS"],
-        )
-
-    def test_callee_saved_addrs_emit_restore_sequence(self):
-        # With callee_saved_addrs=[0xC0, 0xC1], the epilogue first
-        # restores those bytes from frame slots, THEN does the
-        # standard SSP/FP teardown.
-        out = emit_instruction(asm_ast.Ret(
-            arg_bytes=0, local_bytes=2, save_a=True,
-            callee_saved_addrs=[0xC0, 0xC1],
-        ))
-        # The restore sequence: LDY #$01; LDA (FP),Y; STA $C0; LDY #$02;
-        # LDA (FP),Y; STA $C1.
-        self.assertIn("   STA   $C0", out)
-        self.assertIn("   STA   $C1", out)
-        # The restores must happen BEFORE the SSP rewind (the CLC + LDA FP
-        # sequence). Find the first STA $C0 and the first CLC; the STA
-        # must come first.
-        idx_sta_c0 = out.index("   STA   $C0")
-        idx_clc = out.index("   CLC")
-        self.assertLess(idx_sta_c0, idx_clc)
-
-    def test_locals_only_full_epilogue(self):
-        # M=3, N=0: SSP = FP + (M+N+2) = FP + 5; saved FP at FP+M+1=4
-        # (low) / FP+M+2=5 (high), read via (FP),Y with X as scratch.
-        # X is free to clobber: 1-byte returns ride in A (preserved
-        # by the outer PHA/PLA), 2/4/8-byte returns ride in HARGS.
-        # A leading blank line + `; epilogue` comment mark where the
-        # boilerplate starts.
-        self.assertEqual(
-            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3, save_a=True)),
-            [
-                "",
-                "   ; epilogue",
-                "   PHA",
-                # SSP = FP + 5
-                "   CLC",
-                "   LDA   FP",
-                "   ADC   #$05",
-                "   STA   SSP",
-                "   LDA   FP+1",
-                "   ADC   #$00",
-                "   STA   SSP+1",
-                # restore caller FP from FP+4 (low) / FP+5 (high)
-                "   LDY   #$04",
-                "   LDA   (FP),Y",
-                "   TAX",
-                "   INY",
-                "   LDA   (FP),Y",
-                "   STA   FP+1",
-                "   STX   FP",
-                "   PLA",
-                "   RTS",
-            ],
-        )
-
-    def test_save_a_false_skips_pha_pla(self):
-        # Wider-return path: same SSP/FP rewind, no PHA/PLA wrap.
-        # The return value lives in HARGS (Long / Pointer at +0..1,
-        # LongLong / Float at +8..11, Double at +16..23), which the
-        # rewind doesn't touch, so there's nothing to preserve in A.
-        self.assertEqual(
-            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=3, save_a=False)),
-            [
-                "",
-                "   ; epilogue",
-                # SSP = FP + 5 (no PHA before)
-                "   CLC",
-                "   LDA   FP",
-                "   ADC   #$05",
-                "   STA   SSP",
-                "   LDA   FP+1",
-                "   ADC   #$00",
-                "   STA   SSP+1",
-                "   LDY   #$04",
-                "   LDA   (FP),Y",
-                "   TAX",
-                "   INY",
-                "   LDA   (FP),Y",
-                "   STA   FP+1",
-                "   STX   FP",
-                # RTS directly, no PLA
-                "   RTS",
-            ],
-        )
-
-    def test_save_a_false_with_zero_dimensions_still_just_rts(self):
-        # No frame to tear down — save_a is irrelevant; either flag
-        # collapses to a bare RTS.
-        self.assertEqual(
-            emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False)),
-            ["   RTS"],
-        )
-
-    def test_args_shift_ssp_rewind_not_fp_slot(self):
-        # M=2, N=4: SSP rewind is FP + (4+2+2) = FP + 8, but the
-        # saved-FP slot is still at FP+M+1=3 / FP+M+2=4 — args don't
-        # shift the slot location.
-        out = emit_instruction(asm_ast.Ret(arg_bytes=4, local_bytes=2, save_a=True))
-        # SSP rewind low byte = M+N+2 = 8
-        self.assertIn("   ADC   #$08", out)
-        # FP-slot read uses LDY #(M+1) = #$03
-        self.assertIn("   LDY   #$03", out)
-
-    def test_two_byte_rewind_propagates_to_high(self):
-        # The SSP-rewind ADC pair carries between low and high. With
-        # a 9-bit-ish total (e.g. N=0x100, M=0), low byte = $02
-        # (= 0x100+0+2 low byte), high byte = $01.
-        out = emit_instruction(asm_ast.Ret(arg_bytes=0x100, local_bytes=0, save_a=True))
-        self.assertIn("   ADC   #$02", out)
-        self.assertIn("   ADC   #$01", out)
-
-    def test_local_bytes_out_of_range_raises(self):
-        for lb in [-1, 254, 1000]:
-            with self.subTest(local_bytes=lb):
-                with self.assertRaises(ValueError):
-                    emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=lb, save_a=True))
-
-    def test_total_out_of_range_raises(self):
-        # M+N+2 > 0xFFFF can't fit in a 16-bit SSP arithmetic.
-        with self.assertRaises(ValueError):
-            emit_instruction(asm_ast.Ret(arg_bytes=0xFFFE, local_bytes=0, save_a=True))
-
 
 class TestEmitFunction(unittest.TestCase):
     def test_label_subroutine_blank_then_instructions(self):
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_reg(_A)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+            asm_ast.Return(),
         ])
         self.assertEqual(
             emit_function(fn),
@@ -695,46 +417,35 @@ class TestEmitFunction(unittest.TestCase):
         fn = asm_ast.Function(name="main", is_global=True, instructions=[])
         self.assertEqual(emit_function(fn), ["main:", "   SUBROUTINE"])
 
-    def test_prologue_body_epilogue_section_markers(self):
-        # With a non-trivial frame, the output should have `; prologue: ...`
-        # before the prologue asm, a blank line + body asm, a blank line,
-        # then `; epilogue` before the epilogue asm. This is the visual
-        # separator between boilerplate and actual content.
+    def test_comment_blank_section_markers(self):
+        # The asm_to_asm2 lowering emits Comment / Blank atoms to
+        # mark the prologue / epilogue regions. Verify emit_function
+        # renders them at opcode column and as bare blank lines.
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
-            asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
+            asm_ast.Comment(text="prologue: 0 arg bytes, 1 local bytes"),
             asm_ast.Mov(src=asm_ast.Imm(value=7),
                         dst=asm_ast.Frame(offset=1)),
-            asm_ast.Mov(src=asm_ast.Frame(offset=1),
-                        dst=asm_ast.Reg(reg=asm_ast.A())),
-            asm_ast.Ret(arg_bytes=0, local_bytes=1, save_a=True),
+            asm_ast.Blank(),
+            asm_ast.Comment(text="epilogue"),
+            asm_ast.Return(),
         ])
         out = emit_function(fn)
         self.assertIn("   ; prologue: 0 arg bytes, 1 local bytes", out)
         self.assertIn("   ; epilogue", out)
-        # Prologue comment precedes any of the body's Frame accesses.
-        prologue_idx = out.index(
-            "   ; prologue: 0 arg bytes, 1 local bytes"
-        )
-        body_idx = out.index("   LDA   #$07")
+        # Blank line immediately before the epilogue comment.
         epilogue_idx = out.index("   ; epilogue")
-        self.assertLess(prologue_idx, body_idx)
-        self.assertLess(body_idx, epilogue_idx)
-        # Blank line immediately before the epilogue comment, and
-        # immediately after the last prologue line (via the trailing
-        # blank emitted by the prologue).
         self.assertEqual(out[epilogue_idx - 1], "")
-        self.assertEqual(out[body_idx - 1], "")
 
-    def test_empty_body_collapses_consecutive_blanks(self):
-        # Prologue trails with a blank; Ret leads with a blank. In a
-        # function with no body between them, emit_function collapses
-        # the two blanks into one so we don't get a double-blank gap.
+    def test_consecutive_blanks_collapse(self):
+        # Two adjacent Blank atoms collapse to one blank line so a
+        # prologue's trailing blank and an epilogue's leading blank
+        # don't pile up when a function has no body between them.
         fn = asm_ast.Function(name="main", is_global=True, instructions=[
-            asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=1),
-            asm_ast.Ret(arg_bytes=0, local_bytes=1, save_a=True),
+            asm_ast.Blank(),
+            asm_ast.Blank(),
+            asm_ast.Return(),
         ])
         out = emit_function(fn)
-        # No two adjacent blank lines anywhere.
         for i in range(len(out) - 1):
             with self.subTest(i=i):
                 self.assertFalse(
@@ -747,7 +458,7 @@ class TestEmitProgram(unittest.TestCase):
     def test_full(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+            asm_ast.Return(),
         )
         self.assertEqual(
             emit_program(prog),
@@ -763,14 +474,14 @@ class TestEmitProgram(unittest.TestCase):
                 name="foo", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_reg(_A)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+                    asm_ast.Return(),
                 ],
             ),
             asm_ast.Function(
                 name="main", is_global=True, params=[],
                 instructions=[
                     asm_ast.Call(name="foo"),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+                    asm_ast.Return(),
                 ],
             ),
         ])
@@ -817,7 +528,7 @@ class TestEmitProgram(unittest.TestCase):
                 name="main", is_global=True, params=[],
                 instructions=[
                     asm_ast.Mov(src=asm_ast.Imm(value=42), dst=_reg(_A)),
-                    asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+                    asm_ast.Return(),
                 ],
             ),
             asm_ast.StaticVariable(name="g", is_global=False, init=[asm_ast.CharInit(value=7)]),
@@ -1260,7 +971,7 @@ class TestColumnAlignment(unittest.TestCase):
     def test_columns(self):
         prog = _prog(
             asm_ast.Mov(src=asm_ast.Imm(value=0x2A), dst=_reg(_A)),
-            asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+            asm_ast.Return(),
         )
         lines = emit_program(prog).splitlines()
         # Label at column 1 (index 0).
@@ -1331,14 +1042,6 @@ class TestEmitAdd(unittest.TestCase):
             with self.subTest(src=src):
                 with self.assertRaises(ValueError):
                     emit_instruction(asm_ast.Add(src=src, dst=_reg(_A)))
-
-    def test_pseudo_src_rejected(self):
-        with self.assertRaises(ValueError) as cm:
-            emit_instruction(
-                asm_ast.Add(src=asm_ast.Pseudo(name="t", offset=0), dst=_reg(_A))
-            )
-        self.assertIn("Pseudo", str(cm.exception))
-
 
 class TestEmitSub(unittest.TestCase):
     """Sub at emit is a single SBC (with addressing-mode setup for
@@ -1580,16 +1283,6 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         emit_instruction(cls(dst=dst))
 
-    def test_pseudo_dst_rejected(self):
-        for cls, _ in self._CASES:
-            with self.subTest(op=cls.__name__):
-                with self.assertRaises(ValueError) as cm:
-                    emit_instruction(cls(
-                        dst=asm_ast.Pseudo(name="t", offset=0),
-                    ))
-                self.assertIn("Pseudo", str(cm.exception))
-
-
 class TestEmitAnd(unittest.TestCase):
     """And at emit is a single AND instruction (with addressing-mode
     setup for indirect-Y sources). dst must be Reg(A); src can be
@@ -1631,14 +1324,6 @@ class TestEmitAnd(unittest.TestCase):
             with self.subTest(src=src):
                 with self.assertRaises(ValueError):
                     emit_instruction(asm_ast.And(src=src, dst=_reg(_A)))
-
-    def test_pseudo_src_rejected(self):
-        with self.assertRaises(ValueError) as cm:
-            emit_instruction(
-                asm_ast.And(src=asm_ast.Pseudo(name="t", offset=0), dst=_reg(_A))
-            )
-        self.assertIn("Pseudo", str(cm.exception))
-
 
 class TestEmitOr(unittest.TestCase):
     """Or at emit is a single ORA instruction; same operand shape as And."""

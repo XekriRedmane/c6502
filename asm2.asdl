@@ -1,0 +1,80 @@
+module ASM2 {
+    -- ASM2: a strict 1:1-with-6502-opcodes IR. Lowered from asm_ast
+    -- by `passes.asm_to_asm2.translate_program`. Differs from asm_ast
+    -- only in the `instruction` sum: the three compound nodes that
+    -- expanded into multi-instruction sequences at emit time —
+    -- `Ret`, `FunctionPrologue`, `AllocateStack` — are gone, and
+    -- `asm_to_asm2` rewrites each into its component atoms. Every
+    -- other instruction passes through as a structural copy
+    -- retagged at the asm2_ast type. (The "1:1 with opcodes" rule
+    -- preserves asm_ast's existing convention for Mov / Add / Sub:
+    -- the LDY that sets up indirect-Y addressing for a Stack /
+    -- Frame / Indirect operand counts as addressing-mode setup, not
+    -- a separate logical step. `LoadAddress` is also kept — its
+    -- expansion is short enough to stay one logical "compute the
+    -- address of an operand into two bytes" node. The `Return` atom
+    -- is what `RTS` lowers to.)
+    --
+    -- Every operand / static_init / reg / condition / top_level
+    -- type is a structural copy of the matching asm_ast type.
+    -- They're distinct Python classes (dataclasses don't unify
+    -- across modules), so asm_to_asm2 walks each operand and
+    -- produces a fresh asm2_ast value.
+    program = Program(top_level*)
+    top_level =
+        Function(identifier name, bool is_global, identifier* params, instruction* instructions)
+        | StaticVariable(identifier name, bool is_global, static_init* init)
+    static_init = CharInit(int value)
+                | IntInit(int value) | LongInit(int value) | LongLongInit(int value)
+                | FloatInit(int bits) | DoubleInit(int bits)
+                | AddressInit(identifier name, int offset)
+                | StringInit(string str, int bytes)
+                | ZeroInit(int bytes)
+
+    -- Three asm-only atoms join the existing instruction set:
+    --   Return           — RTS (the bare epilogue suffix; what
+    --                      `Ret` collapsed to in the no-frame case)
+    --   Comment(text)    — block-level "; ..." line at opcode
+    --                      column. The `FunctionPrologue` lowering
+    --                      emits one to label the boilerplate; `Ret`
+    --                      emits one labeling the epilogue.
+    --   Blank            — a blank line separator. The lowerings of
+    --                      `FunctionPrologue` and `Ret` use these
+    --                      to bracket the boilerplate.
+    instruction =
+        Mov(operand src, operand dst)
+        | Return
+        | Add(operand src, operand dst)
+        | Sub(operand src, operand dst)
+        | Call(identifier name)
+        | ClearCarry
+        | SetCarry
+        | Inc(operand dst)
+        | Dec(operand dst)
+        | Push(operand src)
+        | Pop(operand dst)
+        | Xor(operand src1, operand src2, operand dst)
+        | And(operand src, operand dst)
+        | Or(operand src, operand dst)
+        | ArithmeticShiftLeft(operand dst)
+        | LogicalShiftRight(operand dst)
+        | RotateLeft(operand dst)
+        | RotateRight(operand dst)
+        | Label(identifier name)
+        | Jump(identifier target)
+        | Branch(condition cond, identifier target)
+        | Compare(operand left, operand right)
+        | LoadAddress(operand src, operand dst)
+        | Comment(string text)
+        | Blank
+
+    operand = Imm(int value) | Reg(reg)
+            | Stack(int offset) | Frame(int offset)
+            | Data(identifier name, int offset)
+            | Indirect(int offset)
+            | ZP(int address, int offset)
+            | ImmLabelLow(identifier name, int offset)
+            | ImmLabelHigh(identifier name, int offset)
+    reg = A | X | Y
+    condition = CC | CS | EQ | MI | NE | PL | VC | VS
+}

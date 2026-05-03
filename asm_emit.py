@@ -1,9 +1,24 @@
-"""Emit 6502 assembly from an asm_ast program.
+"""Emit 6502 assembly from an asm2_ast program.
 
 Formatting rules:
   - labels start in column 1
   - opcodes (uppercase) start in column 4
   - operands start in column 10
+
+`asm2_ast` is the strictly-atomic-IR sibling of `asm_ast`: every
+node represents one logical 6502 instruction. The compound nodes
+that asm_emit used to expand at this stage —
+`AllocateStack` / `FunctionPrologue` / `Ret` — are gone here and
+arrive as already-expanded atom sequences from the
+`passes.asm_to_asm2` lowering pass. Three asm2-only atoms join
+the existing instruction set:
+  - `Return` — RTS (the bare epilogue suffix; what `Ret`
+    collapsed to in the no-frame case).
+  - `Comment(text)` — block-level "; ..." line at opcode column.
+    Used by the prologue / epilogue lowerings to mark the
+    boilerplate.
+  - `Blank` — a blank line separator between prologue / body /
+    epilogue. Consecutive blanks collapse at emit time.
 
 Soft-stack convention (see README "Function stack frame layout"):
   - the soft stack pointer is the symbol `SSP`, a 16-bit ZP value
@@ -15,40 +30,12 @@ Soft-stack convention (see README "Function stack frame layout"):
     `Frame(off)` operands are the byte at `FP+off` (FP-relative).
     Both emit as `LDY #off` then `LDA (PTR),Y` / `STA (PTR),Y`
   - any indirect access clobbers Y
-  - `FunctionPrologue(arg_bytes=N, local_bytes=M)` for `N+M > 0`:
-    emits a leading `; prologue: N arg bytes, M local bytes` comment
-    so the boilerplate region is easy to pick out, allocates `M+2`
-    bytes (locals + saved-FP slot), writes the caller's FP into the
-    slot at `SSP+M+1` (low) and `SSP+M+2` (high), sets `FP = SSP`,
-    and trails with a blank line that separates the prologue from the
-    body. Clobbers A and Y. For `N+M == 0` it emits nothing (no FP
-    setup needed when the function has no locals or args). Bounded
-    `M <= 253` so `LDY #(M+2)` fits in a byte. Args themselves were
-    pushed by the caller before JSR; the prologue doesn't allocate
-    them.
-  - `Ret(arg_bytes=N, local_bytes=M, save_a=…)` for `N+M > 0`: leads
-    with a blank line and `; epilogue` comment to mark the
-    boilerplate region; if `save_a=True` (the 1-byte-return
-    convention — Int only), PHAs the return value first. Then
-    `SSP = FP + (N + M + 2)` in one shot (the +2 is the saved-FP
-    slot; the result is the caller's pre-arg-push SSP, so the
-    caller needs no per-call cleanup). Then reads the saved FP via
-    `(FP),Y` with `Y=M+1` (low) and `Y=M+2` (high), stashing the
-    low byte in X across the high read so we don't corrupt FP's
-    role as the indirect base mid-read. X is free to clobber here
-    because no return convention puts data in X — wider returns
-    (Long / Pointer at HARGS+0..1, LongLong / Float at HARGS+8..11,
-    Double at HARGS+16..23) all live in HARGS, which the SSP/FP
-    arithmetic doesn't touch. Closes with `PLA, RTS` (when
-    save_a=True) or just `RTS` (when save_a=False — wider returns
-    have nothing to preserve in A). For `N+M == 0` it just emits
-    `RTS` regardless of save_a.
 
-One-instruction-per-node rule. With the exceptions of `Ret` and
-`FunctionPrologue` (the multi-step compound nodes documented above),
-every emit-stage instruction maps to exactly one 6502 opcode. Any
-higher-level operation (e.g. `Unary(Not, A)` -> EOR/CLC/ADC sequence)
-must be lowered into atoms by an earlier pass before reaching emit.
+One-instruction-per-node rule. Every emit-stage instruction maps
+to exactly one 6502 opcode (where addressing-mode setup like the
+LDY for indirect-Y counts as part of the opcode). Higher-level
+operations are lowered into atoms by `passes.asm_to_asm2` before
+reaching emit.
 
 Atomic arithmetic / flag instructions:
   - `ClearCarry` -> `CLC`; `SetCarry` -> `SEC`.
@@ -151,7 +138,13 @@ keyed off operand size), and `Mov`s reading the result back out.)
 from __future__ import annotations
 
 
-import asm_ast
+# asm_emit consumes asm2_ast (the strictly-atomic IR), but the
+# legacy `asm_ast.Foo` references throughout this module map
+# 1-to-1 to `asm2_ast.Foo` (every operand / static_init / reg /
+# condition class plus the surviving instruction classes is
+# present in both). The alias avoids a hundred mechanical
+# rewrites without lying about what we consume.
+import asm2_ast as asm_ast
 
 
 # 0-indexed column positions (column 1 = index 0).
@@ -186,22 +179,6 @@ def _comment_line(text: str) -> str:
 def _check_byte(label: str, v: int) -> None:
     if not 0 <= v <= 255:
         raise ValueError(f"{label} {v} out of range for 6502 (expected 0..255)")
-
-
-def _check_amt(amt: int) -> None:
-    if not 0 <= amt <= 0xFFFF:
-        raise ValueError(f"stack adjust {amt} out of range (expected 0..65535)")
-
-
-def _reject_pseudo(op: asm_ast.Type_operand) -> None:
-    """Pseudo operands must be eliminated before emit; the pseudo->stack
-    replacement pass owns that. Reaching emit with one is a contract
-    violation in an earlier pass, not a user-facing condition."""
-    if isinstance(op, asm_ast.Pseudo):
-        raise ValueError(
-            f"Pseudo({op.name!r}) reached asm_emit; "
-            "the pseudo->stack replacement pass must run first"
-        )
 
 
 def _reg_letter(r: asm_ast.Type_reg) -> str:
@@ -239,40 +216,6 @@ def _cond_suffix(c: asm_ast.Type_condition) -> str:
             return "VS"
         case _:
             raise TypeError(f"unexpected condition: {c!r}")
-
-
-def _emit_ssp_sub(amt: int) -> list[str]:
-    """16-bit `SSP -= amt`. Clobbers A. Empty if amt == 0."""
-    _check_amt(amt)
-    if amt == 0:
-        return []
-    lo, hi = amt & 0xFF, (amt >> 8) & 0xFF
-    return [
-        _instr_line("SEC"),
-        _instr_line("LDA", _SSP),
-        _instr_line("SBC", f"#${lo:02X}"),
-        _instr_line("STA", _SSP),
-        _instr_line("LDA", f"{_SSP}+1"),
-        _instr_line("SBC", f"#${hi:02X}"),
-        _instr_line("STA", f"{_SSP}+1"),
-    ]
-
-
-def _emit_ssp_add(amt: int) -> list[str]:
-    """16-bit `SSP += amt`. Clobbers A. Empty if amt == 0."""
-    _check_amt(amt)
-    if amt == 0:
-        return []
-    lo, hi = amt & 0xFF, (amt >> 8) & 0xFF
-    return [
-        _instr_line("CLC"),
-        _instr_line("LDA", _SSP),
-        _instr_line("ADC", f"#${lo:02X}"),
-        _instr_line("STA", _SSP),
-        _instr_line("LDA", f"{_SSP}+1"),
-        _instr_line("ADC", f"#${hi:02X}"),
-        _instr_line("STA", f"{_SSP}+1"),
-    ]
 
 
 def _indirect_addr(op: asm_ast.Type_operand) -> str:
@@ -409,8 +352,6 @@ def _is_imm_label(op: asm_ast.Type_operand) -> bool:
 
 
 def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
-    _reject_pseudo(src)
-    _reject_pseudo(dst)
     # Self-Mov peephole: a Mov whose src and dst are byte-identical
     # operands (same register, same ZP byte, same Frame slot, etc.)
     # is a no-op at the memory level. Drops the redundant
@@ -478,82 +419,6 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
     raise ValueError(f"cannot emit Mov(src={src!r}, dst={dst!r})")
 
 
-def _check_local_bytes(m: int) -> None:
-    if not 0 <= m <= 253:
-        raise ValueError(
-            f"local_bytes {m} out of range (expected 0..253; "
-            "limited by LDY immediate for FP-slot addressing)"
-        )
-
-
-def _emit_set_fp_to_ssp() -> list[str]:
-    """`FP = SSP`. Clobbers A."""
-    return [
-        _instr_line("LDA", _SSP),
-        _instr_line("STA", _FP),
-        _instr_line("LDA", f"{_SSP}+1"),
-        _instr_line("STA", f"{_FP}+1"),
-    ]
-
-
-def _emit_set_ssp_to_fp_plus(amt: int) -> list[str]:
-    """`SSP = FP + amt`. Clobbers A."""
-    _check_amt(amt)
-    if amt == 0:
-        return [
-            _instr_line("LDA", _FP),
-            _instr_line("STA", _SSP),
-            _instr_line("LDA", f"{_FP}+1"),
-            _instr_line("STA", f"{_SSP}+1"),
-        ]
-    lo, hi = amt & 0xFF, (amt >> 8) & 0xFF
-    return [
-        _instr_line("CLC"),
-        _instr_line("LDA", _FP),
-        _instr_line("ADC", f"#${lo:02X}"),
-        _instr_line("STA", _SSP),
-        _instr_line("LDA", f"{_FP}+1"),
-        _instr_line("ADC", f"#${hi:02X}"),
-        _instr_line("STA", f"{_SSP}+1"),
-    ]
-
-
-def _emit_save_fp_into_slot(m: int) -> list[str]:
-    """Write the current FP into the slot at `SSP+M+1` (low) /
-    `SSP+M+2` (high). Clobbers A and Y. Requires `M <= 253`."""
-    _check_local_bytes(m)
-    return [
-        _instr_line("LDY", f"#${m + 1:02X}"),
-        _instr_line("LDA", _FP),
-        _instr_line("STA", f"({_SSP}),Y"),
-        _instr_line("INY"),
-        _instr_line("LDA", f"{_FP}+1"),
-        _instr_line("STA", f"({_SSP}),Y"),
-    ]
-
-
-def _emit_restore_fp_from_slot(m: int) -> list[str]:
-    """Read the 2 bytes at `FP+M+1` / `FP+M+2` back into the FP
-    register. Uses X as a 1-byte scratch for the low byte: we can't
-    write to FP between the two reads because `(FP),Y` uses both
-    bytes of FP as the indirect base. Clobbering X here is fine
-    because no return convention puts data in X — 1-byte returns
-    are in A (preserved by the outer PHA/PLA when `save_a=True`),
-    and 2/4/8-byte returns are in HARGS, which the SSP/FP
-    arithmetic doesn't touch. Clobbers A, X, Y. Requires
-    `M <= 253`."""
-    _check_local_bytes(m)
-    return [
-        _instr_line("LDY", f"#${m + 1:02X}"),
-        _instr_line("LDA", f"({_FP}),Y"),
-        _instr_line("TAX"),
-        _instr_line("INY"),
-        _instr_line("LDA", f"({_FP}),Y"),
-        _instr_line("STA", f"{_FP}+1"),
-        _instr_line("STX", _FP),
-    ]
-
-
 def _check_dst_is_a(dst: asm_ast.Type_operand, op_name: str) -> None:
     """Many ops can only land their result in the accumulator."""
     if not (isinstance(dst, asm_ast.Reg) and isinstance(dst.reg, asm_ast.A)):
@@ -590,8 +455,6 @@ def _emit_add(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
     """At emit, Add is the single ADC instruction (with addressing-mode
     setup for indirect-Y sources). Carry is the caller's job — a
     preceding ClearCarry."""
-    _reject_pseudo(src)
-    _reject_pseudo(dst)
     _check_dst_is_a(dst, "Add")
     return _emit_acc_arith_src("ADC", src)
 
@@ -599,8 +462,6 @@ def _emit_add(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
 def _emit_sub(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
     """At emit, Sub is the single SBC instruction. Carry must be set
     by a preceding SetCarry (SBC subtracts an extra 1 if carry is clear)."""
-    _reject_pseudo(src)
-    _reject_pseudo(dst)
     _check_dst_is_a(dst, "Sub")
     return _emit_acc_arith_src("SBC", src)
 
@@ -614,8 +475,6 @@ def _emit_acc_logic(
     """Common emit for AND/ORA — both implicitly use A as one operand
     and as the destination. Same operand shape as Add/Sub but no carry
     setup is needed (these don't touch C)."""
-    _reject_pseudo(src)
-    _reject_pseudo(dst)
     _check_dst_is_a(dst, op_name)
     return _emit_acc_arith_src(opcode, src)
 
@@ -632,7 +491,6 @@ def _emit_acc_shift(
         place and by colored ZP locals; soft-stack `Stack` / `Frame`
         operands aren't supported (indirect-Y isn't a shift
         addressing mode)."""
-    _reject_pseudo(dst)
     if _is_reg_a(dst):
         return [_instr_line(opcode, "A")]
     if _is_data_or_zp(dst):
@@ -647,7 +505,6 @@ def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
     `Data` / `ZP` operand (the 6502 has memory-mode INC in zp / abs /
     zp,X / abs,X — we emit the abs / zp form). Soft-stack operands
     aren't supported (no indirect-Y)."""
-    _reject_pseudo(dst)
     match dst:
         case asm_ast.Reg(reg=asm_ast.X()):
             return [_instr_line("INX")]
@@ -662,7 +519,6 @@ def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
 
 
 def _emit_dec(dst: asm_ast.Type_operand) -> list[str]:
-    _reject_pseudo(dst)
     match dst:
         case asm_ast.Reg(reg=asm_ast.X()):
             return [_instr_line("DEX")]
@@ -677,14 +533,12 @@ def _emit_dec(dst: asm_ast.Type_operand) -> list[str]:
 
 
 def _emit_push(src: asm_ast.Type_operand) -> list[str]:
-    _reject_pseudo(src)
     if not _is_reg_a(src):
         raise ValueError(f"Push src must be Reg(A), got {src!r}")
     return [_instr_line("PHA")]
 
 
 def _emit_pop(dst: asm_ast.Type_operand) -> list[str]:
-    _reject_pseudo(dst)
     if not _is_reg_a(dst):
         raise ValueError(f"Pop dst must be Reg(A), got {dst!r}")
     return [_instr_line("PLA")]
@@ -695,9 +549,6 @@ def _emit_xor(
     src2: asm_ast.Type_operand,
     dst: asm_ast.Type_operand,
 ) -> list[str]:
-    _reject_pseudo(src1)
-    _reject_pseudo(src2)
-    _reject_pseudo(dst)
     _check_dst_is_a(dst, "Xor")
     # 6502 EOR is "A = A XOR <imm-or-mem>". One src must be Reg(A);
     # the other carries the addressing mode (Imm direct, or Stack/
@@ -722,8 +573,6 @@ def _emit_compare(
     CPX/CPY support immediate and absolute addressing (so Imm and
     Data work for any left register), but they lack indirect-Y, so
     Stack/Frame is only legal when left is A."""
-    _reject_pseudo(left)
-    _reject_pseudo(right)
     if not isinstance(left, asm_ast.Reg):
         raise ValueError(f"Compare left must be a register, got {left!r}")
     match left.reg:
@@ -756,59 +605,6 @@ def _emit_compare(
             raise ValueError(
                 f"cannot emit Compare(left={left!r}, right={right!r})"
             )
-
-
-def _emit_function_prologue(
-    arg_bytes: int, local_bytes: int,
-    callee_saved_addrs: list[int] = (),
-) -> list[str]:
-    if arg_bytes + local_bytes == 0:
-        return []
-    # Allocate locals + saved-FP slot (args were caller-pushed and
-    # don't need allocation). Save the caller's FP into the slot
-    # just above the locals, then capture SSP into FP. The leading
-    # comment + trailing blank line mark the prologue's boilerplate
-    # region so the body is easy to pick out visually.
-    saves_note = (
-        f", {len(callee_saved_addrs)} callee-saved bytes"
-        if callee_saved_addrs else ""
-    )
-    header = _comment_line(
-        f"prologue: {arg_bytes} arg bytes, "
-        f"{local_bytes} local bytes{saves_note}"
-    )
-    out = (
-        [header]
-        + _emit_ssp_sub(local_bytes + 2)
-        + _emit_save_fp_into_slot(local_bytes)
-        + _emit_set_fp_to_ssp()
-    )
-    # After FP is set up, save each callee-saved ZP byte to its
-    # frame slot (FP+1+i for the i-th save).
-    for i, addr in enumerate(callee_saved_addrs):
-        _check_byte("callee-saved address", addr)
-        out += _emit_save_zp_byte_to_frame(addr, i + 1)
-    return out + [""]
-
-
-def _emit_save_zp_byte_to_frame(zp_addr: int, frame_offset: int) -> list[str]:
-    """Save the byte at `$zp_addr` into the frame slot at `FP+frame_offset`.
-    Sequence: LDA $XX; LDY #off; STA (FP),Y."""
-    return [
-        _instr_line("LDA", f"${zp_addr:02X}"),
-        _emit_load_y(frame_offset),
-        _instr_line("STA", f"({_FP}),Y"),
-    ]
-
-
-def _emit_restore_zp_byte_from_frame(zp_addr: int, frame_offset: int) -> list[str]:
-    """Restore the byte at `$zp_addr` from the frame slot at
-    `FP+frame_offset`. Sequence: LDY #off; LDA (FP),Y; STA $XX."""
-    return [
-        _emit_load_y(frame_offset),
-        _instr_line("LDA", f"({_FP}),Y"),
-        _instr_line("STA", f"${zp_addr:02X}"),
-    ]
 
 
 def _shift_offset(
@@ -888,69 +684,28 @@ def _emit_load_address(
     )
 
 
-def _emit_ret(
-    arg_bytes: int, local_bytes: int, save_a: bool,
-    callee_saved_addrs: list[int] = (),
-) -> list[str]:
-    if arg_bytes + local_bytes == 0:
-        # No frame to tear down — A wasn't going to get clobbered, so
-        # `save_a` is irrelevant here. (No callee-saves either —
-        # an empty frame can't host any.)
-        return [_instr_line("RTS")]
-    # Compute the new SSP directly from FP (one 16-bit add), restore
-    # FP from its slot via (FP),Y, then RTS. Leading blank + `;
-    # epilogue` comment separate the boilerplate from the body above.
-    #
-    # When save_a=True (Int / Long returns), bracket the SSP/FP
-    # arithmetic with PHA/PLA so the return value in A survives the
-    # 16-bit add. When save_a=False (FP returns), skip the PHA/PLA —
-    # the return value is already in HARGS, and HARGS isn't touched
-    # by the SSP/FP arithmetic, so there's nothing to preserve.
-    rewind = arg_bytes + local_bytes + 2
-    # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown (so
-    # FP is still valid for the (FP),Y reads). The save area sits at
-    # FP+1..FP+S; restore by reversed index for symmetry with the
-    # prologue saves (order doesn't actually matter since each addr
-    # is independent, but reversed pairs nicely with PHA/PLA-style
-    # save sequences if we ever switch to those).
-    head = ["", _comment_line("epilogue")]
-    restores: list[str] = []
-    for i, addr in enumerate(callee_saved_addrs):
-        _check_byte("callee-saved address", addr)
-        restores += _emit_restore_zp_byte_from_frame(addr, i + 1)
-    body = (
-        _emit_set_ssp_to_fp_plus(rewind)
-        + _emit_restore_fp_from_slot(local_bytes)
-    )
-    if save_a:
-        return head + restores + [_instr_line("PHA")] + body + [
-            _instr_line("PLA"), _instr_line("RTS"),
-        ]
-    return head + restores + body + [_instr_line("RTS")]
-
-
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             return _emit_mov(src, dst)
-        case asm_ast.FunctionPrologue(
-            arg_bytes=ab, local_bytes=lb, callee_saved_addrs=csa,
-        ):
-            return _emit_function_prologue(ab, lb, csa)
-        case asm_ast.Ret(
-            arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
-        ):
-            return _emit_ret(ab, lb, sa, csa)
+        case asm_ast.Return():
+            # The bare RTS atom — what `Ret` collapsed to in the
+            # no-frame case. The framing PHA/PLA / SSP-FP teardown
+            # / callee-save restores have already been laid down
+            # by `passes.asm_to_asm2._ret` as separate atoms.
+            return [_instr_line("RTS")]
+        case asm_ast.Comment(text=text):
+            # Block-level "; ..." line at opcode column. Used by
+            # the prologue / epilogue lowerings to mark the
+            # boilerplate regions of a function.
+            return [_comment_line(text)]
+        case asm_ast.Blank():
+            # Visual separator between prologue / body / epilogue
+            # — `emit_function` collapses runs of blank lines so
+            # double-blanks don't accumulate.
+            return [""]
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _emit_load_address(src, dst)
-        case asm_ast.AllocateStack(bytes=n):
-            # Caller-side soft-stack frame allocation for a call
-            # site: subtract `n` from SSP (16-bit). The same
-            # `_emit_ssp_sub` helper that drives the prologue's
-            # space-for-locals reservation. The caller doesn't have
-            # to undo this — the callee's epilogue rewinds SSP all
-            # the way back to the caller's pre-call value.
-            return _emit_ssp_sub(n)
         case asm_ast.Add(src=src, dst=dst):
             return _emit_add(src, dst)
         case asm_ast.Sub(src=src, dst=dst):

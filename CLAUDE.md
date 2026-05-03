@@ -49,6 +49,7 @@ After editing an ASDL file, regenerate:
 uv run python asdl.py c99.asdl c99_ast.py
 uv run python asdl.py tac.asdl tac_ast.py
 uv run python asdl.py asm.asdl asm_ast.py
+uv run python asdl.py asm2.asdl asm2_ast.py
 ```
 
 The generator emits one `@dataclass` per type. Sum-type bases are named
@@ -58,7 +59,7 @@ constructor classes keep their ASDL names. Fields become `int`, `str`,
 
 ## Compiler pipeline
 
-`compile.py --codegen` chains ten passes, each a separate module that
+`compile.py --codegen` chains eleven passes, each a separate module that
 takes one AST and returns another (or text for emit):
 
 1. `parser.parse` (`parser.py`) — C source → `c99_ast`. Lark/LALR grammar
@@ -1127,16 +1128,43 @@ takes one AST and returns another (or text for emit):
    emitter has the dimensions it needs for the prologue's space-
    allocation step, the save/restore sequences, and the
    epilogue's SSP-rewind.
-10. `asm_emit.emit_program` — `asm_ast` → 6502 assembly text.
-   **Atomic IR**: every node maps to one 6502 instruction, except
-   `Ret` and `FunctionPrologue` (multi-step compound nodes
-   documented above) and `AllocateStack(N)` which expands to the
-   16-bit `SSP -= N` sequence (SEC; LDA SSP; SBC #lo; STA SSP; LDA
-   SSP+1; SBC #hi; STA SSP+1). The prologue additionally emits
-   `LDA $XX; LDY #(i+1); STA (FP),Y` per callee-saved address
-   listed on `FunctionPrologue.callee_saved_addrs` (after FP
-   setup); the epilogue's matching `LDY #(i+1); LDA (FP),Y; STA
-   $XX` runs BEFORE the SSP/FP teardown.
+10. `passes.asm_to_asm2.translate_program` — `asm_ast` → `asm2_ast`.
+    Strictly-atomic-IR lowering: rewrites the three asm_ast
+    compound nodes (`AllocateStack(N)` for caller-side soft-stack
+    allocation, `FunctionPrologue` for the callee's frame setup,
+    `Ret` for the matching teardown) into sequences of single-
+    instruction asm2 atoms, and re-tags every other instruction /
+    operand / static_init / reg / condition payload at the asm2
+    type. The result has every node = one logical 6502
+    instruction (where indirect-Y addressing setup counts as
+    addressing-mode setup, per the asm-emit convention). Three
+    asm2-only atoms join the existing instruction set: `Return`
+    (RTS — what `Ret` collapsed to in the no-frame case),
+    `Comment(text)` (block-level "; …" line at opcode column —
+    what the prologue / epilogue used to emit inline), and
+    `Blank` (a blank-line separator between prologue / body /
+    epilogue; emit collapses runs of these). `LoadAddress` stays
+    a single atom (its expansion is short enough to keep as one
+    logical "compute the address into two bytes" step).
+
+    The compound-node lowerings are deliberately naive: they drop
+    the INY / TAX / STX byte-saving tricks that `asm_emit` used
+    to use, in exchange for a uniform "each Mov is self-
+    contained" model where the same `Mov(Reg(A), Stack(off))`
+    atom always emits its own LDY setup. That costs +1 byte per
+    `FunctionPrologue` save-FP step and +2 bytes per non-trivial
+    `Ret` restore-FP step versus the old emit. `sim.assembler.
+    _prologue_size` / `_ret_size` / `_emit_prologue` / `_emit_ret`
+    mirror the same naive lowering so `instruction_size` (used by
+    `passes.long_branches`) and `assemble` (the in-process binary
+    assembler) stay byte-aligned with what `asm_emit` produces.
+
+11. `asm_emit.emit_program` — `asm2_ast` → 6502 assembly text.
+   **Atomic IR**: every node maps to one 6502 instruction. The
+   compound nodes from asm_ast are gone here — they were
+   expanded by step 10. The new `Return` atom emits `RTS`;
+   `Comment(text)` emits `   ; <text>`; `Blank` emits `""` and
+   `emit_function` collapses consecutive blanks.
 
    Multi-function programs emit each function's body in source
    order separated by a single blank line.
@@ -1168,8 +1196,9 @@ takes one AST and returns another (or text for emit):
    `Data(name, offset=3)` the high byte of a LongLong static, and
    `Data(name, offset=7)` the high byte of a Double static.
 
-`Pseudo` operands at emit time are an error — they must have been resolved by
-step 9 (`replace_pseudoregisters`). `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
+`Pseudo` operands aren't part of `asm2_ast` — they must have been resolved by
+step 9 (`replace_pseudoregisters`); the asm_to_asm2 pass raises if one
+slips through. `Mul`/`Div`/`Mod`/`LeftShift`/`RightShift`
 are TAC-only concepts;
 `tac_to_asm` lowers each to a sequence of `Mov`s into the shared
 zero-page block `HARGS` (`$04`–`$1B`), a `Call` to the appropriate

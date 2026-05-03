@@ -433,6 +433,116 @@ def _to_asm_static_init(
     raise TypeError(f"unexpected static_init: {init!r}")
 
 
+def _is_constant_one(val) -> bool:
+    """True iff `val` is a TAC integer Constant with value 1.
+    Used to gate the inline-shift-by-1 fast paths in
+    `LeftShift` / `RightShift` lowering. Any integer variant
+    counts (Const{Int,Long,LongLong,UInt,ULong,ULongLong}) — the
+    shift count's variant doesn't affect what 1-byte the helper
+    would have read."""
+    if not isinstance(val, tac_ast.Constant):
+        return False
+    c = val.const
+    if not isinstance(c, (
+        tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
+        tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
+    )):
+        return False
+    return c.value == 1
+
+
+def _inline_left_shift_by_one(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+) -> list[asm_ast.Type_instruction]:
+    """Inline lowering of `LeftShift(value, 1)` for any width:
+    `ASL low; ROL b1; ROL b2; ... ROL high`. Routes through `Reg(A)`
+    so it works for any storage class on src / dst (Pseudo / ZP /
+    Data / Stack / Frame). Per byte: `LDA src.bk; ASL/ROL A; STA
+    dst.bk`. The carry from byte k's shift threads into byte k+1's
+    ROL via `LDA` not affecting C — an LDA only sets N/Z, leaving
+    C intact, so the per-byte chain works without explicit carry
+    saves.
+
+    Result type matches the value's width (LeftShift is signedness-
+    agnostic — same bit pattern in either signed or unsigned
+    arithmetic). Doesn't detect overflow; matches the `asl*` runtime
+    helper's behavior."""
+    out: list[asm_ast.Type_instruction] = []
+    for k in range(size):
+        out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+        if k == 0:
+            out.append(asm_ast.ArithmeticShiftLeft(dst=_REG_A))
+        else:
+            out.append(asm_ast.RotateLeft(dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+    return out
+
+
+def _inline_right_shift_by_one(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    *,
+    signed: bool,
+) -> list[asm_ast.Type_instruction]:
+    """Inline lowering of `RightShift(value, 1)` for any width:
+
+      Signed (arithmetic right shift):
+          LDA src.high
+          ASL A           ; sign bit → carry; A discarded
+          LDA src.high
+          ROR A           ; bit 7 ← carry (sign); carry ← src.high[0]
+          STA dst.high
+          LDA src.bN-2
+          ROR A           ; bit 7 ← prev carry; carry ← src.bN-2[0]
+          STA dst.bN-2
+          ...
+          LDA src.b0
+          ROR A
+          STA dst.b0
+
+      Unsigned (logical right shift):
+          LDA src.high
+          LSR A           ; bit 7 ← 0; carry ← src.high[0]
+          STA dst.high
+          LDA src.bN-2
+          ROR A
+          STA dst.bN-2
+          ...
+          LDA src.b0
+          ROR A
+          STA dst.b0
+
+    Same `Reg(A)` routing as the left-shift inline so any storage
+    class works. Carry from each byte threads into the next via
+    LDA (which doesn't touch carry)."""
+    out: list[asm_ast.Type_instruction] = []
+    high = size - 1
+    if signed:
+        # Capture sign bit into carry. The ASL discards A, but
+        # leaves carry = sign bit.
+        out.append(asm_ast.Mov(src=_byte_at(src_op, high), dst=_REG_A))
+        out.append(asm_ast.ArithmeticShiftLeft(dst=_REG_A))
+        # Now ROR the high byte: bit 7 ← sign-bit-from-carry,
+        # carry ← src.high[0].
+        out.append(asm_ast.Mov(src=_byte_at(src_op, high), dst=_REG_A))
+        out.append(asm_ast.RotateRight(dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, high)))
+    else:
+        # Unsigned: LSR the high byte. bit 7 ← 0, carry ← src.high[0].
+        out.append(asm_ast.Mov(src=_byte_at(src_op, high), dst=_REG_A))
+        out.append(asm_ast.LogicalShiftRight(dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, high)))
+    # Lower bytes: ROR with the carry threading from the byte above.
+    for k in range(high - 1, -1, -1):
+        out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+        out.append(asm_ast.RotateRight(dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+    return out
+
+
 def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
     """Address the k-th byte (0 = low, 1 = high) of a multi-byte
     operand. For `Imm`, extract that byte of the constant — Python's
@@ -1648,6 +1758,14 @@ class Translator:
                     src1_op, src2_op, dst_op, size,
                 )
             case tac_ast.LeftShift():
+                # Constant shift by 1 inlines to a per-byte ASL/ROL
+                # chain, avoiding the runtime helper call (and its
+                # cross-call constraint on the value's regalloc
+                # color). Anything else routes to the helper.
+                if _is_constant_one(src2):
+                    return _inline_left_shift_by_one(
+                        src1_op, dst_op, size,
+                    )
                 # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
                 # asl32: 4B value + 1B count → 4B result at HARGS+5.
@@ -1685,6 +1803,15 @@ class Translator:
                 # Vars. Same input-byte layout as LeftShift; `size`
                 # comes from the left operand per §6.5.7.3, the
                 # right contributes only its low byte.
+                #
+                # Constant shift by 1 inlines: signed uses a sign-
+                # capturing LDA/ASL A then per-byte ROR; unsigned
+                # starts the chain with an LSR on the high byte.
+                if _is_constant_one(src2):
+                    return _inline_right_shift_by_one(
+                        src1_op, dst_op, size,
+                        signed=not self._is_unsigned_val(src1),
+                    )
                 if self._is_unsigned_val(src1):
                     helpers = (_LSR8, _LSR16, _LSR32, _LSR64)
                 else:

@@ -70,6 +70,7 @@ from passes.optimization.interference import build_interference
 from passes.optimization.liveness import compute_liveness
 from passes.optimization.register_allocation import Coloring, color_graph
 from passes.optimization.ssa_construction import to_ssa
+from passes.optimization.strength_reduction import reduce_strength
 from passes.optimization.ssa_destruction import from_ssa
 from passes.optimization.unreachable_code_elimination import (
     eliminate_unreachable_code,
@@ -132,6 +133,15 @@ def optimize_function(
     while True:
         prev = fn
         fn = constant_fold(fn, symbols=symbols)
+        # Strength reduction rewrites Multiply / unsigned Divide /
+        # unsigned Modulo by power-of-2 constants into LeftShift /
+        # RightShift / BitwiseAnd. Runs after constant folding so
+        # any all-constant operands are already collapsed (so this
+        # pass only sees mixed Var-and-constant cases). Each
+        # rewrite removes a runtime helper call (mul* / divmod*)
+        # for a power-of-2 multiplier — combined with the asm-
+        # level inline-shift-by-1, the call goes away entirely.
+        fn = reduce_strength(fn, symbols=symbols)
         fn = eliminate_unreachable_code(fn)
         fn = copy_propagate(fn, ssa_dsts=ssa_dsts)
         fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)

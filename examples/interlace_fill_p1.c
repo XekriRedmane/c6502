@@ -66,7 +66,7 @@ static const uint16_t interlace_p1_offsets[105] = {
 /* Broadcast `value` to column `col` across the 105 interlaced rows of
 * hi-res page 1.  Inputs match the 6502 entry contract: A=value, X=col.
 * Caller must hold col in 0..39. */
-void interlace_fill_p1(uint8_t value, uint8_t col)
+__attribute__((zp_abi)) void interlace_fill_p1(uint8_t value, uint8_t col)
 {
     for (int8_t i = 0; i < 105; i++)
         hires_page1[interlace_p1_offsets[i] + col] = value;

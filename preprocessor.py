@@ -31,6 +31,14 @@ from pcpp.preprocessor import Action, OutputDirective, Preprocessor
 
 PCPP_VERSION = "1.30"
 
+# Bundled standard headers (limits.h, etc.) live alongside this
+# module. Added to pcpp's search path AFTER any user `-I` paths
+# so user-supplied headers can shadow ours, but `#include
+# <limits.h>` still resolves without the user passing `-I`.
+_BUNDLED_INCLUDE_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "include",
+)
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="preprocess", add_help=False)
@@ -165,6 +173,11 @@ class CompilePreprocessor(Preprocessor):
             args.includes = [x[0] for x in args.includes]
             for d in args.includes:
                 self.add_path(d)
+        # Append bundled <limits.h> etc. last so user `-I` paths
+        # always take precedence; user-supplied headers can shadow
+        # the c6502-standard ones.
+        if os.path.isdir(_BUNDLED_INCLUDE_DIR):
+            self.add_path(_BUNDLED_INCLUDE_DIR)
 
     def run(self, source: str) -> str:
         self.parse(source)

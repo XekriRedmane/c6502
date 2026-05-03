@@ -41,10 +41,10 @@ Modifier flags (orthogonal to the stage flags; applies to `--tac` and
   elimination) plus TAC-level register allocation that maps promotable
   SSA values to zero-page slots.
 - `--optimize-asm` runs the alternate pipeline: TAC fixed-point opts
-  (no TAC regalloc) → asm-level SSA round-trip with byte-granular DCE
-  + regalloc → late prologue synthesis. Also enables the
-  `__attribute__((zp_abi))` calling-convention optimization (frame
-  elimination on annotated leaves).
+  (no TAC regalloc) → asm-level SSA round-trip with forward + backward
+  copy propagation + byte-granular DCE + regalloc → late prologue
+  synthesis. Also enables the `__attribute__((zp_abi))` calling-
+  convention optimization (frame elimination on annotated leaves).
 
 See the "Optimization pipeline" / "Frame elimination via __attribute__"
 sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
@@ -1358,13 +1358,18 @@ end of `docs/optimization.md`.
 
 `compile.py` has a sibling flag `--optimize-asm` that selects an
 **alternate optimizer pipeline** with byte-granular SSA / DCE /
-regalloc operating on the asm IR. Same end-to-end correctness on
+regalloc operating on the asm IR, plus forward + backward copy
+propagation in the SSA bracket. Same end-to-end correctness on
 the chapter sim corpus; produces equivalent ZP usage to
-`--optimize` plus a few byte-DCE wins (dead high-byte stores
-from cast-then-truncate patterns drop). The two flags are
-mutually exclusive. `--optimize-asm` also enables the
-`__attribute__((zp_abi))` calling-convention optimization (see
-below).
+`--optimize` plus a few byte-DCE wins (dead high-byte stores from
+cast-then-truncate patterns drop) and the round-trip eliminations
+that backward copy-prop catches (e.g. Long return values that
+otherwise route through a ZP slot before being deposited in
+HARGS). The asm-SSA bracket runs
+`[copy_propagate → backward_copy_propagate → byte_dce]*` to a
+fixed point. The two flags are mutually exclusive.
+`--optimize-asm` also enables the `__attribute__((zp_abi))`
+calling-convention optimization (see below).
 
 ## Frame elimination via `__attribute__((zp_abi))`
 
@@ -2131,11 +2136,23 @@ program return values match the unoptimized expectations. See
 
 `--optimize-asm` runs end-to-end as the alternate pipeline:
 TAC fixed-point opts (no TAC regalloc), then asm-level SSA
-round-trip (`passes/optimization_asm/`) with byte-DCE + byte-
+round-trip (`passes/optimization_asm/`) with `[copy_propagate →
+backward_copy_propagate → byte_dce]*` (fixed point) + byte-
 granular regalloc; final stage is a post-regalloc
 `prologue_synthesis` that elides the prologue/epilogue when no
-frame is needed. Same chapter sim corpus runs through the alt
-path via `tests.test_sim_asm_optimized.TestAsmSimChaptersOptimizeAsm`.
+frame is needed. The forward `copy_propagate` is the SSA-aware
+asm equivalent of TAC's pass: substitutes uses of `Mov(src,
+Pseudo)` with `src` for Imm / ImmLabel / SSA-Pseudo sources.
+The backward `backward_copy_propagate` collapses the asm-level
+round-trip pattern `Mov(Reg(A), P); ...; Mov(P, Reg(A));
+Mov(Reg(A), D)` (where `P` is single-use, `D` is a non-Pseudo
+memory destination, the relocation range is free of Calls /
+aliasing writes / control flow, and `Reg(A)` + N/Z flags are
+dead at the deletion point) into a single `Mov(Reg(A), D)` —
+catches return-value temps that get ZP-colored only to be
+immediately reloaded into HARGS. Same chapter sim corpus runs
+through the alt path via
+`tests.test_sim_asm_optimized.TestAsmSimChaptersOptimizeAsm`.
 
 `__attribute__((zp_abi))` on a function declaration enables
 **frame elimination via ZP-passing** under `--optimize-asm`

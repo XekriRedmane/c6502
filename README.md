@@ -86,9 +86,11 @@ Notes:
 - `--optimize-asm` is the alternate optimizer; same end-to-end
   correctness, plus byte-granular optimizations the TAC layer
   can't see (dead high-byte stores from cast-then-truncate
-  patterns) and the `__attribute__((zp_abi))` frame-elimination
-  feature for leaf functions. Mutually exclusive with
-  `--optimize`.
+  patterns; forward + backward copy propagation that collapses
+  the `STA pseudo; ...; LDA pseudo; STA HARGS` round-trip on
+  return-value temporaries) and the `__attribute__((zp_abi))`
+  frame-elimination feature for leaf functions. Mutually
+  exclusive with `--optimize`.
 - The comment-stripping step uses pcpp via the Python API (see
   `preprocessor.py`); pcpp is a project dependency, no shelling out.
 - Any flag `compile.py` doesn't recognize is forwarded to the
@@ -685,12 +687,13 @@ operating at the asm level. Pipeline shape:
 ```
 c99_to_tac → TAC fixed-point opts (NO TAC regalloc, NO TAC from_ssa
    into colorings) → tac_to_asm bare_exit=True → asm-level SSA
-   round-trip (passes/optimization_asm/) → byte-granular DCE →
+   round-trip (passes/optimization_asm/) →
+     [forward copy-prop → backward copy-prop → byte-DCE]* →
    byte-granular regalloc → SSA destruction → late prologue
    synthesis → emit
 ```
 
-Two distinguishing features vs. `--optimize`:
+Three distinguishing features vs. `--optimize`:
 
 - **Byte-granular SSA + regalloc.** The asm-level SSA pass
   versions each `(Pseudo name, byte offset)` pair independently,
@@ -702,6 +705,18 @@ Two distinguishing features vs. `--optimize`:
   disjoint lifetimes within the same logical variable can share
   colors (coalescing-by-accident through the from_ssa parallel-
   copy ordering and apply_coloring's ZP rewrite).
+
+- **Forward + backward copy propagation.** Forward copy-prop
+  substitutes uses of `Mov(src, Pseudo dst)` with `src` for
+  Imm / ImmLabel / SSA-Pseudo sources (mirroring the TAC pass).
+  Backward copy-prop is the dual: when a Pseudo `P` has exactly
+  one use, and that use is the consecutive pair `Mov(P, Reg(A));
+  Mov(Reg(A), D)` (a memory-to-memory copy through A), redirect
+  `P`'s def to write `D` directly and drop the round-trip.
+  Catches the canonical Long-return pattern: a 2-byte temp gets
+  ZP-colored, then immediately reloaded into HARGS — after the
+  rewrite, the adds compute directly into HARGS. Iterates with
+  byte-DCE to a fixed point.
 
 - **Frame elimination via `__attribute__((zp_abi))`.** A
   function declared `__attribute__((zp_abi))` participates in
@@ -1741,9 +1756,9 @@ End-to-end with `--optimize` or `--optimize-asm`:
   folding, UCE, copy propagation, DSE, regalloc) per
   `docs/optimization.md`.
 - `--optimize-asm` runs the alternate optimizer (TAC fixed-
-  point opts → asm-level SSA round-trip with byte-DCE +
-  byte-granular regalloc → late prologue synthesis) per the
-  "Alternate pipeline" section above.
+  point opts → asm-level SSA round-trip with forward + backward
+  copy propagation + byte-DCE + byte-granular regalloc → late
+  prologue synthesis) per the "Alternate pipeline" section above.
 - `__attribute__((zp_abi))` on a function (active under
   `--optimize-asm`) selects the per-function ZP-passing
   calling convention. Validated at compile time: function must

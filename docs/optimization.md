@@ -951,18 +951,41 @@ that's 4 byte-level Phis at the loop top:
 `a.1` doesn't change inside the loop, so neither of its bytes
 gets a Phi.
 
-### After `byte_dce`
+### After the `[copy_propagate → backward_copy_propagate → byte_dce]*` bracket
 
-Every byte of every value is read at some point in this program
-— `b` and `i` are both used in 2-byte arithmetic (`b + a`,
-`i + 1`) and in the 2-byte signed comparison `i < n`. So
-`byte_dce` finds nothing to drop here.
+The three asm-level opts iterate to a fixed point. On this
+particular program:
 
-(For an example where it WOULD drop something: `(long)y`
-followed downstream by `(int)y` truncating back. The
-`SignExtend` lowering writes 4 bytes; only the low 2 are read;
-bytes 2 and 3 of the Long are independently dead and removed,
-shrinking M from 6 to 4 frame bytes on the typical case.)
+* `copy_propagate` finds no direct `Mov(src, Pseudo)` copies —
+  every Pseudo write goes through `Reg(A)` from `tac_to_asm`, so
+  the forward pass has nothing to propagate without an Imm
+  source or another Pseudo source.
+* `backward_copy_propagate` collapses the return-value round-
+  trip: the loop's final `b` value, after byte-versioning, gets
+  ZP-colored to `$83/$82` and was originally read back into A
+  before being deposited in HARGS. The pass redirects the
+  back-edge `b + a` adds to write HARGS directly... actually no
+  — wait, this particular program's return-of-`b` happens
+  AFTER the loop, while the back-edge add stores into `b.v3`
+  which is consumed by the entry-edge Phi. The Phi destruction
+  hasn't happened yet at this point. The pass doesn't fire on
+  Phi-fed values because `b.v3` has more than one use (the
+  back-edge Phi arg AND the loop-exit return). So no rewrite
+  here.
+* `byte_dce` finds nothing to drop. Every byte of every value
+  is read: `b` and `i` are both used in 2-byte arithmetic
+  (`b + a`, `i + 1`) and in the 2-byte signed comparison
+  `i < n`.
+
+(Examples where each pass WOULD fire on simpler programs:
+`copy_propagate` catches `Mov(Imm, Pseudo); use(Pseudo)` patterns
+on programs that store constants for later use. `backward_copy_
+propagate` catches `int add(int x, int y) { return x + y; }`-
+style functions where the result temp is single-use into HARGS —
+its def gets redirected to write HARGS directly. `byte_dce`
+catches `(long)y` cast lowerings whose high bytes are then
+truncated back, shrinking M from 6 to 4 frame bytes on the
+typical case.)
 
 ### After `liveness + interference + color_graph`
 
@@ -1281,13 +1304,19 @@ exposes byte-granular structure that's invisible at TAC, and a
 late, asm-aware regalloc can color individual bytes (rather than
 whole multi-byte values like the TAC-level allocator does today).
 
-Status: byte-level DCE and byte-granular regalloc are now both
-in place. `--optimize-asm` is sim-correct on the chapter_1..12
-corpus and produces output that places live values in ZP slots
-the same way `--optimize` does — with the bonus that byte-level
-DCE drops dead high-byte work that the TAC-level pipeline can't
-see (e.g. a `(long)y` cast whose result is later truncated back
-to int).
+Status: byte-level DCE, byte-granular regalloc, and forward +
+backward copy propagation are all in place. `--optimize-asm` is
+sim-correct on the chapter_1..12 corpus and produces output that
+places live values in ZP slots the same way `--optimize` does —
+with two bonuses:
+
+  * **Byte-level DCE** drops dead high-byte work that the TAC-level
+    pipeline can't see (e.g. a `(long)y` cast whose result is later
+    truncated back to int).
+  * **Backward copy propagation** elides the `STA pseudo; ...; LDA
+    pseudo; STA D` round-trip that TAC-level copy-prop can't see —
+    typical wins are on Long return values where a temp gets ZP-
+    colored and then immediately reloaded into HARGS.
 
 ### How it differs from `--optimize`
 
@@ -1341,11 +1370,23 @@ IR directly (no need to consult `FunctionPrologue.arg_bytes ==
 
 Between `tac_to_asm bare_exit=True` and
 `replace_pseudoregisters_bare_exit`, the alt pipeline runs an
-asm-level SSA round-trip on the Pseudo-bearing IR. Today (step 5e
-of the build plan) it's a no-op round-trip — `to_ssa` →
-`from_ssa` with no opts in between. Steps 6 (byte-level DCE,
-peepholes) and 7 (byte-granular regalloc) will populate the
-sandwich.
+asm-level SSA round-trip on the Pseudo-bearing IR. The middle of
+the sandwich now runs a fixed-point bracket of three passes
+(forward copy-prop → backward copy-prop → byte-DCE), followed by
+byte-granular regalloc, before `from_ssa`:
+
+```
+to_ssa
+  → [copy_propagate → backward_copy_propagate → byte_dce]*
+  → liveness + interference + color_graph
+  → apply_coloring
+  → from_ssa
+```
+
+Each pass in the bracket can enable the others, so the loop runs
+until none of the three changes the function. The TAC optimizer's
+bracket has the analogous shape (constant_fold → UCE → copy_prop →
+DSE).
 
 The interesting design choice: asm-level SSA versions each
 `(Pseudo name, byte offset)` pair *independently*. Byte 0 of a
@@ -1437,6 +1478,138 @@ emissions) stay because they double as carry-flag and N/Z
 producers. Statics are never dropped — writes to file-scope
 globals are observable to other functions.
 
+### Forward copy propagation (`passes/optimization_asm/copy_propagation.py`)
+
+SSA-aware forward propagation of direct copies. Mirrors the TAC
+pass of the same name, retargeted to the asm IR with byte-granular
+`(name, offset)` keys. Recognizes `Mov(src, Pseudo dst)` as a copy
+when:
+
+* `dst` is a Pseudo whose name is SSA-safe (not in `statics`, not
+  address-taken, not a read-modify-write target).
+* `src` is one of:
+  * `Imm` / `ImmLabelLow` / `ImmLabelHigh` — immutable values.
+  * Another Pseudo whose name is also SSA-safe — its single SSA
+    def guarantees the value is stable between the def of `dst`
+    and any use.
+
+Other src kinds (`Reg`, `Stack`, `Frame`, `Data`, `ZP`,
+`Indirect`) are rejected: they alias mutable cells that other
+instructions can write between def and use, so propagating an
+instantaneous value would observe stale data.
+
+After collecting the `dst → src` map and resolving chains
+(SSA guarantees no cycles), the pass walks the function and
+substitutes every Pseudo USE whose `(name, offset)` is in the map
+with the resolved source value. DEFs are left alone (they ARE the
+SSA identity we propagate from). `Phi.args[k].source` is rewritten
+the same way as ordinary uses; `LoadAddress.src` names a storage
+cell, not a value, so it's never substituted.
+
+After the rewrite, the original `Mov` typically has an unused
+dst (no remaining reads), and `byte_dce` drops it on the next
+fixed-point round.
+
+Today's `tac_to_asm` routes every Pseudo↔Pseudo write through
+`Reg(A)`, so direct `Mov(Pseudo, Pseudo)` copies are rare on
+input. The pass primarily catches `Mov(Imm, Pseudo)` patterns and
+sets up infrastructure for future passes (or for `from_ssa`'s
+direct Pseudo→Pseudo Movs from Phi destruction).
+
+### Backward copy propagation (`passes/optimization_asm/backward_copy_propagation.py`)
+
+Forward copy-prop substitutes uses of a copy's `dst` with `src`
+(propagating along the def → use direction). This pass does the
+dual: when a Pseudo `P` has a SINGLE use whose only purpose is to
+deposit `P`'s value in some final memory destination `D`, it
+rewrites `P`'s def to write `D` directly and drops the round-trip.
+
+The asm-level wrinkle: `tac_to_asm` routes every Pseudo↔Memory
+transfer through `Reg(A)`, so a "copy from `P` to `D`" actually
+shows up as the consecutive pair
+
+```
+Mov(Pseudo P, Reg(A))       # load P into A
+Mov(Reg(A), D)              # store A into D
+```
+
+The pass treats that pair as a virtual `Copy(P, D)`. When `P` has
+exactly one such use and its def is `Mov(Reg(A), P)`, the pair can
+be eliminated and the def's destination redirected to `D`.
+
+Concretely, rewrites the pattern
+
+```
+Mov(Reg(A), Pseudo P)       # def of P     (instr def_idx)
+... region R ...
+Mov(Pseudo P, Reg(A))       # last use of P  (instr i)
+Mov(Reg(A), D)              # immediately following  (instr i+1)
+```
+
+into
+
+```
+Mov(Reg(A), D)              # relocated def
+... region R ...
+[pair deleted]
+```
+
+Preconditions (all checked):
+
+* `P` has exactly one USE in the function (the pair's first
+  instruction).
+* `P` is not in `statics` / `excluded` (address-taken, RMW
+  targets) — same set the SSA construction excludes.
+* `P`'s def is the unique `Mov(Reg(A), P)` upstream of the use
+  (canonical-form restriction; today's `tac_to_asm` always emits
+  Pseudo defs in this shape).
+* `def_idx`, `i`, `i+1` lie in the same straight-line basic block
+  — no `Label` / `Jump` / `Branch` / `Ret` / `Return` between
+  `def_idx + 1` and `i`.
+* No instruction in region R reads or writes a cell aliasing
+  `D`'s storage. Aliasing for `Data(name, off)` is exact
+  name+offset match; same for `Stack(off)`.
+* No `Call` in region R — Calls clobber HARGS (the runtime
+  helpers' arg-exchange block) and their full memory-write
+  set is unknown.
+* `Reg(A)`'s value is dead immediately after the deletion site:
+  walking forward from the (former) `i+2` position, the next
+  instruction that touches `A` writes it without reading first
+  (or we hit a `Ret(save_a=False)` / fall off the function).
+* The N/Z flags' values are dead at the deletion site. The
+  deleted `Mov(P, Reg(A))` is an `LDA` that sets N/Z; deleting
+  it would silently change a downstream `Branch` if its flags
+  remained live without an intervening flag-setter.
+
+`D` is restricted to non-`Pseudo` memory (`Data`, `Stack`).
+Merging two Pseudos is the regalloc / coalescing problem, not
+this pass's job.
+
+The pass iterates to a fixed point (a successful rewrite can
+expose another). It catches the canonical Long-return pattern: a
+2-byte temp gets ZP-colored, then immediately loaded back to A and
+deposited in HARGS. After the rewrite, the adds compute directly
+into HARGS and the ZP slots aren't allocated at all. Combined with
+`__attribute__((zp_abi))`, a leaf function like `int add(int a,
+int b) { return a + b; }` collapses to:
+
+```
+add:
+   SUBROUTINE
+.add@asm_ssa_block@0:
+   LDA   $80          ; a's low byte (caller wrote it here)
+   CLC
+   ADC   $82          ; + b's low byte
+   STA   HARGS        ; result low byte direct to HARGS+0
+   LDA   $81
+   ADC   $83
+   STA   HARGS+1      ; result high byte direct to HARGS+1
+   RTS                ; bare RTS — no SSP/FP teardown
+```
+
+8 instructions plus `RTS`. Compare to ~40 instructions on the
+unannotated, non-asm-optimized path.
+
 ### Asm-level regalloc (`passes/optimization_asm/{liveness,interference,regalloc}.py`)
 
 Byte-granular, runs while still in SSA form. Mirrors the TAC
@@ -1498,6 +1671,8 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | 5d. `from_ssa` (Phi → Mov, critical-edge splitting, parallel-copy ordering by storage key, cycle break) | Done |
 | 5e. Wire round-trip into `--optimize-asm`; chapter sim corpus passes | Done |
 | 6. Byte-level DCE (drops dead high-byte work) | Done |
+| 6a. Forward copy propagation (SSA-aware, byte-granular) | Done |
+| 6b. Backward copy propagation (Pseudo → Reg(A) → memory round-trip elision) | Done |
 | 7. Asm-level byte-granular regalloc | Done |
 | F1a. Parser support for `__attribute__((zp_abi))` | Done |
 | F1b. `passes/abi_selection.py` — `ParamLayout` + validation | Done |
@@ -1516,12 +1691,14 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | `passes/optimization_asm/cfg.py` | Asm-level basic-block CFG, idom, dominance frontiers — same shape as the TAC version. |
 | `passes/optimization_asm/ssa_construction.py` | `to_ssa(fn, statics=...)` — byte-granular Phi placement + name versioning. |
 | `passes/optimization_asm/byte_dce.py` | Drops Movs / Phis whose Pseudo dst is unused. |
+| `passes/optimization_asm/copy_propagation.py` | Forward copy-prop: substitutes uses of `Mov(src, Pseudo)` with `src` (Imm / Pseudo / ImmLabel only). |
+| `passes/optimization_asm/backward_copy_propagation.py` | Backward copy-prop: collapses `Mov(A, P); ...; Mov(P, A); Mov(A, D)` round-trips into a single direct `Mov(A, D)` when `P` is single-use. |
 | `passes/optimization_asm/liveness.py` | Backward dataflow over Pseudo names. |
 | `passes/optimization_asm/interference.py` | Chordal graph; filters non-colorable names. |
 | `passes/optimization_asm/regalloc.py` | PEO + greedy 1-byte coloring; accepts `blocked_addrs` to reserve ZP-ABI param slots. |
 | `passes/optimization_asm/apply_coloring.py` | Substitutes colored `Pseudo` operands with `ZP` operands so `from_ssa` can detect physical-slot cycles. |
 | `passes/optimization_asm/ssa_destruction.py` | `from_ssa(fn)` — critical-edge splitting + Phi → Mov + parallel-copy ordering by storage key. |
-| `passes/optimization_asm/optimizer.py` | Per-function driver; threads to_ssa → byte_dce → regalloc → apply_coloring → from_ssa. Computes `blocked_addrs` from each function's own ParamLayout + every ZP-ABI callee's. |
+| `passes/optimization_asm/optimizer.py` | Per-function driver; threads `to_ssa` → fixed-point of (`copy_propagate` → `backward_copy_propagate` → `byte_dce`) → regalloc → `apply_coloring` → `from_ssa`. Computes `blocked_addrs` from each function's own ParamLayout + every ZP-ABI callee's. |
 
 ### Frame elimination via `__attribute__((zp_abi))`
 
@@ -1570,23 +1747,21 @@ add:
    LDA   $80          ; a's low byte (caller wrote it here)
    CLC
    ADC   $82          ; + b's low byte
-   STA   $85          ; result's low byte (regalloc avoids $80-$83)
+   STA   HARGS        ; result low byte direct to HARGS+0
    LDA   $81
    ADC   $83
-   STA   $84
-   LDA   $85
-   STA   HARGS
-   LDA   $84
-   STA   HARGS+1
+   STA   HARGS+1      ; result high byte direct to HARGS+1
    RTS                ; bare RTS — no SSP/FP teardown
 ```
 
 Compare to the legacy soft-stack ABI (the `--optimize` form),
 which emits ~17 instructions of prologue + matching epilogue
 even for this 7-instruction function. The savings stack with
-the existing asm-level optimizations: byte-DCE still trims dead
-high-byte writes, byte-granular regalloc still picks tight
-colors, and the absence of frame ceremony is on top.
+the existing asm-level optimizations: byte-DCE trims dead high-
+byte writes, byte-granular regalloc picks tight colors, backward
+copy-propagation eliminates the `STA pseudo; ...; LDA pseudo; STA
+HARGS` round-trip that would otherwise route the result through
+ZP slots, and the absence of frame ceremony is on top.
 
 A function calling a ZP-ABI callee gets a corresponding
 adjustment: its own body regalloc avoids the callee's param ZP

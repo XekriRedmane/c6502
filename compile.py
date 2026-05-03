@@ -23,6 +23,18 @@ exactly one of:
 optimizer to a fixed point between TAC translation and the next
 stage. Effective for `--tac` and `--codegen`; ignored otherwise.
 
+`--optimize-asm` (mutually exclusive with `--optimize`) selects the
+alternate optimization pipeline that runs TAC-level fixed-point
+opts (the same four passes — constant folding, UCE, copy prop,
+DSE) but defers register allocation to the asm-level. Phase 9
+emits a bare `Return(value)` exit atom and skips
+`FunctionPrologue` entirely; an asm-level SSA optimizer runs
+byte-granular passes (DCE, etc.); regalloc colors byte-wide
+nodes; a post-regalloc synthesis pass inserts the prologue /
+epilogue based on what actually spilled. Step-by-step build —
+intermediate steps may delegate part of the path to the existing
+pipeline.
+
 Output goes to stdout by default, or to the file named by `-o`. With
 `--codegen`, the output file (if any) must have a `.asm` suffix.
 
@@ -48,7 +60,12 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.optimization import optimize_program as optimize_tac
-from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
+from passes.optimization_asm import optimizer as asm_opt
+from passes.prologue_synthesis import synthesize_program as synthesize_prologue
+from passes.replace_pseudoregisters import (
+    replace_program as replace_pseudoregs,
+    replace_program_bare_exit as replace_pseudoregs_bare_exit,
+)
 from passes.identifier_resolution import resolve_program as resolve_identifiers
 from passes.string_lifting import lift_program as lift_strings
 from passes.type_checking import (
@@ -85,7 +102,10 @@ def _format_tokens(source: str) -> str:
     return "".join(out)
 
 
-def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
+def _run_stage(
+    stage: str, source: str, optimize: bool = False,
+    optimize_asm: bool = False,
+) -> str:
     if stage == "lex":
         return _format_tokens(source)
     if stage == "parse":
@@ -99,7 +119,7 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
         # and resolve struct/union sizes.
         prog, symbols, types = type_check_program(_resolved(source))
         tac = translate_to_tac(prog, symbols, types)
-        if optimize:
+        if optimize or optimize_asm:
             # optimize_tac returns (prog, colorings); we're stopping
             # before codegen here so the colorings are discarded.
             tac, _ = optimize_tac(tac, symbols)
@@ -127,6 +147,29 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
         colorings: dict = {}
         if optimize:
             tac, colorings = optimize_tac(tac, symbols)
+        if optimize_asm:
+            # Asm-level pipeline: TAC opts WITHOUT regalloc, then
+            # tac_to_asm in bare-exit mode (Pseudos preserved), then
+            # asm-level SSA round-trip (step 5e: no opts between
+            # to_ssa and from_ssa yet — steps 6 and 7 will populate),
+            # then replace_pseudoregisters_bare_exit (no colorings —
+            # asm-level regalloc isn't done yet, so all Pseudos go
+            # to Frame), then synthesize_prologue.
+            tac, _ = optimize_tac(tac, symbols, do_regalloc=False)
+            asm0 = translate_to_asm(
+                tac, symbols, types, bare_exit=True,
+            )
+            asm0 = asm_opt.optimize_program(
+                asm0, extra_statics=statics,
+            )
+            asm1, dims_by_fn = replace_pseudoregs_bare_exit(
+                asm0, extra_statics=statics, symbols=symbols,
+                types=types, colorings={},
+            )
+            asm2 = synthesize_prologue(asm1, dims_by_fn)
+            return emit_program(lower_to_asm2(
+                expand_long_branches(asm2),
+            ))
         return emit_program(lower_to_asm2(expand_long_branches(replace_pseudoregs(
             translate_to_asm(tac, symbols, types),
             extra_statics=statics,
@@ -155,11 +198,24 @@ def main(argv: list[str]) -> int:
                         const="tac", help="stop after TAC translation")
     stages.add_argument("--codegen", dest="stage", action="store_const",
                         const="codegen", help="emit 6502 assembly")
-    ap.add_argument("--optimize", dest="optimize", action="store_true",
-                    help="run TAC-level optimization passes (constant "
-                         "folding, unreachable-code elimination, copy "
-                         "propagation, dead-store elimination) to a "
-                         "fixed point. Applies to --tac and --codegen.")
+    opt_group = ap.add_mutually_exclusive_group()
+    opt_group.add_argument(
+        "--optimize", dest="optimize", action="store_true",
+        help="run TAC-level optimization passes (constant "
+             "folding, unreachable-code elimination, copy "
+             "propagation, dead-store elimination) to a "
+             "fixed point, then SSA-bracketed register "
+             "allocation. Applies to --tac and --codegen.",
+    )
+    opt_group.add_argument(
+        "--optimize-asm", dest="optimize_asm", action="store_true",
+        help="alternate pipeline: TAC fixed-point opts, then "
+             "asm-level SSA opts (byte-granular DCE, peepholes, "
+             "etc.), regalloc on byte-wide nodes, and late "
+             "prologue / epilogue synthesis driven by what "
+             "actually spilled. Mutually exclusive with "
+             "--optimize. Applies to --tac and --codegen.",
+    )
     args, pcpp_args = ap.parse_known_args(argv[1:])
 
     if (args.stage == "codegen"
@@ -178,7 +234,9 @@ def main(argv: list[str]) -> int:
             source = f.read()
 
     text = _run_stage(
-        args.stage, preprocess(source, pcpp_args), args.optimize,
+        args.stage, preprocess(source, pcpp_args),
+        optimize=args.optimize,
+        optimize_asm=args.optimize_asm,
     )
 
     if args.output is not None:

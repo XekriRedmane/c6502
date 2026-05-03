@@ -490,6 +490,7 @@ class Translator:
         self,
         symbols: SymbolTable | None = None,
         types=None,
+        bare_exit: bool = False,
     ) -> None:
         self._label_counter = 0
         # Optional — synthetic-AST tests can build a Translator
@@ -500,6 +501,17 @@ class Translator:
         # Read-only handle to the type checker's struct/union layout
         # table. Used by `_size_of` for struct-typed Vars.
         self._types = types
+        # When True, `Ret(...)` is replaced by a bare `Return(save_a)`
+        # atom and the matching `FunctionPrologue` is left for a
+        # downstream synthesis pass to insert. Used by the
+        # `--optimize-asm` pipeline so asm-level SSA opts see only
+        # atomic instructions plus the bare exit boundary, with the
+        # SSP/FP teardown materialized only after register allocation
+        # has decided what (if anything) needs spilling. Default
+        # False preserves today's `Ret(arg_bytes=0, local_bytes=0,
+        # save_a=...)` shape that `replace_pseudoregisters` later
+        # patches with the function's frame dims.
+        self._bare_exit = bare_exit
 
     def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a Var whose c99 symbol type is Pointer.
@@ -830,24 +842,35 @@ class Translator:
         epilogue. `save_a=False` since A carries nothing meaningful
         across the SSP/FP arithmetic."""
         if val is None:
-            return [asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False)]
+            return [self._exit(save_a=False)]
         src_op = translate_val(val)
         size = self._size_of(val)
         if size == 1:
             return [
                 asm_ast.Mov(src=src_op, dst=_REG_A),
-                asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True),
+                self._exit(save_a=True),
             ]
         # All wider returns: write src bytes into the HARGS slot for
         # this width (Long → +0..1, LongLong/Float → +8..11, Double
-        # → +16..23) and Ret with save_a=False.
+        # → +16..23) and exit with save_a=False.
         out_off = _RET_HARGS_OFFSET[size]
         seq: list[asm_ast.Type_instruction] = []
         for k in range(size):
             seq.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
             seq.append(asm_ast.Mov(src=_REG_A, dst=_hargs(out_off + k)))
-        seq.append(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=False))
+        seq.append(self._exit(save_a=False))
         return seq
+
+    def _exit(self, *, save_a: bool) -> asm_ast.Type_instruction:
+        """Emit either the legacy compound `Ret(...)` (with placeholder
+        arg_bytes / local_bytes that `replace_pseudoregisters` later
+        patches) or — under `--optimize-asm` — a bare `Return(save_a)`
+        atom that the synthesis pass picks up after regalloc."""
+        if self._bare_exit:
+            return asm_ast.Return(save_a=save_a)
+        return asm_ast.Ret(
+            arg_bytes=0, local_bytes=0, save_a=save_a,
+        )
 
     def _translate_copy(
         self, src: tac_ast.Type_val, dst: tac_ast.Type_val,
@@ -2069,6 +2092,7 @@ def translate_program(
     prog: tac_ast.Type_program,
     symbols: SymbolTable | None = None,
     types=None,
+    bare_exit: bool = False,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
     `c99_to_tac` produced — the Translator consults it via
@@ -2078,8 +2102,16 @@ def translate_program(
     `_size_of` access to struct/union layouts. Unit-test callers
     that only exercise Int paths can omit both; the Translator
     falls back to 1-byte (Int) for any name not in the symbol
-    table."""
-    return Translator(symbols, types).translate_program(prog)
+    table.
+
+    `bare_exit=True` selects the `--optimize-asm` shape: each Ret
+    lowering ends with a bare `Return(save_a)` atom (instead of a
+    compound `Ret(...)` carrying placeholder frame dims) and
+    `replace_pseudoregisters` is expected to skip prepending the
+    matching `FunctionPrologue`. A downstream synthesis pass then
+    materializes the prologue / epilogue once register allocation
+    has decided what spilled."""
+    return Translator(symbols, types, bare_exit=bare_exit).translate_program(prog)
 
 
 def translate_function(

@@ -446,5 +446,23 @@ def _xlate_instruction(
             callee_saved_addrs=csa,
         ):
             return _ret(ab, lb, sa, list(csa))
+        case asm_ast.Return():
+            # Bare exit — just RTS, no SSP/FP teardown. Emitted on
+            # the `--optimize-asm` path between phase 9 and the
+            # synthesis pass; if synthesis decides the function
+            # needs no frame, this passes straight through to the
+            # corresponding asm2 atom. `save_a` is carried on the
+            # asm_ast node but discarded here — by the time we're
+            # in asm2 the synthesis pass has already chosen between
+            # bare RTS (this branch) and a full Ret-shaped epilogue
+            # (which lowers via `_ret`).
+            return [asm2_ast.Return()]
+        case asm_ast.Phi():
+            # Phis are transient SSA-form nodes; they should have
+            # been lowered to Copies by `from_ssa` long before
+            # asm_to_asm2 sees the program.
+            raise TypeError(
+                "asm_to_asm2: Phi node leaked past SSA destruction",
+            )
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")

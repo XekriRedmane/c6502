@@ -308,8 +308,14 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
         ):
             return _ret_size(ab, lb, sa, csa)
+        case asm_ast.Return():
+            return 1   # RTS
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _load_address_size(src, dst)
+        case asm_ast.Phi():
+            raise TypeError(
+                "sim.assembler: Phi node leaked past SSA destruction",
+            )
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 
@@ -455,8 +461,14 @@ def _emit_instr(
             arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
         ):
             return _emit_ret(ab, lb, sa, csa)
+        case asm_ast.Return():
+            return bytes([_IMPLIED["RTS"]])
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _emit_load_address(src, dst, syms)
+        case asm_ast.Phi():
+            raise TypeError(
+                "sim.assembler: Phi node leaked past SSA destruction",
+            )
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 

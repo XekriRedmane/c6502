@@ -882,8 +882,12 @@ doing:
 - `--tac` shows the TAC right after `c99_to_tac` (no optimization).
 - `--tac --optimize` shows the TAC AFTER the full optimizer
   pipeline (post-de-SSA).
+- `--tac --optimize-asm` shows the TAC after the alt path's TAC
+  opts (regalloc skipped, otherwise identical to `--optimize`).
 - `--codegen` shows the final 6502 asm (no optimization).
 - `--codegen --optimize` shows the final asm with regalloc applied.
+- `--codegen --optimize-asm` shows the final asm from the alt
+  pipeline (asm-SSA round-trip; no regalloc until step 7 lands).
 
 For digging deeper into individual phases, the test files are the
 best examples. See `tests/test_ssa.py`, `tests/test_liveness.py`,
@@ -934,3 +938,171 @@ These are documented as future work in the codebase:
 | `passes/optimization/ssa_destruction.py` | `from_ssa` — Phis to Copies, topo-sorted, cycles broken. |
 | `passes/replace_pseudoregisters.py` | Lays out the frame; consumes the Coloring. |
 | `asm_emit.py` | 6502 mnemonic emission, including prologue save/restore. |
+
+---
+
+## The `--optimize-asm` alternate pipeline
+
+`--optimize-asm` selects an alternate optimization path that runs
+TAC-level fixed-point opts but defers register allocation to an
+asm-level layer. The motivation: doing optimization at the asm IR
+exposes byte-granular structure that's invisible at TAC, and a
+late, asm-aware regalloc can color individual bytes (rather than
+whole multi-byte values like the TAC-level allocator does today).
+
+Status: under construction. The architectural skeleton is in
+place — the asm-SSA round-trip, the bare-exit emission, the
+post-regalloc prologue synthesis — but the byte-level optimizations
+and asm-level regalloc that justify the architecture are not yet
+implemented. Today `--optimize-asm` produces correct code (the
+chapter_1..12 sim corpus passes through it) but the generated
+6502 is currently *worse* than `--optimize`'s, because TAC regalloc
+is off and asm regalloc isn't yet on. Steps 6 and 7 in the build
+plan close that gap.
+
+### How it differs from `--optimize`
+
+```
+--optimize               : c99_to_tac → optimize_tac (incl. regalloc)
+                           → tac_to_asm → replace_pseudoregisters
+                           → expand_long_branches → asm_to_asm2
+                           → asm_emit
+
+--optimize-asm           : c99_to_tac → optimize_tac (NO regalloc)
+                           → tac_to_asm bare_exit=True
+                           → asm_opt.optimize_program (asm-SSA round-trip)
+                           → replace_pseudoregisters_bare_exit
+                           → prologue_synthesis
+                           → expand_long_branches → asm_to_asm2
+                           → asm_emit
+```
+
+Three architectural pieces are new under `--optimize-asm`:
+
+**1. Bare-exit emission from `tac_to_asm`.** With `bare_exit=True`,
+phase 9 emits an atomic `asm_ast.Return(save_a)` at each function
+exit instead of the compound `Ret(arg_bytes, local_bytes, save_a,
+callee_saved_addrs)`. The matching `FunctionPrologue` is *not*
+prepended either. The asm tree leaving phase 9 has no SSP/FP
+arithmetic — just the body that staged the return value (in A or
+HARGS per the calling convention) plus a bare exit marker.
+
+**2. `replace_pseudoregisters_bare_exit`.** Same Pseudo → Frame /
+ZP / Data rewriting as the regular pass, but skips the prologue
+prepend and the `Ret(...)` payload patches. Returns the asm
+program alongside a per-function `dict[name, FrameDims]` carrying
+the metrics (arg_bytes, local_bytes, callee_saved_addrs) that the
+synthesis pass later consumes.
+
+**3. `prologue_synthesis` (`passes/prologue_synthesis.py`).** Takes
+the bare-exit program plus the frame dims, and either:
+
+| Condition | Result |
+|---|---|
+| `arg_bytes == 0` AND `local_bytes == 0` AND no callee-saved bytes | Leave the bare `Return(save_a)` atoms in place. No `FunctionPrologue` prepended. |
+| Otherwise | Prepend `FunctionPrologue(N, M, callee_saved_addrs)`; rewrite each `Return(save_a)` to `Ret(N, M, save_a, callee_saved_addrs)`. |
+
+The frame-less case is byte-equivalent to `--optimize`'s current
+collapsed RTS, but the asm tree is now self-describing: any
+later pass can see "this function has no frame" by looking at the
+IR directly (no need to consult `FunctionPrologue.arg_bytes ==
+0`).
+
+### Asm-level SSA (passes/optimization_asm/)
+
+Between `tac_to_asm bare_exit=True` and
+`replace_pseudoregisters_bare_exit`, the alt pipeline runs an
+asm-level SSA round-trip on the Pseudo-bearing IR. Today (step 5e
+of the build plan) it's a no-op round-trip — `to_ssa` →
+`from_ssa` with no opts in between. Steps 6 (byte-level DCE,
+peepholes) and 7 (byte-granular regalloc) will populate the
+sandwich.
+
+The interesting design choice: asm-level SSA versions each
+`(Pseudo name, byte offset)` pair *independently*. Byte 0 of a
+4-byte Long has its own def/use chain separate from byte 1.
+That's what lets a future byte-DCE pass drop the high-byte work
+when the value's used only in its low byte (e.g. a Long that fits
+in an Int).
+
+```
+to_ssa(fn, statics):
+  → CFG construction (passes/optimization_asm/cfg.py)
+  → ensure every reachable block has a leading Label (for
+    Phi pred_label tagging)
+  → identify excluded names: address-taken (LoadAddress.src),
+    read-modify-write targets (Inc/Dec/ASL/LSR/ROL/ROR.dst),
+    and static-storage names (passed in via `statics`)
+  → identify promotable (name, offset) pairs (everything else)
+  → place pruned Phis at iterated dominance frontiers
+  → rename: each def of (name, offset) mints a fresh
+    `<name>.b<offset>.v<N>` Pseudo with offset=0
+```
+
+The renaming convention encodes the byte position into the new
+Pseudo's name (with `offset=0`), so each byte becomes a 1-byte
+virtual variable. After SSA destruction the renamed names persist;
+`replace_pseudoregisters`'s default 1-byte size for unknown names
+gives each its own Frame slot. Multi-byte values get split across
+non-contiguous frame bytes — fine for byte-level access (the
+operand carries the address; no instruction relies on adjacency)
+but obviously broken for `&x` access, which is why address-taken
+names are excluded from versioning.
+
+### `from_ssa` and critical-edge splitting
+
+Asm-level SSA destruction has one significant difference from the
+TAC version: it has to be careful about flag-clobbering Movs.
+
+The standard "Phi → Mov in predecessor before terminator" pattern
+breaks at the asm IR because predecessors can end with a flag-
+sensitive `Branch` (BCC / BEQ / BMI / etc.). An LDA (the Mov's
+load) sets N and Z, so inserting it between a flag-setting
+instruction (an ORA, CMP, ADC etc.) and the Branch that reads its
+flags clobbers the flag. The original TAC version doesn't have
+this issue — TAC's `JumpIfTrue` / `JumpIfFalse` carry the
+condition value as an operand, not via flags.
+
+The fix is **critical-edge splitting**: for each edge from a
+`Branch`-terminated predecessor to a Phi-bearing merge, insert a
+fresh block on the edge:
+
+| Edge type | Layout |
+|---|---|
+| Branch's TAKEN target is a Phi merge | New block appended to the function: `Label split, Movs, Jump merge`. Branch's target rewritten to `split`. |
+| Branch's FALL-THROUGH target is a Phi merge | New block inserted in source order between the Branch's block and the merge: `Label split, Movs`. Falls through to merge naturally — no Jump needed. |
+| Jump-terminated predecessor | No split. Movs go directly before the Jump (JMP doesn't read flags). |
+
+Each affected `Phi.args[i].pred_label` is rewritten from the old
+predecessor's leading label to the split block's label, so the
+destruction step's label-to-block lookup finds the new block.
+
+Parallel-copy ordering and cycle-breaking work the same as in the
+TAC version (topological sort; mint a fresh
+`.<funcname>@asm_cycle_tmp@<N>` Pseudo to break a cycle).
+
+### What's done at the asm-opt layer
+
+| Step | Status |
+|---|---|
+| 1. `--optimize-asm` flag plumbing | Done |
+| 2. `Return(save_a)` atom in `asm_ast` | Done |
+| 3. `replace_program_bare_exit` + `prologue_synthesis` | Done |
+| 4. Synthesis collapses M=0/S=0 to bare RTS | Done |
+| 5a. Asm-level CFG + dominance | Done |
+| 5b. Same | Done |
+| 5c. `to_ssa` (Phi placement + byte-granular renaming) | Done |
+| 5d. `from_ssa` (Phi → Mov, critical-edge splitting, parallel-copy ordering, cycle break) | Done |
+| 5e. Wire round-trip into `--optimize-asm`; chapter sim corpus passes | Done |
+| 6. Byte-level optimizations (DCE on dead high bytes; peepholes) | Pending |
+| 7. Asm-level byte-granular regalloc | Pending |
+
+### Files at a glance (asm-opt layer)
+
+| File | What it does |
+|------|--------------|
+| `passes/prologue_synthesis.py` | Inserts `FunctionPrologue` and rewrites `Return` → `Ret` based on per-function `FrameDims`; collapses no-frame functions to bare RTS. |
+| `passes/optimization_asm/cfg.py` | Asm-level basic-block CFG, idom, dominance frontiers — same shape as the TAC version. |
+| `passes/optimization_asm/ssa_construction.py` | `to_ssa(fn, statics=...)` — byte-granular Phi placement + name versioning. |
+| `passes/optimization_asm/ssa_destruction.py` | `from_ssa(fn)` — critical-edge splitting + Phi → Mov + parallel-copy ordering. |
+| `passes/optimization_asm/optimizer.py` | Per-function driver; round-trip hub for steps 6 and 7. |

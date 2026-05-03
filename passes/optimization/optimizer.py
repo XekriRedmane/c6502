@@ -77,7 +77,8 @@ from passes.optimization.unreachable_code_elimination import (
 
 
 def optimize_program(
-    prog: tac_ast.Program, symbols=None,
+    prog: tac_ast.Program, symbols=None, *,
+    do_regalloc: bool = True,
 ) -> tuple[tac_ast.Program, dict[str, Coloring]]:
     """Optimize each function in `prog`. StaticVariable top-levels
     pass through unchanged. `symbols` is the type checker's
@@ -85,15 +86,23 @@ def optimize_program(
     folding for cast-node folds, SSA construction for fresh-name
     typing).
 
+    `do_regalloc=False` (the `--optimize-asm` path) runs the SSA
+    fixed-point optimizations and `from_ssa` but skips register
+    allocation — the asm-level pipeline does its own byte-granular
+    regalloc later, so duplicating the work at TAC level is wasted.
+    The returned `colorings` dict is empty in that mode.
+
     Returns `(optimized_program, colorings)` where `colorings` maps
-    each optimized function's name to its `Coloring` (or is empty
-    when `symbols=None` and regalloc was therefore skipped).
-    `StaticVariable` top-levels do not appear in the dict."""
+    each optimized function's name to its `Coloring` (empty when
+    `symbols=None` or `do_regalloc=False`). `StaticVariable`
+    top-levels do not appear in the dict."""
     new_top: list[tac_ast.Type_top_level] = []
     colorings: dict[str, Coloring] = {}
     for t in prog.top_level:
         if isinstance(t, tac_ast.Function):
-            new_fn, coloring = optimize_function(t, symbols=symbols)
+            new_fn, coloring = optimize_function(
+                t, symbols=symbols, do_regalloc=do_regalloc,
+            )
             new_top.append(new_fn)
             if coloring is not None:
                 colorings[new_fn.name] = coloring
@@ -104,6 +113,7 @@ def optimize_program(
 
 def optimize_function(
     fn: tac_ast.Function, *, symbols=None,
+    do_regalloc: bool = True,
 ) -> tuple[tac_ast.Function, Coloring | None]:
     """SSA-in → fixed-point cycle → register allocation → de-SSA.
     Without `symbols`, skip SSA conversion (the renaming pass needs
@@ -111,8 +121,11 @@ def optimize_function(
     the SSA-aware passes (copy propagation, dead-store elimination)
     become no-ops in that mode, and regalloc is skipped.
 
+    `do_regalloc=False` runs SSA + fixed-point + from_ssa but skips
+    register allocation. Returned coloring is `None` in that mode.
+
     Returns `(optimized_fn, coloring)` where `coloring` is the
-    register-allocation result (or `None` when `symbols` was None)."""
+    register-allocation result (or `None` when skipped)."""
     ssa_dsts: set[str] | None = None
     if symbols is not None:
         fn, ssa_dsts = to_ssa(fn, symbols)
@@ -126,10 +139,15 @@ def optimize_function(
             break
     coloring: Coloring | None = None
     if symbols is not None:
-        # Regalloc runs on the still-SSA function — chordal interference
-        # graphs admit optimal greedy coloring in dom-tree-PEO.
-        liveness = compute_liveness(fn)
-        graph = build_interference(fn, liveness, symbols)
-        coloring = color_graph(fn, graph)
+        if do_regalloc:
+            # Regalloc runs on the still-SSA function — chordal
+            # interference graphs admit optimal greedy coloring in
+            # dom-tree-PEO.
+            liveness = compute_liveness(fn)
+            graph = build_interference(fn, liveness, symbols)
+            coloring = color_graph(fn, graph)
+        # `from_ssa` runs whether or not we colored. Without regalloc
+        # the function is just regular post-SSA TAC — Phis lowered
+        # to Copies, no ZP coloring decisions yet.
         fn = from_ssa(fn, symbols=symbols)
     return fn, coloring

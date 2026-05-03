@@ -61,6 +61,29 @@ module ASM {
     instruction =
         Mov(operand src, operand dst)
         | Ret(int arg_bytes, int local_bytes, bool save_a, int* callee_saved_addrs)
+        -- Bare `Return` atom: equivalent to `RTS` with no SSP/FP
+        -- teardown. Used by the `--optimize-asm` path between
+        -- `tac_to_asm` and the post-regalloc synthesis pass: phase 9
+        -- emits `Return` after staging the return value (in A or
+        -- HARGS per the calling convention), and `replace_pseudo
+        -- registers` skips inserting the matching `FunctionPrologue`.
+        -- A late synthesis pass then either wraps `Return` with full
+        -- SSP/FP teardown (matching what `Ret(...)` would have
+        -- expanded to) or leaves it bare when the function fits
+        -- entirely in ZP and uses no callee-saved colors. Distinct
+        -- from `Ret` so the asm-level SSA opts can pattern-match the
+        -- function-exit boundary without dragging in the frame-
+        -- teardown semantics.
+        --
+        -- `save_a` mirrors `Ret.save_a` — same per-return-value-shape
+        -- info: True iff the return value rides in A (1-byte
+        -- returns) and so the synthesized epilogue has to bracket
+        -- its 16-bit SSP/FP add with PHA/PLA. False for void / wider
+        -- returns whose value lives in HARGS, untouched by SSP/FP
+        -- arithmetic. Carried on the atom (rather than recomputed at
+        -- synthesis time) because it's intrinsic to the return-value
+        -- staging the body just emitted.
+        | Return(bool save_a)
         | FunctionPrologue(int arg_bytes, int local_bytes, int* callee_saved_addrs)
         | AllocateStack(int bytes)
         | Add(operand src, operand dst)
@@ -95,6 +118,18 @@ module ASM {
         -- single 6502 opcode for "compute the address of an
         -- operand into two bytes".
         | LoadAddress(operand src, operand dst)
+        -- Phi node for asm-level SSA. `dst` is the merged-value
+        -- operand (typically a Pseudo at a specific byte offset).
+        -- `args` is one entry per predecessor block, tagging each
+        -- with the predecessor's leading-Label name and the
+        -- per-pred source operand. Asm SSA versions each
+        -- (Pseudo name, byte offset) pair INDEPENDENTLY, so a
+        -- Phi merges one byte at a time. Phis only exist between
+        -- `to_ssa` and `from_ssa` in `passes.optimization_asm`;
+        -- `asm_to_asm2`, `replace_pseudoregisters`, and the
+        -- in-process sim assembler all reject them.
+        | Phi(operand dst, asm_phi_arg* args)
+    asm_phi_arg = AsmPhiArg(identifier pred_label, operand source)
 
     -- Pseudo(name, offset): a stand-in operand minted by tac_to_asm
     -- for any TAC value that doesn't yet have a concrete address.

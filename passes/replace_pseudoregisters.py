@@ -85,9 +85,24 @@ function's dims.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import asm_ast
 import c99_ast
 from passes.type_checking import SymbolTable
+
+
+@dataclass
+class FrameDims:
+    """Per-function frame metrics computed by the replace pass.
+    Returned alongside the program in `--optimize-asm` mode so the
+    downstream synthesis pass can decide on prologue / epilogue
+    shape without re-running the layout walk. The fields mirror
+    `FunctionPrologue` / `Ret`'s payload so synthesis is a direct
+    rewrite."""
+    arg_bytes: int
+    local_bytes: int
+    callee_saved_addrs: list[int] = field(default_factory=list)
 
 
 def _operands_in(instr: asm_ast.Type_instruction):
@@ -140,6 +155,11 @@ def _operands_in(instr: asm_ast.Type_instruction):
             # / writes its value (just `&x` with no other use).
             # `dst` is the 2-byte temp that receives the address.
             yield src
+        case asm_ast.Phi():
+            raise TypeError(
+                "replace_pseudoregisters: Phi node leaked past "
+                "SSA destruction",
+            )
             yield dst
 
 
@@ -460,6 +480,40 @@ def replace_function(
     behavior (no ZP operands produced, all Pseudos to Frame /
     Data).
     """
+    fn_out, _dims = _replace_function_impl(
+        fn, statics=statics, symbols=symbols, types=types,
+        coloring=coloring, bare_exit=False,
+    )
+    return fn_out
+
+
+def replace_function_bare_exit(
+    fn: asm_ast.Function,
+    statics: frozenset[str] = frozenset(),
+    symbols: SymbolTable | None = None,
+    types=None,
+    coloring=None,
+) -> tuple[asm_ast.Function, FrameDims]:
+    """`--optimize-asm` variant: same Pseudo / Frame / ZP rewrite,
+    but skips the `FunctionPrologue` prepend and leaves each bare
+    `Return(save_a)` atom unpatched. Returns the function alongside
+    the computed `FrameDims` so the synthesis pass can decide on the
+    eventual prologue / epilogue shape based on what actually
+    spilled."""
+    return _replace_function_impl(
+        fn, statics=statics, symbols=symbols, types=types,
+        coloring=coloring, bare_exit=True,
+    )
+
+
+def _replace_function_impl(
+    fn: asm_ast.Function,
+    statics: frozenset[str],
+    symbols: SymbolTable | None,
+    types,
+    coloring,
+    bare_exit: bool,
+) -> tuple[asm_ast.Function, FrameDims]:
     match fn:
         case asm_ast.Function(
             name=name, is_global=is_global,
@@ -476,12 +530,29 @@ def replace_function(
             # Compute final dims now that all locals are accounted
             # for; populate param offsets.
             arg_bytes, local_bytes = r.finalize()
-            # Pass 2: replace operands and patch Ret instructions
-            # with the function's dims.
+            dims = FrameDims(
+                arg_bytes=arg_bytes,
+                local_bytes=local_bytes,
+                callee_saved_addrs=list(r.callee_saved_addrs),
+            )
+            # Pass 2: replace operands. In bare_exit mode the body
+            # ends with `Return(save_a)` (no payload to patch); in
+            # normal mode each `Ret` carries the function's dims.
             new_instrs = [
                 r.replace_instruction(i, arg_bytes, local_bytes)
                 for i in instrs
             ]
+            if bare_exit:
+                # Leave prologue insertion to the synthesis pass.
+                return (
+                    asm_ast.Function(
+                        name=name,
+                        is_global=is_global,
+                        params=list(params),
+                        instructions=new_instrs,
+                    ),
+                    dims,
+                )
             # Prepend the prologue. The emitter takes
             # arg_bytes+local_bytes==0 as a special case (no FP
             # setup needed when there are no args or locals).
@@ -492,11 +563,14 @@ def replace_function(
                 arg_bytes=arg_bytes, local_bytes=local_bytes,
                 callee_saved_addrs=list(r.callee_saved_addrs),
             )
-            return asm_ast.Function(
-                name=name,
-                is_global=is_global,
-                params=list(params),
-                instructions=[prologue] + new_instrs,
+            return (
+                asm_ast.Function(
+                    name=name,
+                    is_global=is_global,
+                    params=list(params),
+                    instructions=[prologue] + new_instrs,
+                ),
+                dims,
             )
         case _:
             raise TypeError(f"unexpected function node: {fn!r}")
@@ -560,5 +634,47 @@ def replace_program(
                         tl, statics, symbols, types, coloring=coloring,
                     ))
             return asm_ast.Program(top_level=new_top)
+        case _:
+            raise TypeError(f"unexpected program node: {prog!r}")
+
+
+def replace_program_bare_exit(
+    prog: asm_ast.Type_program,
+    extra_statics: frozenset[str] = frozenset(),
+    symbols: SymbolTable | None = None,
+    types=None,
+    colorings=None,
+) -> tuple[asm_ast.Type_program, dict[str, FrameDims]]:
+    """`--optimize-asm` variant of `replace_program`. Produces an asm
+    program whose functions still end with bare `Return(save_a)`
+    atoms (no `FunctionPrologue` prepended, no `Ret` payload patches)
+    and a per-function `dict[name, FrameDims]` mapping each function
+    to the metrics the synthesis pass will need to materialize the
+    eventual prologue / epilogue.
+
+    Same arguments as `replace_program`; same coloring semantics
+    (uncolored / spilled / address-taken Pseudos still get Frame
+    slots, computed exactly as in the prologue path)."""
+    match prog:
+        case asm_ast.Program(top_level=top_levels):
+            statics = frozenset(
+                tl.name for tl in top_levels
+                if isinstance(tl, (asm_ast.StaticVariable, asm_ast.Function))
+            ) | extra_statics
+            new_top: list[asm_ast.Type_top_level] = []
+            dims_by_fn: dict[str, FrameDims] = {}
+            for tl in top_levels:
+                if isinstance(tl, asm_ast.StaticVariable):
+                    new_top.append(tl)
+                else:
+                    coloring = (
+                        colorings.get(tl.name) if colorings is not None else None
+                    )
+                    fn_out, dims = replace_function_bare_exit(
+                        tl, statics, symbols, types, coloring=coloring,
+                    )
+                    new_top.append(fn_out)
+                    dims_by_fn[tl.name] = dims
+            return asm_ast.Program(top_level=new_top), dims_by_fn
         case _:
             raise TypeError(f"unexpected program node: {prog!r}")

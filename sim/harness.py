@@ -37,9 +37,14 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
 from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
-from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
+from passes.prologue_synthesis import synthesize_program as synthesize_prologue
+from passes.replace_pseudoregisters import (
+    replace_program as replace_pseudoregs,
+    replace_program_bare_exit as replace_pseudoregs_bare_exit,
+)
 from c99_to_tac import translate_program as translate_to_tac
 from passes.optimization import optimize_program as optimize_tac
+from passes.optimization_asm import optimizer as asm_opt
 from tac_to_asm import translate_program as translate_to_asm
 
 from sim import assembler
@@ -54,7 +59,7 @@ DEFAULT_MAX_CYCLES = 10_000_000
 
 
 def compile_to_asm(
-    source: str, *, optimize: bool = False,
+    source: str, *, optimize: bool = False, optimize_asm: bool = False,
 ) -> tuple[asm_ast.Program, dict, dict]:
     """Run the full pipeline up through asm_ast (post pseudo
     elimination). Returns (asm_program, symbols, types) — the symbol
@@ -65,7 +70,17 @@ def compile_to_asm(
     register allocation; the resulting per-function colorings are
     threaded into `replace_pseudoregisters` so colored values lower
     to ZP operands. Default is False (matches today's pre-regalloc
-    behavior)."""
+    behavior).
+
+    `optimize_asm=True` selects the alternate pipeline (TAC opts,
+    then asm-level SSA opts, byte-granular regalloc, late prologue
+    synthesis). Mutually exclusive with `optimize`. During step-by-
+    step build, intermediate steps may share the existing pipeline
+    until each stage of the new path is wired up."""
+    if optimize and optimize_asm:
+        raise ValueError(
+            "optimize and optimize_asm are mutually exclusive",
+        )
     pp = preprocess(source)
     ast0 = parse(pp)
     ast1 = resolve_identifiers(ast0)
@@ -77,10 +92,25 @@ def compile_to_asm(
     colorings: dict = {}
     if optimize:
         tac, colorings = optimize_tac(tac, syms)
-    asm0 = translate_to_asm(tac, syms, types)
     statics = frozenset(
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
+    if optimize_asm:
+        # Asm-level path: TAC opts without regalloc, then asm-level
+        # SSA round-trip on Pseudos. See compile.py for the full
+        # pipeline shape.
+        tac, _ = optimize_tac(tac, syms, do_regalloc=False)
+        asm0 = translate_to_asm(tac, syms, types, bare_exit=True)
+        asm0 = asm_opt.optimize_program(
+            asm0, extra_statics=statics,
+        )
+        asm1, dims_by_fn = replace_pseudoregs_bare_exit(
+            asm0, extra_statics=statics, symbols=syms,
+            types=types, colorings={},
+        )
+        asm = expand_long_branches(synthesize_prologue(asm1, dims_by_fn))
+        return asm, syms, types
+    asm0 = translate_to_asm(tac, syms, types)
     asm = expand_long_branches(replace_pseudoregs(
         asm0, extra_statics=statics, symbols=syms, types=types,
         colorings=colorings,
@@ -234,11 +264,16 @@ def build_sim(
     source: str, *,
     origin: int = DEFAULT_ORIGIN,
     optimize: bool = False,
+    optimize_asm: bool = False,
 ) -> Simulation:
     """Compile, assemble, install runtime, set up MPU. Doesn't run.
     `optimize=True` enables the SSA-bracketed optimizer including
-    register allocation."""
-    asm_prog, _syms, _types = compile_to_asm(source, optimize=optimize)
+    register allocation. `optimize_asm=True` selects the alternate
+    asm-level optimization pipeline (mutually exclusive with
+    `optimize`)."""
+    asm_prog, _syms, _types = compile_to_asm(
+        source, optimize=optimize, optimize_asm=optimize_asm,
+    )
     runtime = rt_mod.build_runtime()
     assembled = assembler.assemble(
         asm_prog, origin=origin, extra_symbols=runtime.symbols,

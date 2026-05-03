@@ -106,6 +106,11 @@ class Ret(Type_instruction):
 
 
 @dataclass
+class Return(Type_instruction):
+    save_a: bool
+
+
+@dataclass
 class FunctionPrologue(Type_instruction):
     arg_bytes: int
     local_bytes: int
@@ -229,6 +234,23 @@ class Compare(Type_instruction):
 class LoadAddress(Type_instruction):
     src: Type_operand
     dst: Type_operand
+
+
+@dataclass
+class Phi(Type_instruction):
+    dst: Type_operand
+    args: list[Type_asm_phi_arg] = field(default_factory=list)
+
+
+@dataclass
+class Type_asm_phi_arg:
+    pass
+
+
+@dataclass
+class AsmPhiArg(Type_asm_phi_arg):
+    pred_label: str
+    source: Type_operand
 
 
 @dataclass

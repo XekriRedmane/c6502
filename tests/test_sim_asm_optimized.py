@@ -53,6 +53,8 @@ class TestAsmSimChaptersOptimized(unittest.TestCase):
     pipeline runs with `optimize=True`. Per-file `subTest` so one
     regression doesn't mask others."""
 
+    OPTIMIZE_KIND = "optimize"
+
     def test_optimized_expected_returns(self) -> None:
         cases = {
             path: expected
@@ -60,12 +62,13 @@ class TestAsmSimChaptersOptimized(unittest.TestCase):
             if path.startswith(_CHAPTERS_UNDER_TEST)
         }
         self.assertGreater(len(cases), 0, "no chapters in scope")
+        kwargs = {self.OPTIMIZE_KIND: True}
         for rel_path, expected in cases.items():
             with self.subTest(file=rel_path):
                 if rel_path in SKIPS:
                     self.skipTest(SKIPS[rel_path])
                 source = (_TESTS_DIR / rel_path).read_text()
-                sim = build_sim(source, optimize=True)
+                sim = build_sim(source, **kwargs)
                 result = sim.run(max_cycles=_DEFAULT_MAX_CYCLES)
                 if result.timed_out:
                     self.fail(
@@ -82,6 +85,16 @@ class TestAsmSimChaptersOptimized(unittest.TestCase):
                         f"cycles={result.cycles})"
                     ),
                 )
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestAsmSimChaptersOptimizeAsm(TestAsmSimChaptersOptimized):
+    """Same chapter corpus, run through the alternate `--optimize-asm`
+    pipeline. Step 3 baseline: synthesis pass always inserts the
+    full prologue / epilogue, so the simulated return values must
+    still match the unoptimized expectations."""
+
+    OPTIMIZE_KIND = "optimize_asm"
 
 
 if __name__ == "__main__":

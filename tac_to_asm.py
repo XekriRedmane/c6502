@@ -491,6 +491,7 @@ class Translator:
         symbols: SymbolTable | None = None,
         types=None,
         bare_exit: bool = False,
+        abi=None,
     ) -> None:
         self._label_counter = 0
         # Optional — synthetic-AST tests can build a Translator
@@ -512,6 +513,21 @@ class Translator:
         # save_a=...)` shape that `replace_pseudoregisters` later
         # patches with the function's frame dims.
         self._bare_exit = bare_exit
+        # Per-function ABI dict from `passes.abi_selection.select_abi`,
+        # keyed by callee name. When set, `_translate_function_call`
+        # consults the callee's `ParamLayout` and branches between
+        # the soft-stack convention (AllocateStack + Stack writes)
+        # and the ZP-passing convention (Mov writes to fixed ZP
+        # addresses, no stack allocation). When absent / `None` /
+        # missing for a callee, the soft-stack convention is the
+        # default — preserves existing behavior for any TU that
+        # hasn't run `abi_selection`.
+        self._abi = abi or {}
+        # Per-call-site counter used to mint unique cycle-break
+        # temp names for ZP-ABI arg-write parallel-copy ordering.
+        # Each call site gets its own number; the helper's cycle
+        # counter is fresh per call.
+        self._zp_call_site_counter = 0
 
     def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a Var whose c99 symbol type is Pointer.
@@ -1214,15 +1230,22 @@ class Translator:
         args: list[tac_ast.Type_val],
         dst: tac_ast.Type_val | None,
     ) -> list[asm_ast.Type_instruction]:
-        """Caller side of the soft-stack calling convention. Each arg
-        occupies size_of(arg_type) consecutive stack bytes (1 for
-        Int, 2 for Long), packed in source order starting at Stack(1).
-        The callee's prologue saves FP, captures its own FP, and the
-        epilogue rewinds SSP all the way back to the caller's pre-
-        call value — no per-call cleanup at the call site.
+        """Caller side of the calling convention. Branches on the
+        callee's `ParamLayout`:
 
-        Return value, by dst width (read directly after the JSR,
-        before any other helper call clobbers HARGS):
+        - `SoftStackLayout` (default): each arg occupies size_of
+          consecutive stack bytes, packed in source order from
+          `Stack(1)`. The callee's epilogue rewinds SSP — no per-
+          call cleanup at the call site.
+        - `ZpLayout(addrs)`: each arg byte is written to a fixed
+          `ZP(addrs[i])` address. No `AllocateStack`, SSP unmoved.
+          Multiple Movs writing to ZP destinations may have
+          source-vs-destination aliasing if a caller-saved-resident
+          source happens to share an address with a different arg's
+          destination; the parallel-copy ordering helper handles
+          that.
+
+        Return-value capture is identical for both conventions:
           Int (1B)              ← A.
           Long / ULong /
             Pointer (2B)        ← HARGS+0..1.
@@ -1230,21 +1253,13 @@ class Translator:
           Double (8B)           ← HARGS+16..23.
         See `_translate_ret` for the matching callee-side write.
         """
-        # Compute total arg-stack bytes and per-arg base offsets.
-        arg_sizes = [self._size_of(a) for a in args]
-        total = sum(arg_sizes)
+        from passes.abi_selection import SoftStackLayout, ZpLayout
+        layout = self._abi.get(name, SoftStackLayout())
         emitted: list[asm_ast.Type_instruction] = []
-        if total > 0:
-            emitted.append(asm_ast.AllocateStack(bytes=total))
-            off = 1
-            for arg, sz in zip(args, arg_sizes):
-                arg_op = translate_val(arg)
-                for k in range(sz):
-                    emitted.append(asm_ast.Mov(
-                        src=_byte_at(arg_op, k),
-                        dst=asm_ast.Stack(offset=off + k),
-                    ))
-                off += sz
+        if isinstance(layout, ZpLayout):
+            emitted.extend(self._emit_zp_arg_writes(args, layout))
+        else:
+            emitted.extend(self._emit_softstack_arg_writes(args))
         emitted.append(asm_ast.Call(name=name))
         # `dst is None` means a void-returning callee: nothing to
         # capture, the return-value slot stays whatever it was.
@@ -1263,6 +1278,73 @@ class Translator:
                     emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
                     emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
         return emitted
+
+    def _emit_softstack_arg_writes(
+        self, args: list[tac_ast.Type_val],
+    ) -> list[asm_ast.Type_instruction]:
+        """The legacy soft-stack arg sequence: AllocateStack(N) +
+        per-byte Movs into Stack(off). Used for SoftStackLayout
+        callees."""
+        arg_sizes = [self._size_of(a) for a in args]
+        total = sum(arg_sizes)
+        if total == 0:
+            return []
+        emitted: list[asm_ast.Type_instruction] = [
+            asm_ast.AllocateStack(bytes=total),
+        ]
+        off = 1
+        for arg, sz in zip(args, arg_sizes):
+            arg_op = translate_val(arg)
+            for k in range(sz):
+                emitted.append(asm_ast.Mov(
+                    src=_byte_at(arg_op, k),
+                    dst=asm_ast.Stack(offset=off + k),
+                ))
+            off += sz
+        return emitted
+
+    def _emit_zp_arg_writes(
+        self,
+        args: list[tac_ast.Type_val],
+        layout,  # ZpLayout
+    ) -> list[asm_ast.Type_instruction]:
+        """Emit `Mov(arg_byte, ZP(addr))` writes per the callee's
+        `ZpLayout.addrs`. Each Mov's src may be any operand kind
+        (Imm, Pseudo, Frame, Data, ZP, ...); the dst is a `ZP`
+        operand at the addr from the layout.
+
+        When two arg writes alias each other through ZP — a write
+        to ZP $X whose source is something at ZP $Y, paired with
+        a write to ZP $Y whose source is at ZP $X (a swap) — the
+        parallel-copy ordering helper from
+        `passes.optimization_asm.ssa_destruction` topologically
+        sorts the Movs and breaks any cycle with a fresh Pseudo.
+        Reusing the helper keeps the cycle-break logic in one place."""
+        from passes.optimization_asm.ssa_destruction import (
+            _order_parallel_copies,
+        )
+        movs: list[asm_ast.Mov] = []
+        flat_idx = 0
+        for arg in args:
+            arg_op = translate_val(arg)
+            sz = self._size_of(arg)
+            for k in range(sz):
+                addr = layout.addrs[flat_idx + k]
+                movs.append(asm_ast.Mov(
+                    src=_byte_at(arg_op, k),
+                    dst=asm_ast.ZP(address=addr, offset=0),
+                ))
+            flat_idx += sz
+        # Each call site gets its own unique fn_name for any cycle-
+        # break temps the helper might mint, so temps from different
+        # call sites can't collide.
+        self._zp_call_site_counter += 1
+        ordered = _order_parallel_copies(
+            movs,
+            fn_name=f"argwrite_{self._zp_call_site_counter}",
+            cycle_counter=[0],
+        )
+        return list(ordered)
 
     def _translate_indirect_call(
         self,
@@ -2093,6 +2175,7 @@ def translate_program(
     symbols: SymbolTable | None = None,
     types=None,
     bare_exit: bool = False,
+    abi=None,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
     `c99_to_tac` produced — the Translator consults it via
@@ -2110,8 +2193,18 @@ def translate_program(
     `replace_pseudoregisters` is expected to skip prepending the
     matching `FunctionPrologue`. A downstream synthesis pass then
     materializes the prologue / epilogue once register allocation
-    has decided what spilled."""
-    return Translator(symbols, types, bare_exit=bare_exit).translate_program(prog)
+    has decided what spilled.
+
+    `abi` is the per-function `ParamLayout` dict from
+    `passes.abi_selection.select_abi`, keyed by callee name. When
+    supplied, calls to ZP-ABI-annotated callees emit Movs to the
+    callee's pinned ZP addresses instead of the soft-stack
+    AllocateStack + Stack(off) sequence. Calls to soft-stack-ABI
+    callees (the default for any callee not in the dict) keep
+    using the existing convention."""
+    return Translator(
+        symbols, types, bare_exit=bare_exit, abi=abi,
+    ).translate_program(prog)
 
 
 def translate_function(

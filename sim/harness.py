@@ -43,6 +43,7 @@ from passes.replace_pseudoregisters import (
     replace_program_bare_exit as replace_pseudoregs_bare_exit,
 )
 from c99_to_tac import translate_program as translate_to_tac
+from passes.abi_selection import select_abi
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
 from tac_to_asm import translate_program as translate_to_asm
@@ -97,16 +98,20 @@ def compile_to_asm(
     )
     if optimize_asm:
         # Asm-level path: TAC opts without regalloc, then asm-level
-        # SSA round-trip + byte-granular regalloc. See compile.py
-        # for the full pipeline shape.
+        # SSA round-trip + byte-granular regalloc, with ABI
+        # selection threaded through both call-site lowering and
+        # callee-side param resolution. See compile.py for the
+        # full pipeline shape.
         tac, _ = optimize_tac(tac, syms, do_regalloc=False)
-        asm0 = translate_to_asm(tac, syms, types, bare_exit=True)
+        abi = select_abi(tac, ast5, types)
+        asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
         asm0, asm_colorings = asm_opt.optimize_program(
-            asm0, extra_statics=statics,
+            asm0, extra_statics=statics, param_layouts=abi,
         )
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,
             types=types, colorings=asm_colorings,
+            param_layouts=abi,
         )
         asm = expand_long_branches(synthesize_prologue(asm1, dims_by_fn))
         return asm, syms, types

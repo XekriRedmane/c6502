@@ -43,18 +43,31 @@ def color_graph(
     graph: InterferenceGraph,
     *,
     pool: Pool | None = None,
+    blocked_addrs: set[int] | None = None,
 ) -> Coloring:
     """Color `graph`'s nodes onto ZP byte addresses drawn from
     `pool`. Returns a `Coloring` with every graph node either in
-    `assignments` or in `spilled`."""
+    `assignments` or in `spilled`.
+
+    `blocked_addrs` is an optional set of ZP byte addresses that
+    must NOT be assigned to any node. Used by the ZP-ABI path to
+    reserve incoming-param slots: a function declared
+    `__attribute__((zp_abi))` has its parameters at fixed ZP
+    addresses on entry, and body locals must avoid those colors
+    so they don't clobber params mid-computation. Conservative —
+    blocks the addresses for the entire function rather than only
+    while params are live; the simpler approach is correct and
+    the few wasted slots are typically negligible compared to
+    the savings of frame elimination."""
     if pool is None:
         pool = Pool()
+    blocked_addrs = blocked_addrs or set()
     peo = _perfect_elimination_order(fn, graph)
     assignments: dict[str, int] = {}
     spilled: set[str] = set()
     for name in peo:
         node = graph.nodes[name]
-        blocked = _blocked_bytes(name, graph, assignments)
+        blocked = _blocked_bytes(name, graph, assignments) | blocked_addrs
         if node.lives_across_call:
             base = _find_fit(pool.callee_saved(), node.width, blocked)
         else:

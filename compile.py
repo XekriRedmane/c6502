@@ -59,6 +59,7 @@ from passes.asm_to_asm2 import translate_program as lower_to_asm2
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
+from passes.abi_selection import select_abi
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
@@ -149,22 +150,24 @@ def _run_stage(
             tac, colorings = optimize_tac(tac, symbols)
         if optimize_asm:
             # Asm-level pipeline: TAC opts WITHOUT regalloc, then
-            # tac_to_asm in bare-exit mode (Pseudos preserved), then
-            # asm-level SSA round-trip (step 5e: no opts between
-            # to_ssa and from_ssa yet — steps 6 and 7 will populate),
-            # then replace_pseudoregisters_bare_exit (no colorings —
-            # asm-level regalloc isn't done yet, so all Pseudos go
-            # to Frame), then synthesize_prologue.
+            # tac_to_asm in bare-exit mode (Pseudos preserved),
+            # then asm-level SSA round-trip with byte-DCE +
+            # regalloc, then replace_pseudoregisters_bare_exit
+            # (consumes both the asm regalloc colorings AND the
+            # per-function ParamLayouts so ZP-ABI params resolve
+            # to ZP operands), then synthesize_prologue.
             tac, _ = optimize_tac(tac, symbols, do_regalloc=False)
+            abi = select_abi(tac, prog, types)
             asm0 = translate_to_asm(
-                tac, symbols, types, bare_exit=True,
+                tac, symbols, types, bare_exit=True, abi=abi,
             )
             asm0, asm_colorings = asm_opt.optimize_program(
-                asm0, extra_statics=statics,
+                asm0, extra_statics=statics, param_layouts=abi,
             )
             asm1, dims_by_fn = replace_pseudoregs_bare_exit(
                 asm0, extra_statics=statics, symbols=symbols,
                 types=types, colorings=asm_colorings,
+                param_layouts=abi,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             return emit_program(lower_to_asm2(

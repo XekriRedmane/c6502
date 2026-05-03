@@ -212,6 +212,7 @@ class Replacer:
         symbols: SymbolTable | None = None,
         types=None,
         coloring=None,
+        param_layout=None,  # ParamLayout from passes.abi_selection
     ) -> None:
         self.params = params
         self.param_set = set(params)
@@ -226,6 +227,20 @@ class Replacer:
         # allocation; everything else (spilled, uncolored, address-
         # taken) flows through the existing Frame path.
         self.coloring = coloring
+        # Optional `ParamLayout` for the enclosing function. When
+        # the layout is a `ZpLayout`, each parameter's bytes live
+        # at fixed ZP addresses on entry — the caller wrote them
+        # there before JSR, per the ZP-passing calling convention.
+        # `replace` resolves param Pseudos to those ZP addresses
+        # instead of the soft-stack Frame slots. `param_total`
+        # stays at 0 in that case (no AllocateStack on the caller's
+        # side to mirror). When the layout is `SoftStackLayout` or
+        # `None`, the existing Frame-based param resolution applies.
+        self.param_layout = param_layout
+        # Flat byte index of each param's first byte, by param
+        # name. Indexes into the `ZpLayout.addrs` list when the
+        # layout is ZpLayout. Computed in `finalize`.
+        self.param_flat_offsets: dict[str, int] = {}
         # Compute the set of callee-saved ZP byte addresses this
         # function uses. Each byte gets a slot at the bottom of the
         # frame (FP+1..FP+S), so locals start at offset S+1. The
@@ -309,12 +324,28 @@ class Replacer:
         total. Returns `(arg_bytes, local_bytes)` for the
         prologue / Ret patches.
 
-        Param j (1-indexed) sits at Frame offset M + 2 + (sum of
-        prior param sizes) + 1 — i.e., the first byte of the
-        first param is M+3, the next param starts after the first
-        one's bytes, etc. The 2-byte gap (M+1, M+2) holds the
-        saved caller FP."""
+        SoftStackLayout (the default): Param j (1-indexed) sits at
+        Frame offset M + 2 + (sum of prior param sizes) + 1 —
+        i.e., the first byte of the first param is M+3, the next
+        param starts after the first one's bytes, etc. The 2-byte
+        gap (M+1, M+2) holds the saved caller FP. arg_bytes = sum
+        of param byte sizes.
+
+        ZpLayout: params live at fixed ZP addresses (from the
+        layout's `addrs`); `param_bases` stays empty (no Frame
+        slots reserved); `arg_bytes` = 0 (no soft-stack args). We
+        record each param's flat byte index into `addrs` so
+        `replace` can resolve `Pseudo(p, k)` to
+        `ZP(addrs[flat_idx + k], 0)`."""
+        from passes.abi_selection import ZpLayout
         m = self.local_total
+        if isinstance(self.param_layout, ZpLayout):
+            flat = 0
+            for name in self.params:
+                self.param_flat_offsets[name] = flat
+                flat += size_of_name(name, self.symbols, self.types)
+            self.param_total = 0
+            return 0, m
         cursor = m + 3  # first param's first byte
         for name in self.params:
             self.param_bases[name] = cursor
@@ -349,11 +380,20 @@ class Replacer:
             return op
         if op.name in self.statics:
             return asm_ast.Data(name=op.name, offset=op.offset)
+        if op.name in self.param_flat_offsets:
+            # ZP-ABI param: bytes live at fixed ZP addresses per the
+            # function's `ZpLayout`. Resolve to ZP rather than Frame.
+            from passes.abi_selection import ZpLayout
+            assert isinstance(self.param_layout, ZpLayout)
+            flat_idx = self.param_flat_offsets[op.name] + op.offset
+            return asm_ast.ZP(
+                address=self.param_layout.addrs[flat_idx],
+                offset=0,
+            )
         if op.name in self.param_bases:
-            # Param check BEFORE coloring: even if the regalloc
-            # assigned a color to a param's name, the calling
-            # convention demands the param sit at its Frame offset
-            # on entry.
+            # SoftStack-ABI param: even if the regalloc assigned a
+            # color to a param's name, the calling convention demands
+            # the param sit at its Frame offset on entry.
             return asm_ast.Frame(
                 offset=self.param_bases[op.name] + op.offset,
             )
@@ -493,16 +533,25 @@ def replace_function_bare_exit(
     symbols: SymbolTable | None = None,
     types=None,
     coloring=None,
+    param_layout=None,
 ) -> tuple[asm_ast.Function, FrameDims]:
     """`--optimize-asm` variant: same Pseudo / Frame / ZP rewrite,
     but skips the `FunctionPrologue` prepend and leaves each bare
     `Return(save_a)` atom unpatched. Returns the function alongside
     the computed `FrameDims` so the synthesis pass can decide on the
     eventual prologue / epilogue shape based on what actually
-    spilled."""
+    spilled.
+
+    `param_layout` is the function's own `ParamLayout` from
+    `passes.abi_selection`. When `ZpLayout`, parameter Pseudos
+    resolve to fixed ZP addresses on entry (caller wrote the bytes
+    before JSR per the ZP-passing convention) and `arg_bytes`
+    stays at 0. When `SoftStackLayout` or `None`, the existing
+    Frame-based param resolution applies."""
     return _replace_function_impl(
         fn, statics=statics, symbols=symbols, types=types,
         coloring=coloring, bare_exit=True,
+        param_layout=param_layout,
     )
 
 
@@ -513,6 +562,7 @@ def _replace_function_impl(
     types,
     coloring,
     bare_exit: bool,
+    param_layout=None,
 ) -> tuple[asm_ast.Function, FrameDims]:
     match fn:
         case asm_ast.Function(
@@ -522,6 +572,7 @@ def _replace_function_impl(
             r = Replacer(
                 params=list(params), statics=statics,
                 symbols=symbols, types=types, coloring=coloring,
+                param_layout=param_layout,
             )
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
@@ -644,6 +695,7 @@ def replace_program_bare_exit(
     symbols: SymbolTable | None = None,
     types=None,
     colorings=None,
+    param_layouts=None,
 ) -> tuple[asm_ast.Type_program, dict[str, FrameDims]]:
     """`--optimize-asm` variant of `replace_program`. Produces an asm
     program whose functions still end with bare `Return(save_a)`
@@ -654,7 +706,15 @@ def replace_program_bare_exit(
 
     Same arguments as `replace_program`; same coloring semantics
     (uncolored / spilled / address-taken Pseudos still get Frame
-    slots, computed exactly as in the prologue path)."""
+    slots, computed exactly as in the prologue path).
+
+    `param_layouts` is an optional `dict[name, ParamLayout]` from
+    `passes.abi_selection.select_abi`. When supplied, each
+    function's ParamLayout drives how its own params are
+    resolved: a `ZpLayout` function's params lower to ZP operands
+    (caller wrote the bytes there pre-JSR); the resulting
+    `FrameDims.arg_bytes` is 0. Without this dict, every function
+    is treated as `SoftStackLayout` (existing behavior)."""
     match prog:
         case asm_ast.Program(top_level=top_levels):
             statics = frozenset(
@@ -670,8 +730,13 @@ def replace_program_bare_exit(
                     coloring = (
                         colorings.get(tl.name) if colorings is not None else None
                     )
+                    layout = (
+                        param_layouts.get(tl.name)
+                        if param_layouts is not None else None
+                    )
                     fn_out, dims = replace_function_bare_exit(
                         tl, statics, symbols, types, coloring=coloring,
+                        param_layout=layout,
                     )
                     new_top.append(fn_out)
                     dims_by_fn[tl.name] = dims

@@ -148,6 +148,7 @@ Pointer = c99_ast.Pointer
 Array = c99_ast.Array
 Structure = c99_ast.Structure
 Union = c99_ast.Union
+Const = c99_ast.Const
 
 
 # ---------------------------------------------------------------------------
@@ -700,7 +701,9 @@ def _is_object_type(t: Type) -> bool:
     (the type checker rejects struct operands on arithmetic ops,
     bare struct rvalues on most contexts), so they're excluded
     here too — consumers that legitimately accept structs check
-    explicitly."""
+    explicitly. `Const(...)` is transparent — `const int` is still
+    an object type."""
+    t = _strip_const(t)
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
             Char, SChar, UChar,
@@ -713,43 +716,101 @@ def _is_complete_object_type(t: Type) -> bool:
     Union. Used at variable-declaration sites where these IS a legal
     type for the named object (the array / struct decays only when
     its name appears in certain expression contexts, not when it's
-    being declared)."""
+    being declared). `Const` is transparent."""
+    t = _strip_const(t)
     return _is_object_type(t) or isinstance(
         t, (Array, Structure, Union),
     )
 
 
 def _is_struct_or_union(t: Type) -> bool:
-    return isinstance(t, (Structure, Union))
+    return isinstance(_strip_const(t), (Structure, Union))
 
 
 def _is_integer_type(t: Type) -> bool:
     return isinstance(
-        t, (Int, Long, LongLong, UInt, ULong, ULongLong,
-            Char, SChar, UChar),
+        _strip_const(t),
+        (Int, Long, LongLong, UInt, ULong, ULongLong,
+         Char, SChar, UChar),
     )
 
 
 def _is_floating_type(t: Type) -> bool:
-    return isinstance(t, (Float, Double))
+    return isinstance(_strip_const(t), (Float, Double))
 
 
 def _is_pointer_type(t: Type) -> bool:
-    return isinstance(t, Pointer)
+    return isinstance(_strip_const(t), Pointer)
 
 
 def _is_array_type(t: Type) -> bool:
-    return isinstance(t, Array)
+    return isinstance(_strip_const(t), Array)
 
 
 def _is_void(t: Type) -> bool:
     """True iff `t` is the `void` type itself (NOT `void *`)."""
-    return isinstance(t, Void)
+    return isinstance(_strip_const(t), Void)
 
 
 def _is_void_pointer(t: Type) -> bool:
     """True iff `t` is `void *`."""
-    return isinstance(t, Pointer) and isinstance(t.referenced_type, Void)
+    t = _strip_const(t)
+    return isinstance(t, Pointer) and isinstance(
+        _strip_const(t.referenced_type), Void,
+    )
+
+
+def _strip_const(t: Type) -> Type:
+    """Peel ONE top-level `Const` wrapper. `Const(Int)` → `Int`;
+    `Const(Pointer(Const(Int)))` → `Pointer(Const(Int))` (only the
+    outermost Const is removed — the pointee's Const stays).
+    Idempotent for non-`Const` types."""
+    if isinstance(t, c99_ast.Const):
+        return t.referenced_type
+    return t
+
+
+def _strip_const_recursive(t: Type) -> Type:
+    """Strip every `Const` wrapper anywhere in `t`. `Pointer(Const(Int))`
+    becomes `Pointer(Int)`, `Const(Pointer(Const(Int)))` becomes
+    `Pointer(Int)`, `Array(Const(Int), N)` becomes `Array(Int, N)`,
+    etc. Used at the boundary into TAC where const-correctness is no
+    longer relevant."""
+    if isinstance(t, c99_ast.Const):
+        return _strip_const_recursive(t.referenced_type)
+    if isinstance(t, Pointer):
+        return Pointer(referenced_type=_strip_const_recursive(t.referenced_type))
+    if isinstance(t, Array):
+        return Array(
+            element_type=_strip_const_recursive(t.element_type),
+            size=t.size,
+        )
+    if isinstance(t, FunType):
+        return FunType(
+            params=[_strip_const_recursive(p) for p in t.params],
+            ret=_strip_const_recursive(t.ret),
+        )
+    return t
+
+
+def _is_const_qualified(t: Type) -> bool:
+    """True iff `t` has a top-level `Const` wrapper. Used at
+    modification sites to reject `Assignment` / `CompoundAssignment` /
+    `Prefix` / `Postfix` operations on a const-qualified lvalue."""
+    return isinstance(t, c99_ast.Const)
+
+
+def _propagate_const(member_t: Type, container_t: Type) -> Type:
+    """Combine a member's declared type with the container's
+    qualifier per C99 §6.5.2.3.3: a Const-qualified container
+    accessed via `.` propagates Const to the member result. For
+    `->`, pass the pointee in `container_t`. Idempotent — if
+    `member_t` is already `Const(...)`, no extra wrapping."""
+    if not _is_const_qualified(container_t):
+        return member_t
+    if isinstance(member_t, c99_ast.Const):
+        return member_t
+    return c99_ast.Const(referenced_type=member_t)
 
 
 def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
@@ -760,11 +821,14 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     layout is incomplete or `types` is None — sizeof of an
     incomplete type is illegal per C99 §6.5.3.4.1).
 
+    `Const` is transparent — `sizeof(const int)` is `sizeof(int)`.
+
     Mirrors the helper of the same name in `c99_to_tac` (kept local
     so type_checking doesn't import the backend); the two stay in
     sync because they both encode the same storage-model rules.
     Used by the `sizeof` operator's type-checker. Constraint
     violations (Void, FunType) raise TypeCheckError."""
+    t = _strip_const(t)
     if isinstance(t, (Char, SChar, UChar)):
         return 1
     if isinstance(t, (Int, UInt, Pointer)):
@@ -810,6 +874,9 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
     `where` is a short label used in the error message so the user
     knows whether the rejected shape is, say, a parameter or a cast
     target."""
+    # Strip a top-level Const wrapper — the qualifier doesn't change
+    # well-formedness; the underlying type is what we validate.
+    t = _strip_const(t)
     if isinstance(t, Array):
         if isinstance(t.element_type, Void):
             raise TypeCheckError(
@@ -972,6 +1039,7 @@ def _is_arithmetic_type(t: Type) -> bool:
 # arithmetic. So char rank 0; Int/UInt rank 1; Long/ULong rank 2;
 # LongLong/ULongLong rank 3.
 def _int_width(t: Type) -> int:
+    t = _strip_const(t)
     if isinstance(t, (Char, SChar, UChar)):
         return 1
     if isinstance(t, (Int, UInt)):
@@ -986,7 +1054,7 @@ def _int_width(t: Type) -> int:
 def _is_signed(t: Type) -> bool:
     # Plain `char` is unsigned in c6502 (0..255), matching `unsigned
     # char`. Per C99 §6.2.5.15 the choice is implementation-defined.
-    return isinstance(t, (Int, Long, LongLong, SChar))
+    return isinstance(_strip_const(t), (Int, Long, LongLong, SChar))
 
 
 def _promote_integer(t: Type) -> Type:
@@ -1009,7 +1077,12 @@ def _promote_integer(t: Type) -> Type:
     operator, plus the operand of unary `+`, `-`, `~`. The result
     of `_convert_to(exp, _promote_integer(exp.data_type))` wraps
     `exp` in a SignExtend / ZeroExtend Cast (1B → 2B); c99_to_tac
-    lowers those to byte-level inline sequences."""
+    lowers those to byte-level inline sequences.
+
+    Strips a top-level `Const` — qualifiers don't survive integer
+    promotion (the promoted value is an rvalue; rvalues aren't
+    qualified per C99 §6.3.2.1.2)."""
+    t = _strip_const(t)
     if isinstance(t, (Char, SChar, UChar)):
         return Int()
     return t
@@ -1088,7 +1161,11 @@ def _common_type(a: Type, b: Type) -> Type:
         compatibility.)
 
     Returned types are fresh instances so callers can attach them
-    to AST nodes without aliasing."""
+    to AST nodes without aliasing. Strips `Const` from inputs —
+    common-type computation operates on rvalue types, which aren't
+    qualifier-bearing per C99 §6.3.2.1.2."""
+    a = _strip_const(a)
+    b = _strip_const(b)
     if isinstance(a, Double) or isinstance(b, Double):
         return Double()
     if isinstance(a, Float) or isinstance(b, Float):
@@ -1136,8 +1213,17 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
     source is rejected (only an explicit cast can perform pointer→
     integer or pointer→FP conversion). Explicit `(T)x` casts go
     through the Cast type-check handler and aren't gated by this
-    function."""
-    if exp.data_type is not None and _types_equal(exp.data_type, target):
+    function.
+
+    `Const` qualifiers on source/target are stripped before the
+    compatibility checks — assignment conversion operates on
+    unqualified types per C99 §6.5.16.1. The lvalue modification
+    check fires at the Assignment site and is independent of this
+    conversion logic."""
+    if exp.data_type is not None and _types_equal(
+        _strip_const_recursive(exp.data_type),
+        _strip_const_recursive(target),
+    ):
         return exp
     # A void source (e.g. the result of a void-returning function call
     # or a `(void)e` cast) has no value — it can't be implicitly
@@ -1476,7 +1562,11 @@ class TypeChecker:
         self, t: Type, member: str, where: str,
     ) -> MemberInfo:
         """Resolve a member name against a struct/union type. Raises
-        TypeCheckError on incomplete-type access or missing member."""
+        TypeCheckError on incomplete-type access or missing member.
+        Strips a top-level `Const` — `(const struct S).m` looks up
+        `m` on the underlying `struct S`. (Const propagation to the
+        member's result type is the caller's job.)"""
+        t = _strip_const(t)
         if not isinstance(t, (Structure, Union)):
             raise TypeCheckError(
                 f"{where}: operand has non-struct/union type {t!r}"
@@ -2015,7 +2105,14 @@ class TypeChecker:
             type=vd.data_type, attrs=LocalAttr(),
         )
         if vd.init is not None:
-            if isinstance(vd.data_type, Array):
+            # `Const(Array(...))` / `Const(Structure(...))` shouldn't
+            # normally arise (C99 §6.7.3.8 says qualifiers on an
+            # array specify its elements; on structs they ride at
+            # the variable level). Strip a top-level Const here so
+            # the per-shape branches dispatch on the underlying
+            # aggregate type uniformly.
+            data_type_uq = _strip_const(vd.data_type)
+            if isinstance(data_type_uq, Array):
                 # Arrays must use a brace-enclosed initializer list
                 # (`int a[3] = {1, 2, 3};`); a bare scalar is illegal.
                 # The char-array + string-literal special case
@@ -2023,10 +2120,10 @@ class TypeChecker:
                 # path — c99_to_tac then emits per-byte stores.
                 if (
                     isinstance(vd.init, c99_ast.String)
-                    and _is_char_element(vd.data_type.element_type)
+                    and _is_char_element(data_type_uq.element_type)
                 ):
                     self._check_string_array_init(
-                        vd.init, vd.data_type, vd.name,
+                        vd.init, data_type_uq, vd.name,
                     )
                     return
                 if not isinstance(vd.init, c99_ast.InitList):
@@ -2035,24 +2132,26 @@ class TypeChecker:
                         f"initializer (`{{...}}`)"
                     )
                 self._check_array_init_list(
-                    vd.init, vd.data_type, vd.name,
+                    vd.init, data_type_uq, vd.name,
                 )
                 return
-            if isinstance(vd.data_type, (Structure, Union)):
+            if isinstance(data_type_uq, (Structure, Union)):
                 # Two valid initializer forms for struct/union:
                 #   `struct s x = {1, 2};`  → InitList per-member
                 #   `struct s x = other;`   → struct copy (other has
                 #                             matching struct type)
                 if isinstance(vd.init, c99_ast.InitList):
                     self._check_struct_init_list(
-                        vd.init, vd.data_type, vd.name,
+                        vd.init, data_type_uq, vd.name,
                     )
                     return
                 # Non-InitList — must be a struct-typed expression
                 # of the matching tag.
                 self._check_exp(vd.init)
                 init_t = vd.init.data_type
-                if not _types_equal(init_t, vd.data_type):
+                if not _types_equal(
+                    _strip_const(init_t), data_type_uq,
+                ):
                     raise TypeCheckError(
                         f"struct/union {vd.name!r}: initializer has "
                         f"type {init_t!r}, expected {vd.data_type!r}"
@@ -2583,25 +2682,31 @@ class TypeChecker:
         established that at least one of `tl` / `tr` is Pointer."""
         l_ptr = _is_pointer_type(tl)
         r_ptr = _is_pointer_type(tr)
+        # Strip top-level Const so subsequent `_types_equal` and
+        # `.referenced_type` accesses see the bare pointer shape.
+        # Const-qualification of the pointer itself (`int * const`)
+        # doesn't change equality semantics.
+        tl_p = _strip_const(tl)
+        tr_p = _strip_const(tr)
         if l_ptr and r_ptr:
             # `void *` matches any object pointer here, with the
             # common type being `void *`.
             if _is_void_pointer(tl) or _is_void_pointer(tr):
                 return Pointer(referenced_type=Void())
-            if not _types_equal(tl, tr):
+            if not _types_equal(tl_p, tr_p):
                 raise TypeCheckError(
                     f"comparison of distinct pointer types: "
                     f"{tl!r} vs {tr!r}"
                 )
             # Fresh instance so callers can attach to AST nodes
             # without aliasing — same convention as `_common_type`.
-            return Pointer(referenced_type=tl.referenced_type)
+            return Pointer(referenced_type=tl_p.referenced_type)
         # Exactly one operand is a pointer; the other must be a
         # null pointer constant.
         if l_ptr and _is_null_pointer_constant(rhs):
-            return Pointer(referenced_type=tl.referenced_type)
+            return Pointer(referenced_type=tl_p.referenced_type)
         if r_ptr and _is_null_pointer_constant(lhs):
-            return Pointer(referenced_type=tr.referenced_type)
+            return Pointer(referenced_type=tr_p.referenced_type)
         raise TypeCheckError(
             f"comparison between pointer and non-null-constant "
             f"non-pointer: {tl!r} vs {tr!r}"
@@ -2923,11 +3028,18 @@ class TypeChecker:
                     and (_is_pointer_type(tl) or _is_pointer_type(tr))
                 ):
                     op_name = "+" if isinstance(op, c99_ast.Add) else "-"
+                    # Strip top-level Const from each pointer operand
+                    # so subsequent `isinstance(t, Pointer)` checks
+                    # and `.referenced_type` field accesses work
+                    # uniformly. The const-on-the-pointer-itself
+                    # doesn't affect pointer arithmetic legality.
+                    tl_p = _strip_const(tl)
+                    tr_p = _strip_const(tr)
                     # Reject pointer-to-function and pointer-to-void:
                     # §6.5.6.2 requires "pointer to a complete object
                     # type" for the additive ops, and sizeof(void) /
                     # sizeof(function) is undefined.
-                    for t in (tl, tr):
+                    for t in (tl_p, tr_p):
                         if (
                             isinstance(t, Pointer)
                             and isinstance(t.referenced_type, FunType)
@@ -2953,13 +3065,16 @@ class TypeChecker:
                         )
                     if _is_pointer_type(tl) and _is_pointer_type(tr):
                         # ptr + ptr is illegal; ptr - ptr is legal iff
-                        # the pointer types match.
+                        # the pointer types match. Compare on the
+                        # un-Const-qualified pointer types — `int *`
+                        # and `int * const` are compatible for
+                        # subtraction.
                         if isinstance(op, c99_ast.Add):
                             raise TypeCheckError(
                                 f"binary '+' is not defined on two "
                                 f"pointer operands ({tl!r} + {tr!r})"
                             )
-                        if not _types_equal(tl, tr):
+                        if not _types_equal(tl_p, tr_p):
                             raise TypeCheckError(
                                 f"subtraction of distinct pointer "
                                 f"types: {tl!r} - {tr!r}"
@@ -2993,12 +3108,14 @@ class TypeChecker:
                     # Int (which is now exactly 2 bytes).
                     if int_is_left:
                         exp.left = _convert_to(lhs, Int())
-                        ptr_type = tr
+                        ptr_type = tr_p
                     else:
                         exp.right = _convert_to(rhs, Int())
-                        ptr_type = tl
-                    # Result is the pointer type — fresh instance per
-                    # the same convention as `_common_type`.
+                        ptr_type = tl_p
+                    # Result is the pointer type (un-const-qualified
+                    # at the top level — the rvalue isn't qualified
+                    # per §6.3.2.1.2). Pointee const, if any, rides
+                    # through.
                     exp.data_type = Pointer(
                         referenced_type=ptr_type.referenced_type,
                     )
@@ -3101,6 +3218,8 @@ class TypeChecker:
                 # conversions for non-shifts; shifts skip the
                 # arithmetic conversions per §6.5.7.3) to find the
                 # *intermediate* type at which the binop happens.
+                # The const-qualification check on the lval fires
+                # below, after `_check_exp(lv)` stamps lv.data_type.
                 # The rval gets cast to that intermediate type so
                 # c99_to_tac can read it directly; the lval keeps
                 # its own type, and c99_to_tac casts the loaded
@@ -3111,6 +3230,11 @@ class TypeChecker:
                 # the new value of lval, with lval's type.
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
+                if _is_const_qualified(tl):
+                    raise TypeCheckError(
+                        f"cannot modify const-qualified lvalue with "
+                        f"compound assignment: {lv!r} has type {tl!r}"
+                    )
                 self._require_complete_value(lv, "compound assignment lval")
                 self._require_complete_value(rv, "compound assignment rval")
                 if isinstance(tl, Array):
@@ -3202,6 +3326,22 @@ class TypeChecker:
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
+                # Reject assignment to a const-qualified lvalue
+                # (C99 §6.5.16.1 constraint: "An assignment operator
+                # shall have a modifiable lvalue as its left
+                # operand"; §6.3.2.1.1 defines a modifiable lvalue as
+                # one that does NOT have a const-qualified type).
+                # Pointer-assignment qualifier compatibility (e.g.
+                # `int *q = (const int *)p;` discarding const at the
+                # pointee level) is NOT checked here — c6502 follows
+                # gcc's `-Wno-discarded-qualifiers` behavior on that
+                # front; the user can use an explicit cast if they
+                # mean to discard.
+                if _is_const_qualified(tl):
+                    raise TypeCheckError(
+                        f"cannot assign to const-qualified lvalue: "
+                        f"{lv!r} has type {tl!r}"
+                    )
                 # Both sides materialize the struct's bytes (the lval
                 # is overwritten, the rval read), so neither may
                 # have incomplete struct/union type.
@@ -3249,6 +3389,15 @@ class TypeChecker:
                 return tl
             case c99_ast.Postfix(operand=op) | c99_ast.Prefix(operand=op):
                 t = self._check_exp(op)
+                # `++` / `--` modify the operand — reject const-
+                # qualified lvalues (C99 §6.5.2.4.1 / §6.5.3.1.1
+                # require a "modifiable lvalue" operand; §6.3.2.1.1
+                # excludes const-qualified types from "modifiable").
+                if _is_const_qualified(t):
+                    raise TypeCheckError(
+                        f"cannot use ++/-- on const-qualified lvalue: "
+                        f"{op!r} has type {t!r}"
+                    )
                 if not _is_object_type(t):
                     raise TypeCheckError(
                         f"increment/decrement operator on non-object "
@@ -3485,7 +3634,13 @@ class TypeChecker:
                         f"unary '*' requires a pointer operand, got "
                         f"{type(t_inner).__name__}"
                     )
-                pointee = t_inner.referenced_type
+                # `int * const p; *p` reads the int through p — strip
+                # the const-on-the-pointer-itself before unwrapping
+                # to the pointee. (Const-on-the-pointee is preserved
+                # in the result, making `*p` a const lvalue when p
+                # is `const int *`.)
+                t_inner_uq = _strip_const(t_inner)
+                pointee = t_inner_uq.referenced_type
                 # Pointer to incomplete struct/union: dereferencing
                 # the value isn't well-defined (no size, no member
                 # layout, no addressable storage). The `&*p ≡ p`
@@ -3606,7 +3761,13 @@ class TypeChecker:
                         f"subscript needs a pointer/array operand and "
                         f"an integer operand; got {ta!r} and {ti!r}"
                     )
-                if isinstance(ptr_exp.data_type.referenced_type, FunType):
+                # `int * const p; p[i]` — the pointer itself is
+                # const-qualified, but that doesn't make the element
+                # const. Strip the outer Const to get to the
+                # `Pointer(...)` shape; the pointee's own Const (if
+                # any) rides through into the result.
+                ptr_type_uq = _strip_const(ptr_exp.data_type)
+                if isinstance(ptr_type_uq.referenced_type, FunType):
                     raise TypeCheckError(
                         "subscript of pointer-to-function is not "
                         "supported"
@@ -3616,44 +3777,50 @@ class TypeChecker:
                 # 2-byte add to compute the byte address.
                 exp.array = ptr_exp
                 exp.index = _convert_to(int_exp, Int())
-                exp.data_type = ptr_exp.data_type.referenced_type
+                exp.data_type = ptr_type_uq.referenced_type
                 return exp.data_type
             case c99_ast.Dot(operand=operand, member=member):
                 # `e.m` per C99 §6.5.2.3.1: operand must have struct
                 # or union type; result type is the member's type.
+                # §6.5.2.3.3: "If the first expression has qualified
+                # type, the result has the so-qualified version of
+                # the type of the designated member." So a Const-
+                # qualified operand makes the result const-qualified.
                 self._check_exp(operand)
                 t_op = operand.data_type
                 m = self._lookup_member(
                     t_op, member, where=f"member access '.{member}'",
                 )
-                exp.data_type = m.type
-                return m.type
+                result_t = _propagate_const(m.type, t_op)
+                exp.data_type = result_t
+                return result_t
             case c99_ast.Arrow(operand=operand, member=member):
                 # `p->m` per C99 §6.5.2.3.2: operand must have
-                # pointer-to-struct/union type. Result is the
-                # member's type. The pointer is NOT dereferenced
-                # here in the AST sense; the lowering computes
-                # `ptr + offset` and Loads. Array operands decay
-                # to pointer first per C99 §6.3.2.1.3 — that lets
-                # `s_ptr->in_array->a` work, where the inner
-                # `in_array` is a struct member whose type is an
-                # array.
+                # pointer-to-struct/union type. Equivalent to
+                # `(*p).m`, so const-qualification propagates from
+                # the POINTEE (not the pointer) to the member result
+                # — `const struct S *p; p->m` makes `p->m` const,
+                # but `struct S * const p; p->m` does NOT.
                 self._check_exp(operand)
                 exp.operand = _decay_if_array(operand)
                 operand = exp.operand
                 t_op = operand.data_type
-                if not isinstance(t_op, Pointer):
+                # `int * const p; p->m` — strip the const-on-the-
+                # pointer-itself before unwrapping to the pointee.
+                t_op_uq = _strip_const(t_op)
+                if not isinstance(t_op_uq, Pointer):
                     raise TypeCheckError(
                         f"member access '->{member}': operand has "
                         f"non-pointer type {t_op!r}"
                     )
-                pointee = t_op.referenced_type
+                pointee = t_op_uq.referenced_type
                 m = self._lookup_member(
                     pointee, member,
                     where=f"member access '->{member}'",
                 )
-                exp.data_type = m.type
-                return m.type
+                result_t = _propagate_const(m.type, pointee)
+                exp.data_type = result_t
+                return result_t
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — result is `Pointer(operand_type)` per C99
                 # §6.5.3.2.3. Lvalue check on `e` lives in

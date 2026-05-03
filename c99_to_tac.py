@@ -236,13 +236,42 @@ def _break_label(loop_label: str) -> str:
 # directive (DC.B / DC.W) and to track the declared type for
 # debug / linker purposes.
 
+def _strip_const_c99(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
+    """Strip every `Const` wrapper anywhere in `t`. `Pointer(Const(Int))`
+    becomes `Pointer(Int)`, `Const(Pointer(Const(Int)))` becomes
+    `Pointer(Int)`, `Array(Const(Int), N)` becomes `Array(Int, N)`,
+    etc. Used at the type-checker → TAC boundary: const-correctness
+    has been validated by the type checker; downstream layers
+    (storage layout, byte sizing, init-value lowering) treat
+    `const T` exactly like `T`."""
+    if isinstance(t, c99_ast.Const):
+        return _strip_const_c99(t.referenced_type)
+    if isinstance(t, c99_ast.Pointer):
+        return c99_ast.Pointer(
+            referenced_type=_strip_const_c99(t.referenced_type),
+        )
+    if isinstance(t, c99_ast.Array):
+        return c99_ast.Array(
+            element_type=_strip_const_c99(t.element_type),
+            size=t.size,
+        )
+    if isinstance(t, c99_ast.FunType):
+        return c99_ast.FunType(
+            params=[_strip_const_c99(p) for p in t.params],
+            ret=_strip_const_c99(t.ret),
+        )
+    return t
+
+
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
     """Byte width of an object type. Char / SChar / UChar = 1,
     Int / UInt = 2, Long / ULong = 4, LongLong / ULongLong = 8,
     Float = 4, Double = 8, Pointer = 2 (the 6502's address width).
     Used by Cast lowering to decide between SignExtend / ZeroExtend
     / Truncate / no-op (for integer types) and by various size-
-    driven dispatch sites downstream."""
+    driven dispatch sites downstream. `Const` is transparent."""
+    if isinstance(t, c99_ast.Const):
+        return _byte_width_of(t.referenced_type)
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
@@ -270,7 +299,15 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
     Structure / Union all collapse onto `Pointer` — TAC vals of
     those types are always operated on through their address, not
     their payload, so the variant is just an "address-shaped"
-    placeholder; the c99 symbol table is what sizes the storage."""
+    placeholder; the c99 symbol table is what sizes the storage.
+
+    `Const` wrappers are stripped recursively at this boundary —
+    qualifiers are a type-checker concept; downstream TAC and
+    asm passes don't model them."""
+    # Peel any nested Const wrappers (`Const(Pointer(Const(Int)))`
+    # → `Pointer(Int)` at the TAC layer). Idempotent on non-Const.
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
     if isinstance(t, c99_ast.Int):
         return tac_ast.Int()
     if isinstance(t, c99_ast.Long):
@@ -761,7 +798,10 @@ def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     model. Recursive for Array — `int[3][4]` is 24 bytes (Int = 2),
     `char[10]` is 10 bytes. For Structure / Union, looks up the
     tag's layout in `types` (the program-wide TypeTable) and reads
-    its `.size`."""
+    its `.size`. `Const` is transparent — `sizeof(const T) ==
+    sizeof(T)`."""
+    if isinstance(t, c99_ast.Const):
+        return _sizeof(t.referenced_type, types)
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
@@ -833,6 +873,12 @@ class Translator:
         caller passes that in so codegen can size each temp's
         frame slot correctly.
 
+        Strips `Const` from `t` recursively before registering. A
+        temp's value is an rvalue (no qualifiers per C99 §6.3.2.1.2),
+        and downstream consumers (replace_pseudoregisters' frame
+        sizing, tac_to_asm's byte-width dispatch) read the symbol
+        table directly and don't model qualifiers.
+
         The optional default of `None` is a backstop for unit tests
         that exercise the bare counter without going through
         type-checking; the temp registers as `Int` in that case.
@@ -841,8 +887,12 @@ class Translator:
         """
         name = f"%{self._temp_counter}"
         self._temp_counter += 1
+        if t is None:
+            t_unq = c99_ast.Int()
+        else:
+            t_unq = _strip_const_c99(t)
         self._symbols[name] = Symbol(
-            type=t if t is not None else c99_ast.Int(),
+            type=t_unq,
             attrs=LocalAttr(),
         )
         return name
@@ -1049,17 +1099,25 @@ class Translator:
             if isinstance(init, Initial):
                 init_value = init.value
             elif isinstance(init, Tentative):
-                init_value = _zero_init_value(sym.type, self._types)
+                init_value = _zero_init_value(
+                    _strip_const_c99(sym.type), self._types,
+                )
             elif isinstance(init, NoInitializer):
                 continue
             else:
                 raise TypeError(f"unexpected initial value: {init!r}")
             data_type = _to_tac_data_type(sym.type)
+            # `_flat_static_init` walks the c99 type to lay out
+            # initializer bytes — strip Const at the boundary so its
+            # isinstance checks match. Same applies to the zero-init
+            # case via `_zero_init_value` below (the c99 type passed
+            # to it is already stripped via this strip).
+            t_unq = _strip_const_c99(sym.type)
             out.append(tac_ast.StaticVariable(
                 name=name,
                 is_global=sym.attrs.is_global,
                 data_type=data_type,
-                init=_flat_static_init(sym.type, init_value, self._types),
+                init=_flat_static_init(t_unq, init_value, self._types),
             ))
         return out
 
@@ -1972,7 +2030,7 @@ class Translator:
                     ))
                     arg_vals = [addr] + arg_vals
                     sym = self._symbols.get(name)
-                    if sym is not None and isinstance(sym.type, c99_ast.Pointer):
+                    if sym is not None and isinstance(_strip_const_c99(sym.type), c99_ast.Pointer):
                         instrs.append(tac_ast.IndirectCall(
                             ptr=tac_ast.Var(name=name),
                             args=arg_vals, dst=None,
@@ -1988,7 +2046,7 @@ class Translator:
                     )
                 )
                 sym = self._symbols.get(name)
-                if sym is not None and isinstance(sym.type, c99_ast.Pointer):
+                if sym is not None and isinstance(_strip_const_c99(sym.type), c99_ast.Pointer):
                     # Indirect call — the callee is a function-
                     # pointer-typed Var. Pass the pointer val (which
                     # carries the function's address at runtime) to

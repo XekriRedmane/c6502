@@ -316,6 +316,11 @@ class Union(Type_data_type):
 
 
 @dataclass
+class Const(Type_data_type):
+    referenced_type: Type_data_type
+
+
+@dataclass
 class Type_for_init:
     pass
 

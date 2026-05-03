@@ -77,6 +77,18 @@ module C99 {
         -- of where they were instantiated.
         | Structure(identifier tag)
         | Union(identifier tag)
+        -- `const`-qualified type. Wraps any object type at any
+        -- depth: `const int` is `Const(Int())`, `const int *` is
+        -- `Pointer(Const(Int()))`, `int * const` is
+        -- `Const(Pointer(Int()))`. The type checker uses the
+        -- top-level Const to reject lvalue modifications;
+        -- arithmetic / common-type computation strips Const before
+        -- proceeding. Stripped to its inner type when crossing
+        -- into TAC (Const is a type-checker concept; downstream
+        -- passes don't need it). `volatile` and `restrict` are
+        -- still parser-recognized but discarded — c6502 doesn't
+        -- model them.
+        | Const(data_type referenced_type)
 
     for_init = InitDecl(var_decl) | InitExp(exp?)
 

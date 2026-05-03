@@ -86,10 +86,16 @@ _STORAGE_CLASSES = {
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "VOID",
                            "STATIC", "EXTERN",
-                           "STRUCT", "UNION")
+                           "STRUCT", "UNION",
+                           "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "VOID",
                                 "STRUCT", "UNION")
+# `const` is the only type qualifier c6502 enforces; `volatile` and
+# `restrict` parse but are silently dropped (c6502 doesn't model
+# their semantics — no memory-mapped I/O modeling, no aliasing
+# analysis).
+_TYPE_QUALIFIER_TOKEN_TYPES = ("CONST", "VOLATILE", "RESTRICT")
 
 
 # A struct/union type specifier produced by the
@@ -261,22 +267,30 @@ def _split_specifiers(specs):
     """Validate a `specifier+` token list and split it into
     `(data_type, storage_class)`.
 
-    The grammar rule `specifier: type_specifier | STATIC | EXTERN`
-    accepts any interleaving of type and storage-class specifiers in a
-    declaration. C99 §6.7.1.2 / §6.7.2 are stricter:
+    The grammar rule `specifier: type_specifier | type_qualifier |
+    STATIC | EXTERN` accepts any interleaving of type, qualifier,
+    and storage-class specifiers in a declaration. C99 §6.7.1.2 /
+    §6.7.2 are stricter:
       * exactly one type (composed from `INT` and `LONG` per
         `_resolve_data_type`)
       * at most one storage-class specifier
+      * type qualifiers (`const`, `volatile`, `restrict`) may
+        repeat — duplicates have no effect (§6.7.3.4); only `const`
+        is reflected in the data_type, the others are silently
+        accepted-and-dropped
 
-    Returns `(data_type, storage_class)` where data_type is a
-    c99_ast.Int() or .Long() (or .FunType for the future) and
-    storage_class is a c99_ast.Static() / .Extern() / None.
+    Returns `(data_type, storage_class)` where data_type is wrapped
+    in `Const(...)` if any `const` qualifier appeared. storage_class
+    is a `c99_ast.Static() / .Extern() / None`.
     """
     type_specs = []
+    qualifier_specs = []
     storage = None
     for spec in specs:
         if spec.type in _TYPE_SPECIFIER_TOKEN_TYPES:
             type_specs.append(spec)
+        elif spec.type in _TYPE_QUALIFIER_TOKEN_TYPES:
+            qualifier_specs.append(spec)
         else:
             cls = _STORAGE_CLASSES[spec.type]
             if storage is not None:
@@ -285,7 +299,28 @@ def _split_specifiers(specs):
                     "in a declaration"
                 )
             storage = cls()
-    return _resolve_data_type(type_specs), storage
+    return (
+        _apply_qualifiers(_resolve_data_type(type_specs), qualifier_specs),
+        storage,
+    )
+
+
+def _apply_qualifiers(data_type, qualifier_tokens):
+    """Wrap `data_type` in `Const(...)` if any of `qualifier_tokens`
+    is a `CONST` token. `VOLATILE` / `RESTRICT` are silently dropped
+    (c6502 doesn't model them). Idempotent — wrapping `Const(T)` in
+    another `Const` would be redundant per C99 §6.7.3.4 ("If the
+    same qualifier appears more than once in the same specifier-
+    qualifier-list ... the behavior is the same as if it appeared
+    only once")."""
+    has_const = any(
+        t.type == "CONST" for t in qualifier_tokens
+    )
+    if not has_const:
+        return data_type
+    if isinstance(data_type, c99_ast.Const):
+        return data_type
+    return c99_ast.Const(referenced_type=data_type)
 
 
 def _consume_specifiers(items, start):
@@ -691,24 +726,40 @@ def _apply_declarator(decl_tree, base_type):
 
 
 def _wrap_pointers(pointer_tree, base_type):
-    """`pointer: STAR type_qualifier* pointer?`. Walks the optional
-    nested `pointer` chain, wrapping `base_type` once per `*`. Type
-    qualifiers (`const` / `restrict` / `volatile`) accepted by the
-    grammar are dropped — c6502 doesn't model qualifier semantics."""
-    depth = 0
+    """`pointer: STAR type_qualifier* pointer?`. Walks the nested
+    `pointer` chain (innermost-first in the parse tree, outermost-
+    last). Each level wraps `base_type` in `Pointer(...)` and, if
+    that level's qualifier list contains `const`, wraps the result
+    in `Const(...)` — that's the `int * const` form (`Const(Pointer(T))`).
+    `volatile` and `restrict` qualifiers are silently dropped."""
+    # Collect the per-level qualifier lists, innermost first. The
+    # parse tree's outermost `pointer` is the FIRST modifier, but we
+    # apply modifiers innermost-first as we wrap, so we walk the
+    # chain and reverse when applying.
+    levels: list[list] = []
     cur = pointer_tree
     while True:
-        depth += 1
+        # Each `pointer` Tree's direct children are: STAR token
+        # (always first), then a mix of type_qualifier tokens (after
+        # the type_qualifier transformer inlined them to bare CONST/
+        # VOLATILE/RESTRICT tokens), and at most one nested `pointer`
+        # sub-Tree.
+        quals: list = []
         inner = None
         for c in cur.children:
-            if hasattr(c, "data") and c.data == "pointer":
+            if hasattr(c, "type") and c.type in _TYPE_QUALIFIER_TOKEN_TYPES:
+                quals.append(c)
+            elif hasattr(c, "data") and c.data == "pointer":
                 inner = c
-                break
+        levels.append(quals)
         if inner is None:
             break
         cur = inner
-    for _ in range(depth):
+    # Apply innermost-first: levels[-1] is the deepest `*`, applied
+    # to the base type first.
+    for quals in reversed(levels):
         base_type = c99_ast.Pointer(referenced_type=base_type)
+        base_type = _apply_qualifiers(base_type, quals)
     return base_type
 
 
@@ -1078,22 +1129,29 @@ class _ASTBuilder(Transformer):
         return child
 
     def type_name(self, items):
-        # `type_name: type_specifier+ abstract_declarator?` — used in
-        # both cast expressions and `sizeof (T)`.
+        # `type_name: (type_specifier | type_qualifier)+
+        # abstract_declarator?` — used in cast expressions and
+        # `sizeof (T)`.
         #
-        # Each type_specifier child is either a Token (primitive
-        # specifier) or a `_TagSpecifier` (struct/union). If an
-        # abstract_declarator subtree is present, it's the last item
-        # — `_apply_abstract_declarator` composes it into the full
-        # type (pointers, arrays, function suffixes). We do NOT
-        # reject array / function targets here even though they're
-        # illegal for casts (C99 §6.5.4.2), because `sizeof` accepts
-        # both forms (`sizeof (int[3])`, `sizeof (int (*)())`). The
-        # cast-target restriction lives in the `cast` transformer
-        # below.
-        type_specs = [
+        # Each child is either a Token (primitive type-specifier OR
+        # qualifier — disambiguated by `.type`), a `_TagSpecifier`
+        # (struct/union), or an abstract_declarator parse Tree. We
+        # split the leaves into type-specifiers and qualifiers, then
+        # handle the optional abstract_declarator separately.
+        leaf_items = [
             it for it in items
             if isinstance(it, (Token, _TagSpecifier))
+        ]
+        type_specs = [
+            it for it in leaf_items
+            if isinstance(it, _TagSpecifier)
+            or (isinstance(it, Token)
+                and it.type in _TYPE_SPECIFIER_TOKEN_TYPES)
+        ]
+        qualifiers = [
+            it for it in leaf_items
+            if isinstance(it, Token)
+            and it.type in _TYPE_QUALIFIER_TOKEN_TYPES
         ]
         # Inline struct/union *definitions* in a type-name (`(struct
         # foo { int a; })x`) are legal C99 but semantically obscure
@@ -1106,9 +1164,9 @@ class _ASTBuilder(Transformer):
                     "struct/union definition isn't permitted inside "
                     "a type-name (cast / sizeof)"
                 )
-        base = _resolve_data_type(type_specs)
-        if len(type_specs) == len(items):
-            # No abstract_declarator — bare type-specifier list.
+        base = _apply_qualifiers(_resolve_data_type(type_specs), qualifiers)
+        if len(leaf_items) == len(items):
+            # No abstract_declarator — bare specifier-qualifier list.
             return base
         # Trailing abstract_declarator subtree.
         adecl_tree = items[-1]
@@ -1166,27 +1224,18 @@ class _ASTBuilder(Transformer):
         )
 
     def specifier_qualifier_list(self, items):
-        # `(type_specifier | type_qualifier)+` — strip qualifiers
-        # (c6502 doesn't model const / volatile / restrict semantics)
-        # and return the list of type-specifier leaves.
-        out = []
-        for it in items:
-            # type_specifier transformer already inlined to leaf;
-            # type_qualifier rule has its own transformer below
-            # (returns the qualifier token, which we ignore).
-            if hasattr(it, "data") and it.data == "type_qualifier":
-                continue
-            out.append(it)
-        return out
+        # `(type_specifier | type_qualifier)+`. Returns a list of
+        # type-specifier leaves and qualifier tokens, intermixed —
+        # callers (`struct_declaration`) sort them via
+        # `_split_specifier_qualifier_list`.
+        return list(items)
 
-    def type_qualifier(self, items):
-        # Pass through the rule tree so specifier_qualifier_list can
-        # detect and discard it. The Lark Transformer default is to
-        # rebuild a Tree — keep that behavior (don't return a single
-        # leaf) so the qualifier wrapper survives intact for the
-        # filter above.
-        from lark import Tree
-        return Tree("type_qualifier", items)
+    @v_args(inline=True)
+    def type_qualifier(self, child):
+        # `type_qualifier: CONST | RESTRICT | VOLATILE`. Inline the
+        # leaf token so consumers can read its `.type` attribute
+        # alongside type_specifier tokens uniformly.
+        return child
 
     def struct_declarator_list(self, items):
         # `declarator (COMMA declarator)*` — strip COMMA tokens; each
@@ -1196,8 +1245,22 @@ class _ASTBuilder(Transformer):
     def struct_declaration(self, items):
         # `specifier_qualifier_list struct_declarator_list SEMICOLON`.
         # Returns a list of (member_name, member_type) tuples.
-        type_specs = items[0]
+        leaf_items = items[0]
         decl_trees = items[1]
+        # Split type-specifiers from type-qualifiers within the
+        # specifier-qualifier list (the `specifier_qualifier_list`
+        # transformer keeps them intermixed).
+        type_specs = [
+            it for it in leaf_items
+            if isinstance(it, _TagSpecifier)
+            or (isinstance(it, Token)
+                and it.type in _TYPE_SPECIFIER_TOKEN_TYPES)
+        ]
+        qualifiers = [
+            it for it in leaf_items
+            if isinstance(it, Token)
+            and it.type in _TYPE_QUALIFIER_TOKEN_TYPES
+        ]
         # Reject inline struct/union definitions inside a member's
         # type-specifier — `struct outer { struct inner { int x; }
         # nested; };` is legal C99 but rarely-used and not modeled
@@ -1210,7 +1273,7 @@ class _ASTBuilder(Transformer):
                     "isn't supported — declare the inner type at "
                     "outer scope first"
                 )
-        base = _resolve_data_type(type_specs)
+        base = _apply_qualifiers(_resolve_data_type(type_specs), qualifiers)
         # Per C99 §6.7.2.1.2 a struct member's declarator yields a
         # type that has to be a complete object type (or, if it's
         # a flexible array member, the very last member). c6502

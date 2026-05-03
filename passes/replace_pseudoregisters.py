@@ -180,7 +180,10 @@ def size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
 
 
 def sizeof(t: c99_ast.Type_data_type, types=None) -> int:
-    """Bytes occupied by a value of type `t`. Recursive for Array."""
+    """Bytes occupied by a value of type `t`. Recursive for Array.
+    `Const` is transparent."""
+    if isinstance(t, c99_ast.Const):
+        return sizeof(t.referenced_type, types)
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):

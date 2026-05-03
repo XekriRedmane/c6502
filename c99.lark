@@ -212,7 +212,11 @@ start: declaration*
 // LALR(1) lookahead-1 distinguishes the two on `LBRACE` vs `ASSIGN`/
 // `SEMICOLON` once the declarator has been parsed.
 declaration: function_decl | var_decl
-specifier: type_specifier | STATIC | EXTERN
+// Top-level declaration specifier: a type, a storage class, or a
+// type qualifier. C99 §6.7 allows these in any order. The
+// `_split_specifiers` helper sorts them out and rejects illegal
+// combinations.
+specifier: type_specifier | type_qualifier | STATIC | EXTERN
 // Optional GCC-style attribute prefix on a declaration (function or
 // var). Today the only legal annotation name is `zp_abi`; the
 // transformer rejects any other name. Attribute appears BEFORE the
@@ -607,7 +611,7 @@ direct_abstract_declarator: LPAREN abstract_declarator RPAREN
 // abstract declarators and rejects the array / function-pointer
 // shapes (no AST plumbing for them yet).
 
-type_name: type_specifier+ abstract_declarator?
+type_name: (type_specifier | type_qualifier)+ abstract_declarator?
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as

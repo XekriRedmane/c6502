@@ -39,6 +39,7 @@ from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
 from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from c99_to_tac import translate_program as translate_to_tac
+from passes.optimization import optimize_program as optimize_tac
 from tac_to_asm import translate_program as translate_to_asm
 
 from sim import assembler
@@ -52,11 +53,19 @@ DEFAULT_MAX_CYCLES = 10_000_000
 # -------- compile pipeline (C source → asm_ast) --------
 
 
-def compile_to_asm(source: str) -> tuple[asm_ast.Program, dict, dict]:
+def compile_to_asm(
+    source: str, *, optimize: bool = False,
+) -> tuple[asm_ast.Program, dict, dict]:
     """Run the full pipeline up through asm_ast (post pseudo
     elimination). Returns (asm_program, symbols, types) — the symbol
     and type tables come back so the harness can pick the right
-    return-value width based on `main`'s declared type."""
+    return-value width based on `main`'s declared type.
+
+    `optimize=True` runs the SSA-bracketed optimizer including
+    register allocation; the resulting per-function colorings are
+    threaded into `replace_pseudoregisters` so colored values lower
+    to ZP operands. Default is False (matches today's pre-regalloc
+    behavior)."""
     pp = preprocess(source)
     ast0 = parse(pp)
     ast1 = resolve_identifiers(ast0)
@@ -65,12 +74,16 @@ def compile_to_asm(source: str) -> tuple[asm_ast.Program, dict, dict]:
     ast4 = label_loops(ast3)
     ast5, syms, types = type_check_program(ast4)
     tac = translate_to_tac(ast5, syms, types)
+    colorings: dict = {}
+    if optimize:
+        tac, colorings = optimize_tac(tac, syms)
     asm0 = translate_to_asm(tac, syms, types)
     statics = frozenset(
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
     asm = expand_long_branches(replace_pseudoregs(
         asm0, extra_statics=statics, symbols=syms, types=types,
+        colorings=colorings,
     ))
     return asm, syms, types
 
@@ -220,9 +233,12 @@ class Simulation:
 def build_sim(
     source: str, *,
     origin: int = DEFAULT_ORIGIN,
+    optimize: bool = False,
 ) -> Simulation:
-    """Compile, assemble, install runtime, set up MPU. Doesn't run."""
-    asm_prog, _syms, _types = compile_to_asm(source)
+    """Compile, assemble, install runtime, set up MPU. Doesn't run.
+    `optimize=True` enables the SSA-bracketed optimizer including
+    register allocation."""
+    asm_prog, _syms, _types = compile_to_asm(source, optimize=optimize)
     runtime = rt_mod.build_runtime()
     assembled = assembler.assemble(
         asm_prog, origin=origin, extra_symbols=runtime.symbols,

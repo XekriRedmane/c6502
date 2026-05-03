@@ -256,6 +256,139 @@ class TestSSADestruction(unittest.TestCase):
         )
         self.assertEqual(from_ssa(fn), fn)
 
+    def test_chain_topologically_sorted(self) -> None:
+        # Two Phis at .join with a chain dependency: counter's source
+        # is i, i's source is %4. After de-SSA, the Copies must be
+        # ordered so counter reads i BEFORE i is overwritten with %4.
+        fn = _fn(
+            tac_ast.Label(name=".pre"),
+            tac_ast.Jump(target=".loop_continue"),
+            tac_ast.Label(name=".loop_continue"),
+            tac_ast.Label(name=".join"),
+            tac_ast.Phi(
+                dst=_var("@i"), args=[
+                    tac_ast.PhiArg(pred_label=".pre", source=_ci(0)),
+                    tac_ast.PhiArg(
+                        pred_label=".loop_continue", source=_var("%4"),
+                    ),
+                ],
+            ),
+            tac_ast.Phi(
+                dst=_var("@counter"), args=[
+                    tac_ast.PhiArg(pred_label=".pre", source=_ci(0)),
+                    tac_ast.PhiArg(
+                        pred_label=".loop_continue", source=_var("@i"),
+                    ),
+                ],
+            ),
+            tac_ast.Ret(val=_var("@counter")),
+        )
+        out = from_ssa(fn)
+        instrs = out.instructions
+        # Find the loop_continue label and inspect the Copies that
+        # follow up to (but not including) the Jump.
+        idx = next(
+            i for i, x in enumerate(instrs)
+            if isinstance(x, tac_ast.Label) and x.name == ".loop_continue"
+        )
+        # Step past the Label and any additional Labels.
+        copies = []
+        i = idx + 1
+        while i < len(instrs) and not isinstance(
+            instrs[i],
+            (tac_ast.Jump, tac_ast.Label, tac_ast.JumpIfTrue, tac_ast.JumpIfFalse),
+        ):
+            if isinstance(instrs[i], tac_ast.Copy):
+                copies.append(instrs[i])
+            i += 1
+        # The counter = @i Copy must come BEFORE the @i = %4 Copy.
+        # Find their indices.
+        counter_copy_idx = next(
+            i for i, c in enumerate(copies)
+            if isinstance(c.dst, tac_ast.Var) and c.dst.name == "@counter"
+        )
+        i_copy_idx = next(
+            i for i, c in enumerate(copies)
+            if isinstance(c.dst, tac_ast.Var) and c.dst.name == "@i"
+        )
+        self.assertLess(
+            counter_copy_idx, i_copy_idx,
+            "counter Copy must precede i Copy to read old i value",
+        )
+
+    def test_2_cycle_broken_with_temp(self) -> None:
+        # Two Phis at .join whose sources mutually reference each
+        # other's dsts: a 2-cycle in the parallel-copy graph.
+        # SSA-shaped: a' = b, b' = a (where a' is the new a value).
+        # Without cycle-breaking, naive emit would produce
+        # `Copy(b, a); Copy(a, b)` — the second Copy reads the
+        # already-overwritten a. A temp is needed.
+        symbols = _symbols(
+            **{"a": c99_ast.Int(), "b": c99_ast.Int()},
+        )
+        fn = _fn(
+            tac_ast.Label(name=".pre"),
+            tac_ast.Copy(src=_ci(7), dst=_var("a")),
+            tac_ast.Copy(src=_ci(11), dst=_var("b")),
+            tac_ast.Jump(target=".loop_continue"),
+            tac_ast.Label(name=".loop_continue"),
+            tac_ast.Label(name=".join"),
+            tac_ast.Phi(
+                dst=_var("a"), args=[
+                    tac_ast.PhiArg(pred_label=".pre", source=_ci(0)),
+                    tac_ast.PhiArg(
+                        pred_label=".loop_continue", source=_var("b"),
+                    ),
+                ],
+            ),
+            tac_ast.Phi(
+                dst=_var("b"), args=[
+                    tac_ast.PhiArg(pred_label=".pre", source=_ci(0)),
+                    tac_ast.PhiArg(
+                        pred_label=".loop_continue", source=_var("a"),
+                    ),
+                ],
+            ),
+            tac_ast.Ret(val=_var("a")),
+        )
+        out = from_ssa(fn, symbols=symbols)
+        instrs = out.instructions
+        # Locate the post-.loop_continue Copies.
+        idx = next(
+            i for i, x in enumerate(instrs)
+            if isinstance(x, tac_ast.Label) and x.name == ".loop_continue"
+        )
+        copies = []
+        i = idx + 1
+        while i < len(instrs) and not isinstance(
+            instrs[i],
+            (tac_ast.Jump, tac_ast.Label, tac_ast.JumpIfTrue, tac_ast.JumpIfFalse),
+        ):
+            if isinstance(instrs[i], tac_ast.Copy):
+                copies.append(instrs[i])
+            i += 1
+        # Should be 3 copies: temp = X; Y = Z (using temp for one
+        # side); Z = ... or similar. The exact form depends on
+        # which cycle member was chosen, but the cycle-temp Var
+        # must appear.
+        self.assertEqual(len(copies), 3)
+        self.assertTrue(
+            any(
+                isinstance(c.dst, tac_ast.Var)
+                and "cycle_tmp" in c.dst.name
+                for c in copies
+            ),
+            f"expected at least one Copy to write to a cycle temp; got {copies}",
+        )
+        # The cycle temp's symbol entry should be registered with
+        # the same type as the cycle members (Int here).
+        tmp_name = next(
+            c.dst.name for c in copies
+            if isinstance(c.dst, tac_ast.Var) and "cycle_tmp" in c.dst.name
+        )
+        self.assertIn(tmp_name, symbols)
+        self.assertIsInstance(symbols[tmp_name].type, c99_ast.Int)
+
 
 class TestSSARoundTrip(unittest.TestCase):
     def test_roundtrip_preserves_name_and_params(self) -> None:

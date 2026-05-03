@@ -126,16 +126,17 @@ import fp_arith
 import tac_ast
 
 
-# Bit width per integer const variant. FP variants are handled
-# separately via `fp_arith` — they have precision, not bit width
-# in the same sense.
+# Bit width per integer const variant — follows c6502's C99-conformant
+# minimum widths (Int = 16 bits, Long = 32 bits, LongLong = 64 bits).
+# FP variants are handled separately via `fp_arith` — they have
+# precision, not bit width in the same sense.
 _INTEGER_CONST_BITS: dict[type, int] = {
-    tac_ast.ConstInt: 8,
-    tac_ast.ConstLong: 16,
-    tac_ast.ConstLongLong: 32,
-    tac_ast.ConstUInt: 8,
-    tac_ast.ConstULong: 16,
-    tac_ast.ConstULongLong: 32,
+    tac_ast.ConstInt: 16,
+    tac_ast.ConstLong: 32,
+    tac_ast.ConstLongLong: 64,
+    tac_ast.ConstUInt: 16,
+    tac_ast.ConstULong: 32,
+    tac_ast.ConstULongLong: 64,
 }
 
 _UNSIGNED_INT_VARIANTS: tuple[type, ...] = (
@@ -147,12 +148,12 @@ _UNSIGNED_INT_VARIANTS: tuple[type, ...] = (
 # pick the dst variant by reading both width and signedness off the
 # dst's c99 type.
 _INTEGER_VARIANT_FOR: dict[tuple[int, bool], type] = {
-    (8, True):  tac_ast.ConstInt,
-    (16, True):  tac_ast.ConstLong,
-    (32, True):  tac_ast.ConstLongLong,
-    (8, False): tac_ast.ConstUInt,
-    (16, False): tac_ast.ConstULong,
-    (32, False): tac_ast.ConstULongLong,
+    (16, True): tac_ast.ConstInt,
+    (32, True): tac_ast.ConstLong,
+    (64, True): tac_ast.ConstLongLong,
+    (16, False): tac_ast.ConstUInt,
+    (32, False): tac_ast.ConstULong,
+    (64, False): tac_ast.ConstULongLong,
 }
 
 

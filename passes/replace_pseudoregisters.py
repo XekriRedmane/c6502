@@ -10,7 +10,7 @@ convention (see README "Function stack frame layout"):
                             param j (1-indexed) starting at offset
                             M+3 + sum-of-prior-param-sizes
 
-A Pseudo can refer to one of three things, distinguished by name:
+A Pseudo can refer to one of four things, distinguished by name:
 
   * **a static-storage object** — a name that appears as a top-level
     `StaticVariable` in the same program (or in `extra_statics`,
@@ -22,10 +22,26 @@ A Pseudo can refer to one of three things, distinguished by name:
     `params` list. The arg byte sits in the caller's frame at
     `Frame(M + 2 + j_offset + k)` for the j-th param's k-th byte,
     where `j_offset` is the running sum of prior param sizes.
-  * **a local temporary** — anything else. Each distinct local name
-    gets `size_of(name)` consecutive `Frame(off)` slots starting at
-    1, in encounter order, where `size_of` reads the symbol-table
-    type for the name (Long → 2 bytes, Int / unknown → 1 byte).
+    Params always lower to `Frame` regardless of any color the
+    register allocator may have happened to assign — the calling
+    convention writes them to specific soft-stack offsets, so
+    they're inherently frame-resident on entry. (A future
+    optimization could copy-into-ZP at the prologue for hot params;
+    out of scope for now.)
+  * **a colored local** — a Pseudo whose name appears in the
+    optional `Coloring.assignments` map. Lowers to
+    `ZP(address=base, offset=k)` where `base` is the regalloc-
+    assigned ZP byte and `k` is the Pseudo's `offset`. Colored
+    names skip frame allocation entirely (they don't contribute to
+    `local_bytes`), so the prologue's M is just the spill / never-
+    colored / address-taken locals.
+  * **an ordinary (uncolored / spilled) local** — anything else.
+    Each distinct local name gets `size_of(name)` consecutive
+    `Frame(off)` slots starting at 1, in encounter order, where
+    `size_of` reads the symbol-table type for the name (Long → 4
+    bytes, Int → 2 bytes, etc.). Spilled values from regalloc
+    reach this path automatically because they're absent from the
+    coloring's assignments.
 
 Pseudo's `offset` field selects which byte of the allocated slot
 this reference is — `Pseudo(name, offset=0)` is the low byte (or
@@ -127,7 +143,7 @@ def _operands_in(instr: asm_ast.Type_instruction):
             yield dst
 
 
-def _size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
+def size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
     """How many bytes the named pseudo occupies. Reads the symbol
     table — Char/SChar/UChar → 1, Int/UInt → 2, Long/ULong → 4,
     LongLong/ULongLong → 8, Float → 4, Double → 8, Pointer → 2
@@ -140,10 +156,10 @@ def _size_of_name(name: str, symbols: SymbolTable | None, types=None) -> int:
     sym = symbols.get(name)
     if sym is None:
         return 1
-    return _sizeof(sym.type, types)
+    return sizeof(sym.type, types)
 
 
-def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
+def sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     """Bytes occupied by a value of type `t`. Recursive for Array."""
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
@@ -154,7 +170,7 @@ def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
     if isinstance(t, c99_ast.Array):
-        return _sizeof(t.element_type, types) * t.size
+        return sizeof(t.element_type, types) * t.size
     if isinstance(t, (c99_ast.Structure, c99_ast.Union)):
         if types is None:
             return 1
@@ -175,6 +191,7 @@ class Replacer:
         statics: frozenset[str],
         symbols: SymbolTable | None = None,
         types=None,
+        coloring=None,
     ) -> None:
         self.params = params
         self.param_set = set(params)
@@ -184,27 +201,78 @@ class Replacer:
         # objects (file-scope variables and block-scope statics) —
         # they get `Data(name, offset)` not a frame slot.
         self.statics = statics
+        # Optional Coloring from register allocation. A name in
+        # `coloring.assignments` lowers to ZP and skips frame
+        # allocation; everything else (spilled, uncolored, address-
+        # taken) flows through the existing Frame path.
+        self.coloring = coloring
+        # Compute the set of callee-saved ZP byte addresses this
+        # function uses. Each byte gets a slot at the bottom of the
+        # frame (FP+1..FP+S), so locals start at offset S+1. The
+        # prologue saves each byte to its slot; the epilogue
+        # restores. See `callee_saved_addrs`.
+        self.callee_saved_addrs: list[int] = (
+            self._compute_callee_saved_addrs()
+        )
+        s = len(self.callee_saved_addrs)
         # Locals get a *base* offset per distinct name (the offset
         # of byte 0); the byte at `Pseudo(name, offset=k)` is at
         # base+k. Encounter order; each name advances the running
-        # cursor by `size_of(name)`.
+        # cursor by `size_of(name)`. The first S frame bytes are
+        # reserved for callee-saves, so locals start after them
+        # (cursor begins at S, first local lands at offset S+1).
         self.local_bases: dict[str, int] = {}
-        self.local_total: int = 0
+        self.local_total: int = s
         # Filled in by `finalize` once the local total is known.
         self.param_bases: dict[str, int] = {}
         self.param_total: int = 0
 
+    def _compute_callee_saved_addrs(self) -> list[int]:
+        """Set of zero-page byte addresses this function uses from
+        the callee-saved pool. Each byte needs to be saved to the
+        frame in the prologue and restored in the epilogue so the
+        caller can rely on the slot's contents surviving the call.
+
+        For each colored Var, we enumerate every byte it occupies
+        (`[base, base+width)`) and include the ones that fall in
+        `coloring.pool.callee_saved()`. Returns sorted ascending so
+        the prologue / epilogue emit in deterministic order."""
+        if self.coloring is None or not self.coloring.assignments:
+            return []
+        callee_range = self.coloring.pool.callee_saved()
+        used: set[int] = set()
+        for name, base in self.coloring.assignments.items():
+            width = size_of_name(name, self.symbols, self.types)
+            for k in range(width):
+                byte_addr = base + k
+                if byte_addr in callee_range:
+                    used.add(byte_addr)
+        return sorted(used)
+
+    def _is_colored(self, name: str) -> bool:
+        """A name is colored iff a Coloring was supplied AND that
+        name appears in its `assignments` map. Spilled names
+        (`coloring.spilled`) are NOT colored — they fall through to
+        the frame path, which is exactly the right behavior."""
+        return (
+            self.coloring is not None
+            and name in self.coloring.assignments
+        )
+
     def discover(self, op: asm_ast.Type_operand) -> None:
         """First-pass: assign local base offsets to non-param, non-
-        static Pseudos as we see them. Params are skipped — their
-        offsets depend on M (= the final local-byte count), which
-        we don't know until the walk finishes. Statics are skipped
-        — they don't live in the frame at all."""
+        static, non-colored Pseudos as we see them. Params are
+        skipped — their offsets depend on M (= the final local-byte
+        count), which we don't know until the walk finishes.
+        Statics are skipped — they don't live in the frame at all.
+        Colored Pseudos are skipped — they live in ZP, not frame."""
         if not isinstance(op, asm_ast.Pseudo):
             return
         if op.name in self.statics:
             return
         if op.name in self.param_set:
+            return
+        if self._is_colored(op.name):
             return
         if op.name in self.local_bases:
             return
@@ -212,7 +280,7 @@ class Replacer:
         # and advance the cursor by the symbol's size. FP+1 is the
         # first writable slot (FP itself points at the next-free
         # byte), so the first local lands at offset 1.
-        size = _size_of_name(op.name, self.symbols, self.types)
+        size = size_of_name(op.name, self.symbols, self.types)
         self.local_bases[op.name] = self.local_total + 1
         self.local_total += size
 
@@ -230,41 +298,60 @@ class Replacer:
         cursor = m + 3  # first param's first byte
         for name in self.params:
             self.param_bases[name] = cursor
-            cursor += _size_of_name(name, self.symbols, self.types)
+            cursor += size_of_name(name, self.symbols, self.types)
         self.param_total = cursor - (m + 3)
         return self.param_total, m
 
     def replace(self, op: asm_ast.Type_operand) -> asm_ast.Type_operand:
-        """Second-pass: turn each Pseudo into its computed `Data` or
-        `Frame`. Other operands pass through unchanged. The static-
-        set check comes first — a name reusing a value that would
-        otherwise look like a local would still resolve to Data
-        here, which matches the C semantics (static-storage
-        objects own their names module-wide).
+        """Second-pass: turn each Pseudo into its computed `Data`,
+        `ZP`, or `Frame`. Other operands pass through unchanged.
+
+        Decision order:
+          1. static → `Data(name, offset)` (absolute, link-time
+             address). Highest priority: static-storage objects own
+             their names module-wide.
+          2. param → `Frame(...)` from `param_bases`. Forced even if
+             the regalloc happened to color the param's name —
+             params arrive on the soft stack via the calling
+             convention, so they must be at their declared Frame
+             offsets on entry.
+          3. colored local → `ZP(address, offset)` from
+             `coloring.assignments`. Skips frame allocation; lives
+             in zero-page.
+          4. local (uncolored / spilled / address-taken) →
+             `Frame(...)` from `local_bases`.
 
         The Pseudo's `offset` field selects which byte of the
         named value this reference is; we add it to the resolved
-        base address — Data's own `offset`, or the local/param's
-        Frame offset."""
+        base address — Data's `offset`, ZP's `offset`, or the
+        local/param's Frame offset."""
         if not isinstance(op, asm_ast.Pseudo):
             return op
         if op.name in self.statics:
             return asm_ast.Data(name=op.name, offset=op.offset)
+        if op.name in self.param_bases:
+            # Param check BEFORE coloring: even if the regalloc
+            # assigned a color to a param's name, the calling
+            # convention demands the param sit at its Frame offset
+            # on entry.
+            return asm_ast.Frame(
+                offset=self.param_bases[op.name] + op.offset,
+            )
+        if self._is_colored(op.name):
+            base = self.coloring.assignments[op.name]
+            return asm_ast.ZP(address=base, offset=op.offset)
         if op.name in self.local_bases:
             return asm_ast.Frame(
                 offset=self.local_bases[op.name] + op.offset,
             )
-        if op.name in self.param_bases:
-            return asm_ast.Frame(
-                offset=self.param_bases[op.name] + op.offset,
-            )
         # Unrecognized Pseudo — would mean a name not in any of the
-        # three maps, which is a bug in an upstream pass. The emitter
-        # would reject it later anyway, but raising here pinpoints
-        # the cause.
+        # four classifications, which is a bug in an upstream pass.
+        # The emitter would reject it later anyway, but raising here
+        # pinpoints the cause.
         raise ValueError(
-            f"Pseudo({op.name!r}) is neither a static, a local, nor "
-            f"a declared parameter; check tac_to_asm output"
+            f"Pseudo({op.name!r}) is neither a static, a colored "
+            f"local, an ordinary local, nor a declared parameter; "
+            f"check tac_to_asm output"
         )
 
     def replace_instruction(
@@ -327,10 +414,13 @@ class Replacer:
                 # totals; carry save_a through unchanged — tac_to_asm
                 # set it based on whether the return value is in
                 # registers (Int / Long) or in HARGS (LongLong /
-                # Float / Double).
+                # Float / Double). Pass through the function's
+                # callee-saved address list so the epilogue can
+                # restore them before SSP/FP teardown.
                 return asm_ast.Ret(
                     arg_bytes=arg_bytes, local_bytes=local_bytes,
                     save_a=save_a,
+                    callee_saved_addrs=list(self.callee_saved_addrs),
                 )
             case asm_ast.LoadAddress(src=src, dst=dst):
                 # Resolve the Pseudo operands; asm_emit expands the
@@ -353,17 +443,22 @@ def replace_function(
     statics: frozenset[str] = frozenset(),
     symbols: SymbolTable | None = None,
     types=None,
+    coloring=None,
 ) -> asm_ast.Function:
     """Lay out a single function's frame and rewrite Pseudo operands.
 
     `statics` is the set of static-storage names visible at the
     program top level. A Pseudo whose name is in this set lowers to
-    `Data(name, offset)` (absolute addressing); everything else
-    becomes a `Frame(off)`. `symbols` is the type-checker's symbol
-    table, consulted to size each pseudo (Long → 2 bytes, Int →
-    1 byte). Both default to empty / None for unit-test
-    convenience — `replace_program` always passes the program-wide
-    set and the real symbol table.
+    `Data(name, offset)` (absolute addressing). `symbols` is the
+    type-checker's symbol table, consulted to size each pseudo
+    (Long → 4 bytes, Int → 2 bytes, etc.). `coloring` is an optional
+    `passes.optimization.register_allocation.Coloring`; when supplied,
+    each Pseudo whose name is in `coloring.assignments` lowers to
+    `ZP(address, offset)` and skips frame allocation entirely.
+    Spilled / never-colored / address-taken Pseudos continue to use
+    the existing Frame path. All defaults match the pre-regalloc
+    behavior (no ZP operands produced, all Pseudos to Frame /
+    Data).
     """
     match fn:
         case asm_ast.Function(
@@ -372,7 +467,7 @@ def replace_function(
         ):
             r = Replacer(
                 params=list(params), statics=statics,
-                symbols=symbols, types=types,
+                symbols=symbols, types=types, coloring=coloring,
             )
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
@@ -390,8 +485,12 @@ def replace_function(
             # Prepend the prologue. The emitter takes
             # arg_bytes+local_bytes==0 as a special case (no FP
             # setup needed when there are no args or locals).
+            # Pass the callee-saved address list so the prologue
+            # can save each ZP byte to its frame slot after FP
+            # setup (and the matching epilogue restores them).
             prologue = asm_ast.FunctionPrologue(
                 arg_bytes=arg_bytes, local_bytes=local_bytes,
+                callee_saved_addrs=list(r.callee_saved_addrs),
             )
             return asm_ast.Function(
                 name=name,
@@ -408,6 +507,7 @@ def replace_program(
     extra_statics: frozenset[str] = frozenset(),
     symbols: SymbolTable | None = None,
     types=None,
+    colorings=None,
 ) -> asm_ast.Type_program:
     """Lay out frames and lower Pseudo operands for every Function in
     `prog`.
@@ -425,8 +525,14 @@ def replace_program(
         Pseudos and the layout pass would mistake them for locals.
 
     `symbols` is the same type-checker symbol table — passed through
-    so `replace_function` can size each pseudo (Long → 2 bytes,
-    Int → 1 byte).
+    so `replace_function` can size each pseudo (Long → 4 bytes,
+    Int → 2 bytes, etc.).
+
+    `colorings` is an optional `dict[str, Coloring]` mapping each
+    function's name to its register-allocator-produced coloring.
+    `None` (the default) reproduces today's all-Frame behavior;
+    a missing function-name key in the dict has the same effect
+    on a per-function basis.
     """
     match prog:
         case asm_ast.Program(top_level=top_levels):
@@ -447,7 +553,12 @@ def replace_program(
                     # Nothing to lay out; pass through.
                     new_top.append(tl)
                 else:
-                    new_top.append(replace_function(tl, statics, symbols, types))
+                    coloring = (
+                        colorings.get(tl.name) if colorings is not None else None
+                    )
+                    new_top.append(replace_function(
+                        tl, statics, symbols, types, coloring=coloring,
+                    ))
             return asm_ast.Program(top_level=new_top)
         case _:
             raise TypeError(f"unexpected program node: {prog!r}")

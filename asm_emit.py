@@ -112,6 +112,20 @@ produces `Data` operands from any `Pseudo` whose name is a top-
 level `StaticVariable`; the `offset` lets a single Pseudo address
 the high byte of a 2-byte (`Long`) static via `Data(name, offset=1)`.
 
+`ZP(address, offset)` operand. References a numeric zero-page byte
+picked by register allocation. Equivalent to `Data` for emit
+purposes — both lower to native 6502 absolute / zero-page
+addressing — but `address` is a literal byte (in `[Pool.start,
+0xFF]`) rather than a link-time symbol. `address + offset` is
+folded at emit time into a single `LDA $XX` (or the matching opcode
+for the dispatch site). `ZP` is legal everywhere `Data` is, with
+the same addressing-mode constraints; `replace_pseudoregisters`
+produces `ZP` operands from any `Pseudo` whose name appears in the
+optional `Coloring.assignments` map. Unlike `Data`, no `<` / `>`
+label-immediate operations exist for `ZP` since the address is
+already a literal byte (`LoadAddress(src=ZP(...))` is rejected —
+address-taken values are filtered out before regalloc).
+
 `StaticVariable(name, is_global, init)` top-level node. Emitted as
 `<name>:` on its own line followed by `DC.B $XX` on the next, where
 `XX` is the byte init value. (Mnemonics are uppercased per the
@@ -298,12 +312,13 @@ def _emit_indirect_store(off: int, addr_op: asm_ast.Type_operand) -> list[str]:
 
 def _is_memory_operand(op: asm_ast.Type_operand) -> bool:
     """True iff `op` is a memory operand (Stack / Frame / Data /
-    Indirect) — i.e., something that needs a load/store opcode
+    Indirect / ZP) — i.e., something that needs a load/store opcode
     rather than a transfer or immediate. Used at the dispatch
     boundary in Mov."""
     return isinstance(
         op,
-        (asm_ast.Stack, asm_ast.Frame, asm_ast.Data, asm_ast.Indirect),
+        (asm_ast.Stack, asm_ast.Frame, asm_ast.Data,
+         asm_ast.Indirect, asm_ast.ZP),
     )
 
 
@@ -318,14 +333,42 @@ def _data_addr(d: asm_ast.Data) -> str:
     return f"{d.name}+{d.offset}"
 
 
+def _zp_addr(z: asm_ast.ZP) -> str:
+    """Absolute-addressing operand string for a ZP reference. Folds
+    `offset` into the literal byte at emit time — both `address` and
+    `offset` are static integers by the time we get here. Returns
+    `$XX` for the resulting byte. Range-checked to 0..0xFF; an
+    out-of-range result indicates a regalloc bug."""
+    addr = z.address + z.offset
+    _check_byte("ZP address", addr)
+    return f"${addr:02X}"
+
+
+def _is_data_or_zp(op: asm_ast.Type_operand) -> bool:
+    """True iff `op` lowers to native 6502 absolute / zero-page
+    addressing — i.e. Data (link-time symbol) or ZP (regalloc-
+    assigned literal byte). Both bypass the LDY indirect-Y preamble
+    that Stack/Frame need."""
+    return isinstance(op, (asm_ast.Data, asm_ast.ZP))
+
+
+def _abs_addr(op: asm_ast.Type_operand) -> str:
+    """Render Data or ZP as an absolute-addressing operand string."""
+    if isinstance(op, asm_ast.Data):
+        return _data_addr(op)
+    if isinstance(op, asm_ast.ZP):
+        return _zp_addr(op)
+    raise TypeError(f"_abs_addr only handles Data / ZP, got {op!r}")
+
+
 def _emit_memop_load(
     addr_op: asm_ast.Type_operand, opcode: str = "LDA",
 ) -> list[str]:
     """Read the byte addressed by `addr_op` into A (or another reg
     if a different opcode is passed; the caller picks). Indirect-Y
-    for Stack/Frame, absolute for Data."""
-    if isinstance(addr_op, asm_ast.Data):
-        return [_instr_line(opcode, _data_addr(addr_op))]
+    for Stack/Frame, absolute for Data / ZP."""
+    if _is_data_or_zp(addr_op):
+        return [_instr_line(opcode, _abs_addr(addr_op))]
     return [
         _emit_load_y(addr_op.offset),
         _instr_line(opcode, _indirect_addr(addr_op)),
@@ -334,9 +377,9 @@ def _emit_memop_load(
 
 def _emit_memop_store(addr_op: asm_ast.Type_operand) -> list[str]:
     """Store A into the byte addressed by `addr_op`. Indirect-Y for
-    Stack/Frame, absolute for Data."""
-    if isinstance(addr_op, asm_ast.Data):
-        return [_instr_line("STA", _data_addr(addr_op))]
+    Stack/Frame, absolute for Data / ZP."""
+    if _is_data_or_zp(addr_op):
+        return [_instr_line("STA", _abs_addr(addr_op))]
     return [
         _emit_load_y(addr_op.offset),
         _instr_line("STA", _indirect_addr(addr_op)),
@@ -368,6 +411,18 @@ def _is_imm_label(op: asm_ast.Type_operand) -> bool:
 def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]:
     _reject_pseudo(src)
     _reject_pseudo(dst)
+    # Self-Mov peephole: a Mov whose src and dst are byte-identical
+    # operands (same register, same ZP byte, same Frame slot, etc.)
+    # is a no-op at the memory level. Drops the redundant
+    # `LDA $XX; STA $XX` pairs that arise when register allocation
+    # gives a Phi src and dst the same color and de-SSA emits a
+    # would-be cross-color Copy that turns out to be intra-color.
+    # Caveat: technically a memory→A→same-memory Mov clobbers A as a
+    # side effect; downstream code must define A before reading it
+    # again, so dropping is observably equivalent in well-formed
+    # output.
+    if src == dst:
+        return []
     # Register-register and immediate-to-register cases stay as
     # special cases (different opcodes per pair); the memory-operand
     # cases (Stack/Frame/Data) are unified via `_emit_memop_*`.
@@ -406,17 +461,16 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
         )
     if _is_memory_operand(src) and _is_reg_a(dst):
         return _emit_memop_load(src)
-    # Data → Reg(X) / Reg(Y). The 6502 has `LDX zp/abs` and
-    # `LDY zp/abs` natively, so we can load HARGS slots into X or Y
-    # without going through A. (Stack / Frame / Indirect operands
-    # don't get this path because LDX/LDY don't have an indirect-Y
-    # mode.) Used by the runtime helpers' loop-count and scratch
-    # loads.
-    if isinstance(src, asm_ast.Data) and isinstance(dst, asm_ast.Reg):
+    # Data / ZP → Reg(X) / Reg(Y). The 6502 has `LDX zp/abs` and
+    # `LDY zp/abs` natively, so we can load HARGS slots and colored
+    # ZP values into X or Y without going through A. (Stack / Frame /
+    # Indirect operands don't get this path because LDX/LDY don't
+    # have an indirect-Y mode.)
+    if _is_data_or_zp(src) and isinstance(dst, asm_ast.Reg):
         if isinstance(dst.reg, asm_ast.X):
-            return [_instr_line("LDX", _data_addr(src))]
+            return [_instr_line("LDX", _abs_addr(src))]
         if isinstance(dst.reg, asm_ast.Y):
-            return [_instr_line("LDY", _data_addr(src))]
+            return [_instr_line("LDY", _abs_addr(src))]
     if _is_reg_a(src) and _is_memory_operand(dst):
         return _emit_memop_store(dst)
     if _is_memory_operand(src) and _is_memory_operand(dst):
@@ -513,8 +567,8 @@ def _is_reg_a(op: asm_ast.Type_operand) -> bool:
 def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
     """Common emit for ADC/SBC/AND/ORA/EOR sources: the destination is
     always Reg(A); the source can be Imm (direct), Stack/Frame
-    (indirect-Y), or Data (absolute). The opcode picks the operation
-    and the source picks the addressing mode."""
+    (indirect-Y), or Data / ZP (absolute). The opcode picks the
+    operation and the source picks the addressing mode."""
     match src:
         case asm_ast.Imm(value=v):
             _check_byte("immediate", v)
@@ -524,8 +578,8 @@ def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
                 _emit_load_y(src.offset),
                 _instr_line(opcode, _indirect_addr(src)),
             ]
-        case asm_ast.Data():
-            return [_instr_line(opcode, _data_addr(src))]
+        case asm_ast.Data() | asm_ast.ZP():
+            return [_instr_line(opcode, _abs_addr(src))]
         case _:
             raise ValueError(
                 f"unsupported {opcode} source: {src!r}"
@@ -572,38 +626,38 @@ def _emit_acc_shift(
     """Common emit for ASL/LSR/ROL/ROR. The 6502 has accumulator and
     absolute / zero-page addressing modes (no indirect-Y), so:
       - `Reg(A)` → `ASL A` / `LSR A` / `ROL A` / `ROR A`
-      - `Data(name, off)` → `ASL name+off` etc. — dasm picks zp or
-        abs based on the resolved address. Used by the runtime
-        helpers to shift HARGS slots in place; soft-stack `Stack` /
-        `Frame` operands aren't supported (indirect-Y isn't a
-        shift addressing mode)."""
+      - `Data(name, off)` / `ZP(addr, off)` → `ASL name+off` /
+        `ASL $XX` etc. — dasm picks zp or abs based on the resolved
+        address. Used by the runtime helpers to shift HARGS slots in
+        place and by colored ZP locals; soft-stack `Stack` / `Frame`
+        operands aren't supported (indirect-Y isn't a shift
+        addressing mode)."""
     _reject_pseudo(dst)
     if _is_reg_a(dst):
         return [_instr_line(opcode, "A")]
-    if isinstance(dst, asm_ast.Data):
-        return [_instr_line(opcode, _data_addr(dst))]
+    if _is_data_or_zp(dst):
+        return [_instr_line(opcode, _abs_addr(dst))]
     raise ValueError(
-        f"{op_name} dst must be Reg(A) or Data, got {dst!r}"
+        f"{op_name} dst must be Reg(A), Data, or ZP, got {dst!r}"
     )
 
 
 def _emit_inc(dst: asm_ast.Type_operand) -> list[str]:
-    """`INX` / `INY` for X/Y, or `INC name+off` for a `Data` operand
-    (the 6502 has memory-mode INC in zp / abs / zp,X / abs,X — we
-    only emit the abs / zp form here, since `Data` is the only
-    memory operand we accept for the shift family). Soft-stack
-    operands aren't supported (no indirect-Y)."""
+    """`INX` / `INY` for X/Y, or `INC name+off` / `INC $XX` for a
+    `Data` / `ZP` operand (the 6502 has memory-mode INC in zp / abs /
+    zp,X / abs,X — we emit the abs / zp form). Soft-stack operands
+    aren't supported (no indirect-Y)."""
     _reject_pseudo(dst)
     match dst:
         case asm_ast.Reg(reg=asm_ast.X()):
             return [_instr_line("INX")]
         case asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("INY")]
-        case asm_ast.Data():
-            return [_instr_line("INC", _data_addr(dst))]
+        case asm_ast.Data() | asm_ast.ZP():
+            return [_instr_line("INC", _abs_addr(dst))]
         case _:
             raise ValueError(
-                f"Inc dst must be Reg(X), Reg(Y), or Data, got {dst!r}"
+                f"Inc dst must be Reg(X), Reg(Y), Data, or ZP, got {dst!r}"
             )
 
 
@@ -614,11 +668,11 @@ def _emit_dec(dst: asm_ast.Type_operand) -> list[str]:
             return [_instr_line("DEX")]
         case asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("DEY")]
-        case asm_ast.Data():
-            return [_instr_line("DEC", _data_addr(dst))]
+        case asm_ast.Data() | asm_ast.ZP():
+            return [_instr_line("DEC", _abs_addr(dst))]
         case _:
             raise ValueError(
-                f"Dec dst must be Reg(X), Reg(Y), or Data, got {dst!r}"
+                f"Dec dst must be Reg(X), Reg(Y), Data, or ZP, got {dst!r}"
             )
 
 
@@ -685,14 +739,14 @@ def _emit_compare(
         case asm_ast.Imm(value=v):
             _check_byte("immediate", v)
             return [_instr_line(opcode, f"#${v:02X}")]
-        case asm_ast.Data():
-            return [_instr_line(opcode, _data_addr(right))]
+        case asm_ast.Data() | asm_ast.ZP():
+            return [_instr_line(opcode, _abs_addr(right))]
         case asm_ast.Stack() | asm_ast.Frame():
             if opcode != "CMP":
                 raise ValueError(
-                    f"Compare with left={left!r} requires Imm or Data "
-                    "right (CPX/CPY have no indirect-Y addressing mode); "
-                    f"got {right!r}"
+                    f"Compare with left={left!r} requires Imm, Data, or "
+                    "ZP right (CPX/CPY have no indirect-Y addressing "
+                    f"mode); got {right!r}"
                 )
             return [
                 _emit_load_y(right.offset),
@@ -704,7 +758,10 @@ def _emit_compare(
             )
 
 
-def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
+def _emit_function_prologue(
+    arg_bytes: int, local_bytes: int,
+    callee_saved_addrs: list[int] = (),
+) -> list[str]:
     if arg_bytes + local_bytes == 0:
         return []
     # Allocate locals + saved-FP slot (args were caller-pushed and
@@ -712,16 +769,46 @@ def _emit_function_prologue(arg_bytes: int, local_bytes: int) -> list[str]:
     # just above the locals, then capture SSP into FP. The leading
     # comment + trailing blank line mark the prologue's boilerplate
     # region so the body is easy to pick out visually.
-    header = _comment_line(
-        f"prologue: {arg_bytes} arg bytes, {local_bytes} local bytes"
+    saves_note = (
+        f", {len(callee_saved_addrs)} callee-saved bytes"
+        if callee_saved_addrs else ""
     )
-    return (
+    header = _comment_line(
+        f"prologue: {arg_bytes} arg bytes, "
+        f"{local_bytes} local bytes{saves_note}"
+    )
+    out = (
         [header]
         + _emit_ssp_sub(local_bytes + 2)
         + _emit_save_fp_into_slot(local_bytes)
         + _emit_set_fp_to_ssp()
-        + [""]
     )
+    # After FP is set up, save each callee-saved ZP byte to its
+    # frame slot (FP+1+i for the i-th save).
+    for i, addr in enumerate(callee_saved_addrs):
+        _check_byte("callee-saved address", addr)
+        out += _emit_save_zp_byte_to_frame(addr, i + 1)
+    return out + [""]
+
+
+def _emit_save_zp_byte_to_frame(zp_addr: int, frame_offset: int) -> list[str]:
+    """Save the byte at `$zp_addr` into the frame slot at `FP+frame_offset`.
+    Sequence: LDA $XX; LDY #off; STA (FP),Y."""
+    return [
+        _instr_line("LDA", f"${zp_addr:02X}"),
+        _emit_load_y(frame_offset),
+        _instr_line("STA", f"({_FP}),Y"),
+    ]
+
+
+def _emit_restore_zp_byte_from_frame(zp_addr: int, frame_offset: int) -> list[str]:
+    """Restore the byte at `$zp_addr` from the frame slot at
+    `FP+frame_offset`. Sequence: LDY #off; LDA (FP),Y; STA $XX."""
+    return [
+        _emit_load_y(frame_offset),
+        _instr_line("LDA", f"({_FP}),Y"),
+        _instr_line("STA", f"${zp_addr:02X}"),
+    ]
 
 
 def _shift_offset(
@@ -736,6 +823,8 @@ def _shift_offset(
         return asm_ast.Stack(offset=op.offset + k)
     if isinstance(op, asm_ast.Data):
         return asm_ast.Data(name=op.name, offset=op.offset + k)
+    if isinstance(op, asm_ast.ZP):
+        return asm_ast.ZP(address=op.address, offset=op.offset + k)
     raise TypeError(f"can't shift offset on operand {op!r}")
 
 
@@ -799,10 +888,14 @@ def _emit_load_address(
     )
 
 
-def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> list[str]:
+def _emit_ret(
+    arg_bytes: int, local_bytes: int, save_a: bool,
+    callee_saved_addrs: list[int] = (),
+) -> list[str]:
     if arg_bytes + local_bytes == 0:
         # No frame to tear down — A wasn't going to get clobbered, so
-        # `save_a` is irrelevant here.
+        # `save_a` is irrelevant here. (No callee-saves either —
+        # an empty frame can't host any.)
         return [_instr_line("RTS")]
     # Compute the new SSP directly from FP (one 16-bit add), restore
     # FP from its slot via (FP),Y, then RTS. Leading blank + `;
@@ -814,26 +907,40 @@ def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> list[str]:
     # the return value is already in HARGS, and HARGS isn't touched
     # by the SSP/FP arithmetic, so there's nothing to preserve.
     rewind = arg_bytes + local_bytes + 2
+    # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown (so
+    # FP is still valid for the (FP),Y reads). The save area sits at
+    # FP+1..FP+S; restore by reversed index for symmetry with the
+    # prologue saves (order doesn't actually matter since each addr
+    # is independent, but reversed pairs nicely with PHA/PLA-style
+    # save sequences if we ever switch to those).
+    head = ["", _comment_line("epilogue")]
+    restores: list[str] = []
+    for i, addr in enumerate(callee_saved_addrs):
+        _check_byte("callee-saved address", addr)
+        restores += _emit_restore_zp_byte_from_frame(addr, i + 1)
     body = (
         _emit_set_ssp_to_fp_plus(rewind)
         + _emit_restore_fp_from_slot(local_bytes)
     )
-    head = ["", _comment_line("epilogue")]
     if save_a:
-        return head + [_instr_line("PHA")] + body + [
+        return head + restores + [_instr_line("PHA")] + body + [
             _instr_line("PLA"), _instr_line("RTS"),
         ]
-    return head + body + [_instr_line("RTS")]
+    return head + restores + body + [_instr_line("RTS")]
 
 
 def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             return _emit_mov(src, dst)
-        case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
-            return _emit_function_prologue(ab, lb)
-        case asm_ast.Ret(arg_bytes=ab, local_bytes=lb, save_a=sa):
-            return _emit_ret(ab, lb, sa)
+        case asm_ast.FunctionPrologue(
+            arg_bytes=ab, local_bytes=lb, callee_saved_addrs=csa,
+        ):
+            return _emit_function_prologue(ab, lb, csa)
+        case asm_ast.Ret(
+            arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
+        ):
+            return _emit_ret(ab, lb, sa, csa)
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _emit_load_address(src, dst)
         case asm_ast.AllocateStack(bytes=n):

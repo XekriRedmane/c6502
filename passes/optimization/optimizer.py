@@ -1,23 +1,33 @@
 """TAC optimizer driver.
 
-Wraps SSA-in / de-SSA around a fixed-point cycle of four TAC-level
-passes — constant folding, unreachable-code elimination, copy
-propagation, dead-store elimination. The cycle re-runs until the
-function's instruction list is structurally unchanged from the
+Wraps SSA-in / regalloc / de-SSA around a fixed-point cycle of four
+TAC-level passes — constant folding, unreachable-code elimination,
+copy propagation, dead-store elimination. The cycle re-runs until
+the function's instruction list is structurally unchanged from the
 start of an iteration; each cycle sweeps all four passes regardless
 of whether earlier passes converged, since a pass already at fixed
 point is cheap to re-run and the between-pass interleaving is part
 of the optimizer's contract.
 
 Pipeline shape:
-    fn → SSA construction → (CF → UCE → CopyProp → DSE)* → SSA destruction → fn'
+    fn → SSA construction → (CF → UCE → CopyProp → DSE)*
+       → register allocation (still in SSA form)
+       → SSA destruction → fn'
 
 Promotable Vars (block-scope locals, params, and TAC temps that are
 never address-taken and have scalar type) are renamed and Phi'd
 between SSA-in and de-SSA. Address-taken locals, statics, and
-aggregates pass through unchanged. After de-SSA, every Phi has been
-lowered to `Copy` instructions in predecessor blocks; the resulting
-TAC is regular non-SSA form, ready for `tac_to_asm`.
+aggregates pass through unchanged.
+
+Register allocation runs WHILE the function is in SSA form because
+the chordal property of SSA interference graphs is what makes the
+greedy coloring optimal. The resulting `Coloring` is returned
+alongside the function and is consumed by `replace_pseudoregisters`
+downstream — colored names lower to `ZP(addr, offset)` operands;
+spilled / never-colored names continue to flow through the existing
+Frame allocation. After de-SSA, every Phi has been lowered to
+`Copy` instructions in predecessor blocks; the resulting TAC is
+regular non-SSA form, ready for `tac_to_asm`.
 
 The four cycle passes are SSA-aware:
   - constant folding folds a Phi whose every PhiArg.source agrees
@@ -26,7 +36,7 @@ The four cycle passes are SSA-aware:
     folds singleton Phis to Copies, and treats Phi pred_labels as
     label uses so SSA destruction can later locate predecessors.
   - copy propagation and dead-store elimination are the SSA-aware
-    versions (Milestone 2 — currently still stubs).
+    versions.
 
 Termination: each pass is a pure function on tac_ast.Function, and
 dataclass `__eq__` compares structurally — so the loop exits as
@@ -34,13 +44,18 @@ soon as no pass in a cycle made a structural change.
 
 Per-program shape: only `Function` top-levels get optimized;
 `StaticVariable` entries pass through unchanged (their `init` is a
-constant byte layout, not control flow).
+constant byte layout, not control flow). `optimize_program` returns
+`(prog, colorings)` where `colorings: dict[str, Coloring]` keys per
+optimized function name. `StaticVariable` top-levels are absent
+from the dict.
 
 Calling `optimize_function` without `symbols` (e.g. legacy unit
 tests that exercise the driver on synthetic Functions) skips SSA
 construction entirely — the symbol table is required to register
 fresh SSA names with their types, and we'd rather no-op than
 silently emit untyped temporaries that downstream passes can't size.
+In that mode regalloc is also skipped; the returned Coloring is
+`None`.
 """
 
 from __future__ import annotations
@@ -51,6 +66,9 @@ from passes.optimization.copy_propagation import copy_propagate
 from passes.optimization.dead_store_elimination import (
     eliminate_dead_stores,
 )
+from passes.optimization.interference import build_interference
+from passes.optimization.liveness import compute_liveness
+from passes.optimization.register_allocation import Coloring, color_graph
 from passes.optimization.ssa_construction import to_ssa
 from passes.optimization.ssa_destruction import from_ssa
 from passes.optimization.unreachable_code_elimination import (
@@ -60,33 +78,41 @@ from passes.optimization.unreachable_code_elimination import (
 
 def optimize_program(
     prog: tac_ast.Program, symbols=None,
-) -> tac_ast.Program:
+) -> tuple[tac_ast.Program, dict[str, Coloring]]:
     """Optimize each function in `prog`. StaticVariable top-levels
     pass through unchanged. `symbols` is the type checker's
     SymbolTable, threaded into per-pass calls that need it (constant
     folding for cast-node folds, SSA construction for fresh-name
-    typing)."""
-    return tac_ast.Program(top_level=[
-        _optimize_top_level(t, symbols) for t in prog.top_level
-    ])
+    typing).
 
-
-def _optimize_top_level(
-    t: tac_ast.Type_top_level, symbols,
-) -> tac_ast.Type_top_level:
-    if isinstance(t, tac_ast.Function):
-        return optimize_function(t, symbols=symbols)
-    return t
+    Returns `(optimized_program, colorings)` where `colorings` maps
+    each optimized function's name to its `Coloring` (or is empty
+    when `symbols=None` and regalloc was therefore skipped).
+    `StaticVariable` top-levels do not appear in the dict."""
+    new_top: list[tac_ast.Type_top_level] = []
+    colorings: dict[str, Coloring] = {}
+    for t in prog.top_level:
+        if isinstance(t, tac_ast.Function):
+            new_fn, coloring = optimize_function(t, symbols=symbols)
+            new_top.append(new_fn)
+            if coloring is not None:
+                colorings[new_fn.name] = coloring
+        else:
+            new_top.append(t)
+    return tac_ast.Program(top_level=new_top), colorings
 
 
 def optimize_function(
     fn: tac_ast.Function, *, symbols=None,
-) -> tac_ast.Function:
-    """SSA-in → fixed-point cycle → de-SSA. Without `symbols`, skip
-    SSA conversion (the renaming pass needs the symbol table to
-    register fresh SSA names with their types); the SSA-aware passes
-    (copy propagation, dead-store elimination) become no-ops in
-    that mode since they have no safe way to identify SSA names."""
+) -> tuple[tac_ast.Function, Coloring | None]:
+    """SSA-in → fixed-point cycle → register allocation → de-SSA.
+    Without `symbols`, skip SSA conversion (the renaming pass needs
+    the symbol table to register fresh SSA names with their types);
+    the SSA-aware passes (copy propagation, dead-store elimination)
+    become no-ops in that mode, and regalloc is skipped.
+
+    Returns `(optimized_fn, coloring)` where `coloring` is the
+    register-allocation result (or `None` when `symbols` was None)."""
     ssa_dsts: set[str] | None = None
     if symbols is not None:
         fn, ssa_dsts = to_ssa(fn, symbols)
@@ -98,6 +124,12 @@ def optimize_function(
         fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)
         if fn == prev:
             break
+    coloring: Coloring | None = None
     if symbols is not None:
-        fn = from_ssa(fn)
-    return fn
+        # Regalloc runs on the still-SSA function — chordal interference
+        # graphs admit optimal greedy coloring in dom-tree-PEO.
+        liveness = compute_liveness(fn)
+        graph = build_interference(fn, liveness, symbols)
+        coloring = color_graph(fn, graph)
+        fn = from_ssa(fn, symbols=symbols)
+    return fn, coloring

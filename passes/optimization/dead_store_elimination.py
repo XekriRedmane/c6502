@@ -46,6 +46,7 @@ the actual hardware behavior of the 6502 target.
 from __future__ import annotations
 
 import tac_ast
+from passes.optimization.var_visit import uses_in
 
 
 # Instructions kept regardless of dst liveness — they have observable
@@ -161,55 +162,10 @@ def _filter(
 def _collect_uses(
     instrs: list[tac_ast.Type_instruction],
 ) -> set[str]:
-    """Set of Var names read anywhere in `instrs`. `_uses_in` covers
-    every shape; we collapse to names here."""
+    """Set of Var names read anywhere in `instrs`. Delegates to the
+    shared `uses_in` walker."""
     used: set[str] = set()
     for instr in instrs:
-        for v in _uses_of(instr):
+        for v in uses_in(instr):
             used.add(v.name)
     return used
-
-
-def _uses_of(
-    instr: tac_ast.Type_instruction,
-) -> list[tac_ast.Var]:
-    """Var operands of `instr` that are *read*. Mirrors the
-    `_uses_in` helper in `ssa_construction` but inlined here to
-    avoid a cross-module dependency."""
-    out: list[tac_ast.Var] = []
-
-    def add(v: tac_ast.Type_val | None) -> None:
-        if v is not None and isinstance(v, tac_ast.Var):
-            out.append(v)
-
-    match instr:
-        case tac_ast.Ret(val=val):
-            add(val)
-        case tac_ast.SignExtend(src=s) | tac_ast.ZeroExtend(src=s) \
-                | tac_ast.Truncate(src=s) \
-                | tac_ast.IntToFloat(src=s) | tac_ast.IntToDouble(src=s) \
-                | tac_ast.FloatToInt(src=s) | tac_ast.DoubleToInt(src=s) \
-                | tac_ast.FloatToDouble(src=s) | tac_ast.DoubleToFloat(src=s) \
-                | tac_ast.Unary(src=s) | tac_ast.Copy(src=s):
-            add(s)
-        case tac_ast.Binary(src1=s1, src2=s2):
-            add(s1)
-            add(s2)
-        case tac_ast.Load(src_ptr=p):
-            add(p)
-        case tac_ast.Store(src=s, dst_ptr=p):
-            add(s)
-            add(p)
-        case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
-            add(c)
-        case tac_ast.FunctionCall(args=args):
-            for a in args:
-                add(a)
-        case tac_ast.IndirectCall(ptr=p, args=args):
-            add(p)
-            for a in args:
-                add(a)
-        case tac_ast.Phi(args=args):
-            for a in args:
-                add(a.source)
-    return out

@@ -75,6 +75,7 @@ from passes.optimization.cfg import (
     dominator_tree_children,
     immediate_dominators,
 )
+from passes.optimization.var_visit import defs_in, uses_in, vals_in
 from passes.type_checking import LocalAttr, Symbol, SymbolTable
 
 
@@ -108,7 +109,7 @@ def to_ssa(
     holds for them."""
     fn = _maybe_prepend_preheader(fn)
     cfg = build_cfg(fn)
-    _ensure_block_labels(cfg)
+    _ensure_block_labels(cfg, fn.name)
 
     promotable = _identify_promotable(fn, cfg, symbols)
     if not promotable:
@@ -152,7 +153,12 @@ def _maybe_prepend_preheader(fn: tac_ast.Function) -> tac_ast.Function:
     pred_labels include the ENTRY edge — but ENTRY has no
     instructions, hence no label to tag with. The preheader gives us
     a real labeled block to point Phi pred_labels at, which de-SSA
-    can later reach when emitting entry-path Copies."""
+    can later reach when emitting entry-path Copies.
+
+    The minted name is `.<funcname>@ssa_preheader@<N>`; the function-
+    name prefix matches the user-label convention (label_resolution
+    produces `.<funcname>@<orig>`) and keeps SSA labels disjoint
+    across functions in the same program."""
     if not fn.instructions:
         return fn
     if not isinstance(fn.instructions[0], tac_ast.Label):
@@ -162,7 +168,7 @@ def _maybe_prepend_preheader(fn: tac_ast.Function) -> tac_ast.Function:
     }
     counter = 0
     while True:
-        name = f".ssa_preheader@{counter}"
+        name = f".{fn.name}@ssa_preheader@{counter}"
         counter += 1
         if name not in existing:
             break
@@ -178,10 +184,13 @@ def _maybe_prepend_preheader(fn: tac_ast.Function) -> tac_ast.Function:
 # ---------------------------------------------------------------------------
 
 
-def _ensure_block_labels(cfg: CFG) -> None:
+def _ensure_block_labels(cfg: CFG, fn_name: str) -> None:
     """For every real block whose first instruction isn't a `Label`,
     prepend a fresh `Label`. Phi pred_label tagging needs every
-    block on the path to have an addressable label."""
+    block on the path to have an addressable label.
+
+    Minted names use the `.<funcname>@ssa_block@<N>` convention so
+    SSA labels stay disjoint across functions in the same program."""
     existing = {
         i.name for blk in cfg.blocks.values()
         for i in blk.instructions if isinstance(i, tac_ast.Label)
@@ -192,7 +201,7 @@ def _ensure_block_labels(cfg: CFG) -> None:
         if blk.instructions and isinstance(blk.instructions[0], tac_ast.Label):
             continue
         while True:
-            name = f".ssa_block@{counter}"
+            name = f".{fn_name}@ssa_block@{counter}"
             counter += 1
             if name not in existing:
                 existing.add(name)
@@ -256,134 +265,14 @@ def _all_var_names_in(instr: tac_ast.Type_instruction) -> Iterable[str]:
     """Every Var name (use or def) that appears anywhere in `instr`.
     Used only for candidate collection in `_identify_promotable`;
     it intentionally ignores the use/def distinction."""
-    for v in _vals_in(instr):
+    for v in vals_in(instr):
         if isinstance(v, tac_ast.Var):
             yield v.name
-
-
-def _vals_in(instr: tac_ast.Type_instruction) -> Iterable[tac_ast.Type_val]:
-    """Every Type_val operand of `instr`, in roughly source-order."""
-    match instr:
-        case tac_ast.Ret(val=v) if v is not None:
-            yield v
-        case tac_ast.Ret():
-            return
-        case tac_ast.SignExtend(src=s, dst=d) | tac_ast.ZeroExtend(src=s, dst=d) \
-                | tac_ast.Truncate(src=s, dst=d) \
-                | tac_ast.IntToFloat(src=s, dst=d) \
-                | tac_ast.IntToDouble(src=s, dst=d) \
-                | tac_ast.FloatToInt(src=s, dst=d) \
-                | tac_ast.DoubleToInt(src=s, dst=d) \
-                | tac_ast.FloatToDouble(src=s, dst=d) \
-                | tac_ast.DoubleToFloat(src=s, dst=d) \
-                | tac_ast.Unary(src=s, dst=d) \
-                | tac_ast.Copy(src=s, dst=d):
-            yield s
-            yield d
-        case tac_ast.GetAddress(operand=o, dst=d):
-            yield o
-            yield d
-        case tac_ast.Load(src_ptr=p, dst=d):
-            yield p
-            yield d
-        case tac_ast.Store(src=s, dst_ptr=p):
-            yield s
-            yield p
-        case tac_ast.Binary(src1=s1, src2=s2, dst=d):
-            yield s1
-            yield s2
-            yield d
-        case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
-            yield c
-        case tac_ast.FunctionCall(args=args, dst=d):
-            yield from args
-            if d is not None:
-                yield d
-        case tac_ast.IndirectCall(ptr=p, args=args, dst=d):
-            yield p
-            yield from args
-            if d is not None:
-                yield d
-        case tac_ast.Phi(dst=d, args=args):
-            yield d
-            for a in args:
-                yield a.source
 
 
 # ---------------------------------------------------------------------------
 # Phi placement
 # ---------------------------------------------------------------------------
-
-
-def _defs_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
-    """Var operands of `instr` that are *defined* (written)."""
-    match instr:
-        case tac_ast.SignExtend(dst=d) | tac_ast.ZeroExtend(dst=d) \
-                | tac_ast.Truncate(dst=d) \
-                | tac_ast.IntToFloat(dst=d) | tac_ast.IntToDouble(dst=d) \
-                | tac_ast.FloatToInt(dst=d) | tac_ast.DoubleToInt(dst=d) \
-                | tac_ast.FloatToDouble(dst=d) | tac_ast.DoubleToFloat(dst=d) \
-                | tac_ast.Unary(dst=d) | tac_ast.Binary(dst=d) \
-                | tac_ast.Copy(dst=d) \
-                | tac_ast.GetAddress(dst=d) \
-                | tac_ast.Load(dst=d) \
-                | tac_ast.Phi(dst=d):
-            return [d] if isinstance(d, tac_ast.Var) else []
-        case tac_ast.FunctionCall(dst=d) | tac_ast.IndirectCall(dst=d):
-            return [d] if d is not None and isinstance(d, tac_ast.Var) else []
-    return []
-
-
-def _uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
-    """Var operands of `instr` that are *read*. Excludes
-    GetAddress.operand (its name names a storage cell, not a value)
-    — `_identify_promotable` already filters those out from the
-    promotable set, so they aren't candidates for renaming anyway,
-    but it's a good idea to skip them here too."""
-    out: list[tac_ast.Var] = []
-    match instr:
-        case tac_ast.Ret(val=v) if v is not None:
-            if isinstance(v, tac_ast.Var):
-                out.append(v)
-        case tac_ast.SignExtend(src=s) | tac_ast.ZeroExtend(src=s) \
-                | tac_ast.Truncate(src=s) \
-                | tac_ast.IntToFloat(src=s) | tac_ast.IntToDouble(src=s) \
-                | tac_ast.FloatToInt(src=s) | tac_ast.DoubleToInt(src=s) \
-                | tac_ast.FloatToDouble(src=s) | tac_ast.DoubleToFloat(src=s) \
-                | tac_ast.Unary(src=s) | tac_ast.Copy(src=s):
-            if isinstance(s, tac_ast.Var):
-                out.append(s)
-        case tac_ast.Binary(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                out.append(s1)
-            if isinstance(s2, tac_ast.Var):
-                out.append(s2)
-        case tac_ast.Load(src_ptr=p):
-            if isinstance(p, tac_ast.Var):
-                out.append(p)
-        case tac_ast.Store(src=s, dst_ptr=p):
-            if isinstance(s, tac_ast.Var):
-                out.append(s)
-            if isinstance(p, tac_ast.Var):
-                out.append(p)
-        case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
-            if isinstance(c, tac_ast.Var):
-                out.append(c)
-        case tac_ast.FunctionCall(args=args):
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    out.append(a)
-        case tac_ast.IndirectCall(ptr=p, args=args):
-            if isinstance(p, tac_ast.Var):
-                out.append(p)
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    out.append(a)
-        case tac_ast.Phi(args=args):
-            for a in args:
-                if isinstance(a.source, tac_ast.Var):
-                    out.append(a.source)
-    return out
 
 
 def _compute_live_in(
@@ -402,10 +291,10 @@ def _compute_live_in(
         gen_b: set[str] = set()
         kill_b: set[str] = set()
         for instr in blk.instructions:
-            for u in _uses_in(instr):
+            for u in uses_in(instr):
                 if u.name in promotable and u.name not in kill_b:
                     gen_b.add(u.name)
-            for d in _defs_in(instr):
+            for d in defs_in(instr):
                 if d.name in promotable:
                     kill_b.add(d.name)
         gen[bid] = gen_b
@@ -443,7 +332,7 @@ def _place_phis(
     defs: dict[str, set[int]] = defaultdict(set)
     for bid, blk in cfg.blocks.items():
         for instr in blk.instructions:
-            for d in _defs_in(instr):
+            for d in defs_in(instr):
                 if d.name in promotable:
                     defs[d.name].add(bid)
 

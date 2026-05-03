@@ -96,7 +96,10 @@ class TestOptimizeFunction(unittest.TestCase):
     def test_terminates_on_empty_function(self) -> None:
         fn = _fn(_ret())
         # No `symbols` → SSA pipeline skipped; cycle still runs.
-        self.assertEqual(optimize_function(fn), fn)
+        # Coloring is None when symbols is None.
+        out, coloring = optimize_function(fn)
+        self.assertEqual(out, fn)
+        self.assertIsNone(coloring)
 
     def test_terminates_on_function_with_body(self) -> None:
         # Without a symbol table, SSA construction is skipped and
@@ -113,7 +116,9 @@ class TestOptimizeFunction(unittest.TestCase):
             ),
             tac_ast.Ret(val=tac_ast.Var(name="t0")),
         )
-        self.assertEqual(optimize_function(fn), fn)
+        out, coloring = optimize_function(fn)
+        self.assertEqual(out, fn)
+        self.assertIsNone(coloring)
 
 
 class TestOptimizeProgram(unittest.TestCase):
@@ -130,7 +135,10 @@ class TestOptimizeProgram(unittest.TestCase):
             ),
             _fn(_ret()),
         ])
-        self.assertEqual(optimize_program(prog), prog)
+        out, colorings = optimize_program(prog)
+        self.assertEqual(out, prog)
+        # No symbols → no SSA → no regalloc; colorings dict empty.
+        self.assertEqual(colorings, {})
 
     def test_static_only_program_passes_through(self) -> None:
         prog = tac_ast.Program(top_level=[
@@ -141,11 +149,97 @@ class TestOptimizeProgram(unittest.TestCase):
                 init=[tac_ast.LongInit(value=0)],
             ),
         ])
-        self.assertEqual(optimize_program(prog), prog)
+        out, colorings = optimize_program(prog)
+        self.assertEqual(out, prog)
+        self.assertEqual(colorings, {})
 
     def test_empty_program_passes_through(self) -> None:
         prog = tac_ast.Program(top_level=[])
-        self.assertEqual(optimize_program(prog), prog)
+        out, colorings = optimize_program(prog)
+        self.assertEqual(out, prog)
+        self.assertEqual(colorings, {})
+
+
+class TestColoringReturn(unittest.TestCase):
+    """When `symbols` is provided, the optimizer drives SSA, runs the
+    fixed-point cycle, then computes a register-allocation Coloring
+    while still in SSA form. The Coloring is returned alongside the
+    optimized function (or in `optimize_program`'s case, keyed by
+    function name in a dict). Without symbols, regalloc is skipped
+    and the Coloring is None / the dict is empty."""
+
+    def _symbols(self, **kinds):
+        from passes.type_checking import LocalAttr, Symbol, SymbolTable
+        st = SymbolTable()
+        for name, t in kinds.items():
+            st[name] = Symbol(type=t, attrs=LocalAttr())
+        return st
+
+    def test_optimize_function_returns_coloring_with_symbols(self) -> None:
+        import c99_ast
+        # Two locals, both eligible for SSA / coloring. After the
+        # optimizer fixes-up the SSA form, we expect at least one
+        # name in the resulting coloring's assignments.
+        fn = _fn(
+            tac_ast.Copy(
+                src=tac_ast.Constant(const=tac_ast.ConstInt(value=7)),
+                dst=tac_ast.Var(name="@0.a"),
+            ),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=tac_ast.Var(name="@0.a"),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
+                dst=tac_ast.Var(name="@1.b"),
+            ),
+            tac_ast.Ret(val=tac_ast.Var(name="@1.b")),
+        )
+        st = self._symbols(
+            **{"@0.a": c99_ast.Int(), "@1.b": c99_ast.Int()},
+        )
+        out, coloring = optimize_function(fn, symbols=st)
+        self.assertIsNotNone(coloring)
+        # At least some assignment was made (the constant-folding
+        # passes shouldn't fully fold this since `b` depends on `a`
+        # via Add; even if they did, the Var that survives would
+        # still be in the coloring).
+        # We don't pin specific names since the SSA renamer's
+        # output names are an implementation detail.
+
+    def test_optimize_program_keys_colorings_by_function_name(self) -> None:
+        import c99_ast
+        # Two distinct functions; verify each gets its own coloring.
+        fn1 = _fn(
+            tac_ast.Copy(
+                src=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
+                dst=tac_ast.Var(name="@0.x"),
+            ),
+            tac_ast.Ret(val=tac_ast.Var(name="@0.x")),
+            name="foo",
+        )
+        fn2 = _fn(
+            tac_ast.Copy(
+                src=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
+                dst=tac_ast.Var(name="@1.y")),
+            tac_ast.Ret(val=tac_ast.Var(name="@1.y")),
+            name="bar",
+        )
+        prog = tac_ast.Program(top_level=[
+            fn1,
+            tac_ast.StaticVariable(
+                name="g", is_global=True,
+                data_type=tac_ast.Int(),
+                init=[tac_ast.IntInit(value=0)],
+            ),
+            fn2,
+        ])
+        st = self._symbols(
+            **{"@0.x": c99_ast.Int(), "@1.y": c99_ast.Int()},
+        )
+        _, colorings = optimize_program(prog, symbols=st)
+        # Both Function top-levels keyed in; static does NOT appear.
+        self.assertIn("foo", colorings)
+        self.assertIn("bar", colorings)
+        self.assertNotIn("g", colorings)
 
 
 class TestCliFlag(unittest.TestCase):

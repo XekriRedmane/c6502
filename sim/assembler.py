@@ -300,10 +300,14 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return 0
         case asm_ast.AllocateStack(bytes=n):
             return _ssp_sub_size(n)
-        case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
-            return _prologue_size(ab, lb)
-        case asm_ast.Ret(arg_bytes=ab, local_bytes=lb, save_a=sa):
-            return _ret_size(ab, lb, sa)
+        case asm_ast.FunctionPrologue(
+            arg_bytes=ab, local_bytes=lb, callee_saved_addrs=csa,
+        ):
+            return _prologue_size(ab, lb, csa)
+        case asm_ast.Ret(
+            arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
+        ):
+            return _ret_size(ab, lb, sa, csa)
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _load_address_size(src, dst)
         case _:
@@ -443,10 +447,14 @@ def _emit_instr(
             return _emit_branch(cond, target, addr, syms)
         case asm_ast.AllocateStack(bytes=n):
             return _emit_ssp_sub(n)
-        case asm_ast.FunctionPrologue(arg_bytes=ab, local_bytes=lb):
-            return _emit_prologue(ab, lb)
-        case asm_ast.Ret(arg_bytes=ab, local_bytes=lb, save_a=sa):
-            return _emit_ret(ab, lb, sa)
+        case asm_ast.FunctionPrologue(
+            arg_bytes=ab, local_bytes=lb, callee_saved_addrs=csa,
+        ):
+            return _emit_prologue(ab, lb, csa)
+        case asm_ast.Ret(
+            arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
+        ):
+            return _emit_ret(ab, lb, sa, csa)
         case asm_ast.LoadAddress(src=src, dst=dst):
             return _emit_load_address(src, dst, syms)
         case _:
@@ -476,8 +484,17 @@ def _is_indirect_y(op: asm_ast.Type_operand) -> bool:
 
 def _is_memory(op: asm_ast.Type_operand) -> bool:
     return isinstance(
-        op, (asm_ast.Stack, asm_ast.Frame, asm_ast.Data, asm_ast.Indirect)
+        op,
+        (asm_ast.Stack, asm_ast.Frame, asm_ast.Data,
+         asm_ast.Indirect, asm_ast.ZP),
     )
+
+
+def _is_data_or_zp(op: asm_ast.Type_operand) -> bool:
+    """True for absolute-addressed memory operands — Data (link-time
+    symbol) or ZP (regalloc-assigned literal byte). Both lower to
+    native 6502 absolute / zero-page addressing modes."""
+    return isinstance(op, (asm_ast.Data, asm_ast.ZP))
 
 
 def _is_imm_label(op: asm_ast.Type_operand) -> bool:
@@ -516,6 +533,34 @@ def _resolve_data_addr(op: asm_ast.Data, syms: dict[str, int]) -> int:
     if op.name not in syms:
         raise AssemblerError(f"undefined symbol {op.name!r}")
     return (syms[op.name] + op.offset) & 0xFFFF
+
+
+def _resolve_abs_addr(op: asm_ast.Type_operand, syms: dict[str, int]) -> int:
+    """Resolve an absolute-addressing operand (Data or ZP) to a
+    concrete byte address. ZP folds `address + offset` directly;
+    Data resolves through the symbol table."""
+    if isinstance(op, asm_ast.Data):
+        return _resolve_data_addr(op, syms)
+    if isinstance(op, asm_ast.ZP):
+        addr = op.address + op.offset
+        if not 0 <= addr <= 0xFFFF:
+            raise AssemblerError(
+                f"ZP address {addr:#x} out of range",
+            )
+        return addr
+    raise TypeError(f"_resolve_abs_addr only handles Data / ZP, got {op!r}")
+
+
+def _abs_fits_zp(op: asm_ast.Type_operand) -> bool:
+    """True if the resolved address of `op` fits in zero page (and
+    thus the encoded instruction is one byte shorter). For ZP the
+    answer is yes iff the literal address+offset is < 0x100; for
+    Data it falls back to `_data_fits_zp`."""
+    if isinstance(op, asm_ast.ZP):
+        return 0 <= op.address + op.offset <= 0xFF
+    if isinstance(op, asm_ast.Data):
+        return _data_fits_zp(op)
+    raise TypeError(f"_abs_fits_zp only handles Data / ZP, got {op!r}")
 
 
 def _resolve_imm_label(
@@ -609,12 +654,13 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
     # memory -> Reg(A): load.
     if _is_memory(src) and _is_reg_a(dst):
         return _load_mem_to_a_size(src)
-    # Data -> Reg(X) / Reg(Y): direct LDX / LDY (zp or abs). Same
-    # encoding length as memory -> Reg(A) for the Data form.
-    if isinstance(src, asm_ast.Data) and isinstance(dst, asm_ast.Reg) and (
+    # Data / ZP -> Reg(X) / Reg(Y): direct LDX / LDY (zp or abs).
+    # Same encoding length as memory -> Reg(A) for the Data / ZP
+    # form.
+    if _is_data_or_zp(src) and isinstance(dst, asm_ast.Reg) and (
         isinstance(dst.reg, (asm_ast.X, asm_ast.Y))
     ):
-        return 2 if _data_fits_zp(src) else 3
+        return 2 if _abs_fits_zp(src) else 3
     # Reg(A) -> memory: store.
     if _is_reg_a(src) and _is_memory(dst):
         return _store_a_to_mem_size(dst)
@@ -626,12 +672,12 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
 
 def _load_mem_to_a_size(src: asm_ast.Type_operand) -> int:
     """LDA from a memory operand into A."""
-    if isinstance(src, asm_ast.Data):
-        # Absolute or zero-page (dasm picks zp when the linker resolves
-        # to < 0x100 — for static-storage Data this is unreachable since
-        # statics live above $0800, but the same predicate is used at
-        # emit time).
-        return 2 if _data_fits_zp(src) else 3
+    if _is_data_or_zp(src):
+        # Absolute or zero-page (dasm picks zp when the resolved
+        # address < 0x100). For static-storage Data this is normally
+        # absolute (statics live above $0800); for ZP it's always
+        # zero-page mode.
+        return 2 if _abs_fits_zp(src) else 3
     if _is_indirect_y(src):
         return 4   # LDY # + LDA (zp),Y
     raise AssemblerError(f"can't load {src!r} into A")
@@ -639,8 +685,8 @@ def _load_mem_to_a_size(src: asm_ast.Type_operand) -> int:
 
 def _store_a_to_mem_size(dst: asm_ast.Type_operand) -> int:
     """STA to a memory operand from A."""
-    if isinstance(dst, asm_ast.Data):
-        return 2 if _data_fits_zp(dst) else 3
+    if _is_data_or_zp(dst):
+        return 2 if _abs_fits_zp(dst) else 3
     if _is_indirect_y(dst):
         return 4
     raise AssemblerError(f"can't store A into {dst!r}")
@@ -707,12 +753,12 @@ def _emit_mov(
     # memory -> Reg(A).
     if _is_memory(src) and _is_reg_a(dst):
         return _emit_load_mem_to_a(src, syms)
-    # Data -> Reg(X) / Reg(Y) — zp/abs LDX/LDY direct.
-    if isinstance(src, asm_ast.Data) and isinstance(dst, asm_ast.Reg):
+    # Data / ZP -> Reg(X) / Reg(Y) — zp/abs LDX/LDY direct.
+    if _is_data_or_zp(src) and isinstance(dst, asm_ast.Reg):
         if isinstance(dst.reg, asm_ast.X):
-            return _emit_zp_or_abs("LDX", _resolve_data_addr(src, syms))
+            return _emit_zp_or_abs("LDX", _resolve_abs_addr(src, syms))
         if isinstance(dst.reg, asm_ast.Y):
-            return _emit_zp_or_abs("LDY", _resolve_data_addr(src, syms))
+            return _emit_zp_or_abs("LDY", _resolve_abs_addr(src, syms))
     # Reg(A) -> memory.
     if _is_reg_a(src) and _is_memory(dst):
         return _emit_store_a_to_mem(dst, syms)
@@ -725,8 +771,8 @@ def _emit_mov(
 def _emit_load_mem_to_a(
     op: asm_ast.Type_operand, syms: dict[str, int],
 ) -> bytes:
-    if isinstance(op, asm_ast.Data):
-        return _emit_load_zp_or_abs_to_a(_resolve_data_addr(op, syms))
+    if _is_data_or_zp(op):
+        return _emit_load_zp_or_abs_to_a(_resolve_abs_addr(op, syms))
     if _is_indirect_y(op):
         return _emit_indy("LDA", op)
     raise AssemblerError(f"can't load {op!r} into A")
@@ -735,8 +781,8 @@ def _emit_load_mem_to_a(
 def _emit_store_a_to_mem(
     op: asm_ast.Type_operand, syms: dict[str, int],
 ) -> bytes:
-    if isinstance(op, asm_ast.Data):
-        return _emit_store_a_zp_or_abs(_resolve_data_addr(op, syms))
+    if _is_data_or_zp(op):
+        return _emit_store_a_zp_or_abs(_resolve_abs_addr(op, syms))
     if _is_indirect_y(op):
         return _emit_indy("STA", op)
     raise AssemblerError(f"can't store A into {op!r}")
@@ -749,8 +795,8 @@ def _accum_arith_size(src: asm_ast.Type_operand) -> int:
     """ADC/SBC/AND/ORA/EOR (all use Reg(A) as implicit dst)."""
     if isinstance(src, asm_ast.Imm):
         return 2
-    if isinstance(src, asm_ast.Data):
-        return 2 if _data_fits_zp(src) else 3
+    if _is_data_or_zp(src):
+        return 2 if _abs_fits_zp(src) else 3
     if _is_indirect_y(src):
         return 4
     raise AssemblerError(f"unsupported accum-arith src: {src!r}")
@@ -762,8 +808,8 @@ def _emit_accum_arith(
     _reject_pseudo(src)
     if isinstance(src, asm_ast.Imm):
         return bytes([_IMM[opcode], _imm_byte(src.value)])
-    if isinstance(src, asm_ast.Data):
-        return _emit_zp_or_abs(opcode, _resolve_data_addr(src, syms))
+    if _is_data_or_zp(src):
+        return _emit_zp_or_abs(opcode, _resolve_abs_addr(src, syms))
     if _is_indirect_y(src):
         return _emit_indy(opcode, src)
     raise AssemblerError(f"unsupported {opcode} src: {src!r}")
@@ -776,12 +822,12 @@ def _compare_size(
         raise AssemblerError(f"Compare left must be a register; got {left!r}")
     if isinstance(right, asm_ast.Imm):
         return 2
-    if isinstance(right, asm_ast.Data):
-        return 2 if _data_fits_zp(right) else 3
+    if _is_data_or_zp(right):
+        return 2 if _abs_fits_zp(right) else 3
     if _is_indirect_y(right):
         if not isinstance(left.reg, asm_ast.A):
             raise AssemblerError(
-                f"Compare with left={left!r} requires Imm/Data right "
+                f"Compare with left={left!r} requires Imm/Data/ZP right "
                 "(no indirect-Y for CPX/CPY)"
             )
         return 4
@@ -806,12 +852,12 @@ def _emit_compare(
         raise TypeError(f"unexpected reg: {left.reg!r}")
     if isinstance(right, asm_ast.Imm):
         return bytes([_IMM[opcode], _imm_byte(right.value)])
-    if isinstance(right, asm_ast.Data):
-        return _emit_zp_or_abs(opcode, _resolve_data_addr(right, syms))
+    if _is_data_or_zp(right):
+        return _emit_zp_or_abs(opcode, _resolve_abs_addr(right, syms))
     if _is_indirect_y(right):
         if opcode != "CMP":
             raise AssemblerError(
-                f"Compare with left={left!r} requires Imm/Data right; "
+                f"Compare with left={left!r} requires Imm/Data/ZP right; "
                 f"got {right!r}"
             )
         return _emit_indy(opcode, right)
@@ -823,21 +869,21 @@ def _emit_compare(
 
 def _inc_dec_size(dst: asm_ast.Type_operand) -> int:
     """1 byte for register-mode INX/INY/DEX/DEY; 2 / 3 bytes for the
-    memory-mode INC/DEC on a `Data` operand (zp / abs)."""
+    memory-mode INC/DEC on a `Data` / `ZP` operand (zp / abs)."""
     if _is_reg_x(dst) or _is_reg_y(dst):
         return 1
-    if isinstance(dst, asm_ast.Data):
-        return 2 if _data_fits_zp(dst) else 3
+    if _is_data_or_zp(dst):
+        return 2 if _abs_fits_zp(dst) else 3
     raise AssemblerError(f"Inc/Dec dst unsupported: {dst!r}")
 
 
 def _shift_size(dst: asm_ast.Type_operand) -> int:
     """1 byte for accumulator-mode ASL/LSR/ROL/ROR on `Reg(A)`; 2 / 3
-    bytes for the memory-mode forms on a `Data` operand."""
+    bytes for the memory-mode forms on a `Data` / `ZP` operand."""
     if _is_reg_a(dst):
         return 1
-    if isinstance(dst, asm_ast.Data):
-        return 2 if _data_fits_zp(dst) else 3
+    if _is_data_or_zp(dst):
+        return 2 if _abs_fits_zp(dst) else 3
     raise AssemblerError(f"Shift dst unsupported: {dst!r}")
 
 
@@ -848,11 +894,11 @@ def _emit_inc_dec(
         return bytes([_IMPLIED["INX" if name == "Inc" else "DEX"]])
     if _is_reg_y(op):
         return bytes([_IMPLIED["INY" if name == "Inc" else "DEY"]])
-    if isinstance(op, asm_ast.Data):
+    if _is_data_or_zp(op):
         opcode = "INC" if name == "Inc" else "DEC"
-        return _emit_zp_or_abs(opcode, _resolve_data_addr(op, syms))
+        return _emit_zp_or_abs(opcode, _resolve_abs_addr(op, syms))
     raise AssemblerError(
-        f"{name} dst must be Reg(X), Reg(Y), or Data; got {op!r}"
+        f"{name} dst must be Reg(X), Reg(Y), Data, or ZP; got {op!r}"
     )
 
 
@@ -860,12 +906,13 @@ def _emit_shift(
     opcode: str, dst: asm_ast.Type_operand, syms: dict[str, int],
 ) -> bytes:
     """`ASL A`/`LSR A`/`ROL A`/`ROR A` for Reg(A); `<op> name+off`
-    for `Data` (zp or abs depending on the resolved address)."""
+    for `Data` (zp or abs depending on resolved address); `<op> $XX`
+    for `ZP` (always zp mode)."""
     if _is_reg_a(dst):
         return bytes([_IMPLIED[opcode + "_A"]])
-    if isinstance(dst, asm_ast.Data):
-        return _emit_zp_or_abs(opcode, _resolve_data_addr(dst, syms))
-    raise AssemblerError(f"{opcode} dst must be Reg(A) or Data; got {dst!r}")
+    if _is_data_or_zp(dst):
+        return _emit_zp_or_abs(opcode, _resolve_abs_addr(dst, syms))
+    raise AssemblerError(f"{opcode} dst must be Reg(A), Data, or ZP; got {dst!r}")
 
 
 # -------- jumps and branches --------
@@ -935,7 +982,10 @@ def _emit_ssp_sub(amt: int) -> bytes:
 # -------- prologue / epilogue --------
 
 
-def _prologue_size(arg_bytes: int, local_bytes: int) -> int:
+def _prologue_size(
+    arg_bytes: int, local_bytes: int,
+    callee_saved_addrs: list[int] = (),
+) -> int:
     if arg_bytes + local_bytes == 0:
         return 0
     # Allocate locals + 2-byte saved-FP slot.
@@ -945,10 +995,15 @@ def _prologue_size(arg_bytes: int, local_bytes: int) -> int:
     size += 2 + 2 + 2 + 1 + 2 + 2
     # Set FP = SSP: LDA SSP; STA FP; LDA SSP+1; STA FP+1
     size += 2 + 2 + 2 + 2
+    # Per callee-saved byte: LDA $addr (2) + LDY #off (2) + STA (FP),Y (2)
+    size += len(callee_saved_addrs) * 6
     return size
 
 
-def _emit_prologue(arg_bytes: int, local_bytes: int) -> bytes:
+def _emit_prologue(
+    arg_bytes: int, local_bytes: int,
+    callee_saved_addrs: list[int] = (),
+) -> bytes:
     if arg_bytes + local_bytes == 0:
         return b""
     if not 0 <= local_bytes <= 253:
@@ -971,10 +1026,22 @@ def _emit_prologue(arg_bytes: int, local_bytes: int) -> bytes:
     out += _emit_zp("STA", fp)
     out += _emit_zp("LDA", ssp + 1)
     out += _emit_zp("STA", fp + 1)
+    # Save callee-saved ZP bytes into frame slots at FP+1..FP+S.
+    for i, addr in enumerate(callee_saved_addrs):
+        if not 0 <= addr <= 0xFF:
+            raise AssemblerError(
+                f"callee-saved address {addr:#x} out of range 0..0xFF",
+            )
+        out += _emit_zp("LDA", addr)
+        out += bytes([_IMM["LDY"], i + 1])
+        out += bytes([_INDY["STA"], fp])
     return bytes(out)
 
 
-def _ret_size(arg_bytes: int, local_bytes: int, save_a: bool) -> int:
+def _ret_size(
+    arg_bytes: int, local_bytes: int, save_a: bool,
+    callee_saved_addrs: list[int] = (),
+) -> int:
     if arg_bytes + local_bytes == 0:
         return 1   # RTS
     # SSP = FP + (N+M+2): CLC + LDA FP + ADC #lo + STA SSP + LDA FP+1
@@ -989,6 +1056,8 @@ def _ret_size(arg_bytes: int, local_bytes: int, save_a: bool) -> int:
     # X is free to clobber because no return convention puts data
     # there (1B → A, 2B/4B/8B → HARGS).
     size += 2 + 2 + 1 + 1 + 2 + 2 + 2
+    # Per callee-saved byte restore: LDY #off (2) + LDA (FP),Y (2) + STA $addr (2)
+    size += len(callee_saved_addrs) * 6
     # PHA + PLA wrap if save_a; trailing RTS.
     if save_a:
         size += 1 + 1
@@ -996,7 +1065,10 @@ def _ret_size(arg_bytes: int, local_bytes: int, save_a: bool) -> int:
     return size
 
 
-def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> bytes:
+def _emit_ret(
+    arg_bytes: int, local_bytes: int, save_a: bool,
+    callee_saved_addrs: list[int] = (),
+) -> bytes:
     if arg_bytes + local_bytes == 0:
         return bytes([_IMPLIED["RTS"]])
     if not 0 <= local_bytes <= 253:
@@ -1006,6 +1078,16 @@ def _emit_ret(arg_bytes: int, local_bytes: int, save_a: bool) -> bytes:
     rewind = arg_bytes + local_bytes + 2
 
     out = bytearray()
+    # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown so
+    # FP is still valid for the indirect-Y reads.
+    for i, addr in enumerate(callee_saved_addrs):
+        if not 0 <= addr <= 0xFF:
+            raise AssemblerError(
+                f"callee-saved address {addr:#x} out of range 0..0xFF",
+            )
+        out += bytes([_IMM["LDY"], i + 1])
+        out += bytes([_INDY["LDA"], fp])
+        out += _emit_zp("STA", addr)
     if save_a:
         out += bytes([_IMPLIED["PHA"]])
     # SSP = FP + rewind.
@@ -1106,6 +1188,8 @@ def _shift_offset(
         return asm_ast.Data(name=op.name, offset=op.offset + k)
     if isinstance(op, asm_ast.Indirect):
         return asm_ast.Indirect(offset=op.offset + k)
+    if isinstance(op, asm_ast.ZP):
+        return asm_ast.ZP(address=op.address, offset=op.offset + k)
     raise TypeError(f"can't shift offset on operand {op!r}")
 
 

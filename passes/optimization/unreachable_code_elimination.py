@@ -1,6 +1,6 @@
 """TAC unreachable-code elimination.
 
-Four sub-passes, run in order against the function's CFG:
+Five sub-passes, run in order against the function's CFG:
 
 1. Drop unreachable blocks. Forward-traverse from ENTRY; any block
    not visited (no instruction control-flow path can reach it) is
@@ -11,7 +11,15 @@ Four sub-passes, run in order against the function's CFG:
    piggybacks here: any `PhiArg` in a surviving block whose
    `pred_label` named a dropped block is also dropped.
 
-2. Fold singleton Phis. After step 1 (and after the optimizer
+2. Prune dead Phi-edge args. Constant folding can drop a conditional
+   jump (`JumpIfFalse(true)` or `JumpIfTrue(false)` collapsing to
+   nothing), which removes an EDGE from the CFG without removing
+   either endpoint block. Any Phi at the (former) jump target whose
+   `pred_label` matches the now-edgeless predecessor needs its arg
+   dropped. We scan each block's Phis and drop args whose pred_label
+   doesn't correspond to a current actual predecessor of the block.
+
+3. Fold singleton Phis. After steps 1 and 2 (and after the optimizer
    driver's earlier passes propagate constants into Phi args), any
    `Phi` whose remaining argument list has exactly one entry is
    semantically just `Copy(args[0].source, dst)`; rewrite it.
@@ -20,7 +28,7 @@ Four sub-passes, run in order against the function's CFG:
    then also be unreachable and step 1 should already have
    dropped it.
 
-3. Drop useless jumps. A non-last block whose terminator's only
+4. Drop useless jumps. A non-last block whose terminator's only
    successor is the source-order next block doesn't need the
    terminator at all — fall-through gets there for free. Covers
    `Jump(L)` (when L's block is the next block) and conditional
@@ -28,7 +36,7 @@ Four sub-passes, run in order against the function's CFG:
    block, so taken and fall-through coincide). `Ret` is never
    dropped — its successor is EXIT, not a real block.
 
-4. Drop useless labels. A `Label(L)` at a block's start is useless
+5. Drop useless labels. A `Label(L)` at a block's start is useless
    if no remaining `Jump` / `JumpIfTrue` / `JumpIfFalse` AND no
    `PhiArg.pred_label` targets L. Removing it doesn't affect control
    flow — the block stays reachable via fall-through. Including the
@@ -36,11 +44,12 @@ Four sub-passes, run in order against the function's CFG:
    SSA form, otherwise dropping a label referenced by a Phi would
    leave SSA-destruction unable to locate the predecessor block.
 
-Order matters: step 1 must precede 2 (singleton-Phi folding works
-on the post-cleanup arg list); step 1 must precede 3 and 4 (dropping
-a dead block removes any Jump references inside it); step 3 must
-precede 4 (dropping a useless Jump may make its target's label
-unused).
+Order matters: step 1 must precede 2 (which uses the post-cleanup
+predecessor lists); steps 1 and 2 must precede 3 (singleton-Phi
+folding works on the post-prune arg list); steps 1-2 must precede
+4 and 5 (dropping a dead block removes any Jump references inside
+it); step 4 must precede 5 (dropping a useless Jump may make its
+target's label unused).
 
 No fixed-point iteration is needed within the pass — the optimizer
 driver re-runs the whole pipeline (constant folding → UCE → copy
@@ -77,6 +86,7 @@ _JUMP_TYPES: tuple[type, ...] = (
 def eliminate_unreachable_code(fn: tac_ast.Function) -> tac_ast.Function:
     cfg = build_cfg(fn)
     _remove_unreachable_blocks(cfg)
+    _prune_dead_phi_edges(cfg)
     _fold_singleton_phis(cfg)
     _remove_useless_jumps(cfg)
     _remove_useless_labels(cfg)
@@ -119,6 +129,35 @@ def _remove_unreachable_blocks(cfg: CFG) -> None:
                 instr.args = [
                     a for a in instr.args
                     if a.pred_label not in dropped_labels
+                ]
+
+
+def _prune_dead_phi_edges(cfg: CFG) -> None:
+    """For each block B with Phis, drop any PhiArg whose `pred_label`
+    doesn't correspond to a current actual predecessor of B in the
+    CFG. Catches the case where constant folding dropped a
+    conditional jump (`JumpIfFalse(true)` → nothing), removing an
+    edge from pred → B without removing pred itself; the Phi at B
+    is left with a stale arg referencing pred's label."""
+    # Per-block: which leading-label names correspond to actual
+    # current predecessors.
+    leading_label = {
+        bid: blk.instructions[0].name
+        for bid, blk in cfg.blocks.items()
+        if blk.instructions and isinstance(blk.instructions[0], tac_ast.Label)
+    }
+    for bid, blk in cfg.blocks.items():
+        if not any(isinstance(i, tac_ast.Phi) for i in blk.instructions):
+            continue
+        valid_pred_labels = {
+            leading_label[p] for p in blk.predecessors
+            if p in leading_label
+        }
+        for instr in blk.instructions:
+            if isinstance(instr, tac_ast.Phi):
+                instr.args = [
+                    a for a in instr.args
+                    if a.pred_label in valid_pred_labels
                 ]
 
 

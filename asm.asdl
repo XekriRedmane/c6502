@@ -49,10 +49,19 @@ module ASM {
     -- can skip the PHA/PLA pair (`save_a=False`). The flag has no
     -- effect when arg_bytes + local_bytes == 0 (the collapsed
     -- epilogue is just `RTS` either way).
+    --
+    -- `callee_saved_addrs` (FunctionPrologue / Ret) lists the
+    -- zero-page byte addresses the function uses from the callee-
+    -- saved pool. The prologue saves each addressed byte to the
+    -- frame slot at FP+1+i (so the first save lands at FP+1, the
+    -- second at FP+2, etc.); the epilogue restores them. The
+    -- `local_bytes` count INCLUDES the save area (it's the total
+    -- frame size below the saved-FP slot), so the existing
+    -- SSP/FP arithmetic correctly accounts for saves.
     instruction =
         Mov(operand src, operand dst)
-        | Ret(int arg_bytes, int local_bytes, bool save_a)
-        | FunctionPrologue(int arg_bytes, int local_bytes)
+        | Ret(int arg_bytes, int local_bytes, bool save_a, int* callee_saved_addrs)
+        | FunctionPrologue(int arg_bytes, int local_bytes, int* callee_saved_addrs)
         | AllocateStack(int bytes)
         | Add(operand src, operand dst)
         | Sub(operand src, operand dst)
@@ -114,6 +123,16 @@ module ASM {
     -- responsible for loading DPTR with the desired 16-bit address
     -- before issuing any Indirect(offset) access.
     --
+    -- ZP(address, offset): the byte at the absolute zero-page
+    -- address `address + offset`. Equivalent to Data for emit
+    -- purposes — both lower to native 6502 absolute / zero-page
+    -- addressing — but `address` is a numeric ZP slot picked by
+    -- register allocation rather than a link-time symbol. `address`
+    -- is one of the bytes returned by Pool.caller_saved() /
+    -- callee_saved() (i.e. in [Pool.start, 0xFF]); `offset` selects
+    -- the byte within a multi-byte (Long / Float / etc.) value,
+    -- exactly like Data's and Frame's offset fields.
+    --
     -- ImmLabelLow / ImmLabelHigh: immediate byte equal to the low /
     -- high half of the address `name + offset`. dasm renders these
     -- as `#<(name+offset)` / `#>(name+offset)` (collapsing the
@@ -125,6 +144,7 @@ module ASM {
             | Stack(int offset) | Frame(int offset)
             | Data(identifier name, int offset)
             | Indirect(int offset)
+            | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)
     reg = A | X | Y

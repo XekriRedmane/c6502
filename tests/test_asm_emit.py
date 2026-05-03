@@ -89,11 +89,7 @@ class TestEmitMov(unittest.TestCase):
 
     def test_unsupported_mov_combinations_raise(self):
         unsupported = [
-            # No 6502 instruction for register-to-register among same reg or
-            # the X<->Y pair.
-            asm_ast.Mov(src=_reg(_A), dst=_reg(_A)),
-            asm_ast.Mov(src=_reg(_X), dst=_reg(_X)),
-            asm_ast.Mov(src=_reg(_Y), dst=_reg(_Y)),
+            # No 6502 instruction for X<->Y direct transfer.
             asm_ast.Mov(src=_reg(_X), dst=_reg(_Y)),
             asm_ast.Mov(src=_reg(_Y), dst=_reg(_X)),
             # X/Y <-> Stack not handled (would clobber A); codegen must go
@@ -107,6 +103,33 @@ class TestEmitMov(unittest.TestCase):
             with self.subTest(instr=instr):
                 with self.assertRaises(ValueError):
                     emit_instruction(instr)
+
+    def test_self_mov_drops(self):
+        # Mov(src, dst) where src == dst is a no-op (writes the same
+        # value back to the same location). Drop it. Catches Reg→Reg
+        # self-transfers (which used to raise) and the more
+        # important case of regalloc giving a Phi src and dst the
+        # same color, leading to a no-op Copy after de-SSA.
+        same_pairs = [
+            asm_ast.Mov(src=_reg(_A), dst=_reg(_A)),
+            asm_ast.Mov(src=_reg(_X), dst=_reg(_X)),
+            asm_ast.Mov(src=_reg(_Y), dst=_reg(_Y)),
+            asm_ast.Mov(
+                src=asm_ast.ZP(address=0x82, offset=0),
+                dst=asm_ast.ZP(address=0x82, offset=0),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Frame(offset=1),
+                dst=asm_ast.Frame(offset=1),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Data(name="g", offset=0),
+                dst=asm_ast.Data(name="g", offset=0),
+            ),
+        ]
+        for instr in same_pairs:
+            with self.subTest(instr=instr):
+                self.assertEqual(emit_instruction(instr), [])
 
 
 class TestEmitMovStack(unittest.TestCase):
@@ -505,6 +528,22 @@ class TestEmitFunctionPrologue(unittest.TestCase):
                         asm_ast.FunctionPrologue(arg_bytes=0, local_bytes=lb)
                     )
 
+    def test_callee_saved_addrs_emit_save_sequence(self):
+        # With callee_saved_addrs=[0xC0, 0xC1], the prologue emits the
+        # standard FP setup followed by save sequences for each addr.
+        out = emit_instruction(asm_ast.FunctionPrologue(
+            arg_bytes=0, local_bytes=2,
+            callee_saved_addrs=[0xC0, 0xC1],
+        ))
+        # The first save: LDA $C0; LDY #$01; STA (FP),Y.
+        self.assertIn("   LDA   $C0", out)
+        # The second save: LDA $C1; LDY #$02; STA (FP),Y.
+        self.assertIn("   LDA   $C1", out)
+        # The first save's STA target should appear after its LDA.
+        idx_lda_c0 = out.index("   LDA   $C0")
+        idx_ldy_01 = out.index("   LDY   #$01", idx_lda_c0)
+        self.assertGreater(idx_ldy_01, idx_lda_c0)
+
 
 class TestEmitRet(unittest.TestCase):
     def test_zero_dimensions_just_rts(self):
@@ -513,6 +552,25 @@ class TestEmitRet(unittest.TestCase):
             emit_instruction(asm_ast.Ret(arg_bytes=0, local_bytes=0, save_a=True)),
             ["   RTS"],
         )
+
+    def test_callee_saved_addrs_emit_restore_sequence(self):
+        # With callee_saved_addrs=[0xC0, 0xC1], the epilogue first
+        # restores those bytes from frame slots, THEN does the
+        # standard SSP/FP teardown.
+        out = emit_instruction(asm_ast.Ret(
+            arg_bytes=0, local_bytes=2, save_a=True,
+            callee_saved_addrs=[0xC0, 0xC1],
+        ))
+        # The restore sequence: LDY #$01; LDA (FP),Y; STA $C0; LDY #$02;
+        # LDA (FP),Y; STA $C1.
+        self.assertIn("   STA   $C0", out)
+        self.assertIn("   STA   $C1", out)
+        # The restores must happen BEFORE the SSP rewind (the CLC + LDA FP
+        # sequence). Find the first STA $C0 and the first CLC; the STA
+        # must come first.
+        idx_sta_c0 = out.index("   STA   $C0")
+        idx_clc = out.index("   CLC")
+        self.assertLess(idx_sta_c0, idx_clc)
 
     def test_locals_only_full_epilogue(self):
         # M=3, N=0: SSP = FP + (M+N+2) = FP + 5; saved FP at FP+M+1=4
@@ -1078,6 +1136,122 @@ class TestEmitDataOperand(unittest.TestCase):
             left=_reg(asm_ast.X()), right=asm_ast.Data(name="g", offset=0),
         ))
         self.assertEqual(out, ["   CPX   g"])
+
+
+class TestEmitZPOperand(unittest.TestCase):
+    """`ZP(address, offset)` is the absolute-addressing operand the
+    frame-layout pass produces from a Pseudo whose name was assigned
+    a zero-page slot by register allocation. Equivalent to Data for
+    emit purposes — both lower to native 6502 absolute / zero-page
+    addressing — but `address + offset` is folded at emit time into
+    a literal byte address. Should support every dispatch site that
+    Data does."""
+
+    def test_mov_imm_to_zp(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.Imm(value=7),
+            dst=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   LDA   #$07", "   STA   $82"])
+
+    def test_mov_zp_to_reg_a(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.ZP(address=0x82, offset=0), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   LDA   $82"])
+
+    def test_mov_a_to_zp(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=_reg(_A), dst=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   STA   $82"])
+
+    def test_mov_zp_high_byte_offset_folds(self):
+        # ZP(0x82, 1) → $83. Same offset-folding semantics as Data.
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.ZP(address=0x82, offset=1), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   LDA   $83"])
+
+    def test_mov_zp_to_reg_x(self):
+        # 6502 has LDX zp/abs natively — no need to bounce through A.
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.ZP(address=0x82, offset=0), dst=_reg(_X),
+        ))
+        self.assertEqual(out, ["   LDX   $82"])
+
+    def test_mov_zp_to_reg_y(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.ZP(address=0x82, offset=0), dst=_reg(_Y),
+        ))
+        self.assertEqual(out, ["   LDY   $82"])
+
+    def test_mov_zp_to_zp(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.ZP(address=0x82, offset=0),
+            dst=asm_ast.ZP(address=0x90, offset=0),
+        ))
+        self.assertEqual(out, ["   LDA   $82", "   STA   $90"])
+
+    def test_mov_zp_to_frame(self):
+        out = emit_instruction(asm_ast.Mov(
+            src=asm_ast.ZP(address=0x82, offset=0),
+            dst=asm_ast.Frame(offset=1),
+        ))
+        self.assertEqual(out, [
+            "   LDA   $82",
+            "   LDY   #$01",
+            "   STA   (FP),Y",
+        ])
+
+    def test_add_zp_source(self):
+        out = emit_instruction(asm_ast.Add(
+            src=asm_ast.ZP(address=0x82, offset=0), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   ADC   $82"])
+
+    def test_sub_zp_source(self):
+        out = emit_instruction(asm_ast.Sub(
+            src=asm_ast.ZP(address=0x82, offset=0), dst=_reg(_A),
+        ))
+        self.assertEqual(out, ["   SBC   $82"])
+
+    def test_compare_a_with_zp(self):
+        out = emit_instruction(asm_ast.Compare(
+            left=_reg(_A), right=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   CMP   $82"])
+
+    def test_compare_x_with_zp(self):
+        out = emit_instruction(asm_ast.Compare(
+            left=_reg(_X), right=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   CPX   $82"])
+
+    def test_inc_zp(self):
+        out = emit_instruction(asm_ast.Inc(
+            dst=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   INC   $82"])
+
+    def test_dec_zp(self):
+        out = emit_instruction(asm_ast.Dec(
+            dst=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   DEC   $82"])
+
+    def test_asl_zp(self):
+        out = emit_instruction(asm_ast.ArithmeticShiftLeft(
+            dst=asm_ast.ZP(address=0x82, offset=0),
+        ))
+        self.assertEqual(out, ["   ASL   $82"])
+
+    def test_zp_address_out_of_range_raises(self):
+        # Defensive: regalloc shouldn't produce > 0xFF, but we check.
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.Mov(
+                src=asm_ast.ZP(address=0x100, offset=0), dst=_reg(_A),
+            ))
 
 
 class TestColumnAlignment(unittest.TestCase):

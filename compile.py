@@ -99,7 +99,9 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
         prog, symbols, types = type_check_program(_resolved(source))
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
-            tac = optimize_tac(tac, symbols)
+            # optimize_tac returns (prog, colorings); we're stopping
+            # before codegen here so the colorings are discarded.
+            tac, _ = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":
         prog, symbols, types = type_check_program(_resolved(source))
@@ -115,13 +117,21 @@ def _run_stage(stage: str, source: str, optimize: bool = False) -> str:
             if isinstance(sym.attrs, StaticAttr)
         )
         tac = translate_to_tac(prog, symbols, types)
+        # `colorings` is the per-function register-allocation result
+        # produced by the optimizer (empty when --optimize is off).
+        # `replace_pseudoregisters` consumes it to lower colored
+        # Pseudos to ZP operands; uncolored / spilled / address-
+        # taken names continue to flow through the existing Frame
+        # path.
+        colorings: dict = {}
         if optimize:
-            tac = optimize_tac(tac, symbols)
+            tac, colorings = optimize_tac(tac, symbols)
         return emit_program(expand_long_branches(replace_pseudoregs(
             translate_to_asm(tac, symbols, types),
             extra_statics=statics,
             symbols=symbols,
             types=types,
+            colorings=colorings,
         )))
     raise AssertionError(f"unknown stage: {stage!r}")
 

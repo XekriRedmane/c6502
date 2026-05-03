@@ -106,13 +106,13 @@ class TestFoldUnary(unittest.TestCase):
                          tac_ast.Copy(src=_ci(-5), dst=_var("x")))
 
     def test_negate_int_min_wraps(self) -> None:
-        # -(-128) overflows signed 8-bit: 128 mod 256 → 128, signed
-        # = -128 (the canonical two's-complement wrap).
+        # -(-32768) overflows signed 16-bit: 32768 mod 65536 → 32768,
+        # signed = -32768 (the canonical two's-complement wrap).
         out = _fold_one(tac_ast.Unary(
-            op=tac_ast.Negate(), src=_ci(-128), dst=_var("x"),
+            op=tac_ast.Negate(), src=_ci(-32768), dst=_var("x"),
         ))
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(-128), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(-32768), dst=_var("x")))
 
     def test_complement_int(self) -> None:
         out = _fold_one(tac_ast.Unary(
@@ -179,12 +179,12 @@ class TestFoldBinaryArith(unittest.TestCase):
                          tac_ast.Copy(src=_ci(5), dst=_var("x")))
 
     def test_add_overflow_wraps(self) -> None:
-        # 127 + 1 = 128, signed 8-bit wrap → -128.
+        # 32767 + 1 = 32768, signed 16-bit wrap → -32768.
         out = _fold_one(tac_ast.Binary(
-            op=tac_ast.Add(), src1=_ci(127), src2=_ci(1), dst=_var("x"),
+            op=tac_ast.Add(), src1=_ci(32767), src2=_ci(1), dst=_var("x"),
         ))
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(-128), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(-32768), dst=_var("x")))
 
     def test_sub_long(self) -> None:
         out = _fold_one(tac_ast.Binary(
@@ -195,10 +195,10 @@ class TestFoldBinaryArith(unittest.TestCase):
                          tac_ast.Copy(src=_cl(993), dst=_var("x")))
 
     def test_mul_overflow_wraps(self) -> None:
-        # 16 * 16 = 256 mod 256 = 0.
+        # 256 * 256 = 65536 mod 65536 = 0 in 16-bit.
         out = _fold_one(tac_ast.Binary(
             op=tac_ast.Multiply(),
-            src1=_ci(16), src2=_ci(16), dst=_var("x"),
+            src1=_ci(256), src2=_ci(256), dst=_var("x"),
         ))
         self.assertEqual(out[0],
                          tac_ast.Copy(src=_ci(0), dst=_var("x")))
@@ -314,13 +314,13 @@ class TestFoldShift(unittest.TestCase):
                          tac_ast.Copy(src=_ci(8), dst=_var("x")))
 
     def test_left_shift_overflows_into_sign(self) -> None:
-        # 1 << 7 = 128; signed 8-bit canonicalizes to -128.
+        # 1 << 15 = 32768; signed 16-bit canonicalizes to -32768.
         out = _fold_one(tac_ast.Binary(
             op=tac_ast.LeftShift(),
-            src1=_ci(1), src2=_ci(7), dst=_var("x"),
+            src1=_ci(1), src2=_ci(15), dst=_var("x"),
         ))
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(-128), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(-32768), dst=_var("x")))
 
     def test_arithmetic_right_shift_negative_value(self) -> None:
         # -8 >> 1 = -4 (sign-preserving).
@@ -332,9 +332,12 @@ class TestFoldShift(unittest.TestCase):
                          tac_ast.Copy(src=_ci(-4), dst=_var("x")))
 
     def test_shift_count_at_width_unchanged(self) -> None:
+        # Shift count == operand width is UB per C99 §6.5.7.3 — the
+        # folder leaves it alone. Int is 16 bits, so a count of 16
+        # exercises the boundary.
         instr = tac_ast.Binary(
             op=tac_ast.LeftShift(),
-            src1=_ci(1), src2=_ci(8), dst=_var("x"),
+            src1=_ci(1), src2=_ci(16), dst=_var("x"),
         )
         out = _fold_one(instr)
         self.assertEqual(out[0], instr)
@@ -869,15 +872,15 @@ class TestFoldSignExtend(unittest.TestCase):
     def test_int_to_unsigned_long_widens_via_signed(self) -> None:
         # SignExtend's contract is "the source is signed"; the dst's
         # signedness picks the result variant. ConstInt(-1) sign-
-        # extended to ULong is the bit pattern 0xFFFF, stored as
-        # ConstULong(65535).
+        # extended from 16 bits to 32 bits is the bit pattern
+        # 0xFFFFFFFF, stored as ConstULong(0xFFFFFFFF).
         symbols = _symtab(x=c99_ast.ULong())
         out = _fold_one(
             tac_ast.SignExtend(src=_ci(-1), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cul(65535), dst=_var("x")))
+                         tac_ast.Copy(src=_cul(0xFFFFFFFF), dst=_var("x")))
 
     def test_skip_without_symbols(self) -> None:
         instr = tac_ast.SignExtend(src=_ci(-1), dst=_var("x"))
@@ -905,25 +908,27 @@ class TestFoldZeroExtend(unittest.TestCase):
     pattern, then store at dst width."""
 
     def test_uint_to_ulong_negative_value_masks(self) -> None:
-        # ConstInt(-1) is the 8-bit pattern 0xFF; zero-extended to 16
-        # bits → 0x00FF = 255. Result variant is ConstULong (the
-        # dst's c99 type is ULong).
+        # ConstInt(-1) is the 16-bit pattern 0xFFFF; zero-extended to
+        # 32 bits → 0x0000FFFF = 65535. Result variant is ConstULong
+        # (the dst's c99 type is ULong).
         symbols = _symtab(x=c99_ast.ULong())
         out = _fold_one(
             tac_ast.ZeroExtend(src=_ci(-1), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cul(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cul(65535), dst=_var("x")))
 
     def test_uint_to_long_long(self) -> None:
+        # 16-bit ConstInt(-1) bit pattern 0xFFFF → zero-extended to
+        # 64 bits → 0x000000000000FFFF = 65535.
         symbols = _symtab(x=c99_ast.ULongLong())
         out = _fold_one(
             tac_ast.ZeroExtend(src=_ci(-1), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cull(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cull(65535), dst=_var("x")))
 
     def test_ulong_to_ulong_long(self) -> None:
         # ConstULong(65535) is the 16-bit pattern 0xFFFF; zero-extend
@@ -944,23 +949,24 @@ class TestFoldZeroExtend(unittest.TestCase):
 
 class TestFoldTruncate(unittest.TestCase):
     """Truncate(Constant, Var): keep the low dst-width bytes,
-    signed-canonicalize at that width."""
+    signed-canonicalize at that width. Widths follow c6502's
+    C99-conformant minimums (Int = 16 bits, Long = 32, LongLong = 64)."""
 
-    def test_long_to_int_keeps_low_byte(self) -> None:
-        # 0x1234 → 0x34 = 52 in signed 8-bit.
+    def test_long_to_int_keeps_low_bytes(self) -> None:
+        # 0xABCD1234 → low 16 bits = 0x1234 = 4660 in signed 16-bit.
         symbols = _symtab(x=c99_ast.Int())
         out = _fold_one(
-            tac_ast.Truncate(src=_cl(0x1234), dst=_var("x")),
+            tac_ast.Truncate(src=_cl(0xABCD1234), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(0x34), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(0x1234), dst=_var("x")))
 
     def test_long_to_int_canonicalizes_sign(self) -> None:
-        # 0x12FF → 0xFF, signed 8-bit = -1.
+        # 0xABCDFFFF → low 16 bits = 0xFFFF, signed 16-bit = -1.
         symbols = _symtab(x=c99_ast.Int())
         out = _fold_one(
-            tac_ast.Truncate(src=_cl(0x12FF), dst=_var("x")),
+            tac_ast.Truncate(src=_cl(0xABCDFFFF), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
@@ -969,21 +975,23 @@ class TestFoldTruncate(unittest.TestCase):
     def test_long_long_to_long(self) -> None:
         symbols = _symtab(x=c99_ast.Long())
         out = _fold_one(
-            tac_ast.Truncate(src=_cll(0x12345678), dst=_var("x")),
+            tac_ast.Truncate(src=_cll(0xAABBCCDD12345678), dst=_var("x")),
             symbols=symbols,
         )
-        # Low 16 bits of 0x12345678 = 0x5678; fits 16-bit signed.
+        # Low 32 bits of 0xAABBCCDD12345678 = 0x12345678; fits
+        # 32-bit signed.
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cl(0x5678), dst=_var("x")))
+                         tac_ast.Copy(src=_cl(0x12345678), dst=_var("x")))
 
     def test_long_long_to_int(self) -> None:
         symbols = _symtab(x=c99_ast.Int())
         out = _fold_one(
-            tac_ast.Truncate(src=_cll(0x12345678), dst=_var("x")),
+            tac_ast.Truncate(src=_cll(0xAABBCCDD12345678), dst=_var("x")),
             symbols=symbols,
         )
+        # Low 16 bits of 0x...5678 = 0x5678 = 22136 in signed 16-bit.
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(0x78), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(0x5678), dst=_var("x")))
 
     def test_skip_without_symbols(self) -> None:
         instr = tac_ast.Truncate(src=_cl(0x1234), dst=_var("x"))
@@ -1286,24 +1294,25 @@ class TestFoldSignednessAware(unittest.TestCase):
                          tac_ast.Copy(src=_cui(66), dst=_var("x")))
 
     def test_unsigned_arithmetic_canonicalizes_to_non_negative(self) -> None:
-        # Add wraps at 8 bits: 200 + 100 = 300 mod 256 = 44.
-        # Unsigned canonicalization keeps it in 0..255.
+        # Add wraps at 16 bits: 50000 + 20000 = 70000 mod 65536 =
+        # 4464. Unsigned canonicalization keeps it in 0..65535.
         out = _fold_one(tac_ast.Binary(
             op=tac_ast.Add(),
-            src1=_cui(200), src2=_cui(100), dst=_var("x"),
+            src1=_cui(50000), src2=_cui(20000), dst=_var("x"),
         ))
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cui(44), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(4464), dst=_var("x")))
 
     def test_signed_arithmetic_canonicalizes_signed(self) -> None:
-        # 127 + 1 = 128 → signed 8-bit wraps to -128. Same bit
-        # pattern as ConstUInt(128), but the value field is negative.
+        # 32767 + 1 = 32768 → signed 16-bit wraps to -32768. Same
+        # bit pattern as ConstUInt(32768), but the value field is
+        # negative.
         out = _fold_one(tac_ast.Binary(
             op=tac_ast.Add(),
-            src1=_ci(127), src2=_ci(1), dst=_var("x"),
+            src1=_ci(32767), src2=_ci(1), dst=_var("x"),
         ))
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(-128), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(-32768), dst=_var("x")))
 
     def test_mismatched_signedness_unchanged(self) -> None:
         # ConstInt + ConstUInt shouldn't happen post-type-check (both
@@ -1317,20 +1326,20 @@ class TestFoldSignednessAware(unittest.TestCase):
         self.assertEqual(out[0], instr)
 
     def test_unsigned_negate_wraps(self) -> None:
-        # -ConstUInt(1) at 8 bits → bit pattern 0xFF = 255.
+        # -ConstUInt(1) at 16 bits → bit pattern 0xFFFF = 65535.
         out = _fold_one(tac_ast.Unary(
             op=tac_ast.Negate(), src=_cui(1), dst=_var("x"),
         ))
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(65535), dst=_var("x")))
 
     def test_unsigned_complement(self) -> None:
         out = _fold_one(tac_ast.Unary(
             op=tac_ast.Complement(), src=_cui(0), dst=_var("x"),
         ))
-        # ~0 in 8-bit unsigned = 255.
+        # ~0 in 16-bit unsigned = 65535.
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(65535), dst=_var("x")))
 
 
 class TestFoldCopy(unittest.TestCase):
@@ -1353,26 +1362,26 @@ class TestFoldCopy(unittest.TestCase):
                          tac_ast.Copy(src=_cui(1), dst=_var("x")))
 
     def test_signed_to_unsigned_negative_canonicalizes(self) -> None:
-        # ConstInt(-1) bit pattern 0xFF reinterpreted as ConstUInt:
-        # value 255.
+        # ConstInt(-1) bit pattern 0xFFFF reinterpreted as ConstUInt:
+        # value 65535 (UInt is 16 bits).
         symbols = _symtab(x=c99_ast.UInt())
         out = _fold_one(
             tac_ast.Copy(src=_ci(-1), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(65535), dst=_var("x")))
 
     def test_unsigned_to_signed_high_bit_set(self) -> None:
-        # ConstUInt(200) bit pattern 0xC8 reinterpreted as ConstInt:
-        # signed 8-bit value -56.
+        # ConstUInt(40000) bit pattern 0x9C40 reinterpreted as
+        # ConstInt: signed 16-bit value 40000 - 65536 = -25536.
         symbols = _symtab(x=c99_ast.Int())
         out = _fold_one(
-            tac_ast.Copy(src=_cui(200), dst=_var("x")),
+            tac_ast.Copy(src=_cui(40000), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_ci(-56), dst=_var("x")))
+                         tac_ast.Copy(src=_ci(-25536), dst=_var("x")))
 
     def test_signed_long_to_unsigned_long(self) -> None:
         symbols = _symtab(x=c99_ast.ULong())
@@ -1381,7 +1390,7 @@ class TestFoldCopy(unittest.TestCase):
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cul(0xFFFF), dst=_var("x")))
+                         tac_ast.Copy(src=_cul(0xFFFFFFFF), dst=_var("x")))
 
     def test_signed_long_long_to_unsigned_long_long(self) -> None:
         symbols = _symtab(x=c99_ast.ULongLong())
@@ -1390,19 +1399,19 @@ class TestFoldCopy(unittest.TestCase):
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cull(0xFFFFFFFF), dst=_var("x")))
+                         tac_ast.Copy(src=_cull(0xFFFFFFFFFFFFFFFF), dst=_var("x")))
 
     def test_char_dst_variant_is_uint(self) -> None:
         # `char` maps to ConstUInt — plain char is unsigned in c6502
         # per C99 §6.2.5.15's implementation-defined choice (matches
-        # `unsigned char` semantics).
+        # `unsigned char` semantics). UInt is 16 bits, so -1 → 65535.
         symbols = _symtab(x=c99_ast.Char())
         out = _fold_one(
             tac_ast.Copy(src=_ci(-1), dst=_var("x")),
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(65535), dst=_var("x")))
 
     def test_uchar_dst_variant_is_uint(self) -> None:
         symbols = _symtab(x=c99_ast.UChar())
@@ -1411,7 +1420,7 @@ class TestFoldCopy(unittest.TestCase):
             symbols=symbols,
         )
         self.assertEqual(out[0],
-                         tac_ast.Copy(src=_cui(255), dst=_var("x")))
+                         tac_ast.Copy(src=_cui(65535), dst=_var("x")))
 
     def test_matching_variant_unchanged(self) -> None:
         # Variant already matches the dst's c99 type — nothing to do.

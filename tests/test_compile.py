@@ -751,5 +751,63 @@ class TestSizeof(unittest.TestCase):
         self.assertIn("duplicate", err.lower())
 
 
+class TestCodegenWithRegalloc(unittest.TestCase):
+    """End-to-end: --codegen --optimize routes promotable SSA values
+    through register allocation; eligible values lower to direct ZP
+    addressing (LDA $XX) instead of indirect-Y frame access
+    (LDY #off; LDA (FP),Y)."""
+
+    def _run(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
+        with patch("sys.stdin", io.StringIO(stdin)), \
+             patch("sys.stdout", new_callable=io.StringIO) as out, \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            rc = main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_optimize_emits_zp_load_for_register_allocated_value(self):
+        # Two locals depending on a param defeat constant folding:
+        # `a = p + 1; b = a + p; return b`. With --optimize the
+        # surviving locals should land in ZP and lower to direct
+        # LDA $XX.
+        src = "int main(int p) { int a = p + 1; int b = a + p; return b; }"
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+        )
+        self.assertEqual(rc, 0)
+        # At least one ZP load against an address in the default
+        # caller-saved pool ($80..$BF). A regex tolerates whichever
+        # specific slot regalloc picks.
+        import re
+        self.assertRegex(out, r"LDA\s+\$[89AB][0-9A-F]")
+
+    def test_no_optimize_keeps_frame_addressing(self):
+        # Same source without --optimize → no ZP, all accesses are
+        # via the FP-relative indirect-Y machinery.
+        src = "int main(int p) { int a = p + 1; int b = a + p; return b; }"
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen"], stdin=src,
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("(FP),Y", out)
+        # And the unoptimized output should NOT contain ZP literal
+        # loads in the caller-saved pool range — there's no regalloc.
+        # (Static globals can use absolute addressing too, but those
+        # are link-time symbols, not literal $XX bytes.)
+        import re
+        self.assertNotRegex(out, r"LDA\s+\$[89A-F][0-9A-F]")
+
+    def test_optimize_param_still_uses_frame(self):
+        # Per the MVP rule, params always use Frame addressing
+        # regardless of any color regalloc may have assigned —
+        # the calling convention dictates the on-entry layout.
+        src = "int main(int p) { return p + 1; }"
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+        )
+        self.assertEqual(rc, 0)
+        # The param's read should still go through (FP),Y.
+        self.assertIn("(FP),Y", out)
+
+
 if __name__ == "__main__":
     unittest.main()

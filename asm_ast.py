@@ -102,12 +102,14 @@ class Ret(Type_instruction):
     arg_bytes: int
     local_bytes: int
     save_a: bool
+    callee_saved_addrs: list[int] = field(default_factory=list)
 
 
 @dataclass
 class FunctionPrologue(Type_instruction):
     arg_bytes: int
     local_bytes: int
+    callee_saved_addrs: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -268,6 +270,12 @@ class Data(Type_operand):
 
 @dataclass
 class Indirect(Type_operand):
+    offset: int
+
+
+@dataclass
+class ZP(Type_operand):
+    address: int
     offset: int
 
 

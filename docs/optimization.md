@@ -1,0 +1,787 @@
+# The Optimization Pipeline
+
+This is a from-scratch tour of how `--optimize` turns "correct but
+slow" TAC into "correct and faster" TAC. Written for someone who has
+read CLAUDE.md but never touched the optimizer code.
+
+## Why optimize at all?
+
+Without `--optimize`, the c6502 compiler produces working 6502 code
+that puts every variable on the soft stack. Reading a variable costs
+8 cycles (`LDY #off; LDA (FP),Y`). With optimization on, hot
+variables instead live in zero-page bytes (`$80-$FF`) and reading
+costs 3 cycles (`LDA $XX`). About 3× faster per access.
+
+Plus, the optimizer folds constants, drops dead code, and propagates
+copies — the usual dance.
+
+## Where the optimizer fits
+
+```
+parse → resolve names → check types → c99_to_tac
+                                            │
+                                            ▼ TAC
+                                       [optimize]   ← the subject
+                                            │
+                                            ▼ optimized TAC + Coloring
+                              tac_to_asm → replace_pseudoregisters → asm_emit
+```
+
+The optimizer takes a `tac_ast.Program` and returns one. Same
+shape, just better. It also returns a `dict[func_name, Coloring]`
+that downstream `replace_pseudoregisters` consumes to know which
+variables go in zero-page.
+
+The driver lives in `passes/optimization/optimizer.py`.
+
+## The phases at a glance
+
+```
+to_ssa → [constant_fold → UCE → copy_propagate → DSE]* → regalloc → from_ssa
+            └────────── fixed-point loop ───────────┘
+```
+
+Five distinct phases:
+
+1. **`to_ssa`** renames variables so each has exactly one definition.
+   Inserts Phi nodes at control-flow merges.
+2. **The fixed-point loop** runs four cleanup passes in rotation
+   until none of them change anything.
+3. **Register allocation** computes a coloring that maps SSA
+   variables to zero-page slots.
+4. **`from_ssa`** lowers Phi nodes back to ordinary Copies so
+   `tac_to_asm` can handle the result.
+5. (Outside the optimizer.) `replace_pseudoregisters` turns the
+   coloring into actual `ZP(addr, offset)` operands and lays out
+   the frame around them; `asm_emit` produces 6502 mnemonics.
+
+The rest of this document walks through each phase in detail.
+
+---
+
+## Phase 1: `to_ssa` (passes/optimization/ssa_construction.py)
+
+### The problem
+
+Real code reassigns variables a lot:
+
+```c
+x = 1;
+x = x + 5;
+x = x * 2;
+```
+
+There are three different "x"s here, but they all share a name.
+That makes the optimizer's life hard: "what value does `x` have at
+line 3?" depends on where exactly you point.
+
+### The idea: SSA
+
+What if every assignment got a fresh, unique name? Like, instead of
+three `x`s, we have `x.1`, `x.2`, `x.3`:
+
+```
+x.1 = 1
+x.2 = x.1 + 5
+x.3 = x.2 * 2
+```
+
+Now there's no ambiguity. Each variable is **statically defined
+exactly once** — hence "Static Single Assignment". This is the SSA
+property.
+
+In SSA, asking "what's the value of x.2?" has one answer: `x.1 + 5`.
+That makes a lot of optimizations almost trivial. Copy propagation,
+dead-store elimination, value numbering — all dramatically simpler
+when each name has one definition.
+
+### The wrinkle: branches
+
+What about:
+
+```c
+if (c) {
+    x = 1;
+} else {
+    x = 2;
+}
+return x;
+```
+
+Two definitions. After the join, "what's x?" depends on which
+branch executed. We can't just pick a single name.
+
+The fix is a **Phi node**:
+
+```
+if (c) {
+    x.1 = 1;
+} else {
+    x.2 = 2;
+}
+.join:
+    x.3 = phi(then-branch: x.1, else-branch: x.2);
+return x.3;
+```
+
+A Phi says: "x.3 takes whichever value flowed in along the edge we
+arrived on." Think of it like a conductor at a busy intersection.
+When you reach the intersection from the south, x.3 is x.1; from the
+east, x.3 is x.2.
+
+Phis are not real machine instructions. They exist only inside the
+optimizer. `from_ssa` will turn them back into regular Copies later.
+
+### How `to_ssa` actually works
+
+The classical algorithm (Cytron et al. 1991), in five steps:
+
+1. **Identify promotable Vars.** Not every variable can be SSA-
+   renamed. To qualify:
+   - It must be `LocalAttr` (a block-scope local, function param,
+     or compiler-introduced temp). Globals and statics stay put.
+   - It must be a scalar type (Int, Long, Float, Pointer, ...).
+     Arrays and structs go through `GetAddress + Load/Store` and
+     are effectively address-taken.
+   - Nobody must have taken its address with `&`. If `&x` exists
+     somewhere, x's storage must stay at a fixed location, so we
+     can't rename it.
+
+2. **Build the CFG and compute dominators.** A node A "dominates"
+   node B if every path from the start to B goes through A. The
+   immediate dominator (idom) is the closest such ancestor.
+
+3. **Compute dominance frontiers (DF).** DF(B) is the set of
+   "boundary" blocks where B's definitions stop being uniquely
+   in charge — the join points where another path could come in
+   with a different value. Phi nodes for variables defined in B go
+   at the iterated DF of B (DF, plus DF of each block in DF, plus
+   ...).
+
+4. **Place Phis (pruned).** For each promotable variable v, find
+   every block that defines v, then put empty Phi nodes at the
+   iterated DF of those blocks. **Pruning**: only place a Phi at
+   block X if v is "live in" at X. If v is dead at X, the Phi's
+   result would be unread anyway, so don't bother. This avoids a
+   lot of useless Phis.
+
+5. **Rename.** Walk the dominator tree top-down. Each definition
+   gets a fresh number (`x.1`, `x.2`, ...). Each use gets the most
+   recent number on a stack. Phi dsts also get fresh numbers.
+   When a successor's Phi has an arg from this block's edge, the
+   arg's source is whatever's currently on top of the stack for
+   that variable.
+
+The output is a function with the same instruction shape, except
+each variable name has been replaced with `<orig>.<N>`, and Phi
+nodes have been inserted at appropriate joins.
+
+### A concrete example
+
+Source:
+
+```c
+int main(void) {
+    int i = 100;
+    do ; while ((i = i - 5) >= 50);
+    return i;
+}
+```
+
+After `to_ssa`:
+
+```
+.preheader:
+    Copy(100, @0.i.1)
+.loop_start:
+    Phi(@0.i.2, [(.preheader, @0.i.1), (.continue, @0.i.3)])
+.continue:
+    Binary(Sub, @0.i.2, 5, %0.1)
+    Copy(%0.1, @0.i.3)
+    Binary(GreaterOrEqual, @0.i.3, 50, %1.1)
+    JumpIfTrue(%1.1, .loop_start)
+.loop_break:
+    Ret(@0.i.3)
+```
+
+Three SSA names for `i`:
+- `@0.i.1`: the initial value (100)
+- `@0.i.2`: the Phi result at the loop top — either the initial
+  value or the previous iteration's update
+- `@0.i.3`: the post-update value (i - 5)
+
+The Phi on entry has two predecessors: `.preheader` (entry path,
+contributing `@0.i.1`) and `.continue` (back-edge, contributing
+`@0.i.3`).
+
+---
+
+## Phase 2: The Fixed-Point Loop
+
+```
+while True:
+    prev = fn
+    fn = constant_fold(fn)
+    fn = eliminate_unreachable_code(fn)
+    fn = copy_propagate(fn)
+    fn = eliminate_dead_stores(fn)
+    if fn == prev:
+        break
+```
+
+Four passes take turns simplifying. Why a loop? Because each pass
+enables the others. Constant folding might make a conditional
+jump unconditional, which lets UCE drop a block, which makes some
+copies dead, which lets DSE remove them, which exposes more
+constants...
+
+The loop stops when one full cycle made no structural change
+(`fn == prev`, dataclass equality).
+
+### 2a. `constant_fold` (passes/optimization/constant_folding.py)
+
+If you can compute it now, why wait until runtime?
+
+Folds:
+- **Arithmetic**: `Binary(Add, 3, 4)` → `Copy(7, dst)`.
+- **Comparisons**: `Binary(GT, 5, 3)` → `Copy(1, dst)` (true).
+- **Casts of constants**: `Cast(Long, ConstInt(5))` →
+  `ConstLong(5)`.
+- **Unary ops**: `Unary(Negate, 7)` → `Copy(-7, dst)`,
+  `Unary(LogicalNot, 0)` → `Copy(1, dst)`.
+- **Conditional jumps with constant conditions**: `JumpIfTrue(true)`
+  → `Jump(target)`; `JumpIfTrue(false)` → dropped entirely.
+- **Phis where every arg agrees**: `Phi(dst, [(_, c), (_, c)])` →
+  `Copy(c, dst)`.
+
+Critically, it does **arithmetic at the right width**. The 6502 has
+narrow types: `int` is 16 bits. So `30000 + 5000 = 35000`, but
+35000 doesn't fit in signed 16-bit — it wraps to -30536. The
+folder reproduces that wraparound so the optimized code matches
+exactly what the 6502 would compute at runtime. Width canonicalization
+goes through `_INTEGER_CONST_BITS` (Int=16, Long=32, LongLong=64;
+unsigned variants the same widths).
+
+### 2b. `eliminate_unreachable_code` (UCE)
+
+After folding, some code can't run anymore.
+
+Five sub-steps:
+
+1. **Drop unreachable blocks.** Forward DFS from the entry. Any
+   block we don't visit is dead — dropped. Phi args in surviving
+   blocks whose `pred_label` named a dropped block are also
+   dropped.
+
+2. **Prune dead Phi-edge args.** If constant folding dropped a
+   conditional jump, the edge from one block to another is gone —
+   but the destination's Phi still references the source's label.
+   Walk every Phi and drop args whose `pred_label` doesn't match
+   an actual current predecessor.
+
+3. **Fold singleton Phis.** A Phi with only one remaining arg is
+   semantically just a Copy. Rewrite `Phi(dst, [(_, src)])` →
+   `Copy(src, dst)`. (A zero-arg Phi means its block became
+   unreachable; defensive drop.)
+
+4. **Drop useless jumps.** A `Jump(L)` whose target L is the very
+   next block is redundant — fall-through gets there for free.
+   Same for conditional jumps where both successors equal the next
+   block.
+
+5. **Drop useless labels.** A `Label(L)` that no remaining Jump
+   targets AND no Phi `pred_label` references is just decoration.
+   Drop it.
+
+### 2c. `copy_propagate`
+
+`Copy(src, dst)` says "dst equals src." So everywhere that uses
+`dst`, we can equally well use `src`:
+
+```
+Copy(5, x)              ⇒    Copy(5, x)
+Binary(Add, x, 3, y)         Binary(Add, 5, 3, y)
+```
+
+(Then constant folding kicks in next round and computes `5 + 3 = 8`.)
+
+Importantly, this is sound **in SSA form** because every variable
+has exactly one definition. `dst` was set ONCE by the Copy, so
+substituting `src` for it is always correct. In non-SSA TAC,
+`dst` could be reassigned later, breaking the equation.
+
+The pass also chains: if `x = y` and `y = z`, then uses of `x`
+become `z` directly.
+
+### 2d. `eliminate_dead_stores` (DSE)
+
+A definition whose result is never used can be dropped:
+
+```
+x = 5;        ← x is never used, drop it
+y = 7;
+return y;
+```
+
+In SSA, "is x used?" is just "does the name `x` appear anywhere as
+a use?" If not, drop the def.
+
+Special case for function calls: a call may have side effects
+(prints, writes through pointers, calls into hardware). Don't drop
+the call itself, just drop the unused dst:
+`FunctionCall(f, args, dst=x)` → `FunctionCall(f, args, dst=None)`
+when x is unused.
+
+The pass iterates to fixed point internally too — dropping one
+def can make its inputs dead, which can make their inputs dead, etc.
+
+---
+
+## Phase 3: Register Allocation
+
+This is the headline feature. The 6502 has only A, X, Y as real
+registers, but C code needs many more "register-like" slots. The
+trick: use zero-page memory ($80-$FF, configurable) as a register
+file. 128 byte-wide "registers" in the default pool.
+
+The phase has three sub-phases.
+
+### 3a. liveness (passes/optimization/liveness.py)
+
+For each program point, which variables are live? A variable is
+**live** if it has a value that someone might still read.
+
+Rules:
+- A use of x makes x live (someone wants its value).
+- A def of x kills x (the old value is gone; the new value will
+  be live until its next use).
+
+This is computed as a backward dataflow: walk each block in
+reverse, maintaining a `live` set. At each instruction, kill the
+defs and add the uses. Iterate the per-block live-in/live-out
+across the CFG until fixed point.
+
+Two SSA-specific wrinkles for Phis:
+- A Phi's source is conceptually used at the END of the matching
+  predecessor (the edge), not at the Phi's block. So `phi.args`
+  contribute to predecessor live-out, not to the Phi block's
+  live-in.
+- A Phi's dst is conceptually defined at the END of every
+  predecessor (since `from_ssa` will insert a Copy there). So Phi
+  dsts also contribute to predecessor live-out — otherwise the
+  regalloc could happily share the dst's slot with another value
+  that's still live in the predecessor, and the future de-SSA
+  Copy would clobber it.
+
+The result is per-block `live_in[B]` and `live_out[B]`, plus a
+lazy per-instruction `live_after(bid, i)` query.
+
+### 3b. interference graph (passes/optimization/interference.py)
+
+Two variables **interfere** if they're both live at the same
+program point. Such pairs can't share a slot — putting them in the
+same byte would mean one overwrites the other.
+
+The graph:
+- Nodes: variables (well, the colorable ones — locals and SSA
+  temps; statics and function names get filtered out).
+- Edges: pairs (a, b) where a and b are simultaneously live.
+- Each node carries:
+  - **`width`**: 1, 2, 4, or 8 bytes (read from the symbol table:
+    Char/SChar/UChar=1; Int/UInt/Pointer=2; Long/ULong/Float=4;
+    LongLong/ULongLong/Double=8).
+  - **`lives_across_call`**: True iff this value is live at the
+    moment some `FunctionCall` happens. Drives the caller-saved
+    vs callee-saved decision.
+
+Built by walking each block in reverse, maintaining a `live` set
+initialized to `live_out[B]`. At each instruction's defs, edge each
+def with everything currently live. Then remove defs from live; add
+uses to live. Sibling Phi dsts in the same block all interfere with
+each other and with everything live just before the first non-Phi
+instruction.
+
+For SSA, this graph has a beautiful property: it's **chordal**. That
+means it admits a perfect elimination order, and greedy coloring in
+that order gives the optimal solution. (Without SSA, coloring is
+NP-hard.)
+
+### 3c. coloring (passes/optimization/register_allocation.py)
+
+"Coloring" means assigning each node a color (a starting ZP byte
+address) such that no two adjacent nodes (interfering vars) overlap.
+
+Imagine a map of countries: each country needs a different color
+from its neighbors. Same idea, except our "colors" are ranges of
+byte addresses, sized by each variable's width.
+
+The algorithm:
+
+1. **Compute a perfect elimination order (PEO).** Walk the
+   dominator tree top-down listing each value definition. Reverse
+   the result. Params and any other variables that aren't defined
+   by an instruction (e.g. SSA-renamed params) appear LAST in the
+   build order, so they're FIRST in the reversed PEO and get
+   colored first.
+
+2. **For each variable in PEO order:**
+   - Compute `blocked_bytes`: union of byte ranges of every
+     already-colored neighbor.
+   - Choose a pool based on `lives_across_call`:
+     - **True** → callee-saved first. The function's prologue
+       saves these slots and the epilogue restores them, so callees
+       can't disturb them. Doesn't fall back to caller-saved
+       (caller-saved would be clobbered by the call).
+     - **False** → caller-saved first. No save/restore overhead.
+       Falls back to callee-saved if caller-saved is full.
+   - In the chosen pool, find the lowest base such that `[base,
+     base+width)` is fully inside the pool's range AND disjoint
+     from `blocked_bytes`. Pick that.
+   - If nothing fits, **spill** the variable (added to
+     `coloring.spilled`). It'll get a frame slot via
+     `replace_pseudoregisters` later — slower than ZP, but
+     correct.
+
+The result is a `Coloring`:
+
+```python
+@dataclass
+class Coloring:
+    assignments: dict[str, int]    # name -> ZP base address
+    spilled: set[str]              # names that didn't fit
+    pool: Pool                     # echo of the pool used
+```
+
+### Caller-saved vs callee-saved (the convention)
+
+This is about who's responsible for preserving a value across a
+function call.
+
+**Caller-saved**: if the caller has a value in caller-saved ZP and
+calls a function, the callee might trash it. The caller must save
+it before the call (or just not put values that need to survive
+across the call there).
+
+**Callee-saved**: if a function uses a callee-saved ZP byte, IT
+promises to save the prior contents in its own prologue and restore
+them in its own epilogue. Callers can rely on their callee-saved
+values surviving across the call.
+
+The c6502 default split: $80-$BF (64 bytes) caller-saved, $C0-$FF
+(64 bytes) callee-saved. The starting address is configurable via
+`Pool(start=...)`.
+
+The actual save/restore happens later, in
+`replace_pseudoregisters` + `asm_emit`. See Phase 5.
+
+---
+
+## Phase 4: `from_ssa` (passes/optimization/ssa_destruction.py)
+
+We're done optimizing. Now undo the SSA renaming so `tac_to_asm`
+can lower the code (it doesn't know how to handle Phi nodes).
+
+### The plan
+
+A Phi like:
+
+```
+.join:
+    x.3 = phi(then-branch: x.1, else-branch: x.2)
+```
+
+becomes one Copy in each predecessor:
+
+```
+.then:
+    ...
+    Copy(x.1, x.3)            ← inserted here
+    jump .join
+.else:
+    ...
+    Copy(x.2, x.3)            ← inserted here
+.join:
+    use x.3
+```
+
+Now there are no more Phis. Each branch ends with a Copy that
+puts the right value into `x.3` for what comes after.
+
+### The wrinkle: parallel-copy semantics
+
+Multiple Phis at the same join produce multiple Copies in the same
+predecessor. Naive emission can break things.
+
+Example after copy propagation in a loop:
+
+```
+.loop_top:
+    Phi(@i.new, [..., (.continue, %4)])
+    Phi(@counter, [..., (.continue, @i.new)])
+```
+
+In `.continue`, the de-SSA emits TWO Copies. Naive source order:
+
+```
+Copy(%4, @i.new)         ← writes @i.new
+Copy(@i.new, @counter)   ← reads @i.new — but it just got
+                           overwritten with the new value!
+```
+
+This is the classic **lost copy** problem. We need the second Copy
+to read the OLD value of `@i.new`, but the first Copy already
+overwrote it.
+
+### The fix: topological sort
+
+Reorder the Copies so reads happen before overlapping writes:
+
+```
+Copy(@i.new, @counter)   ← read @i.new first (still has old value)
+Copy(%4, @i.new)         ← now overwrite
+```
+
+Algorithm: repeatedly emit any pending Copy whose dst isn't read
+by another pending Copy. Remove. Repeat. When no such Copy
+exists, all remaining Copies form a cycle.
+
+### Cycles need a temp
+
+```
+Copy(a, b)    ← b = a
+Copy(b, a)    ← a = b
+```
+
+A literal swap. Topological sort can't help — every Copy reads
+what another Copy writes. Solution: a temporary:
+
+```
+Copy(b, tmp)   ← save old b
+Copy(a, b)     ← b = old a
+Copy(tmp, a)   ← a = old b (from saved tmp)
+```
+
+The temp is a fresh `<funcname>.cycle_tmp@N` Var. Its type is
+registered in the symbol table (matching the cycle members'
+type). Since regalloc has already run, the temp doesn't get a
+zero-page slot — `replace_pseudoregisters` will give it a frame
+slot, slower than ZP but correct.
+
+After `from_ssa`, the function has zero Phi nodes and is back to
+regular non-SSA TAC.
+
+---
+
+## Phase 5: After the optimizer (replace_pseudoregisters + asm_emit)
+
+The optimizer returns `(prog, colorings)`. Downstream code
+consumes both.
+
+### `tac_to_asm`
+
+Lowers TAC to asm IR. Each TAC value becomes an asm `Pseudo(name,
+offset)` operand. Doesn't know about coloring yet — just produces
+Pseudos uniformly.
+
+### `replace_pseudoregisters`
+
+Receives the `colorings` dict and rewrites every Pseudo in the
+function:
+
+| If the Pseudo's name is...                | Lowers to                    |
+|-------------------------------------------|------------------------------|
+| in the program's static-storage set       | `Data(name, offset)`         |
+| in the function's params                  | `Frame(...)` (calling conv)  |
+| in `coloring.assignments`                 | `ZP(addr, offset)`           |
+| anything else (uncolored / spilled)       | `Frame(...)` (frame slot)    |
+
+Static-storage objects use absolute addressing by symbolic name.
+Params arrive on the soft stack (per the calling convention) so
+they ALWAYS go to Frame even if regalloc colored them. ZP-colored
+locals go to direct zero-page addressing. Uncolored or spilled
+locals fall back to frame-relative storage.
+
+Additionally, this pass **derives the callee-saved-byte set**: for
+each colored value, walk its bytes (`[base, base+width)`); the
+ones that fall in `coloring.pool.callee_saved()` need to be saved
+by the function's prologue. The save area sits at the bottom of
+the frame: `FP+1..FP+S` where S is the number of saved bytes.
+Locals shift up by S to leave room.
+
+### `asm_emit`
+
+Lowers each asm-IR instruction to actual 6502 mnemonics:
+
+- `LDA $XX` for `ZP(0xXX, 0)`
+- `LDA $XY` for `ZP(0xXX, 1)` (offset folded at emit time —
+  XY = XX + 1)
+- `LDA name+0` (= `LDA name`) for `Data(name, 0)`
+- `LDY #off; LDA (FP),Y` for `Frame(off)`
+- ...and so on.
+
+The **prologue** emits the standard FP setup, then for each
+callee-saved address, `LDA $XX; LDY #(slot+1); STA (FP),Y`. The
+**epilogue** does the reverse: `LDY #(slot+1); LDA (FP),Y; STA
+$XX` for each addr, BEFORE the SSP/FP teardown (so FP is still
+valid for the indirect-Y reads).
+
+A small **self-Mov peephole** drops `Mov(src, dst)` when `src ==
+dst`. This catches the case where a Phi's source and destination
+ended up at the same color — the de-SSA Copy is technically `LDA
+$XX; STA $XX`, a no-op. Also covers the now-correct Reg(A)→Reg(A)
+self-transfers.
+
+---
+
+## Putting it all together: end-to-end example
+
+C source:
+
+```c
+int main(int n) {
+    int a = n + 1;
+    int b = 0;
+    for (int i = 0; i < n; i = i + 1) {
+        b = b + a;
+    }
+    return b;
+}
+```
+
+After `c99_to_tac` (sketch):
+
+```
+main(n):
+    a = n + 1
+    b = 0
+    i = 0
+.loop_start:
+    cond = i < n
+    if !cond goto .loop_end
+    b = b + a
+    i = i + 1
+    goto .loop_start
+.loop_end:
+    return b
+```
+
+After `to_ssa` — Phis at the loop top for `b` and `i` (which
+change each iteration). `a` doesn't change, so no Phi for it.
+
+```
+main(n):
+    a.1 = n + 1
+    b.1 = 0
+    i.1 = 0
+.loop_start:
+    b.2 = phi(.entry: b.1, .continue: b.3)
+    i.2 = phi(.entry: i.1, .continue: i.3)
+    cond.1 = i.2 < n
+    if !cond.1 goto .loop_end
+    b.3 = b.2 + a.1
+    i.3 = i.2 + 1
+    goto .loop_start
+.loop_end:
+    return b.2
+```
+
+After the **fixed-point loop**: nothing folds (n is unknown at
+compile time), so the function is structurally unchanged.
+
+After **regalloc** (default pool, $80-$FF):
+- `n`, `a.1`, `b.2`, `i.2` are live across the loop iterations and
+  the Phi merges, so they get callee-saved colors (≥ $C0).
+- `b.3`, `i.3`, `cond.1` are short-lived; they go in caller-saved
+  (≥ $80, < $C0).
+
+After `from_ssa` — Phis lowered to Copies in `.continue` (the
+back-edge pred), topologically sorted:
+
+```
+main(n):
+    a.1 = n + 1
+    b.1 = 0
+    i.1 = 0
+    b.2 = b.1     ← from the entry-edge Phi sources
+    i.2 = i.1
+.loop_start:
+    cond.1 = i.2 < n
+    if !cond.1 goto .loop_end
+    b.3 = b.2 + a.1
+    i.3 = i.2 + 1
+    b.2 = b.3     ← from the back-edge Phi sources
+    i.2 = i.3     ← (sorted to read before overwriting)
+    goto .loop_start
+.loop_end:
+    return b.2
+```
+
+When this lowers to 6502 asm via `tac_to_asm` +
+`replace_pseudoregisters` + `asm_emit`, the loop body is fast: each
+variable read is `LDA $XX` instead of `LDY #off; LDA (FP),Y`. And
+the prologue saves whichever ZP bytes the function uses from
+$C0-$FF, restoring them in the epilogue, so the caller's view of
+those bytes survives the call.
+
+---
+
+## Inspecting intermediate results
+
+Several `compile.py` flags let you peek at what the optimizer is
+doing:
+
+- `--tac` shows the TAC right after `c99_to_tac` (no optimization).
+- `--tac --optimize` shows the TAC AFTER the full optimizer
+  pipeline (post-de-SSA).
+- `--codegen` shows the final 6502 asm (no optimization).
+- `--codegen --optimize` shows the final asm with regalloc applied.
+
+For digging deeper into individual phases, the test files are the
+best examples. See `tests/test_ssa.py`, `tests/test_liveness.py`,
+`tests/test_interference.py`, `tests/test_register_allocation.py`,
+`tests/test_constant_folding.py`, etc.
+
+---
+
+## What's not done yet
+
+These are documented as future work in the codebase:
+
+- **Move coalescing.** When a Phi's source and dst could share a
+  color, regalloc doesn't actively try to make that happen. We
+  rely on the self-Mov peephole to clean up the chance pairings.
+  Real coalescing during coloring would be smarter.
+- **Global value numbering.** Two computations of the same
+  expression aren't deduplicated.
+- **Loop optimizations.** Loop-invariant code motion, strength
+  reduction, etc.
+- **Inlining.** Every function call is a real call.
+- **Smarter spill heuristics.** When a variable spills, we don't
+  re-color the function — we just send the spilled value to
+  frame storage forever.
+- **Variable-width-aware optimal coloring.** Greedy coloring with
+  variable widths is no longer provably optimal (only chordal-
+  with-unit-widths is). It works well in practice, but a more
+  principled allocator could do better in fragmented cases.
+
+---
+
+## Files at a glance
+
+| File | What it does |
+|------|--------------|
+| `passes/optimization/optimizer.py` | Driver. Glues everything together. |
+| `passes/optimization/cfg.py` | Basic blocks, dominators, dominance frontiers. |
+| `passes/optimization/var_visit.py` | Shared use/def walkers (pure structural). |
+| `passes/optimization/ssa_construction.py` | `to_ssa` — places Phis, renames. |
+| `passes/optimization/constant_folding.py` | Compile-time arithmetic. |
+| `passes/optimization/unreachable_code_elimination.py` | UCE — drops dead blocks/edges/labels. |
+| `passes/optimization/copy_propagation.py` | SSA-aware copy-substitution. |
+| `passes/optimization/dead_store_elimination.py` | SSA-aware DSE. |
+| `passes/optimization/liveness.py` | Per-block + per-instruction liveness. |
+| `passes/optimization/interference.py` | Builds the chordal interference graph. |
+| `passes/optimization/pool.py` | Caller/callee-saved ZP pool config. |
+| `passes/optimization/register_allocation.py` | Width-aware chordal coloring. |
+| `passes/optimization/ssa_destruction.py` | `from_ssa` — Phis to Copies, topo-sorted, cycles broken. |
+| `passes/replace_pseudoregisters.py` | Lays out the frame; consumes the Coloring. |
+| `asm_emit.py` | 6502 mnemonic emission, including prologue save/restore. |

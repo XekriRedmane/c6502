@@ -42,25 +42,32 @@ ASDL source.
 to strip comments, then runs to the stage requested by exactly one
 mutually-exclusive flag:
 
-| flag         | output                                                        |
-| ------------ | ------------------------------------------------------------- |
-| `--lex`      | one `line:col<TAB>kind<TAB>value` line per token              |
-| `--parse`    | `pretty(c99_ast)` — the parsed AST                            |
-| `--resolve`  | `pretty(c99_ast)` after the three resolution passes (user     |
-|              | variables → `@N.orig`; goto labels → `.<funcname>@<orig>`;    |
-|              | loops → `.loop@N`, with break/continue stamped to match)      |
-| `--tac`      | `pretty(tac_ast)` — three-address-code IR                     |
-| `--codegen`  | 6502 assembly text                                            |
-| `--optimize` | modifier (orthogonal to the stage flags). With `--tac`, shows |
-|              | post-optimization TAC; with `--codegen`, emits asm where      |
-|              | promotable SSA values are register-allocated to ZP slots.     |
-|              | See `docs/optimization.md` for the pipeline.                  |
+| flag             | output                                                        |
+| ---------------- | ------------------------------------------------------------- |
+| `--lex`          | one `line:col<TAB>kind<TAB>value` line per token              |
+| `--parse`        | `pretty(c99_ast)` — the parsed AST                            |
+| `--resolve`      | `pretty(c99_ast)` after the three resolution passes (user     |
+|                  | variables → `@N.orig`; goto labels → `.<funcname>@<orig>`;    |
+|                  | loops → `.loop@N`, with break/continue stamped to match)      |
+| `--tac`          | `pretty(tac_ast)` — three-address-code IR                     |
+| `--codegen`      | 6502 assembly text                                            |
+| `--optimize`     | modifier (orthogonal to the stage flags). With `--tac`, shows |
+|                  | post-optimization TAC; with `--codegen`, emits asm where      |
+|                  | promotable SSA values are register-allocated to ZP slots.     |
+|                  | See `docs/optimization.md` for the pipeline.                  |
+| `--optimize-asm` | modifier; alternate optimizer operating at the asm level.     |
+|                  | TAC fixed-point opts → asm-level SSA round-trip with byte-    |
+|                  | granular DCE + regalloc → late prologue synthesis. Also       |
+|                  | enables the `__attribute__((zp_abi))` calling-convention      |
+|                  | optimization. Mutually exclusive with `--optimize`. See the   |
+|                  | "Alternate pipeline" section below and `docs/leaf_zp_abi.md`. |
 
 ```sh
 uv run python compile.py <source.c> --codegen              # to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to file
 uv run python compile.py - --tac < source.c                # stdin
 uv run python compile.py - --codegen --optimize < src.c    # with regalloc
+uv run python compile.py - --codegen --optimize-asm < src.c  # alt optimizer
 ```
 
 Notes:
@@ -76,6 +83,12 @@ Notes:
   / address-taken / parameter values continue to use frame
   storage. Roughly 3× faster per access in the loop body for
   hot variables.
+- `--optimize-asm` is the alternate optimizer; same end-to-end
+  correctness, plus byte-granular optimizations the TAC layer
+  can't see (dead high-byte stores from cast-then-truncate
+  patterns) and the `__attribute__((zp_abi))` frame-elimination
+  feature for leaf functions. Mutually exclusive with
+  `--optimize`.
 - The comment-stripping step uses pcpp via the Python API (see
   `preprocessor.py`); pcpp is a project dependency, no shelling out.
 - Any flag `compile.py` doesn't recognize is forwarded to the
@@ -662,6 +675,79 @@ end-to-end example and the actual asm output. The chapter
 `tests/test_sim_asm_optimized.py` runs chapters 1-12 through
 `--optimize` end-to-end via the asm simulator and asserts return
 values match.
+
+## Alternate pipeline: `--optimize-asm`
+
+`compile.py` accepts a sibling `--optimize-asm` flag (mutually
+exclusive with `--optimize`) that runs an alternate optimizer
+operating at the asm level. Pipeline shape:
+
+```
+c99_to_tac → TAC fixed-point opts (NO TAC regalloc, NO TAC from_ssa
+   into colorings) → tac_to_asm bare_exit=True → asm-level SSA
+   round-trip (passes/optimization_asm/) → byte-granular DCE →
+   byte-granular regalloc → SSA destruction → late prologue
+   synthesis → emit
+```
+
+Two distinguishing features vs. `--optimize`:
+
+- **Byte-granular SSA + regalloc.** The asm-level SSA pass
+  versions each `(Pseudo name, byte offset)` pair independently,
+  so byte 0 of a 4-byte Long has its own def/use chain separate
+  from byte 3. A `(long)y` cast whose result is later truncated
+  back to `int` drops the dead high-byte stores via byte-DCE,
+  shrinking the function's frame. The byte-granular regalloc
+  picks ZP slots per byte rather than per multi-byte value, so
+  disjoint lifetimes within the same logical variable can share
+  colors (coalescing-by-accident through the from_ssa parallel-
+  copy ordering and apply_coloring's ZP rewrite).
+
+- **Frame elimination via `__attribute__((zp_abi))`.** A
+  function declared `__attribute__((zp_abi))` participates in
+  a per-function ZP-passing calling convention: caller writes
+  argument bytes directly to fixed ZP addresses (no
+  `AllocateStack`, no soft-stack frame for those args); callee
+  reads params from those addresses (no `Frame(M+3+...)`). When
+  the body also fits entirely in ZP and uses no callee-saved
+  bytes, the function emits as bare body + `RTS` — no prologue,
+  no epilogue. Compile-time validation: the function must be a
+  leaf (no calls in body), must not have its address taken
+  anywhere, and its params must fit the ZP window
+  (default 64 bytes, `$80–$BF`).
+
+  ```c
+  __attribute__((zp_abi)) int add(int a, int b) {
+      return a + b;
+  }
+  int main(void) { return add(3, 4); }
+  ```
+
+  Compiled with `--codegen --optimize-asm`, `add` is just the
+  arithmetic + bare RTS — no SSP/FP setup whatsoever. The
+  caller's body regalloc avoids `add`'s param ZP addresses
+  (computed by `_blocked_addrs_for` from the per-program
+  `ParamLayout` dict), so the `Mov(arg, ZP(addr))` writes never
+  collide with the caller's locals.
+
+  Selection is **manual**: a function uses ZP-passing iff
+  declared with the annotation. Without it, soft-stack as
+  today. The annotation lives on function declarations (and
+  optional definitions) so headers can propagate the contract
+  across translation units.
+
+  Full design + build plan: `docs/leaf_zp_abi.md`. Tests:
+  `tests/test_attribute_zp_abi.py` (parser),
+  `tests/test_abi_selection.py` (validation),
+  `tests/test_tac_to_asm_zp_abi.py` (call-site lowering),
+  `tests/test_replace_pseudoregisters_zp_abi.py` (callee-side
+  resolution), `tests/test_leaf_zp_abi.py` (end-to-end +
+  simulation).
+
+The chapter sim corpus also runs through `--optimize-asm` via
+`TestAsmSimChaptersOptimizeAsm` in
+`tests/test_sim_asm_optimized.py`. Both pipelines pass the same
+program-return assertions on chapter_1..12.
 
 ## Lexer and parser as APIs
 
@@ -1648,6 +1734,23 @@ Not yet anywhere in the pipeline:
   `tac_to_asm` already emits `JSR` to all of these — the
   marshaling is done; what's missing is the implementation that
   the assembler would link against.
+
+End-to-end with `--optimize` or `--optimize-asm`:
+
+- `--optimize` runs the SSA-bracketed TAC optimizer (constant
+  folding, UCE, copy propagation, DSE, regalloc) per
+  `docs/optimization.md`.
+- `--optimize-asm` runs the alternate optimizer (TAC fixed-
+  point opts → asm-level SSA round-trip with byte-DCE +
+  byte-granular regalloc → late prologue synthesis) per the
+  "Alternate pipeline" section above.
+- `__attribute__((zp_abi))` on a function (active under
+  `--optimize-asm`) selects the per-function ZP-passing
+  calling convention. Validated at compile time: function must
+  be a leaf, must not be address-taken, params must fit the ZP
+  window. When the body also fits in ZP and uses no callee-
+  saved bytes, the function emits as bare body + RTS — no
+  prologue, no epilogue. See `docs/leaf_zp_abi.md`.
 
 ## Tests
 

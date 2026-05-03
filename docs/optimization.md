@@ -1499,18 +1499,102 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | 5e. Wire round-trip into `--optimize-asm`; chapter sim corpus passes | Done |
 | 6. Byte-level DCE (drops dead high-byte work) | Done |
 | 7. Asm-level byte-granular regalloc | Done |
+| F1a. Parser support for `__attribute__((zp_abi))` | Done |
+| F1b. `passes/abi_selection.py` — `ParamLayout` + validation | Done |
+| F2. `tac_to_asm` ZP-ABI call-site lowering | Done |
+| F3. `replace_pseudoregisters_bare_exit` resolves ZP-ABI params to ZP | Done |
+| F4. Frame elimination on ZP-ABI leaf functions | Done |
+| F5. Caller's body locals avoid ZP-ABI callee param addresses | Done (via `_blocked_addrs_for`) |
+| F6. End-to-end wiring + chapter sim corpus + new ZP-ABI sim tests | Done |
 
 ### Files at a glance (asm-opt layer)
 
 | File | What it does |
 |------|--------------|
 | `passes/prologue_synthesis.py` | Inserts `FunctionPrologue` and rewrites `Return` → `Ret` based on per-function `FrameDims`; collapses no-frame functions to bare RTS. |
+| `passes/abi_selection.py` | Picks per-function `ParamLayout` from the `__attribute__((zp_abi))` annotation; validates leaf + not-address-taken + fits-in-window. |
 | `passes/optimization_asm/cfg.py` | Asm-level basic-block CFG, idom, dominance frontiers — same shape as the TAC version. |
 | `passes/optimization_asm/ssa_construction.py` | `to_ssa(fn, statics=...)` — byte-granular Phi placement + name versioning. |
 | `passes/optimization_asm/byte_dce.py` | Drops Movs / Phis whose Pseudo dst is unused. |
 | `passes/optimization_asm/liveness.py` | Backward dataflow over Pseudo names. |
 | `passes/optimization_asm/interference.py` | Chordal graph; filters non-colorable names. |
-| `passes/optimization_asm/regalloc.py` | PEO + greedy 1-byte coloring. |
+| `passes/optimization_asm/regalloc.py` | PEO + greedy 1-byte coloring; accepts `blocked_addrs` to reserve ZP-ABI param slots. |
 | `passes/optimization_asm/apply_coloring.py` | Substitutes colored `Pseudo` operands with `ZP` operands so `from_ssa` can detect physical-slot cycles. |
 | `passes/optimization_asm/ssa_destruction.py` | `from_ssa(fn)` — critical-edge splitting + Phi → Mov + parallel-copy ordering by storage key. |
-| `passes/optimization_asm/optimizer.py` | Per-function driver; threads to_ssa → byte_dce → regalloc → apply_coloring → from_ssa. |
+| `passes/optimization_asm/optimizer.py` | Per-function driver; threads to_ssa → byte_dce → regalloc → apply_coloring → from_ssa. Computes `blocked_addrs` from each function's own ParamLayout + every ZP-ABI callee's. |
+
+### Frame elimination via `__attribute__((zp_abi))`
+
+A separate optimization layered on top of `--optimize-asm`: any
+function declared with `__attribute__((zp_abi))` participates in
+the **per-function ZP-passing calling convention**. The function's
+parameters live at fixed zero-page addresses chosen by
+`passes/abi_selection.py`; the caller writes argument bytes
+directly to those addresses (no `AllocateStack`, no `Stack(off)`
+writes); the callee reads them via the same addresses (no
+`Frame(M+3+...)` reads). When the callee also has no Frame-
+resident locals (asm-level regalloc fit everything in ZP) and no
+callee-saved bytes (which leaves don't need anyway), the
+prologue / epilogue collapse entirely — the function emits as
+pure body + bare `RTS`.
+
+Constraints (validated at compile time, error otherwise):
+
+- The function's body must contain no `FunctionCall` /
+  `IndirectCall` (leaf only — see `docs/leaf_zp_abi.md` for the
+  reasoning around recursion and indirect calls).
+- The function's address must not be taken anywhere in the
+  program.
+- The total parameter byte count must fit in the available ZP
+  window (default 64 bytes, $80–$BF).
+
+When validation fails, the compiler reports the specific check
+that failed with a clear error — the annotation has to be
+correct, no silent fallback.
+
+The annotation syntax is `__attribute__((zp_abi))` placed before
+the declaration specifiers:
+
+```c
+__attribute__((zp_abi)) int add(int a, int b) {
+    return a + b;
+}
+```
+
+Compiled with `--codegen --optimize-asm`, `add` produces:
+
+```
+add:
+   SUBROUTINE
+.add@asm_ssa_block@0:
+   LDA   $80          ; a's low byte (caller wrote it here)
+   CLC
+   ADC   $82          ; + b's low byte
+   STA   $85          ; result's low byte (regalloc avoids $80-$83)
+   LDA   $81
+   ADC   $83
+   STA   $84
+   LDA   $85
+   STA   HARGS
+   LDA   $84
+   STA   HARGS+1
+   RTS                ; bare RTS — no SSP/FP teardown
+```
+
+Compare to the legacy soft-stack ABI (the `--optimize` form),
+which emits ~17 instructions of prologue + matching epilogue
+even for this 7-instruction function. The savings stack with
+the existing asm-level optimizations: byte-DCE still trims dead
+high-byte writes, byte-granular regalloc still picks tight
+colors, and the absence of frame ceremony is on top.
+
+A function calling a ZP-ABI callee gets a corresponding
+adjustment: its own body regalloc avoids the callee's param ZP
+addresses (see `_blocked_addrs_for` in
+`passes/optimization_asm/optimizer.py`), so locals can't be
+placed where outgoing-arg writes will land. This is more
+conservative than a per-instruction outgoing-arg-window
+liveness analysis — the addresses are blocked for the function's
+entire body — but it's simple and correct.
+
+The full design and build plan is in `docs/leaf_zp_abi.md`.

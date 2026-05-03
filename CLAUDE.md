@@ -21,6 +21,7 @@ uv run python compile.py <source.c> --codegen              # C → 6502 asm to s
 uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
 uv run python compile.py - --tac < source.c                # read stdin, stop after TAC
 uv run python compile.py - --codegen --optimize < src.c    # with TAC-level optimizer
+uv run python compile.py - --codegen --optimize-asm < src.c  # alt: asm-level optimizer
 ```
 
 `compile.py` is the only CLI; every other module is library-only. Flags it doesn't
@@ -33,12 +34,21 @@ Stage-selection flags (mutually exclusive, one required with `compile.py`):
 the three name-resolution passes (identifier resolution, label resolution,
 loop labeling) in that order.
 
-Modifier flag: `--optimize` (orthogonal to the stage flags; applies to
-`--tac` and `--codegen`). Runs the SSA-bracketed optimizer pipeline
-(constant folding, unreachable-code elimination, copy propagation,
-dead-store elimination) plus register allocation that maps promotable
-SSA values to zero-page slots. See the "Optimization pipeline"
-section below and `docs/optimization.md` for the full walk-through.
+Modifier flags (orthogonal to the stage flags; applies to `--tac` and
+`--codegen`; mutually exclusive with each other):
+- `--optimize` runs the SSA-bracketed optimizer pipeline (constant
+  folding, unreachable-code elimination, copy propagation, dead-store
+  elimination) plus TAC-level register allocation that maps promotable
+  SSA values to zero-page slots.
+- `--optimize-asm` runs the alternate pipeline: TAC fixed-point opts
+  (no TAC regalloc) → asm-level SSA round-trip with byte-granular DCE
+  + regalloc → late prologue synthesis. Also enables the
+  `__attribute__((zp_abi))` calling-convention optimization (frame
+  elimination on annotated leaves).
+
+See the "Optimization pipeline" / "Frame elimination via __attribute__"
+sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
+for the full walk-throughs.
 
 ## Regenerating AST modules
 
@@ -1346,6 +1356,71 @@ color is left to chance + the self-Mov peephole), and a few opts
 remain future work — see the "What's not done yet" section at the
 end of `docs/optimization.md`.
 
+`compile.py` has a sibling flag `--optimize-asm` that selects an
+**alternate optimizer pipeline** with byte-granular SSA / DCE /
+regalloc operating on the asm IR. Same end-to-end correctness on
+the chapter sim corpus; produces equivalent ZP usage to
+`--optimize` plus a few byte-DCE wins (dead high-byte stores
+from cast-then-truncate patterns drop). The two flags are
+mutually exclusive. `--optimize-asm` also enables the
+`__attribute__((zp_abi))` calling-convention optimization (see
+below).
+
+## Frame elimination via `__attribute__((zp_abi))`
+
+A function declared `__attribute__((zp_abi))` participates in a
+**per-function ZP-passing calling convention** instead of the
+soft-stack convention. Caller writes argument bytes directly to
+fixed zero-page addresses (no `AllocateStack`); callee reads
+params from those addresses (no `Frame(M+3+...)` reads). When
+the callee additionally has no Frame-resident locals (asm-level
+regalloc fit everything in ZP) and no callee-saved bytes
+(leaves don't need any), the prologue / epilogue collapse to
+nothing — the function emits as pure body + bare `RTS`.
+
+Active under `--optimize-asm` only (the soft-stack convention
+is unchanged in `--optimize` and unannotated `--optimize-asm`).
+Selection is **manual**: a function uses ZP-passing if and only
+if its declaration carries `__attribute__((zp_abi))`. Without
+the annotation, soft-stack as today.
+
+Validation (compile-time, error otherwise):
+- The body must contain no `FunctionCall` / `IndirectCall` —
+  leaf only. Recursion / mutual recursion would clobber the
+  param ZP slots; indirect calls can't know the callee's ABI.
+- The function's address must not be taken anywhere in the
+  program. (Otherwise an indirect call site would assume the
+  default soft-stack ABI.)
+- The total parameter byte count must fit in the available ZP
+  window (default 64 bytes, $80–$BF).
+
+`passes/abi_selection.py` (`select_abi`) computes the per-
+function `ParamLayout = SoftStackLayout | ZpLayout(addrs)` dict
+and is threaded through:
+- `tac_to_asm` (call-site lowering: ZP-ABI callees get
+  `Mov(arg, ZP(addr))` writes with parallel-copy ordering, no
+  `AllocateStack`).
+- `replace_pseudoregisters_bare_exit` (callee-side: ZP-ABI
+  param Pseudos resolve to `ZP(layout.addrs[k], 0)`;
+  `arg_bytes` stays at 0).
+- `passes/optimization_asm/optimizer.py`'s
+  `_blocked_addrs_for`, which tells the body's regalloc to
+  avoid (a) the function's own param addresses if it's ZP-ABI
+  and (b) every ZP-ABI callee's param addresses — so locals
+  can't collide with incoming or outgoing param bytes.
+
+The annotation is parsed by the C99 grammar's `attribute_clause`
+rule (just before declaration specifiers) and stored on
+`Type_function_decl.abi_annotation` / `Type_var_decl.abi_annotation`
+(the latter only ever None — annotations on object decls / tag-
+only decls are rejected at parse time). Unknown attribute names
+(anything other than `zp_abi` today) are also rejected at parse
+time. Cross-TU correctness rides on header propagation: every
+TU including the header sees the annotation and uses the
+matching ABI.
+
+Full design + build plan in `docs/leaf_zp_abi.md`.
+
 ## Function stack frame (soft stack)
 
 Arguments and locals live on a **soft data stack** in main RAM, separate from
@@ -2053,3 +2128,25 @@ end-to-end via the asm sim: `tests/test_sim_asm_optimized.py`
 runs the chapter_1..12 corpus through `--optimize` and asserts
 program return values match the unoptimized expectations. See
 `docs/optimization.md` for the full walk-through.
+
+`--optimize-asm` runs end-to-end as the alternate pipeline:
+TAC fixed-point opts (no TAC regalloc), then asm-level SSA
+round-trip (`passes/optimization_asm/`) with byte-DCE + byte-
+granular regalloc; final stage is a post-regalloc
+`prologue_synthesis` that elides the prologue/epilogue when no
+frame is needed. Same chapter sim corpus runs through the alt
+path via `tests.test_sim_asm_optimized.TestAsmSimChaptersOptimizeAsm`.
+
+`__attribute__((zp_abi))` on a function declaration enables
+**frame elimination via ZP-passing** under `--optimize-asm`
+(see "Frame elimination via __attribute__((zp_abi))" section
+above). Validated at compile time (function must be a leaf,
+not address-taken, params fit the ZP window); rejected with a
+clear error otherwise. Caller writes args directly to the
+callee's pinned ZP addresses (no AllocateStack); callee's
+params live at those ZP addresses (no Frame reads); when the
+body also fits entirely in ZP and uses no callee-saved bytes,
+the function emits as bare body + RTS — no prologue, no
+epilogue. Tests in `tests/test_leaf_zp_abi.py` cover end-to-
+end compilation + simulation; design and build plan in
+`docs/leaf_zp_abi.md`.

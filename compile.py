@@ -145,6 +145,7 @@ def _run_stage(
             )
             asm0, asm_colorings = asm_opt.optimize_program(
                 asm0, extra_statics=statics, param_layouts=abi,
+                symbols=symbols,
             )
             asm1, dims_by_fn = replace_pseudoregs_bare_exit(
                 asm0, extra_statics=statics, symbols=symbols,

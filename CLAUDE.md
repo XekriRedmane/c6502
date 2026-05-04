@@ -38,11 +38,12 @@ and `--codegen`):
 - `--optimize` runs the optimizer pipeline: TAC-level fixed-point
   opts (constant folding, strength reduction, comparison-against-
   zero / jump fold, UCE, copy propagation, dead-store elimination)
-  → asm-level SSA round-trip with forward + backward copy
-  propagation + byte-granular DCE + byte-granular regalloc →
-  late prologue / epilogue synthesis. Also enables the
-  `__attribute__((zp_abi))` calling-convention optimization (frame
-  elimination on annotated leaves).
+  → asm-level const-static fold (drops scalar `static T const`
+  storage, replacing references with immediates) → asm-level SSA
+  round-trip with forward + backward copy propagation + byte-
+  granular DCE + byte-granular regalloc → late prologue / epilogue
+  synthesis. Also enables the `__attribute__((zp_abi))` calling-
+  convention optimization (frame elimination on annotated leaves).
 
 See the "Optimization pipeline" / "Frame elimination via __attribute__"
 sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
@@ -1338,9 +1339,14 @@ fn → to_ssa
    `FunctionPrologue` prepended).
 
 5. **Asm-level SSA round-trip** (`passes/optimization_asm/`).
-   `to_ssa` byte-versions every promotable `(name, byte offset)`
-   pair (so byte 0 of a 4-byte Long has its own def/use chain
-   separate from byte 3). A fixed-point bracket of
+   A program-level prepass `fold_const_statics` first replaces
+   references to const-qualified internal-linkage scalar statics
+   with `Imm` operands carrying the static's byte values, and
+   drops the now-unreferenced `StaticVariable` top-levels. See
+   "Const-static fold" below for the eligibility rules. Then,
+   per function: `to_ssa` byte-versions every promotable `(name,
+   byte offset)` pair (so byte 0 of a 4-byte Long has its own
+   def/use chain separate from byte 3). A fixed-point bracket of
    `[copy_propagate → backward_copy_propagate → byte_dce]` runs
    to convergence. Then **byte-granular regalloc** colors each
    1-byte SSA name to a ZP slot from a configurable
@@ -1367,11 +1373,60 @@ fn → to_ssa
    rewrites each `Return(save_a)` to `Ret(N, M, save_a,
    callee_saved_addrs)`.
 
-`StaticVariable` top-levels pass through the optimizer unchanged
-(their `init` is constant byte layout, not control flow).
-`optimize_function` without `symbols` (legacy unit-test path)
-skips SSA construction (the renaming pass needs the symbol table
-to register fresh SSA names with their types).
+Most `StaticVariable` top-levels pass through the optimizer
+unchanged (their `init` is constant byte layout, not control
+flow); the const-static fold (next section) drops the subset that
+qualifies. `optimize_function` without `symbols` (legacy unit-test
+path) skips SSA construction (the renaming pass needs the symbol
+table to register fresh SSA names with their types).
+
+## Const-static fold (`passes/optimization_asm/const_static_fold.py`)
+
+Program-level prepass that runs first inside `optimize_program`.
+A `static T const x = <const-init>` (file-scope, internal linkage,
+const-qualified, single foldable scalar init) whose address is
+never taken in the program is genuinely immutable in c6502's
+single-TU model: `static` keeps the symbol invisible at link time,
+`const` rejects writes to it, and "no address taken" means no
+runtime path observes the storage location. Every reference to its
+bytes can therefore be replaced with the corresponding immediate
+at compile time, and the storage cells freed.
+
+A `StaticVariable` top-level becomes a candidate when:
+  * `is_global` is False (internal linkage — `static` at file
+    scope or any block-scope `static`),
+  * the symbol-table type carries an outermost `Const(...)`
+    wrapper (not recursed — `Pointer(Const(Int))` is `const int *`
+    pointee, not a `int * const` pointer; that wouldn't be us),
+  * `init` is a single CharInit / IntInit / LongInit /
+    LongLongInit / FloatInit / DoubleInit (one foldable scalar —
+    arrays, AddressInit, StringInit, ZeroInit are skipped).
+
+A candidate is then disqualified if it appears as:
+  * `LoadAddress.src` — `&candidate` somewhere,
+  * the dst of any write atom (Mov / Add / Sub / And / Or / Xor /
+    Inc / Dec / ASL / LSR / ROL / ROR / Pop) — defensive; the
+    type checker rejects writes to a const lvalue, but we don't
+    silently fold past one if it slipped through,
+  * an `IndexedData(name=candidate, ...)` operand (only relevant
+    for static arrays in practice — defensive),
+  * an `AddressInit(name=candidate, ...)` in another static's
+    initializer.
+
+For surviving candidates: every `Pseudo(name=cand, offset=k)` USE
+in every function is rewritten to `Imm(byte_at(init, k))`, and
+the candidate's `StaticVariable` top-level is dropped. The
+asm-level `Mov(Imm, Pseudo)` shapes the rewrite leaves behind get
+picked up by the existing forward-copy-prop / DCE bracket — the
+fold is a setup for downstream cleanup, not a standalone pass.
+
+The canonical case is a memory-mapped device pointer:
+`static uint8_t * const hires_page1 = (uint8_t * const)0x2000;`
+— every `LDA hires_page1` (3 bytes) collapses to `LDA #$00`
+(2 bytes), every `LDA hires_page1+1` to `LDA #$20`, and the
+2-byte storage of `hires_page1` itself disappears from the
+output. External-linkage globals (without `static`) are skipped
+even when const, because another TU might read the symbol.
 
 ## Frame elimination via `__attribute__((zp_abi))`
 

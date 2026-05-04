@@ -874,6 +874,126 @@ A few things to notice:
 
 ---
 
+## Asm-level prepass: const-static fold (`passes/optimization_asm/const_static_fold.py`)
+
+Before any per-function work, `optimize_program` runs a program-
+level prepass that folds away const-qualified internal-linkage
+scalar statics.
+
+### The case
+
+```c
+static uint8_t * const hires_page1 = (uint8_t * const)0x2000;
+
+void blit(uint8_t v) {
+    *hires_page1 = v;
+}
+```
+
+`hires_page1` is `static` (internal linkage — no other TU can
+reach the symbol), `const` (the type system rejects writes to it),
+and initialized with a constant address. In a single-TU program
+its bytes never change. Without the fold, every reference goes
+through the static's storage:
+
+```
+   LDA   hires_page1     ; 3 bytes, absolute load
+   CLC
+   ADC   $84
+   STA   DPTR
+   LDA   hires_page1+1   ; 3 bytes
+   ADC   $82
+   STA   DPTR+1
+```
+
+— plus the 2-byte `DC.W $2000` storage cells the static itself
+occupies.
+
+After the fold, the bytes of the address are baked into the
+instruction stream as immediates, and the storage cells are gone:
+
+```
+   LDA   #$00            ; 2 bytes, immediate
+   CLC
+   ADC   $84
+   STA   DPTR
+   LDA   #$20            ; 2 bytes, immediate
+   ADC   $82
+   STA   DPTR+1
+```
+
+Two bytes saved per use site (3 → 2), plus the 2-byte storage
+elided entirely. For a memory-mapped device pointer used in a
+hot loop this adds up.
+
+### Eligibility
+
+The fold treats a `StaticVariable` top-level as a candidate iff:
+
+  * `is_global` is False — internal linkage. If the symbol could
+    be referenced from another TU, dropping the storage breaks
+    the link. `static` at file scope and any block-scope `static`
+    qualify.
+  * Symbol-table type carries an outermost `Const(...)` wrapper.
+    The check doesn't recurse: `Pointer(Const(Int))` is `const
+    int *p` (the *pointee* is const, not the pointer itself), and
+    folding the pointer's bytes there would be wrong.
+  * Init is a single foldable scalar — `CharInit(v)` /
+    `IntInit(v)` / `LongInit(v)` / `LongLongInit(v)` /
+    `FloatInit(bits)` / `DoubleInit(bits)`. Multi-element inits
+    (arrays, structs), `AddressInit` (would need to fold to
+    `ImmLabelLow/High`, deferred), `StringInit`, `ZeroInit` are
+    skipped.
+
+A candidate is then disqualified by any of:
+
+  * `LoadAddress.src` naming it (`&candidate` somewhere).
+  * The destination of any write atom (Mov / Add / Sub / And / Or
+    / Xor / Inc / Dec / shifts / rotates / Pop). Defensive — the
+    type checker rejects writes to a const lvalue, but if one
+    slipped through we wouldn't silently drop it.
+  * `IndexedData(name=candidate, ...)` — only relevant for
+    arrays; defensive on scalars.
+  * `AddressInit(name=candidate, ...)` in another static's
+    init list (some other static stored its address at link time).
+
+### The rewrite
+
+For surviving candidates the pass:
+
+  1. Replaces every `Pseudo(name=cand, offset=k)` USE in every
+     function with `Imm(byte_at(init, k))`. Use positions are: the
+     `src` of Mov / Add / Sub / And / Or, both `src1`/`src2` of
+     Xor, the `src` of Push, and both sides of Compare. Defs and
+     `LoadAddress.src/dst` are left alone (the disqualification
+     rules above guarantee the candidate can't appear there).
+  2. Drops the candidate's `StaticVariable` top-level — no more
+     references to the storage exist.
+
+The resulting `Mov(Imm, Pseudo)` shapes flow naturally into the
+existing forward-copy-prop / DCE bracket: each immediate gets
+substituted into its consumers, leaving the `Mov` dead, which
+`byte_dce` then sweeps. So the fold isn't a full optimization on
+its own — it's a setup step that opens the door for the per-
+function passes to clean up.
+
+### Position in the pipeline
+
+Runs FIRST inside `optimize_program`, before any per-function
+SSA work. The asm program at that point has Pseudos rather than
+Data references for static refs (tac_to_asm hasn't been
+followed by `replace_pseudoregisters` yet — that's later in the
+pipeline). The fold is keyed on Pseudo with `name in <statics>`,
+which means we don't have to disambiguate against local
+references (locals would have other Pseudo names).
+
+The pass needs the symbol table to read each candidate's type
+and check the const wrapper; `compile.py` and `sim.harness`
+thread `symbols=symbols` through `optimize_program` for this
+reason.
+
+---
+
 ## The same example through the asm-level pipeline
 
 Same C source. The early stages (parse, resolve, type-check,

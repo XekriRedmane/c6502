@@ -99,6 +99,7 @@ def compile_to_asm(
         asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
         asm0, asm_colorings = asm_opt.optimize_program(
             asm0, extra_statics=statics, param_layouts=abi,
+            symbols=syms,
         )
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,

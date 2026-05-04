@@ -43,6 +43,7 @@ from passes.optimization_asm.backward_copy_propagation import (
     backward_copy_propagate,
 )
 from passes.optimization_asm.byte_dce import byte_dce
+from passes.optimization_asm.const_static_fold import fold_const_statics
 from passes.optimization_asm.copy_propagation import copy_propagate
 from passes.optimization_asm.interference import build_interference
 from passes.optimization_asm.liveness import compute_liveness
@@ -55,6 +56,7 @@ def optimize_program(
     prog: asm_ast.Type_program, *,
     extra_statics: frozenset[str] = frozenset(),
     param_layouts=None,
+    symbols=None,
 ) -> tuple[asm_ast.Type_program, dict[str, Coloring]]:
     """Walk every Function top-level and apply the asm-level SSA
     round-trip. Returns the rewritten program alongside a
@@ -79,8 +81,21 @@ def optimize_program(
     `ZpLayout`, the layout's ZP addresses are reserved (`blocked
     addrs`) during regalloc so body locals don't collide with
     incoming param bytes. Without this dict, every function is
-    treated as soft-stack ABI and no addresses are reserved."""
+    treated as soft-stack ABI and no addresses are reserved.
+
+    `symbols` is the c6502 symbol table; passed through to
+    `fold_const_statics` (the const-static prepass) so it can
+    check the const qualifier on each candidate static. Without
+    it, the prepass is a no-op."""
     from passes.abi_selection import ZpLayout
+    # Program-level prepass: replace references to const-qualified
+    # internal-linkage scalar statics with Imm operands carrying
+    # the static's byte values, and drop the now-unreferenced
+    # StaticVariable top-levels. Runs BEFORE the per-function SSA
+    # round-trip — the resulting `Mov(Imm, Pseudo)` shapes are
+    # picked up by forward copy propagation in the existing fixed-
+    # point bracket.
+    prog = fold_const_statics(prog, symbols=symbols)
     statics: set[str] = set(extra_statics)
     statics |= {
         tl.name for tl in prog.top_level

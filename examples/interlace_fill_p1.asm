@@ -26,11 +26,11 @@ interlace_fill_p1:
    LDA   $82
    ADC   #$00
    STA   $82
-   LDA   hires_page1
+   LDA   #$00
    CLC
    ADC   $83
    STA   DPTR
-   LDA   hires_page1+1
+   LDA   #$20
    ADC   $82
    STA   DPTR+1
    LDA   $80
@@ -46,9 +46,6 @@ interlace_fill_p1:
    JMP   .loop@0_start
 .loop@0_break:
    RTS
-
-hires_page1:
-   DC.W  $2000
 
 interlace_p1_offsets:
    DC.W  $00A8

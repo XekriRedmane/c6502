@@ -938,6 +938,8 @@ class Translator:
                 return self._translate_load(src_ptr, dst)
             case tac_ast.Store(src=src, dst_ptr=dst_ptr):
                 return self._translate_store(src, dst_ptr)
+            case tac_ast.IndexedLoad(name=name, index=index, dst=dst):
+                return self._translate_indexed_load(name, index, dst)
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     # ------------------------------------------------------------------
@@ -1575,6 +1577,43 @@ class Translator:
             *self._stage_dptr(ptr_op),
             *_indirect_write(src_op, n),
         ]
+
+    def _translate_indexed_load(
+        self,
+        name: str,
+        index: tac_ast.Type_val,
+        dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Static-array indexed load: stage `index` into X, then read
+        N consecutive bytes from `name+0..N-1,X` (absolute,X on the
+        link-time label) into `dst`'s N bytes. N comes from the dst's
+        width — a uint16 dst reads 2 bytes, etc.
+
+        Why X, not Y. Frame / Stack / Indirect operands all use Y
+        for their (PTR),Y indirect-indexed accesses; a Frame-resident
+        dst would emit `LDY #off; STA (FP),Y` between byte reads,
+        clobbering Y. X is otherwise unused at this layer, so an
+        `LDA arr+k,X` chain interleaves cleanly with Frame stores
+        without conflict.
+
+        The index is staged via Reg(A) → Reg(X) (LDA + TAX) rather
+        than a direct LDX because the index source can be a
+        Frame/Stack operand, and LDX doesn't have indirect-Y mode."""
+        index_op = translate_val(index)
+        dst_op = translate_val(dst)
+        n = self._size_of(dst)
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=index_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),
+        ]
+        for k in range(n):
+            out.append(asm_ast.Mov(
+                src=asm_ast.IndexedData(
+                    name=name, offset=k, index=asm_ast.X(),
+                ),
+                dst=_byte_at(dst_op, k),
+            ))
+        return out
 
     @staticmethod
     def _stage_dptr(

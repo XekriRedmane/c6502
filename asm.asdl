@@ -174,6 +174,17 @@ module ASM {
     -- `+offset` when offset==0). Used by LoadAddress when the
     -- target is a static-storage name — its address is link-time
     -- known, so the address bytes can be loaded as immediates.
+    --
+    -- IndexedData(name, offset, index): the byte at the absolute
+    -- address `name + offset + index_reg`, accessed via the 6502's
+    -- absolute,X or absolute,Y addressing mode. Used for static-
+    -- storage array indexing where the array's total byte size
+    -- fits within Y's 0..255 range (so the scaled index always
+    -- fits in 8 bits). asm_emit lowers as `LDA name+offset,Y`
+    -- (3-byte instruction) — significantly cheaper than the
+    -- DPTR-staged indirect-Y dereference. Caller is responsible
+    -- for loading `index_reg` (typically Y) with the byte offset
+    -- before issuing the access.
     operand = Imm(int value) | Reg(reg)
             | Pseudo(identifier name, int offset)
             | Stack(int offset) | Frame(int offset)
@@ -182,6 +193,7 @@ module ASM {
             | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)
+            | IndexedData(identifier name, int offset, reg index)
     reg = A | X | Y
     -- 6502 branch conditions, named after the suffix on each Bxx
     -- opcode: BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS.

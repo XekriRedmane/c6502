@@ -87,6 +87,24 @@ _INDY = {
     "CMP": 0xD1,
 }
 
+# Absolute,Y (3 bytes: opcode + lo + hi)
+_ABSY = {
+    "LDA": 0xB9, "STA": 0x99,
+    "ADC": 0x79, "SBC": 0xF9,
+    "AND": 0x39, "ORA": 0x19, "EOR": 0x59,
+    "CMP": 0xD9, "LDX": 0xBE,
+}
+
+# Absolute,X (3 bytes: opcode + lo + hi)
+_ABSX = {
+    "LDA": 0xBD, "STA": 0x9D,
+    "ADC": 0x7D, "SBC": 0xFD,
+    "AND": 0x3D, "ORA": 0x1D, "EOR": 0x5D,
+    "CMP": 0xDD, "LDY": 0xBC,
+    "ASL": 0x1E, "LSR": 0x5E, "ROL": 0x3E, "ROR": 0x7E,
+    "INC": 0xFE, "DEC": 0xDE,
+}
+
 # Indirect (3 bytes: opcode + lo + hi) — only JMP has this mode.
 _IND = {"JMP": 0x6C}
 
@@ -513,6 +531,20 @@ def _is_imm_label(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh))
 
 
+def _is_indexed_data(op: asm_ast.Type_operand) -> bool:
+    """True for `IndexedData` (absolute,X / absolute,Y addressing
+    on a static label)."""
+    return isinstance(op, asm_ast.IndexedData)
+
+
+def _resolve_indexed_data_addr(
+    op: asm_ast.IndexedData, syms: dict[str, int],
+) -> int:
+    if op.name not in syms:
+        raise AssemblerError(f"undefined symbol {op.name!r}")
+    return (syms[op.name] + op.offset) & 0xFFFF
+
+
 def _check_dst_a(op: asm_ast.Type_operand, name: str) -> None:
     if not _is_reg_a(op):
         raise AssemblerError(f"{name} dst must be Reg(A); got {op!r}")
@@ -624,6 +656,16 @@ def _emit_abs(opcode: str, addr: int) -> bytes:
     return bytes([_ABS[opcode], lo, hi])
 
 
+def _emit_abs_indexed(
+    opcode: str, addr: int, index: asm_ast.Type_reg,
+) -> bytes:
+    """Encode absolute,X or absolute,Y addressing — 3 bytes (opcode +
+    lo + hi). Index reg picks between the two opcode tables."""
+    lo, hi = _abs_word(addr)
+    table = _ABSX if isinstance(index, asm_ast.X) else _ABSY
+    return bytes([table[opcode], lo, hi])
+
+
 def _emit_zp(opcode: str, zp: int) -> bytes:
     return bytes([_ZP[opcode], _imm_byte(zp, "zp address")])
 
@@ -666,6 +708,12 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
     # memory -> Reg(A): load.
     if _is_memory(src) and _is_reg_a(dst):
         return _load_mem_to_a_size(src)
+    # IndexedData -> Reg(A): LDA name+off,Y (3 bytes, absolute,Y).
+    if _is_indexed_data(src) and _is_reg_a(dst):
+        return 3
+    # IndexedData -> memory: load + store (3 + store size).
+    if _is_indexed_data(src) and _is_memory(dst):
+        return 3 + _store_a_to_mem_size(dst)
     # Data / ZP -> Reg(X) / Reg(Y): direct LDX / LDY (zp or abs).
     # Same encoding length as memory -> Reg(A) for the Data / ZP
     # form.
@@ -765,6 +813,16 @@ def _emit_mov(
     # memory -> Reg(A).
     if _is_memory(src) and _is_reg_a(dst):
         return _emit_load_mem_to_a(src, syms)
+    # IndexedData -> Reg(A): absolute,X/Y addressing.
+    if _is_indexed_data(src) and _is_reg_a(dst):
+        return _emit_abs_indexed(
+            "LDA", _resolve_indexed_data_addr(src, syms), src.index,
+        )
+    # IndexedData -> memory: load via abs,X/Y, then store.
+    if _is_indexed_data(src) and _is_memory(dst):
+        return _emit_abs_indexed(
+            "LDA", _resolve_indexed_data_addr(src, syms), src.index,
+        ) + _emit_store_a_to_mem(dst, syms)
     # Data / ZP -> Reg(X) / Reg(Y) — zp/abs LDX/LDY direct.
     if _is_data_or_zp(src) and isinstance(dst, asm_ast.Reg):
         if isinstance(dst.reg, asm_ast.X):

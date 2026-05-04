@@ -4,34 +4,20 @@ interlace_fill_p1:
 .interlace_fill_p1@asm_ssa_preheader@0:
 .interlace_fill_p1@ssa_block@0:
    LDA   #$00
-   STA   $86
+   STA   $84
 .loop@0_start:
-   LDA   $86
+   LDA   $84
    CMP   #$69
    BCS   .loop@0_break
 .interlace_fill_p1@asm_ssa_block@0:
-   LDA   #<interlace_p1_offsets
-   STA   $84
-   LDA   #>interlace_p1_offsets
-   STA   $85
-   LDA   $86
+   LDA   $84
    STA   $82
    ASL   $82
-   LDA   #$00
+   LDA   $82
+   TAX
+   LDA   interlace_p1_offsets,X
    STA   $83
-   ROL   $83
-   LDA   $84
-   CLC
-   ADC   $82
-   STA   DPTR
-   LDA   $85
-   ADC   $83
-   STA   DPTR+1
-   LDY   #$00
-   LDA   (DPTR),Y
-   STA   $83
-   INY
-   LDA   (DPTR),Y
+   LDA   interlace_p1_offsets+1,X
    STA   $82
    LDA   $83
    CLC
@@ -48,15 +34,15 @@ interlace_fill_p1:
    ADC   $82
    STA   DPTR+1
    LDA   $80
-   DEY
+   LDY   #$00
    STA   (DPTR),Y
 .loop@0_continue:
-   LDA   $86
+   LDA   $84
    CLC
    ADC   #$01
    STA   $82
    LDA   $82
-   STA   $86
+   STA   $84
    JMP   .loop@0_start
 .loop@0_break:
    RTS

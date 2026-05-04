@@ -287,6 +287,17 @@ def _zp_addr(z: asm_ast.ZP) -> str:
     return f"${addr:02X}"
 
 
+def _indexed_data_addr(d: asm_ast.IndexedData) -> str:
+    """6502 absolute,X / absolute,Y addressing string for a static-
+    storage indexed reference. Renders as `name+offset,X` /
+    `name+offset,Y` (collapsing `+0` for offset==0). Used for static
+    arrays whose total byte size ≤ 256 — the index register's
+    0..255 range covers any element in such an array, so no
+    runtime pointer arithmetic / DPTR setup is needed."""
+    base = d.name if d.offset == 0 else f"{d.name}+{d.offset}"
+    return f"{base},{_reg_letter(d.index)}"
+
+
 def _is_data_or_zp(op: asm_ast.Type_operand) -> bool:
     """True iff `op` lowers to native 6502 absolute / zero-page
     addressing — i.e. Data (link-time symbol) or ZP (regalloc-
@@ -389,6 +400,18 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
     if _is_imm_label(src) and _is_memory_operand(dst):
         return (
             [_instr_line("LDA", _imm_label_text(src))]
+            + _emit_memop_store(dst)
+        )
+    # IndexedData source: absolute,X / absolute,Y addressing into
+    # a static array. Currently only as a Mov src (LDA name,Y) —
+    # caller has staged the byte offset into the named index
+    # register. Destination must be Reg(A), or another memory
+    # operand (in which case A is the conduit).
+    if isinstance(src, asm_ast.IndexedData) and _is_reg_a(dst):
+        return [_instr_line("LDA", _indexed_data_addr(src))]
+    if isinstance(src, asm_ast.IndexedData) and _is_memory_operand(dst):
+        return (
+            [_instr_line("LDA", _indexed_data_addr(src))]
             + _emit_memop_store(dst)
         )
     # Memory-operand paths. `_is_memory_operand` covers Stack, Frame,

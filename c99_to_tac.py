@@ -1838,10 +1838,20 @@ class Translator:
             case c99_ast.Subscript(array=arr, index=idx):
                 # `a[i]` per C99 §6.5.2.1.2 is `*(a + i)`. The type
                 # checker has already decayed any array operand to a
-                # pointer and widened the index to Long, so this
-                # reuses the pointer-arithmetic lowering directly:
-                # compute the byte address, then Load N bytes through
-                # it into a fresh element-typed temp.
+                # pointer and widened the index to Long.
+                #
+                # Fast path: when `a` is a static-storage Array whose
+                # total byte size ≤ 256, the byte offset always fits
+                # in Y's 0..255 range. Emit `IndexedLoad` so
+                # tac_to_asm can lower as 6502 absolute,Y addressing
+                # on the link-time label — no DPTR setup, no indirect
+                # pointer arithmetic. See `_try_indexed_load_subscript`.
+                fast = self._try_indexed_load_subscript(
+                    arr, idx, exp, instrs,
+                )
+                if fast is not None:
+                    return fast
+                # Fallback: general pointer arithmetic + Load.
                 addr = self._translate_subscript_address(
                     arr, idx, instrs,
                 )
@@ -2647,6 +2657,85 @@ class Translator:
             mi.type for mi in m_layout.members if mi.name == member
         )
         return self._add_offset(ptr_val, offset, m_type, instrs)
+
+    def _try_indexed_load_subscript(
+        self,
+        array: c99_ast.Type_exp,
+        index: c99_ast.Type_exp,
+        exp: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val | None:
+        """If `array[index]` qualifies for absolute,Y addressing (the
+        array is a static-storage object whose total byte size ≤ 256),
+        emit `IndexedLoad` and return the dst Var. Otherwise None.
+
+        Qualification:
+          * `array` is `AddressOf(Var(name))` — the type checker's
+            array-to-pointer decay shape for `Var(name)` of array
+            type. (User-written `&arr` would also wrap as AddressOf,
+            but with type `Pointer(Array(...))`; we don't care about
+            the wrapper's type, only the inner symbol's.)
+          * The symbol `name` has `StaticAttr` (file- or block-scope
+            static storage — its address is a link-time label).
+          * The symbol's c99 type is `Array(elem, N)` with
+            `N * sizeof(elem) ≤ 256` so the byte index always fits
+            in Y's 0..255 range for any in-bounds access.
+
+        Lowering:
+          * Compute the index value, truncate to UChar.
+          * Multiply by sizeof(elem) to scale (skipped when
+            sizeof(elem)==1; strength reduction folds power-of-2
+            multiplies into shifts later).
+          * Emit `IndexedLoad(name, byte_idx, dst)`. Dst's width is
+            `sizeof(elem)`, so tac_to_asm reads N bytes from
+            `name+0..N-1,Y`.
+        """
+        if not isinstance(array, c99_ast.AddressOf):
+            return None
+        inner = array.exp
+        if not isinstance(inner, c99_ast.Var):
+            return None
+        sym = self._symbols.get(inner.name)
+        if sym is None or not isinstance(sym.attrs, StaticAttr):
+            return None
+        if not isinstance(sym.type, c99_ast.Array):
+            return None
+        total = _sizeof(sym.type, self._types)
+        if total > 256:
+            return None
+        elem_type = sym.type.element_type
+        elem_size = _sizeof(elem_type, self._types)
+
+        # Compute the 1-byte index. The type checker widened idx to
+        # Long; we evaluate at that width and Truncate.
+        idx_val = self.translate_exp(index, instrs)
+        byte_idx = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.UChar()),
+        )
+        instrs.append(tac_ast.Truncate(src=idx_val, dst=byte_idx))
+
+        if elem_size == 1:
+            scaled_byte: tac_ast.Type_val = byte_idx
+        else:
+            scaled_byte = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.UChar()),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Multiply(),
+                src1=byte_idx,
+                src2=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=elem_size),
+                ),
+                dst=scaled_byte,
+            ))
+
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(exp.data_type),
+        )
+        instrs.append(tac_ast.IndexedLoad(
+            name=inner.name, index=scaled_byte, dst=dst,
+        ))
+        return dst
 
     def _translate_subscript_address(
         self,

@@ -54,6 +54,9 @@ def vals_in(instr: tac_ast.Type_instruction) -> Iterable[tac_ast.Type_val]:
         case tac_ast.Store(src=s, dst_ptr=p):
             yield s
             yield p
+        case tac_ast.IndexedLoad(index=i, dst=d):
+            yield i
+            yield d
         case tac_ast.Binary(src1=s1, src2=s2, dst=d):
             yield s1
             yield s2
@@ -90,6 +93,7 @@ def defs_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
                 | tac_ast.Copy(dst=d) \
                 | tac_ast.GetAddress(dst=d) \
                 | tac_ast.Load(dst=d) \
+                | tac_ast.IndexedLoad(dst=d) \
                 | tac_ast.Phi(dst=d):
             return [d] if isinstance(d, tac_ast.Var) else []
         case tac_ast.FunctionCall(dst=d) | tac_ast.IndirectCall(dst=d):
@@ -129,6 +133,9 @@ def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
                 out.append(s)
             if isinstance(p, tac_ast.Var):
                 out.append(p)
+        case tac_ast.IndexedLoad(index=i):
+            if isinstance(i, tac_ast.Var):
+                out.append(i)
         case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
             if isinstance(c, tac_ast.Var):
                 out.append(c)

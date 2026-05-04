@@ -146,6 +146,10 @@ def _xlate_op(op: asm_ast.Type_operand) -> asm2_ast.Type_operand:
             return asm2_ast.ImmLabelLow(name=n, offset=o)
         case asm_ast.ImmLabelHigh(name=n, offset=o):
             return asm2_ast.ImmLabelHigh(name=n, offset=o)
+        case asm_ast.IndexedData(name=n, offset=o, index=ix):
+            return asm2_ast.IndexedData(
+                name=n, offset=o, index=_xlate_reg(ix),
+            )
         case asm_ast.Pseudo():
             raise ValueError(
                 f"Pseudo({op.name!r}) reached asm_to_asm2; "

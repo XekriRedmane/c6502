@@ -27,6 +27,19 @@ module TAC {
         | GetAddress(val operand, val dst)
         | Load(val src_ptr, val dst)
         | Store(val src, val dst_ptr)
+        -- Indexed load from a static-storage array. `name` is the
+        -- array's symbol; `index` is a 1-byte (UChar) val holding the
+        -- byte offset into the array. `dst` is loaded from the bytes
+        -- starting at `name + index` — its width comes from the
+        -- symbol table, so a uint16 dst reads 2 consecutive bytes.
+        --
+        -- Only emitted by `c99_to_tac` for `arr[i]` where `arr` is a
+        -- static-storage Array whose total byte size fits in Y's
+        -- 0..255 range. tac_to_asm lowers as: stage `index` into Y
+        -- (LDA index; TAY), then one `LDA name+k,Y; STA dst[k]` pair
+        -- per dst byte (6502 absolute,Y addressing on a static
+        -- label).
+        | IndexedLoad(identifier name, val index, val dst)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)

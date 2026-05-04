@@ -68,6 +68,7 @@ _PURE_DEF_TYPES: tuple[type, ...] = (
     tac_ast.FloatToInt, tac_ast.DoubleToInt,
     tac_ast.FloatToDouble, tac_ast.DoubleToFloat,
     tac_ast.Load, tac_ast.GetAddress,
+    tac_ast.IndexedLoad,
     tac_ast.Phi,
 )
 

@@ -75,6 +75,7 @@ module ASM2 {
             | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)
+            | IndexedData(identifier name, int offset, reg index)
     reg = A | X | Y
     condition = CC | CS | EQ | MI | NE | PL | VC | VS
 }

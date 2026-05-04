@@ -290,15 +290,19 @@ def _zero_for_c99_type(t):
 
 
 _INT_CONST_TYPES: tuple[type, ...] = (
+    tac_ast.ConstChar, tac_ast.ConstUChar,
     tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
     tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
 )
 
 _UNSIGNED_INT_CONST_TYPES: tuple[type, ...] = (
+    tac_ast.ConstUChar,
     tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
 )
 
 _ZERO_FOR_VARIANT: dict[type, type] = {
+    tac_ast.ConstChar: lambda: tac_ast.ConstChar(value=0),
+    tac_ast.ConstUChar: lambda: tac_ast.ConstUChar(value=0),
     tac_ast.ConstInt: lambda: tac_ast.ConstInt(value=0),
     tac_ast.ConstLong: lambda: tac_ast.ConstLong(value=0),
     tac_ast.ConstLongLong: lambda: tac_ast.ConstLongLong(value=0),

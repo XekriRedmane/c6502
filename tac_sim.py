@@ -497,6 +497,20 @@ class Simulator:
                     ptr, _ = self._read(frame, p)
                     self.memory.store(ptr, v, w)
 
+            case tac_ast.IndexedLoad(name=name, index=i, dst=d):
+                # Static-array indexed load: take name's static
+                # address, add the byte index, read N bytes.
+                base = self._static_addr.get(name)
+                if base is None:
+                    raise TacSimError(
+                        f"IndexedLoad on unknown static {name!r}",
+                    )
+                idx_val, _ = self._read(frame, i)
+                w = self._dst_width(d)
+                self._write(
+                    frame, d, self.memory.load(base + (idx_val & 0xFF), w),
+                )
+
             case tac_ast.Ret(val=None):
                 return _Return(None, 0)
 

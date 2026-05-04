@@ -281,6 +281,13 @@ class ImmLabelHigh(Type_operand):
 
 
 @dataclass
+class IndexedData(Type_operand):
+    name: str
+    offset: int
+    index: Type_reg
+
+
+@dataclass
 class Type_reg:
     pass
 

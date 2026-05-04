@@ -982,6 +982,11 @@ def emit_program(prog: asm_ast.Type_program) -> str:
                 if i > 0:
                     joined.append("")
                 joined.extend(chunk)
+            # Final pass: collapse redundant LDY #imm sequences that
+            # arise when consecutive indirect-Y addressing modes share
+            # or near-share an offset. See passes.y_peephole.
+            from passes.y_peephole import apply_y_peephole
+            joined = apply_y_peephole(joined)
             return "\n".join(joined) + "\n"
         case _:
             raise TypeError(f"unexpected program: {prog!r}")

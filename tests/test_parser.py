@@ -2331,16 +2331,17 @@ class TestPointerOpsEndToEnd(unittest.TestCase):
         # `*lp = 0x1234L` for a `long *lp` writes 2 bytes via
         # `(DPTR),Y` with Y=0 then Y=1 — same byte-pair pattern as
         # any other Long copy, but the destination is indirect
-        # rather than a Frame slot.
+        # rather than a Frame slot. The Y-tracking peephole rewrites
+        # the second `LDY #$01` as `INY` since Y is known to be 0.
         text = self._codegen(
             "int main(void) { long y; long *lp; lp = &y; "
             "*lp = 0x1234L; return 0; }\n"
         )
         self.assertIn("LDA   #$34", text)
         self.assertIn("LDA   #$12", text)
-        # Two indirect writes (Y=0 for low, Y=1 for high).
+        # Two indirect writes (Y=0 for low, INY for high).
         self.assertIn("LDY   #$00", text)
-        self.assertIn("LDY   #$01", text)
+        self.assertIn("   INY", text)
         self.assertIn("STA   (DPTR),Y", text)
 
     def test_address_of_dereference_collapses(self):

@@ -30,7 +30,7 @@ interlace_fill_p1:
    LDY   #$00
    LDA   (DPTR),Y
    STA   $83
-   LDY   #$01
+   INY
    LDA   (DPTR),Y
    STA   $82
    LDA   $83
@@ -48,7 +48,7 @@ interlace_fill_p1:
    ADC   $82
    STA   DPTR+1
    LDA   $80
-   LDY   #$00
+   DEY
    STA   (DPTR),Y
 .loop@0_continue:
    LDA   $86

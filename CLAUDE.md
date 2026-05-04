@@ -1294,11 +1294,20 @@ fn → to_ssa
      for power-of-2 multipliers; combined with the asm-level
      inline-shift-by-1, the call goes away entirely.
    - `fold_cmp_zero_jump` (`cmp_zero_jump_fold.py`): rewrites
-     `Binary(==/!=, x, 0, cond); JumpIfTrue/False(cond, t)` (with
-     `cond` single-use) as `JumpIfTrue/False(x, t)` with the
-     appropriate sense flip. Traces through ZeroExtend defs to
-     operate at the narrowest available width — `if (uint8_t a
-     == 0)` lowers to bare `LDA a; BNE end`.
+     `Binary(cmp_op, src1, src2, cond); JumpIfTrue/False(cond, t)`
+     (with `cond` single-use) into a single direct conditional jump.
+     Two flavors: ==/!= against zero rewrites to JumpIfTrue/False on
+     the operand (sense flip), tracing through ZeroExtend so e.g.
+     `if (uint8_t a == 0)` lowers to bare `LDA a; BNE end`. Other
+     comparisons (ordering ops, ==/!= against non-zero) rewrite to
+     the new `JumpIfCmp(op', src1, src2, t)` TAC instruction (op' is
+     inverted when the original JumpIf was JumpIfFalse), which
+     `tac_to_asm` lowers as a per-byte compare chain ending in a
+     single Branch — no 0/1 materialize. Operand narrowing through
+     ZeroExtend to 1-byte unsigned (Char/UChar) fires when both
+     operands fit: `if ((uint8_t)i < 105)` lowers to a 3-instruction
+     `LDA i; CMP #105; BCS end` instead of the 16-bit signed SBC
+     chain + 0/1 select + reload + branch.
    - `eliminate_unreachable_code` (`unreachable_code_elimination.py`):
      drops unreachable blocks (forward DFS from ENTRY); prunes Phi
      args whose `pred_label` is no longer an actual predecessor

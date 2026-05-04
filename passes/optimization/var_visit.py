@@ -60,6 +60,9 @@ def vals_in(instr: tac_ast.Type_instruction) -> Iterable[tac_ast.Type_val]:
             yield d
         case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
             yield c
+        case tac_ast.JumpIfCmp(src1=s1, src2=s2):
+            yield s1
+            yield s2
         case tac_ast.FunctionCall(args=args, dst=d):
             yield from args
             if d is not None:
@@ -129,6 +132,11 @@ def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
         case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
             if isinstance(c, tac_ast.Var):
                 out.append(c)
+        case tac_ast.JumpIfCmp(src1=s1, src2=s2):
+            if isinstance(s1, tac_ast.Var):
+                out.append(s1)
+            if isinstance(s2, tac_ast.Var):
+                out.append(s2)
         case tac_ast.FunctionCall(args=args):
             for a in args:
                 if isinstance(a, tac_ast.Var):

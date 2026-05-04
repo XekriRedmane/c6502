@@ -33,6 +33,15 @@ module TAC {
         | Jump(identifier target)
         | JumpIfTrue(val condition, identifier target)
         | JumpIfFalse(val condition, identifier target)
+        -- Compare-and-branch fold. `JumpIfCmp(op, src1, src2, target)`
+        -- jumps to `target` if `op(src1, src2)` is true. Produced by
+        -- the cmp_jump_fold pass when a Binary comparison feeds
+        -- directly (and only) into a conditional jump; combining the
+        -- two saves the 0/1 materialize. tac_to_asm lowers this as a
+        -- per-byte compare chain (signed or unsigned, picked from the
+        -- operands' types) ending in a single Branch — no boolean
+        -- temp.
+        | JumpIfCmp(binary_operator op, val src1, val src2, identifier target)
         | Label(identifier name)
         | FunctionCall(identifier name, val* args, val? dst)
         -- Indirect call via a function pointer. `ptr` is a Pointer-

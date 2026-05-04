@@ -141,10 +141,11 @@ class TestRewriteSenseTable(unittest.TestCase):
 class TestRewriteGuards(unittest.TestCase):
     """Cases that should NOT be rewritten."""
 
-    def test_non_zero_constant_doesnt_fire(self):
-        # `Binary(Equal, x, 5, %c); JumpIfFalse(%c, t)` is not a
-        # zero-comparison; we don't have a single-instruction
-        # rewrite for it.
+    def test_non_zero_constant_folds_to_jumpifcmp(self):
+        # `Binary(Equal, x, 5, %c); JumpIfFalse(%c, t)` doesn't have
+        # the optimal `LDA x; BNE/BEQ` shape (need a CMP), but folds
+        # to a single `JumpIfCmp(NotEqual, x, 5, t)` which still
+        # avoids the 0/1 materialize.
         fn = _fn(
             tac_ast.Binary(
                 op=tac_ast.Equal(),
@@ -153,10 +154,16 @@ class TestRewriteGuards(unittest.TestCase):
             tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
         )
         out = fold_cmp_zero_jump(fn)
-        self.assertEqual(len(out.instructions), 2)
+        self.assertEqual(len(out.instructions), 1)
+        jic = out.instructions[0]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        # JumpIfFalse + Equal → invert to NotEqual.
+        self.assertIsInstance(jic.op, tac_ast.NotEqual)
+        self.assertEqual(jic.target, ".t")
 
-    def test_both_var_doesnt_fire(self):
-        # `Binary(Equal, x, y, %c)` — neither side is zero.
+    def test_both_var_folds_to_jumpifcmp(self):
+        # `Binary(Equal, x, y, %c)` — neither side is zero, but both
+        # operands flow into a JumpIfCmp.
         fn = _fn(
             tac_ast.Binary(
                 op=tac_ast.Equal(),
@@ -165,11 +172,13 @@ class TestRewriteGuards(unittest.TestCase):
             tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
         )
         out = fold_cmp_zero_jump(fn)
-        self.assertEqual(len(out.instructions), 2)
+        self.assertEqual(len(out.instructions), 1)
+        self.assertIsInstance(out.instructions[0], tac_ast.JumpIfCmp)
 
-    def test_non_eq_op_doesnt_fire(self):
-        # `Binary(LessThan, x, 0, ...)` — different operator, not
-        # rewritable by this pass.
+    def test_non_eq_op_folds_to_jumpifcmp(self):
+        # `Binary(LessThan, x, 0, ...); JumpIfFalse(%c, t)` rewrites
+        # to `JumpIfCmp(GreaterOrEqual, x, 0, t)` — the JumpIfFalse
+        # sense flip inverts LessThan to GreaterOrEqual.
         fn = _fn(
             tac_ast.Binary(
                 op=tac_ast.LessThan(),
@@ -178,7 +187,10 @@ class TestRewriteGuards(unittest.TestCase):
             tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
         )
         out = fold_cmp_zero_jump(fn)
-        self.assertEqual(len(out.instructions), 2)
+        self.assertEqual(len(out.instructions), 1)
+        jic = out.instructions[0]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        self.assertIsInstance(jic.op, tac_ast.GreaterOrEqual)
 
     def test_multi_use_cond_doesnt_fire(self):
         # `cond` is used by both the JumpIf and a later Copy — we
@@ -390,6 +402,236 @@ class TestAsmShape(unittest.TestCase):
                     break
                 out.append(line)
         return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# JumpIfCmp rewrites: the generalized fold for ordering ops + non-zero
+# constants. The pass produces `JumpIfCmp(op', src1, src2, target)`
+# where op' is the original op (for JumpIfTrue) or the inverted op
+# (for JumpIfFalse).
+# ---------------------------------------------------------------------------
+
+
+def _const_uchar(v: int) -> tac_ast.Constant:
+    return tac_ast.Constant(const=tac_ast.ConstUChar(value=v))
+
+
+def _symbols(*entries) -> SymbolTable:
+    """Build a SymbolTable from (name, type) pairs."""
+    table: SymbolTable = SymbolTable()
+    for name, t in entries:
+        table[name] = Symbol(type=t, attrs=LocalAttr())
+    return table
+
+
+class TestJumpIfCmpRewrite(unittest.TestCase):
+    """Folds for ordering ops and non-zero equality constants."""
+
+    def test_lt_jumpiftrue_keeps_op(self):
+        # `Binary(LessThan, x, y, %c); JumpIfTrue(%c, t)` ⇒
+        # `JumpIfCmp(LessThan, x, y, t)`.
+        fn = _fn(
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%x"), src2=_var("%y"), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn)
+        self.assertEqual(len(out.instructions), 1)
+        jic = out.instructions[0]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        self.assertIsInstance(jic.op, tac_ast.LessThan)
+
+    def test_lt_jumpiffalse_inverts_to_ge(self):
+        fn = _fn(
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%x"), src2=_var("%y"), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn)
+        jic = out.instructions[0]
+        self.assertIsInstance(jic.op, tac_ast.GreaterOrEqual)
+
+    def test_gt_jumpiffalse_inverts_to_le(self):
+        fn = _fn(
+            tac_ast.Binary(
+                op=tac_ast.GreaterThan(),
+                src1=_var("%x"), src2=_var("%y"), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn)
+        self.assertIsInstance(out.instructions[0].op, tac_ast.LessOrEqual)
+
+    def test_eq_against_nonzero_const_inverts_to_ne(self):
+        # The == 0 special case doesn't fire for == 5, so we route
+        # through JumpIfCmp.
+        fn = _fn(
+            tac_ast.Binary(
+                op=tac_ast.Equal(),
+                src1=_var("%x"), src2=_const_int(5), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn)
+        jic = out.instructions[0]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        self.assertIsInstance(jic.op, tac_ast.NotEqual)
+
+    def test_multi_use_blocks_jumpifcmp_too(self):
+        fn = _fn(
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%x"), src2=_var("%y"), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+            tac_ast.Copy(src=_var("%c"), dst=_var("%retain")),
+        )
+        out = fold_cmp_zero_jump(fn)
+        # Original Binary preserved (not single-use cond).
+        self.assertEqual(len(out.instructions), 3)
+        self.assertIsInstance(out.instructions[0], tac_ast.Binary)
+
+
+class TestJumpIfCmpNarrowing(unittest.TestCase):
+    """Narrowing both operands through ZeroExtend tracing for ordering
+    folds. Pattern: `(int)(uint8) OP int_const` should narrow to a
+    1-byte unsigned compare."""
+
+    def test_narrows_uchar_lt_const(self):
+        # ZeroExtend(@a /uchar/, %wide); Binary(<, %wide, 105, %c);
+        # JumpIfFalse(%c, .t)  ⇒
+        # ZeroExtend(...) /dead/; JumpIfCmp(>=, @a, ConstUChar(105), .t)
+        symbols = _symbols(
+            ("@a", c99_ast.UChar()),
+        )
+        fn = _fn(
+            tac_ast.ZeroExtend(src=_var("@a"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%wide"), src2=_const_int(105), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        # ZeroExtend stays; Binary + JumpIfFalse collapsed.
+        self.assertEqual(len(out.instructions), 2)
+        jic = out.instructions[1]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        self.assertIsInstance(jic.op, tac_ast.GreaterOrEqual)
+        self.assertEqual(jic.src1, _var("@a"))
+        self.assertEqual(jic.src2, _const_uchar(105))
+
+    def test_narrows_const_lt_uchar(self):
+        # `5 < uchar_a` — constant on the left.
+        symbols = _symbols(("@a", c99_ast.UChar()))
+        fn = _fn(
+            tac_ast.ZeroExtend(src=_var("@a"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_const_int(5), src2=_var("%wide"), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = out.instructions[1]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        self.assertEqual(jic.src1, _const_uchar(5))
+        self.assertEqual(jic.src2, _var("@a"))
+
+    def test_narrows_uchar_lt_uchar(self):
+        # Both sides traced through ZeroExtend.
+        symbols = _symbols(
+            ("@a", c99_ast.UChar()),
+            ("@b", c99_ast.UChar()),
+        )
+        fn = _fn(
+            tac_ast.ZeroExtend(src=_var("@a"), dst=_var("%wa")),
+            tac_ast.ZeroExtend(src=_var("@b"), dst=_var("%wb")),
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%wa"), src2=_var("%wb"), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = next(
+            i for i in out.instructions if isinstance(i, tac_ast.JumpIfCmp)
+        )
+        self.assertEqual(jic.src1, _var("@a"))
+        self.assertEqual(jic.src2, _var("@b"))
+
+    def test_narrowing_fails_for_out_of_range_const(self):
+        # 300 doesn't fit in 0..255, so don't narrow. JumpIfCmp still
+        # produced, but operands stay wide.
+        symbols = _symbols(("@a", c99_ast.UChar()))
+        fn = _fn(
+            tac_ast.ZeroExtend(src=_var("@a"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%wide"), src2=_const_int(300), dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".t"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = out.instructions[1]
+        self.assertIsInstance(jic, tac_ast.JumpIfCmp)
+        self.assertEqual(jic.src1, _var("%wide"))
+        self.assertEqual(jic.src2, _const_int(300))
+
+
+# ---------------------------------------------------------------------------
+# Asm-level shape: narrow ordering compare-and-branch produces the
+# 3-instruction LDA/CMP/BCS sequence.
+# ---------------------------------------------------------------------------
+
+
+class TestNarrowOrderingAsmShape(unittest.TestCase):
+    def _compile(self, src: str) -> str:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        return _run_stage("codegen", preprocess(src), optimize=True)
+
+    def test_uchar_lt_const_uses_8bit_cmp_bcs(self):
+        # The loop test in `for (uint8_t i = 0; i < 105; i++)` should
+        # compile to a 1-byte unsigned compare-and-branch:
+        #     LDA <i>; CMP #105; BCS <break>
+        src = (
+            "#include <stdint.h>\n"
+            "int main(void) {\n"
+            "    uint8_t i;\n"
+            "    int sum = 0;\n"
+            "    for (i = 0; i < 105; i = i + 1) sum = sum + 1;\n"
+            "    return sum;\n"
+            "}\n"
+        )
+        asm = self._compile(src)
+        # The 16-bit signed-compare V-correction sequence must be
+        # absent for this loop test.
+        self.assertNotIn("BVC   .jcmp_novf", asm)
+        # And we should see CMP #$69 (105 in hex) followed by a BCS
+        # to the loop break label.
+        self.assertIn("CMP   #$69", asm)
+        self.assertIn("BCS   .loop", asm)
+
+    def test_uchar_loop_returns_correct_count(self):
+        # End-to-end: the loop must terminate with sum == 105.
+        src = (
+            "#include <stdint.h>\n"
+            "int main(void) {\n"
+            "    uint8_t i;\n"
+            "    int sum = 0;\n"
+            "    for (i = 0; i < 105; i = i + 1) sum = sum + 1;\n"
+            "    return sum;\n"
+            "}\n"
+        )
+        sim = build_sim(src, optimize=True)
+        result = sim.run(max_cycles=5_000_000)
+        self.assertFalse(result.timed_out)
+        self.assertEqual(result.return_int(), 105)
 
 
 if __name__ == "__main__":

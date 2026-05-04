@@ -926,6 +926,8 @@ class Translator:
                 return self._translate_cond_jump(
                     cond, target, asm_ast.EQ(),
                 )
+            case tac_ast.JumpIfCmp(op=op, src1=src1, src2=src2, target=target):
+                return self._translate_jump_if_cmp(op, src1, src2, target)
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
                 return self._translate_function_call(name, args, dst)
             case tac_ast.IndirectCall(ptr=ptr, args=args, dst=dst):
@@ -2133,6 +2135,179 @@ class Translator:
             asm_ast.Label(name=end_label),
         ])
         self._store_compare_result(out, dst_op, dst_size)
+        return out
+
+    def _translate_jump_if_cmp(
+        self,
+        op: tac_ast.Type_binary_operator,
+        src1: tac_ast.Type_val,
+        src2: tac_ast.Type_val,
+        target: str,
+    ) -> list[asm_ast.Type_instruction]:
+        """Compare-and-branch fold. The per-byte compare chain is the
+        same shape as `_translate_equality` / `_translate_*_ordering`,
+        but instead of materializing 0/1 into the dst we emit a single
+        `Branch` on the chosen condition straight to `target`. Caller
+        (cmp_jump_fold) has already inverted `op` if the original
+        JumpIf was a JumpIfFalse, so this lowering always means
+        "jump if op(src1, src2) is true".
+        """
+        src1_op = translate_val(src1)
+        src2_op = translate_val(src2)
+        size = self._size_of(src1)
+        unsigned_cmp = (
+            self._is_unsigned_val(src1) or self._is_unsigned_val(src2)
+        )
+        pointer_cmp = (
+            self._is_pointer_val(src1) or self._is_pointer_val(src2)
+        )
+        match op:
+            case tac_ast.Equal():
+                return self._jcmp_equality(
+                    src1_op, src2_op, size, target, branch_on_eq=True,
+                )
+            case tac_ast.NotEqual():
+                return self._jcmp_equality(
+                    src1_op, src2_op, size, target, branch_on_eq=False,
+                )
+            case tac_ast.LessThan():
+                if unsigned_cmp or pointer_cmp:
+                    return self._jcmp_unsigned_ordering(
+                        src1_op, src2_op, size, asm_ast.CC(), target,
+                    )
+                return self._jcmp_signed_ordering(
+                    src1_op, src2_op, size, asm_ast.MI(), target,
+                )
+            case tac_ast.GreaterOrEqual():
+                if unsigned_cmp or pointer_cmp:
+                    return self._jcmp_unsigned_ordering(
+                        src1_op, src2_op, size, asm_ast.CS(), target,
+                    )
+                return self._jcmp_signed_ordering(
+                    src1_op, src2_op, size, asm_ast.PL(), target,
+                )
+            case tac_ast.GreaterThan():
+                # a > b ⇔ b < a (operand swap, same as Binary case).
+                if unsigned_cmp or pointer_cmp:
+                    return self._jcmp_unsigned_ordering(
+                        src2_op, src1_op, size, asm_ast.CC(), target,
+                    )
+                return self._jcmp_signed_ordering(
+                    src2_op, src1_op, size, asm_ast.MI(), target,
+                )
+            case tac_ast.LessOrEqual():
+                # a <= b ⇔ b >= a.
+                if unsigned_cmp or pointer_cmp:
+                    return self._jcmp_unsigned_ordering(
+                        src2_op, src1_op, size, asm_ast.CS(), target,
+                    )
+                return self._jcmp_signed_ordering(
+                    src2_op, src1_op, size, asm_ast.PL(), target,
+                )
+        raise TypeError(f"unsupported JumpIfCmp op: {op!r}")
+
+    def _jcmp_equality(
+        self,
+        src1_op: asm_ast.Type_operand,
+        src2_op: asm_ast.Type_operand,
+        size: int,
+        target: str,
+        *,
+        branch_on_eq: bool,
+    ) -> list[asm_ast.Type_instruction]:
+        """== / != as a direct branch. For NotEqual we branch on the
+        first byte that differs — any BNE fires immediately. For
+        Equal we walk all bytes; if any differs we skip past the
+        final BEQ via a fall-through label so we don't take the
+        branch."""
+        out: list[asm_ast.Type_instruction] = []
+        if not branch_on_eq:
+            for k in range(size - 1, -1, -1):
+                out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))
+                out.append(asm_ast.Compare(
+                    left=_REG_A, right=_byte_at(src2_op, k),
+                ))
+                out.append(asm_ast.Branch(cond=asm_ast.NE(), target=target))
+            return out
+        if size == 1:
+            out.append(asm_ast.Mov(src=src1_op, dst=_REG_A))
+            out.append(asm_ast.Compare(left=_REG_A, right=src2_op))
+            out.append(asm_ast.Branch(cond=asm_ast.EQ(), target=target))
+            return out
+        skip_label = self.make_label("jcmp_skip")
+        # All higher bytes: any inequality short-circuits past the
+        # final BEQ.
+        for k in range(size - 1, 0, -1):
+            out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))
+            out.append(asm_ast.Compare(
+                left=_REG_A, right=_byte_at(src2_op, k),
+            ))
+            out.append(asm_ast.Branch(cond=asm_ast.NE(), target=skip_label))
+        # Last byte: Z reflects the final-byte equality. With all
+        # higher bytes already equal, BEQ now means full-value equal.
+        out.append(asm_ast.Mov(src=_byte_at(src1_op, 0), dst=_REG_A))
+        out.append(asm_ast.Compare(left=_REG_A, right=_byte_at(src2_op, 0)))
+        out.append(asm_ast.Branch(cond=asm_ast.EQ(), target=target))
+        out.append(asm_ast.Label(name=skip_label))
+        return out
+
+    def _jcmp_unsigned_ordering(
+        self,
+        left_op: asm_ast.Type_operand,
+        right_op: asm_ast.Type_operand,
+        size: int,
+        branch_cond: asm_ast.Type_condition,
+        target: str,
+    ) -> list[asm_ast.Type_instruction]:
+        """Unsigned ordering compare-and-branch. 1-byte form uses CMP
+        (no SetCarry needed, no A clobber); multi-byte uses the SBC
+        chain with carry threading. branch_cond picks among CC (<) /
+        CS (>=); operand swap (done by caller) covers > and <=."""
+        out: list[asm_ast.Type_instruction] = []
+        if size == 1:
+            out.append(asm_ast.Mov(src=left_op, dst=_REG_A))
+            out.append(asm_ast.Compare(left=_REG_A, right=right_op))
+            out.append(asm_ast.Branch(cond=branch_cond, target=target))
+            return out
+        out.append(asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A))
+        out.append(asm_ast.SetCarry())
+        out.append(asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A))
+        for k in range(1, size):
+            out.append(asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A))
+            out.append(asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A))
+        out.append(asm_ast.Branch(cond=branch_cond, target=target))
+        return out
+
+    def _jcmp_signed_ordering(
+        self,
+        left_op: asm_ast.Type_operand,
+        right_op: asm_ast.Type_operand,
+        size: int,
+        branch_cond: asm_ast.Type_condition,
+        target: str,
+    ) -> list[asm_ast.Type_instruction]:
+        """Signed ordering compare-and-branch. SBC chain plus the
+        BVC/EOR #$80 V-correction, then branch on MI (<) or PL (>=).
+        Operand swap (done by caller) covers > and <=."""
+        novf_label = self.make_label("jcmp_novf")
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=_byte_at(right_op, 0), dst=_REG_A),
+        ]
+        for k in range(1, size):
+            out.extend([
+                asm_ast.Mov(src=_byte_at(left_op, k), dst=_REG_A),
+                asm_ast.Sub(src=_byte_at(right_op, k), dst=_REG_A),
+            ])
+        out.extend([
+            asm_ast.Branch(cond=asm_ast.VC(), target=novf_label),
+            asm_ast.Xor(
+                src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
+            ),
+            asm_ast.Label(name=novf_label),
+            asm_ast.Branch(cond=branch_cond, target=target),
+        ])
         return out
 
     def _translate_fp_ordering(

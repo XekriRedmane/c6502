@@ -71,6 +71,7 @@ _TERMINATOR_TYPES: tuple[type, ...] = (
     tac_ast.Jump,
     tac_ast.JumpIfTrue,
     tac_ast.JumpIfFalse,
+    tac_ast.JumpIfCmp,
 )
 
 
@@ -130,7 +131,10 @@ def build_cfg(fn: tac_ast.Function) -> CFG:
             add_edge(bid, EXIT_ID)
         elif isinstance(last, tac_ast.Jump):
             add_edge(bid, label_to_block[last.target])
-        elif isinstance(last, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse)):
+        elif isinstance(
+            last,
+            (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse, tac_ast.JumpIfCmp),
+        ):
             add_edge(bid, label_to_block[last.target])
             add_edge(bid, next_bid)
         else:

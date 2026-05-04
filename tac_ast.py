@@ -156,6 +156,14 @@ class JumpIfFalse(Type_instruction):
 
 
 @dataclass
+class JumpIfCmp(Type_instruction):
+    op: Type_binary_operator
+    src1: Type_val
+    src2: Type_val
+    target: str
+
+
+@dataclass
 class Label(Type_instruction):
     name: str
 

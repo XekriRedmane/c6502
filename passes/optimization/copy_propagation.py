@@ -191,6 +191,10 @@ def _rewrite(
             return tac_ast.JumpIfTrue(condition=sub(c), target=t)
         case tac_ast.JumpIfFalse(condition=c, target=t):
             return tac_ast.JumpIfFalse(condition=sub(c), target=t)
+        case tac_ast.JumpIfCmp(op=op, src1=s1, src2=s2, target=t):
+            return tac_ast.JumpIfCmp(
+                op=op, src1=sub(s1), src2=sub(s2), target=t,
+            )
         case tac_ast.FunctionCall(name=n, args=args, dst=d):
             return tac_ast.FunctionCall(
                 name=n, args=[sub(a) for a in args], dst=d,

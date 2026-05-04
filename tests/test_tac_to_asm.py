@@ -1667,5 +1667,160 @@ class TestStaticVariableTranslation(unittest.TestCase):
         ])
 
 
+class TestTranslateJumpIfCmp(unittest.TestCase):
+    """JumpIfCmp lowering: per-byte compare chain ending in a single
+    Branch (no 0/1 materialize). Ordering ops dispatch to signed vs.
+    unsigned per the operand types; equality forms walk all bytes
+    high-to-low."""
+
+    def _t(self, *symbol_specs):
+        from tac_to_asm import Translator
+        from passes.type_checking import LocalAttr, Symbol, SymbolTable
+        import c99_ast as c
+        symbols = SymbolTable()
+        for name, t in symbol_specs:
+            symbols[name] = Symbol(type=t, attrs=LocalAttr())
+        return Translator(symbols=symbols)
+
+    def test_uchar_lt_const_uses_lda_cmp_bcc(self):
+        # 1-byte unsigned compare-and-branch: LDA / CMP / BCC.
+        import c99_ast as c
+        t = self._t(("%a", c.UChar()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.LessThan(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=105)),
+            target=".end",
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%a", offset=0), dst=_REG_A,
+            ),
+            asm_ast.Compare(
+                left=_REG_A, right=asm_ast.Imm(value=105),
+            ),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".end"),
+        ])
+
+    def test_uchar_ge_const_uses_lda_cmp_bcs(self):
+        import c99_ast as c
+        t = self._t(("%a", c.UChar()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.GreaterOrEqual(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=10)),
+            target=".end",
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%a", offset=0), dst=_REG_A,
+            ),
+            asm_ast.Compare(
+                left=_REG_A, right=asm_ast.Imm(value=10),
+            ),
+            asm_ast.Branch(cond=asm_ast.CS(), target=".end"),
+        ])
+
+    def test_uchar_eq_uses_lda_cmp_beq(self):
+        import c99_ast as c
+        t = self._t(("%a", c.UChar()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.Equal(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=5)),
+            target=".end",
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%a", offset=0), dst=_REG_A,
+            ),
+            asm_ast.Compare(
+                left=_REG_A, right=asm_ast.Imm(value=5),
+            ),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".end"),
+        ])
+
+    def test_uchar_ne_uses_lda_cmp_bne(self):
+        import c99_ast as c
+        t = self._t(("%a", c.UChar()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.NotEqual(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=5)),
+            target=".end",
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%a", offset=0), dst=_REG_A,
+            ),
+            asm_ast.Compare(
+                left=_REG_A, right=asm_ast.Imm(value=5),
+            ),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".end"),
+        ])
+
+    def test_int_lt_uses_signed_v_corrected_sequence(self):
+        # 2-byte signed compare-and-branch: SBC chain + BVC/EOR/BPL
+        # equivalent. Ends in a single Branch on MI (LessThan).
+        import c99_ast as c
+        t = self._t(("%a", c.Int()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.LessThan(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=100)),
+            target=".end",
+        ))
+        # Sequence shape: Mov b0, A; SetCarry; Sub b0; Mov b1, A;
+        # Sub b1; BVC novf; EOR #$80; Label novf; Branch MI.
+        ops = [type(i).__name__ for i in out]
+        self.assertEqual(ops, [
+            "Mov", "SetCarry", "Sub",   # low byte
+            "Mov", "Sub",                # high byte
+            "Branch",                    # BVC novf
+            "Xor",                       # EOR #$80
+            "Label",                     # novf:
+            "Branch",                    # BMI .end
+        ])
+        # Final branch is on MI (signed less-than).
+        self.assertEqual(out[-1].cond, asm_ast.MI())
+        self.assertEqual(out[-1].target, ".end")
+
+    def test_uint_lt_uses_unsigned_sbc_chain(self):
+        # 2-byte unsigned compare: SBC chain (with SetCarry), then
+        # Branch on CC. No V-correction.
+        import c99_ast as c
+        t = self._t(("%a", c.UInt()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.LessThan(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUInt(value=1000)),
+            target=".end",
+        ))
+        ops = [type(i).__name__ for i in out]
+        self.assertEqual(ops, [
+            "Mov", "SetCarry", "Sub",   # low byte
+            "Mov", "Sub",                # high byte
+            "Branch",                    # BCC .end
+        ])
+        self.assertEqual(out[-1].cond, asm_ast.CC())
+        # No V-correction.
+        self.assertNotIn("Xor", ops)
+
+    def test_uchar_gt_swaps_operands(self):
+        # `a > b` lowers as `b < a` — operand swap, same branch.
+        import c99_ast as c
+        t = self._t(("%a", c.UChar()), ("%b", c.UChar()))
+        out = t.translate_instruction(tac_ast.JumpIfCmp(
+            op=tac_ast.GreaterThan(),
+            src1=tac_ast.Var(name="%a"),
+            src2=tac_ast.Var(name="%b"),
+            target=".end",
+        ))
+        # First operand (left of CMP) should be the "right" input
+        # (%b), since we computed b < a.
+        first_mov_src = out[0].src
+        self.assertEqual(first_mov_src.name, "%b")
+
+
 if __name__ == "__main__":
     unittest.main()

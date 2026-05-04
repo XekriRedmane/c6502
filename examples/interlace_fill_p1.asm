@@ -7,30 +7,9 @@ interlace_fill_p1:
    STA   $87
 .loop@0_start:
    LDA   $87
-   STA   $83
-   LDA   #$00
-   STA   $82
-   LDA   $83
-   SEC
-   SBC   #$69
-   LDA   $82
-   SBC   #$00
-   BVC   .cmp_novf@0
+   CMP   #$69
+   BCS   .loop@0_break
 .interlace_fill_p1@asm_ssa_block@0:
-   EOR   #$80
-.cmp_novf@0:
-   BMI   .cmp_true@1
-.interlace_fill_p1@asm_ssa_block@1:
-   LDA   #$00
-   JMP   .cmp_end@2
-.cmp_true@1:
-   LDA   #$01
-.cmp_end@2:
-   STA   $82
-   LDA   $82
-   ORA   #$00
-   BEQ   .loop@0_break
-.interlace_fill_p1@asm_ssa_block@2:
    LDA   #<interlace_p1_offsets
    STA   $85
    LDA   #>interlace_p1_offsets

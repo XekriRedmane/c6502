@@ -35,6 +35,7 @@ from passes.identifier_resolution import resolve_program as resolve_identifiers
 from passes.string_lifting import lift_program as lift_strings
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
+from passes.inc_peephole import apply_inc_peephole
 from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
@@ -106,12 +107,14 @@ def compile_to_asm(
             types=types, colorings=asm_colorings,
             param_layouts=abi,
         )
-        asm = expand_long_branches(synthesize_prologue(asm1, dims_by_fn))
+        asm = expand_long_branches(
+            apply_inc_peephole(synthesize_prologue(asm1, dims_by_fn))
+        )
         return asm, syms, types
     asm0 = translate_to_asm(tac, syms, types)
-    asm = expand_long_branches(replace_pseudoregs(
+    asm = expand_long_branches(apply_inc_peephole(replace_pseudoregs(
         asm0, extra_statics=statics, symbols=syms, types=types,
-    ))
+    )))
     return asm, syms, types
 
 

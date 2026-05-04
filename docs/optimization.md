@@ -994,6 +994,143 @@ reason.
 
 ---
 
+## Asm-level peephole: multi-byte INC (`passes/inc_peephole.py`)
+
+Always-on (runs in both the optimized and unoptimized pipelines)
+peephole that runs after `replace_pseudoregisters` (so operands
+are concrete `Data`/`ZP`/`Frame`) and before `expand_long_branches`
+(so its new BNEs participate in long-branch checking). Collapses
+the multi-byte add-1 ADC chain on memory operands into a much
+shorter `INC + BNE` chain.
+
+### The case
+
+A `for (int i = 0; i < N; i++)` loop with `i` ZP-allocated under
+`--optimize` lowers the `i++` to:
+
+```
+LDA  $81             ; load i.lo
+CLC
+ADC  #1              ; i.lo += 1
+STA  $81             ; store i.lo (in place — same address as the LDA)
+LDA  $80             ; load i.hi (different ZP slot — byte regalloc)
+ADC  #0              ; i.hi += 0 + carry
+STA  $80             ; store i.hi (in place)
+```
+
+Each byte is a self-contained read-modify-write of one ZP slot.
+Since the read source equals the write destination on every byte
+AND the operands are ZP, this is exactly the form `INC` was
+designed for. The peephole rewrites it to:
+
+```
+INC  $81
+BNE  .inc_done@N
+INC  $80
+.inc_done@N:
+```
+
+Win at this size: 13 → 6 bytes, 18 → 8 cycles (low byte stayed
+non-zero, BNE skips the high INC) or 12 cycles (low byte wrapped,
+high byte INC fires).
+
+### The pattern matcher
+
+The detector walks the function's instruction list. At each
+position it tries to match the canonical chain shape:
+
+  * Byte 0 (4 instructions): `Mov(M[0], A); ClearCarry;
+    Add(Imm(1), A); Mov(A, M[0])`. M[0] must be `Data` or `ZP`
+    (the addressing modes INC supports), and the LDA source has
+    to equal the STA destination (in-place RMW). On any failure
+    the position contributes nothing — the matcher moves to the
+    next instruction and tries again.
+  * Each continuation byte k≥1 (3 instructions): `Mov(M[k], A);
+    Add(Imm(0), A); Mov(A, M[k])`. No `ClearCarry` (the carry
+    threads from the prior ADC; LDA only sets N/Z, leaves C
+    intact). Same in-place + Data/ZP requirements as byte 0. The
+    chain grows greedily through every continuation byte that
+    matches; the first mismatch ends the chain at whatever length
+    it reached.
+
+Note what the matcher does NOT require: that the byte addresses
+be consecutive. Asm-level SSA splits a multi-byte value into
+independent byte-versioned variables, and byte-granular regalloc
+colors them independently — so `i.lo` and `i.hi` may end up at
+non-adjacent ZP slots (or even with `i.hi` at a *lower* address
+than `i.lo`, as in the example above). The structural pattern
+(CLC-ADC#1 first byte, in-place ADC#0 continuations) is only
+emitted by the multi-byte add-1 lowering, so wherever the bytes
+live, INC + BNE on the matching addresses preserves semantics.
+
+### The rewrite
+
+For an N-byte match returning `[M[0], M[1], ..., M[N-1]]`:
+
+  * N == 1: emit a bare `Inc(M[0])`. No branch needed — caller
+    flow continues naturally. The 1-byte ADC chain (4 instructions,
+    7-9 bytes / 10-12 cycles depending on operand kind) collapses
+    to a single INC (1 instruction, 2-3 bytes / 5-6 cycles).
+  * N >= 2: emit per-byte `Inc(M[k])`; for k < N-1 follow with
+    `Branch(NE, done_label)`. After all bytes, emit
+    `Label(done_label)`. The done label is freshly minted as
+    `.inc_done@<counter>` — leading `.` keeps it dasm-local
+    (scoped to its SUBROUTINE), `@<digits>` keeps it disjoint
+    from user labels (`.<funcname>@<orig>`) and from other
+    translator-minted labels (`.cmp_true@N`, `.if_end@N`,
+    `.lb_skip@N`).
+
+After the rewrite, the per-byte ADC chain (3N+1 instructions for
+N bytes) becomes 2N-1 instructions plus the label. For N=2,
+that's 7 instructions → 4 instructions (counting the label as a
+zero-byte annotation). For N=4, 13 → 8.
+
+### What it doesn't catch
+
+  * **`+= 2` and larger constants.** INC adds 1 only. Chaining
+    multiple INCs would beat the ADC chain only for N=2 (3 → 2
+    bytes), and not at all for N≥3 — the peephole leaves these
+    alone. The pattern's `Add(Imm(1), A)` check is what gates this.
+  * **`-= 1`.** SBC's chain looks like `SetCarry; Sub(Imm(1), A);
+    ... Sub(Imm(0), A); ...`. DEC could replace it, but DEC's
+    flag semantics are different — to detect underflow into the
+    next byte you'd need `LDA m; BNE no_borrow; DEC m+1; no_borrow:
+    DEC m;` (testing BEFORE the DEC, not after). Not implemented
+    yet; would be a separate peephole.
+  * **In-place static-counter writes routed through a temp.**
+    `static int counter; counter += 1;` lowers as `Binary(Add,
+    counter, 1, %t); Copy(%t, counter)` at TAC; the asm chain's
+    STA targets `%t`, not `counter`, so the in-place check fails.
+    A future TAC pass that fuses `Op(X, c, %t); Copy(%t, X)` into
+    in-place `Op(X, c, X)` (a kind of write-back forwarding)
+    would unblock this — orthogonal to the peephole itself.
+  * **`Frame`-resident operands.** The 6502's INC has no
+    `(ind),Y` mode, so soft-stack values can't be INC'd in place
+    — they'd have to load to A, INC A (which doesn't exist —
+    you'd CLC + ADC #1), store back. No win. The eligibility
+    check on `Data`/`ZP` excludes Frame.
+
+### Flag soundness
+
+INC and the ADC chain leave different state in C / V / Z:
+
+  * The original ADC chain leaves C set per the final ADC (and V
+    set per signed overflow on the last byte).
+  * INC doesn't touch C or V; Z is set per the last INC's result.
+  * After the rewrite's `done:` label, Z's value depends on which
+    BNE was the last to fire — non-deterministic at code review
+    but deterministic per byte-pattern.
+
+c6502's codegen treats every TAC-level operation as flag-
+self-contained: each comparison emits its own `LDA` that
+resets N/Z, and each `SBC`/`ADC` chain starts with its own
+`SEC`/`CLC`. There's no path where a downstream instruction
+reads C / V / Z left over from an Add. So the rewrite preserves
+program semantics even though it changes the flag state at the
+sequence's exit.
+
+---
+
 ## The same example through the asm-level pipeline
 
 Same C source. The early stages (parse, resolve, type-check,

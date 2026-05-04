@@ -42,8 +42,12 @@ and `--codegen`):
   storage, replacing references with immediates) → asm-level SSA
   round-trip with forward + backward copy propagation + byte-
   granular DCE + byte-granular regalloc → late prologue / epilogue
-  synthesis. Also enables the `__attribute__((zp_abi))` calling-
-  convention optimization (frame elimination on annotated leaves).
+  synthesis → multi-byte INC peephole (collapses in-place add-1
+  ADC chains on `Data` / `ZP` operands to `INC + BNE` chains).
+  Also enables the `__attribute__((zp_abi))` calling-convention
+  optimization (frame elimination on annotated leaves). The INC
+  peephole runs in the unoptimized pipeline too (its win comes
+  from addressing-mode awareness, not regalloc state).
 
 See the "Optimization pipeline" / "Frame elimination via __attribute__"
 sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
@@ -1427,6 +1431,79 @@ The canonical case is a memory-mapped device pointer:
 2-byte storage of `hires_page1` itself disappears from the
 output. External-linkage globals (without `static`) are skipped
 even when const, because another TU might read the symbol.
+
+## Multi-byte INC peephole (`passes/inc_peephole.py`)
+
+Always-on asm-level peephole that runs after
+`replace_pseudoregisters` (so operands are concrete `Data`/`ZP`/
+`Frame`/etc.) and before `expand_long_branches` (so any new BNE
+displacements participate in long-branch checking). Detects the
+multi-byte add-1 chain emitted by `tac_to_asm` and rewrites it
+to an `INC + BNE` chain on the target memory operand.
+
+The chain pattern (per byte, in order):
+  * Byte 0: `Mov(M[0], A); ClearCarry; Add(Imm(1), A);
+    Mov(A, M[0])` — 4 instructions, in-place RMW on M[0].
+  * Each continuation byte k≥1: `Mov(M[k], A);
+    Add(Imm(0), A); Mov(A, M[k])` — 3 instructions, in-place
+    RMW on M[k]; no CLC since the carry threads from the prior
+    ADC (LDA only sets N/Z, leaves C intact).
+
+Eligibility (per-byte; failures break the chain at that byte):
+  * `M[k]` is `Data(name, k)` or `ZP(addr, 0)`. The 6502's INC
+    has zp / abs / zp,X / abs,X modes — no `(ind),Y` — so
+    `Frame` / `Stack` / `Indirect` operands stay as ADC chains.
+  * The pattern's per-byte LDA source equals the STA destination
+    (in-place). After SSA destruction routes through a temp
+    (common for parallel-copy ordering), `LDA $84; ... STA $82`
+    isn't in-place on $84 and we skip — INC would corrupt $84
+    instead of producing the right answer through the temp.
+
+Bytes don't have to be at consecutive addresses. Byte-granular
+asm SSA + regalloc may color the bytes of one logical multi-byte
+value to non-adjacent ZP slots — the structural pattern (CLC-
+ADC#1 first, ADC#0 continuations, every byte in-place RMW'd) is
+only emitted by the multi-byte add-1 lowering, so wherever the
+bytes live, INC + BNE preserves semantics.
+
+Replacement for an N-byte chain:
+  * N == 1: a bare `Inc(M[0])` — no branch needed (caller flow
+    continues naturally).
+  * N >= 2: `Inc(M[0]); Branch(NE, .inc_done@K); Inc(M[1]);
+    Branch(NE, .inc_done@K); ...; Inc(M[N-1]); Label(.inc_done@K)`
+    — each non-last byte's BNE skips the remaining INCs when its
+    INC produced a non-zero result (no carry into the next byte).
+    A fresh `.inc_done@<counter>` label is minted per chain;
+    leading `.` keeps it dasm-local (per-SUBROUTINE), `@<digits>`
+    keeps it disjoint from user labels and other translator-
+    minted ones (`.if_end@<N>`, `.lb_skip@<N>`, …).
+
+Byte / cycle savings (in-place add-1, vs the ADC chain):
+  * 16-bit absolute: 17 → 8 bytes; 22 → 9 cycles (no overflow
+    into high byte) or 14 cycles (with overflow).
+  * 16-bit ZP: 13 → 6 bytes; 18 → 8 / 12 cycles.
+  * 4-byte absolute: 33 → 18 bytes; cycle savings scale similarly.
+
+The Z flag's value at the rewrite's exit is unreliable — it
+depends on which BNE was the last to fire. The C and V flags are
+left untouched by INC (the original ADC chain set them per the
+final ADC). c6502's codegen never reads any of these across
+separate operations (every comparison emits its own LDA that
+resets N/Z, and SEC/CLC before each SBC/ADC), so the difference
+is invisible to subsequent instructions.
+
+Limitations / what doesn't fire:
+  * `+= 2` and other small constants — INC only adds 1; chaining
+    INCs would lose the win for n ≥ 2.
+  * `-= 1` — needs a separate DEC peephole; DEC sets flags off
+    its result, so detecting underflow needs an LDA + BNE BEFORE
+    the DEC, not after. Not implemented yet.
+  * In-place writes to a static when TAC routes through a temp.
+    `static int counter; counter += 1;` lowers as `Binary(Add,
+    counter, 1, %t); Copy(%t, counter)` — the ADC writes to %t,
+    not counter, so the in-place check fails. A future TAC pass
+    that fuses `Op(X, c, %t); Copy(%t, X)` to in-place `Op(X, c,
+    X)` would unblock this case.
 
 ## Frame elimination via `__attribute__((zp_abi))`
 

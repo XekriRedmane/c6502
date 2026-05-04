@@ -49,6 +49,7 @@ from parser import parse
 from preprocessor import preprocess
 from pretty import pretty
 from passes.asm_to_asm2 import translate_program as lower_to_asm2
+from passes.inc_peephole import apply_inc_peephole
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
@@ -154,14 +155,16 @@ def _run_stage(
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             return emit_program(lower_to_asm2(
-                expand_long_branches(asm2),
+                expand_long_branches(apply_inc_peephole(asm2)),
             ))
-        return emit_program(lower_to_asm2(expand_long_branches(replace_pseudoregs(
-            translate_to_asm(tac, symbols, types),
-            extra_statics=statics,
-            symbols=symbols,
-            types=types,
-        ))))
+        return emit_program(lower_to_asm2(expand_long_branches(
+            apply_inc_peephole(replace_pseudoregs(
+                translate_to_asm(tac, symbols, types),
+                extra_statics=statics,
+                symbols=symbols,
+                types=types,
+            ))
+        )))
     raise AssertionError(f"unknown stage: {stage!r}")
 
 

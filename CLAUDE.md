@@ -37,17 +37,18 @@ Modifier flag (orthogonal to the stage flags; applies to `--tac`
 and `--codegen`):
 - `--optimize` runs the optimizer pipeline: TAC-level fixed-point
   opts (constant folding, strength reduction, comparison-against-
-  zero / jump fold, UCE, copy propagation, dead-store elimination)
-  → asm-level const-static fold (drops scalar `static T const`
-  storage, replacing references with immediates) → asm-level SSA
-  round-trip with forward + backward copy propagation + byte-
-  granular DCE + byte-granular regalloc → late prologue / epilogue
-  synthesis → multi-byte INC peephole (collapses in-place add-1
-  ADC chains on `Data` / `ZP` operands to `INC + BNE` chains).
-  Also enables the `__attribute__((zp_abi))` calling-convention
-  optimization (frame elimination on annotated leaves). The INC
-  peephole runs in the unoptimized pipeline too (its win comes
-  from addressing-mode awareness, not regalloc state).
+  zero / jump fold, UCE, copy propagation, dead-store elimination,
+  copy folding) → asm-level const-static fold (drops scalar
+  `static T const` storage, replacing references with immediates)
+  → asm-level SSA round-trip with forward + backward copy
+  propagation + byte-granular DCE + byte-granular regalloc → late
+  prologue / epilogue synthesis → multi-byte INC peephole
+  (collapses in-place add-1 ADC chains on `Data` / `ZP` operands
+  to `INC + BNE` chains). Also enables the
+  `__attribute__((zp_abi))` calling-convention optimization (frame
+  elimination on annotated leaves). The INC peephole runs in the
+  unoptimized pipeline too (its win comes from addressing-mode
+  awareness, not regalloc state).
 
 See the "Optimization pipeline" / "Frame elimination via __attribute__"
 sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
@@ -1383,6 +1384,87 @@ flow); the const-static fold (next section) drops the subset that
 qualifies. `optimize_function` without `symbols` (legacy unit-test
 path) skips SSA construction (the renaming pass needs the symbol
 table to register fresh SSA names with their types).
+
+## Copy folding (`passes/optimization/copy_folding.py`)
+
+TAC-level pass that fuses adjacent `<producer dst=%t>; Copy(%t,
+X)` pairs into `<producer dst=X>` when `%t` is single-use across
+the function. Runs inside the TAC fixed-point loop (alongside
+constant_fold / reduce_strength / cmp_zero_jump_fold / UCE /
+copy_propagate / DSE) AND once more after `from_ssa` (the SSA
+destruction pass emits Copies at predecessor block ends to feed
+each Phi's source into the Phi's dst — those Copies are the
+loop-counter `i++` shape, fusable but not yet present during the
+fixed-point loop).
+
+The fusion handles two distinct cases:
+
+  1. **Non-SSA-promoted dst** (the unique contribution of this
+     pass). c99_to_tac emits `Binary(Add, x, 1, %t); Copy(%t, x)`
+     for `x += 1` where x is a static or address-taken local —
+     names that aren't SSA-renamed. copy_propagation can't
+     forward `Copy(%t, x)` because x isn't an SSA-renamed name;
+     fusion redirects the producer's dst to x, eliminating the
+     temp.
+  2. **SSA-renamed dst**. After `from_ssa` lowers each Phi to
+     `Copy(%phi_arg, %phi_dst)` at predecessor block tails,
+     those Copies have an SSA-renamed dst. Fusion redirects the
+     producer's dst to `%phi_dst` directly, dropping the round
+     trip. (Inside the fixed-point loop this case is also
+     handled by copy_propagation + DSE — fusion is just a
+     faster equivalent.)
+
+Eligible producers (any TAC instruction with a single Var dst):
+SignExtend, ZeroExtend, Truncate, the six FP-conversion casts
+(IntToFloat, IntToDouble, FloatToInt, DoubleToInt, FloatToDouble,
+DoubleToFloat), Unary, Binary, Copy (chained-copy elimination),
+GetAddress, Load, IndexedLoad, FunctionCall (when its dst is
+non-None), IndirectCall (same).
+
+Phi is deliberately excluded — Phi.dst is always an SSA-renamed
+name in the IR shape this pass sees, and SSA construction's
+invariant (one def per renamed name) keeps it that way until
+SSA destruction. Redirecting Phi.dst would let the SSA
+destruction emit Copies into a non-renamed name, which complects
+a different concern with this pass's job.
+
+Soundness gates:
+  * The Copy is the immediately-next instruction (adjacency).
+    Without intervening side effects, no other op observes `%t`
+    or `X` between the producer and the Copy, so redirecting is
+    semantically identical.
+  * `%t` is used exactly once across the function. The use-count
+    check makes the fusion sound regardless of `%t`'s SSA
+    status — multi-def `%t` (uncommon outside non-SSA) is fine,
+    since after fusion any remaining def writes a name nothing
+    reads (DSE picks them up next iteration).
+  * `X` doesn't have to be SSA-renamed. The fusion preserves
+    SSA: if `X` was renamed, it had exactly one def (the Copy);
+    after fusion it still has one def (the redirected
+    producer). If `X` is non-renamed (static), it had multiple
+    defs; after fusion it still has multiple defs (one redirected
+    here).
+
+The composition with the multi-byte INC peephole is the headline
+win for the static-RMW case: `static int x; x += 1;` previously
+lowered to ~25 bytes (read X to %t through ADC chain, then Copy
+%t back to X). After copy folding it becomes in-place
+`Binary(Add, x, 1, x)`; tac_to_asm emits `LDA x; CLC; ADC #1;
+STA x; LDA x+1; ADC #0; STA x+1`; the INC peephole then collapses
+to `INC x; BNE done; INC x+1; done:` — 8 bytes total.
+
+What still doesn't fire:
+  * `Op(... %t); ...; Copy(%t, X)` with intervening
+    instructions. Could be lifted with a more thorough
+    aliasing/liveness check in the gate, deferred until a
+    motivating case appears.
+  * Asm-SSA-internal Phi destruction copies. The TAC fusion
+    fires before tac_to_asm, but tac_to_asm and the asm-level
+    SSA round-trip introduce their OWN Phi destruction copies
+    on Pseudos that asm regalloc didn't coalesce. Those would
+    need an asm-level analog of this pass — backward_copy_
+    propagation handles a related shape but explicitly defers
+    Pseudo-to-Pseudo coalescing to regalloc.
 
 ## Const-static fold (`passes/optimization_asm/const_static_fold.py`)
 

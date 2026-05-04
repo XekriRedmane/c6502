@@ -335,6 +335,109 @@ when x is unused.
 The pass iterates to fixed point internally too — dropping one
 def can make its inputs dead, which can make their inputs dead, etc.
 
+### 2e. `fold_copies` (`passes/optimization/copy_folding.py`)
+
+c99_to_tac emits `x += 1` for a non-SSA-promoted name (a static
+or address-taken local) as
+
+```
+Binary(Add, x, 1, %t)
+Copy(%t, x)
+```
+
+— a producer that writes to a temp, immediately followed by a
+Copy moving the temp's value back to `x`. The temp `%t` only
+exists because every TAC instruction writes to a single dst by
+convention; nothing else reads `%t`.
+
+`fold_copies` collapses the pattern by redirecting the producer's
+dst to `x` and dropping the Copy:
+
+```
+Binary(Add, x, 1, x)
+```
+
+The fusion fires when `%t` has exactly one use across the function
+(the Copy), and the Copy is the immediately-next instruction after
+the producer.
+
+**Why `copy_propagate` doesn't already do this.** `copy_propagate`
+forwards uses of a Copy's dst into the Copy's src. For
+`Copy(%t, x)`, that means substituting later uses of `x` with
+`%t`. But `x` is non-SSA (a static), so copy_propagate skips it
+— forward substitution would break the SSA invariant (multiple
+defs of `%t` competing). The fusion pass works in the opposite
+direction: redirect the producer's dst, leaving `x` as the live
+name.
+
+**SSA-renamed dsts.** If the Copy's dst is itself an SSA-renamed
+name (`Copy(%t, %r)`), copy_propagate + DSE already eliminates the
+pair: copy_propagate substitutes uses of `%r` with `%t`, leaving
+the Copy dead, and DSE drops it. Fusion handles this case too,
+just redundantly with the existing pipeline.
+
+**Eligible producers.** Anything with a single Var dst: the cast
+family (SignExtend / ZeroExtend / Truncate / IntToFloat /
+IntToDouble / FloatToInt / DoubleToInt / FloatToDouble /
+DoubleToFloat), Unary, Binary, Copy (chained-copy elimination),
+GetAddress, Load, IndexedLoad, FunctionCall and IndirectCall
+when their dst is non-None. Phi is deliberately excluded —
+Phi.dst is always SSA-renamed in the IR shape this pass sees,
+and SSA destruction is responsible for emitting Phi-related
+Copies.
+
+**When it fires.** Inside the fixed-point loop, AND once more
+after `from_ssa` (the SSA destruction pass emits Copies at the
+end of each predecessor block to feed each Phi's source into the
+Phi's dst — those Copies are the loop-counter `i++` shape,
+fusable but not yet present during the fixed-point loop). Running
+once post-destruction (rather than re-running the full loop) is
+sufficient because nothing later in the TAC pipeline produces
+fresh fusable patterns.
+
+**The composition with the asm-level INC peephole** is the
+headline win for the static-RMW case. Without copy folding,
+`static int x; x += 1;` lowers to ~25 bytes:
+
+```
+LDA x.lo                ; 3
+CLC                      ; 1
+ADC #1                   ; 2
+STA %t.lo                ; 2 (%t at ZP)
+LDA x.hi                 ; 3
+ADC #0                   ; 2
+STA %t.hi                ; 2
+LDA %t.lo                ; 2
+STA x.lo                 ; 3
+LDA %t.hi                ; 2
+STA x.hi                 ; 3
+```
+
+After copy folding the temp `%t` is gone (`Binary(Add, x, 1, x)`):
+
+```
+LDA x.lo                ; 3
+CLC                      ; 1
+ADC #1                   ; 2
+STA x.lo                 ; 3
+LDA x.hi                 ; 3
+ADC #0                   ; 2
+STA x.hi                 ; 3
+```
+
+— 17 bytes. Then the INC peephole at the asm level recognizes
+the in-place ADC chain and collapses it to:
+
+```
+INC x                    ; 3
+BNE .inc_done@N          ; 2
+INC x+1                  ; 3
+.inc_done@N:
+```
+
+— 8 bytes total, vs the original 25. The two passes compose
+multiplicatively on this pattern.
+
 ---
 
 ## Phase 3: Register Allocation

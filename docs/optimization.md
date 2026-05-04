@@ -874,15 +874,16 @@ A few things to notice:
 
 ---
 
-## The same example through `--optimize-asm`
+## The same example through the asm-level pipeline
 
 Same C source. The early stages (parse, resolve, type-check,
-`c99_to_tac`) run identically. The fork begins INSIDE
-`optimize_tac`: `--optimize-asm` calls it with
-`do_regalloc=False`, so the TAC fixed-point loop and `from_ssa`
-run, but TAC-level register allocation is skipped. The TAC
-arriving at `tac_to_asm` has every local as a Pseudo with no
-Coloring assigned.
+`c99_to_tac`, the TAC-level fixed-point loop, and `from_ssa`)
+run identically. After TAC's `from_ssa`, `tac_to_asm` is called
+in **bare-exit mode**: each function ends with a bare
+`asm_ast.Return(save_a)` atom (no compound `Ret`) and no
+`FunctionPrologue` is prepended. The frame setup decision is
+deferred to `prologue_synthesis` after asm-level register
+allocation has decided what (if anything) needs spilling.
 
 ### After `tac_to_asm` (`bare_exit=True`)
 
@@ -1068,7 +1069,7 @@ the saved-FP slot at FP+3). Synthesis checks N=2 (param `n` is
 
 ### The actual 6502 assembly
 
-Output of `compile.py - --codegen --optimize-asm` on the same
+Output of `compile.py - --codegen --optimize` on the same
 C source:
 
 ```
@@ -1201,7 +1202,7 @@ A few things to notice:
 - **Fewer ZP bytes used than `--optimize`.** This run uses 8
   bytes (`$80`–`$87`) vs `--optimize`'s 10 bytes (`$82`–`$8B`).
   The difference is `b.2` and `b.3`: `--optimize` colors them
-  separately ($88/$89 vs $84/$85); `--optimize-asm` colors
+  separately ($88/$89 vs $84/$85); `--optimize` colors
   every version of `@2.b.2` to one pair ($83/$82) because
   the byte-versioned SSA exposes that they're the same
   value chain across iterations and the collapsed Phi Movs
@@ -1236,11 +1237,11 @@ doing:
 - `--tac` shows the TAC right after `c99_to_tac` (no optimization).
 - `--tac --optimize` shows the TAC AFTER the full optimizer
   pipeline (post-de-SSA).
-- `--tac --optimize-asm` shows the TAC after the alt path's TAC
+- `--tac --optimize` shows the TAC after the alt path's TAC
   opts (regalloc skipped, otherwise identical to `--optimize`).
 - `--codegen` shows the final 6502 asm (no optimization).
 - `--codegen --optimize` shows the final asm with regalloc applied.
-- `--codegen --optimize-asm` shows the final asm from the alt
+- `--codegen --optimize` shows the final asm from the alt
   pipeline (asm-SSA round-trip; no regalloc until step 7 lands).
 
 For digging deeper into individual phases, the test files are the
@@ -1295,9 +1296,9 @@ These are documented as future work in the codebase:
 
 ---
 
-## The `--optimize-asm` alternate pipeline
+## The `--optimize` alternate pipeline
 
-`--optimize-asm` selects an alternate optimization path that runs
+`--optimize` selects an alternate optimization path that runs
 TAC-level fixed-point opts but defers register allocation to an
 asm-level layer. The motivation: doing optimization at the asm IR
 exposes byte-granular structure that's invisible at TAC, and a
@@ -1305,7 +1306,7 @@ late, asm-aware regalloc can color individual bytes (rather than
 whole multi-byte values like the TAC-level allocator does today).
 
 Status: byte-level DCE, byte-granular regalloc, and forward +
-backward copy propagation are all in place. `--optimize-asm` is
+backward copy propagation are all in place. `--optimize` is
 sim-correct on the chapter_1..12 corpus and produces output that
 places live values in ZP slots the same way `--optimize` does —
 with two bonuses:
@@ -1326,7 +1327,7 @@ with two bonuses:
                            → expand_long_branches → asm_to_asm2
                            → asm_emit
 
---optimize-asm           : c99_to_tac → optimize_tac (NO regalloc)
+--optimize           : c99_to_tac → optimize_tac (NO regalloc)
                            → tac_to_asm bare_exit=True
                            → asm_opt.optimize_program (asm-SSA round-trip)
                            → replace_pseudoregisters_bare_exit
@@ -1335,7 +1336,7 @@ with two bonuses:
                            → asm_emit
 ```
 
-Three architectural pieces are new under `--optimize-asm`:
+Three architectural pieces are new under `--optimize`:
 
 **1. Bare-exit emission from `tac_to_asm`.** With `bare_exit=True`,
 phase 9 emits an atomic `asm_ast.Return(save_a)` at each function
@@ -1661,7 +1662,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 
 | Step | Status |
 |---|---|
-| 1. `--optimize-asm` flag plumbing | Done |
+| 1. `--optimize` flag plumbing | Done |
 | 2. `Return(save_a)` atom in `asm_ast` | Done |
 | 3. `replace_program_bare_exit` + `prologue_synthesis` | Done |
 | 4. Synthesis collapses M=0/S=0 to bare RTS | Done |
@@ -1669,7 +1670,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | 5b. Same | Done |
 | 5c. `to_ssa` (Phi placement + byte-granular renaming) | Done |
 | 5d. `from_ssa` (Phi → Mov, critical-edge splitting, parallel-copy ordering by storage key, cycle break) | Done |
-| 5e. Wire round-trip into `--optimize-asm`; chapter sim corpus passes | Done |
+| 5e. Wire round-trip into `--optimize`; chapter sim corpus passes | Done |
 | 6. Byte-level DCE (drops dead high-byte work) | Done |
 | 6a. Forward copy propagation (SSA-aware, byte-granular) | Done |
 | 6b. Backward copy propagation (Pseudo → Reg(A) → memory round-trip elision) | Done |
@@ -1702,7 +1703,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 
 ### Frame elimination via `__attribute__((zp_abi))`
 
-A separate optimization layered on top of `--optimize-asm`: any
+A separate optimization layered on top of `--optimize`: any
 function declared with `__attribute__((zp_abi))` participates in
 the **per-function ZP-passing calling convention**. The function's
 parameters live at fixed zero-page addresses chosen by
@@ -1738,7 +1739,7 @@ __attribute__((zp_abi)) int add(int a, int b) {
 }
 ```
 
-Compiled with `--codegen --optimize-asm`, `add` produces:
+Compiled with `--codegen --optimize`, `add` produces:
 
 ```
 add:

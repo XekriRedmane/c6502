@@ -47,8 +47,16 @@ def build_interference(
     """Build the interference graph for `fn` from its `liveness`
     snapshot. Returns the same `InterferenceGraph` type the TAC
     pipeline uses (its name is the only field colored values
-    reference downstream)."""
-    excluded = _excluded_names(fn) | statics
+    reference downstream).
+
+    Most nodes are 1 byte wide (asm-SSA has split each multi-byte
+    original into per-byte-versioned variables). The exception is
+    `LoadAddress.dst`: a 2-byte pointer whose high byte is implicitly
+    written at storage_base+1 (see emit's `_shift_offset(dst, 1)`),
+    so the SSA layer doesn't byte-version it. It still needs ZP
+    coloring eligibility — we add it to the graph as a `width=2`
+    node so the allocator finds 2 contiguous bytes for it."""
+    excluded, multi_byte_widths = _categorize_names(fn, statics)
     excluded |= set(fn.params)
 
     graph = InterferenceGraph()
@@ -56,10 +64,13 @@ def build_interference(
     def colorable(name: str) -> bool:
         return name not in excluded
 
+    def width_of(name: str) -> int:
+        return multi_byte_widths.get(name, 1)
+
     def ensure_node(name: str) -> None:
         if name not in graph.nodes:
             graph.nodes[name] = InterferenceNode(
-                name=name, width=1, lives_across_call=False,
+                name=name, width=width_of(name), lives_across_call=False,
             )
 
     for bid, blk in liveness.cfg.blocks.items():
@@ -117,42 +128,64 @@ def build_interference(
 # ---------------------------------------------------------------------------
 
 
-def _excluded_names(fn: asm_ast.Function) -> set[str]:
-    """Names that can't be byte-granular-colored. Includes
-    address-taken, RMW targets, and any name that has a Pseudo
-    reference at non-zero offset (= multi-byte unversioned form)."""
-    excluded: set[str] = set()
-    multi_byte: set[str] = set()
+def _categorize_names(
+    fn: asm_ast.Function,
+    statics: frozenset[str],
+) -> tuple[set[str], dict[str, int]]:
+    """Classify every Pseudo name in `fn` into one of three kinds:
+
+      * **excluded** (returned in the first set): not eligible for
+        ZP coloring. Includes statics and address-taken sources
+        (`LoadAddress.src`).
+      * **multi-byte coloring candidate** (returned as
+        `{name: width}`): names that need a contiguous N-byte ZP
+        block. Two sources:
+          - `LoadAddress.dst` names (always 2 bytes — addresses
+            are 16-bit on the 6502; the LoadAddress instruction
+            implicitly writes both bytes of its dst).
+          - Any Pseudo name with references at multiple byte
+            offsets that isn't otherwise excluded — typically the
+            in-place inline-shift dst from `tac_to_asm`'s shift-
+            by-1 lowering. Width is `max_offset + 1`.
+        The interference graph adds them with `width=N` so the
+        allocator finds N consecutive free bytes.
+      * **single-byte (default)**: every other Pseudo. Width=1.
+        Includes RMW-target names (`Inc / Dec / ASL / LSR / ROL /
+        ROR.dst`) when their references are single-offset — those
+        are treated as ordinary 1-byte values whose def site
+        happens to also be a use site.
+
+    `statics` is the set of static-storage names (file-scope
+    globals, externs); they're always excluded."""
+    excluded: set[str] = set(statics)
+    multi_byte_widths: dict[str, int] = {}
     referenced: dict[str, set[int]] = defaultdict(set)
     for instr in fn.instructions:
-        match instr:
-            case asm_ast.LoadAddress(src=src, dst=dst):
-                # Both src and dst exclude. src is address-taken;
-                # dst holds a 2-byte address whose high byte is
-                # implicitly stored at storage_base+1 (see emit's
-                # `_shift_offset(dst, 1)`) — versioning byte 0 alone
-                # would let regalloc place another value at byte 1's
-                # implicit storage location.
-                if isinstance(src, asm_ast.Pseudo):
-                    excluded.add(src.name)
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-            case (
-                asm_ast.Inc(dst=dst)
-                | asm_ast.Dec(dst=dst)
-                | asm_ast.ArithmeticShiftLeft(dst=dst)
-                | asm_ast.LogicalShiftRight(dst=dst)
-                | asm_ast.RotateLeft(dst=dst)
-                | asm_ast.RotateRight(dst=dst)
-            ):
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
+        if isinstance(instr, asm_ast.LoadAddress):
+            if isinstance(instr.src, asm_ast.Pseudo):
+                excluded.add(instr.src.name)
+            # LoadAddress.dst: 2-byte address. We DON'T exclude
+            # it; instead we color it with width=2 so regalloc
+            # finds 2 contiguous ZP bytes.
+            if isinstance(instr.dst, asm_ast.Pseudo):
+                multi_byte_widths.setdefault(instr.dst.name, 2)
         for op in _all_pseudos_in(instr):
             referenced[op.name].add(op.offset)
+    # Names referenced at multiple byte offsets that aren't already
+    # multi-byte coloring candidates: promote to multi-byte coloring
+    # with `width = max_offset + 1`. This catches the RMW-shift
+    # output from `tac_to_asm`'s inline shift-by-1, where each
+    # byte of a multi-byte temp is shifted in place via a Pseudo
+    # operand on the shift atom.
     for name, offsets in referenced.items():
-        if any(o != 0 for o in offsets):
-            multi_byte.add(name)
-    return excluded | multi_byte
+        if max(offsets) > 0 and name not in multi_byte_widths:
+            multi_byte_widths[name] = max(offsets) + 1
+    # If a name slipped into both the multi-byte set AND was
+    # individually excluded, the exclusion wins.
+    for name in list(multi_byte_widths.keys()):
+        if name in excluded:
+            del multi_byte_widths[name]
+    return excluded, multi_byte_widths
 
 
 def _all_pseudos_in(

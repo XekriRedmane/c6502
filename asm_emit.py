@@ -482,21 +482,34 @@ def _emit_acc_logic(
 def _emit_acc_shift(
     opcode: str, op_name: str, dst: asm_ast.Type_operand,
 ) -> list[str]:
-    """Common emit for ASL/LSR/ROL/ROR. The 6502 has accumulator and
-    absolute / zero-page addressing modes (no indirect-Y), so:
-      - `Reg(A)` → `ASL A` / `LSR A` / `ROL A` / `ROR A`
+    """Common emit for ASL/LSR/ROL/ROR. The 6502 has accumulator
+    and absolute / zero-page addressing modes (no indirect-Y), so:
+      - `Reg(A)` → `ASL A` / `LSR A` / `ROL A` / `ROR A` (1 byte)
       - `Data(name, off)` / `ZP(addr, off)` → `ASL name+off` /
-        `ASL $XX` etc. — dasm picks zp or abs based on the resolved
-        address. Used by the runtime helpers to shift HARGS slots in
-        place and by colored ZP locals; soft-stack `Stack` / `Frame`
-        operands aren't supported (indirect-Y isn't a shift
-        addressing mode)."""
+        `ASL $XX` etc. (2-3 bytes). Used by the runtime helpers
+        to shift HARGS slots in place and by colored ZP locals.
+      - `Stack(off)` / `Frame(off)` — synthesize via the
+        accumulator: `LDY #off; LDA (PTR),Y; <op> A; LDY #off; STA
+        (PTR),Y`. The 6502 has no indirect-Y shift mode, so we
+        round-trip through A. (Two LDY's because one's the load
+        and the other's the store; they're separate atoms in the
+        physical-instruction-count model.) Carry is preserved
+        across LDY / LDA / STA, so multi-byte chains with this
+        synthesis still thread carry correctly between byte k's
+        ASL and byte k+1's ROL."""
     if _is_reg_a(dst):
         return [_instr_line(opcode, "A")]
     if _is_data_or_zp(dst):
         return [_instr_line(opcode, _abs_addr(dst))]
+    if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
+        return (
+            _emit_indirect_load(dst.offset, dst)
+            + [_instr_line(opcode, "A")]
+            + _emit_indirect_store(dst.offset, dst)
+        )
     raise ValueError(
-        f"{op_name} dst must be Reg(A), Data, or ZP, got {dst!r}"
+        f"{op_name} dst must be Reg(A), Data, ZP, Stack, or Frame, "
+        f"got {dst!r}"
     )
 
 

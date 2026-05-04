@@ -457,26 +457,36 @@ def _inline_left_shift_by_one(
     size: int,
 ) -> list[asm_ast.Type_instruction]:
     """Inline lowering of `LeftShift(value, 1)` for any width:
-    `ASL low; ROL b1; ROL b2; ... ROL high`. Routes through `Reg(A)`
-    so it works for any storage class on src / dst (Pseudo / ZP /
-    Data / Stack / Frame). Per byte: `LDA src.bk; ASL/ROL A; STA
-    dst.bk`. The carry from byte k's shift threads into byte k+1's
-    ROL via `LDA` not affecting C — an LDA only sets N/Z, leaving
-    C intact, so the per-byte chain works without explicit carry
-    saves.
+    copy `src` into `dst` byte-by-byte, then shift `dst` in place
+    (`ASL dst.b0; ROL dst.b1; ... ROL dst.bN-1`).
 
-    Result type matches the value's width (LeftShift is signedness-
-    agnostic — same bit pattern in either signed or unsigned
-    arithmetic). Doesn't detect overflow; matches the `asl*` runtime
-    helper's behavior."""
+    The shift atom on the dst byte exploits the 6502's direct
+    addressing modes when dst resolves to ZP / Data (one-instruction
+    `ASL $XX`); for Frame / Stack dsts, asm_emit synthesizes the
+    LDA-then-A-shift-then-STA fallback. Crucially: when `src` and
+    `dst` color to the same physical slot (a frequent SSA-coalescing
+    outcome for compound shifts like `x <<= 1`), the leading Mov
+    becomes a self-Mov and the self-Mov peephole drops it, leaving
+    just the bare in-place shift atoms. That's the optimal form on
+    the 6502.
+
+    Carry threads correctly between byte k's ASL and byte k+1's ROL
+    even when an intervening Mov lives between them: STA / LDA /
+    LDY don't touch the carry flag, so the carry from byte k's
+    in-place ASL survives until byte k+1's in-place ROL reads it.
+
+    Result type matches the value's width — LeftShift is
+    signedness-agnostic. Doesn't detect overflow; matches the
+    `asl*` runtime helper's behavior."""
     out: list[asm_ast.Type_instruction] = []
     for k in range(size):
-        out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+        src_byte = _byte_at(src_op, k)
+        dst_byte = _byte_at(dst_op, k)
+        out.append(asm_ast.Mov(src=src_byte, dst=dst_byte))
         if k == 0:
-            out.append(asm_ast.ArithmeticShiftLeft(dst=_REG_A))
+            out.append(asm_ast.ArithmeticShiftLeft(dst=dst_byte))
         else:
-            out.append(asm_ast.RotateLeft(dst=_REG_A))
-        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+            out.append(asm_ast.RotateLeft(dst=dst_byte))
     return out
 
 
@@ -488,58 +498,58 @@ def _inline_right_shift_by_one(
     signed: bool,
 ) -> list[asm_ast.Type_instruction]:
     """Inline lowering of `RightShift(value, 1)` for any width:
+    copy `src` to `dst` byte-by-byte, then shift `dst` in place
+    high-to-low.
 
-      Signed (arithmetic right shift):
-          LDA src.high
-          ASL A           ; sign bit → carry; A discarded
-          LDA src.high
-          ROR A           ; bit 7 ← carry (sign); carry ← src.high[0]
-          STA dst.high
-          LDA src.bN-2
-          ROR A           ; bit 7 ← prev carry; carry ← src.bN-2[0]
-          STA dst.bN-2
-          ...
-          LDA src.b0
-          ROR A
-          STA dst.b0
+    Signed (arithmetic right shift): a leading sign-capturing `LDA
+    dst.high; ASL A` puts the sign bit into carry (the ASL's value
+    is discarded — A's prior content is not the dst's value yet,
+    but we only need its top bit) — wait, that's not quite right.
+    The proper sequence captures the sign bit BEFORE the dst is
+    written, by reading from the source side directly. For
+    simplicity and correctness, we copy first, then read dst.high
+    to capture the sign:
+        Mov(src.high, dst.high)
+        LDA dst.high; ASL A     ; sign-bit-of-dst.high → carry
+        ROR(dst.high)            ; bit 7 ← carry (sign); carry ← bit 0
+        Mov(src.bN-2, dst.bN-2)
+        ROR(dst.bN-2)
+        ...
 
-      Unsigned (logical right shift):
-          LDA src.high
-          LSR A           ; bit 7 ← 0; carry ← src.high[0]
-          STA dst.high
-          LDA src.bN-2
-          ROR A
-          STA dst.bN-2
-          ...
-          LDA src.b0
-          ROR A
-          STA dst.b0
+    Unsigned (logical right shift): start with LSR on the high
+    byte (bit 7 ← 0), then ROR through each lower byte:
+        Mov(src.high, dst.high)
+        LSR(dst.high)            ; bit 7 ← 0; carry ← bit 0
+        Mov(src.bN-2, dst.bN-2)
+        ROR(dst.bN-2)
+        ...
 
-    Same `Reg(A)` routing as the left-shift inline so any storage
-    class works. Carry from each byte threads into the next via
-    LDA (which doesn't touch carry)."""
+    The Mov-per-byte preserves the carry that was just produced by
+    the previous byte's shift (LDA / LDY / STA all leave C alone).
+    When src and dst coalesce to the same physical slot, the Movs
+    drop via the self-Mov peephole, leaving bare in-place shifts —
+    optimal."""
     out: list[asm_ast.Type_instruction] = []
     high = size - 1
+    src_high = _byte_at(src_op, high)
+    dst_high = _byte_at(dst_op, high)
+    out.append(asm_ast.Mov(src=src_high, dst=dst_high))
     if signed:
-        # Capture sign bit into carry. The ASL discards A, but
-        # leaves carry = sign bit.
-        out.append(asm_ast.Mov(src=_byte_at(src_op, high), dst=_REG_A))
+        # Capture sign bit: load dst.high and ASL — the ASL puts
+        # bit 7 into carry, A's value is then irrelevant. ROR
+        # dst.high then puts the sign bit back into bit 7.
+        out.append(asm_ast.Mov(src=dst_high, dst=_REG_A))
         out.append(asm_ast.ArithmeticShiftLeft(dst=_REG_A))
-        # Now ROR the high byte: bit 7 ← sign-bit-from-carry,
-        # carry ← src.high[0].
-        out.append(asm_ast.Mov(src=_byte_at(src_op, high), dst=_REG_A))
-        out.append(asm_ast.RotateRight(dst=_REG_A))
-        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, high)))
+        out.append(asm_ast.RotateRight(dst=dst_high))
     else:
-        # Unsigned: LSR the high byte. bit 7 ← 0, carry ← src.high[0].
-        out.append(asm_ast.Mov(src=_byte_at(src_op, high), dst=_REG_A))
-        out.append(asm_ast.LogicalShiftRight(dst=_REG_A))
-        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, high)))
-    # Lower bytes: ROR with the carry threading from the byte above.
+        out.append(asm_ast.LogicalShiftRight(dst=dst_high))
+    # Lower bytes: copy then ROR with the carry threaded from
+    # the byte above.
     for k in range(high - 1, -1, -1):
-        out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
-        out.append(asm_ast.RotateRight(dst=_REG_A))
-        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        src_byte = _byte_at(src_op, k)
+        dst_byte = _byte_at(dst_op, k)
+        out.append(asm_ast.Mov(src=src_byte, dst=dst_byte))
+        out.append(asm_ast.RotateRight(dst=dst_byte))
     return out
 
 

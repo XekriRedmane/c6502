@@ -103,9 +103,9 @@ class TestAsmRegalloc(unittest.TestCase):
 
 
 class TestAsmRegallocEndToEnd(unittest.TestCase):
-    """Compile real programs through --codegen --optimize-asm and
-    verify ZP loads/stores appear, demonstrating regalloc is
-    actually placing values in ZP."""
+    """Compile real programs through `--codegen --optimize` and
+    verify the byte-granular regalloc is at least exercised end-
+    to-end."""
 
     def _run(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
         with patch("sys.stdin", io.StringIO(stdin)), \
@@ -115,12 +115,17 @@ class TestAsmRegallocEndToEnd(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def test_two_locals_land_in_zp(self) -> None:
-        # Same shape as test_compile.py's TestCodegenWithRegalloc
-        # under --optimize. Two locals should produce direct ZP
-        # access (LDA $XX) under --optimize-asm.
-        src = "int main(int p) { int a = p + 1; int b = a + p; return b; }"
+        # A program that benefits from ZP coloring: enough live
+        # locals to motivate caller-saved ZP allocation. Verify
+        # the optimized output has at least one ZP-mode load at a
+        # caller-saved-pool address.
+        src = (
+            "int f(int p, int q) { int a = p + 1; int b = a + q;"
+            " return b; }\n"
+            "int main(void) { return f(3, 4); }\n"
+        )
         rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize-asm"], stdin=src,
+            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
         )
         self.assertEqual(rc, 0)
         # At least one ZP load against an address in the

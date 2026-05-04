@@ -51,23 +51,21 @@ mutually-exclusive flag:
 |                  | loops → `.loop@N`, with break/continue stamped to match)      |
 | `--tac`          | `pretty(tac_ast)` — three-address-code IR                     |
 | `--codegen`      | 6502 assembly text                                            |
-| `--optimize`     | modifier (orthogonal to the stage flags). With `--tac`, shows |
-|                  | post-optimization TAC; with `--codegen`, emits asm where      |
-|                  | promotable SSA values are register-allocated to ZP slots.     |
-|                  | See `docs/optimization.md` for the pipeline.                  |
-| `--optimize-asm` | modifier; alternate optimizer operating at the asm level.     |
-|                  | TAC fixed-point opts → asm-level SSA round-trip with byte-    |
-|                  | granular DCE + regalloc → late prologue synthesis. Also       |
+| `--optimize`     | modifier (orthogonal to the stage flags). Runs the optimizer |
+|                  | pipeline: TAC-level fixed-point opts (constant folding,       |
+|                  | strength reduction, comparison-against-zero / jump fold, UCE, |
+|                  | copy prop, DSE) → asm-level SSA round-trip with byte-         |
+|                  | granular forward + backward copy-prop, byte-DCE, byte-        |
+|                  | granular regalloc → late prologue / epilogue synthesis. Also  |
 |                  | enables the `__attribute__((zp_abi))` calling-convention      |
-|                  | optimization. Mutually exclusive with `--optimize`. See the   |
-|                  | "Alternate pipeline" section below and `docs/leaf_zp_abi.md`. |
+|                  | optimization (frame elimination on annotated leaves). See     |
+|                  | `docs/optimization.md` for the pipeline walk-through.         |
 
 ```sh
 uv run python compile.py <source.c> --codegen              # to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to file
 uv run python compile.py - --tac < source.c                # stdin
-uv run python compile.py - --codegen --optimize < src.c    # with regalloc
-uv run python compile.py - --codegen --optimize-asm < src.c  # alt optimizer
+uv run python compile.py - --codegen --optimize < src.c    # with optimization
 ```
 
 Notes:
@@ -75,22 +73,19 @@ Notes:
 - With `--codegen`, the `-o` filename must end in `.asm`.
 - The other stages (`--lex`, `--parse`, `--resolve`, `--tac`) accept any
   output filename, or default to stdout.
-- `--optimize` runs the SSA-bracketed optimizer (constant folding,
-  unreachable-code elimination, copy propagation, dead-store
-  elimination) plus register allocation. Promotable SSA values
-  lower to `ZP(addr, offset)` operands using the configurable ZP
-  pool (default `$80-$FF`, split caller/callee at `$C0`); spilled
-  / address-taken / parameter values continue to use frame
-  storage. Roughly 3× faster per access in the loop body for
-  hot variables.
-- `--optimize-asm` is the alternate optimizer; same end-to-end
-  correctness, plus byte-granular optimizations the TAC layer
-  can't see (dead high-byte stores from cast-then-truncate
-  patterns; forward + backward copy propagation that collapses
-  the `STA pseudo; ...; LDA pseudo; STA HARGS` round-trip on
-  return-value temporaries) and the `__attribute__((zp_abi))`
-  frame-elimination feature for leaf functions. Mutually
-  exclusive with `--optimize`.
+- `--optimize` runs the full optimizer: TAC-level SSA-bracketed
+  fixed-point opts (constant folding, strength reduction, the
+  comparison-against-zero / jump fold, unreachable-code
+  elimination, copy propagation, dead-store elimination), then
+  the asm-level SSA round-trip with byte-granular forward +
+  backward copy propagation and byte-DCE, byte-granular ZP
+  register allocation (default pool `$80–$FF`, split caller-saved
+  / callee-saved at `$C0`), late prologue / epilogue synthesis
+  (frame collapses to bare RTS when nothing needs spilling), and
+  the `__attribute__((zp_abi))` frame-elimination optimization
+  for annotated leaf functions. Roughly 3× faster per access in
+  the loop body for hot variables, plus the prologue-collapse
+  win for leaf zp_abi functions.
 - The comment-stripping step uses pcpp via the Python API (see
   `preprocessor.py`); pcpp is a project dependency, no shelling out.
 - Any flag `compile.py` doesn't recognize is forwarded to the
@@ -678,22 +673,23 @@ end-to-end example and the actual asm output. The chapter
 `--optimize` end-to-end via the asm simulator and asserts return
 values match.
 
-## Alternate pipeline: `--optimize-asm`
+## Optimizer pipeline shape
 
-`compile.py` accepts a sibling `--optimize-asm` flag (mutually
-exclusive with `--optimize`) that runs an alternate optimizer
-operating at the asm level. Pipeline shape:
+`--optimize` runs the full optimization pipeline:
 
 ```
-c99_to_tac → TAC fixed-point opts (NO TAC regalloc, NO TAC from_ssa
-   into colorings) → tac_to_asm bare_exit=True → asm-level SSA
-   round-trip (passes/optimization_asm/) →
-     [forward copy-prop → backward copy-prop → byte-DCE]* →
-   byte-granular regalloc → SSA destruction → late prologue
-   synthesis → emit
+c99_to_tac → TAC fixed-point opts:
+   [constant_fold → strength_reduce → cmp_zero_jump_fold →
+    UCE → copy_prop → DSE]*
+→ tac_to_asm bare_exit=True → asm-level SSA round-trip
+   (passes/optimization_asm/):
+     [forward copy-prop → backward copy-prop → byte-DCE]*
+→ byte-granular regalloc → SSA destruction
+→ replace_pseudoregisters_bare_exit → late prologue synthesis
+→ expand_long_branches → asm_to_asm2 → asm_emit
 ```
 
-Three distinguishing features vs. `--optimize`:
+Distinguishing features:
 
 - **Byte-granular SSA + regalloc.** The asm-level SSA pass
   versions each `(Pseudo name, byte offset)` pair independently,
@@ -703,20 +699,40 @@ Three distinguishing features vs. `--optimize`:
   shrinking the function's frame. The byte-granular regalloc
   picks ZP slots per byte rather than per multi-byte value, so
   disjoint lifetimes within the same logical variable can share
-  colors (coalescing-by-accident through the from_ssa parallel-
-  copy ordering and apply_coloring's ZP rewrite).
+  colors. Multi-byte names (LoadAddress.dst pointers,
+  inline-shift dsts) get a contiguous N-byte ZP block via
+  width-aware allocation.
 
 - **Forward + backward copy propagation.** Forward copy-prop
   substitutes uses of `Mov(src, Pseudo dst)` with `src` for
-  Imm / ImmLabel / SSA-Pseudo sources (mirroring the TAC pass).
-  Backward copy-prop is the dual: when a Pseudo `P` has exactly
-  one use, and that use is the consecutive pair `Mov(P, Reg(A));
-  Mov(Reg(A), D)` (a memory-to-memory copy through A), redirect
-  `P`'s def to write `D` directly and drop the round-trip.
-  Catches the canonical Long-return pattern: a 2-byte temp gets
-  ZP-colored, then immediately reloaded into HARGS — after the
-  rewrite, the adds compute directly into HARGS. Iterates with
-  byte-DCE to a fixed point.
+  Imm / ImmLabel / SSA-Pseudo sources. Backward copy-prop is the
+  dual: when a Pseudo `P` has exactly one use, and that use is
+  the consecutive pair `Mov(P, Reg(A)); Mov(Reg(A), D)` (a
+  memory-to-memory copy through A), redirect `P`'s def to write
+  `D` directly and drop the round-trip. Catches the canonical
+  Long-return pattern: a 2-byte temp gets ZP-colored, then
+  immediately reloaded into HARGS — after the rewrite, the adds
+  compute directly into HARGS. Iterates with byte-DCE to a
+  fixed point.
+
+- **Strength reduction + inline shift-by-1.** TAC-level rewrites
+  Multiply / unsigned Divide / unsigned Modulo by power-of-2
+  constants into LeftShift / RightShift / BitwiseAnd. The asm
+  layer then inlines shift-by-1 as a per-byte `ASL low; ROL b1;
+  ... ROL high` chain (or LSR / signed-aware ROR for right
+  shifts), exploiting the 6502's direct memory shift modes when
+  the operand is ZP-coloreable. Combined effect: `arr[i]` index
+  scaling on `uint16_t arr` becomes a couple of in-place ZP
+  shifts instead of a `mul16` runtime call.
+
+- **Comparison-against-zero / jump fold.** TAC-level rewrite
+  recognizes `Binary(==/!=, x, 0, cond); JumpIfTrue/False(cond,
+  t)` (with `cond` single-use) and folds to a direct
+  `JumpIfTrue/False(x, t)` with the appropriate sense flip.
+  Traces through ZeroExtend defs to operate at the narrowest
+  available width — `if (uint8_t a == 0)` lowers to bare
+  `LDA a; BNE end` instead of the ~13-instruction CMP-and-
+  select sequence.
 
 - **Frame elimination via `__attribute__((zp_abi))`.** A
   function declared `__attribute__((zp_abi))` participates in
@@ -738,7 +754,7 @@ Three distinguishing features vs. `--optimize`:
   int main(void) { return add(3, 4); }
   ```
 
-  Compiled with `--codegen --optimize-asm`, `add` is just the
+  Compiled with `--codegen --optimize`, `add` is just the
   arithmetic + bare RTS — no SSP/FP setup whatsoever. The
   caller's body regalloc avoids `add`'s param ZP addresses
   (computed by `_blocked_addrs_for` from the per-program
@@ -759,10 +775,10 @@ Three distinguishing features vs. `--optimize`:
   resolution), `tests/test_leaf_zp_abi.py` (end-to-end +
   simulation).
 
-The chapter sim corpus also runs through `--optimize-asm` via
-`TestAsmSimChaptersOptimizeAsm` in
-`tests/test_sim_asm_optimized.py`. Both pipelines pass the same
-program-return assertions on chapter_1..12.
+The chapter sim corpus runs end-to-end through `--optimize` via
+`TestAsmSimChaptersOptimized` in
+`tests/test_sim_asm_optimized.py` — chapters 1-12 produce the
+same program-return values as the unoptimized path.
 
 ## Lexer and parser as APIs
 
@@ -1750,22 +1766,21 @@ Not yet anywhere in the pipeline:
   marshaling is done; what's missing is the implementation that
   the assembler would link against.
 
-End-to-end with `--optimize` or `--optimize-asm`:
+End-to-end with `--optimize`:
 
-- `--optimize` runs the SSA-bracketed TAC optimizer (constant
-  folding, UCE, copy propagation, DSE, regalloc) per
-  `docs/optimization.md`.
-- `--optimize-asm` runs the alternate optimizer (TAC fixed-
-  point opts → asm-level SSA round-trip with forward + backward
-  copy propagation + byte-DCE + byte-granular regalloc → late
-  prologue synthesis) per the "Alternate pipeline" section above.
-- `__attribute__((zp_abi))` on a function (active under
-  `--optimize-asm`) selects the per-function ZP-passing
-  calling convention. Validated at compile time: function must
-  be a leaf, must not be address-taken, params must fit the ZP
-  window. When the body also fits in ZP and uses no callee-
-  saved bytes, the function emits as bare body + RTS — no
-  prologue, no epilogue. See `docs/leaf_zp_abi.md`.
+- TAC-level fixed-point opts (constant folding, strength
+  reduction, comparison-against-zero / jump fold, UCE, copy
+  propagation, DSE) → asm-level SSA round-trip with forward +
+  backward copy propagation + byte-DCE → byte-granular regalloc
+  → late prologue synthesis. See `docs/optimization.md` for the
+  pipeline walk-through.
+- `__attribute__((zp_abi))` on a function selects the per-
+  function ZP-passing calling convention. Validated at compile
+  time: function must be a leaf, must not be address-taken,
+  params must fit the ZP window. When the body also fits in ZP
+  and uses no callee-saved bytes, the function emits as bare
+  body + RTS — no prologue, no epilogue. See
+  `docs/leaf_zp_abi.md`.
 
 ## Tests
 

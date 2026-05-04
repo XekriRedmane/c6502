@@ -60,28 +60,22 @@ DEFAULT_MAX_CYCLES = 10_000_000
 
 
 def compile_to_asm(
-    source: str, *, optimize: bool = False, optimize_asm: bool = False,
+    source: str, *, optimize: bool = False,
 ) -> tuple[asm_ast.Program, dict, dict]:
     """Run the full pipeline up through asm_ast (post pseudo
     elimination). Returns (asm_program, symbols, types) — the symbol
     and type tables come back so the harness can pick the right
     return-value width based on `main`'s declared type.
 
-    `optimize=True` runs the SSA-bracketed optimizer including
-    register allocation; the resulting per-function colorings are
-    threaded into `replace_pseudoregisters` so colored values lower
-    to ZP operands. Default is False (matches today's pre-regalloc
-    behavior).
-
-    `optimize_asm=True` selects the alternate pipeline (TAC opts,
-    then asm-level SSA opts, byte-granular regalloc, late prologue
-    synthesis). Mutually exclusive with `optimize`. During step-by-
-    step build, intermediate steps may share the existing pipeline
-    until each stage of the new path is wired up."""
-    if optimize and optimize_asm:
-        raise ValueError(
-            "optimize and optimize_asm are mutually exclusive",
-        )
+    `optimize=True` runs the optimizer pipeline: TAC-level fixed-
+    point opts (constant folding, strength reduction, comparison-
+    against-zero / jump fold, UCE, copy prop, DSE), then the asm-
+    level SSA round-trip with byte-granular forward + backward
+    copy-prop, byte-DCE, and byte-granular regalloc, then late
+    prologue / epilogue synthesis (collapses prologue/epilogue
+    when nothing needs spilling). Also enables the
+    `__attribute__((zp_abi))` calling-convention optimization
+    (frame elimination on annotated leaves)."""
     pp = preprocess(source)
     ast0 = parse(pp)
     ast1 = resolve_identifiers(ast0)
@@ -90,19 +84,17 @@ def compile_to_asm(
     ast4 = label_loops(ast3)
     ast5, syms, types = type_check_program(ast4)
     tac = translate_to_tac(ast5, syms, types)
-    colorings: dict = {}
-    if optimize:
-        tac, colorings = optimize_tac(tac, syms)
     statics = frozenset(
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
-    if optimize_asm:
-        # Asm-level path: TAC opts without regalloc, then asm-level
-        # SSA round-trip + byte-granular regalloc, with ABI
-        # selection threaded through both call-site lowering and
-        # callee-side param resolution. See compile.py for the
-        # full pipeline shape.
-        tac, _ = optimize_tac(tac, syms, do_regalloc=False)
+    if optimize:
+        # Optimized path: TAC opts → tac_to_asm bare-exit → asm-
+        # level SSA round-trip + byte-granular regalloc →
+        # replace_pseudoregisters_bare_exit → prologue synthesis.
+        # ABI selection is threaded through both call-site
+        # lowering and callee-side param resolution. See
+        # compile.py for the full pipeline shape.
+        tac = optimize_tac(tac, syms)
         abi = select_abi(tac, ast5, types)
         asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
         asm0, asm_colorings = asm_opt.optimize_program(
@@ -118,7 +110,6 @@ def compile_to_asm(
     asm0 = translate_to_asm(tac, syms, types)
     asm = expand_long_branches(replace_pseudoregs(
         asm0, extra_statics=statics, symbols=syms, types=types,
-        colorings=colorings,
     ))
     return asm, syms, types
 
@@ -269,15 +260,13 @@ def build_sim(
     source: str, *,
     origin: int = DEFAULT_ORIGIN,
     optimize: bool = False,
-    optimize_asm: bool = False,
 ) -> Simulation:
     """Compile, assemble, install runtime, set up MPU. Doesn't run.
-    `optimize=True` enables the SSA-bracketed optimizer including
-    register allocation. `optimize_asm=True` selects the alternate
-    asm-level optimization pipeline (mutually exclusive with
-    `optimize`)."""
+    `optimize=True` runs the optimizer pipeline (TAC fixed-point
+    opts, asm-SSA round-trip, byte-granular regalloc, late prologue
+    synthesis, plus `__attribute__((zp_abi))` frame elimination)."""
     asm_prog, _syms, _types = compile_to_asm(
-        source, optimize=optimize, optimize_asm=optimize_asm,
+        source, optimize=optimize,
     )
     runtime = rt_mod.build_runtime()
     assembled = assembler.assemble(

@@ -1254,9 +1254,12 @@ class TestEmitXor(unittest.TestCase):
 
 
 class TestEmitShiftRotateAcc(unittest.TestCase):
-    """ASL/LSR/ROL/ROR all currently target the accumulator only —
-    soft-stack values can't be addressed by these opcodes (no
-    indirect-Y mode). Reg(A) emits `<OP> A`; anything else raises."""
+    """ASL / LSR / ROL / ROR have accumulator and absolute / zero-
+    page addressing modes natively. Soft-stack `Stack` / `Frame`
+    operands have no indirect-Y shift mode on the 6502, so the
+    emit synthesizes a `LDY # / LDA (PTR),Y / <op> A / LDY # / STA
+    (PTR),Y` round-trip. Other operand kinds (Reg(X), Reg(Y), Imm,
+    Pseudo) still raise — they don't make sense as shift targets."""
 
     _CASES = [
         (asm_ast.ArithmeticShiftLeft, "ASL"),
@@ -1273,12 +1276,40 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
                     [f"   {opcode}   A"],
                 )
 
-    def test_non_acc_dst_raises(self):
+    def test_stack_synthesis(self):
+        # `<op> Stack(off)` synthesizes via A-round-trip.
+        for cls, opcode in self._CASES:
+            with self.subTest(op=opcode):
+                self.assertEqual(
+                    emit_instruction(cls(dst=asm_ast.Stack(offset=3))),
+                    [
+                        "   LDY   #$03",
+                        "   LDA   (SSP),Y",
+                        f"   {opcode}   A",
+                        "   LDY   #$03",
+                        "   STA   (SSP),Y",
+                    ],
+                )
+
+    def test_frame_synthesis(self):
+        # `<op> Frame(off)` — same shape but addressed via FP.
+        for cls, opcode in self._CASES:
+            with self.subTest(op=opcode):
+                self.assertEqual(
+                    emit_instruction(cls(dst=asm_ast.Frame(offset=2))),
+                    [
+                        "   LDY   #$02",
+                        "   LDA   (FP),Y",
+                        f"   {opcode}   A",
+                        "   LDY   #$02",
+                        "   STA   (FP),Y",
+                    ],
+                )
+
+    def test_unsupported_dst_raises(self):
+        # Reg(X), Reg(Y), Imm — still rejected.
         for cls, _ in self._CASES:
-            for dst in [_reg(_X), _reg(_Y),
-                        asm_ast.Imm(value=1),
-                        asm_ast.Stack(offset=1),
-                        asm_ast.Frame(offset=1)]:
+            for dst in [_reg(_X), _reg(_Y), asm_ast.Imm(value=1)]:
                 with self.subTest(op=cls.__name__, dst=dst):
                     with self.assertRaises(ValueError):
                         emit_instruction(cls(dst=dst))

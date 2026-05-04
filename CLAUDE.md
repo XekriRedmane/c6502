@@ -20,8 +20,7 @@ uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one te
 uv run python compile.py <source.c> --codegen              # C → 6502 asm to stdout
 uv run python compile.py <source.c> --codegen -o out.asm   # to a file (must end .asm)
 uv run python compile.py - --tac < source.c                # read stdin, stop after TAC
-uv run python compile.py - --codegen --optimize < src.c    # with TAC-level optimizer
-uv run python compile.py - --codegen --optimize-asm < src.c  # alt: asm-level optimizer
+uv run python compile.py - --codegen --optimize < src.c    # with the optimizer pipeline
 ```
 
 `compile.py` is the only CLI; every other module is library-only. Flags it doesn't
@@ -34,17 +33,16 @@ Stage-selection flags (mutually exclusive, one required with `compile.py`):
 the three name-resolution passes (identifier resolution, label resolution,
 loop labeling) in that order.
 
-Modifier flags (orthogonal to the stage flags; applies to `--tac` and
-`--codegen`; mutually exclusive with each other):
-- `--optimize` runs the SSA-bracketed optimizer pipeline (constant
-  folding, unreachable-code elimination, copy propagation, dead-store
-  elimination) plus TAC-level register allocation that maps promotable
-  SSA values to zero-page slots.
-- `--optimize-asm` runs the alternate pipeline: TAC fixed-point opts
-  (no TAC regalloc) → asm-level SSA round-trip with forward + backward
-  copy propagation + byte-granular DCE + regalloc → late prologue
-  synthesis. Also enables the `__attribute__((zp_abi))` calling-
-  convention optimization (frame elimination on annotated leaves).
+Modifier flag (orthogonal to the stage flags; applies to `--tac`
+and `--codegen`):
+- `--optimize` runs the optimizer pipeline: TAC-level fixed-point
+  opts (constant folding, strength reduction, comparison-against-
+  zero / jump fold, UCE, copy propagation, dead-store elimination)
+  → asm-level SSA round-trip with forward + backward copy
+  propagation + byte-granular DCE + byte-granular regalloc →
+  late prologue / epilogue synthesis. Also enables the
+  `__attribute__((zp_abi))` calling-convention optimization (frame
+  elimination on annotated leaves).
 
 See the "Optimization pipeline" / "Frame elimination via __attribute__"
 sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
@@ -1250,17 +1248,16 @@ construct a fresh `Translator`.
 
 ## Optimization pipeline (`--optimize`)
 
-When `--optimize` is on, `compile.py` inserts `optimize_program`
-(in `passes/optimization/optimizer.py`) between c99_to_tac and
-tac_to_asm. The optimizer takes `(prog, symbols)` and returns
-`(optimized_prog, colorings)` where `colorings` is a
-`dict[func_name, Coloring]` consumed downstream by
-`replace_pseudoregisters`. Per-function shape:
+When `--optimize` is on, `compile.py` runs the full optimization
+pipeline: TAC-level fixed-point opts → asm-level SSA round-trip
+with byte-granular regalloc → late prologue / epilogue synthesis.
+Per-function shape (TAC half):
 
 ```
-fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
-              build liveness → build interference → color_graph →
-              from_ssa → fn'
+fn → to_ssa
+   → [constant_fold → strength_reduce → cmp_zero_jump_fold →
+      UCE → copy_propagate → DSE]*
+   → from_ssa → fn'
 ```
 
 `docs/optimization.md` is the from-scratch tour. The brief version:
@@ -1277,8 +1274,9 @@ fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
    `.<funcname>@ssa_preheader@N`, so two functions in the same
    program don't collide in the asm namespace.
 
-2. **Fixed-point loop** rotates four passes until no pass makes a
-   structural change (`fn == prev`). Each pass enables the others:
+2. **Fixed-point loop** rotates six passes until no pass makes a
+   structural change (`fn == prev`). Each pass enables the
+   others:
    - `constant_fold` (`constant_folding.py`): folds Unary, Binary,
      comparison, integer-width / FP conversion casts, conditional
      jumps with constant conditions, and Phis whose every arg
@@ -1286,6 +1284,21 @@ fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
      declared width (Int 16-bit, Long 32-bit, LongLong 64-bit;
      unsigned variants the same widths). Wraparound matches what
      the 6502 lowering computes at runtime.
+   - `reduce_strength` (`strength_reduction.py`): rewrites
+     `Multiply(x, 2^k)` (commutative) → `LeftShift(x, k)`,
+     unsigned `Divide(x, 2^k)` → `RightShift(x, k)`, unsigned
+     `Modulo(x, 2^k)` → `BitwiseAnd(x, 2^k - 1)`, plus mul/div
+     by 1 → Copy. Signed Divide / Modulo are skipped (C99
+     truncation semantics differ from arithmetic shift). Each
+     rewrite removes a runtime helper call (`mul*` / `divmod*`)
+     for power-of-2 multipliers; combined with the asm-level
+     inline-shift-by-1, the call goes away entirely.
+   - `fold_cmp_zero_jump` (`cmp_zero_jump_fold.py`): rewrites
+     `Binary(==/!=, x, 0, cond); JumpIfTrue/False(cond, t)` (with
+     `cond` single-use) as `JumpIfTrue/False(x, t)` with the
+     appropriate sense flip. Traces through ZeroExtend defs to
+     operate at the narrowest available width — `if (uint8_t a
+     == 0)` lowers to bare `LDA a; BNE end`.
    - `eliminate_unreachable_code` (`unreachable_code_elimination.py`):
      drops unreachable blocks (forward DFS from ENTRY); prunes Phi
      args whose `pred_label` is no longer an actual predecessor
@@ -1300,33 +1313,7 @@ fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
      anywhere. `FunctionCall` / `IndirectCall` keep the call (side
      effects) but drop the dst when unused.
 
-3. **Register allocation** runs while the function is in SSA form
-   (the chordal property is what makes greedy coloring optimal):
-   - `liveness.py` computes per-block live-in/live-out + lazy
-     per-instruction queries. Phi sources contribute to the
-     matching predecessor's live_out (the future de-SSA Copy reads
-     them there); Phi dsts contribute to every predecessor's
-     live_out (the future de-SSA Copy writes them, so they need
-     to interfere with anything else live across the predecessor).
-   - `interference.py` builds the chordal interference graph: each
-     node carries a width (1/2/4/8 bytes from the symbol table)
-     and a `lives_across_call` bit (true iff live at any
-     `FunctionCall` / `IndirectCall`). Statics, function names,
-     and address-taken locals are filtered out — regalloc only
-     colors LocalAttr scalars.
-   - `pool.py` carries the caller/callee-saved partition of the
-     ZP register pool. Default `Pool(start=0x80)` splits
-     `[0x80, 0xFF]` into caller-saved `[0x80, 0xC0)` and
-     callee-saved `[0xC0, 0x100)` (64 bytes each). The starting
-     address must be even and is configurable.
-   - `register_allocation.py` colors via greedy width-aware
-     allocation in dom-tree-PEO. Cross-call values prefer
-     callee-saved (the function's prologue/epilogue save+restore
-     them); non-cross-call values prefer caller-saved (no
-     overhead). Falls back to the other pool when the preferred
-     is full; spills to frame when neither fits.
-
-4. **`from_ssa`** (`ssa_destruction.py`) lowers each Phi to one
+3. **`from_ssa`** (`ssa_destruction.py`) lowers each Phi to one
    Copy per PhiArg in the matching predecessor block, before the
    terminator. Within each predecessor's parallel-copy set, Copies
    are **topologically sorted** so a Copy's dst isn't read by a
@@ -1335,41 +1322,47 @@ fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
    dst at the same block. Cycles (e.g. `a, b = b, a`) are broken
    with a fresh `<funcname>.cycle_tmp@N` Var, registered in the
    symbol table with the cycle members' type. The temp gets a
-   frame slot via `replace_pseudoregisters` later (regalloc
-   already ran).
+   frame slot via `replace_pseudoregisters` later.
 
-5. After `from_ssa`, the function is regular non-SSA TAC ready for
-   `tac_to_asm` and the rest of the pipeline. The Coloring flows
-   through `compile.py` into `replace_pseudoregisters`, which
-   lowers colored Pseudos to `ZP(addr, offset)` operands and
-   reserves frame slots at `FP+1..FP+S` for callee-saved bytes
-   the function uses (saved by the prologue, restored by the
-   epilogue).
+4. After `from_ssa`, the function is regular non-SSA TAC ready
+   for `tac_to_asm` (in bare-exit mode — Pseudos preserved, no
+   `FunctionPrologue` prepended).
+
+5. **Asm-level SSA round-trip** (`passes/optimization_asm/`).
+   `to_ssa` byte-versions every promotable `(name, byte offset)`
+   pair (so byte 0 of a 4-byte Long has its own def/use chain
+   separate from byte 3). A fixed-point bracket of
+   `[copy_propagate → backward_copy_propagate → byte_dce]` runs
+   to convergence. Then **byte-granular regalloc** colors each
+   1-byte SSA name to a ZP slot from a configurable
+   caller/callee-saved partition (default
+   `Pool(start=0x80)` splits `[0x80, 0xFF]` into caller-saved
+   `[0x80, 0xC0)` and callee-saved `[0xC0, 0x100)`); multi-byte
+   names (LoadAddress.dst, inline-shift dsts) get a contiguous
+   width-N block via width-aware allocation. Cross-call values
+   prefer callee-saved (the function's prologue/epilogue save+
+   restore them); non-cross-call values prefer caller-saved.
+   `from_ssa` lowers Phis to per-edge Movs with parallel-copy
+   ordering by physical-storage key.
+
+6. **`replace_pseudoregisters_bare_exit`** consumes the asm-
+   regalloc colorings and resolves Pseudos: colored to `ZP(addr,
+   offset)`; spilled / address-taken / params to `Frame(off)`.
+
+7. **Late prologue synthesis** (`passes/prologue_synthesis.py`).
+   When the function ends up with `arg_bytes == 0`, `local_bytes
+   == 0`, and no callee-saved bytes, the bare `Return(save_a)`
+   atoms stay and no `FunctionPrologue` is prepended — the
+   function emits as pure body + RTS. Otherwise the synthesis
+   prepends `FunctionPrologue(N, M, callee_saved_addrs)` and
+   rewrites each `Return(save_a)` to `Ret(N, M, save_a,
+   callee_saved_addrs)`.
 
 `StaticVariable` top-levels pass through the optimizer unchanged
 (their `init` is constant byte layout, not control flow).
 `optimize_function` without `symbols` (legacy unit-test path)
-skips both SSA and regalloc and returns `(fn, None)`.
-
-The MVP doesn't yet do move coalescing (Phi src/dst sharing a
-color is left to chance + the self-Mov peephole), and a few opts
-remain future work — see the "What's not done yet" section at the
-end of `docs/optimization.md`.
-
-`compile.py` has a sibling flag `--optimize-asm` that selects an
-**alternate optimizer pipeline** with byte-granular SSA / DCE /
-regalloc operating on the asm IR, plus forward + backward copy
-propagation in the SSA bracket. Same end-to-end correctness on
-the chapter sim corpus; produces equivalent ZP usage to
-`--optimize` plus a few byte-DCE wins (dead high-byte stores from
-cast-then-truncate patterns drop) and the round-trip eliminations
-that backward copy-prop catches (e.g. Long return values that
-otherwise route through a ZP slot before being deposited in
-HARGS). The asm-SSA bracket runs
-`[copy_propagate → backward_copy_propagate → byte_dce]*` to a
-fixed point. The two flags are mutually exclusive.
-`--optimize-asm` also enables the `__attribute__((zp_abi))`
-calling-convention optimization (see below).
+skips SSA construction (the renaming pass needs the symbol table
+to register fresh SSA names with their types).
 
 ## Frame elimination via `__attribute__((zp_abi))`
 
@@ -1383,11 +1376,11 @@ regalloc fit everything in ZP) and no callee-saved bytes
 (leaves don't need any), the prologue / epilogue collapse to
 nothing — the function emits as pure body + bare `RTS`.
 
-Active under `--optimize-asm` only (the soft-stack convention
-is unchanged in `--optimize` and unannotated `--optimize-asm`).
-Selection is **manual**: a function uses ZP-passing if and only
-if its declaration carries `__attribute__((zp_abi))`. Without
-the annotation, soft-stack as today.
+Active under `--optimize` only (without `--optimize` the
+unoptimized soft-stack convention applies, regardless of the
+annotation). Selection is **manual**: a function uses ZP-passing
+if and only if its declaration carries `__attribute__((zp_abi))`.
+Without the annotation, soft-stack as today.
 
 Validation (compile-time, error otherwise):
 - The body must contain no `FunctionCall` / `IndirectCall` —
@@ -2117,48 +2110,41 @@ already emits Calls to all of these, so a program that uses
 or any indirect call (`fp()` where fp is a function pointer)
 assembles but won't link until those helpers exist.
 
-`--optimize` runs end-to-end (see "Optimization pipeline"
-section above): SSA construction → fixed-point loop (constant
-folding, UCE, copy prop, DSE) → register allocation onto ZP
-(default `$80-$FF`, configurable via `Pool(start=...)`, split
-caller/callee at `$C0`) → SSA destruction with topologically
-sorted parallel copies (cycles broken with a fresh temp).
-Promotable SSA values lower to `ZP(addr, offset)` operands —
-direct zero-page addressing, ~3× faster per access than the
-unoptimized indirect-Y `(FP),Y` path. Spilled / address-taken /
-parameter Pseudos continue to use Frame slots. Cross-call live
-values get callee-saved colors and the function's
-prologue/epilogue save+restore them around the body. Verified
+`--optimize` runs the optimizer pipeline end-to-end (see
+"Optimization pipeline" section above): TAC SSA construction →
+fixed-point loop (constant folding, strength reduction,
+comparison-against-zero / jump fold, UCE, copy prop, DSE) →
+TAC SSA destruction → tac_to_asm bare-exit → asm-level SSA
+round-trip with `[copy_propagate → backward_copy_propagate →
+byte_dce]*` to fixed point → byte-granular regalloc onto ZP
+(default `$80–$FF`, configurable via `Pool(start=...)`, split
+caller/callee at `$C0`) → asm SSA destruction → late prologue /
+epilogue synthesis. Promotable SSA values lower to `ZP(addr,
+offset)` operands — direct zero-page addressing, ~3× faster
+per access than the unoptimized indirect-Y `(FP),Y` path.
+Spilled / address-taken / parameter Pseudos continue to use
+Frame slots. Cross-call live values get callee-saved colors
+and the function's prologue/epilogue save+restore them around
+the body. The asm-level forward `copy_propagate` substitutes
+uses of `Mov(src, Pseudo)` with `src` for Imm / ImmLabel /
+SSA-Pseudo sources. The backward `backward_copy_propagate`
+collapses the round-trip pattern `Mov(Reg(A), P); ...;
+Mov(P, Reg(A)); Mov(Reg(A), D)` (where `P` is single-use, `D`
+is a non-Pseudo memory destination, the relocation range is
+free of Calls / aliasing writes / control flow, and `Reg(A)` +
+N/Z flags are dead at the deletion point) into a single
+`Mov(Reg(A), D)` — catches return-value temps that get ZP-
+colored only to be immediately reloaded into HARGS. Verified
 end-to-end via the asm sim: `tests/test_sim_asm_optimized.py`
 runs the chapter_1..12 corpus through `--optimize` and asserts
 program return values match the unoptimized expectations. See
 `docs/optimization.md` for the full walk-through.
 
-`--optimize-asm` runs end-to-end as the alternate pipeline:
-TAC fixed-point opts (no TAC regalloc), then asm-level SSA
-round-trip (`passes/optimization_asm/`) with `[copy_propagate →
-backward_copy_propagate → byte_dce]*` (fixed point) + byte-
-granular regalloc; final stage is a post-regalloc
-`prologue_synthesis` that elides the prologue/epilogue when no
-frame is needed. The forward `copy_propagate` is the SSA-aware
-asm equivalent of TAC's pass: substitutes uses of `Mov(src,
-Pseudo)` with `src` for Imm / ImmLabel / SSA-Pseudo sources.
-The backward `backward_copy_propagate` collapses the asm-level
-round-trip pattern `Mov(Reg(A), P); ...; Mov(P, Reg(A));
-Mov(Reg(A), D)` (where `P` is single-use, `D` is a non-Pseudo
-memory destination, the relocation range is free of Calls /
-aliasing writes / control flow, and `Reg(A)` + N/Z flags are
-dead at the deletion point) into a single `Mov(Reg(A), D)` —
-catches return-value temps that get ZP-colored only to be
-immediately reloaded into HARGS. Same chapter sim corpus runs
-through the alt path via
-`tests.test_sim_asm_optimized.TestAsmSimChaptersOptimizeAsm`.
-
 `__attribute__((zp_abi))` on a function declaration enables
-**frame elimination via ZP-passing** under `--optimize-asm`
-(see "Frame elimination via __attribute__((zp_abi))" section
-above). Validated at compile time (function must be a leaf,
-not address-taken, params fit the ZP window); rejected with a
+**frame elimination via ZP-passing** under `--optimize` (see
+"Frame elimination via __attribute__((zp_abi))" section above).
+Validated at compile time (function must be a leaf, not
+address-taken, params fit the ZP window); rejected with a
 clear error otherwise. Caller writes args directly to the
 callee's pinned ZP addresses (no AllocateStack); callee's
 params live at those ZP addresses (no Frame reads); when the

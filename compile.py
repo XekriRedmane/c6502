@@ -19,21 +19,14 @@ exactly one of:
   --codegen  go all the way to 6502 assembly text. Type checking
              runs first.
 
-`--optimize` (orthogonal to the stage flag) runs the TAC-level
-optimizer to a fixed point between TAC translation and the next
-stage. Effective for `--tac` and `--codegen`; ignored otherwise.
-
-`--optimize-asm` (mutually exclusive with `--optimize`) selects the
-alternate optimization pipeline that runs TAC-level fixed-point
-opts (the same four passes — constant folding, UCE, copy prop,
-DSE) but defers register allocation to the asm-level. Phase 9
-emits a bare `Return(value)` exit atom and skips
-`FunctionPrologue` entirely; an asm-level SSA optimizer runs
-byte-granular passes (DCE, etc.); regalloc colors byte-wide
-nodes; a post-regalloc synthesis pass inserts the prologue /
-epilogue based on what actually spilled. Step-by-step build —
-intermediate steps may delegate part of the path to the existing
-pipeline.
+`--optimize` (orthogonal to the stage flag) runs the optimizer
+pipeline: TAC-level fixed-point opts (constant folding, strength
+reduction, comparison-against-zero / jump fold, UCE, copy prop,
+DSE) followed by the asm-level SSA round-trip with byte-granular
+copy-prop / backward copy-prop / DCE, byte-granular regalloc, and
+late prologue / epilogue synthesis. Effective for `--tac` and
+`--codegen`. Also enables the `__attribute__((zp_abi))` calling-
+convention optimization (frame elimination on annotated leaves).
 
 Output goes to stdout by default, or to the file named by `-o`. With
 `--codegen`, the output file (if any) must have a `.asm` suffix.
@@ -105,7 +98,6 @@ def _format_tokens(source: str) -> str:
 
 def _run_stage(
     stage: str, source: str, optimize: bool = False,
-    optimize_asm: bool = False,
 ) -> str:
     if stage == "lex":
         return _format_tokens(source)
@@ -120,43 +112,33 @@ def _run_stage(
         # and resolve struct/union sizes.
         prog, symbols, types = type_check_program(_resolved(source))
         tac = translate_to_tac(prog, symbols, types)
-        if optimize or optimize_asm:
-            # optimize_tac returns (prog, colorings); we're stopping
-            # before codegen here so the colorings are discarded.
-            tac, _ = optimize_tac(tac, symbols)
+        if optimize:
+            tac = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":
         prog, symbols, types = type_check_program(_resolved(source))
         # `replace_pseudoregisters` needs to recognize every static-
         # storage object — including extern references that don't
         # produce a StaticVariable definition here — to avoid
-        # mistaking their Pseudos for locals. Any StaticAttr entry in
-        # the symbol table is a static-storage object; pass the full
-        # set as `extra_statics` so the asm pass picks up the externs
-        # the asm program doesn't otherwise know about.
+        # mistaking their Pseudos for locals. Any StaticAttr entry
+        # in the symbol table is a static-storage object; pass the
+        # full set as `extra_statics` so the asm pass picks up the
+        # externs the asm program doesn't otherwise know about.
         statics = frozenset(
             name for name, sym in symbols.items()
             if isinstance(sym.attrs, StaticAttr)
         )
         tac = translate_to_tac(prog, symbols, types)
-        # `colorings` is the per-function register-allocation result
-        # produced by the optimizer (empty when --optimize is off).
-        # `replace_pseudoregisters` consumes it to lower colored
-        # Pseudos to ZP operands; uncolored / spilled / address-
-        # taken names continue to flow through the existing Frame
-        # path.
-        colorings: dict = {}
         if optimize:
-            tac, colorings = optimize_tac(tac, symbols)
-        if optimize_asm:
-            # Asm-level pipeline: TAC opts WITHOUT regalloc, then
-            # tac_to_asm in bare-exit mode (Pseudos preserved),
-            # then asm-level SSA round-trip with byte-DCE +
-            # regalloc, then replace_pseudoregisters_bare_exit
-            # (consumes both the asm regalloc colorings AND the
-            # per-function ParamLayouts so ZP-ABI params resolve
-            # to ZP operands), then synthesize_prologue.
-            tac, _ = optimize_tac(tac, symbols, do_regalloc=False)
+            # Optimized pipeline: TAC opts (no regalloc) → tac_to_asm
+            # in bare-exit mode (Pseudos preserved) → asm-level SSA
+            # round-trip with byte-granular copy-prop / DCE / regalloc
+            # → replace_pseudoregisters_bare_exit (consumes the asm
+            # regalloc colorings AND the per-function ParamLayouts so
+            # ZP-ABI params resolve to ZP operands) →
+            # synthesize_prologue (collapses prologue/epilogue when
+            # nothing needs spilling).
+            tac = optimize_tac(tac, symbols)
             abi = select_abi(tac, prog, types)
             asm0 = translate_to_asm(
                 tac, symbols, types, bare_exit=True, abi=abi,
@@ -178,7 +160,6 @@ def _run_stage(
             extra_statics=statics,
             symbols=symbols,
             types=types,
-            colorings=colorings,
         ))))
     raise AssertionError(f"unknown stage: {stage!r}")
 
@@ -201,23 +182,17 @@ def main(argv: list[str]) -> int:
                         const="tac", help="stop after TAC translation")
     stages.add_argument("--codegen", dest="stage", action="store_const",
                         const="codegen", help="emit 6502 assembly")
-    opt_group = ap.add_mutually_exclusive_group()
-    opt_group.add_argument(
+    ap.add_argument(
         "--optimize", dest="optimize", action="store_true",
-        help="run TAC-level optimization passes (constant "
-             "folding, unreachable-code elimination, copy "
-             "propagation, dead-store elimination) to a "
-             "fixed point, then SSA-bracketed register "
-             "allocation. Applies to --tac and --codegen.",
-    )
-    opt_group.add_argument(
-        "--optimize-asm", dest="optimize_asm", action="store_true",
-        help="alternate pipeline: TAC fixed-point opts, then "
-             "asm-level SSA opts (byte-granular DCE, peepholes, "
-             "etc.), regalloc on byte-wide nodes, and late "
-             "prologue / epilogue synthesis driven by what "
-             "actually spilled. Mutually exclusive with "
-             "--optimize. Applies to --tac and --codegen.",
+        help="run the optimizer pipeline: TAC-level fixed-point opts "
+             "(constant folding, strength reduction, comparison-"
+             "against-zero / jump fold, UCE, copy propagation, dead-"
+             "store elimination), then asm-level SSA round-trip "
+             "(byte-granular forward + backward copy-prop, byte-DCE, "
+             "byte-granular regalloc), then late prologue / epilogue "
+             "synthesis. Also enables the `__attribute__((zp_abi))` "
+             "calling-convention optimization. Applies to --tac and "
+             "--codegen.",
     )
     args, pcpp_args = ap.parse_known_args(argv[1:])
 
@@ -239,7 +214,6 @@ def main(argv: list[str]) -> int:
     text = _run_stage(
         args.stage, preprocess(source, pcpp_args),
         optimize=args.optimize,
-        optimize_asm=args.optimize_asm,
     )
 
     if args.output is not None:

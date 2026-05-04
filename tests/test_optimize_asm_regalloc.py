@@ -27,7 +27,7 @@ from sim.harness import build_sim, run_c_program
 
 
 def _opt_asm(src: str):
-    return build_sim(src, optimize_asm=True).run()
+    return build_sim(src, optimize=True).run()
 
 
 def _no_opt(src: str):

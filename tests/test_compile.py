@@ -809,10 +809,10 @@ class TestCodegenWithRegalloc(unittest.TestCase):
         self.assertIn("(FP),Y", out)
 
 
-class TestOptimizeAsmFlag(unittest.TestCase):
-    """`--optimize-asm` selects the alternate optimization pipeline.
-    Step 1 just adds the flag plumbing; behavior is identical to
-    `--optimize` until later steps fork the path."""
+class TestOptimizeFlagBehavior(unittest.TestCase):
+    """Smoke checks for `--optimize`: representative programs
+    compile, and frameless functions collapse to bare RTS via
+    the late prologue-synthesis pass."""
 
     def _run(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
         with patch("sys.stdin", io.StringIO(stdin)), \
@@ -821,23 +821,7 @@ class TestOptimizeAsmFlag(unittest.TestCase):
             rc = main(argv)
         return rc, out.getvalue(), err.getvalue()
 
-    def test_optimize_asm_accepted_at_codegen(self):
-        rc, out, _ = self._run(
-            ["compile.py", "-", "--codegen", "--optimize-asm"],
-            stdin="int main(int p) { int a = p + 1; return a; }",
-        )
-        self.assertEqual(rc, 0)
-        self.assertIn("main:", out)
-
-    def test_optimize_asm_compiles_representative_programs(self):
-        # Step 5e+: --optimize-asm has diverged from --optimize at
-        # the asm IR level (TAC regalloc skipped, byte-level SSA
-        # round-trip in place, asm-level regalloc still pending) so
-        # byte-equivalence no longer holds. Verify each
-        # representative program at least compiles cleanly without
-        # crashing and produces non-empty output. End-to-end
-        # correctness is covered by the chapter sim corpus
-        # (`tests.test_sim_asm_optimized.TestAsmSimChaptersOptimizeAsm`).
+    def test_optimize_compiles_representative_programs(self):
         sources = [
             "int main(int p) { int a = p + 1; int b = a + p; return b; }",
             "int add(int a, int b) { return a + b; } "
@@ -849,40 +833,28 @@ class TestOptimizeAsmFlag(unittest.TestCase):
         for src in sources:
             with self.subTest(src=src):
                 rc, out, _ = self._run(
-                    ["compile.py", "-", "--codegen", "--optimize-asm"],
+                    ["compile.py", "-", "--codegen", "--optimize"],
                     stdin=src,
                 )
                 self.assertEqual(rc, 0)
                 self.assertIn("main:", out)
                 self.assertIn("RTS", out)
 
-    def test_optimize_and_optimize_asm_mutually_exclusive(self):
-        with self.assertRaises(SystemExit):
-            self._run(
-                ["compile.py", "-", "--codegen",
-                 "--optimize", "--optimize-asm"],
-                stdin="int main(void) { return 0; }",
-            )
-
-    def test_optimize_asm_collapses_frameless_function(self):
-        # Step 4: a no-arg / no-local / no-callee-saved function
-        # under --optimize-asm reaches the synthesis pass with bare
-        # `Return(save_a)` atoms, and synthesis short-circuits — no
-        # FunctionPrologue, no SSP/FP arithmetic, just a single RTS.
-        # The emitted text matches what the legacy --optimize path
-        # produces (which also collapses, just at a later stage).
+    def test_optimize_collapses_frameless_function(self):
+        # A no-arg / no-local / no-callee-saved function under
+        # `--optimize` reaches the synthesis pass with bare
+        # `Return(save_a)` atoms, and synthesis short-circuits —
+        # no FunctionPrologue, no SSP/FP arithmetic, just a
+        # single RTS.
         from sim.harness import compile_to_asm
         prog, _, _ = compile_to_asm(
-            "int main(void) { return 0; }", optimize_asm=True,
+            "int main(void) { return 0; }", optimize=True,
         )
-        # Find main's instructions.
         from asm_ast import Function, FunctionPrologue, Ret, Return
         mains = [tl for tl in prog.top_level
                  if isinstance(tl, Function) and tl.name == "main"]
         self.assertEqual(len(mains), 1)
         instrs = mains[0].instructions
-        # No prologue and no Ret — just the value setup and a bare
-        # Return(save_a) atom at the end.
         self.assertFalse(
             any(isinstance(i, FunctionPrologue) for i in instrs),
             "frame-less function should not have a FunctionPrologue",

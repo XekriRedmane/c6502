@@ -1,18 +1,23 @@
-"""Scaffolding tests for `passes.optimization`.
+"""Tests for the TAC-level optimizer driver (`passes.optimization`).
 
-Each individual pass is a stub today (identity), so the tests here
-focus on:
-  - the per-pass identity contract (a stub returns its input
-    structurally unchanged),
-  - the driver's fixed-point loop (terminates immediately when no
-    pass reports a change),
+The driver wraps SSA-in / fixed-point cycle / SSA-out around a TAC
+function. Per-pass behavioral tests live in their own modules
+(`test_constant_folding.py`, `test_unreachable_code_elimination.py`,
+`test_ssa.py`, `test_strength_reduction.py`,
+`test_cmp_zero_jump_fold.py`, etc.). What this file pins:
+
+  - the per-pass entry points accept arbitrary well-formed input
+    without crashing;
+  - the driver's fixed-point loop terminates (synthetic functions
+    converge in zero or one iteration);
   - the program-level dispatch (Function entries get optimized,
-    StaticVariable entries pass through),
-  - end-to-end plumbing (`--optimize` doesn't break --tac / --codegen).
+    StaticVariable entries pass through);
+  - end-to-end CLI plumbing (`--optimize` doesn't break --tac /
+    --codegen).
 
-When real folding / propagation / DCE land, each pass module gets
-its own behavioral test file; this module stays focused on the
-driver's invariants.
+Coloring decisions live entirely in the asm-level pipeline now —
+this driver does NOT perform register allocation. See
+`tests/test_asm_regalloc.py` and friends for coloring tests.
 """
 
 from __future__ import annotations
@@ -50,11 +55,7 @@ def _fn(*instrs, name: str = "main", params=()) -> tac_ast.Function:
 class TestPassesAcceptInputs(unittest.TestCase):
     """Each pass at minimum must accept arbitrary well-formed input
     without crashing. Behavioral correctness for each pass lives in
-    its own test module (test_constant_folding.py,
-    test_unreachable_code_elimination.py, test_ssa.py, ...). What
-    we pin here is just that the per-pass entry points are
-    structurally well-formed so the optimizer driver doesn't
-    explode mid-cycle."""
+    its own test module."""
 
     def setUp(self) -> None:
         self.fn = _fn(
@@ -68,7 +69,7 @@ class TestPassesAcceptInputs(unittest.TestCase):
                 src2=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
                 dst=tac_ast.Var(name="y"),
             ),
-            tac_ast.Ret(val=tac_ast.Var(name="y")),
+            _ret(),
         )
 
     def test_constant_folding_runs(self) -> None:
@@ -95,11 +96,8 @@ class TestOptimizeFunction(unittest.TestCase):
 
     def test_terminates_on_empty_function(self) -> None:
         fn = _fn(_ret())
-        # No `symbols` → SSA pipeline skipped; cycle still runs.
-        # Coloring is None when symbols is None.
-        out, coloring = optimize_function(fn)
+        out = optimize_function(fn)
         self.assertEqual(out, fn)
-        self.assertIsNone(coloring)
 
     def test_terminates_on_function_with_body(self) -> None:
         # Without a symbol table, SSA construction is skipped and
@@ -116,9 +114,8 @@ class TestOptimizeFunction(unittest.TestCase):
             ),
             tac_ast.Ret(val=tac_ast.Var(name="t0")),
         )
-        out, coloring = optimize_function(fn)
+        out = optimize_function(fn)
         self.assertEqual(out, fn)
-        self.assertIsNone(coloring)
 
 
 class TestOptimizeProgram(unittest.TestCase):
@@ -135,10 +132,8 @@ class TestOptimizeProgram(unittest.TestCase):
             ),
             _fn(_ret()),
         ])
-        out, colorings = optimize_program(prog)
+        out = optimize_program(prog)
         self.assertEqual(out, prog)
-        # No symbols → no SSA → no regalloc; colorings dict empty.
-        self.assertEqual(colorings, {})
 
     def test_static_only_program_passes_through(self) -> None:
         prog = tac_ast.Program(top_level=[
@@ -149,102 +144,18 @@ class TestOptimizeProgram(unittest.TestCase):
                 init=[tac_ast.LongInit(value=0)],
             ),
         ])
-        out, colorings = optimize_program(prog)
+        out = optimize_program(prog)
         self.assertEqual(out, prog)
-        self.assertEqual(colorings, {})
 
     def test_empty_program_passes_through(self) -> None:
         prog = tac_ast.Program(top_level=[])
-        out, colorings = optimize_program(prog)
+        out = optimize_program(prog)
         self.assertEqual(out, prog)
-        self.assertEqual(colorings, {})
-
-
-class TestColoringReturn(unittest.TestCase):
-    """When `symbols` is provided, the optimizer drives SSA, runs the
-    fixed-point cycle, then computes a register-allocation Coloring
-    while still in SSA form. The Coloring is returned alongside the
-    optimized function (or in `optimize_program`'s case, keyed by
-    function name in a dict). Without symbols, regalloc is skipped
-    and the Coloring is None / the dict is empty."""
-
-    def _symbols(self, **kinds):
-        from passes.type_checking import LocalAttr, Symbol, SymbolTable
-        st = SymbolTable()
-        for name, t in kinds.items():
-            st[name] = Symbol(type=t, attrs=LocalAttr())
-        return st
-
-    def test_optimize_function_returns_coloring_with_symbols(self) -> None:
-        import c99_ast
-        # Two locals, both eligible for SSA / coloring. After the
-        # optimizer fixes-up the SSA form, we expect at least one
-        # name in the resulting coloring's assignments.
-        fn = _fn(
-            tac_ast.Copy(
-                src=tac_ast.Constant(const=tac_ast.ConstInt(value=7)),
-                dst=tac_ast.Var(name="@0.a"),
-            ),
-            tac_ast.Binary(
-                op=tac_ast.Add(),
-                src1=tac_ast.Var(name="@0.a"),
-                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
-                dst=tac_ast.Var(name="@1.b"),
-            ),
-            tac_ast.Ret(val=tac_ast.Var(name="@1.b")),
-        )
-        st = self._symbols(
-            **{"@0.a": c99_ast.Int(), "@1.b": c99_ast.Int()},
-        )
-        out, coloring = optimize_function(fn, symbols=st)
-        self.assertIsNotNone(coloring)
-        # At least some assignment was made (the constant-folding
-        # passes shouldn't fully fold this since `b` depends on `a`
-        # via Add; even if they did, the Var that survives would
-        # still be in the coloring).
-        # We don't pin specific names since the SSA renamer's
-        # output names are an implementation detail.
-
-    def test_optimize_program_keys_colorings_by_function_name(self) -> None:
-        import c99_ast
-        # Two distinct functions; verify each gets its own coloring.
-        fn1 = _fn(
-            tac_ast.Copy(
-                src=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
-                dst=tac_ast.Var(name="@0.x"),
-            ),
-            tac_ast.Ret(val=tac_ast.Var(name="@0.x")),
-            name="foo",
-        )
-        fn2 = _fn(
-            tac_ast.Copy(
-                src=tac_ast.Constant(const=tac_ast.ConstInt(value=2)),
-                dst=tac_ast.Var(name="@1.y")),
-            tac_ast.Ret(val=tac_ast.Var(name="@1.y")),
-            name="bar",
-        )
-        prog = tac_ast.Program(top_level=[
-            fn1,
-            tac_ast.StaticVariable(
-                name="g", is_global=True,
-                data_type=tac_ast.Int(),
-                init=[tac_ast.IntInit(value=0)],
-            ),
-            fn2,
-        ])
-        st = self._symbols(
-            **{"@0.x": c99_ast.Int(), "@1.y": c99_ast.Int()},
-        )
-        _, colorings = optimize_program(prog, symbols=st)
-        # Both Function top-levels keyed in; static does NOT appear.
-        self.assertIn("foo", colorings)
-        self.assertIn("bar", colorings)
-        self.assertNotIn("g", colorings)
 
 
 class TestCliFlag(unittest.TestCase):
-    """`--optimize` is orthogonal to --tac / --codegen and shouldn't
-    change observable output while every pass is a stub."""
+    """`--optimize` is orthogonal to --tac / --codegen — it changes
+    the optimization level but the same stages still run."""
 
     SOURCE = "int main(void) { return 42; }"
 
@@ -255,28 +166,30 @@ class TestCliFlag(unittest.TestCase):
             rc = compile_main(argv)
         return rc, out.getvalue(), err.getvalue()
 
-    def test_tac_with_optimize_matches_unoptimized_for_stubs(self) -> None:
-        rc1, plain, _ = self._run(
+    def test_tac_with_optimize_compiles(self) -> None:
+        # `return 42` is a trivial constant; the optimized TAC
+        # may or may not match the unoptimized form (constant
+        # folding could collapse it differently). Just verify
+        # both invocations succeed.
+        rc1, _, _ = self._run(
             ["compile.py", "-", "--tac"], stdin=self.SOURCE,
         )
-        rc2, opt, _ = self._run(
+        rc2, _, _ = self._run(
             ["compile.py", "-", "--tac", "--optimize"], stdin=self.SOURCE,
         )
         self.assertEqual(rc1, 0)
         self.assertEqual(rc2, 0)
-        self.assertEqual(plain, opt)
 
-    def test_codegen_with_optimize_matches_unoptimized_for_stubs(self) -> None:
-        rc1, plain, _ = self._run(
+    def test_codegen_with_optimize_compiles(self) -> None:
+        rc1, _, _ = self._run(
             ["compile.py", "-", "--codegen"], stdin=self.SOURCE,
         )
-        rc2, opt, _ = self._run(
+        rc2, _, _ = self._run(
             ["compile.py", "-", "--codegen", "--optimize"],
             stdin=self.SOURCE,
         )
         self.assertEqual(rc1, 0)
         self.assertEqual(rc2, 0)
-        self.assertEqual(plain, opt)
 
 
 if __name__ == "__main__":

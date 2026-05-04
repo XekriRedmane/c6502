@@ -36,13 +36,13 @@ class TestLeafZpAbi(unittest.TestCase):
         with patch("sys.stdin", io.StringIO(source)), \
              patch("sys.stdout", new_callable=io.StringIO) as out:
             rc = compile_main([
-                "compile.py", "-", "--codegen", "--optimize-asm",
+                "compile.py", "-", "--codegen", "--optimize",
             ])
         self.assertEqual(rc, 0)
         return out.getvalue()
 
     def _sim_return_int(self, source: str) -> int:
-        sim = build_sim(source, optimize_asm=True)
+        sim = build_sim(source, optimize=True)
         result = sim.run(max_cycles=5_000_000)
         self.assertFalse(result.timed_out, "simulator timed out")
         return _signed_int(result.return_int())

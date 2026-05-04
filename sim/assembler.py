@@ -891,11 +891,15 @@ def _inc_dec_size(dst: asm_ast.Type_operand) -> int:
 
 def _shift_size(dst: asm_ast.Type_operand) -> int:
     """1 byte for accumulator-mode ASL/LSR/ROL/ROR on `Reg(A)`; 2 / 3
-    bytes for the memory-mode forms on a `Data` / `ZP` operand."""
+    bytes for the memory-mode forms on a `Data` / `ZP` operand;
+    9 bytes for the indirect-Y synthesis on `Stack(off)` / `Frame(off)`
+    (LDY # = 2; LDA (zp),Y = 2; <op> A = 1; LDY # = 2; STA (zp),Y = 2)."""
     if _is_reg_a(dst):
         return 1
     if _is_data_or_zp(dst):
         return 2 if _abs_fits_zp(dst) else 3
+    if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
+        return _load_mem_to_a_size(dst) + 1 + _store_a_to_mem_size(dst)
     raise AssemblerError(f"Shift dst unsupported: {dst!r}")
 
 
@@ -919,12 +923,23 @@ def _emit_shift(
 ) -> bytes:
     """`ASL A`/`LSR A`/`ROL A`/`ROR A` for Reg(A); `<op> name+off`
     for `Data` (zp or abs depending on resolved address); `<op> $XX`
-    for `ZP` (always zp mode)."""
+    for `ZP` (always zp mode); for `Stack` / `Frame`, synthesize
+    `LDY #off; LDA (PTR),Y; <op> A; LDY #off; STA (PTR),Y` since
+    the 6502 has no indirect-Y mode for shift opcodes."""
     if _is_reg_a(dst):
         return bytes([_IMPLIED[opcode + "_A"]])
     if _is_data_or_zp(dst):
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(dst, syms))
-    raise AssemblerError(f"{opcode} dst must be Reg(A), Data, or ZP; got {dst!r}")
+    if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
+        return (
+            _emit_indy("LDA", dst)
+            + bytes([_IMPLIED[opcode + "_A"]])
+            + _emit_indy("STA", dst)
+        )
+    raise AssemblerError(
+        f"{opcode} dst must be Reg(A), Data, ZP, Stack, or Frame; "
+        f"got {dst!r}"
+    )
 
 
 # -------- jumps and branches --------

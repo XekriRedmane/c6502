@@ -213,7 +213,7 @@ parse → resolve → check → c99_to_tac
                                 ▼
                          optimize_tac (TAC fixed-point;
                                        regalloc skipped under
-                                       --optimize-asm)
+                                       --optimize)
                                 │
                                 ▼
                        [ABI-selection pass]   ← new
@@ -376,7 +376,7 @@ S = 0            (no callee-saved needed — no nested calls
 ```
 
 So `M == 0` iff every local fits in ZP via asm-level regalloc.
-That's the existing `--optimize-asm` regalloc's job — nothing
+That's the existing `--optimize` regalloc's job — nothing
 new needed there.
 
 When `N == 0 && M == 0 && S == 0`, `prologue_synthesis`
@@ -384,7 +384,7 @@ collapses the function to a bare `RTS`. No prologue. No
 epilogue beyond the value-staging in HARGS (or A for 1-byte
 returns) and the RTS.
 
-The `--optimize-asm` collapse path already handles
+The `--optimize` collapse path already handles
 `N == 0 && M == 0 && S == 0`. The new ABI just makes more
 functions hit that case (any leaf with few enough params).
 
@@ -600,7 +600,7 @@ the existing collapse path fires.
 
 This step is mostly verification: add a focused test that a
 trivial leaf function (`int add(int a, int b) { return a + b;
-}`) produces no prologue under `--optimize-asm`. Should pass
+}`) produces no prologue under `--optimize`. Should pass
 as a side effect of F1–F3 once they're wired through.
 
 ### Step F5: caller-side regalloc respects outgoing-arg windows
@@ -624,9 +624,9 @@ Verifiable: chapter sim corpus + a focused stress test (a
 function that calls a leaf with many args while holding
 caller-saved scratch).
 
-### Step F6: leaf_zp ABI on by default in `--optimize-asm`; verify corpus
+### Step F6: leaf_zp ABI on by default in `--optimize`; verify corpus
 
-Wire ABI selection into the `--optimize-asm` pipeline.
+Wire ABI selection into the `--optimize` pipeline.
 Verification:
 - Chapter sim corpus passes end-to-end.
 - A diff-vs-baseline check confirms specific leaf functions

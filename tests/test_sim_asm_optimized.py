@@ -1,22 +1,23 @@
-"""End-to-end smoke test for register allocation: run a curated
+"""End-to-end smoke test for the optimizer pipeline: run a curated
 subset of chapter programs through the asm simulator with
 `optimize=True`, asserting the same expected return values as the
-pre-regalloc asm sim. Catches any bug that produces compiling-but-
-semantically-wrong code (e.g. two interfering vars sharing a byte,
-or a colored value clobbering one that's still live).
+unoptimized asm sim. Catches any optimizer bug that produces
+compiling-but-semantically-wrong code (e.g. two interfering values
+sharing a byte, a colored value clobbering one that's still live,
+a folded comparison flipping its sense).
 
 Subset rationale: we don't run every chapter file because some hit
-known regalloc-unrelated issues (frame_too_large for >253-byte
-frames, extern_unresolved for stdio calls, wrong_value for
-pre-existing codegen bugs). The subset here is the chapter_5..12
-files that already pass the asm sim WITHOUT regalloc — a passing
-sim there confirms regalloc preserves semantics on programs the
-rest of the pipeline already handles.
+known unrelated issues (frame_too_large for >253-byte frames,
+extern_unresolved for stdio calls, wrong_value for pre-existing
+codegen bugs). The subset here is the chapter_5..12 files that
+already pass the asm sim WITHOUT optimization — a passing sim there
+confirms the optimizer preserves semantics on programs the rest of
+the pipeline already handles.
 
-Files in chapter_19's `optimization/` tree are explicitly
-relevant — they exercise the optimizer pipeline and benefit most
-from regalloc — but they're driven through the chapter_19 harness's
-own simulator setup; we don't duplicate that here.
+Files in chapter_19's `optimization/` tree are explicitly relevant
+— they exercise the optimizer pipeline most directly — but they're
+driven through the chapter_19 harness's own simulator setup; we
+don't duplicate that here.
 """
 from __future__ import annotations
 
@@ -49,11 +50,9 @@ _CHAPTERS_UNDER_TEST = tuple(
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestAsmSimChaptersOptimized(unittest.TestCase):
-    """Same expected-return assertions as `test_sim_asm.py`, but the
-    pipeline runs with `optimize=True`. Per-file `subTest` so one
-    regression doesn't mask others."""
-
-    OPTIMIZE_KIND = "optimize"
+    """Same expected-return assertions as `test_sim_asm.py`, but
+    the pipeline runs with `optimize=True`. Per-file `subTest` so
+    one regression doesn't mask others."""
 
     def test_optimized_expected_returns(self) -> None:
         cases = {
@@ -62,13 +61,12 @@ class TestAsmSimChaptersOptimized(unittest.TestCase):
             if path.startswith(_CHAPTERS_UNDER_TEST)
         }
         self.assertGreater(len(cases), 0, "no chapters in scope")
-        kwargs = {self.OPTIMIZE_KIND: True}
         for rel_path, expected in cases.items():
             with self.subTest(file=rel_path):
                 if rel_path in SKIPS:
                     self.skipTest(SKIPS[rel_path])
                 source = (_TESTS_DIR / rel_path).read_text()
-                sim = build_sim(source, **kwargs)
+                sim = build_sim(source, optimize=True)
                 result = sim.run(max_cycles=_DEFAULT_MAX_CYCLES)
                 if result.timed_out:
                     self.fail(
@@ -85,16 +83,6 @@ class TestAsmSimChaptersOptimized(unittest.TestCase):
                         f"cycles={result.cycles})"
                     ),
                 )
-
-
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
-class TestAsmSimChaptersOptimizeAsm(TestAsmSimChaptersOptimized):
-    """Same chapter corpus, run through the alternate `--optimize-asm`
-    pipeline. Step 3 baseline: synthesis pass always inserts the
-    full prologue / epilogue, so the simulated return values must
-    still match the unoptimized expectations."""
-
-    OPTIMIZE_KIND = "optimize_asm"
 
 
 if __name__ == "__main__":

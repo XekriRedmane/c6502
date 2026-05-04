@@ -980,8 +980,11 @@ class TestTranslateLongLong(unittest.TestCase):
 
     def test_zero_extend_uint_to_ulong_writes_two_zero_high_bytes(self):
         # UInt (2B) → ULong (4B): copy the two source bytes into the
-        # low half of dst, then zero-fill bytes 2 and 3 of dst (the
-        # new high half) by loading 0 into A and storing it.
+        # low half of dst, then write Imm(0) directly into bytes 2
+        # and 3 of dst. Each Mov(Imm(0), dst[k]) is a recorded
+        # forward-CP source, so a downstream consumer of dst[k] gets
+        # Imm(0) substituted in and the high bytes' Pseudo storage
+        # gets DCE'd.
         import c99_ast
         from passes.type_checking import (
             LocalAttr, Symbol, SymbolTable,
@@ -998,22 +1001,18 @@ class TestTranslateLongLong(unittest.TestCase):
                 dst=tac_ast.Var(name="%0"),
             )
         )
-        # The trailing sequence is: load 0 into A, then store it
-        # into dst[2] and dst[3] — three instructions total.
+        # The trailing sequence is two single-Mov writes of Imm(0).
         tail = [
             asm_ast.Mov(
-                src=asm_ast.Imm(value=0), dst=asm_ast.Reg(reg=asm_ast.A()),
-            ),
-            asm_ast.Mov(
-                src=asm_ast.Reg(reg=asm_ast.A()),
+                src=asm_ast.Imm(value=0),
                 dst=asm_ast.Pseudo(name="%0", offset=2),
             ),
             asm_ast.Mov(
-                src=asm_ast.Reg(reg=asm_ast.A()),
+                src=asm_ast.Imm(value=0),
                 dst=asm_ast.Pseudo(name="%0", offset=3),
             ),
         ]
-        self.assertEqual(out[-3:], tail)
+        self.assertEqual(out[-2:], tail)
 
     def test_long_long_return_writes_to_hargs_8_through_11(self):
         # Callee-side: the LongLong (4B) return convention reuses
@@ -1444,18 +1443,18 @@ class TestSignExtendAndTruncate(unittest.TestCase):
             )
         )
         self.assertEqual(out, [
+            # Single-Mov copy phase: forward CP can substitute through
+            # this def.
             asm_ast.Mov(
                 src=asm_ast.Pseudo(name="@0.x", offset=0),
-                dst=asm_ast.Reg(reg=asm_ast.A()),
-            ),
-            asm_ast.Mov(
-                src=asm_ast.Reg(reg=asm_ast.A()),
                 dst=asm_ast.Pseudo(name="%0", offset=0),
             ),
-            # ORA #$00 refreshes N from A — the previous STA's
-            # `LDY #off` clobbered it for soft-stack stores.
-            asm_ast.Or(
-                src=asm_ast.Imm(value=0x00),
+            # Explicit reload of src.high into A — the copy phase's
+            # Mov could be eaten by the self-Mov peephole if regalloc
+            # coalesced src and dst, so we don't rely on A holding
+            # src.high after it.
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="@0.x", offset=0),
                 dst=asm_ast.Reg(reg=asm_ast.A()),
             ),
             asm_ast.Branch(cond=asm_ast.MI(), target=".sx_neg@0"),

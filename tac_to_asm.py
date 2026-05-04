@@ -1029,21 +1029,22 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         """Signed narrower→wider widening (Int → Long, Int → LongLong,
         Long → LongLong, etc.). Copy each source byte into the
-        matching dst byte, then dispatch on the source's high-byte
-        sign to write $00 (positive) or $FF (negative) to each of
-        dst's remaining (high) bytes. Two minted labels per use; the
-        Translator's counter keeps them globally unique.
+        matching dst byte, then explicitly load src.high into A and
+        dispatch on its sign to write $00 (positive) or $FF
+        (negative) to each of dst's remaining (high) bytes. Two
+        minted labels per use; the Translator's counter keeps them
+        globally unique.
 
-        N-flag refresh via `ORA #$00`. The intuition would be that
-        the last LDA in the byte-copy loop sets N from the source's
-        high byte, and the trailing STA preserves flags — but `STA`
-        to a Stack / Frame / Indirect operand emits as
-        `LDY #off; STA (PTR),Y`, and the LDY part DOES update N/Z
-        from its (almost always positive) immediate. So the BMI
-        without a refresh ends up testing the LDY's immediate, not
-        the source's sign. We emit `ORA #$00` (which preserves A but
-        re-establishes N from A's bit 7) right before the BMI to
-        force-correct the flag. Costs 2 extra bytes per SignExtend."""
+        Copy phase uses single `Mov(src.k, dst.k)` per byte (mirrors
+        `_translate_copy`), so forward CP can substitute through the
+        def-use chain. We DON'T rely on A holding src.high after the
+        loop — if src and dst happen to color to the same ZP slot
+        the self-Mov peephole would eat the load and leave A
+        undefined. Instead an explicit `Mov(src.high, A)` between
+        copy and sign check ensures A is loaded and N reflects
+        src.high's bit 7 (LDA's flag update is the last thing the
+        emit produces, even when the source is a Frame/Stack/Indirect
+        slot needing LDY setup)."""
         src_op = translate_val(src)
         dst_op = translate_val(dst)
         src_w = self._size_of(src)
@@ -1052,10 +1053,11 @@ class Translator:
         end_label = self.make_label("sx_done")
         out: list[asm_ast.Type_instruction] = []
         for k in range(src_w):
-            out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
-            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+            out.append(asm_ast.Mov(
+                src=_byte_at(src_op, k), dst=_byte_at(dst_op, k),
+            ))
         out.extend([
-            asm_ast.Or(src=asm_ast.Imm(value=0x00), dst=_REG_A),
+            asm_ast.Mov(src=_byte_at(src_op, src_w - 1), dst=_REG_A),
             asm_ast.Branch(cond=asm_ast.MI(), target=neg_label),
             asm_ast.Mov(src=asm_ast.Imm(value=0x00), dst=_REG_A),
             asm_ast.Jump(target=end_label),
@@ -1074,24 +1076,28 @@ class Translator:
         ULongLong, ULong → ULongLong, etc.). Copy each source byte
         unchanged, then write a literal 0 into each of dst's
         remaining (high) bytes. No branch needed — the new high
-        bytes are unconditionally zero. Routes each byte through A
-        so memory-to-memory dst layouts work uniformly."""
+        bytes are unconditionally zero.
+
+        Single `Mov(src.k, dst.k)` per byte (mirrors `_translate_copy`).
+        The asm emit phase synthesizes the LDA/STA conduit when the
+        operand pair needs it, but the IR shows direct def-use links
+        — `Mov(Imm(0), dst[k])` is a recorded copy source for forward
+        CP, so a downstream `Mov(dst[k], consumer)` substitutes
+        `Imm(0)` straight through and the intermediate Pseudo gets
+        DCE'd."""
         src_op = translate_val(src)
         dst_op = translate_val(dst)
         src_w = self._size_of(src)
         tgt_w = self._size_of(dst)
         out: list[asm_ast.Type_instruction] = []
         for k in range(src_w):
-            out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
-            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
-        if src_w < tgt_w:
             out.append(asm_ast.Mov(
-                src=asm_ast.Imm(value=0x00), dst=_REG_A,
+                src=_byte_at(src_op, k), dst=_byte_at(dst_op, k),
             ))
-            for k in range(src_w, tgt_w):
-                out.append(asm_ast.Mov(
-                    src=_REG_A, dst=_byte_at(dst_op, k),
-                ))
+        for k in range(src_w, tgt_w):
+            out.append(asm_ast.Mov(
+                src=asm_ast.Imm(value=0x00), dst=_byte_at(dst_op, k),
+            ))
         return out
 
     def _int_type_of(

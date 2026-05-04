@@ -663,7 +663,10 @@ class Translator:
         sym = self._symbols.get(val.name)
         if sym is None:
             return False
-        return isinstance(sym.type, c99_ast.Pointer)
+        sym_type = sym.type
+        while isinstance(sym_type, c99_ast.Const):
+            sym_type = sym_type.referenced_type
+        return isinstance(sym_type, c99_ast.Pointer)
 
     def _is_fp_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a floating-point operand (Float or
@@ -686,7 +689,10 @@ class Translator:
             sym = self._symbols.get(val.name)
             if sym is None:
                 return False
-            return isinstance(sym.type, (c99_ast.Float, c99_ast.Double))
+            sym_type = sym.type
+            while isinstance(sym_type, c99_ast.Const):
+                sym_type = sym_type.referenced_type
+            return isinstance(sym_type, (c99_ast.Float, c99_ast.Double))
         return False
 
     def _is_unsigned_val(self, val: tac_ast.Type_val) -> bool:
@@ -713,7 +719,10 @@ class Translator:
                 sym = self._symbols.get(name)
                 if sym is None:
                     return False
-                return isinstance(sym.type, (
+                sym_type = sym.type
+                while isinstance(sym_type, c99_ast.Const):
+                    sym_type = sym_type.referenced_type
+                return isinstance(sym_type, (
                     c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
                     c99_ast.Char, c99_ast.UChar, c99_ast.Pointer,
                 ))
@@ -752,44 +761,47 @@ class Translator:
                 )
                 if sym is None:
                     return 1
+                sym_type = sym.type
+                while isinstance(sym_type, c99_ast.Const):
+                    sym_type = sym_type.referenced_type
                 if isinstance(
-                    sym.type,
+                    sym_type,
                     (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
                 ):
                     return 1
                 if isinstance(
-                    sym.type,
+                    sym_type,
                     (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer),
                 ):
                     return 2
                 if isinstance(
-                    sym.type, (c99_ast.Long, c99_ast.ULong),
+                    sym_type, (c99_ast.Long, c99_ast.ULong),
                 ):
                     return 4
                 if isinstance(
-                    sym.type, (c99_ast.LongLong, c99_ast.ULongLong),
+                    sym_type, (c99_ast.LongLong, c99_ast.ULongLong),
                 ):
                     return 8
-                if isinstance(sym.type, c99_ast.Float):
+                if isinstance(sym_type, c99_ast.Float):
                     return 4
-                if isinstance(sym.type, c99_ast.Double):
+                if isinstance(sym_type, c99_ast.Double):
                     return 8
                 if isinstance(
-                    sym.type, (c99_ast.Structure, c99_ast.Union),
+                    sym_type, (c99_ast.Structure, c99_ast.Union),
                 ):
                     if self._types is None:
                         return 1
-                    layout = self._types.get(sym.type.tag)
+                    layout = self._types.get(sym_type.tag)
                     if layout is None or not layout.complete:
                         return 1
                     return layout.size
-                if isinstance(sym.type, c99_ast.Array):
+                if isinstance(sym_type, c99_ast.Array):
                     # Arrays are sized as element-size × count. They
                     # only reach this dispatch when an array-typed var
                     # is being moved/loaded as a whole, which is rare
                     # outside struct copies that happen to embed an
                     # array member.
-                    return _array_bytes(sym.type, self._types)
+                    return _array_bytes(sym_type, self._types)
                 return 1
         raise TypeError(f"unexpected val: {val!r}")
 
@@ -1123,7 +1135,10 @@ class Translator:
         sym = self._symbols.get(val.name)
         if sym is None:
             raise TypeError(f"unknown Var in FP conversion: {val.name}")
-        return type(sym.type)
+        sym_type = sym.type
+        while isinstance(sym_type, c99_ast.Const):
+            sym_type = sym_type.referenced_type
+        return type(sym_type)
 
     def _translate_int_to_fp(
         self,

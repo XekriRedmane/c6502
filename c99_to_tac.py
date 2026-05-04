@@ -2184,6 +2184,9 @@ class Translator:
         The type checker's already widened any int operand to Int, so
         every value reaching this method is 2 bytes wide and the
         arithmetic happens at one width."""
+        lt = _strip_const_c99(lt)
+        rt = _strip_const_c99(rt)
+        result_type = _strip_const_c99(result_type)
         l_ptr = isinstance(lt, c99_ast.Pointer)
         r_ptr = isinstance(rt, c99_ast.Pointer)
         if l_ptr and r_ptr:

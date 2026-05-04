@@ -18,7 +18,7 @@
 
 /* Apple II hi-res page 1 framebuffer: $2000-$3FFF. */
 #define HGR_PAGE1_ADDR 0x2000
-static uint8_t* hires_page1 = (uint8_t*)HGR_PAGE1_ADDR;
+static uint8_t* const hires_page1 = (uint8_t* const)HGR_PAGE1_ADDR;
 
 /* Offsets into hires_page1 (i.e. effective_addr - $2000) for the 105
 * painted rows, in the same band-interlaced order as the 6502 unroll.

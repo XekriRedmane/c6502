@@ -34,7 +34,7 @@ from passes.identifier_resolution import resolve_program as resolve_identifiers
 from passes.type_checking import (
     Const, Int, Long, Pointer, TypeCheckError, check_program,
 )
-from sim.harness import run_c_program
+from sim.harness import build_sim, run_c_program
 
 
 def _check(src: str):
@@ -381,6 +381,36 @@ class TestEndToEnd(unittest.TestCase):
         )
         result = run_c_program(src)
         self.assertEqual(result.return_int_signed(), 60)
+
+    def test_const_pointer_static_pointer_arithmetic(self):
+        # Regression: a `T * const` static used as the base of a
+        # 16-bit pointer + integer Add. The bug was that several
+        # tac_to_asm helpers (`_size_of` and friends) read `sym.type`
+        # without stripping the `Const` wrapper, so the static's
+        # width came back as 1 byte. The 16-bit Add then lowered as
+        # a single-byte add — the high byte was never written, and
+        # the resulting address pointed wherever the temp's high
+        # byte happened to hold. We pick an index whose low-byte
+        # add carries into the high byte (300 = 0x012C, base low
+        # byte 0x40 + 0x2C = 0x6C with no carry; switch to an index
+        # that DOES need both bytes), and write through the pointer:
+        # if the high byte was lost we land on a different page
+        # entirely. The store target is 0x4000 + 300 = 0x412C; in
+        # the buggy lowering the high byte of the address is
+        # uninitialized so memory[0x412C] stays 0.
+        src = (
+            "static unsigned char * const buf"
+            " = (unsigned char * const)0x4000;\n"
+            "int main(void) {\n"
+            "    buf[300] = 0x42;\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                result = sim.run()
+                self.assertEqual(result.memory[0x4000 + 300], 0x42)
 
 
 class TestVolatileAndRestrictParseButDrop(unittest.TestCase):

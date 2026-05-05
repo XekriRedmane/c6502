@@ -45,6 +45,7 @@ from passes.optimization_asm.backward_copy_propagation import (
 from passes.optimization_asm.byte_dce import byte_dce
 from passes.optimization_asm.coalescing import coalesce_moves
 from passes.optimization_asm.const_static_fold import fold_const_statics
+from passes.optimization_asm.dead_static import apply_dead_static_elimination
 from passes.optimization_asm.copy_propagation import copy_propagate
 from passes.optimization_asm.interference import build_interference
 from passes.optimization_asm.liveness import compute_liveness
@@ -115,7 +116,15 @@ def optimize_program(
             colorings[new_fn.name] = coloring
         else:
             new_top.append(tl)
-    return asm_ast.Program(top_level=new_top), colorings
+    # Drop any internal-linkage StaticVariable nothing references.
+    # Runs AFTER the per-function loop so the per-function passes'
+    # DCE / copy-prop can settle before we count references — a
+    # static whose last use was a dead load shouldn't survive just
+    # because the load was still in the IR upstream.
+    out_prog = apply_dead_static_elimination(
+        asm_ast.Program(top_level=new_top),
+    )
+    return out_prog, colorings
 
 
 def _blocked_addrs_for(

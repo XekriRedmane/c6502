@@ -37,12 +37,7 @@ interlace_fill_p1:
    LDY   #$00
    STA   (DPTR),Y
 .loop@0_continue:
-   LDA   $84
-   CLC
-   ADC   #$01
-   STA   $82
-   LDA   $82
-   STA   $84
+   INC   $84
    JMP   .loop@0_start
 .loop@0_break:
    RTS

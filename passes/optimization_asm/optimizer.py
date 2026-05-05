@@ -43,6 +43,7 @@ from passes.optimization_asm.backward_copy_propagation import (
     backward_copy_propagate,
 )
 from passes.optimization_asm.byte_dce import byte_dce
+from passes.optimization_asm.coalescing import coalesce_moves
 from passes.optimization_asm.const_static_fold import fold_const_statics
 from passes.optimization_asm.copy_propagation import copy_propagate
 from passes.optimization_asm.interference import build_interference
@@ -180,7 +181,23 @@ def _optimize_function(
     # param bytes mid-computation.
     liveness = compute_liveness(fn)
     graph = build_interference(fn, liveness, statics=statics)
+    # Step 7a: move coalescing. Merge non-interfering Pseudo pairs
+    # connected by a Mov or Phi-arg into one node so they get the
+    # same color. After Phi destruction the corresponding Movs
+    # become self-Movs that asm_emit's self-Mov peephole drops —
+    # eliminating the SSA-Phi-induced temp routing.
+    coalesce_result = coalesce_moves(fn, graph)
     coloring = color_graph(fn, graph, blocked_addrs=blocked_addrs)
+    # Project coloring through the coalescing result: every name
+    # that was merged into a representative inherits the rep's
+    # color. apply_coloring keys on names, so it needs the merged
+    # names back in the assignments dict.
+    for name, _rep in coalesce_result.representative.items():
+        rep = coalesce_result.resolve(name)
+        if rep in coloring.assignments:
+            coloring.assignments[name] = coloring.assignments[rep]
+        elif rep in coloring.spilled:
+            coloring.spilled.add(name)
     # Apply the coloring to the SSA function BEFORE destruction so
     # `from_ssa`'s parallel-copy ordering can detect cross-Mov
     # cycles at the physical-slot level. Two Phi-derived Movs whose

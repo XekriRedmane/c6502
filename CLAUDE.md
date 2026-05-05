@@ -1351,7 +1351,10 @@ fn → to_ssa
    "Const-static fold" below for the eligibility rules. Then,
    per function: `to_ssa` byte-versions every promotable `(name,
    byte offset)` pair (so byte 0 of a 4-byte Long has its own
-   def/use chain separate from byte 3). A fixed-point bracket of
+   def/use chain separate from byte 3). Move coalescing
+   (`coalesce_moves`) merges Mov / Phi-related SSA names into
+   one interference-graph node when they don't interfere — see
+   "Move coalescing" below. A fixed-point bracket of
    `[copy_propagate → backward_copy_propagate → byte_dce]` runs
    to convergence. Then **byte-granular regalloc** colors each
    1-byte SSA name to a ZP slot from a configurable
@@ -1465,6 +1468,63 @@ What still doesn't fire:
     need an asm-level analog of this pass — backward_copy_
     propagation handles a related shape but explicitly defers
     Pseudo-to-Pseudo coalescing to regalloc.
+
+## Move coalescing (`passes/optimization_asm/coalescing.py`)
+
+Asm-level SSA-era pass that merges move-related Pseudo pairs in
+the interference graph when they don't interfere. Runs between
+`build_interference` and `color_graph`. The point: ensure the
+two ends of every `Mov(Pseudo a, Pseudo b)` and every
+`(Phi.dst, PhiArg.source)` pair get the SAME ZP color whenever
+that's safe. After SSA destruction the corresponding Mov
+becomes `Mov(ZP($X), ZP($X))` — a self-Mov that asm_emit's
+self-Mov peephole drops, eliminating the temp-routing round
+trip.
+
+Move-related pairs come from two sources:
+  * `Mov(Pseudo a, Pseudo b)` — explicit Pseudo-to-Pseudo copy
+    in the asm IR.
+  * `(Phi.dst, PhiArg.source)` — SSA destruction would emit a
+    `Mov(source, dst)` for this pair at the predecessor block's
+    tail.
+
+Eligibility filters:
+  * Both names must be in the interference graph (statics,
+    address-taken, params are excluded upstream).
+  * Same width (the coloring pool's slot search is width-aware;
+    coalescing different widths would force one node into the
+    other's slot layout).
+  * No interference edge between them (coalescing two
+    interfering nodes would force them to share a color, which
+    can't be correct).
+  * Both Pseudos have `offset == 0` (asm-SSA-renamed names; a
+    non-zero offset marks an unrenamed multi-byte name needing
+    contiguous bytes, not the same byte).
+
+Algorithm: aggressive (Chaitin-style) — for each candidate pair
+in instruction order, look up the union-find class
+representatives, check eligibility, and merge by absorbing one
+node's edges and `lives_across_call` flag into the other. The
+spill check is implicit via the existing `Coloring.spilled`
+fallback: if a coalesced node ends up with too-high degree to
+fit in any pool, spilling kicks in. With the default 128-byte
+ZP pool this hasn't been observed in practice on c6502
+programs.
+
+The `CoalesceResult.representative` map projects every coalesced
+non-rep name to its rep. The optimizer driver expands the
+post-coloring assignments through this map so `apply_coloring`
+sees every original SSA name mapped to its merged color.
+
+The headline win: a loop-counter `for (uint8_t i = 0; i < N;
+i++) ...` previously routed the increment through a temp
+because asm-SSA Phi destruction emitted a `Mov(.v_post_inc,
+.v_phi)` with the two SSA names colored to different ZP slots.
+With coalescing, .v_phi / .v_init / .v_post_inc all share one
+slot; the inserted Mov is a self-Mov dropped at emit; and the
+in-place ADC chain that remains is collapsed by the multi-byte
+INC peephole. End result: `i++` becomes a single `INC $XX`
+(uchar) or `INC $XX; BNE done; INC $YY; done:` (int).
 
 ## Const-static fold (`passes/optimization_asm/const_static_fold.py`)
 

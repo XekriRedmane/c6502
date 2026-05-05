@@ -1999,6 +1999,79 @@ The colorable-name filter in `interference.py` excludes:
 * any name with non-zero-offset Pseudo references (= unversioned
   multi-byte name, not eligible for 1-byte coloring)
 
+### Move coalescing (`passes/optimization_asm/coalescing.py`)
+
+Standard SSA-era allocator transformation: identify pairs of
+SSA-renamed names that are connected by a `Mov` or by a Phi
+argument, and merge them in the interference graph when they
+don't interfere. Runs between `build_interference` and
+`color_graph`.
+
+The motivating case: a loop counter.
+
+```
+.preheader:
+    Mov(Imm(0), %i.v0)          # init
+.loop_top:
+    Phi(%i.phi,
+        [(.preheader, %i.v0), (.continue, %i.v_post)])
+    ... use %i.phi ...
+.continue:
+    Mov(%i.phi, A); CLC; Add(Imm(1), A); Mov(A, %i.v_post)
+    Jump(.loop_top)
+```
+
+Without coalescing, regalloc colors the three SSA names
+(`%i.v0`, `%i.phi`, `%i.v_post`) independently. After SSA
+destruction, the Phi becomes per-edge Movs; the Phi-destruction
+Mov on the back edge — `Mov(%i.v_post, %i.phi)` — turns into a
+real ZP→ZP copy (`LDA $X; STA $Y`) at emit time. The
+increment routes through the temp:
+
+```
+LDA $Y       ; load %i.phi
+CLC
+ADC #1
+STA $X       ; store %i.v_post
+LDA $X       ; reload %i.v_post (Phi destruction)
+STA $Y       ; store back to %i.phi
+```
+
+With coalescing, the three names merge into one node in the
+interference graph (none of them interfere — `.v_post` is born
+right where `.v_phi` dies; `.v_init` is dead by the loop top).
+After coloring they share one ZP slot. The Phi-destruction Mov
+becomes `Mov(ZP($X), ZP($X))` — a self-Mov dropped by
+asm_emit's self-Mov peephole. Net result:
+
+```
+LDA $X
+CLC
+ADC #1
+STA $X
+```
+
+— in-place RMW, which the multi-byte INC peephole then
+collapses to a bare `INC $X` (or `INC + BNE + INC` for multi-
+byte).
+
+**Algorithm.** Aggressive Chaitin-style coalescing: walk every
+move-related pair, look up the union-find class
+representatives, check eligibility (both are graph nodes, same
+width, no interference edge), and merge by absorbing one
+node's neighbors and `lives_across_call` flag into the other.
+The `CoalesceResult.representative` map projects every
+coalesced non-rep name to its rep; the optimizer driver expands
+the post-coloring assignments through this map so
+`apply_coloring` finds every original name with the right
+color.
+
+No conservative degree check (Briggs / George): the c6502 ZP
+pool has 128 byte slots by default, and aggressive coalescing
+hasn't pushed any program in the corpus to spill. If a program
+ever does spill due to coalescing, the existing
+`Coloring.spilled` fallback handles it gracefully.
+
 ### Apply-coloring + `from_ssa` cycle hazard
 
 A subtle interaction: when two SSA-distinct names get assigned

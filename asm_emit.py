@@ -288,13 +288,18 @@ def _zp_addr(z: asm_ast.ZP) -> str:
 
 
 def _indexed_data_addr(d: asm_ast.IndexedData) -> str:
-    """6502 absolute,X / absolute,Y addressing string for a static-
-    storage indexed reference. Renders as `name+offset,X` /
-    `name+offset,Y` (collapsing `+0` for offset==0). Used for static
-    arrays whose total byte size ≤ 256 — the index register's
-    0..255 range covers any element in such an array, so no
-    runtime pointer arithmetic / DPTR setup is needed."""
-    base = d.name if d.offset == 0 else f"{d.name}+{d.offset}"
+    """6502 absolute,X / absolute,Y addressing string for an
+    indexed reference. Renders as `name+offset,X` /
+    `name+offset,Y` (collapsing `+0` for offset==0) when `name`
+    is non-empty, or `$XXXX,X` / `$XXXX,Y` when `name` is empty
+    (the IndexedStore lowering uses the empty-name form for
+    raw 16-bit absolute,X stores against a folded constant
+    address).
+    """
+    if d.name:
+        base = d.name if d.offset == 0 else f"{d.name}+{d.offset}"
+    else:
+        base = f"${d.offset:04X}"
     return f"{base},{_reg_letter(d.index)}"
 
 
@@ -414,6 +419,12 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             [_instr_line("LDA", _indexed_data_addr(src))]
             + _emit_memop_store(dst)
         )
+    # IndexedData destination: absolute,X / absolute,Y store. Used
+    # by the IndexedStore lowering to emit `STA $XXXX,X` directly.
+    # Source must be Reg(A); the caller has already loaded A with
+    # the value being stored.
+    if isinstance(dst, asm_ast.IndexedData) and _is_reg_a(src):
+        return [_instr_line("STA", _indexed_data_addr(dst))]
     # Memory-operand paths. `_is_memory_operand` covers Stack, Frame,
     # Data, and Indirect — the addressing-mode difference is hidden
     # inside `_emit_memop_load` / `_emit_memop_store`.

@@ -68,6 +68,9 @@ from passes.optimization.dead_store_elimination import (
     eliminate_dead_stores,
 )
 from passes.optimization.reassoc_const import reassoc_constants
+from passes.optimization.recognize_indexed_store import (
+    recognize_indexed_store,
+)
 from passes.optimization.ssa_construction import to_ssa
 from passes.optimization.ssa_destruction import from_ssa
 from passes.optimization.static_const_fold import (
@@ -126,6 +129,7 @@ def optimize_function(
         fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)
         fn = fold_copies(fn)
         fn = reassoc_constants(fn)
+        fn = recognize_indexed_store(fn, symbols=symbols)
         if fn == prev:
             break
     if symbols is not None:

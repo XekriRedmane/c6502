@@ -952,6 +952,8 @@ class Translator:
                 return self._translate_store(src, dst_ptr)
             case tac_ast.IndexedLoad(name=name, index=index, dst=dst):
                 return self._translate_indexed_load(name, index, dst)
+            case tac_ast.IndexedStore(address=addr, index=index, src=src):
+                return self._translate_indexed_store(addr, index, src)
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     # ------------------------------------------------------------------
@@ -1629,6 +1631,36 @@ class Translator:
                 dst=_byte_at(dst_op, k),
             ))
         return out
+
+    def _translate_indexed_store(
+        self,
+        address: int,
+        index: tac_ast.Type_val,
+        src: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Absolute,X store to a numeric base address. Stage `index`
+        into X, `src` into A, then `STA $<address>,X`. The
+        `IndexedData` operand with an empty `name` field renders
+        the address as a raw `$XXXX` hex literal — no symbol-table
+        lookup needed at link time.
+
+        The recognizer pass (`recognize_indexed_store`) has already
+        verified `index` is a 1-byte typed Var and `src` is a 1-byte
+        typed Var or Constant, so this lowering doesn't size-fan-
+        out — exactly one STA atom."""
+        index_op = translate_val(index)
+        src_op = translate_val(src)
+        return [
+            asm_ast.Mov(src=index_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),
+            asm_ast.Mov(src=src_op, dst=_REG_A),
+            asm_ast.Mov(
+                src=_REG_A,
+                dst=asm_ast.IndexedData(
+                    name="", offset=address, index=asm_ast.X(),
+                ),
+            ),
+        ]
 
     @staticmethod
     def _stage_dptr(

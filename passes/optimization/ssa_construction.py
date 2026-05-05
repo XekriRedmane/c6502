@@ -589,6 +589,10 @@ def _rewrite_instruction(
             i2 = rewrite_use(i)
             d2 = rewrite_def(d)
             return tac_ast.IndexedLoad(name=n, index=i2, dst=d2)
+        case tac_ast.IndexedStore(address=a, index=i, src=s):
+            i2 = rewrite_use(i)
+            s2 = rewrite_use(s)
+            return tac_ast.IndexedStore(address=a, index=i2, src=s2)
         case tac_ast.Jump(target=t):
             return tac_ast.Jump(target=t)
         case tac_ast.JumpIfTrue(condition=c, target=t):

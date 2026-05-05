@@ -431,6 +431,11 @@ def _vars_used_in(instr: tac_ast.Type_instruction):
         case tac_ast.IndexedLoad(index=i):
             if isinstance(i, tac_ast.Var):
                 yield i
+        case tac_ast.IndexedStore(index=i, src=s):
+            if isinstance(i, tac_ast.Var):
+                yield i
+            if isinstance(s, tac_ast.Var):
+                yield s
         case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
             if isinstance(c, tac_ast.Var):
                 yield c

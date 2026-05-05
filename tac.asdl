@@ -40,6 +40,24 @@ module TAC {
         -- per dst byte (6502 absolute,Y addressing on a static
         -- label).
         | IndexedLoad(identifier name, val index, val dst)
+        -- Indexed store to a 16-bit absolute address. `address` is a
+        -- compile-time integer base; `index` is a 1-byte (UChar) val
+        -- that the codegen stages into X; `src` is a 1-byte (UChar /
+        -- SChar / Char) val that the codegen stages into A. tac_to_asm
+        -- lowers as `LDA src; LDX index; STA $<address>,X` — the 6502
+        -- absolute,X addressing mode applied to a raw numeric address.
+        --
+        -- Emitted by `passes/optimization/recognize_indexed_store.py`
+        -- when it spots a `Store(val, %addr)` whose `%addr` is the
+        -- result of `Binary(Add, Constant(C), %ext_idx, %addr)` and
+        -- `%ext_idx` is a `ZeroExtend` of a 1-byte typed Var (so the
+        -- high byte of the addition is C's high byte plus 0). Eligibility
+        -- checks: C+255 must fit in 16 bits (so the absolute,X addressing
+        -- doesn't wrap past $FFFF); the temps must be single-use; the
+        -- value being stored must be 1 byte wide (a 16-bit STA would
+        -- need two STA abs,X forms with no carry threading and the
+        -- pattern's profile changes).
+        | IndexedStore(int address, val index, val src)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)

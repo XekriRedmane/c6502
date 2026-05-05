@@ -160,6 +160,10 @@ def _rewrite_instr(
             # IndexedLoad.name is the array's symbol identifier, not
             # a value — leave it alone. Only the index is a USE.
             return tac_ast.IndexedLoad(name=n, index=sub(idx), dst=d)
+        case tac_ast.IndexedStore(address=a, index=idx, src=s):
+            return tac_ast.IndexedStore(
+                address=a, index=sub(idx), src=sub(s),
+            )
         case tac_ast.Unary(op=op, src=s, dst=d):
             return tac_ast.Unary(op=op, src=sub(s), dst=d)
         case tac_ast.Binary(op=op, src1=s1, src2=s2, dst=d):

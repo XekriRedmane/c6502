@@ -174,10 +174,15 @@ def _try_reassoc(
     )
     if inner_const is None:
         return instr
-    if type(outer_const.const) is not type(inner_const.const):
-        # Different variants → different widths or signedness.
-        # The combined constant wouldn't have a unique variant;
-        # bail rather than guess.
+    outer_bits = _BITS_FOR_VARIANT.get(type(outer_const.const))
+    inner_bits = _BITS_FOR_VARIANT.get(type(inner_const.const))
+    if outer_bits is None or outer_bits != inner_bits:
+        # Different bit widths → can't combine directly. Same-width
+        # signed vs unsigned IS allowed: the bit pattern of an Add
+        # is signedness-agnostic, and the result wraps modulo 2^N
+        # the same way either way. We pick the outer's variant for
+        # the combined Constant — downstream consumers see the
+        # expected result type.
         return instr
     combined_value = _wrap(
         outer_const.const.value + inner_const.const.value,

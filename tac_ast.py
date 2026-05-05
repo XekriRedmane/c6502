@@ -125,6 +125,13 @@ class IndexedLoad(Type_instruction):
 
 
 @dataclass
+class IndexedStore(Type_instruction):
+    address: int
+    index: Type_val
+    src: Type_val
+
+
+@dataclass
 class Unary(Type_instruction):
     op: Type_unary_operator
     src: Type_val

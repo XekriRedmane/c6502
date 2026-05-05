@@ -1454,7 +1454,68 @@ buf[offsets[2] + col] = value;
 the static-const reads turn `buf` into `Constant(0x2000)`, the
 const-array fold turns `offsets[2]` into `Constant(0x300)`, and
 reassociation collapses `0x2000 + (0x300 + col)` to `0x2300 +
-col` — one runtime 16-bit Add instead of two.
+col` — one runtime 16-bit Add instead of two. Then the
+IndexedStore recognizer (next section) folds the whole thing
+into a single absolute,X store.
+
+## IndexedStore recognizer (`passes/optimization/recognize_indexed_store.py`)
+
+A TAC pass that runs in the fixed-point loop. Detects the
+canonical absolute,X-store pattern and rewrites it to the new
+`IndexedStore(int address, val index, val src)` instruction.
+
+Pattern (three adjacent instructions, with single-use temps):
+
+```
+ZeroExtend(uchar_var, %ext)
+Binary(Add, Constant(C), %ext, %addr)   # or commutative
+Store(val, %addr)
+```
+
+Eligibility:
+  * `%ext` and `%addr` are single-use Pseudos.
+  * `uchar_var`'s c99 type is 1 byte (Char / SChar / UChar).
+  * `val` is 1-byte typed (Var or Constant).
+  * `0 ≤ C ≤ 0xFF00` so `C + 255` fits in the 16-bit address
+    space (the 6502's absolute,X addressing wraps modulo
+    0x10000; capping the base prevents an unintended wrap into
+    page zero).
+
+The replacement `IndexedStore(C, uchar_var, val)` lowers in
+`tac_to_asm` to:
+
+```
+LDA val           # Mov(val, A)
+LDX uchar_var     # Mov(uchar_var, X) via A
+STA $C,X          # Mov(A, IndexedData(name="", offset=C, index=X))
+```
+
+The asm IR's `IndexedData` operand has been extended: when its
+`name` field is empty, the address is read directly from
+`offset` (rendered as `$XXXX,X` instead of `name+offset,X`). The
+existing static-array load path uses `name`-keyed `IndexedData`;
+the IndexedStore lowering uses the empty-name variant for raw
+numeric bases.
+
+The end-to-end composition (`static T * const` + const subscript
++ reassoc + recognize) turns
+
+```c
+static uint8_t * const buf = (uint8_t * const)0x2000;
+buf[100 + col] = value;
+```
+
+(where `col` is uchar) into a single
+
+```
+LDA value
+LDX col
+STA $2064,X
+```
+
+— 7 bytes / 11 cycles, vs the original ~19 bytes / ~30 cycles
+with separate 16-bit pointer arithmetic + DPTR-staged indirect-Y
+store.
 
 ## Copy folding (`passes/optimization/copy_folding.py`)
 

@@ -540,6 +540,11 @@ def _is_indexed_data(op: asm_ast.Type_operand) -> bool:
 def _resolve_indexed_data_addr(
     op: asm_ast.IndexedData, syms: dict[str, int],
 ) -> int:
+    if not op.name:
+        # Empty `name` ↔ raw 16-bit address in `offset` (the
+        # IndexedStore lowering's absolute,X form against a folded
+        # numeric address).
+        return op.offset & 0xFFFF
     if op.name not in syms:
         raise AssemblerError(f"undefined symbol {op.name!r}")
     return (syms[op.name] + op.offset) & 0xFFFF
@@ -714,6 +719,10 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
     # IndexedData -> memory: load + store (3 + store size).
     if _is_indexed_data(src) and _is_memory(dst):
         return 3 + _store_a_to_mem_size(dst)
+    # Reg(A) -> IndexedData: STA $XXXX,X / $XXXX,Y absolute-indexed
+    # store. 3 bytes regardless of name vs. raw-numeric base.
+    if _is_reg_a(src) and _is_indexed_data(dst):
+        return 3
     # Data / ZP -> Reg(X) / Reg(Y): direct LDX / LDY (zp or abs).
     # Same encoding length as memory -> Reg(A) for the Data / ZP
     # form.
@@ -823,6 +832,11 @@ def _emit_mov(
         return _emit_abs_indexed(
             "LDA", _resolve_indexed_data_addr(src, syms), src.index,
         ) + _emit_store_a_to_mem(dst, syms)
+    # Reg(A) -> IndexedData: absolute,X/Y store of A.
+    if _is_reg_a(src) and _is_indexed_data(dst):
+        return _emit_abs_indexed(
+            "STA", _resolve_indexed_data_addr(dst, syms), dst.index,
+        )
     # Data / ZP -> Reg(X) / Reg(Y) — zp/abs LDX/LDY direct.
     if _is_data_or_zp(src) and isinstance(dst, asm_ast.Reg):
         if isinstance(dst.reg, asm_ast.X):

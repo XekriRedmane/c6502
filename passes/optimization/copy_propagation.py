@@ -189,6 +189,10 @@ def _rewrite(
             return tac_ast.Store(src=sub(s), dst_ptr=sub(p))
         case tac_ast.IndexedLoad(name=n, index=i, dst=d):
             return tac_ast.IndexedLoad(name=n, index=sub(i), dst=d)
+        case tac_ast.IndexedStore(address=a, index=i, src=s):
+            return tac_ast.IndexedStore(
+                address=a, index=sub(i), src=sub(s),
+            )
         case tac_ast.JumpIfTrue(condition=c, target=t):
             return tac_ast.JumpIfTrue(condition=sub(c), target=t)
         case tac_ast.JumpIfFalse(condition=c, target=t):

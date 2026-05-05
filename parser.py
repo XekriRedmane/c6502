@@ -363,6 +363,22 @@ def _consume_attribute_clause(items, start):
     return None, start
 
 
+def _consume_pragma_clause(items, start):
+    """If `items[start]` is a transformed pragma_clause result (a
+    plain string — the canonical annotation name, e.g. "unroll"),
+    return `(annotation, start+1)`. Otherwise the optional
+    `pragma_clause?` in the grammar didn't fire, return `(None,
+    start)`. Same Token-vs-str distinction as
+    `_consume_attribute_clause`."""
+    if (
+        start < len(items)
+        and isinstance(items[start], str)
+        and not hasattr(items[start], "type")
+    ):
+        return items[start], start + 1
+    return None, start
+
+
 # Integer constant typing per C99 §6.4.4.1 paragraph 5: "the type of
 # an integer constant is the first of the corresponding list in which
 # its value can be represented." c6502 models six integer types —
@@ -1788,12 +1804,20 @@ class _ASTBuilder(Transformer):
     # between the condition and post_clause is in our items list. Each
     # of condition / post_clause is independently optional, so we scan
     # for the SEMICOLON to know which side each remaining child is on.
+    def pragma_unroll(self, items):
+        # `pragma_clause: PRAGMA_UNROLL -> pragma_unroll`. The token's
+        # value is the literal sentinel; we hand back the canonical
+        # annotation name that ForStmt.unroll_annotation expects.
+        return "unroll"
+
     def for_stmt(self, items):
-        # items: [FOR, LPAREN, for_init, condition?, SEMICOLON, post_clause?,
-        #         RPAREN, statement]
-        init = items[2]
+        # items: [pragma?, FOR, LPAREN, for_init, condition?, SEMICOLON,
+        #         post_clause?, RPAREN, statement]
+        unroll_annotation, idx = _consume_pragma_clause(items, 0)
+        # idx now points at FOR. The rest of the parse is unchanged.
+        init = items[idx + 2]
         body = items[-1]
-        middle = items[3:-2]
+        middle = items[idx + 3:-2]
         semi_idx = next(
             i for i, c in enumerate(middle)
             if hasattr(c, "type") and c.type == "SEMICOLON"
@@ -1808,6 +1832,7 @@ class _ASTBuilder(Transformer):
             post_clause=post_clause,
             body=body,
             label="",
+            unroll_annotation=unroll_annotation,
         )
 
     # Alternatives of `exp` — each named in c99.lark.

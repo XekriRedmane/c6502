@@ -109,6 +109,7 @@ class ForStmt(Type_statement):
     post_clause: Type_exp | None = None
     body: Type_statement
     label: str
+    unroll_annotation: str | None = None
 
 
 @dataclass

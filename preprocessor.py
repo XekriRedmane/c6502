@@ -305,9 +305,73 @@ class CompilePreprocessor(Preprocessor):
             print(f'{total:f},{self_:f},{size:d},"{path}"', file=stream)
 
 
+class PreprocessorError(Exception):
+    """A `#pragma c6502 ...` line whose body c6502 does not recognize."""
+
+
+# `#pragma c6502 loop unroll(enable)` — emitted for the immediately-
+# following for-loop and consumed by the parser as a `pragma_clause`.
+# The chosen sentinel uses the C-reserved identifier namespace
+# (`__c6502_` per C99 §7.1.3) so it can never collide with a user
+# identifier, and the lexer already accepts plain identifiers — no
+# lexer change required.
+_PRAGMA_UNROLL_SENTINEL = "__c6502_pragma_unroll__"
+
+# Match a full `#pragma ...` line (anchored to start-of-line, possibly
+# preceded by whitespace). Captures the body after `#pragma` for
+# inspection.
+_PRAGMA_LINE_RE = re.compile(r"^[ \t]*#[ \t]*pragma\b(?P<body>.*)$")
+
+# Within a `#pragma c6502 ...` body, recognize the unroll directive.
+# Whitespace is permissive; the form is otherwise fixed.
+_C6502_UNROLL_RE = re.compile(
+    r"^[ \t]+loop[ \t]+unroll[ \t]*\([ \t]*(?P<state>enable|disable)[ \t]*\)[ \t]*$",
+)
+
+
+def _rewrite_pragmas(text: str) -> str:
+    """Post-scan pcpp output: rewrite `#pragma c6502 ...` lines to
+    sentinel tokens the parser can consume, strip every other
+    `#pragma` line.
+
+    Each rewrite preserves the original line as a single line of
+    output (sentinel-on-its-own-line for `enable`, blank line
+    otherwise) so error line numbers stay accurate.
+
+    `#pragma c6502 loop unroll(enable)`  → `__c6502_pragma_unroll__`
+    `#pragma c6502 loop unroll(disable)` → blank line (explicit no-op)
+    other `#pragma c6502 ...`            → PreprocessorError
+    any other `#pragma ...`              → blank line (C99 §6.10.6)
+    """
+    out_lines = []
+    for lineno, line in enumerate(text.split("\n"), start=1):
+        m = _PRAGMA_LINE_RE.match(line)
+        if not m:
+            out_lines.append(line)
+            continue
+        body = m.group("body")
+        if not body.startswith((" ", "\t")) or not body.lstrip().startswith("c6502"):
+            # Not ours — strip per C99 §6.10.6.
+            out_lines.append("")
+            continue
+        # Strip the `c6502` token, then match the rest.
+        rest = body.lstrip()[len("c6502"):]
+        m2 = _C6502_UNROLL_RE.match(rest)
+        if m2 is None:
+            raise PreprocessorError(
+                f"line {lineno}: unrecognized `#pragma c6502` "
+                f"directive: {line.strip()!r}",
+            )
+        if m2.group("state") == "enable":
+            out_lines.append(_PRAGMA_UNROLL_SENTINEL)
+        else:
+            out_lines.append("")
+    return "\n".join(out_lines)
+
+
 def preprocess(source: str, argv: list[str] | None = None) -> str:
     """Preprocess `source`. `argv` accepts pcpp/pcmd.py-style flags minus -o.
 
     With no argv (or `[]`): strip comments and suppress `#line` markers.
     """
-    return CompilePreprocessor(parse_args(argv)).run(source)
+    return _rewrite_pragmas(CompilePreprocessor(parse_args(argv)).run(source))

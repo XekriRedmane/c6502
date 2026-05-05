@@ -1,47 +1,114 @@
 interlace_fill_p1:
    SUBROUTINE
 
-.interlace_fill_p1@asm_ssa_preheader@0:
-.interlace_fill_p1@ssa_block@0:
+.interlace_fill_p1@asm_ssa_block@0:
    LDX   $81
    LDA   $80
+   STA   $20A8,X
+   STA   $2328,X
    STA   $21D0,X
-   LDA   #$00
-   STA   $84
-.loop@0_start:
-   LDA   $84
-   CMP   #$69
-   BCS   .loop@0_break
-.interlace_fill_p1@asm_ssa_block@0:
-   LDA   $84
-   STA   $82
-   ASL   $82
-   LDX   $82
-   LDA   interlace_p1_offsets,X
-   STA   $83
-   LDA   interlace_p1_offsets+1,X
-   STA   $82
-   LDA   $83
-   CLC
-   ADC   $81
-   STA   $83
-   LDA   $82
-   ADC   #$00
-   STA   $82
-   LDA   #$00
-   CLC
-   ADC   $83
-   STA   DPTR
-   LDA   #$20
-   ADC   $82
-   STA   DPTR+1
-   LDA   $80
-   LDY   #$00
-   STA   (DPTR),Y
-.loop@0_continue:
-   INC   $84
-   JMP   .loop@0_start
-.loop@0_break:
+   STA   $24A8,X
+   STA   $2728,X
+   STA   $25D0,X
+   STA   $28A8,X
+   STA   $2B28,X
+   STA   $29D0,X
+   STA   $2CA8,X
+   STA   $2F28,X
+   STA   $2DD0,X
+   STA   $30A8,X
+   STA   $3328,X
+   STA   $31D0,X
+   STA   $34A8,X
+   STA   $3728,X
+   STA   $35D0,X
+   STA   $38A8,X
+   STA   $3B28,X
+   STA   $39D0,X
+   STA   $3CA8,X
+   STA   $3F28,X
+   STA   $3DD0,X
+   STA   $2128,X
+   STA   $23A8,X
+   STA   $2250,X
+   STA   $2528,X
+   STA   $27A8,X
+   STA   $2650,X
+   STA   $2928,X
+   STA   $2BA8,X
+   STA   $2A50,X
+   STA   $2D28,X
+   STA   $2FA8,X
+   STA   $2E50,X
+   STA   $3128,X
+   STA   $33A8,X
+   STA   $3250,X
+   STA   $3528,X
+   STA   $37A8,X
+   STA   $3650,X
+   STA   $3928,X
+   STA   $3BA8,X
+   STA   $3A50,X
+   STA   $3D28,X
+   STA   $3FA8,X
+   STA   $3E50,X
+   STA   $21A8,X
+   STA   $2050,X
+   STA   $22D0,X
+   STA   $25A8,X
+   STA   $2450,X
+   STA   $26D0,X
+   STA   $29A8,X
+   STA   $2850,X
+   STA   $2AD0,X
+   STA   $2DA8,X
+   STA   $2C50,X
+   STA   $2ED0,X
+   STA   $31A8,X
+   STA   $3050,X
+   STA   $32D0,X
+   STA   $35A8,X
+   STA   $3450,X
+   STA   $36D0,X
+   STA   $39A8,X
+   STA   $3850,X
+   STA   $3AD0,X
+   STA   $3DA8,X
+   STA   $3C50,X
+   STA   $3ED0,X
+   STA   $2228,X
+   STA   $20D0,X
+   STA   $2350,X
+   STA   $2628,X
+   STA   $24D0,X
+   STA   $2750,X
+   STA   $2A28,X
+   STA   $28D0,X
+   STA   $2B50,X
+   STA   $2E28,X
+   STA   $2CD0,X
+   STA   $2F50,X
+   STA   $3228,X
+   STA   $30D0,X
+   STA   $3350,X
+   STA   $3628,X
+   STA   $34D0,X
+   STA   $3750,X
+   STA   $3A28,X
+   STA   $38D0,X
+   STA   $3B50,X
+   STA   $3E28,X
+   STA   $3CD0,X
+   STA   $3F50,X
+   STA   $22A8,X
+   STA   $2150,X
+   STA   $23D0,X
+   STA   $26A8,X
+   STA   $2550,X
+   STA   $27D0,X
+   STA   $2AA8,X
+   STA   $2950,X
+   STA   $2BD0,X
    RTS
 
 interlace_p1_offsets:

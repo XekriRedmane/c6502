@@ -287,7 +287,7 @@ class LabelResolver:
                 )
             case c99_ast.ForStmt(
                 init=init, condition=cond, post_clause=post,
-                body=body, label=label,
+                body=body, label=label, unroll_annotation=unroll,
             ):
                 return c99_ast.ForStmt(
                     init=init,
@@ -295,6 +295,7 @@ class LabelResolver:
                     post_clause=post,
                     body=self._rewrite_statement(body, labels),
                     label=label,
+                    unroll_annotation=unroll,
                 )
             case c99_ast.SwitchStmt(
                 control=control, body=body, label=label,

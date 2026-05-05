@@ -18,7 +18,14 @@ module C99 {
         | ContinueStmt(identifier label)
         | WhileStmt(exp condition, statement body, identifier label)
         | DoWhileStmt(statement body, exp condition, identifier label)
-        | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label)
+        -- `unroll_annotation` carries the value of any
+        -- `#pragma c6502 loop unroll(<state>)` directive immediately
+        -- preceding the loop. The only recognized name today is
+        -- "unroll" — set when the pragma's state is `enable`.
+        -- `disable` and absent pragma both leave it None. The
+        -- pragma is honored only under `--optimize --unroll`; a
+        -- pragma seen without those flags is silently ignored.
+        | ForStmt(for_init init, exp? condition, exp? post_clause, statement body, identifier label, string? unroll_annotation)
         | SwitchStmt(exp control, statement body, identifier label, switch_case* cases, identifier? default_label, data_type? promoted_type)
         | CaseStmt(exp value, statement body, identifier label)
         | DefaultStmt(statement body, identifier label)

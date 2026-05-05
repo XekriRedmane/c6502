@@ -277,7 +277,7 @@ class LoopLabeler:
                 )
             case c99_ast.ForStmt(
                 init=init, condition=cond, post_clause=post,
-                body=body,
+                body=body, unroll_annotation=unroll,
             ):
                 # The header (init / condition / post_clause) is built
                 # of expressions and a possible declaration — none of
@@ -296,6 +296,7 @@ class LoopLabeler:
                     post_clause=post,
                     body=self.label_statement(body, inner),
                     label=lbl,
+                    unroll_annotation=unroll,
                 )
             case c99_ast.SwitchStmt(
                 control=control, body=body,

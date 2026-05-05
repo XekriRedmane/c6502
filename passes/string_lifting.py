@@ -267,6 +267,7 @@ class StringLifter:
                 )
             case c99_ast.ForStmt(
                 init=fi, condition=c, post_clause=p, body=b, label=lbl,
+                unroll_annotation=unroll,
             ):
                 return c99_ast.ForStmt(
                     init=self._lift_for_init(fi),
@@ -275,6 +276,7 @@ class StringLifter:
                         self._lift_exp(p) if p is not None else None
                     ),
                     body=self._lift_statement(b), label=lbl,
+                    unroll_annotation=unroll,
                 )
             case c99_ast.SwitchStmt(
                 control=c, body=b, label=lbl, cases=cs,

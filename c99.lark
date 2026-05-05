@@ -137,6 +137,11 @@ IMAGINARY: "_Imaginary"
 // declaration; see docs/leaf_zp_abi.md.
 ATTRIBUTE: "__attribute__"
 
+// Sentinel emitted by the preprocessor in place of `#pragma c6502
+// loop unroll(enable)`. The reserved-namespace prefix (C99 §7.1.3)
+// keeps it disjoint from any user identifier.
+PRAGMA_UNROLL: "__c6502_pragma_unroll__"
+
 // -- Identifier (placeholder alphabet, pending a grammar) --
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 
@@ -223,6 +228,12 @@ specifier: type_specifier | type_qualifier | STATIC | EXTERN
 // declaration specifiers; placing it after the declarator (also
 // legal in GCC) is not supported.
 attribute_clause: ATTRIBUTE LPAREN LPAREN IDENTIFIER RPAREN RPAREN
+
+// Pragma clause prefixed to a `for` statement. The preprocessor maps
+// every `#pragma c6502 loop unroll(enable)` line to the
+// PRAGMA_UNROLL sentinel; any other recognized c6502 pragmas become
+// blank lines. Only `for` accepts a pragma_clause today.
+pragma_clause: PRAGMA_UNROLL                                         -> pragma_unroll
 // var_decl covers four shapes:
 //   `int x;` / `int x = 1;`           — object declaration with declarator
 //   `int foo(int);`                   — function forward decl (the var_decl
@@ -309,7 +320,7 @@ statement: RETURN exp? SEMICOLON                                    -> return_st
          | CONTINUE SEMICOLON                                       -> continue_stmt
          | WHILE LPAREN exp RPAREN statement                        -> while_stmt
          | DO statement WHILE LPAREN exp RPAREN SEMICOLON           -> do_stmt
-         | FOR LPAREN for_init exp? SEMICOLON exp? RPAREN statement -> for_stmt
+         | pragma_clause? FOR LPAREN for_init exp? SEMICOLON exp? RPAREN statement -> for_stmt
          | SWITCH LPAREN exp RPAREN statement                       -> switch_stmt
          | CASE constant_exp COLON statement                        -> case_stmt
          | DEFAULT COLON statement                                  -> default_stmt
@@ -625,7 +636,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | COMPLEX | IMAGINARY | ATTRIBUTE
+         | BOOL | COMPLEX | IMAGINARY | ATTRIBUTE | PRAGMA_UNROLL
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT

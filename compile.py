@@ -51,6 +51,7 @@ from pretty import pretty
 from passes.asm_to_asm2 import translate_program as lower_to_asm2
 from passes.direct_index_load import apply_direct_index_load
 from passes.inc_peephole import apply_inc_peephole
+from passes.redundant_load import apply_redundant_load_elimination
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
@@ -63,6 +64,7 @@ from passes.replace_pseudoregisters import (
     replace_program_bare_exit as replace_pseudoregs_bare_exit,
 )
 from passes.identifier_resolution import resolve_program as resolve_identifiers
+from passes.optimization_ast.unroll import unroll_program
 from passes.string_lifting import lift_program as lift_strings
 from passes.type_checking import (
     StaticAttr,
@@ -71,24 +73,66 @@ from passes.type_checking import (
 from c99_to_tac import translate_program as translate_to_tac
 
 
-def _resolved(source: str):
-    """Run parse + name resolution + string lifting. Order matters:
+def _resolved(source: str, *, unroll: bool = False):
+    """Run parse + (optional unroll) + name resolution + string
+    lifting. Order matters:
       1. parse — c99 AST
-      2. identifier_resolution — user names get unique
+      2. (optional) unroll — when --optimize --unroll is set, every
+         for-loop carrying `#pragma c6502 loop unroll(enable)` is
+         fully unrolled here, BEFORE identifier_resolution, so each
+         cloned body's locals get fresh per-iteration `@N.<name>`
+         rewrites for free.
+      3. identifier_resolution — user names get unique
          `@N.<orig>` rewrites; string literals pass through.
-      3. string_lifting — every non-direct-array-init String
+      4. string_lifting — every non-direct-array-init String
          becomes a `Var(.str@N)` referring to a fresh file-scope
          static (prepended to the program's declaration list).
          Runs AFTER identifier_resolution so the lifted names use
          a disjoint character (`.`) and don't get re-renamed.
-      4. label_resolution — user `goto` labels mangle to
+      5. label_resolution — user `goto` labels mangle to
          `.<funcname>@<orig>`.
-      5. loop_labeling — iteration / switch / case / default
+      6. loop_labeling — iteration / switch / case / default
          labels get `.loop@<N>` etc.
     """
+    parsed = parse(source)
+    if unroll:
+        parsed = unroll_program(parsed)
     return label_loops(resolve_labels(lift_strings(
-        resolve_identifiers(parse(source)),
+        resolve_identifiers(parsed),
     )))
+
+
+# Defensive cap on the asm-peephole fixed-point loop. None of the
+# three peepholes can grow a program — they only delete or fuse —
+# so the iteration count is bounded by the number of deletable
+# instructions. The cap exists to surface bugs (an unsound pass
+# making a no-op rewrite that the equality check classifies as a
+# change) rather than to constrain real workloads.
+_PEEPHOLE_FIXEDPOINT_CAP = 16
+
+
+def _peephole_fixedpoint(prog):
+    """Run apply_inc_peephole → apply_direct_index_load →
+    apply_redundant_load_elimination in sequence, repeating until
+    a full sweep produces no further change. Each pass can enable
+    the next: `inc_peephole` may shorten chains that `direct_index_
+    load` then collapses; `direct_index_load`'s rewrite of `LDA M;
+    TAX` to `LDX M` exposes redundant `LDX M` loads downstream;
+    `redundant_load`'s deletions can leave new `LDA; TAX` pairs
+    adjacent. Order: inc → direct → redundant matches the natural
+    enabling chain."""
+    for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
+        new_prog = apply_redundant_load_elimination(
+            apply_direct_index_load(apply_inc_peephole(prog)),
+        )
+        if new_prog == prog:
+            return new_prog
+        prog = new_prog
+    raise AssertionError(
+        f"asm peephole fixed-point loop didn't converge in "
+        f"{_PEEPHOLE_FIXEDPOINT_CAP} iterations — a peephole pass "
+        "is reporting changes without actually modifying the IR.",
+    )
 
 
 def _format_tokens(source: str) -> str:
@@ -99,26 +143,30 @@ def _format_tokens(source: str) -> str:
 
 
 def _run_stage(
-    stage: str, source: str, optimize: bool = False,
+    stage: str, source: str, optimize: bool = False, unroll: bool = False,
 ) -> str:
     if stage == "lex":
         return _format_tokens(source)
     if stage == "parse":
         return pretty(parse(source)) + "\n"
     if stage == "resolve":
-        return pretty(_resolved(source)) + "\n"
+        return pretty(_resolved(source, unroll=unroll)) + "\n"
     if stage == "tac":
         # Thread the symbol + type tables from type_checking into
         # c99_to_tac so the latter can read function-linkage flags,
         # emit StaticVariable entries for static-storage objects,
         # and resolve struct/union sizes.
-        prog, symbols, types = type_check_program(_resolved(source))
+        prog, symbols, types = type_check_program(
+            _resolved(source, unroll=unroll),
+        )
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
             tac = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":
-        prog, symbols, types = type_check_program(_resolved(source))
+        prog, symbols, types = type_check_program(
+            _resolved(source, unroll=unroll),
+        )
         # `replace_pseudoregisters` needs to recognize every static-
         # storage object — including extern references that don't
         # produce a StaticVariable definition here — to avoid
@@ -156,17 +204,15 @@ def _run_stage(
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             return emit_program(lower_to_asm2(
-                expand_long_branches(
-                    apply_direct_index_load(apply_inc_peephole(asm2)),
-                ),
+                expand_long_branches(_peephole_fixedpoint(asm2)),
             ))
         return emit_program(lower_to_asm2(expand_long_branches(
-            apply_direct_index_load(apply_inc_peephole(replace_pseudoregs(
+            _peephole_fixedpoint(replace_pseudoregs(
                 translate_to_asm(tac, symbols, types),
                 extra_statics=statics,
                 symbols=symbols,
                 types=types,
-            )))
+            )),
         )))
     raise AssertionError(f"unknown stage: {stage!r}")
 
@@ -201,7 +247,20 @@ def main(argv: list[str]) -> int:
              "calling-convention optimization. Applies to --tac and "
              "--codegen.",
     )
+    ap.add_argument(
+        "--unroll", dest="unroll", action="store_true",
+        help="fully unroll every for-loop carrying `#pragma c6502 "
+             "loop unroll(enable)`. Requires --optimize. Applies to "
+             "--resolve, --tac, and --codegen.",
+    )
     args, pcpp_args = ap.parse_known_args(argv[1:])
+
+    if args.unroll and not args.optimize:
+        print(
+            "compile.py: --unroll requires --optimize",
+            file=sys.stderr,
+        )
+        return 2
 
     if (args.stage == "codegen"
             and args.output is not None
@@ -220,7 +279,7 @@ def main(argv: list[str]) -> int:
 
     text = _run_stage(
         args.stage, preprocess(source, pcpp_args),
-        optimize=args.optimize,
+        optimize=args.optimize, unroll=args.unroll,
     )
 
     if args.output is not None:

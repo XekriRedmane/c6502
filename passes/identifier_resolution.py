@@ -911,7 +911,7 @@ class Resolver:
                 )
             case c99_ast.ForStmt(
                 init=init, condition=cond, post_clause=post,
-                body=body, label=label,
+                body=body, label=label, unroll_annotation=unroll,
             ):
                 # C99 §6.8.5.3: the for-header opens its own block-
                 # scope. Mechanics match Compound: clone the parent
@@ -943,6 +943,7 @@ class Resolver:
                     post_clause=new_post,
                     body=new_body,
                     label=label,
+                    unroll_annotation=unroll,
                 )
             case c99_ast.Null():
                 return c99_ast.Null()

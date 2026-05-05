@@ -67,8 +67,12 @@ from passes.optimization.copy_propagation import copy_propagate
 from passes.optimization.dead_store_elimination import (
     eliminate_dead_stores,
 )
+from passes.optimization.reassoc_const import reassoc_constants
 from passes.optimization.ssa_construction import to_ssa
 from passes.optimization.ssa_destruction import from_ssa
+from passes.optimization.static_const_fold import (
+    fold_static_const_reads,
+)
 from passes.optimization.strength_reduction import reduce_strength
 from passes.optimization.unreachable_code_elimination import (
     eliminate_unreachable_code,
@@ -105,6 +109,13 @@ def optimize_function(
     ssa_dsts: set[str] | None = None
     if symbols is not None:
         fn, ssa_dsts = to_ssa(fn, symbols)
+        # One-shot: replace `Var(static_const_scalar)` USE-position
+        # operands with `Constant(value)` so the fixed-point loop's
+        # constant_fold can collapse downstream arithmetic. SSA
+        # construction has already finished, so the substitution
+        # doesn't disturb def/use chains (statics aren't promoted
+        # in any case).
+        fn = fold_static_const_reads(fn, symbols)
     while True:
         prev = fn
         fn = constant_fold(fn, symbols=symbols)
@@ -114,6 +125,7 @@ def optimize_function(
         fn = copy_propagate(fn, ssa_dsts=ssa_dsts)
         fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)
         fn = fold_copies(fn)
+        fn = reassoc_constants(fn)
         if fn == prev:
             break
     if symbols is not None:

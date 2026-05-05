@@ -35,16 +35,20 @@ loop labeling) in that order.
 
 Modifier flag (orthogonal to the stage flags; applies to `--tac`
 and `--codegen`):
-- `--optimize` runs the optimizer pipeline: TAC-level fixed-point
-  opts (constant folding, strength reduction, comparison-against-
-  zero / jump fold, UCE, copy propagation, dead-store elimination,
-  copy folding) → asm-level const-static fold (drops scalar
-  `static T const` storage, replacing references with immediates)
-  → asm-level SSA round-trip with forward + backward copy
-  propagation + byte-granular DCE + byte-granular regalloc → late
-  prologue / epilogue synthesis → multi-byte INC peephole
-  (collapses in-place add-1 ADC chains on `Data` / `ZP` operands
-  to `INC + BNE` chains). Also enables the
+- `--optimize` runs the optimizer pipeline: TAC SSA construction
+  → one-shot scalar const-static read fold (replaces `Var(static
+  const scalar)` USE positions with `Constant(value)`) → fixed-
+  point loop (constant folding incl. const-array-subscript fold,
+  strength reduction, comparison-against-zero / jump fold, UCE,
+  copy propagation, dead-store elimination, copy folding,
+  Add-with-Constant reassociation) → SSA destruction → post-
+  destruction copy folding → asm-level const-static fold (drops
+  scalar `static T const` storage, replacing references with
+  immediates) → asm-level SSA round-trip with move coalescing,
+  forward + backward copy propagation, byte-granular DCE +
+  byte-granular regalloc → late prologue / epilogue synthesis →
+  multi-byte INC peephole (collapses in-place add-1 ADC chains on
+  `Data` / `ZP` operands to `INC + BNE` chains). Also enables the
   `__attribute__((zp_abi))` calling-convention optimization (frame
   elimination on annotated leaves). The INC peephole runs in the
   unoptimized pipeline too (its win comes from addressing-mode
@@ -1387,6 +1391,70 @@ flow); the const-static fold (next section) drops the subset that
 qualifies. `optimize_function` without `symbols` (legacy unit-test
 path) skips SSA construction (the renaming pass needs the symbol
 table to register fresh SSA names with their types).
+
+## Static-const reads + array-subscript folding
+
+Three composable TAC-level passes that turn const-static reads
+and const-array subscripts with constant indices into compile-
+time Constants, exposing them to the rest of the constant
+folder.
+
+### `passes/optimization/static_const_fold.py` — scalar reads
+
+One-shot pass that runs once after `to_ssa`, before the fixed-
+point loop. Walks every TAC instruction; replaces every USE-
+position `Var(name)` with `Constant(value)` when `name`'s symbol-
+table entry is:
+
+  * `StaticAttr(initial_value=Initial(c))` with `c` being `int`
+    or `float` (NOT `AddressInit` — link-time symbol; NOT a
+    tuple — aggregate);
+  * type carries an outermost `Const(...)` wrapper (gates the
+    fold on the C type system having already promised the
+    storage's value is fixed at runtime);
+  * underlying type is a foldable scalar (Char/SChar/UChar /
+    Int/UInt / Long/ULong / LongLong/ULongLong / Float / Double
+    / Pointer — not Array, Structure, Union).
+
+The asm-level `fold_const_statics` already drops the
+`StaticVariable` storage when nothing references it; this
+TAC-level pass eliminates the runtime reads upstream so the
+constant flows into the rest of the constant folder.
+
+### Const-array-subscript fold (`_fold_indexed_load` in
+`constant_folding.py`)
+
+`IndexedLoad(name, Constant(byte_idx), dst)` collapses to
+`Copy(Constant(value), dst)` when:
+
+  * `name` is `StaticAttr(Initial(tuple_value))`,
+  * the array's element type is const-qualified
+    (`Array(Const(elem_t), N)`),
+  * `byte_idx` is element-aligned,
+  * the indexed element value is `int` or `float` (not a nested
+    tuple, not `AddressInit`),
+  * the dst's c99 width matches the element's width.
+
+### Add-with-Constant reassociation (`passes/optimization/reassoc_const.py`)
+
+Recognizes `Binary(Add, C2, V, %inner); Binary(Add, C1, %inner,
+%outer)` (or any commutative variant) where `%inner` is single-
+use and the two Constants share a const variant, and rewrites
+to `Binary(Add, (C1+C2), V, %outer)` (dropping the inner def).
+Wraps modulo the variant's bit width.
+
+The headline composition: in code like
+
+```c
+static uint8_t * const buf = (uint8_t * const)0x2000;
+static const uint16_t offsets[N] = {0x100, 0x200, ...};
+buf[offsets[2] + col] = value;
+```
+
+the static-const reads turn `buf` into `Constant(0x2000)`, the
+const-array fold turns `offsets[2]` into `Constant(0x300)`, and
+reassociation collapses `0x2000 + (0x300 + col)` to `0x2300 +
+col` — one runtime 16-bit Add instead of two.
 
 ## Copy folding (`passes/optimization/copy_folding.py`)
 

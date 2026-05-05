@@ -3,6 +3,16 @@ interlace_fill_p1:
 
 .interlace_fill_p1@asm_ssa_preheader@0:
 .interlace_fill_p1@ssa_block@0:
+   LDA   #$D0
+   CLC
+   ADC   $81
+   STA   DPTR
+   LDA   #$21
+   ADC   #$00
+   STA   DPTR+1
+   LDA   $80
+   LDY   #$00
+   STA   (DPTR),Y
    LDA   #$00
    STA   $84
 .loop@0_start:

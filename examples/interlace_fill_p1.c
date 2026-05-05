@@ -68,6 +68,7 @@ static const uint16_t interlace_p1_offsets[105] = {
 * Caller must hold col in 0..39. */
 __attribute__((zp_abi)) void interlace_fill_p1(uint8_t value, uint8_t col)
 {
+    hires_page1[interlace_p1_offsets[2] + col] = value;
     for (uint8_t i = 0; i < 105; i++)
         hires_page1[interlace_p1_offsets[i] + col] = value;
 }

@@ -235,6 +235,15 @@ def _fold(
             if tv is None:
                 return instr
             return None if tv else tac_ast.Jump(target=t)
+        case tac_ast.IndexedLoad(
+            name=name,
+            index=tac_ast.Constant(const=c),
+            dst=dst,
+        ):
+            res = _fold_indexed_load(name, c, dst, symbols)
+            if res is not None:
+                return res
+            return instr
         case tac_ast.Phi(dst=dst, args=args) if args:
             res = _fold_phi(args, dst)
             if res is not None:
@@ -260,6 +269,109 @@ _CONVERSION_NODES = (
     tac_ast.FloatToInt, tac_ast.DoubleToInt,
     tac_ast.FloatToDouble, tac_ast.DoubleToFloat,
 )
+
+
+def _fold_indexed_load(
+    name: str,
+    idx_const: tac_ast.Type_const,
+    dst: tac_ast.Type_val,
+    symbols,
+) -> tac_ast.Type_instruction | None:
+    """Fold `IndexedLoad(name, Constant(byte_idx), dst)` into
+    `Copy(Constant(value), dst)` when:
+      * `name` is a static-storage object with `Initial(tuple_value)`
+        (an array initialized with a constant initializer list);
+      * the array's element type is const-qualified (the type system
+        guarantees the elements never change at runtime);
+      * `byte_idx` is element-aligned (a fold across element
+        boundaries would need byte-level slicing — deferred);
+      * the addressed element value is `int` or `float` (NOT a
+        nested tuple — multi-dim folding would need a separate
+        path; NOT `AddressInit` — link-time symbol, not foldable);
+      * the dst Var's c99 type matches the array's element type
+        in width (so the fold's Constant variant matches what
+        downstream consumers expect).
+
+    Returns `Copy(Constant, dst)` on success, or None to leave the
+    `IndexedLoad` alone.
+    """
+    if symbols is None:
+        return None
+    if not isinstance(dst, tac_ast.Var):
+        return None
+    sym = symbols.get(name)
+    if sym is None:
+        return None
+    # Importing here to avoid a circular import at module load.
+    from passes.type_checking import Initial, StaticAttr
+    if not isinstance(sym.attrs, StaticAttr):
+        return None
+    if not isinstance(sym.attrs.initial_value, Initial):
+        return None
+    init_value = sym.attrs.initial_value.value
+    if not isinstance(init_value, tuple):
+        return None
+    arr_t = sym.type
+    while isinstance(arr_t, c99_ast.Const):
+        arr_t = arr_t.referenced_type
+    if not isinstance(arr_t, c99_ast.Array):
+        return None
+    elem_t = arr_t.element_type
+    # Eligibility gate: only fold when the array's element type is
+    # const-qualified. Without const, the C standard permits writes
+    # to the elements at runtime, and a fold based on the static-
+    # init values would be unsound.
+    if not isinstance(elem_t, c99_ast.Const):
+        return None
+    elem_t_unq = elem_t.referenced_type
+    elem_size = _scalar_size(elem_t_unq)
+    if elem_size is None:
+        return None
+    # `byte_idx` from the `Constant(c)` — the const variant carries
+    # the value at whatever width c99_to_tac chose for the byte
+    # index (typically ConstUChar for arrays ≤ 256 bytes).
+    byte_idx = idx_const.value
+    if byte_idx % elem_size != 0:
+        return None
+    elem_idx = byte_idx // elem_size
+    if elem_idx < 0 or elem_idx >= len(init_value):
+        return None
+    val = init_value[elem_idx]
+    if not isinstance(val, (int, float)):
+        return None
+    # Match the dst Var's c99 type — that's the result type of the
+    # IndexedLoad. If dst's type doesn't match the element width
+    # we'd need byte-level slicing; bail.
+    dst_sym = symbols.get(dst.name)
+    if dst_sym is None:
+        return None
+    dst_t = dst_sym.type
+    while isinstance(dst_t, c99_ast.Const):
+        dst_t = dst_t.referenced_type
+    if _scalar_size(dst_t) != elem_size:
+        return None
+    # Build the Constant matching the dst's c99 type. Reuse the
+    # c99_to_tac helper that knows the variant mapping.
+    from c99_to_tac import _tac_const_for
+    return tac_ast.Copy(
+        src=tac_ast.Constant(const=_tac_const_for(dst_t, val)),
+        dst=dst,
+    )
+
+
+def _scalar_size(t) -> int | None:
+    """Byte width of a scalar type, or None if not a foldable
+    scalar. Mirrors the size table used elsewhere in the
+    optimizer; kept local to avoid a cross-module dependency."""
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+        return 1
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
+        return 2
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Float)):
+        return 4
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
+        return 8
+    return None
 
 
 def _fold_phi(

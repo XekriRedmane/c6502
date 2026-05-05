@@ -3,8 +3,7 @@ interlace_fill_p1:
 
 .interlace_fill_p1@asm_ssa_preheader@0:
 .interlace_fill_p1@ssa_block@0:
-   LDA   $81
-   TAX
+   LDX   $81
    LDA   $80
    STA   $21D0,X
    LDA   #$00
@@ -17,8 +16,7 @@ interlace_fill_p1:
    LDA   $84
    STA   $82
    ASL   $82
-   LDA   $82
-   TAX
+   LDX   $82
    LDA   interlace_p1_offsets,X
    STA   $83
    LDA   interlace_p1_offsets+1,X

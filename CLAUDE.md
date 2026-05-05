@@ -1703,6 +1703,49 @@ The canonical case is a memory-mapped device pointer:
 output. External-linkage globals (without `static`) are skipped
 even when const, because another TU might read the symbol.
 
+## Direct-into-X/Y peephole (`passes/direct_index_load.py`)
+
+Always-on asm-level peephole. `tac_to_asm` always stages a value
+into `Reg(X)` or `Reg(Y)` via `Reg(A)`:
+
+```
+Mov(M, Reg(A))            ; LDA M
+Mov(Reg(A), Reg(X))       ; TAX
+```
+
+This is conservatively right at lowering time — `M` is still a
+`Pseudo` and could resolve to `Frame` / `Stack` / `Indirect`,
+which use indirect-Y addressing that `LDX` / `LDY` don't support.
+After `replace_pseudoregisters` resolves Pseudos to concrete
+operand types, we can short-circuit the round trip when `M` is
+addressable by `LDX` / `LDY` directly:
+
+  * `Imm`  — `LDX #imm` (2 bytes vs `LDA #imm; TAX` = 3 bytes).
+  * `Data` — `LDX abs` (3 bytes vs `LDA abs; TAX` = 4 bytes).
+  * `ZP`   — `LDX zp` (2 bytes vs `LDA zp; TAX` = 3 bytes).
+
+Saves 1 byte / 2 cycles per occurrence.
+
+Eligibility:
+  * Two consecutive instructions match `Mov(src=M, dst=Reg(A));
+    Mov(src=Reg(A), dst=Reg(X|Y))`.
+  * `M ∈ {Data, ZP, Imm}` — the addressing modes `LDX` / `LDY`
+    support directly. `Frame` / `Stack` / `Indirect` skip.
+  * `Reg(A)` is dead immediately after the second `Mov` — no
+    subsequent read of A before A is redefined. Uses a forward
+    liveness scan within the basic block (mirrors
+    `backward_copy_propagation._a_dead_at`).
+
+Flag soundness: `LDA M; TAX` sets N/Z based on M's value (LDA
+sets, TAX overwrites with the same value); `LDX M` sets N/Z
+based on M's value. Same flag state at the rewrite's exit, so
+any subsequent `Branch` observes the same condition.
+
+Runs after `replace_pseudoregisters` (operands concrete) and
+before `expand_long_branches` (no new branches introduced — the
+pass shrinks code, never expands). Active in both optimized and
+unoptimized pipelines, like `inc_peephole`.
+
 ## Multi-byte INC peephole (`passes/inc_peephole.py`)
 
 Always-on asm-level peephole that runs after

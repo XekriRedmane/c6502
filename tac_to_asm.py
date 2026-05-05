@@ -954,6 +954,8 @@ class Translator:
                 return self._translate_indexed_load(name, index, dst)
             case tac_ast.IndexedStore(address=addr, index=index, src=src):
                 return self._translate_indexed_store(addr, index, src)
+            case tac_ast.IndexedConstLoad(address=addr, index=index, dst=dst):
+                return self._translate_indexed_const_load(addr, index, dst)
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     # ------------------------------------------------------------------
@@ -1660,6 +1662,30 @@ class Translator:
                     name="", offset=address, index=asm_ast.X(),
                 ),
             ),
+        ]
+
+    def _translate_indexed_const_load(
+        self,
+        address: int,
+        index: tac_ast.Type_val,
+        dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Absolute,X load from a numeric base address. Mirror of
+        `_translate_indexed_store`: stage `index` into X, then
+        `LDA $<address>,X`, then store A into `dst`. The recognizer
+        verified everything is 1-byte typed."""
+        index_op = translate_val(index)
+        dst_op = translate_val(dst)
+        return [
+            asm_ast.Mov(src=index_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),
+            asm_ast.Mov(
+                src=asm_ast.IndexedData(
+                    name="", offset=address, index=asm_ast.X(),
+                ),
+                dst=_REG_A,
+            ),
+            asm_ast.Mov(src=_REG_A, dst=dst_op),
         ]
 
     @staticmethod

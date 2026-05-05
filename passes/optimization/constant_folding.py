@@ -624,6 +624,41 @@ def _is_unsigned_const(c: tac_ast.Type_const) -> bool:
     return isinstance(c, _UNSIGNED_INT_VARIANTS)
 
 
+# Pairs of integer const variants that share a byte width, indexed
+# by either side. Used to canonicalize same-width different-signedness
+# Add/Sub/Mul/And/Or/Xor operands to the unsigned variant for folding
+# (motivating case: `Pointer + int` arithmetic produces
+# `ConstUInt(addr) + ConstInt(off)`).
+_SIGNEDNESS_PAIR: dict[type, type] = {
+    tac_ast.ConstInt: tac_ast.ConstUInt,
+    tac_ast.ConstUInt: tac_ast.ConstUInt,
+    tac_ast.ConstLong: tac_ast.ConstULong,
+    tac_ast.ConstULong: tac_ast.ConstULong,
+    tac_ast.ConstLongLong: tac_ast.ConstULongLong,
+    tac_ast.ConstULongLong: tac_ast.ConstULongLong,
+    tac_ast.ConstChar: tac_ast.ConstUChar,
+    tac_ast.ConstUChar: tac_ast.ConstUChar,
+}
+
+
+def _promote_same_width_signedness(
+    c1: tac_ast.Type_const, c2: tac_ast.Type_const,
+) -> tuple[tac_ast.Type_const, tac_ast.Type_const] | None:
+    """If `c1` and `c2` have the same byte width but different
+    signedness, return both promoted to the unsigned variant.
+    Otherwise None. Both inputs must already be integer consts."""
+    target1 = _SIGNEDNESS_PAIR.get(type(c1))
+    target2 = _SIGNEDNESS_PAIR.get(type(c2))
+    if target1 is None or target1 is not target2:
+        return None
+    bits = _INTEGER_CONST_BITS[target1]
+    mask = (1 << bits) - 1
+    return (
+        target1(value=c1.value & mask),
+        target1(value=c2.value & mask),
+    )
+
+
 def _to_signed(value: int, bits: int) -> int:
     """Interpret `value` as a `bits`-wide two's-complement signed
     integer. Idempotent: a value already in the signed range is
@@ -752,7 +787,21 @@ def _fold_binary(
     if not _is_integer_const(c1) or not _is_integer_const(c2):
         return None
     if type(c1) is not type(c2):
-        return None
+        # Same-width different-signedness pairs (UChar/Char, UInt/Int,
+        # ULong/Long, ULongLong/LongLong) come up in pointer arithmetic
+        # — `Pointer + int` lowers to `Add(ConstUInt(addr), ConstInt(off))`
+        # because Pointer maps to ConstUInt while int literals stay
+        # ConstInt. The bit pattern of Add/Sub/Mul/And/Or/Xor is the
+        # same regardless of signedness, so we promote both operands
+        # to the unsigned variant (per C99 §6.3.1.8 "unsigned dominates"
+        # at equal rank) and proceed. Divide / Modulo are NOT
+        # commutative across signedness — they bail.
+        promoted = _promote_same_width_signedness(c1, c2)
+        if promoted is None:
+            return None
+        if isinstance(op, (tac_ast.Divide, tac_ast.Modulo)):
+            return None
+        c1, c2 = promoted
     variant = type(c1)
     unsigned = _is_unsigned_const(c1)
     a = _operand_value(c1)

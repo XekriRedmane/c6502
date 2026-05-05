@@ -58,6 +58,23 @@ module TAC {
         -- need two STA abs,X forms with no carry threading and the
         -- pattern's profile changes).
         | IndexedStore(int address, val index, val src)
+        -- Indexed load from a 16-bit absolute address. Mirror of
+        -- IndexedStore: `address` is a compile-time integer base,
+        -- `index` is a 1-byte (UChar) val staged into X, `dst`
+        -- receives the 1-byte value at `$<address>+X`. tac_to_asm
+        -- lowers as `LDX index; LDA $<address>,X; STA dst`.
+        --
+        -- Emitted by `passes/optimization/recognize_indexed_load.py`
+        -- when it spots a `Load(%addr, dst)` whose `%addr` is the
+        -- result of `Binary(Add, Constant(C), %ext_idx, %addr)`
+        -- with `%ext_idx` a `ZeroExtend` of a 1-byte typed Var.
+        -- Same eligibility checks as IndexedStore: C+255 ≤ 0xFFFF,
+        -- temps single-use, dst is 1 byte wide. The motivating
+        -- case is `*(constant_pointer + uchar_idx)` reads, e.g.
+        -- the per-byte source-table read in a hot inner loop after
+        -- const-static fold has turned the source pointer into a
+        -- numeric address.
+        | IndexedConstLoad(int address, val index, val dst)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)

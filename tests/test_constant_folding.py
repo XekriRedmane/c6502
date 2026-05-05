@@ -1314,16 +1314,20 @@ class TestFoldSignednessAware(unittest.TestCase):
         self.assertEqual(out[0],
                          tac_ast.Copy(src=_ci(-32768), dst=_var("x")))
 
-    def test_mismatched_signedness_unchanged(self) -> None:
-        # ConstInt + ConstUInt shouldn't happen post-type-check (both
-        # operands are promoted to the same type), but bail rather
-        # than guess at the result variant.
-        instr = tac_ast.Binary(
+    def test_mismatched_signedness_folds_to_unsigned(self) -> None:
+        # ConstInt + ConstUInt at the same width arises from pointer
+        # arithmetic (pointer values come out as ConstUInt; integer
+        # offsets stay ConstInt). The bit pattern of Add is
+        # signedness-agnostic, so we promote both operands to the
+        # unsigned variant per C99 §6.3.1.8 "unsigned dominates" and
+        # fold. Without this fold, the IndexedStore / IndexedConstLoad
+        # recognizers can't reduce the resulting Add chain to a
+        # single-Constant Add.
+        out = _fold_one(tac_ast.Binary(
             op=tac_ast.Add(),
             src1=_ci(1), src2=_cui(2), dst=_var("x"),
-        )
-        out = _fold_one(instr)
-        self.assertEqual(out[0], instr)
+        ))
+        self.assertEqual(out[0], tac_ast.Copy(src=_cui(3), dst=_var("x")))
 
     def test_unsigned_negate_wraps(self) -> None:
         # -ConstUInt(1) at 16 bits → bit pattern 0xFFFF = 65535.

@@ -26,10 +26,23 @@ static const uint8_t HUD_ROW_COUNT[7] = { 7, 1, 7, 1, 7, 1, 7 };
 
 #define HUD_COL_BASE 0x0C    /* hi-res byte column $0C..$1B = middle 16 of 40 */
 
+/* Source bytes live at a fixed address; declaring it as a const-
+ * pointer static lets const-static-fold turn `hud_strip_src[y]`
+ * into a `LDA $A30D+y` form (after Y-register pinning eliminates
+ * the runtime pointer arithmetic). */
+static const uint8_t * const hud_strip_src = (const uint8_t *)0xA30D;
+
 __attribute__((zp_abi))
-void paint_hud_strip_p1(const uint8_t *hud_strip_src /* 112 bytes @ $A30D */) {
+void paint_hud_strip_p1(void) {
     uint8_t y = 0;                          /* monotonic, NOT reset per column */
-    for (int8_t x = 0x0F; x >= 0; x--) {       /* right-to-left, 16 columns */
+    /* Loop right-to-left, columns 0x0F..0x00. We use a uint8_t
+     * counter so the iv stays unsigned (avoiding the SignExtend
+     * that would otherwise block IndexedStore recognition). The
+     * canonical "x = 16; x-- > 0;" form gives x = 15..0 in the
+     * body and the post-decrement underflows to 0xFF on the
+     * loop-exit iteration. */
+    for (uint8_t x_iter = 16; x_iter-- > 0; ) {
+        uint8_t x = x_iter;
 
         #pragma c6502 loop unroll(enable)
         for (uint8_t b = 0; b < 7; b++) {

@@ -68,6 +68,9 @@ from passes.optimization.dead_store_elimination import (
     eliminate_dead_stores,
 )
 from passes.optimization.reassoc_const import reassoc_constants
+from passes.optimization.recognize_indexed_load import (
+    recognize_indexed_load,
+)
 from passes.optimization.recognize_indexed_store import (
     recognize_indexed_store,
 )
@@ -130,6 +133,7 @@ def optimize_function(
         fn = fold_copies(fn)
         fn = reassoc_constants(fn)
         fn = recognize_indexed_store(fn, symbols=symbols)
+        fn = recognize_indexed_load(fn, symbols=symbols)
         if fn == prev:
             break
     if symbols is not None:

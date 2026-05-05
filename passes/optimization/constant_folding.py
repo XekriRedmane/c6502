@@ -281,16 +281,24 @@ def _fold_indexed_load(
     `Copy(Constant(value), dst)` when:
       * `name` is a static-storage object with `Initial(tuple_value)`
         (an array initialized with a constant initializer list);
-      * the array's element type is const-qualified (the type system
-        guarantees the elements never change at runtime);
+      * the array's leaf element type is const-qualified (the type
+        system guarantees the elements never change at runtime).
+        For a multi-dim `Array(Array(... Const(scalar) ...), N)` we
+        walk through every Array level looking for the Const wrapper
+        at the leaf;
       * `byte_idx` is element-aligned (a fold across element
         boundaries would need byte-level slicing — deferred);
-      * the addressed element value is `int` or `float` (NOT a
-        nested tuple — multi-dim folding would need a separate
-        path; NOT `AddressInit` — link-time symbol, not foldable);
-      * the dst Var's c99 type matches the array's element type
-        in width (so the fold's Constant variant matches what
+      * the addressed leaf is `int` or `float` (a Pointer-element
+        array stores its addresses as ints in the init tuple, so
+        Pointer leaves with link-time-numeric init values fold
+        too; `AddressInit` link-time symbols still don't);
+      * the dst Var's c99 type matches the leaf element type in
+        width (so the fold's Constant variant matches what
         downstream consumers expect).
+
+    Multi-dim init values are nested tuples of leaf values
+    (zero-padded to the declared sizes by the type checker). We
+    walk them by repeated divmod against each dimension's stride.
 
     Returns `Copy(Constant, dst)` on success, or None to leave the
     `IndexedLoad` alone.
@@ -316,15 +324,18 @@ def _fold_indexed_load(
         arr_t = arr_t.referenced_type
     if not isinstance(arr_t, c99_ast.Array):
         return None
-    elem_t = arr_t.element_type
-    # Eligibility gate: only fold when the array's element type is
-    # const-qualified. Without const, the C standard permits writes
-    # to the elements at runtime, and a fold based on the static-
-    # init values would be unsound.
-    if not isinstance(elem_t, c99_ast.Const):
+    # Walk through every Array nesting level, recording sizes;
+    # land at the leaf element type (which must be Const-qualified
+    # for the fold to be sound).
+    dim_sizes: list[int] = []
+    leaf_t = arr_t
+    while isinstance(leaf_t, c99_ast.Array):
+        dim_sizes.append(leaf_t.size)
+        leaf_t = leaf_t.element_type
+    if not isinstance(leaf_t, c99_ast.Const):
         return None
-    elem_t_unq = elem_t.referenced_type
-    elem_size = _scalar_size(elem_t_unq)
+    leaf_t_unq = leaf_t.referenced_type
+    elem_size = _scalar_size(leaf_t_unq)
     if elem_size is None:
         return None
     # `byte_idx` from the `Constant(c)` — the const variant carries
@@ -334,13 +345,31 @@ def _fold_indexed_load(
     if byte_idx % elem_size != 0:
         return None
     elem_idx = byte_idx // elem_size
-    if elem_idx < 0 or elem_idx >= len(init_value):
+    total_elems = 1
+    for d in dim_sizes:
+        total_elems *= d
+    if elem_idx < 0 or elem_idx >= total_elems:
         return None
-    val = init_value[elem_idx]
+    # Walk the nested init tuple by per-level stride. `remaining`
+    # is the still-unspent flat element index; at each level we
+    # peel off the outermost dim's contribution and descend.
+    val = init_value
+    remaining = elem_idx
+    for level, _ in enumerate(dim_sizes):
+        inner_elems = 1
+        for d2 in dim_sizes[level + 1:]:
+            inner_elems *= d2
+        cur_idx = remaining // inner_elems
+        remaining = remaining % inner_elems
+        if not isinstance(val, tuple):
+            return None
+        if cur_idx >= len(val):
+            return None
+        val = val[cur_idx]
     if not isinstance(val, (int, float)):
         return None
     # Match the dst Var's c99 type — that's the result type of the
-    # IndexedLoad. If dst's type doesn't match the element width
+    # IndexedLoad. If dst's type doesn't match the leaf width
     # we'd need byte-level slicing; bail.
     dst_sym = symbols.get(dst.name)
     if dst_sym is None:

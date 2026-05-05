@@ -686,6 +686,154 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
         )
 
 
+class TestUnrollConstArraySubscriptBound(unittest.TestCase):
+    """The unroll recognizer accepts a const-array subscript as
+    an integer-bound, where every index is itself an integer-bound
+    (i.e., either a literal Constant or a recursively-foldable
+    Subscript)."""
+
+    def test_1d_const_array_bound(self) -> None:
+        # The bound is `BOUNDS[2]` — should fold to the third
+        # element (5) and produce 5 cloned bodies.
+        src = """
+        static const int BOUNDS[3] = {3, 4, 5};
+        int main(void) {
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < BOUNDS[2]; i++) i;
+            return 0;
+        }
+        """
+        prog = unroll_program(parse(preprocess(src)))
+        # Find main and inspect the unrolled compound.
+        main = next(d for d in prog.declaration
+                    if isinstance(d, c99_ast.FunctionDecl))
+        outer = next(bi for bi in main.function_decl.body.block_item
+                     if isinstance(bi, c99_ast.S)
+                     and isinstance(bi.statement, c99_ast.Compound))
+        self.assertEqual(len(outer.statement.block.block_item), 5)
+
+    def test_2d_const_array_bound(self) -> None:
+        src = """
+        static const int M[2][3] = { {1, 2, 3}, {4, 5, 6} };
+        int main(void) {
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < M[1][2]; i++) i;
+            return 0;
+        }
+        """
+        prog = unroll_program(parse(preprocess(src)))
+        main = next(d for d in prog.declaration
+                    if isinstance(d, c99_ast.FunctionDecl))
+        outer = next(bi for bi in main.function_decl.body.block_item
+                     if isinstance(bi, c99_ast.S)
+                     and isinstance(bi.statement, c99_ast.Compound))
+        # M[1][2] = 6, so 6 iterations.
+        self.assertEqual(len(outer.statement.block.block_item), 6)
+
+    def test_const_array_zero_pads_missing_inner(self) -> None:
+        # Inner row {7} pads to size 3 with two zeros. The bound
+        # M[1][2] is the second padded zero — 0 iterations.
+        src = """
+        static const int M[2][3] = { {1, 2, 3}, {7} };
+        int main(void) {
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < M[1][2]; i++) i;
+            return 0;
+        }
+        """
+        prog = unroll_program(parse(preprocess(src)))
+        main = next(d for d in prog.declaration
+                    if isinstance(d, c99_ast.FunctionDecl))
+        outer = next(bi for bi in main.function_decl.body.block_item
+                     if isinstance(bi, c99_ast.S)
+                     and isinstance(bi.statement, c99_ast.Compound))
+        self.assertEqual(len(outer.statement.block.block_item), 0)
+
+    def test_outer_iv_substituted_into_inner_bound(self) -> None:
+        # The motivating case: middle loop's iv `b` is substituted
+        # into the inner loop's bound `COUNT[b]` per outer iter.
+        src = """
+        static const int COUNT[3] = {2, 4, 1};
+        int main(void) {
+            int s = 0;
+            #pragma c6502 loop unroll(enable)
+            for (int b = 0; b < 3; b++) {
+                #pragma c6502 loop unroll(enable)
+                for (int i = 0; i < COUNT[b]; i++) s++;
+            }
+            return s;
+        }
+        """
+        prog = unroll_program(parse(preprocess(src)))
+        # Each outer iter should produce a Compound with N inner
+        # clones where N = COUNT[b]. Total inner clones = 2+4+1 = 7.
+        # The resulting tree is Compound([Compound, Compound, Compound])
+        # at the outer level; each child is a Compound containing the
+        # substituted body, which is itself a Compound containing the
+        # inner unroll's Compound of clones.
+        main = next(d for d in prog.declaration
+                    if isinstance(d, c99_ast.FunctionDecl))
+        # Count CompoundAssignment / Postfix nodes — one per inner iter.
+        count_postfix = [0]
+
+        def walk(n):
+            if isinstance(n, c99_ast.Postfix):
+                count_postfix[0] += 1
+            if hasattr(n, "__dataclass_fields__"):
+                for f in n.__dataclass_fields__:
+                    walk(getattr(n, f))
+            elif isinstance(n, list):
+                for item in n:
+                    walk(item)
+
+        walk(main.function_decl.body)
+        # 7 cloned `s++;` postfixes. (The outer `b++` and inner
+        # `i++` are gone — the for-loops were dissolved.)
+        self.assertEqual(count_postfix[0], 7)
+
+    def test_non_static_array_not_folded(self) -> None:
+        # Bound depends on a non-static (block-scope) array — not
+        # in the const map. Must reject.
+        src = """
+        int main(void) {
+            const int BOUNDS[3] = {3, 4, 5};
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < BOUNDS[2]; i++) i;
+            return 0;
+        }
+        """
+        with self.assertRaises(UnrollError):
+            unroll_program(parse(preprocess(src)))
+
+    def test_non_const_array_not_folded(self) -> None:
+        # File-scope static but no const qualifier — not in the
+        # map. Must reject.
+        src = """
+        static int BOUNDS[3] = {3, 4, 5};
+        int main(void) {
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < BOUNDS[2]; i++) i;
+            return 0;
+        }
+        """
+        with self.assertRaises(UnrollError):
+            unroll_program(parse(preprocess(src)))
+
+    def test_subscript_with_non_constant_index_rejected(self) -> None:
+        # The array is foldable but the index isn't.
+        src = """
+        static const int BOUNDS[3] = {3, 4, 5};
+        int main(void) {
+            int j = 1;
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < BOUNDS[j]; i++) i;
+            return 0;
+        }
+        """
+        with self.assertRaises(UnrollError):
+            unroll_program(parse(preprocess(src)))
+
+
 class TestUnrollCli(unittest.TestCase):
     """`--unroll` CLI flag — invocation, gating on `--optimize`,
     and an end-to-end pipeline check that an annotated loop

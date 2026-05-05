@@ -659,5 +659,222 @@ class TestStaticConstFoldCorrectness(unittest.TestCase):
         self.assertEqual(result.return_int() & 0xFFFF, 300)
 
 
+class TestMultiDimConstArrayFoldUnit(unittest.TestCase):
+    """Direct calls to `constant_fold` exercising the multi-dim
+    extension to `_fold_indexed_load`. Layout:
+      * Init values come in nested tuples zero-padded to the
+        declared sizes (matching what `passes.type_checking`
+        produces).
+      * The TAC `IndexedLoad.index` is a flat byte-index Constant
+        — c99_to_tac's multi-dim recognizer pre-computes it when
+        every subscript is a compile-time integer."""
+
+    def _make_2d_uchar_symbol(
+        self, values: tuple[tuple[int, ...], ...], inner_size: int,
+    ) -> Symbol:
+        # Inner element type carries Const at the leaf, not at the
+        # immediate (Array) element type.
+        return Symbol(
+            type=c99_ast.Array(
+                element_type=c99_ast.Array(
+                    element_type=c99_ast.Const(
+                        referenced_type=c99_ast.UChar(),
+                    ),
+                    size=inner_size,
+                ),
+                size=len(values),
+            ),
+            attrs=StaticAttr(
+                initial_value=Initial(value=values), is_global=False,
+            ),
+        )
+
+    def test_2d_aligned_constant_folds(self) -> None:
+        # M[1][2] in a 3x3 uchar table → flat byte_idx = 1*3 + 2 = 5.
+        sym_arr = self._make_2d_uchar_symbol(
+            ((1, 2, 3), (4, 5, 6), (7, 8, 9)), inner_size=3,
+        )
+        sym_dst = Symbol(type=c99_ast.UChar(), attrs=LocalAttr())
+        symbols = _table({"arr": sym_arr, "%t": sym_dst})
+        instrs = [
+            tac_ast.IndexedLoad(
+                name="arr",
+                index=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=5),
+                ),
+                dst=_var("%t"),
+            ),
+        ]
+        out = constant_fold(_fn(instrs), symbols=symbols)
+        self.assertIsInstance(out.instructions[0], tac_ast.Copy)
+        self.assertEqual(
+            out.instructions[0].src,
+            tac_ast.Constant(const=tac_ast.ConstUChar(value=6)),
+        )
+
+    def test_2d_padded_zero_folds(self) -> None:
+        # Inner row {7} is zero-padded to size 3. M[1][2] = 0.
+        sym_arr = self._make_2d_uchar_symbol(
+            ((1, 2, 3), (7, 0, 0), (0, 0, 0)), inner_size=3,
+        )
+        sym_dst = Symbol(type=c99_ast.UChar(), attrs=LocalAttr())
+        symbols = _table({"arr": sym_arr, "%t": sym_dst})
+        instrs = [
+            tac_ast.IndexedLoad(
+                name="arr",
+                index=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=5),
+                ),
+                dst=_var("%t"),
+            ),
+        ]
+        out = constant_fold(_fn(instrs), symbols=symbols)
+        self.assertIsInstance(out.instructions[0], tac_ast.Copy)
+        self.assertEqual(
+            out.instructions[0].src,
+            tac_ast.Constant(const=tac_ast.ConstUChar(value=0)),
+        )
+
+    def test_pointer_element_array_folds(self) -> None:
+        # static uint8_t * const HGR[4] = {0x2000, 0x2400, 0x2800, 0x2C00}
+        # — pointer-element array with int-literal initializers.
+        # HGR[2] = 0x2800, returned as a 2-byte Pointer.
+        sym_arr = Symbol(
+            type=c99_ast.Array(
+                element_type=c99_ast.Const(
+                    referenced_type=c99_ast.Pointer(
+                        referenced_type=c99_ast.UChar(),
+                    ),
+                ),
+                size=4,
+            ),
+            attrs=StaticAttr(
+                initial_value=Initial(
+                    value=(0x2000, 0x2400, 0x2800, 0x2C00),
+                ),
+                is_global=False,
+            ),
+        )
+        sym_dst = Symbol(
+            type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
+            attrs=LocalAttr(),
+        )
+        symbols = _table({"arr": sym_arr, "%t": sym_dst})
+        # byte_idx = 4 (element 2 × 2 bytes per pointer).
+        instrs = [
+            tac_ast.IndexedLoad(
+                name="arr",
+                index=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=4),
+                ),
+                dst=_var("%t"),
+            ),
+        ]
+        out = constant_fold(_fn(instrs), symbols=symbols)
+        self.assertIsInstance(out.instructions[0], tac_ast.Copy)
+        # Pointer maps to ConstUInt (2-byte unsigned) per
+        # _tac_const_for's Pointer dispatch.
+        self.assertEqual(
+            out.instructions[0].src,
+            tac_ast.Constant(const=tac_ast.ConstUInt(value=0x2800)),
+        )
+
+    def test_2d_misaligned_byte_idx_does_not_fold(self) -> None:
+        # uint16_t[2][3] — element_size=2. byte_idx=3 isn't 2-aligned.
+        sym_arr = Symbol(
+            type=c99_ast.Array(
+                element_type=c99_ast.Array(
+                    element_type=c99_ast.Const(
+                        referenced_type=c99_ast.UInt(),
+                    ),
+                    size=3,
+                ),
+                size=2,
+            ),
+            attrs=StaticAttr(
+                initial_value=Initial(
+                    value=((1, 2, 3), (4, 5, 6)),
+                ),
+                is_global=False,
+            ),
+        )
+        sym_dst = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        symbols = _table({"arr": sym_arr, "%t": sym_dst})
+        instrs = [
+            tac_ast.IndexedLoad(
+                name="arr",
+                index=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=3),
+                ),
+                dst=_var("%t"),
+            ),
+        ]
+        out = constant_fold(_fn(instrs), symbols=symbols)
+        self.assertIsInstance(out.instructions[0], tac_ast.IndexedLoad)
+
+
+class TestMultiDimRecognizerEmits(unittest.TestCase):
+    """The c99→TAC multi-dim subscript recognizer fires when every
+    subscript index is a compile-time integer constant, emitting
+    `IndexedLoad(name, Constant(flat_byte_idx), dst)`. With runtime
+    indices on a multi-dim subscript, the recognizer bails and the
+    regular Load lowering takes over."""
+
+    def _tac_for(self, src: str) -> list[tac_ast.Type_instruction]:
+        from c99_to_tac import translate_program
+        from passes.identifier_resolution import resolve_program
+        from passes.label_resolution import (
+            resolve_program as resolve_labels,
+        )
+        from passes.loop_labeling import label_program
+        from passes.string_lifting import lift_program
+        from passes.type_checking import check_program
+        from preprocessor import preprocess
+        from parser import parse
+
+        prog = parse(preprocess(src))
+        prog = label_program(resolve_labels(
+            lift_program(resolve_program(prog)),
+        ))
+        prog, syms, types = check_program(prog)
+        tac = translate_program(prog, syms, types)
+        fn = next(
+            tl for tl in tac.top_level
+            if isinstance(tl, tac_ast.Function)
+        )
+        return fn.instructions
+
+    def test_2d_all_constant_emits_indexed_load(self) -> None:
+        instrs = self._tac_for("""
+            static const unsigned char M[3][2] = {
+                {1, 2}, {3, 4}, {5, 6}
+            };
+            int main(void) { return M[1][1]; }
+        """)
+        ils = [i for i in instrs if isinstance(i, tac_ast.IndexedLoad)]
+        self.assertEqual(len(ils), 1)
+        self.assertEqual(ils[0].name, "M")
+        # M[1][1] — flat byte_idx = 1*2 + 1 = 3.
+        self.assertEqual(
+            ils[0].index,
+            tac_ast.Constant(const=tac_ast.ConstUChar(value=3)),
+        )
+
+    def test_3d_all_constant_emits_indexed_load(self) -> None:
+        instrs = self._tac_for("""
+            static const unsigned char A[2][2][2] = {
+                {{1,2},{3,4}}, {{5,6},{7,8}}
+            };
+            int main(void) { return A[1][0][1]; }
+        """)
+        ils = [i for i in instrs if isinstance(i, tac_ast.IndexedLoad)]
+        self.assertEqual(len(ils), 1)
+        # A[1][0][1] = 6 — flat byte_idx = 1*4 + 0*2 + 1 = 5.
+        self.assertEqual(
+            ils[0].index,
+            tac_ast.Constant(const=tac_ast.ConstUChar(value=5)),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

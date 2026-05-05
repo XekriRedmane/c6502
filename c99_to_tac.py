@@ -209,6 +209,25 @@ from passes.type_checking import (
 # translator-minted label (`.if_end@<N>`, `.cond_else@<N>`, …): those
 # differ in prefix, and they end at the digit run after `@` rather
 # than in a `_start`/`_continue`/`_break` suffix.
+def _const_int_or_none(exp: c99_ast.Type_exp | None) -> int | None:
+    """Drill through any number of `Cast` wrappers and return the
+    underlying integer Constant value, or None if the expression
+    isn't a compile-time integer constant. Used by the IndexedLoad
+    multi-dim recognizer to detect all-constant subscript chains."""
+    if exp is None:
+        return None
+    while isinstance(exp, c99_ast.Cast):
+        exp = exp.exp
+    if isinstance(exp, c99_ast.Constant) and isinstance(
+        exp.const,
+        (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
+         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
+         c99_ast.ConstChar, c99_ast.ConstUChar),
+    ):
+        return exp.const.value
+    return None
+
+
 def _start_label(loop_label: str) -> str:
     return f"{loop_label}_start"
 
@@ -2668,37 +2687,60 @@ class Translator:
         exp: c99_ast.Type_exp,
         instrs: list[tac_ast.Type_instruction],
     ) -> tac_ast.Type_val | None:
-        """If `array[index]` qualifies for absolute,Y addressing (the
-        array is a static-storage object whose total byte size ≤ 256),
-        emit `IndexedLoad` and return the dst Var. Otherwise None.
+        """If `array[index]` (single- or multi-dim) qualifies for
+        absolute,Y addressing (the underlying array is a static-
+        storage object whose total byte size ≤ 256), emit
+        `IndexedLoad` and return the dst Var. Otherwise None.
 
-        Qualification:
+        Single-dim shape (`arr[i]`):
           * `array` is `AddressOf(Var(name))` — the type checker's
             array-to-pointer decay shape for `Var(name)` of array
-            type. (User-written `&arr` would also wrap as AddressOf,
-            but with type `Pointer(Array(...))`; we don't care about
-            the wrapper's type, only the inner symbol's.)
-          * The symbol `name` has `StaticAttr` (file- or block-scope
-            static storage — its address is a link-time label).
-          * The symbol's c99 type is `Array(elem, N)` with
-            `N * sizeof(elem) ≤ 256` so the byte index always fits
-            in Y's 0..255 range for any in-bounds access.
+            type.
+          * `i` is a runtime expression; this method emits
+            Truncate + optional Multiply + IndexedLoad.
 
-        Lowering:
-          * Compute the index value, truncate to UChar.
-          * Multiply by sizeof(elem) to scale (skipped when
-            sizeof(elem)==1; strength reduction folds power-of-2
-            multiplies into shifts later).
-          * Emit `IndexedLoad(name, byte_idx, dst)`. Dst's width is
-            `sizeof(elem)`, so tac_to_asm reads N bytes from
-            `name+0..N-1,Y`.
+        Multi-dim shape (`arr[i0]...[iN-1]`) only fires when EVERY
+        index is a compile-time integer constant (constant
+        propagation through nested AddressOf/Subscript wrappers
+        the type checker introduces for inner-array decays). The
+        flat byte index is computed in Python at translation time;
+        a single `IndexedLoad(name, Constant(byte_idx), dst)` is
+        emitted. Multi-dim with runtime indices isn't recognized —
+        that path falls back to the regular Load lowering.
+
+        Qualification (both shapes):
+          * The base symbol has `StaticAttr` (file- or block-scope
+            static storage — its address is a link-time label).
+          * The symbol's c99 type is `Array(...)` with
+            `_sizeof ≤ 256` so the byte index always fits in Y's
+            0..255 range for any in-bounds access.
+          * The number of indices matches the number of array
+            dimensions (a partial subscript that yields a sub-
+            array is NOT eligible — its dst would be an array, not
+            a scalar).
         """
-        if not isinstance(array, c99_ast.AddressOf):
-            return None
-        inner = array.exp
-        if not isinstance(inner, c99_ast.Var):
-            return None
-        sym = self._symbols.get(inner.name)
+        # Walk inside-out, collecting (index, ...) for each
+        # subscript level. Single-dim case: indices_outer_to_inner
+        # ends up as [index]. Multi-dim case (nested
+        # AddressOf+Subscript wrappers): one entry per level.
+        indices_inner_to_outer: list[c99_ast.Type_exp] = [index]
+        cur_array = array
+        base_var: c99_ast.Var | None = None
+        while True:
+            if not isinstance(cur_array, c99_ast.AddressOf):
+                return None
+            inner = cur_array.exp
+            if isinstance(inner, c99_ast.Var):
+                base_var = inner
+                break
+            if not isinstance(inner, c99_ast.Subscript):
+                return None
+            indices_inner_to_outer.append(inner.index)
+            cur_array = inner.array
+        # Reverse so indices are in source order: outermost first.
+        indices_outer_to_inner = list(reversed(indices_inner_to_outer))
+
+        sym = self._symbols.get(base_var.name)
         if sym is None or not isinstance(sym.attrs, StaticAttr):
             return None
         if not isinstance(sym.type, c99_ast.Array):
@@ -2706,12 +2748,58 @@ class Translator:
         total = _sizeof(sym.type, self._types)
         if total > 256:
             return None
-        elem_type = sym.type.element_type
-        elem_size = _sizeof(elem_type, self._types)
 
+        # Collect array dims and leaf scalar size.
+        arr_t = sym.type
+        dim_sizes: list[int] = []
+        while isinstance(arr_t, c99_ast.Array):
+            dim_sizes.append(arr_t.size)
+            arr_t = arr_t.element_type
+        while isinstance(arr_t, c99_ast.Const):
+            arr_t = arr_t.referenced_type
+        elem_size = _sizeof(arr_t, self._types)
+
+        # Number of indices must match dimensionality. Partial
+        # subscripts (yielding sub-arrays) bail — they aren't
+        # IndexedLoad-shaped.
+        if len(indices_outer_to_inner) != len(dim_sizes):
+            return None
+
+        # Multi-dim (≥ 2 indices): only fire when ALL indices fold
+        # to compile-time constants. Otherwise bail to the regular
+        # Load lowering.
+        if len(dim_sizes) >= 2:
+            constant_indices: list[int] = []
+            for idx_exp in indices_outer_to_inner:
+                v = _const_int_or_none(idx_exp)
+                if v is None:
+                    return None
+                constant_indices.append(v)
+            # Compute flat byte index outermost-first.
+            flat_byte_idx = 0
+            for level, ci in enumerate(constant_indices):
+                stride = elem_size
+                for inner_d in dim_sizes[level + 1:]:
+                    stride *= inner_d
+                flat_byte_idx += ci * stride
+            if flat_byte_idx < 0 or flat_byte_idx >= total:
+                return None
+            dst = tac_ast.Var(
+                name=self.make_temporary_variable_name(exp.data_type),
+            )
+            instrs.append(tac_ast.IndexedLoad(
+                name=base_var.name,
+                index=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=flat_byte_idx),
+                ),
+                dst=dst,
+            ))
+            return dst
+
+        # Single-dim path with possibly-runtime index.
         # Compute the 1-byte index. The type checker widened idx to
         # Long; we evaluate at that width and Truncate.
-        idx_val = self.translate_exp(index, instrs)
+        idx_val = self.translate_exp(indices_outer_to_inner[0], instrs)
         byte_idx = tac_ast.Var(
             name=self.make_temporary_variable_name(c99_ast.UChar()),
         )
@@ -2736,7 +2824,7 @@ class Translator:
             name=self.make_temporary_variable_name(exp.data_type),
         )
         instrs.append(tac_ast.IndexedLoad(
-            name=inner.name, index=scaled_byte, dst=dst,
+            name=base_var.name, index=scaled_byte, dst=dst,
         ))
         return dst
 

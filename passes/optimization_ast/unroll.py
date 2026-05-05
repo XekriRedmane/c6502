@@ -10,14 +10,29 @@ Recognizer (canonical shape only — anything else raises
 UnrollError, since the user explicitly asked to unroll):
   init: `T i = <integer-constant>;` with T in
         {int, unsigned int, long, unsigned long,
-         long long, unsigned long long}
-  cond: `i <op> <integer-constant>` with op in {<, <=, >, >=}
+         long long, unsigned long long, char, signed char,
+         unsigned char}
+  cond: `i <op> <integer-bound>` with op in {<, <=, >, >=}
   post: `i++`, `i--`, `++i`, `--i`, `i += K`, or `i -= K`
-        (K an integer constant > 0)
+        (K an integer-bound > 0)
   body: no break/continue/goto/labeled-statement; no
         modification (assignment / inc / dec / address-of) of
         the induction variable; no inner declaration shadowing
         the induction variable.
+
+An "integer-bound" is either a literal integer Constant OR a
+constant-foldable subscript on a file-scope `static const` array
+of integers (single- or multi-dim), where every index is itself
+an integer-bound. This lets a loop's bound depend on a const
+lookup table whose key is a substituted induction variable from
+an enclosing unrolled loop:
+
+    static const uint8_t COUNTS[7] = {7, 1, 7, 1, 7, 1, 7};
+    #pragma c6502 loop unroll(enable)
+    for (uint8_t b = 0; b < 7; b++)
+        #pragma c6502 loop unroll(enable)
+        for (uint8_t i = 0; i < COUNTS[b]; i++)  // bound folds
+            ...
 
 Iteration count is capped at MAX_ITERATIONS.
 
@@ -62,22 +77,148 @@ _IV_TYPE_TO_CONST: dict[type, type] = {
 }
 
 
+# File-scope static const array values, keyed by source name.
+# Each value is a nested tuple of int leaves matching the array's
+# declared shape (zero-padded to the declared sizes). Populated by
+# `unroll_program` and consulted by `_const_int_value` for
+# Subscript folding. Save/restore at entry/exit so nested calls
+# (e.g. unit tests calling unroll_program inside another) don't
+# leak state.
+_CURRENT_CONST_ARRAYS: dict[str, "_ValueTree"] = {}
+
+
+# A const-array value tree: either an int (scalar leaf) or a tuple
+# of value trees (one level of array nesting). Padded to declared
+# size at every level.
+_ValueTree = "int | tuple"
+
+
 def unroll_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:
     """Walk every function definition; unroll every annotated for-
     loop in their bodies. Top-level declarations and forward
     function declarations pass through unchanged."""
-    new_decls: list[c99_ast.Type_declaration] = []
+    global _CURRENT_CONST_ARRAYS
+    saved = _CURRENT_CONST_ARRAYS
+    _CURRENT_CONST_ARRAYS = _build_const_array_map(prog)
+    try:
+        new_decls: list[c99_ast.Type_declaration] = []
+        for d in prog.declaration:
+            if (
+                isinstance(d, c99_ast.FunctionDecl)
+                and d.function_decl.body is not None
+            ):
+                new_decls.append(c99_ast.FunctionDecl(
+                    function_decl=_unroll_function(d.function_decl),
+                ))
+            else:
+                new_decls.append(d)
+        return c99_ast.Program(declaration=new_decls)
+    finally:
+        _CURRENT_CONST_ARRAYS = saved
+
+
+def _build_const_array_map(prog: c99_ast.Type_program) -> dict[str, _ValueTree]:
+    """Walk top-level VarDecls; for each file-scope `static`
+    array of const-qualified integer scalars with a fully-foldable
+    InitList initializer, store its value tree under the source
+    name. Multi-dim arrays produce nested tuples; missing trailing
+    items at every level pad to the declared size with zero. Any
+    decl whose init has a non-foldable item is skipped (unrolling
+    just won't fire on subscripts of it)."""
+    out: dict[str, _ValueTree] = {}
     for d in prog.declaration:
-        if (
-            isinstance(d, c99_ast.FunctionDecl)
-            and d.function_decl.body is not None
-        ):
-            new_decls.append(c99_ast.FunctionDecl(
-                function_decl=_unroll_function(d.function_decl),
-            ))
-        else:
-            new_decls.append(d)
-    return c99_ast.Program(declaration=new_decls)
+        if not isinstance(d, c99_ast.VarDecl):
+            continue
+        vd = d.var_decl
+        if not isinstance(vd.storage_class, c99_ast.Static):
+            continue
+        sizes = _const_array_sizes(vd.data_type)
+        if sizes is None:
+            continue
+        if vd.init is None:
+            continue
+        tree = _init_to_value_tree(vd.init, sizes)
+        if tree is not None:
+            out[vd.name] = tree
+    return out
+
+
+def _const_array_sizes(t: c99_ast.Type_data_type) -> list[int] | None:
+    """If `t` is a (possibly multi-dim) Array whose leaf element
+    type is `Const(<integer>)`, return the dimension sizes
+    [outer, ..., inner]. Otherwise None."""
+    sizes: list[int] = []
+    while isinstance(t, c99_ast.Array):
+        sizes.append(t.size)
+        t = t.element_type
+    if not sizes:
+        return None
+    if not isinstance(t, c99_ast.Const):
+        return None
+    leaf = t.referenced_type
+    if not isinstance(leaf, (
+        c99_ast.Int, c99_ast.UInt, c99_ast.Long, c99_ast.ULong,
+        c99_ast.LongLong, c99_ast.ULongLong,
+        c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+    )):
+        return None
+    return sizes
+
+
+def _init_to_value_tree(
+    init: c99_ast.Type_exp | None, sizes: list[int],
+) -> _ValueTree | None:
+    """Convert an init expression to a value tree of shape `sizes`.
+    Pads each level with zeros (or zero-trees) to the declared
+    size. Returns None if any item isn't a foldable integer
+    constant."""
+    if not sizes:
+        # Scalar leaf — must be an integer Constant. We deliberately
+        # don't recurse through `_const_int_value` here because that
+        # consults `_CURRENT_CONST_ARRAYS`, which we're still
+        # building. Subscripts in const-array initializers (rare —
+        # would need another const array's value as an init term)
+        # aren't folded.
+        return _scalar_const_int(init)
+    if init is None:
+        return _zero_tree(sizes)
+    if not isinstance(init, c99_ast.InitList):
+        return None
+    inner_sizes = sizes[1:]
+    items: list[_ValueTree] = []
+    for sub in init.items:
+        v = _init_to_value_tree(sub, inner_sizes)
+        if v is None:
+            return None
+        items.append(v)
+    pad = _zero_tree(inner_sizes)
+    while len(items) < sizes[0]:
+        items.append(pad)
+    return tuple(items)
+
+
+def _zero_tree(sizes: list[int]) -> _ValueTree:
+    if not sizes:
+        return 0
+    return tuple([_zero_tree(sizes[1:])] * sizes[0])
+
+
+def _scalar_const_int(exp: c99_ast.Type_exp | None) -> int | None:
+    """Same as `_const_int_value` for the scalar Constant case
+    only, without the Subscript recursion that would consult
+    `_CURRENT_CONST_ARRAYS`."""
+    if exp is None:
+        return None
+    while isinstance(exp, c99_ast.Cast):
+        exp = exp.exp
+    if isinstance(exp, c99_ast.Constant) and isinstance(
+        exp.const,
+        (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
+         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
+         c99_ast.ConstChar, c99_ast.ConstUChar),
+    ):
+        return exp.const.value
+    return None
 
 
 def _unroll_function(
@@ -431,7 +572,9 @@ def _is_var(exp, name: str) -> bool:
 
 def _const_int_value(exp) -> int | None:
     """Return the int value if `exp` is an integer Constant
-    (transparently unwrapping any leading Casts), else None."""
+    (unwrapping leading Casts), or a foldable Subscript on a
+    file-scope `static const` integer array (single- or multi-dim,
+    every index itself a foldable integer-bound). Otherwise None."""
     if exp is None:
         return None
     while isinstance(exp, c99_ast.Cast):
@@ -439,7 +582,41 @@ def _const_int_value(exp) -> int | None:
     if isinstance(exp, c99_ast.Constant) and isinstance(
         exp.const,
         (c99_ast.ConstInt, c99_ast.ConstLong, c99_ast.ConstLongLong,
-         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong),
+         c99_ast.ConstUInt, c99_ast.ConstULong, c99_ast.ConstULongLong,
+         c99_ast.ConstChar, c99_ast.ConstUChar),
     ):
         return exp.const.value
+    if isinstance(exp, c99_ast.Subscript):
+        return _fold_subscript(exp)
     return None
+
+
+def _fold_subscript(exp: c99_ast.Subscript) -> int | None:
+    """Fold a (possibly multi-dim) Subscript into an integer leaf
+    value when the base is a known `static const` array and every
+    index folds to an int. Returns None on any miss."""
+    indices: list[int] = []
+    cur: c99_ast.Type_exp = exp
+    while isinstance(cur, c99_ast.Subscript):
+        idx = _const_int_value(cur.index)
+        if idx is None:
+            return None
+        # Subscript walks inside-out (the OUTER subscript is the
+        # outermost expression node), so the LAST index in source
+        # order is collected first. Reversed below.
+        indices.append(idx)
+        cur = cur.array
+    while isinstance(cur, c99_ast.Cast):
+        cur = cur.exp
+    if not isinstance(cur, c99_ast.Var):
+        return None
+    if cur.name not in _CURRENT_CONST_ARRAYS:
+        return None
+    val: _ValueTree = _CURRENT_CONST_ARRAYS[cur.name]
+    for i in reversed(indices):  # outermost-first
+        if not isinstance(val, tuple):
+            return None
+        if not (0 <= i < len(val)):
+            return None
+        val = val[i]
+    return val if isinstance(val, int) else None

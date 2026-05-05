@@ -17,6 +17,31 @@ Pool selection follows the same rule as the TAC version:
     overhead; clobbered by any nested call we don't make).
 Spills land in `Coloring.spilled` and `replace_pseudoregisters`
 falls back to Frame allocation for them.
+
+# HwReg coloring (X / Y)
+
+A subset of nodes can be pinned into the 6502's X or Y index
+register instead of a ZP byte slot. Eligibility is precomputed by
+`hwreg_eligibility.scan_function`: every def/use must be
+representable as an LDX/LDY/STX/STY/INX/DEX/CPX/CPY-style op.
+The pre-pass then tries to assign X or Y to eligible nodes
+carrying a `hint` (typically a Pseudo that feeds the
+`Mov(P, A); Mov(A, X|Y)` index-setup chain before each
+IndexedData access).
+
+Hard constraints on a HwReg-colored node:
+  * Width 1, offset 0 (single-byte SSA-renamed name).
+  * `lives_across_call == False` — helpers clobber A, X, Y.
+  * No interference with another node already pinned to the same
+    HwReg.
+
+The X and Y registers are independent resources: an X-pinned node
+and a Y-pinned node may interfere freely. Multiple non-interfering
+nodes can share the same HwReg color.
+
+HwReg colors live in `Coloring.hwreg_assignments` (a parallel dict
+mapping name → "X" | "Y"); the existing ZP `assignments` and
+`spilled` paths are unchanged for non-HwReg names.
 """
 
 from __future__ import annotations
@@ -35,6 +60,7 @@ from passes.optimization_asm.cfg import (
     dominator_tree_children,
     immediate_dominators,
 )
+from passes.optimization_asm.hwreg_eligibility import HwRegEligibility
 from passes.optimization_asm.liveness import _defs_in
 
 
@@ -44,10 +70,12 @@ def color_graph(
     *,
     pool: Pool | None = None,
     blocked_addrs: set[int] | None = None,
+    hwreg_eligibility: HwRegEligibility | None = None,
 ) -> Coloring:
     """Color `graph`'s nodes onto ZP byte addresses drawn from
-    `pool`. Returns a `Coloring` with every graph node either in
-    `assignments` or in `spilled`.
+    `pool`, optionally pinning HwReg-eligible nodes into X / Y first.
+    Returns a `Coloring` with every graph node either in
+    `assignments`, in `hwreg_assignments`, or in `spilled`.
 
     `blocked_addrs` is an optional set of ZP byte addresses that
     must NOT be assigned to any node. Used by the ZP-ABI path to
@@ -58,14 +86,29 @@ def color_graph(
     blocks the addresses for the entire function rather than only
     while params are live; the simpler approach is correct and
     the few wasted slots are typically negligible compared to
-    the savings of frame elimination."""
+    the savings of frame elimination.
+
+    `hwreg_eligibility`, when supplied, drives the HwReg pre-pass:
+    nodes in `hints_x`/`hints_y` are tried first against the X / Y
+    register, succeeding when graph constraints allow. Eligibility
+    is graph-rep-level (the caller is responsible for projecting
+    pre-coalescing names through any rep_map before passing in)."""
     if pool is None:
         pool = Pool()
     blocked_addrs = blocked_addrs or set()
     peo = _perfect_elimination_order(fn, graph)
     assignments: dict[str, int] = {}
+    hwreg_assignments: dict[str, str] = {}
     spilled: set[str] = set()
+
+    if hwreg_eligibility is not None:
+        _try_hwreg_assign(
+            graph, hwreg_eligibility, hwreg_assignments,
+        )
+
     for name in peo:
+        if name in hwreg_assignments:
+            continue
         node = graph.nodes[name]
         blocked = _blocked_bytes(name, graph, assignments) | blocked_addrs
         if node.lives_across_call:
@@ -78,7 +121,90 @@ def color_graph(
             spilled.add(name)
         else:
             assignments[name] = base
-    return Coloring(assignments=assignments, spilled=spilled, pool=pool)
+    return Coloring(
+        assignments=assignments,
+        spilled=spilled,
+        pool=pool,
+        hwreg_assignments=hwreg_assignments,
+    )
+
+
+def _try_hwreg_assign(
+    graph: InterferenceGraph,
+    eligibility: HwRegEligibility,
+    hwreg_assignments: dict[str, str],
+) -> None:
+    """Greedy pre-coloring: walk hinted candidates, assigning each
+    to its preferred HwReg (X for hints_x, Y for hints_y). When the
+    preferred reg is blocked by an already-assigned interference
+    neighbor, fall back to the OTHER reg before giving up — multiple
+    candidates with overlapping live ranges and the same X-hint
+    (typical in unrolled loops where every iteration's index value
+    feeds an IndexedData chain) can then partition naturally between
+    X and Y, saving the index-setup chain on each.
+
+    Mutates `hwreg_assignments` in place.
+
+    Assignment order is hints_x first (X-preferred), then hints_y
+    (Y-preferred). Within each bucket we iterate in sorted name order
+    for determinism. A name in BOTH hints_x and hints_y is processed
+    in the X bucket (X is the tac_to_asm target).
+
+    Note: every assignment is at most one HwReg color per name. A
+    name's preferred reg is decided once, with a single fallback to
+    the other reg, and that decision is final. (No re-shuffling once
+    assigned — the assigned name's color satisfies all its
+    constraints by construction.)"""
+
+    def _can_pin(name: str, reg: str) -> bool:
+        node = graph.nodes.get(name)
+        if node is None:
+            return False
+        if node.width != 1:
+            return False
+        if node.lives_across_call:
+            return False
+        if name in hwreg_assignments:
+            return False
+        for nbr in graph.neighbors(name):
+            if hwreg_assignments.get(nbr) == reg:
+                return False
+        return True
+
+    def _try_pin_with_fallback(name: str, preferred: str) -> None:
+        other = "Y" if preferred == "X" else "X"
+        if _can_pin(name, preferred):
+            hwreg_assignments[name] = preferred
+            return
+        if _can_pin(name, other):
+            hwreg_assignments[name] = other
+
+    # Priority: by use count (descending), then by name (alphabetical
+    # — for determinism). Highest use-count wins HwReg first, since
+    # pinning a many-use name eliminates many setup chains; pinning
+    # a few-use name eliminates few. The classic example is a
+    # column-iv used as the index for an entire run of indexed
+    # stores: lots of references, lots of savings if pinned.
+    def _priority(name: str) -> tuple:
+        return (-eligibility.use_count.get(name, 0), name)
+
+    # hints_x: prefer X, fall back to Y. Names already pinned (by
+    # earlier iterations) skip cleanly.
+    for name in sorted(eligibility.hints_x, key=_priority):
+        if name not in eligibility.eligible:
+            continue
+        if name in hwreg_assignments:
+            continue
+        _try_pin_with_fallback(name, preferred="X")
+
+    # hints_y: prefer Y, fall back to X. Skip names already
+    # assigned (e.g. one in BOTH hint sets that already got X).
+    for name in sorted(eligibility.hints_y, key=_priority):
+        if name not in eligibility.eligible:
+            continue
+        if name in hwreg_assignments:
+            continue
+        _try_pin_with_fallback(name, preferred="Y")
 
 
 def _perfect_elimination_order(

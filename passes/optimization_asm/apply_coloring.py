@@ -1,12 +1,13 @@
 """Apply a `Coloring` to an asm-SSA function: substitute every
 `Pseudo(name, offset)` whose name is in `coloring.assignments` with
-the corresponding `ZP(address, offset)` operand.
+the corresponding `ZP(address, offset)` operand, OR substitute names
+in `coloring.hwreg_assignments` with `Reg(X)` / `Reg(Y)`.
 
 Runs between `byte_dce` and `from_ssa`. By the time `from_ssa`
-sees the function, colored values have been lowered to ZP, so the
-parallel-copy ordering can spot cross-Mov cycles at the PHYSICAL
-slot level (which is the actual hazard) instead of just the SSA
-name level. Cycles like:
+sees the function, colored values have been lowered to ZP / HwReg,
+so the parallel-copy ordering can spot cross-Mov cycles at the
+PHYSICAL slot level (which is the actual hazard) instead of just
+the SSA name level. Cycles like:
 
     Phi(X, [(P, Y)])  ; X := Y
     Phi(Y, [(P, X)])  ; Y := X
@@ -17,7 +18,26 @@ reads it). With pre-applied coloring, those Movs become
 `Mov(ZP($B), ZP($A))` and `Mov(ZP($A), ZP($B))`, and the cycle
 detector sees the `ZP($A)` repetition.
 
-Pseudos NOT in the coloring (params, address-taken, statics,
+# HwReg substitution
+
+When a Pseudo is HwReg-colored to X / Y, every reference to it
+becomes `Reg(X)` / `Reg(Y)`. The substitution alone produces
+correct but suboptimal code: an IndexedData index-setup chain
+
+    Mov(P, Reg(A)); Mov(Reg(A), Reg(X)); ... IndexedData(..., X)
+
+with P colored to Y becomes
+
+    Mov(Reg(Y), Reg(A)); Mov(Reg(A), Reg(X)); ... IndexedData(..., X)
+
+— TYA + TAX before each LDA name,X. The two transfers are
+redundant since X already gets Y's value and we could read
+IndexedData with `index=Y` directly. So a follow-up peephole
+recognizes the redundant transfer chain and drops it, rewriting
+the following IndexedData operands' index from X to Y (or Y to X
+in the symmetric case). See `_rewrite_redundant_transfers`.
+
+Pseudos NOT in either coloring (params, address-taken, statics,
 spilled) pass through unchanged — they're handled later by
 `replace_pseudoregisters_bare_exit`.
 """
@@ -30,13 +50,26 @@ from passes.optimization.register_allocation import Coloring
 def apply_coloring(
     fn: asm_ast.Function, coloring: Coloring,
 ) -> asm_ast.Function:
-    """Return `fn` with every colored Pseudo lowered to ZP."""
-    if not coloring.assignments:
+    """Return `fn` with every colored Pseudo lowered to ZP / Reg."""
+    if not coloring.assignments and not coloring.hwreg_assignments:
         return fn
+    # Phase 1: substitute Pseudo references.
     new_instrs = [
         _apply_to_instruction(instr, coloring)
         for instr in fn.instructions
     ]
+    # Phase 2: drop the redundant TR'A + TAR transfer chain that
+    # arises when a HwReg-colored Pseudo feeds an IndexedData index
+    # setup. Rewrites the following IndexedData operands' index to
+    # use the source HwReg directly. Iterated to fixpoint because a
+    # cross-transfer's rewritten run may include adjacent self-
+    # transfer chains that the next pass picks up.
+    if coloring.hwreg_assignments:
+        while True:
+            prev_len = len(new_instrs)
+            new_instrs = _rewrite_redundant_transfers(new_instrs)
+            if len(new_instrs) == prev_len:
+                break
     return asm_ast.Function(
         name=fn.name,
         is_global=fn.is_global,
@@ -48,10 +81,29 @@ def apply_coloring(
 def _apply_to_op(
     op: asm_ast.Type_operand, coloring: Coloring,
 ) -> asm_ast.Type_operand:
-    if isinstance(op, asm_ast.Pseudo) and op.name in coloring.assignments:
-        addr = coloring.assignments[op.name] + op.offset
-        return asm_ast.ZP(address=addr, offset=0)
+    if isinstance(op, asm_ast.Pseudo):
+        if op.name in coloring.hwreg_assignments:
+            # HwReg coloring is single-byte only, so offset must be 0.
+            # (Eligibility scan + regalloc together guarantee this; if
+            # offset != 0 sneaks through, treat it as a regalloc bug
+            # rather than silently masking with `& 0`.)
+            assert op.offset == 0, (
+                f"HwReg-colored Pseudo {op.name} has nonzero offset "
+                f"{op.offset}; eligibility scan should have rejected it"
+            )
+            return _hwreg_letter_to_op(coloring.hwreg_assignments[op.name])
+        if op.name in coloring.assignments:
+            addr = coloring.assignments[op.name] + op.offset
+            return asm_ast.ZP(address=addr, offset=0)
     return op
+
+
+def _hwreg_letter_to_op(letter: str) -> asm_ast.Reg:
+    if letter == "X":
+        return asm_ast.Reg(reg=asm_ast.X())
+    if letter == "Y":
+        return asm_ast.Reg(reg=asm_ast.Y())
+    raise ValueError(f"unknown HwReg letter: {letter!r}")
 
 
 def _apply_to_instruction(
@@ -113,3 +165,236 @@ def _apply_to_instruction(
             )
         case _:
             return instr
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: redundant transfer-chain elimination
+# ---------------------------------------------------------------------------
+
+
+def _rewrite_redundant_transfers(
+    instrs: list[asm_ast.Type_instruction],
+) -> list[asm_ast.Type_instruction]:
+    """Eliminate redundant `Mov(Reg(R'), Reg(A)); Mov(Reg(A),
+    Reg(R))` chains that arise after HwReg-coloring substitutes a
+    Pseudo→Reg(R') in an IndexedData index-setup chain.
+
+    Two cases:
+
+    **Self-transfer** (R == R'). The chain is `TR'A; TAR'` —
+    transfers R' through A and back to R'. Pure no-op for R'  (its
+    value is unchanged); only A is clobbered. By construction
+    (every emitter of this shape is the IndexedData index setup,
+    where the next instruction redefines A via an LDA), dropping
+    is unconditionally sound. Drop both Movs; emit nothing.
+
+    **Cross-transfer** (R != R'). The chain transfers R' to R;
+    the value the user wanted in R is already in R'. If the chain
+    is followed by IndexedData accesses with `index=R` and no
+    intervening write to R / R' / A or control-flow boundary, we
+    can rewrite those accesses to `index=R'` and drop the chain.
+    If no IndexedData rewrites would fire (because the chain is
+    setting up R for some non-IndexedData use), leave the chain
+    in place — dropping would leave R undefined for that use.
+    """
+    out: list[asm_ast.Type_instruction] = []
+    i = 0
+    n = len(instrs)
+    while i < n:
+        chain = _match_transfer_chain(instrs, i)
+        if chain is None:
+            out.append(instrs[i])
+            i += 1
+            continue
+        src_reg, dst_reg, chain_len = chain
+        if src_reg == dst_reg:
+            # Self-transfer: drop the chain unconditionally.
+            i += chain_len
+            continue
+        # Cross-transfer: walk forward from i+chain_len, rewriting
+        # IndexedData operands until the run boundary.
+        j = i + chain_len
+        rewritten_run: list[asm_ast.Type_instruction] = []
+        any_rewritten = False
+        while j < n:
+            instr = instrs[j]
+            new_instr = _rewrite_indexed_data_index_in_instr(
+                instr, from_letter=dst_reg, to_letter=src_reg,
+            )
+            if new_instr is not instr:
+                any_rewritten = True
+            should_stop = _instr_breaks_transfer_chain(
+                new_instr, dst_reg=dst_reg, src_reg=src_reg,
+            )
+            rewritten_run.append(new_instr)
+            j += 1
+            if should_stop:
+                break
+        if any_rewritten:
+            # Drop the chain, splice the rewritten run.
+            out.extend(rewritten_run)
+            i = j
+        else:
+            out.append(instrs[i])
+            i += 1
+    return out
+
+
+def _match_transfer_chain(
+    instrs: list[asm_ast.Type_instruction], start: int,
+) -> tuple[str, str, int] | None:
+    """Match a 2-instruction transfer chain `Mov(Reg(R'), A); Mov(A,
+    Reg(R))` at `instrs[start]`. Returns (src_letter, dst_letter, 2)
+    on success, or None on failure. R and R' are HwRegs (X or Y);
+    the same-letter case (R == R') represents a self-transfer
+    through A — degenerate but still detected, and the caller
+    decides what to do with it."""
+    if start + 2 > len(instrs):
+        return None
+    i0 = instrs[start]
+    i1 = instrs[start + 1]
+    if not (isinstance(i0, asm_ast.Mov) and isinstance(i1, asm_ast.Mov)):
+        return None
+    src = i0.src
+    dst1 = i0.dst
+    src1 = i1.src
+    dst2 = i1.dst
+    # i0: Mov(Reg(R'), Reg(A))
+    if not (
+        isinstance(src, asm_ast.Reg)
+        and isinstance(src.reg, (asm_ast.X, asm_ast.Y))
+        and isinstance(dst1, asm_ast.Reg)
+        and isinstance(dst1.reg, asm_ast.A)
+    ):
+        return None
+    # i1: Mov(Reg(A), Reg(R))
+    if not (
+        isinstance(src1, asm_ast.Reg)
+        and isinstance(src1.reg, asm_ast.A)
+        and isinstance(dst2, asm_ast.Reg)
+        and isinstance(dst2.reg, (asm_ast.X, asm_ast.Y))
+    ):
+        return None
+    src_letter = "X" if isinstance(src.reg, asm_ast.X) else "Y"
+    dst_letter = "X" if isinstance(dst2.reg, asm_ast.X) else "Y"
+    return (src_letter, dst_letter, 2)
+
+
+def _rewrite_indexed_data_index_in_instr(
+    instr: asm_ast.Type_instruction,
+    *, from_letter: str, to_letter: str,
+) -> asm_ast.Type_instruction:
+    """If `instr` is a Mov whose src or dst is an IndexedData with
+    index matching `from_letter`, return a copy with the index
+    rewritten to `to_letter`. Otherwise return `instr` unchanged
+    (same identity if no rewrite — caller's heuristic uses
+    `is`-comparison)."""
+    if not isinstance(instr, asm_ast.Mov):
+        return instr
+    new_src = _rewrite_indexed_data_index_in_op(
+        instr.src, from_letter=from_letter, to_letter=to_letter,
+    )
+    new_dst = _rewrite_indexed_data_index_in_op(
+        instr.dst, from_letter=from_letter, to_letter=to_letter,
+    )
+    if new_src is instr.src and new_dst is instr.dst:
+        return instr
+    return asm_ast.Mov(src=new_src, dst=new_dst)
+
+
+def _rewrite_indexed_data_index_in_op(
+    op: asm_ast.Type_operand, *, from_letter: str, to_letter: str,
+) -> asm_ast.Type_operand:
+    if not isinstance(op, asm_ast.IndexedData):
+        return op
+    cur_letter = "X" if isinstance(op.index, asm_ast.X) else "Y"
+    if cur_letter != from_letter:
+        return op
+    new_reg = (
+        asm_ast.X() if to_letter == "X" else asm_ast.Y()
+    )
+    return asm_ast.IndexedData(
+        name=op.name, offset=op.offset, index=new_reg,
+    )
+
+
+def _instr_breaks_transfer_chain(
+    instr: asm_ast.Type_instruction,
+    *, dst_reg: str, src_reg: str,
+) -> bool:
+    """True iff `instr` ends the rewriteable run after the transfer
+    chain. The run continues only as long as:
+      * `instr` doesn't write to Reg(dst_reg) (would re-define the
+        register we're rewriting), to Reg(src_reg) (would change the
+        source value), or to Reg(A).
+      * `instr` isn't a Call, Label, Branch, or Jump (control flow
+        boundary).
+
+    Note: writes to Reg(A) are common (every IndexedData read goes
+    through A), so the chain typically stops after one or a few
+    rewritten Movs in practice. That's correct — once A is
+    clobbered, we can't be sure what comes next. Index-register
+    rewrites are still sound up to and including the A-clobbering
+    instruction (the IndexedData read itself uses A as destination
+    but reads only the index register, which we haven't touched
+    yet at that point). So we treat "ending after this Mov" rather
+    than "ending before this Mov"."""
+    # Control-flow boundaries.
+    if isinstance(instr, (asm_ast.Call, asm_ast.Label, asm_ast.Jump,
+                          asm_ast.Branch, asm_ast.Return, asm_ast.Ret,
+                          asm_ast.FunctionPrologue,
+                          asm_ast.AllocateStack)):
+        return True
+    # Writes to dst_reg / src_reg via Mov / Inc / Dec / etc.
+    dst_op = _instr_destination(instr)
+    if dst_op is not None and isinstance(dst_op, asm_ast.Reg):
+        cur_letter = _reg_letter(dst_op)
+        if cur_letter in (dst_reg, src_reg):
+            return True
+    return False
+
+
+def _instr_destination(
+    instr: asm_ast.Type_instruction,
+) -> asm_ast.Type_operand | None:
+    """The single-destination operand of `instr`, if any. (Many
+    instructions write A; this function returns the explicit dst
+    field. Compare / Push / ClearCarry / SetCarry have no dst.)"""
+    match instr:
+        case asm_ast.Mov(dst=dst):
+            return dst
+        case asm_ast.Add(dst=dst) | asm_ast.Sub(dst=dst):
+            return dst
+        case asm_ast.And(dst=dst) | asm_ast.Or(dst=dst):
+            return dst
+        case asm_ast.Xor(dst=dst):
+            return dst
+        case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
+            return dst
+        case (
+            asm_ast.ArithmeticShiftLeft(dst=dst)
+            | asm_ast.LogicalShiftRight(dst=dst)
+            | asm_ast.RotateLeft(dst=dst)
+            | asm_ast.RotateRight(dst=dst)
+        ):
+            return dst
+        case asm_ast.Pop(dst=dst):
+            return dst
+        case asm_ast.LoadAddress(dst=dst):
+            return dst
+    return None
+
+
+def _reg_letter(op: asm_ast.Type_operand) -> str:
+    """Return 'A' / 'X' / 'Y' if `op` is a Reg, else ''. Used by the
+    chain-breaking check; non-Reg destinations don't affect index
+    register state."""
+    if not isinstance(op, asm_ast.Reg):
+        return ""
+    if isinstance(op.reg, asm_ast.A):
+        return "A"
+    if isinstance(op.reg, asm_ast.X):
+        return "X"
+    if isinstance(op.reg, asm_ast.Y):
+        return "Y"
+    return ""

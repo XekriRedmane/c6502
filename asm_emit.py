@@ -395,6 +395,12 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             return [_instr_line("TAX")]
         case asm_ast.Reg(reg=asm_ast.A()), asm_ast.Reg(reg=asm_ast.Y()):
             return [_instr_line("TAY")]
+        case asm_ast.Reg(reg=asm_ast.X()), asm_ast.Reg(reg=asm_ast.Y()):
+            # No direct TXY — go through A.
+            return [_instr_line("TXA"), _instr_line("TAY")]
+        case asm_ast.Reg(reg=asm_ast.Y()), asm_ast.Reg(reg=asm_ast.X()):
+            # No direct TYX — go through A.
+            return [_instr_line("TYA"), _instr_line("TAX")]
     # ImmLabel paths. Same shape as Imm — load to A as immediate,
     # then optionally store. Restricted to A-as-destination since
     # only `LDA #<name` / `LDA #>name` are used by LoadAddress
@@ -446,6 +452,29 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             return [_instr_line("LDX", _abs_addr(src))]
         if isinstance(dst.reg, asm_ast.Y):
             return [_instr_line("LDY", _abs_addr(src))]
+    # Reg(X) / Reg(Y) → Data / ZP. STX / STY have zp / abs forms
+    # natively (no indirect-Y), so we can store colored HwRegs back
+    # to ZP / static-storage directly. Used by the HwReg-coloring
+    # pipeline for SSA destruction copies into static-storage names
+    # and for any explicit `Mov(P, ZP)` where P is HwReg-colored.
+    if isinstance(src, asm_ast.Reg) and _is_data_or_zp(dst):
+        if isinstance(src.reg, asm_ast.X):
+            return [_instr_line("STX", _abs_addr(dst))]
+        if isinstance(src.reg, asm_ast.Y):
+            return [_instr_line("STY", _abs_addr(dst))]
+    # Reg(X) / Reg(Y) → Stack / Frame / Indirect. STX / STY don't
+    # have indirect-Y mode; route through A. (Y is also the
+    # addressing-mode index register for indirect-Y, so a
+    # `Mov(Reg(Y), Frame)` would need to clobber Y to set up the
+    # LDY #off — we avoid this in eligibility for now.)
+    if (
+        isinstance(src, asm_ast.Reg)
+        and isinstance(src.reg, (asm_ast.X, asm_ast.Y))
+        and _is_memory_operand(dst)
+    ):
+        if isinstance(src.reg, asm_ast.X):
+            return [_instr_line("TXA")] + _emit_memop_store(dst)
+        return [_instr_line("TYA")] + _emit_memop_store(dst)
     if _is_reg_a(src) and _is_memory_operand(dst):
         return _emit_memop_store(dst)
     if _is_memory_operand(src) and _is_memory_operand(dst):

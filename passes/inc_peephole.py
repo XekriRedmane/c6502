@@ -221,18 +221,28 @@ def _try_match_continuation_byte(
 
 
 def _is_inc_eligible_operand(op: asm_ast.Type_operand) -> bool:
-    """True iff `op` is a memory operand INC can address directly:
-    `Data(name, k)` (absolute) or `ZP(addr, 0)` (zero-page).
-    Frame / Stack / Indirect use indirect-Y, which INC doesn't
-    support. Pseudo isn't here because the peephole runs after
-    `replace_pseudoregisters`."""
-    return isinstance(op, (asm_ast.Data, asm_ast.ZP))
+    """True iff `op` is a memory operand INC / INX / INY can address
+    directly: `Data(name, k)` (absolute), `ZP(addr, 0)` (zero-page),
+    or `Reg(X)` / `Reg(Y)` (the index registers themselves). The
+    HwReg case enables `Inc(Reg(Y)) → INY` after HwReg coloring
+    substitutes a Pseudo y-counter into Reg(Y); the same single-
+    byte ADC chain that operates on a ZP byte now operates on an
+    HwReg, and the peephole collapses it to INY/INX. Frame / Stack
+    / Indirect use indirect-Y, which INC doesn't support. Pseudo
+    isn't here because the peephole runs after `replace_pseudo
+    registers` (or, for HwReg-pinned values, after `apply_coloring`
+    has rewritten Pseudo → Reg)."""
+    if isinstance(op, (asm_ast.Data, asm_ast.ZP)):
+        return True
+    if isinstance(op, asm_ast.Reg):
+        return isinstance(op.reg, (asm_ast.X, asm_ast.Y))
+    return False
 
 
 def _operands_equal(
     a: asm_ast.Type_operand, b: asm_ast.Type_operand,
 ) -> bool:
-    """True iff `a` and `b` denote the same memory byte."""
+    """True iff `a` and `b` denote the same byte / register."""
     if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
     if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
@@ -240,6 +250,8 @@ def _operands_equal(
             a.address == b.address
             and a.offset == b.offset
         )
+    if isinstance(a, asm_ast.Reg) and isinstance(b, asm_ast.Reg):
+        return type(a.reg) is type(b.reg)
     return False
 
 

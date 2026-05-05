@@ -47,6 +47,10 @@ from passes.optimization_asm.coalescing import coalesce_moves
 from passes.optimization_asm.const_static_fold import fold_const_statics
 from passes.optimization_asm.dead_static import apply_dead_static_elimination
 from passes.optimization_asm.copy_propagation import copy_propagate
+from passes.optimization_asm.hwreg_eligibility import (
+    HwRegEligibility,
+    scan_function as scan_hwreg_eligibility,
+)
 from passes.optimization_asm.interference import build_interference
 from passes.optimization_asm.liveness import compute_liveness
 from passes.optimization_asm.regalloc import color_graph
@@ -196,14 +200,30 @@ def _optimize_function(
     # become self-Movs that asm_emit's self-Mov peephole drops —
     # eliminating the SSA-Phi-induced temp routing.
     coalesce_result = coalesce_moves(fn, graph)
-    coloring = color_graph(fn, graph, blocked_addrs=blocked_addrs)
+    # Step 7b: HwReg-pinning eligibility. Scan the function for
+    # Pseudos that meet the per-instruction shape constraints
+    # (eligible to live in X / Y), with hint sets for names that
+    # currently feed an `Mov(P, A); Mov(A, X|Y)` index-setup chain
+    # — those are the candidates with the largest payoff. We scan
+    # the IR (pre-coalescing names), then project to rep level
+    # using the coalescing result.
+    raw_eligibility = scan_hwreg_eligibility(fn)
+    rep_eligibility = _project_eligibility(
+        raw_eligibility, coalesce_result, all_names=_all_pseudo_names(fn),
+    )
+    coloring = color_graph(
+        fn, graph, blocked_addrs=blocked_addrs,
+        hwreg_eligibility=rep_eligibility,
+    )
     # Project coloring through the coalescing result: every name
     # that was merged into a representative inherits the rep's
     # color. apply_coloring keys on names, so it needs the merged
-    # names back in the assignments dict.
+    # names back in the assignments / hwreg_assignments dict.
     for name, _rep in coalesce_result.representative.items():
         rep = coalesce_result.resolve(name)
-        if rep in coloring.assignments:
+        if rep in coloring.hwreg_assignments:
+            coloring.hwreg_assignments[name] = coloring.hwreg_assignments[rep]
+        elif rep in coloring.assignments:
             coloring.assignments[name] = coloring.assignments[rep]
         elif rep in coloring.spilled:
             coloring.spilled.add(name)
@@ -218,3 +238,99 @@ def _optimize_function(
     fn = apply_coloring(fn, coloring)
     fn = from_ssa(fn)
     return fn, coloring
+
+
+def _all_pseudo_names(fn: asm_ast.Function) -> set[str]:
+    """Every Pseudo name appearing anywhere in `fn.instructions`.
+    Used to enumerate names for the eligibility projection."""
+    out: set[str] = set()
+    for instr in fn.instructions:
+        for op in _all_operands_in(instr):
+            if isinstance(op, asm_ast.Pseudo):
+                out.add(op.name)
+    return out
+
+
+def _all_operands_in(
+    instr: asm_ast.Type_instruction,
+):
+    """Yield every operand appearing in `instr`. Mirrors the helpers
+    in `interference._all_pseudos_in` and `liveness._defs_in`/
+    `_uses_in` but yields all operands (not just Pseudos), so callers
+    can filter."""
+    match instr:
+        case asm_ast.Mov(src=src, dst=dst):
+            yield src; yield dst
+        case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d):
+            yield s; yield d
+        case asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d):
+            yield s; yield d
+        case asm_ast.Xor(src1=s1, src2=s2, dst=d):
+            yield s1; yield s2; yield d
+        case asm_ast.Inc(dst=d) | asm_ast.Dec(dst=d):
+            yield d
+        case (
+            asm_ast.ArithmeticShiftLeft(dst=d)
+            | asm_ast.LogicalShiftRight(dst=d)
+            | asm_ast.RotateLeft(dst=d)
+            | asm_ast.RotateRight(dst=d)
+        ):
+            yield d
+        case asm_ast.Push(src=s):
+            yield s
+        case asm_ast.Pop(dst=d):
+            yield d
+        case asm_ast.Compare(left=l, right=r):
+            yield l; yield r
+        case asm_ast.LoadAddress(src=s, dst=d):
+            yield s; yield d
+        case asm_ast.Phi(dst=d, args=args):
+            yield d
+            for a in args:
+                yield a.source
+
+
+def _project_eligibility(
+    raw: HwRegEligibility,
+    coalesce_result,
+    *, all_names: set[str],
+) -> HwRegEligibility:
+    """Project per-Pseudo eligibility through the coalescing result.
+
+    A coalesced rep is `eligible` iff EVERY member that maps to it
+    is in `raw.eligible`. (Conservative: a single ineligible member
+    taints the rep.) Hints transfer from any member: the rep is in
+    `hints_x` iff any member is, and similarly for hints_y. Hints
+    are restricted to the eligible set after projection.
+
+    Names in `all_names` that aren't in `coalesce_result.
+    representative` are singletons — they map to themselves and
+    project trivially."""
+    # Group names by rep.
+    members_by_rep: dict[str, set[str]] = {}
+    for name in all_names:
+        rep = coalesce_result.resolve(name)
+        members_by_rep.setdefault(rep, set()).add(name)
+    rep_eligible: set[str] = set()
+    rep_hints_x: set[str] = set()
+    rep_hints_y: set[str] = set()
+    rep_use_count: dict[str, int] = {}
+    for rep, members in members_by_rep.items():
+        if all(m in raw.eligible for m in members):
+            rep_eligible.add(rep)
+        if any(m in raw.hints_x for m in members):
+            rep_hints_x.add(rep)
+        if any(m in raw.hints_y for m in members):
+            rep_hints_y.add(rep)
+        # Use count is the sum across all merged members.
+        rep_use_count[rep] = sum(
+            raw.use_count.get(m, 0) for m in members
+        )
+    rep_hints_x &= rep_eligible
+    rep_hints_y &= rep_eligible
+    return HwRegEligibility(
+        eligible=rep_eligible,
+        hints_x=rep_hints_x,
+        hints_y=rep_hints_y,
+        use_count=rep_use_count,
+    )

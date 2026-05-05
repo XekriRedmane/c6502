@@ -93,12 +93,8 @@ class TestEmitMov(unittest.TestCase):
 
     def test_unsupported_mov_combinations_raise(self):
         unsupported = [
-            # No 6502 instruction for X<->Y direct transfer.
-            asm_ast.Mov(src=_reg(_X), dst=_reg(_Y)),
-            asm_ast.Mov(src=_reg(_Y), dst=_reg(_X)),
-            # X/Y <-> Stack not handled (would clobber A); codegen must go
-            # via A explicitly.
-            asm_ast.Mov(src=_reg(_X), dst=asm_ast.Stack(offset=2)),
+            # Stack/Frame → Reg(X) (would need LDX through indirect-Y,
+            # which the 6502 doesn't have). Codegen routes via A.
             asm_ast.Mov(src=asm_ast.Stack(offset=2), dst=_reg(_X)),
             # Imm cannot be a destination.
             asm_ast.Mov(src=_reg(_A), dst=asm_ast.Imm(value=0)),
@@ -107,6 +103,26 @@ class TestEmitMov(unittest.TestCase):
             with self.subTest(instr=instr):
                 with self.assertRaises(ValueError):
                     emit_instruction(instr)
+
+    def test_x_y_cross_transfers_via_a(self):
+        # No direct TXY/TYX opcode — emit goes through A.
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(src=_reg(_X), dst=_reg(_Y))),
+            ["   TXA", "   TAY"],
+        )
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(src=_reg(_Y), dst=_reg(_X))),
+            ["   TYA", "   TAX"],
+        )
+
+    def test_x_y_to_stack_via_a(self):
+        # No STX/STY for indirect-Y addressing — emit routes via A.
+        self.assertEqual(
+            emit_instruction(asm_ast.Mov(
+                src=_reg(_X), dst=asm_ast.Stack(offset=2),
+            )),
+            ["   TXA", "   LDY   #$02", "   STA   (SSP),Y"],
+        )
 
     def test_self_mov_drops(self):
         # Mov(src, dst) where src == dst is a no-op (writes the same

@@ -51,6 +51,8 @@ from pretty import pretty
 from passes.asm_to_asm2 import translate_program as lower_to_asm2
 from passes.direct_index_load import apply_direct_index_load
 from passes.inc_peephole import apply_inc_peephole
+from passes.dec_peephole import apply_dec_peephole
+from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.redundant_load import apply_redundant_load_elimination
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
@@ -112,18 +114,23 @@ _PEEPHOLE_FIXEDPOINT_CAP = 16
 
 
 def _peephole_fixedpoint(prog):
-    """Run apply_inc_peephole → apply_direct_index_load →
-    apply_redundant_load_elimination in sequence, repeating until
-    a full sweep produces no further change. Each pass can enable
-    the next: `inc_peephole` may shorten chains that `direct_index_
-    load` then collapses; `direct_index_load`'s rewrite of `LDA M;
-    TAX` to `LDX M` exposes redundant `LDX M` loads downstream;
-    `redundant_load`'s deletions can leave new `LDA; TAX` pairs
-    adjacent. Order: inc → direct → redundant matches the natural
-    enabling chain."""
+    """Run apply_inc_peephole → apply_dec_peephole → apply_direct_
+    index_load → apply_redundant_load_elimination in sequence,
+    repeating until a full sweep produces no further change. Each
+    pass can enable the next: `inc_peephole` / `dec_peephole` may
+    shorten chains that `direct_index_load` then collapses;
+    `direct_index_load`'s rewrite of `LDA M; TAX` to `LDX M`
+    exposes redundant `LDX M` loads downstream; `redundant_load`'s
+    deletions can leave new `LDA; TAX` pairs adjacent. Order:
+    inc/dec → direct → redundant matches the natural enabling
+    chain."""
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
         new_prog = apply_redundant_load_elimination(
-            apply_direct_index_load(apply_inc_peephole(prog)),
+            apply_direct_index_load(
+                apply_sub1_test_zero_peephole(
+                    apply_dec_peephole(apply_inc_peephole(prog)),
+                ),
+            ),
         )
         if new_prog == prog:
             return new_prog

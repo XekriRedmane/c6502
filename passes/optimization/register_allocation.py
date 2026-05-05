@@ -31,10 +31,25 @@ class Coloring:
     `assignments` maps each successfully-colored Var name to its ZP
     base address (the lowest byte of its allocated `width`-byte slot).
     `spilled` lists names that were in the input graph but couldn't
-    fit any pool. `pool` echoes the configuration used."""
+    fit any pool. `pool` echoes the configuration used.
+
+    `hwreg_assignments` maps an SSA name to a hardware register letter
+    ("X" or "Y") when regalloc decides to pin the value into a 6502
+    index register instead of a ZP byte. A name appearing here is NOT
+    in `assignments` (the two are mutually exclusive). HwReg pinning
+    is only chosen for 1-byte values that meet a specific eligibility
+    predicate (see `passes.optimization_asm.hwreg_eligibility`):
+    every def/use must be representable as an LDX/LDY/STX/STY/INX/
+    DEX/INY/DEY/CPX/CPY-style operation, and the value must not be
+    live across any `Call` (helpers clobber X and Y). The headline
+    savings are: (a) eliminating the LDX/LDY setup before each
+    `IndexedData` access where the index value is HwReg-pinned, and
+    (b) collapsing per-byte ADC chains on a counter into INX/DEX
+    when the counter is HwReg-pinned."""
     assignments: dict[str, int] = field(default_factory=dict)
     spilled: set[str] = field(default_factory=set)
     pool: Pool = field(default_factory=Pool)
+    hwreg_assignments: dict[str, str] = field(default_factory=dict)
 
 
 def _blocked_bytes(

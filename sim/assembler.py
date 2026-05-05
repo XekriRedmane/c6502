@@ -699,8 +699,19 @@ def _emit_store_a_zp_or_abs(addr: int) -> bytes:
 def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
     _reject_pseudo(src)
     _reject_pseudo(dst)
-    # Reg<->Reg transfers: 1 byte.
+    # Self-Mov: emits nothing (matches asm_emit's self-Mov peephole).
+    if src == dst:
+        return 0
+    # Reg<->Reg transfers: 1 byte for direct opcodes (TXA, TYA, TAX,
+    # TAY); 2 bytes for X↔Y which routes through A as two transfers.
     if isinstance(src, asm_ast.Reg) and isinstance(dst, asm_ast.Reg):
+        sr, dr = src.reg, dst.reg
+        # X↔Y has no direct opcode; go through A.
+        if (
+            (isinstance(sr, asm_ast.X) and isinstance(dr, asm_ast.Y))
+            or (isinstance(sr, asm_ast.Y) and isinstance(dr, asm_ast.X))
+        ):
+            return 2
         return 1
     # Imm/ImmLabel -> Reg: 2 bytes (LD# imm).
     if (isinstance(src, asm_ast.Imm) or _is_imm_label(src)) and isinstance(
@@ -730,6 +741,21 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
         isinstance(dst.reg, (asm_ast.X, asm_ast.Y))
     ):
         return 2 if _abs_fits_zp(src) else 3
+    # Reg(X) / Reg(Y) -> Data / ZP: STX / STY (zp or abs).
+    if (
+        isinstance(src, asm_ast.Reg)
+        and isinstance(src.reg, (asm_ast.X, asm_ast.Y))
+        and _is_data_or_zp(dst)
+    ):
+        return 2 if _abs_fits_zp(dst) else 3
+    # Reg(X) / Reg(Y) -> indirect memory (Stack/Frame/Indirect):
+    # TXA/TYA (1) + LDY # (2) + STA (zp),Y (2) = 5 bytes.
+    if (
+        isinstance(src, asm_ast.Reg)
+        and isinstance(src.reg, (asm_ast.X, asm_ast.Y))
+        and _is_indirect_y(dst)
+    ):
+        return 1 + 4
     # Reg(A) -> memory: store.
     if _is_reg_a(src) and _is_memory(dst):
         return _store_a_to_mem_size(dst)
@@ -787,6 +813,9 @@ def _emit_mov(
 ) -> bytes:
     _reject_pseudo(src)
     _reject_pseudo(dst)
+    # Self-Mov: emit nothing (matches asm_emit's self-Mov peephole).
+    if src == dst:
+        return b""
     # Reg-to-reg transfers.
     if isinstance(src, asm_ast.Reg) and isinstance(dst, asm_ast.Reg):
         sr, dr = src.reg, dst.reg
@@ -798,6 +827,11 @@ def _emit_mov(
             return bytes([_IMPLIED["TAX"]])
         if isinstance(sr, asm_ast.A) and isinstance(dr, asm_ast.Y):
             return bytes([_IMPLIED["TAY"]])
+        # X↔Y cross-transfer routes through A.
+        if isinstance(sr, asm_ast.X) and isinstance(dr, asm_ast.Y):
+            return bytes([_IMPLIED["TXA"], _IMPLIED["TAY"]])
+        if isinstance(sr, asm_ast.Y) and isinstance(dr, asm_ast.X):
+            return bytes([_IMPLIED["TYA"], _IMPLIED["TAX"]])
         raise AssemblerError(f"unsupported Mov reg->reg: {src!r} -> {dst!r}")
     # Imm -> Reg.
     if isinstance(src, asm_ast.Imm) and isinstance(dst, asm_ast.Reg):
@@ -843,6 +877,25 @@ def _emit_mov(
             return _emit_zp_or_abs("LDX", _resolve_abs_addr(src, syms))
         if isinstance(dst.reg, asm_ast.Y):
             return _emit_zp_or_abs("LDY", _resolve_abs_addr(src, syms))
+    # Reg(X) / Reg(Y) -> Data / ZP — zp/abs STX/STY direct.
+    if (
+        isinstance(src, asm_ast.Reg)
+        and isinstance(src.reg, (asm_ast.X, asm_ast.Y))
+        and _is_data_or_zp(dst)
+    ):
+        op = "STX" if isinstance(src.reg, asm_ast.X) else "STY"
+        return _emit_zp_or_abs(op, _resolve_abs_addr(dst, syms))
+    # Reg(X) / Reg(Y) -> indirect memory: TXA/TYA + STA (zp),Y.
+    if (
+        isinstance(src, asm_ast.Reg)
+        and isinstance(src.reg, (asm_ast.X, asm_ast.Y))
+        and _is_indirect_y(dst)
+    ):
+        transfer = (
+            _IMPLIED["TXA"] if isinstance(src.reg, asm_ast.X)
+            else _IMPLIED["TYA"]
+        )
+        return bytes([transfer]) + _emit_indy("STA", dst)
     # Reg(A) -> memory.
     if _is_reg_a(src) and _is_memory(dst):
         return _emit_store_a_to_mem(dst, syms)

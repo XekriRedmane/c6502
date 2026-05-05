@@ -213,9 +213,11 @@ class TestDirectIndexLoadAsmShape(unittest.TestCase):
 
     def test_indexed_load_uses_direct_ldx(self) -> None:
         # IndexedLoad's lowering stages the index via A→X. Under
-        # --optimize, a local that ends up at ZP exposes the
-        # peephole's pattern; we expect a direct `LDX $XX` and no
-        # `LDA $XX; TAX` pair feeding `arr,X`.
+        # --optimize, the loop counter `i` ends up either pinned to
+        # the X register directly (HwReg coloring) or living in ZP
+        # with a peephole-emitted direct `LDX $XX`. Either way the
+        # `arr[i]` access uses absolute,X addressing — `LDA arr,X`
+        # — without an `LDA <i>; TAX` pair.
         src = (
             "#include <stdint.h>\n"
             "static const uint8_t arr[10] ="
@@ -227,10 +229,10 @@ class TestDirectIndexLoadAsmShape(unittest.TestCase):
             "}\n"
         )
         asm = self._compile(src)
-        # The `arr[i]` access should use a direct `LDX $XX` (the
-        # ZP slot holding `i`), then `LDA arr,X`.
-        self.assertIn("LDX   $", asm)
+        # Direct absolute,X read.
         self.assertIn("LDA   arr,X", asm)
+        # No `LDA <i>; TAX` setup pair feeding the indexed load.
+        self.assertNotIn("TAX", asm)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

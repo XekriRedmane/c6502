@@ -83,7 +83,14 @@ def recognize_indexed_store(
     (`ZeroExtend; Binary(Add); Store`), splice in an
     `IndexedStore` and drop the three original instructions.
     Without `symbols`, the pass is a no-op (we need symbol-table
-    types to verify the index is 1-byte and the value is 1-byte)."""
+    types to verify the index is 1-byte and the value is 1-byte).
+
+    Two passes: pass 1 scans for triples and records which
+    instructions to drop / replace; pass 2 rebuilds the
+    instruction list. The split is needed because the Store
+    (where the rewrite materializes) comes AFTER the two defs
+    it subsumes — a single-pass loop would emit those defs
+    before reaching the Store."""
     if symbols is None:
         return fn
     use_counts = _count_uses(fn.instructions)
@@ -93,20 +100,27 @@ def recognize_indexed_store(
     for i, instr in enumerate(fn.instructions):
         for d in _defs(instr):
             def_idx[d.name] = i
-    new_instrs: list[tac_ast.Type_instruction] = []
+    # Pass 1: identify rewrites.
+    rewrites: dict[int, tac_ast.Type_instruction] = {}
     dropped: set[int] = set()
     for i, instr in enumerate(fn.instructions):
-        if i in dropped:
-            continue
         rewritten = _try_recognize(
             instr, fn.instructions, def_idx, use_counts, symbols,
         )
         if rewritten is not None:
             replacement, dropped_indices = rewritten
+            # Don't fold if any of the prereq instructions was
+            # already consumed by an earlier fold.
+            if dropped_indices & dropped:
+                continue
+            rewrites[i] = replacement
             dropped.update(dropped_indices)
-            new_instrs.append(replacement)
+    # Pass 2: rebuild.
+    new_instrs: list[tac_ast.Type_instruction] = []
+    for i, instr in enumerate(fn.instructions):
+        if i in dropped:
             continue
-        new_instrs.append(instr)
+        new_instrs.append(rewrites.get(i, instr))
     return tac_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,

@@ -89,19 +89,32 @@ def reassoc_constants(fn: tac_ast.Function) -> tac_ast.Function:
     """Walk `fn`'s instructions; for each outer Add(Const, %inner)
     where the inner is a single-use Pseudo defined by another
     Add(Const, ...), combine the two Constants. Returns a new
-    Function; doesn't mutate the input."""
+    Function; doesn't mutate the input.
+
+    Two passes: pass 1 scans for rewrites and records which inner-
+    Binary indices to drop and which outer-Binary indices to
+    replace; pass 2 rebuilds the instruction list. The split is
+    needed because the inner def precedes the outer in source
+    order — a single-pass loop would emit the inner before
+    realizing the outer subsumes it."""
     use_counts = _count_uses(fn.instructions)
     inner_def = _build_inner_def_index(fn.instructions)
-    new_instrs: list[tac_ast.Type_instruction] = []
+    # Pass 1: record rewrites.
+    rewrites: dict[int, tac_ast.Type_instruction] = {}
     dropped_def_indices: set[int] = set()
     for i, instr in enumerate(fn.instructions):
-        if i in dropped_def_indices:
-            continue
         rewritten = _try_reassoc(
             instr, fn.instructions, inner_def, use_counts,
             dropped_def_indices,
         )
-        new_instrs.append(rewritten)
+        if rewritten is not instr:
+            rewrites[i] = rewritten
+    # Pass 2: rebuild.
+    new_instrs: list[tac_ast.Type_instruction] = []
+    for i, instr in enumerate(fn.instructions):
+        if i in dropped_def_indices:
+            continue
+        new_instrs.append(rewrites.get(i, instr))
     return tac_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
@@ -144,7 +157,7 @@ def _try_reassoc(
 ) -> tac_ast.Type_instruction:
     """If `instr` is an outer Add(Const, %inner) (or Add(%inner,
     Const)) where `%inner`'s single-use def is itself an Add with
-    a Constant operand of the same variant, return the combined
+    a Constant operand of the same width, return the combined
     Add. The inner def's index is added to `dropped_def_indices`
     so the caller skips emitting it. Otherwise return `instr`
     unchanged."""

@@ -4,16 +4,13 @@ paint_hud_strip_p1:
 .paint_hud_strip_p1@asm_ssa_preheader@0:
 .paint_hud_strip_p1@ssa_block@0:
    LDY   #$00
-   LDA   #$10
-   STA   $80
+   LDX   #$10
 .loop@0_start:
-   LDA   $80
+   TXA
    SEC
    SBC   #$01
    TAX
-   BCS   .lb_skip@0
-   JMP   .loop@0_break
-.lb_skip@0:
+   BCC   .loop@0_break
 .paint_hud_strip_p1@asm_ssa_block@0:
    LDA   $A30D,Y
    INY
@@ -62,7 +59,6 @@ paint_hud_strip_p1:
    STA   $398C,X
    STA   $3D8C,X
 .loop@0_continue:
-   STX   $80
    JMP   .loop@0_start
 .loop@0_break:
    RTS

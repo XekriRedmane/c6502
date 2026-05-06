@@ -138,7 +138,54 @@ def _try_match_sub1(
     #   Mov(M[k+1], A); Sub(Imm 0, A); Mov(A, M[k+1])
     if _is_sbc_continuation(instrs, start + 4):
         return None
+    # Reject if followed by a Branch that reads C or V — DEC
+    # doesn't touch C/V, but SBC sets them, so dropping the SBC
+    # would leave C/V at a stale value and BCC/BCS/BVC/BVS would
+    # observe wrong flags. The N/Z flags ARE set by DEC and match
+    # what the SBC would have set (DEC's N/Z reflect the result),
+    # so BMI/BPL/BEQ/BNE remain correct.
+    if _next_branch_reads_c_or_v(instrs, start + 4):
+        return None
     return (4, i0.src)
+
+
+def _next_branch_reads_c_or_v(
+    instrs: list[asm_ast.Type_instruction], pos: int,
+) -> bool:
+    """True iff the next flag-relevant instruction at or after
+    `pos` is a Branch on C (BCC/BCS) or V (BVC/BVS). Walks past
+    instructions that don't read flags (LDA / STA / etc. — these
+    set N/Z but don't read prior flag state) until hitting a
+    Branch or another instruction that resets all flags."""
+    j = pos
+    n = len(instrs)
+    while j < n:
+        instr = instrs[j]
+        if isinstance(instr, asm_ast.Branch):
+            return isinstance(
+                instr.cond, (asm_ast.CC, asm_ast.CS, asm_ast.VC, asm_ast.VS),
+            )
+        # Any flag-setting instruction other than a Branch: assume
+        # we're not the relevant flag source anymore. Conservative:
+        # reset all flags means the SBC's flags don't reach the
+        # branch, so the peephole is safe regardless.
+        if isinstance(instr, (
+            asm_ast.Mov, asm_ast.Add, asm_ast.Sub, asm_ast.And,
+            asm_ast.Or, asm_ast.Xor, asm_ast.Compare, asm_ast.Inc,
+            asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
+            asm_ast.LogicalShiftRight, asm_ast.RotateLeft,
+            asm_ast.RotateRight, asm_ast.Pop,
+            asm_ast.SetCarry, asm_ast.ClearCarry,
+        )):
+            return False
+        # Labels, Jumps, Calls, etc. — control flow boundary; we
+        # can't reason cross-block here, so be safe.
+        if isinstance(instr, (asm_ast.Label, asm_ast.Jump,
+                              asm_ast.Call, asm_ast.Ret,
+                              asm_ast.Return)):
+            return False
+        j += 1
+    return False
 
 
 def _is_sbc_continuation(

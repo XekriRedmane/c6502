@@ -170,6 +170,18 @@ def _optimize_function(
     fn: asm_ast.Function, statics: frozenset[str],
     blocked_addrs: set[int],
 ) -> tuple[asm_ast.Function, Coloring]:
+    # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
+    # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
+    # BEFORE SSA construction so the resulting IR (no Compare-
+    # against-zero) is what the eligibility scan sees — without
+    # the Compare's `cmp_right` position, the iv operand becomes
+    # HwReg-eligible.
+    from passes.sub1_test_zero_peephole import (
+        apply_sub1_test_zero_peephole,
+    )
+    # Wrap as a single-fn program for the pass's API.
+    prog = asm_ast.Program(top_level=[fn])
+    fn = apply_sub1_test_zero_peephole(prog).top_level[0]
     fn = to_ssa(fn, statics=statics)
     # Step 6: SSA-aware forward + backward copy propagation +
     # byte-granular DCE, iterated to a fixed point. Forward

@@ -174,10 +174,12 @@ def _try_match(
 
 def _is_compareable_operand(op: asm_ast.Type_operand) -> bool:
     """True iff `op` can appear as both a Mov src AND a Compare
-    right operand. CMP supports zp / abs / # — we want the
-    memory-resident kinds (Data, ZP) since the test is "did this
-    memory location's value drop to 0"."""
-    return isinstance(op, (asm_ast.Data, asm_ast.ZP))
+    right operand. CMP supports zp / abs / # — we accept Data,
+    ZP, and `Pseudo` (so the peephole can fire BEFORE pseudo-
+    register replacement, where Pseudo operands haven't yet been
+    lowered to concrete ZP / Frame slots). Same operand both
+    times is what matters for the peephole's soundness."""
+    return isinstance(op, (asm_ast.Data, asm_ast.ZP, asm_ast.Pseudo))
 
 
 def _operands_equal(
@@ -187,4 +189,6 @@ def _operands_equal(
         return a.name == b.name and a.offset == b.offset
     if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
         return a.address == b.address and a.offset == b.offset
+    if isinstance(a, asm_ast.Pseudo) and isinstance(b, asm_ast.Pseudo):
+        return a.name == b.name and a.offset == b.offset
     return False

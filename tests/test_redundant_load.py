@@ -83,16 +83,25 @@ class TestRedundantLoadBasic(unittest.TestCase):
         self.assertEqual(len(out), 4)
 
     def test_zp_aliased_store_invalidates(self) -> None:
+        # `LDA $80; LDA #99; STA $80; LDA $80; ret`. The first LDA's
+        # tracking is killed by the LDA #99 (A reloaded with a
+        # different value). The STA $80 then ALSO establishes
+        # `A === $80` (we just wrote A's value there), so the
+        # final LDA $80 IS redundant — it reads the same 99 we
+        # just stored. Verifies the post-store tracking path:
+        # invalidate-aliasing drops the prior tracking, but the
+        # source register and the destination memory now share
+        # the just-written value.
         zp80 = asm_ast.ZP(address=0x80, offset=0)
         instrs = [
             asm_ast.Mov(src=zp80, dst=_REG_A),
-            asm_ast.Mov(src=asm_ast.Imm(value=99), dst=_REG_A),  # kills A
-            asm_ast.Mov(src=_REG_A, dst=zp80),  # writes the tracked addr
-            asm_ast.Mov(src=zp80, dst=_REG_A),  # NOT redundant
+            asm_ast.Mov(src=asm_ast.Imm(value=99), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp80),
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # redundant — drop
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        self.assertEqual(len(out), 5)
+        self.assertEqual(len(out), 4)
 
 
 class TestRedundantLoadAliasing(unittest.TestCase):
@@ -135,16 +144,20 @@ class TestRedundantLoadAliasing(unittest.TestCase):
         self.assertEqual(len(out), 3)
 
     def test_data_store_invalidates_matching_data_tracking(self) -> None:
+        # Same shape as test_zp_aliased_store_invalidates but for
+        # Data (link-time-symbol) operands. The STA establishes
+        # `A === g`, so the final LDA g IS redundant — A holds 7
+        # from the LDA #7 above and we just wrote 7 to g.
         data_g = asm_ast.Data(name="g", offset=0)
         instrs = [
             asm_ast.Mov(src=data_g, dst=_REG_A),
-            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),  # kill A
-            asm_ast.Mov(src=_REG_A, dst=data_g),  # write to tracked addr
-            asm_ast.Mov(src=data_g, dst=_REG_A),  # NOT redundant
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=data_g),
+            asm_ast.Mov(src=data_g, dst=_REG_A),  # redundant — drop
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        self.assertEqual(len(out), 5)
+        self.assertEqual(len(out), 4)
 
     def test_data_store_to_different_symbol_keeps_tracking(self) -> None:
         data_g = asm_ast.Data(name="g", offset=0)

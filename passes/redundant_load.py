@@ -74,7 +74,7 @@ keeps us symmetric with `inc_peephole` and
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import asm_ast
 
@@ -93,14 +93,25 @@ def apply_redundant_load_elimination(
 
 @dataclass
 class _RegState:
-    """Per-block register tracking. Each field is the operand the
-    register currently mirrors, or None when unknown."""
-    a: asm_ast.Type_operand | None = None
-    x: asm_ast.Type_operand | None = None
-    y: asm_ast.Type_operand | None = None
+    """Per-block register tracking. Each field is the LIST of
+    operands the corresponding register is known to mirror — empty
+    when unknown. A register can simultaneously mirror multiple
+    operands when, e.g., we LDA M (now A === M) and then STA N
+    (now A === N as well, since the store wrote A's value to N
+    while leaving A unchanged). Either equivalence is grounds for
+    dropping a redundant LDA M / LDA N later.
+
+    Stored as `list` rather than `set` because operand objects
+    aren't hashable (dataclasses are by default but operand types
+    are sum types not all of which are frozen)."""
+    a: list[asm_ast.Type_operand] = field(default_factory=list)
+    x: list[asm_ast.Type_operand] = field(default_factory=list)
+    y: list[asm_ast.Type_operand] = field(default_factory=list)
 
     def reset(self) -> None:
-        self.a = self.x = self.y = None
+        self.a = []
+        self.x = []
+        self.y = []
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
@@ -133,7 +144,7 @@ def _is_redundant_load(
     if not isinstance(instr.dst, asm_ast.Reg):
         return False
     cur = _get_reg(state, instr.dst.reg)
-    return cur is not None and _operands_equal(cur, instr.src)
+    return any(_operands_equal(c, instr.src) for c in cur)
 
 
 def _update_state(
@@ -164,7 +175,7 @@ def _update_state(
     if isinstance(instr, asm_ast.Pop):
         # PLA / PLX / PLY pulls a fresh value off the stack.
         if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, None)
+            _set_reg(state, instr.dst.reg, [])
         return
     if isinstance(instr, asm_ast.Push):
         # PHA / PHP doesn't change registers but writes the stack —
@@ -180,26 +191,47 @@ def _update_state(
         # `dst=Reg(A)`. The result in A is no longer a copy of any
         # tracked operand.
         if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, None)
-        # Memory side-effects: the source operand may also be the
-        # destination of an indirectly-aliased write? No — these
-        # instructions don't write memory. Nothing else to do.
+            _set_reg(state, instr.dst.reg, [])
         return
     if isinstance(instr, asm_ast.Xor):
-        # EOR with src1 / src2 / dst (dst is always Reg(A)).
         if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, None)
+            _set_reg(state, instr.dst.reg, [])
         return
     if isinstance(instr, (asm_ast.ArithmeticShiftLeft,
                           asm_ast.LogicalShiftRight,
                           asm_ast.RotateLeft, asm_ast.RotateRight)):
-        # Operate on Reg(A) per c6502's IR. Modify A; no memory write.
         if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, None)
+            _set_reg(state, instr.dst.reg, [])
         return
     if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-        # Memory write to instr.dst. Invalidate any register tracking
-        # that may alias.
+        # Inc/Dec on `Reg(X)` / `Reg(Y)` modifies the index register
+        # itself (INX / DEX / INY / DEY) — no memory write. The
+        # register's tracked sources are cleared, AND any other
+        # register's tracked sources that DEPEND on that register
+        # (e.g. `IndexedData(_, _, index=X)`) are filtered out.
+        # Tracked sources that don't depend on the register
+        # (Imm, ZP, Data, IndexedData with the OTHER register)
+        # remain valid.
+        if isinstance(instr.dst, asm_ast.Reg) and isinstance(
+            instr.dst.reg, (asm_ast.X, asm_ast.Y)
+        ):
+            changed_reg = instr.dst.reg
+            _set_reg(state, changed_reg, [])
+            state.a = [
+                op for op in state.a
+                if not _depends_on_reg(op, changed_reg)
+            ]
+            state.x = [
+                op for op in state.x
+                if not _depends_on_reg(op, changed_reg)
+            ]
+            state.y = [
+                op for op in state.y
+                if not _depends_on_reg(op, changed_reg)
+            ]
+            return
+        # Inc/Dec on a memory operand (Data, ZP). Memory write to
+        # instr.dst. Invalidate any register tracking that may alias.
         _invalidate_aliasing(state, instr.dst)
         return
     # Comments, blank lines, and any future no-op nodes.
@@ -218,35 +250,54 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
     dst_is_reg = isinstance(mov.dst, asm_ast.Reg)
     if src_is_reg and dst_is_reg:
         # TAX / TAY / TXA / TYA: dst now mirrors whatever src mirrors.
-        new_value = _get_reg(state, mov.src.reg)
+        new_value = list(_get_reg(state, mov.src.reg))
         _set_reg(state, mov.dst.reg, new_value)
         return
     if dst_is_reg and not src_is_reg:
-        # Load: the register now mirrors the source operand.
-        _set_reg(state, mov.dst.reg, mov.src)
+        # Load: the register now mirrors ONLY the source operand.
+        # Any prior equivalences are wiped out (the previous
+        # value in the register is gone).
+        _set_reg(state, mov.dst.reg, [mov.src])
         return
     if src_is_reg and not dst_is_reg:
         # Store: register unchanged; memory at dst is rewritten.
-        # Invalidate any tracked register whose source aliases dst.
+        # Invalidate any tracked register equivalence that aliases
+        # dst.
         _invalidate_aliasing(state, mov.dst)
+        # Post-store, the source register and the destination
+        # memory cell hold the same value. ADD this equivalence
+        # to the source register's list — it doesn't replace
+        # existing trackings (a register can simultaneously mirror
+        # multiple memory cells, e.g. after `LDA M; STA N` we know
+        # A === M AND A === N). We only track when the destination
+        # is a "stable" memory operand (ZP / Data / Stack / Frame /
+        # Indirect); IndexedData destinations depend on the index
+        # register's runtime value and are excluded.
+        if isinstance(mov.dst, (
+            asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
+            asm_ast.Frame, asm_ast.Indirect,
+        )):
+            cur = _get_reg(state, mov.src.reg)
+            if not any(_operands_equal(c, mov.dst) for c in cur):
+                cur.append(mov.dst)
         return
     # Memory-to-memory Mov — c6502 doesn't emit these, but be safe.
     _invalidate_aliasing(state, mov.dst)
 
 
-def _get_reg(state: _RegState, reg: asm_ast.Type_reg):
+def _get_reg(state: _RegState, reg: asm_ast.Type_reg) -> list[asm_ast.Type_operand]:
     if isinstance(reg, asm_ast.A):
         return state.a
     if isinstance(reg, asm_ast.X):
         return state.x
     if isinstance(reg, asm_ast.Y):
         return state.y
-    return None
+    return []
 
 
 def _set_reg(
     state: _RegState, reg: asm_ast.Type_reg,
-    value: asm_ast.Type_operand | None,
+    value: list[asm_ast.Type_operand],
 ) -> None:
     if isinstance(reg, asm_ast.A):
         state.a = value
@@ -259,14 +310,11 @@ def _set_reg(
 def _invalidate_aliasing(
     state: _RegState, write_dst: asm_ast.Type_operand,
 ) -> None:
-    """For each tracked register, drop the tracking if its source
-    operand might alias `write_dst`."""
-    if state.a is not None and _may_alias(state.a, write_dst):
-        state.a = None
-    if state.x is not None and _may_alias(state.x, write_dst):
-        state.x = None
-    if state.y is not None and _may_alias(state.y, write_dst):
-        state.y = None
+    """For each tracked register, filter out equivalence entries
+    whose operand might alias `write_dst`."""
+    state.a = [op for op in state.a if not _may_alias(op, write_dst)]
+    state.x = [op for op in state.x if not _may_alias(op, write_dst)]
+    state.y = [op for op in state.y if not _may_alias(op, write_dst)]
 
 
 def _may_alias(
@@ -297,6 +345,17 @@ def _may_alias(
     if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
     return True
+
+
+def _depends_on_reg(
+    op: asm_ast.Type_operand, reg: asm_ast.Type_reg,
+) -> bool:
+    """True iff `op`'s value depends on the runtime value of the
+    register `reg`. Only `IndexedData(_, _, index=R)` does — its
+    address is `name + offset + R_value`."""
+    if isinstance(op, asm_ast.IndexedData):
+        return type(op.index) is type(reg)
+    return False
 
 
 def _operands_equal(

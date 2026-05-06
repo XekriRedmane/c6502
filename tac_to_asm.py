@@ -2406,7 +2406,27 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         """Signed ordering compare-and-branch. SBC chain plus the
         BVC/EOR #$80 V-correction, then branch on MI (<) or PL (>=).
-        Operand swap (done by caller) covers > and <=."""
+        Operand swap (done by caller) covers > and <=.
+
+        Special case: when `right_op` is `Imm(0)` (the comparison is
+        `signed_var <op> 0` after any caller-side swap), the SBC
+        chain reduces to identity for each byte — `SBC #0` with
+        carry-in 1 leaves the byte unchanged and forwards C=1, so
+        every byte's load determines its own N/Z and no underflow
+        propagates. The final N flag matches bit 7 of `left_op`'s
+        high byte, which IS the value's sign bit. V can't overflow
+        when subtracting zero, so the V-correction is a no-op.
+        Reduce to a single `LDA hi(left_op); B<cond> target` —
+        2 instructions vs. the 6+ of the SBC + V-correction form.
+        Sound for both 1-byte SChar `>= 0` (the rotated countdown
+        loop tail) and any wider signed compare against zero."""
+        if isinstance(right_op, asm_ast.Imm) and right_op.value == 0:
+            return [
+                asm_ast.Mov(
+                    src=_byte_at(left_op, size - 1), dst=_REG_A,
+                ),
+                asm_ast.Branch(cond=branch_cond, target=target),
+            ]
         novf_label = self.make_label("jcmp_novf")
         out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=_byte_at(left_op, 0), dst=_REG_A),

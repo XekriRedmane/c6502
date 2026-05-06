@@ -23,17 +23,18 @@ static const uint8_t HUD_ROW_GROUPS[7][7] = {
     {25, 26, 27, 28, 29, 30, 31 },   /* b6 -> rows 25..31*/
 };
 static const uint8_t HUD_ROW_COUNT[7] = { 7, 1, 7, 1, 7, 1, 7 };
+static uint8_t* const HUD_STRIP_SRC = 0xA30Du;
 
 #define HUD_COL_BASE 0x0C    /* hi-res byte column $0C..$1B = middle 16 of 40 */
 
 __attribute__((zp_abi))
-void paint_hud_strip_p1(const uint8_t *hud_strip_src /* 112 bytes @ $A30D */) {
+void paint_hud_strip_p1(void) {
     uint8_t y = 0;                          /* monotonic, NOT reset per column */
     for (int8_t x = 0x0F; x >= 0; x--) {       /* right-to-left, 16 columns */
 
         #pragma c6502 loop unroll(enable)
         for (uint8_t b = 0; b < 7; b++) {
-            uint8_t pixels = hud_strip_src[y++];
+            uint8_t pixels = HUD_STRIP_SRC[y++];
 
             #pragma c6502 loop unroll(enable)
             for (uint8_t i = 0; i < HUD_ROW_COUNT[b]; i++) {

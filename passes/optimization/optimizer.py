@@ -8,10 +8,17 @@ since a pass already at fixed point is cheap to re-run and the
 between-pass interleaving is part of the optimizer's contract.
 
 Pipeline shape:
-    fn → SSA construction
+    fn → loop_rotate (one-shot, pre-SSA)
+       → SSA construction
        → (CF → strength_reduce → cmp_zero_jump_fold → UCE → CopyProp →
           DSE → CopyFold)*
        → SSA destruction → fn'
+
+`loop_rotate` runs before SSA because the rewrite is a structural
+shuffle of instruction ranges with no name updates — pre-SSA the
+loop counter `x_var` carries one canonical name across init, body,
+and post, so a name-preserving move suffices. After the rotation,
+`to_ssa` rebuilds Phis for the new control flow.
 
 Promotable Vars (block-scope locals, params, and TAC temps that are
 never address-taken and have scalar type) are renamed and Phi'd
@@ -67,6 +74,9 @@ from passes.optimization.copy_propagation import copy_propagate
 from passes.optimization.dead_store_elimination import (
     eliminate_dead_stores,
 )
+from passes.optimization.loop_rotate import (
+    rotate_signed_countdown_loops,
+)
 from passes.optimization.reassoc_const import reassoc_constants
 from passes.optimization.recognize_indexed_load import (
     recognize_indexed_load,
@@ -115,6 +125,12 @@ def optimize_function(
     Returns the optimized function."""
     ssa_dsts: set[str] | None = None
     if symbols is not None:
+        # Pre-SSA: rotate signed-countdown for-loops to test-at-
+        # bottom shape. Operates on the canonical c99_to_tac for-
+        # loop layout where x_var carries one name across init,
+        # body, and post. After this, `to_ssa` rebuilds Phis for
+        # the rotated control flow.
+        fn = rotate_signed_countdown_loops(fn, symbols)
         fn, ssa_dsts = to_ssa(fn, symbols)
         # One-shot: replace `Var(static_const_scalar)` USE-position
         # operands with `Constant(value)` so the fixed-point loop's

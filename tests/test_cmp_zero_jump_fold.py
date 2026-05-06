@@ -634,5 +634,173 @@ class TestNarrowOrderingAsmShape(unittest.TestCase):
         self.assertEqual(result.return_int(), 105)
 
 
+# ---------------------------------------------------------------------------
+# SignExtend narrowing for `>= 0` / `< 0` against zero.
+# ---------------------------------------------------------------------------
+
+
+def _const_char(v: int) -> tac_ast.Constant:
+    return tac_ast.Constant(const=tac_ast.ConstChar(value=v))
+
+
+def _symbols(*pairs):
+    """Build a SymbolTable from `(name, c99_type)` pairs."""
+    out: SymbolTable = {}
+    for name, t in pairs:
+        out[name] = Symbol(type=t, attrs=LocalAttr())
+    return out
+
+
+class TestSignExtendNarrowingAgainstZero(unittest.TestCase):
+    """Narrowing `(int)schar >= 0` / `< 0` to a 1-byte signed test
+    against ConstChar(0). The rewrite is sound because SignExtend
+    preserves the sign bit, and the zero-relational asm path then
+    emits `LDA b; B<PL|MI> t` — the rotated countdown loop tail."""
+
+    def test_narrows_schar_ge_zero(self):
+        symbols = _symbols(("@x", c99_ast.SChar()))
+        fn = _fn(
+            tac_ast.SignExtend(src=_var("@x"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.GreaterOrEqual(),
+                src1=_var("%wide"), src2=_const_int(0),
+                dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".top"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        # Three instructions in: SignExtend; Binary; JumpIfTrue.
+        # After fold: SignExtend (now dead, DSE will pick it up
+        # later); JumpIfCmp(GE, @x, ConstChar(0), .top).
+        jic = next(
+            i for i in out.instructions
+            if isinstance(i, tac_ast.JumpIfCmp)
+        )
+        self.assertIsInstance(jic.op, tac_ast.GreaterOrEqual)
+        self.assertEqual(jic.src1, _var("@x"))
+        self.assertEqual(jic.src2, _const_char(0))
+        self.assertEqual(jic.target, ".top")
+
+    def test_narrows_schar_lt_zero(self):
+        symbols = _symbols(("@x", c99_ast.SChar()))
+        fn = _fn(
+            tac_ast.SignExtend(src=_var("@x"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.LessThan(),
+                src1=_var("%wide"), src2=_const_int(0),
+                dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".neg"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = next(
+            i for i in out.instructions
+            if isinstance(i, tac_ast.JumpIfCmp)
+        )
+        self.assertIsInstance(jic.op, tac_ast.LessThan)
+        self.assertEqual(jic.src1, _var("@x"))
+        self.assertEqual(jic.src2, _const_char(0))
+
+    def test_narrows_schar_jumpiffalse_inverts_to_lt(self):
+        # JumpIfFalse on `>= 0` ⇒ "jump if NOT (>= 0)" ⇒
+        # JumpIfCmp(LT, ...) (op inverted because JumpIfCmp
+        # always means "jump if op is true").
+        symbols = _symbols(("@x", c99_ast.SChar()))
+        fn = _fn(
+            tac_ast.SignExtend(src=_var("@x"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.GreaterOrEqual(),
+                src1=_var("%wide"), src2=_const_int(0),
+                dst=_var("%c"),
+            ),
+            tac_ast.JumpIfFalse(condition=_var("%c"), target=".break"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = next(
+            i for i in out.instructions
+            if isinstance(i, tac_ast.JumpIfCmp)
+        )
+        self.assertIsInstance(jic.op, tac_ast.LessThan)
+        self.assertEqual(jic.src1, _var("@x"))
+        self.assertEqual(jic.src2, _const_char(0))
+
+    def test_does_not_narrow_gt_against_zero(self):
+        # `> 0` would need a separate non-zero check; we only
+        # narrow `>= 0` / `< 0`. The fold still produces a
+        # JumpIfCmp but operands stay wide.
+        symbols = _symbols(("@x", c99_ast.SChar()))
+        fn = _fn(
+            tac_ast.SignExtend(src=_var("@x"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.GreaterThan(),
+                src1=_var("%wide"), src2=_const_int(0),
+                dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".pos"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = next(
+            i for i in out.instructions
+            if isinstance(i, tac_ast.JumpIfCmp)
+        )
+        # Operand stays wide (not the SChar).
+        self.assertEqual(jic.src1, _var("%wide"))
+        self.assertEqual(jic.src2, _const_int(0))
+
+    def test_does_not_narrow_uchar_through_signextend(self):
+        # SignExtend of an UChar is unusual (c99_to_tac would emit
+        # ZeroExtend); but a synthetic case shouldn't narrow because
+        # UChar isn't in `_NARROW_SIGNED_TYPES`.
+        symbols = _symbols(("@x", c99_ast.UChar()))
+        fn = _fn(
+            tac_ast.SignExtend(src=_var("@x"), dst=_var("%wide")),
+            tac_ast.Binary(
+                op=tac_ast.GreaterOrEqual(),
+                src1=_var("%wide"), src2=_const_int(0),
+                dst=_var("%c"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c"), target=".top"),
+        )
+        out = fold_cmp_zero_jump(fn, symbols=symbols)
+        jic = next(
+            i for i in out.instructions
+            if isinstance(i, tac_ast.JumpIfCmp)
+        )
+        self.assertEqual(jic.src1, _var("%wide"))
+
+
+# ---------------------------------------------------------------------------
+# Asm-level: signed `>= 0` lowers to `LDA; B<PL|MI>` (no SBC chain).
+# ---------------------------------------------------------------------------
+
+
+class TestSignedZeroOrderingAsmShape(unittest.TestCase):
+    def _compile(self, src: str) -> str:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        return _run_stage("codegen", preprocess(src), optimize=True)
+
+    def test_signed_byte_ge_zero_uses_bare_lda_bpl(self):
+        # `int8_t x; for (...; x >= 0; x--)` — the loop tail
+        # should NOT contain the V-correction (BVC + EOR #$80)
+        # sequence. The lowering of `JumpIfCmp(GE, schar, 0, .top)`
+        # is `LDA schar; BPL .top` — 2 instructions.
+        src = (
+            "#include <stdint.h>\n"
+            "int sum;\n"
+            "int main(void) {\n"
+            "    for (int8_t x = 15; x >= 0; x--) sum += 1;\n"
+            "    return sum;\n"
+            "}\n"
+        )
+        asm = self._compile(src)
+        # No V-correction in this function.
+        self.assertNotIn("BVC   .jcmp_novf", asm)
+        # And `BPL` to a loop-back target appears (the
+        # `redundant_load_after_rmw` pass also drops the LDA, so
+        # asm shows DEC + BPL directly).
+        self.assertIn("BPL", asm)
+
+
 if __name__ == "__main__":
     unittest.main()

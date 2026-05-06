@@ -50,6 +50,7 @@ from preprocessor import preprocess
 from pretty import pretty
 from passes.asm_to_asm2 import translate_program as lower_to_asm2
 from passes.direct_index_load import apply_direct_index_load
+from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
@@ -125,10 +126,12 @@ def _peephole_fixedpoint(prog):
     inc/dec → direct → redundant matches the natural enabling
     chain."""
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
-        new_prog = apply_redundant_load_elimination(
-            apply_direct_index_load(
-                apply_sub1_test_zero_peephole(
-                    apply_dec_peephole(apply_inc_peephole(prog)),
+        new_prog = apply_asm_dead_store(
+            apply_redundant_load_elimination(
+                apply_direct_index_load(
+                    apply_sub1_test_zero_peephole(
+                        apply_dec_peephole(apply_inc_peephole(prog)),
+                    ),
                 ),
             ),
         )

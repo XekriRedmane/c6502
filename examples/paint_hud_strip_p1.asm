@@ -16,7 +16,6 @@ paint_hud_strip_p1:
 .lb_skip@0:
 .paint_hud_strip_p1@asm_ssa_block@0:
    LDA   $A30D,Y
-   STA   $80
    INY
    STA   $240C,X
    STA   $280C,X
@@ -26,11 +25,9 @@ paint_hud_strip_p1:
    STA   $380C,X
    STA   $3C0C,X
    LDA   $A30D,Y
-   STA   $80
    INY
    STA   $208C,X
    LDA   $A30D,Y
-   STA   $80
    INY
    STA   $248C,X
    STA   $288C,X
@@ -40,11 +37,9 @@ paint_hud_strip_p1:
    STA   $388C,X
    STA   $3C8C,X
    LDA   $A30D,Y
-   STA   $80
    INY
    STA   $210C,X
    LDA   $A30D,Y
-   STA   $80
    INY
    STA   $250C,X
    STA   $290C,X
@@ -54,7 +49,6 @@ paint_hud_strip_p1:
    STA   $390C,X
    STA   $3D0C,X
    LDA   $A30D,Y
-   STA   $80
    INY
    STA   $218C,X
    LDA   $A30D,Y

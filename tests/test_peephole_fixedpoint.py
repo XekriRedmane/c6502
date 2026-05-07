@@ -40,14 +40,17 @@ class TestFixedpoint(unittest.TestCase):
 
     def test_already_converged_returns_unchanged(self) -> None:
         # A program with no peephole opportunities (no INC chain,
-        # no LDA-TAX pair, no redundant load): `_peephole_fixedpoint`
-        # returns it unchanged — and the equality check confirms
-        # that the loop terminated after one no-op sweep.
+        # no LDA-TAX pair, no redundant load, no dead store):
+        # `_peephole_fixedpoint` returns it unchanged — and the
+        # equality check confirms that the loop terminated after
+        # one no-op sweep. The destination here is a Data operand
+        # (link-time global) so `asm_dead_store` conservatively
+        # keeps the store live across function exit.
         zp80 = asm_ast.ZP(address=0x80, offset=0)
-        zpC0 = asm_ast.ZP(address=0xC0, offset=0)
+        sink = asm_ast.Data(name="sink", offset=0)
         prog = _prog([
             asm_ast.Mov(src=zp80, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=zpC0),
+            asm_ast.Mov(src=_REG_A, dst=sink),
             asm_ast.Return(save_a=False),
         ])
         out = _peephole_fixedpoint(prog)
@@ -76,10 +79,13 @@ class TestFixedpoint(unittest.TestCase):
         # $90 with a single INC. The LDA $80 immediately after the
         # chain is then redundant (A still holds $80 — INC $90
         # writes to a disjoint ZP cell). Both rewrites happen in
-        # one iteration of the fixed-point loop.
+        # one iteration of the fixed-point loop. The trailing STA
+        # writes to a Data sink so `asm_dead_store` doesn't
+        # additionally drop it (a ZP-in-pool target would be dead
+        # at function exit).
         zp80 = asm_ast.ZP(address=0x80, offset=0)
         zp90 = asm_ast.ZP(address=0x90, offset=0)
-        zpC0 = asm_ast.ZP(address=0xC0, offset=0)
+        sink = asm_ast.Data(name="sink", offset=0)
         prog = _prog([
             asm_ast.Mov(src=zp80, dst=_REG_A),
             # 4-instruction inc chain on $90 (eligible for inc_peephole).
@@ -93,12 +99,12 @@ class TestFixedpoint(unittest.TestCase):
             # (INC $90 writes to a disjoint ZP cell, so A's
             # tracking survives).
             asm_ast.Mov(src=zp80, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=zpC0),
+            asm_ast.Mov(src=_REG_A, dst=sink),
             asm_ast.Return(save_a=False),
         ])
         out = _peephole_fixedpoint(prog)
         instrs = out.top_level[0].instructions
-        # Expected after one iteration: LDA $80; INC $90; STA $C0; Ret
+        # Expected after one iteration: LDA $80; INC $90; STA sink; Ret
         # (the redundant LDA $80 is gone).
         self.assertEqual(len(instrs), 4)
         self.assertIsInstance(instrs[0], asm_ast.Mov)

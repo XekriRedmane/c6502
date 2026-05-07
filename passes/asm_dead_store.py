@@ -1,61 +1,79 @@
-"""Asm-level dead-store elimination (within-block).
+"""Asm-level dead-store elimination (CFG-wide).
 
-Walks each function's linear instruction stream. For each
-`Mov(Reg, M)` (i.e. STA / STX / STY) into a memory operand `M`,
-scans forward in the same basic-block segment looking for either:
+Walks each function and drops any `Mov(Reg, M)` (i.e. STA / STX /
+STY) into a memory operand `M` whose value is not observed by any
+instruction reachable from the store. Handles two cases:
 
-  * a READ of `M` before another WRITE to `M` → the STA is LIVE,
-    keep it; OR
-  * a WRITE to `M` (with no intervening read), or a basic-block
-    boundary (Label, Jump, Branch, Call, function exit) → the STA
-    is DEAD (or "unknown to be live" — conservatively keep it
-    when the boundary is hit, but for an OBSERVED kill within the
-    block, drop).
+  * Within-block: forward linear scan finds a same-address overwrite
+    before any read of `M`. This was the original pass's behavior
+    and still covers the simple cache-then-overwrite shape.
+  * Across blocks: when the within-block scan reaches a control-
+    flow boundary (Label / Jump / Branch / Ret / Return), continue
+    via a CFG-wide forward DFS. The store is dead iff every path
+    forward either re-overwrites `M` before reading, or terminates
+    at function exit with `M` known dead-at-exit.
 
-# Motivating case
+# Motivating case (cross-block, what triggered the cross-block work)
 
-The c6502 pixel-cache pattern after sink-increment + redundant-
-load STA-tracking:
+The b=6 group of paint_hud_strip_p1.c's unrolled body, post-
+regalloc and post-redundant-load:
 
-    LDA $A30D,Y     ; A = pixels
-    STA $80         ; cache pixels in ZP
+    LDA $A30D,Y         ; A = pixels.6
+    STA $80             ; cache pixels in ZP (the candidate)
     INY
-    STA $240C,X     ; row 1 (uses A)
-    STA $280C,X     ; row 2 (uses A — same pixels)
-    ... 5 more STAs ...
-    LDA $A30D,Y     ; reload A with NEW pixels
-    STA $80         ; cache new pixels — overwrites the old cache
+    STA $258C,X         ; row 1 (uses A — same pixels)
+    ... 6 more STAs to framebuffer ...
+    .loop@0_continue:   ; back-edge target, no LDA $80 anywhere
+    DEX
+    BPL .split          ; or fall through to RTS
+    .ssa_block@0:
+    RTS
+    .split:
+    JMP .loop@0_start
 
-The first `STA $80` cached pixels for the run of `STA $XXXX,X`
-writes. With STA-tracking redundant-load elimination, those
-writes read A directly (not $80), so the cache is never read.
-The second `STA $80` then overwrites the cache without anyone
-having read it. The first STA is dead.
+Every path forward — the fall-through to RTS, and the back-edge
+through the entire unrolled body — never reads $80 before either
+re-overwriting it or exiting. The store is dead.
 
-This pass walks each STA forward and detects this shape.
+# Dead-at-exit determination
 
-# Conservative aliasing
+At a `Ret` / `Return` (function exit), the store's target is
+considered "dead at exit" iff its address is in the asm-level
+regalloc pool (default `$80..$FF`). Locations there are
+function-local: caller-saved slots `$80..$BF` are clobbered
+across calls anyway, and callee-saved slots `$C0..$FF` get
+restored from frame storage by the late-synthesized epilogue,
+not from their current ZP value at the body's `Return`.
 
-We use the same aliasing rules as `redundant_load`: ZP doesn't
-alias Data / IndexedData (ZP < $0100, others ≥ $0100). Two ZPs
-alias iff they have the same address. Two Datas alias iff they
-have the same `name + offset`. Anything we can't classify
-returns `True` (defensive — keep the STA).
+For ZP outside the pool (runtime infrastructure at `$00..$1F`,
+notably HARGS at `$04..$1B` which holds wider-than-Int return
+values) and for `Data` (link-time-addressable globals — other
+functions in the program can read them), we conservatively treat
+the address as live at exit. Cross-block analysis still gets to
+fire if every path back-edges and overwrites before reading; it
+just can't conclude "dead" purely on reaching function exit.
 
-# Boundary handling
+# Conservative aliasing and opaque instructions
 
-Hitting a Label, Jump, Branch, Call, FunctionPrologue, Ret, or
-Return ends the within-block scan. At a boundary we don't know
-whether downstream code reads `M`, so we conservatively keep the
-STA.
+Aliasing follows the same rules as `redundant_load._may_alias`:
+ZP doesn't alias `Data` / `IndexedData`; two ZPs alias iff same
+address; two `Data`s alias iff same name+offset; anything we
+can't classify aliases conservatively.
+
+Compound instructions (`LoadAddress`, `AllocateStack`,
+`FunctionPrologue`) and `Call` are treated as opaque — they may
+read any memory cell, so a path through one returns LIVE for any
+target. `Push` / `Pop` write/read the hardware stack, which we
+don't track; conservative LIVE.
 
 # Where to run
 
 After `replace_pseudoregisters` (operands are concrete) and
-after the existing peephole bracket (the inc/dec/sub1_test_zero/
-direct_index_load/redundant_load passes set up the dead-cache
-pattern). Before `expand_long_branches` (this pass shrinks code,
-never grows; new branches don't appear).
+after the within-block peephole bracket (the
+inc/dec/sub1_test_zero/direct_index_load/redundant_load passes
+set up the dead-cache pattern). Before `expand_long_branches`
+(this pass shrinks code, never grows; new branches don't
+appear).
 """
 
 from __future__ import annotations
@@ -63,16 +81,27 @@ from __future__ import annotations
 import asm_ast
 
 
-_BLOCK_TERMINATORS: tuple[type, ...] = (
-    asm_ast.Label,
-    asm_ast.Jump,
-    asm_ast.Branch,
+# Asm-level regalloc pool range (default `Pool(start=0x80)` splits
+# `[0x80, 0xFF]` into caller-saved `[0x80, 0xC0)` and callee-saved
+# `[0xC0, 0x100)`). ZP addresses in this range are function-local,
+# so they're dead at the function's exit. Hardcoded for now —
+# a non-default pool would still be sound but might miss some
+# cross-block kills.
+_POOL_LO = 0x80
+_POOL_HI = 0x100
+
+
+# Compound / opaque instructions that the within-block fallback
+# treats as block boundaries. The CFG walker treats them as opaque
+# reads (LIVE on any path through them) so we can't optimize past
+# one even cross-block.
+_OPAQUE_TYPES: tuple[type, ...] = (
     asm_ast.Call,
-    asm_ast.Ret,
-    asm_ast.Return,
     asm_ast.FunctionPrologue,
     asm_ast.AllocateStack,
     asm_ast.LoadAddress,
+    asm_ast.Push,
+    asm_ast.Pop,
 )
 
 
@@ -88,21 +117,109 @@ def apply_asm_dead_store(prog: asm_ast.Program) -> asm_ast.Program:
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     """Walk `fn.instructions` and drop any STA whose target memory
-    is overwritten before being read within the basic-block
-    segment."""
+    is not observed by any instruction reachable from the store
+    (within-block kill, or CFG-wide forward search reaching only
+    re-kills / dead-at-exit terminations)."""
     instrs = fn.instructions
+    label_to_index = _build_label_map(instrs)
     drop = [False] * len(instrs)
     for i, instr in enumerate(instrs):
         if not _is_dse_candidate(instr):
             continue
-        # `instr` is a Mov(Reg, M) where M is a stable-memory dst.
-        if _is_dead(instrs, i):
+        if _is_dead_cfg(instrs, i, label_to_index):
             drop[i] = True
     out = [instr for i, instr in enumerate(instrs) if not drop[i]]
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _build_label_map(
+    instrs: list[asm_ast.Type_instruction],
+) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for i, ins in enumerate(instrs):
+        if isinstance(ins, asm_ast.Label):
+            out[ins.name] = i
+    return out
+
+
+def _successors(
+    instrs: list[asm_ast.Type_instruction], i: int,
+    label_to_index: dict[str, int],
+) -> list[int]:
+    """Indices of instructions that can execute immediately after
+    `instrs[i]`. Empty for `Ret` / `Return` (function exit)."""
+    ins = instrs[i]
+    if isinstance(ins, (asm_ast.Ret, asm_ast.Return)):
+        return []
+    if isinstance(ins, asm_ast.Jump):
+        tgt = label_to_index.get(ins.target)
+        return [tgt] if tgt is not None else []
+    if isinstance(ins, asm_ast.Branch):
+        out: list[int] = []
+        if i + 1 < len(instrs):
+            out.append(i + 1)
+        tgt = label_to_index.get(ins.target)
+        if tgt is not None:
+            out.append(tgt)
+        return out
+    if i + 1 < len(instrs):
+        return [i + 1]
+    return []
+
+
+def _is_dead_at_exit(target: asm_ast.Type_operand) -> bool:
+    """True iff `target` is known dead at function exit. ZP in the
+    asm-level regalloc pool (`$80..$FF`) is function-local and so
+    has no observer past `Ret` / `Return`. Everything else is
+    conservatively live."""
+    if isinstance(target, asm_ast.ZP):
+        addr = target.address + target.offset
+        return _POOL_LO <= addr < _POOL_HI
+    return False
+
+
+def _is_dead_cfg(
+    instrs: list[asm_ast.Type_instruction], start: int,
+    label_to_index: dict[str, int],
+) -> bool:
+    """True iff the STA at `instrs[start]` is dead by CFG-wide
+    forward search: every path from start+1 forward either
+    overwrites `target` at the same address before any read, or
+    reaches a function exit with `target` dead-at-exit. Any path
+    that finds a read (or hits an opaque instruction) returns
+    LIVE."""
+    sta = instrs[start]
+    target = sta.dst
+    visited: set[int] = set()
+    stack: list[int] = list(_successors(instrs, start, label_to_index))
+    while stack:
+        j = stack.pop()
+        if j in visited:
+            continue
+        visited.add(j)
+        nxt = instrs[j]
+        # Opaque instructions: assume they may read `target`.
+        if isinstance(nxt, _OPAQUE_TYPES):
+            return False
+        # Function exit: dead iff `target` is dead-at-exit.
+        if isinstance(nxt, (asm_ast.Ret, asm_ast.Return)):
+            if not _is_dead_at_exit(target):
+                return False
+            continue
+        # Read of `target`: LIVE.
+        if _reads(nxt, target):
+            return False
+        # Exact-address overwrite: kill on this path, don't
+        # propagate. (Aliasing-but-not-equal writes don't count as
+        # a kill — they may write some other byte that aliases.)
+        if _writes_same(nxt, target):
+            continue
+        # Otherwise: continue to successors.
+        stack.extend(_successors(instrs, j, label_to_index))
+    return True
 
 
 def _is_dse_candidate(instr: asm_ast.Type_instruction) -> bool:
@@ -117,30 +234,6 @@ def _is_dse_candidate(instr: asm_ast.Type_instruction) -> bool:
     if not isinstance(instr.dst, (asm_ast.ZP, asm_ast.Data)):
         return False
     return True
-
-
-def _is_dead(
-    instrs: list[asm_ast.Type_instruction], start: int,
-) -> bool:
-    """True iff the STA at `instrs[start]` is dead in the within-
-    block sense: forward scan finds another write to the same
-    memory cell before any read of it, with no intervening
-    block-boundary instruction."""
-    sta = instrs[start]
-    target = sta.dst  # ZP or Data operand
-    j = start + 1
-    while j < len(instrs):
-        nxt = instrs[j]
-        if isinstance(nxt, _BLOCK_TERMINATORS):
-            # Boundary — conservative: keep the STA.
-            return False
-        if _reads(nxt, target):
-            return False
-        if _writes_same(nxt, target):
-            return True
-        j += 1
-    # End of function — conservative: keep the STA.
-    return False
 
 
 def _reads(instr: asm_ast.Type_instruction, target: asm_ast.Type_operand) -> bool:
@@ -199,9 +292,6 @@ def _read_operands(
                 yield s1
             if not isinstance(s2, asm_ast.Reg):
                 yield s2
-        case asm_ast.Push(src=src):
-            if not isinstance(src, asm_ast.Reg):
-                yield src
         case asm_ast.Compare(left=l, right=r):
             if not isinstance(l, asm_ast.Reg):
                 yield l

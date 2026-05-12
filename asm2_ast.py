@@ -263,6 +263,11 @@ class Indirect(Type_operand):
 
 
 @dataclass
+class IndirectY(Type_operand):
+    pass
+
+
+@dataclass
 class ZP(Type_operand):
     address: int
     offset: int

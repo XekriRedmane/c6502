@@ -140,6 +140,8 @@ def _xlate_op(op: asm_ast.Type_operand) -> asm2_ast.Type_operand:
             return asm2_ast.Data(name=n, offset=o)
         case asm_ast.Indirect(offset=o):
             return asm2_ast.Indirect(offset=o)
+        case asm_ast.IndirectY():
+            return asm2_ast.IndirectY()
         case asm_ast.ZP(address=a, offset=o):
             return asm2_ast.ZP(address=a, offset=o)
         case asm_ast.ImmLabelLow(name=n, offset=o):

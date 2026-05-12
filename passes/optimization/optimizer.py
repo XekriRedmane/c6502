@@ -84,6 +84,9 @@ from passes.optimization.recognize_indexed_load import (
 from passes.optimization.recognize_indexed_store import (
     recognize_indexed_store,
 )
+from passes.optimization.recognize_indirect_indexed import (
+    recognize_indirect_indexed,
+)
 from passes.optimization.sink_increment import sink_increments
 from passes.optimization.ssa_construction import to_ssa
 from passes.optimization.ssa_destruction import from_ssa
@@ -151,6 +154,7 @@ def optimize_function(
         fn = reassoc_constants(fn)
         fn = recognize_indexed_store(fn, symbols=symbols)
         fn = recognize_indexed_load(fn, symbols=symbols)
+        fn = recognize_indirect_indexed(fn, symbols=symbols)
         fn = sink_increments(fn)
         if fn == prev:
             break

@@ -516,7 +516,7 @@ def _is_memory(op: asm_ast.Type_operand) -> bool:
     return isinstance(
         op,
         (asm_ast.Stack, asm_ast.Frame, asm_ast.Data,
-         asm_ast.Indirect, asm_ast.ZP),
+         asm_ast.Indirect, asm_ast.IndirectY, asm_ast.ZP),
     )
 
 
@@ -656,6 +656,13 @@ def _emit_indy(opcode: str, op: asm_ast.Type_operand) -> bytes:
     )
 
 
+def _emit_indy_no_y_setup(opcode: str) -> bytes:
+    """<op> (DPTR),Y where Y is already preloaded. For IndirectY
+    operands. Skips the LDY emission since the caller has staged Y
+    externally."""
+    return bytes([_INDY[opcode], DEFAULT_ZP_SYMBOLS["DPTR"]])
+
+
 def _emit_abs(opcode: str, addr: int) -> bytes:
     lo, hi = _abs_word(addr)
     return bytes([_ABS[opcode], lo, hi])
@@ -775,6 +782,8 @@ def _load_mem_to_a_size(src: asm_ast.Type_operand) -> int:
         return 2 if _abs_fits_zp(src) else 3
     if _is_indirect_y(src):
         return 4   # LDY # + LDA (zp),Y
+    if isinstance(src, asm_ast.IndirectY):
+        return 2   # LDA (zp),Y; Y preloaded externally
     raise AssemblerError(f"can't load {src!r} into A")
 
 
@@ -784,6 +793,8 @@ def _store_a_to_mem_size(dst: asm_ast.Type_operand) -> int:
         return 2 if _abs_fits_zp(dst) else 3
     if _is_indirect_y(dst):
         return 4
+    if isinstance(dst, asm_ast.IndirectY):
+        return 2   # STA (zp),Y; Y preloaded externally
     raise AssemblerError(f"can't store A into {dst!r}")
 
 
@@ -912,6 +923,8 @@ def _emit_load_mem_to_a(
         return _emit_load_zp_or_abs_to_a(_resolve_abs_addr(op, syms))
     if _is_indirect_y(op):
         return _emit_indy("LDA", op)
+    if isinstance(op, asm_ast.IndirectY):
+        return _emit_indy_no_y_setup("LDA")
     raise AssemblerError(f"can't load {op!r} into A")
 
 
@@ -922,6 +935,8 @@ def _emit_store_a_to_mem(
         return _emit_store_a_zp_or_abs(_resolve_abs_addr(op, syms))
     if _is_indirect_y(op):
         return _emit_indy("STA", op)
+    if isinstance(op, asm_ast.IndirectY):
+        return _emit_indy_no_y_setup("STA")
     raise AssemblerError(f"can't store A into {op!r}")
 
 

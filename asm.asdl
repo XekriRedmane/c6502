@@ -185,11 +185,22 @@ module ASM {
     -- DPTR-staged indirect-Y dereference. Caller is responsible
     -- for loading `index_reg` (typically Y) with the byte offset
     -- before issuing the access.
+    --
+    -- IndirectY: the byte at `(DPTR),Y` where the Y register has
+    -- already been loaded by the caller (analogous to IndexedData's
+    -- external-Y convention). Distinct from `Indirect(offset)`,
+    -- which always emits its own `LDY #offset` for the Y setup —
+    -- `IndirectY` skips the LDY and emits just the access
+    -- (`LDA (DPTR),Y` / `STA (DPTR),Y`). Used by the
+    -- IndirectIndexedLoad / IndirectIndexedStore TAC lowerings,
+    -- where Y is loaded from a runtime index variable rather than a
+    -- compile-time offset.
     operand = Imm(int value) | Reg(reg)
             | Pseudo(identifier name, int offset)
             | Stack(int offset) | Frame(int offset)
             | Data(identifier name, int offset)
             | Indirect(int offset)
+            | IndirectY()
             | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)

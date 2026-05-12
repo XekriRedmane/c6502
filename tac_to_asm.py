@@ -956,6 +956,10 @@ class Translator:
                 return self._translate_indexed_store(addr, index, src)
             case tac_ast.IndexedConstLoad(address=addr, index=index, dst=dst):
                 return self._translate_indexed_const_load(addr, index, dst)
+            case tac_ast.IndirectIndexedLoad(ptr=ptr, index=index, dst=dst):
+                return self._translate_indirect_indexed_load(ptr, index, dst)
+            case tac_ast.IndirectIndexedStore(ptr=ptr, index=index, src=src):
+                return self._translate_indirect_indexed_store(ptr, index, src)
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     # ------------------------------------------------------------------
@@ -1686,6 +1690,85 @@ class Translator:
                 dst=_REG_A,
             ),
             asm_ast.Mov(src=_REG_A, dst=dst_op),
+        ]
+
+    def _translate_indirect_indexed_load(
+        self,
+        ptr: tac_ast.Type_val,
+        index: tac_ast.Type_val,
+        dst: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Indirect-(zp),Y load via the DPTR pair, with Y carrying
+        the runtime index instead of a compile-time offset. Lowers
+        as:
+
+            <stage ptr → DPTR>
+            Mov(idx, A)        ; LDA idx   (may clobber Y for Frame idx)
+            Mov(A, Reg(Y))     ; TAY       (Y = idx)
+            Mov(IndirectY, A)  ; LDA (DPTR),Y
+            Mov(A, dst)        ; STA dst
+
+        Eight asm atoms (vs ~10 for the unrecognized
+        ZeroExtend + Binary(Add) + Load sequence) — the win
+        compounds across an unrolled body where DPTR staging is
+        loop-invariant and the asm-level passes elide the
+        redundant restores.
+
+        Y-preservation rationale: the only instruction between
+        `TAY` (setting Y=idx) and `LDA (DPTR),Y` (consuming Y) is
+        the IndirectY atom itself, which doesn't emit an LDY (that
+        was the point of the new operand). So Y stays correct.
+
+        The recognizer verified `dst` is 1 byte, so no per-byte
+        fan-out."""
+        ptr_op = translate_val(ptr)
+        idx_op = translate_val(index)
+        dst_op = translate_val(dst)
+        return [
+            *self._stage_dptr(ptr_op),
+            asm_ast.Mov(src=idx_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.Y())),
+            asm_ast.Mov(src=asm_ast.IndirectY(), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst_op),
+        ]
+
+    def _translate_indirect_indexed_store(
+        self,
+        ptr: tac_ast.Type_val,
+        index: tac_ast.Type_val,
+        src: tac_ast.Type_val,
+    ) -> list[asm_ast.Type_instruction]:
+        """Indirect-(zp),Y store via DPTR. Trickier than the load
+        because two values need to reach the STA: `src` in A and
+        `idx` in Y. Loading either through a Frame source clobbers
+        Y (LDY #off setup), so we PHA across the idx load:
+
+            <stage ptr → DPTR>
+            Mov(src, A)         ; LDA src   (Y may be clobbered)
+            Push                 ; PHA       (save src on hw stack)
+            Mov(idx, A)         ; LDA idx   (clobbers Y for Frame idx,
+                                 ;            which is fine; we're
+                                 ;            about to set Y anyway)
+            Mov(A, Reg(Y))      ; TAY       (Y = idx)
+            Pop                  ; PLA       (A = src)
+            Mov(A, IndirectY)   ; STA (DPTR),Y
+
+        The PHA/PLA adds 2 bytes / 7 cycles vs an idealized
+        ZP-only sequence, but is necessary for correctness when
+        either operand spills to Frame. An asm-level peephole
+        could collapse the save/restore when both operands prove
+        to be ZP-resident post-regalloc — deferred."""
+        ptr_op = translate_val(ptr)
+        idx_op = translate_val(index)
+        src_op = translate_val(src)
+        return [
+            *self._stage_dptr(ptr_op),
+            asm_ast.Mov(src=src_op, dst=_REG_A),
+            asm_ast.Push(src=_REG_A),
+            asm_ast.Mov(src=idx_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.Y())),
+            asm_ast.Pop(dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectY()),
         ]
 
     @staticmethod

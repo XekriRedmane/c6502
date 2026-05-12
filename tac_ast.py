@@ -139,6 +139,20 @@ class IndexedConstLoad(Type_instruction):
 
 
 @dataclass
+class IndirectIndexedLoad(Type_instruction):
+    ptr: Type_val
+    index: Type_val
+    dst: Type_val
+
+
+@dataclass
+class IndirectIndexedStore(Type_instruction):
+    ptr: Type_val
+    index: Type_val
+    src: Type_val
+
+
+@dataclass
 class Unary(Type_instruction):
     op: Type_unary_operator
     src: Type_val

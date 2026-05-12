@@ -75,6 +75,27 @@ module TAC {
         -- const-static fold has turned the source pointer into a
         -- numeric address.
         | IndexedConstLoad(int address, val index, val dst)
+        -- Indirect-indexed load through a pointer-typed val. `ptr` is a
+        -- 2-byte Pointer-typed val holding a runtime address; `index`
+        -- is a 1-byte (Char/SChar/UChar) val that the codegen stages
+        -- into Y; `dst` is loaded from `*(ptr + index)`. tac_to_asm
+        -- lowers as: stage `ptr` into the zero-page DPTR pair, then
+        -- `LDY index; LDA (DPTR),Y; STA dst` — the 6502 indirect-Y
+        -- addressing mode does the `ptr + Y` arithmetic for free.
+        --
+        -- Emitted by `passes/optimization/recognize_indirect_indexed.py`
+        -- when it spots a `Load(%addr, dst)` whose `%addr` is the
+        -- result of `Binary(Add, ptr_var, %ext_idx, %addr)` (or the
+        -- commuted form) and `%ext_idx` is a `ZeroExtend` of a 1-byte
+        -- typed Var. Eligibility: temps single-use, dst is 1 byte
+        -- wide, the pointer's pointee is 1 byte (so the type checker
+        -- didn't insert a Multiply for sizeof scaling).
+        | IndirectIndexedLoad(val ptr, val index, val dst)
+        -- Mirror of IndirectIndexedLoad for stores. Writes `src`'s
+        -- byte to `*(ptr + index)`. tac_to_asm lowers as: stage `ptr`
+        -- into DPTR, then `LDY index; LDA src; STA (DPTR),Y`. Same
+        -- eligibility checks as the Load form.
+        | IndirectIndexedStore(val ptr, val index, val src)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)

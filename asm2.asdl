@@ -72,6 +72,7 @@ module ASM2 {
             | Stack(int offset) | Frame(int offset)
             | Data(identifier name, int offset)
             | Indirect(int offset)
+            | IndirectY()
             | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)

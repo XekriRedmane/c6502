@@ -194,6 +194,14 @@ def _try_recognize(
     ptr_var, ext_var = _split_var_var(addr_def.src1, addr_def.src2, def_idx, all_instrs)
     if ptr_var is None or ext_var is None:
         return None
+    # Defer to `recognize_indexed_store` / `recognize_indexed_load`
+    # when the pointer-side Var transitively holds a Constant.
+    # Forcing the indirect-(zp),Y form here would lock in DPTR-
+    # staging-via-IndirectIndexed for what's really an absolute,X
+    # pattern, which IndexedStore lowers more cheaply
+    # (`STA $C,X` vs. `STA (DPTR),Y` plus the staging).
+    if _resolves_to_constant(ptr_var, def_idx, all_instrs):
+        return None
     if use_counts.get(ext_var.name, 0) != 1:
         return None
     ext_def_idx = def_idx[ext_var.name]
@@ -246,6 +254,36 @@ def _defined_by_zero_extend(
     if idx is None:
         return False
     return isinstance(all_instrs[idx], tac_ast.ZeroExtend)
+
+
+def _resolves_to_constant(
+    v: tac_ast.Var,
+    def_idx: dict[str, int],
+    all_instrs: list[tac_ast.Type_instruction],
+) -> bool:
+    """True iff `v`'s SSA def chain ends in a Constant. Follows
+    `Copy` chains of arbitrary depth; gives up on non-Copy defs.
+    Used to defer to the IndexedLoad/Store recognizers when the
+    pointer-side operand is just a Var-wrapped Constant."""
+    seen: set[str] = set()
+    cur = v
+    while True:
+        if cur.name in seen:
+            return False
+        seen.add(cur.name)
+        idx = def_idx.get(cur.name)
+        if idx is None:
+            return False
+        d = all_instrs[idx]
+        if not isinstance(d, tac_ast.Copy):
+            return False
+        src = d.src
+        if isinstance(src, tac_ast.Constant):
+            return True
+        if isinstance(src, tac_ast.Var):
+            cur = src
+            continue
+        return False
 
 
 def _is_1_byte_var(v: tac_ast.Var, symbols) -> bool:

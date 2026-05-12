@@ -154,10 +154,21 @@ def optimize_function(
         fn = reassoc_constants(fn)
         fn = recognize_indexed_store(fn, symbols=symbols)
         fn = recognize_indexed_load(fn, symbols=symbols)
-        fn = recognize_indirect_indexed(fn, symbols=symbols)
         fn = sink_increments(fn)
         if fn == prev:
             break
+    # Run the indirect-indexed recognizer AFTER the fixed-point
+    # loop has converged on constant folding. If we ran it inside
+    # the loop, it could prematurely lock in an IndirectIndexed
+    # form for an address chain whose pointer side is going to
+    # fold to a Constant on the next iteration — preempting the
+    # cheaper `recognize_indexed_store` lowering. Running it last
+    # guarantees: every chain that COULD become absolute,X already
+    # has (via recognize_indexed_store); only the genuine
+    # runtime-pointer cases (zp_abi params, address-taken pointer
+    # locals) remain for the (zp),Y lowering.
+    if symbols is not None:
+        fn = recognize_indirect_indexed(fn, symbols=symbols)
     if symbols is not None:
         fn = from_ssa(fn, symbols=symbols)
     # Post-from_ssa copy folding. SSA destruction emits a Copy at

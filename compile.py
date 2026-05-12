@@ -58,6 +58,7 @@ from passes.redundant_load import apply_redundant_load_elimination
 from passes.redundant_load_after_rmw import (
     apply_redundant_load_after_rmw,
 )
+from passes.redundant_store import apply_redundant_store_elimination
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
@@ -103,9 +104,10 @@ def _resolved(source: str, *, unroll: bool = False):
     parsed = parse(source)
     if unroll:
         parsed = unroll_program(parsed)
-    return label_loops(resolve_labels(lift_strings(
-        resolve_identifiers(parsed),
-    )))
+    resolved = resolve_identifiers(parsed)
+    lifted = lift_strings(resolved)
+    label_resolved = resolve_labels(lifted)
+    return label_loops(label_resolved)
 
 
 # Defensive cap on the asm-peephole fixed-point loop. None of the
@@ -119,28 +121,29 @@ _PEEPHOLE_FIXEDPOINT_CAP = 16
 
 def _peephole_fixedpoint(prog):
     """Run apply_inc_peephole → apply_dec_peephole → apply_direct_
-    index_load → apply_redundant_load_elimination in sequence,
-    repeating until a full sweep produces no further change. Each
-    pass can enable the next: `inc_peephole` / `dec_peephole` may
-    shorten chains that `direct_index_load` then collapses;
-    `direct_index_load`'s rewrite of `LDA M; TAX` to `LDX M`
-    exposes redundant `LDX M` loads downstream; `redundant_load`'s
-    deletions can leave new `LDA; TAX` pairs adjacent. Order:
-    inc/dec → direct → redundant matches the natural enabling
+    index_load → apply_redundant_load_elimination →
+    apply_redundant_store_elimination in sequence, repeating until
+    a full sweep produces no further change. Each pass can enable
+    the next: `inc_peephole` / `dec_peephole` may shorten chains
+    that `direct_index_load` then collapses; `direct_index_load`'s
+    rewrite of `LDA M; TAX` to `LDX M` exposes redundant `LDX M`
+    loads downstream; `redundant_load`'s deletions can leave new
+    `LDA; TAX` pairs adjacent. `redundant_store` catches memory-
+    to-memory transfer redundancies (e.g. repeated DPTR staging
+    in an unrolled body) that `redundant_load`'s A-tracking can't
+    see across an intervening A clobber. Order: inc/dec → direct →
+    redundant_load → redundant_store matches the natural enabling
     chain. `redundant_load_after_rmw` runs after dec/inc — it
     needs the rmw form to exist to recognize its pattern."""
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
-        new_prog = apply_asm_dead_store(
-            apply_redundant_load_elimination(
-                apply_redundant_load_after_rmw(
-                    apply_direct_index_load(
-                        apply_sub1_test_zero_peephole(
-                            apply_dec_peephole(apply_inc_peephole(prog)),
-                        ),
-                    ),
-                ),
-            ),
-        )
+        new_prog = apply_inc_peephole(prog)
+        new_prog = apply_dec_peephole(new_prog)
+        new_prog = apply_sub1_test_zero_peephole(new_prog)
+        new_prog = apply_direct_index_load(new_prog)
+        new_prog = apply_redundant_load_after_rmw(new_prog)
+        new_prog = apply_redundant_load_elimination(new_prog)
+        new_prog = apply_redundant_store_elimination(new_prog)
+        new_prog = apply_asm_dead_store(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog
@@ -219,17 +222,18 @@ def _run_stage(
                 param_layouts=abi,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
-            return emit_program(lower_to_asm2(
-                expand_long_branches(_peephole_fixedpoint(asm2)),
-            ))
-        return emit_program(lower_to_asm2(expand_long_branches(
-            _peephole_fixedpoint(replace_pseudoregs(
-                translate_to_asm(tac, symbols, types),
-                extra_statics=statics,
-                symbols=symbols,
-                types=types,
-            )),
-        )))
+            asm3 = _peephole_fixedpoint(asm2)
+            asm4 = expand_long_branches(asm3)
+            asm5 = lower_to_asm2(asm4)
+            return emit_program(asm5)
+        asm0 = translate_to_asm(tac, symbols, types)
+        asm1 = replace_pseudoregs(
+            asm0, extra_statics=statics, symbols=symbols, types=types,
+        )
+        asm2 = _peephole_fixedpoint(asm1)
+        asm3 = expand_long_branches(asm2)
+        asm4 = lower_to_asm2(asm3)
+        return emit_program(asm4)
     raise AssertionError(f"unknown stage: {stage!r}")
 
 

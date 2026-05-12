@@ -244,6 +244,139 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         self.assertEqual(out.instructions, instrs)
 
 
+class TestRecognizeIndirectIndexedDefersToIndexedStore(unittest.TestCase):
+    """The recognizer must defer to `recognize_indexed_store` /
+    `recognize_indexed_load` when the pointer-side Var transitively
+    holds a Constant — those passes lower the access to a cheaper
+    absolute,X form (`STA $XXXX,X`) once constant propagation
+    finishes. Firing prematurely on the Var locks in the indirect-
+    (zp),Y form, which is strictly worse for compile-time-known
+    addresses.
+
+    Regression test: prior to the fix in 9137831, the recognizer
+    fired inside the TAC fixed-point loop, preempting
+    `recognize_indexed_store` on chains that would have folded to
+    a Constant on the next iteration. The result on
+    paint_hud_strip_p1 was a 4-5x output blowup."""
+
+    def test_copy_constant_ptr_defers_load(self) -> None:
+        # `Copy(Const, %ptr); ZeroExtend(uchar, %ext); Binary(Add,
+        # %ptr, %ext, %addr); Load(%addr, dst)` — %ptr transitively
+        # IS a constant; defer.
+        instrs = [
+            tac_ast.Copy(
+                src=tac_ast.Constant(
+                    const=tac_ast.ConstUInt(value=0x4000),
+                ),
+                dst=_var("%ptr"),
+            ),
+            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=_var("%ptr"),
+                src2=_var("%ext"),
+                dst=_var("%addr"),
+            ),
+            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
+        ]
+        symbols = _table({
+            "y": _uchar_local(),
+            "b": _uchar_local(),
+            "%ptr": _ptr_local(),
+            "%ext": _uint_local(),
+            "%addr": _ptr_local(),
+        })
+        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
+        # No IndirectIndexedLoad produced — instructions unchanged.
+        self.assertEqual(out.instructions, instrs)
+
+    def test_copy_constant_ptr_defers_store(self) -> None:
+        instrs = [
+            tac_ast.Copy(
+                src=tac_ast.Constant(
+                    const=tac_ast.ConstUInt(value=0x4000),
+                ),
+                dst=_var("%ptr"),
+            ),
+            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=_var("%ptr"),
+                src2=_var("%ext"),
+                dst=_var("%addr"),
+            ),
+            tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr")),
+        ]
+        symbols = _table({
+            "y": _uchar_local(),
+            "value": _uchar_local(),
+            "%ptr": _ptr_local(),
+            "%ext": _uint_local(),
+            "%addr": _ptr_local(),
+        })
+        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
+        self.assertEqual(out.instructions, instrs)
+
+    def test_copy_chain_to_constant_defers(self) -> None:
+        # %p1 = Copy(Const); %p2 = Copy(%p1); Binary(%p2, ...);
+        # the chain through Copy → Copy → Constant should defer.
+        instrs = [
+            tac_ast.Copy(
+                src=tac_ast.Constant(
+                    const=tac_ast.ConstUInt(value=0x4000),
+                ),
+                dst=_var("%p1"),
+            ),
+            tac_ast.Copy(src=_var("%p1"), dst=_var("%p2")),
+            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=_var("%p2"),
+                src2=_var("%ext"),
+                dst=_var("%addr"),
+            ),
+            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
+        ]
+        symbols = _table({
+            "y": _uchar_local(),
+            "b": _uchar_local(),
+            "%p1": _ptr_local(),
+            "%p2": _ptr_local(),
+            "%ext": _uint_local(),
+            "%addr": _ptr_local(),
+        })
+        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
+        self.assertEqual(out.instructions, instrs)
+
+    def test_var_with_no_copy_def_still_fires(self) -> None:
+        # A genuine runtime pointer (e.g., a zp_abi param) has no
+        # Copy(Constant) def — the recognizer should still fire.
+        # Here we model it by simply NOT providing a def for `p`.
+        instrs = [
+            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%ext")),
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=_var("p"),
+                src2=_var("%ext"),
+                dst=_var("%addr"),
+            ),
+            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b")),
+        ]
+        symbols = _table({
+            "y": _uchar_local(),
+            "b": _uchar_local(),
+            "p": _ptr_local(),
+            "%ext": _uint_local(),
+            "%addr": _ptr_local(),
+        })
+        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
+        # Fires — IndirectIndexedLoad replaces the 3-instruction chain.
+        self.assertEqual(len(out.instructions), 1)
+        self.assertIsInstance(
+            out.instructions[0], tac_ast.IndirectIndexedLoad,
+        )
+
+
 class TestRecognizeIndirectIndexedStoreUnit(unittest.TestCase):
     """Unit tests for the store shape."""
 

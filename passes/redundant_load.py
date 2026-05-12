@@ -77,6 +77,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes.asm_aliasing import may_alias as _may_alias
 
 
 def apply_redundant_load_elimination(
@@ -315,36 +316,6 @@ def _invalidate_aliasing(
     state.a = [op for op in state.a if not _may_alias(op, write_dst)]
     state.x = [op for op in state.x if not _may_alias(op, write_dst)]
     state.y = [op for op in state.y if not _may_alias(op, write_dst)]
-
-
-def _may_alias(
-    a: asm_ast.Type_operand, b: asm_ast.Type_operand,
-) -> bool:
-    """Conservative: True iff we can't prove the two operands
-    refer to disjoint memory cells (or one is a non-memory
-    `Imm`, in which case it never aliases).
-
-    Provably disjoint cases (return False):
-      * Either side is `Imm` — immediates aren't memory.
-      * Both are `ZP`: only same-byte aliases.
-      * One is `ZP`, other is `Data` / `IndexedData` — different
-        memory regions ($00–$FF vs ≥ $100).
-      * Both are `Data` with different name OR different offset.
-
-    Everything else returns True (defensive)."""
-    if isinstance(a, asm_ast.Imm) or isinstance(b, asm_ast.Imm):
-        return False
-    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
-        return (a.address + a.offset) == (b.address + b.offset)
-    if (isinstance(a, asm_ast.ZP)
-            and isinstance(b, (asm_ast.Data, asm_ast.IndexedData))):
-        return False
-    if (isinstance(b, asm_ast.ZP)
-            and isinstance(a, (asm_ast.Data, asm_ast.IndexedData))):
-        return False
-    if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
-        return a.name == b.name and a.offset == b.offset
-    return True
 
 
 def _depends_on_reg(

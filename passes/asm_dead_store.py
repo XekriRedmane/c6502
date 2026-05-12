@@ -79,6 +79,7 @@ appear).
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import may_alias as _may_alias
 
 
 # Asm-level regalloc pool range (default `Pool(start=0x80)` splits
@@ -309,27 +310,6 @@ def _read_operands(
         ):
             if not isinstance(dst, asm_ast.Reg):
                 yield dst
-
-
-def _may_alias(
-    a: asm_ast.Type_operand, b: asm_ast.Type_operand,
-) -> bool:
-    """Conservative aliasing: True iff we can't prove the two
-    operands refer to disjoint memory cells. Mirrors `redundant_
-    load._may_alias`'s rules."""
-    if isinstance(a, asm_ast.Imm) or isinstance(b, asm_ast.Imm):
-        return False
-    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
-        return (a.address + a.offset) == (b.address + b.offset)
-    if (isinstance(a, asm_ast.ZP)
-            and isinstance(b, (asm_ast.Data, asm_ast.IndexedData))):
-        return False
-    if (isinstance(b, asm_ast.ZP)
-            and isinstance(a, (asm_ast.Data, asm_ast.IndexedData))):
-        return False
-    if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
-        return a.name == b.name and a.offset == b.offset
-    return True
 
 
 def _operands_equal_exact(

@@ -172,13 +172,26 @@ def _successors(
 
 
 def _is_dead_at_exit(target: asm_ast.Type_operand) -> bool:
-    """True iff `target` is known dead at function exit. ZP in the
-    asm-level regalloc pool (`$80..$FF`) is function-local and so
-    has no observer past `Ret` / `Return`. Everything else is
+    """True iff `target` is known dead at function exit.
+
+    Dead-at-exit categories:
+      * ZP in the asm-level regalloc pool (`$80..$FF`) — function-
+        local scratch.
+      * `Data("DPTR", _)` — DPTR is the runtime's caller-saved
+        scratch indirect-pointer pair. Callers don't expect its
+        value preserved across a call; the only observable side
+        effect of writing to it is a subsequent indirect access
+        from inside this function, which the CFG-wide forward
+        DFS would have caught as a read.
+
+    Everything else (user statics, HARGS / SSP / FP runtime
+    symbols that carry return values or stack state) is
     conservatively live."""
     if isinstance(target, asm_ast.ZP):
         addr = target.address + target.offset
         return _POOL_LO <= addr < _POOL_HI
+    if isinstance(target, asm_ast.Data) and target.name == "DPTR":
+        return True
     return False
 
 
@@ -277,13 +290,19 @@ def _write_operand(
 def _read_operands(
     instr: asm_ast.Type_instruction,
 ):
-    """Yield every memory operand `instr` may read."""
+    """Yield every memory operand `instr` may read. Includes the
+    implicit pointer-source read for indirect-Y target operands —
+    e.g. `STA (DPTR),Y` writes the target byte but READS DPTR
+    (and DPTR+1) to know where to write."""
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             if not isinstance(src, asm_ast.Reg):
                 yield src
-            # A Mov to a non-reg memory operand only WRITES that dst;
-            # it doesn't read it. (STA M doesn't read M.)
+            # STA via an indirect-Y mode reads the pointer source
+            # (DPTR / FP / SSP / explicit ZP base) to compute the
+            # target address. Surface those as reads so DSE
+            # doesn't drop a still-live pointer staging.
+            yield from _ptr_source_reads(dst)
         case asm_ast.Add(src=src, dst=dst) | asm_ast.Sub(src=src, dst=dst) \
                 | asm_ast.And(src=src, dst=dst) | asm_ast.Or(src=src, dst=dst):
             if not isinstance(src, asm_ast.Reg):
@@ -302,6 +321,7 @@ def _read_operands(
             # INC/DEC reads its dst (RMW).
             if not isinstance(dst, asm_ast.Reg):
                 yield dst
+            yield from _ptr_source_reads(dst)
         case (
             asm_ast.ArithmeticShiftLeft(dst=dst)
             | asm_ast.LogicalShiftRight(dst=dst)
@@ -310,6 +330,23 @@ def _read_operands(
         ):
             if not isinstance(dst, asm_ast.Reg):
                 yield dst
+            yield from _ptr_source_reads(dst)
+
+
+def _ptr_source_reads(op: asm_ast.Type_operand):
+    """For an indirect-Y addressing-mode operand (Indirect /
+    IndirectY / IndirectZp / IndirectZpY), yield the operand(s)
+    naming the ZP byte pair that holds the pointer (DPTR / FP /
+    SSP / the explicit ZP base). Yields nothing for non-indirect-Y
+    operands."""
+    if isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY)):
+        yield asm_ast.Data(name="DPTR", offset=0)
+        yield asm_ast.Data(name="DPTR", offset=1)
+        return
+    if isinstance(op, (asm_ast.IndirectZp, asm_ast.IndirectZpY)):
+        yield asm_ast.ZP(address=op.address, offset=0)
+        yield asm_ast.ZP(address=op.address + 1, offset=0)
+        return
 
 
 def _operands_equal_exact(

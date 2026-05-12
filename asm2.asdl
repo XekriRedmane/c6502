@@ -73,6 +73,8 @@ module ASM2 {
             | Data(identifier name, int offset)
             | Indirect(int offset)
             | IndirectY()
+            | IndirectZp(int address, int offset)
+            | IndirectZpY(int address)
             | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)

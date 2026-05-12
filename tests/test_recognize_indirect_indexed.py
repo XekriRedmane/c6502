@@ -305,7 +305,9 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
     def test_indirect_indexed_load_emits_short_sequence(self) -> None:
         # `ptr[idx]` where ptr is a zp_abi parameter and idx is a
         # uchar local. The indirect-Y access should appear without
-        # a 16-bit Add chain.
+        # a 16-bit Add chain; the `indirect_base_prop` pass further
+        # bypasses DPTR staging by using the zp_abi pointer's ZP
+        # bytes as the indirect base directly.
         src = (
             "#include <stdint.h>\n"
             "static volatile uint8_t result;\n"
@@ -316,14 +318,18 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
             "int main(void) { return 0; }\n"
         )
         asm = self._compile(src)
-        # Expect `LDA (DPTR),Y` with no preceding 16-bit ADC of idx.
-        self.assertIn("LDA   (DPTR),Y", asm)
+        # Expect an `LDA ($XX),Y` indirect-Y read (the ZP base
+        # is the zp_abi-pinned pointer slot, so $80 by the default
+        # pool layout).
+        self.assertIn("LDA   ($80),Y", asm)
         # The unrecognized form would emit `CLC` for the 16-bit
         # Add inside `copy` — verify that's gone.
         body_start = asm.index("copy:")
         body_end = asm.index("\n\n", body_start)
         copy_body = asm[body_start:body_end]
         self.assertNotIn("CLC", copy_body)
+        # And the DPTR staging itself has been bypassed.
+        self.assertNotIn("STA   DPTR", copy_body)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

@@ -195,12 +195,26 @@ module ASM {
     -- IndirectIndexedLoad / IndirectIndexedStore TAC lowerings,
     -- where Y is loaded from a runtime index variable rather than a
     -- compile-time offset.
+    --
+    -- IndirectZp(addr, offset): the byte at `(zp),Y` where `zp =
+    -- addr` (any ZP location, not just DPTR) and Y is set to
+    -- `offset` by an LDY preamble. Used by the
+    -- `indirect_base_prop` pass to bypass the DPTR staging when a
+    -- ZP-resident pointer can be used directly. emit: `LDY
+    -- #offset; LDA ($addr),Y`.
+    --
+    -- IndirectZpY(addr): same as `IndirectZp` but with Y preloaded
+    -- externally (no LDY emitted). emit: `LDA ($addr),Y`. Used
+    -- when the source pointer at `addr,addr+1` should serve as the
+    -- indirect base without staging through DPTR.
     operand = Imm(int value) | Reg(reg)
             | Pseudo(identifier name, int offset)
             | Stack(int offset) | Frame(int offset)
             | Data(identifier name, int offset)
             | Indirect(int offset)
             | IndirectY()
+            | IndirectZp(int address, int offset)
+            | IndirectZpY(int address)
             | ZP(int address, int offset)
             | ImmLabelLow(identifier name, int offset)
             | ImmLabelHigh(identifier name, int offset)

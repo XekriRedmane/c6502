@@ -301,6 +301,17 @@ class IndirectY(Type_operand):
 
 
 @dataclass
+class IndirectZp(Type_operand):
+    address: int
+    offset: int
+
+
+@dataclass
+class IndirectZpY(Type_operand):
+    address: int
+
+
+@dataclass
 class ZP(Type_operand):
     address: int
     offset: int

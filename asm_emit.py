@@ -254,14 +254,15 @@ def _emit_indirect_store(off: int, addr_op: asm_ast.Type_operand) -> list[str]:
 
 
 def _is_memory_operand(op: asm_ast.Type_operand) -> bool:
-    """True iff `op` is a memory operand (Stack / Frame / Data /
-    Indirect / IndirectY / ZP) — i.e., something that needs a
-    load/store opcode rather than a transfer or immediate. Used at
-    the dispatch boundary in Mov."""
+    """True iff `op` is a memory operand — anything that needs a
+    load/store opcode rather than a transfer or immediate. Used
+    at the dispatch boundary in Mov."""
     return isinstance(
         op,
         (asm_ast.Stack, asm_ast.Frame, asm_ast.Data,
-         asm_ast.Indirect, asm_ast.IndirectY, asm_ast.ZP),
+         asm_ast.Indirect, asm_ast.IndirectY,
+         asm_ast.IndirectZp, asm_ast.IndirectZpY,
+         asm_ast.ZP),
     )
 
 
@@ -326,11 +327,19 @@ def _emit_memop_load(
     """Read the byte addressed by `addr_op` into A (or another reg
     if a different opcode is passed; the caller picks). Indirect-Y
     for Stack/Frame/Indirect, absolute for Data / ZP. IndirectY
-    skips the LDY since Y was preloaded externally."""
+    and IndirectZpY skip the LDY since Y was preloaded externally.
+    IndirectZp uses an explicit ZP base instead of DPTR."""
     if _is_data_or_zp(addr_op):
         return [_instr_line(opcode, _abs_addr(addr_op))]
     if isinstance(addr_op, asm_ast.IndirectY):
         return [_instr_line(opcode, f"({_DPTR}),Y")]
+    if isinstance(addr_op, asm_ast.IndirectZpY):
+        return [_instr_line(opcode, f"(${addr_op.address:02X}),Y")]
+    if isinstance(addr_op, asm_ast.IndirectZp):
+        return [
+            _emit_load_y(addr_op.offset),
+            _instr_line(opcode, f"(${addr_op.address:02X}),Y"),
+        ]
     return [
         _emit_load_y(addr_op.offset),
         _instr_line(opcode, _indirect_addr(addr_op)),
@@ -339,12 +348,20 @@ def _emit_memop_load(
 
 def _emit_memop_store(addr_op: asm_ast.Type_operand) -> list[str]:
     """Store A into the byte addressed by `addr_op`. Indirect-Y for
-    Stack/Frame/Indirect, absolute for Data / ZP. IndirectY skips
-    the LDY since Y was preloaded externally."""
+    Stack/Frame/Indirect, absolute for Data / ZP. IndirectY and
+    IndirectZpY skip the LDY since Y was preloaded externally.
+    IndirectZp uses an explicit ZP base instead of DPTR."""
     if _is_data_or_zp(addr_op):
         return [_instr_line("STA", _abs_addr(addr_op))]
     if isinstance(addr_op, asm_ast.IndirectY):
         return [_instr_line("STA", f"({_DPTR}),Y")]
+    if isinstance(addr_op, asm_ast.IndirectZpY):
+        return [_instr_line("STA", f"(${addr_op.address:02X}),Y")]
+    if isinstance(addr_op, asm_ast.IndirectZp):
+        return [
+            _emit_load_y(addr_op.offset),
+            _instr_line("STA", f"(${addr_op.address:02X}),Y"),
+        ]
     return [
         _emit_load_y(addr_op.offset),
         _instr_line("STA", _indirect_addr(addr_op)),

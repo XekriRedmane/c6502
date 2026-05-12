@@ -137,19 +137,39 @@ def may_alias(
         a, asm_ast.ZP,
     ):
         return False
-    # Indirect / IndirectY vs ZP-in-pool: user pointers don't point
-    # into the regalloc pool under c6502's invariant.
-    if isinstance(a, (asm_ast.Indirect, asm_ast.IndirectY)) and isinstance(
-        b, asm_ast.ZP,
-    ):
+    # Indirect-Y family (Indirect / IndirectY / IndirectZp /
+    # IndirectZpY) vs ZP-in-pool: user pointers don't point into
+    # the regalloc pool under c6502's address-taken-goes-to-Frame
+    # invariant.
+    _indy_indirect_kinds = (
+        asm_ast.Indirect, asm_ast.IndirectY,
+        asm_ast.IndirectZp, asm_ast.IndirectZpY,
+    )
+    if isinstance(a, _indy_indirect_kinds) and isinstance(b, asm_ast.ZP):
         addr = b.address + b.offset
         if pool_lo <= addr < pool_hi:
             return False
-    if isinstance(b, (asm_ast.Indirect, asm_ast.IndirectY)) and isinstance(
-        a, asm_ast.ZP,
-    ):
+    if isinstance(b, _indy_indirect_kinds) and isinstance(a, asm_ast.ZP):
         addr = a.address + a.offset
         if pool_lo <= addr < pool_hi:
+            return False
+    # IndirectZp / IndirectZpY vs Data(runtime symbol): the
+    # IndirectZp family uses an explicit ZP base (NOT DPTR), so it
+    # neither aliases DPTR (the pointer source) nor any other
+    # runtime ZP symbol (user pointers don't point into runtime
+    # infrastructure by c6502 convention).
+    #
+    # Note: `Indirect` / `IndirectY` themselves DO reference DPTR
+    # (it's their pointer source) and so MUST be allowed to alias
+    # `Data("DPTR", _)` — otherwise DSE would drop a live STA DPTR
+    # that subsequent LDA (DPTR),Y reads observe. The rule below
+    # is intentionally scoped to the IndirectZp* kinds only.
+    _zp_indirect_kinds = (asm_ast.IndirectZp, asm_ast.IndirectZpY)
+    if isinstance(a, _zp_indirect_kinds) and isinstance(b, asm_ast.Data):
+        if b.name in _RUNTIME_ZP_NAMES:
+            return False
+    if isinstance(b, _zp_indirect_kinds) and isinstance(a, asm_ast.Data):
+        if a.name in _RUNTIME_ZP_NAMES:
             return False
     # Same-kind same-offset cases for the indirect-Y family.
     if isinstance(a, asm_ast.Frame) and isinstance(b, asm_ast.Frame):
@@ -158,6 +178,16 @@ def may_alias(
         return a.offset == b.offset
     if isinstance(a, asm_ast.Indirect) and isinstance(b, asm_ast.Indirect):
         return a.offset == b.offset
+    if isinstance(a, asm_ast.IndirectZp) and isinstance(b, asm_ast.IndirectZp):
+        # Different ZP bases ⇒ different runtime pointers ⇒ no
+        # alias. Same base + same offset ⇒ same byte.
+        if a.address != b.address:
+            return False
+        return a.offset == b.offset
+    if isinstance(a, asm_ast.IndirectZpY) and isinstance(b, asm_ast.IndirectZpY):
+        if a.address != b.address:
+            return False
+        return True  # same base, both depend on the same external Y
     # Frame vs Stack: separate stack pointers; no alias.
     if (
         isinstance(a, asm_ast.Frame) and isinstance(b, asm_ast.Stack)
@@ -166,3 +196,11 @@ def may_alias(
         return False
     # Default: conservative.
     return True
+
+
+# Names of runtime-installed ZP symbols (matches `sim.assembler.
+# DEFAULT_ZP_SYMBOLS`). Used by the indirect-Y aliasing rules to
+# tell "Data(known runtime symbol)" apart from "Data(user
+# static)" — only the user-static side could possibly be reached
+# by a user pointer.
+_RUNTIME_ZP_NAMES = frozenset({"SSP", "FP", "HARGS", "DPTR"})

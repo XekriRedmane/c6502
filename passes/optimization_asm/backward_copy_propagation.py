@@ -72,6 +72,12 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes.asm_liveness import (
+    a_dead_at as _a_dead_at,
+    is_reg_a as _is_reg_a,
+    kills_a as _kills_a,
+    reads_a as _reads_a,
+)
 
 
 ByteVar = tuple[str, int]
@@ -255,40 +261,12 @@ def _operands_alias(
     return False
 
 
-def _is_reg_a(op: asm_ast.Type_operand) -> bool:
-    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
-
-
 def _is_memory_dst(op: asm_ast.Type_operand) -> bool:
     """Allowed final-destination shapes — non-Pseudo memory cells.
     `Data` and `Stack` are what `tac_to_asm` emits at this point in
     the pipeline; `Frame` / `ZP` are introduced by later passes
     (`replace_pseudoregisters`) and shouldn't appear here."""
     return isinstance(op, (asm_ast.Data, asm_ast.Stack))
-
-
-def _a_dead_at(
-    instrs: list[asm_ast.Type_instruction], idx: int,
-) -> bool:
-    """True iff `Reg(A)`'s value at position `idx` is dead — every
-    forward path through the instruction stream encounters a
-    write-without-read of A before any read of A.
-
-    Conservative within a single basic block: stops at any
-    intra-block control-flow boundary (`Branch` / `Jump` / `Label`)
-    and returns False (we don't track inter-block A liveness)."""
-    while idx < len(instrs):
-        instr = instrs[idx]
-        if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
-            return not instr.save_a
-        if isinstance(instr, (asm_ast.Label, asm_ast.Jump, asm_ast.Branch)):
-            return False
-        if _reads_a(instr):
-            return False
-        if _kills_a(instr):
-            return True
-        idx += 1
-    return True
 
 
 def _flags_dead_at(
@@ -314,53 +292,6 @@ def _flags_dead_at(
     return True
 
 
-def _reads_a(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` reads `Reg(A)` (uses it as a source or
-    read-modify-writes via `dst=A`)."""
-    if isinstance(instr, asm_ast.Mov):
-        return _is_reg_a(instr.src)
-    if isinstance(instr, asm_ast.Push):
-        return _is_reg_a(instr.src)
-    if isinstance(instr, (
-        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
-    )):
-        return _is_reg_a(instr.src) or _is_reg_a(instr.dst)
-    if isinstance(instr, asm_ast.Xor):
-        return (
-            _is_reg_a(instr.src1) or _is_reg_a(instr.src2)
-            or _is_reg_a(instr.dst)
-        )
-    if isinstance(instr, asm_ast.Compare):
-        return _is_reg_a(instr.left) or _is_reg_a(instr.right)
-    if isinstance(instr, (
-        asm_ast.Inc, asm_ast.Dec,
-        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.RotateLeft, asm_ast.RotateRight,
-    )):
-        return _is_reg_a(instr.dst)
-    if isinstance(instr, asm_ast.Phi):
-        return any(_is_reg_a(a.source) for a in instr.args)
-    return False
-
-
-def _kills_a(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` writes `Reg(A)` without reading it first."""
-    if isinstance(instr, asm_ast.Mov):
-        if _is_reg_a(instr.dst) and not _is_reg_a(instr.src):
-            return True
-    if isinstance(instr, asm_ast.Pop):
-        if _is_reg_a(instr.dst):
-            return True
-    if isinstance(instr, asm_ast.Call):
-        # Callees clobber A: 1-byte returns place the result in A;
-        # HARGS-returning callees leave A unspecified. Either way
-        # the prior A is gone.
-        return True
-    if isinstance(instr, asm_ast.LoadAddress):
-        # The 4-instruction expansion (LDA #lo; STA dst.b0;
-        # LDA #hi; STA dst.b1) overwrites A unconditionally.
-        return True
-    return False
 
 
 def _sets_flags(instr: asm_ast.Type_instruction) -> bool:

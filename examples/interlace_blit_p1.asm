@@ -6,8 +6,7 @@ interlace_blit_p1:
    LDY   #$00
    LDX   $82
 .loop@0_start:
-   TXA
-   CMP   #$28
+   CPX   #$28
    BCC   .if_else@1
 .interlace_blit_p1@ssa_block@1:
    TYA
@@ -200,8 +199,7 @@ interlace_blit_p1:
 .if_end@0:
    DEX
 .loop@0_continue:
-   TXA
-   CMP   $83
+   CPX   $83
    BNE   .interlace_blit_p1@asm_ssa_split@0
 .interlace_blit_p1@asm_ssa_block@0:
    RTS

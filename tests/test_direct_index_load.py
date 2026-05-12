@@ -167,15 +167,39 @@ class TestDirectIndexLoadUnit(unittest.TestCase):
             asm_ast.Mov(src=asm_ast.ZP(address=0x80, offset=0), dst=_REG_X),
         )
 
-    def test_branch_after_pair_blocks_fold(self) -> None:
-        # A Branch after the pair could read A's value across the
-        # branch target's basic block. The pass conservatively
-        # treats Branch / Jump / Label as blocking — bails.
+    def test_branch_after_pair_with_clean_targets_folds(self) -> None:
+        # A Branch after the pair: the CFG-wide A-liveness walk
+        # follows both successors (fall-through and target). Here
+        # both paths terminate at `Return(save_a=False)` with no
+        # intervening read of A, so the fold IS sound.
         instrs = [
             asm_ast.Mov(src=asm_ast.ZP(address=0x80, offset=0), dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=_REG_X),
             asm_ast.Branch(cond=asm_ast.NE(), target="L"),
             asm_ast.Label(name="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = apply_direct_index_load(_prog(instrs))
+        rebuilt = out.top_level[0].instructions
+        self.assertEqual(
+            rebuilt[0],
+            asm_ast.Mov(src=asm_ast.ZP(address=0x80, offset=0), dst=_REG_X),
+        )
+
+    def test_branch_target_reads_a_blocks_fold(self) -> None:
+        # If A is live on at least one path after the Branch, the
+        # fold is unsound. Here the Branch target stores A to
+        # memory before any kill — A is observably live there.
+        instrs = [
+            asm_ast.Mov(src=asm_ast.ZP(address=0x80, offset=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Branch(cond=asm_ast.NE(), target="L"),
+            # Fall-through: kill A immediately.
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Return(save_a=False),
+            asm_ast.Label(name="L"),
+            # Target: read A (STA to memory). A is live here.
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.ZP(address=0x90, offset=0)),
             asm_ast.Return(save_a=False),
         ]
         out = apply_direct_index_load(_prog(instrs))

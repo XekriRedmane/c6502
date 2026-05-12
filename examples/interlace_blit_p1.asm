@@ -13,8 +13,6 @@ interlace_blit_p1:
    CLC
    ADC   #$23
    TAY
-   LDA   #$00
-   ADC   #$00
    JMP   .if_end@0
 .if_else@1:
    LDA   $80

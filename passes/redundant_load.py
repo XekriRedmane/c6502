@@ -78,6 +78,7 @@ from dataclasses import dataclass, field
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
+from passes.asm_liveness import flags_dead_at as _flags_dead_at
 
 
 def apply_redundant_load_elimination(
@@ -354,46 +355,3 @@ def _operands_equal(
     return False
 
 
-def _flags_dead_at(
-    instrs: list[asm_ast.Type_instruction], idx: int,
-) -> bool:
-    """True iff scanning forward from `idx`, no `Branch` reads the
-    N/Z flags before another instruction resets them. Conservative:
-    treat anything we can't classify as live (the load isn't dropped)."""
-    while idx < len(instrs):
-        instr = instrs[idx]
-        if isinstance(instr, asm_ast.Branch):
-            # The flags ARE read here.
-            return False
-        if isinstance(instr, (asm_ast.Label, asm_ast.Jump,
-                              asm_ast.Ret, asm_ast.Return,
-                              asm_ast.Call)):
-            # Block boundary — flags are dead from the next block's
-            # perspective. (Inter-block flag liveness is rare in
-            # c6502's lowerings; if it ever arises, this returns
-            # True erroneously, but the cost is dropping a load
-            # that may have been observable; the lowerings don't
-            # exhibit this shape today.)
-            return True
-        if _resets_nz(instr):
-            return True
-        idx += 1
-    return True
-
-
-def _resets_nz(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` writes the N/Z flags (so any prior flag
-    state is overwritten)."""
-    if isinstance(instr, asm_ast.Mov):
-        # LDA / LDX / LDY / TAX / TAY / TXA / TYA all set N/Z.
-        # STA / STX / STY don't.
-        return isinstance(instr.dst, asm_ast.Reg)
-    if isinstance(instr, (asm_ast.Add, asm_ast.Sub, asm_ast.And,
-                          asm_ast.Or, asm_ast.Xor, asm_ast.Compare,
-                          asm_ast.Inc, asm_ast.Dec,
-                          asm_ast.ArithmeticShiftLeft,
-                          asm_ast.LogicalShiftRight,
-                          asm_ast.RotateLeft, asm_ast.RotateRight,
-                          asm_ast.Pop)):
-        return True
-    return False

@@ -74,9 +74,11 @@ from typing import Iterable
 import asm_ast
 from passes.asm_liveness import (
     a_dead_at as _a_dead_at,
+    flags_dead_at as _flags_dead_at,
     is_reg_a as _is_reg_a,
     kills_a as _kills_a,
     reads_a as _reads_a,
+    sets_flags as _sets_flags,
 )
 
 
@@ -269,64 +271,6 @@ def _is_memory_dst(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, (asm_ast.Data, asm_ast.Stack))
 
 
-def _flags_dead_at(
-    instrs: list[asm_ast.Type_instruction], idx: int,
-) -> bool:
-    """True iff the N/Z flags' values at position `idx` are dead —
-    no `Branch` reads them before some flag-setter overwrites them.
-
-    Conservative: a `Jump` / `Ret` / `Return` / `Label` /
-    end-of-function ends the walk safely (no `Branch` ever observes
-    the flags from this point on)."""
-    while idx < len(instrs):
-        instr = instrs[idx]
-        if isinstance(instr, asm_ast.Branch):
-            return False
-        if isinstance(instr, (
-            asm_ast.Jump, asm_ast.Ret, asm_ast.Return, asm_ast.Label,
-        )):
-            return True
-        if _sets_flags(instr):
-            return True
-        idx += 1
-    return True
-
-
-
-
-def _sets_flags(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr`'s 6502 lowering fully overwrites the N/Z
-    flags."""
-    if isinstance(instr, asm_ast.Mov):
-        # Mov(_, Reg(A|X|Y)) → LD* sets flags.
-        if isinstance(instr.dst, asm_ast.Reg):
-            return True
-        # Mov(Reg(A), memory) → STA only — no flag change.
-        if _is_reg_a(instr.src):
-            return False
-        # Mov(non-A, memory) emits LDA src; STA dst — LDA sets flags.
-        return True
-    if isinstance(instr, (
-        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
-        asm_ast.Xor,
-    )):
-        return True
-    if isinstance(instr, (
-        asm_ast.Inc, asm_ast.Dec,
-        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.RotateLeft, asm_ast.RotateRight,
-    )):
-        return True
-    if isinstance(instr, asm_ast.Compare):
-        return True
-    if isinstance(instr, asm_ast.Pop):
-        return True
-    if isinstance(instr, asm_ast.LoadAddress):
-        return True
-    if isinstance(instr, asm_ast.Call):
-        # Callee-defined flag state — assume clobbered.
-        return True
-    return False
 
 
 def _with_mov_dst(

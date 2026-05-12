@@ -55,6 +55,7 @@ from passes.inc_peephole import apply_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
+from passes.dead_a_arith import apply_dead_a_arith_elimination
 from passes.redundant_load import apply_redundant_load_elimination
 from passes.redundant_load_after_rmw import (
     apply_redundant_load_after_rmw,
@@ -146,6 +147,7 @@ def _peephole_fixedpoint(prog):
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)
         new_prog = apply_asm_dead_store(new_prog)
+        new_prog = apply_dead_a_arith_elimination(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog

@@ -91,6 +91,7 @@ memory-vs-memory redundancies.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import flags_dead_at as _flags_dead_at
 
 
 # Pre-installed runtime ZP symbol addresses (matches
@@ -343,39 +344,3 @@ def _aliases(addr_id: tuple, write_id: tuple) -> bool:
     return False
 
 
-def _flags_dead_at(
-    instrs: list[asm_ast.Type_instruction], idx: int,
-) -> bool:
-    """True iff dropping a load at index `idx - 2` is sound from
-    a flag-liveness standpoint. Scans forward from `idx`; returns
-    False if a Branch reads the flags before another instruction
-    overwrites them. Mirrors `redundant_load._flags_dead_at`."""
-    while idx < len(instrs):
-        instr = instrs[idx]
-        if isinstance(instr, asm_ast.Branch):
-            return False
-        if isinstance(instr, (
-            asm_ast.Label, asm_ast.Jump,
-            asm_ast.Ret, asm_ast.Return, asm_ast.Call,
-        )):
-            return True
-        if _resets_nz(instr):
-            return True
-        idx += 1
-    return True
-
-
-def _resets_nz(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` overwrites the N/Z flags."""
-    if isinstance(instr, asm_ast.Mov):
-        # Loads (LDA / LDX / LDY / transfers) set N/Z; stores
-        # don't.
-        return isinstance(instr.dst, asm_ast.Reg)
-    return isinstance(instr, (
-        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
-        asm_ast.Xor, asm_ast.Compare,
-        asm_ast.Inc, asm_ast.Dec,
-        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.RotateLeft, asm_ast.RotateRight,
-        asm_ast.Pop,
-    ))

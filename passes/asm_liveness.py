@@ -180,3 +180,71 @@ def kills_a(instr: asm_ast.Type_instruction) -> bool:
     if isinstance(instr, asm_ast.LoadAddress):
         return True
     return False
+
+
+def flags_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff the N/Z flags' values at position `idx` are dead —
+    no `Branch` reads them before some flag-setter overwrites them.
+    Within-block walk: a `Jump` / `Ret` / `Return` / `Label`
+    terminates safely (the N/Z status of subsequent paths is each
+    block's responsibility; if the next block's first instruction
+    is a Branch, the soundness of declaring flags dead here depends
+    on c6502's emission convention always setting N/Z before any
+    Branch the lowering needs to read — which it does).
+
+    The C and V flags aren't tracked separately: V is only observed
+    by the V-correction sequence in signed-comparison lowerings,
+    which itself emits a flag-setter just before the Branch; C is
+    observed by ADC / SBC / BCC / BCS sequences that the codegen
+    always seeds with an explicit CLC / SEC immediately before. So
+    "no Branch before a flag overwriter" is a conservative
+    overapproximation of "all flags dead"."""
+    while idx < len(instrs):
+        instr = instrs[idx]
+        if isinstance(instr, asm_ast.Branch):
+            return False
+        if isinstance(instr, (
+            asm_ast.Jump, asm_ast.Ret, asm_ast.Return, asm_ast.Label,
+        )):
+            return True
+        if sets_flags(instr):
+            return True
+        idx += 1
+    return True
+
+
+def sets_flags(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr`'s 6502 lowering fully overwrites the N/Z
+    flags."""
+    if isinstance(instr, asm_ast.Mov):
+        # Mov(_, Reg(A|X|Y)) → LD* sets flags.
+        if isinstance(instr.dst, asm_ast.Reg):
+            return True
+        # Mov(Reg(A), memory) → STA only — no flag change.
+        if is_reg_a(instr.src):
+            return False
+        # Mov(non-A, memory) emits LDA src; STA dst — LDA sets flags.
+        return True
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+        asm_ast.Xor,
+    )):
+        return True
+    if isinstance(instr, (
+        asm_ast.Inc, asm_ast.Dec,
+        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+        asm_ast.RotateLeft, asm_ast.RotateRight,
+    )):
+        return True
+    if isinstance(instr, asm_ast.Compare):
+        return True
+    if isinstance(instr, asm_ast.Pop):
+        return True
+    if isinstance(instr, asm_ast.LoadAddress):
+        return True
+    if isinstance(instr, asm_ast.Call):
+        # Callee-defined flag state — assume clobbered.
+        return True
+    return False

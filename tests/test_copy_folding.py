@@ -263,9 +263,10 @@ class TestCopyFoldingEndToEnd(unittest.TestCase):
         self.assertIn(".loop@0_continue:", asm)
         # The continue block (between loop@0_continue and the
         # next label) should have INC + BNE + INC for the 16-bit
-        # i++. Since other ZP slots are also in play, just check
-        # that the INC chain pattern appears in the asm.
-        self.assertIn("INC   $", asm)
+        # i++. Body locals emit as `__local_<fn>_b<k>` symbols
+        # now; check the INC + done-label chain.
+        import re
+        self.assertRegex(asm, r"INC\s+__local_\w+_b\d+")
         self.assertIn(".inc_done@", asm)
 
 

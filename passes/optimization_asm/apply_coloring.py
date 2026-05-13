@@ -49,13 +49,37 @@ from passes.optimization.register_allocation import Coloring
 
 def apply_coloring(
     fn: asm_ast.Function, coloring: Coloring,
+    *,
+    local_pool: list[int] | None = None,
 ) -> asm_ast.Function:
-    """Return `fn` with every colored Pseudo lowered to ZP / Reg."""
+    """Return `fn` with every colored Pseudo lowered to ZP / Reg.
+
+    When `local_pool` is provided, regalloc-colored Pseudos whose
+    address falls in the pool are emitted as
+    `Data(__local_<fn>_b<k>, 0)` operands instead of numeric
+    `ZP(addr, 0)` — where `k` is the byte's position in
+    `local_pool`. The asm-emit stage prints
+    `__local_<fn>_b<k> EQU $<addr>` directives alongside the
+    `__zpabi_*` block, and dasm picks zp vs. absolute addressing
+    from the resolved value (so a pool that spilled above `$FF`
+    is transparent to the body). The symbolic form is what makes
+    the multi-TU linker (`compile.py --link`) able to re-allocate
+    body locals globally: the per-TU IR doesn't bake in addresses,
+    only stable slot indices.
+
+    Functions WITHOUT a private pool (ineligible per
+    `zp_local_allocation`) fall back to the numeric `ZP(addr, 0)`
+    form. Same for any colored byte that — defensively — lands
+    outside the supplied pool (shouldn't happen; the regalloc was
+    given the pool as its `allowed_range`)."""
     if not coloring.assignments and not coloring.hwreg_assignments:
         return fn
+    addr_to_slot: dict[int, int] = {}
+    if local_pool:
+        addr_to_slot = {addr: k for k, addr in enumerate(local_pool)}
     # Phase 1: substitute Pseudo references.
     new_instrs = [
-        _apply_to_instruction(instr, coloring)
+        _apply_to_instruction(instr, coloring, fn.name, addr_to_slot)
         for instr in fn.instructions
     ]
     # Phase 2: drop the redundant TR'A + TAR transfer chain that
@@ -80,6 +104,7 @@ def apply_coloring(
 
 def _apply_to_op(
     op: asm_ast.Type_operand, coloring: Coloring,
+    fn_name: str, addr_to_slot: dict[int, int],
 ) -> asm_ast.Type_operand:
     if isinstance(op, asm_ast.Pseudo):
         if op.name in coloring.hwreg_assignments:
@@ -94,6 +119,11 @@ def _apply_to_op(
             return _hwreg_letter_to_op(coloring.hwreg_assignments[op.name])
         if op.name in coloring.assignments:
             addr = coloring.assignments[op.name] + op.offset
+            if addr in addr_to_slot:
+                return asm_ast.Data(
+                    name=f"__local_{fn_name}_b{addr_to_slot[addr]}",
+                    offset=0,
+                )
             return asm_ast.ZP(address=addr, offset=0)
     return op
 
@@ -108,8 +138,9 @@ def _hwreg_letter_to_op(letter: str) -> asm_ast.Reg:
 
 def _apply_to_instruction(
     instr: asm_ast.Type_instruction, coloring: Coloring,
+    fn_name: str, addr_to_slot: dict[int, int],
 ) -> asm_ast.Type_instruction:
-    apply = lambda op: _apply_to_op(op, coloring)
+    apply = lambda op: _apply_to_op(op, coloring, fn_name, addr_to_slot)
     match instr:
         case asm_ast.Mov(src=src, dst=dst):
             return asm_ast.Mov(src=apply(src), dst=apply(dst))

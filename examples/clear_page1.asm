@@ -2,6 +2,8 @@ __zpabi_clear_page1_p0	EQU	$80
 __zpabi_clear_page1_p1	EQU	$81
 __zpabi_interlace_fill_p1_p0	EQU	$82
 __zpabi_interlace_fill_p1_p1	EQU	$83
+__local_clear_page1_b0	EQU	$84
+__local_clear_page1_b1	EQU	$85
 
 clear_page1:
    SUBROUTINE
@@ -9,9 +11,9 @@ clear_page1:
 .clear_page1@asm_ssa_preheader@0:
 .clear_page1@ssa_block@0:
    LDA   __zpabi_clear_page1_p0
-   STA   $84
+   STA   __local_clear_page1_b0
 .loop@0_start:
-   LDX   $84
+   LDX   __local_clear_page1_b0
    LDA   #$00
    STA   $2600,X
    STA   $2A00,X
@@ -47,24 +49,25 @@ clear_page1:
    STA   $2028,X
    STA   $2428,X
    STA   $2828,X
-   LDA   $84
+   LDA   __local_clear_page1_b0
    STA   __zpabi_interlace_fill_p1_p0
    LDA   #$00
    STA   __zpabi_interlace_fill_p1_p1
    JSR   interlace_fill_p1
-   LDA   $84
+   LDA   __local_clear_page1_b0
    CMP   __zpabi_clear_page1_p1
    BNE   .if_end@0
 .clear_page1@asm_ssa_block@0:
    JMP   .loop@0_break
 .if_end@0:
-   DEC   $84
+   DEC   __local_clear_page1_b0
 .loop@0_continue:
    JMP   .loop@0_start
 .loop@0_break:
    LDX   #$27
 .loop@1_start:
    LDA   $0300,X
+   STA   __local_clear_page1_b0
    STA   $3028,X
    STA   $3428,X
    STA   $3828,X

@@ -127,6 +127,22 @@ def may_alias(
         a, (asm_ast.Data, asm_ast.IndexedData),
     ):
         return False
+    # ZP-symbol Data (`__local_*`, `__zpabi_*`) vs IndexedData:
+    # these symbols resolve to ZP byte addresses via EQU
+    # bindings at link time. IndexedData operands either target
+    # link-time-named statics (own namespace) or raw absolute
+    # addresses ≥ $0100 (their offset field exceeds the ZP
+    # range). In either case they can't alias a ZP-resolved
+    # symbol — same reasoning as the literal `ZP` operand
+    # branch above.
+    if isinstance(a, asm_ast.Data) and isinstance(
+        b, asm_ast.IndexedData,
+    ) and _is_zp_symbol(a.name):
+        return False
+    if isinstance(b, asm_ast.Data) and isinstance(
+        a, asm_ast.IndexedData,
+    ) and _is_zp_symbol(b.name):
+        return False
     # Frame / Stack vs ZP: FP / SSP point into the soft stack
     # (main RAM, ≥ $0800); offsets 0..255 don't reach ZP.
     if isinstance(a, (asm_ast.Frame, asm_ast.Stack)) and isinstance(
@@ -204,3 +220,18 @@ def may_alias(
 # static)" — only the user-static side could possibly be reached
 # by a user pointer.
 _RUNTIME_ZP_NAMES = frozenset({"SSP", "FP", "HARGS", "DPTR"})
+
+
+def _is_zp_symbol(name: str) -> bool:
+    """True iff `name` is one of c6502's known ZP-resolving
+    symbols: runtime infrastructure (`SSP`/`FP`/`HARGS`/`DPTR`),
+    a zp_abi param slot (`__zpabi_<fn>_p<k>`), or a body-local
+    slot (`__local_<fn>_b<k>`). Each of these resolves to a ZP
+    byte address via an EQU binding, so the same "distinct
+    namespace" rule that applies to literal `ZP` operands
+    applies to Data references against these symbols too."""
+    return (
+        name in _RUNTIME_ZP_NAMES
+        or name.startswith("__zpabi_")
+        or name.startswith("__local_")
+    )

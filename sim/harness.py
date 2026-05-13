@@ -50,7 +50,9 @@ from passes.replace_pseudoregisters import (
 from c99_to_tac import translate_program as translate_to_tac
 from passes.abi_selection import select_abi
 from passes.function_local_sizing import compute_local_bytes
-from passes.zp_local_allocation import allocate_function_locals
+from passes.zp_local_allocation import (
+    allocate_function_locals, build_local_slot_symbols,
+)
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
@@ -123,6 +125,12 @@ def compile_to_asm(
             asm0, extra_statics=statics, param_layouts=abi,
             symbols=syms, local_pools=local_pools,
         )
+        # Merge zp_abi slot symbols with body-local slot symbols
+        # so the assembler resolves both via `extra_symbols`.
+        zp_slot_symbols = {
+            **zp_slot_symbols,
+            **build_local_slot_symbols(local_pools),
+        }
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,
             types=types, colorings=asm_colorings,

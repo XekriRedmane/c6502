@@ -67,7 +67,9 @@ from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.abi_selection import select_abi
 from passes.function_local_sizing import compute_local_bytes
-from passes.zp_local_allocation import allocate_function_locals
+from passes.zp_local_allocation import (
+    allocate_function_locals, build_local_slot_symbols,
+)
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
@@ -253,10 +255,17 @@ def _run_stage(
                 param_layouts=abi, local_pools=local_pools,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
-            asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=zp_slot_symbols)
+            # Build the full EQU table: zp_abi param slots plus the
+            # per-function body-local slot symbols emitted by
+            # apply_coloring. The asm IR references body locals as
+            # `Data(__local_<fn>_b<k>, 0)`, so the emit needs an
+            # `EQU` binding for every symbol the IR uses.
+            local_slot_symbols = build_local_slot_symbols(local_pools)
+            all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
+            asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=all_slot_symbols)
             asm4 = expand_long_branches(asm3)
             asm5 = lower_to_asm2(asm4)
-            return emit_program(asm5, zp_slot_symbols=zp_slot_symbols)
+            return emit_program(asm5, zp_slot_symbols=all_slot_symbols)
         asm0 = translate_to_asm(tac, symbols, types)
         asm1 = replace_pseudoregs(
             asm0, extra_statics=statics, symbols=symbols, types=types,

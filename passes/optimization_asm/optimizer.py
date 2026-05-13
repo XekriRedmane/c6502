@@ -126,8 +126,13 @@ def optimize_program(
         if isinstance(tl, asm_ast.Function):
             blocked_addrs = _blocked_addrs_for(tl, param_layouts)
             allowed_range = _allowed_range_for(tl, local_pools)
+            pool_for_fn = (
+                local_pools.get(tl.name)
+                if local_pools is not None else None
+            )
             new_fn, coloring = _optimize_function(
                 tl, statics_frozen, blocked_addrs, allowed_range,
+                local_pool=pool_for_fn,
             )
             new_top.append(new_fn)
             colorings[new_fn.name] = coloring
@@ -203,6 +208,7 @@ def _optimize_function(
     fn: asm_ast.Function, statics: frozenset[str],
     blocked_addrs: set[int],
     allowed_range: range | None = None,
+    local_pool: list[int] | None = None,
 ) -> tuple[asm_ast.Function, Coloring]:
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
     # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
@@ -282,7 +288,7 @@ def _optimize_function(
     # compare by SSA name). After this rewrite, those Movs become
     # `Mov(ZP($A), ZP($B))` shapes that the storage-key check
     # handles correctly.
-    fn = apply_coloring(fn, coloring)
+    fn = apply_coloring(fn, coloring, local_pool=local_pool)
     fn = from_ssa(fn)
     return fn, coloring
 

@@ -767,18 +767,21 @@ class TestCodegenWithRegalloc(unittest.TestCase):
     def test_optimize_emits_zp_load_for_register_allocated_value(self):
         # Two locals depending on a param defeat constant folding:
         # `a = p + 1; b = a + p; return b`. With --optimize the
-        # surviving locals should land in ZP and lower to direct
-        # LDA $XX.
+        # surviving locals land in the function's private pool and
+        # lower to `LDA __local_main_b<k>`. The EQU directives at
+        # the top bind each symbol to an address in the caller-
+        # saved ZP range so dasm encodes the loads as 2-byte zp.
         src = "int main(int p) { int a = p + 1; int b = a + p; return b; }"
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
         )
         self.assertEqual(rc, 0)
-        # At least one ZP load against an address in the default
-        # caller-saved pool ($80..$BF). A regex tolerates whichever
-        # specific slot regalloc picks.
         import re
-        self.assertRegex(out, r"LDA\s+\$[89AB][0-9A-F]")
+        # At least one body-local symbolic load.
+        self.assertRegex(out, r"LDA\s+__local_main_b\d+")
+        # Its EQU binding lands in the default caller-saved ZP
+        # range ($80..$BF).
+        self.assertRegex(out, r"__local_main_b\d+\s+EQU\s+\$[89AB][0-9A-F]")
 
     def test_no_optimize_keeps_frame_addressing(self):
         # Same source without --optimize → no ZP, all accesses are

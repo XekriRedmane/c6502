@@ -136,6 +136,24 @@ _DEFAULT_SPILL_START = 0x0200
 _DEFAULT_SPILL_END = 0x10000
 
 
+def build_local_slot_symbols(
+    local_pools: dict[str, list[int]],
+) -> dict[str, int]:
+    """Convert per-function pool address lists into the EQU symbol
+    table the asm-emit stage expects. Each pool entry becomes
+    `__local_<fn>_b<k>` bound to its concrete byte address. The
+    asm IR references body locals by these symbols (via
+    `apply_coloring`'s `local_pool` mode), and the emit prepends
+    `<sym> EQU $<addr>` for each. The multi-TU linker
+    (`compile.py --link`) reads the metadata block and re-binds
+    every `__local_*` symbol globally."""
+    out: dict[str, int] = {}
+    for fn_name, pool in local_pools.items():
+        for k, addr in enumerate(pool):
+            out[f"__local_{fn_name}_b{k}"] = addr
+    return out
+
+
 def allocate_function_locals(
     prog: tac_ast.Program,
     abi: dict[str, ParamLayout],

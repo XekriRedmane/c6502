@@ -128,10 +128,11 @@ class TestAsmRegallocEndToEnd(unittest.TestCase):
             ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
         )
         self.assertEqual(rc, 0)
-        # At least one ZP load against an address in the
-        # caller-saved pool ($80..$BF).
+        # At least one body-local symbolic load with an EQU
+        # binding in the caller-saved ZP range.
         import re
-        self.assertRegex(out, r"LDA\s+\$[89AB][0-9A-F]")
+        self.assertRegex(out, r"LDA\s+__local_\w+_b\d+")
+        self.assertRegex(out, r"__local_\w+_b\d+\s+EQU\s+\$[89AB][0-9A-F]")
 
 
 if __name__ == "__main__":

@@ -847,7 +847,7 @@ class TestOptimizeFlagBehavior(unittest.TestCase):
         # no FunctionPrologue, no SSP/FP arithmetic, just a
         # single RTS.
         from sim.harness import compile_to_asm
-        prog, _, _ = compile_to_asm(
+        prog, _, _, _ = compile_to_asm(
             "int main(void) { return 0; }", optimize=True,
         )
         from asm_ast import Function, FunctionPrologue, Ret, Return

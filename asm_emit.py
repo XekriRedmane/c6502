@@ -1054,7 +1054,22 @@ def emit_top_level(tl: asm_ast.Type_top_level) -> list[str]:
     raise TypeError(f"unexpected top-level node: {tl!r}")
 
 
-def emit_program(prog: asm_ast.Type_program) -> str:
+def emit_program(
+    prog: asm_ast.Type_program,
+    *,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> str:
+    """Emit dasm-flavored 6502 assembly for `prog`.
+
+    `zp_slot_symbols` is an optional `dict[symbol_name, address]`
+    produced by `passes.zp_slot_allocation`. When non-empty, the
+    output starts with a block of `<sym> EQU $<addr>` directives —
+    one per entry — that bind every `__zpabi_*` slot symbol used
+    by call-site arg writes and callee-side param reads in the
+    body. dasm picks zp vs. absolute addressing from each
+    symbol's value, so the same `LDA <sym>` instruction assembles
+    as a 2-byte ZP load when the symbol lives in `$00..$FF` and a
+    3-byte absolute load otherwise."""
     match prog:
         case asm_ast.Program(top_level=top_levels):
             # One blank line separates consecutive top-level
@@ -1062,8 +1077,11 @@ def emit_program(prog: asm_ast.Type_program) -> str:
             # so they're visually distinct in the output. Trailing
             # newline at the very end (so the file ends in a
             # newline rather than a label).
-            chunks = [emit_top_level(tl) for tl in top_levels]
             joined: list[str] = []
+            if zp_slot_symbols:
+                joined.extend(_emit_equ_block(zp_slot_symbols))
+                joined.append("")
+            chunks = [emit_top_level(tl) for tl in top_levels]
             for i, chunk in enumerate(chunks):
                 if i > 0:
                     joined.append("")
@@ -1076,5 +1094,22 @@ def emit_program(prog: asm_ast.Type_program) -> str:
             return "\n".join(joined) + "\n"
         case _:
             raise TypeError(f"unexpected program: {prog!r}")
+
+
+def _emit_equ_block(
+    sym_to_addr: dict[str, int],
+) -> list[str]:
+    """Format the zp_abi slot-symbol bindings as dasm `EQU`
+    directives. Sorted by address (ascending) to keep the block
+    deterministic and visually grouped — ZP allocations cluster
+    at the top, spill-region allocations follow."""
+    items = sorted(sym_to_addr.items(), key=lambda kv: (kv[1], kv[0]))
+    lines: list[str] = []
+    for sym, addr in items:
+        if addr <= 0xFF:
+            lines.append(f"{sym}\tEQU\t${addr:02X}")
+        else:
+            lines.append(f"{sym}\tEQU\t${addr:04X}")
+    return lines
 
 

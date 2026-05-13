@@ -66,6 +66,7 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.abi_selection import select_abi
+from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
@@ -122,7 +123,7 @@ def _resolved(source: str, *, unroll: bool = False):
 _PEEPHOLE_FIXEDPOINT_CAP = 16
 
 
-def _peephole_fixedpoint(prog):
+def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
     """Run apply_inc_peephole → apply_dec_peephole → apply_direct_
     index_load → apply_redundant_load_elimination →
     apply_redundant_store_elimination in sequence, repeating until
@@ -144,7 +145,9 @@ def _peephole_fixedpoint(prog):
         new_prog = apply_sub1_test_zero_peephole(new_prog)
         new_prog = apply_direct_index_load(new_prog)
         new_prog = apply_cpx_cpy_peephole(new_prog)
-        new_prog = apply_indirect_base_prop(new_prog)
+        new_prog = apply_indirect_base_prop(
+            new_prog, zp_symbol_addrs=zp_slot_symbols,
+        )
         new_prog = apply_redundant_load_after_rmw(new_prog)
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)
@@ -215,6 +218,7 @@ def _run_stage(
             # nothing needs spilling).
             tac = optimize_tac(tac, symbols)
             abi = select_abi(tac, prog, types)
+            abi, zp_slot_symbols = allocate_zp_slots(tac, abi)
             asm0 = translate_to_asm(
                 tac, symbols, types, bare_exit=True, abi=abi,
             )
@@ -228,10 +232,10 @@ def _run_stage(
                 param_layouts=abi,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
-            asm3 = _peephole_fixedpoint(asm2)
+            asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=zp_slot_symbols)
             asm4 = expand_long_branches(asm3)
             asm5 = lower_to_asm2(asm4)
-            return emit_program(asm5)
+            return emit_program(asm5, zp_slot_symbols=zp_slot_symbols)
         asm0 = translate_to_asm(tac, symbols, types)
         asm1 = replace_pseudoregs(
             asm0, extra_statics=statics, symbols=symbols, types=types,

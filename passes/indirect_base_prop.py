@@ -76,17 +76,33 @@ _RUNTIME_ZP_ADDRS = {
 }
 
 
-def apply_indirect_base_prop(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_indirect_base_prop(
+    prog: asm_ast.Program,
+    *,
+    zp_symbol_addrs: dict[str, int] | None = None,
+) -> asm_ast.Program:
+    """Rewrite DPTR-staged indirect loads/stores to use the source
+    ZP pair directly. `zp_symbol_addrs` extends the runtime-symbol
+    table with caller-supplied `Data(name)` → byte-address bindings
+    (typically the `__zpabi_*` slot symbols produced by
+    `passes.zp_slot_allocation`) so a `Data(__zpabi_fn_p0)` whose
+    resolved address is in zero page is recognized as a valid ZP
+    pointer source for `(zp),Y` rewriting."""
+    addrs = dict(_RUNTIME_ZP_ADDRS)
+    if zp_symbol_addrs:
+        addrs.update(zp_symbol_addrs)
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(_rewrite_function(tl, addrs))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _rewrite_function(
+    fn: asm_ast.Function, zp_addrs: dict[str, int],
+) -> asm_ast.Function:
     """Walk `fn`'s instructions; track the `DPTR === zp_pair(N)`
     equivalence per basic block; rewrite Indirect / IndirectY
     operands while it holds."""
@@ -95,7 +111,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):
-        stage = _match_dptr_stage(instrs, i)
+        stage = _match_dptr_stage(instrs, i, zp_addrs)
         if stage is not None:
             base_zp = stage
             out.extend(instrs[i:i + 4])
@@ -127,6 +143,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 def _match_dptr_stage(
     instrs: list[asm_ast.Type_instruction], i: int,
+    zp_addrs: dict[str, int],
 ) -> int | None:
     """Match the 4-instruction DPTR-stage shape at `instrs[i:i+4]`.
     Returns the ZP byte address `N` of the source pair's low byte
@@ -144,8 +161,8 @@ def _match_dptr_stage(
         return None
     if not _is_dptr_byte(b.dst, 0) or not _is_dptr_byte(d.dst, 1):
         return None
-    addr_a = _resolved_zp_addr(a.src)
-    addr_c = _resolved_zp_addr(c.src)
+    addr_a = _resolved_zp_addr(a.src, zp_addrs)
+    addr_c = _resolved_zp_addr(c.src, zp_addrs)
     if addr_a is None or addr_c is None:
         return None
     if addr_c != addr_a + 1:
@@ -165,16 +182,20 @@ def _is_dptr_byte(op: asm_ast.Type_operand, offset: int) -> bool:
     )
 
 
-def _resolved_zp_addr(op: asm_ast.Type_operand) -> int | None:
+def _resolved_zp_addr(
+    op: asm_ast.Type_operand, zp_addrs: dict[str, int],
+) -> int | None:
     """ZP byte address that `op` references, if op resolves to a
     specific ZP byte. `ZP(addr, off)` resolves to `addr+off`;
-    `Data(name, off)` resolves via the runtime-symbol table for
-    DPTR / HARGS / SSP / FP. Returns None for non-ZP operands."""
+    `Data(name, off)` resolves via `zp_addrs` (which extends the
+    runtime-symbol table with any caller-supplied bindings like
+    the `__zpabi_*` slot symbols). Returns None for non-ZP
+    operands or symbols whose resolved address is above `$FF`."""
     if isinstance(op, asm_ast.ZP):
         return op.address + op.offset
     if isinstance(op, asm_ast.Data):
-        base = _RUNTIME_ZP_ADDRS.get(op.name)
-        if base is not None:
+        base = zp_addrs.get(op.name)
+        if base is not None and base + op.offset <= 0xFF:
             return base + op.offset
     return None
 

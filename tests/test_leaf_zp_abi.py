@@ -97,14 +97,11 @@ class TestLeafZpAbi(unittest.TestCase):
         # or end-of-output.
         main_idx = out.index("main:")
         main_body = out[main_idx:]
-        # Caller writes 3 to ZP $80 and 4 to ZP $82 (low bytes;
-        # high bytes go to $81/$83). No SBC against SSP for
-        # arg-block allocation. (The prologue still adjusts SSP
-        # for the saved-FP slot since main is soft-stack ABI; we
-        # only check there's no AllocateStack-style SBC matching
-        # the 4-byte arg total.)
-        self.assertIn("STA   $80", main_body)
-        self.assertIn("STA   $82", main_body)
+        # Caller writes the args to `add`'s slot symbols directly
+        # (no SBC-against-SSP). dasm resolves the symbols via the
+        # EQU directives the emit stage prepended.
+        self.assertIn("STA   __zpabi_add_p0", main_body)
+        self.assertIn("STA   __zpabi_add_p2", main_body)
 
     def test_caller_with_locals_calls_zp_abi_correctly(self) -> None:
         # Caller has its own body locals (x and y) AND calls a
@@ -127,20 +124,82 @@ class TestLeafZpAbi(unittest.TestCase):
         # x=10, y=20, return 30.
         self.assertEqual(self._sim_return_int(src), 30)
 
-    def test_zp_abi_with_call_in_body_rejected(self) -> None:
-        # End-to-end via compile_main: the abi_selection error
-        # should propagate.
+    def test_zp_abi_nonrecursive_call_accepted(self) -> None:
+        # A direct non-recursive call from a zp_abi function is
+        # now accepted (the optimizer's regalloc keeps the callee's
+        # param ZP slots disjoint from the caller's locals).
         src = (
             "int helper(int x) { return x + 1; } "
             "__attribute__((zp_abi)) int wrap(int x) { return helper(x); } "
             "int main(void) { return wrap(3); }"
+        )
+        self.assertEqual(self._sim_return_int(src), 4)
+
+    def test_zp_abi_recursion_rejected(self) -> None:
+        # End-to-end via compile_main: a zp_abi function on a call-
+        # graph cycle is rejected.
+        src = (
+            "__attribute__((zp_abi)) int rec(int x) { "
+            "  return x ? rec(x - 1) : 0; "
+            "} "
+            "int main(void) { return rec(3); }"
         )
         with self.assertRaises(Exception) as cm:
             self._codegen(src)
         # AbiSelectionError doesn't subclass ParserError; it
         # propagates as-is. Verify the error message names the
         # offending function.
-        self.assertIn("wrap", str(cm.exception))
+        self.assertIn("rec", str(cm.exception))
+
+    def test_extern_zp_abi_call_site_uses_zp(self) -> None:
+        # Extern declaration with `__attribute__((zp_abi))`: call
+        # sites should emit direct ZP writes (no AllocateStack / no
+        # `(SSP),Y` arg writes) — the annotation propagates from
+        # the declaration to the call site.
+        src = (
+            "__attribute__((zp_abi)) extern int helper(int x); "
+            "int main(void) { return helper(7); }"
+        )
+        asm = self._codegen(src)
+        # Symbolic slot write: `STA __zpabi_helper_p0` for the param;
+        # no `(SSP),Y` arg write that the soft-stack ABI would emit.
+        # The emit prepends an `__zpabi_helper_p0 EQU $80` directive
+        # so dasm encodes the store as 2-byte ZP addressing.
+        self.assertIn("STA   __zpabi_helper_p0", asm)
+        self.assertIn("__zpabi_helper_p0\tEQU\t$80", asm)
+        self.assertNotIn("STA   (SSP)", asm)
+
+    def test_zp_abi_caller_callee_get_disjoint_slots(self) -> None:
+        # A zp_abi caller and its direct zp_abi callee must be
+        # assigned disjoint slot ranges by
+        # `passes.zp_slot_allocation`: otherwise the callee's
+        # arg-write would clobber the caller's still-live params.
+        # Verified end-to-end via the simulator (correctness) and
+        # by inspecting the EQU directives in the emitted asm
+        # (allocation shape).
+        src = (
+            "__attribute__((zp_abi)) "
+            "void noop(int x, int y) { (void)x; (void)y; } "
+            "__attribute__((zp_abi)) "
+            "int caller(int a, int b) { "
+            "  noop(a + 100, 0); "
+            "  return b; "
+            "} "
+            "int main(void) { return caller(2, 5); }"
+        )
+        # Correctness: `b` survives the call to `noop`.
+        self.assertEqual(self._sim_return_int(src), 5)
+        # Allocation shape: caller occupies the bottom of the ZP
+        # window; noop is pushed up so its slots don't overlap.
+        asm = self._codegen(src)
+        self.assertIn("__zpabi_caller_p0\tEQU\t$80", asm)
+        self.assertIn("__zpabi_caller_p1\tEQU\t$81", asm)
+        self.assertIn("__zpabi_caller_p2\tEQU\t$82", asm)
+        self.assertIn("__zpabi_caller_p3\tEQU\t$83", asm)
+        self.assertIn("__zpabi_noop_p0\tEQU\t$84", asm)
+        self.assertIn("__zpabi_noop_p1\tEQU\t$85", asm)
+        self.assertIn("__zpabi_noop_p2\tEQU\t$86", asm)
+        self.assertIn("__zpabi_noop_p3\tEQU\t$87", asm)
 
 
 if __name__ == "__main__":

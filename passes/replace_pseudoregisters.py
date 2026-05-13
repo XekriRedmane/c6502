@@ -384,13 +384,18 @@ class Replacer:
         if op.name in self.statics:
             return asm_ast.Data(name=op.name, offset=op.offset)
         if op.name in self.param_flat_offsets:
-            # ZP-ABI param: bytes live at fixed ZP addresses per the
-            # function's `ZpLayout`. Resolve to ZP rather than Frame.
+            # ZP-ABI param: bytes live at fixed addresses per the
+            # function's `ZpLayout`. Resolve to a symbolic `Data`
+            # operand whose name is the slot symbol; the asm-emit
+            # stage prints `<sym> EQU $<addr>` directives at the
+            # top of the output, and dasm picks zp vs. absolute
+            # addressing from the resolved value. Spill above $FF
+            # therefore needs no IR change.
             from passes.abi_selection import ZpLayout
             assert isinstance(self.param_layout, ZpLayout)
             flat_idx = self.param_flat_offsets[op.name] + op.offset
-            return asm_ast.ZP(
-                address=self.param_layout.addrs[flat_idx],
+            return asm_ast.Data(
+                name=self.param_layout.slot_symbols[flat_idx],
                 offset=0,
             )
         if op.name in self.param_bases:

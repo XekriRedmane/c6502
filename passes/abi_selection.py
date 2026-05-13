@@ -9,29 +9,45 @@ without `__attribute__((zp_abi))` a function gets the soft-stack
 ABI; with the annotation, the function gets ZP-passing after
 validation.
 
+Functions defined in this TU and zp_abi-annotated externs both
+land in the returned dict. The extern case is the canonical
+cross-TU path: a header declares
+`__attribute__((zp_abi)) extern T fn(...)`, every TU that
+includes it sees the annotation, and call sites in this TU use
+ZP-passing for `fn` even though its body isn't visible.
+
 Validation of a `zp_abi` function (rejected with a clear error if
 any check fails):
 
-  1. **No nested calls.** The TAC body must contain zero
-     `FunctionCall` and zero `IndirectCall` instructions. A
-     function that calls others can't keep its parameters at
-     fixed ZP addresses across the call window — the callee
-     would clobber them.
-  2. **Address not taken.** No `Var(name=fn)` appears anywhere
+  1. **No indirect calls.** The TAC body must contain zero
+     `IndirectCall` instructions — the callee's ABI can't be
+     known at an indirect call site, so the callee might
+     reenter `fn` and clobber its parameter ZP slots.
+  2. **Not on a call-graph cycle.** Direct `FunctionCall`s
+     inside the body are fine, BUT `fn` must not be reachable
+     from itself via the static direct-call graph. A recursive
+     call (direct or transitive) would overwrite the outer
+     activation's parameter ZP slots before it returned.
+     Non-recursive calls are safe: the optimizer's regalloc
+     already blocks every zp_abi callee's parameter ZP slots
+     from being used as the caller's locals (see
+     `passes/optimization_asm/optimizer.py::_blocked_addrs_for`),
+     so the callee can't alias the caller's params.
+  3. **Address not taken.** No `Var(name=fn)` appears anywhere
      in the program. If the function's address is taken, an
      indirect call site can't know its custom ABI; only the
      soft-stack convention can be assumed at indirect call
      sites.
-  3. **Params fit.** The total parameter byte count fits in
+  4. **Params fit.** The total parameter byte count fits in
      the configured ZP window (`pool.zp_param_window()` —
      defaults to the caller-saved range $80–$BF).
 
 The returned dict has an entry for every `Function` top-level in
-`prog`. Functions with no annotation get `SoftStackLayout`. The
-dict can also be queried for `extern`-only declarations (which
-have no TAC `Function` body) — this design gives those
-`SoftStackLayout` always (cross-TU functions can't be reasoned
-about from inside this TU).
+`prog`, plus one entry per zp_abi-annotated extern. Functions
+defined in this TU without an annotation get `SoftStackLayout`;
+unannotated externs are absent from the dict, and the caller-
+side lookup in `tac_to_asm` falls back to `SoftStackLayout` for
+any missing name.
 
 `select_abi` is the entry point. The intermediate helper
 `_address_taken` walks the program once to compute the
@@ -49,8 +65,9 @@ from passes.optimization.var_visit import vals_in
 
 class AbiSelectionError(Exception):
     """Raised when a `__attribute__((zp_abi))` annotation can't be
-    honored: the function makes nested calls, has its address
-    taken, or has too many parameter bytes."""
+    honored: the function makes an indirect call, sits on a cycle
+    in the direct call graph (recursion), has its address taken,
+    or has too many parameter bytes."""
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +85,25 @@ class SoftStackLayout:
 @dataclass
 class ZpLayout:
     """The ZP-passing convention: each parameter byte lives at a
-    fixed ZP address. `addrs[i]` is the address holding the i-th
-    parameter byte (low byte of param 0 first, then high byte of
-    param 0, then low byte of param 1, etc.)."""
+    fixed address resolved at the asm-emit stage. `slot_symbols[i]`
+    names the i-th parameter byte's slot (low byte of param 0 first,
+    then high byte of param 0, then low byte of param 1, etc.).
+    `addrs[i]` is the concrete numeric address that each symbol
+    will resolve to at assembly time — populated by
+    `passes.zp_slot_allocation` after the call graph is known, so
+    no two functions on a common call path share a slot.
+
+    The asm emit produces `<symbol> EQU $<addr>` directives at the
+    top of the output and uses `Data(slot_symbols[i])` for every
+    caller-side arg-write and callee-side param-read. dasm picks
+    zp vs. absolute addressing automatically from each symbol's
+    resolved value — so when ZP saturates and the allocator spills
+    a function's slots above `$FF`, no code changes are needed.
+
+    `addrs` is what the asm-level regalloc reads via
+    `_blocked_addrs_for` to keep body locals disjoint from the
+    function's own param storage. Both fields are kept in sync."""
+    slot_symbols: list[str] = field(default_factory=list)
     addrs: list[int] = field(default_factory=list)
 
 
@@ -192,29 +225,82 @@ def _function_decls_by_name(
 # ---------------------------------------------------------------------------
 
 
-def _has_call_in_body(fn: tac_ast.Function) -> bool:
-    return any(
-        isinstance(i, (tac_ast.FunctionCall, tac_ast.IndirectCall))
-        for i in fn.instructions
-    )
+def _has_indirect_call(fn: tac_ast.Function) -> bool:
+    return any(isinstance(i, tac_ast.IndirectCall) for i in fn.instructions)
+
+
+def _build_callgraph(prog: tac_ast.Program) -> dict[str, set[str]]:
+    """`name -> set of direct callees`. Edges come from
+    `FunctionCall.name` only; `IndirectCall` is reported per-
+    function via `_has_indirect_call`. Only edges into functions
+    defined in this program are recorded — calls to externs (no
+    matching `tac_ast.Function`) can't introduce a cycle that
+    reenters the current TU."""
+    fn_names = {
+        tl.name for tl in prog.top_level
+        if isinstance(tl, tac_ast.Function)
+    }
+    cg: dict[str, set[str]] = {name: set() for name in fn_names}
+    for tl in prog.top_level:
+        if not isinstance(tl, tac_ast.Function):
+            continue
+        for instr in tl.instructions:
+            if (
+                isinstance(instr, tac_ast.FunctionCall)
+                and instr.name in fn_names
+            ):
+                cg[tl.name].add(instr.name)
+    return cg
+
+
+def _on_cycle(name: str, callgraph: dict[str, set[str]]) -> bool:
+    """True iff `name` is reachable from itself in the direct-call
+    graph (i.e. participates in a cycle — direct or mutual
+    recursion). Iterative DFS starting from each direct callee of
+    `name`."""
+    targets = callgraph.get(name, set())
+    if not targets:
+        return False
+    visited: set[str] = set()
+    stack = list(targets)
+    while stack:
+        n = stack.pop()
+        if n == name:
+            return True
+        if n in visited:
+            continue
+        visited.add(n)
+        stack.extend(callgraph.get(n, ()))
+    return False
 
 
 def _validate_zp_abi(
     fn: tac_ast.Function,
     fn_decl: c99_ast.Type_function_decl,
     address_taken: set[str],
+    callgraph: dict[str, set[str]],
     pool: Pool,
     types,
 ) -> ZpLayout:
     """Validate that `fn` can be given the ZP-passing ABI; return
     the computed `ZpLayout`. Raises `AbiSelectionError` on any
     violation."""
-    if _has_call_in_body(fn):
+    if _has_indirect_call(fn):
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
-            f"`__attribute__((zp_abi))` but its body contains a "
-            f"call instruction; ZP-passing functions must be "
-            f"leaves",
+            f"`__attribute__((zp_abi))` but its body contains an "
+            f"indirect call; the callee's ABI can't be known at "
+            f"the call site, so a ZP-passing function can't make "
+            f"indirect calls",
+        )
+    if _on_cycle(fn.name, callgraph):
+        raise AbiSelectionError(
+            f"function `{fn.name}` declared "
+            f"`__attribute__((zp_abi))` but is reachable from "
+            f"itself through the static call graph (direct or "
+            f"mutual recursion); a recursive call would clobber "
+            f"the parameter ZP slots before the outer activation "
+            f"returned",
         )
     if fn.name in address_taken:
         raise AbiSelectionError(
@@ -234,7 +320,42 @@ def _validate_zp_abi(
             f"(${window.start:02X}-${window.stop - 1:02X})",
         )
     addrs = [window.start + k for k in range(byte_count)]
-    return ZpLayout(addrs=addrs)
+    symbols = [f"__zpabi_{fn.name}_p{k}" for k in range(byte_count)]
+    return ZpLayout(slot_symbols=symbols, addrs=addrs)
+
+
+def _validate_zp_abi_extern(
+    name: str,
+    fn_decl: c99_ast.Type_function_decl,
+    address_taken: set[str],
+    pool: Pool,
+    types,
+) -> ZpLayout:
+    """Validate a zp_abi annotation on an extern declaration (no
+    TAC body in this TU). Only the address-taken and param-fit
+    checks apply — the IndirectCall and recursion checks need a
+    body to inspect, and for cross-TU functions we trust the
+    programmer's annotation."""
+    if name in address_taken:
+        raise AbiSelectionError(
+            f"function `{name}` declared "
+            f"`__attribute__((zp_abi))` but its address is taken "
+            f"somewhere in the program; ZP-passing functions "
+            f"can't be reached through a function pointer",
+        )
+    byte_count = _param_byte_count(fn_decl, types)
+    window = _zp_param_window(pool)
+    available = len(window)
+    if byte_count > available:
+        raise AbiSelectionError(
+            f"function `{name}` declared "
+            f"`__attribute__((zp_abi))` has {byte_count} parameter "
+            f"bytes, exceeding the {available}-byte ZP window "
+            f"(${window.start:02X}-${window.stop - 1:02X})",
+        )
+    addrs = [window.start + k for k in range(byte_count)]
+    symbols = [f"__zpabi_{name}_p{k}" for k in range(byte_count)]
+    return ZpLayout(slot_symbols=symbols, addrs=addrs)
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +384,13 @@ def select_abi(
     annotations = _annotation_map(c99_prog)
     decls = _function_decls_by_name(c99_prog)
     address_taken = _address_taken(prog)
+    callgraph = _build_callgraph(prog)
     out: dict[str, ParamLayout] = {}
+    defined: set[str] = set()
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
+        defined.add(tl.name)
         ann = annotations.get(tl.name)
         fn_decl = decls.get(tl.name)
         if ann == "zp_abi":
@@ -277,7 +401,7 @@ def select_abi(
                     f"declaration is missing — internal error",
                 )
             out[tl.name] = _validate_zp_abi(
-                tl, fn_decl, address_taken, pool, types,
+                tl, fn_decl, address_taken, callgraph, pool, types,
             )
         elif ann is None:
             out[tl.name] = SoftStackLayout()
@@ -289,4 +413,17 @@ def select_abi(
                 f"function `{tl.name}` has unrecognized abi "
                 f"annotation {ann!r}",
             )
+    # zp_abi-annotated externs: declared in this TU but defined
+    # elsewhere. Call sites in this TU need their `ZpLayout` so
+    # arg writes go to the callee's pinned ZP slots instead of
+    # the soft stack.
+    for name, ann in annotations.items():
+        if ann != "zp_abi" or name in defined:
+            continue
+        fn_decl = decls.get(name)
+        if fn_decl is None:
+            continue
+        out[name] = _validate_zp_abi_extern(
+            name, fn_decl, address_taken, pool, types,
+        )
     return out

@@ -1838,29 +1838,62 @@ if and only if its declaration carries `__attribute__((zp_abi))`.
 Without the annotation, soft-stack as today.
 
 Validation (compile-time, error otherwise):
-- The body must contain no `FunctionCall` / `IndirectCall` —
-  leaf only. Recursion / mutual recursion would clobber the
-  param ZP slots; indirect calls can't know the callee's ABI.
+- The body must contain no `IndirectCall` — the callee's ABI
+  can't be known at an indirect call site.
+- The function must not sit on a cycle in the static direct
+  call graph (no direct or mutual recursion). A recursive call
+  would clobber the parameter ZP slots before the outer
+  activation returned. Direct, non-recursive `FunctionCall`s
+  ARE permitted.
 - The function's address must not be taken anywhere in the
   program. (Otherwise an indirect call site would assume the
   default soft-stack ABI.)
 - The total parameter byte count must fit in the available ZP
-  window (default 64 bytes, $80–$BF).
+  window (default 64 bytes, $80–$BF). Functions whose slot
+  range can't fit alongside their transitive callers' ranges
+  are spilled to a non-ZP fallback region (default
+  $0200–$FFFF); see `passes/zp_slot_allocation.py`. Costs 1
+  byte / 1 cycle per access vs. ZP; the calling convention is
+  otherwise unchanged.
 
-`passes/abi_selection.py` (`select_abi`) computes the per-
-function `ParamLayout = SoftStackLayout | ZpLayout(addrs)` dict
-and is threaded through:
+**Symbolic slot references + link-time resolution.** Each
+zp_abi function's parameter bytes are referenced through
+**slot symbols** (`__zpabi_<funcname>_p<k>`), not numeric
+addresses. `passes/abi_selection.py` (`select_abi`) decides
+which functions get the ZP-passing ABI and assigns slot
+symbols. `passes/zp_slot_allocation.py` then walks the
+program's static call graph and binds each symbol to a
+concrete address such that no two functions on a common
+caller-callee path share a byte — siblings can reuse slots,
+since their activations never overlap on the call stack.
+`asm_emit` prepends `<sym> EQU $<addr>` directives to the
+output; dasm picks zero-page vs. absolute addressing
+automatically from each symbol's value, so the spill-to-non-
+ZP fallback is transparent to the call-site / callee code.
+
+The dict produced by `select_abi`
+(`ParamLayout = SoftStackLayout | ZpLayout(slot_symbols, addrs)`)
+is threaded through:
+- `passes/zp_slot_allocation.py` (`allocate_zp_slots`) — call-
+  graph-aware address assignment. Disjointness across paths is
+  guaranteed by construction; no shadow-copy fallback is
+  needed.
 - `tac_to_asm` (call-site lowering: ZP-ABI callees get
-  `Mov(arg, ZP(addr))` writes with parallel-copy ordering, no
-  `AllocateStack`).
+  `Mov(arg, Data(slot_symbol, 0))` writes with parallel-copy
+  ordering, no `AllocateStack`).
 - `replace_pseudoregisters_bare_exit` (callee-side: ZP-ABI
-  param Pseudos resolve to `ZP(layout.addrs[k], 0)`;
+  param Pseudos resolve to `Data(slot_symbol, 0)`;
   `arg_bytes` stays at 0).
 - `passes/optimization_asm/optimizer.py`'s
   `_blocked_addrs_for`, which tells the body's regalloc to
   avoid (a) the function's own param addresses if it's ZP-ABI
-  and (b) every ZP-ABI callee's param addresses — so locals
-  can't collide with incoming or outgoing param bytes.
+  and (b) every ZP-ABI callee's param addresses — so body
+  locals don't share storage with incoming or outgoing param
+  bytes.
+- `passes/indirect_base_prop.py` — accepts the
+  `__zpabi_*` symbol table so a `Data(__zpabi_fn_p0)` whose
+  resolved address is in zero page is recognized as a valid
+  ZP pointer source for `(zp),Y` rewriting.
 
 The annotation is parsed by the C99 grammar's `attribute_clause`
 rule (just before declaration specifiers) and stored on
@@ -2598,9 +2631,9 @@ program return values match the unoptimized expectations. See
 `__attribute__((zp_abi))` on a function declaration enables
 **frame elimination via ZP-passing** under `--optimize` (see
 "Frame elimination via __attribute__((zp_abi))" section above).
-Validated at compile time (function must be a leaf, not
-address-taken, params fit the ZP window); rejected with a
-clear error otherwise. Caller writes args directly to the
+Validated at compile time (no IndirectCall, not on a call-
+graph cycle, not address-taken, params fit the ZP window);
+rejected with a clear error otherwise. Caller writes args directly to the
 callee's pinned ZP addresses (no AllocateStack); callee's
 params live at those ZP addresses (no Frame reads); when the
 body also fits entirely in ZP and uses no callee-saved bytes,

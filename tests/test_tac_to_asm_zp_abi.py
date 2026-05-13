@@ -76,10 +76,18 @@ class TestZpAbiCallSite(unittest.TestCase):
         self.assertIsInstance(next_mov.dst, asm_ast.Stack)
 
     def test_zp_layout_caller_emits_no_allocate_stack(self) -> None:
-        # callee has ZpLayout([0x80, 0x81]) — an Int param. Caller
-        # writes the arg's two bytes to ZP $80 / $81 directly.
+        # callee has ZpLayout — an Int param. Caller writes the
+        # arg's two bytes to the callee's slot symbols directly
+        # (`Data(__zpabi_callee_p0)` / `Data(__zpabi_callee_p1)`).
+        # dasm resolves those symbols to ZP addresses via the
+        # `EQU` directives the emit stage prepends.
         abi = {
-            "callee": ZpLayout(addrs=[0x80, 0x81]),
+            "callee": ZpLayout(
+                slot_symbols=[
+                    "__zpabi_callee_p0", "__zpabi_callee_p1",
+                ],
+                addrs=[0x80, 0x81],
+            ),
             "main": SoftStackLayout(),
         }
         prog = _prog(
@@ -101,21 +109,30 @@ class TestZpAbiCallSite(unittest.TestCase):
             isinstance(i, asm_ast.AllocateStack)
             for i in instrs
         ))
-        # The two arg-byte Movs target ZP($80, 0) and ZP($81, 0).
-        zp_movs = [
+        # The two arg-byte Movs target Data(__zpabi_callee_p0) and
+        # Data(__zpabi_callee_p1).
+        data_movs = [
             i for i in instrs
             if isinstance(i, asm_ast.Mov)
-            and isinstance(i.dst, asm_ast.ZP)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name.startswith("__zpabi_")
         ]
-        self.assertEqual(len(zp_movs), 2)
-        addrs = sorted(m.dst.address for m in zp_movs)
-        self.assertEqual(addrs, [0x80, 0x81])
+        self.assertEqual(len(data_movs), 2)
+        names = sorted(m.dst.name for m in data_movs)
+        self.assertEqual(
+            names, ["__zpabi_callee_p0", "__zpabi_callee_p1"],
+        )
 
     def test_zp_layout_two_args_use_consecutive_addrs(self) -> None:
-        # Two Int args → 4 bytes total. ZpLayout assigns consecutive
-        # addresses $80..$83.
+        # Two Int args → 4 bytes total. Slot symbols index 0..3.
         abi = {
-            "callee": ZpLayout(addrs=[0x80, 0x81, 0x82, 0x83]),
+            "callee": ZpLayout(
+                slot_symbols=[
+                    "__zpabi_callee_p0", "__zpabi_callee_p1",
+                    "__zpabi_callee_p2", "__zpabi_callee_p3",
+                ],
+                addrs=[0x80, 0x81, 0x82, 0x83],
+            ),
             "main": SoftStackLayout(),
         }
         prog = _prog(
@@ -131,12 +148,19 @@ class TestZpAbiCallSite(unittest.TestCase):
         )
         out = translate_program(prog, abi=abi)
         instrs = _ops(out, "main")
-        zp_dsts = [
-            i.dst.address for i in instrs
+        data_names = [
+            i.dst.name for i in instrs
             if isinstance(i, asm_ast.Mov)
-            and isinstance(i.dst, asm_ast.ZP)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name.startswith("__zpabi_")
         ]
-        self.assertEqual(zp_dsts, [0x80, 0x81, 0x82, 0x83])
+        self.assertEqual(
+            data_names,
+            [
+                "__zpabi_callee_p0", "__zpabi_callee_p1",
+                "__zpabi_callee_p2", "__zpabi_callee_p3",
+            ],
+        )
 
 
 if __name__ == "__main__":

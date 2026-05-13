@@ -1,10 +1,15 @@
+__zpabi_interlace_blit_p1_p0	EQU	$80
+__zpabi_interlace_blit_p1_p1	EQU	$81
+__zpabi_interlace_blit_p1_p2	EQU	$82
+__zpabi_interlace_blit_p1_p3	EQU	$83
+
 interlace_blit_p1:
    SUBROUTINE
 
 .interlace_blit_p1@asm_ssa_preheader@0:
 .interlace_blit_p1@ssa_block@0:
    LDY   #$00
-   LDX   $82
+   LDX   __zpabi_interlace_blit_p1_p2
 .loop@0_start:
    CPX   #$28
    BCC   .if_else@1
@@ -193,7 +198,7 @@ interlace_blit_p1:
 .if_end@0:
    DEX
 .loop@0_continue:
-   CPX   $83
+   CPX   __zpabi_interlace_blit_p1_p3
    BNE   .interlace_blit_p1@asm_ssa_split@0
 .interlace_blit_p1@asm_ssa_block@0:
    RTS

@@ -49,6 +49,7 @@ from passes.replace_pseudoregisters import (
 )
 from c99_to_tac import translate_program as translate_to_tac
 from passes.abi_selection import select_abi
+from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
 from tac_to_asm import translate_program as translate_to_asm
@@ -66,11 +67,15 @@ DEFAULT_MAX_CYCLES = 10_000_000
 
 def compile_to_asm(
     source: str, *, optimize: bool = False,
-) -> tuple[asm_ast.Program, dict, dict]:
+) -> tuple[asm_ast.Program, dict, dict, dict[str, int]]:
     """Run the full pipeline up through asm_ast (post pseudo
-    elimination). Returns (asm_program, symbols, types) — the symbol
+    elimination). Returns
+    `(asm_program, symbols, types, zp_slot_symbols)` — the symbol
     and type tables come back so the harness can pick the right
-    return-value width based on `main`'s declared type.
+    return-value width based on `main`'s declared type, and
+    `zp_slot_symbols` carries the zp_abi slot-name → address
+    bindings produced by `passes.zp_slot_allocation` (empty when
+    optimization is off or no zp_abi function is present).
 
     `optimize=True` runs the optimizer pipeline: TAC-level fixed-
     point opts (constant folding, strength reduction, comparison-
@@ -101,6 +106,7 @@ def compile_to_asm(
         # compile.py for the full pipeline shape.
         tac = optimize_tac(tac, syms)
         abi = select_abi(tac, ast5, types)
+        abi, zp_slot_symbols = allocate_zp_slots(tac, abi)
         asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
         asm0, asm_colorings = asm_opt.optimize_program(
             asm0, extra_statics=statics, param_layouts=abi,
@@ -122,7 +128,7 @@ def compile_to_asm(
                 )
             )
         )
-        return asm, syms, types
+        return asm, syms, types, zp_slot_symbols
     asm0 = translate_to_asm(tac, syms, types)
     asm = expand_long_branches(
         apply_asm_dead_store(
@@ -136,7 +142,7 @@ def compile_to_asm(
             ))
         )
     )
-    return asm, syms, types
+    return asm, syms, types, {}
 
 
 # -------- Simulation state --------
@@ -290,12 +296,14 @@ def build_sim(
     `optimize=True` runs the optimizer pipeline (TAC fixed-point
     opts, asm-SSA round-trip, byte-granular regalloc, late prologue
     synthesis, plus `__attribute__((zp_abi))` frame elimination)."""
-    asm_prog, _syms, _types = compile_to_asm(
+    asm_prog, _syms, _types, zp_slot_symbols = compile_to_asm(
         source, optimize=optimize,
     )
     runtime = rt_mod.build_runtime()
+    extra_symbols = dict(runtime.symbols)
+    extra_symbols.update(zp_slot_symbols)
     assembled = assembler.assemble(
-        asm_prog, origin=origin, extra_symbols=runtime.symbols,
+        asm_prog, origin=origin, extra_symbols=extra_symbols,
     )
     if "main" not in assembled.symbols:
         raise ValueError("program has no `main` function")

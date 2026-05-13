@@ -1,112 +1,323 @@
+__zpabi_interlace_fill_p1_p0	EQU	$80
+__zpabi_interlace_fill_p1_p1	EQU	$81
+
 interlace_fill_p1:
    SUBROUTINE
 
 .interlace_fill_p1@asm_ssa_block@0:
-   LDX   $81
-   LDA   $80
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $20A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2328,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $21D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $24A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2728,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $25D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $28A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2B28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $29D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2CA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2F28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2DD0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $30A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3328,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $31D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $34A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3728,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $35D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $38A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3B28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $39D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3CA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3F28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3DD0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2128,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $23A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2250,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2528,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $27A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2650,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2928,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2BA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2A50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2D28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2FA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2E50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3128,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $33A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3250,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3528,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $37A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3650,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3928,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3BA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3A50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3D28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3FA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3E50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $21A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2050,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $22D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $25A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2450,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $26D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $29A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2850,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2AD0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2DA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2C50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2ED0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $31A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3050,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $32D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $35A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3450,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $36D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $39A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3850,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3AD0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3DA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3C50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3ED0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2228,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $20D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2350,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2628,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $24D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2750,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2A28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $28D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2B50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2E28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2CD0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2F50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3228,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $30D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3350,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3628,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $34D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3750,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3A28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $38D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3B50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3E28,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3CD0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $3F50,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $22A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2150,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $23D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $26A8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2550,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $27D0,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2AA8,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2950,X
+   LDX   __zpabi_interlace_fill_p1_p1
+   LDA   __zpabi_interlace_fill_p1_p0
    STA   $2BD0,X
    RTS

@@ -1482,10 +1482,10 @@ class Translator:
             arg_op = translate_val(arg)
             sz = self._size_of(arg)
             for k in range(sz):
-                addr = layout.addrs[flat_idx + k]
+                sym = layout.slot_symbols[flat_idx + k]
                 movs.append(asm_ast.Mov(
                     src=_byte_at(arg_op, k),
-                    dst=asm_ast.ZP(address=addr, offset=0),
+                    dst=asm_ast.Data(name=sym, offset=0),
                 ))
             flat_idx += sz
         # Each call site gets its own unique fn_name for any cycle-

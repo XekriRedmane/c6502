@@ -4,6 +4,10 @@ __zpabi_interlace_blit_p1_p2	EQU	$82
 __zpabi_interlace_blit_p1_p3	EQU	$83
 __local_interlace_blit_p1_b0	EQU	$84
 
+; @zp-link-meta-begin
+; def interlace_blit_p1 param_bytes=4 local_bytes=1 indirect=false in_cycle=false
+; @zp-link-meta-end
+
 interlace_blit_p1:
    SUBROUTINE
 

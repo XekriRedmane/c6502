@@ -1,5 +1,9 @@
 __local_paint_hud_strip_p1_b0	EQU	$80
 
+; @zp-link-meta-begin
+; def paint_hud_strip_p1 param_bytes=0 local_bytes=1 indirect=false in_cycle=false
+; @zp-link-meta-end
+
 paint_hud_strip_p1:
    SUBROUTINE
 

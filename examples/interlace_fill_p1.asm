@@ -1,6 +1,10 @@
 __zpabi_interlace_fill_p1_p0	EQU	$80
 __zpabi_interlace_fill_p1_p1	EQU	$81
 
+; @zp-link-meta-begin
+; def interlace_fill_p1 param_bytes=2 local_bytes=0 indirect=false in_cycle=false
+; @zp-link-meta-end
+
 interlace_fill_p1:
    SUBROUTINE
 

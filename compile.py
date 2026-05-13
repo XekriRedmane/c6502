@@ -67,6 +67,7 @@ from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.abi_selection import select_abi
 from passes.function_local_sizing import compute_local_bytes
+from passes.zp_link_metadata import build_metadata, format_metadata
 from passes.zp_local_allocation import (
     allocate_function_locals, build_local_slot_symbols,
 )
@@ -265,7 +266,11 @@ def _run_stage(
             asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=all_slot_symbols)
             asm4 = expand_long_branches(asm3)
             asm5 = lower_to_asm2(asm4)
-            return emit_program(asm5, zp_slot_symbols=all_slot_symbols)
+            link_meta = build_metadata(tac, abi, local_pools)
+            return emit_program(
+                asm5, zp_slot_symbols=all_slot_symbols,
+                link_metadata_lines=format_metadata(link_meta),
+            )
         asm0 = translate_to_asm(tac, symbols, types)
         asm1 = replace_pseudoregs(
             asm0, extra_statics=statics, symbols=symbols, types=types,

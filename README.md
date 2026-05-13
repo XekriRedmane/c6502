@@ -51,15 +51,11 @@ mutually-exclusive flag:
 |                  | loops → `.loop@N`, with break/continue stamped to match)      |
 | `--tac`          | `pretty(tac_ast)` — three-address-code IR                     |
 | `--codegen`      | 6502 assembly text                                            |
-| `--optimize`     | modifier (orthogonal to the stage flags). Runs the optimizer |
-|                  | pipeline: TAC-level fixed-point opts (constant folding,       |
-|                  | strength reduction, comparison-against-zero / jump fold, UCE, |
-|                  | copy prop, DSE) → asm-level SSA round-trip with byte-         |
-|                  | granular forward + backward copy-prop, byte-DCE, byte-        |
-|                  | granular regalloc → late prologue / epilogue synthesis. Also  |
-|                  | enables the `__attribute__((zp_abi))` calling-convention      |
-|                  | optimization (frame elimination on annotated leaves). See     |
-|                  | `docs/optimization.md` for the pipeline walk-through.         |
+| `--optimize`     | modifier orthogonal to the stage flags. Runs the optimizer    |
+|                  | pipeline (TAC fixed-point opts → asm-level SSA round-trip with|
+|                  | byte-granular regalloc → late prologue synthesis) and enables |
+|                  | the `__attribute__((zp_abi))` + call-graph-disjoint local-pool|
+|                  | allocator. See `docs/optimization.md` for the walk-through.   |
 
 ```sh
 uv run python compile.py <source.c> --codegen              # to stdout
@@ -68,42 +64,18 @@ uv run python compile.py - --tac < source.c                # stdin
 uv run python compile.py - --codegen --optimize < src.c    # with optimization
 ```
 
-Notes:
 - `-` as the input filename reads from stdin.
 - With `--codegen`, the `-o` filename must end in `.asm`.
-- The other stages (`--lex`, `--parse`, `--resolve`, `--tac`) accept any
-  output filename, or default to stdout.
-- `--optimize` runs the full optimizer: TAC-level SSA-bracketed
-  fixed-point opts (constant folding, strength reduction, the
-  comparison-against-zero / jump fold, unreachable-code
-  elimination, copy propagation, dead-store elimination), then
-  the asm-level SSA round-trip with byte-granular forward +
-  backward copy propagation and byte-DCE, byte-granular ZP
-  register allocation (default pool `$80–$FF`, split caller-saved
-  / callee-saved at `$C0`), late prologue / epilogue synthesis
-  (frame collapses to bare RTS when nothing needs spilling), and
-  the `__attribute__((zp_abi))` frame-elimination optimization
-  for annotated leaf functions. Roughly 3× faster per access in
-  the loop body for hot variables, plus the prologue-collapse
-  win for leaf zp_abi functions.
-- The comment-stripping step uses pcpp via the Python API (see
-  `preprocessor.py`); pcpp is a project dependency, no shelling out.
-- Any flag `compile.py` doesn't recognize is forwarded to the
-  preprocessor — the full pcpp surface (`-D`, `-U`, `-N`, `-I`,
-  `--passthru-*`, `--line-directive`, etc.) works the same as the
-  `pcpp` CLI. pcpp's own `-o` is not forwarded; `compile.py`'s `-o`
-  is the only output flag.
+- Other stages accept any output filename, or default to stdout.
+- Comment stripping uses pcpp via the Python API; any flag
+  `compile.py` doesn't recognize is forwarded to pcpp (`-D`,
+  `-U`, `-I`, `--passthru-*`, etc.).
 
 ```sh
 uv run python compile.py - --codegen -DMAX=42 -I include/ < src.c
 ```
 
-`compile.py` is the only CLI; every other module (`lexer.py`,
-`parser.py`, `passes/identifier_resolution.py`,
-`passes/label_resolution.py`, `passes/loop_labeling.py`,
-`passes/type_checking.py`, `c99_to_tac.py`, `tac_to_asm.py`,
-`passes/optimization/*`, `passes/replace_pseudoregisters.py`,
-`asm_emit.py`) is library-only and used as an import.
+`compile.py` is the only CLI; every other module is library-only.
 
 ## Compiler pipeline
 
@@ -602,183 +574,63 @@ The intermediate stages are inspectable via `compile.py`'s
 
 ## Optimization pipeline (`--optimize`)
 
-When `--optimize` is on, `compile.py` inserts the optimizer
-(`passes/optimization/optimizer.py`) between c99_to_tac and
-tac_to_asm. The optimizer takes `(prog, symbols)` and returns
-`(optimized_prog, colorings)` where `colorings: dict[func_name,
-Coloring]` is consumed by `replace_pseudoregisters` to map
-promotable SSA values to zero-page slots.
-
-Per-function shape:
-
-```
-fn → to_ssa → [constant_fold → UCE → copy_propagate → DSE]* →
-              build liveness → build interference → color_graph →
-              from_ssa → fn'
-```
-
-The five phases:
-
-1. **`to_ssa`** renames promotable Vars (block-scope locals,
-   parameters, and TAC temps that are LocalAttr scalars and never
-   address-taken) to `<orig>.<N>` so each name has exactly one
-   definition. Inserts `Phi(dst, args=[(pred_label, src), ...])`
-   nodes at iterated dominance frontiers (Cytron 1991), pruned
-   by liveness.
-
-2. **The fixed-point loop** rotates four passes until no pass
-   makes a structural change. Each pass enables the others:
-   `constant_fold` evaluates compile-time-known arithmetic at the
-   correct width (Int 16-bit, Long 32-bit, LongLong 64-bit
-   wraparound matches what the 6502 lowering would compute);
-   `eliminate_unreachable_code` (UCE) drops dead blocks, prunes
-   stale Phi args after dropped jumps, folds singleton Phis,
-   removes useless jumps and labels; `copy_propagate` substitutes
-   `Copy(src, dst)` everywhere `dst` is used (sound only in SSA);
-   `eliminate_dead_stores` drops pure defs whose dst is unused.
-
-3. **Register allocation** runs while still in SSA form (the
-   chordal property is what makes greedy coloring optimal):
-   `liveness.py` computes per-block + per-instruction liveness;
-   `interference.py` builds the chordal interference graph with
-   per-node width (1/2/4/8 bytes) and a `lives_across_call` bit;
-   `pool.py` defines the configurable caller/callee-saved ZP
-   partition (default `Pool(start=0x80)` → caller `[$80, $C0)`,
-   callee `[$C0, $100)`); `register_allocation.py` colors via
-   width-aware greedy allocation in dom-tree-PEO. Cross-call
-   live values prefer callee-saved (the function's
-   prologue/epilogue save+restore them); other values prefer
-   caller-saved (no overhead).
-
-4. **`from_ssa`** lowers each Phi to one Copy per PhiArg in the
-   matching predecessor block, **topologically sorted** so a
-   Copy's dst isn't read by a later Copy (fixes the "lost copy"
-   problem when copy propagation collapses Phi sources to other
-   Phi dsts). Cycles (e.g. `a, b = b, a`) are broken with a
-   fresh `<funcname>.cycle_tmp@N` Var registered in the symbol
-   table.
-
-5. After `from_ssa`, the function is regular non-SSA TAC ready
-   for `tac_to_asm` and the rest of the pipeline. The Coloring
-   flows through `compile.py` into `replace_pseudoregisters`,
-   which lowers colored Pseudos to `ZP(addr, offset)` operands
-   (direct zero-page addressing, ~3× faster than the
-   indirect-Y `(FP),Y` path) and reserves frame slots
-   `FP+1..FP+S` for callee-saved bytes the function uses
-   (saved by the prologue, restored by the epilogue).
-
-`docs/optimization.md` is the from-scratch tour with a worked
-end-to-end example and the actual asm output. The chapter
-`tests/test_sim_asm_optimized.py` runs chapters 1-12 through
-`--optimize` end-to-end via the asm simulator and asserts return
-values match.
-
-## Optimizer pipeline shape
-
-`--optimize` runs the full optimization pipeline:
-
 ```
 c99_to_tac → TAC fixed-point opts:
    [constant_fold → strength_reduce → cmp_zero_jump_fold →
     UCE → copy_prop → DSE]*
-→ tac_to_asm bare_exit=True → asm-level SSA round-trip
-   (passes/optimization_asm/):
-     [forward copy-prop → backward copy-prop → byte-DCE]*
+→ tac_to_asm bare_exit=True → asm-level SSA round-trip:
+   [forward copy-prop → backward copy-prop → byte-DCE]*
 → byte-granular regalloc → SSA destruction
 → replace_pseudoregisters_bare_exit → late prologue synthesis
 → expand_long_branches → asm_to_asm2 → asm_emit
 ```
 
+The TAC-level fixed-point loop iterates `constant_fold`
+(width-correct integer / FP folding), `reduce_strength`
+(Mul/Div/Mod by `2^k` → shift / mask), `fold_cmp_zero_jump`
+(fuses `cmp; JumpIf` into direct conditional jumps; narrows
+through ZeroExtend), `eliminate_unreachable_code` (Phi
+pruning, dead block / jump / label removal), SSA-aware
+`copy_propagate`, and SSA-aware `eliminate_dead_stores`.
+`from_ssa` lowers each Phi to per-predecessor Copies with
+parallel-copy topological ordering; cycles break with a fresh
+`<funcname>.cycle_tmp@N` Var.
+
 Distinguishing features:
 
 - **Byte-granular SSA + regalloc.** The asm-level SSA pass
-  versions each `(Pseudo name, byte offset)` pair independently,
-  so byte 0 of a 4-byte Long has its own def/use chain separate
-  from byte 3. A `(long)y` cast whose result is later truncated
-  back to `int` drops the dead high-byte stores via byte-DCE,
-  shrinking the function's frame. The byte-granular regalloc
-  picks ZP slots per byte rather than per multi-byte value, so
-  disjoint lifetimes within the same logical variable can share
-  colors. Multi-byte names (LoadAddress.dst pointers,
-  inline-shift dsts) get a contiguous N-byte ZP block via
-  width-aware allocation.
+  versions each `(name, byte offset)` pair independently, so
+  byte 0 of a Long has its own def/use chain separate from
+  byte 3. A `(long)y` cast whose result is later truncated
+  back to `int` drops the dead high-byte stores via byte-DCE.
+  The byte-granular regalloc picks ZP slots per byte; disjoint
+  lifetimes within the same logical variable can share colors.
+- **Forward + backward copy propagation.** Forward substitutes
+  Mov-into-Pseudo uses. Backward collapses the `Mov(A, P);
+  ...; Mov(P, A); Mov(A, D)` round-trip into a single
+  `Mov(A, D)` at the def site — catches Long-return temps
+  that get ZP-colored only to be immediately reloaded into
+  HARGS.
+- **Strength reduction + inline shift-by-1.** Power-of-2
+  `Multiply` / `Divide` / `Modulo` rewrite to shifts / masks;
+  the asm layer inlines shift-by-1 as a per-byte
+  `ASL low; ROL b1; ...` chain on ZP-coloreable operands.
+- **Comparison-against-zero / jump fold.** `if (uint8_t a == 0)`
+  lowers to bare `LDA a; BNE end` (3 bytes) instead of a
+  ~13-instruction CMP-and-select sequence, by tracing through
+  ZeroExtend defs.
+- **Call-graph-disjoint ZP allocation.** See dedicated section
+  above. Under `--optimize`, every eligible function gets a
+  private range of ZP bytes for its params (`__attribute__
+  ((zp_abi))` only) and body locals, disjoint from every
+  coexisting function. Eligible functions emit as bare body +
+  RTS. Phase 2 will move the EQU emission into a separate
+  `slots.inc` for cross-TU allocation.
 
-- **Forward + backward copy propagation.** Forward copy-prop
-  substitutes uses of `Mov(src, Pseudo dst)` with `src` for
-  Imm / ImmLabel / SSA-Pseudo sources. Backward copy-prop is the
-  dual: when a Pseudo `P` has exactly one use, and that use is
-  the consecutive pair `Mov(P, Reg(A)); Mov(Reg(A), D)` (a
-  memory-to-memory copy through A), redirect `P`'s def to write
-  `D` directly and drop the round-trip. Catches the canonical
-  Long-return pattern: a 2-byte temp gets ZP-colored, then
-  immediately reloaded into HARGS — after the rewrite, the adds
-  compute directly into HARGS. Iterates with byte-DCE to a
-  fixed point.
-
-- **Strength reduction + inline shift-by-1.** TAC-level rewrites
-  Multiply / unsigned Divide / unsigned Modulo by power-of-2
-  constants into LeftShift / RightShift / BitwiseAnd. The asm
-  layer then inlines shift-by-1 as a per-byte `ASL low; ROL b1;
-  ... ROL high` chain (or LSR / signed-aware ROR for right
-  shifts), exploiting the 6502's direct memory shift modes when
-  the operand is ZP-coloreable. Combined effect: `arr[i]` index
-  scaling on `uint16_t arr` becomes a couple of in-place ZP
-  shifts instead of a `mul16` runtime call.
-
-- **Comparison-against-zero / jump fold.** TAC-level rewrite
-  recognizes `Binary(==/!=, x, 0, cond); JumpIfTrue/False(cond,
-  t)` (with `cond` single-use) and folds to a direct
-  `JumpIfTrue/False(x, t)` with the appropriate sense flip.
-  Traces through ZeroExtend defs to operate at the narrowest
-  available width — `if (uint8_t a == 0)` lowers to bare
-  `LDA a; BNE end` instead of the ~13-instruction CMP-and-
-  select sequence.
-
-- **Frame elimination via `__attribute__((zp_abi))`.** A
-  function declared `__attribute__((zp_abi))` participates in
-  a per-function ZP-passing calling convention: caller writes
-  argument bytes directly to fixed ZP addresses (no
-  `AllocateStack`, no soft-stack frame for those args); callee
-  reads params from those addresses (no `Frame(M+3+...)`). When
-  the body also fits entirely in ZP and uses no callee-saved
-  bytes, the function emits as bare body + `RTS` — no prologue,
-  no epilogue. Compile-time validation: the function must be a
-  leaf (no calls in body), must not have its address taken
-  anywhere, and its params must fit the ZP window
-  (default 64 bytes, `$80–$BF`).
-
-  ```c
-  __attribute__((zp_abi)) int add(int a, int b) {
-      return a + b;
-  }
-  int main(void) { return add(3, 4); }
-  ```
-
-  Compiled with `--codegen --optimize`, `add` is just the
-  arithmetic + bare RTS — no SSP/FP setup whatsoever. The
-  caller's body regalloc avoids `add`'s param ZP addresses
-  (computed by `_blocked_addrs_for` from the per-program
-  `ParamLayout` dict), so the `Mov(arg, ZP(addr))` writes never
-  collide with the caller's locals.
-
-  Selection is **manual**: a function uses ZP-passing iff
-  declared with the annotation. Without it, soft-stack as
-  today. The annotation lives on function declarations (and
-  optional definitions) so headers can propagate the contract
-  across translation units.
-
-  Full design + build plan: `docs/leaf_zp_abi.md`. Tests:
-  `tests/test_attribute_zp_abi.py` (parser),
-  `tests/test_abi_selection.py` (validation),
-  `tests/test_tac_to_asm_zp_abi.py` (call-site lowering),
-  `tests/test_replace_pseudoregisters_zp_abi.py` (callee-side
-  resolution), `tests/test_leaf_zp_abi.py` (end-to-end +
-  simulation).
-
-The chapter sim corpus runs end-to-end through `--optimize` via
-`TestAsmSimChaptersOptimized` in
-`tests/test_sim_asm_optimized.py` — chapters 1-12 produce the
-same program-return values as the unoptimized path.
+`docs/optimization.md` is the from-scratch tour with worked
+examples. `tests/test_sim_asm_optimized.py` runs chapters
+1-12 through `--optimize` end-to-end and asserts return
+values match the unoptimized path.
 
 ## Lexer and parser as APIs
 
@@ -1480,306 +1332,94 @@ the function runs.
 
 ## Status
 
-End-to-end (C source through `compile.py --codegen` to runnable-shape
-6502 assembly):
+End-to-end through `compile.py --codegen` to runnable 6502 asm:
 
-- multiple top-level functions, function definitions, forward
-  declarations, and function calls (with parameters). Caller pushes
-  N argument bytes onto the soft stack, JSRs, and the callee
-  prologue captures FP. Args land at `Frame(M+3)..Frame(M+2+N)` in
-  the callee's frame; locals at `Frame(1)..Frame(M)`; the saved
-  caller FP at the 2-byte gap M+1, M+2.
+- Multiple top-level functions, forward declarations, function
+  calls with parameters, multi-arg passing via the soft-stack
+  convention (caller writes args at `Stack(1..N)`; callee reads
+  at `Frame(M+3..M+2+N)`).
+- Variable declarations (typed), assignments, expression
+  statements, null statements. Block-scope automatics get unique
+  `@<N>.<orig>` names before TAC; missing `return` appends an
+  implicit `Ret(0)` typed for the function's return.
+- All nine integer types (`int` / `long` / `long long` /
+  `unsigned int` / `unsigned long` / `unsigned long long` /
+  `char` / `signed char` / `unsigned char`) and explicit casts
+  among them. Mixed-type arithmetic per C99 §6.3.1.8; the type
+  checker inserts implicit `SignExtend` / `ZeroExtend` /
+  `Truncate` casts so TAC sees uniform-width operands.
+  Multi-byte arithmetic fans out byte-by-byte with carry
+  threading. **Gaps**: `*` / `/` / `%` / `<<` / `>>` lower to
+  runtime-helper Calls (mul/divmod/asl/asr/lsr) — marshaling
+  is in place but the helpers themselves aren't yet in the
+  repo; programs that use them assemble but won't link.
+  Unsigned ordering (`<` / `>` / `<=` / `>=`) on multi-byte
+  operands still V-corrects (signed lowering) — a known
+  imprecision.
+- Floating types (`float`, `double`): static initialisers
+  lay down IEEE 754 bytes; runtime int↔FP conversions
+  marshal through HARGS to runtime helpers (also not yet in
+  the repo). Arithmetic on FP operands raises
+  `NotImplementedError` at TAC translation pending the FP
+  helpers.
+- Storage classes `static` / `extern` with C99 §6.2.2 linkage.
+  File-scope objects (incl. block-scope `static`) emit as
+  `StaticVariable` top-levels; `extern` references use absolute
+  addressing without a definition. See "Storage classes and
+  linkage".
+- Integer / character / string / floating constants per their
+  C99 §6.4.4 / §6.4.5 rules (string-literal concatenation,
+  string lifting to file-scope `static char[N+1]`).
+- Unary `-` / `~` / `!`, binary `+` / `-` / `*` / `/` / `%` /
+  `&` / `|` / `^` / `<<` / `>>` / `==` / `!=` /
+  `<` / `>` / `<=` / `>=` / `&&` / `||`. `==`/`!=`/`<`/`>`/
+  `<=`/`>=` lower inline (no helper); `*`/`/`/`%`/`<<`/`>>`
+  marshal through HARGS to runtime helpers.
+- Assignment `=`, compound `+=` etc., prefix `++a`/`--a`,
+  postfix `a++`/`a--`. Subscript / Dereference lvalues
+  evaluate their address exactly once (so `arr[i++] += 1`
+  is correct).
+- Control flow: `if` / `if else`, ternary `? :`,
+  `while` / `do-while` / `for` (with `break` / `continue`),
+  labeled statements and `goto` (forward gotos OK),
+  `switch` / `case` / `default`. Loop scope opens its own
+  variable scope.
+- Arrays (block-scope and `static`, single and multi-dim),
+  constant-initializer lists with zero-padding for missing
+  entries, array-to-pointer decay, multi-dim subscript,
+  array parameters with the §6.7.5.3.7 pointer adjustment.
+  Rejected: array assignment, extern arrays.
+- Pointers, pointer arithmetic (with sizeof-pointee scaling),
+  pointer ordering comparisons, function pointers and
+  indirect calls (through `icall`, pending the runtime
+  helper).
+- `void` return type and `void *` per §6.3.2.3.1.
+- `sizeof` (both shapes) folded at compile time; result type
+  `unsigned long` (size_t).
+- `struct` and `union`: declarations (file- and block-scope),
+  forward decls, `.` / `->` access (chained), compound
+  initializers, struct = struct copy, pointer-to-struct,
+  address-of member. **No padding** — byte-aligned everywhere.
+  Struct-by-value params use the soft-stack arg block;
+  struct-by-value returns use an sret convention with a
+  hidden first param. Block-scope tag shadowing supported.
 
-- variable declarations (`int x;`, `int x = exp;`, `long x;`,
-  `long x = exp;`, `unsigned int u;`, `unsigned long w;`, plus
-  initialized forms), assignments, expression statements, and null
-  statements (`;`). Block-scope automatic variables get unique
-  `@<N>.<orig>` names before TAC. `c99_to_tac` lowers an automatic-
-  storage initializer the same way it lowers an assignment (`Copy`
-  from the evaluated rval into the var). Functions without a
-  `return` statement get an implicit `Ret(Constant(0))` from the
-  TAC translator, with the constant's width chosen by the
-  function's declared return type (`ConstLong(0)` for a 2-byte-
-  returning function, `ConstInt(0)` otherwise).
-
-- All four integer types — `int` / `long` (signed 1-byte and
-  2-byte) and `unsigned int` / `unsigned long` (unsigned 1-byte
-  and 2-byte) — plus explicit cast expressions `(int)x` /
-  `(long)x` / `(unsigned int)x` / `(unsigned long)x` (C99
-  §6.5.4) at their own precedence level between unary and
-  multiplicative. Integer literals dispatch to the right const
-  variant per C99 §6.4.4.1 paragraph 5 (the lexer splits by
-  suffix and the parser walks the §6.4.4.1 type list to pick
-  the first variant whose range fits the value). The type
-  checker tags every expression with its `data_type` and applies
-  C99's usual arithmetic conversions (§6.3.1.8) and the assignment /
-  argument / return / initializer conversions (§6.5.16.1,
-  §6.5.2.2.7, §6.8.6.4.3) by wrapping the narrower /
-  source-typed operand in an implicit `Cast`. `c99_to_tac`
-  lowers each `Cast` to `SignExtend` (signed 1B → any 2B),
-  `ZeroExtend` (unsigned 1B → any 2B), `Truncate` (any 2B →
-  any 1B), or elision (same width — including all cross-sign
-  same-width casts, since the 6502 doesn't distinguish
-  signedness). `tac_to_asm` then expands every 2-byte operation
-  into byte-level asm sequences with carry threading where
-  needed (and lowers `SignExtend` / `ZeroExtend` inline). 2-byte-
-  typed locals / params / temporaries occupy 2 contiguous frame
-  bytes (`replace_pseudoregisters` reads each pseudo's symbol-
-  table type to size its slot); 2-byte return values use the
-  A=lo/X=hi convention from the runtime helpers. A typed
-  `StaticVariable` lays down as `<name>: DC.B $XX` for 1-byte
-  inits (`IntInit` / `UIntInit`) and `<name>: DC.W $XXXX` for
-  2-byte inits (`LongInit` / `ULongInit`). Mixed-type arithmetic
-  goes through the full §6.3.1.8 promotion rule
-  (Int+Long → Long, UInt+Long → Long via ZeroExtend, Int+UInt
-  → UInt, UInt+ULong → ULong, etc.). The remaining gaps:
-  `*` / `/` / `%` / `<<` / `>>` on 2-byte operands raises
-  `NotImplementedError` in `tac_to_asm` because the 16-bit
-  runtime helpers aren't in this repo, and the ordering ops
-  `<` / `>` / `<=` / `>=` always lower as if signed (the
-  V-corrected `SBC` + `BMI`/`BPL` form), so unsigned ordering
-  isn't yet distinguishable from signed.
-
-- storage-class specifiers `static` and `extern`, with the C99
-  §6.2.2 linkage rules. File-scope objects, file-scope `static`
-  objects, and block-scope `static` objects all emit as top-level
-  `StaticVariable` nodes; references use absolute addressing.
-  Block-scope and file-scope `extern` declarations are recognized
-  as references — the asm output uses absolute addressing for them,
-  but no `DC.B` is emitted (the definition lives in another TU).
-  See the "Storage classes and linkage" section above.
-
-- integer constants
-- unary `-` (negate), `~` (complement), and `!` (logical not —
-  lowers inline to `Branch(EQ) + 0/1 select`, no runtime helper)
-- binary `+`, `-`, `*`, `/`, `%` (with TAC-level precedence).
-  Multiply/divide/modulo emit `JSR mul8` / `JSR divmod8` against
-  the runtime helpers described in "`Call` and runtime helpers"
-  above — the helpers themselves aren't in this repo yet.
-- binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
-- binary `<<` (logical) and `>>` (arithmetic — c6502 treats integers
-  as signed); emit `JSR shl8` / `JSR asr8`.
-- binary `==` and `!=` (lower inline to `CMP` + `BEQ`/`BNE` + a 0/1
-  select — see "Comparison lowering" above; no runtime helper)
-- binary `<`, `>`, `<=`, `>=` (signed; lower inline to `SBC` with a
-  V-flag correction and then `BMI`/`BPL` + 0/1 select. c6502 assumes
-  signed integers, so this matches C's `int` relational semantics.
-  `>` and `<=` swap their operands to reuse the same MI/PL branch
-  paths — the EOR correction makes `Z` unreliable, so swapping is
-  cheaper than a second compare)
-- binary `&&` and `||` (short-circuit; `c99_to_tac` lowers them to
-  `JumpIfFalse`/`JumpIfTrue` + `Jump`/`Label`/`Copy`, then
-  `tac_to_asm` lowers the conditional jumps to `Mov(cond, A);
-  Branch(EQ|NE, target)` — LDA sets Z based on the loaded byte, so
-  BEQ/BNE drive off C's truthy/falsy directly. `Copy` becomes a
-  single `Mov`; TAC `Jump` and `Label` are atom-for-atom. No runtime
-  helper, no TAC binop — the control flow *is* the semantics)
-- compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-  `<<=`, `>>=` (the parser desugars `lval OP= rval` to `lval = lval
-  OP rval`, so the lowering is exactly the underlying binary op
-  followed by a `Copy` back into the lval — no AST/IR additions, no
-  extra cases in any later pass. Right-associative like plain `=`,
-  so `a += b += 1` is `a += (b += 1)`. The lval is duplicated as a
-  tree reference, which is safe because the only legal lval is a
-  `Var`; richer lvalues in future will need to materialize the
-  address into a temp first)
-- prefix `++a` / `--a` (parse-time desugaring to `a = a ± 1` — same
-  shape as a compound assignment; returns the operand's *new* value)
-- postfix `a++` / `a--` (its own `Postfix(incdec_op, exp)` AST node
-  because postfix has to evaluate to the operand's *old* value. The
-  TAC lowering is `Copy(a, %old); Binary(Add/Sub, a, 1, %new);
-  Copy(%new, a)` and the result val is `%old`, so callers see the
-  pre-mutation value. Postfix is one precedence level tighter than
-  unary, so `-a++` parses as `-(a++)` and `a+++b` lexes via max-munch
-  as `a++ + b`)
-- `if (cond) stmt` and `if (cond) stmt else stmt`. `c99_to_tac`
-  lowers to `JumpIfFalse(cond, end@N)` + body + `Label(end@N)` for
-  the no-else form, or `JumpIfFalse(cond, else@N)` + then-body +
-  `Jump(end@N)` + `Label(else@N)` + else-body + `Label(end@N)` with
-  an else. The labels (`if_end@N` / `if_else@N`) come from the same
-  Translator label counter as the short-circuit and inline-
-  comparison lowerings, so they're globally unique. Dangling-else
-  binds to the nearest `if` per C99 §6.8.4.1 — Lark's LALR(1)
-  backend resolves the shift-reduce conflict in favor of shifting,
-  which gives that binding for free
-- ternary `cond ? t : f`. `c99_to_tac` lowers it like an if/else
-  that also produces a value: evaluate `cond`, `JumpIfFalse` to
-  `cond_else@N`, evaluate the true-clause and `Copy` into a shared
-  `dst` temp, `Jump(cond_end@N)`, `Label(cond_else@N)`, evaluate
-  the false-clause and `Copy` into the same `dst`,
-  `Label(cond_end@N)` — the Conditional expression returns `dst`.
-  Labels share the same Translator counter as `if` / short-circuit
-  / inline-comparison lowerings, so each ternary gets globally
-  unique `cond_else@N` / `cond_end@N` numbers. Right-associative
-  and has lower precedence than all binaries: `a || b ? 1 : 2` is
-  `(a||b) ? 1 : 2`, `1 ? 2 : 3 || 4` is `1 ? 2 : (3||4)`, and
-  `a ? 1 : b ? 2 : 3` is `a ? 1 : (b ? 2 : 3)`
-- labeled statements `label: stmt` (C99 §6.8.1) and `goto label;`
-  (§6.8.6). `passes.label_resolution` ensures labels are unique
-  within a function and that every goto target is declared somewhere
-  in the enclosing function, then rewrites each declared label and
-  matching goto target to `.<funcname>@<orig>` — dasm local labels
-  (leading dot, scoped to the SUBROUTINE) with `@` as the separator
-  (illegal in a C identifier, so user labels stay disjoint from any
-  user-written name; translator-minted labels like `.if_end@N` and
-  `.loop@N` also embed `@`, but their part-after-`@` is digits vs.
-  a C identifier here, so the two forms can't match). `c99_to_tac`
-  lowers `Goto(L)` to TAC `Jump(L)` and `LabeledStmt(L, s)` to
-  `Label(L)` followed by `s`'s own lowering. Labels are visible
-  across the entire function, so forward gotos work. The §6.8.6
-  constraint about jumping past a variably-modified-type
-  declaration's scope is vacuous (c6502 has no VLAs)
-- iteration statements `while (cond) stmt`, `do stmt while (cond);`,
-  and `for (<for_init> exp? ; exp?) stmt`, plus the jump statements
-  `break;` and `continue;`. `passes.loop_labeling` mints a unique
-  `.loop@<N>` per iteration statement and stamps it on the loop and
-  on every break/continue inside its body; nested loops push their
-  own label, so an inner break/continue targets the innermost
-  enclosing loop. A break/continue outside any loop raises
-  `LoopLabelingError`. `c99_to_tac` derives `<base>_start` /
-  `<base>_continue` / `<base>_break` sub-labels by suffix. The
-  for-header opens its own variable-resolution scope (C99
-  §6.8.5.3), so `int a; for (int a = 1; a < 10; a++) ...` legally
-  shadows the outer `a` for the duration of the loop.
-- compound statements (`{ ... }` as a nested statement, C99 §6.8.3).
-  Each compound statement opens a new variable-resolution scope —
-  shadowing across blocks is legal (`int a = 1; { int a = 2; }` is
-  fine), redeclaration in the same block is not. At the TAC level
-  blocks dissolve: TAC has no scope, so `Compound(block)` lowers to
-  its block items in order with no extra structure (names are
-  already globally unique by the time they reach TAC).
-- arbitrary parenthesisation
-
-- `switch (e) { case <const>: ... default: ... }` per C99 §6.8.4.2.
-  `passes.loop_labeling` mints a unique `.switch@<N>` per switch and
-  collects the case / default labels into the SwitchStmt; the case-
-  label expression is folded by `passes.constant_expression`
-  (handles integer literals, integer casts, and `sizeof`) and
-  canonicalized to a `Constant` of the switch's promoted control
-  type. `c99_to_tac` lowers the dispatch as a compare-and-
-  conditional-jump chain followed by an unconditional jump to the
-  default label (or to `<switch>_break` if there's no default).
-  Cases fall through unless `break;` (lowered to
-  `Jump(<switch>_break)`) is hit. Duff's-device-style case bodies
-  inside `if` / loop bodies work because `loop_labeling` preserves
-  the enclosing switch's case-collector through those.
-
-- `void` return type, void expressions in their four legal contexts
-  (expression statement, both branches of `?:`, the operand of
-  `(void)`, for-init / for-cont), the bare `return;` form, and
-  falling off the end of a void function. `void *` with implicit
-  conversion to and from any object pointer per C99 §6.3.2.3.1.
-  `c99_to_tac` collapses void Casts / void-result Conditionals /
-  void-returning FunctionCalls so no value temp is allocated; void
-  Ret lowers to a bare epilogue with `save_a=False`.
-
-- `sizeof` operator (both shapes — `sizeof e` and `sizeof (T)`).
-  Result type `unsigned long` (size_t in c6502); folds to a
-  compile-time constant in `c99_to_tac` from the operand's
-  data_type, with the inner expression NOT translated (per C99
-  §6.5.3.4.2). c6502's storage-model sizes:
-  `char`/`int`/`signed char`/`unsigned char`/`unsigned int` = 1;
-  `long`/`unsigned long`/pointer = 2; `long long`/`unsigned long
-  long`/`float` = 4; `double` = 8; arrays multiply through their
-  element; struct = sum of member sizes; union = max of member
-  sizes (no padding — c6502 is byte-aligned everywhere).
-  `passes.constant_expression` also folds `sizeof` so it can
-  appear in `case` labels (and any other §6.6.6 site that lands
-  later — enum constants, non-VLA array sizes, bit-field widths).
-
-- `struct` and `union` (C99 §6.7.2.1 / §6.5.2.3). File-scope
-  declarations (`struct foo { int a; long b; };`), block-scope
-  declarations, and forward declarations (`struct foo;`).
-  Member access via `.` and `->` (chained / nested forms like
-  `s_ptr->in_array->a` work). Compound initializers
-  (`struct s x = {1, 2, {3, 4, 5}};`). Struct copy via
-  `s1 = s2` / `s1 = other.member` / `*p = small`. Pointer-to-
-  struct, address-of struct member, `sizeof(struct foo)`, and
-  unions. Layout follows c6502's no-padding rule: struct
-  members lay out byte-by-byte in declaration order; union
-  members all pin to offset 0 with size = max(members).
-  `c99_to_tac` lowers each member access to `GetAddress` (or
-  pointer-load) + `Binary(Add, ConstLong(member.offset))` +
-  `Load`/`Store`; struct copy reuses TAC `Copy`'s existing
-  N-byte fan-out via `_size_of`. Static-storage struct/union
-  initializers lay down as a flat sequence of typed `*Init`
-  items in member order, with union statics tail-padding to
-  the union's full size. Tag visibility is per-block (a stack
-  of visible-tag sets pushes on every Compound block, for-
-  header, and function body), so a tag declared in an inner
-  scope isn't visible after the scope exits. References to a
-  yet-undeclared tag auto-introduce a forward declaration in
-  the current scope (the standard's "appearance of `struct foo`
-  in any declaration introduces it" rule).
-
-  **Struct-by-value parameter passing**: a struct argument
-  contributes `sizeof(struct)` bytes to the caller's soft-stack
-  arg block. Callee reads them via `Frame(M+3+offset)`. No new
-  mechanism beyond the existing per-byte arg-write loop.
-
-  **Struct-by-value returns** use an sret convention: the
-  caller allocates a return slot in its frame, passes its
-  address as a hidden first parameter (`.sret.<funcname>`,
-  `Pointer(struct)`-typed). `return e;` lowers to
-  `Store(e, .sret) + Ret(None)`. The function call expression's
-  result IS the slot — `f().m` reads through it directly, and
-  `dst = f();` Copies it into `dst` without any extra
-  intermediate. The slot has temporary lifetime: you can read
-  through `f().m` but the structural lvalue check rejects
-  `f().m = …` and `(c?a:b).m = …` because the operand isn't
-  an lvalue.
-
-  **Block-scope tag shadowing**: file-scope tags keep their
-  source name; block-scope tag declarations get a fresh
-  `@<N>.<source>` rename in identifier_resolution's tag scope,
-  so two different block-scope `struct s` definitions land in
-  the type checker's TypeTable as distinct `@N.s` and `@M.s`.
-  Same clone-and-flip pattern as the variable scope — outer
-  tags are shadowed when an inner block declares the same
-  source tag, restored when the block exits. Forward
-  references to as-yet-undeclared tags auto-introduce a
-  forward declaration in the current scope per C99 §6.7.2.3.
-
-Partially supported:
-
-- unsigned integer types (`unsigned int`, `unsigned long`)
-  parse and propagate through every pass — values lay down
-  correctly, mixed-type arithmetic promotes per C99 §6.3.1.8,
-  and explicit casts lower to `SignExtend` / `ZeroExtend` /
-  `Truncate` / no-op as appropriate. What still acts signed:
-  `<` / `>` / `<=` / `>=` use the V-corrected `SBC` +
-  `BMI`/`BPL` sequence regardless of operand signedness, and
-  `>>` always emits `JSR asr8` (signed arithmetic right shift)
-  — neither has the unsigned variant (`BCC`/`BCS` ordering,
-  `JSR lsr8` for unsigned right shift) wired up yet.
-
-Not yet anywhere in the pipeline:
-
-- a runtime header that defines `SSP`/`FP`/`HARGS`/`DPTR` at
-  their ZP addresses, initializes `SSP` to top-of-RAM, sets the
-  reset vector to a stub that calls `main`, and provides the
-  arithmetic helpers (`mul8`/`divmod8`/`asl8`/`asr8`,
-  `mul16`/`divmod16`/`asl16`/`asr16`,
-  `mul32`/`divmod32`/`asl32`/`asr32`), the FP arithmetic /
-  conversion family, and the `icall` indirect-call trampoline.
-  `tac_to_asm` already emits `JSR` to all of these — the
-  marshaling is done; what's missing is the implementation that
-  the assembler would link against.
+**Not yet in the pipeline**: the runtime header
+(`SSP`/`FP`/`HARGS`/`DPTR` ZP addresses, reset vector, arithmetic
+helpers `mul8/16/32`, `divmod8/16/32`, `asl/asr/lsr8/16/32`, FP
+arithmetic helpers, 26 FP-conversion helpers, `icall`
+trampoline). Programs that use `*` / `/` / `%` / `<<` / `>>`,
+any FP↔int cast, or any indirect call assemble but won't link
+until those land.
 
 End-to-end with `--optimize`:
 
-- TAC-level fixed-point opts (constant folding, strength
-  reduction, comparison-against-zero / jump fold, UCE, copy
-  propagation, DSE) → asm-level SSA round-trip with forward +
-  backward copy propagation + byte-DCE → byte-granular regalloc
-  → late prologue synthesis. See `docs/optimization.md` for the
-  pipeline walk-through.
-- `__attribute__((zp_abi))` on a function selects the per-
-  function ZP-passing calling convention. Validated at compile
-  time: function must be a leaf, must not be address-taken,
-  params must fit the ZP window. When the body also fits in ZP
-  and uses no callee-saved bytes, the function emits as bare
-  body + RTS — no prologue, no epilogue. See
+- Full optimizer: TAC SSA fixed-point opts → asm-level SSA
+  round-trip with byte-granular regalloc → late prologue
+  synthesis. See `docs/optimization.md`.
+- Call-graph-disjoint ZP allocation for params (when
+  `__attribute__((zp_abi))`-annotated) AND body locals.
+  Eligible functions emit as bare body + RTS. See
   `docs/leaf_zp_abi.md`.
 
 ## Tests

@@ -283,6 +283,15 @@ def _run_stage(
 
 
 def main(argv: list[str]) -> int:
+    # `--link` is the multi-TU linker mode: positional args are
+    # one-or-more .asm files (each from a per-TU
+    # `compile.py --codegen --optimize`) and the output is a
+    # single .asm with all `__zpabi_*` / `__local_*` symbols
+    # re-allocated globally. Eats a different argument shape
+    # than the single-TU compile modes, so we detect it before
+    # the main argparse setup.
+    if "--link" in argv[1:]:
+        return _main_link(argv)
     ap = argparse.ArgumentParser(prog="compile.py")
     ap.add_argument("input", help="C source file, or - for stdin")
     ap.add_argument("-o", dest="output",
@@ -352,6 +361,45 @@ def main(argv: list[str]) -> int:
             f.write(text)
     else:
         sys.stdout.write(text)
+    return 0
+
+
+def _main_link(argv: list[str]) -> int:
+    """Argparse path for `--link`. Positional args are one or
+    more `.asm` files; `-o` is the combined output."""
+    ap = argparse.ArgumentParser(
+        prog="compile.py --link",
+        description=(
+            "Re-allocate __zpabi_* and __local_* symbols across "
+            "multiple .asm files and emit a single combined .asm "
+            "with one global EQU block."
+        ),
+    )
+    ap.add_argument(
+        "inputs", nargs="+",
+        help="input .asm files (each from `compile.py --codegen "
+             "--optimize`)",
+    )
+    ap.add_argument("-o", dest="output", required=True,
+                    help="combined output .asm")
+    ap.add_argument(
+        "--link", action="store_true",
+        help=argparse.SUPPRESS,  # already detected by main
+    )
+    args = ap.parse_args(argv[1:])
+    if not args.output.endswith(".asm"):
+        print(
+            f"compile.py: --link output must have .asm suffix: "
+            f"{args.output}",
+            file=sys.stderr,
+        )
+        return 2
+    from passes.linker import LinkError, link_files
+    try:
+        link_files(args.inputs, args.output)
+    except LinkError as e:
+        print(f"compile.py: link error: {e}", file=sys.stderr)
+        return 1
     return 0
 
 

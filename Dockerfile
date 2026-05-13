@@ -26,12 +26,6 @@ RUN git clone https://github.com/dasm-assembler/dasm.git /tmp/dasm \
     && cp /tmp/dasm/bin/dasm /usr/local/bin/dasm \
     && rm -rf /tmp/dasm
 
-# Install Claude Code CLI. ADD of the npm registry's "latest" metadata
-# invalidates this layer whenever a new version of claude-code is published,
-# so the install below always picks up the newest release.
-ADD https://registry.npmjs.org/@anthropic-ai/claude-code/latest /tmp/claude-code-latest.json
-RUN npm install -g @anthropic-ai/claude-code
-
 # Install uv (Python package manager)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
@@ -49,6 +43,19 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 USER robertbaruch
+
+# Point npm's global prefix at robertbaruch's home so the user can upgrade
+# claude-code at runtime (npm install -g @anthropic-ai/claude-code) without
+# hitting EACCES on /usr/local/lib/node_modules.
+ENV NPM_CONFIG_PREFIX=/home/robertbaruch/.npm-global
+ENV PATH=/home/robertbaruch/.npm-global/bin:$PATH
+
+# Install Claude Code CLI. ADD of the npm registry's "latest" metadata
+# invalidates this layer whenever a new version of claude-code is published,
+# so the install below always picks up the newest release.
+ADD https://registry.npmjs.org/@anthropic-ai/claude-code/latest /tmp/claude-code-latest.json
+RUN mkdir -p "$NPM_CONFIG_PREFIX" \
+    && npm install -g @anthropic-ai/claude-code
 
 # Trust the bind-mounted project repo so git works inside the container
 # (otherwise host/container UID mismatch trips git's dubious-ownership check).

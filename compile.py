@@ -250,7 +250,7 @@ def _run_stage(
             asm1, dims_by_fn = replace_pseudoregs_bare_exit(
                 asm0, extra_statics=statics, symbols=symbols,
                 types=types, colorings=asm_colorings,
-                param_layouts=abi,
+                param_layouts=abi, local_pools=local_pools,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=zp_slot_symbols)

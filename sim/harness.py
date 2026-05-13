@@ -126,7 +126,7 @@ def compile_to_asm(
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,
             types=types, colorings=asm_colorings,
-            param_layouts=abi,
+            param_layouts=abi, local_pools=local_pools,
         )
         asm = expand_long_branches(
             apply_asm_dead_store(

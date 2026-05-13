@@ -216,6 +216,7 @@ class Replacer:
         types=None,
         coloring=None,
         param_layout=None,  # ParamLayout from passes.abi_selection
+        private_pool_addrs: frozenset[int] = frozenset(),
     ) -> None:
         self.params = params
         self.param_set = set(params)
@@ -244,6 +245,15 @@ class Replacer:
         # name. Indexes into the `ZpLayout.addrs` list when the
         # layout is ZpLayout. Computed in `finalize`.
         self.param_flat_offsets: dict[str, int] = {}
+        # ZP byte addresses that belong to this function's private
+        # pool from `passes.zp_local_allocation`. These are
+        # by-construction safe across calls (call-graph-disjoint
+        # allocation guarantees no coexisting function touches
+        # them), so they're EXCLUDED from `callee_saved_addrs`
+        # even when they happen to fall in the default Pool's
+        # callee_saved() range. For functions without a private
+        # pool, this set is empty and the existing logic applies.
+        self.private_pool_addrs = private_pool_addrs
         # Compute the set of callee-saved ZP byte addresses this
         # function uses. Each byte gets a slot at the bottom of the
         # frame (FP+1..FP+S), so locals start at offset S+1. The
@@ -273,8 +283,13 @@ class Replacer:
 
         For each colored Var, we enumerate every byte it occupies
         (`[base, base+width)`) and include the ones that fall in
-        `coloring.pool.callee_saved()`. Returns sorted ascending so
-        the prologue / epilogue emit in deterministic order."""
+        `coloring.pool.callee_saved()`. Addresses in this function's
+        `private_pool_addrs` are excluded — `zp_local_allocation`
+        guarantees no coexisting function touches them, so the
+        save/restore would be wasted even when the address lands in
+        the conventional callee-saved range. Returns sorted
+        ascending so the prologue / epilogue emit in deterministic
+        order."""
         if self.coloring is None or not self.coloring.assignments:
             return []
         callee_range = self.coloring.pool.callee_saved()
@@ -283,7 +298,7 @@ class Replacer:
             width = size_of_name(name, self.symbols, self.types)
             for k in range(width):
                 byte_addr = base + k
-                if byte_addr in callee_range:
+                if byte_addr in callee_range and byte_addr not in self.private_pool_addrs:
                     used.add(byte_addr)
         return sorted(used)
 
@@ -542,6 +557,7 @@ def replace_function_bare_exit(
     types=None,
     coloring=None,
     param_layout=None,
+    private_pool_addrs: frozenset[int] = frozenset(),
 ) -> tuple[asm_ast.Function, FrameDims]:
     """`--optimize-asm` variant: same Pseudo / Frame / ZP rewrite,
     but skips the `FunctionPrologue` prepend and leaves each bare
@@ -555,11 +571,20 @@ def replace_function_bare_exit(
     resolve to fixed ZP addresses on entry (caller wrote the bytes
     before JSR per the ZP-passing convention) and `arg_bytes`
     stays at 0. When `SoftStackLayout` or `None`, the existing
-    Frame-based param resolution applies."""
+    Frame-based param resolution applies.
+
+    `private_pool_addrs` is the set of byte addresses returned by
+    `passes.zp_local_allocation.allocate_function_locals` for
+    this function. Addresses in this set are excluded from the
+    `callee_saved_addrs` computation regardless of where they
+    land — the private-pool allocator already guarantees no
+    coexisting function touches them, so save/restore would be
+    pure waste."""
     return _replace_function_impl(
         fn, statics=statics, symbols=symbols, types=types,
         coloring=coloring, bare_exit=True,
         param_layout=param_layout,
+        private_pool_addrs=private_pool_addrs,
     )
 
 
@@ -571,6 +596,7 @@ def _replace_function_impl(
     coloring,
     bare_exit: bool,
     param_layout=None,
+    private_pool_addrs: frozenset[int] = frozenset(),
 ) -> tuple[asm_ast.Function, FrameDims]:
     match fn:
         case asm_ast.Function(
@@ -581,6 +607,7 @@ def _replace_function_impl(
                 params=list(params), statics=statics,
                 symbols=symbols, types=types, coloring=coloring,
                 param_layout=param_layout,
+                private_pool_addrs=private_pool_addrs,
             )
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
@@ -704,6 +731,7 @@ def replace_program_bare_exit(
     types=None,
     colorings=None,
     param_layouts=None,
+    local_pools: dict[str, list[int]] | None = None,
 ) -> tuple[asm_ast.Type_program, dict[str, FrameDims]]:
     """`--optimize-asm` variant of `replace_program`. Produces an asm
     program whose functions still end with bare `Return(save_a)`
@@ -742,9 +770,14 @@ def replace_program_bare_exit(
                         param_layouts.get(tl.name)
                         if param_layouts is not None else None
                     )
+                    private = (
+                        frozenset(local_pools.get(tl.name, ()))
+                        if local_pools is not None else frozenset()
+                    )
                     fn_out, dims = replace_function_bare_exit(
                         tl, statics, symbols, types, coloring=coloring,
                         param_layout=layout,
+                        private_pool_addrs=private,
                     )
                     new_top.append(fn_out)
                     dims_by_fn[tl.name] = dims

@@ -71,11 +71,12 @@ def color_graph(
     pool: Pool | None = None,
     blocked_addrs: set[int] | None = None,
     hwreg_eligibility: HwRegEligibility | None = None,
+    allowed_range: range | None = None,
 ) -> Coloring:
-    """Color `graph`'s nodes onto ZP byte addresses drawn from
-    `pool`, optionally pinning HwReg-eligible nodes into X / Y first.
-    Returns a `Coloring` with every graph node either in
-    `assignments`, in `hwreg_assignments`, or in `spilled`.
+    """Color `graph`'s nodes onto ZP byte addresses, optionally
+    pinning HwReg-eligible nodes into X / Y first. Returns a
+    `Coloring` with every graph node either in `assignments`,
+    in `hwreg_assignments`, or in `spilled`.
 
     `blocked_addrs` is an optional set of ZP byte addresses that
     must NOT be assigned to any node. Used by the ZP-ABI path to
@@ -92,7 +93,23 @@ def color_graph(
     nodes in `hints_x`/`hints_y` are tried first against the X / Y
     register, succeeding when graph constraints allow. Eligibility
     is graph-rep-level (the caller is responsible for projecting
-    pre-coalescing names through any rep_map before passing in)."""
+    pre-coalescing names through any rep_map before passing in).
+
+    `allowed_range`, when provided, REPLACES the pool-based
+    caller/callee partition. Every node's color is drawn from
+    this range exclusively; `lives_across_call` no longer drives
+    color choice, because by construction every byte in
+    `allowed_range` is safe to hold values across any call the
+    caller knows about (the caller — typically the optimizer
+    driver feeding the per-function private range from
+    `passes.zp_local_allocation`).
+
+    The range may extend above `$FF`; addresses there assemble
+    as 3-byte absolute mode instead of 2-byte zero-page, but
+    semantics are identical. HwReg-pinning (X / Y) is still
+    gated by `lives_across_call` because X and Y are 6502
+    hardware registers always clobbered by JSR — orthogonal to
+    the ZP-byte question."""
     if pool is None:
         pool = Pool()
     blocked_addrs = blocked_addrs or set()
@@ -111,7 +128,9 @@ def color_graph(
             continue
         node = graph.nodes[name]
         blocked = _blocked_bytes(name, graph, assignments) | blocked_addrs
-        if node.lives_across_call:
+        if allowed_range is not None:
+            base = _find_fit(allowed_range, node.width, blocked)
+        elif node.lives_across_call:
             base = _find_fit(pool.callee_saved(), node.width, blocked)
         else:
             base = _find_fit(pool.caller_saved(), node.width, blocked)

@@ -49,6 +49,8 @@ from passes.replace_pseudoregisters import (
 )
 from c99_to_tac import translate_program as translate_to_tac
 from passes.abi_selection import select_abi
+from passes.function_local_sizing import compute_local_bytes
+from passes.zp_local_allocation import allocate_function_locals
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
@@ -108,9 +110,18 @@ def compile_to_asm(
         abi = select_abi(tac, ast5, types)
         abi, zp_slot_symbols = allocate_zp_slots(tac, abi)
         asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
-        asm0, asm_colorings = asm_opt.optimize_program(
+        # Preliminary optimizer pass: conservative pool, used
+        # only to size local-byte demand. IR discarded.
+        asm_prelim, _ = asm_opt.optimize_program(
             asm0, extra_statics=statics, param_layouts=abi,
             symbols=syms,
+        )
+        local_bytes = compute_local_bytes(asm_prelim)
+        local_pools = allocate_function_locals(tac, abi, local_bytes)
+        # Final optimizer pass with per-function private pools.
+        asm0, asm_colorings = asm_opt.optimize_program(
+            asm0, extra_statics=statics, param_layouts=abi,
+            symbols=syms, local_pools=local_pools,
         )
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,

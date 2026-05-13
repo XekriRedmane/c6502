@@ -169,6 +169,38 @@ class TestLeafZpAbi(unittest.TestCase):
         self.assertIn("__zpabi_helper_p0\tEQU\t$80", asm)
         self.assertNotIn("STA   (SSP)", asm)
 
+    def test_eligible_non_leaf_emits_no_prologue(self) -> None:
+        # An eligible function (no recursion, no indirect calls,
+        # all callees eligible) that DOES make a zp_abi call AND
+        # has a body local live across that call should still
+        # emit as bare body + RTS — the private-pool allocator
+        # gives the local a ZP slot disjoint from every coexisting
+        # function's footprint, so no callee-save prologue is
+        # needed. Headline win of the zp_local_allocation pass.
+        src = (
+            "__attribute__((zp_abi)) "
+            "void touch(unsigned char x) { (void)x; } "
+            "__attribute__((zp_abi)) "
+            "unsigned char wrap(unsigned char a, unsigned char b) { "
+            "  unsigned char x = a; "
+            "  touch(b); "
+            "  return x; "
+            "} "
+            "int main(void) { return wrap(7, 3); }"
+        )
+        asm = self._codegen(src)
+        # wrap's body bounded by the next top-level label.
+        wrap_idx = asm.index("wrap:")
+        main_idx = asm.index("main:")
+        wrap_body = asm[wrap_idx:main_idx]
+        # No soft-stack prologue artifacts.
+        self.assertNotIn("STA   SSP", wrap_body)
+        self.assertNotIn("STA   FP", wrap_body)
+        self.assertNotIn(";", wrap_body)  # no "prologue:" comments
+        # The cross-call value `x` (= a) must survive the call;
+        # verified by the sim.
+        self.assertEqual(self._sim_return_int(src), 7)
+
     def test_zp_abi_caller_callee_get_disjoint_slots(self) -> None:
         # A zp_abi caller and its direct zp_abi callee must be
         # assigned disjoint slot ranges by

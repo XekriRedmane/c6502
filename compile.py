@@ -66,6 +66,8 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.abi_selection import select_abi
+from passes.function_local_sizing import compute_local_bytes
+from passes.zp_local_allocation import allocate_function_locals
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization_asm import optimizer as asm_opt
@@ -222,9 +224,28 @@ def _run_stage(
             asm0 = translate_to_asm(
                 tac, symbols, types, bare_exit=True, abi=abi,
             )
-            asm0, asm_colorings = asm_opt.optimize_program(
+            # Preliminary optimizer pass with the default
+            # caller/callee partition. Used only to size each
+            # function's local-byte demand; the IR it produces is
+            # discarded.
+            asm_prelim, _ = asm_opt.optimize_program(
                 asm0, extra_statics=statics, param_layouts=abi,
                 symbols=symbols,
+            )
+            local_bytes = compute_local_bytes(asm_prelim)
+            # Call-graph-disjoint private pools per function. The
+            # asm regalloc draws from these for eligible functions;
+            # ineligible functions (recursive, indirect-calling,
+            # or with non-zp_abi extern callees) fall back to the
+            # conservative pool.
+            local_pools = allocate_function_locals(
+                tac, abi, local_bytes,
+            )
+            # Final optimizer pass with private pools threaded
+            # through to the regalloc.
+            asm0, asm_colorings = asm_opt.optimize_program(
+                asm0, extra_statics=statics, param_layouts=abi,
+                symbols=symbols, local_pools=local_pools,
             )
             asm1, dims_by_fn = replace_pseudoregs_bare_exit(
                 asm0, extra_statics=statics, symbols=symbols,

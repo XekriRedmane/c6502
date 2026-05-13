@@ -157,6 +157,7 @@ def allocate_function_locals(
     zp_start, zp_end = zp_window.start, zp_window.stop
 
     callgraph = _build_callgraph(prog)
+    direct_extern_callees = _build_direct_extern_callees(prog, callgraph)
     eligible = _determine_eligibility(prog, abi, callgraph)
 
     # Restrict to eligible — both for the topological walk and
@@ -187,15 +188,17 @@ def allocate_function_locals(
         # Ancestor local pools (already allocated in this walk).
         for anc in ancestors.get(fn, ()):
             forbidden.update(local_pools.get(anc, ()))
-        # Coexisting zp_abi param slots: ancestors, descendants,
-        # and the function itself. Ancestors / descendants are
-        # restricted to eligible above, but zp_abi externs and
-        # ineligible-but-defined zp_abi functions also need to
-        # be considered — they still have param slots that get
-        # written when `fn` calls them (or that get written by
-        # `fn`'s caller when invoking `fn`'s ancestor).
+        # Coexisting zp_abi param slots: every zp_abi function
+        # whose param slots are written while `fn` is on the call
+        # stack. That's the transitive ancestor chain (their
+        # params sit at their pinned slots while `fn` runs deeper)
+        # PLUS the transitive descendant chain (their params get
+        # written when `fn` — or anything it calls — invokes
+        # them). Descendants include extern zp_abi callees, which
+        # don't appear as nodes in `callgraph` but ARE reachable
+        # via the FunctionCall edges from any in-TU descendant.
         coexisting_zp = _coexisting_zp_functions(
-            fn, callgraph, abi,
+            fn, callgraph, direct_extern_callees, abi,
         )
         for other in coexisting_zp:
             forbidden.update(zp_param_addrs.get(other, ()))
@@ -401,20 +404,54 @@ def _ancestors_and_descendants(
     return ancestors, descendants
 
 
+def _build_direct_extern_callees(
+    prog: tac_ast.Program,
+    callgraph: dict[str, set[str]],
+) -> dict[str, set[str]]:
+    """Per-function set of direct callees that are NOT defined in
+    this TU (i.e. would resolve to extern symbols at link time).
+    The main allocator uses this to walk extern zp_abi callees
+    transitively for the coexisting-zp set; eligibility uses it
+    only indirectly via `_determine_eligibility`. Keyed by the
+    caller's name; the set values are extern callee names."""
+    in_tu = set(callgraph.keys())
+    out: dict[str, set[str]] = {n: set() for n in in_tu}
+    for tl in prog.top_level:
+        if not isinstance(tl, tac_ast.Function):
+            continue
+        for instr in tl.instructions:
+            if (
+                isinstance(instr, tac_ast.FunctionCall)
+                and instr.name not in in_tu
+            ):
+                out[tl.name].add(instr.name)
+    return out
+
+
 def _coexisting_zp_functions(
     fn: str,
     full_callgraph: dict[str, set[str]],
+    direct_extern_callees: dict[str, set[str]],
     abi: dict[str, ParamLayout],
 ) -> set[str]:
-    """Set of zp_abi function names that may share the call
-    stack with `fn`. Includes both ancestors AND descendants in
-    the FULL (unfiltered) call graph — even ineligible zp_abi
-    functions and extern zp_abi declarations count, because
-    their param slots get written when they're invoked. Excludes
-    `fn` itself; the caller adds that separately."""
+    """Set of zp_abi function names whose param slots may be live
+    or get written while `fn` is on the call stack. Includes:
+
+      * transitive ancestors of `fn` that are zp_abi (their
+        params sit at pinned slots while `fn` runs deeper);
+      * transitive descendants of `fn` that are zp_abi
+        (their params get written when `fn` — or any function
+        it calls transitively — invokes them);
+      * extern zp_abi callees reachable from `fn` or any of its
+        transitive in-TU descendants (these don't appear as
+        nodes in `full_callgraph` because they have no body, but
+        they ARE on the call stack with `fn` whenever the chain
+        invokes them).
+
+    Excludes `fn` itself; the caller adds that separately."""
     out: set[str] = set()
+    # Transitive ancestors via the inverted graph.
     callers_of = _invert(full_callgraph)
-    # Transitive ancestors (callers of callers of...).
     seen_anc: set[str] = set()
     stack: list[str] = list(callers_of.get(fn, ()))
     while stack:
@@ -425,35 +462,27 @@ def _coexisting_zp_functions(
         if isinstance(abi.get(n), ZpLayout):
             out.add(n)
         stack.extend(callers_of.get(n, ()))
-    # Transitive descendants (callees of callees of...). Note
-    # the full callgraph only contains in-TU functions; for the
-    # extern case we need to look at FunctionCall instructions
-    # directly. Handled below.
-    seen_desc: set[str] = set()
-    stack = list(full_callgraph.get(fn, ()))
+    # Transitive descendants via the forward graph. Each step,
+    # we also record any direct extern callees of the current
+    # node — they're "coexisting" with `fn` (will be on the
+    # stack when `fn`'s subtree invokes them).
+    seen_desc: set[str] = {fn}
+    stack = [fn]
     while stack:
         n = stack.pop()
-        if n in seen_desc:
-            continue
-        seen_desc.add(n)
-        if isinstance(abi.get(n), ZpLayout):
-            out.add(n)
-        stack.extend(full_callgraph.get(n, ()))
-    # Direct extern zp_abi callees of fn or any of its
-    # transitive descendants. These don't appear in
-    # `full_callgraph` (which only has TU-defined functions) but
-    # they ARE on the call stack with fn.
-    # (Captured separately: we infer them by scanning the bodies
-    # of fn and its descendants for FunctionCalls to abi entries
-    # that lack a tac_ast.Function body. The caller of this
-    # helper doesn't have the prog handy, though, so we accept a
-    # slight conservativeness here and rely on the caller to
-    # pre-aggregate them. Today the caller is
-    # `allocate_function_locals`, which doesn't pre-aggregate;
-    # extern zp_abi callees that aren't reachable via the
-    # in-TU subgraph won't be in `out` — they just can't be on
-    # the stack with `fn` via any TU-internal path, so they
-    # don't need to be considered.)
+        for callee in full_callgraph.get(n, ()):
+            if callee in seen_desc:
+                continue
+            seen_desc.add(callee)
+            if isinstance(abi.get(callee), ZpLayout):
+                out.add(callee)
+            stack.append(callee)
+        # Extern callees reachable directly from `n`. These have
+        # no body so they don't contribute further descendants of
+        # their own (we can't see them anyway).
+        for ext in direct_extern_callees.get(n, ()):
+            if isinstance(abi.get(ext), ZpLayout):
+                out.add(ext)
     return out
 
 

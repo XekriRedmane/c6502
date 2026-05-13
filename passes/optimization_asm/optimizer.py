@@ -63,6 +63,7 @@ def optimize_program(
     extra_statics: frozenset[str] = frozenset(),
     param_layouts=None,
     symbols=None,
+    local_pools: dict[str, list[int]] | None = None,
 ) -> tuple[asm_ast.Type_program, dict[str, Coloring]]:
     """Walk every Function top-level and apply the asm-level SSA
     round-trip. Returns the rewritten program alongside a
@@ -92,7 +93,18 @@ def optimize_program(
     `symbols` is the c6502 symbol table; passed through to
     `fold_const_statics` (the const-static prepass) so it can
     check the const qualifier on each candidate static. Without
-    it, the prepass is a no-op."""
+    it, the prepass is a no-op.
+
+    `local_pools`, when supplied, is a `dict[fn_name, list[int]]`
+    from `passes.zp_local_allocation.allocate_function_locals`.
+    For every function present in the dict, the asm-level
+    regalloc draws colors EXCLUSIVELY from that function's
+    private range (a contiguous list of byte addresses,
+    typically in zero page but possibly spilled above `$FF`).
+    Functions NOT in the dict fall back to the default
+    caller/callee-saved partition of `Pool(start=0x80)`. This
+    enables the call-graph-disjoint allocation that eliminates
+    callee-save prologues for eligible functions."""
     from passes.abi_selection import ZpLayout
     # Program-level prepass: replace references to const-qualified
     # internal-linkage scalar statics with Imm operands carrying
@@ -113,8 +125,9 @@ def optimize_program(
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             blocked_addrs = _blocked_addrs_for(tl, param_layouts)
+            allowed_range = _allowed_range_for(tl, local_pools)
             new_fn, coloring = _optimize_function(
-                tl, statics_frozen, blocked_addrs,
+                tl, statics_frozen, blocked_addrs, allowed_range,
             )
             new_top.append(new_fn)
             colorings[new_fn.name] = coloring
@@ -166,9 +179,30 @@ def _blocked_addrs_for(
     return out
 
 
+def _allowed_range_for(
+    fn: asm_ast.Function,
+    local_pools: dict[str, list[int]] | None,
+) -> range | None:
+    """If `fn` has a private local pool, return the contiguous
+    `range(min, max + 1)` that bounds it. The pool is always
+    contiguous (allocator guarantees) so a `range` is the natural
+    representation for `color_graph`'s `_find_fit`. Returns None
+    when the function isn't in the pool dict — the regalloc then
+    falls back to the default caller/callee partition."""
+    if local_pools is None:
+        return None
+    pool = local_pools.get(fn.name)
+    if not pool:
+        return None
+    lo = pool[0]
+    hi = pool[-1] + 1
+    return range(lo, hi)
+
+
 def _optimize_function(
     fn: asm_ast.Function, statics: frozenset[str],
     blocked_addrs: set[int],
+    allowed_range: range | None = None,
 ) -> tuple[asm_ast.Function, Coloring]:
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
     # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
@@ -226,6 +260,7 @@ def _optimize_function(
     coloring = color_graph(
         fn, graph, blocked_addrs=blocked_addrs,
         hwreg_eligibility=rep_eligibility,
+        allowed_range=allowed_range,
     )
     # Project coloring through the coalescing result: every name
     # that was merged into a representative inherits the rep's

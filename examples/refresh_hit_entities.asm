@@ -76,7 +76,6 @@ refresh_hit_entities:
 .if_end@0:
    DEC   __local_refresh_hit_entities_b4
 .loop@0_continue:
-   LDA   __local_refresh_hit_entities_b4
    BPL   .refresh_hit_entities@asm_ssa_split@0
 .refresh_hit_entities@asm_ssa_block@2:
    RTS

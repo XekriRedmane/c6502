@@ -129,7 +129,7 @@ def _rewrite_function(
         # equivalence for SUBSEQUENT instructions.
         if base_zp is not None:
             rewritten = _rewrite_operands(instr, base_zp)
-            if _writes_invalidate(instr, base_zp):
+            if _writes_invalidate(instr, base_zp, zp_addrs):
                 base_zp = None
             out.append(rewritten)
         else:
@@ -211,6 +211,7 @@ def _is_block_boundary(instr: asm_ast.Type_instruction) -> bool:
 
 def _writes_invalidate(
     instr: asm_ast.Type_instruction, base_zp: int,
+    zp_addrs: dict[str, int],
 ) -> bool:
     """True iff `instr`'s memory writes could touch any byte in
     `{DPTR, DPTR+1, base_zp, base_zp+1}` — the set of cells the
@@ -218,7 +219,7 @@ def _writes_invalidate(
     protected = {
         _DPTR_ADDR, _DPTR_ADDR + 1, base_zp, base_zp + 1,
     }
-    for write_id in _memory_writes(instr):
+    for write_id in _memory_writes(instr, zp_addrs):
         if write_id is None:
             return True
         if write_id[0] == 'byte':
@@ -236,7 +237,10 @@ def _writes_invalidate(
     return False
 
 
-def _memory_writes(instr: asm_ast.Type_instruction):
+def _memory_writes(
+    instr: asm_ast.Type_instruction,
+    zp_addrs: dict[str, int],
+):
     """Yield write-ids for each memory cell potentially written.
     Mirrors `redundant_store._memory_writes`'s shape — see that
     module's docstring for the encoding."""
@@ -248,7 +252,7 @@ def _memory_writes(instr: asm_ast.Type_instruction):
             yield ('byte', dst.address + dst.offset)
             return
         if isinstance(dst, asm_ast.Data):
-            base = _RUNTIME_ZP_ADDRS.get(dst.name)
+            base = zp_addrs.get(dst.name)
             if base is not None:
                 yield ('byte', base + dst.offset)
             else:
@@ -276,7 +280,7 @@ def _memory_writes(instr: asm_ast.Type_instruction):
             yield ('byte', dst.address + dst.offset)
             return
         if isinstance(dst, asm_ast.Data):
-            base = _RUNTIME_ZP_ADDRS.get(dst.name)
+            base = zp_addrs.get(dst.name)
             if base is not None:
                 yield ('byte', base + dst.offset)
             else:
@@ -295,7 +299,7 @@ def _memory_writes(instr: asm_ast.Type_instruction):
             yield ('byte', dst.address + dst.offset)
             return
         if isinstance(dst, asm_ast.Data):
-            base = _RUNTIME_ZP_ADDRS.get(dst.name)
+            base = zp_addrs.get(dst.name)
             if base is not None:
                 yield ('byte', base + dst.offset)
             else:

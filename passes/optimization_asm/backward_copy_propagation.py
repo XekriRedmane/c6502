@@ -255,11 +255,45 @@ def _safe_relocation_range(
 def _operands_alias(
     a: asm_ast.Type_operand, b: asm_ast.Type_operand,
 ) -> bool:
-    """True iff `a` and `b` name the same memory cell."""
+    """True iff `a` and `b` may name the same memory cell.
+
+    Direct comparisons for the stable-name shapes:
+
+      * `Data` ↔ `Data` — same `(name, offset)`.
+      * `Stack` ↔ `Stack` — same `offset`.
+      * `ZP` ↔ `ZP` — same resolved `address+offset`.
+
+    Indirect addressing aliases its base-pointer pair:
+
+      * `Indirect(_)` uses DPTR — aliases `Data("DPTR", _)`.
+      * `IndirectZp(addr, _)` uses the ZP pair at `addr`,`addr+1` —
+        aliases `ZP(addr, _)`.
+
+    The indirect-via-pointer cases matter because relocating a
+    backward-CP target into `Data("DPTR", k)` BEFORE an intermediate
+    `Indirect` read would partially clobber the pointer DPTR uses,
+    yielding a hybrid address."""
     if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
     if isinstance(a, asm_ast.Stack) and isinstance(b, asm_ast.Stack):
         return a.offset == b.offset
+    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
+        return a.address + a.offset == b.address + b.offset
+    # Indirect uses DPTR as its base pointer: aliases any
+    # Data("DPTR", _) cell.
+    indirect_a = isinstance(a, asm_ast.Indirect)
+    indirect_b = isinstance(b, asm_ast.Indirect)
+    dptr_a = isinstance(a, asm_ast.Data) and a.name == "DPTR"
+    dptr_b = isinstance(b, asm_ast.Data) and b.name == "DPTR"
+    if (indirect_a and dptr_b) or (indirect_b and dptr_a):
+        return True
+    # IndirectZp uses (ZP at addr, ZP at addr+1) as its base pointer.
+    iz_a = isinstance(a, asm_ast.IndirectZp)
+    iz_b = isinstance(b, asm_ast.IndirectZp)
+    if iz_a and isinstance(b, asm_ast.ZP):
+        return b.address + b.offset in (a.address, a.address + 1)
+    if iz_b and isinstance(a, asm_ast.ZP):
+        return a.address + a.offset in (b.address, b.address + 1)
     return False
 
 

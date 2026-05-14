@@ -59,20 +59,21 @@ def byte_dce(
     read them — so they're never considered dead even if the local
     function never reads them. Same set the SSA construction pass
     uses to exclude statics from versioning."""
+    excluded = _excluded_names(fn)
     while True:
         prev = fn
-        fn = _one_pass(fn, statics)
+        fn = _one_pass(fn, statics, excluded)
         if fn.instructions == prev.instructions:
             return fn
 
 
 def _one_pass(
-    fn: asm_ast.Function, statics: frozenset[str],
+    fn: asm_ast.Function, statics: frozenset[str], excluded: frozenset[str],
 ) -> asm_ast.Function:
     use_set = _collect_pseudo_uses(fn)
     new_instrs: list[asm_ast.Type_instruction] = []
     for instr in fn.instructions:
-        if _is_dead(instr, use_set, statics):
+        if _is_dead(instr, use_set, statics, excluded):
             continue
         new_instrs.append(instr)
     return asm_ast.Function(
@@ -87,14 +88,26 @@ def _is_dead(
     instr: asm_ast.Type_instruction,
     use_set: set[tuple[str, int]],
     statics: frozenset[str],
+    excluded: frozenset[str],
 ) -> bool:
     """True iff dropping `instr` is safe (its dst Pseudo is unused
-    AND not a static-storage name). Only Mov / Phi are considered
-    today — see the module docstring for the rationale."""
+    AND not a static-storage name AND not on an address-taken
+    name). Only Mov / Phi are considered today — see the module
+    docstring for the rationale.
+
+    The `excluded` gate matters for address-taken Pseudos: a
+    `LoadAddress(P, _)` makes EVERY byte of P observable via
+    indirect-Y reads through the produced pointer. `_use_operands`
+    only counts the addressed byte (offset 0) as a use, so without
+    this gate the high bytes of `P` look unused and a multi-byte
+    init like `int i = -100;` would have its high-byte store
+    silently dropped."""
     if isinstance(instr, asm_ast.Mov):
         if not isinstance(instr.dst, asm_ast.Pseudo):
             return False
         if instr.dst.name in statics:
+            return False
+        if instr.dst.name in excluded:
             return False
         return (instr.dst.name, instr.dst.offset) not in use_set
     if isinstance(instr, asm_ast.Phi):
@@ -102,8 +115,38 @@ def _is_dead(
             return False
         if instr.dst.name in statics:
             return False
+        if instr.dst.name in excluded:
+            return False
         return (instr.dst.name, instr.dst.offset) not in use_set
     return False
+
+
+def _excluded_names(fn: asm_ast.Function) -> frozenset[str]:
+    """Pseudo names that asm-level SSA construction excludes from
+    byte-granular versioning — address-taken (via LoadAddress) and
+    read-modify-write targets. Mirror of
+    `passes.optimization_asm.ssa_construction._excluded_names`.
+    Kept in sync defensively: a name not promoted to SSA can't be
+    safely DCE'd at the byte level either."""
+    excluded: set[str] = set()
+    for instr in fn.instructions:
+        match instr:
+            case asm_ast.LoadAddress(src=src, dst=dst):
+                if isinstance(src, asm_ast.Pseudo):
+                    excluded.add(src.name)
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
+            case (
+                asm_ast.Inc(dst=dst)
+                | asm_ast.Dec(dst=dst)
+                | asm_ast.ArithmeticShiftLeft(dst=dst)
+                | asm_ast.LogicalShiftRight(dst=dst)
+                | asm_ast.RotateLeft(dst=dst)
+                | asm_ast.RotateRight(dst=dst)
+            ):
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
+    return frozenset(excluded)
 
 
 def _collect_pseudo_uses(

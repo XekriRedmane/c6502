@@ -71,38 +71,41 @@ _OPT_DIVERGES: dict[str, str] = {
     # --- FP / special-value semantics
     "chapter_13/valid/special_values/infinity.c": "opt-divergence-fp",
     # --- Pointer / dereference miscompiles
-    "chapter_14/valid/casts/cast_between_pointer_types.c": "opt-divergence-pointer",
-    "chapter_14/valid/declarators/declarators.c": "opt-divergence-pointer",
-    "chapter_14/valid/dereference/multilevel_indirection.c": "opt-divergence-pointer",
-    "chapter_14/valid/dereference/read_through_pointers.c": "opt-divergence-pointer",
-    "chapter_14/valid/dereference/static_var_indirection.c": "opt-divergence-pointer",
-    "chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c": "opt-divergence-pointer",
     "chapter_15/valid/declarators/equivalent_declarators.c": "opt-divergence-pointer",
     "chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c": "opt-divergence-pointer",
     "chapter_15/valid/extra_credit/incr_and_decr_nested_pointers.c": "opt-divergence-pointer",
-    "chapter_15/valid/initialization/automatic_nested.c": "opt-divergence-pointer",
-    "chapter_15/valid/pointer_arithmetic/pointer_add.c": "opt-divergence-pointer",
     "chapter_15/valid/pointer_arithmetic/pointer_diff.c": "opt-divergence-pointer",
     "chapter_15/valid/subscripting/subscript_nested.c": "opt-divergence-pointer",
     # --- Char / string miscompiles
-    "chapter_16/valid/chars/access_through_char_pointer.c": "opt-divergence-char",
     "chapter_16/valid/chars/partial_initialization.c": "opt-divergence-char",
-    # "chapter_16/valid/chars/return_char.c" — fixed 2026-05-14 by
-    # routing the 1-byte Ret path through `_byte_at` so signed
-    # constants get masked to 0..255 before reaching emit.
     "chapter_16/valid/strings_as_initializers/partial_initialize_via_string.c": "opt-divergence-char",
     # --- Struct / union miscompiles
-    "chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c": "opt-divergence-struct",
-    "chapter_18/valid/extra_credit/other_features/bitwise_ops_struct_members.c": "opt-divergence-struct",
-    "chapter_18/valid/extra_credit/semantic_analysis/union_members_same_type.c": "opt-divergence-struct",
-    "chapter_18/valid/extra_credit/semantic_analysis/union_self_pointer.c": "opt-divergence-struct",
-    "chapter_18/valid/extra_credit/union_copy/assign_to_union.c": "opt-divergence-struct",
     "chapter_18/valid/no_structure_parameters/parse_and_lex/postfix_precedence.c": "opt-divergence-struct",
-    "chapter_18/valid/no_structure_parameters/semantic_analysis/namespaces.c": "opt-divergence-struct",
-    "chapter_18/valid/no_structure_parameters/smoke_tests/static_vs_auto.c": "opt-divergence-struct",
-    "chapter_18/valid/params_and_returns/ignore_retval.c": "opt-divergence-struct",
-    "chapter_18/valid/params_and_returns/return_incomplete_type.c": "opt-divergence-struct",
-    "chapter_18/valid/params_and_returns/simple.c": "opt-divergence-struct",
+    # Fixed during the 2026-05-14 sweep:
+    #   - chapter_14/valid/dereference/read_through_pointers.c
+    #   - chapter_14/valid/dereference/static_var_indirection.c
+    #   - chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c
+    #     (byte_dce: address-taken Pseudos excluded from byte DCE)
+    #   - chapter_15/valid/initialization/automatic_nested.c (same)
+    #   - chapter_14/valid/casts/cast_between_pointer_types.c
+    #   - chapter_14/valid/declarators/declarators.c
+    #   - chapter_14/valid/dereference/multilevel_indirection.c
+    #   - chapter_15/valid/pointer_arithmetic/pointer_add.c
+    #   - chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c
+    #   - chapter_18/valid/extra_credit/other_features/bitwise_ops_struct_members.c
+    #   - chapter_18/valid/extra_credit/semantic_analysis/union_members_same_type.c
+    #   - chapter_18/valid/extra_credit/semantic_analysis/union_self_pointer.c
+    #   - chapter_18/valid/no_structure_parameters/semantic_analysis/namespaces.c
+    #   - chapter_18/valid/no_structure_parameters/smoke_tests/static_vs_auto.c
+    #   - chapter_18/valid/params_and_returns/ignore_retval.c
+    #   - chapter_18/valid/params_and_returns/simple.c
+    #   - chapter_18/valid/extra_credit/union_copy/assign_to_union.c
+    #   - chapter_18/valid/params_and_returns/return_incomplete_type.c
+    #   - chapter_16/valid/chars/access_through_char_pointer.c
+    #   - chapter_16/valid/chars/return_char.c (LDA #-10 emit)
+    #     (backward_copy_propagation: Indirect aliases Data("DPTR"),
+    #      and indirect_base_prop: local-pool slot symbols recognized
+    #      as ZP for invalidation purposes)
 }
 
 

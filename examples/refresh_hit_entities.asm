@@ -24,9 +24,7 @@ refresh_hit_entities:
 
 .refresh_hit_entities@asm_ssa_preheader@0:
 .refresh_hit_entities@ssa_block@0:
-   LDA   __zpabi_refresh_hit_entities_p0
-   STA   __local_refresh_hit_entities_b4
-   TAX
+   LDX   __zpabi_refresh_hit_entities_p0
 .loop@0_start:
    LDA   entity_hit_y,X
    SEC
@@ -40,22 +38,21 @@ refresh_hit_entities:
    LDA   entity_hit_state,X
    BPL   .if_else@3
 .refresh_hit_entities@ssa_block@3:
-   LDX   __zpabi_refresh_hit_entities_p2
-   LDA   hit_spr_neg_hi,X
+   LDY   __zpabi_refresh_hit_entities_p2
+   LDA   hit_spr_neg_hi,Y
    STA   __local_refresh_hit_entities_b1
-   LDA   hit_spr_neg_lo,X
+   LDA   hit_spr_neg_lo,Y
    STA   __local_refresh_hit_entities_b0
    JMP   .if_end@2
 .if_else@3:
-   LDX   __zpabi_refresh_hit_entities_p2
-   LDA   hit_spr_pos_hi,X
+   LDY   __zpabi_refresh_hit_entities_p2
+   LDA   hit_spr_pos_hi,Y
    STA   __local_refresh_hit_entities_b1
-   LDA   hit_spr_pos_lo,X
+   LDA   hit_spr_pos_lo,Y
    STA   __local_refresh_hit_entities_b0
 .if_end@2:
    LDA   __local_refresh_hit_entities_b0
    STA   __local_refresh_hit_entities_b2
-   LDX   __local_refresh_hit_entities_b4
    LDA   entity_hit_row,X
    STA   __local_refresh_hit_entities_b0
    LDA   #$07
@@ -70,11 +67,12 @@ refresh_hit_entities:
    STA   __zpabi_draw_sprite_opaque_p4
    LDA   __local_refresh_hit_entities_b1
    STA   __zpabi_draw_sprite_opaque_p5
+   STX   __local_refresh_hit_entities_b4
    JSR   draw_sprite_opaque
+   LDX   __local_refresh_hit_entities_b4
 .if_end@1:
 .if_end@0:
    DEX
-   STX   __local_refresh_hit_entities_b4
 .loop@0_continue:
    BPL   .refresh_hit_entities@asm_ssa_split@0
 .refresh_hit_entities@asm_ssa_block@2:

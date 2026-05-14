@@ -136,17 +136,17 @@ def compile_to_asm(
             types=types, colorings=asm_colorings,
             param_layouts=abi, local_pools=local_pools,
         )
-        asm = expand_long_branches(
-            apply_asm_dead_store(
-                apply_direct_index_load(
-                    apply_sub1_test_zero_peephole(
-                        apply_dec_peephole(apply_inc_peephole(
-                            synthesize_prologue(asm1, dims_by_fn)
-                        ))
-                    )
-                )
-            )
+        from compile import _peephole_fixedpoint
+        from passes.loop_counter_to_x import apply_loop_counter_to_x
+        asm2_synth = synthesize_prologue(asm1, dims_by_fn)
+        asm3 = _peephole_fixedpoint(
+            asm2_synth, zp_slot_symbols=zp_slot_symbols,
         )
+        asm3 = apply_loop_counter_to_x(asm3)
+        asm3 = _peephole_fixedpoint(
+            asm3, zp_slot_symbols=zp_slot_symbols,
+        )
+        asm = expand_long_branches(asm3)
         return asm, syms, types, zp_slot_symbols
     asm0 = translate_to_asm(tac, syms, types)
     asm = expand_long_branches(

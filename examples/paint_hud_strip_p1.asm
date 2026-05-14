@@ -49,7 +49,6 @@ paint_hud_strip_p1:
    INY
    STA   $218C,X
    LDA   $A30D,Y
-   STA   __local_paint_hud_strip_p1_b0
    INY
    STA   $258C,X
    STA   $298C,X

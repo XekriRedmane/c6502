@@ -73,7 +73,6 @@ clear_page1:
    LDX   #$27
 .loop@1_start:
    LDA   $0300,X
-   STA   __local_clear_page1_b0
    STA   $3028,X
    STA   $3428,X
    STA   $3828,X

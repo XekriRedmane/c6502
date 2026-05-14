@@ -53,6 +53,12 @@ from passes.direct_index_load import apply_direct_index_load
 from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
+from passes.branch_invert import apply_branch_invert
+from passes.const_arith_fold import apply_const_arith_fold
+from passes.mem_const_prop import apply_mem_const_prop
+from passes.round_trip_load import apply_round_trip_load_drop
+from passes.and_sign_bit_branch import apply_and_sign_bit_branch
+from passes.self_store_drop import apply_self_store_drop
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
@@ -156,8 +162,16 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_redundant_load_after_rmw(new_prog)
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)
-        new_prog = apply_asm_dead_store(new_prog)
+        new_prog = apply_asm_dead_store(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
         new_prog = apply_dead_a_arith_elimination(new_prog)
+        new_prog = apply_branch_invert(new_prog)
+        new_prog = apply_mem_const_prop(new_prog)
+        new_prog = apply_const_arith_fold(new_prog)
+        new_prog = apply_round_trip_load_drop(new_prog)
+        new_prog = apply_and_sign_bit_branch(new_prog)
+        new_prog = apply_self_store_drop(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog

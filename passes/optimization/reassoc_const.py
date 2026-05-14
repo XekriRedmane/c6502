@@ -99,13 +99,17 @@ def reassoc_constants(fn: tac_ast.Function) -> tac_ast.Function:
     realizing the outer subsumes it."""
     use_counts = _count_uses(fn.instructions)
     inner_def = _build_inner_def_index(fn.instructions)
-    # Pass 1: record rewrites.
+    # Pass 1: record rewrites. When an earlier outer fusion has
+    # already rewritten an instruction in this pass, later outers
+    # that look up its dst as their inner must see the REWRITTEN
+    # form — otherwise the second fusion uses stale operands and
+    # the dropped-defs cascade leaves dangling references.
     rewrites: dict[int, tac_ast.Type_instruction] = {}
     dropped_def_indices: set[int] = set()
     for i, instr in enumerate(fn.instructions):
         rewritten = _try_reassoc(
             instr, fn.instructions, inner_def, use_counts,
-            dropped_def_indices,
+            dropped_def_indices, rewrites,
         )
         if rewritten is not instr:
             rewrites[i] = rewritten
@@ -154,6 +158,7 @@ def _try_reassoc(
     inner_def: dict[str, int],
     use_counts: Counter[str],
     dropped_def_indices: set[int],
+    rewrites: dict[int, tac_ast.Type_instruction] | None = None,
 ) -> tac_ast.Type_instruction:
     """If `instr` is an outer Add(Const, %inner) (or Add(%inner,
     Const)) where `%inner`'s single-use def is itself an Add with
@@ -176,7 +181,16 @@ def _try_reassoc(
         return instr
     if inner_idx in dropped_def_indices:
         return instr
-    inner = all_instrs[inner_idx]
+    # If an earlier rewrite in this same pass replaced the inner
+    # def's instruction, use the REWRITTEN form — it reflects the
+    # current effective definition of `outer_var`. Without this,
+    # chained Add fusions (A→B; B→C) read stale operands from the
+    # pre-rewrite A→B instruction and drop B's def, leaving the
+    # final C→? referencing an already-dropped name.
+    if rewrites is not None and inner_idx in rewrites:
+        inner = rewrites[inner_idx]
+    else:
+        inner = all_instrs[inner_idx]
     if inner is instr:
         # Self-update shape `x = x + C` (non-SSA name with the dst
         # equal to a src). The fusion target is the same instruction

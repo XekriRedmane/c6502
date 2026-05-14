@@ -70,17 +70,16 @@ _TESTS_DIR = Path(__file__).parent
 _OPT_DIVERGES: dict[str, str] = {
     # --- FP / special-value semantics
     "chapter_13/valid/special_values/infinity.c": "opt-divergence-fp",
-    # --- Pointer / dereference miscompiles
-    "chapter_15/valid/declarators/equivalent_declarators.c": "opt-divergence-pointer",
-    "chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c": "opt-divergence-pointer",
-    "chapter_15/valid/extra_credit/incr_and_decr_nested_pointers.c": "opt-divergence-pointer",
-    "chapter_15/valid/pointer_arithmetic/pointer_diff.c": "opt-divergence-pointer",
-    "chapter_15/valid/subscripting/subscript_nested.c": "opt-divergence-pointer",
     # --- Char / string miscompiles
     "chapter_16/valid/chars/partial_initialization.c": "opt-divergence-char",
     "chapter_16/valid/strings_as_initializers/partial_initialize_via_string.c": "opt-divergence-char",
-    # --- Struct / union miscompiles
-    "chapter_18/valid/no_structure_parameters/parse_and_lex/postfix_precedence.c": "opt-divergence-struct",
+    # 2026-05-14: reassoc-const chain fusion fix flipped:
+    #   - chapter_15/valid/declarators/equivalent_declarators.c
+    #   - chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c
+    #   - chapter_15/valid/extra_credit/incr_and_decr_nested_pointers.c
+    #   - chapter_15/valid/pointer_arithmetic/pointer_diff.c
+    #   - chapter_15/valid/subscripting/subscript_nested.c
+    #   - chapter_18/valid/no_structure_parameters/parse_and_lex/postfix_precedence.c
     # Fixed during the 2026-05-14 sweep:
     #   - chapter_14/valid/dereference/read_through_pointers.c
     #   - chapter_14/valid/dereference/static_var_indirection.c

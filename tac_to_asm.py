@@ -2459,6 +2459,7 @@ class Translator:
         pointer_cmp = (
             self._is_pointer_val(src1) or self._is_pointer_val(src2)
         )
+        fp = self._is_fp_val(src1) or self._is_fp_val(src2)
         match op:
             case tac_ast.Equal():
                 return self._jcmp_equality(
@@ -2469,6 +2470,10 @@ class Translator:
                     src1_op, src2_op, size, target, branch_on_eq=False,
                 )
             case tac_ast.LessThan():
+                if fp:
+                    return self._jcmp_fp_ordering(
+                        src1_op, src2_op, size, target, lt=True,
+                    )
                 if unsigned_cmp or pointer_cmp:
                     return self._jcmp_unsigned_ordering(
                         src1_op, src2_op, size, asm_ast.CC(), target,
@@ -2477,6 +2482,11 @@ class Translator:
                     src1_op, src2_op, size, asm_ast.MI(), target,
                 )
             case tac_ast.GreaterOrEqual():
+                if fp:
+                    # a >= b <=> b <= a (NaN-safe).
+                    return self._jcmp_fp_ordering(
+                        src2_op, src1_op, size, target, lt=False,
+                    )
                 if unsigned_cmp or pointer_cmp:
                     return self._jcmp_unsigned_ordering(
                         src1_op, src2_op, size, asm_ast.CS(), target,
@@ -2486,6 +2496,10 @@ class Translator:
                 )
             case tac_ast.GreaterThan():
                 # a > b ⇔ b < a (operand swap, same as Binary case).
+                if fp:
+                    return self._jcmp_fp_ordering(
+                        src2_op, src1_op, size, target, lt=True,
+                    )
                 if unsigned_cmp or pointer_cmp:
                     return self._jcmp_unsigned_ordering(
                         src2_op, src1_op, size, asm_ast.CC(), target,
@@ -2495,6 +2509,10 @@ class Translator:
                 )
             case tac_ast.LessOrEqual():
                 # a <= b ⇔ b >= a.
+                if fp:
+                    return self._jcmp_fp_ordering(
+                        src1_op, src2_op, size, target, lt=False,
+                    )
                 if unsigned_cmp or pointer_cmp:
                     return self._jcmp_unsigned_ordering(
                         src2_op, src1_op, size, asm_ast.CS(), target,
@@ -2503,6 +2521,52 @@ class Translator:
                     src2_op, src1_op, size, asm_ast.PL(), target,
                 )
         raise TypeError(f"unsupported JumpIfCmp op: {op!r}")
+
+    def _jcmp_fp_ordering(
+        self,
+        left_op: asm_ast.Type_operand,
+        right_op: asm_ast.Type_operand,
+        size: int,
+        target: str,
+        *,
+        lt: bool,
+    ) -> list[asm_ast.Type_instruction]:
+        """FP `<` / `<=` JumpIfCmp via the same `flt`/`fle`/`dlt`/`dle`
+        helper as `_translate_fp_ordering`, but instead of writing
+        the helper's 0/1 result into a TAC dst we read it inline and
+        branch on `!= 0`.
+
+        The bit-pattern signed-int compare doesn't work for IEEE 754
+        — negative floats violate the encoding's monotonicity across
+        the sign bit, and ±inf / NaN edges trip the V-correction.
+        Routing through the helper guarantees correct ordering
+        semantics for the full FP range.
+
+        Caller swaps operands for `>` / `>=` (NaN-safe under
+        IEEE 754: both directions yield false on NaN)."""
+        if size == 4:
+            helper = _FLT if lt else _FLE
+            out_off = 8
+        else:
+            helper = _DLT if lt else _DLE
+            out_off = 16
+        out: list[asm_ast.Type_instruction] = []
+        # Stage the two operands into HARGS+0..size-1 and
+        # HARGS+size..2*size-1. Mirrors the staging loop in
+        # `_translate_helper_call` (which we don't reuse here
+        # because it copies the result into a dst Pseudo; we
+        # branch on the result directly).
+        slot = 0
+        for src_op, sz in [(left_op, size), (right_op, size)]:
+            for k in range(sz):
+                out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_hargs(slot)))
+                slot += 1
+        out.append(asm_ast.Call(name=helper))
+        # Read the 1-byte 0/1 result into A and branch on != 0.
+        out.append(asm_ast.Mov(src=_hargs(out_off), dst=_REG_A))
+        out.append(asm_ast.Branch(cond=asm_ast.NE(), target=target))
+        return out
 
     def _jcmp_equality(
         self,

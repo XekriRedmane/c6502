@@ -306,6 +306,35 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
         # Any prior equivalences are wiped out (the previous
         # value in the register is gone).
         _set_reg(state, mov.dst.reg, [mov.src])
+        # When the load writes X or Y, also drop any tracking
+        # in the OTHER registers that depends on the changed
+        # index register — e.g. `IndexedData(_, _, index=X)`
+        # entries in state.a become stale the moment X holds a
+        # different value. Without this, a `LDA arr,X; LDX
+        # #N; LDA arr,X` chain would incorrectly drop the
+        # second load on the assumption that A still mirrors
+        # `arr,X`. Mirrors the INX/DEX/INY/DEY invalidation
+        # done lower in `_update_state`.
+        if isinstance(mov.dst.reg, (asm_ast.X, asm_ast.Y)):
+            changed_reg = mov.dst.reg
+            if isinstance(changed_reg, asm_ast.X):
+                state.a = [
+                    op for op in state.a
+                    if not _depends_on_reg(op, changed_reg)
+                ]
+                state.y = [
+                    op for op in state.y
+                    if not _depends_on_reg(op, changed_reg)
+                ]
+            else:  # Y
+                state.a = [
+                    op for op in state.a
+                    if not _depends_on_reg(op, changed_reg)
+                ]
+                state.x = [
+                    op for op in state.x
+                    if not _depends_on_reg(op, changed_reg)
+                ]
         return
     if src_is_reg and not dst_is_reg:
         # Store: register unchanged; memory at dst is rewritten.

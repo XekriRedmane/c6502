@@ -68,43 +68,50 @@ _TESTS_DIR = Path(__file__).parent
 # loosely to the C feature each test exercises; bisecting which
 # pass mis-compiles each one is per-bug follow-up work.
 _OPT_DIVERGES: dict[str, str] = {
-    # --- FP / special-value semantics
-    "chapter_13/valid/special_values/infinity.c": "opt-divergence-fp",
-    # --- Char / string miscompiles
-    "chapter_16/valid/chars/partial_initialization.c": "opt-divergence-char",
-    "chapter_16/valid/strings_as_initializers/partial_initialize_via_string.c": "opt-divergence-char",
-    # 2026-05-14: reassoc-const chain fusion fix flipped:
-    #   - chapter_15/valid/declarators/equivalent_declarators.c
-    #   - chapter_15/valid/extra_credit/compound_nested_pointer_assignment.c
-    #   - chapter_15/valid/extra_credit/incr_and_decr_nested_pointers.c
-    #   - chapter_15/valid/pointer_arithmetic/pointer_diff.c
-    #   - chapter_15/valid/subscripting/subscript_nested.c
-    #   - chapter_18/valid/no_structure_parameters/parse_and_lex/postfix_precedence.c
-    # Fixed during the 2026-05-14 sweep:
-    #   - chapter_14/valid/dereference/read_through_pointers.c
-    #   - chapter_14/valid/dereference/static_var_indirection.c
-    #   - chapter_14/valid/extra_credit/bitwise_ops_with_dereferenced_ptrs.c
-    #     (byte_dce: address-taken Pseudos excluded from byte DCE)
-    #   - chapter_15/valid/initialization/automatic_nested.c (same)
-    #   - chapter_14/valid/casts/cast_between_pointer_types.c
-    #   - chapter_14/valid/declarators/declarators.c
-    #   - chapter_14/valid/dereference/multilevel_indirection.c
-    #   - chapter_15/valid/pointer_arithmetic/pointer_add.c
-    #   - chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c
-    #   - chapter_18/valid/extra_credit/other_features/bitwise_ops_struct_members.c
-    #   - chapter_18/valid/extra_credit/semantic_analysis/union_members_same_type.c
-    #   - chapter_18/valid/extra_credit/semantic_analysis/union_self_pointer.c
-    #   - chapter_18/valid/no_structure_parameters/semantic_analysis/namespaces.c
-    #   - chapter_18/valid/no_structure_parameters/smoke_tests/static_vs_auto.c
-    #   - chapter_18/valid/params_and_returns/ignore_retval.c
-    #   - chapter_18/valid/params_and_returns/simple.c
-    #   - chapter_18/valid/extra_credit/union_copy/assign_to_union.c
-    #   - chapter_18/valid/params_and_returns/return_incomplete_type.c
-    #   - chapter_16/valid/chars/access_through_char_pointer.c
-    #   - chapter_16/valid/chars/return_char.c (LDA #-10 emit)
-    #     (backward_copy_propagation: Indirect aliases Data("DPTR"),
-    #      and indirect_base_prop: local-pool slot symbols recognized
-    #      as ZP for invalidation purposes)
+    # Empty as of 2026-05-14: every chapter program in
+    # `EXPECTED_RETURNS` that compiles+runs under unopt also
+    # matches under opt.
+    #
+    # Historical fixes during the initial differential sweep:
+    #
+    #   * `byte_dce` excludes address-taken Pseudos (so a
+    #     LoadAddress(P, _) keeps every byte of P alive — flipped
+    #     ~7 chapter_14 / chapter_18 pointer / struct / union tests).
+    #
+    #   * `tac_to_asm` masks 1-byte signed Ret constants to 0..255
+    #     (LDA #-10 used to trip the immediate-range check on
+    #     `signed char` returns).
+    #
+    #   * `backward_copy_propagation`: `Indirect(_)` aliases
+    #     `Data("DPTR", _)` and `IndirectZp(addr, _)` aliases
+    #     `ZP(addr, _)`. Combined with the next fix, prevents
+    #     backward-CP from relocating a write into the ZP byte
+    #     a subsequent `(zp),Y` consumer uses as its base.
+    #
+    #   * `indirect_base_prop` uses linker-supplied
+    #     `zp_symbol_addrs` (rather than the hardcoded
+    #     `_RUNTIME_ZP_ADDRS`) to recognize `__local_<fn>_b<k>`
+    #     local-pool slot symbols as ZP — needed for the
+    #     invalidation logic to see writes to those slots.
+    #
+    #   * `reassoc_const`: skip self-update `x = x + c` fusion
+    #     (where outer and inner are the same node).
+    #
+    #   * `reassoc_const`: when chaining fusions, look up the
+    #     REWRITTEN form of the inner def (3+ Add chains
+    #     otherwise drop a needed intermediate, leaving the
+    #     final dst referencing a now-dropped name).
+    #
+    #   * `redundant_load`: writing X or Y also invalidates A's
+    #     trackings that depend on the changed register
+    #     (`LDX #N` after `LDA arr,X` makes the prior tracking
+    #     stale).
+    #
+    #   * `tac_to_asm`: JumpIfCmp on FP operands routes through
+    #     `flt`/`fle`/`dlt`/`dle` helpers (signed-int bit
+    #     compare doesn't honour IEEE 754 across the sign bit,
+    #     so the V-correction lowering miscompares -inf vs.
+    #     -very_large and similar shapes).
 }
 
 

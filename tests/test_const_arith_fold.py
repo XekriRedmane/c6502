@@ -63,6 +63,25 @@ class TestConstArithFold(unittest.TestCase):
         out = _instrs(apply_const_arith_fold(prog))
         self.assertEqual(len(out), 2)
 
+    def test_lda_zero_then_ora_M_absorbs(self):
+        # LDA #$00; ORA M → LDA M (0 | M = M with same flag effects).
+        prog = _wrap([
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Or(src=asm_ast.Data(name="M", offset=0), dst=_A),
+        ])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Data(name="M", offset=0), dst=_A),
+        ])
+
+    def test_lda_ff_then_and_M_absorbs(self):
+        prog = _wrap([
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_A),
+            asm_ast.And(src=asm_ast.Data(name="M", offset=0), dst=_A),
+        ])
+        out = _instrs(apply_const_arith_fold(prog))
+        self.assertEqual(len(out), 1)
+
     def test_does_not_fire_when_prev_doesnt_write_a(self):
         # A Compare doesn't write A — the identity drop shouldn't fire.
         prog = _wrap([

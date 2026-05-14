@@ -53,8 +53,7 @@ refresh_hit_entities:
    LDA   hit_spr_pos_lo,X
    STA   __local_refresh_hit_entities_b0
 .if_end@2:
-   LDA   #$00
-   ORA   __local_refresh_hit_entities_b0
+   LDA   __local_refresh_hit_entities_b0
    STA   __local_refresh_hit_entities_b2
    LDX   __local_refresh_hit_entities_b4
    LDA   entity_hit_row,X

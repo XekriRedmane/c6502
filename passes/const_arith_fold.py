@@ -93,6 +93,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             out.append(a)
             i += 2
             continue
+        absorbed = _try_absorb_zero_load(a, b)
+        if absorbed is not None:
+            out.append(absorbed)
+            i += 2
+            continue
         out.append(a)
         i += 1
     while i < len(instrs):
@@ -102,6 +107,23 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _try_absorb_zero_load(a, b):
+    """Fold `Mov(Imm(0), A); Or(M, A)` → `Mov(M, A)`, and
+    `Mov(Imm(0xFF), A); And(M, A)` → `Mov(M, A)`. The combined
+    semantics are A = M, flags = bit7(M) / (M==0) — identical to a
+    plain LDA M. Returns the replacement instruction or None."""
+    if not (isinstance(a, asm_ast.Mov)
+            and isinstance(a.src, asm_ast.Imm)
+            and _is_reg_a(a.dst)):
+        return None
+    c1 = a.src.value & 0xFF
+    if isinstance(b, asm_ast.Or) and _is_reg_a(b.dst) and c1 == 0:
+        return asm_ast.Mov(src=b.src, dst=a.dst)
+    if isinstance(b, asm_ast.And) and _is_reg_a(b.dst) and c1 == 0xFF:
+        return asm_ast.Mov(src=b.src, dst=a.dst)
+    return None
 
 
 def _try_fold(

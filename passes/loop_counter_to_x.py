@@ -1,92 +1,101 @@
-"""Promote a uchar loop counter from a ZP slot to the X register.
+"""Promote a uchar loop counter to the X register, with full
+cross-call save/restore and Y-pivot of transient indexed accesses.
 
 # Motivating case
 
-`refresh_hit_entities`'s outer loop:
+`refresh_hit_entities` outer loop. Original (pre-this-pass):
 
-    LDA p0                      ; init from param
+    LDA p0
     STA b4
 .loop_start:
-    LDX b4                      ; reload at loop top
-    LDA arr,X                   ; use as index
+    LDX b4                      ; reload counter at top
+    LDA entity_hit_y,X
     ...
-    LDX p2                      ; X clobbered
-    LDA other,X
+    LDX p2                      ; sprite_xref — clobbers X
+    LDA hit_spr_*,X
     ...
     LDX b4                      ; mid-iter reload after clobber
+    LDA entity_hit_row,X
     ...
-    JSR helper                  ; X clobbered
-    DEC b4                      ; decrement memory
+    STA p5
+    JSR draw_sprite_opaque       ; callee clobbers X
+    DEC b4
 .loop_continue:
-    BPL .loop_start             ; branch on memory's flag (already
-                                 ; folded from DEC; LDA; BPL via
-                                 ; dec_inc_branch_fold)
+    BPL .loop_start
 
-Two loop-overhead instructions can disappear if `b4`'s
-canonical home moves to X:
+Hand-written equivalent (Drol's REFRESH_HIT_ENTITIES at $631D):
 
-    LDX b4 at the loop top  →  drop (X carries the value from the
-                                  init's TAX OR the prior iteration's
-                                  DEX)
-    DEC b4 at the tail      →  DEX; STX b4 (decrement X, sync memory
-                                  so mid-iter reloads still see the
-                                  current value)
+    LDX ZP_HIT_MAX              ; init X
+HIT_DRAW_BODY:
+    LDA ENTITY_HIT_Y,X
+    ...
+    LDY ZP_SPRITE_XREF          ; sprite_xref in Y (not X!)
+    LDA HIT_SPR_*,Y
+    ...
+    LDA ENTITY_HIT_ROW,X        ; X still has counter
+    ...
+    STX ZP_DRAW_LOOP_IDX        ; save before JSR
+    JSR DRAW_SPRITE_OPAQUE
+    LDX ZP_DRAW_LOOP_IDX        ; restore after JSR
+    JMP HIT_DRAW_TAIL
+HIT_DRAW_TAIL:
+    DEX
+    BPL HIT_DRAW_BODY
 
-Net: -3 bytes / -3 cycles per iteration for the loop-top LDX
-drop, +1 byte / +0 cycles for the DEC→DEX+STX swap (DEC zp = 2
-bytes 5 cycles; DEX = 1 byte 2 cycles; STX zp = 2 bytes 3 cycles
-— DEX+STX = 3 bytes 5 cycles vs DEC's 2 bytes 5 cycles, so +1
-byte / 0 cycles). One-time +1 byte at init for the TAX. For the
-12-iteration outer loop in refresh_hit_entities this saves ~24
-bytes / 36 cycles per call.
+Three transformations combine to bridge the gap:
 
-# Pattern detection
+  1. **Y-pivot** any `LDX <other>; LDA arr,X; ...` block to
+     `LDY <other>; LDA arr,Y; ...`, so X isn't clobbered by the
+     transient indexed access.
+  2. **Cross-Call save/restore**: insert `STX M` before each
+     `Call` in the body, and `LDX M` after — explicitly preserving
+     the counter across the callee's clobber.
+  3. **Counter promotion**: drop the loop-top `LDX M` (X carries
+     from prior iter's DEX or init), drop the now-redundant
+     mid-iter `LDX M` reloads (X is preserved via Y-pivot and
+     save/restore), append `TAX` to the init, replace `DEC M`
+     with `DEX`.
 
-A ZP/Data slot `M` is a promotion candidate iff its function-wide
-use pattern matches:
+# Eligibility
 
-  * exactly one `Mov(_, Data(M))` or `Mov(_, ZP(M))` (the init).
-    Source can be Reg(A) — i.e., `STA M` after some LDA — that's
-    where we'll insert the `TAX`.
-  * exactly one `Dec(Data/ZP(M))` (the decrement).
-  * one or more `Mov(Data/ZP(M), Reg(X))` (LDX M reloads).
-  * NO other Mov src/dst, no Compare, no Inc, no Add/Sub/And/Or
-    with M, no IndexedData using M as either base or index.
+The slot M is eligible iff:
 
-Plus a structural check:
+  * Exactly one Mov whose dst is M (the init).
+  * Exactly one `Dec(M)` (the decrement).
+  * One or more `Mov(M, Reg(X))` (LDX M reloads).
+  * No other uses of M anywhere.
+  * Every other X-write in the function is one of:
+    - An `LDX <other>` whose surrounding basic-block range
+      contains only IndexedData(index=X) consumers AND no Y-use.
+      (Pivotable.)
+    - A `Call` instruction (save/restore handled).
+  * Other X-writers (INX, DEX, TAX) disqualify.
 
-  * The `Dec(M)` is immediately followed by an optional passive
-    Label and then a `Branch(<flag-NZ cond>, L)` where L is the
-    label of a basic block whose first non-Label instruction is
-    one of the `LDX M` reloads. That LDX M is the "loop-top reload"
-    we drop.
+# Soundness sketch
 
-# Soundness
+After the transformation, X holds M's current value at every
+program point that originally read M via `LDX M` (or any other X
+consumer). Specifically:
 
-After the rewrite, X holds the current counter value at every
-program point that previously read M:
-
-  * After `LDA p0; STA M; TAX`: X = M.
-  * After each `DEX; STX M`: X = M = old_M - 1.
-  * At the loop top: X = M (preserved from the prior `DEX; STX M`
-    or the init's `TAX`).
-
-The dropped LDX M at the loop top is functionally a no-op because
-X already mirrors M (from the back-edge or init paths). Every other
-LDX M (mid-body reload after a clobber) is preserved, so the
-function's observable register state matches the pre-rewrite
-version after each clobber + reload pair.
-
-The N/Z flags at the BPL: previously `DEC M` set N=bit7(new M);
-now `DEX` sets N=bit7(new X) and `STX M` doesn't touch flags. Same
-flag at the branch.
+  * Init: `LDA <src>; STA M; TAX` — X = M = initial.
+  * Loop-top: X carries from the previous iter's DEX (back-edge)
+    or the init's TAX. The dropped LDX M is unobservable.
+  * Mid-body: Y-pivoted ranges leave X untouched; the M-canonical
+    home is read implicitly via the same X. Mid-iter LDX M was
+    only there to restore after an X-clobber; with no clobber,
+    drop.
+  * Around Call: STX M before the Call writes the canonical home
+    so the LDX M after restores X correctly.
+  * Loop tail: DEX decrements X (= M). No STX needed because
+    either (a) the next iter starts at loop-top with X carrying,
+    or (b) before the next Call, an STX will sync M.
 
 # Where to run
 
-After `replace_pseudoregisters` (so operands are concrete Data/ZP)
-and after the asm-peephole fixed-point loop (so DEC has already
-been folded with its trailing LDA/BPL via `dec_inc_branch_fold`).
-Before `expand_long_branches` so any branches stay short-enough."""
+After `replace_pseudoregisters` (operands are concrete) and after
+the asm-peephole fixed-point loop (so `dec_inc_branch_fold` has
+already simplified `DEC M; LDA M; B<cond>` to `DEC M; B<cond>`).
+Before `expand_long_branches`."""
 
 from __future__ import annotations
 
@@ -108,6 +117,22 @@ def apply_loop_counter_to_x(prog: asm_ast.Program) -> asm_ast.Program:
     return asm_ast.Program(top_level=new_top)
 
 
+def _is_reg(op, regtype) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, regtype)
+
+
+def _is_reg_a(op) -> bool:
+    return _is_reg(op, asm_ast.A)
+
+
+def _is_reg_x(op) -> bool:
+    return _is_reg(op, asm_ast.X)
+
+
+def _is_reg_y(op) -> bool:
+    return _is_reg(op, asm_ast.Y)
+
+
 def _operands_equal(a, b) -> bool:
     if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
@@ -124,38 +149,169 @@ def _operand_key(op) -> tuple | None:
     return None
 
 
-def _is_reg_a(op) -> bool:
-    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
-
-
-def _is_reg_x(op) -> bool:
-    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.X)
+def _mem_op_from_key(key):
+    kind = key[0]
+    if kind == "data":
+        return asm_ast.Data(name=key[1], offset=key[2])
+    return asm_ast.ZP(address=key[1], offset=key[2])
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
-    candidate = _find_promotion_candidate(instrs)
-    if candidate is None:
+    plan = _plan_promotion(instrs)
+    if plan is None:
         return fn
-    return _do_promotion(fn, candidate)
+    return _apply_plan(fn, plan)
 
 
-def _find_promotion_candidate(instrs):
-    """Find a single ZP/Data slot M satisfying the pattern. Returns
-    a dict with the indices we need to rewrite, or None.
+def _plan_promotion(instrs):
+    """Identify a candidate counter slot M and verify the
+    transformation can be applied. Returns a plan dict or None.
 
-    The dict has keys:
-      'init_sta_idx' — index of the `Mov(Reg(A), Data/ZP(M))` init.
-      'dec_idx'      — index of the `Dec(M)`.
-      'loop_top_lda_idx' — index of the loop-top `LDX M` to drop.
-      'mem_op'       — the operand object representing M, for emitting
-                       new instructions."""
-    # First pass: scan all uses of every memory cell, classify by
-    # role. A cell M is a candidate iff its uses fit exactly:
-    #   init: exactly 1
-    #   dec: exactly 1
-    #   ldx: >= 1
-    #   any other: 0
+    Plan keys:
+      'm_key'           — counter slot key (memory op).
+      'init_idx'        — index of init Mov(_, M).
+      'dec_idx'         — index of Dec(M).
+      'loop_top_lda_idx' — index of the loop-top LDX M to drop.
+      'mid_lda_indices' — indices of mid-iter LDX M reloads to drop.
+      'pivot_ranges'    — list of (start, end) ranges to Y-pivot.
+      'call_indices'    — indices of Call instructions to wrap.
+    """
+    # Step 1: find counter-slot candidates by use-pattern.
+    cand = _find_counter_candidate(instrs)
+    if cand is None:
+        return None
+    m_key = cand['m_key']
+    m_op = _mem_op_from_key(m_key)
+
+    # Step 2: scan all X-writes. Classify each.
+    pivot_ranges: list[tuple[int, int]] = []
+    call_indices: list[int] = []
+    mid_lda_indices: list[int] = []
+    loop_top_lda_idx = cand['loop_top_lda_idx']
+    dec_idx = cand['dec_idx']
+
+    i = 0
+    while i < len(instrs):
+        instr = instrs[i]
+        if _is_x_write_other_than(instr, m_key):
+            # Some non-counter X-write. Must be Y-pivotable or a Call.
+            if isinstance(instr, asm_ast.Call):
+                call_indices.append(i)
+                i += 1
+                continue
+            if _is_ldx_to_x(instr):
+                # Try to collect a pivot range.
+                end = _try_collect_pivot_range(instrs, i)
+                if end is None:
+                    return None
+                pivot_ranges.append((i, end))
+                i = end
+                continue
+            # Some other X-write (INX, DEX, TAX, PLX): disqualify.
+            return None
+        # LDX M reload: track if it's mid-iter (not the loop-top one).
+        if (isinstance(instr, asm_ast.Mov)
+                and _is_reg_x(instr.dst)
+                and _operand_key(instr.src) == m_key
+                and i != loop_top_lda_idx):
+            mid_lda_indices.append(i)
+        i += 1
+
+    return {
+        'm_key': m_key,
+        'm_op': m_op,
+        'init_idx': cand['init_idx'],
+        'dec_idx': dec_idx,
+        'loop_top_lda_idx': loop_top_lda_idx,
+        'mid_lda_indices': mid_lda_indices,
+        'pivot_ranges': pivot_ranges,
+        'call_indices': call_indices,
+    }
+
+
+def _is_x_write_other_than(instr, m_key) -> bool:
+    """True iff `instr` writes Reg(X) AND the write isn't an LDX
+    from the counter's canonical home M."""
+    if isinstance(instr, asm_ast.Mov):
+        if _is_reg_x(instr.dst):
+            # LDX from M is the canonical reload — not "other".
+            if _operand_key(instr.src) == m_key:
+                return False
+            return True
+        return False
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        return _is_reg_x(instr.dst)
+    if isinstance(instr, asm_ast.Call):
+        return True
+    if isinstance(instr, asm_ast.Pop):
+        return _is_reg_x(instr.dst)
+    return False
+
+
+def _is_ldx_to_x(instr) -> bool:
+    return (isinstance(instr, asm_ast.Mov)
+            and _is_reg_x(instr.dst)
+            and not isinstance(instr.src, asm_ast.Reg))
+
+
+def _try_collect_pivot_range(instrs, start: int):
+    """Verify a Y-pivot range starting at instrs[start] is valid.
+    Returns the exclusive end index, or None if no valid range
+    exists from here.
+
+    Validity:
+      * No Y use or Y write in the range (we're about to put a
+        value in Y).
+      * Every X use in the range is via IndexedData(index=X).
+      * Range ends at: another X-write, a control-flow boundary,
+        or end-of-function."""
+    j = start + 1
+    while j < len(instrs):
+        instr = instrs[j]
+        # Control-flow / call boundaries end the range BEFORE this
+        # instruction.
+        if isinstance(instr, (asm_ast.Label, asm_ast.Jump,
+                              asm_ast.Branch, asm_ast.Call,
+                              asm_ast.Ret, asm_ast.Return)):
+            return j
+        # Another X-write ends the range BEFORE this instruction.
+        if isinstance(instr, asm_ast.Mov):
+            if _is_reg_x(instr.dst):
+                return j
+            if _is_reg_y(instr.dst):
+                # Y-write — would conflict.
+                return None
+            if _is_reg_y(instr.src):
+                # TYA or read-Y — conflicts.
+                return None
+            if _is_reg_x(instr.src):
+                # TXA or STX — uses X as a value, not as index.
+                return None
+            # Check IndexedData operands for Y use.
+            for op in (instr.src, instr.dst):
+                if isinstance(op, asm_ast.IndexedData):
+                    if isinstance(op.index, asm_ast.Y):
+                        return None
+        elif isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+            if _is_reg_x(instr.dst):
+                return j
+            if _is_reg_y(instr.dst):
+                return None
+        elif isinstance(instr, asm_ast.Compare):
+            if _is_reg_x(instr.left) or _is_reg_y(instr.left):
+                return None
+        elif isinstance(instr, asm_ast.Push):
+            if _is_reg_x(instr.src) or _is_reg_y(instr.src):
+                return None
+        j += 1
+    return j
+
+
+def _find_counter_candidate(instrs):
+    """Identify a memory slot M with the loop-counter use pattern.
+    Returns a dict with 'm_key', 'init_idx', 'dec_idx',
+    'loop_top_lda_idx', or None."""
     init_idx: dict[tuple, int] = {}
     init_count: dict[tuple, int] = {}
     dec_idx: dict[tuple, int] = {}
@@ -168,17 +324,17 @@ def _find_promotion_candidate(instrs):
             key = _operand_key(op)
             if key is None:
                 continue
-            if role == "init":
+            if role == 'init':
                 init_count[key] = init_count.get(key, 0) + 1
                 init_idx[key] = i
-            elif role == "ldx":
+            elif role == 'ldx':
                 ldx_idx.setdefault(key, []).append(i)
-            elif role == "dec":
+            elif role == 'dec':
                 dec_count[key] = dec_count.get(key, 0) + 1
                 dec_idx[key] = i
             else:
-                # any other use disqualifies
                 disqualified.add(key)
+
     for key in list(init_count) + list(dec_count) + list(ldx_idx):
         if key in disqualified:
             continue
@@ -188,134 +344,40 @@ def _find_promotion_candidate(instrs):
             continue
         if not ldx_idx.get(key):
             continue
-        # Structural check: DEC at dec_idx, optional Label, Branch(PL|MI|EQ|NE).
-        match = _find_loop_top_lda(
+        loop_top = _find_loop_top_lda(
             instrs, dec_idx[key], ldx_idx[key],
         )
-        if match is None:
+        if loop_top is None:
             continue
-        loop_top_lda_idx = match
         return {
-            'init_sta_idx': init_idx[key],
+            'm_key': key,
+            'init_idx': init_idx[key],
             'dec_idx': dec_idx[key],
-            'loop_top_lda_idx': loop_top_lda_idx,
-            'mem_op': _mem_op_from_key(key),
+            'loop_top_lda_idx': loop_top,
         }
     return None
 
 
-def _mem_op_from_key(key):
-    kind = key[0]
-    if kind == "data":
-        return asm_ast.Data(name=key[1], offset=key[2])
-    return asm_ast.ZP(address=key[1], offset=key[2])
-
-
-def _find_loop_top_lda(instrs, dec_idx, ldx_indices):
-    """Verify the DEC is immediately followed by an optional passive
-    Label and then a flag-NZ Branch whose target chain (resolving
-    bare Jump indirections) lands at a basic block whose first
-    non-Label instruction is one of `ldx_indices`. Returns that
-    index, or None.
-
-    The back-edge from a do-while loop typically goes via a
-    trampoline like:
-        BPL .asm_ssa_split@0
-      .asm_ssa_split@0:
-        JMP .loop@0_start
-      .loop@0_start:
-        LDX M
-    We follow the JMP transitively (capped to avoid cycles)."""
-    # Build the set of labels that are jump/branch targets — any
-    # such label between DEC and Branch indicates a `continue` (or
-    # other) path that bypasses our DEC. The transform would be
-    # unsound on those paths because X wouldn't get the DEX update.
-    branch_targets: set[str] = set()
-    for inst in instrs:
-        if isinstance(inst, (asm_ast.Jump, asm_ast.Branch)):
-            branch_targets.add(inst.target)
-    j = dec_idx + 1
-    while j < len(instrs) and isinstance(instrs[j], asm_ast.Label):
-        if instrs[j].name in branch_targets:
-            return None
-        j += 1
-    if j >= len(instrs):
-        return None
-    br = instrs[j]
-    if not (isinstance(br, asm_ast.Branch)
-            and isinstance(br.cond, _FLAG_NZ_BRANCHES)):
-        return None
-    target = br.target
-    label_to_idx = {
-        inst.name: k for k, inst in enumerate(instrs)
-        if isinstance(inst, asm_ast.Label)
-    }
-    # Follow JMP indirections through label trampolines. Also skip
-    # self-Movs (asm-emit drops them but they may appear in the
-    # post-peephole IR as residue from SSA destruction).
-    seen: set[str] = set()
-    while target in label_to_idx and target not in seen:
-        seen.add(target)
-        k = label_to_idx[target] + 1
-        # Skip contiguous Labels and self-Movs.
-        while k < len(instrs):
-            inst = instrs[k]
-            if isinstance(inst, asm_ast.Label):
-                k += 1
-                continue
-            if (isinstance(inst, asm_ast.Mov)
-                    and _stable_mem_eq(inst.src, inst.dst)):
-                k += 1
-                continue
-            break
-        if k >= len(instrs):
-            return None
-        if isinstance(instrs[k], asm_ast.Jump):
-            target = instrs[k].target
-            continue
-        # Found the loop body's first real instruction.
-        if k in ldx_indices:
-            return k
-        return None
-    return None
+def _stable_mem_eq(a, b) -> bool:
+    if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
+        return a.name == b.name and a.offset == b.offset
+    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
+        return a.address == b.address and a.offset == b.offset
+    return False
 
 
 def _operand_roles(instr):
-    """Yield (role, operand) pairs for each memory operand involved
-    in `instr`. Roles:
-      'init' — Mov(_, <mem>) that writes M (any source). Covers
-               `STA M` (Reg(A) src), `LDA other; STA M` mem-to-mem
-               (non-Reg src). Self-Movs (src == dst) are filtered.
-      'ldx'  — Mov(<mem>, Reg(X)): LDX M.
-      'dec'  — Dec(<mem>): DEC M.
-      'other' — any other use (disqualifies the cell).
-
-    Reg-Reg Movs and self-Movs are ignored. Operands that aren't
-    Data/ZP are skipped — only stable-address memory cells are
-    candidates."""
+    """Classify each memory operand's role for the candidate scan."""
     if isinstance(instr, asm_ast.Mov):
         src, dst = instr.src, instr.dst
-        # Self-Movs (src == dst structurally) are no-ops at emit
-        # time; ignore.
         if _stable_mem_eq(src, dst):
-            return
-        # Mov(<mem>, Reg(X)) — LDX M.
+            return  # self-Mov
         if _is_reg_x(dst) and not isinstance(src, asm_ast.Reg):
             yield ('ldx', src)
             return
-        # Mov(<anything>, <mem>) — write to memory. Could be STA
-        # (Reg(A) src) or mem-to-mem (non-Reg src). Both ok.
         if not isinstance(dst, asm_ast.Reg):
             yield ('init', dst)
-            # The src side, if memory, is read — that's an 'other'
-            # use of that cell. We don't yield for src here because
-            # we don't want to promote the source — only the dst.
-            # If src happens to be the same cell as dst, we already
-            # filtered via _stable_mem_eq above.
             return
-        # Anything else: dst is a register (X/Y, since A was handled
-        # in the LDX branch indirectly). The src, if memory, is a
-        # read of that cell — counts as 'ldy' or 'other' depending.
         if not isinstance(src, asm_ast.Reg):
             yield ('other', src)
         return
@@ -342,45 +404,146 @@ def _operand_roles(instr):
         return
 
 
-def _stable_mem_eq(a, b) -> bool:
-    if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
-        return a.name == b.name and a.offset == b.offset
-    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.ZP):
-        return a.address == b.address and a.offset == b.offset
-    return False
+def _find_loop_top_lda(instrs, dec_idx, ldx_indices):
+    """Verify the DEC is followed by a flag-NZ Branch whose target
+    chain lands at one of the ldx_indices. Returns that index or
+    None."""
+    branch_targets: set[str] = set()
+    for inst in instrs:
+        if isinstance(inst, (asm_ast.Jump, asm_ast.Branch)):
+            branch_targets.add(inst.target)
+    j = dec_idx + 1
+    while j < len(instrs) and isinstance(instrs[j], asm_ast.Label):
+        if instrs[j].name in branch_targets:
+            return None
+        j += 1
+    if j >= len(instrs):
+        return None
+    br = instrs[j]
+    if not (isinstance(br, asm_ast.Branch)
+            and isinstance(br.cond, _FLAG_NZ_BRANCHES)):
+        return None
+    target = br.target
+    label_to_idx = {
+        inst.name: k for k, inst in enumerate(instrs)
+        if isinstance(inst, asm_ast.Label)
+    }
+    seen: set[str] = set()
+    while target in label_to_idx and target not in seen:
+        seen.add(target)
+        k = label_to_idx[target] + 1
+        while k < len(instrs):
+            inst = instrs[k]
+            if isinstance(inst, asm_ast.Label):
+                k += 1
+                continue
+            if (isinstance(inst, asm_ast.Mov)
+                    and _stable_mem_eq(inst.src, inst.dst)):
+                k += 1
+                continue
+            break
+        if k >= len(instrs):
+            return None
+        if isinstance(instrs[k], asm_ast.Jump):
+            target = instrs[k].target
+            continue
+        if k in ldx_indices:
+            return k
+        return None
+    return None
 
 
-def _do_promotion(fn, candidate):
-    """Apply the three rewrites:
-      1. After init `Mov(Reg(A), M)`: insert `Mov(Reg(A), Reg(X))`
-         (TAX) so X starts the loop holding M's value.
-      2. At the loop-top index: drop the `Mov(M, Reg(X))` (LDX M).
-      3. At the dec index: replace `Dec(M)` with `Dec(Reg(X)); Mov(
-         Reg(X), M)` (DEX; STX M) — keep X decremented AND memory
-         synced for mid-body reloads."""
+def _apply_plan(fn, plan):
+    """Walk the function's instructions, applying all rewrites from
+    the plan. Output is a fresh instruction list."""
     instrs = fn.instructions
-    out: list[asm_ast.Type_instruction] = []
-    init_idx = candidate['init_sta_idx']
-    loop_top_lda_idx = candidate['loop_top_lda_idx']
-    dec_idx = candidate['dec_idx']
-    mem_op = candidate['mem_op']
+    m_op = plan['m_op']
+    init_idx = plan['init_idx']
+    dec_idx = plan['dec_idx']
+    loop_top_lda_idx = plan['loop_top_lda_idx']
+    mid_lda_set = set(plan['mid_lda_indices'])
+    call_set = set(plan['call_indices'])
+    # Map each pivot range start to its end.
+    pivot_start_to_end: dict[int, int] = {
+        s: e for s, e in plan['pivot_ranges']
+    }
+    pivot_in_range: dict[int, int] = {}
+    for s, e in plan['pivot_ranges']:
+        for j in range(s, e):
+            pivot_in_range[j] = s
+
     reg_x = asm_ast.Reg(reg=asm_ast.X())
+    reg_y = asm_ast.Reg(reg=asm_ast.Y())
     reg_a = asm_ast.Reg(reg=asm_ast.A())
 
-    for i, instr in enumerate(instrs):
+    out: list[asm_ast.Type_instruction] = []
+    i = 0
+    while i < len(instrs):
         if i == loop_top_lda_idx:
-            # Drop the loop-top LDX M.
+            i += 1
             continue
-        out.append(instr)
-        if i == init_idx:
-            # Append TAX right after the init STA M.
-            out.append(asm_ast.Mov(src=reg_a, dst=reg_x))
+        if i in mid_lda_set:
+            i += 1
+            continue
+        if i in call_set:
+            # Wrap: STX M; <Call>; LDX M.
+            out.append(asm_ast.Mov(src=reg_x, dst=m_op))
+            out.append(instrs[i])
+            out.append(asm_ast.Mov(src=m_op, dst=reg_x))
+            i += 1
+            continue
+        if i in pivot_in_range:
+            # Y-pivot: rewrite the leading LDX→LDY and each
+            # IndexedData(X) consumer in the range.
+            out.append(_pivot_rewrite(instrs[i]))
+            i += 1
+            continue
         if i == dec_idx:
-            # We've already appended the DEC M; replace it now.
-            out.pop()
+            # Replace Dec(M) with Dec(Reg(X)) (DEX).
             out.append(asm_ast.Dec(dst=reg_x))
-            out.append(asm_ast.Mov(src=reg_x, dst=mem_op))
+            i += 1
+            continue
+        if i == init_idx:
+            # Append TAX after init so X holds M's value.
+            out.append(instrs[i])
+            out.append(asm_ast.Mov(src=reg_a, dst=reg_x))
+            i += 1
+            continue
+        out.append(instrs[i])
+        i += 1
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _pivot_rewrite(instr):
+    """Rewrite a pivot-range instruction: the leading LDX→LDY,
+    and any IndexedData(index=X) consumer to index=Y."""
+    if isinstance(instr, asm_ast.Mov):
+        new_src = _rewrite_op_for_pivot(instr.src)
+        new_dst = _rewrite_op_for_pivot(instr.dst)
+        # The leading LDX (dst=Reg(X), non-Reg src) becomes LDY.
+        if (_is_reg_x(new_dst)
+                and not isinstance(new_src, asm_ast.Reg)):
+            new_dst = asm_ast.Reg(reg=asm_ast.Y())
+        if new_src is instr.src and new_dst is instr.dst:
+            return instr
+        return asm_ast.Mov(src=new_src, dst=new_dst)
+    if isinstance(instr, (asm_ast.Add, asm_ast.Sub,
+                          asm_ast.And, asm_ast.Or)):
+        new_src = _rewrite_op_for_pivot(instr.src)
+        new_dst = _rewrite_op_for_pivot(instr.dst)
+        if new_src is instr.src and new_dst is instr.dst:
+            return instr
+        return type(instr)(src=new_src, dst=new_dst)
+    return instr
+
+
+def _rewrite_op_for_pivot(op):
+    if (isinstance(op, asm_ast.IndexedData)
+            and isinstance(op.index, asm_ast.X)):
+        return asm_ast.IndexedData(
+            name=op.name, offset=op.offset, index=asm_ast.Y(),
+        )
+    return op

@@ -42,15 +42,16 @@ class TestLoopCounterToX(unittest.TestCase):
         # TAX inserted after the init STA.
         self.assertEqual(out[1], asm_ast.Mov(src=_A, dst=_M("b")))
         self.assertEqual(out[2], asm_ast.Mov(src=_A, dst=_X))  # TAX
-        # The LDX at loop top is dropped.
-        # New shape: [LDA p, STA b, TAX, Label, LDA arr,X, DEX, STX b, BPL, Return]
-        self.assertEqual(len(out), 9)
-        # DEC b replaced with DEX; STX b.
+        # The LDX at loop top is dropped. No Calls in this test, so
+        # no STX-before-Call insertion. The tail's DEC becomes DEX
+        # with no trailing STX — X carries to next iter via the
+        # back-edge.
+        # New shape: [LDA p, STA b, TAX, Label, LDA arr,X, DEX, BPL, Return]
+        self.assertEqual(len(out), 8)
+        # DEC b replaced with DEX.
         self.assertTrue(any(isinstance(i, asm_ast.Dec) and isinstance(i.dst, asm_ast.Reg)
+                            and isinstance(i.dst.reg, asm_ast.X)
                             for i in out))
-        self.assertTrue(any(isinstance(i, asm_ast.Mov)
-                            and i.src == _X
-                            and i.dst == _M("b") for i in out))
 
     def test_other_use_of_M_disqualifies(self):
         # Adding a `Compare(_, M)` use disqualifies — M now has a
@@ -81,8 +82,12 @@ class TestLoopCounterToX(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ])
         out = _instrs(apply_loop_counter_to_x(prog))
-        # Fires; loop-top LDX dropped.
-        self.assertTrue(any(isinstance(i, asm_ast.Mov) and i.src == _X and i.dst == _M("b") for i in out))
+        # Fires: TAX inserted, loop-top LDX dropped, Dec(M) → Dec(X).
+        self.assertTrue(any(isinstance(i, asm_ast.Mov)
+                            and i.src == _A and i.dst == _X for i in out))
+        self.assertTrue(any(isinstance(i, asm_ast.Dec)
+                            and isinstance(i.dst, asm_ast.Reg)
+                            and isinstance(i.dst.reg, asm_ast.X) for i in out))
 
     def test_active_label_between_dec_and_branch_blocks(self):
         # A label between DEC and Branch that something else jumps

@@ -95,6 +95,20 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):
+        # Drop trivial self-Movs `Mov(X, X)` (structurally identical
+        # src and dst). These arise from SSA destruction emitting
+        # parallel-copy moves where source and destination coalesce
+        # to the same color. `asm_emit` already drops them at codegen
+        # time, but dropping them at IR level lets downstream passes
+        # (notably `asm_dead_store`) avoid mistaking the self-Mov's
+        # src for a live read of its dst.
+        cur = instrs[i]
+        if (isinstance(cur, asm_ast.Mov)
+                and _is_stable_mem(cur.src)
+                and _is_stable_mem(cur.dst)
+                and _operands_equal(cur.src, cur.dst)):
+            i += 1
+            continue
         if i + 1 < len(instrs):
             a, b = instrs[i], instrs[i + 1]
             if (isinstance(a, asm_ast.Mov)

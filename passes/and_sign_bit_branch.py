@@ -98,9 +98,26 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 
 def _is_lda_to_a(instr) -> bool:
-    return (isinstance(instr, asm_ast.Mov)
-            and _is_reg_a(instr.dst)
-            and not _is_reg_a(instr.src))
+    """True iff `instr` is a Mov whose emit lowering uses `LDA` and
+    leaves A with the source's value AND N/Z reflecting that value.
+    Covers two shapes:
+
+      * `Mov(<non-Reg src>, Reg(A))` — direct LDA into A.
+      * `Mov(<non-Reg src>, <stable memory dst>)` — emit's LDA + STA
+        pair. The LDA half still leaves A = src and N/Z = src's flag
+        bits, which is what the downstream AND #$80 reads.
+
+    Mov(Reg(A), <mem>) (a pure STA) does NOT load A — A's value and
+    the flags carry over from whatever set them earlier. Skip.
+    """
+    if not isinstance(instr, asm_ast.Mov):
+        return False
+    if isinstance(instr.src, asm_ast.Reg):
+        # Mov(X/Y, A) (TXA/TYA) DOES set N/Z. Allow when dst is A.
+        return isinstance(instr.src.reg, (asm_ast.X, asm_ast.Y)) and _is_reg_a(instr.dst)
+    # Non-Reg src: dst is either Reg(A) or memory. Both shapes emit
+    # via LDA src; ... and leave A with src's flag effects.
+    return True
 
 
 def _is_and_imm80(instr) -> bool:

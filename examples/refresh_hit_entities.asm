@@ -30,7 +30,6 @@ refresh_hit_entities:
    LDX   __local_refresh_hit_entities_b4
    LDA   entity_hit_y,X
    STA   __local_refresh_hit_entities_b0
-   LDA   __local_refresh_hit_entities_b0
    CMP   __zpabi_refresh_hit_entities_p1
    BCC   .if_end@0
 .refresh_hit_entities@asm_ssa_block@0:
@@ -43,8 +42,6 @@ refresh_hit_entities:
 .refresh_hit_entities@asm_ssa_block@1:
    LDX   __local_refresh_hit_entities_b4
    LDA   entity_hit_state,X
-   STA   __local_refresh_hit_entities_b0
-   LDA   __local_refresh_hit_entities_b0
    BPL   .if_else@3
 .refresh_hit_entities@ssa_block@3:
    LDX   __zpabi_refresh_hit_entities_p2

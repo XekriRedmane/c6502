@@ -283,8 +283,23 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
             if not any(_operands_equal(c, mov.dst) for c in cur):
                 cur.append(mov.dst)
         return
-    # Memory-to-memory Mov — c6502 doesn't emit these, but be safe.
+    # Memory-to-memory Mov: c6502 DOES emit these (e.g.
+    # `Mov(IndexedData, Data)`, `Mov(Data, Data)`), and asm_emit
+    # lowers them to `LDA src; STA dst` — using A as the staging
+    # register. So post-Mov, A's value equals BOTH src and dst.
+    #
+    # Invalidate any prior trackings that aliased the dst write,
+    # then ADD A === dst (when dst is a stable-address memory
+    # operand). We don't add A === src: the src may carry an
+    # index register that future code could change, invalidating
+    # the equivalence — and the dst-side tracking is sufficient
+    # for catching the common `LDA M; STA N; LDA N` shape.
     _invalidate_aliasing(state, mov.dst)
+    if isinstance(mov.dst, (
+        asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
+        asm_ast.Frame, asm_ast.Indirect,
+    )):
+        state.a = [mov.dst]
 
 
 def _get_reg(state: _RegState, reg: asm_ast.Type_reg) -> list[asm_ast.Type_operand]:

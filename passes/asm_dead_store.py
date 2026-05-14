@@ -130,23 +130,59 @@ def _rewrite_function(
     fn: asm_ast.Function,
     zp_slot_symbols: dict[str, int] | None = None,
 ) -> asm_ast.Function:
-    """Walk `fn.instructions` and drop any STA whose target memory
-    is not observed by any instruction reachable from the store
-    (within-block kill, or CFG-wide forward search reaching only
-    re-kills / dead-at-exit terminations)."""
+    """Walk `fn.instructions` and drop or morph any STA whose target
+    memory is not observed by any instruction reachable from the
+    store (within-block kill, or CFG-wide forward search reaching
+    only re-kills / dead-at-exit terminations).
+
+    Two cases:
+      * `Mov(Reg, <mem>)` — pure STA. If dead, drop entirely.
+      * `Mov(<non-Reg src>, <mem dst>)` — emit's LDA+STA pair. The
+        STA half is dead, but the LDA's side effects (A's new
+        value AND the N/Z flags it sets) may still be needed by
+        downstream code. Morph to `Mov(<src>, Reg(A))` (LDA only),
+        keeping the load while dropping the store."""
     instrs = fn.instructions
     label_to_index = _build_label_map(instrs)
-    drop = [False] * len(instrs)
+    out: list[asm_ast.Type_instruction] = []
     for i, instr in enumerate(instrs):
-        if not _is_dse_candidate(instr):
+        kind = _dse_candidate_kind(instr)
+        if kind is None:
+            out.append(instr)
             continue
-        if _is_dead_cfg(instrs, i, label_to_index, zp_slot_symbols):
-            drop[i] = True
-    out = [instr for i, instr in enumerate(instrs) if not drop[i]]
+        if not _is_dead_cfg(instrs, i, label_to_index, zp_slot_symbols):
+            out.append(instr)
+            continue
+        if kind == "pure_sta":
+            # Drop entirely.
+            continue
+        # kind == "mem_to_mem": keep the LDA half by morphing the
+        # dst to Reg(A).
+        out.append(asm_ast.Mov(
+            src=instr.src, dst=asm_ast.Reg(reg=asm_ast.A()),
+        ))
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _dse_candidate_kind(instr: asm_ast.Type_instruction) -> str | None:
+    """Classify `instr` for dead-store handling:
+      * "pure_sta"  — `Mov(Reg, <stable mem>)`: drop on dead.
+      * "mem_to_mem" — `Mov(<non-Reg>, <stable mem>)`: morph on
+        dead (preserve the LDA half).
+      * None        — not a candidate."""
+    if not isinstance(instr, asm_ast.Mov):
+        return None
+    if not isinstance(instr.dst, (asm_ast.ZP, asm_ast.Data)):
+        return None
+    if isinstance(instr.src, asm_ast.Reg):
+        return "pure_sta"
+    # Non-Reg src into stable memory: emit produces LDA src; STA dst.
+    # We can drop the STA half by morphing dst to Reg(A), preserving
+    # the load and its flag effects.
+    return "mem_to_mem"
 
 
 def _build_label_map(

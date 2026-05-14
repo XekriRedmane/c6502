@@ -245,6 +245,11 @@ def _update_state(
                           asm_ast.RotateLeft, asm_ast.RotateRight)):
         if isinstance(instr.dst, asm_ast.Reg):
             _set_reg(state, instr.dst.reg, [])
+            return
+        # Shift/rotate on a memory operand (zp / abs). This is a
+        # read-modify-write — the cell's value changes, so any
+        # tracking that mirrors this cell must be invalidated.
+        _invalidate_aliasing(state, instr.dst)
         return
     if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
         # Inc/Dec on `Reg(X)` / `Reg(Y)` modifies the index register

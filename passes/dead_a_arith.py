@@ -64,7 +64,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_liveness import (
-    a_dead_at, flags_dead_at, is_reg_a,
+    a_dead_at, all_flags_dead_at, flags_dead_at, is_reg_a,
 )
 
 
@@ -89,8 +89,18 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         after = i + 1
         if not a_dead_at(instrs, after):
             continue
-        if not flags_dead_at(instrs, after):
-            continue
+        # Add/Sub also write C/V. Dropping such an instruction must
+        # not strand a downstream C-reader (e.g. a subsequent SBC
+        # in the multi-byte chain that threads carry without an
+        # intervening CLC/SEC). For non-C-writing A-arithmetic
+        # (Mov/And/Or/Xor — LDA/TXA/TYA/AND/ORA/EOR), the C/V flags
+        # carry through unchanged, so only N/Z liveness matters.
+        if isinstance(instr, (asm_ast.Add, asm_ast.Sub)):
+            if not all_flags_dead_at(instrs, after):
+                continue
+        else:
+            if not flags_dead_at(instrs, after):
+                continue
         drop[i] = True
     out = [
         instr for i, instr in enumerate(instrs) if not drop[i]

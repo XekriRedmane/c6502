@@ -177,6 +177,13 @@ def _try_reassoc(
     if inner_idx in dropped_def_indices:
         return instr
     inner = all_instrs[inner_idx]
+    if inner is instr:
+        # Self-update shape `x = x + C` (non-SSA name with the dst
+        # equal to a src). The fusion target is the same instruction
+        # — fusing with itself produces a no-op replacement that the
+        # rebuild loop then drops as `dropped_def_indices`, silently
+        # erasing the increment. Reject.
+        return instr
     if not (
         isinstance(inner, tac_ast.Binary)
         and isinstance(inner.op, tac_ast.Add)

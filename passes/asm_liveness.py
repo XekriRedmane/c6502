@@ -194,13 +194,9 @@ def flags_dead_at(
     on c6502's emission convention always setting N/Z before any
     Branch the lowering needs to read — which it does).
 
-    The C and V flags aren't tracked separately: V is only observed
-    by the V-correction sequence in signed-comparison lowerings,
-    which itself emits a flag-setter just before the Branch; C is
-    observed by ADC / SBC / BCC / BCS sequences that the codegen
-    always seeds with an explicit CLC / SEC immediately before. So
-    "no Branch before a flag overwriter" is a conservative
-    overapproximation of "all flags dead"."""
+    Only tracks N/Z. Callers that need to know whether C is also
+    dead (e.g. dropping an Add/Sub whose C output threads into a
+    later SBC chain) must use `all_flags_dead_at`."""
     while idx < len(instrs):
         instr = instrs[idx]
         if isinstance(instr, asm_ast.Branch):
@@ -213,6 +209,65 @@ def flags_dead_at(
             return True
         idx += 1
     return True
+
+
+def all_flags_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff every flag (N/Z/C/V) at position `idx` is dead —
+    no instruction reads any of them before they're overwritten.
+
+    Stricter than `flags_dead_at`: also detects subsequent Add/Sub
+    (which read C from the prior ADC/SBC) and RotateLeft/Right
+    (which read C as the shift-in bit) as flag readers. These are
+    common in multi-byte arithmetic chains where the codegen does
+    NOT seed CLC/SEC between consecutive ADCs/SBCs because they're
+    deliberately threading carry.
+
+    Use this when dropping or rewriting an instruction whose C/V
+    side-effects could be observed downstream."""
+    while idx < len(instrs):
+        instr = instrs[idx]
+        if isinstance(instr, asm_ast.Branch):
+            return False
+        if isinstance(instr, (
+            asm_ast.Add, asm_ast.Sub,
+            asm_ast.RotateLeft, asm_ast.RotateRight,
+        )):
+            # Reads C before (possibly) overwriting it.
+            return False
+        if isinstance(instr, (
+            asm_ast.Jump, asm_ast.Ret, asm_ast.Return, asm_ast.Label,
+        )):
+            return True
+        if _overwrites_all_flags(instr):
+            return True
+        idx += 1
+    return True
+
+
+def _overwrites_all_flags(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` overwrites N, Z, AND C (V is harder to fully
+    track but the common signed-compare V-correction pattern emits
+    its own flag-setter right after the EOR, so we conservatively
+    require N/Z/C to all be overwritten here).
+
+    The N/Z-only setters from `sets_flags` aren't sufficient — they
+    leave C unchanged, so a downstream ADC/SBC/BCC could still read
+    the previous C. Strict overwriters of C:
+      * `SetCarry` / `ClearCarry` — explicit C writes.
+      * `Compare` (CMP/CPX/CPY) — sets N/Z/C from subtraction.
+      * `ArithmeticShiftLeft` / `LogicalShiftRight` — set C from
+        the shifted-out bit.
+      * `Call` — callee defines all flags."""
+    if isinstance(instr, (
+        asm_ast.SetCarry, asm_ast.ClearCarry,
+        asm_ast.Compare,
+        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+        asm_ast.Call,
+    )):
+        return True
+    return False
 
 
 def sets_flags(instr: asm_ast.Type_instruction) -> bool:

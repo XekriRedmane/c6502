@@ -177,16 +177,34 @@ class TestRedundantLoadAliasing(unittest.TestCase):
 
 
 class TestRedundantLoadBlockBoundaries(unittest.TestCase):
-    def test_label_resets_state(self) -> None:
+    def test_label_resets_state_when_branched_to(self) -> None:
+        # A label that something else branches/jumps to is a real
+        # join point — state at entry could come from anywhere.
         zp80 = asm_ast.ZP(address=0x80, offset=0)
         instrs = [
             asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Jump(target="L"),               # makes "L" a branch target
             asm_ast.Label(name="L"),
-            asm_ast.Mov(src=zp80, dst=_REG_A),  # block boundary — keep
+            asm_ast.Mov(src=zp80, dst=_REG_A),      # block boundary — keep
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        self.assertEqual(len(out), 4)
+        self.assertEqual(len(out), 5)
+
+    def test_label_with_only_fall_through_pred_preserves_state(self) -> None:
+        # A label that nothing branches/jumps to has only the
+        # fall-through predecessor — state at entry equals state
+        # at exit of the prior instruction, so a follow-up
+        # redundant load can still be eliminated.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Label(name="L"),                # only fall-through reaches L
+            asm_ast.Mov(src=zp80, dst=_REG_A),      # redundant — drop
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 3)
 
     def test_jump_resets_state(self) -> None:
         zp80 = asm_ast.ZP(address=0x80, offset=0)

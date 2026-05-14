@@ -118,8 +118,14 @@ class _RegState:
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     state = _RegState()
-    out: list[asm_ast.Type_instruction] = []
     instrs = fn.instructions
+    # Set of label names that are the target of some Branch or
+    # Jump in this function. A `Label` whose name is NOT in this
+    # set has only the immediate fall-through as a predecessor —
+    # its register-mirror state at entry equals the state at the
+    # preceding instruction's exit, so we don't need to reset.
+    branch_targets = _collect_branch_targets(instrs)
+    out: list[asm_ast.Type_instruction] = []
     for i, instr in enumerate(instrs):
         if _is_redundant_load(instr, state) and _flags_dead_at(instrs, i + 1):
             # Drop the load entirely — A / X / Y already mirror
@@ -127,11 +133,26 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             # flags before something else resets them.
             continue
         out.append(instr)
-        _update_state(instr, state)
+        _update_state(instr, state, branch_targets)
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _collect_branch_targets(instrs) -> set[str]:
+    """Set of label names referenced by any `Jump` or `Branch` in
+    `instrs`. Used to decide whether a `Label` introduces a new
+    block: a label that nothing branches/jumps to has only the
+    fall-through predecessor, so the prior instruction's register
+    state still applies at the label."""
+    out: set[str] = set()
+    for instr in instrs:
+        if isinstance(instr, asm_ast.Jump):
+            out.add(instr.target)
+        elif isinstance(instr, asm_ast.Branch):
+            out.add(instr.target)
+    return out
 
 
 def _is_redundant_load(
@@ -151,15 +172,35 @@ def _is_redundant_load(
 
 def _update_state(
     instr: asm_ast.Type_instruction, state: _RegState,
+    branch_targets: set[str] | None = None,
 ) -> None:
     """Apply `instr`'s effect to the tracked register state."""
     if isinstance(instr, asm_ast.Mov):
         _update_for_mov(instr, state)
         return
-    if isinstance(instr, (asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
+    if isinstance(instr, asm_ast.Label):
+        # A label that something else can branch / jump to is a
+        # join point — incoming control might bring an unrelated
+        # register state, so we must reset. A label that ONLY the
+        # fall-through reaches (no jump / branch targets it) leaves
+        # the prior register state intact at this point.
+        if branch_targets is None or instr.name in branch_targets:
+            state.reset()
+        return
+    if isinstance(instr, (asm_ast.Jump,
                           asm_ast.Ret, asm_ast.Return)):
-        # Block boundary — anything after this is a fresh block.
+        # No fall-through. The next instruction starts a new block
+        # reached only via its Label-as-target.
         state.reset()
+        return
+    if isinstance(instr, asm_ast.Branch):
+        # Conditional branch: the fall-through preserves register
+        # state (the condition only affects PC, not registers). DON'T
+        # reset. The next instruction's state == this instruction's
+        # exit state, which == this instruction's entry state since
+        # Branch doesn't write registers. If the next instruction is
+        # a Label that's also a Jump/Branch target, the Label
+        # update will reset.
         return
     if isinstance(instr, asm_ast.Call):
         # JSR may clobber any register and any memory; conservatively

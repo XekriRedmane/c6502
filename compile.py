@@ -59,6 +59,7 @@ from passes.mem_const_prop import apply_mem_const_prop
 from passes.round_trip_load import apply_round_trip_load_drop
 from passes.and_sign_bit_branch import apply_and_sign_bit_branch
 from passes.self_store_drop import apply_self_store_drop
+from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
@@ -172,6 +173,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)
+        new_prog = apply_cmp_sbc_fusion(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog

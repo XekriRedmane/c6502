@@ -553,6 +553,74 @@ def _inline_right_shift_by_one(
     return out
 
 
+def _shift_count_const_value(val) -> int | None:
+    """If `val` is a non-negative integer Constant, return its value
+    as a Python int. Otherwise None. Used to detect shift-by-N-bits
+    where N is a known constant, so the helper call can be replaced
+    by inline byte placements when N is a multiple of 8."""
+    if not isinstance(val, tac_ast.Constant):
+        return None
+    c = val.const
+    if not isinstance(c, (
+        tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
+        tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
+    )):
+        return None
+    if c.value < 0:
+        return None
+    return c.value
+
+
+def _inline_left_shift_byte_aligned(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    byte_count: int,
+) -> list[asm_ast.Type_instruction]:
+    """LeftShift by `byte_count*8` bits where `0 < byte_count < size`.
+    Emits byte moves: `dst.b[k] = src.b[k - byte_count]` for
+    `k >= byte_count`, else `0`. Signedness-agnostic (the bit pattern
+    is the same).
+
+    Move order is high-byte-first to stay correct under aliasing:
+    if src and dst coalesce to the same physical slot (regalloc
+    outcome on in-place `x <<= 8`), processing the high dst byte
+    first reads src's low byte BEFORE the low dst byte is zeroed."""
+    out: list[asm_ast.Type_instruction] = []
+    for k in range(size - 1, -1, -1):
+        dst_byte = _byte_at(dst_op, k)
+        if k < byte_count:
+            out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=dst_byte))
+        else:
+            src_byte = _byte_at(src_op, k - byte_count)
+            out.append(asm_ast.Mov(src=src_byte, dst=dst_byte))
+    return out
+
+
+def _inline_right_shift_byte_aligned_unsigned(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    byte_count: int,
+) -> list[asm_ast.Type_instruction]:
+    """Logical RightShift by `byte_count*8` bits where `0 <
+    byte_count < size`. Emits byte moves: `dst.b[k] =
+    src.b[k + byte_count]` for `k + byte_count < size`, else `0`.
+
+    Move order is low-byte-first for aliasing safety: high src
+    bytes are read before low dst bytes are zeroed."""
+    out: list[asm_ast.Type_instruction] = []
+    for k in range(size):
+        dst_byte = _byte_at(dst_op, k)
+        src_idx = k + byte_count
+        if src_idx < size:
+            src_byte = _byte_at(src_op, src_idx)
+            out.append(asm_ast.Mov(src=src_byte, dst=dst_byte))
+        else:
+            out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=dst_byte))
+    return out
+
+
 def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
     """Address the k-th byte (0 = low, 1 = high) of a multi-byte
     operand. For `Imm`, extract that byte of the constant — Python's
@@ -1979,6 +2047,17 @@ class Translator:
                     return _inline_left_shift_by_one(
                         src1_op, dst_op, size,
                     )
+                # Constant shift by a positive multiple of 8 (less
+                # than size*8) is a byte rearrangement — emit byte
+                # moves instead of a JSR to `asl*`. Signedness-
+                # agnostic. Shifts by ≥ size*8 are UB per C99
+                # §6.5.7.4 so the helper-call fallback is fine.
+                cnt = _shift_count_const_value(src2)
+                if (cnt is not None and cnt > 0 and cnt % 8 == 0
+                        and cnt < size * 8):
+                    return _inline_left_shift_byte_aligned(
+                        src1_op, dst_op, size, cnt // 8,
+                    )
                 # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
                 # asl32: 4B value + 1B count → 4B result at HARGS+5.
@@ -2024,6 +2103,19 @@ class Translator:
                     return _inline_right_shift_by_one(
                         src1_op, dst_op, size,
                         signed=not self._is_unsigned_val(src1),
+                    )
+                # Unsigned shift by a positive multiple of 8 (less
+                # than size*8) is a byte rearrangement — emit byte
+                # moves instead of JSR to `lsr*`. Signed shift by
+                # N*8 would need a sign-fill on the vacated high
+                # bytes (analogous to SignExtend); routes through
+                # the helper for now.
+                cnt = _shift_count_const_value(src2)
+                if (cnt is not None and cnt > 0 and cnt % 8 == 0
+                        and cnt < size * 8
+                        and self._is_unsigned_val(src1)):
+                    return _inline_right_shift_byte_aligned_unsigned(
+                        src1_op, dst_op, size, cnt // 8,
                     )
                 if self._is_unsigned_val(src1):
                     helpers = (_LSR8, _LSR16, _LSR32, _LSR64)

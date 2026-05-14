@@ -471,6 +471,155 @@ class TestTranslateInstruction(unittest.TestCase):
             ],
         )
 
+    def test_left_shift_by_byte_aligned_constant_emits_byte_moves(self):
+        # `Binary(LeftShift, x_2B, ConstInt(8))` is a 1-byte byte
+        # placement: dst.b1 = src.b0, dst.b0 = 0. High-byte-first
+        # order keeps it correct under regalloc-induced aliasing.
+        # No `asl16` Call.
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.LeftShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=8)),
+            dst=tac_ast.Var(name="%1"),
+        ))
+        self.assertEqual(
+            [i for i in out if isinstance(i, asm_ast.Call)], [],
+        )
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%0", offset=0),
+                dst=asm_ast.Pseudo(name="%1", offset=1),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=0),
+                dst=asm_ast.Pseudo(name="%1", offset=0),
+            ),
+        ])
+
+    def test_left_shift_by_16_on_ulong_emits_two_byte_shuffle(self):
+        # `Binary(LeftShift, x_4B, ConstInt(16))`: result.b3 = src.b1,
+        # result.b2 = src.b0, result.b1 = 0, result.b0 = 0.
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=c99_ast.ULong(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=c99_ast.ULong(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.LeftShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=16)),
+            dst=tac_ast.Var(name="%1"),
+        ))
+        self.assertEqual(
+            [i for i in out if isinstance(i, asm_ast.Call)], [],
+        )
+        # Iteration runs high-to-low (k=3,2,1,0).
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%0", offset=1),
+                dst=asm_ast.Pseudo(name="%1", offset=3),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%0", offset=0),
+                dst=asm_ast.Pseudo(name="%1", offset=2),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=0),
+                dst=asm_ast.Pseudo(name="%1", offset=1),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=0),
+                dst=asm_ast.Pseudo(name="%1", offset=0),
+            ),
+        ])
+
+    def test_unsigned_right_shift_by_8_emits_byte_moves(self):
+        # Unsigned (lsr) right shift by 8: dst.b0 = src.b1, dst.b1 = 0.
+        # Low-byte-first for aliasing safety.
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.RightShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=8)),
+            dst=tac_ast.Var(name="%1"),
+        ))
+        self.assertEqual(
+            [i for i in out if isinstance(i, asm_ast.Call)], [],
+        )
+        self.assertEqual(out, [
+            asm_ast.Mov(
+                src=asm_ast.Pseudo(name="%0", offset=1),
+                dst=asm_ast.Pseudo(name="%1", offset=0),
+            ),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=0),
+                dst=asm_ast.Pseudo(name="%1", offset=1),
+            ),
+        ])
+
+    def test_signed_right_shift_by_8_still_calls_asr16(self):
+        # Signed RightShift by N*8 would need a sign-fill on the
+        # vacated high bytes; the byte-shuffle path is unsigned-only,
+        # so signed routes through `asr*`.
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.RightShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=8)),
+            dst=tac_ast.Var(name="%1"),
+        ))
+        self.assertEqual(
+            [c.name for c in out if isinstance(c, asm_ast.Call)],
+            ["asr16"],
+        )
+
+    def test_left_shift_by_size_in_bits_falls_through_to_helper(self):
+        # Shift count >= size*8 is UB per C99 §6.5.7.4 — punt to the
+        # helper rather than try to define behavior at this layer.
+        from passes.type_checking import (
+            LocalAttr, Symbol, SymbolTable,
+        )
+        from tac_to_asm import Translator
+        import c99_ast
+        symbols = SymbolTable()
+        symbols["%0"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        symbols["%1"] = Symbol(type=c99_ast.UInt(), attrs=LocalAttr())
+        out = Translator(symbols).translate_instruction(tac_ast.Binary(
+            op=tac_ast.LeftShift(),
+            src1=tac_ast.Var(name="%0"),
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=16)),
+            dst=tac_ast.Var(name="%1"),
+        ))
+        self.assertEqual(
+            [c.name for c in out if isinstance(c, asm_ast.Call)],
+            ["asl16"],
+        )
+
     def test_binary_modulo_lowered_to_sdivmod8_remainder(self):
         # Same input layout as Divide; the remainder lives at the
         # slot pair after the quotient (HARGS+3 for sdivmod8). Both

@@ -1074,8 +1074,13 @@ class Translator:
         src_op = translate_val(val)
         size = self._size_of(val)
         if size == 1:
+            # `_byte_at` masks `Imm` to 0..255 — necessary when the
+            # constant is signed-negative (SChar, etc.); a direct
+            # `Mov(Imm(-10), A)` would emit `LDA #-10` which trips
+            # the 8-bit-immediate range check in asm_emit. For
+            # non-Imm operands `_byte_at` is a no-op at offset 0.
             return [
-                asm_ast.Mov(src=src_op, dst=_REG_A),
+                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
                 self._exit(save_a=True),
             ]
         # All wider returns: write src bytes into the HARGS slot for

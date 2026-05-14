@@ -106,17 +106,30 @@ _OPAQUE_TYPES: tuple[type, ...] = (
 )
 
 
-def apply_asm_dead_store(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_asm_dead_store(
+    prog: asm_ast.Program,
+    *,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> asm_ast.Program:
+    """`zp_slot_symbols`: optional map from slot-symbol name (e.g.
+    `__local_<fn>_b<k>`, `__zpabi_<fn>_p<k>`) to its concrete ZP
+    address. When provided, `Data(name)` operands whose name is in
+    the map are treated as ZP at that address for dead-at-exit
+    eligibility — so a STA to a local-pool slot at the function's
+    tail is dead just like a regular `ZP(addr)` write would be."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(_rewrite_function(tl, zp_slot_symbols))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _rewrite_function(
+    fn: asm_ast.Function,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> asm_ast.Function:
     """Walk `fn.instructions` and drop any STA whose target memory
     is not observed by any instruction reachable from the store
     (within-block kill, or CFG-wide forward search reaching only
@@ -127,7 +140,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     for i, instr in enumerate(instrs):
         if not _is_dse_candidate(instr):
             continue
-        if _is_dead_cfg(instrs, i, label_to_index):
+        if _is_dead_cfg(instrs, i, label_to_index, zp_slot_symbols):
             drop[i] = True
     out = [instr for i, instr in enumerate(instrs) if not drop[i]]
     return asm_ast.Function(
@@ -171,7 +184,10 @@ def _successors(
     return []
 
 
-def _is_dead_at_exit(target: asm_ast.Type_operand) -> bool:
+def _is_dead_at_exit(
+    target: asm_ast.Type_operand,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> bool:
     """True iff `target` is known dead at function exit.
 
     Dead-at-exit categories:
@@ -183,6 +199,13 @@ def _is_dead_at_exit(target: asm_ast.Type_operand) -> bool:
         effect of writing to it is a subsequent indirect access
         from inside this function, which the CFG-wide forward
         DFS would have caught as a read.
+      * `Data(name, off)` where `name` is in `zp_slot_symbols` and
+        the resolved address (`zp_slot_symbols[name] + off`) is in
+        the pool range — these are local-pool body locals and
+        zp_abi param slots that the allocator carved into ZP. They
+        look like `Data` operands in the IR (the linker resolves
+        the EQU symbol at link time) but behave like ZP-pool ZPs
+        for liveness purposes.
 
     Everything else (user statics, HARGS / SSP / FP runtime
     symbols that carry return values or stack state) is
@@ -190,14 +213,19 @@ def _is_dead_at_exit(target: asm_ast.Type_operand) -> bool:
     if isinstance(target, asm_ast.ZP):
         addr = target.address + target.offset
         return _POOL_LO <= addr < _POOL_HI
-    if isinstance(target, asm_ast.Data) and target.name == "DPTR":
-        return True
+    if isinstance(target, asm_ast.Data):
+        if target.name == "DPTR":
+            return True
+        if zp_slot_symbols is not None and target.name in zp_slot_symbols:
+            addr = zp_slot_symbols[target.name] + target.offset
+            return _POOL_LO <= addr < _POOL_HI
     return False
 
 
 def _is_dead_cfg(
     instrs: list[asm_ast.Type_instruction], start: int,
     label_to_index: dict[str, int],
+    zp_slot_symbols: dict[str, int] | None = None,
 ) -> bool:
     """True iff the STA at `instrs[start]` is dead by CFG-wide
     forward search: every path from start+1 forward either
@@ -220,7 +248,7 @@ def _is_dead_cfg(
             return False
         # Function exit: dead iff `target` is dead-at-exit.
         if isinstance(nxt, (asm_ast.Ret, asm_ast.Return)):
-            if not _is_dead_at_exit(target):
+            if not _is_dead_at_exit(target, zp_slot_symbols):
                 return False
             continue
         # Read of `target`: LIVE.
@@ -276,9 +304,15 @@ def _write_operand(
     instr: asm_ast.Type_instruction,
 ) -> asm_ast.Type_operand | None:
     """The single MEMORY destination operand of `instr`, if any.
-    Reg destinations don't count (they don't kill memory)."""
+    Reg destinations don't count (they don't kill memory).
+
+    Any `Mov` with a non-`Reg` dst writes the dst's byte — including
+    memory-to-memory shapes like `Mov(IndexedData, Data)` and
+    `Mov(Data, Data)`, which `asm_emit` lowers to `LDA src; STA dst`.
+    For kill purposes the source side doesn't matter: the dst is
+    overwritten regardless of where the value came from."""
     match instr:
-        case asm_ast.Mov(src=src, dst=dst) if isinstance(src, asm_ast.Reg):
+        case asm_ast.Mov(src=_, dst=dst):
             if not isinstance(dst, asm_ast.Reg):
                 return dst
         case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):

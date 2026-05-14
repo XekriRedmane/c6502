@@ -26,8 +26,8 @@ refresh_hit_entities:
 .refresh_hit_entities@ssa_block@0:
    LDA   __zpabi_refresh_hit_entities_p0
    STA   __local_refresh_hit_entities_b4
+   TAX
 .loop@0_start:
-   LDX   __local_refresh_hit_entities_b4
    LDA   entity_hit_y,X
    SEC
    SBC   __zpabi_refresh_hit_entities_p1
@@ -73,7 +73,8 @@ refresh_hit_entities:
    JSR   draw_sprite_opaque
 .if_end@1:
 .if_end@0:
-   DEC   __local_refresh_hit_entities_b4
+   DEX
+   STX   __local_refresh_hit_entities_b4
 .loop@0_continue:
    BPL   .refresh_hit_entities@asm_ssa_split@0
 .refresh_hit_entities@asm_ssa_block@2:

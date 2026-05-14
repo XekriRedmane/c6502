@@ -61,6 +61,7 @@ from passes.and_sign_bit_branch import apply_and_sign_bit_branch
 from passes.self_store_drop import apply_self_store_drop
 from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
+from passes.loop_counter_to_x import apply_loop_counter_to_x
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
@@ -282,6 +283,7 @@ def _run_stage(
             local_slot_symbols = build_local_slot_symbols(local_pools)
             all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
             asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=all_slot_symbols)
+            asm3 = apply_loop_counter_to_x(asm3)
             asm4 = expand_long_branches(asm3)
             asm5 = lower_to_asm2(asm4)
             link_meta = build_metadata(tac, abi, local_pools)

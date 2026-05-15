@@ -706,6 +706,21 @@ def _emit_compare(
             )
 
 
+def _emit_bit_test(src: asm_ast.Type_operand) -> list[str]:
+    """`BitTest(src)` -> `BIT src`. NMOS 6502 supports only zero-
+    page and absolute addressing for BIT (no immediate, no
+    indirect-Y), so `src` must be `Data` or `ZP`. Sets N to bit 7
+    of src, V to bit 6, Z to (A & src) == 0; doesn't modify A."""
+    match src:
+        case asm_ast.Data() | asm_ast.ZP():
+            return [_instr_line("BIT", _abs_addr(src))]
+        case _:
+            raise ValueError(
+                f"BitTest src must be Data or ZP (NMOS 6502 has no "
+                f"`BIT #imm` or indirect-Y BIT); got {src!r}"
+            )
+
+
 def _shift_offset(
     op: asm_ast.Type_operand, k: int,
 ) -> asm_ast.Type_operand:
@@ -845,6 +860,8 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return [f"{name}:"]
         case asm_ast.Compare(left=left, right=right):
             return _emit_compare(left, right)
+        case asm_ast.BitTest(src=src):
+            return _emit_bit_test(src)
         case _:
             raise TypeError(f"unexpected instruction: {instr!r}")
 

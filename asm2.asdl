@@ -64,6 +64,11 @@ module ASM2 {
         | Jump(identifier target)
         | Branch(condition cond, identifier target)
         | Compare(operand left, operand right)
+        -- `BIT src` — sets N/V from bit 7/6 of src; sets Z from
+        -- (A & src) == 0. Doesn't modify A. src is Data / ZP only
+        -- (NMOS 6502; no `BIT #imm`). See asm.asdl for the
+        -- motivating use cases.
+        | BitTest(operand src)
         | LoadAddress(operand src, operand dst)
         | Comment(string text)
         | Blank

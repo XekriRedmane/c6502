@@ -864,6 +864,39 @@ class TestEmitDataOperand(unittest.TestCase):
         ))
         self.assertEqual(out, ["   CPX   g"])
 
+    def test_bit_test_with_data(self):
+        # `BIT name` — absolute addressing, sets N from bit 7 / V
+        # from bit 6 / Z from (A & mem) == 0. No register specifier
+        # since BIT only has one operand form.
+        out = emit_instruction(asm_ast.BitTest(
+            src=asm_ast.Data(name="flags", offset=0),
+        ))
+        self.assertEqual(out, ["   BIT   flags"])
+
+    def test_bit_test_with_data_offset(self):
+        out = emit_instruction(asm_ast.BitTest(
+            src=asm_ast.Data(name="x", offset=2),
+        ))
+        self.assertEqual(out, ["   BIT   x+2"])
+
+    def test_bit_test_with_zp(self):
+        # `BIT $80` — zero-page form. asm_emit doesn't pick the
+        # opcode size; dasm does, but the operand syntax is `$XX`.
+        out = emit_instruction(asm_ast.BitTest(
+            src=asm_ast.ZP(address=0x80, offset=0),
+        ))
+        self.assertEqual(out, ["   BIT   $80"])
+
+    def test_bit_test_with_imm_rejected(self):
+        # NMOS 6502 has no `BIT #imm` (that's a 65C02 extension).
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.BitTest(src=asm_ast.Imm(value=0x80)))
+
+    def test_bit_test_with_frame_rejected(self):
+        # No indirect-Y addressing for BIT.
+        with self.assertRaises(ValueError):
+            emit_instruction(asm_ast.BitTest(src=asm_ast.Frame(offset=3)))
+
 
 class TestEmitZPOperand(unittest.TestCase):
     """`ZP(address, offset)` is the absolute-addressing operand the

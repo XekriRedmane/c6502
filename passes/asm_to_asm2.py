@@ -441,6 +441,8 @@ def _xlate_instruction(
             return [asm2_ast.Compare(
                 left=_xlate_op(lt), right=_xlate_op(rt),
             )]
+        case asm_ast.BitTest(src=s):
+            return [asm2_ast.BitTest(src=_xlate_op(s))]
         case asm_ast.LoadAddress(src=s, dst=d):
             return [asm2_ast.LoadAddress(
                 src=_xlate_op(s), dst=_xlate_op(d),

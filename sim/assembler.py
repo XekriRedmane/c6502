@@ -65,6 +65,7 @@ _ZP = {
     "CMP": 0xC5, "CPX": 0xE4, "CPY": 0xC4,
     "ASL": 0x06, "LSR": 0x46, "ROL": 0x26, "ROR": 0x66,
     "INC": 0xE6, "DEC": 0xC6,
+    "BIT": 0x24,
 }
 
 # Absolute addressing (3 bytes: opcode + lo + hi)
@@ -77,6 +78,7 @@ _ABS = {
     "JMP": 0x4C, "JSR": 0x20,
     "ASL": 0x0E, "LSR": 0x4E, "ROL": 0x2E, "ROR": 0x6E,
     "INC": 0xEE, "DEC": 0xCE,
+    "BIT": 0x2C,
 }
 
 # Indirect-Y (zp),Y (2 bytes: opcode + zp byte)
@@ -297,6 +299,8 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return _accum_arith_size(other)
         case asm_ast.Compare(left=left, right=right):
             return _compare_size(left, right)
+        case asm_ast.BitTest(src=src):
+            return _bit_test_size(src)
         case asm_ast.ClearCarry() | asm_ast.SetCarry():
             return 1
         case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
@@ -439,6 +443,8 @@ def _emit_instr(
             return _emit_accum_arith("EOR", other, syms)
         case asm_ast.Compare(left=left, right=right):
             return _emit_compare(left, right, syms)
+        case asm_ast.BitTest(src=src):
+            return _emit_bit_test(src, syms)
         case asm_ast.ClearCarry():
             return bytes([_IMPLIED["CLC"]])
         case asm_ast.SetCarry():
@@ -1012,6 +1018,26 @@ def _compare_size(
             )
         return 4
     raise AssemblerError(f"unsupported Compare right: {right!r}")
+
+
+def _bit_test_size(src: asm_ast.Type_operand) -> int:
+    if not _is_data_or_zp(src):
+        raise AssemblerError(
+            f"BitTest src must be Data / ZP (NMOS 6502 has no "
+            f"`BIT #imm`); got {src!r}"
+        )
+    return 2 if _abs_fits_zp(src) else 3
+
+
+def _emit_bit_test(
+    src: asm_ast.Type_operand, syms: dict[str, int],
+) -> bytes:
+    _reject_pseudo(src)
+    if not _is_data_or_zp(src):
+        raise AssemblerError(
+            f"BitTest src must be Data / ZP; got {src!r}"
+        )
+    return _emit_zp_or_abs("BIT", _resolve_abs_addr(src, syms))
 
 
 def _emit_compare(

@@ -106,6 +106,20 @@ module ASM {
         | Jump(identifier target)
         | Branch(condition cond, identifier target)
         | Compare(operand left, operand right)
+        -- BitTest(src) — emits `BIT src` (NMOS 6502: zp and abs
+        -- addressing only). Sets N to bit 7 of src, V to bit 6 of
+        -- src, Z to (A & src) == 0. A is not modified. The primary
+        -- use is sign-bit testing without disturbing A: `BIT M; BPL
+        -- target` checks bit 7 of M in 5 cycles / 3 bytes (zp) or
+        -- 7 cycles / 4 bytes (abs), vs. `LDA M; AND #$80; BEQ
+        -- target` at 8+ cycles / 6 bytes that also clobbers A.
+        --
+        -- src must be Data / ZP — the NMOS 6502 has no `BIT #imm`
+        -- (that's a 65C02 extension we don't model). Frame / Stack
+        -- / Indirect / IndexedData / Reg aren't BIT-addressable
+        -- either; asm_emit and the in-process sim assembler reject
+        -- them.
+        | BitTest(operand src)
         -- LoadAddress(src, dst) — compound node, expanded by
         -- replace_pseudoregisters into a sequence of atomic Movs.
         -- `src` is a Pseudo naming the lvalue to take the address

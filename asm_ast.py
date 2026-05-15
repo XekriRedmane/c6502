@@ -231,6 +231,11 @@ class Compare(Type_instruction):
 
 
 @dataclass
+class BitTest(Type_instruction):
+    src: Type_operand
+
+
+@dataclass
 class LoadAddress(Type_instruction):
     src: Type_operand
     dst: Type_operand

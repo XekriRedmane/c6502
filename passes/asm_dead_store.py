@@ -108,11 +108,21 @@ _POOL_HI = 0x100
 # `apply_indirect_base_prop`'s downstream DPTR-staging cleanup.
 # `_read_operands` and `_write_operand` handle Push / Pop
 # precisely below.
+#
+# `LoadAddress` is also NOT opaque: its memory effect is a bounded
+# 2-byte write to `dst` plus, for the `Frame(off)` source variant,
+# a read of `FP` / `FP+1` (the 6502 lowering is CLC; LDA FP; ADC
+# #off; STA dst.lo; LDA FP+1; ADC #0; STA dst.hi). The `Data(name)`
+# variant reads no memory at all — `LDA #<name; STA dst.lo; LDA
+# #>name; STA dst.hi` — both halves are immediates. Treating it as
+# opaque blocks the DSE walk through a DPTR-staging cleanup
+# whenever a downstream `LoadAddress` happens to land before the
+# next DPTR overwrite; the dead `STA DPTR` then survives. Modeled
+# precisely in `_read_operands` and `_write_operand` below.
 _OPAQUE_TYPES: tuple[type, ...] = (
     asm_ast.Call,
     asm_ast.FunctionPrologue,
     asm_ast.AllocateStack,
-    asm_ast.LoadAddress,
 )
 
 
@@ -290,6 +300,14 @@ def _is_dead_cfg(
         visited.add(j)
         nxt = instrs[j]
         # Opaque instructions: assume they may read `target`.
+        # `Call` is here because, even though DPTR is documented
+        # caller-saved scratch (no user callee should rely on its
+        # incoming value), the `icall` trampoline IS the JSR target
+        # for indirect calls and `icall: JMP (DPTR)` reads both
+        # bytes of DPTR — so blanket "Call kills DPTR" is unsound.
+        # A more refined version would identify the call's target
+        # name and treat non-`icall` named callees as kills of
+        # DPTR; deferred until the gain motivates the complexity.
         if isinstance(nxt, _OPAQUE_TYPES):
             return False
         # Function exit: dead iff `target` is dead-at-exit.
@@ -372,6 +390,16 @@ def _write_operand(
             # store.
             if not isinstance(dst, asm_ast.Reg):
                 return dst
+        case asm_ast.LoadAddress(dst=dst):
+            # Writes two bytes — dst (low) and dst+1 (high). The
+            # caller of `_writes_same` is looking for an exact-byte
+            # kill; return the low byte so a STA to that exact byte
+            # is recognized as killed by this LoadAddress. The high
+            # byte case isn't surfaced through this single-operand
+            # API — DSE will just keep walking past it, which is
+            # sound (no spurious kill of an unrelated cell).
+            if not isinstance(dst, asm_ast.Reg):
+                return dst
     return None
 
 
@@ -428,6 +456,15 @@ def _read_operands(
         # Pop has no read operands (the hardware stack pop isn't a
         # memory target the DSE tracks); its write is handled in
         # `_write_operand`.
+        case asm_ast.LoadAddress(src=src):
+            # Data src: address is link-time known; lowered to LDA
+            # #<name / LDA #>name — both immediates. No memory read.
+            # Frame src: lowered to CLC; LDA FP; ADC #off; ...; LDA
+            # FP+1; ADC #0 — reads FP and FP+1. Surface those so a
+            # still-live STA FP / STA FP+1 upstream isn't dropped.
+            if isinstance(src, asm_ast.Frame):
+                yield asm_ast.Data(name="FP", offset=0)
+                yield asm_ast.Data(name="FP", offset=1)
 
 
 def _ptr_source_reads(op: asm_ast.Type_operand):

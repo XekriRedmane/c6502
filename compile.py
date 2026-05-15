@@ -83,6 +83,9 @@ from passes.zp_local_allocation import (
 )
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
+from passes.optimization.dispatch_pointer_array import (
+    dispatch_const_pointer_arrays,
+)
 from passes.optimization_asm import optimizer as asm_opt
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
 from passes.replace_pseudoregisters import (
@@ -242,6 +245,13 @@ def _run_stage(
             # synthesize_prologue (collapses prologue/epilogue when
             # nothing needs spilling).
             tac = optimize_tac(tac, symbols)
+            # Inline-switch dispatch for small const-pointer arrays.
+            # Recognizes `arr[i][j]` where arr is a `static const T
+            # * const[N]` and rewrites the indirect chain to a
+            # CMP/BEQ dispatch on `i`. Runs post-from_ssa (inside
+            # optimize_tac), so the dispatched cases can each
+            # write to the same dst without Phi insertion.
+            tac = dispatch_const_pointer_arrays(tac, symbols)
             abi = select_abi(tac, prog, types)
             abi, zp_slot_symbols = allocate_zp_slots(tac, abi)
             asm0 = translate_to_asm(

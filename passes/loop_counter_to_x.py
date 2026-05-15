@@ -227,6 +227,7 @@ def _plan_promotion(instrs):
         'mid_lda_indices': mid_lda_indices,
         'pivot_ranges': pivot_ranges,
         'call_indices': call_indices,
+        'lda_m_indices': cand['lda_m_indices'],
     }
 
 
@@ -293,6 +294,14 @@ def _try_collect_pivot_range(instrs, start: int):
                 if isinstance(op, asm_ast.IndexedData):
                     if isinstance(op.index, asm_ast.Y):
                         return None
+                # Indirect operands (Indirect / IndirectY /
+                # IndirectZp / IndirectZpY) all read Y as their
+                # addressing-mode index. A pivot that overwrites Y
+                # would corrupt these reads.
+                if isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY,
+                                   asm_ast.IndirectZp,
+                                   asm_ast.IndirectZpY)):
+                    return None
         elif isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
             if _is_reg_x(instr.dst):
                 return j
@@ -311,12 +320,13 @@ def _try_collect_pivot_range(instrs, start: int):
 def _find_counter_candidate(instrs):
     """Identify a memory slot M with the loop-counter use pattern.
     Returns a dict with 'm_key', 'init_idx', 'dec_idx',
-    'loop_top_lda_idx', or None."""
+    'loop_top_lda_idx', 'lda_m_indices', or None."""
     init_idx: dict[tuple, int] = {}
     init_count: dict[tuple, int] = {}
     dec_idx: dict[tuple, int] = {}
     dec_count: dict[tuple, int] = {}
     ldx_idx: dict[tuple, list[int]] = {}
+    lda_idx: dict[tuple, list[int]] = {}
     disqualified: set[tuple] = set()
 
     for i, instr in enumerate(instrs):
@@ -329,6 +339,8 @@ def _find_counter_candidate(instrs):
                 init_idx[key] = i
             elif role == 'ldx':
                 ldx_idx.setdefault(key, []).append(i)
+            elif role == 'lda':
+                lda_idx.setdefault(key, []).append(i)
             elif role == 'dec':
                 dec_count[key] = dec_count.get(key, 0) + 1
                 dec_idx[key] = i
@@ -354,6 +366,7 @@ def _find_counter_candidate(instrs):
             'init_idx': init_idx[key],
             'dec_idx': dec_idx[key],
             'loop_top_lda_idx': loop_top,
+            'lda_m_indices': lda_idx.get(key, []),
         }
     return None
 
@@ -374,6 +387,12 @@ def _operand_roles(instr):
             return  # self-Mov
         if _is_reg_x(dst) and not isinstance(src, asm_ast.Reg):
             yield ('ldx', src)
+            return
+        if _is_reg_a(dst) and not isinstance(src, asm_ast.Reg):
+            # `Mov(M, Reg(A))` — LDA M. Doesn't disqualify the
+            # counter slot; the apply step rewrites it to TXA
+            # (since X = M is the promotion invariant).
+            yield ('lda', src)
             return
         if not isinstance(dst, asm_ast.Reg):
             yield ('init', dst)
@@ -463,6 +482,7 @@ def _apply_plan(fn, plan):
     loop_top_lda_idx = plan['loop_top_lda_idx']
     mid_lda_set = set(plan['mid_lda_indices'])
     call_set = set(plan['call_indices'])
+    lda_m_set = set(plan['lda_m_indices'])
     # Map each pivot range start to its end.
     pivot_start_to_end: dict[int, int] = {
         s: e for s, e in plan['pivot_ranges']
@@ -496,6 +516,12 @@ def _apply_plan(fn, plan):
             # Y-pivot: rewrite the leading LDX→LDY and each
             # IndexedData(X) consumer in the range.
             out.append(_pivot_rewrite(instrs[i]))
+            i += 1
+            continue
+        if i in lda_m_set:
+            # `LDA M` rewritten to `TXA` — X = M is the promotion
+            # invariant, so this is value-equivalent.
+            out.append(asm_ast.Mov(src=reg_x, dst=reg_a))
             i += 1
             continue
         if i == dec_idx:

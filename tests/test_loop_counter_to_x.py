@@ -89,6 +89,81 @@ class TestLoopCounterToX(unittest.TestCase):
                             and isinstance(i.dst, asm_ast.Reg)
                             and isinstance(i.dst.reg, asm_ast.X) for i in out))
 
+    def test_lda_m_rewritten_to_txa(self):
+        # `Mov(M, Reg(A))` (LDA M) is value-equivalent to TXA after
+        # promotion (since X = M is the invariant). The pass should
+        # accept the slot and rewrite the LDA M to TXA.
+        prog = _wrap([
+            asm_ast.Mov(src=_M("p"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("b")),
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(src=_M("b"), dst=_X),            # loop-top reload
+            asm_ast.Mov(src=_M("b"), dst=_A),            # LDA M — was disqualifying
+            asm_ast.Mov(src=_A, dst=_M("scratch")),
+            asm_ast.Dec(dst=_M("b")),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_loop_counter_to_x(prog))
+        # Fires: the LDA M is rewritten to TXA, the loop-top LDX is
+        # dropped, init gets a TAX, Dec(M) → Dec(X).
+        # Look for TXA (Mov(Reg(X), Reg(A))) in the body.
+        self.assertTrue(any(isinstance(i, asm_ast.Mov)
+                            and i.src == _X and i.dst == _A for i in out))
+        self.assertTrue(any(isinstance(i, asm_ast.Dec)
+                            and isinstance(i.dst, asm_ast.Reg)
+                            and isinstance(i.dst.reg, asm_ast.X) for i in out))
+
+    def test_save_restore_around_call(self):
+        # A counter loop containing a Call gets STX/LDX wrapping
+        # around each Call — the callee clobbers X but the counter
+        # is preserved via the save/restore.
+        prog = _wrap([
+            asm_ast.Mov(src=_M("p"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("b")),
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(src=_M("b"), dst=_X),
+            asm_ast.Mov(src=asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
+                        dst=_A),
+            asm_ast.Call(name="helper"),
+            asm_ast.Dec(dst=_M("b")),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_loop_counter_to_x(prog))
+        # Find the Call and confirm it's preceded by STX M and
+        # followed by LDX M.
+        call_idx = next(
+            k for k, i in enumerate(out) if isinstance(i, asm_ast.Call)
+        )
+        self.assertEqual(out[call_idx - 1],
+                         asm_ast.Mov(src=_X, dst=_M("b")))
+        self.assertEqual(out[call_idx + 1],
+                         asm_ast.Mov(src=_M("b"), dst=_X))
+
+    def test_pivot_blocked_by_indirect_y_access(self):
+        # If a non-counter `LDX <other>` opens what would otherwise
+        # be a pivot range, but the range contains an Indirect-Y
+        # operand (which reads Y for its addressing mode), the
+        # pivot is unsound — rewriting LDX→LDY would clobber the
+        # value Y carries for the indirect access. The pass must
+        # reject the promotion.
+        prog = _wrap([
+            asm_ast.Mov(src=_M("p"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("b")),
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(src=_M("b"), dst=_X),
+            asm_ast.Mov(src=_M("temp"), dst=_X),     # non-counter LDX — pivot start
+            asm_ast.Mov(src=asm_ast.IndirectZpY(address=0x10), dst=_A),  # uses Y!
+            asm_ast.Dec(dst=_M("b")),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_loop_counter_to_x(prog))
+        # Unchanged — pivot couldn't form.
+        self.assertEqual(len(out), 9)
+        self.assertEqual(out, prog.top_level[0].instructions)
+
     def test_active_label_between_dec_and_branch_blocks(self):
         # A label between DEC and Branch that something else jumps
         # to means there's a control path bypassing the DEC — our

@@ -1437,6 +1437,19 @@ fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
    chain that would have qualified for the cheaper absolute,X
    form.
 
+5a. **`dispatch_const_pointer_arrays`** (`passes/optimization/
+    dispatch_pointer_array.py`). Runs at the program level
+    after `optimize_tac` (post-from_ssa). Recognizes the
+    `Binary(LeftShift|Multiply, i, 1|2) + IndexedLoad(arr, _,
+    %ptr) + IndirectIndexedLoad(%ptr, j, %v)` chain when `arr`
+    is a file-scope `static const T * const[N]` with N ≤ 8 and
+    all-AddressInit elements; rewrites to a CMP/BEQ dispatch on
+    `i` with per-case direct `IndexedLoad(target_k, j, %v)`.
+    Eliminates DPTR staging and (zp),Y indirection at the cost
+    of a small dispatch chain; frees X and Y from the
+    dual-index conflict so loop counters can stay pinned to X
+    across the dispatch.
+
 6. **`from_ssa`** (`ssa_destruction.py`). One Copy per PhiArg
    in the matching predecessor, before the terminator. Parallel-
    copy ordering by topological sort fixes the "lost copy"
@@ -1454,7 +1467,11 @@ fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
    promotable `(name, offset)` pair; `hwreg_eligibility` marks
    Pseudos that can live in X/Y across their intra-block live
    range (saves the `LDX / LDY` setup for absolute,X / (zp),Y
-   accesses where the index is the pinned Pseudo); `coalesce_
+   accesses where the index is the pinned Pseudo). Eligibility
+   is per-HwReg (separate `eligible_x` and `eligible_y` sets) —
+   `Mov(IndexedData(...,X), P)` makes P Y-eligible only (via
+   `LDY abs,X`, since `LDX abs,X` doesn't exist), and vice
+   versa for IndexedData(...,Y). `coalesce_
    moves` merges Mov/Phi-related non-interfering names; fixed-
    point `[copy_propagate → backward_copy_propagate →
    byte_dce]`. **Byte-granular regalloc** colors 1-byte SSA
@@ -1482,15 +1499,27 @@ fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
     `FunctionPrologue(N, M, callee_saved_addrs)` and patch each
     `Return` to `Ret(N, M, save_a, callee_saved_addrs)`.
 
+10a. **`apply_licm`** (`passes/asm_licm.py`). Asm-level LICM-
+    lite for loop-invariant constant stores. Identifies natural
+    loops by back-edge, hoists `Mov(Imm, Data|ZP)` and `LDA #c;
+    STA M` pairs to the preheader when the dst isn't otherwise
+    written in the body, no `Call` appears in the body
+    (conservative — sidesteps zp_abi clobber questions), and
+    the loop has a single entry through the header.
+
 11. **`loop_counter_to_x`** (`passes/loop_counter_to_x.py`).
     Asm-level. Promotes a loop counter pseudo to `Reg(X)` when
     the live range fits the X pivot pattern: the counter is
     initialized once outside the loop, used as an `LDX` source
     inside, decremented at loop bottom, and not live across any
-    JSR (or saved/restored around them with `STX`/`LDX`). The
-    classic refresh_hit_entities winner — ~5× speedup on the
-    hot loop. Composes with the Y-pivot path inside the
-    promotion shape.
+    JSR (saved/restored around them with `STX`/`LDX`). Also
+    accepts `LDA M` body uses (rewritten to `TXA` since X = M is
+    the promotion invariant). Y-pivot ranges within the loop
+    reject ranges containing Indirect / IndirectY / IndirectZp /
+    IndirectZpY operands — these read Y for addressing and the
+    pivot's LDX→LDY rewrite would clobber that Y. The classic
+    refresh_hit_entities winner — ~5× speedup on the hot loop.
+    Composes with the Y-pivot path inside the promotion shape.
 
 12. **Peephole fixed-point loop** — see "Peephole catalog"
     below. 19 passes; runs twice in the optimized pipeline

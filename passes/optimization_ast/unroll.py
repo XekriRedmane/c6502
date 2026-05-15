@@ -340,7 +340,12 @@ def _validate_init(
             "unroll: for-init must declare the induction variable "
             "(`for (T i = <const>; ...; ...)`)",
         )
-    vd = init.var_decl
+    if len(init.var_decls) != 1:
+        raise UnrollError(
+            "unroll: for-init must declare exactly one induction "
+            "variable (multi-declarator forms aren't supported)",
+        )
+    vd = init.var_decls[0]
     if vd.storage_class is not None:
         raise UnrollError(
             "unroll: induction variable cannot have a storage class",
@@ -485,8 +490,8 @@ def _validate_body(body: c99_ast.Type_statement, iv_name: str) -> None:
                     f"unroll: induction variable `{iv_name}` is shadowed "
                     "by an inner declaration",
                 )
-            case c99_ast.InitDecl(var_decl=inner_vd) \
-                 if inner_vd.name == iv_name:
+            case c99_ast.InitDecl(var_decls=inner_vds) \
+                 if any(v.name == iv_name for v in inner_vds):
                 # Inner for-loop init declaring the same name.
                 raise UnrollError(
                     f"unroll: induction variable `{iv_name}` is shadowed "

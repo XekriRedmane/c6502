@@ -1524,15 +1524,15 @@ class Translator:
         # the result thrown away. An empty `for (;;)` lowers to no
         # init instructions.
         match init:
-            case c99_ast.InitDecl(var_decl=vd):
-                # for-init is restricted to variable declarations
-                # (C99 §6.8.5), so we lower the var_decl directly
-                # rather than going through the wider declaration
-                # dispatcher. Same dispatch as block-scope vars:
-                # InitList for array/struct/union, String for char-
-                # array, plain expression otherwise (including
-                # struct-copy init).
-                if vd.init is not None:
+            case c99_ast.InitDecl(var_decls=vds):
+                # for-init permits one or more variable declarations
+                # sharing a specifier run (C99 §6.8.5). Each lowers
+                # like a top-level block-scope var: InitList for
+                # array/struct/union, String for char-array, plain
+                # expression otherwise (including struct-copy init).
+                for vd in vds:
+                    if vd.init is None:
+                        continue
                     if isinstance(vd.init, c99_ast.InitList):
                         if isinstance(vd.data_type, c99_ast.Array):
                             self._translate_array_init_list(vd, instrs)
@@ -2017,6 +2017,14 @@ class Translator:
                     instrs.append(tac_ast.Copy(src=f_val, dst=dst))
                 instrs.append(tac_ast.Label(name=end_label))
                 return dst
+            case c99_ast.Comma(left=left, right=right):
+                # C99 §6.5.17 — evaluate `left` for side effects (the
+                # resulting val is discarded), then evaluate `right`
+                # and return ITS val as the expression's value. No
+                # TAC node needed; the sequence of instructions
+                # emitted by the two sub-translations IS the comma.
+                self.translate_exp(left, instrs)
+                return self.translate_exp(right, instrs)
             case c99_ast.FunctionCall(name=name, args=args):
                 # `f(arg1, arg2, ...)` lowers to: evaluate each arg
                 # in source order (so its temporaries get the lower

@@ -97,7 +97,11 @@ module C99 {
         -- model them.
         | Const(data_type referenced_type)
 
-    for_init = InitDecl(var_decl) | InitExp(exp?)
+    -- `for (decl ; ...)` per C99 §6.8.5: the initializer may
+    -- introduce multiple variables via the standard multi-init-
+    -- declarator form (`for (int i = 0, j = N; ...)`). Each is a
+    -- plain var_decl (no storage class, no inline struct body).
+    for_init = InitDecl(var_decl* var_decls) | InitExp(exp?)
 
     -- All expressions have a data type, which might be unspecified.
     exp =
@@ -164,6 +168,11 @@ module C99 {
         -- (Dot inherits; Arrow always is).
         | Dot(exp operand, identifier member, data_type?)
         | Arrow(exp operand, identifier member, data_type?)
+        -- Comma operator (C99 §6.5.17). `left` is evaluated for its
+        -- side effects and the result discarded; the expression's
+        -- value (and type) is that of `right`. Left-associative — the
+        -- parser nests as `Comma(Comma(a, b), c)` for `a, b, c`.
+        | Comma(exp left, exp right, data_type?)
 
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement

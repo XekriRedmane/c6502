@@ -1195,10 +1195,10 @@ class TestIterationStatements(unittest.TestCase):
         self.assertEqual(
             self._stmt_of("for (int i = 0; i < 10; i++) ;"),
             c99_ast.ForStmt(
-                init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
+                init=c99_ast.InitDecl(var_decls=[c99_ast.Type_var_decl(
                     name="i", init=c99_ast.Constant(const=c99_ast.ConstInt(value=0)),
                     data_type=c99_ast.Int(),
-                )),
+                )]),
                 condition=c99_ast.Binary(
                     op=c99_ast.LessThan(),
                     left=c99_ast.Var(name="i"),

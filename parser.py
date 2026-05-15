@@ -1479,61 +1479,77 @@ class _ASTBuilder(Transformer):
         ]
         return c99_ast.InitList(items=children)
 
+    def init_declarator(self, items):
+        # `init_declarator: declarator (ASSIGN initializer)?`. Returns
+        # a `(declarator_tree, init_or_None)` pair so var_decl can
+        # iterate the list emitted by `init_declarator (COMMA
+        # init_declarator)*`.
+        decl_tree = items[0]
+        init = None
+        if len(items) >= 3 and _is_token(items[1], "ASSIGN"):
+            init = items[2]
+        return (decl_tree, init)
+
     def var_decl(self, items):
-        # `var_decl: attribute_clause? specifier+ declarator (ASSIGN
-        # exp)? SEMICOLON`. Optional attribute-clause rides at index 0
-        # if the grammar matched it. The specifiers give the BASE
-        # type; the declarator wraps it with pointer / function
-        # modifiers and names the identifier. If the resulting
-        # composed_type is FunType, this is actually a forward
-        # function declaration (`int foo(int);` parses as var_decl
-        # with a function-typed declarator) — rewrap as
-        # Type_function_decl with body=None.
+        # `var_decl: attribute_clause? specifier+ init_declarator
+        # (COMMA init_declarator)* SEMICOLON`. The specifiers give the
+        # BASE type; each init_declarator wraps it with pointer /
+        # array / function modifiers and names the identifier. If a
+        # declarator's composed type is FunType, that init-declarator
+        # is a forward function declaration (`int foo(int);`) — rewrap
+        # as Type_function_decl with body=None; function decls in this
+        # form cannot carry an initializer.
         #
-        # Returns a list of `Type_declaration` AST nodes. When the
-        # specifier-run included an *inline* struct/union body
-        # (`struct foo { int a; } x;`) the StructDecl for the body
-        # comes FIRST in the returned list, followed by the
-        # VarDecl/FunctionDecl that consumed the type.
+        # Returns a list of `Type_declaration` AST nodes. Inline
+        # struct/union bodies in the specifier run (`struct foo {int
+        # a;} x;`) come FIRST in the returned list, followed by one
+        # node per init-declarator in source order.
         abi_annotation, i = _consume_attribute_clause(items, 0)
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
-        decl_tree = items[i]
-        name, composed, outer_param_names = _apply_declarator(
-            decl_tree, base_type,
-        )
-        i += 1
-        init = None
-        if i < len(items) and _is_token(items[i], "ASSIGN"):
-            init = items[i + 1]
-        if isinstance(composed, c99_ast.FunType):
-            if init is not None:
-                raise ParserError(
-                    "function declaration cannot have an initializer"
-                )
-            tail = c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
-                name=name,
-                params=outer_param_names or [],
-                body=None,
-                data_type=composed,
-                storage_class=storage_class,
-                abi_annotation=abi_annotation,
-            ))
-        else:
-            if abi_annotation is not None:
-                raise ParserError(
-                    f"`__attribute__(({abi_annotation}))` is only "
-                    f"valid on function declarations; saw it on "
-                    f"object declaration `{name}`",
-                )
-            tail = c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
-                name=name,
-                init=init,
-                data_type=composed,
-                storage_class=storage_class,
-            ))
-        return struct_decls + [tail]
+        # Remaining items are init_declarator results (tuples) and
+        # COMMA / SEMICOLON tokens. Pick out the tuples in order.
+        init_decls = [
+            it for it in items[i:]
+            if isinstance(it, tuple)
+        ]
+        tails: list = []
+        for decl_tree, init in init_decls:
+            name, composed, outer_param_names = _apply_declarator(
+                decl_tree, base_type,
+            )
+            if isinstance(composed, c99_ast.FunType):
+                if init is not None:
+                    raise ParserError(
+                        "function declaration cannot have an initializer"
+                    )
+                tails.append(c99_ast.FunctionDecl(
+                    function_decl=c99_ast.Type_function_decl(
+                        name=name,
+                        params=outer_param_names or [],
+                        body=None,
+                        data_type=composed,
+                        storage_class=storage_class,
+                        abi_annotation=abi_annotation,
+                    )
+                ))
+            else:
+                if abi_annotation is not None:
+                    raise ParserError(
+                        f"`__attribute__(({abi_annotation}))` is only "
+                        f"valid on function declarations; saw it on "
+                        f"object declaration `{name}`",
+                    )
+                tails.append(c99_ast.VarDecl(
+                    var_decl=c99_ast.Type_var_decl(
+                        name=name,
+                        init=init,
+                        data_type=composed,
+                        storage_class=storage_class,
+                    )
+                ))
+        return struct_decls + tails
 
     def tag_only_decl(self, items):
         # `var_decl: attribute_clause? specifier+ SEMICOLON ->
@@ -1718,14 +1734,14 @@ class _ASTBuilder(Transformer):
     def for_init(self, items):
         if len(items) == 1:
             child = items[0]
-            # var_decl now returns a list of Type_declaration AST
-            # nodes (typically one element). For for-init, the list
-            # MUST be exactly one element AND that element must be a
-            # plain object declaration — no inline struct definitions
-            # (`for (struct foo {int a;} x = ...; ...)` would smuggle
-            # the tag into for-loop scope) and no function decls.
+            # var_decl returns a list of Type_declaration AST nodes:
+            # one per init-declarator, with any inline struct/union
+            # body for the specifier prepended. For for-init, none
+            # of them may be an inline struct body (would smuggle the
+            # tag into for-loop scope), none may be a function decl,
+            # and none may carry a storage class (C99 §6.8.5.3 only
+            # permits auto / register).
             if isinstance(child, list):
-                # Reject inline struct definitions.
                 if any(
                     isinstance(d, c99_ast.StructDecl)
                     for d in child
@@ -1734,29 +1750,27 @@ class _ASTBuilder(Transformer):
                         "struct/union definition isn't permitted in a "
                         "for-loop initializer"
                     )
-                if len(child) != 1:
+                if not child:
                     raise AssertionError(
-                        f"unexpected multi-decl in for_init: {child!r}"
+                        f"empty decl list in for_init: {child!r}"
                     )
-                inner = child[0]
-                if isinstance(inner, c99_ast.FunctionDecl):
-                    raise ParserError(
-                        "function declarations aren't permitted in a "
-                        "for-loop initializer (C99 §6.8.5.3)"
-                    )
-                # Plain VarDecl — unwrap to the inner Type_var_decl.
-                vd = inner.var_decl
-                # §6.8.5.3 also bans `static` / `extern` for-init
-                # objects (only auto / register are permitted; in our
-                # model that's `storage_class=None`).
-                if vd.storage_class is not None:
-                    raise ParserError(
-                        f"storage class "
-                        f"{type(vd.storage_class).__name__.lower()!r} "
-                        f"isn't permitted on a for-loop initializer "
-                        f"(C99 §6.8.5.3 — only auto / register)"
-                    )
-                return c99_ast.InitDecl(var_decl=vd)
+                vds: list[c99_ast.Type_var_decl] = []
+                for inner in child:
+                    if isinstance(inner, c99_ast.FunctionDecl):
+                        raise ParserError(
+                            "function declarations aren't permitted "
+                            "in a for-loop initializer (C99 §6.8.5.3)"
+                        )
+                    vd = inner.var_decl
+                    if vd.storage_class is not None:
+                        raise ParserError(
+                            f"storage class "
+                            f"{type(vd.storage_class).__name__.lower()!r} "
+                            f"isn't permitted on a for-loop initializer "
+                            f"(C99 §6.8.5.3 — only auto / register)"
+                        )
+                    vds.append(vd)
+                return c99_ast.InitDecl(var_decls=vds)
             # Bare SEMICOLON — empty for-init clause.
             return c99_ast.InitExp(exp=None)
         # exp + SEMICOLON.
@@ -1883,6 +1897,10 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def assignment(self, lval, _assign, rval):
         return c99_ast.Assignment(lval=lval, rval=rval)
+
+    @v_args(inline=True)
+    def comma_expression(self, left, _comma, right):
+        return c99_ast.Comma(left=left, right=right)
 
     @v_args(inline=True)
     def compound_assign(self, lval, op_token, rval):

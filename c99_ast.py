@@ -328,7 +328,7 @@ class Type_for_init:
 
 @dataclass
 class InitDecl(Type_for_init):
-    var_decl: Type_var_decl
+    var_decls: list[Type_var_decl] = field(default_factory=list)
 
 
 @dataclass
@@ -473,6 +473,13 @@ class Dot(Type_exp):
 class Arrow(Type_exp):
     operand: Type_exp
     member: str
+    data_type: Type_data_type | None = None
+
+
+@dataclass
+class Comma(Type_exp):
+    left: Type_exp
+    right: Type_exp
     data_type: Type_data_type | None = None
 
 

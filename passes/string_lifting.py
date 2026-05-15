@@ -317,7 +317,7 @@ class StringLifter:
     def _lift_for_init(self, fi):
         if isinstance(fi, c99_ast.InitDecl):
             return c99_ast.InitDecl(
-                var_decl=self._lift_var_decl(fi.var_decl),
+                var_decls=[self._lift_var_decl(vd) for vd in fi.var_decls],
             )
         if isinstance(fi, c99_ast.InitExp):
             return c99_ast.InitExp(
@@ -386,6 +386,12 @@ class StringLifter:
                     condition=self._lift_exp(c),
                     true_clause=self._lift_exp(t),
                     false_clause=self._lift_exp(f),
+                    data_type=dt,
+                )
+            case c99_ast.Comma(left=l, right=r, data_type=dt):
+                return c99_ast.Comma(
+                    left=self._lift_exp(l),
+                    right=self._lift_exp(r),
                     data_type=dt,
                 )
             case c99_ast.FunctionCall(name=n, args=args, data_type=dt):

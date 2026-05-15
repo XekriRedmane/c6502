@@ -955,19 +955,22 @@ class Resolver:
         scope: _Scope,
     ) -> c99_ast.Type_for_init:
         match init:
-            case c99_ast.InitDecl(var_decl=vd):
-                # C99 §6.8.5.3: the for-init is restricted to a *non-
-                # extern, non-static* declaration. Reject either
+            case c99_ast.InitDecl(var_decls=vds):
+                # C99 §6.8.5.3: the for-init is restricted to *non-
+                # extern, non-static* declarations. Reject any
                 # storage class up front so the resolver doesn't
                 # silently accept ill-formed C.
-                if vd.storage_class is not None:
-                    raise IdentifierResolutionError(
-                        f"storage-class specifier not allowed on a "
-                        f"for-init declaration: {vd.name!r}"
+                resolved: list[c99_ast.Type_var_decl] = []
+                for vd in vds:
+                    if vd.storage_class is not None:
+                        raise IdentifierResolutionError(
+                            f"storage-class specifier not allowed on a "
+                            f"for-init declaration: {vd.name!r}"
+                        )
+                    resolved.append(
+                        self.resolve_var_decl(vd, scope, Linkage.NONE)
                     )
-                return c99_ast.InitDecl(
-                    var_decl=self.resolve_var_decl(vd, scope, Linkage.NONE),
-                )
+                return c99_ast.InitDecl(var_decls=resolved)
             case c99_ast.InitExp(exp=exp):
                 return c99_ast.InitExp(
                     exp=self.resolve_exp(exp, scope) if exp is not None else None,
@@ -1055,6 +1058,11 @@ class Resolver:
                     condition=self.resolve_exp(cond, scope),
                     true_clause=self.resolve_exp(true_clause, scope),
                     false_clause=self.resolve_exp(false_clause, scope),
+                )
+            case c99_ast.Comma(left=left, right=right):
+                return c99_ast.Comma(
+                    left=self.resolve_exp(left, scope),
+                    right=self.resolve_exp(right, scope),
                 )
             case c99_ast.Postfix(op=op, operand=operand):
                 # Same lvalue rule as Assignment — see `_is_lvalue`.

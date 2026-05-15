@@ -2583,28 +2583,30 @@ class TypeChecker:
         self, init: c99_ast.Type_for_init,
     ) -> None:
         match init:
-            case c99_ast.InitDecl(var_decl=vd):
+            case c99_ast.InitDecl(var_decls=vds):
                 # The for-init-decl rule (resolver) forbids storage-
-                # class specifiers, so this is always plain
-                # `T <name> = <exp>;` and lands as a LocalAttr.
-                if not _is_complete_object_type(vd.data_type):
-                    raise TypeCheckError(
-                        f"for-init {vd.name!r} declared with non-"
-                        f"object type {vd.data_type!r}"
+                # class specifiers on every declarator, so each is
+                # plain `T <name> = <exp>;` and lands as a LocalAttr.
+                for vd in vds:
+                    if not _is_complete_object_type(vd.data_type):
+                        raise TypeCheckError(
+                            f"for-init {vd.name!r} declared with non-"
+                            f"object type {vd.data_type!r}"
+                        )
+                    _check_well_formed_type(
+                        vd.data_type, where=f"for-init {vd.name!r}",
+                        types=self.types,
+                        require_complete=isinstance(
+                            vd.data_type, (Structure, Union, Array),
+                        ),
+                        tag_visible=self._tag_visible,
+                        auto_introduce=self._auto_introduce_tag,
                     )
-                _check_well_formed_type(
-                    vd.data_type, where=f"for-init {vd.name!r}",
-                    types=self.types,
-                    require_complete=isinstance(
-                        vd.data_type, (Structure, Union, Array),
-                    ),
-                    tag_visible=self._tag_visible,
-                auto_introduce=self._auto_introduce_tag,
-                )
-                self.symbols[vd.name] = Symbol(
-                    type=vd.data_type, attrs=LocalAttr(),
-                )
-                if vd.init is not None:
+                    self.symbols[vd.name] = Symbol(
+                        type=vd.data_type, attrs=LocalAttr(),
+                    )
+                    if vd.init is None:
+                        continue
                     if isinstance(vd.data_type, Array):
                         if not isinstance(vd.init, c99_ast.InitList):
                             raise TypeCheckError(
@@ -2615,7 +2617,7 @@ class TypeChecker:
                         self._check_array_init_list(
                             vd.init, vd.data_type, vd.name,
                         )
-                        return
+                        continue
                     if isinstance(vd.data_type, (Structure, Union)):
                         # Same two forms accepted by block-scope var
                         # decls: brace-enclosed compound initializer
@@ -2624,7 +2626,7 @@ class TypeChecker:
                             self._check_struct_init_list(
                                 vd.init, vd.data_type, vd.name,
                             )
-                            return
+                            continue
                         self._check_exp(vd.init)
                         init_t = vd.init.data_type
                         if not _types_equal(init_t, vd.data_type):
@@ -2633,7 +2635,7 @@ class TypeChecker:
                                 f"initializer has type {init_t!r}, "
                                 f"expected {vd.data_type!r}"
                             )
-                        return
+                        continue
                     if isinstance(vd.init, c99_ast.InitList):
                         raise TypeCheckError(
                             f"scalar variable {vd.name!r} cannot "
@@ -3527,6 +3529,21 @@ class TypeChecker:
                 exp.false_clause = _convert_to(f_clause, common)
                 exp.data_type = common
                 return common
+            case c99_ast.Comma(left=left, right=right):
+                # C99 §6.5.17: evaluate `left` for side effects, then
+                # `right`; the result has `right`'s type and value.
+                # Type-check both sides independently (no conversion).
+                # `left` follows the same rule as an expression
+                # statement — its value is discarded, so an incomplete
+                # struct/union expression isn't usable here.
+                self._check_exp(left)
+                self._require_complete_value(
+                    left, "left operand of comma operator",
+                )
+                tr = self._check_exp(right)
+                exp.right = _decay_if_array(right)
+                exp.data_type = exp.right.data_type
+                return exp.data_type
             case c99_ast.FunctionCall(name=name, args=args):
                 sym = self.symbols.get(name)
                 if sym is None:

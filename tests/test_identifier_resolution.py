@@ -770,7 +770,7 @@ class TestLoopResolution(unittest.TestCase):
         )
         resolved = resolve_program(prog)
         for_stmt = resolved.declaration[0].function_decl.body.block_item[0].statement
-        decl = for_stmt.init.var_decl
+        decl = for_stmt.init.var_decls[0]
         self.assertEqual(decl.name, "@0.i")
         self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@0.i"))
         self.assertEqual(for_stmt.post_clause.operand, c99_ast.Var(name="@0.i"))
@@ -792,7 +792,7 @@ class TestLoopResolution(unittest.TestCase):
         self.assertEqual(outer_decl.name, "@0.a")
         for_stmt = items[1].statement
         # for-header's `a` is a fresh unique name.
-        self.assertEqual(for_stmt.init.var_decl.name, "@1.a")
+        self.assertEqual(for_stmt.init.var_decls[0].name, "@1.a")
         # Condition / post / body all see @1.a.
         self.assertEqual(for_stmt.condition.left, c99_ast.Var(name="@1.a"))
         self.assertEqual(for_stmt.post_clause.lval, c99_ast.Var(name="@1.a"))
@@ -860,7 +860,7 @@ class TestLoopResolution(unittest.TestCase):
         )
         resolved = resolve_program(prog)
         for_stmt = resolved.declaration[0].function_decl.body.block_item[0].statement
-        self.assertEqual(for_stmt.init.var_decl.name, "@0.i")
+        self.assertEqual(for_stmt.init.var_decls[0].name, "@0.i")
         body_decl = for_stmt.body.block.block_item[0].declaration.var_decl
         self.assertEqual(body_decl.name, "@1.i")
 

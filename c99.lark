@@ -244,8 +244,14 @@ pragma_clause: PRAGMA_UNROLL                                         -> pragma_u
 //   `struct foo;`                     — struct/union forward declaration
 // The struct/union-only forms (no declarator) take the
 // `tag_only_decl` alternative.
-var_decl: attribute_clause? specifier+ declarator (ASSIGN initializer)? SEMICOLON
+// C99 §6.7 allows a single declaration to introduce multiple
+// init-declarators sharing the same specifier run: `int a, b = 5,
+// c;`. Each init-declarator fans out into its own VarDecl (or
+// FunctionDecl forward-decl, if its composed type is FunType).
+var_decl: attribute_clause? specifier+ init_declarator (COMMA init_declarator)* SEMICOLON
         | attribute_clause? specifier+ SEMICOLON                -> tag_only_decl
+
+init_declarator: declarator (ASSIGN initializer)?
 
 // Initializer per C99 §6.7.8: either a single assignment-level
 // expression, or a brace-enclosed list of initializers. The list
@@ -343,7 +349,15 @@ constant_exp: conditional_exp
 // rule prefix inlines a level when it has a single child, so the
 // AST sees no extra wrapping for "passes through to next level".
 
+// `exp` is the comma-level (C99 §6.5.17): left-associative, lowest
+// precedence. Sites that want a single value with no top-level
+// comma (function-call arguments, scalar initializers, assignment
+// RHS) use `assignment_exp` directly. Sites that follow the C99
+// `expression` non-terminal (statements, if/while/switch conditions,
+// for-init/cond/update, `?:` middle slot, subscript index, parens,
+// `return`) take `exp`.
 ?exp: assignment_exp
+    | exp COMMA assignment_exp                                   -> comma_expression
 
 // Right-recursive so `=` is right-associative: `a = b = c` parses as
 // `a = (b = c)`. The LHS is `conditional_exp` (one level tighter than
@@ -494,11 +508,13 @@ unop: MINUS                         -> negate
     | TILDE                         -> complement
     | BANG                          -> logical_not
 
-// Argument-list nodes: each arg is a full `exp` (assignment-level
-// expression — comma operator isn't supported, so this matches C's
-// argument-expression-list grammar).
+// Argument-list nodes: each arg is `assignment_exp` (C99
+// §6.5.2.2 — the argument-expression-list, NOT a comma-level
+// expression). Using full `exp` here would conflict with the
+// outer comma separator: `f(a, b)` could ambiguously mean
+// `f((a, b))` with one comma-typed arg.
 
-arg_list: exp (COMMA exp)*
+arg_list: assignment_exp (COMMA assignment_exp)*
 
 // Type qualifiers (§6.7.3) — accepted by the grammar so qualified
 // types parse without fuss in pointers / arrays / parameter lists /

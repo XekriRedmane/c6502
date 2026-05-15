@@ -1414,10 +1414,10 @@ class TestTranslateLoops(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.ForStmt(
-                init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
+                init=c99_ast.InitDecl(var_decls=[c99_ast.Type_var_decl(
                     name="i", init=c99_ast.Constant(const=c99_ast.ConstInt(value=0)),
                     data_type=c99_ast.Int(),
-                )),
+                )]),
                 condition=None,
                 post_clause=None,
                 body=c99_ast.Null(),
@@ -1444,10 +1444,10 @@ class TestTranslateLoops(unittest.TestCase):
         instrs: list = []
         t.translate_statement(
             c99_ast.ForStmt(
-                init=c99_ast.InitDecl(var_decl=c99_ast.Type_var_decl(
+                init=c99_ast.InitDecl(var_decls=[c99_ast.Type_var_decl(
                     name="i", init=None,
                     data_type=c99_ast.Int(),
-                )),
+                )]),
                 condition=None,
                 post_clause=None,
                 body=c99_ast.Null(),

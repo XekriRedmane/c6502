@@ -89,6 +89,15 @@ def from_ssa(fn: asm_ast.Function) -> asm_ast.Function:
             ordered = _order_parallel_copies(
                 movs, fn_name=fn.name, cycle_counter=cycle_counter,
             )
+            # A Phi.dst that apply_coloring rewrote to Reg(X) / Reg(Y)
+            # may be paired with an arg whose source is still a Pseudo
+            # (parameters / address-taken locals stay symbolic until
+            # replace_pseudoregisters). Once those Pseudos resolve to
+            # Frame / Stack / Indirect, a direct `Mov(memory, Reg(X|Y))`
+            # is unassemblable — the 6502 has no `LDX (zp),Y` form.
+            # Defensively route any non-Reg / non-Imm source destined
+            # for X or Y through A.
+            ordered = _safe_dst_xy_split(ordered)
             insert_pos = len(pred_blk.instructions)
             if (
                 pred_blk.instructions
@@ -291,6 +300,41 @@ def _rewrite_phi_pred_label(
                     pred_label=new_pred_label,
                     source=arg.source,
                 )
+
+
+def _safe_dst_xy_split(
+    movs: list[asm_ast.Mov],
+) -> list[asm_ast.Mov]:
+    """Route any `Mov(non_reg_non_imm, Reg(X|Y))` through `Reg(A)` to
+    keep the result assemblable after `replace_pseudoregisters`.
+
+    Background: a Phi whose dst was hwreg-colored to X / Y may have
+    args whose source is still a Pseudo (parameters, address-taken
+    locals, statics — names that stay symbolic until
+    `replace_pseudoregisters`). The 6502 has no `LDX (zp),Y` /
+    `LDY (zp),Y`, so a direct `Mov(Frame/Stack/Indirect, Reg(X|Y))`
+    is unassemblable. We don't know which Pseudos resolve to ZP /
+    Data (assemblable) versus Frame / Stack (not), so be
+    conservative: anything that isn't an `Imm` or another `Reg`
+    routes through A.
+
+    Imm and Reg sources are safe direct loads (`LDX #imm`, `TXY`
+    via two transfers, etc.) and skip the split."""
+    if not movs:
+        return movs
+    out: list[asm_ast.Mov] = []
+    reg_a = asm_ast.Reg(reg=asm_ast.A())
+    for m in movs:
+        if (
+            isinstance(m.dst, asm_ast.Reg)
+            and isinstance(m.dst.reg, (asm_ast.X, asm_ast.Y))
+            and not isinstance(m.src, (asm_ast.Imm, asm_ast.Reg))
+        ):
+            out.append(asm_ast.Mov(src=m.src, dst=reg_a))
+            out.append(asm_ast.Mov(src=reg_a, dst=m.dst))
+        else:
+            out.append(m)
+    return out
 
 
 def _order_parallel_copies(

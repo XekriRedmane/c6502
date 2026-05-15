@@ -9,6 +9,53 @@ are managed with `uv`; `pyproject.toml` is the source of truth and `uv.lock` the
 resolved set. `requirements.txt` is a hand-maintained `pip`-compatible fallback
 and may lag.
 
+## Pipeline at a glance
+
+```
+C source
+  → preprocess (pcpp)
+  → lex + parse (lark, LALR)            → c99_ast
+  → identifier_resolution
+  → string_lifting
+  → label_resolution
+  → loop_labeling
+  → type_checking                       → c99_ast (+ SymbolTable, TypeTable)
+  → (--unroll: unroll_program — #pragma c6502 loop unroll(enable))
+  → c99_to_tac                          → tac_ast
+  → (--optimize: TAC fixed-point opts)
+  → (--optimize: select_abi + allocate_zp_slots)
+  → tac_to_asm                          → asm_ast
+  → (--optimize: asm-SSA round-trip + byte-granular regalloc)
+  → replace_pseudoregisters             (Pseudo → Frame / ZP / Data)
+  → (--optimize: synthesize_prologue, loop_counter_to_x, peephole fixedpoint)
+  → expand_long_branches
+  → asm_to_asm2                         → asm2_ast (1:1 with 6502 opcodes)
+  → asm_emit                            → dasm-syntax 6502 assembly text
+```
+
+Four ASDL-defined IRs (`c99.asdl`, `tac.asdl`, `asm.asdl`,
+`asm2.asdl`) shape the data passed between passes. `tac_ast`
+carries width AND signedness on integer types; `asm_ast` is
+byte-typed (one IR atom per 6502 opcode, with `Pseudo` operands
+that `replace_pseudoregisters` resolves); `asm2_ast` is `asm_ast`
+with the three compound nodes (`FunctionPrologue` / `AllocateStack`
+/ `Ret`) already expanded into atoms.
+
+Two key runtime conventions:
+
+  * **Soft data stack** at `SSP`/`FP` (zero-page pointers, both grow
+    downward); the 6502 hardware stack at `$0100-$01FF` is reserved
+    for JSR return addresses and short-lived PHA/PLA. Reserved ZP:
+    `$00-$01` SSP, `$02-$03` FP, `$04-$23` HARGS (runtime-helper
+    exchange block), `$24-$25` DPTR (caller-saved indirect-pointer
+    scratch).
+  * **`__attribute__((zp_abi))` + call-graph-disjoint private pools**
+    put params AND body locals in ZP for eligible leaf / non-
+    recursive / non-indirect-calling functions; ineligible functions
+    fall back to the default caller/callee partition (`$80..$BF` /
+    `$C0..$FF`). Eligible functions emit as bare body + RTS. See
+    the "Call-graph-disjoint ZP allocation" section.
+
 ## Common commands
 
 ```sh
@@ -33,30 +80,63 @@ Stage-selection flags (mutually exclusive, one required with `compile.py`):
 the three name-resolution passes (identifier resolution, label resolution,
 loop labeling) in that order.
 
-Modifier flag (orthogonal to the stage flags; applies to `--tac`
-and `--codegen`):
-- `--optimize` runs the optimizer pipeline: TAC SSA construction
-  → one-shot scalar const-static read fold (replaces `Var(static
-  const scalar)` USE positions with `Constant(value)`) → fixed-
-  point loop (constant folding incl. const-array-subscript fold,
-  strength reduction, comparison-against-zero / jump fold, UCE,
-  copy propagation, dead-store elimination, copy folding,
-  Add-with-Constant reassociation) → SSA destruction → post-
-  destruction copy folding → asm-level const-static fold (drops
-  scalar `static T const` storage, replacing references with
-  immediates) → asm-level SSA round-trip with move coalescing,
-  forward + backward copy propagation, byte-granular DCE +
-  byte-granular regalloc → late prologue / epilogue synthesis →
-  multi-byte INC peephole (collapses in-place add-1 ADC chains on
-  `Data` / `ZP` operands to `INC + BNE` chains). Also enables the
-  `__attribute__((zp_abi))` calling-convention optimization (frame
-  elimination on annotated leaves). The INC peephole runs in the
-  unoptimized pipeline too (its win comes from addressing-mode
-  awareness, not regalloc state).
+Modifier flags (orthogonal to the stage flags; both apply to
+`--tac` and `--codegen`):
 
-See the "Optimization pipeline" / "Frame elimination via __attribute__"
-sections below and `docs/optimization.md` / `docs/leaf_zp_abi.md`
-for the full walk-throughs.
+- `--optimize` runs the optimizer pipeline:
+
+  1. TAC SSA construction (`passes.optimization.ssa_construction`).
+  2. One-shot scalar const-static read fold — replaces `Var(static
+     const scalar)` USE positions with `Constant(value)`.
+  3. TAC fixed-point loop: constant folding (incl. const-array-
+     subscript fold), strength reduction, comparison-against-zero
+     / jump fold, AND-zero-jump fold, unreachable-code elimination,
+     copy propagation, dead-store elimination, copy folding,
+     Add-with-Constant reassociation, loop rotation, sink-increment,
+     IndexedLoad / IndexedStore / IndirectIndexed recognizers.
+  4. TAC SSA destruction + post-destruction copy folding.
+  5. Asm-level const-static fold (drops scalar `static T const`
+     storage, replacing references with immediates).
+  6. Asm-level SSA round-trip: move coalescing, forward + backward
+     copy propagation, byte-granular DCE, byte-granular regalloc
+     drawing from per-function private pools (when eligible) or
+     the default caller/callee partition.
+  7. `replace_pseudoregisters_bare_exit` resolves Pseudos.
+  8. Late prologue / epilogue synthesis (collapses to bare body +
+     RTS when no save / spill is needed).
+  9. `loop_counter_to_x` (X-pivot promotion for hot loop counters).
+  10. Peephole fixed-point loop — see the "Peephole catalog" section.
+  11. `expand_long_branches`, `asm_to_asm2`, `emit_program`.
+
+  Also enables `__attribute__((zp_abi))` and the call-graph-disjoint
+  body-local allocator. The INC / DEC peepholes run in the
+  unoptimized pipeline too (their win is addressing-mode-aware, not
+  regalloc-dependent).
+
+- `--unroll` (only meaningful with `--optimize`) runs `passes.
+  optimization_ast.unroll.unroll_program` after parsing and before
+  identifier resolution. Every for-loop carrying `#pragma c6502
+  loop unroll(enable)` (with the canonical `init=const; cond=var<const;
+  step=var=var+const` shape and a compile-time-known iteration
+  count) is fully unrolled in place. Unrolling before name
+  resolution means each unrolled body gets fresh per-iteration
+  identifier renames; unrolling-then-typechecking sidesteps having
+  to fix up SymbolTable entries.
+
+Linker mode:
+
+- `compile.py --link <a.asm> <b.asm> ... -o out.asm` — multi-TU
+  globally re-allocates `__zpabi_*` and `__local_*` ZP slot
+  symbols across the supplied per-TU outputs (each produced by
+  `compile.py --codegen --optimize`). Reads each input's
+  `; @zp-link-meta-begin` / `; @zp-link-meta-end` block (emitted
+  by `passes.zp_link_metadata`) to recover the call-graph and
+  param/local sizes needed for the global allocation. See
+  `passes/linker.py`.
+
+See the "Optimization pipeline" section below and
+`docs/optimization.md` / `docs/leaf_zp_abi.md` for the full
+walk-throughs.
 
 ## Regenerating AST modules
 
@@ -1263,26 +1343,51 @@ byte-granular regalloc → late prologue / epilogue synthesis.
 Per-function TAC shape:
 
 ```
-fn → to_ssa
-   → [constant_fold → strength_reduce → cmp_zero_jump_fold →
-      UCE → copy_propagate → DSE]*
-   → from_ssa → fn'
+fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
+   → to_ssa
+   → fold_static_const_reads (one-shot)
+   → [constant_fold → reduce_strength → fold_cmp_zero_jump
+      → fold_narrow_and_jump → UCE → copy_propagate → DSE
+      → fold_copies → reassoc_constants → recognize_indexed_store
+      → recognize_indexed_load → sink_increments]*
+   → recognize_indirect_indexed (post-fixedpoint, one-shot)
+   → from_ssa
+   → fold_copies                                  (post-from_ssa)
+   → fn'
 ```
 
 `docs/optimization.md` is the from-scratch tour. Brief:
 
-1. **`to_ssa`** (`passes/optimization/ssa_construction.py`).
+1. **`rotate_signed_countdown_loops`** (`passes/optimization/
+   loop_rotate.py`). Pre-SSA one-shot. Recognizes the canonical
+   `c99_to_tac` for-loop shape where the test is at the top
+   (`for (i = N; i >= 0; i--)`) and rotates to test-at-bottom
+   (`do { ... } while (i >= 0);`), saving one unconditional jump
+   per iteration. Operates pre-SSA because the rewrite is
+   structural — Phis don't exist yet, so the rewrite needs only
+   to fix up the def/use chain on the loop's single counter var,
+   not parallel-copy a Phi web. `to_ssa` rebuilds Phis after.
+
+2. **`to_ssa`** (`passes/optimization/ssa_construction.py`).
    Renames promotable Vars (LocalAttr + scalar + non-address-
    taken) to `<orig>.<N>`; inserts pruned Phi nodes at iterated
    dominance frontiers (Cytron 1991). Address-taken locals,
    statics, aggregates pass through unchanged. SSA-minted
    labels are scoped per-function (`.<funcname>@ssa_block@N`).
 
-2. **Fixed-point loop**. Six passes rotated to convergence:
+3. **`fold_static_const_reads`** (`passes/optimization/
+   static_const_fold.py`). One-shot post-SSA. Replaces every
+   USE-position `Var(name)` with `Constant(value)` when `name`
+   is `static const` scalar with an `Initial(c)` initializer
+   and a const-qualified type. See "Static-const reads + array-
+   subscript folding" below for details.
+
+4. **Fixed-point loop**. Twelve passes rotated to convergence:
    - `constant_fold`: folds Unary / Binary / comparison / cast /
      conditional-jump-with-constant-cond / Phis with agreeing
      args. Width-correct wraparound at the operand's declared
-     width.
+     width. Const-array-subscript fold (`_fold_indexed_load`) is
+     part of this pass.
    - `reduce_strength`: `Multiply(x, 2^k)` → `LeftShift`,
      unsigned `Divide(x, 2^k)` → `RightShift`, unsigned
      `Modulo(x, 2^k)` → `BitwiseAnd`. Signed Divide / Modulo
@@ -1293,6 +1398,11 @@ fn → to_ssa
      for the per-byte compare-chain lowering. Operand narrowing
      through ZeroExtend folds `(uint8_t)i < 105` to 3-instr
      `LDA / CMP / BCS`.
+   - `fold_narrow_and_jump` (`passes/optimization/and_zero_jump_
+     fold.py`): folds `(ZeroExtend(uchar); BitwiseAnd(_, 0x80);
+     JumpIf*)` to `JumpIfMasked` when the operand can be
+     narrowed to 1 byte — produces the direct `LDA / BPL/BMI`
+     pattern at asm lowering instead of an 8-bit AND + 16-bit Z.
    - `eliminate_unreachable_code`: forward DFS from ENTRY; prunes
      dead Phi args; folds singleton Phis to Copies; drops
      useless jumps / labels.
@@ -1301,49 +1411,115 @@ fn → to_ssa
    - `eliminate_dead_stores` (SSA-aware): drops pure defs with
      no reads. Calls keep the call (side effects) but drop
      unused dst.
+   - `fold_copies` (`passes/optimization/copy_folding.py`):
+     fuses `<producer dst=%t>; Copy(%t, X)` to `<producer
+     dst=X>` for single-use `%t`. See its dedicated section
+     below.
+   - `reassoc_constants` (`passes/optimization/reassoc_const.py`):
+     `Add(C2, V, %t); Add(C1, %t, dst)` → `Add(C1+C2, V, dst)`.
+   - `recognize_indexed_store` / `recognize_indexed_load`
+     (`passes/optimization/recognize_indexed_*.py`): collapses
+     `ZeroExtend(uchar) + Binary(Add, C) + Store/Load` chains
+     to `IndexedStore` / `IndexedLoad` (absolute,X addressing).
+     See "IndexedStore recognizer" below.
+   - `sink_increments` (`passes/optimization/sink_increment.py`):
+     moves `Y = X + c` past the last in-line use of `X` when
+     `Y`'s only consumer follows, exposing `recognize_indexed_*`
+     patterns the original ordering hid.
 
-3. **`from_ssa`** (`ssa_destruction.py`). One Copy per PhiArg
+5. **`recognize_indirect_indexed`** (`passes/optimization/
+   recognize_indirect_indexed.py`). Post-fixedpoint one-shot.
+   Collapses `ZeroExtend(uchar) + Binary(Add, ptr) + Load` to
+   `IndirectIndexed` for the `(zp),Y` lowering. Deliberately
+   runs LAST so any pointer that's going to fold to a Constant
+   (via the const-static fold path) has already done so —
+   otherwise this pass would prematurely lock in (zp),Y for a
+   chain that would have qualified for the cheaper absolute,X
+   form.
+
+6. **`from_ssa`** (`ssa_destruction.py`). One Copy per PhiArg
    in the matching predecessor, before the terminator. Parallel-
    copy ordering by topological sort fixes the "lost copy"
    problem; cycles break with a fresh `<funcname>.cycle_tmp@N`.
 
-4. After `from_ssa` the function is non-SSA TAC, ready for
+7. After `from_ssa` the function is non-SSA TAC, ready for
    `tac_to_asm` in bare-exit mode.
 
-5. **Asm-level SSA round-trip** (`passes/optimization_asm/`).
-   Prepass `fold_const_statics` replaces const-static reads
-   with `Imm` operands (see "Const-static fold" below). Per
-   function: `to_ssa` byte-versions every promotable
-   `(name, offset)` pair; `coalesce_moves` merges Mov/Phi-
-   related non-interfering names; fixed-point `[copy_propagate
-   → backward_copy_propagate → byte_dce]`. **Byte-granular
-   regalloc** colors 1-byte SSA names to ZP from
-   `Pool(start=0x80)` (default split: caller-saved
-   `[0x80, 0xC0)`, callee-saved `[0xC0, 0x100)`); multi-byte
-   names get contiguous width-N blocks. Cross-call values
+8. **Asm-level SSA round-trip** (`passes/optimization_asm/`).
+   Prepass `fold_const_statics` (`const_static_fold.py`)
+   replaces const-static reads with `Imm` operands (see "Const-
+   static fold" below). Then `dead_static.py` drops any
+   internal-linkage `StaticVariable` top-level nothing now
+   references. Per function: `to_ssa` byte-versions every
+   promotable `(name, offset)` pair; `hwreg_eligibility` marks
+   Pseudos that can live in X/Y across their intra-block live
+   range (saves the `LDX / LDY` setup for absolute,X / (zp),Y
+   accesses where the index is the pinned Pseudo); `coalesce_
+   moves` merges Mov/Phi-related non-interfering names; fixed-
+   point `[copy_propagate → backward_copy_propagate →
+   byte_dce]`. **Byte-granular regalloc** colors 1-byte SSA
+   names to ZP from `Pool(start=0x80)` (default split: caller-
+   saved `[0x80, 0xC0)`, callee-saved `[0xC0, 0x100)`); multi-
+   byte names get contiguous width-N blocks. Cross-call values
    prefer callee-saved; non-cross-call values caller-saved.
-   `from_ssa` emits per-edge Movs with parallel-copy ordering.
+   HwReg-eligible Pseudos are assigned `Reg(X)` / `Reg(Y)`
+   instead of a ZP byte. `from_ssa` emits per-edge Movs with
+   parallel-copy ordering.
 
    When the per-function private pool (see "Call-graph-disjoint
    ZP allocation") is in effect for an eligible function, the
    regalloc draws colors exclusively from that pool — the
    caller/callee partition collapses.
 
-6. **`replace_pseudoregisters_bare_exit`** resolves Pseudos:
+9. **`replace_pseudoregisters_bare_exit`** resolves Pseudos:
    colored → `ZP(addr, 0)`; spilled / address-taken / params →
    `Frame(off)` or `Data(slot_symbol, 0)` for zp_abi params.
 
-7. **Late prologue synthesis** (`passes/prologue_synthesis.py`):
-   when `arg_bytes == local_bytes == callee_saved_bytes == 0`,
-   the bare `Return(save_a)` atoms stay and no
-   `FunctionPrologue` is prepended. Otherwise prepend
-   `FunctionPrologue(N, M, callee_saved_addrs)` and patch each
-   `Return` to `Ret(N, M, save_a, callee_saved_addrs)`.
+10. **Late prologue synthesis** (`passes/prologue_synthesis.py`):
+    when `arg_bytes == local_bytes == callee_saved_bytes == 0`,
+    the bare `Return(save_a)` atoms stay and no
+    `FunctionPrologue` is prepended. Otherwise prepend
+    `FunctionPrologue(N, M, callee_saved_addrs)` and patch each
+    `Return` to `Ret(N, M, save_a, callee_saved_addrs)`.
+
+11. **`loop_counter_to_x`** (`passes/loop_counter_to_x.py`).
+    Asm-level. Promotes a loop counter pseudo to `Reg(X)` when
+    the live range fits the X pivot pattern: the counter is
+    initialized once outside the loop, used as an `LDX` source
+    inside, decremented at loop bottom, and not live across any
+    JSR (or saved/restored around them with `STX`/`LDX`). The
+    classic refresh_hit_entities winner — ~5× speedup on the
+    hot loop. Composes with the Y-pivot path inside the
+    promotion shape.
+
+12. **Peephole fixed-point loop** — see "Peephole catalog"
+    below. 19 passes; runs twice in the optimized pipeline
+    (once before `loop_counter_to_x`, once after, so promotions
+    the X-pivot exposes get a second round of cleanup).
+
+13. **`expand_long_branches`** rewrites conditional branches
+    whose target is out of the ±127-byte range into
+    `Branch(inverted_cond, .skip); Jump(target); .skip:`.
+    Iterative because rewrites can push other branches over
+    the limit.
+
+14. **`asm_to_asm2`** expands the three compound nodes
+    (`FunctionPrologue` / `AllocateStack` / `Ret`) into
+    sequences of asm2 atoms — see the `asm_to_asm2`
+    description in the compiler-pipeline section.
 
 `StaticVariable` top-levels pass through unchanged except for
-the const-static fold (next section). `optimize_function`
-without `symbols` (legacy unit-test path) skips SSA
-construction.
+the const-static fold (next section) and the `dead_static`
+drop. `optimize_function` without `symbols` (legacy unit-test
+path) skips SSA construction.
+
+After `--optimize --codegen`, `passes.zp_link_metadata` emits a
+`; @zp-link-meta-begin` / `; @zp-link-meta-end` block at the
+top of the output: each `def <fn> param_bytes=N local_bytes=M
+indirect=B in_cycle=B` and `ext <fn> param_bytes=N` and `call
+<caller> -> <callee>` line carries what `compile.py --link`
+needs to re-allocate `__zpabi_*` / `__local_*` symbols globally
+across multiple TUs.
 
 ## Static-const reads + array-subscript folding
 
@@ -1656,6 +1832,110 @@ The canonical case is a memory-mapped device pointer:
 output. External-linkage globals (without `static`) are skipped
 even when const, because another TU might read the symbol.
 
+## Peephole catalog
+
+`compile._peephole_fixedpoint` runs the following passes in order
+until a full sweep produces no change. Each pass is a separate
+module under `passes/`; see the module docstring for the full
+rationale and motivating shape. Order matters — each pass can
+enable the next (e.g. INC chains shorten, freeing up
+direct-LDX/LDY rewrites). The loop is capped at
+`_PEEPHOLE_FIXEDPOINT_CAP = 16` iterations as a safety net.
+
+Always-on (runs in both optimized AND unoptimized pipelines):
+
+  * `apply_inc_peephole` — multi-byte ADC-#1 chains on stable
+    memory → `INC + BNE` chains. See "Multi-byte INC peephole".
+  * `apply_dec_peephole` — single-byte SBC-#1 chains on stable
+    memory → `DEC`. (No multi-byte form: DEC sets N/Z off the
+    post-decrement value, so the underflow check would have to
+    sit BEFORE the DEC, not after, which doesn't match the chain
+    shape.)
+  * `apply_sub1_test_zero_peephole` — folds the
+    `for (uint8_t i = N; i-- > 0; ) { ... }` shape's separate
+    sub-and-test pair into a single `DEC M; BNE label` (or
+    inverted variant) since DEC's flag side-effect IS the post-
+    decrement zero test.
+  * `apply_direct_index_load` — `LDA M; TAX` → `LDX M` when M
+    is `Imm`/`Data`/`ZP` and `Reg(A)` is dead after. See
+    "Direct-into-X/Y peephole".
+  * `apply_cpx_cpy_peephole` — `Mov(X|Y, A); Compare(A, imm)` →
+    `Compare(X|Y, imm)` (`CPX` / `CPY`) when the compare's left
+    is already in X or Y. Loop-induction-variable test shape.
+  * `apply_indirect_base_prop` — detects the 4-instruction DPTR
+    stage from a ZP-resolvable pair `(N, N+1)` and rewrites
+    subsequent `Indirect(off)` / `IndirectY()` operands to
+    `IndirectZp(N, off)` / `IndirectZpY(N)`, bypassing DPTR.
+    Composes with DSE to drop the now-dead `STA DPTR` / `STA
+    DPTR+1` writes.
+
+Only meaningful with `--optimize` (the unoptimized pipeline
+skips them):
+
+  * `apply_redundant_load_after_rmw` — drops `LDA M` after `INC
+    M` / `DEC M` / shift-on-M when only the N/Z flag effect was
+    needed (the RMW already set N/Z off M's new value).
+  * `apply_redundant_load_elimination` — per-block A/X/Y
+    tracker: if `LDA M` (or LDX/LDY M) is about to read M and
+    the target register already mirrors M, drop the load.
+    Heaviest after loop unrolling.
+  * `apply_redundant_store_elimination` — drops STAs whose
+    written cell is overwritten before any read. Memory-to-
+    memory transfer redundancy (e.g. the unrolled DPTR-staging
+    sequences `redundant_load`'s A-tracking can't see across an
+    intervening A clobber).
+  * `apply_asm_dead_store` — CFG-wide forward dead-store
+    elimination on Mov-into-memory atoms. Drops or morphs (to
+    LDA-only) STAs whose target byte isn't observed by any
+    reachable instruction. Treats DPTR / pool ZP / local-pool
+    slot symbols as dead-at-exit. `LoadAddress` is modeled
+    precisely (read FP/FP+1 only for Frame src; bounded 2-byte
+    write at dst) rather than opaque. `Call` /
+    `FunctionPrologue` / `AllocateStack` are opaque.
+  * `apply_dead_a_arith_elimination` — drops instructions whose
+    only observable effect is a write to `Reg(A)` and the
+    N/Z/C/V flags, when both A and the flags are dead afterward.
+  * `apply_branch_invert` — `Branch(cond, L); Jump(target); L:`
+    → `Branch(inverted_cond, target)` when L is the immediate
+    next instruction.
+  * `apply_mem_const_prop` — per-block memory-cell value tracker
+    (`Data(name, off)` / `ZP(addr, off)`); substitutes the known
+    immediate at any downstream operand slot that accepts `Imm`.
+  * `apply_const_arith_fold` — folds `LDA #C1; ALU #C2` chains
+    that produce a compile-time-known A value, replacing the
+    sequence with `LDA #folded`. Most useful for the high-byte
+    branch of an int-typed AND of a uchar value (`(uchar &
+    0x80)` after promotion).
+  * `apply_round_trip_load_drop` — drops `STA M; LDA M` where
+    the LDA's only observable side effect is re-loading A with
+    A's already-current value.
+  * `apply_and_sign_bit_branch` — `Mov(M, A); And(Imm(0x80),
+    A); Branch(EQ|NE, _)` → `BitTest(M); Branch(PL|MI, _)` when
+    M is BIT-addressable (`Data` / `ZP`) AND A is dead after.
+    Pays 1 byte / 3+ cycles per occurrence and preserves A for
+    downstream use.
+  * `apply_self_store_drop` — `Mov(M, A); ...; Mov(A, M)` where
+    the body doesn't modify M and A reads M → drop the trailing
+    self-store.
+  * `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; ...; SBC`
+    pattern where the SBC's effect duplicates the Compare's
+    flag set.
+  * `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A);
+    Branch(EQ|NE, _)` → `Dec(M)/Inc(M); Branch(EQ|NE, _)` —
+    drops the redundant LDA since INC/DEC already set N/Z off
+    M's new value.
+
+Two more asm-only peepholes run OUTSIDE the fixed-point loop:
+
+  * `passes.y_peephole` (`apply_y_peephole`) — collapses
+    adjacent `LDY #<off>` setups for indirect-Y accesses to the
+    same or adjacent offsets into a single `LDY` plus `INY` /
+    `DEY`.
+  * `passes.long_branches` (`expand_program`) — rewrites
+    conditional branches whose target is out of the ±127-byte
+    range into `Branch(inverted_cond, .skip); Jump(target);
+    .skip:`. Runs once, after every other peephole has settled.
+
 ## Direct-into-X/Y peephole (`passes/direct_index_load.py`)
 
 Always-on asm-level peephole. `tac_to_asm` always stages a value
@@ -1951,6 +2231,16 @@ annotated sample prologue/epilogue.
   IR but `tac_to_asm` doesn't emit them yet (`<<`/`>>` go through the
   `asl` / `asr` runtime helpers); they're available for inlining
   inside the helpers themselves once those land.
+- `BitTest(src)` emits NMOS 6502 `BIT src` (zp / abs addressing
+  only — no `BIT #imm` on NMOS). Sets `N=bit7(src)`, `V=bit6(src)`,
+  `Z=(A & src)==0`; does not modify A. Primary use is the sign-bit
+  test: `BIT M; BPL target` reads bit 7 of M in 5 cycles / 3 bytes
+  (zp) vs. `LDA M; AND #$80; BEQ target` at 8+ cycles / 6 bytes
+  that also clobbers A. `src` must be `Data` / `ZP`; emit and the
+  in-process sim assembler reject `Frame` / `Stack` / `Indirect` /
+  `IndexedData` / `Reg`. Emitted by `passes.and_sign_bit_branch`
+  when the optimizer recognizes a `Mov(M, A); And(Imm(0x80), A);
+  Branch(EQ|NE, _)` triple.
 - `Label(name)`, `Jump(target)`, and `Branch(cond, target)` are the
   control-flow atoms. `Label` emits `<name>:` at column 1 (same column
   as the function name); `Jump` is `JMP <target>`; `Branch` is one of
@@ -1998,298 +2288,84 @@ Multi-TU `libraries/` subdirs and platform-specific `.s` files aren't
 applicable to c6502 and are skipped at import time. Every harness
 class is `@unittest.skipUnless(shutil.which("pcpp"), …)`.
 
-## Status (what works end-to-end through `--codegen`)
+## Status
 
-- Functions with a body of block items: any of `int` / `long` /
-  `long long` / `unsigned int` / `unsigned long` /
-  `unsigned long long` / `float` / `double` decl (with optional
-  initializer), `return exp;`, `exp;`, `goto label;`,
-  `label: stmt`, nested `{ ... }`, or a null `;`. Nested blocks
-  open a new variable-resolution scope; missing `return`
-  appends an implicit `Ret(0)` typed for the function's return.
-- All nine integer types (`int`, `long`, `long long`,
-  `unsigned int`, `unsigned long`, `unsigned long long`,
-  `char`, `signed char`, `unsigned char`) and explicit casts
-  among them lower through to 6502 asm. Multi-byte arithmetic
-  (`+`, `-`, bitwise, comparisons, equality, sign/zero-extend,
-  truncate) fans out byte-by-byte in `tac_to_asm` keyed on the
-  symbol-table type. Locals / params / temps occupy `sizeof(T)`
-  contiguous frame bytes.
-  Return values: 1-byte (Char-family) in `A`; 2-byte (Int /
-  UInt / Pointer) in `HARGS+0..1`; 4-byte (Long / ULong / Float
-  / LongLong / ULongLong) in `HARGS+8..11`; 8-byte (Double) in
-  `HARGS+16..23`. The 4B / 8B offsets match the FP / mul32 /
-  divmod32 helpers' output slots so `return a OP b;` needs no
-  epilogue copy. HARGS-resident returns flip
-  `Ret(save_a=False)` so the epilogue skips the PHA/PLA pair.
-  Mixed-type arithmetic goes through C99 §6.3.1.8 usual
-  conversions in `passes.type_checking`; the type checker
-  inserts `SignExtend` / `ZeroExtend` casts so by the time TAC
-  sees the tree every operand has a concrete width.
-  Comparisons on unsigned multi-byte operands still V-correct
-  (signed lowering) — a known imprecision.
-  `*` / `/` / `%` / `<<` / `>>` lower to runtime helper calls
-  through HARGS (`mul8/16/32`, `divmod8/16/32`, `asl8/16/32`,
-  `asr/lsr8/16/32`); marshaling is in place but the helpers
-  themselves aren't in this repo, so multi-byte arithmetic
-  assembles but won't link until the runtime header lands.
-- Integer constants of all six suffix flavors per C99
-  §6.4.4.1: lex-time split into `INTEGER_CONSTANT` /
-  `LONG_INTEGER` / `UINT_INTEGER` / `ULONG_INTEGER` (with
-  `has_ll` flag for `LL`/`ULL`); parser picks the first variant
-  in C99's type list whose range fits. Literals beyond
-  `unsigned long long` are rejected.
-- Character constants (`'a'`, `'\n'`, `'\x41'`, `'\101'`) per
-  §6.4.4.4 — emits `ConstInt` (char constants have type int).
-  Multi-character constants and `\u`/`\U` rejected.
-- String literals per §6.4.5; adjacent literals concatenated
-  per §6.4.5.5. `passes.string_lifting` hoists every non-init
-  String into a file-scope `static char[N+1] .str@<N>` and
-  replaces the node with a `Var` ref, so `&"abc"`, `"abc"[i]`,
-  `char *p = "abc"` all work through the regular array path.
-  `char arr[N] = "abc";` keeps the literal inline; static init
-  lays down the bytes + zero-pad.
-- Floating constants per §6.4.4.2 — `ConstDouble` (unsuffixed),
-  `ConstFloat` (`f`/`F`); `l`/`L` (long double) rejected. Hex
-  floating literals (`0x1.0p3`) lex but the parser rejects them.
-  FP-literal Imm operands pack to non-negative bit pattern at
-  TAC→asm so the existing `_byte_at` shift-and-mask extraction
-  works.
-- explicit casts among any of the four integer types lower
-  through `SignExtend` / `ZeroExtend` / `Truncate` / no-op as
-  appropriate. FP-involving runtime casts (int↔float, int↔double,
-  float↔double) lower through six TAC-only nodes (`IntToFloat` /
-  `IntToDouble` / `FloatToInt` / `DoubleToInt` / `FloatToDouble`
-  / `DoubleToFloat`); `tac_to_asm` marshals operands through HARGS
-  and emits `JSR i2f` / `JSR u2f` / `JSR l2f` / `JSR ul2f` (and
-  the d-variants for double, the f2*/d2* family for FP→int, plus
-  `JSR f2d` / `JSR d2f` for cross-precision), with the helper name
-  picked from the operand's symbol-table type so signed and
-  unsigned conversions go to distinct helpers. Compile-time
-  constant casts are folded in Python by `c99_to_tac` (see
-  `_fold_fp_cast_constant`) — no helper call. Static initialisers
-  also do the conversion in Python at build time, so e.g. `double
-  x = 3;` lays down `3.0` correctly. The 18 conversion helpers
-  themselves aren't in this repo yet — see the runtime-header
-  status note below
-- unary `-`, `~`, and `!` (`!` lowers inline to `Branch(EQ) + 0/1 select`
-  — no runtime helper; the framing `LDA` already sets Z)
-- binary `+`, `-`, `*`, `/`, `%` (the multiplicative ops marshal
-  operands into the `HARGS` zero-page block and emit
-  `JSR mul8` / `JSR divmod8` for 1-byte operands or
-  `JSR mul16` / `JSR divmod16` for 2-byte operands — see below)
-- binary `&`, `|`, `^` (lower to single 6502 `AND`/`ORA`/`EOR`)
-- binary `<<` and `>>` (`>>` is arithmetic; c6502 assumes signed
-  integers right now). Both marshal through HARGS and emit
-  `JSR asl8`/`JSR asr8` for 1-byte operands or `JSR asl16`/
-  `JSR asr16` for 2-byte operands
-- binary `==` and `!=` (lower inline to `CMP` + `BEQ`/`BNE` + a 0/1
-  select — no runtime helper)
-- binary `<`, `>`, `<=`, `>=` (signed; lower inline to `SBC` with a
-  V-flag correction `BVC novf; EOR #$80` and then `BMI`/`BPL` + a 0/1
-  select. `>` and `<=` swap their operands so the same MI/PL branches
-  work. c6502 assumes signed integers right now, so this matches C's
-  relational semantics for `int`)
-- binary `&&` and `||` (short-circuit; `c99_to_tac` lowers them to
-  `JumpIfFalse`/`JumpIfTrue` + `Jump`/`Label`/`Copy`, then `tac_to_asm`
-  lowers the conditional jumps to `Mov(cond, A); Branch(EQ|NE, target)`
-  — LDA sets Z based on the loaded byte, so BEQ/BNE drives off C's
-  falsy/truthy directly. Copy becomes a single `Mov`; Jump and Label
-  are atom-for-atom. No runtime helper and no TAC binop — the control
-  flow *is* the semantics)
-- compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
-  `<<=`, `>>=`. Each builds a `CompoundAssignment` AST node;
-  c99_to_tac evaluates the lval's address ONCE (so
-  `arr[i++] += 1` doesn't double-fire the side effect), then
-  Load + cast to intermediate type + Binary + cast back + Store.
-  `intermediate_type` is the binop's working type (common-of-
-  promoted for arithmetic / bitwise; promoted-left-only for
-  shifts). Pointer arith `ptr += int` routes through
-  `translate_pointer_arithmetic` for sizeof-pointee scaling.
-- Prefix `++a` / `--a` and postfix `a++` / `a--`. Each is its
-  own AST node so `c99_to_tac` can evaluate Subscript /
-  Dereference addresses ONCE for the read-modify-write — keeps
-  `++arr[--i]` / `(*p++)++` correct. Postfix returns the old
-  value, prefix the new.
-- `if` / `if else`, ternary `cond ? t : f`. c99_to_tac lowers
-  to `JumpIfFalse` + label sequence; the ternary stores both
-  branches' results into one dst Pseudo via Copies. Labels
-  (`.if_end@N`, `.if_else@N`, `.cond_else@N`, …) share a
-  Translator-wide counter for unique numbering.
-- Labeled statements + `goto` (C99 §6.8.1 / §6.8.6).
-  `passes.label_resolution` validates uniqueness per function
-  and rewrites to dasm-local `.<funcname>@<orig>` form. Forward
-  gotos are fine; jumps into VLA scope are vacuously checked
-  (no VLAs).
-- Iteration statements `while`, `do-while`, `for` plus
-  `break` / `continue`. `for_init` is a decl or an
-  expression-or-empty. `passes.loop_labeling` mints
-  `.loop@<N>` per iteration statement and stamps it onto
-  enclosed break/continue; c99_to_tac derives `_start` /
-  `_continue` / `_break` sub-labels by suffix. The for-header
-  opens its own scope per §6.8.5.3 so `for (int a = 1; ...)`
-  legally shadows an outer `a`. Missing for-condition treated
-  as unconditionally true.
-- `switch` / `case` / `default` per §6.8.4.2. Control must be
-  integer-typed (FP / Pointer rejected). Case labels are
-  integer constant expressions per §6.6.6, converted to the
-  switch's promoted control type modulo width with uniqueness
-  enforced on the converted values. `c99_to_tac` lowers to a
-  compare-and-conditional-jump dispatch chain, then the body
-  with case/default labels emitted inline; cases fall through
-  unless `break;` hits. Case bodies can sit inside nested
-  if/loop/compound bodies (Duff's device) — the labeling pass
-  descends through them. Constant-expression evaluator today
-  accepts `Constant` literals optionally wrapped in casts; no
-  Unary / Binary / Conditional folds yet.
-- Arbitrary parenthesisation.
+For a working-feature checklist (every C99 §6.x construct c6502
+accepts end-to-end), see the README's `## Status` section and
+`tests/STATUS.md` (chapter-by-chapter pass/fail). The chapter
+test harnesses under `tests/test_chapter_<N>.py` are the
+authoritative list of what compiles and runs.
 
-Lowered all the way to 6502 asm:
-- Function declarations at block scope (`int foo(int a, int b);`).
-  `identifier_resolution` registers the name with external
-  linkage; `c99_to_tac` discards the bodyless decl block items.
-- Function calls under the soft-stack convention: caller
-  subtracts N from SSP, writes args at `Stack(1..N)`, JSRs;
-  callee prologue saves caller FP and captures its own; epilogue
-  rewinds SSP to the caller's pre-call value.
-- Multiple top-level function definitions; emitted in source
-  order separated by blank lines.
-- Function parameters at `Frame(M+3..M+2+N)`; locals at
-  `Frame(1..M)`; saved caller FP at the 2-byte gap `M+1`, `M+2`.
-- Pointer arithmetic per C99 §6.5.6: `ptr ± int` (int widened to
-  Long, scaled by `sizeof(pointee)`), `ptr - ptr` (matching types
-  only; subtracts and divides by pointee size; result Long,
-  c6502's `ptrdiff_t`). `sizeof(pointee) > 1` uses `mul16` /
-  `divmod16` runtime helpers (program assembles, won't link
-  until those land). Rejected: `ptr + ptr`, `int - ptr`,
-  `ptr ± float`, mismatched pointer types, function-pointer
-  arithmetic.
-- Pointer ordering (`<`/`>`/`<=`/`>=`) per §6.5.8: both operands
-  must be matching pointer types; unsigned lowering (per-byte
-  SBC with carry; BCC/BCS) so addresses above `$8000` rank
-  correctly. Rejected: pointer vs. integer (even null), pointer
-  vs. float, mismatched types.
-- Block-scope arrays with constant integer sizes (`int a[10]`,
-  `int a[3][4]` etc.). Frame allocation reserves
-  `sizeof(elem) × count` bytes. Subscript `a[i]` / `p[i]` and
-  array-to-pointer decay (§6.3.2.1.3) share the pointer-
-  arithmetic infrastructure. The decay wrapper is the narrower
-  `Pointer(elem)` form (byte-equivalent to the standard's
-  `Pointer(Array(elem, N))`); `&arr` yields the standard form
-  too, both work through TAC. Rejected: array assignment,
-  `extern` arrays. Pre/postfix-increment and compound-assignment
-  on subscripts evaluate the index exactly once
-  (`arr[i++] *= 3` is correct).
-- File-scope and block-scope `static` arrays with constant
-  initializer lists. The type checker validates and builds a
-  value tree on `Initial.value`; `c99_to_tac` flattens it
-  row-major and coalesces zero runs into `ZeroInit(bytes)`, so
-  `int a[5] = {1};` lays down as `IntInit(1) + ZeroInit(4)`.
-  Asm-emit renders typed inits as `dc.b/w/l` and ZeroInits as
-  `ds.b N`. Missing trailing entries zero-pad per §6.7.8.21;
-  bare `static int a[N];` zero-fills via the same machinery.
-- Array initializer lists per §6.7.8 with shorter-list zero-pad,
-  multi-dim nested forms, trailing commas. Rejected: scalar init
-  for an array, brace init for a scalar, too many initializers,
-  C99 subaggregate flat form (`int a[2][3] = {1,2,3,4,5,6};`).
-- Multi-dim subscript `a[i][j]`. The type checker reifies decay
-  as `Subscript(AddressOf(Subscript(AddressOf(a), i)), j)`;
-  `c99_to_tac`'s AddressOf branch chains through
-  `_translate_subscript_address` for the rvalue path without a
-  trailing Load. User-written `&a[i]` works through the same
-  case — identifier_resolution treats Subscript as a third
-  syntactic lvalue alongside Var / Dereference.
-- Array parameters with C99 §6.7.5.3.7 adjustment: `T param[N]`
-  becomes `T *param` at parse time. Only the outermost array
-  suffix decays, so `int foo(int a[3][4])` becomes
-  `int foo(int (*a)[4])`. Forward decls with array-typed params
-  are compatible with definitions using the equivalent pointer
-  type.
-- Struct and union types per §6.7.2.1 / §6.5.2.3: declarations
-  with bodies, forward declarations, member access `.` / `->`,
-  compound initializers, struct = struct copy (byte fan-out),
-  pointer-to-struct, address-of member, `sizeof(struct/union)`.
-  Layout: no padding, byte-aligned. `Structure(tag)` and
-  `Union(tag)` carry just the tag; full layout lives in the
-  `TypeTable` parallel to the `SymbolTable`. Tag visibility is
-  per-block; auto-introduction per §6.7.2.3 paragraph 5.
-  Member access lowers to `GetAddress` (or load through pointer)
-  + offset Add + Load/Store. Static struct initializers flatten
-  to a typed-init list; union statics zero-pad to full union
-  size after the first member.
+This section captures only the **gaps and known imprecisions**
+that an unwary contributor would otherwise discover by surprise.
 
-  **Struct-by-value params** use the soft-stack arg block: a
-  struct param contributes `sizeof(struct)` to the caller's arg
-  bytes. **Struct-by-value returns** use an sret convention:
-  `c99_to_tac` prepends a hidden `.sret.<funcname>` Pointer
-  param; callee writes through that pointer and returns void.
-  Caller mints a fresh struct-typed slot, passes its address as
-  arg 0, and the slot Var becomes the call expression's result
-  (treated as any other addressable lvalue for chained `.m`).
-  Rvalue struct expressions (`f().m = …`, `(c?a:b).m = …`) are
-  rejected: the slot has temporary lifetime, can't be assigned
-  through.
+### Not yet in the repo (programs assemble but won't link)
 
-  **Block-scope tag shadowing**: file-scope tags keep their
-  spelling; block-scope tags get a fresh `@<N>.<source>` rename
-  via the `_TagScope` (parallel to the variable scope). Error
-  messages strip the prefix.
+The runtime header isn't in this repo:
 
-  See `tests/STATUS.md` for chapter_18 file-by-file status.
+- Symbol pinning for `SSP` / `FP` / `HARGS` / `DPTR`, `SSP`
+  initialization, reset vector.
+- Integer helpers: `mul8/16/32`, `udivmod8/16/32`, `sdivmod8/16/32`,
+  `asl8/16/32`, `asr8/16/32`, `lsr8/16/32`.
+- FP conversion helpers: 26 functions covering
+  `{i,u,l,ul,ll,ull}{2f,2d}` and `{f,d}2{i,u,l,ul,ll,ull}` plus
+  `f2d` / `d2f`.
+- FP arithmetic helpers: `fadd` / `fsub` / `fmul` / `fdiv` and
+  the `d`-variants. The ordering helpers `flt` / `fle` / `dlt` /
+  `dle` exist as Python hooks in the sim but not yet as 6502
+  routines.
+- `icall` trampoline (`JMP (DPTR)`).
 
-Unsigned types (`unsigned int`, `unsigned long`,
-`unsigned long long`) lower end-to-end. Mixed-type arithmetic
-promotes per §6.3.1.8 via `_convert_to` casts in the type
-checker. Ordering ops (`<` / `>` / `<=` / `>=`) on unsigned
-operands dispatch to the BCC/BCS-based per-byte SBC sequence
-(no V-correction); `>>` dispatches to `lsr8/16/32`. Signedness
-rides on the const variant for Constants and the symbol-table
-c99 type for Vars.
+Programs that hit any of `*` / `/` / `%` / `<<` / `>>` / FP↔int
+cast / FP arithmetic / indirect call assemble cleanly through
+dasm but won't link until the runtime header lands. Python-
+implemented hooks in `sim/` cover all of these so simulation-
+based tests still pass.
 
-Long-long types (`long long`, `unsigned long long`) are 4-byte
-signed / unsigned. Multi-byte add / sub / bitwise / extend /
-truncate / equality / ordering / negate / complement fan out
-to per-byte sequences with carry threading. `*` / `/` / `%` /
-`<<` / `>>` dispatch to `mul32` / `divmod32` / `asl32` / `asr32`
-helpers. LongLong return values exchange through `HARGS+8..11`
-(same as Float).
+### Type-system limitations
 
-Floating types (`float`, `double`) lower static initialisers
-(IEEE 754 bytes via `DC.L`), block-scope loads, and conversions
-between FP and integer types (six TAC nodes:
-`IntToFloat` / `IntToDouble` / `FloatToInt` / `DoubleToInt` /
-`FloatToDouble` / `DoubleToFloat`) into HARGS-marshaled helper
-Calls. Compile-time constant casts are folded in Python; static
-initialisers do int→float in Python at build time. **Missing**:
-arithmetic / unary FP ops raise `NotImplementedError` at TAC
-translation, pending the runtime FP helpers.
+- FP arithmetic / unary FP ops (`+`/`-`/`*`/`/` and unary `-`
+  on `float` / `double`) raise `NotImplementedError` at TAC
+  translation. FP conversions and static initialisers work; FP
+  comparisons via `flt` / `fle` / `dlt` / `dle` work in sim
+  through Python hooks.
+- `long double` rejected at parse time (no 16-byte IEEE 754).
+- Hex floating literals (`0x1.0p3`) lex but the parser rejects
+  them — `float()` doesn't parse C hex-float syntax and the
+  conversion isn't wired up.
+- Function-pointer expressions don't exist yet — c6502 has no
+  function-pointer call form beyond `IndirectCall` from the
+  parser's restricted callee = identifier rule.
+- `extern` arrays rejected.
+- Some C99 init-list shapes rejected: scalar init for an array,
+  brace init for a scalar, too many initializers, the C99
+  subaggregate flat form (`int a[2][3] = {1,2,3,4,5,6};`).
+- Constant-expression evaluator (`passes.constant_expression`)
+  accepts only `Constant` literals optionally wrapped in casts;
+  no Unary / Binary / Conditional folds yet. Affects
+  `case <const-expr>:` and any future enum / array-size /
+  bitfield-width consumer.
 
-**Not yet in the repo**: the runtime header that defines `SSP` /
-`FP` / `HARGS` / `DPTR`, initializes `SSP`, sets the reset
-vector, and provides the runtime helpers `mul8/16/32`,
-`divmod8/16/32`, `asl/asr/lsr8/16/32`, the 26 FP conversion
-helpers (`i/u/l/ul/ll/ull2f`/`2d`, `f/d2i/u/l/ul/ll/ull`,
-`f2d`, `d2f`), the FP arithmetic helpers (`fadd/fsub/fmul/fdiv`,
-`dadd/dsub/dmul/ddiv`), and the `icall` trampoline. Programs
-using `*` / `/` / `%` / `<<` / `>>` or any FP↔int cast or any
-indirect call assemble but won't link until those land.
+### Codegen imprecisions
 
-`--optimize` runs the full optimizer pipeline (see
-"Optimization pipeline" section above): TAC SSA opts → asm-
-level SSA round-trip with byte-granular regalloc → late
-prologue / epilogue synthesis. Promotable SSA values lower to
-direct `ZP(addr, 0)` operands (~3× faster per access than the
-unoptimized indirect-Y `(FP),Y` path). Eligible functions get
-private ZP byte ranges via call-graph-disjoint allocation (see
-the section above) — `clear_page1` and other deep-chain leaves
-emit as bare body + RTS. Verified end-to-end via the asm sim:
-`tests/test_sim_asm_optimized.py` runs the chapter_1..12
-corpus through `--optimize` and asserts return values match
-the unoptimized path. See `docs/optimization.md`.
+- Comparisons on unsigned multi-byte operands use the signed
+  V-corrected lowering. Correct for values whose high bit isn't
+  set; incorrect for `unsigned long long` operands spanning the
+  sign-bit boundary. Tracked but not fixed.
+- The 8-bit signed `>>` helper (`asr8`) is mostly a placeholder
+  — `signed char >>` integer-promotes to int before the shift,
+  so `asr16` does the real work; `asr8` exists for completeness.
+- Rvalue struct expressions used as lvalues (`f().m = …`,
+  `(c?a:b).m = …`) are rejected: the sret slot has temporary
+  lifetime, so assigning through it would be a memory-safety
+  hole.
 
-`__attribute__((zp_abi))` selects ZP-passing for params; the
-call-graph-disjoint local-pool allocator extends the same
-optimization to body locals (see "Call-graph-disjoint ZP
-allocation" section above). Eligible functions emit as bare
-body + RTS. Tests: `tests/test_leaf_zp_abi.py`. Design:
-`docs/leaf_zp_abi.md`.
+### Where to look for more
+
+- `tests/STATUS.md` — chapter_18 file-by-file status.
+- `tests/test_sim_differential.py` — opt-vs-unopt sim
+  differential across the full chapter corpus; the
+  `_OPT_DIVERGES` dict at the top is the live list of optimizer
+  bugs (today empty as of 2026-05-14).
+- `tests/test_sim_asm_optimized.py` — chapter_1..12 corpus run
+  through `--optimize` with end-to-end return-value assertions.

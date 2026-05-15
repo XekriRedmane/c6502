@@ -284,3 +284,54 @@ def dominance_frontiers(cfg: CFG) -> dict[int, set[int]]:
                 df[runner].add(b)
                 runner = idom[runner]
     return df
+
+
+def natural_loops(cfg: CFG) -> list[tuple[int, set[int]]]:
+    """Return one `(header_id, body_block_ids)` pair per natural loop.
+
+    A natural loop is identified by its back-edge — an edge
+    `(tail → header)` where `header` dominates `tail`. The body is
+    `{header} ∪ {nodes that can reach tail backwards without passing
+    through header}`. Loops sharing a header (e.g. multiple back-edges
+    from `continue` statements) are coalesced into one entry whose
+    body is the union over those back-edges.
+
+    Unreachable blocks (not in `idom`) are excluded — their loop
+    membership doesn't matter since UCE will drop them anyway.
+    """
+    idom = immediate_dominators(cfg)
+    reachable = set(idom.keys())
+
+    def dominates(d: int, b: int) -> bool:
+        if d == b:
+            return True
+        cur = b
+        while idom[cur] != cur:
+            cur = idom[cur]
+            if cur == d:
+                return True
+        return False
+
+    back_edges_by_header: dict[int, list[int]] = {}
+    for bid in reachable:
+        if bid == ENTRY_ID:
+            continue
+        for succ in cfg.blocks[bid].successors:
+            if succ in reachable and dominates(succ, bid):
+                back_edges_by_header.setdefault(succ, []).append(bid)
+
+    loops: list[tuple[int, set[int]]] = []
+    for header, tails in back_edges_by_header.items():
+        body: set[int] = {header}
+        stack = list(tails)
+        while stack:
+            n = stack.pop()
+            if n in body:
+                continue
+            body.add(n)
+            for pred in cfg.blocks[n].predecessors:
+                if pred in reachable and pred not in body:
+                    stack.append(pred)
+        loops.append((header, body))
+
+    return loops

@@ -10,8 +10,8 @@ between-pass interleaving is part of the optimizer's contract.
 Pipeline shape:
     fn → loop_rotate (one-shot, pre-SSA)
        → SSA construction
-       → (CF → strength_reduce → cmp_zero_jump_fold → UCE → CopyProp →
-          DSE → CopyFold)*
+       → (CF → strength_reduce → cmp_zero_jump_fold → and_zero_jump_fold →
+          dead_loop_elim → UCE → CopyProp → DSE → CopyFold → ...)*
        → SSA destruction → fn'
 
 `loop_rotate` runs before SSA because the rewrite is a structural
@@ -35,6 +35,11 @@ Per-pass roles:
     JumpIfTrue/False(cond, t)` as a direct JumpIf on x (with sense
     flip), tracing through ZeroExtend defs to operate at the
     narrowest available width.
+  - eliminate_dead_loops: detect natural loops whose body is pure
+    (no Call / Store / Ret) and every SSA def is loop-local
+    (no use outside the body); rewrite the header to jump past
+    the body so UCE prunes it on the next sweep. Composes with
+    DSE to collapse the nested empty-loop shape down to nothing.
   - UCE: prune unreachable blocks; fold singleton Phis to Copies;
     treat Phi pred_labels as label uses so SSA destruction can
     later locate predecessors.
@@ -72,6 +77,9 @@ from passes.optimization.cmp_zero_jump_fold import fold_cmp_zero_jump
 from passes.optimization.constant_folding import constant_fold
 from passes.optimization.copy_folding import fold_copies
 from passes.optimization.copy_propagation import copy_propagate
+from passes.optimization.dead_loop_elimination import (
+    eliminate_dead_loops,
+)
 from passes.optimization.dead_store_elimination import (
     eliminate_dead_stores,
 )
@@ -149,6 +157,7 @@ def optimize_function(
         fn = reduce_strength(fn, symbols=symbols)
         fn = fold_cmp_zero_jump(fn, symbols=symbols)
         fn = fold_narrow_and_jump(fn, symbols=symbols)
+        fn = eliminate_dead_loops(fn, ssa_dsts=ssa_dsts)
         fn = eliminate_unreachable_code(fn)
         fn = copy_propagate(fn, ssa_dsts=ssa_dsts)
         fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)

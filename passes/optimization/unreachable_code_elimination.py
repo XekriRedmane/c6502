@@ -81,6 +81,7 @@ _JUMP_TYPES: tuple[type, ...] = (
     tac_ast.JumpIfTrue,
     tac_ast.JumpIfFalse,
     tac_ast.JumpIfCmp,
+    tac_ast.JumpIfMasked,
 )
 
 

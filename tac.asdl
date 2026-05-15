@@ -111,6 +111,23 @@ module TAC {
         -- operands' types) ending in a single Branch — no boolean
         -- temp.
         | JumpIfCmp(binary_operator op, val src1, val src2, identifier target)
+        -- Masked-test-and-branch fold. `JumpIfMasked(val, mask,
+        -- jump_when_nonzero, target)` jumps to `target` iff
+        -- `(val & mask) != 0` (when `jump_when_nonzero=True`) or
+        -- `(val & mask) == 0` (when False). Produced by the
+        -- and_zero_jump fold when `Binary(BitwiseAnd, narrow_val,
+        -- ConstInt(mask), %res); JumpIfTrue/False(%res, target)`
+        -- can be narrowed: the operand traces back to a 1-byte
+        -- value (typically through ZeroExtend) and the mask fits
+        -- in 0..255. `mask` is the literal byte value; `val` is the
+        -- 1-byte source (the c99 type carries the signedness, but
+        -- the bit-test is type-agnostic). tac_to_asm lowers as
+        -- `LDA val; AND #mask; B(EQ|NE) target` (no widening, no
+        -- 0/1 materialize). With `mask == 0x80` the existing
+        -- `and_sign_bit_branch` asm peephole then folds the
+        -- AND+Branch to `BPL`/`BMI`, leaving just `LDA val;
+        -- B(PL|MI) target`.
+        | JumpIfMasked(val val, int mask, bool jump_when_nonzero, identifier target)
         | Label(identifier name)
         | FunctionCall(identifier name, val* args, val? dst)
         -- Indirect call via a function pointer. `ptr` is a Pointer-

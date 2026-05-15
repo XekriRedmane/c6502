@@ -199,6 +199,14 @@ class JumpIfCmp(Type_instruction):
 
 
 @dataclass
+class JumpIfMasked(Type_instruction):
+    val: Type_val
+    mask: int
+    jump_when_nonzero: bool
+    target: str
+
+
+@dataclass
 class Label(Type_instruction):
     name: str
 

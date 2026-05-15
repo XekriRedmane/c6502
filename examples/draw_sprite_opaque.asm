@@ -14,10 +14,9 @@ __local_draw_sprite_opaque_b5	EQU	$8C
 __local_draw_sprite_opaque_b6	EQU	$8D
 __local_draw_sprite_opaque_b7	EQU	$8E
 __local_draw_sprite_opaque_b8	EQU	$8F
-__local_draw_sprite_opaque_b9	EQU	$90
 
 ; @zp-link-meta-begin
-; def draw_sprite_opaque param_bytes=7 local_bytes=10 indirect=false in_cycle=false
+; def draw_sprite_opaque param_bytes=7 local_bytes=9 indirect=false in_cycle=false
 ; @zp-link-meta-end
 
 draw_sprite_opaque:
@@ -25,79 +24,70 @@ draw_sprite_opaque:
 
 .draw_sprite_opaque@asm_ssa_block@0:
    LDA   __zpabi_draw_sprite_opaque_p6
-   AND   #$80
-   STA   __local_draw_sprite_opaque_b1
-   LDA   #$00
-   STA   __local_draw_sprite_opaque_b0
-   LDA   __local_draw_sprite_opaque_b1
-   BEQ   .cond_else@0
+   BPL   .cond_else@0
 .draw_sprite_opaque@ssa_block@1:
    LDA   #<screen_row_addr_hi2
-   STA   __local_draw_sprite_opaque_b8
+   STA   __local_draw_sprite_opaque_b7
    LDA   #>screen_row_addr_hi2
-   STA   __local_draw_sprite_opaque_b8+1
+   STA   __local_draw_sprite_opaque_b7+1
    JMP   .cond_end@1
 .cond_else@0:
    LDA   #<screen_row_addr_hi
-   STA   __local_draw_sprite_opaque_b8
+   STA   __local_draw_sprite_opaque_b7
    LDA   #>screen_row_addr_hi
-   STA   __local_draw_sprite_opaque_b8+1
+   STA   __local_draw_sprite_opaque_b7+1
 .cond_end@1:
    LDA   #$00
-   STA   __local_draw_sprite_opaque_b7
-   LDA   __zpabi_draw_sprite_opaque_p1
    STA   __local_draw_sprite_opaque_b6
+   LDA   __zpabi_draw_sprite_opaque_p1
+   STA   __local_draw_sprite_opaque_b5
    LDX   __zpabi_draw_sprite_opaque_p3
 .loop@0_start:
-   LDA   __local_draw_sprite_opaque_b6
+   LDA   __local_draw_sprite_opaque_b5
    BEQ   .loop@0_break
 .draw_sprite_opaque@ssa_block@2:
    TXA
    TAY
-   LDA   ($8F),Y
+   LDA   ($8E),Y
    STA   __local_draw_sprite_opaque_b1
    LDA   screen_row_addr_lo,X
-   STA   __local_draw_sprite_opaque_b5
-   LDA   __local_draw_sprite_opaque_b1
-   STA   __local_draw_sprite_opaque_b4
-   LDA   __zpabi_draw_sprite_opaque_p0
-   STA   __local_draw_sprite_opaque_b3
-   LDA   __zpabi_draw_sprite_opaque_p2
-   STA   __local_draw_sprite_opaque_b2
-.loop@1_start:
-   LDA   __local_draw_sprite_opaque_b3
-   AND   #$80
-   STA   __local_draw_sprite_opaque_b1
-   LDA   #$00
    STA   __local_draw_sprite_opaque_b0
+   STA   __local_draw_sprite_opaque_b4
    LDA   __local_draw_sprite_opaque_b1
-   BNE   .loop@1_break
-.draw_sprite_opaque@asm_ssa_block@1:
+   STA   __local_draw_sprite_opaque_b3
+   LDA   __zpabi_draw_sprite_opaque_p0
+   STA   __local_draw_sprite_opaque_b2
+   LDA   __zpabi_draw_sprite_opaque_p2
+   STA   __local_draw_sprite_opaque_b1
+.loop@1_start:
    LDA   __local_draw_sprite_opaque_b2
+   BMI   .loop@1_break
+.draw_sprite_opaque@asm_ssa_block@1:
+   LDA   __local_draw_sprite_opaque_b1
    CMP   #$28
    BCS   .if_end@2
 .draw_sprite_opaque@asm_ssa_block@2:
-   LDY   __local_draw_sprite_opaque_b7
+   LDY   __local_draw_sprite_opaque_b6
    LDA   ($84),Y
    STA   __local_draw_sprite_opaque_b0
-   LDA   __local_draw_sprite_opaque_b5
-   STA   DPTR
    LDA   __local_draw_sprite_opaque_b4
+   STA   DPTR
+   LDA   __local_draw_sprite_opaque_b3
    STA   DPTR+1
    LDA   __local_draw_sprite_opaque_b0
    PHA
-   LDY   __local_draw_sprite_opaque_b2
+   LDY   __local_draw_sprite_opaque_b1
    PLA
    STA   (DPTR),Y
 .if_end@2:
 .loop@1_continue:
-   DEC   __local_draw_sprite_opaque_b3
    DEC   __local_draw_sprite_opaque_b2
-   INC   __local_draw_sprite_opaque_b7
+   DEC   __local_draw_sprite_opaque_b1
+   INC   __local_draw_sprite_opaque_b6
    JMP   .loop@1_start
 .loop@1_break:
 .loop@0_continue:
-   DEC   __local_draw_sprite_opaque_b6
+   DEC   __local_draw_sprite_opaque_b5
    INX
    JMP   .loop@0_start
 .loop@0_break:

@@ -1008,6 +1008,10 @@ class Translator:
                 )
             case tac_ast.JumpIfCmp(op=op, src1=src1, src2=src2, target=target):
                 return self._translate_jump_if_cmp(op, src1, src2, target)
+            case tac_ast.JumpIfMasked(
+                val=v, mask=m, jump_when_nonzero=jnz, target=target,
+            ):
+                return self._translate_jump_if_masked(v, m, jnz, target)
             case tac_ast.FunctionCall(name=name, args=args, dst=dst):
                 return self._translate_function_call(name, args, dst)
             case tac_ast.IndirectCall(ptr=ptr, args=args, dst=dst):
@@ -1449,6 +1453,34 @@ class Translator:
             out.append(asm_ast.Or(src=_byte_at(cond_op, k), dst=_REG_A))
         out.append(asm_ast.Branch(cond=branch_cond, target=target))
         return out
+
+    def _translate_jump_if_masked(
+        self,
+        val: tac_ast.Type_val,
+        mask: int,
+        jump_when_nonzero: bool,
+        target: str,
+    ) -> list[asm_ast.Type_instruction]:
+        """`(val & mask) ? jmp target : fall-through` as a 3-atom
+        sequence: `LDA val; AND #mask; B(NE|EQ) target`. `val` is
+        always 1-byte (the producer pass narrows wider operands
+        before emitting this node), so no per-byte fan-out.
+
+        `mask == 0x80` is the sign-bit-test special case: the
+        existing `and_sign_bit_branch` peephole fires on the
+        `LDA; AND #$80; B(EQ|NE)` shape, collapsing the AND and
+        flipping the branch to give `LDA val; B(PL|MI) target`."""
+        val_op = translate_val(val)
+        if mask < 0 or mask > 0xFF:
+            raise ValueError(
+                f"JumpIfMasked mask must fit in 0..255; got {mask}"
+            )
+        branch = asm_ast.NE() if jump_when_nonzero else asm_ast.EQ()
+        return [
+            asm_ast.Mov(src=_byte_at(val_op, 0), dst=_REG_A),
+            asm_ast.And(src=asm_ast.Imm(value=mask), dst=_REG_A),
+            asm_ast.Branch(cond=branch, target=target),
+        ]
 
     def _translate_function_call(
         self,

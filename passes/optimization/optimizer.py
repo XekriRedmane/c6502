@@ -67,6 +67,7 @@ operates on the post-`tac_to_asm` IR with byte-granular precision.
 from __future__ import annotations
 
 import tac_ast
+from passes.optimization.and_zero_jump_fold import fold_narrow_and_jump
 from passes.optimization.cmp_zero_jump_fold import fold_cmp_zero_jump
 from passes.optimization.constant_folding import constant_fold
 from passes.optimization.copy_folding import fold_copies
@@ -147,6 +148,7 @@ def optimize_function(
         fn = constant_fold(fn, symbols=symbols)
         fn = reduce_strength(fn, symbols=symbols)
         fn = fold_cmp_zero_jump(fn, symbols=symbols)
+        fn = fold_narrow_and_jump(fn, symbols=symbols)
         fn = eliminate_unreachable_code(fn)
         fn = copy_propagate(fn, ssa_dsts=ssa_dsts)
         fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)

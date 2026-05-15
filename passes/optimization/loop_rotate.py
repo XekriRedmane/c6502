@@ -159,13 +159,14 @@ _INT_CONST_VARIANTS: tuple[type, ...] = (
 _COND_BLOCK_BREAKERS: tuple[type, ...] = (
     tac_ast.Label,
     tac_ast.Jump, tac_ast.JumpIfTrue, tac_ast.JumpIfCmp,
+    tac_ast.JumpIfMasked,
     tac_ast.Ret,
     tac_ast.FunctionCall, tac_ast.IndirectCall,
 )
 _POST_BLOCK_BREAKERS: tuple[type, ...] = (
     tac_ast.Label,
     tac_ast.Jump, tac_ast.JumpIfTrue, tac_ast.JumpIfFalse,
-    tac_ast.JumpIfCmp,
+    tac_ast.JumpIfCmp, tac_ast.JumpIfMasked,
     tac_ast.Ret,
     tac_ast.FunctionCall, tac_ast.IndirectCall,
 )

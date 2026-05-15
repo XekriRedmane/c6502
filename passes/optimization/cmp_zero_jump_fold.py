@@ -552,6 +552,9 @@ def _vars_used_in(instr: tac_ast.Type_instruction):
                 yield s1
             if isinstance(s2, tac_ast.Var):
                 yield s2
+        case tac_ast.JumpIfMasked(val=v):
+            if isinstance(v, tac_ast.Var):
+                yield v
         case tac_ast.FunctionCall(args=args):
             for a in args:
                 if isinstance(a, tac_ast.Var):

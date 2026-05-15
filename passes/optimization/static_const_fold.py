@@ -180,6 +180,13 @@ def _rewrite_instr(
             return tac_ast.JumpIfCmp(
                 op=op, src1=sub(s1), src2=sub(s2), target=t,
             )
+        case tac_ast.JumpIfMasked(
+            val=v, mask=m, jump_when_nonzero=jnz, target=t,
+        ):
+            return tac_ast.JumpIfMasked(
+                val=sub(v), mask=m,
+                jump_when_nonzero=jnz, target=t,
+            )
         case tac_ast.FunctionCall(name=n, args=args, dst=d):
             return tac_ast.FunctionCall(
                 name=n, args=[sub(a) for a in args], dst=d,

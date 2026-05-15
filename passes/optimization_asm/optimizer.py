@@ -267,6 +267,8 @@ def _optimize_function(
         fn, graph, blocked_addrs=blocked_addrs,
         hwreg_eligibility=rep_eligibility,
         allowed_range=allowed_range,
+        liveness=liveness,
+        rep_map=coalesce_result.representative,
     )
     # Project coloring through the coalescing result: every name
     # that was merged into a representative inherits the rep's

@@ -1,7 +1,8 @@
 __local_paint_hud_strip_p1_b0	EQU	$80
+__local_paint_hud_strip_p1_b1	EQU	$81
 
 ; @zp-link-meta-begin
-; def paint_hud_strip_p1 param_bytes=0 local_bytes=1 indirect=false in_cycle=false
+; def paint_hud_strip_p1 param_bytes=0 local_bytes=2 indirect=false in_cycle=false
 ; @zp-link-meta-end
 
 paint_hud_strip_p1:
@@ -9,56 +10,64 @@ paint_hud_strip_p1:
 
 .paint_hud_strip_p1@asm_ssa_preheader@0:
 .paint_hud_strip_p1@ssa_block@0:
-   LDY   #$00
-   LDX   #$0F
+   LDA   #$00
+   STA   __local_paint_hud_strip_p1_b1
+   LDY   #$0F
 .loop@0_start:
-   LDA   $A30D,Y
-   INY
-   STA   $240C,X
-   STA   $280C,X
-   STA   $2C0C,X
-   STA   $300C,X
-   STA   $340C,X
-   STA   $380C,X
-   STA   $3C0C,X
-   LDA   $A30D,Y
-   INY
-   STA   $208C,X
-   LDA   $A30D,Y
-   INY
-   STA   $248C,X
-   STA   $288C,X
-   STA   $2C8C,X
-   STA   $308C,X
-   STA   $348C,X
-   STA   $388C,X
-   STA   $3C8C,X
-   LDA   $A30D,Y
-   INY
-   STA   $210C,X
-   LDA   $A30D,Y
-   INY
-   STA   $250C,X
-   STA   $290C,X
-   STA   $2D0C,X
-   STA   $310C,X
-   STA   $350C,X
-   STA   $390C,X
-   STA   $3D0C,X
-   LDA   $A30D,Y
-   INY
-   STA   $218C,X
-   LDA   $A30D,Y
-   INY
-   STA   $258C,X
-   STA   $298C,X
-   STA   $2D8C,X
-   STA   $318C,X
-   STA   $358C,X
-   STA   $398C,X
-   STA   $3D8C,X
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $240C,Y
+   STA   $280C,Y
+   STA   $2C0C,Y
+   STA   $300C,Y
+   STA   $340C,Y
+   STA   $380C,Y
+   STA   $3C0C,Y
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $208C,Y
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $248C,Y
+   STA   $288C,Y
+   STA   $2C8C,Y
+   STA   $308C,Y
+   STA   $348C,Y
+   STA   $388C,Y
+   STA   $3C8C,Y
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $210C,Y
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $250C,Y
+   STA   $290C,Y
+   STA   $2D0C,Y
+   STA   $310C,Y
+   STA   $350C,Y
+   STA   $390C,Y
+   STA   $3D0C,Y
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $218C,Y
+   LDX   __local_paint_hud_strip_p1_b1
+   LDA   $A30D,X
+   INC   __local_paint_hud_strip_p1_b1
+   STA   $258C,Y
+   STA   $298C,Y
+   STA   $2D8C,Y
+   STA   $318C,Y
+   STA   $358C,Y
+   STA   $398C,Y
+   STA   $3D8C,Y
 .loop@0_continue:
-   DEX
+   DEY
    BPL   .paint_hud_strip_p1@asm_ssa_split@0
 .paint_hud_strip_p1@asm_ssa_block@0:
    RTS

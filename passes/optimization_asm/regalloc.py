@@ -61,7 +61,7 @@ from passes.optimization_asm.cfg import (
     immediate_dominators,
 )
 from passes.optimization_asm.hwreg_eligibility import HwRegEligibility
-from passes.optimization_asm.liveness import _defs_in
+from passes.optimization_asm.liveness import Liveness, _defs_in
 
 
 def color_graph(
@@ -72,6 +72,8 @@ def color_graph(
     blocked_addrs: set[int] | None = None,
     hwreg_eligibility: HwRegEligibility | None = None,
     allowed_range: range | None = None,
+    liveness: Liveness | None = None,
+    rep_map: dict[str, str] | None = None,
 ) -> Coloring:
     """Color `graph`'s nodes onto ZP byte addresses, optionally
     pinning HwReg-eligible nodes into X / Y first. Returns a
@@ -121,6 +123,7 @@ def color_graph(
     if hwreg_eligibility is not None:
         _try_hwreg_assign(
             graph, hwreg_eligibility, hwreg_assignments,
+            fn=fn, liveness=liveness, rep_map=rep_map,
         )
 
     for name in peo:
@@ -152,6 +155,10 @@ def _try_hwreg_assign(
     graph: InterferenceGraph,
     eligibility: HwRegEligibility,
     hwreg_assignments: dict[str, str],
+    *,
+    fn: asm_ast.Function | None = None,
+    liveness: Liveness | None = None,
+    rep_map: dict[str, str] | None = None,
 ) -> None:
     """Greedy pre-coloring: walk hinted candidates, assigning each
     to its preferred HwReg (X for hints_x, Y for hints_y). When the
@@ -175,6 +182,107 @@ def _try_hwreg_assign(
     assigned — the assigned name's color satisfies all its
     constraints by construction.)"""
 
+    # Precompute the per-instruction HwReg clobber map and the
+    # def-position of every Pseudo. The interference graph alone
+    # doesn't track interference with hardware registers (it only
+    # has edges between Pseudos), so a Pseudo whose live range
+    # crosses an instruction that writes Reg(X) / Reg(Y) — but
+    # without a graph-neighbor at the writing position — would
+    # otherwise slip through. Liveness is optional: callers that
+    # didn't supply it get the legacy (unsafe) behavior; the
+    # optimizer driver always passes it.
+    #
+    # `rep_map` is the coalescing result (`CoalesceResult.
+    # representative`): the eligibility set is built at REP names
+    # (post-coalescing), but liveness is computed at pre-coalescing
+    # SSA names. We project every live-set element through `rep_map`
+    # to get the rep-level live set before comparing.
+    clobber_positions: dict[str, list[tuple[int, int]]] = {
+        "X": [],
+        "Y": [],
+    }
+    # All def positions per rep — a coalesced rep may have several
+    # contributing defs (the original SSA names had one each, but
+    # after coalescing they share a name). Any one of those is a
+    # legitimate write of `rep` into `reg` after pinning, not a
+    # clobber.
+    def_positions_rep: dict[str, set[tuple[int, int]]] = {}
+    rep_map = rep_map or {}
+
+    def _resolve_rep(name: str) -> str:
+        cur = name
+        while cur in rep_map:
+            cur = rep_map[cur]
+        return cur
+
+    if fn is not None and liveness is not None:
+        for bid, blk in liveness.cfg.blocks.items():
+            for idx, instr in enumerate(blk.instructions):
+                for letter in _instr_writes_hwregs(instr):
+                    clobber_positions[letter].append((bid, idx))
+                for d in _defs_in(instr):
+                    rep_name = _resolve_rep(d.name)
+                    def_positions_rep.setdefault(
+                        rep_name, set(),
+                    ).add((bid, idx))
+
+    def _is_self_transfer_chain(
+        bid: int, idx: int, name: str,
+    ) -> bool:
+        """A `Mov(Reg(A), Reg(R))` whose immediately preceding
+        instruction is `Mov(Pseudo N, Reg(A))` with `rep(N) == name`
+        is the index-setup chain for `name`. After pinning `name` to
+        `R`, the pair becomes `Mov(Reg(R), Reg(A)); Mov(Reg(A),
+        Reg(R))` — a self-transfer that `apply_coloring._rewrite_
+        redundant_transfers` later drops. So it isn't really a
+        clobber of `R` for `name`'s liveness: the value placed in
+        `R` IS `name`'s value."""
+        blk = liveness.cfg.blocks.get(bid)
+        if blk is None or idx == 0:
+            return False
+        instr = blk.instructions[idx]
+        prev = blk.instructions[idx - 1]
+        if not (
+            isinstance(instr, asm_ast.Mov)
+            and isinstance(instr.src, asm_ast.Reg)
+            and isinstance(instr.src.reg, asm_ast.A)
+        ):
+            return False
+        if not (
+            isinstance(prev, asm_ast.Mov)
+            and isinstance(prev.src, asm_ast.Pseudo)
+            and isinstance(prev.dst, asm_ast.Reg)
+            and isinstance(prev.dst.reg, asm_ast.A)
+            and prev.src.offset == 0
+        ):
+            return False
+        return _resolve_rep(prev.src.name) == name
+
+    def _hwreg_clobbered_in_live_range(name: str, reg: str) -> bool:
+        if liveness is None:
+            return False
+        positions = clobber_positions.get(reg, ())
+        if not positions:
+            return False
+        # `name` here is a rep-level name (eligibility set is
+        # post-projection). Any of its coalesced defs is fine; only
+        # an instruction that writes `reg` AND isn't one of `name`'s
+        # def positions counts as a clobber. Additionally, the
+        # index-setup chain `Mov(Pseudo name, A); Mov(A, Reg(R))`
+        # collapses to a self-transfer after pinning, so its second
+        # Mov also isn't a real clobber.
+        def_pos_set = def_positions_rep.get(name, set())
+        for bid, idx in positions:
+            if (bid, idx) in def_pos_set:
+                continue
+            if _is_self_transfer_chain(bid, idx, name):
+                continue
+            live = liveness.live_after(bid, idx)
+            for live_name in live:
+                if _resolve_rep(live_name) == name:
+                    return True
+        return False
+
     def _can_pin(name: str, reg: str) -> bool:
         node = graph.nodes.get(name)
         if node is None:
@@ -188,6 +296,8 @@ def _try_hwreg_assign(
         for nbr in graph.neighbors(name):
             if hwreg_assignments.get(nbr) == reg:
                 return False
+        if _hwreg_clobbered_in_live_range(name, reg):
+            return False
         return True
 
     def _try_pin_with_fallback(name: str, preferred: str) -> None:
@@ -224,6 +334,53 @@ def _try_hwreg_assign(
         if name in hwreg_assignments:
             continue
         _try_pin_with_fallback(name, preferred="Y")
+
+
+def _instr_writes_hwregs(
+    instr: asm_ast.Type_instruction,
+) -> tuple[str, ...]:
+    """Return the X / Y registers (if any) written by `instr` as a
+    tuple of letters. Used by the HwReg clobber-in-live-range check
+    in `_try_hwreg_assign`.
+
+    What writes X / Y in the asm IR at this stage of the pipeline:
+      * `Mov(_, Reg(X|Y))` — TAX / TAY / LDX / LDY (any addressing
+        mode the emitter supports).
+      * `Inc(Reg(X|Y))` / `Dec(Reg(X|Y))` — INX / INY / DEX / DEY.
+      * `Pop(dst=Reg(X|Y))` — PLX / PLY (not currently emitted by
+        tac_to_asm, but the IR allows it).
+
+    Excluded:
+      * `Mov(Reg(X|Y), _)` — reads X/Y, doesn't write.
+      * `Push(src=Reg(X|Y))` — reads X/Y, doesn't write.
+      * `Compare(Reg(X|Y), _)` — reads X/Y for CPX / CPY, doesn't
+        write.
+      * Add / Sub / And / Or / Xor / ASL / LSR / ROL / ROR — these
+        atoms only accept Reg(A) as dst per the asm IR contract.
+      * Phi — its dst is still a Pseudo at this pipeline stage.
+      * Implicit clobbers from operands that emit LDY at lowering
+        time (`Frame` / `Stack` / `Indirect` / `IndirectY`) — not
+        included here because at this stage operands are still
+        Pseudos that haven't been resolved. A separate pass would
+        be needed to model those; this check covers the explicit
+        case that surfaces in current generated code."""
+    out: list[str] = []
+
+    def _add_if_xy(dst: asm_ast.Type_operand) -> None:
+        if isinstance(dst, asm_ast.Reg):
+            if isinstance(dst.reg, asm_ast.X):
+                out.append("X")
+            elif isinstance(dst.reg, asm_ast.Y):
+                out.append("Y")
+
+    match instr:
+        case asm_ast.Mov(dst=dst):
+            _add_if_xy(dst)
+        case asm_ast.Pop(dst=dst):
+            _add_if_xy(dst)
+        case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
+            _add_if_xy(dst)
+    return tuple(out)
 
 
 def _perfect_elimination_order(

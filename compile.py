@@ -62,6 +62,7 @@ from passes.self_store_drop import apply_self_store_drop
 from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 from passes.loop_counter_to_x import apply_loop_counter_to_x
+from passes.asm_licm import apply_licm
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
@@ -275,6 +276,11 @@ def _run_stage(
                 param_layouts=abi, local_pools=local_pools,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
+            # LICM-lite: hoist loop-invariant constant stores out
+            # of natural loops (only fires when the loop body has
+            # no Call — conservative to sidestep zp_abi clobber
+            # questions).
+            asm2 = apply_licm(asm2)
             # Build the full EQU table: zp_abi param slots plus the
             # per-function body-local slot symbols emitted by
             # apply_coloring. The asm IR references body locals as

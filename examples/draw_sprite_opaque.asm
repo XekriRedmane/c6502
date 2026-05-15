@@ -52,9 +52,9 @@ draw_sprite_opaque:
    STA   __local_draw_sprite_opaque_b1
    LDA   screen_row_addr_lo,X
    STA   __local_draw_sprite_opaque_b0
-   STA   __local_draw_sprite_opaque_b4
-   LDA   __local_draw_sprite_opaque_b1
    STA   __local_draw_sprite_opaque_b3
+   LDA   __local_draw_sprite_opaque_b1
+   STA   __local_draw_sprite_opaque_b4
    LDA   __zpabi_draw_sprite_opaque_p0
    STA   __local_draw_sprite_opaque_b2
    LDA   __zpabi_draw_sprite_opaque_p2
@@ -70,15 +70,10 @@ draw_sprite_opaque:
    LDY   __local_draw_sprite_opaque_b6
    LDA   ($84),Y
    STA   __local_draw_sprite_opaque_b0
-   LDA   __local_draw_sprite_opaque_b4
-   STA   DPTR
-   LDA   __local_draw_sprite_opaque_b3
-   STA   DPTR+1
-   LDA   __local_draw_sprite_opaque_b0
    PHA
    LDY   __local_draw_sprite_opaque_b1
    PLA
-   STA   (DPTR),Y
+   STA   ($8A),Y
 .if_end@2:
 .loop@1_continue:
    DEC   __local_draw_sprite_opaque_b2

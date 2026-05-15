@@ -201,7 +201,19 @@ def _excluded_names(fn: asm_ast.Function) -> set[str]:
     * Read-modify-write targets (Inc / Dec / ASL / LSR / ROL / ROR
       `.dst`) — single-operand RMW doesn't decompose cleanly into
       separate SSA versions. Defensive: today's `tac_to_asm` doesn't
-      emit these forms with Pseudo dsts."""
+      emit these forms with Pseudo dsts.
+    * **DPTR-staged pointer Pseudos** — when both bytes of a Pseudo
+      P are staged through DPTR (the canonical 4-instruction
+      sequence `Mov(P[0], A); STA DPTR; Mov(P[1], A); STA DPTR+1`),
+      byte-versioning would split P into separate single-byte
+      Pseudos that regalloc places independently — typically at
+      non-contiguous or wrong-order ZP slots, blocking the
+      `apply_indirect_base_prop` peephole that would otherwise
+      bypass the DPTR staging and emit `(P_low_addr),Y` directly.
+      Excluding P keeps it as a multi-byte Pseudo, which regalloc's
+      `_categorize_names` recognizes and allocates as a contiguous
+      2-byte block with byte 0 at the lower address — exactly the
+      shape `apply_indirect_base_prop` needs."""
     excluded: set[str] = set()
     for instr in fn.instructions:
         match instr:
@@ -220,7 +232,69 @@ def _excluded_names(fn: asm_ast.Function) -> set[str]:
             ):
                 if isinstance(dst, asm_ast.Pseudo):
                     excluded.add(dst.name)
+    excluded |= _dptr_staged_pointer_names(fn.instructions)
     return excluded
+
+
+def _dptr_staged_pointer_names(
+    instrs: list[asm_ast.Type_instruction],
+) -> set[str]:
+    """Detect Pseudo names whose byte 0 AND byte 1 are staged
+    through DPTR in the canonical 4-instruction sequence that
+    `tac_to_asm._stage_dptr` emits:
+
+        Mov(Pseudo(P, 0), Reg(A))
+        Mov(Reg(A), Data("DPTR", 0))
+        Mov(Pseudo(P, 1), Reg(A))
+        Mov(Reg(A), Data("DPTR", 1))
+
+    Strict-adjacency match — pre-SSA the lowering produces this
+    exact 4-instruction window. Returns the set of Pseudo names
+    that appear as the source of at least one such window."""
+    out: set[str] = set()
+    for i in range(len(instrs) - 3):
+        name = _match_dptr_stage_4(instrs, i)
+        if name is not None:
+            out.add(name)
+    return out
+
+
+def _match_dptr_stage_4(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> str | None:
+    a, b, c, d = instrs[i:i + 4]
+    if not all(isinstance(x, asm_ast.Mov) for x in (a, b, c, d)):
+        return None
+    # a: Mov(Pseudo(P, 0), Reg(A))
+    if not (
+        isinstance(a.src, asm_ast.Pseudo) and a.src.offset == 0
+        and isinstance(a.dst, asm_ast.Reg)
+        and isinstance(a.dst.reg, asm_ast.A)
+    ):
+        return None
+    # b: Mov(Reg(A), Data("DPTR", 0))
+    if not (
+        isinstance(b.src, asm_ast.Reg) and isinstance(b.src.reg, asm_ast.A)
+        and isinstance(b.dst, asm_ast.Data)
+        and b.dst.name == "DPTR" and b.dst.offset == 0
+    ):
+        return None
+    # c: Mov(Pseudo(P, 1), Reg(A)) — same Pseudo name as `a`.
+    if not (
+        isinstance(c.src, asm_ast.Pseudo)
+        and c.src.name == a.src.name and c.src.offset == 1
+        and isinstance(c.dst, asm_ast.Reg)
+        and isinstance(c.dst.reg, asm_ast.A)
+    ):
+        return None
+    # d: Mov(Reg(A), Data("DPTR", 1))
+    if not (
+        isinstance(d.src, asm_ast.Reg) and isinstance(d.src.reg, asm_ast.A)
+        and isinstance(d.dst, asm_ast.Data)
+        and d.dst.name == "DPTR" and d.dst.offset == 1
+    ):
+        return None
+    return a.src.name
 
 
 # ---------------------------------------------------------------------------

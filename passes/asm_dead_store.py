@@ -96,13 +96,23 @@ _POOL_HI = 0x100
 # treats as block boundaries. The CFG walker treats them as opaque
 # reads (LIVE on any path through them) so we can't optimize past
 # one even cross-block.
+#
+# `Push` / `Pop` are deliberately NOT here: they only touch the
+# 6502 hardware stack at $0100-$01FF and register A (Push src=A,
+# Pop dst=A in the IR shapes tac_to_asm emits). They do not read
+# or write any memory operand a DSE target can name (Data / ZP /
+# Frame / Stack / Indirect / IndexedData all address other
+# regions). Treating them as opaque would needlessly mark every
+# STA dead inside an indirect-Y store's `PHA src; ... ; PLA` save
+# bracket as live — which is exactly the shape that blocks
+# `apply_indirect_base_prop`'s downstream DPTR-staging cleanup.
+# `_read_operands` and `_write_operand` handle Push / Pop
+# precisely below.
 _OPAQUE_TYPES: tuple[type, ...] = (
     asm_ast.Call,
     asm_ast.FunctionPrologue,
     asm_ast.AllocateStack,
     asm_ast.LoadAddress,
-    asm_ast.Push,
-    asm_ast.Pop,
 )
 
 
@@ -354,6 +364,14 @@ def _write_operand(
         case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
             if not isinstance(dst, asm_ast.Reg):
                 return dst
+        case asm_ast.Pop(dst=dst):
+            # PLA pops the hardware stack into `dst`. When `dst` is
+            # Reg(A) (the typical IR shape) this isn't a memory kill;
+            # in the defensive case where `dst` is a memory operand,
+            # surface it so it can kill a same-address upstream
+            # store.
+            if not isinstance(dst, asm_ast.Reg):
+                return dst
     return None
 
 
@@ -401,6 +419,15 @@ def _read_operands(
             if not isinstance(dst, asm_ast.Reg):
                 yield dst
             yield from _ptr_source_reads(dst)
+        case asm_ast.Push(src=src):
+            # PHA reads src (typically Reg(A); the IR allows any
+            # operand). Hardware-stack write isn't visible to memory
+            # DSE — the stack at $0100-$01FF isn't a target shape.
+            if not isinstance(src, asm_ast.Reg):
+                yield src
+        # Pop has no read operands (the hardware stack pop isn't a
+        # memory target the DSE tracks); its write is handled in
+        # `_write_operand`.
 
 
 def _ptr_source_reads(op: asm_ast.Type_operand):

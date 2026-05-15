@@ -451,10 +451,10 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
             "int main(void) { return 0; }\n"
         )
         asm = self._compile(src)
-        # Expect an `LDA ($XX),Y` indirect-Y read (the ZP base
-        # is the zp_abi-pinned pointer slot, so $80 by the default
-        # pool layout).
-        self.assertIn("LDA   ($80),Y", asm)
+        # Expect an `LDA (symbol),Y` indirect-Y read (the ZP base
+        # is the zp_abi-pinned pointer slot, rendered by emit
+        # using the slot's symbolic name).
+        self.assertIn("LDA   (__zpabi_copy_p0),Y", asm)
         # The unrecognized form would emit `CLC` for the 16-bit
         # Add inside `copy` — verify that's gone.
         body_start = asm.index("copy:")

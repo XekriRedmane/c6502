@@ -48,7 +48,7 @@ draw_sprite_opaque:
 .draw_sprite_opaque@ssa_block@2:
    TXA
    TAY
-   LDA   ($8E),Y
+   LDA   (__local_draw_sprite_opaque_b7),Y
    STA   __local_draw_sprite_opaque_b1
    LDA   screen_row_addr_lo,X
    STA   __local_draw_sprite_opaque_b0
@@ -68,12 +68,12 @@ draw_sprite_opaque:
    BCS   .if_end@2
 .draw_sprite_opaque@asm_ssa_block@2:
    LDY   __local_draw_sprite_opaque_b6
-   LDA   ($84),Y
+   LDA   (__zpabi_draw_sprite_opaque_p4),Y
    STA   __local_draw_sprite_opaque_b0
    PHA
    LDY   __local_draw_sprite_opaque_b1
    PLA
-   STA   ($8A),Y
+   STA   (__local_draw_sprite_opaque_b3),Y
 .if_end@2:
 .loop@1_continue:
    DEC   __local_draw_sprite_opaque_b2

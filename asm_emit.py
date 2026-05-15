@@ -162,6 +162,30 @@ _FP = "FP"
 _DPTR = "DPTR"
 
 
+# Per-emit_program context: reverse map `int → str` from ZP byte
+# address to the symbol that names it (runtime symbols like DPTR /
+# FP / SSP, plus any zp_slot_symbols passed in). Used to render
+# `IndirectZp` / `IndirectZpY` operands as `(symbol),Y` instead of
+# `($XX),Y` — preserves the source-level reference and makes the
+# emitted asm self-documenting. Reset to empty between calls so
+# unit-test paths that call individual emit helpers directly see
+# the raw-address rendering.
+_ADDR_TO_SYMBOL: dict[int, str] = {}
+
+
+def _zpy_operand(address: int) -> str:
+    """Render the `(addr),Y` indirect-Y addressing operand. Uses a
+    known symbol when `_ADDR_TO_SYMBOL` has one for this address;
+    falls back to the raw `($XX),Y` form otherwise. Symbol form
+    keeps the asm readable when the address comes from a regalloc-
+    assigned slot (`__local_<fn>_b<k>`) or a zp_abi param slot
+    (`__zpabi_<fn>_p<k>`); raw form is the safe default."""
+    sym = _ADDR_TO_SYMBOL.get(address)
+    if sym is not None:
+        return f"({sym}),Y"
+    return f"(${address:02X}),Y"
+
+
 def _instr_line(opcode: str, operand: str = "") -> str:
     line = " " * _OPCODE_COL + opcode.upper()
     if operand:
@@ -334,11 +358,11 @@ def _emit_memop_load(
     if isinstance(addr_op, asm_ast.IndirectY):
         return [_instr_line(opcode, f"({_DPTR}),Y")]
     if isinstance(addr_op, asm_ast.IndirectZpY):
-        return [_instr_line(opcode, f"(${addr_op.address:02X}),Y")]
+        return [_instr_line(opcode, _zpy_operand(addr_op.address))]
     if isinstance(addr_op, asm_ast.IndirectZp):
         return [
             _emit_load_y(addr_op.offset),
-            _instr_line(opcode, f"(${addr_op.address:02X}),Y"),
+            _instr_line(opcode, _zpy_operand(addr_op.address)),
         ]
     return [
         _emit_load_y(addr_op.offset),
@@ -356,11 +380,11 @@ def _emit_memop_store(addr_op: asm_ast.Type_operand) -> list[str]:
     if isinstance(addr_op, asm_ast.IndirectY):
         return [_instr_line("STA", f"({_DPTR}),Y")]
     if isinstance(addr_op, asm_ast.IndirectZpY):
-        return [_instr_line("STA", f"(${addr_op.address:02X}),Y")]
+        return [_instr_line("STA", _zpy_operand(addr_op.address))]
     if isinstance(addr_op, asm_ast.IndirectZp):
         return [
             _emit_load_y(addr_op.offset),
-            _instr_line("STA", f"(${addr_op.address:02X}),Y"),
+            _instr_line("STA", _zpy_operand(addr_op.address)),
         ]
     return [
         _emit_load_y(addr_op.offset),
@@ -1093,6 +1117,44 @@ def emit_program(
     --link`). Emitted immediately after the EQU block. Dasm
     ignores comments, so the asm assembles unchanged in single-TU
     mode."""
+    global _ADDR_TO_SYMBOL
+    # Build the reverse map for the duration of this emit so
+    # `IndirectZp` / `IndirectZpY` operands render as
+    # `(symbol),Y` when the runtime ZP base address matches a
+    # named slot. Runtime symbols (SSP / FP / HARGS / DPTR) get
+    # mapped first; caller-supplied zp_slot_symbols may override
+    # (a slot symbol on the same byte as a runtime symbol would
+    # be a layout bug, but the override is harmless if it
+    # happens). Pairs that resolve outside zero page are skipped
+    # — only ZP-base indirect-Y rendering uses this map.
+    addr_to_sym: dict[int, str] = {
+        0x00: "SSP",
+        0x02: "FP",
+        0x04: "HARGS",
+        0x24: "DPTR",
+    }
+    if zp_slot_symbols:
+        for name, addr in zp_slot_symbols.items():
+            if 0 <= addr <= 0xFF:
+                addr_to_sym[addr] = name
+    prev_addr_to_sym = _ADDR_TO_SYMBOL
+    _ADDR_TO_SYMBOL = addr_to_sym
+    try:
+        return _emit_program_body(
+            prog,
+            zp_slot_symbols=zp_slot_symbols,
+            link_metadata_lines=link_metadata_lines,
+        )
+    finally:
+        _ADDR_TO_SYMBOL = prev_addr_to_sym
+
+
+def _emit_program_body(
+    prog: asm_ast.Type_program,
+    *,
+    zp_slot_symbols: dict[str, int] | None,
+    link_metadata_lines: list[str] | None,
+) -> str:
     match prog:
         case asm_ast.Program(top_level=top_levels):
             # One blank line separates consecutive top-level

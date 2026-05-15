@@ -244,9 +244,23 @@ def _rewrite_redundant_transfers(
             continue
         # Cross-transfer: walk forward from i+chain_len, rewriting
         # IndexedData operands until the run boundary.
+        #
+        # When a rewrite would produce an unencodable Mov shape
+        # (same-index `LDX abs,X` / `LDY abs,Y`), we split the
+        # consolidated load (`Mov(IndexedData(...,X), Reg(Y))` =
+        # `LDY abs,X`) into `Mov(IndexedData(...,Y), Reg(A))` +
+        # `Mov(Reg(A), Reg(Y))` — i.e. `LDA abs,Y; TAY`. The
+        # post-rewrite shape (4 bytes) is one byte longer than the
+        # pre-rewrite `LDY abs,X` (3 bytes), but dropping the
+        # preceding 2-byte transfer chain still nets one byte
+        # saved AND keeps Reg(X) free for downstream opportunities
+        # (e.g. loop_counter_to_x). Stores can't be split this
+        # way — `STX/STY abs,X|Y` don't exist — so a Mov with the
+        # IndexedData on the dst side aborts the whole rewrite.
         j = i + chain_len
         rewritten_run: list[asm_ast.Type_instruction] = []
         any_rewritten = False
+        aborted = False
         while j < n:
             instr = instrs[j]
             new_instr = _rewrite_indexed_data_index_in_instr(
@@ -254,6 +268,17 @@ def _rewrite_redundant_transfers(
             )
             if new_instr is not instr:
                 any_rewritten = True
+                splitted = _split_unencodable_indexed_load(new_instr)
+                if splitted is not None:
+                    rewritten_run.extend(splitted)
+                    j += 1
+                    # The split's tail is `Mov(Reg(A), Reg(dst))`
+                    # which writes dst_reg; that's also a chain
+                    # boundary, so stop here.
+                    break
+                if _is_unencodable_indexed_mov(new_instr):
+                    aborted = True
+                    break
             should_stop = _instr_breaks_transfer_chain(
                 new_instr, dst_reg=dst_reg, src_reg=src_reg,
             )
@@ -261,7 +286,7 @@ def _rewrite_redundant_transfers(
             j += 1
             if should_stop:
                 break
-        if any_rewritten:
+        if any_rewritten and not aborted:
             # Drop the chain, splice the rewritten run.
             out.extend(rewritten_run)
             i = j
@@ -269,6 +294,55 @@ def _rewrite_redundant_transfers(
             out.append(instrs[i])
             i += 1
     return out
+
+
+def _is_unencodable_indexed_mov(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` is a Mov whose IndexedData operand uses the
+    same index register as the other operand's HwReg. The 6502
+    has no `LDX abs,X` / `LDY abs,Y` / `STX abs,X` / `STY abs,Y`
+    encodings; emit and the in-process assembler both reject these.
+    Used by the cross-transfer rewrite to detect when an X→Y (or
+    Y→X) IndexedData index rewrite would land in the unencodable
+    region."""
+    if not isinstance(instr, asm_ast.Mov):
+        return False
+    src, dst = instr.src, instr.dst
+    if (isinstance(src, asm_ast.IndexedData)
+        and isinstance(dst, asm_ast.Reg)
+        and type(src.index) is type(dst.reg)):
+        return True
+    if (isinstance(dst, asm_ast.IndexedData)
+        and isinstance(src, asm_ast.Reg)
+        and type(dst.index) is type(src.reg)):
+        return True
+    return False
+
+
+def _split_unencodable_indexed_load(
+    instr: asm_ast.Type_instruction,
+) -> list[asm_ast.Type_instruction] | None:
+    """If `instr` is the same-index `Mov(IndexedData(...,R), Reg(R))`
+    load form, split it into `Mov(IndexedData(...,R), Reg(A))` +
+    `Mov(Reg(A), Reg(R))` (= `LDA abs,R; T{R}A` then `TAR`). The
+    consolidated `LD{R} abs,R` doesn't exist, but the split is
+    value-equivalent and 1 byte longer than the consolidated form
+    would have been. Returns None for stores (no split is
+    value-equivalent) and for instructions that aren't this exact
+    shape."""
+    if not isinstance(instr, asm_ast.Mov):
+        return None
+    src, dst = instr.src, instr.dst
+    if not (
+        isinstance(src, asm_ast.IndexedData)
+        and isinstance(dst, asm_ast.Reg)
+        and type(src.index) is type(dst.reg)
+    ):
+        return None
+    reg_a = asm_ast.Reg(reg=asm_ast.A())
+    return [
+        asm_ast.Mov(src=src, dst=reg_a),
+        asm_ast.Mov(src=reg_a, dst=dst),
+    ]
 
 
 def _match_transfer_chain(

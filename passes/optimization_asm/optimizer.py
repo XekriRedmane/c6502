@@ -352,11 +352,12 @@ def _project_eligibility(
 ) -> HwRegEligibility:
     """Project per-Pseudo eligibility through the coalescing result.
 
-    A coalesced rep is `eligible` iff EVERY member that maps to it
-    is in `raw.eligible`. (Conservative: a single ineligible member
-    taints the rep.) Hints transfer from any member: the rep is in
+    A coalesced rep is in `eligible_x` iff EVERY member that maps
+    to it is in `raw.eligible_x` — conservative: a single member
+    that can't be X-pinned taints the rep. Same independently for
+    `eligible_y`. Hints transfer from any member: the rep is in
     `hints_x` iff any member is, and similarly for hints_y. Hints
-    are restricted to the eligible set after projection.
+    are then restricted to the matching-HwReg eligible set.
 
     Names in `all_names` that aren't in `coalesce_result.
     representative` are singletons — they map to themselves and
@@ -366,13 +367,16 @@ def _project_eligibility(
     for name in all_names:
         rep = coalesce_result.resolve(name)
         members_by_rep.setdefault(rep, set()).add(name)
-    rep_eligible: set[str] = set()
+    rep_eligible_x: set[str] = set()
+    rep_eligible_y: set[str] = set()
     rep_hints_x: set[str] = set()
     rep_hints_y: set[str] = set()
     rep_use_count: dict[str, int] = {}
     for rep, members in members_by_rep.items():
-        if all(m in raw.eligible for m in members):
-            rep_eligible.add(rep)
+        if all(m in raw.eligible_x for m in members):
+            rep_eligible_x.add(rep)
+        if all(m in raw.eligible_y for m in members):
+            rep_eligible_y.add(rep)
         if any(m in raw.hints_x for m in members):
             rep_hints_x.add(rep)
         if any(m in raw.hints_y for m in members):
@@ -381,10 +385,12 @@ def _project_eligibility(
         rep_use_count[rep] = sum(
             raw.use_count.get(m, 0) for m in members
         )
-    rep_hints_x &= rep_eligible
-    rep_hints_y &= rep_eligible
+    rep_eligible_any = rep_eligible_x | rep_eligible_y
+    rep_hints_x &= rep_eligible_any
+    rep_hints_y &= rep_eligible_any
     return HwRegEligibility(
-        eligible=rep_eligible,
+        eligible_x=rep_eligible_x,
+        eligible_y=rep_eligible_y,
         hints_x=rep_hints_x,
         hints_y=rep_hints_y,
         use_count=rep_use_count,

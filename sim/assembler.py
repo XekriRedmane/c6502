@@ -759,6 +759,18 @@ def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:
     # IndexedData -> memory: load + store (3 + store size).
     if _is_indexed_data(src) and _is_memory(dst):
         return 3 + _store_a_to_mem_size(dst)
+    # IndexedData -> Reg(X) / Reg(Y): `LDX abs,Y` and `LDY abs,X`
+    # are 3 bytes; the same-index cases (`LDX abs,X`, `LDY abs,Y`)
+    # don't exist and never get this far (hwreg_eligibility refuses
+    # to color a Pseudo into a shape that would produce one).
+    if _is_indexed_data(src) and isinstance(dst, asm_ast.Reg):
+        idx = src.index
+        if (isinstance(dst.reg, asm_ast.X)
+            and isinstance(idx, asm_ast.Y)):
+            return 3
+        if (isinstance(dst.reg, asm_ast.Y)
+            and isinstance(idx, asm_ast.X)):
+            return 3
     # Reg(A) -> IndexedData: STA $XXXX,X / $XXXX,Y absolute-indexed
     # store. 3 bytes regardless of name vs. raw-numeric base.
     if _is_reg_a(src) and _is_indexed_data(dst):
@@ -908,6 +920,20 @@ def _emit_mov(
         return _emit_abs_indexed(
             "STA", _resolve_indexed_data_addr(dst, syms), dst.index,
         )
+    # IndexedData -> Reg(X) / Reg(Y): `LDX abs,Y` and `LDY abs,X`
+    # are the only valid same-instruction loads (`LDX abs,X` and
+    # `LDY abs,Y` don't exist).
+    if _is_indexed_data(src) and isinstance(dst, asm_ast.Reg):
+        if (isinstance(dst.reg, asm_ast.X)
+            and isinstance(src.index, asm_ast.Y)):
+            return _emit_abs_indexed(
+                "LDX", _resolve_indexed_data_addr(src, syms), src.index,
+            )
+        if (isinstance(dst.reg, asm_ast.Y)
+            and isinstance(src.index, asm_ast.X)):
+            return _emit_abs_indexed(
+                "LDY", _resolve_indexed_data_addr(src, syms), src.index,
+            )
     # Data / ZP -> Reg(X) / Reg(Y) — zp/abs LDX/LDY direct.
     if _is_data_or_zp(src) and isinstance(dst, asm_ast.Reg):
         if isinstance(dst.reg, asm_ast.X):

@@ -103,6 +103,15 @@ class HwRegEligibility:
     """Per-function HwReg coloring eligibility + hint sets +
     per-name use-count weights.
 
+    Eligibility is per-HwReg: `eligible_x` and `eligible_y` are
+    independent sets, because some operand shapes work in only one
+    of the two. The canonical asymmetric case is `Mov(IndexedData,
+    P)` — pinning P to Y is fine when the IndexedData indexes by X
+    (`LDY abs,X` exists), but pinning to X would require `LDX abs,X`
+    which doesn't exist on the 6502; the reverse holds for an
+    IndexedData indexed by Y. Most other peer shapes (Imm, ZP, Data,
+    Reg) are symmetric: `eligible_x` and `eligible_y` agree.
+
     `use_count[name]` is the number of times `name` appears as a
     Pseudo operand anywhere in the function (any role). Used to
     prioritize candidates at coloring time: a name that appears
@@ -112,37 +121,39 @@ class HwRegEligibility:
     treats each operand position equally regardless of static
     weight, and doesn't model loop nesting — but tracks the
     intuition that more references = more savings."""
-    eligible: set[str] = field(default_factory=set)
+    eligible_x: set[str] = field(default_factory=set)
+    eligible_y: set[str] = field(default_factory=set)
     hints_x: set[str] = field(default_factory=set)
     hints_y: set[str] = field(default_factory=set)
     use_count: dict[str, int] = field(default_factory=dict)
 
+    @property
+    def eligible(self) -> set[str]:
+        """Union of `eligible_x` and `eligible_y` — a name is in
+        `eligible` iff it can be pinned to at least one HwReg.
+        Provided for callers that only need a "could this be
+        HwReg-pinned at all?" check."""
+        return self.eligible_x | self.eligible_y
+
 
 def scan_function(fn: asm_ast.Function) -> HwRegEligibility:
-    """Compute the per-Pseudo eligibility set for HwReg coloring,
+    """Compute the per-Pseudo eligibility sets for HwReg coloring,
     plus X/Y hint sets derived from the index-setup chain pattern.
     Single forward pass over `fn.instructions`.
 
-    Eligibility is conservative: if any operand position involving a
-    Pseudo doesn't match the supported shapes (Mov sources/dests,
-    Inc/Dec, Compare, Mov-into-Reg(A) followed by TAX/TAY chain), the
-    Pseudo is dropped from `eligible`. The dropped name then can't
-    be HwReg-pinned even if it would otherwise have a hint."""
-    # Collect every Pseudo name that appears anywhere, with the
-    # offset they appear at (eligible names must only appear at
-    # offset 0). Track per-name "all OK so far" — flips False on
-    # any disqualifying use.
+    Eligibility is per-HwReg AND conservative: a Pseudo is in
+    `eligible_x` iff every def/use is X-encodable, and similarly
+    for `eligible_y`. A name can be in both (the common case for
+    Imm / ZP / Data / Reg peers), in one (when an IndexedData
+    peer is asymmetric), or in neither (any disqualifying role)."""
     seen: set[str] = set()
-    disqualified: set[str] = set()
+    disqualified_x: set[str] = set()
+    disqualified_y: set[str] = set()
     hints_x: set[str] = set()
     hints_y: set[str] = set()
     use_count: dict[str, int] = {}
 
-    def disqualify(name: str) -> None:
-        disqualified.add(name)
-
     instrs = fn.instructions
-    n = len(instrs)
     for i, instr in enumerate(instrs):
         for op_role, op in _operand_roles(instr):
             if not isinstance(op, asm_ast.Pseudo):
@@ -150,12 +161,14 @@ def scan_function(fn: asm_ast.Function) -> HwRegEligibility:
             seen.add(op.name)
             use_count[op.name] = use_count.get(op.name, 0) + 1
             if op.offset != 0:
-                disqualify(op.name)
+                disqualified_x.add(op.name)
+                disqualified_y.add(op.name)
                 continue
-            # Each role determines whether this site is HwReg-
-            # representable. Any "no" disqualifies the name.
-            if not _role_ok(op_role, instr):
-                disqualify(op.name)
+            x_ok, y_ok = _role_ok(op_role, instr)
+            if not x_ok:
+                disqualified_x.add(op.name)
+            if not y_ok:
+                disqualified_y.add(op.name)
         # Detect the index-setup chain at this instruction position:
         #   instrs[i-1] = Mov(P, Reg(A))
         #   instrs[i  ] = Mov(Reg(A), Reg(X|Y))
@@ -181,13 +194,19 @@ def scan_function(fn: asm_ast.Function) -> HwRegEligibility:
                 elif isinstance(instr.dst.reg, asm_ast.Y):
                     hints_y.add(p_name)
 
-    eligible = seen - disqualified
-    # Hints are restricted to the eligible set — a hinted-but-
-    # disqualified name can't be HwReg-pinned anyway.
-    hints_x &= eligible
-    hints_y &= eligible
+    eligible_x = seen - disqualified_x
+    eligible_y = seen - disqualified_y
+    # Hints are restricted to the UNION of eligibility — a name with
+    # hint_x but only y-eligible is still a useful preference signal
+    # (the regalloc's fallback path tries the other HwReg). A name
+    # disqualified from BOTH X and Y can't be HwReg-pinned at all, so
+    # hints for it are dropped.
+    eligible_any = eligible_x | eligible_y
+    hints_x &= eligible_any
+    hints_y &= eligible_any
     return HwRegEligibility(
-        eligible=eligible, hints_x=hints_x, hints_y=hints_y,
+        eligible_x=eligible_x, eligible_y=eligible_y,
+        hints_x=hints_x, hints_y=hints_y,
         use_count=use_count,
     )
 
@@ -255,86 +274,92 @@ def _operand_roles(instr: asm_ast.Type_instruction):
             yield ("other", dst)
 
 
-def _role_ok(role: str, instr: asm_ast.Type_instruction) -> bool:
+def _role_ok(role: str, instr: asm_ast.Type_instruction) -> tuple[bool, bool]:
     """Is a Pseudo in `role` of `instr` representable when colored
-    to X or Y? Only certain (role, peer-operand-shape) combinations
-    work — e.g. Compare(P, Imm) is fine (CPX #imm) but Compare(P,
-    Frame) needs A as scratch (CPX can't load through indirect-Y),
-    so we reject it for HwReg eligibility."""
+    to X or Y? Returns `(x_ok, y_ok)` — independent per HwReg.
+
+    Most roles are symmetric (the same answer for X and Y), but
+    `Mov` with an `IndexedData` peer is asymmetric: `LDX abs,Y` and
+    `LDY abs,X` exist, but `LDX abs,X` and `LDY abs,Y` don't. So a
+    Pseudo at `mov_dst` with peer `IndexedData(index=X)` is
+    Y-eligible but not X-eligible.
+    """
     if role == "other":
-        return False
+        return (False, False)
     if role == "inc_dec":
-        return True
+        return (True, True)
     if role == "phi_dst" or role == "phi_arg":
         # Phi-arg substitution happens in apply_coloring AFTER
         # SSA destruction lowers each PhiArg to a Mov on the
         # predecessor edge. The Mov's compatibility is checked at
         # the destruction site as a regular mov_src/mov_dst pair,
         # so we accept Phi unconditionally here.
-        return True
+        return (True, True)
     if isinstance(instr, asm_ast.Mov):
-        # The Pseudo at `role` must have a peer operand that's
-        # one of the HwReg-friendly shapes. Specifically:
-        #   mov_dst (Pseudo is the dst): src must be Imm /
-        #     Reg(A) / ZP / Data / IndexedData. Stack/Frame/
-        #     Indirect/ImmLabel/Pseudo->Reg(X|Y) ok (they go
-        #     through A in emit). Reg(X|Y) sources are also fine
-        #     (TXA/TYA via A, then TAY/TAX).
-        #   mov_src (Pseudo is the src): dst must be Reg(A) /
-        #     ZP / Data / Reg(X|Y). Stack/Frame/Indirect dsts
-        #     would need TXA + STA via indirect-Y, which we
-        #     accept (they go through A). Other Pseudos as dst
-        #     accepted (post-coalescing, the other Pseudo may
-        #     also be HwReg-colored).
-        # We allow all the source/dst shapes that asm_emit can
-        # render — see _emit_mov in asm_emit.py.
         peer = instr.dst if role == "mov_src" else instr.src
-        return _peer_is_hwreg_friendly(peer)
+        return _peer_is_hwreg_friendly(peer, role)
     if role == "cmp_left":
-        # Compare(Reg(X|Y), <Imm | ZP | Data | Reg(A) | Reg(X|Y)>)
-        # → CPX/CPY <imm/zp/abs>. Frame/Stack/Indirect right
-        # operands aren't supported — CPX/CPY have no indirect-Y.
+        # Compare(Reg(X|Y), <Imm | ZP | Data>) → CPX/CPY
+        # <imm/zp/abs>. Frame/Stack/Indirect right operands aren't
+        # supported — CPX/CPY have no indirect-Y.
         right = instr.right  # type: ignore[attr-defined]
-        return _cmp_peer_is_hwreg_friendly(right)
+        ok = _cmp_peer_is_hwreg_friendly(right)
+        return (ok, ok)
     if role == "cmp_right":
-        # Compare with Pseudo on the right side: this is unusual
-        # (typical lowering puts the Pseudo on the left), and CPX
-        # doesn't have a "compare with X" with an arbitrary left
-        # — the `left` would have to be Reg(A). Treating as
-        # disqualifying defensively; if a left==Reg(A) check
-        # turns out to matter, lift it later.
-        return False
-    return False
+        # Compare with Pseudo on the right side: unusual; CPX/CPY
+        # don't have a form with X/Y on the right unless `left` is
+        # Reg(A) — disqualifying defensively.
+        return (False, False)
+    return (False, False)
 
 
-def _peer_is_hwreg_friendly(peer: asm_ast.Type_operand) -> bool:
+def _peer_is_hwreg_friendly(
+    peer: asm_ast.Type_operand, role: str,
+) -> tuple[bool, bool]:
     """Is `peer` a Mov peer (src or dst) that asm_emit can render
-    when the other side is Reg(X|Y)?"""
+    when the other side is Reg(X) / Reg(Y)? Returns `(x_ok, y_ok)`.
+
+    `role` is one of "mov_src" (the Pseudo is the Mov's src; peer
+    is the dst) or "mov_dst" (the Pseudo is the dst; peer is the
+    src). The split matters only for IndexedData: loads through
+    `LDX abs,Y` / `LDY abs,X` are valid (mov_dst path); stores
+    through `STX abs,Y` / `STY abs,X` etc. don't exist on the
+    6502, so no `Mov(Reg(X|Y), IndexedData)` shape is emittable.
+    """
     if isinstance(peer, asm_ast.Imm):
-        return True
+        return (True, True)
     if isinstance(peer, asm_ast.Reg):
         # A, X, Y are all OK — TXA/TYA/TAX/TAY exist; same-reg
         # self-Movs are dropped by the self-Mov peephole.
-        return True
+        return (True, True)
     if isinstance(peer, (asm_ast.Data, asm_ast.ZP)):
         # LDX/LDY zp/abs ; STX/STY zp/abs.
-        return True
+        return (True, True)
     if isinstance(peer, asm_ast.Pseudo):
         # Post-coalescing the peer may or may not be HwReg-colored;
         # apply_coloring resolves both sides before emit.
-        return True
+        return (True, True)
     if isinstance(peer, (asm_ast.Stack, asm_ast.Frame, asm_ast.Indirect)):
         # Indirect-Y addressing — emit goes through A.
-        return True
+        return (True, True)
     if isinstance(peer, asm_ast.IndexedData):
-        # LDA name,Y / LDA name,X — emit goes through A.
-        return True
+        if role == "mov_dst":
+            # The Pseudo is the load target; peer is IndexedData
+            # src. Valid only when the load opcode's destination
+            # register differs from the IndexedData index register
+            # (`LDX abs,Y`, `LDY abs,X`).
+            x_ok = isinstance(peer.index, asm_ast.Y)
+            y_ok = isinstance(peer.index, asm_ast.X)
+            return (x_ok, y_ok)
+        # mov_src: store. No `STX abs,X|Y` / `STY abs,X|Y` on the
+        # 6502 — emit routes A→IndexedData only.
+        return (False, False)
     if isinstance(peer, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
         # LDA #<name (immediate) — only as src; only into A in
         # current emit. Treating as "ok if peer is sensible"; if
         # this turns out to need finer dispatch, refine later.
-        return True
-    return False
+        return (True, True)
+    return (False, False)
 
 
 def _cmp_peer_is_hwreg_friendly(peer: asm_ast.Type_operand) -> bool:

@@ -472,6 +472,20 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
             [_instr_line("LDA", _indexed_data_addr(src))]
             + _emit_memop_store(dst)
         )
+    # IndexedData -> Reg(X) / Reg(Y): the 6502 has `LDX abs,Y` and
+    # `LDY abs,X` but not `LDX abs,X` / `LDY abs,Y` (the index
+    # register can't be both the addressing-mode index AND the
+    # destination of the same load). Cross-index cases use the
+    # native opcode; same-index cases aren't emittable and the
+    # hwreg_eligibility pass refuses to color a Pseudo in a way
+    # that would produce one.
+    if isinstance(src, asm_ast.IndexedData) and isinstance(dst, asm_ast.Reg):
+        if (isinstance(dst.reg, asm_ast.X)
+            and isinstance(src.index, asm_ast.Y)):
+            return [_instr_line("LDX", _indexed_data_addr(src))]
+        if (isinstance(dst.reg, asm_ast.Y)
+            and isinstance(src.index, asm_ast.X)):
+            return [_instr_line("LDY", _indexed_data_addr(src))]
     # IndexedData destination: absolute,X / absolute,Y store. Used
     # by the IndexedStore lowering to emit `STA $XXXX,X` directly.
     # Source must be Reg(A); the caller has already loaded A with

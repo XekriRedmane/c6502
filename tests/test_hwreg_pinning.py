@@ -89,6 +89,82 @@ class TestHwRegEligibility(unittest.TestCase):
         elig = self._scan(instrs)
         self.assertEqual(elig.use_count.get("P", 0), 2)
 
+    def test_pseudo_loaded_from_indexed_data_x_indexed_is_y_only(self):
+        # Pseudo P is the dst of Mov(IndexedData(...,X), P). Pinning
+        # P to X would yield `LDX abs,X` which doesn't exist; pinning
+        # to Y yields `LDY abs,X` which DOES exist. So P is
+        # Y-eligible but not X-eligible.
+        instrs = [
+            _mov(
+                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
+                asm_ast.Pseudo(name="P", offset=0),
+            ),
+            # Downstream X-setup chain that hints P → X. The fallback
+            # in regalloc tries Y when X is ineligible.
+            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
+            _mov(_reg("A"), _reg("X")),
+            _mov(
+                asm_ast.IndexedData(name="arr2", offset=0, index=asm_ast.X()),
+                _reg("A"),
+            ),
+        ]
+        elig = self._scan(instrs)
+        self.assertNotIn("P", elig.eligible_x)
+        self.assertIn("P", elig.eligible_y)
+        # The X-setup chain still hints X — the fallback path will
+        # handle the actual coloring decision.
+        self.assertIn("P", elig.hints_x)
+
+    def test_pseudo_loaded_from_indexed_data_y_indexed_is_x_only(self):
+        # Mirror: peer `IndexedData(...,Y)` makes P X-eligible
+        # (`LDX abs,Y` exists) but not Y-eligible (`LDY abs,Y`
+        # doesn't). IndexedData(index=Y) arises after
+        # loop_counter_to_x rewrites an X-pivoting access chain.
+        instrs = [
+            _mov(
+                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.Y()),
+                asm_ast.Pseudo(name="P", offset=0),
+            ),
+            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
+        ]
+        elig = self._scan(instrs)
+        self.assertIn("P", elig.eligible_x)
+        self.assertNotIn("P", elig.eligible_y)
+
+    def test_eligible_property_is_union_of_x_and_y(self):
+        # The legacy `.eligible` property is the union of the per-
+        # HwReg sets; consumers that only need "any HwReg works"
+        # can use it. Names in one but not the other still appear
+        # in the union.
+        instrs = [
+            _mov(
+                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
+                asm_ast.Pseudo(name="P", offset=0),
+            ),
+            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
+        ]
+        elig = self._scan(instrs)
+        self.assertNotIn("P", elig.eligible_x)
+        self.assertIn("P", elig.eligible_y)
+        self.assertIn("P", elig.eligible)
+
+    def test_pseudo_stored_to_indexed_data_is_disqualified(self):
+        # Pseudo P is the src of Mov(P, IndexedData(...,X)). If P
+        # is HwReg-pinned to X or Y, the result is Mov(Reg(X|Y),
+        # IndexedData(...,X)) — `STX abs,X` / `STY abs,X` don't
+        # exist on the 6502; only `STA abs,X` does. The scan must
+        # drop P from both eligibility sets.
+        instrs = [
+            _mov(asm_ast.Imm(value=5), asm_ast.Pseudo(name="P", offset=0)),
+            _mov(
+                asm_ast.Pseudo(name="P", offset=0),
+                asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()),
+            ),
+        ]
+        elig = self._scan(instrs)
+        self.assertNotIn("P", elig.eligible_x)
+        self.assertNotIn("P", elig.eligible_y)
+
 
 class TestApplyColoringHwReg(unittest.TestCase):
     """Unit tests for HwReg substitution + redundant-transfer

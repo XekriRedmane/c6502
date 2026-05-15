@@ -284,6 +284,15 @@ def _try_hwreg_assign(
         return False
 
     def _can_pin(name: str, reg: str) -> bool:
+        # Per-HwReg eligibility: a name is X-pinnable only if it's
+        # in eligible_x, Y-pinnable only if it's in eligible_y.
+        # Most names are in both (the symmetric peer shapes); the
+        # asymmetric IndexedData-peer case is the reason this
+        # gate is per-HwReg rather than a single set.
+        if reg == "X" and name not in eligibility.eligible_x:
+            return False
+        if reg == "Y" and name not in eligibility.eligible_y:
+            return False
         node = graph.nodes.get(name)
         if node is None:
             return False
@@ -318,20 +327,24 @@ def _try_hwreg_assign(
         return (-eligibility.use_count.get(name, 0), name)
 
     # hints_x: prefer X, fall back to Y. Names already pinned (by
-    # earlier iterations) skip cleanly.
+    # earlier iterations) skip cleanly. The per-HwReg gate in
+    # `_can_pin` enforces that the fallback only fires when the name
+    # is eligible for the other HwReg.
     for name in sorted(eligibility.hints_x, key=_priority):
-        if name not in eligibility.eligible:
-            continue
         if name in hwreg_assignments:
+            continue
+        if (name not in eligibility.eligible_x
+            and name not in eligibility.eligible_y):
             continue
         _try_pin_with_fallback(name, preferred="X")
 
     # hints_y: prefer Y, fall back to X. Skip names already
     # assigned (e.g. one in BOTH hint sets that already got X).
     for name in sorted(eligibility.hints_y, key=_priority):
-        if name not in eligibility.eligible:
-            continue
         if name in hwreg_assignments:
+            continue
+        if (name not in eligibility.eligible_x
+            and name not in eligibility.eligible_y):
             continue
         _try_pin_with_fallback(name, preferred="Y")
 

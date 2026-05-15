@@ -1347,9 +1347,10 @@ fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
    → to_ssa
    → fold_static_const_reads (one-shot)
    → [constant_fold → reduce_strength → fold_cmp_zero_jump
-      → fold_narrow_and_jump → UCE → copy_propagate → DSE
-      → fold_copies → reassoc_constants → recognize_indexed_store
-      → recognize_indexed_load → sink_increments]*
+      → fold_narrow_and_jump → eliminate_dead_loops → UCE
+      → copy_propagate → DSE → fold_copies → reassoc_constants
+      → recognize_indexed_store → recognize_indexed_load
+      → sink_increments]*
    → recognize_indirect_indexed (post-fixedpoint, one-shot)
    → from_ssa
    → fold_copies                                  (post-from_ssa)
@@ -1403,6 +1404,21 @@ fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
      JumpIf*)` to `JumpIfMasked` when the operand can be
      narrowed to 1 byte — produces the direct `LDA / BPL/BMI`
      pattern at asm lowering instead of an 8-bit AND + 16-bit Z.
+   - `eliminate_dead_loops` (`passes/optimization/dead_loop_
+     elimination.py`): detects natural loops (back-edges via the
+     existing `natural_loops()` helper in `cfg.py`) whose body
+     has no `Call` / `Store` / `Ret` and whose every SSA def is
+     loop-local (no use anywhere outside the body). When the
+     gates pass, rewrites the header to `[Label, Jump(exit)]`
+     so UCE prunes the now-unreachable body on the next sweep.
+     Single-exit-edge gate keeps Phi-arg retagging at the exit
+     unambiguous. Collapses nested empty-loop shapes like
+     `do { while(--y); } while(--d);` to nothing — no observable
+     effects means no work to do. NOTE: lacking volatile
+     semantics (the parser silently drops the qualifier), this
+     pass will currently delete loops the programmer marked
+     volatile; preserving them requires plumbing volatile
+     through the type system.
    - `eliminate_unreachable_code`: forward DFS from ENTRY; prunes
      dead Phi args; folds singleton Phis to Copies; drops
      useless jumps / labels.

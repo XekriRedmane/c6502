@@ -16,6 +16,7 @@ extern const uint8_t floor_base_row[];         /* per-(floor_col) screen Y base 
 extern const uint8_t perspective_xoff_byte[]; /* byte-domain perspective X offsets */
 extern const uint8_t rescue_bobble[];          /* 7 signed step-Y deltas (bit 7 = sign) */
 
+__attribute__((zp_abi))
 static void spawn_pos_dir(uint8_t slot)
 {
     entity_active[slot]    = 0x01;

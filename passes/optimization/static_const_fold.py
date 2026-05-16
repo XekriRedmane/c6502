@@ -175,6 +175,10 @@ def _rewrite_instr(
             return tac_ast.IndexedStore(
                 address=a, index=sub(idx), src=sub(s), is_volatile=v,
             )
+        case tac_ast.IndexedSymbolStore(name=n, index=idx, src=s, is_volatile=v):
+            return tac_ast.IndexedSymbolStore(
+                name=n, index=sub(idx), src=sub(s), is_volatile=v,
+            )
         case tac_ast.Unary(op=op, src=s, dst=d):
             return tac_ast.Unary(op=op, src=sub(s), dst=d)
         case tac_ast.Binary(op=op, src1=s1, src2=s2, dst=d):

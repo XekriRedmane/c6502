@@ -333,6 +333,9 @@ def _instr_use_vals(inst):
     elif isinstance(inst, tac_ast.IndexedStore):
         yield inst.index
         yield inst.src
+    elif isinstance(inst, tac_ast.IndexedSymbolStore):
+        yield inst.index
+        yield inst.src
     elif isinstance(inst, tac_ast.IndexedConstLoad):
         yield inst.index
     elif isinstance(inst, tac_ast.IndirectIndexedLoad):

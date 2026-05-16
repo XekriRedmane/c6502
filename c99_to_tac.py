@@ -2161,8 +2161,14 @@ class Translator:
                     ))
                     return rval_val
                 if isinstance(lval, c99_ast.Subscript):
-                    # `a[i] = rval` — same address computation as the
-                    # rvalue Subscript, then Store instead of Load.
+                    # `a[i] = rval` — try the static-array fast path
+                    # first (mirror of `_try_indexed_load_subscript`
+                    # on the rvalue side); fall back to general
+                    # pointer arithmetic + Store.
+                    if self._try_indexed_store_subscript(
+                        lval, rval_val, is_vol, instrs,
+                    ):
+                        return rval_val
                     addr = self._translate_subscript_address(
                         lval.array, lval.index, instrs,
                     )
@@ -3076,6 +3082,121 @@ class Translator:
             is_volatile=_is_volatile_quals_c99(exp.data_type),
         ))
         return dst
+
+    def _try_indexed_store_subscript(
+        self,
+        lval: c99_ast.Subscript,
+        rval_val: tac_ast.Type_val,
+        is_volatile: bool,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> bool:
+        """Store-side mirror of `_try_indexed_load_subscript`. If
+        `lval` is `arr[i]` (single- or multi-dim) where the
+        underlying `arr` is a static-storage Array whose total byte
+        size ≤ 256, emit `IndexedSymbolStore` and return True.
+        Otherwise return False and let the caller fall back to
+        general pointer arithmetic + Store.
+
+        Same eligibility as the load side; same single-dim runtime-
+        index / multi-dim constant-index split. The byte width of
+        the store comes from `rval_val`'s symbol-table type, picked
+        up by `tac_to_asm._translate_indexed_symbol_store` via
+        `_size_of`."""
+        # Walk inside-out, collecting indices per subscript level.
+        indices_inner_to_outer: list[c99_ast.Type_exp] = [lval.index]
+        cur_array = lval.array
+        base_var: c99_ast.Var | None = None
+        while True:
+            if not isinstance(cur_array, c99_ast.AddressOf):
+                return False
+            inner = cur_array.exp
+            if isinstance(inner, c99_ast.Var):
+                base_var = inner
+                break
+            if not isinstance(inner, c99_ast.Subscript):
+                return False
+            indices_inner_to_outer.append(inner.index)
+            cur_array = inner.array
+        indices_outer_to_inner = list(reversed(indices_inner_to_outer))
+
+        sym = self._symbols.get(base_var.name)
+        if sym is None or not isinstance(sym.attrs, StaticAttr):
+            return False
+        if not isinstance(sym.type, c99_ast.Array):
+            return False
+        total = _sizeof(sym.type, self._types)
+        if total > 256:
+            return False
+
+        arr_t = sym.type
+        dim_sizes: list[int] = []
+        while isinstance(arr_t, c99_ast.Array):
+            dim_sizes.append(arr_t.size)
+            arr_t = arr_t.element_type
+        while isinstance(arr_t, (c99_ast.Const, c99_ast.Volatile)):
+            arr_t = arr_t.referenced_type
+        elem_size = _sizeof(arr_t, self._types)
+
+        if len(indices_outer_to_inner) != len(dim_sizes):
+            return False
+
+        # Multi-dim with all-constant indices: compute flat byte
+        # offset in Python.
+        if len(dim_sizes) >= 2:
+            constant_indices: list[int] = []
+            for idx_exp in indices_outer_to_inner:
+                v = _const_int_or_none(idx_exp)
+                if v is None:
+                    return False
+                constant_indices.append(v)
+            flat_byte_idx = 0
+            for level, ci in enumerate(constant_indices):
+                stride = elem_size
+                for inner_d in dim_sizes[level + 1:]:
+                    stride *= inner_d
+                flat_byte_idx += ci * stride
+            if flat_byte_idx < 0 or flat_byte_idx >= total:
+                return False
+            instrs.append(tac_ast.IndexedSymbolStore(
+                name=base_var.name,
+                index=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=flat_byte_idx),
+                ),
+                src=rval_val,
+                is_volatile=is_volatile,
+            ))
+            return True
+
+        # Single-dim with possibly-runtime index: Truncate to UChar,
+        # optionally multiply by elem_size, emit IndexedSymbolStore.
+        idx_val = self.translate_exp(indices_outer_to_inner[0], instrs)
+        byte_idx = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.UChar()),
+        )
+        instrs.append(tac_ast.Truncate(src=idx_val, dst=byte_idx))
+
+        if elem_size == 1:
+            scaled_byte: tac_ast.Type_val = byte_idx
+        else:
+            scaled_byte = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.UChar()),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Multiply(),
+                src1=byte_idx,
+                src2=tac_ast.Constant(
+                    const=tac_ast.ConstUChar(value=elem_size),
+                ),
+                dst=scaled_byte,
+            ))
+
+        instrs.append(tac_ast.IndexedSymbolStore(
+            name=base_var.name,
+            index=scaled_byte,
+            src=rval_val,
+            is_volatile=is_volatile,
+        ))
+        return True
 
     def _translate_subscript_address(
         self,

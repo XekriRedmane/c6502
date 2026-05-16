@@ -618,6 +618,12 @@ def _rewrite_instruction(
             return tac_ast.IndexedStore(
                 address=a, index=i2, src=s2, is_volatile=v,
             )
+        case tac_ast.IndexedSymbolStore(name=n, index=i, src=s, is_volatile=v):
+            i2 = rewrite_use(i)
+            s2 = rewrite_use(s)
+            return tac_ast.IndexedSymbolStore(
+                name=n, index=i2, src=s2, is_volatile=v,
+            )
         case tac_ast.Jump(target=t):
             return tac_ast.Jump(target=t)
         case tac_ast.JumpIfTrue(condition=c, target=t):

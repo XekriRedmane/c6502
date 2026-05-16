@@ -197,6 +197,10 @@ def _rewrite(
             return tac_ast.IndexedStore(
                 address=a, index=sub(i), src=sub(s), is_volatile=v,
             )
+        case tac_ast.IndexedSymbolStore(name=n, index=i, src=s, is_volatile=v):
+            return tac_ast.IndexedSymbolStore(
+                name=n, index=sub(i), src=sub(s), is_volatile=v,
+            )
         case tac_ast.JumpIfTrue(condition=c, target=t):
             return tac_ast.JumpIfTrue(condition=sub(c), target=t)
         case tac_ast.JumpIfFalse(condition=c, target=t):

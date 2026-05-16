@@ -74,6 +74,23 @@ module TAC {
         -- need two STA abs,X forms with no carry threading and the
         -- pattern's profile changes).
         | IndexedStore(int address, val index, val src, bool is_volatile)
+        -- Mirror of IndexedLoad for stores. `name` is the array's
+        -- symbol; `index` is a 1-byte (UChar) val holding the byte
+        -- offset into the array; `src` is the val to store, whose
+        -- byte width comes from its type. tac_to_asm lowers as:
+        -- stage `index` into X (LDA index; TAX), then one
+        -- `LDA src[k]; STA name+k,X` pair per src byte (6502
+        -- absolute,X addressing on a static label).
+        --
+        -- Emitted by `c99_to_tac` for `arr[i] = v` where `arr` is
+        -- a static-storage Array whose total byte size fits in
+        -- X's 0..255 range, mirroring the eligibility of
+        -- `_try_indexed_load_subscript` on the rvalue side. The
+        -- existing numeric-base `IndexedStore` covers the cases
+        -- where the optimizer folded a static-pointer base into a
+        -- compile-time constant; `IndexedSymbolStore` covers the
+        -- direct named-array case.
+        | IndexedSymbolStore(identifier name, val index, val src, bool is_volatile)
         -- Indexed load from a 16-bit absolute address. Mirror of
         -- IndexedStore: `address` is a compile-time integer base,
         -- `index` is a 1-byte (UChar) val staged into X, `dst`

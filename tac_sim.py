@@ -511,6 +511,19 @@ class Simulator:
                     frame, d, self.memory.load(base + (idx_val & 0xFF), w),
                 )
 
+            case tac_ast.IndexedSymbolStore(name=name, index=i, src=s):
+                # Mirror of IndexedLoad for stores: take name's
+                # static address, add the byte index, write N
+                # bytes from src.
+                base = self._static_addr.get(name)
+                if base is None:
+                    raise TacSimError(
+                        f"IndexedSymbolStore on unknown static {name!r}",
+                    )
+                idx_val, _ = self._read(frame, i)
+                v, (_, w, _) = self._read(frame, s)
+                self.memory.store(base + (idx_val & 0xFF), v, w)
+
             case tac_ast.Ret(val=None):
                 return _Return(None, 0)
 

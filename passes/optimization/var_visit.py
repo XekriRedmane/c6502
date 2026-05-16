@@ -60,6 +60,9 @@ def vals_in(instr: tac_ast.Type_instruction) -> Iterable[tac_ast.Type_val]:
         case tac_ast.IndexedStore(index=i, src=s):
             yield i
             yield s
+        case tac_ast.IndexedSymbolStore(index=i, src=s):
+            yield i
+            yield s
         case tac_ast.IndexedConstLoad(index=i, dst=d):
             yield i
             yield d
@@ -154,6 +157,11 @@ def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
             if isinstance(i, tac_ast.Var):
                 out.append(i)
         case tac_ast.IndexedStore(index=i, src=s):
+            if isinstance(i, tac_ast.Var):
+                out.append(i)
+            if isinstance(s, tac_ast.Var):
+                out.append(s)
+        case tac_ast.IndexedSymbolStore(index=i, src=s):
             if isinstance(i, tac_ast.Var):
                 out.append(i)
             if isinstance(s, tac_ast.Var):

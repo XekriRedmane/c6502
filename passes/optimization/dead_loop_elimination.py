@@ -65,6 +65,7 @@ _SIDE_EFFECTING_TYPES: tuple[type, ...] = (
     tac_ast.IndirectCall,
     tac_ast.Store,
     tac_ast.IndexedStore,
+    tac_ast.IndexedSymbolStore,
     tac_ast.IndirectIndexedStore,
     tac_ast.Ret,
 )

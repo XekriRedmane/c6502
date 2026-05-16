@@ -1253,6 +1253,12 @@ class Translator:
                 address=addr, index=index, src=src, is_volatile=v,
             ):
                 return self._translate_indexed_store(addr, index, src, v)
+            case tac_ast.IndexedSymbolStore(
+                name=name, index=index, src=src, is_volatile=v,
+            ):
+                return self._translate_indexed_symbol_store(
+                    name, index, src, v,
+                )
             case tac_ast.IndexedConstLoad(
                 address=addr, index=index, dst=dst, is_volatile=v,
             ):
@@ -2018,6 +2024,48 @@ class Translator:
                 is_volatile=is_volatile,
             ),
         ]
+
+    def _translate_indexed_symbol_store(
+        self,
+        name: str,
+        index: tac_ast.Type_val,
+        src: tac_ast.Type_val,
+        is_volatile: bool = False,
+    ) -> list[asm_ast.Type_instruction]:
+        """Static-array indexed store: stage `index` into X, then
+        write N consecutive bytes from `src` to `name+0..N-1,X`
+        (absolute,X on the link-time label). Mirror of
+        `_translate_indexed_load`.
+
+        Why X, not Y. Frame / Stack / Indirect source operands all
+        use Y for their (PTR),Y indirect-indexed accesses; staging
+        a Frame-resident src byte into A clobbers Y. X is otherwise
+        free at this layer.
+
+        The index is staged via Reg(A) → Reg(X) (LDA + TAX) rather
+        than a direct LDX because the index source may be a Frame
+        operand and LDX doesn't have indirect-Y mode. The
+        `direct_index_load` peephole collapses the LDA/TAX pair to
+        a single LDX when `index` resolves to Imm/Data/ZP."""
+        index_op = translate_val(index)
+        src_op = translate_val(src)
+        n = self._size_of(src)
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=index_op, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),
+        ]
+        for k in range(n):
+            out.append(asm_ast.Mov(
+                src=_byte_at(src_op, k), dst=_REG_A,
+            ))
+            out.append(asm_ast.Mov(
+                src=_REG_A,
+                dst=asm_ast.IndexedData(
+                    name=name, offset=k, index=asm_ast.X(),
+                ),
+                is_volatile=is_volatile,
+            ))
+        return out
 
     def _translate_indexed_const_load(
         self,

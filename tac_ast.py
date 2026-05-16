@@ -136,6 +136,14 @@ class IndexedStore(Type_instruction):
 
 
 @dataclass(kw_only=True)
+class IndexedSymbolStore(Type_instruction):
+    name: str = ''
+    index: Type_val
+    src: Type_val
+    is_volatile: bool = False
+
+
+@dataclass(kw_only=True)
 class IndexedConstLoad(Type_instruction):
     address: int = 0
     index: Type_val

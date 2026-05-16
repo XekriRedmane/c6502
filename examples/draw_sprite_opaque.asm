@@ -70,9 +70,7 @@ draw_sprite_opaque:
    LDY   __local_draw_sprite_opaque_b6
    LDA   (__zpabi_draw_sprite_opaque_p4),Y
    STA   __local_draw_sprite_opaque_b0
-   PHA
    LDY   __local_draw_sprite_opaque_b1
-   PLA
    STA   (__local_draw_sprite_opaque_b3),Y
 .if_end@2:
 .loop@1_continue:

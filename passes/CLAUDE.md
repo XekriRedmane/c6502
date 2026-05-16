@@ -32,6 +32,13 @@ this directory:
 - `asm_licm.py` — `apply_licm` for loop-invariant constant stores.
 - `asm_liveness.py` — per-block liveness used by several peepholes.
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
+- `dead_pha_pla.py` — `apply_dead_pha_pla`. Drops `Push(Reg(A)) /
+  body / Pop(Reg(A))` triples when the body preserves A and the
+  PLA's N/Z flag effect is dead. Always-on. Headline case: the
+  indirect-indexed-store lowering emits a conservative
+  save/restore around the idx-into-Y stage, which becomes pure
+  overhead once `direct_index_load` fuses the `LDA idx; TAY` into
+  a flag-preserving `LDY idx`.
 - `branch_invert.py` — `apply_branch_invert` peephole.
 - `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
@@ -581,6 +588,12 @@ Always-on (runs in both optimized AND unoptimized pipelines):
 - `apply_direct_index_load` — `LDA M; TAX` → `LDX M` when M is
   `Imm`/`Data`/`ZP` and `Reg(A)` is dead after. See "Direct-into-X/Y
   peephole" below.
+- `apply_dead_pha_pla` — drops `PHA / body / PLA` when the body
+  preserves `Reg(A)` and the PLA's N/Z flag effect is dead. The
+  indirect-indexed-store lowering emits a conservative save/restore
+  around its idx-into-Y stage that this pass collapses once
+  `direct_index_load` has fused the inner `LDA idx; TAY` into a
+  flag-preserving `LDY idx`.
 - `apply_cpx_cpy_peephole` — `Mov(X|Y, A); Compare(A, imm)` →
   `Compare(X|Y, imm)` (`CPX` / `CPY`) when the compare's left is
   already in X or Y. Loop-induction-variable test shape.

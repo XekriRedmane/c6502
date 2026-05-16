@@ -66,18 +66,14 @@ floor_enemy_advance:
    LDA   #>enemy_flag
    STA   __local_floor_enemy_advance_b0+1
    LDA   #$FF
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
    LDA   #<enemy_col
    STA   __local_floor_enemy_advance_b0
    LDA   #>enemy_col
    STA   __local_floor_enemy_advance_b0+1
    LDA   #$3E
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
    JMP   .if_end@4
 .if_else@5:
@@ -86,18 +82,14 @@ floor_enemy_advance:
    LDA   #>enemy_flag
    STA   __local_floor_enemy_advance_b0+1
    LDA   #$01
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
    LDA   #<enemy_col
    STA   __local_floor_enemy_advance_b0
    LDA   #>enemy_col
    STA   __local_floor_enemy_advance_b0+1
    LDA   #$4A
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
 .if_end@4:
    LDA   __zpabi_floor_enemy_advance_p1
@@ -113,9 +105,7 @@ floor_enemy_advance:
    LDA   __local_floor_enemy_advance_b1
    STA   DPTR+1
    LDA   __local_floor_enemy_advance_b2
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
 .if_end@3:
 .if_end@2:
@@ -156,9 +146,7 @@ floor_enemy_advance:
    LDA   __local_floor_enemy_advance_b1
    STA   DPTR+1
    LDA   __local_floor_enemy_advance_b2
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
    LDA   __local_floor_enemy_advance_b2
    SEC
@@ -175,9 +163,7 @@ floor_enemy_advance:
    LDA   __local_floor_enemy_advance_b1
    STA   DPTR+1
    LDA   #$00
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
 .if_end@12:
    JMP   .if_end@6
@@ -214,9 +200,7 @@ floor_enemy_advance:
    LDA   __local_floor_enemy_advance_b1
    STA   DPTR+1
    LDA   __local_floor_enemy_advance_b2
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
    LDA   __local_floor_enemy_advance_b2
    CMP   #$8F
@@ -231,9 +215,7 @@ floor_enemy_advance:
    LDA   __local_floor_enemy_advance_b1
    STA   DPTR+1
    LDA   #$00
-   PHA
    LDY   __local_floor_enemy_advance_b3
-   PLA
    STA   (__local_floor_enemy_advance_b0),Y
 .if_end@17:
 .if_end@6:

@@ -50,6 +50,7 @@ from preprocessor import preprocess
 from pretty import pretty
 from passes.asm_to_asm2 import translate_program as lower_to_asm2
 from passes.direct_index_load import apply_direct_index_load
+from passes.dead_pha_pla import apply_dead_pha_pla
 from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
@@ -162,6 +163,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_dec_peephole(new_prog)
         new_prog = apply_sub1_test_zero_peephole(new_prog)
         new_prog = apply_direct_index_load(new_prog)
+        new_prog = apply_dead_pha_pla(new_prog)
         new_prog = apply_cpx_cpy_peephole(new_prog)
         new_prog = apply_indirect_base_prop(
             new_prog, zp_symbol_addrs=zp_slot_symbols,

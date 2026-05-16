@@ -4,14 +4,20 @@ Formatting rules:
   - labels start in column 1
   - opcodes (uppercase) start in column 4
   - operands start in column 10
+  - multi-function programs emit each function's body in source
+    order, separated by a single blank line; `emit_function`
+    collapses consecutive `Blank` atoms inside a function.
 
 `asm2_ast` is the strictly-atomic-IR sibling of `asm_ast`: every
 node represents one logical 6502 instruction. The compound nodes
 that asm_emit used to expand at this stage —
 `AllocateStack` / `FunctionPrologue` / `Ret` — are gone here and
 arrive as already-expanded atom sequences from the
-`passes.asm_to_asm2` lowering pass. Three asm2-only atoms join
-the existing instruction set:
+`passes.asm_to_asm2` lowering pass. `Pseudo` operands are also out
+of bounds here — `passes.replace_pseudoregisters` (step 9) resolves
+every Pseudo into `Frame` / `Stack` / `Data` / `ZP` before
+asm_to_asm2 runs; emit raises if one slips through. Three asm2-only
+atoms join the existing instruction set:
   - `Return` — RTS (the bare epilogue suffix; what `Ret`
     collapsed to in the no-frame case).
   - `Comment(text)` — block-level "; ..." line at opcode column.
@@ -86,6 +92,31 @@ Atomic arithmetic / flag instructions:
     N/Z/C flags an `SBC left - right` would, without writing the
     result anywhere.
 
+`Mov(src, dst)` operand constraints. Mov covers register transfers
+(TAX/TAY/TXA/TYA), register↔memory (LDA/STA/LDX/STX/LDY/STY), and
+constant→register (LDA/LDX/LDY #$XX). The 6502 has no `TXY` / `TYX`
+opcodes, so `Mov(Reg(X), Reg(Y))` synthesizes as `TXA; TAY` (and
+`Reg(Y)→Reg(X)` as `TYA; TAX`); the synthesis happens in
+`_emit_mov`, the IR atom stays single. `Stack` / `Frame` operands
+emit an `LDY #off` addressing-mode setup pair plus the `LDA (PTR),Y`
+/ `STA (PTR),Y`. `Imm(v)`, `Stack(off)`, and `Frame(off)` byte
+values are all `0..255` (single byte). The self-Mov peephole fires
+when `src == dst` byte-identically (same register, same ZP byte,
+same Frame slot) and returns `[]`, dropping the redundant `LDA $XX;
+STA $XX` pair that arises when regalloc gives a Phi src and dst the
+same color.
+
+`BitTest(src)` atom. Emits NMOS 6502 `BIT src` (zp / abs addressing
+only — no `BIT #imm` on NMOS). Sets `N=bit7(src)`, `V=bit6(src)`,
+`Z=(A & src)==0`; does not modify A. Primary use is the sign-bit
+test: `BIT M; BPL target` reads bit 7 of M in 5 cycles / 3 bytes
+(zp) vs. `LDA M; AND #$80; BEQ target` at 8+ cycles / 6 bytes that
+also clobbers A. `src` must be `Data` / `ZP`; emit and the
+in-process sim assembler reject `Frame` / `Stack` / `Indirect` /
+`IndexedData` / `Reg`. Emitted by `passes.and_sign_bit_branch` when
+the optimizer recognizes a `Mov(M, A); And(Imm(0x80), A);
+Branch(EQ|NE, _)` triple.
+
 `Data(name, offset)` operand. References a static-storage object by
 symbolic name. Lowers to 6502 absolute addressing — `LDA name`,
 `STA name`, `ADC name`, `EOR name`, etc. for `offset == 0`, and
@@ -114,9 +145,29 @@ already a literal byte (`LoadAddress(src=ZP(...))` is rejected —
 address-taken values are filtered out before regalloc).
 
 `StaticVariable(name, is_global, init)` top-level node. Emitted as
-`<name>:` on its own line followed by `DC.B $XX` on the next, where
-`XX` is the byte init value. (Mnemonics are uppercased per the
-`_instr_line` convention — including the `dc.b` directive name.)
+`<name>:` on its own line followed by the dasm directive matching
+the init variant:
+  - `IntInit(int=v)`       → `DC.B $XX` (1 byte; masked to 8 bits).
+  - `LongInit(int=v)`      → `DC.W $XXXX` (2 bytes; masked to 16
+                              bits so signed-negative values render
+                              as two's-complement).
+  - `LongLongInit(int=v)`  → `DC.L $WWWWWWWW` (4 bytes; masked to
+                              32 bits — same two's-complement
+                              rationale).
+  - `FloatInit(float=v)`   → `DC.L $WWWWWWWW` (4 bytes IEEE 754
+                              single, packed via `struct.pack` at
+                              emit time).
+  - `DoubleInit(float=v)`  → two `DC.L`s, low half then high half
+                              (8 bytes IEEE 754 double; dasm has
+                              no native 8-byte directive).
+dasm's DC.B/DC.W/DC.L all lay bytes down little-endian, matching
+the soft-stack memory model — so `Data(name, offset=1)` accesses
+the high byte of a Long static, `Data(name, offset=3)` the high
+byte of a LongLong static, and `Data(name, offset=7)` the high byte
+of a Double static. (Mnemonics are uppercased per the `_instr_line`
+convention — including the `dc.b` / `dc.w` / `dc.l` directive
+names.)
+
 The `is_global` flag is recorded on the IR but not yet surfaced in
 the asm output: dasm has no native "export" / "module-private"
 distinction, and statics get unique names anyway (block-scope

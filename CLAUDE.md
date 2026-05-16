@@ -429,95 +429,20 @@ cross-cutting facts other docs / readers need at orientation level:
 
 ## asm_emit
 
-`asm_emit.emit_program` — `asm2_ast` → 6502 assembly text.
-
-**Atomic IR**: every node maps to one 6502 instruction. The compound
-nodes from asm_ast are gone here — they were expanded by step 10
-(`asm_to_asm2`). The `Return` atom emits `RTS`; `Comment(text)`
-emits `   ; <text>`; `Blank` emits `""` and `emit_function`
-collapses consecutive blanks.
-
-Multi-function programs emit each function's body in source order
-separated by a single blank line.
-
-`Data(name, offset)` operands render as `LDA name` for offset 0 (the
-common case) and `LDA name+offset` otherwise — the assembler
-resolves the symbol+offset to a fixed address. `ZP(address, offset)`
-operands fold both at emit time into `LDA $XX` (where XX = address +
-offset), giving direct zero-page addressing for regalloc-assigned
-locals. `ZP` is legal everywhere `Data` is (Mov, Add/Sub, Compare,
-Inc/Dec, ASL/LSR, direct LDX/LDY shortcut). The self-Mov peephole
-inside `_emit_mov` returns `[]` when `src == dst` — drops the
-redundant `LDA $XX; STA $XX` pairs that arise when regalloc gives a
-Phi src and dst the same color.
-
-Top-level `StaticVariable(name, _, init)` emits as `<name>:`
-followed by `DC.B $XX` for `IntInit(int=v)`, `DC.W $XXXX` for
-`LongInit(int=v)`, `DC.L $WWWWWWWW` for `LongLongInit(int=v)` (4
-bytes signed/unsigned integer; mask to 32 bits so negatives render
-as two's-complement), `DC.L $WWWWWWWW` for `FloatInit(float=v)` (4
-bytes IEEE 754 single, packed via `struct.pack` at emit time), and
-two `DC.L`s — low half, high half — for `DoubleInit(float=v)` (8
-bytes IEEE 754 double; dasm has no native 8-byte directive). The W
-form masks to 16 bits so signed-negative values render as two's-
-complement; dasm's `DC.W` / `DC.L` both lay the bytes down little-
-endian, matching the soft-stack memory model — so `Data(name,
-offset=1)` accesses the high byte of a Long static, `Data(name,
-offset=3)` the high byte of a LongLong static, and `Data(name,
-offset=7)` the high byte of a Double static.
-
-`Pseudo` operands aren't part of `asm2_ast` — they must have been
-resolved by step 9 (`replace_pseudoregisters`); the asm_to_asm2 pass
-raises if one slips through.
-
-### Emit atomicity conventions
-
-- `Add`/`Sub` do **not** emit `CLC`/`SEC` themselves — the caller
-  emits `ClearCarry`/`SetCarry` first. This keeps each atomic node
-  1:1 with a 6502 opcode.
-- The `LDY` that sets up an indirect-Y source counts as addressing-
-  mode setup, not a separate logical step, so a single `Mov(Frame,
-  Reg(A))` still emits `LDY #o; LDA (PTR),Y`.
-- `PTR` is `SSP` for `Stack` operands, `FP` for `Frame` operands.
-  Stack/Frame offsets and immediates are `0..255` (single byte).
-- Unsupported reg combinations for `Mov` raise (e.g. `Reg(X) →
-  Reg(Y)`, `Reg(Y) → Reg(X)` — no direct transfer instruction).
-  Same-register pairs (`Reg(A) → Reg(A)` etc.) and same-operand
-  `Mov(src, dst)` with `src == dst` go through the self-Mov peephole
-  and emit `[]` (the peephole catches the self-copies that arise
-  when regalloc gives a Phi src and dst the same color).
-- `ArithmeticShiftLeft` (ASL), `LogicalShiftRight` (LSR),
-  `RotateLeft` (ROL), and `RotateRight` (ROR) currently only accept
-  `Reg(A)` as `dst`. The 6502's shift/rotate family has accumulator
-  and absolute/zero-page modes but no indirect-Y, so soft-stack
-  values can't be shifted in place — load to A, shift, store back.
-  These atoms are present in the IR but `tac_to_asm` doesn't emit
-  them yet (`<<`/`>>` go through the `asl` / `asr` runtime helpers);
-  they're available for inlining inside the helpers themselves once
-  those land.
-- `BitTest(src)` emits NMOS 6502 `BIT src` (zp / abs addressing only
-  — no `BIT #imm` on NMOS). Sets `N=bit7(src)`, `V=bit6(src)`,
-  `Z=(A & src)==0`; does not modify A. Primary use is the sign-bit
-  test: `BIT M; BPL target` reads bit 7 of M in 5 cycles / 3 bytes
-  (zp) vs. `LDA M; AND #$80; BEQ target` at 8+ cycles / 6 bytes
-  that also clobbers A. `src` must be `Data` / `ZP`; emit and the
-  in-process sim assembler reject `Frame` / `Stack` / `Indirect` /
-  `IndexedData` / `Reg`. Emitted by `passes.and_sign_bit_branch`
-  when the optimizer recognizes a `Mov(M, A); And(Imm(0x80), A);
-  Branch(EQ|NE, _)` triple.
-- `Label(name)`, `Jump(target)`, and `Branch(cond, target)` are the
-  control-flow atoms. `Label` emits `<name>:` at column 1 (same
-  column as the function name); `Jump` is `JMP <target>`; `Branch`
-  is one of `BCC`/`BCS`/`BEQ`/`BMI`/`BNE`/`BPL`/`BVC`/`BVS` per its
-  `condition`. All branches/jumps are symbolic — emit doesn't
-  compute displacements, the assembler does. `tac_to_asm` emits them
-  for the inline comparison lowerings and for the short-circuit
-  lowerings of `&&` / `||` (`JumpIfFalse` → `Mov(cond, A);
-  Branch(EQ, target)`, `JumpIfTrue` → `Branch(NE, …)`; TAC `Jump` /
-  `Label` are atom-for-atom).
-- Output formatting: labels at column 1, opcodes at column 4,
-  operands at column 10. Each function emits `<name>:`, then
-  `SUBROUTINE`, blank line, then instructions.
+`asm_emit.emit_program` — `asm2_ast` → 6502 assembly text. See the
+module docstring at the top of `asm_emit.py` for the formatting
+rules, the per-atom emit table (Mov / Add / Sub / Compare / ASL /
+LSR / ROL / ROR / Inc / Dec / Push / Pop / Xor / And / Or / Call /
+Jump / Branch / Label / BitTest etc.), the Data / ZP operand
+addressing modes, the self-Mov peephole, and the StaticVariable
+init-variant directives (DC.B / DC.W / DC.L / two DC.Ls). One
+cross-cutting fact worth keeping at orientation level: every
+asm2_ast node maps to exactly one 6502 instruction (addressing-mode
+setup like the `LDY` for indirect-Y counts as part of the opcode);
+the compound nodes from `asm_ast` (`Ret`, `FunctionPrologue`,
+`AllocateStack`) and any leftover `Pseudo` operands are
+already-resolved by `asm_to_asm2` and `replace_pseudoregisters`
+before emit runs, and emit raises if one slips through.
 
 ## Function stack frame (soft stack)
 

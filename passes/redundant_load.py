@@ -43,100 +43,28 @@ That's enough for the unroll case (track ZP, write to
 IndexedData; survives) and conservative everywhere else (any
 shape we can't classify invalidates everything tracked).
 
-# Flag soundness — and the Z-reflects tracker
+# Flag soundness — the Z-reflects tracker
 
-The 6502 has a tiny one-bit lightbulb called the Z flag. It turns
-ON whenever the CPU just produced a zero result, and OFF
-otherwise. Most data-affecting instructions touch Z: every LDA
-turns Z ON iff the loaded byte was zero; every ADC / SBC / AND /
-ORA / EOR turns Z ON iff the new value of A is zero; INC / DEC
-turn Z ON iff the bumped memory cell is now zero.
+Dropping `LDA M` skips re-setting Z to "(M == 0)". A subsequent
+`Branch(EQ|NE)` then reads whatever Z was left at by the prior
+flag-affecting instruction — which may not match what `LDA M`
+would have produced. Two independent paths to soundness:
 
-The downstream consumer of Z is a `Branch(EQ, ...)` (BEQ) or
-`Branch(NE, ...)` (BNE) — these jump iff Z is the corresponding
-state. So if we drop an `LDA M`, we skip the act of *re-setting*
-the lightbulb to "is M zero?". If a BEQ / BNE follows, the
-branch will read whatever state the lightbulb was left in by
-the instruction BEFORE the LDA. That might be the wrong state.
+  1. **Flag dead.** No reachable instruction reads N/Z before
+     another instruction overwrites them: dropping is safe
+     regardless of Z's current value. `_flags_dead_at` answers
+     this with a forward CFG scan.
 
-There are two clean ways to know dropping the LDA is safe for
-the branch:
+  2. **Flag already correct.** Some earlier instruction already
+     set Z to "(M == 0)" and nothing since has touched it:
+     `LDA M`'s flag effect is redundant. `z_reflects` tracks
+     which operands' zeroness Z currently reflects.
 
-  1. **The flag is dead.** No reachable instruction reads Z
-     before another instruction overwrites it. Then it doesn't
-     matter what Z is — we can drop the LDA without changing
-     observable behavior. This is the `_flags_dead_at` check —
-     it scans forward and answers "is Z dead at position N+1".
-
-  2. **The flag is already what the LDA would set it to.** Maybe
-     an earlier instruction already set Z to "is M zero?", and
-     no intervening instruction has touched Z since. Then the
-     LDA's flag effect is *redundant* — it would set Z to the
-     same state it already has. Dropping is safe; the branch
-     sees the same Z either way.
-
-The first check is the simple one; the second is what the
-`z_reflects` tracker does. Each entry in `z_reflects` is an
-operand whose current value's zeroness equals the current state
-of Z. After `LDA M`, `z_reflects = [M]` — Z reflects M's
-zeroness. After `STA N` (M's current value into N), N now has
-the same value as M did when the LDA ran, AND Z still reflects
-that value, so `z_reflects = [M, N]`. After `SBC #1`, Z reflects
-A's new value — but A's identity is no longer tracked (state.a
-is cleared too), so `z_reflects = []`. After `STA M`, A's
-current (unknown) value is in M, and Z reflects A's current
-value, so `z_reflects = [M]` again.
-
-When `_is_redundant_load` sees `LDA M`, it checks BOTH:
-  * `state.<reg>` contains M (the register already holds M's
-    value — no need to load again).
-  * `z_reflects` contains M OR the flag is dead (the lightbulb
-    is already in the state the LDA would set, OR nobody cares).
-
-If both hold, drop the LDA.
-
-# The example the new check fixes
-
-For `volatile uint8_t y = pitch; while (--y != 0) {}`, the inner
-loop in asm IR looks like:
-
-    LDA b1   (volatile read of y)         ; A = y, Z = (y == 0)
-    SEC
-    SBC #1                                ; A = y - 1, Z = (A == 0)
-    STA b0                                ; b0 = A
-    Mov(b0, b1) (volatile)                ; emit: LDA b0; STA b1
-    LDA b0                                ; <-- redundant
-    Branch(EQ, .break)
-
-After `STA b0`: A === b0, Z still reflects (post-SBC == 0) which
-equals (b0 == 0). So `state.a = [b0]`, `z_reflects = [b0]`.
-
-The volatile mem-to-mem `Mov(b0, b1)` emits `LDA b0; STA b1`.
-The LDA b0 in emit doesn't change A's value (A === b0 already),
-and sets Z to (b0 == 0) — which is what Z was. So
-`state.a = [b0]`, `z_reflects = [b0]` survive the Mov.
-
-At the candidate `LDA b0`: state.a contains b0 (value redundant)
-AND z_reflects contains b0 (flag redundant). Drop the LDA.
-
-Without the `z_reflects` extension, the conservative
-`_flags_dead_at` would refuse the drop here (the Branch reads
-Z), and the LDA would survive — bloating the inner loop by a
-3-cycle no-op every iteration.
-
-# Why z_reflects is a LIST, not a single operand
-
-After `LDA M; STA N; STA P`, A's value === M === N === P. Z
-still reflects "the value of A". So z_reflects tracks every
-operand currently equivalent for the purpose of the Z flag.
-Either of `LDA M`, `LDA N`, `LDA P` is redundant given the
-current state — the list captures all three.
-
-This is the same shape `state.a` already uses for tracking
-value-equivalence. `z_reflects` follows the same update rules:
-add to the list when a STA copies A's value to a new cell;
-clear when an instruction overwrites A's value (SBC / ADC etc.)
-or directly overwrites Z (CMP / BIT / etc.).
+`z_reflects` is a LIST because multiple cells can be
+simultaneously zero-equivalent: after `LDA M; STA N; STA P`,
+Z reflects M === N === P. Same shape as `state.a/x/y`. Update
+rules track every flag-affecting opcode (LDA, ADC, SBC, AND,
+ORA, EOR, INC, DEC, shifts, CMP, BIT, mem-to-mem Movs).
 
 # Basic blocks
 
@@ -163,6 +91,16 @@ from dataclasses import dataclass, field
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
+
+
+# Operand kinds with stable (non-index-dependent) addresses — the
+# kinds we're willing to add to a register's equivalence class or
+# to z_reflects after a write. `IndexedData` is excluded because
+# its address depends on the index register's runtime value.
+_STABLE_MEM_TYPES = (
+    asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
+    asm_ast.Frame, asm_ast.Indirect,
+)
 
 
 def apply_redundant_load_elimination(
@@ -317,114 +255,58 @@ def _update_state(
     branch_targets: set[str] | None = None,
 ) -> None:
     """Apply `instr`'s effect to the tracked register AND z_reflects
-    state.
-
-    The Z flag is touched by a wide variety of instructions; each
-    branch below handles its own update. The rough categorization:
-
-      - Instructions that DON'T touch Z (SetCarry / ClearCarry /
-        Push / Compare-doesn't-fit-our-model / pure stores / etc.):
-        z_reflects unchanged.
-      - Instructions that set Z based on a specific operand's
-        zeroness (LDA M, INC M, DEC M, shift-of-M):
-        z_reflects = [M].
-      - Instructions that set Z based on A's new value, where A's
-        identity isn't tracked anymore (SBC / ADC / AND / OR / XOR
-        / shift-of-A / PLA): z_reflects = []. (After the
-        instruction state.a is also empty, so the lists stay in
-        sync — which is what the STA-into-A's-equivalence-class
-        machinery in `_update_for_mov` relies on.)
-      - Block-boundary instructions (Label-as-target, Jump, Ret,
-        Call, FunctionPrologue / AllocateStack / LoadAddress):
-        full reset (state.reset() clears z_reflects too).
+    state. SBC/ADC/AND/OR/XOR/shift-of-A clear state.a and
+    z_reflects in parallel, which is what the STA equivalence-class
+    code in `_update_for_mov` relies on for the "both empty" branch.
     """
     if isinstance(instr, asm_ast.Mov):
         _update_for_mov(instr, state)
         return
     if isinstance(instr, asm_ast.Label):
-        # A label that something else can branch / jump to is a
-        # join point — incoming control might bring an unrelated
-        # register state, so we must reset. A label that ONLY the
-        # fall-through reaches (no jump / branch targets it) leaves
-        # the prior register state intact at this point.
+        # Reset at join points only — a fall-through-only label
+        # preserves the prior block's register state.
         if branch_targets is None or instr.name in branch_targets:
             state.reset()
         return
     if isinstance(instr, (asm_ast.Jump,
                           asm_ast.Ret, asm_ast.Return)):
-        # No fall-through. The next instruction starts a new block
-        # reached only via its Label-as-target.
         state.reset()
         return
     if isinstance(instr, asm_ast.Branch):
-        # Conditional branch: the fall-through preserves register
-        # state (the condition only affects PC, not registers). DON'T
-        # reset. The next instruction's state == this instruction's
-        # exit state, which == this instruction's entry state since
-        # Branch doesn't write registers OR flags. If the next
-        # instruction is a Label that's also a Jump/Branch target,
-        # the Label update will reset.
+        # Fall-through preserves register state (Branch writes
+        # neither registers nor flags).
         return
     if isinstance(instr, asm_ast.Call):
-        # JSR may clobber any register, any memory, and the flags;
-        # conservatively invalidate everything.
+        # JSR may clobber any register, memory, or flag.
         state.reset()
         return
     if isinstance(instr, (asm_ast.FunctionPrologue,
                           asm_ast.AllocateStack,
                           asm_ast.LoadAddress)):
-        # These compound nodes expand into multi-instruction sequences
-        # in asm_to_asm2; their inner effect on A / X / Y / flags is
-        # more than a simple tracker can model.
+        # These expand into multi-instruction sequences in
+        # asm_to_asm2; their inner effects exceed the tracker.
         state.reset()
         return
     if isinstance(instr, asm_ast.Pop):
-        # PLA / PLX / PLY pulls a fresh value off the stack. Sets
-        # the destination register, sets N/Z based on the pulled
-        # value. We don't track stack-pointer-relative values, so
-        # the pulled value's identity is unknown.
+        # PLA/PLX/PLY: dest register loaded with unknown value;
+        # N/Z set off that value.
         if isinstance(instr.dst, asm_ast.Reg):
             _set_reg(state, instr.dst.reg, [])
-        # Z reflects the pulled value, whose identity is unknown.
         state.z_reflects = []
         return
     if isinstance(instr, asm_ast.Push):
-        # PHA / PHP doesn't change registers OR flags — only the
-        # stack pointer and stack memory. We don't track either.
         return
-    if isinstance(instr, asm_ast.SetCarry):
-        # SEC: sets C only. N/Z untouched.
+    if isinstance(instr, (asm_ast.SetCarry, asm_ast.ClearCarry)):
         return
-    if isinstance(instr, asm_ast.ClearCarry):
-        # CLC: clears C only. N/Z untouched.
-        return
-    if isinstance(instr, asm_ast.Compare):
-        # CMP: sets N/Z/C based on A - operand. Z is set to "A
-        # equals operand", which isn't an "operand's zeroness"
-        # relation — clear z_reflects.
-        state.z_reflects = []
-        return
-    if isinstance(instr, asm_ast.BitTest):
-        # BIT M: sets N to bit 7 of M, V to bit 6, and Z to
-        # (A & M) == 0. The Z meaning here ("A and M have no
-        # bits in common") doesn't fit our "operand's zeroness"
-        # model — clear conservatively.
+    if isinstance(instr, (asm_ast.Compare, asm_ast.BitTest)):
+        # CMP and BIT both set Z to a relation between A and the
+        # operand, not to "operand's zeroness" — clear z_reflects.
         state.z_reflects = []
         return
     if isinstance(instr, (asm_ast.Add, asm_ast.Sub,
-                          asm_ast.And, asm_ast.Or)):
-        # ADC / SBC / AND / ORA: in c6502's IR these always have
-        # `dst=Reg(A)`. The result in A is no longer a copy of any
-        # tracked operand. Z reflects A's new value, but A's
-        # identity is unknown, so z_reflects collapses to [] —
-        # parallel with state.a. A subsequent STA M can then
-        # repopulate both lists by adding M to each.
-        if isinstance(instr.dst, asm_ast.Reg):
-            _set_reg(state, instr.dst.reg, [])
-        state.z_reflects = []
-        return
-    if isinstance(instr, asm_ast.Xor):
-        # EOR: same Z behavior as ADC/SBC/etc.
+                          asm_ast.And, asm_ast.Or, asm_ast.Xor)):
+        # ADC/SBC/AND/ORA/EOR always write Reg(A) in our IR. A's
+        # identity is lost; Z reflects A's new (untracked) value.
         if isinstance(instr.dst, asm_ast.Reg):
             _set_reg(state, instr.dst.reg, [])
         state.z_reflects = []
@@ -433,36 +315,21 @@ def _update_state(
                           asm_ast.LogicalShiftRight,
                           asm_ast.RotateLeft, asm_ast.RotateRight)):
         if isinstance(instr.dst, asm_ast.Reg):
-            # ASL A / LSR A / ROL A / ROR A: A's value changes,
-            # Z = (A's new value == 0). Both lists empty.
             _set_reg(state, instr.dst.reg, [])
             state.z_reflects = []
             return
-        # Shift/rotate on a memory operand (zp / abs). This is a
-        # read-modify-write — the cell's value changes, so any
-        # tracking that mirrors this cell must be invalidated.
-        # Z = (cell's new value == 0).
         _invalidate_aliasing(state, instr.dst)
-        # z_reflects now only contains operands that ARE the
-        # shifted cell (now reflects its new value). Other
-        # entries had values that haven't changed.
-        state.z_reflects = [
-            op for op in state.z_reflects if not _may_alias(op, instr.dst)
-        ]
+        _invalidate_z_aliasing(state, instr.dst)
         state.z_reflects.append(instr.dst)
         return
     if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-        # Inc/Dec on `Reg(X)` / `Reg(Y)` modifies the index register
-        # itself (INX / DEX / INY / DEY) — no memory write. The
-        # register's tracked sources are cleared, AND any other
-        # register's tracked sources that DEPEND on that register
-        # (e.g. `IndexedData(_, _, index=X)`) are filtered out.
-        # Tracked sources that don't depend on the register
-        # (Imm, ZP, Data, IndexedData with the OTHER register)
-        # remain valid.
         if isinstance(instr.dst, asm_ast.Reg) and isinstance(
             instr.dst.reg, (asm_ast.X, asm_ast.Y)
         ):
+            # INX/DEX/INY/DEY: drop the register's own equivalences
+            # AND any other register's tracking of an
+            # IndexedData(_, _, index=changed_reg) operand whose
+            # address depended on the prior register value.
             changed_reg = instr.dst.reg
             _set_reg(state, changed_reg, [])
             state.a = [
@@ -477,64 +344,27 @@ def _update_state(
                 op for op in state.y
                 if not _depends_on_reg(op, changed_reg)
             ]
-            # INX/DEX/INY/DEY sets Z to (X/Y's new value == 0).
-            # We don't track X/Y values structurally as operands,
-            # so the new Z meaning isn't representable here —
-            # clear conservatively. The other z_reflects entries
-            # (representing memory cells) survive only if their
-            # addresses don't depend on the changed register.
-            state.z_reflects = [
-                op for op in state.z_reflects
-                if not _depends_on_reg(op, changed_reg)
-            ]
-            # And drop everything anyway — the old z_reflects
-            # entries represented prior Z state, but Z has been
-            # overwritten by the INX/DEX result.
             state.z_reflects = []
             return
-        # Inc/Dec on a memory operand (Data, ZP). Memory write to
-        # instr.dst. Invalidate any register tracking that may alias.
-        # Z = (cell's new value == 0). z_reflects becomes [dst].
+        # Inc/Dec on a memory operand: Z = (cell's new value == 0).
         _invalidate_aliasing(state, instr.dst)
         state.z_reflects = [instr.dst]
         return
-    # Comments, blank lines, and any future no-op nodes — neither
-    # registers nor flags change.
     return
 
 
 def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
-    """Distinguish the four Mov shapes:
-      Mov(Reg, Reg)        — register transfer.
-      Mov(non-Reg, Reg)    — load (LDA / LDX / LDY).
-      Mov(Reg, non-Reg)    — store (STA / STX / STY).
-      Mov(non-Reg, non-Reg) — memory-to-memory; emit lowers to
-                              `LDA src; STA dst`.
-
-    Each path updates BOTH the value tracker (`state.a/x/y`) AND
-    the flag tracker (`state.z_reflects`) per the corresponding
-    instruction's effect on N/Z.
+    """Apply a Mov's effect to state.a/x/y and z_reflects. Mov has
+    four shapes: register-transfer, load, store, and mem-to-mem
+    (emit lowers to `LDA src; STA dst`).
     """
-    # A volatile Mov reads or writes memory whose contents can
-    # change outside the function's control. The redundant_load
-    # pass refuses to elide volatile Movs (`_is_redundant_load`
-    # gates on `is_volatile`), so the question here is what the
-    # tracker should record for what comes AFTER. The volatile
-    # Mov itself executes — its emit-time effects on A / flags
-    # are real — and the subsequent instruction sees that state.
     if mov.is_volatile:
         if isinstance(mov.dst, asm_ast.Reg):
-            # Volatile LDA M (or LDX/LDY): the load happened, A
-            # now holds M's value AT THAT READ, and Z reflects
-            # the same. But the next time we'd want to LDA M
-            # we MUSTN'T elide (M might have changed). So clear
-            # state.<reg> — no future LDA can rely on A still
-            # mirroring M. z_reflects is more subtle: Z's
-            # current value IS (M's value-at-read == 0). For
-            # the IMMEDIATE downstream Branch, that's correct.
-            # And no subsequent LDA M would be elidable (volatile
-            # check rejects), so including M in z_reflects can't
-            # cause an incorrect drop — keep it.
+            # Volatile LDA M: clear state.<reg> so no future LDA M
+            # can elide. z_reflects gets M because Z's current
+            # value IS (M-at-read == 0) for the immediate downstream
+            # Branch; a later LDA M wouldn't elide anyway (the
+            # volatile gate rejects).
             _set_reg(state, mov.dst.reg, [])
             if not isinstance(mov.src, asm_ast.Reg):
                 state.z_reflects = [mov.src]
@@ -542,69 +372,28 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
                 state.z_reflects = []
             return
         if isinstance(mov.src, asm_ast.Reg):
-            # Volatile STA M (Reg, Mem). Memory at M is rewritten
-            # (and observable). A unchanged, Z unchanged.
+            # Volatile STA M. Don't add M to the source register's
+            # equivalence class — a future LDA M wouldn't be
+            # elidable anyway, so the equivalence is unreachable.
             _invalidate_aliasing(state, mov.dst)
-            # state.<src.reg>'s entries that aliased M were just
-            # invalidated; the source register's other entries
-            # (and the prior z_reflects) survive. Don't ADD M to
-            # the source's list — M is volatile, so a subsequent
-            # LDA M wouldn't be elidable anyway, and adding
-            # would suggest equivalence we can't rely on for
-            # future reads.
-            state.z_reflects = [
-                op for op in state.z_reflects
-                if not _may_alias(op, mov.dst)
-            ]
+            _invalidate_z_aliasing(state, mov.dst)
             return
         # Volatile memory-to-memory Mov: emit lowers to
-        # `LDA src; STA dst`. The LDA src reads src into A AND
-        # sets Z to (src == 0). The STA dst writes A to dst (a
-        # volatile write — observable, can't be elided).
-        #
-        # Post-Mov: A holds src's just-read value. Z reflects
-        # src's value. The dst's value equals src's value AT
-        # THIS WRITE, but dst is treated as volatile (the
-        # is_volatile bit on the Mov often comes from dst being
-        # volatile-typed), so we don't trust dst's value for
-        # future reads.
-        #
-        # For state.a: src may carry the dst-volatile-derived
-        # is_volatile=True even when src ITSELF is a non-volatile
-        # stable cell (e.g., `Copy(non_volatile_temp,
-        # volatile_y)` in our motivating sfx_tone case). In that
-        # case, A === src is a valid equivalence: src is stable,
-        # so A still mirrors src after this Mov. We add src to
-        # state.a UNLESS src is a register-indexed operand
-        # (IndexedData) whose value depends on an index register
-        # (the safety bar set by the non-volatile path below).
+        # `LDA src; STA dst`. The is_volatile bit often comes from
+        # dst being volatile-typed even when src itself is a stable
+        # non-volatile cell (e.g. `Copy(temp, volatile_y)` in the
+        # sfx_tone case); in that case A === src is still a valid
+        # equivalence post-Mov, so we add src to state.a when src
+        # is a stable-address operand.
         _invalidate_aliasing(state, mov.dst)
-        if isinstance(mov.src, (
-            asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
-            asm_ast.Frame, asm_ast.Indirect,
-        )):
-            if not any(
-                _operands_equal(c, mov.src) for c in state.a
-            ):
+        _invalidate_z_aliasing(state, mov.dst)
+        if isinstance(mov.src, _STABLE_MEM_TYPES):
+            if not any(_operands_equal(c, mov.src) for c in state.a):
                 state.a.append(mov.src)
-            state.z_reflects = [
-                op for op in state.z_reflects
-                if not _may_alias(op, mov.dst)
-            ]
             if not any(
                 _operands_equal(z, mov.src) for z in state.z_reflects
             ):
                 state.z_reflects.append(mov.src)
-        else:
-            # src is volatile-typed-and-its-value-can-change
-            # (IndirectY, IndexedData with a runtime index, etc.).
-            # Z reflects the just-read value but we can't name a
-            # stable operand for it. Clear z_reflects for any
-            # entry that may alias the dst write; the rest stay.
-            state.z_reflects = [
-                op for op in state.z_reflects
-                if not _may_alias(op, mov.dst)
-            ]
         return
     src_is_reg = isinstance(mov.src, asm_ast.Reg)
     dst_is_reg = isinstance(mov.dst, asm_ast.Reg)
@@ -663,94 +452,42 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
             ]
         return
     if src_is_reg and not dst_is_reg:
-        # Store: register unchanged; memory at dst is rewritten.
-        # Invalidate any tracked register equivalence that aliases
-        # dst. STA / STX / STY do NOT modify N/Z (the only register
-        # values they touch are written to memory; flags are
-        # untouched).
+        # Store. STA/STX/STY don't touch N/Z. Add dst to the source
+        # register's equivalence class so a later `LDA dst` can
+        # elide. Add dst to z_reflects only when Z was already
+        # tracking the source register's value — i.e. the existing
+        # z_reflects entries intersect the existing register
+        # equivalence class, OR both are empty (Z reflects A's
+        # current unknown value, and dst now equals that value).
         _invalidate_aliasing(state, mov.dst)
-        # Post-store, the source register and the destination
-        # memory cell hold the same value. ADD this equivalence
-        # to the source register's list — it doesn't replace
-        # existing trackings (a register can simultaneously mirror
-        # multiple memory cells, e.g. after `LDA M; STA N` we know
-        # A === M AND A === N). We only track when the destination
-        # is a "stable" memory operand (ZP / Data / Stack / Frame /
-        # Indirect); IndexedData destinations depend on the index
-        # register's runtime value and are excluded.
-        if isinstance(mov.dst, (
-            asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
-            asm_ast.Frame, asm_ast.Indirect,
-        )):
+        if isinstance(mov.dst, _STABLE_MEM_TYPES):
             cur = _get_reg(state, mov.src.reg)
+            cur_was_empty = not cur
             if not any(_operands_equal(c, mov.dst) for c in cur):
                 cur.append(mov.dst)
-            # z_reflects: the store doesn't change Z, but it
-            # makes dst's value EQUAL to the source register's
-            # current value. If Z was previously set by an
-            # instruction whose result was (the source register's
-            # value's zeroness) — captured by `state.z_reflects`
-            # being parallel with `state.<src.reg>` — then Z
-            # also reflects (dst's new value's zeroness). Add
-            # dst to z_reflects IFF z_reflects already contained
-            # an operand from the source register's equivalence
-            # class (or z_reflects is empty AND state.<src.reg>
-            # is empty, meaning Z reflects A's-current-value-but-
-            # we-don't-know-which-cell — STA M then makes Z
-            # reflect M too).
-            #
-            # Easier rule: if z_reflects ∩ state.<src.reg> is
-            # non-empty, OR (z_reflects is empty AND state.
-            # <src.reg> is empty), add dst to z_reflects. This
-            # covers both the after-LDA case (lists agree) and
-            # the after-SBC-then-STA case (both empty before STA,
-            # dst becomes the first entry).
-            cur_after = _get_reg(state, mov.src.reg)
-            cur_for_check = [c for c in cur_after if c is not mov.dst]
+            cur_pre_existing = [c for c in cur if c is not mov.dst]
             shared = any(
                 _operands_equal(z, c)
                 for z in state.z_reflects
-                for c in cur_for_check
+                for c in cur_pre_existing
             )
-            if shared or (not state.z_reflects and not cur_for_check):
+            if shared or (not state.z_reflects and cur_was_empty):
                 if not any(
                     _operands_equal(z, mov.dst)
                     for z in state.z_reflects
                 ):
                     state.z_reflects.append(mov.dst)
         return
-    # Memory-to-memory Mov: c6502 DOES emit these (e.g.
-    # `Mov(IndexedData, Data)`, `Mov(Data, Data)`), and asm_emit
-    # lowers them to `LDA src; STA dst` — using A as the staging
-    # register. So post-Mov, A's value equals BOTH src and dst,
-    # and Z reflects (src == 0) (set by the emit-time LDA src).
-    #
-    # Invalidate any prior trackings that aliased the dst write,
-    # then ADD A === dst (when dst is a stable-address memory
-    # operand). We don't add A === src: the src may carry an
-    # index register that future code could change, invalidating
-    # the equivalence — and the dst-side tracking is sufficient
-    # for catching the common `LDA M; STA N; LDA N` shape.
+    # Memory-to-memory Mov: emit lowers to `LDA src; STA dst`. The
+    # emit-time LDA sets Z to (src == 0); dst now holds that value
+    # too. We don't add src to state.a or z_reflects because src
+    # may be an index-dependent operand whose value future code
+    # can change; the dst-side tracking is sufficient for the
+    # common `LDA M; STA N; LDA N` shape.
     _invalidate_aliasing(state, mov.dst)
-    if isinstance(mov.dst, (
-        asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
-        asm_ast.Frame, asm_ast.Indirect,
-    )):
+    _invalidate_z_aliasing(state, mov.dst)
+    if isinstance(mov.dst, _STABLE_MEM_TYPES):
         state.a = [mov.dst]
-    # z_reflects after a mem-to-mem emit: the LDA src set Z to
-    # (src == 0); the STA dst doesn't touch Z. So Z reflects src.
-    # And dst now equals src in value, so dst also reflects.
-    # Filter out any prior entries that may alias the dst (their
-    # cell's value may have just changed), then include dst.
-    # We DON'T include src for the same index-register-stability
-    # reason `state.a` excludes it.
-    state.z_reflects = [
-        op for op in state.z_reflects if not _may_alias(op, mov.dst)
-    ]
-    if isinstance(mov.dst, (
-        asm_ast.ZP, asm_ast.Data, asm_ast.Stack,
-        asm_ast.Frame, asm_ast.Indirect,
-    )):
         state.z_reflects.append(mov.dst)
 
 
@@ -784,6 +521,15 @@ def _invalidate_aliasing(
     state.a = [op for op in state.a if not _may_alias(op, write_dst)]
     state.x = [op for op in state.x if not _may_alias(op, write_dst)]
     state.y = [op for op in state.y if not _may_alias(op, write_dst)]
+
+
+def _invalidate_z_aliasing(
+    state: _RegState, write_dst: asm_ast.Type_operand,
+) -> None:
+    """Drop z_reflects entries whose operand may alias `write_dst`."""
+    state.z_reflects = [
+        op for op in state.z_reflects if not _may_alias(op, write_dst)
+    ]
 
 
 def _depends_on_reg(

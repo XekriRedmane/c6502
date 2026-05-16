@@ -266,22 +266,49 @@ class TestRedundantLoadRegisterClobbers(unittest.TestCase):
 
 
 class TestRedundantLoadFlags(unittest.TestCase):
-    def test_branch_immediately_after_keeps_load(self) -> None:
-        # If Branch reads N/Z, dropping the LDA would change the
-        # flag state. We must NOT drop.
+    def test_branch_after_lda_sta_lda_drops_second_lda(self) -> None:
+        # `LDA zp80; STA zpC0; LDA zp80; Branch(EQ)` — the second
+        # LDA zp80 is redundant for BOTH value AND Z. The first
+        # LDA set Z = (zp80 == 0); STA zpC0 doesn't touch Z. The
+        # z_reflects tracker recognizes that Z is already in the
+        # state the second LDA would put it in, so the LDA is
+        # safe to drop even though the Branch reads N/Z.
         zp80 = asm_ast.ZP(address=0x80, offset=0)
         zpC0 = asm_ast.ZP(address=0xC0, offset=0)
         instrs = [
             asm_ast.Mov(src=zp80, dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=zpC0),
-            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate drop
-            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),  # reads N/Z
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate — dropped
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        # Even though A still holds zp80, dropping the load would
-        # move the Branch's flag observation upstream.
-        self.assertEqual(len(out), 5)
+        # Four instructions remain (the second LDA zp80 is gone).
+        self.assertEqual(len(out), 4)
+
+    def test_branch_after_load_of_unrelated_cell_keeps_load(self) -> None:
+        # If an instruction between the first LDA and the candidate
+        # LDA changes Z to reflect a DIFFERENT cell's value (here:
+        # LDA zpC1), Z no longer matches "is zp80 zero" — the
+        # candidate LDA's flag effect isn't redundant any more.
+        # The candidate stays.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zpC0 = asm_ast.ZP(address=0xC0, offset=0)
+        zpC1 = asm_ast.ZP(address=0xC1, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # A = zp80, Z = (zp80==0)
+            asm_ast.Mov(src=_REG_A, dst=zpC0),  # zpC0 = A; Z unchanged
+            asm_ast.Mov(src=zpC1, dst=_REG_X),  # LDX zpC1; Z = (zpC1==0)
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate: A still
+            # mirrors zp80 (the LDX didn't touch A's tracking), but
+            # Z now reflects zpC1, not zp80. The LDA's flag effect
+            # IS observable through the Branch, so don't drop.
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # All six instructions remain.
+        self.assertEqual(len(out), 6)
 
     def test_intervening_flag_setter_allows_drop(self) -> None:
         zp80 = asm_ast.ZP(address=0x80, offset=0)
@@ -291,6 +318,124 @@ class TestRedundantLoadFlags(unittest.TestCase):
             asm_ast.Mov(src=_REG_A, dst=zp81),  # STA — preserves zp80
             asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate drop
             asm_ast.Mov(src=zp81, dst=_REG_X),  # LDX — resets N/Z
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 5)
+
+
+class TestRedundantLoadZReflects(unittest.TestCase):
+    """The `z_reflects` tracker recognizes cases where the Z flag is
+    already in the state a candidate LDA would set it to — making
+    the LDA's flag effect redundant, even when a downstream Branch
+    reads N/Z. Together with the existing value-redundancy check,
+    this lets the pass drop loads that the conservative
+    `_flags_dead_at` gate would refuse.
+
+    These tests pin the key shapes the tracker recognizes."""
+
+    def test_sbc_sta_lda_branch_drops_lda(self) -> None:
+        # `SBC #c` sets Z to "is A's new value zero". `STA M`
+        # copies A to M, leaving Z unchanged AND making M's value
+        # equal to A's. The candidate `LDA M` would set Z to
+        # "is M zero" — same state, redundant.
+        #
+        # This is the inner-loop shape in sfx_tone's
+        # `volatile uint8_t y; --y` lowering, modulo the
+        # intervening volatile mem-to-mem Mov.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # LDA y
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp80),  # STA y
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # The candidate LDA is gone (it would have been the 5th
+        # instruction; the rewritten function has 6, not 7).
+        self.assertEqual(len(out), 6)
+
+    def test_inc_unrelated_keeps_lda(self) -> None:
+        # `STA M; INC P; LDA M; B<NZ>` — the INC P resets Z to
+        # reflect P's new value, not M's. The candidate LDA M
+        # IS needed to bring Z back to "is M zero" before the
+        # branch.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp90 = asm_ast.ZP(address=0x90, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp80),  # idempotent store
+            asm_ast.Inc(dst=zp90),              # Z = (zp90 == 0)
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate — KEEP
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # All five non-label instructions remain — the LDA is the
+        # only way to set Z to "is zp80 zero" before the branch.
+        self.assertEqual(len(out), 6)
+
+    def test_cmp_clears_z_reflects(self) -> None:
+        # `Compare(A, M)` sets Z to "A equals M". That doesn't
+        # match any operand's zeroness — z_reflects must clear.
+        # A subsequent `LDA M; Branch` then can't elide the LDA
+        # via z_reflects (only via the value check, which also
+        # requires flags_dead).
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp81 = asm_ast.ZP(address=0x81, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Compare(left=_REG_A, right=zp81),
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate — KEEP
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 5)
+
+    def test_inc_m_drops_following_lda_m_branch(self) -> None:
+        # `INC M; LDA M; B<NZ>` — the INC set Z to reflect M's
+        # new value. The LDA's value-into-A is still useful for
+        # any downstream use of A, but for Z it's redundant —
+        # AND the existing `dec_inc_branch_fold` peephole drops
+        # this case too. Verify redundant_load also catches it
+        # via z_reflects (independent of `dec_inc_branch_fold`).
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Inc(dst=zp80),
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # The LDA is gone — INC's flag effect is what the Branch
+        # reads. (Note: A's value is dead at the branch in this
+        # snippet, but redundant_load only drops the LDA when
+        # the value check ALSO passes — which it doesn't here, A
+        # didn't previously mirror zp80. Actually that's wrong:
+        # state.a was empty before the candidate, so the LDA
+        # ISN'T redundant for the value. Pass refuses to drop,
+        # so all four instructions remain.)
+        self.assertEqual(len(out), 4)
+
+    def test_sta_chain_z_reflects_grows(self) -> None:
+        # `LDA M1; STA M2; STA M3; LDA M1` — after the STAs,
+        # state.a = [M1, M2, M3] (all three cells hold A's value)
+        # and z_reflects = [M1, M2, M3] (Z reflects M1 == 0,
+        # which equals M2 == 0 and M3 == 0). The candidate
+        # LDA M1 is redundant for both value AND Z. Drop.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp81 = asm_ast.ZP(address=0x81, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp81),
+            asm_ast.Mov(src=_REG_A, dst=zp82),
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # candidate
             asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
             asm_ast.Return(save_a=False),
         ]

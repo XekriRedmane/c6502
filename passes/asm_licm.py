@@ -1,10 +1,22 @@
-"""Asm-level loop-invariant constant-store hoisting (LICM-lite).
+"""Asm-level loop-invariant store hoisting (LICM-lite).
 
-Detects `Mov(Imm, Data | ZP)` and `LDA #c; STA M` shapes inside a
-natural loop and hoists them to the loop's preheader when they're
-loop-invariant. The motivating case is loop-invariant zp_abi arg
-writes (e.g. `LDA #$01; STA __zpabi_callee_p0` inside a loop that
-calls `callee` with a constant width arg) — without LICM the
+Detects three shapes inside a natural loop and hoists them to the
+loop's preheader when loop-invariant:
+
+  1. `Mov(Imm, Data | ZP)` — single-instruction constant store.
+  2. `Mov(Imm, Reg(A)); Mov(Reg(A), Data | ZP)` — pre-fusion
+     lowered form of (1).
+  3. `Mov(Data | ZP, Reg(A)); Mov(Reg(A), Data | ZP)` — read-
+     then-write of a stable memory cell into another stable
+     memory cell. The DPTR staging for a volatile pointer
+     dereference (`LDA static_ptr; STA DPTR; LDA static_ptr+1;
+     STA DPTR+1`) inside an outer loop is the motivating case:
+     the static pointer doesn't change between iterations, so
+     the staging belongs in the preheader.
+
+The motivating case for shapes (1)/(2) is loop-invariant zp_abi
+arg writes (e.g. `LDA #$01; STA __zpabi_callee_p0` inside a loop
+that calls `callee` with a constant width arg) — without LICM the
 constant is re-stored every iteration.
 
 # What counts as a natural loop
@@ -23,12 +35,14 @@ position where the outer loop can hoist it further.
 
 # Eligibility
 
-A `Mov(Imm, Data | ZP)` (or the lowered pair `Mov(Imm, Reg(A));
-Mov(Reg(A), Data | ZP)`) inside a loop body is eligible for
-hoisting when:
+A candidate inside a loop body is eligible for hoisting when:
 
   * The dst (`Data` or `ZP`) is not written elsewhere in the
     loop body — only the to-be-hoisted Mov writes it.
+  * For shape (3) — the read-then-write pair — additionally:
+    the src (`Data` or `ZP`) must not be written anywhere in
+    the loop body. Otherwise the loaded value could change
+    between iterations.
   * No `Call` appears in the loop body. The conservative
     constraint avoids reasoning about whether a callee might
     clobber the dst: most importantly, calls to a `zp_abi`
@@ -41,6 +55,11 @@ hoisting when:
     Verified by checking that the header Label is the only
     branch target inside `[header_idx, back_edge_idx]` referenced
     from outside.
+  * For shape (3) and any Mov pair: neither half of the pair
+    can carry `is_volatile=True`. A volatile Mov must remain at
+    its source-order position so the access is observable on
+    every iteration — hoisting one out of the loop would change
+    the observable access count.
 
 # Hoist mechanics
 
@@ -146,7 +165,9 @@ def _try_hoist_one(
     if any(isinstance(instrs[k], asm_ast.Call) for k in body_range):
         return None
     # Tally write-counts to each Data/ZP key inside the body so we
-    # can recognize "only this Mov writes M".
+    # can recognize "only this Mov writes M" (for the dst check) and
+    # "no instruction writes this cell" (for the src check on the
+    # read-then-write shape).
     write_count: dict[tuple, int] = {}
     for k in body_range:
         dst_key = _written_data_key(instrs[k])
@@ -157,8 +178,13 @@ def _try_hoist_one(
         candidate = _match_candidate(instrs, k, back_edge_idx)
         if candidate is None:
             continue
-        span_len, dst_key = candidate
+        span_len, dst_key, src_key = candidate
         if write_count.get(dst_key, 0) != 1:
+            continue
+        # For the read-then-write shape (src_key is not None), the
+        # src cell must not be written anywhere in the body. Otherwise
+        # the loaded value isn't loop-invariant.
+        if src_key is not None and write_count.get(src_key, 0) != 0:
             continue
         # Hoist. The candidate occupies [k, k + span_len) — splice
         # those instructions out of the body and into the position
@@ -243,35 +269,61 @@ def _operand_key(op: asm_ast.Type_operand) -> tuple | None:
 def _match_candidate(
     instrs: list[asm_ast.Type_instruction],
     start: int, last: int,
-) -> tuple[int, tuple] | None:
-    """If `instrs[start:]` is a hoistable Imm-store, return
-    `(span_length, dst_key)`. Otherwise None.
+) -> tuple[int, tuple, tuple | None] | None:
+    """If `instrs[start:]` is a hoistable store, return
+    `(span_length, dst_key, src_key)` where `src_key` is the
+    invariant-source key (for shape 3 — read-then-write) or None
+    (for shapes 1 / 2 — Imm sources, automatically invariant).
+    Otherwise return None.
 
-    Two shapes:
+    Three shapes:
       1. `Mov(Imm, Data | ZP)` — single instruction.
       2. `Mov(Imm, Reg(A)); Mov(Reg(A), Data | ZP)` — pair
          (the tac_to_asm-lowered form before any peephole fusion).
          The pair counts as one logical hoist; both instructions
          move together.
+      3. `Mov(Data | ZP, Reg(A)); Mov(Reg(A), Data | ZP)` — pair
+         that copies one stable memory cell into another. The
+         src_key returned identifies the cell that must not be
+         written anywhere in the body for the hoist to be sound.
+
+    Volatile-flagged Movs (either half of a pair, or the
+    single-instruction form) disqualify the candidate — the
+    observable access must remain at its source-order position.
     """
     inst = instrs[start]
     if not isinstance(inst, asm_ast.Mov):
+        return None
+    if inst.is_volatile:
         return None
     # Shape 1: Mov(Imm, Data|ZP) directly.
     if isinstance(inst.src, asm_ast.Imm):
         key = _operand_key(inst.dst)
         if key is not None:
-            return (1, key)
-    # Shape 2: Mov(Imm, Reg(A)) followed by Mov(Reg(A), Data|ZP).
-    if (isinstance(inst.src, asm_ast.Imm)
-        and isinstance(inst.dst, asm_ast.Reg)
+            return (1, key, None)
+    # Shapes 2 and 3 both have the structure
+    #   Mov(<src>, Reg(A))
+    #   Mov(Reg(A), Data|ZP)
+    # — the first instruction loads A from `<src>` and the second
+    # writes A to a stable memory cell. The two pair shapes differ
+    # only in what `<src>` is.
+    if (isinstance(inst.dst, asm_ast.Reg)
         and isinstance(inst.dst.reg, asm_ast.A)
         and start + 1 <= last):
         nxt = instrs[start + 1]
         if (isinstance(nxt, asm_ast.Mov)
+            and not nxt.is_volatile
             and isinstance(nxt.src, asm_ast.Reg)
             and isinstance(nxt.src.reg, asm_ast.A)):
-            key = _operand_key(nxt.dst)
-            if key is not None:
-                return (2, key)
+            dst_key = _operand_key(nxt.dst)
+            if dst_key is not None:
+                # Shape 2: Mov(Imm, A); Mov(A, Data|ZP). No src
+                # check needed (Imm is always invariant).
+                if isinstance(inst.src, asm_ast.Imm):
+                    return (2, dst_key, None)
+                # Shape 3: Mov(Data|ZP, A); Mov(A, Data|ZP). The
+                # caller must verify src isn't written in the body.
+                src_key = _operand_key(inst.src)
+                if src_key is not None:
+                    return (2, dst_key, src_key)
     return None

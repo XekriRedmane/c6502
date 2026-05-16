@@ -26,8 +26,6 @@ floor_enemy_draw:
    LDX   #$03
 .loop@0_start:
    LDA   enemy_flag,X
-   STA   __local_floor_enemy_draw_b0
-   LDA   __local_floor_enemy_draw_b0
    BNE   .if_end@0
 .floor_enemy_draw@asm_ssa_block@0:
    JMP   .loop@0_continue

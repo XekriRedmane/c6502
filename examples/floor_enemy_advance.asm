@@ -29,7 +29,6 @@ floor_enemy_advance:
    LDX   __local_floor_enemy_advance_b3
    LDA   enemy_flag,X
    STA   __local_floor_enemy_advance_b0
-   LDA   __local_floor_enemy_advance_b0
    BEQ   .lb_skip@2
    JMP   .if_else@1
 .lb_skip@2:

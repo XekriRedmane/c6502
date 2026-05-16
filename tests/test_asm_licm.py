@@ -137,6 +137,86 @@ class TestAsmLicm(unittest.TestCase):
         out = _instrs(apply_licm(_wrap(instrs)))
         self.assertEqual(out, instrs)
 
+    def test_mem_to_mem_pair_hoisted(self):
+        # `LDA src; STA dst` where src is a stable cell never
+        # written in the loop body — the canonical pattern is DPTR
+        # staging for a volatile pointer dereference inside an
+        # outer loop. The pair belongs in the preheader.
+        instrs = [
+            asm_ast.Label(name=".loop_start"),
+            # Mem-to-mem copy of a static pointer's low byte into DPTR.
+            asm_ast.Mov(
+                src=asm_ast.Data(name="sfx_click_ptr", offset=0),
+                dst=_A,
+            ),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="DPTR", offset=0)),
+            # Some loop counter machinery in the body.
+            asm_ast.Mov(src=asm_ast.Data(name="counter", offset=0), dst=_A),
+            asm_ast.Compare(left=_A, right=asm_ast.Imm(value=0)),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_licm(_wrap(instrs)))
+        loop_idx = next(
+            i for i, x in enumerate(out)
+            if isinstance(x, asm_ast.Label) and x.name == ".loop_start"
+        )
+        # The mem-to-mem pair is now in the preheader region.
+        preheader = out[:loop_idx]
+        self.assertTrue(any(
+            isinstance(x, asm_ast.Mov)
+            and isinstance(x.src, asm_ast.Data)
+            and x.src.name == "sfx_click_ptr"
+            for x in preheader
+        ))
+        # And gone from the loop body.
+        body = out[loop_idx + 1:]
+        self.assertFalse(any(
+            isinstance(x, asm_ast.Mov)
+            and isinstance(x.dst, asm_ast.Data)
+            and x.dst.name == "DPTR"
+            for x in body
+        ))
+
+    def test_mem_to_mem_pair_refused_when_src_written_in_body(self):
+        # If anything in the body writes to the source cell, the
+        # value isn't loop-invariant — hoisting would observe a
+        # different value than the in-place version would. Use
+        # `Inc(ptr)` for the in-body write: a single-instruction
+        # modify that LICM itself can't hoist (only Mov shapes are
+        # candidates), so the test isolates the mem-to-mem refusal.
+        instrs = [
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(
+                src=asm_ast.Data(name="ptr", offset=0), dst=_A,
+            ),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="DPTR", offset=0)),
+            # A non-hoistable in-body modify of `ptr`:
+            asm_ast.Inc(dst=asm_ast.Data(name="ptr", offset=0)),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_licm(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_volatile_mov_refuses_hoist(self):
+        # A volatile Mov must remain at its source-order position
+        # so the observable access count matches the source loop
+        # iteration count. Hoisting one out of the loop would
+        # change the observed access count from N to 1.
+        instrs = [
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(
+                src=asm_ast.Data(name="ptr", offset=0), dst=_A,
+                is_volatile=True,
+            ),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="DPTR", offset=0)),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_licm(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
 
 if __name__ == "__main__":
     unittest.main()

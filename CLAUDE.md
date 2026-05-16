@@ -532,7 +532,6 @@ in `sim/` cover all of these so simulation-based tests still pass.
 - Function-pointer expressions don't exist yet — c6502 has no
   function-pointer call form beyond `IndirectCall` from the parser's
   restricted callee = identifier rule.
-- `extern` arrays rejected.
 - Some C99 init-list shapes rejected: scalar init for an array,
   brace init for a scalar, too many initializers, the C99
   subaggregate flat form (`int a[2][3] = {1,2,3,4,5,6};`).

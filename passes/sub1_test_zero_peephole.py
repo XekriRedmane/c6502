@@ -118,6 +118,7 @@ def _try_match(
     # i0: Mov(M, Reg(A))
     if not (
         isinstance(i0, asm_ast.Mov)
+        and not i0.is_volatile
         and i0.dst == _REG_A
         and _is_compareable_operand(i0.src)
     ):

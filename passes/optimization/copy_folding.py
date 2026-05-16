@@ -192,13 +192,13 @@ def _redirect_dst(
             return tac_ast.Copy(src=s, dst=new_dst)
         case tac_ast.GetAddress(operand=o, dst=d) if is_target(d):
             return tac_ast.GetAddress(operand=o, dst=new_dst)
-        case tac_ast.Load(src_ptr=p, dst=d) if is_target(d):
-            return tac_ast.Load(src_ptr=p, dst=new_dst)
+        case tac_ast.Load(src_ptr=p, dst=d, is_volatile=v) if is_target(d):
+            return tac_ast.Load(src_ptr=p, dst=new_dst, is_volatile=v)
         case tac_ast.IndexedLoad(
-            name=n, index=idx, dst=d,
+            name=n, index=idx, dst=d, is_volatile=v,
         ) if is_target(d):
             return tac_ast.IndexedLoad(
-                name=n, index=idx, dst=new_dst,
+                name=n, index=idx, dst=new_dst, is_volatile=v,
             )
         case tac_ast.FunctionCall(
             name=n, args=args, dst=d,

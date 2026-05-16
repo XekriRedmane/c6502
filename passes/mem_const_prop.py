@@ -189,8 +189,12 @@ def _substitute(instr, state: _BlockState):
     if its value is known. Slots that accept `Imm` only:
     `Mov.src` (when dst is `Reg(A)` — LDA imm is the only
     Imm-accepting Mov shape), `And.src`, `Or.src`, `Add.src`,
-    `Sub.src`, `Compare.right`."""
-    if isinstance(instr, asm_ast.Mov) and _is_reg_a(instr.dst):
+    `Sub.src`, `Compare.right`. Volatile Movs are left alone —
+    a volatile load must re-read the memory cell every time, not
+    use a previously-cached immediate."""
+    if (isinstance(instr, asm_ast.Mov)
+            and not instr.is_volatile
+            and _is_reg_a(instr.dst)):
         new_src = _substitute_source(instr.src, state)
         if new_src is not instr.src:
             return asm_ast.Mov(src=new_src, dst=instr.dst)
@@ -216,6 +220,17 @@ def _update_state(instr, state: _BlockState) -> None:
     or an original literal — either way it's a Python int we can
     track."""
     if isinstance(instr, asm_ast.Mov):
+        # Volatile Mov: the source can yield a different value
+        # between reads, and a volatile write to a memory cell
+        # doesn't make the memory's value knowable to the prop
+        # tracker (the program — or hardware — may overwrite it
+        # asynchronously). Drop any tracking related to A and
+        # invalidate any cached value for the dst.
+        if instr.is_volatile:
+            state.a_value = None
+            if not _is_reg_a(instr.dst):
+                _invalidate_alias(state, instr.dst)
+            return
         if _is_reg_a(instr.dst):
             # Mov(<src>, A): A becomes <src>'s value.
             if isinstance(instr.src, asm_ast.Imm):

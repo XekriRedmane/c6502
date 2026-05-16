@@ -104,6 +104,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         # src for a live read of its dst.
         cur = instrs[i]
         if (isinstance(cur, asm_ast.Mov)
+                and not cur.is_volatile
                 and _is_stable_mem(cur.src)
                 and _is_stable_mem(cur.dst)
                 and _operands_equal(cur.src, cur.dst)):
@@ -111,10 +112,14 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             continue
         if i + 1 < len(instrs):
             a, b = instrs[i], instrs[i + 1]
+            # Neither Mov can be volatile — a volatile LDA must
+            # re-read, and a volatile STA must always write.
             if (isinstance(a, asm_ast.Mov)
+                    and not a.is_volatile
                     and _is_reg_a(a.dst)
                     and _is_stable_mem(a.src)
                     and isinstance(b, asm_ast.Mov)
+                    and not b.is_volatile
                     and _is_reg_a(b.src)
                     and _is_stable_mem(b.dst)
                     and _operands_equal(a.src, b.dst)):

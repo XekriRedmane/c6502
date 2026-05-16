@@ -255,31 +255,52 @@ def _break_label(loop_label: str) -> str:
 # directive (DC.B / DC.W) and to track the declared type for
 # debug / linker purposes.
 
-def _strip_const_c99(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
-    """Strip every `Const` wrapper anywhere in `t`. `Pointer(Const(Int))`
-    becomes `Pointer(Int)`, `Const(Pointer(Const(Int)))` becomes
-    `Pointer(Int)`, `Array(Const(Int), N)` becomes `Array(Int, N)`,
-    etc. Used at the type-checker → TAC boundary: const-correctness
-    has been validated by the type checker; downstream layers
-    (storage layout, byte sizing, init-value lowering) treat
-    `const T` exactly like `T`."""
-    if isinstance(t, c99_ast.Const):
-        return _strip_const_c99(t.referenced_type)
+def _is_volatile_quals_c99(t: c99_ast.Type_data_type | None) -> bool:
+    """True iff `t` has a top-level `Volatile` wrapper (possibly
+    underneath a `Const`). Used at every Load / Store / IndexedLoad
+    / IndexedStore / IndirectIndexedLoad / IndirectIndexedStore
+    emission site to decide whether to set `is_volatile=True` on the
+    resulting TAC atom. `None` (a missing data_type on a synthetic
+    expression that bypassed type-checking) falls back to False —
+    the conservative answer that lets downstream passes treat the
+    access normally."""
+    if t is None:
+        return False
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    return isinstance(t, c99_ast.Volatile)
+
+
+def _strip_quals_c99(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
+    """Strip every `Const` / `Volatile` wrapper anywhere in `t`.
+    `Pointer(Const(Int))` becomes `Pointer(Int)`,
+    `Volatile(Pointer(Volatile(Int)))` becomes `Pointer(Int)`,
+    `Array(Const(Int), N)` becomes `Array(Int, N)`, etc. Used at the
+    type-checker → TAC boundary: const-correctness has been validated
+    by the type checker, and volatile-ness is captured separately on
+    the per-access `is_volatile` bit threaded onto Load / Store
+    atoms — so downstream layers (storage layout, byte sizing,
+    init-value lowering) can treat `T` / `const T` / `volatile T` /
+    `const volatile T` all the same."""
+    if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        return _strip_quals_c99(t.referenced_type)
     if isinstance(t, c99_ast.Pointer):
         return c99_ast.Pointer(
-            referenced_type=_strip_const_c99(t.referenced_type),
+            referenced_type=_strip_quals_c99(t.referenced_type),
         )
     if isinstance(t, c99_ast.Array):
         return c99_ast.Array(
-            element_type=_strip_const_c99(t.element_type),
+            element_type=_strip_quals_c99(t.element_type),
             size=t.size,
         )
     if isinstance(t, c99_ast.FunType):
         return c99_ast.FunType(
-            params=[_strip_const_c99(p) for p in t.params],
-            ret=_strip_const_c99(t.ret),
+            params=[_strip_quals_c99(p) for p in t.params],
+            ret=_strip_quals_c99(t.ret),
         )
     return t
+
+
 
 
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
@@ -288,8 +309,9 @@ def _byte_width_of(t: c99_ast.Type_data_type) -> int:
     Float = 4, Double = 8, Pointer = 2 (the 6502's address width).
     Used by Cast lowering to decide between SignExtend / ZeroExtend
     / Truncate / no-op (for integer types) and by various size-
-    driven dispatch sites downstream. `Const` is transparent."""
-    if isinstance(t, c99_ast.Const):
+    driven dispatch sites downstream. `Const` and `Volatile` are
+    transparent."""
+    if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         return _byte_width_of(t.referenced_type)
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
@@ -320,12 +342,15 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
     their payload, so the variant is just an "address-shaped"
     placeholder; the c99 symbol table is what sizes the storage.
 
-    `Const` wrappers are stripped recursively at this boundary —
-    qualifiers are a type-checker concept; downstream TAC and
-    asm passes don't model them."""
-    # Peel any nested Const wrappers (`Const(Pointer(Const(Int)))`
-    # → `Pointer(Int)` at the TAC layer). Idempotent on non-Const.
-    while isinstance(t, c99_ast.Const):
+    `Const` and `Volatile` wrappers are stripped at this boundary —
+    Const has done its job at the type checker, and Volatile rides
+    on the per-access `is_volatile` bit threaded onto Load / Store
+    atoms by the lowering rather than on the type. Downstream TAC
+    layers don't need to know about either qualifier."""
+    # Peel any nested Const / Volatile wrappers
+    # (`Const(Pointer(Const(Int)))` → `Pointer(Int)` at the TAC
+    # layer). Idempotent on unqualified types.
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     if isinstance(t, c99_ast.Int):
         return tac_ast.Int()
@@ -420,7 +445,11 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
     (1-byte unsigned) — plain `char` is unsigned in c6502 per the
     §6.2.5.15 implementation-defined choice. Used by the synthetic-
     constant call sites (postfix `+1`, short-circuit 0/1, implicit
-    `return 0`)."""
+    `return 0`). `Const` / `Volatile` qualifiers on `t` are
+    transparent — the const's variant cares only about the
+    underlying width and signedness."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
     if isinstance(t, c99_ast.SChar):
         return tac_ast.ConstChar(value=int(value))
     if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
@@ -817,9 +846,9 @@ def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     model. Recursive for Array — `int[3][4]` is 24 bytes (Int = 2),
     `char[10]` is 10 bytes. For Structure / Union, looks up the
     tag's layout in `types` (the program-wide TypeTable) and reads
-    its `.size`. `Const` is transparent — `sizeof(const T) ==
-    sizeof(T)`."""
-    if isinstance(t, c99_ast.Const):
+    its `.size`. `Const` and `Volatile` are both transparent —
+    `sizeof(const volatile T) == sizeof(T)`."""
+    if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         return _sizeof(t.referenced_type, types)
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
@@ -909,7 +938,7 @@ class Translator:
         if t is None:
             t_unq = c99_ast.Int()
         else:
-            t_unq = _strip_const_c99(t)
+            t_unq = _strip_quals_c99(t)
         self._symbols[name] = Symbol(
             type=t_unq,
             attrs=LocalAttr(),
@@ -1119,7 +1148,7 @@ class Translator:
                 init_value = init.value
             elif isinstance(init, Tentative):
                 init_value = _zero_init_value(
-                    _strip_const_c99(sym.type), self._types,
+                    _strip_quals_c99(sym.type), self._types,
                 )
             elif isinstance(init, NoInitializer):
                 continue
@@ -1131,7 +1160,7 @@ class Translator:
             # isinstance checks match. Same applies to the zero-init
             # case via `_zero_init_value` below (the c99 type passed
             # to it is already stripped via this strip).
-            t_unq = _strip_const_c99(sym.type)
+            t_unq = _strip_quals_c99(sym.type)
             out.append(tac_ast.StaticVariable(
                 name=name,
                 is_global=sym.attrs.is_global,
@@ -1877,7 +1906,10 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
-                instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
+                instrs.append(tac_ast.Load(
+                    src_ptr=addr, dst=dst,
+                    is_volatile=_is_volatile_quals_c99(exp.data_type),
+                ))
                 return dst
             case c99_ast.Dot(operand=operand, member=member):
                 # `e.m` — compute the byte address of the member,
@@ -1890,7 +1922,10 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
-                instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
+                instrs.append(tac_ast.Load(
+                    src_ptr=addr, dst=dst,
+                    is_volatile=_is_volatile_quals_c99(exp.data_type),
+                ))
                 return dst
             case c99_ast.Arrow(operand=operand, member=member):
                 # `p->m` — evaluate the pointer, add the member's
@@ -1901,7 +1936,10 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
-                instrs.append(tac_ast.Load(src_ptr=addr, dst=dst))
+                instrs.append(tac_ast.Load(
+                    src_ptr=addr, dst=dst,
+                    is_volatile=_is_volatile_quals_c99(exp.data_type),
+                ))
                 return dst
             case c99_ast.Assignment(lval=lval, rval=rval):
                 # identifier_resolution accepts five lval shapes:
@@ -1920,6 +1958,11 @@ class Translator:
                     # `b = a = 5` -> inner returns Var(@0.a), outer copies
                     # that into @1.b and returns Var(@1.b).
                     return dst
+                # Volatility of the destination lvalue rides on the
+                # lval's stamped data_type (`*p` has the pointee's
+                # type, including any Volatile qualifier propagated
+                # from `p`'s `Pointer(Volatile(T))`).
+                is_vol = _is_volatile_quals_c99(lval.data_type)
                 if isinstance(lval, c99_ast.Dereference):
                     # `*p = rval` lowers to a Store: evaluate the
                     # pointer expression, then write the rval's bytes
@@ -1931,6 +1974,7 @@ class Translator:
                     ptr_val = self.translate_exp(lval.exp, instrs)
                     instrs.append(tac_ast.Store(
                         src=rval_val, dst_ptr=ptr_val,
+                        is_volatile=is_vol,
                     ))
                     return rval_val
                 if isinstance(lval, c99_ast.Subscript):
@@ -1941,6 +1985,7 @@ class Translator:
                     )
                     instrs.append(tac_ast.Store(
                         src=rval_val, dst_ptr=addr,
+                        is_volatile=is_vol,
                     ))
                     return rval_val
                 if isinstance(lval, c99_ast.Dot):
@@ -1949,6 +1994,7 @@ class Translator:
                     )
                     instrs.append(tac_ast.Store(
                         src=rval_val, dst_ptr=addr,
+                        is_volatile=is_vol,
                     ))
                     return rval_val
                 if isinstance(lval, c99_ast.Arrow):
@@ -1957,6 +2003,7 @@ class Translator:
                     )
                     instrs.append(tac_ast.Store(
                         src=rval_val, dst_ptr=addr,
+                        is_volatile=is_vol,
                     ))
                     return rval_val
                 raise TypeError(
@@ -2067,7 +2114,7 @@ class Translator:
                     ))
                     arg_vals = [addr] + arg_vals
                     sym = self._symbols.get(name)
-                    if sym is not None and isinstance(_strip_const_c99(sym.type), c99_ast.Pointer):
+                    if sym is not None and isinstance(_strip_quals_c99(sym.type), c99_ast.Pointer):
                         instrs.append(tac_ast.IndirectCall(
                             ptr=tac_ast.Var(name=name),
                             args=arg_vals, dst=None,
@@ -2083,7 +2130,7 @@ class Translator:
                     )
                 )
                 sym = self._symbols.get(name)
-                if sym is not None and isinstance(_strip_const_c99(sym.type), c99_ast.Pointer):
+                if sym is not None and isinstance(_strip_quals_c99(sym.type), c99_ast.Pointer):
                     # Indirect call — the callee is a function-
                     # pointer-typed Var. Pass the pointer val (which
                     # carries the function's address at runtime) to
@@ -2115,7 +2162,10 @@ class Translator:
                 # expression, then Load N bytes through the
                 # resulting pointer into a fresh pointee-typed temp.
                 # The dst's type comes from the type checker (the
-                # Dereference node's data_type is the pointee).
+                # Dereference node's data_type is the pointee, which
+                # also tells us if the pointee is volatile-qualified
+                # — `p` is `Pointer(Volatile(T))` → `*p` has
+                # data_type `Volatile(T)`).
                 #
                 # The store-through-pointer case (`*p = rval`) is
                 # handled in the Assignment case above; that path
@@ -2125,7 +2175,10 @@ class Translator:
                 dst = tac_ast.Var(
                     name=self.make_temporary_variable_name(exp.data_type),
                 )
-                instrs.append(tac_ast.Load(src_ptr=ptr_val, dst=dst))
+                instrs.append(tac_ast.Load(
+                    src_ptr=ptr_val, dst=dst,
+                    is_volatile=_is_volatile_quals_c99(exp.data_type),
+                ))
                 return dst
             case c99_ast.AddressOf(exp=inner):
                 # `&e` — `e` is an lvalue (validated by
@@ -2211,9 +2264,9 @@ class Translator:
         The type checker's already widened any int operand to Int, so
         every value reaching this method is 2 bytes wide and the
         arithmetic happens at one width."""
-        lt = _strip_const_c99(lt)
-        rt = _strip_const_c99(rt)
-        result_type = _strip_const_c99(result_type)
+        lt = _strip_quals_c99(lt)
+        rt = _strip_quals_c99(rt)
+        result_type = _strip_quals_c99(result_type)
         l_ptr = isinstance(lt, c99_ast.Pointer)
         r_ptr = isinstance(rt, c99_ast.Pointer)
         if l_ptr and r_ptr:
@@ -2337,7 +2390,7 @@ class Translator:
                     src2=_tac_const_val(c99_ast.Int(), offset),
                     dst=addr,
                 ))
-            instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+            instrs.append(tac_ast.Store(src=val, dst_ptr=addr, is_volatile=_is_volatile_quals_c99(elem_type)))
 
     def _translate_string_array_init(
         self,
@@ -2386,7 +2439,7 @@ class Translator:
                     src2=_tac_const_val(c99_ast.Int(), i),
                     dst=addr,
                 ))
-            instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+            instrs.append(tac_ast.Store(src=val, dst_ptr=addr, is_volatile=_is_volatile_quals_c99(elem_type)))
 
     def _emit_init_stores(
         self,
@@ -2456,7 +2509,7 @@ class Translator:
                         src2=_tac_const_val(c99_ast.Int(), byte_offset),
                         dst=addr,
                     ))
-                instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+                instrs.append(tac_ast.Store(src=val, dst_ptr=addr, is_volatile=_is_volatile_quals_c99(elem_type)))
 
     def _emit_struct_init_stores(
         self,
@@ -2527,7 +2580,10 @@ class Translator:
                         src2=_tac_const_val(c99_ast.Int(), byte_offset),
                         dst=addr,
                     ))
-                instrs.append(tac_ast.Store(src=val, dst_ptr=addr))
+                instrs.append(tac_ast.Store(
+                    src=val, dst_ptr=addr,
+                    is_volatile=_is_volatile_quals_c99(mt),
+                ))
 
     def _translate_struct_init_list(
         self,
@@ -2763,7 +2819,7 @@ class Translator:
         while isinstance(arr_t, c99_ast.Array):
             dim_sizes.append(arr_t.size)
             arr_t = arr_t.element_type
-        while isinstance(arr_t, c99_ast.Const):
+        while isinstance(arr_t, (c99_ast.Const, c99_ast.Volatile)):
             arr_t = arr_t.referenced_type
         elem_size = _sizeof(arr_t, self._types)
 
@@ -2801,6 +2857,7 @@ class Translator:
                     const=tac_ast.ConstUChar(value=flat_byte_idx),
                 ),
                 dst=dst,
+                is_volatile=_is_volatile_quals_c99(exp.data_type),
             ))
             return dst
 
@@ -2833,6 +2890,7 @@ class Translator:
         )
         instrs.append(tac_ast.IndexedLoad(
             name=base_var.name, index=scaled_byte, dst=dst,
+            is_volatile=_is_volatile_quals_c99(exp.data_type),
         ))
         return dst
 
@@ -2938,9 +2996,14 @@ class Translator:
         cur = tac_ast.Var(
             name=self.make_temporary_variable_name(op_type),
         )
-        instrs.append(tac_ast.Load(src_ptr=addr, dst=cur))
+        is_vol = _is_volatile_quals_c99(op_type)
+        instrs.append(tac_ast.Load(
+            src_ptr=addr, dst=cur, is_volatile=is_vol,
+        ))
         new = self._emit_incdec_step(op, cur, op_type, instrs)
-        instrs.append(tac_ast.Store(src=new, dst_ptr=addr))
+        instrs.append(tac_ast.Store(
+            src=new, dst_ptr=addr, is_volatile=is_vol,
+        ))
         return cur if return_old else new
 
     def _emit_incdec_step(
@@ -3064,12 +3127,17 @@ class Translator:
         cur = tac_ast.Var(
             name=self.make_temporary_variable_name(lv_type),
         )
-        instrs.append(tac_ast.Load(src_ptr=addr, dst=cur))
+        is_vol = _is_volatile_quals_c99(lv_type)
+        instrs.append(tac_ast.Load(
+            src_ptr=addr, dst=cur, is_volatile=is_vol,
+        ))
         new_val = self._compute_compound_step(
             op, cur, lv_type, rval, intermediate_type,
             is_pointer_arith, instrs,
         )
-        instrs.append(tac_ast.Store(src=new_val, dst_ptr=addr))
+        instrs.append(tac_ast.Store(
+            src=new_val, dst_ptr=addr, is_volatile=is_vol,
+        ))
         return new_val
 
     def _compute_compound_step(

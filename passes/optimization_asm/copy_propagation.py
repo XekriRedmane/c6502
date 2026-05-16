@@ -179,8 +179,8 @@ def _rewrite(
         return op
 
     match instr:
-        case asm_ast.Mov(src=src, dst=dst):
-            return asm_ast.Mov(src=sub_use(src), dst=dst)
+        case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
+            return asm_ast.Mov(src=sub_use(src), dst=dst, is_volatile=v)
         case asm_ast.Add(src=src, dst=dst):
             # `dst` is read-modify-write (it's the accumulator A in
             # current emissions, and A isn't a Pseudo, so sub_use

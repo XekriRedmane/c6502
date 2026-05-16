@@ -163,6 +163,7 @@ def _try_match_first_byte(
     i0, i1, i2, i3 = instrs[start:start + 4]
     if not (
         isinstance(i0, asm_ast.Mov)
+        and not i0.is_volatile
         and _is_inc_eligible_operand(i0.src)
         and i0.dst == _REG_A
     ):
@@ -175,8 +176,15 @@ def _try_match_first_byte(
         and i2.dst == _REG_A
     ):
         return None
+    # The store half can't be volatile either — the original 4-insn
+    # sequence has one read + one write per byte; folding to `INC M`
+    # would yield the same access count but a volatile RMW is its own
+    # category (the compiler can't safely combine read+write into
+    # one read-modify-write instruction when the cell can change
+    # asynchronously). Refuse.
     if not (
         isinstance(i3, asm_ast.Mov)
+        and not i3.is_volatile
         and i3.src == _REG_A
         and _operands_equal(i3.dst, i0.src)
     ):
@@ -195,12 +203,14 @@ def _try_match_continuation_byte(
     regalloc places multi-byte values' bytes at independent ZP slots,
     so the bytes can sit anywhere; the structural pattern is what
     identifies them as part of one logical add-1. M still has to be
-    INC-eligible and the pattern still has to be in-place."""
+    INC-eligible and the pattern still has to be in-place. Volatile
+    Movs make the pattern non-matching — see `_try_match_first_byte`."""
     if start + 3 > len(instrs):
         return None
     i0, i1, i2 = instrs[start:start + 3]
     if not (
         isinstance(i0, asm_ast.Mov)
+        and not i0.is_volatile
         and _is_inc_eligible_operand(i0.src)
         and i0.dst == _REG_A
     ):
@@ -213,6 +223,7 @@ def _try_match_continuation_byte(
         return None
     if not (
         isinstance(i2, asm_ast.Mov)
+        and not i2.is_volatile
         and i2.src == _REG_A
         and _operands_equal(i2.dst, i0.src)
     ):

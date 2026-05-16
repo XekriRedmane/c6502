@@ -165,38 +165,67 @@ class TestGenerator(unittest.TestCase):
         self.assertEqual(b.v, [])
 
     def test_default_field_followed_by_required_uses_kw_only(self):
-        # When an optional / sequence field (which gets a Python
-        # default) precedes a required field, the dataclass falls
-        # back to kw_only=True to satisfy Python's "no non-default
-        # after default" rule. The ASDL field order is preserved as-
-        # is in the generated class — callers just have to use kw
-        # args.
-        ns = self._exec("module F { x = X(int? a, int b) }")
+        # When a defaulted field (optional, sequence, or primitive —
+        # primitives all carry a default value, see the generator's
+        # `_PRIMITIVE_DEFAULTS`) precedes a non-defaulted user-typed
+        # field, the dataclass falls back to kw_only=True to satisfy
+        # Python's "no non-default after default" rule. The ASDL field
+        # order is preserved as-is — callers just have to use kw args.
+        ns = self._exec(dedent("""
+            module F {
+                ty = TyA
+                x = X(int? a, ty b)
+            }
+        """))
         # Positional args fail (kw_only blocks them).
         with self.assertRaises(TypeError):
-            ns["X"](None, 5)
+            ns["X"](None, ns["TyA"]())
         # Keyword args work.
-        x = ns["X"](b=5)
-        self.assertEqual((x.a, x.b), (None, 5))
-        x = ns["X"](a=1, b=2)
-        self.assertEqual((x.a, x.b), (1, 2))
+        x = ns["X"](b=ns["TyA"]())
+        self.assertEqual(x.a, None)
+        self.assertIsInstance(x.b, ns["TyA"])
 
     def test_required_then_default_then_required_uses_kw_only(self):
         # Same situation, just demonstrating that the trigger is "any
-        # default-having field followed by a required field," not
-        # "first field has default."
-        ns = self._exec("module F { x = X(int a, int? b, int c) }")
-        x = ns["X"](a=1, c=3)
-        self.assertEqual((x.a, x.b, x.c), (1, None, 3))
+        # default-having field followed by a non-defaulted field,"
+        # not "first field has default."
+        ns = self._exec(dedent("""
+            module F {
+                ty = TyA
+                x = X(ty a, int? b, ty c)
+            }
+        """))
+        ta = ns["TyA"]()
+        x = ns["X"](a=ta, c=ta)
+        self.assertEqual(x.b, None)
 
     def test_required_then_default_keeps_positional(self):
-        # No reordering needed: optional comes after required. Stays
-        # positional-friendly (no kw_only fallback).
-        ns = self._exec("module F { x = X(int a, int? b) }")
-        x = ns["X"](1)
-        self.assertEqual((x.a, x.b), (1, None))
-        x = ns["X"](1, 2)
-        self.assertEqual((x.a, x.b), (1, 2))
+        # No reordering needed: optional comes after the user-typed
+        # required field. Stays positional-friendly (no kw_only
+        # fallback).
+        ns = self._exec(dedent("""
+            module F {
+                ty = TyA
+                x = X(ty a, int? b)
+            }
+        """))
+        ta = ns["TyA"]()
+        x = ns["X"](ta)
+        self.assertEqual(x.b, None)
+        x = ns["X"](ta, 7)
+        self.assertEqual(x.b, 7)
+
+    def test_primitive_field_defaults(self):
+        # Primitive fields (int / bool / identifier / string / float /
+        # bytes) get a default value so a freshly added field doesn't
+        # force every call site to update. ASDL order is preserved;
+        # callers just have to use kw args if a non-defaulted field
+        # follows.
+        ns = self._exec("module F { x = X(int a, bool b, identifier c) }")
+        x = ns["X"]()
+        self.assertEqual((x.a, x.b, x.c), (0, False, ""))
+        x = ns["X"](a=1, b=True, c="hi")
+        self.assertEqual((x.a, x.b, x.c), (1, True, "hi"))
 
     def test_attributes_inherited_kw_only(self):
         ns = self._exec(dedent("""

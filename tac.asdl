@@ -25,8 +25,19 @@ module TAC {
         -- the zero-page DPTR pair before issuing the indirect-Y
         -- accesses.
         | GetAddress(val operand, val dst)
-        | Load(val src_ptr, val dst)
-        | Store(val src, val dst_ptr)
+        -- `is_volatile=true` marks the access as deriving from a
+        -- volatile-qualified lvalue (`volatile T *p; *p` or `volatile
+        -- T x; x`). Downstream TAC and asm passes that would normally
+        -- eliminate or coalesce the access — DSE drops unused-dst
+        -- Loads; copy_prop folds through Loads; redundant_load_elim
+        -- drops a Load whose A already mirrors the address; dead-pure-
+        -- loop elim treats a Load as a side-effect-free instruction —
+        -- all skip volatile-flagged atoms per C99 §6.7.3.6 ("every
+        -- access to an object of volatile-qualified type ... is a
+        -- side effect"). Default (false) for any access derived from
+        -- an unqualified or merely const-qualified lvalue.
+        | Load(val src_ptr, val dst, bool is_volatile)
+        | Store(val src, val dst_ptr, bool is_volatile)
         -- Indexed load from a static-storage array. `name` is the
         -- array's symbol; `index` is a 1-byte (UChar) val holding the
         -- byte offset into the array. `dst` is loaded from the bytes
@@ -39,7 +50,12 @@ module TAC {
         -- (LDA index; TAY), then one `LDA name+k,Y; STA dst[k]` pair
         -- per dst byte (6502 absolute,Y addressing on a static
         -- label).
-        | IndexedLoad(identifier name, val index, val dst)
+        -- The `is_volatile` bit on this and the other indexed /
+        -- indirect-indexed variants carries the same meaning as on
+        -- `Load` / `Store` — set when the access derives from a
+        -- volatile-qualified lvalue, suppresses elimination /
+        -- coalescing in downstream passes.
+        | IndexedLoad(identifier name, val index, val dst, bool is_volatile)
         -- Indexed store to a 16-bit absolute address. `address` is a
         -- compile-time integer base; `index` is a 1-byte (UChar) val
         -- that the codegen stages into X; `src` is a 1-byte (UChar /
@@ -57,7 +73,7 @@ module TAC {
         -- value being stored must be 1 byte wide (a 16-bit STA would
         -- need two STA abs,X forms with no carry threading and the
         -- pattern's profile changes).
-        | IndexedStore(int address, val index, val src)
+        | IndexedStore(int address, val index, val src, bool is_volatile)
         -- Indexed load from a 16-bit absolute address. Mirror of
         -- IndexedStore: `address` is a compile-time integer base,
         -- `index` is a 1-byte (UChar) val staged into X, `dst`
@@ -74,7 +90,7 @@ module TAC {
         -- the per-byte source-table read in a hot inner loop after
         -- const-static fold has turned the source pointer into a
         -- numeric address.
-        | IndexedConstLoad(int address, val index, val dst)
+        | IndexedConstLoad(int address, val index, val dst, bool is_volatile)
         -- Indirect-indexed load through a pointer-typed val. `ptr` is a
         -- 2-byte Pointer-typed val holding a runtime address; `index`
         -- is a 1-byte (Char/SChar/UChar) val that the codegen stages
@@ -90,12 +106,12 @@ module TAC {
         -- typed Var. Eligibility: temps single-use, dst is 1 byte
         -- wide, the pointer's pointee is 1 byte (so the type checker
         -- didn't insert a Multiply for sizeof scaling).
-        | IndirectIndexedLoad(val ptr, val index, val dst)
+        | IndirectIndexedLoad(val ptr, val index, val dst, bool is_volatile)
         -- Mirror of IndirectIndexedLoad for stores. Writes `src`'s
         -- byte to `*(ptr + index)`. tac_to_asm lowers as: stage `ptr`
         -- into DPTR, then `LDY index; LDA src; STA (DPTR),Y`. Same
         -- eligibility checks as the Load form.
-        | IndirectIndexedStore(val ptr, val index, val src)
+        | IndirectIndexedStore(val ptr, val index, val src, bool is_volatile)
         | Unary(unary_operator op, val src, val dst)
         | Binary(binary_operator op, val src1, val src2, val dst)
         | Copy(val src, val dst)

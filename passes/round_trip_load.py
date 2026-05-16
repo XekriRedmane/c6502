@@ -128,19 +128,23 @@ def _writes_a_with_flag_effect(instr) -> bool:
 
 
 def _is_sta(instr) -> bool:
-    """True iff `instr` is `Mov(Reg(A), <stable memory>)`. We
-    only match stable memory operands (ZP / Data) because those
-    are the ones a subsequent LDA can recognize as the same
-    address."""
+    """True iff `instr` is `Mov(Reg(A), <stable memory>)` and isn't
+    a volatile store. We only match stable memory operands (ZP /
+    Data) because those are the ones a subsequent LDA can recognize
+    as the same address."""
     return (isinstance(instr, asm_ast.Mov)
+            and not instr.is_volatile
             and _is_reg_a(instr.src)
             and isinstance(instr.dst, (asm_ast.ZP, asm_ast.Data)))
 
 
 def _is_lda_same_addr(instr, sta) -> bool:
     """True iff `instr` is `Mov(<mem>, Reg(A))` whose source is
-    structurally identical to `sta.dst`."""
+    structurally identical to `sta.dst`, and isn't a volatile
+    load (a volatile load re-reads the memory cell every time)."""
     if not isinstance(instr, asm_ast.Mov):
+        return False
+    if instr.is_volatile:
         return False
     if not _is_reg_a(instr.dst):
         return False

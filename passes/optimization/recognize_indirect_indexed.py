@@ -169,12 +169,14 @@ def _try_recognize(
         addr_val = instr.src_ptr
         head_kind = "load"
         head_value_for_check = instr.dst  # already verified 1-byte
+        head_is_volatile = instr.is_volatile
     elif isinstance(instr, tac_ast.Store):
         if not _is_1_byte_val(instr.src, symbols):
             return None
         addr_val = instr.dst_ptr
         head_kind = "store"
         head_value_for_check = instr.src
+        head_is_volatile = instr.is_volatile
     else:
         return None
     if not isinstance(addr_val, tac_ast.Var):
@@ -214,14 +216,17 @@ def _try_recognize(
     idx_var = ext_def.src
     if not _is_1_byte_var(idx_var, symbols):
         return None
-    # Build the replacement.
+    # Build the replacement. The collapsed instruction inherits
+    # the original Load/Store's `is_volatile` bit.
     if head_kind == "load":
         replacement: tac_ast.Type_instruction = tac_ast.IndirectIndexedLoad(
             ptr=ptr_var, index=idx_var, dst=head_value_for_check,
+            is_volatile=head_is_volatile,
         )
     else:
         replacement = tac_ast.IndirectIndexedStore(
             ptr=ptr_var, index=idx_var, src=head_value_for_check,
+            is_volatile=head_is_volatile,
         )
     return (replacement, {addr_def_idx, ext_def_idx})
 
@@ -291,7 +296,7 @@ def _is_1_byte_var(v: tac_ast.Var, symbols) -> bool:
     if sym is None:
         return False
     t = sym.type
-    while isinstance(t, c99_ast.Const):
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
 

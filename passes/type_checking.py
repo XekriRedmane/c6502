@@ -703,7 +703,7 @@ def _is_object_type(t: Type) -> bool:
     here too — consumers that legitimately accept structs check
     explicitly. `Const(...)` is transparent — `const int` is still
     an object type."""
-    t = _strip_const(t)
+    t = _strip_quals(t)
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
             Char, SChar, UChar,
@@ -717,100 +717,135 @@ def _is_complete_object_type(t: Type) -> bool:
     type for the named object (the array / struct decays only when
     its name appears in certain expression contexts, not when it's
     being declared). `Const` is transparent."""
-    t = _strip_const(t)
+    t = _strip_quals(t)
     return _is_object_type(t) or isinstance(
         t, (Array, Structure, Union),
     )
 
 
 def _is_struct_or_union(t: Type) -> bool:
-    return isinstance(_strip_const(t), (Structure, Union))
+    return isinstance(_strip_quals(t), (Structure, Union))
 
 
 def _is_integer_type(t: Type) -> bool:
     return isinstance(
-        _strip_const(t),
+        _strip_quals(t),
         (Int, Long, LongLong, UInt, ULong, ULongLong,
          Char, SChar, UChar),
     )
 
 
 def _is_floating_type(t: Type) -> bool:
-    return isinstance(_strip_const(t), (Float, Double))
+    return isinstance(_strip_quals(t), (Float, Double))
 
 
 def _is_pointer_type(t: Type) -> bool:
-    return isinstance(_strip_const(t), Pointer)
+    return isinstance(_strip_quals(t), Pointer)
 
 
 def _is_array_type(t: Type) -> bool:
-    return isinstance(_strip_const(t), Array)
+    return isinstance(_strip_quals(t), Array)
 
 
 def _is_void(t: Type) -> bool:
     """True iff `t` is the `void` type itself (NOT `void *`)."""
-    return isinstance(_strip_const(t), Void)
+    return isinstance(_strip_quals(t), Void)
 
 
 def _is_void_pointer(t: Type) -> bool:
     """True iff `t` is `void *`."""
-    t = _strip_const(t)
+    t = _strip_quals(t)
     return isinstance(t, Pointer) and isinstance(
-        _strip_const(t.referenced_type), Void,
+        _strip_quals(t.referenced_type), Void,
     )
 
 
-def _strip_const(t: Type) -> Type:
-    """Peel ONE top-level `Const` wrapper. `Const(Int)` → `Int`;
-    `Const(Pointer(Const(Int)))` → `Pointer(Const(Int))` (only the
-    outermost Const is removed — the pointee's Const stays).
-    Idempotent for non-`Const` types."""
-    if isinstance(t, c99_ast.Const):
-        return t.referenced_type
+def _strip_quals(t: Type) -> Type:
+    """Peel any top-level `Const` and `Volatile` wrappers. Loops
+    until the outermost type is neither — so `Const(Volatile(Int))`
+    and `Volatile(Const(Int))` both reduce to `Int`. Inner qualifiers
+    inside `Pointer` / `Array` / `FunType` stay (the pointer's *type*
+    is the qualified composite). Idempotent.
+
+    Used by every type predicate that doesn't care about qualifiers
+    — `_is_object_type`, the integer / pointer / array / void
+    predicates, the common-type computation, etc. C99 §6.3.2.1
+    paragraph 2 specifies that non-lvalue conversion strips both
+    `const` and `volatile`, so almost everywhere outside the
+    lvalue-modification check the right behavior is to strip both."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
     return t
 
 
-def _strip_const_recursive(t: Type) -> Type:
-    """Strip every `Const` wrapper anywhere in `t`. `Pointer(Const(Int))`
-    becomes `Pointer(Int)`, `Const(Pointer(Const(Int)))` becomes
-    `Pointer(Int)`, `Array(Const(Int), N)` becomes `Array(Int, N)`,
-    etc. Used at the boundary into TAC where const-correctness is no
-    longer relevant."""
-    if isinstance(t, c99_ast.Const):
-        return _strip_const_recursive(t.referenced_type)
+def _strip_quals_recursive(t: Type) -> Type:
+    """Strip every `Const` / `Volatile` wrapper anywhere in `t`.
+    `Pointer(Const(Int))` becomes `Pointer(Int)`,
+    `Volatile(Pointer(Volatile(Int)))` becomes `Pointer(Int)`,
+    `Array(Const(Int), N)` becomes `Array(Int, N)`, etc.
+
+    Used by `_convert_to` at the implicit-conversion boundary to
+    compare types modulo qualifiers (a `const int` operand can
+    flow into an `int` parameter without an explicit cast)."""
+    if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        return _strip_quals_recursive(t.referenced_type)
     if isinstance(t, Pointer):
-        return Pointer(referenced_type=_strip_const_recursive(t.referenced_type))
+        return Pointer(referenced_type=_strip_quals_recursive(t.referenced_type))
     if isinstance(t, Array):
         return Array(
-            element_type=_strip_const_recursive(t.element_type),
+            element_type=_strip_quals_recursive(t.element_type),
             size=t.size,
         )
     if isinstance(t, FunType):
         return FunType(
-            params=[_strip_const_recursive(p) for p in t.params],
-            ret=_strip_const_recursive(t.ret),
+            params=[_strip_quals_recursive(p) for p in t.params],
+            ret=_strip_quals_recursive(t.ret),
         )
     return t
 
 
 def _is_const_qualified(t: Type) -> bool:
-    """True iff `t` has a top-level `Const` wrapper. Used at
-    modification sites to reject `Assignment` / `CompoundAssignment` /
-    `Prefix` / `Postfix` operations on a const-qualified lvalue."""
+    """True iff `t` has a top-level `Const` wrapper, possibly nested
+    underneath a `Volatile` wrapper (the parser canonicalizes
+    `const volatile T` to `Const(Volatile(T))`, but defensively we
+    accept the other order too). Used at modification sites to
+    reject `Assignment` / `CompoundAssignment` / `Prefix` / `Postfix`
+    operations on a const-qualified lvalue."""
+    while isinstance(t, c99_ast.Volatile):
+        t = t.referenced_type
     return isinstance(t, c99_ast.Const)
 
 
-def _propagate_const(member_t: Type, container_t: Type) -> Type:
-    """Combine a member's declared type with the container's
-    qualifier per C99 §6.5.2.3.3: a Const-qualified container
-    accessed via `.` propagates Const to the member result. For
-    `->`, pass the pointee in `container_t`. Idempotent — if
-    `member_t` is already `Const(...)`, no extra wrapping."""
-    if not _is_const_qualified(container_t):
-        return member_t
-    if isinstance(member_t, c99_ast.Const):
-        return member_t
-    return c99_ast.Const(referenced_type=member_t)
+def _is_volatile_qualified(t: Type) -> bool:
+    """True iff `t` has a top-level `Volatile` wrapper (possibly
+    underneath a `Const`). Used by c99_to_tac to decide whether to
+    emit `Load` / `Store` with `is_volatile=True`. Per C99
+    §6.7.3.6 a volatile object's value cannot be cached and every
+    access is observable; in c6502 this turns off the
+    redundant-load / dead-store / dead-loop optimizations on
+    every memory op derived from the access."""
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    return isinstance(t, c99_ast.Volatile)
+
+
+def _propagate_quals(member_t: Type, container_t: Type) -> Type:
+    """Per C99 §6.5.2.3.3, a member access through a Const- or
+    Volatile-qualified container yields a result with those same
+    qualifiers. `s.m` on `S const s` is `const T` (where T is m's
+    declared type); same for `->` on a pointer to a qualified
+    struct. We mirror that here, applying both qualifiers
+    independently in the canonical Volatile-inside, Const-outside
+    order."""
+    if _is_volatile_qualified(container_t) and not _is_volatile_qualified(
+        member_t,
+    ):
+        member_t = c99_ast.Volatile(referenced_type=member_t)
+    if _is_const_qualified(container_t) and not _is_const_qualified(
+        member_t,
+    ):
+        member_t = c99_ast.Const(referenced_type=member_t)
+    return member_t
 
 
 def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
@@ -828,7 +863,7 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     sync because they both encode the same storage-model rules.
     Used by the `sizeof` operator's type-checker. Constraint
     violations (Void, FunType) raise TypeCheckError."""
-    t = _strip_const(t)
+    t = _strip_quals(t)
     if isinstance(t, (Char, SChar, UChar)):
         return 1
     if isinstance(t, (Int, UInt, Pointer)):
@@ -876,7 +911,7 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
     target."""
     # Strip a top-level Const wrapper — the qualifier doesn't change
     # well-formedness; the underlying type is what we validate.
-    t = _strip_const(t)
+    t = _strip_quals(t)
     if isinstance(t, Array):
         if isinstance(t.element_type, Void):
             raise TypeCheckError(
@@ -1039,7 +1074,7 @@ def _is_arithmetic_type(t: Type) -> bool:
 # arithmetic. So char rank 0; Int/UInt rank 1; Long/ULong rank 2;
 # LongLong/ULongLong rank 3.
 def _int_width(t: Type) -> int:
-    t = _strip_const(t)
+    t = _strip_quals(t)
     if isinstance(t, (Char, SChar, UChar)):
         return 1
     if isinstance(t, (Int, UInt)):
@@ -1054,7 +1089,7 @@ def _int_width(t: Type) -> int:
 def _is_signed(t: Type) -> bool:
     # Plain `char` is unsigned in c6502 (0..255), matching `unsigned
     # char`. Per C99 §6.2.5.15 the choice is implementation-defined.
-    return isinstance(_strip_const(t), (Int, Long, LongLong, SChar))
+    return isinstance(_strip_quals(t), (Int, Long, LongLong, SChar))
 
 
 def _promote_integer(t: Type) -> Type:
@@ -1082,7 +1117,7 @@ def _promote_integer(t: Type) -> Type:
     Strips a top-level `Const` — qualifiers don't survive integer
     promotion (the promoted value is an rvalue; rvalues aren't
     qualified per C99 §6.3.2.1.2)."""
-    t = _strip_const(t)
+    t = _strip_quals(t)
     if isinstance(t, (Char, SChar, UChar)):
         return Int()
     return t
@@ -1164,8 +1199,8 @@ def _common_type(a: Type, b: Type) -> Type:
     to AST nodes without aliasing. Strips `Const` from inputs —
     common-type computation operates on rvalue types, which aren't
     qualifier-bearing per C99 §6.3.2.1.2."""
-    a = _strip_const(a)
-    b = _strip_const(b)
+    a = _strip_quals(a)
+    b = _strip_quals(b)
     if isinstance(a, Double) or isinstance(b, Double):
         return Double()
     if isinstance(a, Float) or isinstance(b, Float):
@@ -1221,8 +1256,8 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
     check fires at the Assignment site and is independent of this
     conversion logic."""
     if exp.data_type is not None and _types_equal(
-        _strip_const_recursive(exp.data_type),
-        _strip_const_recursive(target),
+        _strip_quals_recursive(exp.data_type),
+        _strip_quals_recursive(target),
     ):
         return exp
     # A void source (e.g. the result of a void-returning function call
@@ -1566,7 +1601,7 @@ class TypeChecker:
         Strips a top-level `Const` — `(const struct S).m` looks up
         `m` on the underlying `struct S`. (Const propagation to the
         member's result type is the caller's job.)"""
-        t = _strip_const(t)
+        t = _strip_quals(t)
         if not isinstance(t, (Structure, Union)):
             raise TypeCheckError(
                 f"{where}: operand has non-struct/union type {t!r}"
@@ -2111,7 +2146,7 @@ class TypeChecker:
             # the variable level). Strip a top-level Const here so
             # the per-shape branches dispatch on the underlying
             # aggregate type uniformly.
-            data_type_uq = _strip_const(vd.data_type)
+            data_type_uq = _strip_quals(vd.data_type)
             if isinstance(data_type_uq, Array):
                 # Arrays must use a brace-enclosed initializer list
                 # (`int a[3] = {1, 2, 3};`); a bare scalar is illegal.
@@ -2150,7 +2185,7 @@ class TypeChecker:
                 self._check_exp(vd.init)
                 init_t = vd.init.data_type
                 if not _types_equal(
-                    _strip_const(init_t), data_type_uq,
+                    _strip_quals(init_t), data_type_uq,
                 ):
                     raise TypeCheckError(
                         f"struct/union {vd.name!r}: initializer has "
@@ -2688,8 +2723,8 @@ class TypeChecker:
         # `.referenced_type` accesses see the bare pointer shape.
         # Const-qualification of the pointer itself (`int * const`)
         # doesn't change equality semantics.
-        tl_p = _strip_const(tl)
-        tr_p = _strip_const(tr)
+        tl_p = _strip_quals(tl)
+        tr_p = _strip_quals(tr)
         if l_ptr and r_ptr:
             # `void *` matches any object pointer here, with the
             # common type being `void *`.
@@ -3035,8 +3070,8 @@ class TypeChecker:
                     # and `.referenced_type` field accesses work
                     # uniformly. The const-on-the-pointer-itself
                     # doesn't affect pointer arithmetic legality.
-                    tl_p = _strip_const(tl)
-                    tr_p = _strip_const(tr)
+                    tl_p = _strip_quals(tl)
+                    tr_p = _strip_quals(tr)
                     # Reject pointer-to-function and pointer-to-void:
                     # §6.5.6.2 requires "pointer to a complete object
                     # type" for the additive ops, and sizeof(void) /
@@ -3656,7 +3691,7 @@ class TypeChecker:
                 # to the pointee. (Const-on-the-pointee is preserved
                 # in the result, making `*p` a const lvalue when p
                 # is `const int *`.)
-                t_inner_uq = _strip_const(t_inner)
+                t_inner_uq = _strip_quals(t_inner)
                 pointee = t_inner_uq.referenced_type
                 # Pointer to incomplete struct/union: dereferencing
                 # the value isn't well-defined (no size, no member
@@ -3783,7 +3818,7 @@ class TypeChecker:
                 # const. Strip the outer Const to get to the
                 # `Pointer(...)` shape; the pointee's own Const (if
                 # any) rides through into the result.
-                ptr_type_uq = _strip_const(ptr_exp.data_type)
+                ptr_type_uq = _strip_quals(ptr_exp.data_type)
                 if isinstance(ptr_type_uq.referenced_type, FunType):
                     raise TypeCheckError(
                         "subscript of pointer-to-function is not "
@@ -3808,7 +3843,7 @@ class TypeChecker:
                 m = self._lookup_member(
                     t_op, member, where=f"member access '.{member}'",
                 )
-                result_t = _propagate_const(m.type, t_op)
+                result_t = _propagate_quals(m.type, t_op)
                 exp.data_type = result_t
                 return result_t
             case c99_ast.Arrow(operand=operand, member=member):
@@ -3824,7 +3859,7 @@ class TypeChecker:
                 t_op = operand.data_type
                 # `int * const p; p->m` — strip the const-on-the-
                 # pointer-itself before unwrapping to the pointee.
-                t_op_uq = _strip_const(t_op)
+                t_op_uq = _strip_quals(t_op)
                 if not isinstance(t_op_uq, Pointer):
                     raise TypeCheckError(
                         f"member access '->{member}': operand has "
@@ -3835,7 +3870,7 @@ class TypeChecker:
                     pointee, member,
                     where=f"member access '->{member}'",
                 )
-                result_t = _propagate_const(m.type, pointee)
+                result_t = _propagate_quals(m.type, pointee)
                 exp.data_type = result_t
                 return result_t
             case c99_ast.AddressOf(exp=inner):

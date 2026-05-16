@@ -21,7 +21,7 @@ class Type_function_definition:
 
 @dataclass(kw_only=True)
 class Function(Type_function_definition):
-    name: str
+    name: str = ''
     params: list[str] = field(default_factory=list)
     body: Type_block
 
@@ -80,26 +80,26 @@ class Compound(Type_statement):
 
 @dataclass
 class BreakStmt(Type_statement):
-    label: str
+    label: str = ''
 
 
 @dataclass
 class ContinueStmt(Type_statement):
-    label: str
+    label: str = ''
 
 
 @dataclass
 class WhileStmt(Type_statement):
     condition: Type_exp
     body: Type_statement
-    label: str
+    label: str = ''
 
 
 @dataclass
 class DoWhileStmt(Type_statement):
     body: Type_statement
     condition: Type_exp
-    label: str
+    label: str = ''
 
 
 @dataclass(kw_only=True)
@@ -108,7 +108,7 @@ class ForStmt(Type_statement):
     condition: Type_exp | None = None
     post_clause: Type_exp | None = None
     body: Type_statement
-    label: str
+    label: str = ''
     unroll_annotation: str | None = None
 
 
@@ -116,7 +116,7 @@ class ForStmt(Type_statement):
 class SwitchStmt(Type_statement):
     control: Type_exp
     body: Type_statement
-    label: str
+    label: str = ''
     cases: list[Type_switch_case] = field(default_factory=list)
     default_label: str | None = None
     promoted_type: Type_data_type | None = None
@@ -126,23 +126,23 @@ class SwitchStmt(Type_statement):
 class CaseStmt(Type_statement):
     value: Type_exp
     body: Type_statement
-    label: str
+    label: str = ''
 
 
 @dataclass
 class DefaultStmt(Type_statement):
     body: Type_statement
-    label: str
+    label: str = ''
 
 
 @dataclass
 class Goto(Type_statement):
-    label: str
+    label: str = ''
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LabeledStmt(Type_statement):
-    label: str
+    label: str = ''
     statement: Type_statement
 
 
@@ -154,7 +154,7 @@ class Null(Type_statement):
 @dataclass
 class Type_switch_case:
     value: Type_exp
-    label: str
+    label: str = ''
 
 
 @dataclass
@@ -179,7 +179,7 @@ class StructDecl(Type_declaration):
 
 @dataclass(kw_only=True)
 class Type_var_decl:
-    name: str
+    name: str = ''
     init: Type_exp | None = None
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
@@ -188,7 +188,7 @@ class Type_var_decl:
 
 @dataclass(kw_only=True)
 class Type_function_decl:
-    name: str
+    name: str = ''
     params: list[str] = field(default_factory=list)
     body: Type_block | None = None
     data_type: Type_data_type
@@ -198,14 +198,14 @@ class Type_function_decl:
 
 @dataclass
 class Type_struct_decl:
-    tag: str
-    is_union: bool
+    tag: str = ''
+    is_union: bool = False
     members: list[Type_member_decl] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Type_member_decl:
-    name: str
+    name: str = ''
     data_type: Type_data_type
 
 
@@ -303,21 +303,26 @@ class Pointer(Type_data_type):
 @dataclass
 class Array(Type_data_type):
     element_type: Type_data_type
-    size: int
+    size: int = 0
 
 
 @dataclass
 class Structure(Type_data_type):
-    tag: str
+    tag: str = ''
 
 
 @dataclass
 class Union(Type_data_type):
-    tag: str
+    tag: str = ''
 
 
 @dataclass
 class Const(Type_data_type):
+    referenced_type: Type_data_type
+
+
+@dataclass
+class Volatile(Type_data_type):
     referenced_type: Type_data_type
 
 
@@ -349,12 +354,12 @@ class Constant(Type_exp):
 
 @dataclass
 class String(Type_exp):
-    str: str
+    str: str = ''
 
 
 @dataclass
 class Var(Type_exp):
-    name: str
+    name: str = ''
     data_type: Type_data_type | None = None
 
 
@@ -420,7 +425,7 @@ class Conditional(Type_exp):
 
 @dataclass
 class FunctionCall(Type_exp):
-    name: str
+    name: str = ''
     args: list[Type_exp] = field(default_factory=list)
     data_type: Type_data_type | None = None
 
@@ -465,14 +470,14 @@ class SizeOfType(Type_exp):
 @dataclass
 class Dot(Type_exp):
     operand: Type_exp
-    member: str
+    member: str = ''
     data_type: Type_data_type | None = None
 
 
 @dataclass
 class Arrow(Type_exp):
     operand: Type_exp
-    member: str
+    member: str = ''
     data_type: Type_data_type | None = None
 
 
@@ -620,49 +625,49 @@ class Type_const:
 
 @dataclass
 class ConstInt(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstLong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstLongLong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstUInt(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstULong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstULongLong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstFloat(Type_const):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class ConstDouble(Type_const):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class ConstChar(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstUChar(Type_const):
-    value: int
+    value: int = 0

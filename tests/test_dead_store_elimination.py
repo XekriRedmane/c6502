@@ -142,6 +142,33 @@ class TestDeadStoreElimination(unittest.TestCase):
         )
         self.assertEqual(eliminate_dead_stores(fn), fn)
 
+    def test_volatile_load_kept_with_unused_dst(self) -> None:
+        # `(void)*p` where p points at a volatile pointee: the Load
+        # writes its dst to a temp nobody reads, but the read of
+        # `*p` itself is an observable side effect (C99 §6.7.3.6).
+        # DSE must keep the Load.
+        fn = _fn(
+            tac_ast.Load(
+                src_ptr=_var("p"), dst=_var("t.1"), is_volatile=True,
+            ),
+            tac_ast.Ret(val=_ci(0)),
+        )
+        out = eliminate_dead_stores(fn, ssa_dsts={"t.1"})
+        self.assertEqual(out, fn)
+
+    def test_nonvolatile_load_dropped_with_unused_dst(self) -> None:
+        # Sanity check: an identical non-volatile Load IS dropped.
+        # Establishes that the previous test isn't accidentally
+        # passing because of some other gate.
+        fn = _fn(
+            tac_ast.Load(
+                src_ptr=_var("p"), dst=_var("t.1"), is_volatile=False,
+            ),
+            tac_ast.Ret(val=_ci(0)),
+        )
+        out = eliminate_dead_stores(fn, ssa_dsts={"t.1"})
+        self.assertEqual(out.instructions, [tac_ast.Ret(val=_ci(0))])
+
 
 if __name__ == "__main__":
     unittest.main()

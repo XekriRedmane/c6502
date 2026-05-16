@@ -116,11 +116,25 @@ def _collect_candidates(
 
 
 def _is_const_qualified(t) -> bool:
-    """True iff the type carries an outermost `Const` wrapper. We
-    don't recurse — `Pointer(Const(Int))` is `int * const`-pointee,
-    not a const pointer itself; folding the pointer's bytes would
-    be unsound."""
-    return isinstance(t, c99_ast.Const)
+    """True iff the type is const-qualified AND not volatile. The
+    outermost wrapper may be `Const(...)` or `Volatile(Const(...))`
+    (the parser canonicalizes `const volatile T` to
+    `Const(Volatile(T))`, but defensively we accept the other
+    order); however a top-level Volatile rejects folding even when
+    nested Const is present — per C99 §6.7.3.6 each volatile access
+    is a side effect, and replacing reads with an immediate would
+    erase those.
+
+    We don't recurse past the qualifier layer — `Pointer(Const(Int))`
+    is `int * const`-pointee, not a const pointer itself; folding
+    the pointer's bytes would be unsound."""
+    has_const = False
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        if isinstance(t, c99_ast.Volatile):
+            return False
+        has_const = True
+        t = t.referenced_type
+    return has_const
 
 
 def _scalar_init_bytes(
@@ -332,8 +346,8 @@ def _rewrite_instr(
         return op
 
     match instr:
-        case asm_ast.Mov(src=src, dst=dst):
-            return asm_ast.Mov(src=sub(src), dst=dst)
+        case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
+            return asm_ast.Mov(src=sub(src), dst=dst, is_volatile=v)
         case asm_ast.Add(src=src, dst=dst):
             return asm_ast.Add(src=sub(src), dst=dst)
         case asm_ast.Sub(src=src, dst=dst):

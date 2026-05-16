@@ -21,16 +21,16 @@ class Type_top_level:
 
 @dataclass
 class Function(Type_top_level):
-    name: str
-    is_global: bool
+    name: str = ''
+    is_global: bool = False
     params: list[str] = field(default_factory=list)
     instructions: list[Type_instruction] = field(default_factory=list)
 
 
 @dataclass
 class StaticVariable(Type_top_level):
-    name: str
-    is_global: bool
+    name: str = ''
+    is_global: bool = False
     init: list[Type_static_init] = field(default_factory=list)
 
 
@@ -41,49 +41,49 @@ class Type_static_init:
 
 @dataclass
 class CharInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class IntInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class LongInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class LongLongInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class FloatInit(Type_static_init):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class DoubleInit(Type_static_init):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class AddressInit(Type_static_init):
-    name: str
-    offset: int
+    name: str = ''
+    offset: int = 0
 
 
 @dataclass
 class StringInit(Type_static_init):
-    str: str
-    bytes: int
+    str: str = ''
+    bytes: int = 0
 
 
 @dataclass
 class ZeroInit(Type_static_init):
-    bytes: int
+    bytes: int = 0
 
 
 @dataclass
@@ -116,7 +116,7 @@ class Sub(Type_instruction):
 
 @dataclass
 class Call(Type_instruction):
-    name: str
+    name: str = ''
 
 
 @dataclass
@@ -190,18 +190,18 @@ class RotateRight(Type_instruction):
 
 @dataclass
 class Label(Type_instruction):
-    name: str
+    name: str = ''
 
 
 @dataclass
 class Jump(Type_instruction):
-    target: str
+    target: str = ''
 
 
 @dataclass
 class Branch(Type_instruction):
     cond: Type_condition
-    target: str
+    target: str = ''
 
 
 @dataclass
@@ -223,7 +223,7 @@ class LoadAddress(Type_instruction):
 
 @dataclass
 class Comment(Type_instruction):
-    text: str
+    text: str = ''
 
 
 @dataclass
@@ -238,7 +238,7 @@ class Type_operand:
 
 @dataclass
 class Imm(Type_operand):
-    value: int
+    value: int = 0
 
 
 @dataclass
@@ -248,23 +248,23 @@ class Reg(Type_operand):
 
 @dataclass
 class Stack(Type_operand):
-    offset: int
+    offset: int = 0
 
 
 @dataclass
 class Frame(Type_operand):
-    offset: int
+    offset: int = 0
 
 
 @dataclass
 class Data(Type_operand):
-    name: str
-    offset: int
+    name: str = ''
+    offset: int = 0
 
 
 @dataclass
 class Indirect(Type_operand):
-    offset: int
+    offset: int = 0
 
 
 @dataclass
@@ -274,37 +274,37 @@ class IndirectY(Type_operand):
 
 @dataclass
 class IndirectZp(Type_operand):
-    address: int
-    offset: int
+    address: int = 0
+    offset: int = 0
 
 
 @dataclass
 class IndirectZpY(Type_operand):
-    address: int
+    address: int = 0
 
 
 @dataclass
 class ZP(Type_operand):
-    address: int
-    offset: int
+    address: int = 0
+    offset: int = 0
 
 
 @dataclass
 class ImmLabelLow(Type_operand):
-    name: str
-    offset: int
+    name: str = ''
+    offset: int = 0
 
 
 @dataclass
 class ImmLabelHigh(Type_operand):
-    name: str
-    offset: int
+    name: str = ''
+    offset: int = 0
 
 
-@dataclass
+@dataclass(kw_only=True)
 class IndexedData(Type_operand):
-    name: str
-    offset: int
+    name: str = ''
+    offset: int = 0
     index: Type_reg
 
 

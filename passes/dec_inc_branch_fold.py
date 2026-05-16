@@ -135,6 +135,7 @@ def _try_match(
         return None
     lda = instrs[j]
     if not (isinstance(lda, asm_ast.Mov)
+            and not lda.is_volatile
             and _is_reg_a(lda.dst)
             and _stable_mem_eq(lda.src, mem)):
         return None

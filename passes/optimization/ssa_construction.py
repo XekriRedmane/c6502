@@ -577,22 +577,26 @@ def _rewrite_instruction(
             # operand, so this is consistent.
             d2 = rewrite_def(d)
             return tac_ast.GetAddress(operand=o, dst=d2)
-        case tac_ast.Load(src_ptr=p, dst=d):
+        case tac_ast.Load(src_ptr=p, dst=d, is_volatile=v):
             p2 = rewrite_use(p)
             d2 = rewrite_def(d)
-            return tac_ast.Load(src_ptr=p2, dst=d2)
-        case tac_ast.Store(src=s, dst_ptr=p):
+            return tac_ast.Load(src_ptr=p2, dst=d2, is_volatile=v)
+        case tac_ast.Store(src=s, dst_ptr=p, is_volatile=v):
             s2 = rewrite_use(s)
             p2 = rewrite_use(p)
-            return tac_ast.Store(src=s2, dst_ptr=p2)
-        case tac_ast.IndexedLoad(name=n, index=i, dst=d):
+            return tac_ast.Store(src=s2, dst_ptr=p2, is_volatile=v)
+        case tac_ast.IndexedLoad(name=n, index=i, dst=d, is_volatile=v):
             i2 = rewrite_use(i)
             d2 = rewrite_def(d)
-            return tac_ast.IndexedLoad(name=n, index=i2, dst=d2)
-        case tac_ast.IndexedStore(address=a, index=i, src=s):
+            return tac_ast.IndexedLoad(
+                name=n, index=i2, dst=d2, is_volatile=v,
+            )
+        case tac_ast.IndexedStore(address=a, index=i, src=s, is_volatile=v):
             i2 = rewrite_use(i)
             s2 = rewrite_use(s)
-            return tac_ast.IndexedStore(address=a, index=i2, src=s2)
+            return tac_ast.IndexedStore(
+                address=a, index=i2, src=s2, is_volatile=v,
+            )
         case tac_ast.Jump(target=t):
             return tac_ast.Jump(target=t)
         case tac_ast.JumpIfTrue(condition=c, target=t):

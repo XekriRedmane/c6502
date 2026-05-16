@@ -171,6 +171,13 @@ def _find_one_chain(
             continue
         if not isinstance(inst.ptr, tac_ast.Var):
             continue
+        # Volatile pointee or volatile pointer-table: refuse to
+        # dispatch. The collapse would replace one observable
+        # access with N observable accesses (or zero, for the
+        # untaken cases), changing the program's volatile-access
+        # trace. Per C99 §6.7.3.6 that's a semantic change.
+        if inst.is_volatile:
+            continue
         p_name = inst.ptr.name
         if use_count.get(p_name, 0) != 1:
             continue
@@ -179,6 +186,8 @@ def _find_one_chain(
             continue
         ptr_def = instrs[ptr_def_idx]
         if not isinstance(ptr_def, tac_ast.IndexedLoad):
+            continue
+        if ptr_def.is_volatile:
             continue
         arr_name = ptr_def.name
         if arr_name not in pointer_arrays:

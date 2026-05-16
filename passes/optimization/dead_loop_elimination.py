@@ -104,12 +104,22 @@ def _try_eliminate(
     header to jump past the body. Mutates `cfg` in place if the
     rewrite fires; returns True iff it did."""
     # Purity: every body instruction must be pure. Phi / Copy /
-    # Binary / Unary / cast / Load / GetAddress / IndexedLoad /
-    # IndexedConstLoad / IndirectIndexedLoad / Label / Jump /
+    # Binary / Unary / cast / GetAddress / Label / Jump /
     # JumpIfTrue / JumpIfFalse / JumpIfCmp / JumpIfMasked all pass.
+    # `Load` / `IndexedLoad` / `IndexedConstLoad` /
+    # `IndirectIndexedLoad` are pure ONLY when not volatile — a
+    # volatile read is observable (C99 §6.7.3.6) and a loop body
+    # containing one isn't safe to delete even when its dst is
+    # loop-local.
     for bid in body:
         for instr in cfg.blocks[bid].instructions:
             if isinstance(instr, _SIDE_EFFECTING_TYPES):
+                return False
+            if isinstance(instr, (
+                tac_ast.Load, tac_ast.IndexedLoad,
+                tac_ast.IndexedConstLoad,
+                tac_ast.IndirectIndexedLoad,
+            )) and instr.is_volatile:
                 return False
 
     # All defs in the loop body must be SSA-renamed names. Non-SSA

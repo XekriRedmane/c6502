@@ -732,7 +732,7 @@ class Translator:
         if sym is None:
             return False
         sym_type = sym.type
-        while isinstance(sym_type, c99_ast.Const):
+        while isinstance(sym_type, (c99_ast.Const, c99_ast.Volatile)):
             sym_type = sym_type.referenced_type
         return isinstance(sym_type, c99_ast.Pointer)
 
@@ -758,7 +758,7 @@ class Translator:
             if sym is None:
                 return False
             sym_type = sym.type
-            while isinstance(sym_type, c99_ast.Const):
+            while isinstance(sym_type, (c99_ast.Const, c99_ast.Volatile)):
                 sym_type = sym_type.referenced_type
             return isinstance(sym_type, (c99_ast.Float, c99_ast.Double))
         return False
@@ -788,7 +788,7 @@ class Translator:
                 if sym is None:
                     return False
                 sym_type = sym.type
-                while isinstance(sym_type, c99_ast.Const):
+                while isinstance(sym_type, (c99_ast.Const, c99_ast.Volatile)):
                     sym_type = sym_type.referenced_type
                 return isinstance(sym_type, (
                     c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
@@ -830,7 +830,7 @@ class Translator:
                 if sym is None:
                     return 1
                 sym_type = sym.type
-                while isinstance(sym_type, c99_ast.Const):
+                while isinstance(sym_type, (c99_ast.Const, c99_ast.Volatile)):
                     sym_type = sym_type.referenced_type
                 if isinstance(
                     sym_type,
@@ -1018,20 +1018,34 @@ class Translator:
                 return self._translate_indirect_call(ptr, args, dst)
             case tac_ast.GetAddress(operand=operand, dst=dst):
                 return self._translate_get_address(operand, dst)
-            case tac_ast.Load(src_ptr=src_ptr, dst=dst):
-                return self._translate_load(src_ptr, dst)
-            case tac_ast.Store(src=src, dst_ptr=dst_ptr):
-                return self._translate_store(src, dst_ptr)
-            case tac_ast.IndexedLoad(name=name, index=index, dst=dst):
-                return self._translate_indexed_load(name, index, dst)
-            case tac_ast.IndexedStore(address=addr, index=index, src=src):
-                return self._translate_indexed_store(addr, index, src)
-            case tac_ast.IndexedConstLoad(address=addr, index=index, dst=dst):
-                return self._translate_indexed_const_load(addr, index, dst)
-            case tac_ast.IndirectIndexedLoad(ptr=ptr, index=index, dst=dst):
-                return self._translate_indirect_indexed_load(ptr, index, dst)
-            case tac_ast.IndirectIndexedStore(ptr=ptr, index=index, src=src):
-                return self._translate_indirect_indexed_store(ptr, index, src)
+            case tac_ast.Load(src_ptr=src_ptr, dst=dst, is_volatile=v):
+                return self._translate_load(src_ptr, dst, v)
+            case tac_ast.Store(src=src, dst_ptr=dst_ptr, is_volatile=v):
+                return self._translate_store(src, dst_ptr, v)
+            case tac_ast.IndexedLoad(
+                name=name, index=index, dst=dst, is_volatile=v,
+            ):
+                return self._translate_indexed_load(name, index, dst, v)
+            case tac_ast.IndexedStore(
+                address=addr, index=index, src=src, is_volatile=v,
+            ):
+                return self._translate_indexed_store(addr, index, src, v)
+            case tac_ast.IndexedConstLoad(
+                address=addr, index=index, dst=dst, is_volatile=v,
+            ):
+                return self._translate_indexed_const_load(addr, index, dst, v)
+            case tac_ast.IndirectIndexedLoad(
+                ptr=ptr, index=index, dst=dst, is_volatile=v,
+            ):
+                return self._translate_indirect_indexed_load(
+                    ptr, index, dst, v,
+                )
+            case tac_ast.IndirectIndexedStore(
+                ptr=ptr, index=index, src=src, is_volatile=v,
+            ):
+                return self._translate_indirect_indexed_store(
+                    ptr, index, src, v,
+                )
         raise TypeError(f"unexpected instruction node: {instr!r}")
 
     # ------------------------------------------------------------------
@@ -1221,7 +1235,7 @@ class Translator:
         if sym is None:
             raise TypeError(f"unknown Var in FP conversion: {val.name}")
         sym_type = sym.type
-        while isinstance(sym_type, c99_ast.Const):
+        while isinstance(sym_type, (c99_ast.Const, c99_ast.Volatile)):
             sym_type = sym_type.referenced_type
         return type(sym_type)
 
@@ -1681,29 +1695,34 @@ class Translator:
 
     def _translate_load(
         self, src_ptr: tac_ast.Type_val, dst: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """`*p` (read) — stage the 2-byte address `p` into the DPTR
         zero-page pair, then read N bytes through `(DPTR),Y` into
-        `dst`. N is dst's width per the symbol table."""
+        `dst`. N is dst's width per the symbol table. The actual
+        `(DPTR),Y` reads carry `is_volatile` when the TAC Load was
+        flagged volatile; the DPTR staging Movs don't."""
         ptr_op = translate_val(src_ptr)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
         return [
             *self._stage_dptr(ptr_op),
-            *_indirect_read(dst_op, n),
+            *_indirect_read(dst_op, n, is_volatile=is_volatile),
         ]
 
     def _translate_store(
         self, src: tac_ast.Type_val, dst_ptr: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """`*p = v` — stage the 2-byte address `p` into DPTR, then
-        write `src`'s N bytes through `(DPTR),Y`. N is src's width."""
+        write `src`'s N bytes through `(DPTR),Y`. N is src's width.
+        Volatility rides on the actual `(DPTR),Y` writes only."""
         ptr_op = translate_val(dst_ptr)
         src_op = translate_val(src)
         n = self._size_of(src)
         return [
             *self._stage_dptr(ptr_op),
-            *_indirect_write(src_op, n),
+            *_indirect_write(src_op, n, is_volatile=is_volatile),
         ]
 
     def _translate_indexed_load(
@@ -1711,6 +1730,7 @@ class Translator:
         name: str,
         index: tac_ast.Type_val,
         dst: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """Static-array indexed load: stage `index` into X, then read
         N consecutive bytes from `name+0..N-1,X` (absolute,X on the
@@ -1740,6 +1760,7 @@ class Translator:
                     name=name, offset=k, index=asm_ast.X(),
                 ),
                 dst=_byte_at(dst_op, k),
+                is_volatile=is_volatile,
             ))
         return out
 
@@ -1748,6 +1769,7 @@ class Translator:
         address: int,
         index: tac_ast.Type_val,
         src: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """Absolute,X store to a numeric base address. Stage `index`
         into X, `src` into A, then `STA $<address>,X`. The
@@ -1770,6 +1792,7 @@ class Translator:
                 dst=asm_ast.IndexedData(
                     name="", offset=address, index=asm_ast.X(),
                 ),
+                is_volatile=is_volatile,
             ),
         ]
 
@@ -1778,6 +1801,7 @@ class Translator:
         address: int,
         index: tac_ast.Type_val,
         dst: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """Absolute,X load from a numeric base address. Mirror of
         `_translate_indexed_store`: stage `index` into X, then
@@ -1793,6 +1817,7 @@ class Translator:
                     name="", offset=address, index=asm_ast.X(),
                 ),
                 dst=_REG_A,
+                is_volatile=is_volatile,
             ),
             asm_ast.Mov(src=_REG_A, dst=dst_op),
         ]
@@ -1802,6 +1827,7 @@ class Translator:
         ptr: tac_ast.Type_val,
         index: tac_ast.Type_val,
         dst: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """Indirect-(zp),Y load via the DPTR pair, with Y carrying
         the runtime index instead of a compile-time offset. Lowers
@@ -1833,7 +1859,10 @@ class Translator:
             *self._stage_dptr(ptr_op),
             asm_ast.Mov(src=idx_op, dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.Y())),
-            asm_ast.Mov(src=asm_ast.IndirectY(), dst=_REG_A),
+            asm_ast.Mov(
+                src=asm_ast.IndirectY(), dst=_REG_A,
+                is_volatile=is_volatile,
+            ),
             asm_ast.Mov(src=_REG_A, dst=dst_op),
         ]
 
@@ -1842,6 +1871,7 @@ class Translator:
         ptr: tac_ast.Type_val,
         index: tac_ast.Type_val,
         src: tac_ast.Type_val,
+        is_volatile: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """Indirect-(zp),Y store via DPTR. Trickier than the load
         because two values need to reach the STA: `src` in A and
@@ -1873,7 +1903,10 @@ class Translator:
             asm_ast.Mov(src=idx_op, dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.Y())),
             asm_ast.Pop(dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=asm_ast.IndirectY()),
+            asm_ast.Mov(
+                src=_REG_A, dst=asm_ast.IndirectY(),
+                is_volatile=is_volatile,
+            ),
         ]
 
     @staticmethod
@@ -2799,28 +2832,43 @@ def _hargs(k: int) -> asm_ast.Type_operand:
 
 
 def _indirect_read(
-    dst: asm_ast.Type_operand, n: int,
+    dst: asm_ast.Type_operand, n: int, is_volatile: bool = False,
 ) -> list[asm_ast.Type_instruction]:
     """Read `n` bytes through DPTR (already staged with the source
     address) into `dst`. Each byte routes through A: `LDY #k; LDA
-    (DPTR),Y; STA dst+k`. Used by the Load TAC op."""
+    (DPTR),Y; STA dst+k`. Used by the Load TAC op.
+
+    When `is_volatile` is True the `(DPTR),Y → A` Mov (the actual
+    memory access) carries the volatile bit; the store-into-dst Mov
+    doesn't — dst is an internal SSA temp's storage with no observer
+    outside the function."""
     out: list[asm_ast.Type_instruction] = []
     for k in range(n):
-        out.append(asm_ast.Mov(src=asm_ast.Indirect(offset=k), dst=_REG_A))
+        out.append(asm_ast.Mov(
+            src=asm_ast.Indirect(offset=k), dst=_REG_A,
+            is_volatile=is_volatile,
+        ))
         out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst, k)))
     return out
 
 
 def _indirect_write(
-    src: asm_ast.Type_operand, n: int,
+    src: asm_ast.Type_operand, n: int, is_volatile: bool = False,
 ) -> list[asm_ast.Type_instruction]:
     """Write `n` bytes from `src` through DPTR (already staged with
     the destination address). Each byte routes through A: `LDY #k;
-    LDA src+k; STA (DPTR),Y`. Used by the Store TAC op."""
+    LDA src+k; STA (DPTR),Y`. Used by the Store TAC op.
+
+    When `is_volatile` is True the `A → (DPTR),Y` Mov (the actual
+    memory access) carries the volatile bit; the read-from-src Mov
+    doesn't — src is internal storage."""
     out: list[asm_ast.Type_instruction] = []
     for k in range(n):
         out.append(asm_ast.Mov(src=_byte_at(src, k), dst=_REG_A))
-        out.append(asm_ast.Mov(src=_REG_A, dst=asm_ast.Indirect(offset=k)))
+        out.append(asm_ast.Mov(
+            src=_REG_A, dst=asm_ast.Indirect(offset=k),
+            is_volatile=is_volatile,
+        ))
     return out
 
 

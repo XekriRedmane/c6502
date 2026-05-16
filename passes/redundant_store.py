@@ -172,6 +172,11 @@ def _match_lda_sta(
         return None
     if not (isinstance(a, asm_ast.Mov) and isinstance(b, asm_ast.Mov)):
         return None
+    # Volatile Movs aren't elidable — both ends of the LDA/STA pair
+    # must be non-volatile (otherwise we'd drop an observable read
+    # or write).
+    if a.is_volatile or b.is_volatile:
+        return None
     if not (_is_reg_a(a.dst) and _is_reg_a(b.src)):
         return None
     if not (_is_stable_mem(a.src) and _is_stable_mem(b.dst)):

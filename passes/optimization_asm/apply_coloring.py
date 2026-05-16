@@ -142,8 +142,10 @@ def _apply_to_instruction(
 ) -> asm_ast.Type_instruction:
     apply = lambda op: _apply_to_op(op, coloring, fn_name, addr_to_slot)
     match instr:
-        case asm_ast.Mov(src=src, dst=dst):
-            return asm_ast.Mov(src=apply(src), dst=apply(dst))
+        case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
+            return asm_ast.Mov(
+                src=apply(src), dst=apply(dst), is_volatile=v,
+            )
         case asm_ast.Add(src=src, dst=dst):
             return asm_ast.Add(src=apply(src), dst=apply(dst))
         case asm_ast.Sub(src=src, dst=dst):
@@ -404,7 +406,9 @@ def _rewrite_indexed_data_index_in_instr(
     )
     if new_src is instr.src and new_dst is instr.dst:
         return instr
-    return asm_ast.Mov(src=new_src, dst=new_dst)
+    return asm_ast.Mov(
+        src=new_src, dst=new_dst, is_volatile=instr.is_volatile,
+    )
 
 
 def _rewrite_indexed_data_index_in_op(

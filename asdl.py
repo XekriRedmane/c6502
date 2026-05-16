@@ -270,6 +270,15 @@ def _constructor_field_line(f: Field) -> str:
         return f"    {name}: {ann} = field(default_factory=list)"
     if f.optional:
         return f"    {name}: {ann} = None"
+    # Primitives get a default value so call sites that don't care
+    # about the field (e.g. a freshly-added `bool is_volatile` on
+    # Load / Store) keep working without churning the entire codebase.
+    # This matches `_attribute_line`'s convention; the asymmetry that
+    # existed previously (defaults only for attributes, not for
+    # constructor fields) was incidental.
+    default = _PRIMITIVE_DEFAULTS.get(f.type)
+    if default is not None:
+        return f"    {name}: {ann} = {default}"
     return f"    {name}: {ann}"
 
 
@@ -288,14 +297,15 @@ def _attribute_line(f: Field) -> str:
     return f"    {name}: {ann}"
 
 
-# A field gets a Python default whenever it's optional or a sequence; a
-# required field doesn't. Python dataclasses forbid a field-with-default
-# being followed by a field-without-default in positional order, so when
-# an ASDL constructor mixes the two with defaults appearing first we emit
+# A field gets a Python default whenever it's optional, a sequence, or
+# a primitive scalar (covered by `_PRIMITIVE_DEFAULTS`). Python
+# dataclasses forbid a field-with-default being followed by a field-
+# without-default in positional order, so when an ASDL constructor
+# mixes the two with defaults appearing first we emit
 # `@dataclass(kw_only=True)` to dodge the ordering rule rather than
 # silently reordering the user's ASDL fields.
 def _has_default(f: Field) -> bool:
-    return f.optional or f.sequence
+    return f.optional or f.sequence or f.type in _PRIMITIVE_DEFAULTS
 
 
 def _needs_kw_only(fs: list[Field]) -> bool:

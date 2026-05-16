@@ -91,10 +91,10 @@ _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "VOID",
                                 "STRUCT", "UNION")
-# `const` is the only type qualifier c6502 enforces; `volatile` and
-# `restrict` parse but are silently dropped (c6502 doesn't model
-# their semantics — no memory-mapped I/O modeling, no aliasing
-# analysis).
+# `const` and `volatile` are honored at parse time and wrapped into
+# `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
+# but is silently dropped — c6502 has no aliasing-analysis pass that
+# could use it.
 _TYPE_QUALIFIER_TOKEN_TYPES = ("CONST", "VOLATILE", "RESTRICT")
 
 
@@ -306,21 +306,47 @@ def _split_specifiers(specs):
 
 
 def _apply_qualifiers(data_type, qualifier_tokens):
-    """Wrap `data_type` in `Const(...)` if any of `qualifier_tokens`
-    is a `CONST` token. `VOLATILE` / `RESTRICT` are silently dropped
-    (c6502 doesn't model them). Idempotent — wrapping `Const(T)` in
-    another `Const` would be redundant per C99 §6.7.3.4 ("If the
-    same qualifier appears more than once in the same specifier-
-    qualifier-list ... the behavior is the same as if it appeared
-    only once")."""
-    has_const = any(
-        t.type == "CONST" for t in qualifier_tokens
-    )
-    if not has_const:
-        return data_type
-    if isinstance(data_type, c99_ast.Const):
-        return data_type
-    return c99_ast.Const(referenced_type=data_type)
+    """Wrap `data_type` in `Const(...)` and/or `Volatile(...)` per
+    `qualifier_tokens`. `RESTRICT` is silently dropped (c6502 doesn't
+    model aliasing analysis).
+
+    Canonical wrapping order is Volatile-innermost, Const-outermost
+    when both are present — so `const volatile int` becomes
+    `Const(Volatile(Int))`. The order doesn't affect semantics (the
+    type checker's strip helpers peel either or both), it just keeps
+    structural equality predictable so downstream consumers don't
+    have to handle two equivalent shapes.
+
+    Idempotent per C99 §6.7.3.4 ("If the same qualifier appears more
+    than once in the same specifier-qualifier-list ... the behavior
+    is the same as if it appeared only once") — wrapping `Const(T)`
+    in another `Const` (or `Volatile(T)` in another `Volatile`) is a
+    no-op."""
+    has_const = any(t.type == "CONST" for t in qualifier_tokens)
+    has_volatile = any(t.type == "VOLATILE" for t in qualifier_tokens)
+    if has_volatile and not _has_outer_volatile(data_type):
+        data_type = c99_ast.Volatile(referenced_type=data_type)
+    if has_const and not _has_outer_const(data_type):
+        data_type = c99_ast.Const(referenced_type=data_type)
+    return data_type
+
+
+def _has_outer_const(t):
+    """True iff `t` is `Const(...)` directly, or `Volatile(Const(...))`
+    — i.e. a Const qualifier sits at any position before encountering
+    a non-qualifier type. The idempotence check uses this so
+    `const volatile const int` reduces to `Const(Volatile(Int))`
+    without an inner duplicate `Const`."""
+    while isinstance(t, c99_ast.Volatile):
+        t = t.referenced_type
+    return isinstance(t, c99_ast.Const)
+
+
+def _has_outer_volatile(t):
+    """Mirror of `_has_outer_const` for the Volatile qualifier."""
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    return isinstance(t, c99_ast.Volatile)
 
 
 def _consume_specifiers(items, start):
@@ -744,10 +770,12 @@ def _apply_declarator(decl_tree, base_type):
 def _wrap_pointers(pointer_tree, base_type):
     """`pointer: STAR type_qualifier* pointer?`. Walks the nested
     `pointer` chain (innermost-first in the parse tree, outermost-
-    last). Each level wraps `base_type` in `Pointer(...)` and, if
-    that level's qualifier list contains `const`, wraps the result
-    in `Const(...)` — that's the `int * const` form (`Const(Pointer(T))`).
-    `volatile` and `restrict` qualifiers are silently dropped."""
+    last). Each level wraps `base_type` in `Pointer(...)` and applies
+    that level's `const` / `volatile` qualifiers via
+    `_apply_qualifiers` — e.g. `int * const` becomes
+    `Const(Pointer(Int))`, `volatile int *` becomes
+    `Pointer(Volatile(Int))`, `int * volatile` becomes
+    `Volatile(Pointer(Int))`. `restrict` is silently dropped."""
     # Collect the per-level qualifier lists, innermost first. The
     # parse tree's outermost `pointer` is the FIRST modifier, but we
     # apply modifiers innermost-first as we wrap, so we walk the

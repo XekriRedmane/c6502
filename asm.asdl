@@ -59,7 +59,25 @@ module ASM {
     -- frame size below the saved-FP slot), so the existing
     -- SSP/FP arithmetic correctly accounts for saves.
     instruction =
-        Mov(operand src, operand dst)
+        -- `is_volatile=true` tags a memory load or store the asm
+        -- atom derived from. It's threaded onto every Mov whose
+        -- src or dst is a memory operand corresponding to a
+        -- volatile TAC Load / Store / IndexedLoad / IndexedStore /
+        -- IndirectIndexedLoad / IndirectIndexedStore. Downstream
+        -- asm passes that would otherwise eliminate or coalesce
+        -- the access skip volatile-flagged Movs:
+        --   - asm_dead_store: keeps volatile-flagged Movs.
+        --   - redundant_load_elimination: keeps volatile loads.
+        --   - redundant_store_elimination: keeps volatile stores.
+        --   - mem_const_prop: skips volatile loads.
+        --   - round_trip_load_drop: skips volatile loads / stores.
+        --   - self_store_drop: skips volatile.
+        --   - dead_a_arith_elimination: keeps volatile loads.
+        -- Default (false) for any Mov derived from a non-volatile
+        -- access or from internal codegen (prologue / epilogue /
+        -- frame-pointer setup / etc.) — those access compiler-
+        -- managed memory that has no observer outside the function.
+        Mov(operand src, operand dst, bool is_volatile)
         | Ret(int arg_bytes, int local_bytes, bool save_a, int* callee_saved_addrs)
         -- Bare `Return` atom: equivalent to `RTS` with no SSP/FP
         -- teardown. Used by the `--optimize-asm` path between

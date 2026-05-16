@@ -103,6 +103,10 @@ def _is_dead(
     init like `int i = -100;` would have its high-byte store
     silently dropped."""
     if isinstance(instr, asm_ast.Mov):
+        # Volatile Movs have observable memory effects regardless
+        # of whether the dst Pseudo is read — never drop.
+        if instr.is_volatile:
+            return False
         if not isinstance(instr.dst, asm_ast.Pseudo):
             return False
         if instr.dst.name in statics:

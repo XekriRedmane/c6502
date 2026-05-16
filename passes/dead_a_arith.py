@@ -117,6 +117,11 @@ def _writes_only_a_and_flags(instr: asm_ast.Type_instruction) -> bool:
     secondary register clobber from operand-shape emission, no
     control-flow effect."""
     if isinstance(instr, asm_ast.Mov):
+        # A volatile-flagged Mov derives from a volatile lvalue
+        # access — its memory read IS the observable effect even
+        # when A and flags are dead afterward. Never droppable.
+        if instr.is_volatile:
+            return False
         if not is_reg_a(instr.dst):
             return False
         return _is_pure_source(instr.src) or _is_xy_reg(instr.src)

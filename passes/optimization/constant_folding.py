@@ -239,7 +239,13 @@ def _fold(
             name=name,
             index=tac_ast.Constant(const=c),
             dst=dst,
+            is_volatile=is_vol,
         ):
+            # A volatile indexed read is observable per access;
+            # collapsing it to a `Copy(Constant(value), dst)` would
+            # erase the access. Skip folding.
+            if is_vol:
+                return instr
             res = _fold_indexed_load(name, c, dst, symbols)
             if res is not None:
                 return res
@@ -320,7 +326,7 @@ def _fold_indexed_load(
     if not isinstance(init_value, tuple):
         return None
     arr_t = sym.type
-    while isinstance(arr_t, c99_ast.Const):
+    while isinstance(arr_t, (c99_ast.Const, c99_ast.Volatile)):
         arr_t = arr_t.referenced_type
     if not isinstance(arr_t, c99_ast.Array):
         return None
@@ -332,9 +338,18 @@ def _fold_indexed_load(
     while isinstance(leaf_t, c99_ast.Array):
         dim_sizes.append(leaf_t.size)
         leaf_t = leaf_t.element_type
-    if not isinstance(leaf_t, c99_ast.Const):
+    # Element must be const-qualified AND not volatile — folding
+    # an `Array(Volatile(T), N)` access would erase the per-access
+    # side effects volatile guarantees (§6.7.3.6).
+    has_const = False
+    leaf_t_unq = leaf_t
+    while isinstance(leaf_t_unq, (c99_ast.Const, c99_ast.Volatile)):
+        if isinstance(leaf_t_unq, c99_ast.Volatile):
+            return None
+        has_const = True
+        leaf_t_unq = leaf_t_unq.referenced_type
+    if not has_const:
         return None
-    leaf_t_unq = leaf_t.referenced_type
     elem_size = _scalar_size(leaf_t_unq)
     if elem_size is None:
         return None
@@ -375,7 +390,7 @@ def _fold_indexed_load(
     if dst_sym is None:
         return None
     dst_t = dst_sym.type
-    while isinstance(dst_t, c99_ast.Const):
+    while isinstance(dst_t, (c99_ast.Const, c99_ast.Volatile)):
         dst_t = dst_t.referenced_type
     if _scalar_size(dst_t) != elem_size:
         return None

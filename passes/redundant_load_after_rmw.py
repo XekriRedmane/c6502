@@ -175,8 +175,12 @@ def _is_redundant_lda_after_rmw(
     rmw: asm_ast.Type_instruction, nxt: asm_ast.Type_instruction,
 ) -> bool:
     """True iff `nxt` is `Mov(M, Reg(A))` whose M equals the rmw's
-    dst — a flag-redundant load of the just-modified byte."""
+    dst — a flag-redundant load of the just-modified byte. A
+    volatile LDA is never redundant; the read is the observable
+    side effect we'd erase by dropping it."""
     if not isinstance(nxt, asm_ast.Mov):
+        return False
+    if nxt.is_volatile:
         return False
     if not _is_reg_a(nxt.dst):
         return False

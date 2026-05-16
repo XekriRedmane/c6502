@@ -215,9 +215,13 @@ def _try_recognize(
     if not _is_1_byte_val(instr.src, symbols):
         return None
     # All checks pass. Build the IndexedStore and mark the three
-    # source instructions for deletion.
+    # source instructions for deletion. The collapsed instruction
+    # inherits the original Store's `is_volatile` bit — folding a
+    # volatile Store into an IndexedStore is fine; both lower to
+    # the same logical access, just through different addressing.
     indexed = tac_ast.IndexedStore(
         address=addr_value, index=idx_var, src=instr.src,
+        is_volatile=instr.is_volatile,
     )
     return (indexed, {addr_def_idx, ext_def_idx})
 
@@ -243,7 +247,7 @@ def _is_1_byte_var(
     if sym is None:
         return False
     t = sym.type
-    while isinstance(t, c99_ast.Const):
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
 

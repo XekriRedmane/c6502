@@ -516,12 +516,12 @@ unop: MINUS                         -> negate
 
 arg_list: assignment_exp (COMMA assignment_exp)*
 
-// Type qualifiers (§6.7.3) — accepted by the grammar so qualified
-// types parse without fuss in pointers / arrays / parameter lists /
-// casts. None of them are modelled in the AST today (no const-
-// correctness, no `restrict` aliasing analysis, no `volatile`
-// memory-fence emission), so the transformer treats them as syntax-
-// only noise.
+// Type qualifiers (§6.7.3). `const` wraps the qualified type in
+// `Const(...)` and gates lvalue modifications at type-check; `volatile`
+// wraps it in `Volatile(...)` and threads through TAC / asm as a per-
+// access bit that suppresses optimizations (DSE, dead-loop elim,
+// redundant-load elim, etc.). `restrict` is accepted but discarded —
+// c6502 has no aliasing-analysis pass that could use it.
 type_qualifier: CONST | RESTRICT | VOLATILE
 
 // Declarators (§6.7.5).

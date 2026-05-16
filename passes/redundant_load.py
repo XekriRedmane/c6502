@@ -160,6 +160,11 @@ def _is_redundant_load(
 ) -> bool:
     if not isinstance(instr, asm_ast.Mov):
         return False
+    # A volatile load must re-read the memory cell every time per
+    # C99 §6.7.3.6 — never elide even if A already mirrors the
+    # value from an earlier read.
+    if instr.is_volatile:
+        return False
     # Register-to-register Movs aren't redundant in the load sense
     # — they're transfers, handled by _update_state.
     if isinstance(instr.src, asm_ast.Reg):
@@ -294,6 +299,18 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
       Mov(non-Reg, non-Reg) — c6502's IR doesn't actually emit
                               this, but we treat it conservatively.
     """
+    # A volatile Mov reads or writes memory whose contents can
+    # change outside the function's control. We don't record what
+    # the register now "mirrors" because the next access to that
+    # memory could yield a different value — recording would let a
+    # subsequent load incorrectly elide. Drop any prior tracking
+    # tied to the dst register and return.
+    if mov.is_volatile:
+        if isinstance(mov.dst, asm_ast.Reg):
+            _set_reg(state, mov.dst.reg, [])
+        else:
+            _invalidate_aliasing(state, mov.dst)
+        return
     src_is_reg = isinstance(mov.src, asm_ast.Reg)
     dst_is_reg = isinstance(mov.dst, asm_ast.Reg)
     if src_is_reg and dst_is_reg:

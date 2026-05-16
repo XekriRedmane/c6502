@@ -413,17 +413,19 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(result.memory[0x4000 + 300], 0x42)
 
 
-class TestVolatileAndRestrictParseButDrop(unittest.TestCase):
-    """`volatile` and `restrict` are reserved keywords accepted by
-    the parser but silently dropped — c6502 doesn't model their
-    semantics. Programs using them parse and run as if the
-    qualifier weren't there."""
+class TestVolatileQualifierAndRestrictDrop(unittest.TestCase):
+    """`volatile` is honored by the parser and the type checker —
+    it wraps the qualified type in a `Volatile(...)` AST node, which
+    c99_to_tac reads off to mark Load / Store atoms as volatile.
+    `restrict` is still parser-accepted but silently dropped (c6502
+    has no aliasing-analysis pass that could use it)."""
 
     def test_volatile_int_parses(self):
         prog = parse("volatile int x = 5;")
         decl = prog.declaration[0].var_decl
-        # Stripped — same as plain `int x = 5;`.
-        self.assertIsInstance(decl.data_type, Int)
+        # Volatile wraps the qualified Int.
+        self.assertIsInstance(decl.data_type, c99_ast.Volatile)
+        self.assertIsInstance(decl.data_type.referenced_type, Int)
 
     def test_restrict_pointer_parses(self):
         prog = parse("int *restrict p;")
@@ -433,9 +435,9 @@ class TestVolatileAndRestrictParseButDrop(unittest.TestCase):
         self.assertIsInstance(decl.data_type, Pointer)
 
     def test_volatile_can_be_modified(self):
-        # We don't enforce volatile, so writes succeed (which is
-        # also the standard's behavior — `volatile T` is still a
-        # modifiable lvalue).
+        # `volatile T` is a modifiable lvalue (only `const` rejects
+        # writes); the assignment succeeds and the program reads
+        # back the updated value.
         src = (
             "int main(void) {\n"
             "    volatile int x = 5;\n"
@@ -445,6 +447,63 @@ class TestVolatileAndRestrictParseButDrop(unittest.TestCase):
         )
         result = run_c_program(src)
         self.assertEqual(result.return_int_signed(), 10)
+
+
+class TestVolatilePointerDerefSurvives(unittest.TestCase):
+    """Phase 1 of volatile support: a read or write through a
+    pointer to a volatile pointee survives the optimizer end-to-end.
+
+    The motivating case is memory-mapped I/O like Apple II's
+    `$C030` speaker-toggle soft switch: a `volatile uint8_t *p`
+    dereference, even when discarded with `(void)*p;`, must emit
+    the actual `LDA (p),Y` so the hardware side effect happens."""
+
+    def _compile_optimized(self, src: str) -> str:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        return _run_stage(
+            "codegen", preprocess(src),
+            optimize=True, unroll=False,
+        )
+
+    def test_void_deref_emits_load_through_pointer(self):
+        # `(void)*p` where `*p` is volatile — even with the result
+        # discarded, the read survives.
+        src = (
+            "#include <stdint.h>\n"
+            "extern const volatile uint8_t *p;\n"
+            "__attribute__((zp_abi))\n"
+            "void poke(void) { (void)*p; }\n"
+        )
+        asm = self._compile_optimized(src)
+        # The `LDA (DPTR),Y` is the actual volatile memory access.
+        self.assertIn("LDA   (DPTR),Y", asm)
+
+    def test_nonvolatile_void_deref_is_dropped(self):
+        # Sanity: same shape without `volatile` collapses entirely
+        # (the load's destination is unused, DSE drops it). The
+        # difference between this and the volatile version is
+        # exactly what volatile semantics buy us.
+        src = (
+            "#include <stdint.h>\n"
+            "extern const uint8_t *p;\n"
+            "__attribute__((zp_abi))\n"
+            "void poke(void) { (void)*p; }\n"
+        )
+        asm = self._compile_optimized(src)
+        self.assertNotIn("LDA   (DPTR),Y", asm)
+
+    def test_volatile_store_through_pointer_emits_indirect_store(self):
+        # Writing through a `volatile T *` emits the store even when
+        # nothing further reads the cell.
+        src = (
+            "#include <stdint.h>\n"
+            "extern volatile uint8_t *p;\n"
+            "__attribute__((zp_abi))\n"
+            "void poke(uint8_t v) { *p = v; }\n"
+        )
+        asm = self._compile_optimized(src)
+        self.assertIn("STA   (DPTR),Y", asm)
 
 
 if __name__ == "__main__":

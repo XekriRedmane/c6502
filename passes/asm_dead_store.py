@@ -192,8 +192,14 @@ def _dse_candidate_kind(instr: asm_ast.Type_instruction) -> str | None:
       * "pure_sta"  — `Mov(Reg, <stable mem>)`: drop on dead.
       * "mem_to_mem" — `Mov(<non-Reg>, <stable mem>)`: morph on
         dead (preserve the LDA half).
-      * None        — not a candidate."""
+      * None        — not a candidate.
+
+    Volatile Movs are never candidates — every store to a volatile
+    cell is an observable side effect (C99 §6.7.3.6) and must
+    survive even when the cell is never read again."""
     if not isinstance(instr, asm_ast.Mov):
+        return None
+    if instr.is_volatile:
         return None
     if not isinstance(instr.dst, (asm_ast.ZP, asm_ast.Data)):
         return None
@@ -332,8 +338,11 @@ def _is_dse_candidate(instr: asm_ast.Type_instruction) -> bool:
     """True iff `instr` is a STA / STX / STY into stable memory
     (ZP / Data) — the only shapes this DSE handles. Stack / Frame /
     Indirect destinations could be aliased by an indirect-Y read
-    that we can't statically resolve, so we skip them."""
+    that we can't statically resolve, so we skip them. Volatile
+    stores are always preserved."""
     if not isinstance(instr, asm_ast.Mov):
+        return False
+    if instr.is_volatile:
         return False
     if not isinstance(instr.src, asm_ast.Reg):
         return False

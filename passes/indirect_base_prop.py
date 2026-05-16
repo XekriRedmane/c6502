@@ -337,7 +337,9 @@ def _rewrite_operands(
         new_dst = _rewrite_op(instr.dst, base_zp)
         if new_src is instr.src and new_dst is instr.dst:
             return instr
-        return asm_ast.Mov(src=new_src, dst=new_dst)
+        return asm_ast.Mov(
+            src=new_src, dst=new_dst, is_volatile=instr.is_volatile,
+        )
     if isinstance(instr, (
         asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
     )):

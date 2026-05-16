@@ -92,10 +92,29 @@ module C99 {
         -- arithmetic / common-type computation strips Const before
         -- proceeding. Stripped to its inner type when crossing
         -- into TAC (Const is a type-checker concept; downstream
-        -- passes don't need it). `volatile` and `restrict` are
-        -- still parser-recognized but discarded — c6502 doesn't
-        -- model them.
+        -- passes don't need it). `restrict` is still parser-
+        -- recognized but discarded — c6502 doesn't model
+        -- aliasing analysis.
         | Const(data_type referenced_type)
+        -- `volatile`-qualified type. Same wrapping shape as Const:
+        -- `volatile int` is `Volatile(Int())`, `volatile int *` is
+        -- `Pointer(Volatile(Int()))`, `int * volatile` is
+        -- `Volatile(Pointer(Int()))`. Unlike Const, Volatile is
+        -- NOT stripped at the TAC boundary — c99_to_tac reads it
+        -- off the lvalue type at every memory-access lowering and
+        -- threads it into the resulting Load/Store's is_volatile
+        -- bit. The bit then propagates through TAC and asm
+        -- optimization passes that would otherwise eliminate or
+        -- coalesce the access (DSE keeps volatile Loads regardless
+        -- of dst use; dead-pure-loop elim treats a volatile Load
+        -- as a side effect; copy propagation doesn't fold across a
+        -- volatile read; asm-level redundant-load / mem-const-prop
+        -- / dead-store-elim all skip volatile-flagged atoms). The
+        -- type checker, on the other hand, treats Volatile much
+        -- like Const for arithmetic / common-type purposes —
+        -- both qualifiers are stripped before the §6.3.1.8 rules
+        -- run, then re-applied (if applicable) at the result.
+        | Volatile(data_type referenced_type)
 
     -- `for (decl ; ...)` per C99 §6.8.5: the initializer may
     -- introduce multiple variables via the standard multi-init-

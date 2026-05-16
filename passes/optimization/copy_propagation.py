@@ -183,15 +183,19 @@ def _rewrite(
             # dst, the operand here is the storage location's name,
             # which can't be replaced with a Constant anyway.
             return instr
-        case tac_ast.Load(src_ptr=p, dst=d):
-            return tac_ast.Load(src_ptr=sub(p), dst=d)
-        case tac_ast.Store(src=s, dst_ptr=p):
-            return tac_ast.Store(src=sub(s), dst_ptr=sub(p))
-        case tac_ast.IndexedLoad(name=n, index=i, dst=d):
-            return tac_ast.IndexedLoad(name=n, index=sub(i), dst=d)
-        case tac_ast.IndexedStore(address=a, index=i, src=s):
+        case tac_ast.Load(src_ptr=p, dst=d, is_volatile=v):
+            return tac_ast.Load(src_ptr=sub(p), dst=d, is_volatile=v)
+        case tac_ast.Store(src=s, dst_ptr=p, is_volatile=v):
+            return tac_ast.Store(
+                src=sub(s), dst_ptr=sub(p), is_volatile=v,
+            )
+        case tac_ast.IndexedLoad(name=n, index=i, dst=d, is_volatile=v):
+            return tac_ast.IndexedLoad(
+                name=n, index=sub(i), dst=d, is_volatile=v,
+            )
+        case tac_ast.IndexedStore(address=a, index=i, src=s, is_volatile=v):
             return tac_ast.IndexedStore(
-                address=a, index=sub(i), src=sub(s),
+                address=a, index=sub(i), src=sub(s), is_volatile=v,
             )
         case tac_ast.JumpIfTrue(condition=c, target=t):
             return tac_ast.JumpIfTrue(condition=sub(c), target=t)

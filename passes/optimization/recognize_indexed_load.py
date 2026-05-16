@@ -170,6 +170,7 @@ def _try_recognize(
         return None
     indexed = tac_ast.IndexedConstLoad(
         address=addr_value, index=idx_var, dst=instr.dst,
+        is_volatile=instr.is_volatile,
     )
     return (indexed, {addr_def_idx, ext_def_idx})
 
@@ -189,6 +190,6 @@ def _is_1_byte_var(v: tac_ast.Var, symbols) -> bool:
     if sym is None:
         return False
     t = sym.type
-    while isinstance(t, c99_ast.Const):
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))

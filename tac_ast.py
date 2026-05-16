@@ -21,16 +21,16 @@ class Type_top_level:
 
 @dataclass
 class Function(Type_top_level):
-    name: str
-    is_global: bool
+    name: str = ''
+    is_global: bool = False
     params: list[str] = field(default_factory=list)
     instructions: list[Type_instruction] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class StaticVariable(Type_top_level):
-    name: str
-    is_global: bool
+    name: str = ''
+    is_global: bool = False
     data_type: Type_data_type
     init: list[Type_static_init] = field(default_factory=list)
 
@@ -109,33 +109,38 @@ class GetAddress(Type_instruction):
 class Load(Type_instruction):
     src_ptr: Type_val
     dst: Type_val
+    is_volatile: bool = False
 
 
 @dataclass
 class Store(Type_instruction):
     src: Type_val
     dst_ptr: Type_val
+    is_volatile: bool = False
 
 
-@dataclass
+@dataclass(kw_only=True)
 class IndexedLoad(Type_instruction):
-    name: str
+    name: str = ''
     index: Type_val
     dst: Type_val
+    is_volatile: bool = False
 
 
-@dataclass
+@dataclass(kw_only=True)
 class IndexedStore(Type_instruction):
-    address: int
+    address: int = 0
     index: Type_val
     src: Type_val
+    is_volatile: bool = False
 
 
-@dataclass
+@dataclass(kw_only=True)
 class IndexedConstLoad(Type_instruction):
-    address: int
+    address: int = 0
     index: Type_val
     dst: Type_val
+    is_volatile: bool = False
 
 
 @dataclass
@@ -143,6 +148,7 @@ class IndirectIndexedLoad(Type_instruction):
     ptr: Type_val
     index: Type_val
     dst: Type_val
+    is_volatile: bool = False
 
 
 @dataclass
@@ -150,6 +156,7 @@ class IndirectIndexedStore(Type_instruction):
     ptr: Type_val
     index: Type_val
     src: Type_val
+    is_volatile: bool = False
 
 
 @dataclass
@@ -175,19 +182,19 @@ class Copy(Type_instruction):
 
 @dataclass
 class Jump(Type_instruction):
-    target: str
+    target: str = ''
 
 
 @dataclass
 class JumpIfTrue(Type_instruction):
     condition: Type_val
-    target: str
+    target: str = ''
 
 
 @dataclass
 class JumpIfFalse(Type_instruction):
     condition: Type_val
-    target: str
+    target: str = ''
 
 
 @dataclass
@@ -195,25 +202,25 @@ class JumpIfCmp(Type_instruction):
     op: Type_binary_operator
     src1: Type_val
     src2: Type_val
-    target: str
+    target: str = ''
 
 
 @dataclass
 class JumpIfMasked(Type_instruction):
     val: Type_val
-    mask: int
-    jump_when_nonzero: bool
-    target: str
+    mask: int = 0
+    jump_when_nonzero: bool = False
+    target: str = ''
 
 
 @dataclass
 class Label(Type_instruction):
-    name: str
+    name: str = ''
 
 
 @dataclass
 class FunctionCall(Type_instruction):
-    name: str
+    name: str = ''
     args: list[Type_val] = field(default_factory=list)
     dst: Type_val | None = None
 
@@ -236,9 +243,9 @@ class Type_phi_arg:
     pass
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PhiArg(Type_phi_arg):
-    pred_label: str
+    pred_label: str = ''
     source: Type_val
 
 
@@ -254,7 +261,7 @@ class Constant(Type_val):
 
 @dataclass
 class Var(Type_val):
-    name: str
+    name: str = ''
 
 
 @dataclass
@@ -430,52 +437,52 @@ class Type_const:
 
 @dataclass
 class ConstChar(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstUChar(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstInt(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstLong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstLongLong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstUInt(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstULong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstULongLong(Type_const):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ConstFloat(Type_const):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class ConstDouble(Type_const):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
@@ -485,66 +492,66 @@ class Type_static_init:
 
 @dataclass
 class CharInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class UCharInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class IntInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class LongInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class LongLongInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class UIntInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ULongInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class ULongLongInit(Type_static_init):
-    value: int
+    value: int = 0
 
 
 @dataclass
 class FloatInit(Type_static_init):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class DoubleInit(Type_static_init):
-    bits: int
+    bits: int = 0
 
 
 @dataclass
 class AddressInit(Type_static_init):
-    name: str
-    offset: int
+    name: str = ''
+    offset: int = 0
 
 
 @dataclass
 class StringInit(Type_static_init):
-    str: str
-    bytes: int
+    str: str = ''
+    bytes: int = 0
 
 
 @dataclass
 class ZeroInit(Type_static_init):
-    bytes: int
+    bytes: int = 0

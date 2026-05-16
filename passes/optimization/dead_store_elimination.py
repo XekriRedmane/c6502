@@ -127,6 +127,18 @@ def _filter(
     if isinstance(instr, _SIDE_EFFECTING_TYPES):
         return instr, False
 
+    # Volatile Load / IndexedLoad / IndexedConstLoad /
+    # IndirectIndexedLoad — the access is observable per C99
+    # §6.7.3.6 and must survive even when its dst is unread.
+    # `(void)*p` where `*p` is a volatile read is the canonical
+    # case: the Load's dst is a one-shot temp that nothing reads,
+    # but the read of `*p` itself is a side effect.
+    if isinstance(instr, (
+        tac_ast.Load, tac_ast.IndexedLoad,
+        tac_ast.IndexedConstLoad, tac_ast.IndirectIndexedLoad,
+    )) and instr.is_volatile:
+        return instr, False
+
     if isinstance(instr, _PURE_DEF_TYPES):
         dst = instr.dst
         if not isinstance(dst, tac_ast.Var):

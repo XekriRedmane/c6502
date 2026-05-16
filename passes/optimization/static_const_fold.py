@@ -93,15 +93,22 @@ def _build_cache(
 
 def _scalar_type(t):
     """Return the underlying scalar type if `t` is a const-qualified
-    scalar, else None. The const wrapper at the top level is the
-    eligibility gate — we don't fold non-const statics (they could
-    legally be modified at runtime, even if the program doesn't
-    happen to)."""
-    if not isinstance(t, c99_ast.Const):
-        return None
-    inner = t.referenced_type
-    while isinstance(inner, c99_ast.Const):
+    (and NOT volatile-qualified) scalar, else None. The const wrapper
+    is the eligibility gate — we don't fold non-const statics (they
+    could legally be modified at runtime, even if the program doesn't
+    happen to). Volatile statics are also rejected even when const-
+    qualified: per C99 §6.7.3.6, every access to a volatile object
+    is a side effect, so folding two `Var(...)` reads to a single
+    `Constant` would erase those side effects."""
+    has_const = False
+    inner = t
+    while isinstance(inner, (c99_ast.Const, c99_ast.Volatile)):
+        if isinstance(inner, c99_ast.Volatile):
+            return None
+        has_const = True
         inner = inner.referenced_type
+    if not has_const:
+        return None
     if isinstance(inner, (
         c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
         c99_ast.Int, c99_ast.UInt,
@@ -152,17 +159,21 @@ def _rewrite_instr(
             # GetAddress.operand names a storage cell (its address
             # is what we want); folding its value would be wrong.
             return instr
-        case tac_ast.Load(src_ptr=p, dst=d):
-            return tac_ast.Load(src_ptr=sub(p), dst=d)
-        case tac_ast.Store(src=s, dst_ptr=p):
-            return tac_ast.Store(src=sub(s), dst_ptr=sub(p))
-        case tac_ast.IndexedLoad(name=n, index=idx, dst=d):
+        case tac_ast.Load(src_ptr=p, dst=d, is_volatile=v):
+            return tac_ast.Load(src_ptr=sub(p), dst=d, is_volatile=v)
+        case tac_ast.Store(src=s, dst_ptr=p, is_volatile=v):
+            return tac_ast.Store(
+                src=sub(s), dst_ptr=sub(p), is_volatile=v,
+            )
+        case tac_ast.IndexedLoad(name=n, index=idx, dst=d, is_volatile=v):
             # IndexedLoad.name is the array's symbol identifier, not
             # a value — leave it alone. Only the index is a USE.
-            return tac_ast.IndexedLoad(name=n, index=sub(idx), dst=d)
-        case tac_ast.IndexedStore(address=a, index=idx, src=s):
+            return tac_ast.IndexedLoad(
+                name=n, index=sub(idx), dst=d, is_volatile=v,
+            )
+        case tac_ast.IndexedStore(address=a, index=idx, src=s, is_volatile=v):
             return tac_ast.IndexedStore(
-                address=a, index=sub(idx), src=sub(s),
+                address=a, index=sub(idx), src=sub(s), is_volatile=v,
             )
         case tac_ast.Unary(op=op, src=s, dst=d):
             return tac_ast.Unary(op=op, src=sub(s), dst=d)

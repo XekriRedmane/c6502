@@ -315,7 +315,10 @@ def _with_mov_dst(
     supported (the canonical def we relocate is always
     `Mov(Reg(A), P)`)."""
     if isinstance(instr, asm_ast.Mov):
-        return asm_ast.Mov(src=instr.src, dst=new_dst)
+        return asm_ast.Mov(
+            src=instr.src, dst=new_dst,
+            is_volatile=instr.is_volatile,
+        )
     raise AssertionError(
         f"_with_mov_dst: unsupported {type(instr).__name__}",
     )

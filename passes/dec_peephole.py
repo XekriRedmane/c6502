@@ -116,6 +116,7 @@ def _try_match_sub1(
     i0, i1, i2, i3 = instrs[start:start + 4]
     if not (
         isinstance(i0, asm_ast.Mov)
+        and not i0.is_volatile
         and _is_dec_eligible_operand(i0.src)
         and i0.dst == _REG_A
     ):
@@ -130,6 +131,7 @@ def _try_match_sub1(
         return None
     if not (
         isinstance(i3, asm_ast.Mov)
+        and not i3.is_volatile
         and i3.src == _REG_A
         and _operands_equal(i3.dst, i0.src)
     ):

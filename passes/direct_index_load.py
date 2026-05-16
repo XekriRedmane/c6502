@@ -126,13 +126,21 @@ def _try_fuse(
         return None
     if not isinstance(second, asm_ast.Mov):
         return None
+    # The second Mov is a register-to-register transfer (TAX/TAY) —
+    # never volatile. Only `first` carries the memory-access bit.
+    if second.is_volatile:
+        return None
     if not _is_reg_a(second.src):
         return None
     if not _is_reg_x_or_y(second.dst):
         return None
     if not _a_dead_at(instrs, after_idx):
         return None
-    return asm_ast.Mov(src=first.src, dst=second.dst)
+    # Preserve the volatile bit from the first Mov — the fused
+    # `LDX M` is the same memory access as the original `LDA M`.
+    return asm_ast.Mov(
+        src=first.src, dst=second.dst, is_volatile=first.is_volatile,
+    )
 
 
 def _is_reg_x_or_y(op: asm_ast.Type_operand) -> bool:

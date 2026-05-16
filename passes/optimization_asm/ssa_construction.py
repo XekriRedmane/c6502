@@ -685,10 +685,10 @@ def _rewrite_instruction(
     # By instruction shape: handle uses first (so a self-write reads
     # the OLD value), then defs.
     match instr:
-        case asm_ast.Mov(src=src, dst=dst):
+        case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             new_src = rewrite_use(src)
             new_dst = rewrite_def(dst)
-            return asm_ast.Mov(src=new_src, dst=new_dst)
+            return asm_ast.Mov(src=new_src, dst=new_dst, is_volatile=v)
         case asm_ast.Add(src=src, dst=dst):
             new_src = rewrite_use(src)
             new_dst = rewrite_def(dst)

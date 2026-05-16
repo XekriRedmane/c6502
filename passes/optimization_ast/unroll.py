@@ -153,9 +153,18 @@ def _const_array_sizes(t: c99_ast.Type_data_type) -> list[int] | None:
         t = t.element_type
     if not sizes:
         return None
-    if not isinstance(t, c99_ast.Const):
+    # Require Const, reject Volatile — unrolling reads from the
+    # array at compile time; if the array is volatile the per-
+    # access side effects can't be elided.
+    has_const = False
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        if isinstance(t, c99_ast.Volatile):
+            return None
+        has_const = True
+        t = t.referenced_type
+    if not has_const:
         return None
-    leaf = t.referenced_type
+    leaf = t
     if not isinstance(leaf, (
         c99_ast.Int, c99_ast.UInt, c99_ast.Long, c99_ast.ULong,
         c99_ast.LongLong, c99_ast.ULongLong,

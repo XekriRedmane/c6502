@@ -1639,6 +1639,64 @@ class TestArrays(unittest.TestCase):
             )
         self.assertIn("incompatible", str(ctx.exception))
 
+    def test_extern_unsized_array_at_file_scope(self):
+        # `extern int a[];` — the `[]` form parses to `Array(elem,
+        # size=0)`, the incomplete-array sentinel. At the outermost
+        # type of an `extern` declaration that's legal (the size is
+        # supplied by the defining TU).
+        _, symbols = _check("extern int a[];")
+        sym = symbols["a"]
+        self.assertIsInstance(sym.attrs, StaticAttr)
+        self.assertEqual(sym.attrs.initial_value, NoInitializer())
+        self.assertEqual(
+            sym.type, c99_ast.Array(element_type=Int(), size=0),
+        )
+
+    def test_extern_unsized_array_at_block_scope(self):
+        # Same shape but block-scope `extern T a[];`.
+        _, symbols = _check(
+            "int main(void) { extern int a[]; return a[0]; }"
+        )
+        sym = symbols["a"]
+        self.assertIsInstance(sym.attrs, StaticAttr)
+        self.assertEqual(sym.attrs.initial_value, NoInitializer())
+        self.assertEqual(
+            sym.type, c99_ast.Array(element_type=Int(), size=0),
+        )
+
+    def test_non_extern_unsized_array_at_file_scope_rejected(self):
+        # `int a[];` at file scope — incomplete array without
+        # `extern`. C99 allows a tentative definition of this form
+        # that completes at end-of-TU, but c6502 doesn't support
+        # tentative array completion; reject up-front.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check("int a[];")
+        self.assertIn("incomplete array", str(ctx.exception))
+
+    def test_non_extern_unsized_array_at_block_scope_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check("int main(void) { int a[]; return 0; }")
+        self.assertIn("incomplete array", str(ctx.exception))
+
+    def test_sizeof_incomplete_array_rejected(self):
+        # `sizeof(a)` on an incomplete-array-typed lvalue is illegal
+        # per C99 §6.5.3.4.1 — sizeof requires a complete object
+        # type.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "extern int a[]; "
+                "int main(void) { return (int)sizeof(a); }"
+            )
+        self.assertIn("incomplete array", str(ctx.exception))
+
+    def test_struct_member_incomplete_array_rejected(self):
+        # Struct members must be complete object types — the
+        # well-formed-type walk passes `require_complete=True` at the
+        # member site.
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check("struct s { int a[]; }; ")
+        self.assertIn("incomplete array", str(ctx.exception))
+
     def test_static_array_with_init_list(self):
         # Block-scope `static int a[3] = {1, 2, 3};` produces a
         # StaticAttr whose `value` is a 3-element tuple matching

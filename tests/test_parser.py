@@ -3222,14 +3222,17 @@ class TestArrayDeclarations(unittest.TestCase):
             size=10,
         ))
 
-    def test_unspecified_size_rejected(self):
-        # `int a[]` (no size) would need an init list to determine
-        # the count, which c6502 doesn't support yet. Lark wraps
-        # transformer exceptions in `VisitError`.
+    def test_unspecified_size_parses_as_incomplete_array(self):
+        # `extern int a[]` (no size) parses to `Array(elem, size=0)` —
+        # the incomplete-array sentinel. The type checker enforces
+        # that the sentinel is only valid at the outermost type of an
+        # `extern` declaration.
         from parser import parse
-        from lark.exceptions import VisitError
-        with self.assertRaises((NotImplementedError, VisitError)):
-            parse("int main(void) { int a[]; return 0; }")
+        prog = parse("extern int a[];")
+        vd = prog.declaration[0].var_decl
+        self.assertEqual(vd.data_type, c99_ast.Array(
+            element_type=c99_ast.Int(), size=0,
+        ))
 
     def test_zero_size_rejected(self):
         from parser import parse, ParserError

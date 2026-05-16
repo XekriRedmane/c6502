@@ -913,6 +913,19 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
     # well-formedness; the underlying type is what we validate.
     t = _strip_quals(t)
     if isinstance(t, Array):
+        # Incomplete-array sentinel (size == 0 from the parser's `[]`
+        # form) is legal only at the OUTERMOST type of an `extern`
+        # declaration — every other context requires a complete type
+        # (struct members, array elements, sizeof targets, non-extern
+        # objects). Callers signal "complete required" via
+        # `require_complete=True`; the per-decl-site code computes that
+        # flag.
+        if require_complete and t.size == 0:
+            raise TypeCheckError(
+                f"{where}: incomplete array type (`[]`) is allowed "
+                f"only at the outermost type of an `extern` "
+                f"declaration"
+            )
         if isinstance(t.element_type, Void):
             raise TypeCheckError(
                 f"{where}: array element type cannot be void (C99 "
@@ -2026,9 +2039,13 @@ class TypeChecker:
         # For struct/union object types the tag must be a complete
         # type at the point of declaration. (Pointers to struct
         # may point to incomplete types — the well-formed-type walk
-        # passes `require_complete=False` through Pointer.)
-        require_complete = isinstance(
-            vd.data_type, (Structure, Union, Array),
+        # passes `require_complete=False` through Pointer.) `extern`
+        # block-scope decls may name incomplete struct / array types
+        # (the definition lives elsewhere), same as file scope.
+        is_extern_decl = isinstance(vd.storage_class, c99_ast.Extern)
+        require_complete = (
+            isinstance(vd.data_type, (Structure, Union, Array))
+            and not is_extern_decl
         )
         _check_well_formed_type(
             vd.data_type, where=f"object {vd.name!r}",
@@ -3757,6 +3774,17 @@ class TypeChecker:
                     raise TypeCheckError(
                         "sizeof of a function type is illegal "
                         "(C99 §6.5.3.4.1)"
+                    )
+                # Reject `sizeof(arr)` when `arr` has incomplete-array
+                # type (`extern T a[];`) — C99 §6.5.3.4.1 requires a
+                # complete object type. The array decay exemption only
+                # waives the array-to-pointer conversion; the
+                # completeness requirement still applies.
+                stripped = _strip_quals(inner_t)
+                if isinstance(stripped, Array) and stripped.size == 0:
+                    raise TypeCheckError(
+                        "sizeof of an incomplete array type is "
+                        "illegal (C99 §6.5.3.4.1)"
                     )
                 # Result type is `unsigned long` (c6502's size_t).
                 exp.data_type = ULong()

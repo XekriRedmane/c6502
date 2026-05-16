@@ -842,38 +842,13 @@ def _apply_direct_declarator(dd_tree, base_type):
         and _is_token(children[1], "LBRACKET")
         and _is_token(children[3], "RBRACKET")
     ):
-        suffix = children[2]
-        if not hasattr(suffix, "data") or suffix.data != "array_size_plain":
-            raise NotImplementedError(
-                "only plain array sizes are supported "
-                f"(got {getattr(suffix, 'data', suffix)!r})"
-            )
-        if len(suffix.children) == 0:
-            raise NotImplementedError(
-                "array of unspecified size (`[]`) is not supported"
-            )
-        if len(suffix.children) > 1:
-            raise NotImplementedError(
-                "type-qualified array sizes aren't supported"
-            )
-        size_exp = suffix.children[0]
-        if not isinstance(size_exp, c99_ast.Constant):
-            raise NotImplementedError(
-                "array size must be an integer constant literal"
-            )
-        c = size_exp.const
-        if not isinstance(c, (
-            c99_ast.ConstInt, c99_ast.ConstLong,
-            c99_ast.ConstUInt, c99_ast.ConstULong,
-        )):
-            raise NotImplementedError(
-                "array size must be an integer constant"
-            )
-        if c.value <= 0:
-            raise ParserError("array size must be positive")
+        size = _array_size_from_suffix(children[2])
         # Wrap base_type in an Array; recurse with the wrapped type
         # so any further suffixes (deeper in inner_dd) compose on top.
-        new_base = c99_ast.Array(element_type=base_type, size=c.value)
+        # size == 0 is the "incomplete array" sentinel from `[]`; the
+        # type checker enforces that it only appears at the outermost
+        # type of an `extern` declaration.
+        new_base = c99_ast.Array(element_type=base_type, size=size)
         return _apply_direct_declarator(inner_dd, new_base)
     # 4) Function suffix — `inner_dd LPAREN body? RPAREN` where body
     #    is a parameter_type_list, VOID, an identifier_list, or
@@ -976,18 +951,18 @@ def _adjust_param_type(t):
 
 
 def _array_size_from_suffix(suffix):
-    """Decode an `array_suffix` parse tree into a positive int size.
-    Used by both the named (`int a[3]`) and abstract (`int (*)[3]`)
-    declarator paths."""
+    """Decode an `array_suffix` parse tree into an int size. Returns 0
+    for the unsized form `[]` (the incomplete-array sentinel — the
+    type checker enforces that it only appears at the outermost type
+    of an `extern` declaration). Used by both the named (`int a[3]`)
+    and abstract (`int (*)[3]`) declarator paths."""
     if not hasattr(suffix, "data") or suffix.data != "array_size_plain":
         raise NotImplementedError(
             "only plain array sizes are supported "
             f"(got {getattr(suffix, 'data', suffix)!r})"
         )
     if len(suffix.children) == 0:
-        raise NotImplementedError(
-            "array of unspecified size (`[]`) is not supported"
-        )
+        return 0
     if len(suffix.children) > 1:
         raise NotImplementedError(
             "type-qualified array sizes aren't supported"

@@ -334,140 +334,46 @@ FP/integer specifier mix (`int float`, `unsigned double`, etc.).
 
 ### Statement and expression grammar
 
-A `<block>` is `{ <block_item>* }` (its own AST product type
-`Block(block_item*)` so a function body is `Function(name,
-Block([...]))`). A block item is a declaration (`var_decl` or
-`function_decl`) or a statement (`return exp;`, `exp;`, `if (exp)
-stmt (else stmt)?`, `goto label;`, `label: stmt`, a `<block>`
-(compound statement, `Compound(block)`), `break;`, `continue;`,
-`while (exp) stmt`, `do stmt while (exp);`, `for (<for_init> exp? ;
-exp?) stmt`, or a null `;`). The two declaration alternatives map to
-the AST sum `declaration = FunctionDecl(function_decl) |
-VarDecl(var_decl)`: `var_decl` is `<specifier>+ <declarator> (= exp)?
-;` and `function_decl` is `<specifier>+ <declarator> <block>` (the
-function-definition path; forward declarations like `int foo(int x);`
-parse as `var_decl` because the trailing `;` matches that rule, and
-the var_decl transformer rewraps as a `Type_function_decl` with
-`body=None` whenever the declarator composes to a FunType). The
-transformer walks the declarator parse tree (per C99 §6.7.5: postfix
-array / function suffixes bind tighter than prefix `*`) via
-`_apply_declarator`, returning `(name, composed_type,
-outer_param_names)`. Composed type accumulates `Pointer` wrappers
-from the pointer prefix and `FunType` wrappers from function
-suffixes; the outermost function-suffix's param names ride along
-separately for the AST's `params` field (which holds names alongside
-the function's `data_type` = `FunType` carrying param types). `int
-*p;` → `Pointer(Int())`; `int *foo(int *x)` →
-`FunType(params=[Pointer(Int())], ret=Pointer(Int()))`. Array
-declarators (`int a[10];`) and function-pointer declarators (`int
-(*fp)(int);`) parse but `_apply_direct_declarator` raises
-NotImplementedError when it hits an array suffix — c99_ast has no
-Array variant yet.
+See `c99.lark` for the full grammar — it's the authoritative,
+compact description of what parses. A few non-obvious AST-shape
+notes that aren't visible from the grammar alone:
 
-Iteration statements introduce a `for_init` rule covering a
-`var_decl` or `exp? ;` (function declarations aren't legal in for-
-init per C99 §6.8.5). The loop AST nodes (`WhileStmt`, `DoWhileStmt`,
-`ForStmt`, `BreakStmt`, `ContinueStmt`) carry an `identifier label`
-field that the parser leaves as the empty string — the loop_labeling
-pass fills it in later. Selection / case statements (`SwitchStmt`,
-`CaseStmt`, `DefaultStmt`) carry the same kind of `label` field;
-`SwitchStmt` additionally has `cases` (a list of `(value, label)`
-pairs collected from its body), an optional `default_label`, and an
-optional `promoted_type` (filled by the type checker — see pass 5).
-The case-label expression goes through a `constant_exp` non-terminal
-that's a one-child wrapper around `conditional_exp`; the wrapper
-exists so the site is self-documenting and shares a §6.6 validator
-across future call sites (enums, array sizes, etc. — see
-`passes.constant_expression`). The case / default rules introduce
-their own COLON shift-reduce situation analogous to labeled
-statements; LALR(1) shift resolves it correctly. The compound-
-statement rule reuses the same `block` rule the function body uses —
-the only difference is the transformer wraps the resulting `Block`
-in a `Compound`. The `IDENTIFIER COLON statement` rule for labeled
-statements introduces a shift-reduce conflict at statement-start on
-COLON lookahead — Lark's LALR(1) backend resolves it by shifting
-(same mechanism that handles dangling-else), which picks the
-labeled-statement branch. Inside an expression (e.g. a ternary's
-true-clause) the parser state is different, so `a ? b : c` continues
-to parse as a Conditional even though `b` is also an IDENTIFIER
-followed by COLON.
-
-The dangling-else ambiguity is resolved by Lark's LALR(1) backend
-preferring shift, which binds `else` to the nearest preceding
-unmatched `if` (the C99 §6.8.4.1 rule). `<exp>` covers integer
-constants, identifiers, casts (`(int)x` / `(long)x`), unary `-`/`~`/
-`!`, binary `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
-parentheses, right-associative `=`, and the ternary `cond ? t : f`.
-Cast expressions sit at their own `cast_exp` level between
-`unary_exp` and `mul_exp` (C99 §6.5.4), right-recursive so
-`(int)(long)x` parses as `(int)((long)x)`. The `mul_exp` recursive
-RHS and the unary-operator alternative both take `cast_exp`, so
-`-(int)x` parses as `-((int)x)`; prefix `++`/`--` keep their
-`unary_exp` operand because the cast result isn't an lvalue (so
-`++(int)x` is a parse error). The LPAREN-vs-paren-expr ambiguity is
-resolved at LALR(1) by the next token after `(`: any type-specifier
-token (`INT`, `LONG`, `SIGNED`, `UNSIGNED`, `FLOAT`, `DOUBLE`) →
-cast; anything else → parenthesised exp. Each `Cast(target_type,
-exp)` carries a resolved object-type target (built by the `type_name:
-type_specifier+` rule, which reuses `_resolve_data_type`).
-
-The assignment LHS is loosened from C99's `unary-expression` to
-`conditional_exp`, so `1+2=3+4` and `(1?2:a)=5` both parse —
-identifier resolution rejects the non-lvalue forms. The ternary sits
-at its own `conditional_exp` level between assignment and logical-or
-(C99 §6.5.15): condition is `logical_or_exp`, true-clause is full
-`exp`, false-clause is `conditional_exp`. The right-recursion makes
-`?:` right-associative (`a ? 1 : b ? 2 : 3` is `a ? 1 : (b ? 2 :
-3)`) and keeps assignments out of the false-clause slot, so `1 ? 2
-: a = 5` parses as `(1 ? 2 : a) = 5` via the outer assignment rule
-(and then fails the lvalue check).
-
-The ten compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`,
-`|=`, `^=`, `<<=`, `>>=`) share a single `compound_assign` builder
-that builds a `CompoundAssignment(op, lval, rval, intermediate_type?,
-data_type?)` AST node — NOT a parse-time desugar to `Assignment(lval,
-Binary(OP, lval, rval))`. The explicit node is what lets c99_to_tac
-evaluate the lval's address ONCE before the read-modify-write, which
-matters for Subscript / Dereference / Dot / Arrow lvals whose
-address-computing subexpressions have side effects (`arr[i++] += 1`,
-`(*p++)++`, `ptr++[idx++] *= 3`); a desugar would duplicate the lval
-and fire those side effects twice. The type checker stamps two types
-on the node: `intermediate_type` is the binop's working type —
-common-of-promoted for arithmetic / bitwise per §6.3.1.8, promoted-
-left alone for shifts per §6.5.7.3 (right operand promotes
-independently), pointer-itself for `ptr += int` (which routes
-through `translate_pointer_arithmetic` in c99_to_tac for sizeof-
-pointee scaling) — and `data_type` is the lval's type, the result of
-the compound assign expression. c99_to_tac's
-`_translate_compound_assign` computes the lval's address once, Loads
-at the lval type, casts to intermediate_type, applies the binop,
-casts back to lval's type, and Stores. Var lvals skip the Load/Store
-(the Var IS the storage).
-
-Prefix `++a` / `--a` and postfix `a++` / `a--` each build their own
-AST node (`Prefix(incdec_op, exp)` / `Postfix(incdec_op, exp)`)
-instead of desugaring to assignment. Two reasons: (1) they have
-different result semantics — prefix returns the *new* value, postfix
-the *old* value, which can't be expressed by reusing `Assignment` /
-`Binary` alone; (2) direct nodes let `c99_to_tac` evaluate the
-operand's address ONCE before the read-modify-write, avoiding the
-side-effect duplication a desugared `arr[--i] = arr[--i] + 1` would
-cause for richer lvalues. Postfix sits at its own grammar level
-(`postfix_exp`) one tighter than `unary_exp`, so `-a++` parses as
-`-(a++)` and `++a++` as `++(a++)` (the inner `a++` isn't an lvalue,
-but identifier_resolution rejects that semantically — the grammar
-accepts it).
-
-Function calls `f(arg, ...)` sit at the atom level alongside
-constants, parenthesised expressions, and bare identifiers. The
-grammar uses `IDENTIFIER LPAREN arg_list? RPAREN -> function_call`
-(and `IDENTIFIER -> identifier` as a separate atom alternative);
-LALR(1) shifts on LPAREN to disambiguate between the two — bare `f`
-reduces to `Var("f")`, `f(x)` reduces to `FunctionCall(name="f",
-args=[...])`. The callee is a literal identifier, not an expression,
-because the AST node carries the name as a string (`FunctionCall(name,
-args)`) — no pointer-to-function call form yet. Arg expressions are
-full `exp` (assignment-level), separated by commas.
+- Forward function declarations (`int foo(int x);`) parse as
+  `var_decl` (the trailing `;` matches that rule); the transformer
+  rewraps as `Type_function_decl` with `body=None` when the
+  declarator composes to a FunType.
+- Compound assignments build a `CompoundAssignment(op, lval, rval,
+  intermediate_type?, data_type?)` node, NOT a parse-time desugar
+  to `Assignment(lval, Binary(OP, lval, rval))`. The explicit node
+  lets c99_to_tac evaluate the lval's address ONCE for side-effect-
+  ful lvals like `arr[i++] += 1`. The type checker stamps
+  `intermediate_type` (binop working type) and `data_type` (lval
+  type, the result type).
+- Prefix `++a`/`--a` → `Prefix(incdec_op, exp)`; postfix `a++`/`a--`
+  → `Postfix(incdec_op, exp)`. Separate nodes (not desugars) for
+  the same address-once reason and because prefix returns the new
+  value, postfix the old.
+- `FunctionCall(name, args)` carries the callee as a string, not an
+  expression — no function-pointer call form yet.
+- Loop / switch / case / default / labeled nodes carry an
+  `identifier label` field the parser leaves empty; loop_labeling /
+  label_resolution fill it in later. `SwitchStmt` also has `cases`
+  (list of `(value, label)` pairs), `default_label`, and a
+  `promoted_type` filled by the type checker.
+- Case-label expressions go through a `constant_exp` wrapper around
+  `conditional_exp` — the wrapper is a hook for the §6.6 validator
+  in `passes.constant_expression`.
+- Array declarators (`int a[10];`) and function-pointer declarators
+  (`int (*fp)(int);`) parse but `_apply_direct_declarator` raises
+  NotImplementedError on the array suffix — c99_ast has no Array
+  variant yet.
+- The assignment LHS is loosened from C99's `unary-expression` to
+  `conditional_exp`, so `1+2=3+4` parses — identifier resolution
+  rejects non-lvalue forms.
+- LALR(1) shift-reduce resolutions worth knowing: dangling-else
+  binds to the nearest `if`; `IDENTIFIER COLON` at statement-start
+  picks the labeled-statement branch; `(` followed by a type-
+  specifier token picks the cast branch.
 
 ### Lexer & preprocessor
 

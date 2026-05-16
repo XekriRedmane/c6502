@@ -160,12 +160,20 @@ def _try_match_at(
     first = instrs[i]
     if not isinstance(first, asm_ast.Mov):
         return None
+    # A volatile load of P is its own observable side effect — even
+    # though we could relocate the def, doing so would erase the
+    # `LDA P` from the output. Refuse.
+    if first.is_volatile:
+        return None
     if not isinstance(first.src, asm_ast.Pseudo):
         return None
     if not _is_reg_a(first.dst):
         return None
     second = instrs[i + 1]
     if not isinstance(second, asm_ast.Mov):
+        return None
+    # Similarly a volatile STA into D must survive the rewrite.
+    if second.is_volatile:
         return None
     if not _is_reg_a(second.src):
         return None
@@ -181,6 +189,12 @@ def _try_match_at(
 
     def_idx = _find_canonical_def(instrs, P, upper_bound=i)
     if def_idx is None:
+        return None
+    # The def itself must be non-volatile too: the def stores into
+    # P (a volatile cell) — eliding the store via relocation would
+    # erase that observable write.
+    def_instr = instrs[def_idx]
+    if isinstance(def_instr, asm_ast.Mov) and def_instr.is_volatile:
         return None
 
     if not _safe_relocation_range(instrs, def_idx + 1, i, D):

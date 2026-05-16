@@ -213,7 +213,14 @@ def _excluded_names(fn: asm_ast.Function) -> set[str]:
       Excluding P keeps it as a multi-byte Pseudo, which regalloc's
       `_categorize_names` recognizes and allocates as a contiguous
       2-byte block with byte 0 at the lower address — exactly the
-      shape `apply_indirect_base_prop` needs."""
+      shape `apply_indirect_base_prop` needs.
+    * **Pseudos accessed by any volatile-flagged Mov** — splitting
+      a volatile Pseudo across SSA versions and coloring them to
+      separate ZP slots would route some accesses to one cell and
+      some to another, which is incoherent for a memory cell that
+      external observers expect to address through a single name.
+      Keep volatile Pseudos as a single name so every access hits
+      the same slot."""
     excluded: set[str] = set()
     for instr in fn.instructions:
         match instr:
@@ -230,6 +237,13 @@ def _excluded_names(fn: asm_ast.Function) -> set[str]:
                 | asm_ast.RotateLeft(dst=dst)
                 | asm_ast.RotateRight(dst=dst)
             ):
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
+            case asm_ast.Mov(src=src, dst=dst, is_volatile=True):
+                # Volatile-marked accesses keep the Pseudo as one
+                # name so every access hits the same storage cell.
+                if isinstance(src, asm_ast.Pseudo):
+                    excluded.add(src.name)
                 if isinstance(dst, asm_ast.Pseudo):
                     excluded.add(dst.name)
     excluded |= _dptr_staged_pointer_names(fn.instructions)

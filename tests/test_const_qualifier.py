@@ -506,5 +506,62 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
         self.assertIn("STA   (DPTR),Y", asm)
 
 
+class TestVolatileLocalSurvives(unittest.TestCase):
+    """Phase 2 of volatile support: a local variable declared
+    `volatile T y` keeps its accesses explicit at codegen time —
+    the asm-level DEC peephole, redundant-load elim, etc. all
+    refuse to coalesce volatile cells, so the read-modify-write
+    pattern visible in the source ends up byte-for-byte in the
+    output (modulo SBC-vs-DEC).
+
+    The motivating case is the speaker-click delay loop in
+    sfx_tone.c — `while (--y != 0) { }` keeps spinning as long as
+    `y` is volatile, but collapses to nothing when `y` is plain."""
+
+    def _compile_optimized(self, src: str) -> str:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        return _run_stage(
+            "codegen", preprocess(src),
+            optimize=True, unroll=False,
+        )
+
+    def test_volatile_decrement_loop_keeps_explicit_rmw(self):
+        # `volatile uint8_t y = n; while (--y != 0) {}` lowers each
+        # decrement as `LDA y; SEC; SBC #1; STA y` rather than the
+        # `DEC y` peephole-collapsed form. The DEC would still
+        # produce the right `y` trajectory, but it's a single
+        # read-modify-write instruction — for volatile semantics
+        # we want one explicit load AND one explicit store per
+        # iteration.
+        src = (
+            "#include <stdint.h>\n"
+            "__attribute__((zp_abi))\n"
+            "void delay(uint8_t n) {\n"
+            "    volatile uint8_t y = n;\n"
+            "    while (--y != 0) { }\n"
+            "}\n"
+        )
+        asm = self._compile_optimized(src)
+        # The loop body has an explicit SBC chain — DEC didn't fire.
+        self.assertIn("SBC   #$01", asm)
+        self.assertNotIn("DEC   __local_delay", asm)
+
+    def test_nonvolatile_decrement_loop_collapses(self):
+        # Sanity: the same shape without `volatile` collapses to
+        # RTS (the dead-pure-loop pass + DSE eat the function).
+        src = (
+            "#include <stdint.h>\n"
+            "__attribute__((zp_abi))\n"
+            "void delay(uint8_t n) {\n"
+            "    uint8_t y = n;\n"
+            "    while (--y != 0) { }\n"
+            "}\n"
+        )
+        asm = self._compile_optimized(src)
+        # No SBC, no DEC, just RTS for the function body.
+        self.assertNotIn("SBC", asm)
+
+
 if __name__ == "__main__":
     unittest.main()

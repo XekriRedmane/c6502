@@ -930,6 +930,17 @@ class Translator:
                 out: list[asm_ast.Type_instruction] = []
                 for instr in instrs:
                     out.extend(self.translate_instruction(instr))
+                # Mark Movs whose src or dst Pseudo names a
+                # volatile-typed user variable. Mov atoms emitted by
+                # Load / Store / IndexedLoad / etc. for volatile
+                # pointer dereferences already carry the bit
+                # (set explicitly by those lowerings); this pass
+                # covers the OTHER path — direct accesses to a
+                # volatile-typed local / param / static via Copy /
+                # Binary / Unary / etc., where the resulting Mov
+                # accesses the named cell through standard Pseudo
+                # addressing.
+                out = [self._mark_volatile_var_access(m) for m in out]
                 return asm_ast.Function(
                     name=name,
                     is_global=is_global,
@@ -937,6 +948,49 @@ class Translator:
                     instructions=out,
                 )
         raise TypeError(f"unexpected function node: {fn!r}")
+
+    def _mark_volatile_var_access(
+        self, instr: asm_ast.Type_instruction,
+    ) -> asm_ast.Type_instruction:
+        """If `instr` is a Mov whose src or dst is a `Pseudo(name, _)`
+        for a volatile-typed user variable, return a copy with
+        `is_volatile=True`. Otherwise return `instr` unchanged.
+
+        Doesn't override an already-set bit (volatile Mov atoms from
+        Load / Store lowerings stay volatile)."""
+        if not isinstance(instr, asm_ast.Mov):
+            return instr
+        if instr.is_volatile:
+            return instr
+        if self._operand_is_volatile_pseudo(instr.src):
+            return asm_ast.Mov(
+                src=instr.src, dst=instr.dst, is_volatile=True,
+            )
+        if self._operand_is_volatile_pseudo(instr.dst):
+            return asm_ast.Mov(
+                src=instr.src, dst=instr.dst, is_volatile=True,
+            )
+        return instr
+
+    def _operand_is_volatile_pseudo(
+        self, op: asm_ast.Type_operand,
+    ) -> bool:
+        """True iff `op` is `Pseudo(name, _)` and `name` resolves to
+        a symbol-table entry whose type is volatile-qualified. TAC
+        temps (`%N`) and synthetic names (DPTR, HARGS) aren't
+        volatile-typed in the symbol table; they fall through to
+        False."""
+        if not isinstance(op, asm_ast.Pseudo):
+            return False
+        if self._symbols is None:
+            return False
+        sym = self._symbols.get(op.name)
+        if sym is None:
+            return False
+        t = sym.type
+        while isinstance(t, c99_ast.Const):
+            t = t.referenced_type
+        return isinstance(t, c99_ast.Volatile)
 
     def translate_instruction(
         self, instr: tac_ast.Type_instruction,

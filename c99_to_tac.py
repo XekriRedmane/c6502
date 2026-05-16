@@ -945,6 +945,24 @@ class Translator:
         )
         return name
 
+    def _is_volatile_var(self, name: str) -> bool:
+        """True iff `name` resolves to a variable whose c99 type is
+        volatile-qualified (the qualifier may sit underneath a Const).
+        Used by every translate site that reads or writes a Var by
+        name — for volatile Vars we go through the address-taken-
+        equivalent path (`GetAddress` + `Load` / `Store` with
+        `is_volatile=True`) so each access is preserved by every
+        downstream pass that respects the volatile bit.
+
+        Synthetic Vars (TAC temps named `%N`) and any name absent
+        from the symbol table fall back to False — neither has a
+        c99-level volatile qualifier."""
+        sym = self._symbols.get(name)
+        if sym is None:
+            return False
+        return _is_volatile_quals_c99(sym.type)
+
+
     def make_label(self, prefix: str) -> str:
         # Leading `.` makes this a dasm-style local label — scoped to
         # the enclosing SUBROUTINE, so labels in different functions
@@ -1858,6 +1876,10 @@ class Translator:
                 # passes straight through into TAC's Var namespace —
                 # `@` and TAC's `%` are both illegal in C identifiers,
                 # so user vars and translator temps can't collide.
+                # Volatility of the underlying storage is handled at
+                # `tac_to_asm` lowering time, which consults the
+                # symbol table when it emits the load/store atom for
+                # this name.
                 return tac_ast.Var(name=name)
             case c99_ast.SizeOfExp(exp=inner):
                 # `sizeof e` — fold to a compile-time constant.
@@ -1956,7 +1978,10 @@ class Translator:
                     instrs.append(tac_ast.Copy(src=rval_val, dst=dst))
                     # Return the lval so chained assignments compose:
                     # `b = a = 5` -> inner returns Var(@0.a), outer copies
-                    # that into @1.b and returns Var(@1.b).
+                    # that into @1.b and returns Var(@1.b). For volatile
+                    # `a`, this means the outer `b = a` re-reads `a` —
+                    # which is fine: a volatile read is the right
+                    # semantics for "read the value of `a` again".
                     return dst
                 # Volatility of the destination lvalue rides on the
                 # lval's stamped data_type (`*p` has the pointee's

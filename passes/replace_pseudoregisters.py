@@ -445,9 +445,10 @@ class Replacer:
         to carry the function's dims. Instructions without operand
         fields (or only register operands) pass through unchanged."""
         match instr:
-            case asm_ast.Mov(src=src, dst=dst):
+            case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
                 return asm_ast.Mov(
                     src=self.replace(src), dst=self.replace(dst),
+                    is_volatile=v,
                 )
             case asm_ast.Add(src=src, dst=dst):
                 return asm_ast.Add(

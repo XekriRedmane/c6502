@@ -341,8 +341,12 @@ def _split_unencodable_indexed_load(
     ):
         return None
     reg_a = asm_ast.Reg(reg=asm_ast.A())
+    # The split preserves the original Mov's volatile bit on the
+    # half that actually accesses memory (the IndexedData read).
+    # The TAX/TAY half is a register transfer with no memory side
+    # effect, so it stays non-volatile.
     return [
-        asm_ast.Mov(src=src, dst=reg_a),
+        asm_ast.Mov(src=src, dst=reg_a, is_volatile=instr.is_volatile),
         asm_ast.Mov(src=reg_a, dst=dst),
     ]
 

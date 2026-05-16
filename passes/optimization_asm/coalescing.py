@@ -170,9 +170,18 @@ def _move_related_pairs(
     Pairs with `offset != 0` Pseudos are skipped: those reference
     an unrenamed multi-byte name (typically the unsplit param
     bytes that asm-SSA leaves alone), and the coloring layer
-    doesn't byte-rewrite them."""
+    doesn't byte-rewrite them.
+
+    Volatile-flagged Movs aren't coalesce candidates — coalescing
+    would merge the volatile Pseudo with a non-volatile temp under
+    one name, and the resulting single coloring would let
+    non-volatile uses share the volatile cell's storage. Whether
+    that's incorrect depends on later passes' assumptions, but
+    keeping them distinct is the safe call."""
     for instr in fn.instructions:
         if isinstance(instr, asm_ast.Mov):
+            if instr.is_volatile:
+                continue
             src, dst = instr.src, instr.dst
             if (
                 isinstance(src, asm_ast.Pseudo)

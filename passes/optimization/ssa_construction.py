@@ -231,7 +231,16 @@ def _identify_promotable(
 ) -> set[str]:
     """A Var is promotable iff (a) its symbol entry is `LocalAttr`,
     (b) its type is scalar (excludes `Array` / `Structure` / `Union`
-    and `FunType`), and (c) it's never the operand of `GetAddress`.
+    and `FunType`), (c) it isn't volatile-qualified (C99 §6.7.3.6
+    requires every access to a volatile object to be an observable
+    side effect — caching the value in a Phi'd SSA temp would erase
+    those accesses), and (d) it's never the operand of `GetAddress`.
+
+    The volatile exclusion is partly redundant with `_SCALAR_TYPES`
+    not listing `Volatile` (the wrapper isn't a scalar tag), but
+    explicit is better than incidental — a future refactor that
+    strips qualifiers before the type check would otherwise
+    silently lose volatile semantics.
     """
     address_taken: set[str] = set()
     candidates: set[str] = set()
@@ -255,10 +264,22 @@ def _identify_promotable(
             continue
         if not isinstance(sym.attrs, LocalAttr):
             continue
+        if _is_volatile_qualified(sym.type):
+            continue
         if not isinstance(sym.type, _SCALAR_TYPES):
             continue
         promotable.add(name)
     return promotable
+
+
+def _is_volatile_qualified(t) -> bool:
+    """True iff `t` has a top-level `Volatile` wrapper (possibly
+    underneath a `Const` — the parser canonicalizes
+    `const volatile T` to `Const(Volatile(T))`, but defensively we
+    accept either order)."""
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    return isinstance(t, c99_ast.Volatile)
 
 
 def _all_var_names_in(instr: tac_ast.Type_instruction) -> Iterable[str]:

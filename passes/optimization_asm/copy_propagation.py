@@ -243,9 +243,10 @@ def _rewrite(
 def _excluded_names(fn: asm_ast.Function) -> set[str]:
     """Pseudo names that asm-SSA construction skipped: address-taken
     (`LoadAddress.src`), 2-byte address holders (`LoadAddress.dst`),
-    and read-modify-write targets (`Inc / Dec / ASL / LSR / ROL /
-    ROR.dst`). Their values can change without an SSA-versioned def,
-    so they're unsafe both as copy dsts AND as copy srcs."""
+    read-modify-write targets (`Inc / Dec / ASL / LSR / ROL /
+    ROR.dst`), and names accessed by any volatile-flagged Mov. Their
+    values can change without an SSA-versioned def OR have external
+    observers, so they're unsafe both as copy dsts AND as copy srcs."""
     excluded: set[str] = set()
     for instr in fn.instructions:
         match instr:
@@ -262,6 +263,11 @@ def _excluded_names(fn: asm_ast.Function) -> set[str]:
                 | asm_ast.RotateLeft(dst=dst)
                 | asm_ast.RotateRight(dst=dst)
             ):
+                if isinstance(dst, asm_ast.Pseudo):
+                    excluded.add(dst.name)
+            case asm_ast.Mov(src=src, dst=dst, is_volatile=True):
+                if isinstance(src, asm_ast.Pseudo):
+                    excluded.add(src.name)
                 if isinstance(dst, asm_ast.Pseudo):
                     excluded.add(dst.name)
     return excluded

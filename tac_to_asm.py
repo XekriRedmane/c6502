@@ -105,7 +105,9 @@ Mapping highlights (full per-op detail in `translate_binary` /
                                `_byte_at(_, k)` calls bump offset to
                                address byte k.
 
-Calling convention (callee-side, see also `replace_pseudoregisters`):
+Calling convention:
+
+Callee-side (see also `replace_pseudoregisters`):
   - Each arg occupies size_of(arg_type) consecutive stack bytes (low
     at the lower offset for multi-byte args).
   - Return value rides in registers when small enough to fit, in the
@@ -119,6 +121,173 @@ Calling convention (callee-side, see also `replace_pseudoregisters`):
     FP operands needs no epilogue copy. FP returns also skip the
     epilogue's PHA/PLA pair (Ret(save_a=False)) — the SSP/FP
     arithmetic doesn't touch HARGS, so there's nothing to preserve.
+
+Caller-side: FunctionCall(name, args, dst) lowers to
+  `AllocateStack(total_arg_bytes)` (sum of each arg's size — Int 1B,
+  Long 2B, LongLong/Float 4B, Double 8B), one Mov per arg byte
+  writing into `Stack(1)..Stack(total_arg_bytes)` in source order
+  (low byte at the lower offset for multi-byte args), `Call(name)`,
+  then byte-by-byte capture of the return value at the matching
+  width (A, A+X, HARGS+8..11, or HARGS+16..23). LongLong shares
+  Float's HARGS slot because types are exclusive per call and
+  mul32/divmod32 already write 4-byte results to that offset, so
+  `return a OP b;` for LongLong operands needs no epilogue copy.
+  Callers MUST capture any HARGS-returned value *immediately* after
+  the JSR, before any other helper Call — HARGS is caller-saved.
+  The callee's epilogue rewinds SSP all the way back to the
+  caller's pre-call value, so there's no per-call cleanup.
+
+  Runtime-helper Calls (mul8/16/32, {u,s}divmod8/16/32,
+  asl/asr/lsr 8/16/32) bypass this convention entirely — they emit
+  straight to `asm_ast.Call` with no `AllocateStack`, exchanging
+  operands through HARGS instead of the soft stack.
+
+Runtime helper layout:
+
+HARGS is a 24-byte zero-page block (`$04`–`$1B`) the runtime header
+pins by name, sized for the largest helper (dadd/dsub/dmul/ddiv —
+16 bytes in + 8 bytes out); integer helpers use only the low 8
+bytes. Caller writes inputs into `HARGS+0..N-1`, JSRs the helper,
+and reads the result from a fixed offset later in the block. Inputs
+survive the call. The signed/unsigned divmod split mirrors the
+asr/lsr right-shift split: signed `/` and `%` route to `sdivmod*`
+(trunc-toward-zero per C99 §6.5.5.6), unsigned to `udivmod*`
+(floor-divide). Per-helper layout (inputs → outputs):
+
+  mul8       A:+0, B:+1               → product:+2 (1 byte; low byte of
+                                          A*B, high byte discarded
+                                          because int*int wraps to int)
+  udivmod8/  num:+0, den:+1           → quot:+2, rem:+3
+   sdivmod8
+  asl8/      val:+0, count:+1         → result:+2
+   asr8/
+   lsr8
+  mul16      A:+0..+1, B:+2..+3       → product:+4..+5 (2 bytes; low half
+                                          of A*B, high half discarded)
+  udivmod16/ num:+0..+1, den:+2..+3   → quot:+4..+5, rem:+6..+7
+   sdivmod16
+  asl16/     val:+0..+1, count:+2     → result:+3..+4 (1-byte count: shifts
+   asr16/     ≥16 are UB, so the high byte of a promoted-to-Long count is
+   lsr16      dropped)
+  mul32      A:+0..+3, B:+4..+7       → product:+8..+11 (4 bytes; low half
+                                          of A*B, high half discarded)
+  udivmod32/ num:+0..+3, den:+4..+7   → quot:+8..+11, rem:+12..+15
+   sdivmod32
+  asl32/     val:+0..+3, count:+4     → result:+5..+8 (1-byte count: shifts
+   asr32/     ≥32 are UB)
+   lsr32
+
+`RightShift` dispatches by operand signedness — signed → `asr*`
+(arithmetic, sign-preserving), unsigned → `lsr*` (logical, zero-
+fill). Signedness for Constants comes from the const variant
+(Const{Int,Long,LongLong} → signed, Const{UInt,ULong,ULongLong} →
+unsigned); for Vars, from the symbol-table c99 type. The 16- and
+32-bit helpers themselves aren't in the repo yet; the lowerings
+emit calls in advance of the runtime header landing.
+
+Inline comparison and LogicalNot lowerings (no runtime helper —
+the 6502's CMP / SBC + branch atoms cover these):
+
+  LogicalNot(src, dst): `Mov(src, A); Branch(EQ, true); Mov(0, A);
+    Jump(end); Label(true); Mov(1, A); Label(end); Mov(A, dst)`.
+    The framing `LDA` already sets Z, so no separate Compare.
+
+  Equal / NotEqual: `Mov(src1, A); Compare(A, src2); Branch(EQ|NE,
+    true); LDA #0; Jump(end); Label(true); LDA #1; Label(end); Mov(
+    A, dst)`. For multi-byte operands: walk bytes high→low, BNE
+    short-circuits to a "differ" label on each except the lowest;
+    the final low-byte CMP's Z is the answer.
+
+  LessThan / GreaterOrEqual: `Mov(src1, A); SetCarry; Sub(src2, A);
+    Branch(VC, novf); Eor(0x80, A); Label(novf); Branch(MI|PL,
+    true); … 0/1 select …`. CMP can't be used for signed ordering
+    because it leaves V untouched, and the N flag lies when the
+    signed subtraction overflows — the `BVC novf; EOR #$80` pair
+    corrects N. Multi-byte: chained SBCs (carry threads low→high)
+    then V-correction on the high byte.
+
+  GreaterThan / LessOrEqual: reuse the LessThan / GreaterOrEqual
+    sequence with operands swapped (`>` → `src2 < src1`, `<=` →
+    `src2 >= src1`). Z is unreliable after the EOR correction, so
+    asking for "not-less-than AND not-equal" directly would need a
+    second compare; swapping is cheaper.
+
+  JumpIfFalse / JumpIfTrue on multi-byte conditions: `Mov(cond[0],
+    A); Or(cond[1], A); … Or(cond[size-1], A); Branch(EQ|NE,
+    target)`. The OR chain sets Z=1 iff every byte is zero, which
+    is the whole-value "is zero" test.
+
+  Mul / Div / Mod / LeftShift / RightShift are TAC-only — they
+    lower via the runtime-helper path above, not inline.
+
+Cast lowering specifics (SignExtend / ZeroExtend / Truncate carry
+no width info themselves; tac_to_asm reads the symbol-table widths
+of src and dst at lowering time, so the same three nodes cover
+every 1B/2B/4B widening / narrowing pair):
+
+  Truncate(src, dst): copy `_size_of(dst)` low bytes from src into
+    dst. Memory is little-endian, so offset 0 is the low byte; the
+    source's higher bytes are just discarded.
+
+  SignExtend(src, dst): copy each source byte to the matching dst
+    byte (the last LDA's N flag reflects the source's sign byte),
+    `Branch(MI, sx_neg@N); LDA #$00; Jump(sx_done@N); Label(
+    sx_neg@N); LDA #$FF; Label(sx_done@N);` then STA into each
+    remaining (high) dst byte. Two minted labels per use; the
+    Translator's program-global counter keeps them unique.
+
+  ZeroExtend(src, dst): copy each source byte unchanged, then
+    write a literal 0 into each remaining (high) dst byte. No
+    branch needed.
+
+  FP conversions (IntToFloat / IntToDouble / FloatToInt /
+    DoubleToInt / FloatToDouble / DoubleToFloat): runtime helper
+    Calls. Helper choice reads the symbol-table types of src and
+    dst (i2f vs. u2f vs. l2f vs. ul2f vs. ll2f vs. ull2f on the
+    integer side; f2d / d2f on the FP side).
+
+Operand-size and signedness dispatch:
+
+  `Translator._size_of(val)` returns 1 (Int/UInt), 2 (Long/ULong),
+  4 (LongLong/ULongLong/Float), or 8 (Double) — reading the symbol
+  table for Vars and the const variant for Constants. Each per-
+  instruction lowering keys off this size; the size-parameterized
+  loops naturally generalize across 1, 2, and 4 byte widths with
+  carry threading where appropriate. Signedness only matters for
+  ordering comparisons, right shift, and int↔FP conversion;
+  elsewhere the byte sequences are identical. `_is_unsigned_val`
+  picks the right ordering / right-shift dispatch; `_int_type_of`
+  picks the right FP-conversion helper. Both read the const variant
+  for Constants and the symbol-table c99 type for Vars.
+
+Per-byte addressing:
+
+  `Pseudo` / `Stack` / `Frame` / `Data` carry an `int offset` field
+  that selects which byte of a multi-byte value the reference is
+  (offset=0 is the low byte). `_byte_at(operand, k)` produces the
+  k-th byte of any operand: `Imm(v)` → `Imm((v >> 8*k) & 0xFF)`
+  (Python's arithmetic `>>` folds a negative ConstLong to its
+  two's-complement bytes; FP constants pre-fold to a non-negative
+  IEEE 754 bit pattern at `translate_val` time, so the same shift-
+  and-mask byte extraction works without special-casing FP); memory-
+  shaped operands bump their `offset` by k.
+
+Asm StaticVariable init:
+
+  The asm-side `static_init` sum has five variants — three integer
+  width variants (IntInit | LongInit | LongLongInit) plus FloatInit
+  and DoubleInit. The TAC unsigned variants collapse onto the
+  matching width (UIntInit→IntInit, ULongInit→LongInit,
+  ULongLongInit→LongLongInit) because the asm side has no
+  signedness — `asm_emit` lays the bytes down at the right width
+  and the bit pattern is what matters. The cell-size dispatch in
+  `asm_emit` is by variant: DC.B for IntInit, DC.W for LongInit,
+  DC.L for LongLongInit, DC.L for FloatInit, two DC.Ls for
+  DoubleInit (dasm has no native 8-byte directive).
+
+Caveat: output is correct but redundant — every intermediate is
+materialized through a Frame slot. Optimization is deferred to
+TAC-level passes (see `passes/optimization/CLAUDE.md`).
 """
 
 from __future__ import annotations

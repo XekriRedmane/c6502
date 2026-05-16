@@ -402,218 +402,30 @@ pointer-arithmetic byte-scaling via `translate_pointer_arithmetic`).
 
 ## tac_to_asm
 
-`tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. The asm
-program shape mirrors TAC: `Program(top_level*)` with `Function(name,
-is_global, params, instructions)` and `StaticVariable(name,
-is_global, init)`. Each TAC `Function` lowers atom by atom; each TAC
-`StaticVariable` rides through to an asm `StaticVariable`. The asm-
-side init has five variants — the integer side carries only the
-three width variants (`IntInit | LongInit | LongLongInit`), so TAC's
-`UIntInit(v)` collapses to asm `IntInit(v)`, `ULongInit(v)` to
-`LongInit(v)`, and `ULongLongInit(v)` to `LongLongInit(v)`; the FP
-side keeps Float and Double distinct (`FloatInit | DoubleInit`)
-because their IEEE 754 byte patterns differ. The asm side has no
-`data_type` field — the variant of the init alone determines the
-cell size at emit (DC.B for IntInit, DC.W for LongInit, DC.L for
-LongLongInit, DC.L for FloatInit, two DC.Ls for DoubleInit since
-dasm has no native 8-byte directive).
+`tac_to_asm.translate_program` — `tac_ast` → `asm_ast`. See the
+module docstring at the top of `tac_to_asm.py` for the per-construct
+mapping, the runtime helper layout table (HARGS slots per helper),
+the inline comparison / LogicalNot lowerings, the cast lowering
+specifics, and the caller-/callee-side calling convention. Two
+cross-cutting facts other docs / readers need at orientation level:
 
-**The asm IR is strictly 1:1 with 6502 opcodes** — no width tagging
-anywhere. The 6502 is an 8-bit machine, so every asm instruction is
-implicitly Byte-typed. That makes `tac_to_asm` the single home of
-all multi-byte lowering: for each TAC instruction whose operands are
-wider than 1 byte (Long / ULong = 2 bytes, LongLong / ULongLong = 4,
-Float = 4, Double = 8 — per the symbol table), the translator emits
-a sequence of byte-level asm atoms — typically one pass per byte
-with the 6502's carry flag threading naturally between them for
-arithmetic on 2-byte operands. (FP arithmetic isn't lowered inline;
-it dispatches to runtime helpers via the HARGS block — see below.)
-
-**Per-byte addressing.** `Pseudo` and `Data` carry an `int offset`
-field that selects which byte of a multi-byte value the reference
-is — `offset=0` is the low byte (or the only byte of an Int),
-`offset=k` the (k+1)-th byte (so `offset=7` is the high byte of a
-Double). The helper `_byte_at(operand, k)` produces the k-th byte
-of any operand: `Imm(v)` → `Imm((v >> 8*k) & 0xFF)` (using Python's
-arithmetic `>>` so a negative ConstLong folds to its two's-
-complement bytes; FP constants pre-fold to a non-negative IEEE 754
-bit pattern at `translate_val` time, so the same shift-and-mask byte
-extraction works without special-casing FP); memory-shaped operands
-(Pseudo / Stack / Frame / Data) bump their `offset` by k.
-
-**Operand-size dispatch.** `Translator._size_of(val)` returns 1 for
-1-byte types (Int / UInt), 2 for 2-byte (Long / ULong), 4 for 4-byte
-(LongLong / ULongLong / Float), 8 for Double — by reading the symbol
-table for Vars and the const variant for Constants (each TAC integer
-const variant carries width AND signedness; this helper only reads
-width). Each per-instruction lowering keys off this size; the size-
-parameterized loops naturally generalize across 1, 2, and 4 byte
-widths with carry threading where appropriate. Signedness only
-matters for ordering comparisons, right shift, and int↔FP conversion;
-everywhere else the byte sequences are identical. The signedness
-dispatch reads the operand: const variant for Constants, symbol-
-table c99 type for Vars (via `_is_unsigned_val` for ordering / right
-shift, `_int_type_of` for FP-conversion helper selection). Examples:
-
-- `Copy(src, dst)`: 1 Mov for Int, 2 Movs (lo, hi) for Long.
-- `Binary(Add, …)` Long: `Mov src1.lo→A; CLC; Add(src2.lo, A);
-  Mov A→dst.lo; Mov src1.hi→A; Add(src2.hi, A); Mov A→dst.hi`. No
-  CLC between the bytes — `LDA` only affects N/Z, so the carry from
-  the low ADC is intact for the high ADC.
-- `Binary(Subtract, …)` Long: same shape with SetCarry/Sub, borrow
-  threads via the carry register.
-- `Binary(Equal, …)` Long: high-byte CMP first; if differ, BNE
-  short-circuits to a label (Z=0 there); else fall through to low-
-  byte CMP whose Z is the final answer; then 0/1 select.
-- `Binary(LessThan, …)` Long: low-byte SBC then high-byte SBC
-  (carry threads), V-correction on the high result, branch on
-  MI/PL. Same operand-swap trick as the 8-bit form for `>` / `<=`.
-- `JumpIfFalse(Long_cond, target)`: `Mov(cond.lo, A); Or(cond.hi,
-  A); Branch(EQ, target)` — the OR sets Z=1 iff both bytes are
-  zero, i.e. the 16-bit value is zero.
-- `Mul/Div/Mod/Shift` (any operand width): runtime-helper Calls.
-  See "Runtime helper layout" below.
-
-**Cast lowering** (matches the TAC node names from c99_to_tac).
-SignExtend / ZeroExtend / Truncate read the source and destination
-operand widths from the symbol table at lowering time, so the same
-three TAC nodes cover every 1B/2B/4B widening or narrowing pair. The
-6502 has no signedness distinction at the byte level, so same-width
-casts are no-ops.
-
-- `Truncate(src, dst)`: copy `_size_of(dst)` low bytes from src into
-  dst — memory is little-endian, so byte 0 is the low byte, and the
-  source's higher bytes are just discarded. Covers Long → Int,
-  LongLong → Int, LongLong → Long, etc., for any signedness
-  combination.
-- `SignExtend(src, dst)` (signed source widened): inline byte
-  sequence — copy each source byte to the matching dst byte (the
-  last LDA's N flag is the source's sign byte's), `Branch(MI,
-  sx_neg@N); LDA #$00; Jump(sx_done@N); Label(sx_neg@N); LDA #$FF;
-  Label(sx_done@N);` then STA into each remaining (high) dst byte.
-  Covers Int → Long, Int → LongLong, Long → LongLong, Int → ULong,
-  etc. Two minted labels per use; the Translator's program-global
-  counter keeps them unique.
-- `ZeroExtend(src, dst)` (unsigned source widened): inline byte
-  sequence — copy each source byte unchanged, then write a literal
-  0 into each remaining (high) dst byte. No branch needed. Covers
-  UInt → ULong, UInt → ULongLong, ULong → ULongLong, etc.
-
-Output is correct but redundant — every intermediate is materialized
-through a `Frame` slot. Optimization is deferred to TAC-level passes
-(see [passes/optimization/CLAUDE.md](passes/optimization/CLAUDE.md)).
-
-**TAC `FunctionCall(name, args, dst)`** lowers to the caller-side
-soft-stack convention: `AllocateStack(total_arg_bytes)` (each Long
-arg contributes 2 bytes, each LongLong / Float arg 4, each Double 8,
-each Int 1), one Mov per arg byte writing into
-`Stack(1)..Stack(total_arg_bytes)` in source order (low byte at the
-lower offset for multi-byte args), `Call(name)`, then capture the
-return value. The convention is width-driven: Int (1B) ← A; Long
-(2B) ← A=low, X=high (with X routed through A for the high-byte
-store); LongLong (4B) / Float (4B) ← bytes read from `HARGS+8..11`
-byte-by-byte through A; Double (8B) ← bytes read from
-`HARGS+16..23`. LongLong shares the Float slot because types are
-exclusive per call and `mul32` / `divmod32` already write their
-4-byte results to that offset, so a function ending `return a OP b;`
-for LongLong operands needs no epilogue copy. The FP slots are
-deliberately the same as the FP arithmetic helpers' output slots.
-Caller has to capture any HARGS-returned value *immediately* after
-the JSR, before any other helper Call, since HARGS is caller-saved.
-The callee's epilogue rewinds SSP all the way back to the caller's
-pre-call value, so there's no per-call cleanup. Runtime-helper calls
-(mul8/16/32, divmod8/16/32, asl8/16/32, asr8/16/32) emitted by the
-binary-op lowerings still go straight to `asm_ast.Call` (no
-`AllocateStack`); they exchange operands through the `HARGS` zero-
-page block instead of the soft stack, so they bypass the user-
-function calling convention entirely.
-
-### Runtime helper layout
-
-Operands are exchanged through `HARGS`, a 24-byte zero-page block
-(`$04`–`$1B`) that the runtime header pins by name. The block is
-sized for the largest helper (`dadd`/`dsub`/`dmul`/`ddiv`, which
-need 16 bytes in + 8 bytes out); integer helpers use only the low 8
-bytes. Caller writes inputs into `HARGS+0..N-1`, JSRs the helper
-(mul8 / udivmod8 / sdivmod8 / asl8 / asr8 / lsr8 for 1-byte
-operands; the 16-bit and 32-bit families have the same names with
-the suffix changed to 16 or 32), and reads the result from a fixed
-offset later in the block. Inputs survive the call. The
-signed/unsigned divmod split mirrors the asr/lsr right-shift split:
-signed `/` and `%` route to `sdivmod*` (trunc-toward-zero per C99
-§6.5.5.6), unsigned to `udivmod*` (floor-divide). Per-helper layout
-(inputs → outputs):
-
-```
-  mul8       A:+0, B:+1               → product:+2 (1 byte; low byte of
-                                          A*B, high byte discarded
-                                          because int*int wraps to int)
-  udivmod8/  num:+0, den:+1           → quot:+2, rem:+3
-   sdivmod8
-  asl8/      val:+0, count:+1         → result:+2
-   asr8/
-   lsr8
-  mul16      A:+0..+1, B:+2..+3       → product:+4..+5 (2 bytes; low half
-                                          of A*B, high half discarded)
-  udivmod16/ num:+0..+1, den:+2..+3   → quot:+4..+5, rem:+6..+7
-   sdivmod16
-  asl16/     val:+0..+1, count:+2     → result:+3..+4 (1-byte count: shifts
-   asr16/     ≥16 are UB, so the high byte of a promoted-to-Long count is
-   lsr16      dropped)
-  mul32      A:+0..+3, B:+4..+7       → product:+8..+11 (4 bytes; low half
-                                          of A*B, high half discarded)
-  udivmod32/ num:+0..+3, den:+4..+7   → quot:+8..+11, rem:+12..+15
-   sdivmod32
-  asl32/     val:+0..+3, count:+4     → result:+5..+8 (1-byte count: shifts
-   asr32/     ≥32 are UB)
-   lsr32
-```
-
-`RightShift` dispatches by operand signedness: signed operands route
-to `asr*` (arithmetic, sign-preserving), unsigned to `lsr*` (logical,
-zero-fill). Signedness for Constants comes from the const variant
-(Const{Int,Long,LongLong} → signed, Const{UInt,ULong,ULongLong} →
-unsigned); for Vars, from the symbol-table c99 type. The 16- and
-32-bit helpers themselves aren't in the repo yet; the lowerings emit
-calls to them in advance of the runtime header landing. (8-bit
-signed `>>` of `signed char` is rare in practice — `signed char`
-integer-promotes to `int` before `>>`, so the 8-bit `asr8` helper is
-mostly a placeholder.)
-
-### Comparisons and LogicalNot
-
-`Mul`/`Div`/`Mod`/`LeftShift`/`RightShift` are TAC-only concepts;
-`tac_to_asm` lowers each to a sequence of `Mov`s into `HARGS`, a
-`Call` to the appropriate runtime helper, and `Mov`s reading the
-result back out at a helper-specific offset within HARGS (see table
-above).
-
-The unary `LogicalNot` is lowered inline (no runtime helper): `Mov
-src→A; Branch(EQ, true); Mov 0→A; Jump end; true: Mov 1→A; end: Mov
-A→dst`. The framing `Mov(src, A)` already sets Z via `LDA`, so no
-`Compare` is needed before the branch.
-
-The six comparison ops
-(`Equal`/`NotEqual`/`LessThan`/`GreaterThan`/`LessOrEqual`/`GreaterOrEqual`)
-are also TAC-only but are lowered inline with `Compare`/`Sub` +
-`Branch` atoms (no runtime helper). `Equal`/`NotEqual` emit `Mov
-src1→A; Compare(A, src2); Branch(EQ|NE, true); LDA #0; Jump end;
-true: LDA #1; end: Mov A→dst`. `LessThan`/`GreaterOrEqual` use `Mov
-src1→A; SEC; Sub(src2, A); BVC novf; EOR #$80; novf:; Branch(MI|PL,
-true); … 0/1 select …`. CMP can't be used for signed ordering
-because it leaves V alone, and the N flag lies when the signed
-subtraction overflows — the `BVC novf; EOR #$80` pair corrects N.
-`GreaterThan`/`LessOrEqual` reuse the same sequence with operands
-swapped (`>` → `src2 < src1`, `<=` → `src2 >= src1`) because `Z` is
-unreliable after the EOR correction, so asking for "not-less-than
-AND not-equal" directly would need a second compare; swapping is
-cheaper. The asm IR itself has no multiply/divide/shift/lnot
-primitives — every non-prologue/ret node is 1:1 with a 6502 opcode.
-
-`tac_to_asm` is class-based (`Translator`) because the inline
-comparison lowerings mint fresh labels per use and need a counter
-that persists across the whole program. Module-level wrappers
-(`translate_program`, etc.) each construct a fresh `Translator`.
+- **The asm IR is strictly 1:1 with 6502 opcodes** (the documented
+  exceptions are `Ret`, `FunctionPrologue`, and `AllocateStack`,
+  which `asm_to_asm2` expands into atoms before emit). No width
+  tagging — the 6502 is an 8-bit machine, every operand is one
+  byte. That makes `tac_to_asm` the single home of all multi-byte
+  lowering: for each TAC instruction whose operands are wider than
+  1 byte, the translator emits a sequence of byte-level asm atoms,
+  typically one pass per byte with the 6502's carry flag threading
+  naturally between them. (FP arithmetic isn't lowered inline; it
+  dispatches to runtime helpers via the HARGS block.)
+- **HARGS** is the runtime-helper exchange block — 24 bytes of
+  zero-page at `$04`–`$1B`. Caller writes inputs at fixed offsets,
+  JSRs the helper, reads outputs from later offsets. The same block
+  doubles as the wide-return slot for `LongLong` / `Float` / `Double`
+  return values (`HARGS+8..11` and `HARGS+16..23`). HARGS is
+  caller-saved, so any HARGS-returned value MUST be captured
+  immediately after the JSR.
 
 ## asm_emit
 
@@ -717,10 +529,10 @@ the way during frame teardown.
 
 Reserved zero-page: `$00`/`$01` = `SSP` (soft stack pointer, low/
 high), `$02`/`$03` = `FP` (frame pointer), `$04`–`$1B` = `HARGS`
-(24-byte runtime-helper exchange block — see "Runtime helper layout"
-above for each helper's per-byte slot table; the block is sized for
-the largest helper, `dadd`/`dsub`/`dmul`/`ddiv`, with 16 bytes of
-inputs + 8 of output). `SSP` and `FP` both point at the **next-free
+(24-byte runtime-helper exchange block — see `tac_to_asm.py`'s
+module docstring for each helper's per-byte slot table; the block
+is sized for the largest helper, `dadd`/`dsub`/`dmul`/`ddiv`, with
+16 bytes of inputs + 8 of output). `SSP` and `FP` both point at the **next-free
 byte** and grow downward. SSP/FP access is always indirect-indexed:
 `LDY #off; LDA (SSP),Y` or `LDA (FP),Y`, so `Y` is scratch for any
 soft-stack access. HARGS bytes are accessed absolutely (`LDA

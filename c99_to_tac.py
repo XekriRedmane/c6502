@@ -131,18 +131,131 @@ Mapping:
                                  must be a Var (identifier_resolution
                                  enforces this; we double-check at
                                  runtime).
-  C99 Postfix(op, Var(v))     -> emit Copy(Var(v), %old) to capture
-                                 the operand's value before mutation,
-                                 then Binary(Add/Subtract, Var(v),
-                                 Constant(1), %new) to compute the
-                                 updated value, then Copy(%new,
-                                 Var(v)) to store it back. Returns
-                                 Var(%old) so callers see the *old*
-                                 value (postfix semantics) — distinct
-                                 from prefix `++a`/`--a`, which the
-                                 parser desugars to `a = a ± 1` and
-                                 returns the *new* value via the
-                                 Assignment branch.
+  C99 Prefix(op, operand)     -> read-modify-write on operand's
+                                 storage. Returns the *new* value.
+                                 Shares `_translate_incdec` with
+                                 Postfix (`return_old=False`). Operand
+                                 is one of Var / Subscript /
+                                 Dereference / Dot / Arrow; the
+                                 address-computing subexpression
+                                 fires ONCE, so `++arr[--i]`
+                                 increments at the decremented index.
+                                 For Pointer operands the ±1 routes
+                                 through `translate_pointer_arithmetic`
+                                 so the step scales by sizeof(*ptr)
+                                 per C99 §6.5.6.8.
+  C99 Postfix(op, operand)    -> same shape as Prefix
+                                 (`_translate_incdec`,
+                                 `return_old=True`), but captures the
+                                 pre-mutation value into an `old`
+                                 temp BEFORE the binary update and
+                                 returns that, so callers see the
+                                 *old* value (postfix semantics).
+                                 Same operand set, same address-once
+                                 guarantee, same Pointer scaling.
+  C99 CompoundAssignment(     -> evaluate the lval's address ONCE
+        op, lval, rval,          (matters for side-effect-ful lvals
+        intermediate_type?,      like `arr[i++] += 1`), Load at the
+        data_type?)              lval's type, Cast to
+                                 `intermediate_type` (the binop
+                                 working type stamped by the type
+                                 checker — common-of-promoted for
+                                 arithmetic/bitwise per §6.3.1.8,
+                                 promoted-left for shifts per
+                                 §6.5.7.3, pointer-itself for
+                                 `ptr += int` routing through
+                                 `translate_pointer_arithmetic`),
+                                 apply the binop, Cast back to the
+                                 lval's type, Store. Var lvals skip
+                                 the Load/Store (the Var IS the
+                                 storage). `data_type` is the lval's
+                                 type and the result type of the
+                                 expression.
+  C99 Cast(target, inner)     -> width- and signedness-driven (the
+                                 6502 has no signedness distinction
+                                 at the byte level, so same-width
+                                 casts elide):
+                                  * same width                → elide
+                                  * narrower→wider, signed    →
+                                                SignExtend(src, dst)
+                                  * narrower→wider, unsigned  →
+                                                ZeroExtend(src, dst)
+                                  * wider→narrower            →
+                                                Truncate(src, dst)
+                                  * int→Float / int→Double    →
+                                       IntToFloat / IntToDouble
+                                  * Float/Double→int          →
+                                       FloatToInt / DoubleToInt
+                                  * Float↔Double               →
+                                       FloatToDouble / DoubleToFloat
+                                 SignExtend / ZeroExtend / Truncate
+                                 carry no width info — tac_to_asm
+                                 reads the symbol-table widths of
+                                 src and dst at lowering time so the
+                                 same three nodes cover every
+                                 1B/2B/4B widening or narrowing
+                                 pair. FP-cast operands that are
+                                 TAC Constants compile-time-fold via
+                                 `_fold_fp_cast_constant` —
+                                 sidesteps the signedness erasure
+                                 that would otherwise lose info
+                                 when the integer const variant
+                                 reaches the runtime conversion
+                                 helper. Static-storage initializers
+                                 also bypass the runtime path
+                                 (`_tac_static_init_for` converts in
+                                 Python). A `None` inner data_type
+                                 (synthetic AST that bypassed
+                                 type-checking) falls back to elide.
+  C99 FunctionCall(name, args) -> evaluate each arg in source order
+                                 (left-most temp first), mint a
+                                 fresh typed dst temp, emit one
+                                 tac FunctionCall(name, args, dst).
+                                 The dst temp is what the call
+                                 expression evaluates to, so chained
+                                 uses (`x = f() + g()`) thread
+                                 through Copy / Binary / Ret.
+  C99 Subscript(arr, idx)     -> reuses translate_pointer_arithmetic:
+                                 compute `arr_val + idx*sizeof(elem)`
+                                 into a Pointer-typed temp, then
+                                 Load(src_ptr=addr, dst=fresh_elem)
+                                 in rvalue context. The lvalue path
+                                 (Assignment with Subscript lval)
+                                 feeds the same address into a
+                                 Store. Array decay is reified by
+                                 the type checker as an AddressOf
+                                 wrapper that lowers to GetAddress
+                                 here, so `arr[i]` and `ptr[i]`
+                                 share the same TAC shape — the
+                                 difference is `arr[i]` evaluates to
+                                 `GetAddress(arr) + ...` while
+                                 `ptr[i]` evaluates to
+                                 `Load(ptr) + ...`.
+  C99 SwitchStmt(control,     -> evaluate control once into a typed
+        body, label, cases,      temp `t`; for each (case_value,
+        default_label)           case_label) in `cases` emit
+                                 Binary(Equal, t, case_const, eq) +
+                                 JumpIfTrue(eq, case_label); emit an
+                                 unconditional Jump(default_label or
+                                 <label>_break) past the dispatch
+                                 chain; translate `body` (which
+                                 contains CaseStmt/DefaultStmt nodes
+                                 emitting their Label + recursing
+                                 into the inner statement); emit
+                                 Label(<label>_break). Each
+                                 case.value is already a
+                                 canonicalized integer Constant of
+                                 the switch's promoted control type
+                                 (type_checking pass 5), so the
+                                 dispatch comparisons happen at one
+                                 width. Fall-through is implicit —
+                                 BreakStmt terminates a case.
+  C99 CaseStmt(value, stmt,   -> outside the dispatch context,
+        label)                   just emit Label(label) and recurse
+                                 into `stmt`. The case-value was
+                                 already consumed at the dispatch
+                                 chain.
+  C99 DefaultStmt(stmt, label) -> same as CaseStmt — Label + recurse.
   C99 Negate / Complement /   -> TAC Negate / Complement / LogicalNot
     LogicalNot
   C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
@@ -180,6 +293,51 @@ flow *is* the semantics):
   C99 Binary(LogicalOr, L, R): symmetric, with JumpIfTrue / or_true@N /
       or_end@N and the 0/1 constants swapped. Each use of && or || gets
       a fresh N so nested short-circuits don't collide.
+
+Cross-cutting invariants downstream passes depend on:
+
+- Typed temporaries: `Translator.make_temporary_variable_name(t)`
+  mints a fresh `%N` AND registers it in the symbol table as a
+  `LocalAttr` with `type=t`. Every production call site passes the
+  surrounding expression's `data_type` (the type checker's post-
+  promotion result), so each `%N` carries the right width. tac_to_asm
+  reads `symbols['%N'].type` for operand-size dispatch (1B for
+  Int/UInt, 2B for Long/ULong/Pointer, 4B for LongLong/ULongLong/
+  Float, 8B for Double); `replace_pseudoregisters` reads it for slot
+  sizing. The `t=None` default is a unit-test backstop, resolved to
+  Int.
+- Parameter names ride through unchanged — they were renamed to
+  `@<N>.<orig>` by identifier_resolution and TAC `Var(@<N>.<orig>)`
+  references in the body see the same names.
+- Const variant carries width AND signedness. The TAC `const` sum
+  has six integer variants (Const{Int,UInt,Long,ULong,LongLong,
+  ULongLong}); `_to_tac_const` is a 1-to-1 map. ConstChar / ConstUChar
+  collapse onto ConstInt / ConstUInt per §6.3.1.1.2. The 6502 doesn't
+  care about signedness for `+`/`-`/`&`/`|`/`^`/`<<`/`==`/`!=`, so
+  those op lowerings dispatch only on width; ordering (`<`/`>`/`<=`/
+  `>=`), right shift, and int↔FP conversion read the variant's
+  signedness for Constants and the symbol-table c99 type for Vars,
+  and dispatch accordingly (asr* vs. lsr*, V-corrected MI/PL vs.
+  BCC/BCS, i2f vs. u2f vs. l2f etc.). The static_init sum mirrors
+  the const sum on the integer side (IntInit/UIntInit/LongInit/
+  ULongInit/LongLongInit/ULongLongInit) and keeps Float/Double
+  distinct on the FP side.
+- Synthetic-constant helpers: `_tac_const_for(t, v)` and
+  `_tac_const_val(t, v)` build a typed Constant of the right variant
+  for the synthetic-constant call sites (postfix `+1`, short-circuit
+  0/1, implicit `return 0`) — Int→ConstInt, UInt→ConstUInt,
+  Long→ConstLong, ULong/Pointer→ConstULong, LongLong→ConstLongLong,
+  ULongLong→ConstULongLong, Float→ConstFloat, Double→ConstDouble.
+- Pointer arithmetic byte-scaling: `translate_pointer_arithmetic`
+  is the single home of sizeof-pointee scaling for Binary(Add|
+  Subtract) on Pointer operands, Subscript, and Prefix/Postfix on
+  Pointer operands. `ptr ± int` multiplies the int by
+  `_pointee_size(ptr)` (skipping the multiply for size==1); `ptr -
+  ptr` divides the byte-difference by `_pointee_size(ptr)` to
+  recover the element count. `_pointee_size` returns the recursive
+  `_sizeof` of the pointee (1 Int/UInt, 2 Long/ULong/Pointer, 4
+  Float, 8 Double, `_sizeof(elem) × count` for Array — same widths
+  as tac_to_asm's symbol-table sizing).
 """
 
 from __future__ import annotations

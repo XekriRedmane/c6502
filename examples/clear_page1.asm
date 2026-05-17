@@ -1,12 +1,12 @@
-__zpabi_clear_page1_p0	EQU	$80
-__zpabi_clear_page1_p1	EQU	$81
-__zpabi_interlace_fill_p1_p0	EQU	$82
-__zpabi_interlace_fill_p1_p1	EQU	$83
-__local_clear_page1_b0	EQU	$84
+__zpabi_clear_page1__zp_clear_col	EQU	$80
+__zpabi_clear_page1__zp_clear_col_end	EQU	$81
+__zpabi_interlace_fill_p1__col	EQU	$82
+__zpabi_interlace_fill_p1__paint	EQU	$83
+__local_clear_page1__x	EQU	$84
 
 ; @zp-link-meta-begin
-; def clear_page1 param_bytes=2 local_bytes=2 indirect=false in_cycle=false
-; ext interlace_fill_p1 param_bytes=2
+; def clear_page1 params=__zpabi_clear_page1__zp_clear_col,__zpabi_clear_page1__zp_clear_col_end locals=__local_clear_page1__x,__local_clear_page1__0 indirect=false in_cycle=false
+; ext interlace_fill_p1 params=__zpabi_interlace_fill_p1__col,__zpabi_interlace_fill_p1__paint
 ; call clear_page1 -> interlace_fill_p1
 ; @zp-link-meta-end
 
@@ -15,10 +15,10 @@ clear_page1:
 
 .clear_page1@asm_ssa_preheader@0:
 .clear_page1@ssa_block@0:
-   LDA   __zpabi_clear_page1_p0
-   STA   __local_clear_page1_b0
+   LDA   __zpabi_clear_page1__zp_clear_col
+   STA   __local_clear_page1__x
 .loop@0_start:
-   LDX   __local_clear_page1_b0
+   LDX   __local_clear_page1__x
    LDA   #$00
    STA   $2600,X
    STA   $2A00,X
@@ -54,18 +54,18 @@ clear_page1:
    STA   $2028,X
    STA   $2428,X
    STA   $2828,X
-   LDA   __local_clear_page1_b0
-   STA   __zpabi_interlace_fill_p1_p0
+   LDA   __local_clear_page1__x
+   STA   __zpabi_interlace_fill_p1__col
    LDA   #$00
-   STA   __zpabi_interlace_fill_p1_p1
+   STA   __zpabi_interlace_fill_p1__paint
    JSR   interlace_fill_p1
-   LDA   __local_clear_page1_b0
-   CMP   __zpabi_clear_page1_p1
+   LDA   __local_clear_page1__x
+   CMP   __zpabi_clear_page1__zp_clear_col_end
    BNE   .if_end@0
 .clear_page1@asm_ssa_block@0:
    JMP   .loop@0_break
 .if_end@0:
-   DEC   __local_clear_page1_b0
+   DEC   __local_clear_page1__x
 .loop@0_continue:
    JMP   .loop@0_start
 .loop@0_break:

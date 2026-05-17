@@ -277,7 +277,7 @@ class TestCoalescingEndToEnd(unittest.TestCase):
             end_idx = len(rest)
         block = rest[:end_idx]
         import re
-        self.assertRegex(block, r"INC\s+__local_\w+_b\d+")
+        self.assertRegex(block, r"INC\s+__local_\w+__\w+")
         self.assertNotIn("ADC   #$01", block)
 
     def test_uchar_loop_correct_sum(self) -> None:

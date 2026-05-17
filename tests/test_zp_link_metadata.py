@@ -121,15 +121,27 @@ class TestRoundTrip(unittest.TestCase):
         meta = LinkMetadata(
             defs=[
                 FunctionMeta(
-                    name="caller", param_bytes=2,
-                    local_bytes=3, indirect=False, in_cycle=False,
+                    name="caller",
+                    params=["__zpabi_caller__x_0", "__zpabi_caller__x_1"],
+                    locals=[
+                        "__local_caller__sprite_x",
+                        "__local_caller__sprite_y",
+                        "__local_caller__0",
+                    ],
+                    indirect=False, in_cycle=False,
                 ),
                 FunctionMeta(
-                    name="other", param_bytes=0,
-                    local_bytes=0, indirect=True, in_cycle=False,
+                    name="other", params=[], locals=[],
+                    indirect=True, in_cycle=False,
                 ),
             ],
-            externs=[ExternMeta(name="helper", param_bytes=4)],
+            externs=[ExternMeta(
+                name="helper",
+                params=[
+                    "__zpabi_helper__a_0", "__zpabi_helper__a_1",
+                    "__zpabi_helper__b_0", "__zpabi_helper__b_1",
+                ],
+            )],
             calls=[("caller", "helper"), ("other", "caller")],
         )
         text = "\n".join(format_metadata(meta))

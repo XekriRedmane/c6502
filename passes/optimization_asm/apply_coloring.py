@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.optimization.register_allocation import Coloring
+from passes.zp_slot_naming import local_slot_names
 
 
 def apply_coloring(
@@ -74,12 +75,12 @@ def apply_coloring(
     given the pool as its `allowed_range`)."""
     if not coloring.assignments and not coloring.hwreg_assignments:
         return fn
-    addr_to_slot: dict[int, int] = {}
+    addr_to_name: dict[int, str] = {}
     if local_pool:
-        addr_to_slot = {addr: k for k, addr in enumerate(local_pool)}
+        addr_to_name = local_slot_names(fn.name, coloring, local_pool)
     # Phase 1: substitute Pseudo references.
     new_instrs = [
-        _apply_to_instruction(instr, coloring, fn.name, addr_to_slot)
+        _apply_to_instruction(instr, coloring, fn.name, addr_to_name)
         for instr in fn.instructions
     ]
     # Phase 2: drop the redundant TR'A + TAR transfer chain that
@@ -104,7 +105,7 @@ def apply_coloring(
 
 def _apply_to_op(
     op: asm_ast.Type_operand, coloring: Coloring,
-    fn_name: str, addr_to_slot: dict[int, int],
+    fn_name: str, addr_to_name: dict[int, str],
 ) -> asm_ast.Type_operand:
     if isinstance(op, asm_ast.Pseudo):
         if op.name in coloring.hwreg_assignments:
@@ -119,9 +120,9 @@ def _apply_to_op(
             return _hwreg_letter_to_op(coloring.hwreg_assignments[op.name])
         if op.name in coloring.assignments:
             addr = coloring.assignments[op.name] + op.offset
-            if addr in addr_to_slot:
+            if addr in addr_to_name:
                 return asm_ast.Data(
-                    name=f"__local_{fn_name}_b{addr_to_slot[addr]}",
+                    name=addr_to_name[addr],
                     offset=0,
                 )
             return asm_ast.ZP(address=addr, offset=0)
@@ -138,9 +139,9 @@ def _hwreg_letter_to_op(letter: str) -> asm_ast.Reg:
 
 def _apply_to_instruction(
     instr: asm_ast.Type_instruction, coloring: Coloring,
-    fn_name: str, addr_to_slot: dict[int, int],
+    fn_name: str, addr_to_name: dict[int, str],
 ) -> asm_ast.Type_instruction:
-    apply = lambda op: _apply_to_op(op, coloring, fn_name, addr_to_slot)
+    apply = lambda op: _apply_to_op(op, coloring, fn_name, addr_to_name)
     match instr:
         case asm_ast.Mov(src=src, dst=dst, is_volatile=v):
             return asm_ast.Mov(

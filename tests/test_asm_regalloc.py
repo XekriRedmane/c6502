@@ -131,8 +131,8 @@ class TestAsmRegallocEndToEnd(unittest.TestCase):
         # At least one body-local symbolic load with an EQU
         # binding in the caller-saved ZP range.
         import re
-        self.assertRegex(out, r"LDA\s+__local_\w+_b\d+")
-        self.assertRegex(out, r"__local_\w+_b\d+\s+EQU\s+\$[89AB][0-9A-F]")
+        self.assertRegex(out, r"LDA\s+__local_\w+__\w+")
+        self.assertRegex(out, r"__local_\w+__\w+\s+EQU\s+\$[89AB][0-9A-F]")
 
 
 if __name__ == "__main__":

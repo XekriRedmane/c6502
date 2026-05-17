@@ -263,10 +263,11 @@ class TestCopyFoldingEndToEnd(unittest.TestCase):
         self.assertIn(".loop@0_continue:", asm)
         # The continue block (between loop@0_continue and the
         # next label) should have INC + BNE + INC for the 16-bit
-        # i++. Body locals emit as `__local_<fn>_b<k>` symbols
-        # now; check the INC + done-label chain.
+        # i++. Body locals emit as
+        # `__local_<fn>__<source>[_<byte>]` symbols; check the
+        # INC + done-label chain.
         import re
-        self.assertRegex(asm, r"INC\s+__local_\w+_b\d+")
+        self.assertRegex(asm, r"INC\s+__local_\w+__\w+")
         self.assertIn(".inc_done@", asm)
 
 

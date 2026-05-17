@@ -613,6 +613,8 @@ def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
         case asm_ast.Imm(value=v):
             _check_byte("immediate", v)
             return [_instr_line(opcode, f"#${v:02X}")]
+        case asm_ast.ImmLabelLow() | asm_ast.ImmLabelHigh():
+            return [_instr_line(opcode, _imm_label_text(src))]
         case asm_ast.Stack() | asm_ast.Frame():
             return [
                 _emit_load_y(src.offset),
@@ -782,6 +784,8 @@ def _emit_compare(
         case asm_ast.Imm(value=v):
             _check_byte("immediate", v)
             return [_instr_line(opcode, f"#${v:02X}")]
+        case asm_ast.ImmLabelLow() | asm_ast.ImmLabelHigh():
+            return [_instr_line(opcode, _imm_label_text(right))]
         case asm_ast.Data() | asm_ast.ZP():
             return [_instr_line(opcode, _abs_addr(right))]
         case asm_ast.Stack() | asm_ast.Frame():

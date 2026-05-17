@@ -61,6 +61,7 @@ import c99_ast
 import tac_ast
 from passes.optimization.pool import Pool
 from passes.optimization.var_visit import vals_in
+from passes.zp_slot_naming import param_slot_symbols
 
 
 class AbiSelectionError(Exception):
@@ -174,6 +175,19 @@ def _param_byte_count(fn_decl: c99_ast.Type_function_decl, types) -> int:
         # Defensive — should never happen for a FunctionDecl.
         return 0
     return sum(sizeof(p, types) for p in fun_type.params)
+
+
+def _per_param_byte_sizes(
+    fn_decl: c99_ast.Type_function_decl, types,
+) -> list[int]:
+    """Byte size per parameter, in declaration order — the parallel
+    list to `fn_decl.params` (which holds resolved names). Used by
+    the zp_abi slot-symbol minter to derive per-byte symbol names."""
+    from passes.replace_pseudoregisters import sizeof
+    fun_type = fn_decl.data_type
+    if not isinstance(fun_type, c99_ast.FunType):
+        return []
+    return [sizeof(p, types) for p in fun_type.params]
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +334,11 @@ def _validate_zp_abi(
             f"(${window.start:02X}-${window.stop - 1:02X})",
         )
     addrs = [window.start + k for k in range(byte_count)]
-    symbols = [f"__zpabi_{fn.name}_p{k}" for k in range(byte_count)]
+    symbols = param_slot_symbols(
+        fn.name,
+        list(fn_decl.params),
+        _per_param_byte_sizes(fn_decl, types),
+    )
     return ZpLayout(slot_symbols=symbols, addrs=addrs)
 
 
@@ -354,7 +372,11 @@ def _validate_zp_abi_extern(
             f"(${window.start:02X}-${window.stop - 1:02X})",
         )
     addrs = [window.start + k for k in range(byte_count)]
-    symbols = [f"__zpabi_{name}_p{k}" for k in range(byte_count)]
+    symbols = param_slot_symbols(
+        name,
+        list(fn_decl.params),
+        _per_param_byte_sizes(fn_decl, types),
+    )
     return ZpLayout(slot_symbols=symbols, addrs=addrs)
 
 

@@ -81,7 +81,7 @@ class TestLinkerHappyPath(unittest.TestCase):
             self.assertEqual(_link([a, b], out), 0)
             text = out.read_text()
             # One global EQU block at the top.
-            self.assertIn("__zpabi_helper_p0\tEQU\t", text)
+            self.assertIn("__zpabi_helper__x_0\tEQU\t", text)
             # The function bodies appear after the EQU block.
             self.assertIn("main:", text)
             self.assertIn("helper:", text)
@@ -125,7 +125,7 @@ class TestLinkerHappyPath(unittest.TestCase):
             self.assertEqual(_link(paths, out), 0)
             text = out.read_text()
             # One EQU per symbol.
-            self.assertEqual(text.count("__zpabi_helper_p0\tEQU\t"), 1)
+            self.assertEqual(text.count("__zpabi_helper__x_0\tEQU\t"), 1)
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

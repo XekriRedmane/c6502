@@ -1,20 +1,20 @@
-__zpabi_floor_enemy_draw_p0	EQU	$80
-__zpabi_draw_sprite_p0	EQU	$81
-__zpabi_draw_sprite_p1	EQU	$82
-__zpabi_draw_sprite_p2	EQU	$83
-__zpabi_draw_sprite_p3	EQU	$84
-__zpabi_draw_sprite_p4	EQU	$85
-__zpabi_draw_sprite_p5	EQU	$86
-__zpabi_draw_sprite_p6	EQU	$87
-__local_floor_enemy_draw_b0	EQU	$88
-__local_floor_enemy_draw_b1	EQU	$89
-__local_floor_enemy_draw_b2	EQU	$8A
-__local_floor_enemy_draw_b3	EQU	$8B
-__local_floor_enemy_draw_b4	EQU	$8C
+__zpabi_floor_enemy_draw__page_flag	EQU	$80
+__zpabi_draw_sprite__width	EQU	$81
+__zpabi_draw_sprite__height	EQU	$82
+__zpabi_draw_sprite__sprite_x	EQU	$83
+__zpabi_draw_sprite__sprite_y	EQU	$84
+__zpabi_draw_sprite__tile_src_0	EQU	$85
+__zpabi_draw_sprite__tile_src_1	EQU	$86
+__zpabi_draw_sprite__page_flag	EQU	$87
+__local_floor_enemy_draw__0	EQU	$88
+__local_floor_enemy_draw__1	EQU	$89
+__local_floor_enemy_draw__2	EQU	$8A
+__local_floor_enemy_draw__3	EQU	$8B
+__local_floor_enemy_draw__slot	EQU	$8C
 
 ; @zp-link-meta-begin
-; def floor_enemy_draw param_bytes=1 local_bytes=5 indirect=false in_cycle=false
-; ext draw_sprite param_bytes=7
+; def floor_enemy_draw params=__zpabi_floor_enemy_draw__page_flag locals=__local_floor_enemy_draw__0,__local_floor_enemy_draw__1,__local_floor_enemy_draw__2,__local_floor_enemy_draw__3,__local_floor_enemy_draw__slot indirect=false in_cycle=false
+; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag
 ; call floor_enemy_draw -> draw_sprite
 ; @zp-link-meta-end
 
@@ -32,7 +32,7 @@ floor_enemy_draw:
 .if_end@0:
    LDY   enemy_col,X
    LDA   proj_screen_col,Y
-   STA   __local_floor_enemy_draw_b3
+   STA   __local_floor_enemy_draw__3
    LDA   proj_frame_idx,Y
    TAY
    TXA
@@ -46,19 +46,19 @@ floor_enemy_draw:
    BEQ   .dispatch@0@case@2
 .floor_enemy_draw@asm_ssa_block@3:
    LDA   floor_enemy_spr_s3_lo,Y
-   STA   __local_floor_enemy_draw_b2
+   STA   __local_floor_enemy_draw__2
    JMP   .dispatch@0@end
 .dispatch@0@case@0:
    LDA   floor_enemy_spr_s0_lo,Y
-   STA   __local_floor_enemy_draw_b2
+   STA   __local_floor_enemy_draw__2
    JMP   .dispatch@0@end
 .dispatch@0@case@1:
    LDA   floor_enemy_spr_s1_lo,Y
-   STA   __local_floor_enemy_draw_b2
+   STA   __local_floor_enemy_draw__2
    JMP   .dispatch@0@end
 .dispatch@0@case@2:
    LDA   floor_enemy_spr_s2_lo,Y
-   STA   __local_floor_enemy_draw_b2
+   STA   __local_floor_enemy_draw__2
    JMP   .dispatch@0@end
 .dispatch@0@end:
    TXA
@@ -72,42 +72,42 @@ floor_enemy_draw:
    BEQ   .dispatch@1@case@2
 .floor_enemy_draw@asm_ssa_block@6:
    LDA   floor_enemy_spr_s3_hi,Y
-   STA   __local_floor_enemy_draw_b0
+   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@case@0:
    LDA   floor_enemy_spr_s0_hi,Y
-   STA   __local_floor_enemy_draw_b0
+   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@case@1:
    LDA   floor_enemy_spr_s1_hi,Y
-   STA   __local_floor_enemy_draw_b0
+   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@case@2:
    LDA   floor_enemy_spr_s2_hi,Y
-   STA   __local_floor_enemy_draw_b0
+   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@end:
-   LDA   __local_floor_enemy_draw_b0
-   STA   __local_floor_enemy_draw_b1
+   LDA   __local_floor_enemy_draw__0
+   STA   __local_floor_enemy_draw__1
    LDA   enemy_y,X
-   STA   __local_floor_enemy_draw_b0
+   STA   __local_floor_enemy_draw__0
    LDA   #$01
-   STA   __zpabi_draw_sprite_p0
+   STA   __zpabi_draw_sprite__width
    LDA   #$05
-   STA   __zpabi_draw_sprite_p1
-   LDA   __local_floor_enemy_draw_b3
-   STA   __zpabi_draw_sprite_p2
-   LDA   __local_floor_enemy_draw_b0
-   STA   __zpabi_draw_sprite_p3
-   LDA   __local_floor_enemy_draw_b2
-   STA   __zpabi_draw_sprite_p4
-   LDA   __local_floor_enemy_draw_b1
-   STA   __zpabi_draw_sprite_p5
-   LDA   __zpabi_floor_enemy_draw_p0
-   STA   __zpabi_draw_sprite_p6
-   STX   __local_floor_enemy_draw_b4
+   STA   __zpabi_draw_sprite__height
+   LDA   __local_floor_enemy_draw__3
+   STA   __zpabi_draw_sprite__sprite_x
+   LDA   __local_floor_enemy_draw__0
+   STA   __zpabi_draw_sprite__sprite_y
+   LDA   __local_floor_enemy_draw__2
+   STA   __zpabi_draw_sprite__tile_src_0
+   LDA   __local_floor_enemy_draw__1
+   STA   __zpabi_draw_sprite__tile_src_1
+   LDA   __zpabi_floor_enemy_draw__page_flag
+   STA   __zpabi_draw_sprite__page_flag
+   STX   __local_floor_enemy_draw__slot
    JSR   draw_sprite
-   LDX   __local_floor_enemy_draw_b4
+   LDX   __local_floor_enemy_draw__slot
 .loop@0_continue:
    DEX
    BPL   .floor_enemy_draw@asm_ssa_split@0

@@ -1,14 +1,14 @@
-__zpabi_spawn_pos_dir_p0	EQU	$80
+__zpabi_spawn_pos_dir__slot	EQU	$80
 
 ; @zp-link-meta-begin
-; def spawn_pos_dir param_bytes=1 local_bytes=1 indirect=false in_cycle=false
+; def spawn_pos_dir params=__zpabi_spawn_pos_dir__slot locals=__local_spawn_pos_dir__0 indirect=false in_cycle=false
 ; @zp-link-meta-end
 
 spawn_pos_dir:
    SUBROUTINE
 
 .spawn_pos_dir@asm_ssa_block@0:
-   LDX   __zpabi_spawn_pos_dir_p0
+   LDX   __zpabi_spawn_pos_dir__slot
    LDA   #$01
    STA   entity_active,X
    STA   rescue_dir,X

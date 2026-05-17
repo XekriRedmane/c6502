@@ -100,8 +100,9 @@ class TestLeafZpAbi(unittest.TestCase):
         # Caller writes the args to `add`'s slot symbols directly
         # (no SBC-against-SSP). dasm resolves the symbols via the
         # EQU directives the emit stage prepended.
-        self.assertIn("STA   __zpabi_add_p0", main_body)
-        self.assertIn("STA   __zpabi_add_p2", main_body)
+        # 2-byte int params -> per-byte slot symbols suffixed _0/_1.
+        self.assertIn("STA   __zpabi_add__a_0", main_body)
+        self.assertIn("STA   __zpabi_add__b_0", main_body)
 
     def test_caller_with_locals_calls_zp_abi_correctly(self) -> None:
         # Caller has its own body locals (x and y) AND calls a
@@ -161,12 +162,12 @@ class TestLeafZpAbi(unittest.TestCase):
             "int main(void) { return helper(7); }"
         )
         asm = self._codegen(src)
-        # Symbolic slot write: `STA __zpabi_helper_p0` for the param;
-        # no `(SSP),Y` arg write that the soft-stack ABI would emit.
-        # The emit prepends an `__zpabi_helper_p0 EQU $80` directive
+        # Symbolic slot write: `STA __zpabi_helper__x_0` for the
+        # param's low byte; no `(SSP),Y` arg write that the soft-
+        # stack ABI would emit. The emit prepends an EQU directive
         # so dasm encodes the store as 2-byte ZP addressing.
-        self.assertIn("STA   __zpabi_helper_p0", asm)
-        self.assertIn("__zpabi_helper_p0\tEQU\t$80", asm)
+        self.assertIn("STA   __zpabi_helper__x_0", asm)
+        self.assertIn("__zpabi_helper__x_0\tEQU\t$80", asm)
         self.assertNotIn("STA   (SSP)", asm)
 
     def test_eligible_non_leaf_emits_no_prologue(self) -> None:
@@ -224,14 +225,16 @@ class TestLeafZpAbi(unittest.TestCase):
         # Allocation shape: caller occupies the bottom of the ZP
         # window; noop is pushed up so its slots don't overlap.
         asm = self._codegen(src)
-        self.assertIn("__zpabi_caller_p0\tEQU\t$80", asm)
-        self.assertIn("__zpabi_caller_p1\tEQU\t$81", asm)
-        self.assertIn("__zpabi_caller_p2\tEQU\t$82", asm)
-        self.assertIn("__zpabi_caller_p3\tEQU\t$83", asm)
-        self.assertIn("__zpabi_noop_p0\tEQU\t$84", asm)
-        self.assertIn("__zpabi_noop_p1\tEQU\t$85", asm)
-        self.assertIn("__zpabi_noop_p2\tEQU\t$86", asm)
-        self.assertIn("__zpabi_noop_p3\tEQU\t$87", asm)
+        # 2-byte int params -> two per-byte slots each: <param>_0
+        # (low byte) and <param>_1 (high byte).
+        self.assertIn("__zpabi_caller__a_0\tEQU\t$80", asm)
+        self.assertIn("__zpabi_caller__a_1\tEQU\t$81", asm)
+        self.assertIn("__zpabi_caller__b_0\tEQU\t$82", asm)
+        self.assertIn("__zpabi_caller__b_1\tEQU\t$83", asm)
+        self.assertIn("__zpabi_noop__x_0\tEQU\t$84", asm)
+        self.assertIn("__zpabi_noop__x_1\tEQU\t$85", asm)
+        self.assertIn("__zpabi_noop__y_0\tEQU\t$86", asm)
+        self.assertIn("__zpabi_noop__y_1\tEQU\t$87", asm)
 
 
 if __name__ == "__main__":

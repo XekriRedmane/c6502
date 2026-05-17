@@ -129,7 +129,7 @@ def compile_to_asm(
         # so the assembler resolves both via `extra_symbols`.
         zp_slot_symbols = {
             **zp_slot_symbols,
-            **build_local_slot_symbols(local_pools),
+            **build_local_slot_symbols(local_pools, asm_colorings),
         }
         asm1, dims_by_fn = replace_pseudoregs_bare_exit(
             asm0, extra_statics=statics, symbols=syms,

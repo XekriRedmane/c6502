@@ -138,19 +138,41 @@ _DEFAULT_SPILL_END = 0x10000
 
 def build_local_slot_symbols(
     local_pools: dict[str, list[int]],
+    colorings: dict[str, "Coloring"] | None = None,
+    *,
+    slot_names_by_fn: dict[str, list[str]] | None = None,
 ) -> dict[str, int]:
     """Convert per-function pool address lists into the EQU symbol
     table the asm-emit stage expects. Each pool entry becomes
-    `__local_<fn>_b<k>` bound to its concrete byte address. The
-    asm IR references body locals by these symbols (via
-    `apply_coloring`'s `local_pool` mode), and the emit prepends
-    `<sym> EQU $<addr>` for each. The multi-TU linker
-    (`compile.py --link`) reads the metadata block and re-binds
-    every `__local_*` symbol globally."""
+    `__local_<fn>__<source>[_<byte>]` (when the byte traces back
+    to a source variable through SSA renaming + move coalescing)
+    or `__local_<fn>__<N>` (compiler temporary), bound to its
+    concrete byte address. The asm IR references body locals by
+    these symbols (via `apply_coloring`'s `local_pool` mode), and
+    the emit prepends `<sym> EQU $<addr>` for each.
+
+    Callers supply EITHER `colorings` (the typical single-TU
+    pipeline: per-function `Coloring` from the asm-SSA regalloc)
+    or `slot_names_by_fn` (the multi-TU linker pipeline, where
+    slot names round-trip through the per-TU metadata block since
+    the linker doesn't have access to the original colorings).
+    `slot_names_by_fn[fn]` is the per-pool-byte ordered list of
+    slot symbols — same shape as
+    `passes.zp_slot_naming.compute_local_slot_names`."""
+    from passes.zp_slot_naming import compute_local_slot_names
+    if slot_names_by_fn is None:
+        slot_names_by_fn = compute_local_slot_names(
+            local_pools, colorings or {},
+        )
     out: dict[str, int] = {}
     for fn_name, pool in local_pools.items():
-        for k, addr in enumerate(pool):
-            out[f"__local_{fn_name}_b{k}"] = addr
+        names = slot_names_by_fn.get(fn_name)
+        if names is None:
+            names = [
+                f"__local_{fn_name}__{k}" for k in range(len(pool))
+            ]
+        for addr, name in zip(pool, names):
+            out[name] = addr
     return out
 
 

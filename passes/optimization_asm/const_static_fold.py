@@ -204,7 +204,9 @@ def _scan_instr(
     """Mark candidates appearing in disqualifying contexts in this
     instruction. Read-only USES (Mov src, Add src, Compare, etc.)
     are foldable; everything else is disqualifying."""
-    # LoadAddress.src naming a candidate = address-taken.
+    # LoadAddress.src naming a candidate = address-taken (Frame-src
+    # case; static-src LoadAddress was lowered to ImmLabel* by
+    # tac_to_asm and is caught by the operand-walk below).
     if isinstance(instr, asm_ast.LoadAddress):
         if (
             isinstance(instr.src, asm_ast.Pseudo)
@@ -225,9 +227,17 @@ def _scan_instr(
     # Indexed-data references — only meaningful for arrays, but
     # defensive: a candidate appearing here means somebody is
     # indexing through it, which we can't fold.
+    # ImmLabelLow / ImmLabelHigh references — `&candidate` after
+    # tac_to_asm's static-LoadAddress lowering; the link-time
+    # address is needed, so the storage must survive.
     for op in _operand_uses(instr):
         if (
             isinstance(op, asm_ast.IndexedData)
+            and op.name in candidates
+        ):
+            disqualified.add(op.name)
+        if (
+            isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh))
             and op.name in candidates
         ):
             disqualified.add(op.name)

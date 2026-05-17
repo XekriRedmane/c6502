@@ -296,7 +296,7 @@ from __future__ import annotations
 import asm_ast
 import c99_ast
 import tac_ast
-from passes.type_checking import SymbolTable
+from passes.type_checking import StaticAttr, SymbolTable
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
@@ -1906,21 +1906,51 @@ class Translator:
     def _translate_get_address(
         self, operand: tac_ast.Type_val, dst: tac_ast.Type_val,
     ) -> list[asm_ast.Type_instruction]:
-        """`&x` — produce a `LoadAddress` compound asm node. The
-        operand at TAC time is a Var naming the lvalue; we hand it
-        through as a Pseudo so replace_pseudoregisters can dispatch
-        on its storage class (local → FP-relative add; static →
-        immediate label-half loads). dst is the 2-byte temp that
-        holds the resulting address."""
+        """`&x` — for a static-storage lvalue the address is a link-
+        time constant, so we emit two atomic
+        `Mov(ImmLabelLow/High(name, 0), Pseudo(dst, byte))` Movs.
+        The asm-SSA optimizer's byte-granular copy-prop + DCE
+        then see through the staging temp `dst` to the eventual
+        consumer (e.g. the `Mov` into a zp_abi pointer-arg slot),
+        collapsing the round trip. For an automatic-storage lvalue
+        the address is `FP + frame_offset` — emitted as a compound
+        `LoadAddress` atom that the asm emitter lowers into the
+        CLC/LDA/ADC chain at print time. dst is the 2-byte temp
+        that receives the address either way."""
         if not isinstance(operand, tac_ast.Var):
             raise TypeError(
                 f"GetAddress operand must be a Var (an lvalue name); "
                 f"got {operand!r}"
             )
+        dst_op = translate_val(dst)
+        if self._is_static_storage(operand.name):
+            return [
+                asm_ast.Mov(
+                    src=asm_ast.ImmLabelLow(name=operand.name, offset=0),
+                    dst=_byte_at(dst_op, 0),
+                ),
+                asm_ast.Mov(
+                    src=asm_ast.ImmLabelHigh(name=operand.name, offset=0),
+                    dst=_byte_at(dst_op, 1),
+                ),
+            ]
         return [asm_ast.LoadAddress(
             src=asm_ast.Pseudo(name=operand.name, offset=0),
-            dst=translate_val(dst),
+            dst=dst_op,
         )]
+
+    def _is_static_storage(self, name: str) -> bool:
+        """True iff `name` resolves through the symbol table to an
+        object with `StaticAttr` (file-scope object or block-scope
+        `static`). Address-of of a static is a compile-time constant
+        label — we lower it to `ImmLabelLow/High` immediate stores
+        rather than the compound `LoadAddress` atom."""
+        if self._symbols is None:
+            return False
+        sym = self._symbols.get(name)
+        if sym is None:
+            return False
+        return isinstance(sym.attrs, StaticAttr)
 
     def _translate_load(
         self, src_ptr: tac_ast.Type_val, dst: tac_ast.Type_val,

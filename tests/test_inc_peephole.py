@@ -68,11 +68,11 @@ class TestIncPeepholeAsmShape(unittest.TestCase):
         # only ever appears in this program for the i++ increment).
         self.assertNotIn("ADC   #$01", asm)
         # And the INC + BNE done-label chain should appear. The
-        # INC target is a body-local slot symbol now
-        # (`__local_<fn>_b<k>`), bound to a ZP address via the
-        # EQU directive emitted at the top of the file.
+        # INC target is a body-local slot symbol
+        # (`__local_<fn>__<source>[_<byte>]`), bound to a ZP
+        # address via the EQU directive emitted at the top.
         import re
-        self.assertRegex(asm, r"INC\s+__local_\w+_b\d+")
+        self.assertRegex(asm, r"INC\s+__local_\w+__\w+")
         self.assertIn(".inc_done@", asm)
 
     def test_one_byte_inc_no_branch(self) -> None:

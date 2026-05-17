@@ -255,26 +255,23 @@ def _synthesize(
             instructions=instrs,
         ))
     prog = tac_ast.Program(top_level=top_level)
-    # Build the abi dict. Defs that have param_bytes > 0 are
-    # zp_abi; param_bytes == 0 means a non-zp_abi function.
+    # Build the abi dict from the metadata-embedded slot symbols.
+    # Each TU baked the symbol strings into its body when emitting
+    # the per-TU asm; the linker reuses them verbatim so the bodies
+    # don't need rewriting — only the EQU block (which we mint
+    # fresh below) and the addresses change.
     abi: dict[str, ParamLayout] = {}
     for d in merged.defs:
-        if d.param_bytes > 0:
+        if d.params:
             abi[d.name] = ZpLayout(
-                slot_symbols=[
-                    f"__zpabi_{d.name}_p{k}"
-                    for k in range(d.param_bytes)
-                ],
+                slot_symbols=list(d.params),
                 addrs=[],
             )
         else:
             abi[d.name] = SoftStackLayout()
     for e in merged.externs:
         abi[e.name] = ZpLayout(
-            slot_symbols=[
-                f"__zpabi_{e.name}_p{k}"
-                for k in range(e.param_bytes)
-            ],
+            slot_symbols=list(e.params),
             addrs=[],
         )
     local_bytes = {d.name: d.local_bytes for d in merged.defs}
@@ -315,7 +312,12 @@ def link_files(
     # Run the global allocators.
     abi, zp_sym_to_addr = allocate_zp_slots(prog, abi)
     local_pools = allocate_function_locals(prog, abi, local_bytes)
-    local_sym_to_addr = build_local_slot_symbols(local_pools)
+    # Slot names round-trip through the per-TU metadata block;
+    # reuse them verbatim so the body text doesn't need rewriting.
+    slot_names_by_fn = {d.name: list(d.locals) for d in merged.defs}
+    local_sym_to_addr = build_local_slot_symbols(
+        local_pools, slot_names_by_fn=slot_names_by_fn,
+    )
     all_symbols = {**zp_sym_to_addr, **local_sym_to_addr}
     # Format the output.
     out_lines: list[str] = []

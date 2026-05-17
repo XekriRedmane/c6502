@@ -302,9 +302,18 @@ def _run_stage(
             # Build the full EQU table: zp_abi param slots plus the
             # per-function body-local slot symbols emitted by
             # apply_coloring. The asm IR references body locals as
-            # `Data(__local_<fn>_b<k>, 0)`, so the emit needs an
-            # `EQU` binding for every symbol the IR uses.
-            local_slot_symbols = build_local_slot_symbols(local_pools)
+            # `Data(__local_<fn>__<source>[_<byte>], 0)`, so the
+            # emit needs an `EQU` binding for every symbol the IR
+            # uses. We compute the per-pool-byte ordered name list
+            # once and thread it into both the EQU builder and the
+            # link-metadata builder so both share the same view.
+            from passes.zp_slot_naming import compute_local_slot_names
+            slot_names_by_fn = compute_local_slot_names(
+                local_pools, asm_colorings,
+            )
+            local_slot_symbols = build_local_slot_symbols(
+                local_pools, slot_names_by_fn=slot_names_by_fn,
+            )
             all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
             asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=all_slot_symbols)
             asm3 = apply_loop_counter_to_x(asm3)
@@ -331,7 +340,10 @@ def _run_stage(
                 asm4, all_slot_symbols,
             )
             asm5 = lower_to_asm2(asm4)
-            link_meta = build_metadata(tac, abi, local_pools)
+            link_meta = build_metadata(
+                tac, abi, local_pools,
+                slot_names_by_fn=slot_names_by_fn,
+            )
             return emit_program(
                 asm5, zp_slot_symbols=emit_slot_symbols,
                 link_metadata_lines=format_metadata(link_meta),

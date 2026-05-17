@@ -1,16 +1,16 @@
-__zpabi_interlace_fill_p1_p0	EQU	$80
-__zpabi_interlace_fill_p1_p1	EQU	$81
+__zpabi_interlace_fill_p1__value	EQU	$80
+__zpabi_interlace_fill_p1__col	EQU	$81
 
 ; @zp-link-meta-begin
-; def interlace_fill_p1 param_bytes=2 local_bytes=0 indirect=false in_cycle=false
+; def interlace_fill_p1 params=__zpabi_interlace_fill_p1__value,__zpabi_interlace_fill_p1__col locals= indirect=false in_cycle=false
 ; @zp-link-meta-end
 
 interlace_fill_p1:
    SUBROUTINE
 
 .interlace_fill_p1@asm_ssa_block@0:
-   LDX   __zpabi_interlace_fill_p1_p1
-   LDA   __zpabi_interlace_fill_p1_p0
+   LDX   __zpabi_interlace_fill_p1__col
+   LDA   __zpabi_interlace_fill_p1__value
    STA   $20A8,X
    STA   $2328,X
    STA   $21D0,X

@@ -778,10 +778,10 @@ class TestCodegenWithRegalloc(unittest.TestCase):
         self.assertEqual(rc, 0)
         import re
         # At least one body-local symbolic load.
-        self.assertRegex(out, r"LDA\s+__local_main_b\d+")
+        self.assertRegex(out, r"LDA\s+__local_main__\w+")
         # Its EQU binding lands in the default caller-saved ZP
         # range ($80..$BF).
-        self.assertRegex(out, r"__local_main_b\d+\s+EQU\s+\$[89AB][0-9A-F]")
+        self.assertRegex(out, r"__local_main__\w+\s+EQU\s+\$[89AB][0-9A-F]")
 
     def test_no_optimize_keeps_frame_addressing(self):
         # Same source without --optimize → no ZP, all accesses are

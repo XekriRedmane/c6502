@@ -59,19 +59,40 @@ from passes.abi_selection import ParamLayout, ZpLayout
 
 @dataclass
 class FunctionMeta:
-    """Per-defined-function metadata."""
+    """Per-defined-function metadata. `params` is the flat
+    per-byte list of zp_abi parameter slot symbols (empty for
+    non-zp_abi functions); `locals` is the per-pool-byte list of
+    body-local slot symbols (empty for functions without a private
+    pool). Slot count is `len(...)` of each list, so `param_bytes`
+    and `local_bytes` are derived properties for backward-readable
+    code."""
     name: str
-    param_bytes: int
-    local_bytes: int
+    params: list[str]
+    locals: list[str]
     indirect: bool
     in_cycle: bool
+
+    @property
+    def param_bytes(self) -> int:
+        return len(self.params)
+
+    @property
+    def local_bytes(self) -> int:
+        return len(self.locals)
 
 
 @dataclass
 class ExternMeta:
-    """Per-declared-extern metadata (zp_abi externs only)."""
+    """Per-declared-extern metadata (zp_abi externs only). `params`
+    carries the flat per-byte slot symbols the caller TU references
+    at call sites — the linker re-binds them to fresh ZP addresses
+    while preserving the strings."""
     name: str
-    param_bytes: int
+    params: list[str]
+
+    @property
+    def param_bytes(self) -> int:
+        return len(self.params)
 
 
 @dataclass
@@ -93,10 +114,19 @@ def build_metadata(
     prog: tac_ast.Program,
     abi: dict[str, ParamLayout],
     local_pools: dict[str, list[int]],
+    *,
+    slot_names_by_fn: dict[str, list[str]] | None = None,
 ) -> LinkMetadata:
     """Collect link metadata from the TAC program + per-function
     allocator outputs. Run after `select_abi`,
-    `allocate_zp_slots`, and `allocate_function_locals`."""
+    `allocate_zp_slots`, and `allocate_function_locals`.
+
+    `slot_names_by_fn`, when supplied, provides the per-function
+    body-local slot symbols (one per pool byte, in pool order) the
+    asm-SSA regalloc + naming logic produced. The linker reads
+    these strings from metadata and reuses them verbatim when
+    minting the global EQU block. When absent (e.g. callers that
+    don't run the optimizer), we fall back to numeric temp names."""
     in_tu_names = {
         tl.name for tl in prog.top_level
         if isinstance(tl, tac_ast.Function)
@@ -118,16 +148,24 @@ def build_metadata(
 
     out = LinkMetadata()
     # Per-defined-function entries.
-    param_bytes_for = {
-        n: len(layout.slot_symbols)
+    params_for: dict[str, list[str]] = {
+        n: list(layout.slot_symbols)
         for n, layout in abi.items()
         if isinstance(layout, ZpLayout)
     }
     for name in sorted(in_tu_names):
+        locals_list: list[str]
+        if slot_names_by_fn is not None and name in slot_names_by_fn:
+            locals_list = list(slot_names_by_fn[name])
+        else:
+            locals_list = [
+                f"__local_{name}__{k}"
+                for k in range(len(local_pools.get(name, ())))
+            ]
         out.defs.append(FunctionMeta(
             name=name,
-            param_bytes=param_bytes_for.get(name, 0),
-            local_bytes=len(local_pools.get(name, ())),
+            params=params_for.get(name, []),
+            locals=locals_list,
             indirect=indirect_per_fn.get(name, False),
             in_cycle=name in in_cycle,
         ))
@@ -140,7 +178,7 @@ def build_metadata(
         if isinstance(layout, ZpLayout):
             out.externs.append(ExternMeta(
                 name=name,
-                param_bytes=len(layout.slot_symbols),
+                params=list(layout.slot_symbols),
             ))
     # Call edges. Sorted for deterministic output.
     seen_calls: set[tuple[str, str]] = set()
@@ -220,14 +258,14 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
     for d in meta.defs:
         lines.append(
             f"; def {d.name} "
-            f"param_bytes={d.param_bytes} "
-            f"local_bytes={d.local_bytes} "
+            f"params={','.join(d.params)} "
+            f"locals={','.join(d.locals)} "
             f"indirect={'true' if d.indirect else 'false'} "
             f"in_cycle={'true' if d.in_cycle else 'false'}"
         )
     for e in meta.externs:
         lines.append(
-            f"; ext {e.name} param_bytes={e.param_bytes}"
+            f"; ext {e.name} params={','.join(e.params)}"
         )
     for caller, callee in meta.calls:
         lines.append(f"; call {caller} -> {callee}")
@@ -288,8 +326,8 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
         kvs = dict(_split_kv(p) for p in parts[2:])
         out.defs.append(FunctionMeta(
             name=name,
-            param_bytes=int(kvs["param_bytes"]),
-            local_bytes=int(kvs["local_bytes"]),
+            params=_split_csv(kvs["params"]),
+            locals=_split_csv(kvs["locals"]),
             indirect=kvs["indirect"] == "true",
             in_cycle=kvs["in_cycle"] == "true",
         ))
@@ -299,7 +337,7 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
         name = parts[1]
         kvs = dict(_split_kv(p) for p in parts[2:])
         out.externs.append(ExternMeta(
-            name=name, param_bytes=int(kvs["param_bytes"]),
+            name=name, params=_split_csv(kvs["params"]),
         ))
     elif kind == "call":
         # Format: `call <caller> -> <callee>`
@@ -315,3 +353,10 @@ def _split_kv(token: str) -> tuple[str, str]:
         raise ValueError(f"expected key=value, got {token!r}")
     k, v = token.split("=", 1)
     return k, v
+
+
+def _split_csv(value: str) -> list[str]:
+    """Comma-separated value list. Empty string -> empty list."""
+    if not value:
+        return []
+    return value.split(",")

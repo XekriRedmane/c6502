@@ -1005,7 +1005,7 @@ def _emit_store_a_to_mem(
 
 def _accum_arith_size(src: asm_ast.Type_operand) -> int:
     """ADC/SBC/AND/ORA/EOR (all use Reg(A) as implicit dst)."""
-    if isinstance(src, asm_ast.Imm):
+    if isinstance(src, asm_ast.Imm) or _is_imm_label(src):
         return 2
     if _is_data_or_zp(src):
         return 2 if _abs_fits_zp(src) else 3
@@ -1023,6 +1023,8 @@ def _emit_accum_arith(
     _reject_pseudo(src)
     if isinstance(src, asm_ast.Imm):
         return bytes([_IMM[opcode], _imm_byte(src.value)])
+    if _is_imm_label(src):
+        return bytes([_IMM[opcode], _resolve_imm_label(src, syms)])
     if _is_data_or_zp(src):
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(src, syms))
     if _is_indirect_y(src):
@@ -1039,7 +1041,7 @@ def _compare_size(
 ) -> int:
     if not isinstance(left, asm_ast.Reg):
         raise AssemblerError(f"Compare left must be a register; got {left!r}")
-    if isinstance(right, asm_ast.Imm):
+    if isinstance(right, asm_ast.Imm) or _is_imm_label(right):
         return 2
     if _is_data_or_zp(right):
         return 2 if _abs_fits_zp(right) else 3
@@ -1091,6 +1093,8 @@ def _emit_compare(
         raise TypeError(f"unexpected reg: {left.reg!r}")
     if isinstance(right, asm_ast.Imm):
         return bytes([_IMM[opcode], _imm_byte(right.value)])
+    if _is_imm_label(right):
+        return bytes([_IMM[opcode], _resolve_imm_label(right, syms)])
     if _is_data_or_zp(right):
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(right, syms))
     if _is_indirect_y(right):

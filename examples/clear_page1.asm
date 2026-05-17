@@ -3,7 +3,6 @@ __zpabi_clear_page1_p1	EQU	$81
 __zpabi_interlace_fill_p1_p0	EQU	$82
 __zpabi_interlace_fill_p1_p1	EQU	$83
 __local_clear_page1_b0	EQU	$84
-__local_clear_page1_b1	EQU	$85
 
 ; @zp-link-meta-begin
 ; def clear_page1 param_bytes=2 local_bytes=2 indirect=false in_cycle=false

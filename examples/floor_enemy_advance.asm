@@ -27,7 +27,6 @@ floor_enemy_advance:
 .floor_enemy_advance@asm_ssa_block@0:
    LDX   __local_floor_enemy_advance_b2
    LDA   enemy_flag,X
-   STA   __local_floor_enemy_advance_b0
    BNE   .if_else@1
 .floor_enemy_advance@asm_ssa_block@1:
    LDA   jump_flag
@@ -76,8 +75,8 @@ floor_enemy_advance:
 .if_end@2:
    JMP   .if_end@0
 .if_else@1:
-   LDA   __local_floor_enemy_advance_b0
-   BPL   .if_else@7
+   AND   #$80
+   BEQ   .if_else@7
 .floor_enemy_advance@asm_ssa_block@5:
    LDA   __zpabi_floor_enemy_advance_p0
    BNE   .if_else@9
@@ -86,8 +85,8 @@ floor_enemy_advance:
    STA   __local_floor_enemy_advance_b1
    JMP   .if_end@8
 .if_else@9:
-   LDA   __zpabi_floor_enemy_advance_p0
-   BPL   .if_else@11
+   AND   #$80
+   BEQ   .if_else@11
 .floor_enemy_advance@ssa_block@8:
    LDA   #$05
    STA   __local_floor_enemy_advance_b1
@@ -119,8 +118,8 @@ floor_enemy_advance:
    STA   __local_floor_enemy_advance_b1
    JMP   .if_end@13
 .if_else@14:
-   LDA   __zpabi_floor_enemy_advance_p0
-   BPL   .if_else@16
+   AND   #$80
+   BEQ   .if_else@16
 .floor_enemy_advance@ssa_block@11:
    LDA   #$09
    STA   __local_floor_enemy_advance_b1

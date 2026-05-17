@@ -1,4 +1,3 @@
-__local_paint_hud_strip_p1_b0	EQU	$80
 __local_paint_hud_strip_p1_b1	EQU	$81
 
 ; @zp-link-meta-begin

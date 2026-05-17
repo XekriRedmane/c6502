@@ -13,7 +13,6 @@ __local_draw_sprite_opaque_b4	EQU	$8B
 __local_draw_sprite_opaque_b5	EQU	$8C
 __local_draw_sprite_opaque_b6	EQU	$8D
 __local_draw_sprite_opaque_b7	EQU	$8E
-__local_draw_sprite_opaque_b8	EQU	$8F
 
 ; @zp-link-meta-begin
 ; def draw_sprite_opaque param_bytes=7 local_bytes=9 indirect=false in_cycle=false

@@ -96,6 +96,9 @@ from passes.optimization.recognize_indexed_store import (
 from passes.optimization.recognize_indirect_indexed import (
     recognize_indirect_indexed,
 )
+from passes.optimization.sink_and_past_branch import (
+    sink_and_past_branch,
+)
 from passes.optimization.sink_increment import sink_increments
 from passes.optimization.ssa_construction import to_ssa
 from passes.optimization.ssa_destruction import from_ssa
@@ -166,6 +169,7 @@ def optimize_function(
         fn = recognize_indexed_store(fn, symbols=symbols)
         fn = recognize_indexed_load(fn, symbols=symbols)
         fn = sink_increments(fn)
+        fn = sink_and_past_branch(fn, symbols=symbols)
         if fn == prev:
             break
     # Run the indirect-indexed recognizer AFTER the fixed-point

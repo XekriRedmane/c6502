@@ -177,19 +177,77 @@ class TestRedundantLoadAliasing(unittest.TestCase):
 
 
 class TestRedundantLoadBlockBoundaries(unittest.TestCase):
-    def test_label_resets_state_when_branched_to(self) -> None:
-        # A label that something else branches/jumps to is a real
-        # join point — state at entry could come from anywhere.
+    def test_label_resets_state_when_multi_pred(self) -> None:
+        # A label with multiple predecessors (two Jumps targeting
+        # it, or a Jump plus a fall-through) is a real join point
+        # — state at entry could come from anywhere. We can't
+        # restore a single saved state; reset.
         zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
         instrs = [
             asm_ast.Mov(src=zp80, dst=_REG_A),
-            asm_ast.Jump(target="L"),               # makes "L" a branch target
+            asm_ast.Jump(target="L"),
+            # An unreachable Mov + Jump to make L have two preds.
+            asm_ast.Label(name="X"),
+            asm_ast.Mov(src=zp82, dst=_REG_A),
+            asm_ast.Jump(target="L"),
             asm_ast.Label(name="L"),
-            asm_ast.Mov(src=zp80, dst=_REG_A),      # block boundary — keep
+            asm_ast.Mov(src=zp80, dst=_REG_A),      # KEEP — multi-pred reset
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        self.assertEqual(len(out), 5)
+        # The Mov at L is preserved; multi-pred → reset.
+        last_mov = out[-2]
+        assert isinstance(last_mov, asm_ast.Mov)
+        self.assertEqual(last_mov.src, zp80)
+        self.assertEqual(last_mov.dst, _REG_A)
+
+    def test_unique_pred_jump_restores_state(self) -> None:
+        # A label whose only predecessor is a single Jump (no
+        # fall-through, no other Branch/Jump) inherits the
+        # caller's register state — Jump doesn't modify A. The
+        # cross-block restore drops the redundant load at L.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Jump(target="L"),
+            asm_ast.Label(name="L"),
+            asm_ast.Mov(src=zp80, dst=_REG_A),      # DROP — A still = zp80
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 4)
+        # The dropped Mov was the second Mov(zp80, A); the first
+        # one remains.
+        movs = [i for i in out if isinstance(i, asm_ast.Mov)]
+        self.assertEqual(len(movs), 1)
+
+    def test_unique_pred_branch_restores_state(self) -> None:
+        # Same as above with a Branch (e.g., BPL) — Branch also
+        # preserves A across both edges, so the unique-pred-Branch
+        # target gets the restore too. Models the apply_bobble
+        # shape: STA b0; BPL target; ... ; target: LDA b0 → drop.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),      # A = zp80
+            asm_ast.Branch(cond=asm_ast.PL(), target="L"),
+            # Fall-through path uses A for something, then JMPs
+            # somewhere else (NOT L).
+            asm_ast.Mov(src=asm_ast.Imm(value=0x42), dst=_REG_A),
+            asm_ast.Jump(target="END"),
+            asm_ast.Label(name="L"),                # unique-pred from Branch
+            asm_ast.Mov(src=zp80, dst=_REG_A),      # DROP — A still = zp80
+            asm_ast.Label(name="END"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # The Mov at L is dropped.
+        l_idx = next(
+            i for i, ins in enumerate(out)
+            if isinstance(ins, asm_ast.Label) and ins.name == "L"
+        )
+        next_instr = out[l_idx + 1]
+        self.assertNotIsInstance(next_instr, asm_ast.Mov)
 
     def test_label_with_only_fall_through_pred_preserves_state(self) -> None:
         # A label that nothing branches/jumps to has only the

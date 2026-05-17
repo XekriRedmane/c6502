@@ -153,14 +153,58 @@ class _RegState:
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     state = _RegState()
     instrs = fn.instructions
-    # Set of label names that are the target of some Branch or
-    # Jump in this function. A `Label` whose name is NOT in this
-    # set has only the immediate fall-through as a predecessor —
-    # its register-mirror state at entry equals the state at the
-    # preceding instruction's exit, so we don't need to reset.
-    branch_targets = _collect_branch_targets(instrs)
+    # Per-label CFG-summary info. `branch_targets` is the legacy
+    # set used by `_update_state`'s Label-reset logic;
+    # `total_preds` counts each label's predecessors so we can
+    # identify Labels whose single incoming edge is a Branch or
+    # Jump (and therefore preserves A across the transition).
+    branch_targets, total_preds = _analyze_labels(instrs)
+    # Cross-block A-tracking. Snapshot the register state right
+    # before each Branch/Jump and key it by the target label. When
+    # we later reach a Label whose unique predecessor IS that
+    # Branch/Jump (no fall-through, no other branches targeting
+    # it), restore the snapshot instead of resetting to empty.
+    #
+    # Soundness: a Branch instruction doesn't modify any register
+    # or flag. The path Branch-taken → Target executes no other
+    # instructions, so the registers / flags AT the target match
+    # the snapshot. Same for an unconditional Jump. With multi-pred
+    # Labels we can't make this claim — different incoming paths
+    # may have left A in different states — so the multi-pred case
+    # still resets (conservative).
+    #
+    # Motivating shape (after the TAC sinker fires on apply_bobble):
+    #     LDA bobble
+    #     STA b0              ; A still mirrors bobble; b0 too
+    #     BPL .else
+    #     ; (add path: uses A directly)
+    #     ...
+    #     JMP .end
+    # .else:                   ; unique-pred from BPL
+    #     LDA b0              ; redundant — A still = b0 (which =
+    #                         ; bobble) coming out of the BPL
+    #
+    # Dropping the `LDA b0` cascades: `STA b0` becomes a dead store
+    # for asm_dead_store to collect next sweep.
+    saved_at: dict[str, _RegState] = {}
     out: list[asm_ast.Type_instruction] = []
     for i, instr in enumerate(instrs):
+        # Cross-block restore: at a unique-pred branch-target
+        # Label, restore the saved state instead of letting
+        # `_update_state` reset it.
+        if (
+            isinstance(instr, asm_ast.Label)
+            and instr.name in branch_targets
+            and total_preds.get(instr.name, 0) == 1
+            and instr.name in saved_at
+        ):
+            saved = saved_at[instr.name]
+            state.a = list(saved.a)
+            state.x = list(saved.x)
+            state.y = list(saved.y)
+            state.z_reflects = list(saved.z_reflects)
+            out.append(instr)
+            continue
         if _is_redundant_load(instr, state) and _flags_redundant_at(
             instrs, i, state,
         ):
@@ -172,6 +216,17 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             #   - No reachable Branch reads Z before another
             #     instruction overwrites it (`_flags_dead_at`).
             continue
+        # Snapshot the state at every Branch/Jump for later
+        # restoration. Must be captured BEFORE `_update_state` —
+        # Jump's update resets state to empty, which would
+        # invalidate the snapshot.
+        if isinstance(instr, (asm_ast.Branch, asm_ast.Jump)):
+            saved_at[instr.target] = _RegState(
+                a=list(state.a),
+                x=list(state.x),
+                y=list(state.y),
+                z_reflects=list(state.z_reflects),
+            )
         out.append(instr)
         _update_state(instr, state, branch_targets)
     return asm_ast.Function(
@@ -228,6 +283,68 @@ def _collect_branch_targets(instrs) -> set[str]:
         elif isinstance(instr, asm_ast.Branch):
             out.add(instr.target)
     return out
+
+
+def _analyze_labels(
+    instrs: list[asm_ast.Type_instruction],
+) -> tuple[set[str], dict[str, int]]:
+    """Compute per-label CFG summary info.
+
+    Returns `(branch_targets, total_preds)`:
+
+      - `branch_targets`: set of label names targeted by any
+        `Branch` or `Jump` (the legacy `_collect_branch_targets`
+        output).
+      - `total_preds`: per-label count of predecessors, where each
+        predecessor is one of:
+          + a `Branch`/`Jump` instruction whose target is this
+            label (counted once per such instruction),
+          + a fall-through edge from the immediately-preceding
+            source-order instruction, if that instruction isn't
+            an unconditional terminator (`Jump` / `Ret` /
+            `Return`). `Branch` is NOT a terminator — its
+            fall-through edge counts as a pred for the next
+            label.
+
+    The cross-block A-tracking restore in `_rewrite_function`
+    fires only when `total_preds == 1` AND the label is in
+    `branch_targets` — i.e., the unique predecessor IS the
+    saved-from Branch/Jump. Single-pred fall-through labels
+    (not in `branch_targets`) already preserve state under the
+    existing logic, so they need no special handling here.
+    """
+    branch_targets: set[str] = set()
+    bj_preds: dict[str, int] = {}
+    fallthru_preds: dict[str, bool] = {}
+    for i, instr in enumerate(instrs):
+        if isinstance(instr, asm_ast.Jump):
+            branch_targets.add(instr.target)
+            bj_preds[instr.target] = bj_preds.get(instr.target, 0) + 1
+        elif isinstance(instr, asm_ast.Branch):
+            branch_targets.add(instr.target)
+            bj_preds[instr.target] = bj_preds.get(instr.target, 0) + 1
+        if isinstance(instr, asm_ast.Label):
+            if i == 0:
+                # Function-entry label has no fall-through pred;
+                # ENTRY-edge is treated as "reset" by virtue of the
+                # state starting empty.
+                fallthru_preds[instr.name] = False
+            else:
+                prev = instrs[i - 1]
+                # `Branch` can fall through (when not taken);
+                # everything except an unconditional terminator
+                # naturally falls through.
+                fallthru_preds[instr.name] = not isinstance(
+                    prev, (asm_ast.Jump, asm_ast.Ret, asm_ast.Return),
+                )
+    total_preds: dict[str, int] = {}
+    names = set(bj_preds.keys()) | set(fallthru_preds.keys())
+    for name in names:
+        total_preds[name] = (
+            bj_preds.get(name, 0)
+            + (1 if fallthru_preds.get(name, False) else 0)
+        )
+    return branch_targets, total_preds
 
 
 def _is_redundant_load(

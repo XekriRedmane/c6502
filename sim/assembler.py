@@ -1011,6 +1011,9 @@ def _accum_arith_size(src: asm_ast.Type_operand) -> int:
         return 2 if _abs_fits_zp(src) else 3
     if _is_indirect_y(src):
         return 4
+    if _is_indexed_data(src):
+        # abs,X or abs,Y — 3 bytes (opcode + lo + hi).
+        return 3
     raise AssemblerError(f"unsupported accum-arith src: {src!r}")
 
 
@@ -1024,6 +1027,10 @@ def _emit_accum_arith(
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(src, syms))
     if _is_indirect_y(src):
         return _emit_indy(opcode, src)
+    if _is_indexed_data(src):
+        return _emit_abs_indexed(
+            opcode, _resolve_indexed_data_addr(src, syms), src.index,
+        )
     raise AssemblerError(f"unsupported {opcode} src: {src!r}")
 
 

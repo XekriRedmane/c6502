@@ -620,6 +620,12 @@ def _emit_acc_arith_src(opcode: str, src: asm_ast.Type_operand) -> list[str]:
             ]
         case asm_ast.Data() | asm_ast.ZP():
             return [_instr_line(opcode, _abs_addr(src))]
+        case asm_ast.IndexedData():
+            # `ADC abs,X` / `ADC abs,Y` are valid 6502 opcodes ($7D
+            # / $79); same for SBC / AND / ORA / EOR / CMP. Used by
+            # the `adc_commute` peephole when the to-add value lives
+            # in A and the other operand is a static-array element.
+            return [_instr_line(opcode, _indexed_data_addr(src))]
         case _:
             raise ValueError(
                 f"unsupported {opcode} source: {src!r}"

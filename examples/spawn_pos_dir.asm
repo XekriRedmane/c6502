@@ -1,5 +1,4 @@
 __zpabi_spawn_pos_dir_p0	EQU	$80
-__local_spawn_pos_dir_b0	EQU	$81
 
 ; @zp-link-meta-begin
 ; def spawn_pos_dir param_bytes=1 local_bytes=1 indirect=false in_cycle=false

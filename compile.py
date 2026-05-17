@@ -60,6 +60,9 @@ from passes.mem_const_prop import apply_mem_const_prop
 from passes.round_trip_load import apply_round_trip_load_drop
 from passes.and_sign_bit_branch import apply_and_sign_bit_branch
 from passes.self_store_drop import apply_self_store_drop
+from passes.adc_commute import apply_adc_commute
+from passes.dual_index_promotion import apply_dual_index_promotion
+from passes.prune_unused_slots import prune_unused_locals
 from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 from passes.loop_counter_to_x import apply_loop_counter_to_x
@@ -181,6 +184,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)
+        new_prog = apply_adc_commute(new_prog)
         new_prog = apply_cmp_sbc_fusion(new_prog)
         new_prog = apply_dec_inc_branch_fold(new_prog)
         if new_prog == prog:
@@ -306,11 +310,28 @@ def _run_stage(
             # exposed (e.g., redundant LDX/STX pairs after the
             # Y-pivot embedded in loop_counter_to_x freed up X).
             asm3 = _peephole_fixedpoint(asm3, zp_slot_symbols=all_slot_symbols)
+            # Y-promote a Data symbol that's loaded into X multiple
+            # times when Y is otherwise unused — saves the
+            # per-occurrence `LDX abs` reload by loading once into
+            # Y at function entry. Re-run the peephole fixedpoint
+            # so dead LDA/STA pairs around the dropped LDX get
+            # collected.
+            asm3 = apply_dual_index_promotion(asm3)
+            asm3 = _peephole_fixedpoint(asm3, zp_slot_symbols=all_slot_symbols)
             asm4 = expand_long_branches(asm3)
+            # Drop EQU entries for `__local_*` symbols that the
+            # peephole catalog rendered unreferenced. Walks asm_ast
+            # operands directly, so run BEFORE asm_to_asm2 (which
+            # re-tags instructions at asm2_ast types). Cosmetic only —
+            # the bytes are still reserved by the function's
+            # local_bytes count.
+            emit_slot_symbols = prune_unused_locals(
+                asm4, all_slot_symbols,
+            )
             asm5 = lower_to_asm2(asm4)
             link_meta = build_metadata(tac, abi, local_pools)
             return emit_program(
-                asm5, zp_slot_symbols=all_slot_symbols,
+                asm5, zp_slot_symbols=emit_slot_symbols,
                 link_metadata_lines=format_metadata(link_meta),
             )
         asm0 = translate_to_asm(tac, symbols, types)

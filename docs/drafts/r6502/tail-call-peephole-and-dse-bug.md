@@ -3,8 +3,9 @@
 Catch-up post on my C99-to-6502 compiler. Adding a tail-call peephole
 should be three lines: match `JSR foo; RTS`, rewrite to `JMP foo`,
 done. It was three lines. It also broke 80 tests, because the
-dead-store-elimination pass quietly relied on `JSR` being opaque in a
-way `JMP` wasn't.
+dead-store-elimination pass treated `JSR` and `JMP` differently in a
+way that quietly relied on `JSR` being the only way to leave a
+function.
 
 ## The peephole
 
@@ -70,12 +71,41 @@ reads `__zpabi_apply_bobble_p0` after the store.
 Of course — nothing in *this function* does. The reader is
 `apply_bobble`, on the other side of the call.
 
-The DSE pass models `Call(name)` as opaque: it might read any memory,
-so the walk that decides whether a store is dead bails when it hits
-one. But after the peephole, the function ends with `Jump(name)`,
-not `Call(name)`. The walk's `_successors(Jump)` does a label lookup,
-and `apply_bobble` isn't a label in this function. Empty successor
-list. Walk terminates. Store classified as dead.
+To explain why DSE got confused, here's what it actually does. For
+each candidate store `STA $XX`, the pass walks forward through the
+control-flow graph from the store, following every successor edge,
+asking at each instruction: "is `$XX` read here?" If it ever finds
+a read on any path, the store is **live** — keep it. If every path
+either (a) overwrites `$XX` before reading it, or (b) reaches a
+function exit without anyone having read it, the store is **dead** —
+drop it.
+
+The pass also has to handle instructions whose effect it can't model
+precisely. When the walker hits one of those, it gives up on that
+path and conservatively assumes the store is live. The pass calls
+this **opaque**.
+
+`Call(name)` (= `JSR`) is opaque. The callee can read any memory the
+caller cares about — we don't try to inspect the callee's body to
+prove otherwise.
+
+`Jump(name)` (= `JMP`) is *not* opaque. It's plain control flow:
+look up the target label in the function's local label map, push
+that index as the next instruction to visit, continue the walk.
+That's exactly right for the `JMP` to a loop header, or the `JMP`
+out of an `if`-branch to a join — every `Jump` this codegen produced
+before the peephole stayed inside the function.
+
+The peephole introduced a new shape: `Jump(apply_bobble)`. The
+target isn't a local label — it's the name of an *external*
+function. The walker did its label lookup, found nothing,
+returned an empty successor list, and treated the empty list as
+"this path exits cleanly with no reader found." Walk terminates.
+Store classified as dead. Apply this to all four marshalling
+stores. Drop them all.
+
+Then `apply_bobble` runs with whatever stale bytes were already in
+its param slots from the last unrelated call.
 
 The runtime symptom: `apply_bobble(slot, new_anim)` runs with whatever
 stale bytes happened to be at `__zpabi_apply_bobble_p0` and `_p1`
@@ -106,15 +136,25 @@ Suite back to green.
 
 The DSE pass treated `Jump` as "just control flow" because, before
 this peephole existed, every `Jump` *was* just control flow within
-a function. Adding a tail-call peephole silently changed the
-invariant — `Jump` could now leave the function. Same instruction
-mnemonic in dasm output (just `JMP`), totally different liveness
-semantics.
+a function. The "opaque vs transparent" split between `Call` and
+`Jump` wasn't a value judgment about the instructions — it was an
+artifact of where they showed up. `Call` was the only way to
+transfer to code we couldn't see; `Jump` always went somewhere
+inside the function whose CFG we owned.
 
-If you're adding an inter-procedural tail-call to a backend that's
-been single-procedure-aware everywhere, audit every flow analysis
-for "what if this transfer leaves the function?" — it's a
-two-condition fix per pass, but you have to find them.
+The peephole quietly violated that invariant. Same instruction
+mnemonic in the dasm output (just `JMP`), totally different
+liveness semantics: a `JMP` to a local label preserves the
+"within this function" assumption the DSE walker depends on; a
+`JMP` to an external function name doesn't, and the walker had
+no way to tell the difference because it never had to before.
+
+If you're adding an inter-procedural tail-call to a backend
+that's been single-procedure-aware everywhere, audit every flow
+analysis for "what if this transfer leaves the function?" — it's
+a two-condition fix per pass (check whether the target resolves
+inside the current function; if not, treat as opaque), but you
+have to find them.
 
 The full pass is 30 lines plus the docstring, in
 `passes/tail_call.py` if anyone wants to lift it.

@@ -47,6 +47,7 @@ from passes.optimization_asm.coalescing import coalesce_moves
 from passes.optimization_asm.const_static_fold import fold_const_statics
 from passes.optimization_asm.dead_static import apply_dead_static_elimination
 from passes.optimization_asm.copy_propagation import copy_propagate
+from passes.optimization_asm.or_zero_absorb import absorb_zero_load
 from passes.optimization_asm.hwreg_eligibility import (
     HwRegEligibility,
     scan_function as scan_hwreg_eligibility,
@@ -236,6 +237,12 @@ def _optimize_function(
         fn = copy_propagate(fn, statics=statics)
         fn = backward_copy_propagate(fn, statics=statics)
         fn = byte_dce(fn, statics=statics)
+        # Absorb-zero-load: collapse `Mov(Imm(0), A); Or(X, A)` to
+        # `Mov(X, A)`. Done here (pre-coalescing) so the resulting
+        # cleaner copy chain feeds into move coalescing. See the
+        # module docstring for why this is split from the post-
+        # coloring const_arith_fold pass.
+        fn = absorb_zero_load(fn)
         if fn.instructions == prev.instructions:
             break
     # Step 7: byte-granular regalloc on the still-SSA function.

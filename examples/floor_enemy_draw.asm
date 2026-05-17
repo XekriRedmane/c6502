@@ -46,19 +46,19 @@ floor_enemy_draw:
    BEQ   .dispatch@0@case@2
 .floor_enemy_draw@asm_ssa_block@3:
    LDA   floor_enemy_spr_s3_lo,Y
-   STA   __local_floor_enemy_draw_b1
+   STA   __local_floor_enemy_draw_b2
    JMP   .dispatch@0@end
 .dispatch@0@case@0:
    LDA   floor_enemy_spr_s0_lo,Y
-   STA   __local_floor_enemy_draw_b1
+   STA   __local_floor_enemy_draw_b2
    JMP   .dispatch@0@end
 .dispatch@0@case@1:
    LDA   floor_enemy_spr_s1_lo,Y
-   STA   __local_floor_enemy_draw_b1
+   STA   __local_floor_enemy_draw_b2
    JMP   .dispatch@0@end
 .dispatch@0@case@2:
    LDA   floor_enemy_spr_s2_lo,Y
-   STA   __local_floor_enemy_draw_b1
+   STA   __local_floor_enemy_draw_b2
    JMP   .dispatch@0@end
 .dispatch@0@end:
    TXA
@@ -87,8 +87,6 @@ floor_enemy_draw:
    STA   __local_floor_enemy_draw_b0
    JMP   .dispatch@1@end
 .dispatch@1@end:
-   LDA   __local_floor_enemy_draw_b1
-   STA   __local_floor_enemy_draw_b2
    LDA   __local_floor_enemy_draw_b0
    STA   __local_floor_enemy_draw_b1
    LDA   enemy_y,X

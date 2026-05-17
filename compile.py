@@ -65,6 +65,7 @@ from passes.dual_index_promotion import apply_dual_index_promotion
 from passes.prune_unused_slots import prune_unused_locals
 from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
+from passes.tail_call import apply_tail_call
 from passes.loop_counter_to_x import apply_loop_counter_to_x
 from passes.asm_licm import apply_licm
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
@@ -187,6 +188,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_adc_commute(new_prog)
         new_prog = apply_cmp_sbc_fusion(new_prog)
         new_prog = apply_dec_inc_branch_fold(new_prog)
+        new_prog = apply_tail_call(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog

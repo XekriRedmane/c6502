@@ -316,6 +316,13 @@ def _is_dead_cfg(
         # DPTR; deferred until the gain motivates the complexity.
         if isinstance(nxt, _OPAQUE_TYPES):
             return False
+        # Tail-call: a Jump to a non-local label leaves this
+        # function for a callee that may read `target` (especially
+        # any `__zpabi_<callee>_p*` slot we just wrote as argument
+        # marshalling). Treat as opaque — same reasoning as `Call`.
+        if (isinstance(nxt, asm_ast.Jump)
+                and nxt.target not in label_to_index):
+            return False
         # Function exit: dead iff `target` is dead-at-exit.
         if isinstance(nxt, (asm_ast.Ret, asm_ast.Return)):
             if not _is_dead_at_exit(target, zp_slot_symbols):

@@ -72,6 +72,41 @@ class TestCoalescingUnit(unittest.TestCase):
         self.assertEqual(result.resolve(removed), survivor)
         self.assertEqual(result.resolve(survivor), survivor)
 
+    def test_a_routed_pair_no_interference_coalesces(self) -> None:
+        # `Mov(a, A); Mov(A, b)` is a logical copy a → b that the
+        # extended `_move_related_pairs` enumeration picks up.
+        # Without this, the `<<8 | byte` byte-construction idiom
+        # (`Mov(Imm(0), A); Or(a, A); Mov(A, b)` → after the
+        # absorb_zero_load fold) leaves a and b at distinct ZP
+        # colors and the b2 round-trip survives in step_pos.asm.
+        a_reg = asm_ast.Reg(reg=asm_ast.A())
+        instrs = [
+            asm_ast.Mov(src=_pseudo("a"), dst=a_reg),
+            asm_ast.Mov(src=a_reg, dst=_pseudo("b")),
+        ]
+        graph = _graph_with_nodes("a", "b")
+        result = coalesce_moves(_fn(instrs), graph)
+        survivor = "a" if "a" in graph.nodes else "b"
+        removed = "b" if survivor == "a" else "a"
+        self.assertNotIn(removed, graph.nodes)
+        self.assertEqual(result.resolve(removed), survivor)
+
+    def test_a_routed_volatile_not_coalesced(self) -> None:
+        # A volatile half of the pair guards an observable load /
+        # store that must not be merged away.
+        a_reg = asm_ast.Reg(reg=asm_ast.A())
+        instrs = [
+            asm_ast.Mov(
+                src=_pseudo("a"), dst=a_reg, is_volatile=True,
+            ),
+            asm_ast.Mov(src=a_reg, dst=_pseudo("b")),
+        ]
+        graph = _graph_with_nodes("a", "b")
+        coalesce_moves(_fn(instrs), graph)
+        # Both names remain in the graph — no merge.
+        self.assertIn("a", graph.nodes)
+        self.assertIn("b", graph.nodes)
+
     def test_phi_args_coalesce_with_dst(self) -> None:
         # A Phi with two arg sources merges all three into one
         # equivalence class (assuming none interfere).

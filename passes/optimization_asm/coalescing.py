@@ -166,6 +166,13 @@ def _move_related_pairs(
       * `Mov(Pseudo, Pseudo)` — explicit Pseudo-to-Pseudo copy.
       * Each `(Phi.dst, PhiArg.source)` pair where both are
         Pseudos — SSA destruction would emit a Mov for this.
+      * Adjacent `Mov(Pseudo a, Reg(A)); Mov(Reg(A), Pseudo b)` —
+        an A-routed copy from a to b. `tac_to_asm` always routes
+        Pseudo↔Pseudo transfers through A (the 6502 has no direct
+        mem-to-mem move at the IR level), so the indirect form is
+        the typical shape after copy-prop / DCE settles. Coalescing
+        the two ends lets the resulting `Mov(P, A); Mov(A, P)` (with
+        P the merged color) collapse to a self-Mov dropped at emit.
 
     Pairs with `offset != 0` Pseudos are skipped: those reference
     an unrenamed multi-byte name (typically the unsplit param
@@ -178,7 +185,8 @@ def _move_related_pairs(
     non-volatile uses share the volatile cell's storage. Whether
     that's incorrect depends on later passes' assumptions, but
     keeping them distinct is the safe call."""
-    for instr in fn.instructions:
+    instrs = fn.instructions
+    for instr in instrs:
         if isinstance(instr, asm_ast.Mov):
             if instr.is_volatile:
                 continue
@@ -204,6 +212,31 @@ def _move_related_pairs(
                     and src.name != dst.name
                 ):
                     yield (dst.name, src.name)
+    # A-routed Pseudo↔Pseudo: adjacent `Mov(P_a, A); Mov(A, P_b)`.
+    # The 6502 has no direct memory-to-memory move, so a logical
+    # copy from one Pseudo to another lowers to a load-via-A then
+    # a store-from-A. Coalescing these merges the two ends; after
+    # apply_coloring the pair becomes a self-Mov dropped at emit.
+    for i in range(len(instrs) - 1):
+        a, b = instrs[i], instrs[i + 1]
+        if not (isinstance(a, asm_ast.Mov)
+                and isinstance(b, asm_ast.Mov)):
+            continue
+        if a.is_volatile or b.is_volatile:
+            continue
+        if not (isinstance(a.src, asm_ast.Pseudo)
+                and a.src.offset == 0
+                and isinstance(a.dst, asm_ast.Reg)
+                and isinstance(a.dst.reg, asm_ast.A)):
+            continue
+        if not (isinstance(b.src, asm_ast.Reg)
+                and isinstance(b.src.reg, asm_ast.A)
+                and isinstance(b.dst, asm_ast.Pseudo)
+                and b.dst.offset == 0):
+            continue
+        if a.src.name == b.dst.name:
+            continue
+        yield (a.src.name, b.dst.name)
 
 
 def _merge(

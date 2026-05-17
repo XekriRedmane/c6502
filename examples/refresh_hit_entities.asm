@@ -40,19 +40,19 @@ refresh_hit_entities:
 .refresh_hit_entities@ssa_block@3:
    LDY   __zpabi_refresh_hit_entities_p2
    LDA   hit_spr_neg_hi,Y
-   STA   __local_refresh_hit_entities_b1
-   LDA   hit_spr_neg_lo,Y
    STA   __local_refresh_hit_entities_b0
+   LDA   hit_spr_neg_lo,Y
+   STA   __local_refresh_hit_entities_b2
    JMP   .if_end@2
 .if_else@3:
    LDY   __zpabi_refresh_hit_entities_p2
    LDA   hit_spr_pos_hi,Y
-   STA   __local_refresh_hit_entities_b1
-   LDA   hit_spr_pos_lo,Y
    STA   __local_refresh_hit_entities_b0
+   LDA   hit_spr_pos_lo,Y
+   STA   __local_refresh_hit_entities_b2
 .if_end@2:
    LDA   __local_refresh_hit_entities_b0
-   STA   __local_refresh_hit_entities_b2
+   STA   __local_refresh_hit_entities_b1
    LDA   entity_hit_row,X
    STA   __local_refresh_hit_entities_b0
    LDA   #$07

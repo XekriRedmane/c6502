@@ -776,6 +776,7 @@ companion_update:
 .if_else@44:
    LDA   companion_dir,X
    STA   __local_companion_update__0
+   LDA   companion_dir,X
    BPL   .cond_else@45
 .companion_update@ssa_block@4:
    STX   __zpabi_active_neg_step__slot

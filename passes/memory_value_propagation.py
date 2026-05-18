@@ -160,8 +160,28 @@ class DataExpr:
     offset: int
 
 
+@dataclass(frozen=True)
+class IndexedDataExpr:
+    """The byte value at `name + offset + index_reg's value`, where
+    `name` resolves to a non-ZP memory location. The `index_token`
+    captures the current "identity" of the index register at the
+    time the fact was established — it must match the index
+    register's identity at the use site for the recompute to be
+    sound. Identity is a positive integer that gets bumped every
+    time the index register is written; the same integer at two
+    points means the register's value has been continuously stable
+    between them within the analysis's tracking ability."""
+    name: str
+    offset: int
+    idx_is_x: bool       # True for X-indexed, False for Y-indexed
+    idx_token: int
+
+
 # Union of recomputable expression types.
-Expr = ZPRef | ImmExpr | ImmLabelLowExpr | ImmLabelHighExpr | DataExpr
+Expr = (
+    ZPRef | ImmExpr | ImmLabelLowExpr | ImmLabelHighExpr
+    | DataExpr | IndexedDataExpr
+)
 
 
 # ---- Lattice state ----
@@ -170,11 +190,26 @@ Expr = ZPRef | ImmExpr | ImmLabelLowExpr | ImmLabelHighExpr | DataExpr
 class State:
     a_value: Optional[Expr] = None
     cells: dict[int, Expr] = field(default_factory=dict)
+    # Identity tokens for the X and Y registers. Bumped every time
+    # the corresponding register is written. None when the register
+    # was never written within the analysis's reach (treated as a
+    # distinct value from any previously-bumped token).
+    #
+    # The token is purely an opaque identifier for "the index
+    # register's current value." Two states with the same token for
+    # X mean X has been continuously unchanged on every path
+    # between the two — sound for an IndexedData recompute. Two
+    # states with different tokens mean X has been written
+    # somewhere; the recompute is unsound.
+    x_token: Optional[int] = None
+    y_token: Optional[int] = None
 
     def copy(self) -> "State":
         return State(
             a_value=self.a_value,
             cells=dict(self.cells),
+            x_token=self.x_token,
+            y_token=self.y_token,
         )
 
     def __eq__(self, other):
@@ -183,6 +218,8 @@ class State:
         return (
             self.a_value == other.a_value
             and self.cells == other.cells
+            and self.x_token == other.x_token
+            and self.y_token == other.y_token
         )
 
 
@@ -245,12 +282,81 @@ def _rewrite_function(
     # whose name appears here is too risky — we conservatively
     # exclude it.
     writable = _writable_data_names(fn)
-    in_states = _solve(cfg, zp_addrs, writable)
-    new_instrs = _rewrite(cfg, in_states, zp_addrs, writable)
+    # Precompute per-instruction tokens for X / Y writes. The token
+    # is the instruction's overall position in the function (an
+    # int); it's stable across re-iterations of the worklist, and
+    # two states agreeing on a token means they reached this point
+    # via the same most-recent X (or Y) write. See
+    # `_index_register_tokens` for the encoding rules.
+    x_tokens, y_tokens = _index_register_tokens(fn)
+    ctx = _Ctx(
+        zp_addrs=zp_addrs, writable=writable,
+        x_tokens=x_tokens, y_tokens=y_tokens,
+    )
+    in_states = _solve(cfg, ctx)
+    new_instrs = _rewrite(cfg, in_states, ctx)
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
     )
+
+
+@dataclass
+class _Ctx:
+    """Per-function precomputed context threaded through the
+    dataflow and rewriter. Keeps the signature of `_transfer` and
+    friends compact."""
+    zp_addrs: dict[str, int]
+    writable: frozenset[str]
+    x_tokens: dict[int, int]
+    y_tokens: dict[int, int]
+
+
+def _index_register_tokens(
+    fn: asm_ast.Function,
+) -> tuple[dict[int, int], dict[int, int]]:
+    """For each instruction in `fn` that writes Reg(X) or Reg(Y),
+    record a unique token. Returns
+    `({id(instr): token}, {id(instr): token})` — separate maps for
+    X and Y. The token is just the instruction's 1-based position
+    in the function's instruction list; this is stable, unique
+    across writes, and distinct from the initial-state token (0)."""
+    x_tokens: dict[int, int] = {}
+    y_tokens: dict[int, int] = {}
+    for i, instr in enumerate(fn.instructions, start=1):
+        if _writes_x(instr):
+            x_tokens[id(instr)] = i
+        if _writes_y(instr):
+            y_tokens[id(instr)] = i
+    return x_tokens, y_tokens
+
+
+def _writes_x(instr: asm_ast.Type_instruction) -> bool:
+    return _writes_reg(instr, asm_ast.X)
+
+
+def _writes_y(instr: asm_ast.Type_instruction) -> bool:
+    return _writes_reg(instr, asm_ast.Y)
+
+
+def _writes_reg(instr: asm_ast.Type_instruction, reg_cls) -> bool:
+    if isinstance(instr, asm_ast.Mov):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, reg_cls))
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, reg_cls))
+    if isinstance(instr, asm_ast.Pop):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, reg_cls))
+    # Calls clobber all registers; we model that via the token-
+    # bumping at the Call instruction itself, but `_writes_reg`
+    # returns False here since `_index_register_tokens` shouldn't
+    # bump for a Call (the bump happens in `_transfer` via
+    # the Call's `id(instr)` lookup OR via a separate path —
+    # for simplicity we treat Call as "X/Y unknown" by killing the
+    # tokens entirely in `_transfer`).
+    return False
 
 
 def _writable_data_names(fn: asm_ast.Function) -> frozenset[str]:
@@ -291,8 +397,7 @@ def _instr_write_dst(
 # ---- Dataflow ----
 
 def _solve(
-    cfg: CFG, zp_addrs: dict[str, int],
-    writable: frozenset[str],
+    cfg: CFG, ctx: _Ctx,
 ) -> dict[int, _StateOrTop]:
     """Forward worklist dataflow. Returns per-block in-states. Block
     in-state is the meet of its predecessors' out-states; out-state
@@ -303,8 +408,13 @@ def _solve(
     for bid in cfg.blocks:
         in_state[bid] = None
         out_state[bid] = None
-    in_state[ENTRY_ID] = State()
-    out_state[ENTRY_ID] = State()
+    # At function entry: X and Y were assigned by the caller — we
+    # consider that an opaque "initial" value with token 0. Any
+    # in-function X/Y write will bump to a positive token, so a
+    # later state with x_token=0 means "X hasn't been written
+    # since entry."
+    in_state[ENTRY_ID] = State(x_token=0, y_token=0)
+    out_state[ENTRY_ID] = State(x_token=0, y_token=0)
     worklist: list[int] = list(cfg.block_order) + [EXIT_ID]
     seen: set[int] = set()
     iterations = 0
@@ -342,9 +452,7 @@ def _solve(
             continue
         seen.add(bid)
         in_state[bid] = new_in
-        new_out = _transfer_block(
-            cfg.blocks[bid], new_in, zp_addrs, writable,
-        )
+        new_out = _transfer_block(cfg.blocks[bid], new_in, ctx)
         if new_out != out_state[bid]:
             out_state[bid] = new_out
             for s in cfg.blocks[bid].successors:
@@ -359,29 +467,33 @@ def _meet(a: _StateOrTop, b: _StateOrTop) -> _StateOrTop:
     if b is None:
         return a
     a_val = a.a_value if a.a_value == b.a_value else None
+    x_token = a.x_token if a.x_token == b.x_token else None
+    y_token = a.y_token if a.y_token == b.y_token else None
     cells = {
         k: v for k, v in a.cells.items()
         if b.cells.get(k) == v
     }
-    return State(a_value=a_val, cells=cells)
+    return State(
+        a_value=a_val, cells=cells,
+        x_token=x_token, y_token=y_token,
+    )
 
 
 def _transfer_block(
-    block: BasicBlock, in_state: State,
-    zp_addrs: dict[str, int], writable: frozenset[str],
+    block: BasicBlock, in_state: State, ctx: _Ctx,
 ) -> State:
     state = in_state.copy()
     for instr in block.instructions:
-        _transfer(instr, state, zp_addrs, writable)
+        _transfer(instr, state, ctx)
     return state
 
 
 def _transfer(
-    instr: asm_ast.Type_instruction, state: State,
-    zp_addrs: dict[str, int], writable: frozenset[str] = frozenset(),
+    instr: asm_ast.Type_instruction, state: State, ctx: _Ctx,
 ) -> None:
     """In-place transfer of `instr`'s effects on `state`."""
-    # Calls / compound atoms: opaque, kill everything.
+    # Calls / compound atoms: opaque, kill everything (cells, A
+    # register, and the X/Y tokens since a callee can clobber them).
     if isinstance(instr, (
         asm_ast.Call, asm_ast.FunctionPrologue,
         asm_ast.AllocateStack, asm_ast.LoadAddress,
@@ -389,6 +501,11 @@ def _transfer(
     )):
         state.a_value = None
         state.cells.clear()
+        # The Call could write X/Y; bump tokens to "unknown" so any
+        # IndexedDataExpr fact established before is no longer
+        # recoverable.
+        state.x_token = None
+        state.y_token = None
         return
     # Block-terminator atoms are visited too (they end blocks, but
     # the dataflow framework still calls transfer on them); they
@@ -403,7 +520,9 @@ def _transfer(
         return
     # Mov: the main vehicle for establishing and killing facts.
     if isinstance(instr, asm_ast.Mov):
-        _transfer_mov(instr, state, zp_addrs, writable)
+        _transfer_mov(instr, state, ctx)
+        # Update X/Y tokens if this Mov writes to X or Y.
+        _bump_index_tokens(instr, state, ctx)
         return
     # Arithmetic / logic on Reg(A): clobbers A; some kill cells.
     if isinstance(instr, (
@@ -412,13 +531,13 @@ def _transfer(
         if _is_reg_a(instr.dst):
             state.a_value = None
         else:
-            _kill_writes(instr.dst, state, zp_addrs)
+            _kill_writes(instr.dst, state, ctx.zp_addrs)
         return
     if isinstance(instr, asm_ast.Xor):
         if _is_reg_a(instr.dst):
             state.a_value = None
         else:
-            _kill_writes(instr.dst, state, zp_addrs)
+            _kill_writes(instr.dst, state, ctx.zp_addrs)
         return
     # In-place RMW on a memory cell (or register).
     if isinstance(instr, (
@@ -429,16 +548,20 @@ def _transfer(
         if isinstance(instr.dst, asm_ast.Reg):
             if _is_reg_a(instr.dst):
                 state.a_value = None
+            else:
+                _bump_index_tokens(instr, state, ctx)
             return
-        _kill_writes(instr.dst, state, zp_addrs)
+        _kill_writes(instr.dst, state, ctx.zp_addrs)
         return
     # Pop: stack pop into A / X / Y / memory.
     if isinstance(instr, asm_ast.Pop):
         if isinstance(instr.dst, asm_ast.Reg):
             if _is_reg_a(instr.dst):
                 state.a_value = None
+            else:
+                _bump_index_tokens(instr, state, ctx)
             return
-        _kill_writes(instr.dst, state, zp_addrs)
+        _kill_writes(instr.dst, state, ctx.zp_addrs)
         return
     # Push: reads only, no memory effect on tracked cells.
     if isinstance(instr, asm_ast.Push):
@@ -446,15 +569,14 @@ def _transfer(
 
 
 def _transfer_mov(
-    instr: asm_ast.Mov, state: State, zp_addrs: dict[str, int],
-    writable: frozenset[str],
+    instr: asm_ast.Mov, state: State, ctx: _Ctx,
 ) -> None:
     src, dst = instr.src, instr.dst
     # `src_expr` is the recomputable Expr that `src` represents at
     # this point, if any. None means "src isn't recomputable as
     # tracked" (or it's a Reg, handled separately).
-    src_expr = _src_expr(src, zp_addrs, writable)
-    dst_zp = _zp_addr(dst, zp_addrs)
+    src_expr = _src_expr(src, state, ctx)
+    dst_zp = _zp_addr(dst, ctx.zp_addrs)
 
     # Compute the new A value and whether A is clobbered.
     new_a: Optional[Expr] = state.a_value
@@ -483,7 +605,7 @@ def _transfer_mov(
 
     # Apply the kill side of the dst write FIRST.
     if not isinstance(dst, asm_ast.Reg):
-        _kill_writes(dst, state, zp_addrs)
+        _kill_writes(dst, state, ctx.zp_addrs)
 
     # Apply the A update.
     if a_clobbered:
@@ -511,12 +633,12 @@ def _transfer_mov(
 
 def _src_expr(
     src: asm_ast.Type_operand,
-    zp_addrs: dict[str, int],
-    writable: frozenset[str],
+    state: State, ctx: _Ctx,
 ) -> Optional[Expr]:
-    """Return the Expr that `src` represents, if recomputable.
-    Returns None for sources we don't track (Frame, Stack, Indirect,
-    IndexedData, Reg, or mutable Data names)."""
+    """Return the Expr that `src` represents at the current state,
+    if recomputable. Returns None for sources we don't track
+    (Frame, Stack, Indirect, Reg, mutable Data names, or
+    IndexedData with an unknown index-register token)."""
     if isinstance(src, asm_ast.Imm):
         return ImmExpr(value=src.value)
     if isinstance(src, asm_ast.ImmLabelLow):
@@ -526,13 +648,57 @@ def _src_expr(
     if isinstance(src, asm_ast.ZP):
         return ZPRef(addr=src.address + src.offset)
     if isinstance(src, asm_ast.Data):
-        zp = _zp_addr(src, zp_addrs)
+        zp = _zp_addr(src, ctx.zp_addrs)
         if zp is not None:
             return ZPRef(addr=zp)
-        if src.name in writable:
+        if src.name in ctx.writable:
             return None
         return DataExpr(name=src.name, offset=src.offset)
+    if isinstance(src, asm_ast.IndexedData):
+        if src.name in ctx.writable:
+            return None
+        idx_is_x = isinstance(src.index, asm_ast.X)
+        token = state.x_token if idx_is_x else state.y_token
+        if token is None:
+            return None
+        return IndexedDataExpr(
+            name=src.name, offset=src.offset,
+            idx_is_x=idx_is_x, idx_token=token,
+        )
     return None
+
+
+def _bump_index_tokens(
+    instr: asm_ast.Type_instruction, state: State, ctx: _Ctx,
+) -> None:
+    """Update `state.x_token` / `state.y_token` if `instr` writes
+    to Reg(X) / Reg(Y). Uses the precomputed per-instruction token
+    from `ctx`. Also kills any IndexedDataExpr facts whose
+    idx_token no longer matches the new state token."""
+    new_x = ctx.x_tokens.get(id(instr))
+    new_y = ctx.y_tokens.get(id(instr))
+    if new_x is not None:
+        state.x_token = new_x
+        _kill_stale_index_facts(state, is_x=True)
+    if new_y is not None:
+        state.y_token = new_y
+        _kill_stale_index_facts(state, is_x=False)
+
+
+def _kill_stale_index_facts(state: State, is_x: bool) -> None:
+    """Remove any cell / a_value fact whose value is an
+    IndexedDataExpr indexed by the just-bumped register but whose
+    captured token no longer matches the new state token."""
+    current_token = state.x_token if is_x else state.y_token
+    for k, v in list(state.cells.items()):
+        if (isinstance(v, IndexedDataExpr)
+                and v.idx_is_x == is_x
+                and v.idx_token != current_token):
+            state.cells.pop(k, None)
+    if (isinstance(state.a_value, IndexedDataExpr)
+            and state.a_value.idx_is_x == is_x
+            and state.a_value.idx_token != current_token):
+        state.a_value = None
 
 
 def _kill_writes(
@@ -612,9 +778,7 @@ def _is_reg_a(op: asm_ast.Type_operand) -> bool:
 # ---- Rewriter ----
 
 def _rewrite(
-    cfg: CFG, in_states: dict[int, _StateOrTop],
-    zp_addrs: dict[str, int],
-    writable: frozenset[str],
+    cfg: CFG, in_states: dict[int, _StateOrTop], ctx: _Ctx,
 ) -> list[asm_ast.Type_instruction]:
     """Walk every block in CFG order, computing per-instruction
     in-states from the block's in-state and rewriting operands."""
@@ -624,14 +788,13 @@ def _rewrite(
         bin = in_states.get(bid) or State()
         state = bin.copy()
         for instr in block.instructions:
-            out.append(_rewrite_instr(instr, state, zp_addrs))
-            _transfer(instr, state, zp_addrs, writable)
+            out.append(_rewrite_instr(instr, state, ctx))
+            _transfer(instr, state, ctx)
     return out
 
 
 def _rewrite_instr(
-    instr: asm_ast.Type_instruction, state: State,
-    zp_addrs: dict[str, int],
+    instr: asm_ast.Type_instruction, state: State, ctx: _Ctx,
 ) -> asm_ast.Type_instruction:
     """Apply per-operand rewrites based on `state`. Two rewrite
     families:
@@ -648,19 +811,36 @@ def _rewrite_instr(
     if base is not None:
         instr = _rewrite_operands_for_dptr(instr, base)
     # Second pass: substitute cell-reads with their tracked Expr.
-    return _rewrite_cell_reads(instr, state, zp_addrs)
+    return _rewrite_cell_reads(instr, state, ctx)
 
 
 def _rewrite_cell_reads(
-    instr: asm_ast.Type_instruction, state: State,
-    zp_addrs: dict[str, int],
+    instr: asm_ast.Type_instruction, state: State, ctx: _Ctx,
 ) -> asm_ast.Type_instruction:
     """For each src operand that resolves to a tracked ZP cell `M`
     where `state.cells[M]` is a recomputable Expr different from
-    `ZPRef(M)`, rewrite the operand to express the Expr directly."""
+    `ZPRef(M)`, rewrite the operand to express the Expr directly.
+
+    Conservative on which contexts accept IndexedData substitution:
+    LDA-shaped reads (`Mov(_, Reg(A))` and mem-to-mem Movs) always
+    work; LDX-/LDY-shaped reads must not have the destination's
+    register match the IndexedData's index (the 6502 has no
+    LDX abs,X or LDY abs,Y). Compare-right and ALU-source positions
+    accept Imm / Data / ZP substitutions but skip IndexedData
+    until the asm_emit / sim assembler dispatch is wired up for
+    those shapes."""
     if isinstance(instr, asm_ast.Mov):
-        new_src = _rewrite_src(instr.src, state, zp_addrs)
+        new_src = _rewrite_src(
+            instr.src, state, ctx, allow_indexed=True,
+        )
         if new_src is instr.src:
+            return instr
+        # Reject `Mov(IndexedData(...,X), Reg(X))` and
+        # `Mov(IndexedData(...,Y), Reg(Y))` — the 6502 has no
+        # `LDX abs,X` or `LDY abs,Y`.
+        if (isinstance(new_src, asm_ast.IndexedData)
+                and isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, type(new_src.index))):
             return instr
         return asm_ast.Mov(
             src=new_src, dst=instr.dst, is_volatile=instr.is_volatile,
@@ -668,53 +848,62 @@ def _rewrite_cell_reads(
     if isinstance(instr, (
         asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
     )):
-        new_src = _rewrite_src(instr.src, state, zp_addrs)
+        new_src = _rewrite_src(
+            instr.src, state, ctx, allow_indexed=False,
+        )
         if new_src is instr.src:
             return instr
         return type(instr)(src=new_src, dst=instr.dst)
     if isinstance(instr, asm_ast.Xor):
-        new_s1 = _rewrite_src(instr.src1, state, zp_addrs)
-        new_s2 = _rewrite_src(instr.src2, state, zp_addrs)
+        new_s1 = _rewrite_src(
+            instr.src1, state, ctx, allow_indexed=False,
+        )
+        new_s2 = _rewrite_src(
+            instr.src2, state, ctx, allow_indexed=False,
+        )
         if new_s1 is instr.src1 and new_s2 is instr.src2:
             return instr
         return asm_ast.Xor(
             src1=new_s1, src2=new_s2, dst=instr.dst,
         )
     if isinstance(instr, asm_ast.Compare):
-        new_right = _rewrite_src(instr.right, state, zp_addrs)
+        new_right = _rewrite_src(
+            instr.right, state, ctx, allow_indexed=False,
+        )
         if new_right is instr.right:
             return instr
         return asm_ast.Compare(left=instr.left, right=new_right)
     if isinstance(instr, asm_ast.Push):
-        new_src = _rewrite_src(instr.src, state, zp_addrs)
+        new_src = _rewrite_src(
+            instr.src, state, ctx, allow_indexed=False,
+        )
         if new_src is instr.src:
             return instr
         return asm_ast.Push(src=new_src)
     return instr
 
 
+
+
 def _rewrite_src(
-    op: asm_ast.Type_operand, state: State,
-    zp_addrs: dict[str, int],
+    op: asm_ast.Type_operand, state: State, ctx: _Ctx,
+    *,
+    allow_indexed: bool = False,
 ) -> asm_ast.Type_operand:
     """If `op` resolves to a tracked ZP cell with a recomputable
     Expr, return the operand form of that Expr. Otherwise return
-    `op` unchanged."""
-    addr = _zp_addr(op, zp_addrs)
+    `op` unchanged. `allow_indexed=False` disables IndexedData
+    substitution (caller couldn't accept the resulting operand
+    shape)."""
+    addr = _zp_addr(op, ctx.zp_addrs)
     if addr is None:
         return op
     fact = state.cells.get(addr)
     if fact is None:
         return op
     if isinstance(fact, ZPRef):
-        if fact.addr == addr:
-            return op   # trivial self-reference
-        # Don't substitute a ZP cell with another ZP cell — that's
-        # what apply_indirect_base_prop and the DPTR-specific
-        # rewrite handle (only for indirect operands). For plain
-        # reads, substituting a ZP read with another ZP read isn't
-        # strictly a win (both are zp addressing, same cycles),
-        # and chains can blow up. Skip.
+        # Don't substitute a ZP cell with another ZP cell — both are
+        # zp addressing at the same cycle cost; chains add noise.
         return op
     if isinstance(fact, ImmExpr):
         return asm_ast.Imm(value=fact.value)
@@ -724,6 +913,23 @@ def _rewrite_src(
         return asm_ast.ImmLabelHigh(name=fact.name, offset=fact.offset)
     if isinstance(fact, DataExpr):
         return asm_ast.Data(name=fact.name, offset=fact.offset)
+    if isinstance(fact, IndexedDataExpr):
+        if not allow_indexed:
+            return op
+        # Substitute only if the index register's token at this
+        # state still matches the fact's captured token. Identity
+        # match is the dataflow's soundness guarantee — X (or Y)
+        # has been continuously unchanged on every path from the
+        # fact's establishment to here.
+        current_token = (
+            state.x_token if fact.idx_is_x else state.y_token
+        )
+        if current_token is None or current_token != fact.idx_token:
+            return op
+        idx_reg = asm_ast.X() if fact.idx_is_x else asm_ast.Y()
+        return asm_ast.IndexedData(
+            name=fact.name, offset=fact.offset, index=idx_reg,
+        )
     return op
 
 

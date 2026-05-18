@@ -218,5 +218,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Claude Code local state (per-clone settings, transcripts, etc.)
-.claude/
+# Claude Code local state (per-clone settings, transcripts, etc.).
+# Exclude everything directly in .claude/ (settings.json,
+# settings.local.json, etc.) but allow the shared skills tree.
+.claude/*
+!.claude/skills/

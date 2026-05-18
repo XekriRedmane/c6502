@@ -61,7 +61,7 @@ refresh_hit_entities:
    STA   __zpabi_draw_sprite_opaque__height
    LDA   __local_refresh_hit_entities__1
    STA   __zpabi_draw_sprite_opaque__sprite_x
-   LDA   __local_refresh_hit_entities__hi
+   LDA   entity_hit_row,X
    STA   __zpabi_draw_sprite_opaque__sprite_y
    LDA   __local_refresh_hit_entities__lo
    STA   __zpabi_draw_sprite_opaque__tile_src_0

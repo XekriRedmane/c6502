@@ -97,7 +97,7 @@ floor_enemy_draw:
    STA   __zpabi_draw_sprite__height
    LDA   __local_floor_enemy_draw__3
    STA   __zpabi_draw_sprite__sprite_x
-   LDA   __local_floor_enemy_draw__0
+   LDA   enemy_y,X
    STA   __zpabi_draw_sprite__sprite_y
    LDA   __local_floor_enemy_draw__2
    STA   __zpabi_draw_sprite__tile_src_0

@@ -2,7 +2,6 @@ __zpabi_floor_enemy_advance__move_dir	EQU	$80
 __zpabi_floor_enemy_advance__player_col	EQU	$81
 __zpabi_snd_delay_down__pitch	EQU	$82
 __zpabi_snd_delay_down__clicks	EQU	$83
-__local_floor_enemy_advance__0	EQU	$84
 __local_floor_enemy_advance__step	EQU	$85
 __local_floor_enemy_advance__slot	EQU	$86
 
@@ -36,7 +35,6 @@ floor_enemy_advance:
    STA   jump_flag
    LDX   __zpabi_floor_enemy_advance__player_col
    LDA   floor_enemy_spawn_sched,X
-   STA   __local_floor_enemy_advance__0
    BMI   .if_end@3
 .floor_enemy_advance@asm_ssa_block@3:
    LDA   #$20

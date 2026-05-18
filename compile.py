@@ -77,6 +77,7 @@ from passes.redundant_load_after_rmw import (
     apply_redundant_load_after_rmw,
 )
 from passes.redundant_store import apply_redundant_store_elimination
+from passes.asm_remat import apply_remat
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
@@ -175,6 +176,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_redundant_load_after_rmw(new_prog)
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)
+        new_prog = apply_remat(new_prog, zp_slot_symbols=zp_slot_symbols)
         new_prog = apply_asm_dead_store(
             new_prog, zp_slot_symbols=zp_slot_symbols,
         )

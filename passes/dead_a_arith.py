@@ -145,9 +145,19 @@ def _writes_only_a_and_flags(instr: asm_ast.Type_instruction) -> bool:
 
 def _is_pure_source(op: asm_ast.Type_operand) -> bool:
     """True iff `op`, used as a load/arith source, doesn't trigger
-    an LDY (or other register clobber) in emission. Imm, Data, ZP
-    qualify; Frame/Stack/Indirect/IndirectY don't."""
-    return isinstance(op, (asm_ast.Imm, asm_ast.Data, asm_ast.ZP))
+    an LDY (or other register clobber) in emission. Imm /
+    ImmLabelLow / ImmLabelHigh / Data / ZP / IndexedData qualify
+    — they emit as single LDA / ADC / ... opcodes without a
+    setup LDY. Frame / Stack / Indirect / IndirectY don't (their
+    emit prepends an `LDY #off` that's a real side effect)."""
+    return isinstance(op, (
+        asm_ast.Imm,
+        asm_ast.ImmLabelLow,
+        asm_ast.ImmLabelHigh,
+        asm_ast.Data,
+        asm_ast.ZP,
+        asm_ast.IndexedData,
+    ))
 
 
 def _is_xy_reg(op: asm_ast.Type_operand) -> bool:

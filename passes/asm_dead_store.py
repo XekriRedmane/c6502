@@ -284,6 +284,24 @@ def _is_dead_at_exit(
     return False
 
 
+def _is_dead_at_tail_call(target: asm_ast.Type_operand) -> bool:
+    """True iff `target` is known dead at a tail-call edge (a
+    `Jump` to an external label that leaves this function).
+
+    Stricter than `_is_dead_at_exit`: the callee may read its own
+    `__zpabi_<callee>__*` arg slots (which sit in the pool range
+    and would qualify as dead-at-return), so we can't blanket-allow
+    pool-range addresses. The call-graph-disjoint allocator's
+    guarantee — `__local_<fn>__*` slots are at addresses disjoint
+    from every transitively-reachable callee's read set — gives us
+    a precise narrower rule: only `__local_<...>__*` Data names are
+    safely dead across a tail-call. Numeric ZP, user statics, and
+    `__zpabi_<callee>__*` arg slots are all conservatively live."""
+    if isinstance(target, asm_ast.Data):
+        return target.name.startswith("__local_")
+    return False
+
+
 def _is_dead_cfg(
     instrs: list[asm_ast.Type_instruction], start: int,
     label_to_index: dict[str, int],
@@ -317,12 +335,19 @@ def _is_dead_cfg(
         if isinstance(nxt, _OPAQUE_TYPES):
             return False
         # Tail-call: a Jump to a non-local label leaves this
-        # function for a callee that may read `target` (especially
-        # any `__zpabi_<callee>_p*` slot we just wrote as argument
-        # marshalling). Treat as opaque — same reasoning as `Call`.
+        # function for a callee that may read `target` — especially
+        # any `__zpabi_<callee>__*` slot we just wrote as argument
+        # marshalling. But the call-graph-disjoint allocator
+        # guarantees `__local_<fn>__*` cells are at addresses disjoint
+        # from every transitively-reachable callee's read set, so a
+        # `__local_*` target dies at the tail-call edge even though
+        # other pool-range cells (zp_abi arg slots, raw numeric ZP)
+        # don't.
         if (isinstance(nxt, asm_ast.Jump)
                 and nxt.target not in label_to_index):
-            return False
+            if not _is_dead_at_tail_call(target):
+                return False
+            continue
         # Function exit: dead iff `target` is dead-at-exit.
         if isinstance(nxt, (asm_ast.Ret, asm_ast.Return)):
             if not _is_dead_at_exit(target, zp_slot_symbols):

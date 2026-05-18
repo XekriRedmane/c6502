@@ -8,7 +8,6 @@ __zpabi_draw_sprite__sprite_y	EQU	$86
 __zpabi_draw_sprite__tile_src_0	EQU	$87
 __zpabi_draw_sprite__tile_src_1	EQU	$88
 __zpabi_draw_sprite__page_flag	EQU	$89
-__local_special_inactive_draw__0	EQU	$8A
 
 ; @zp-link-meta-begin
 ; def special_inactive_draw params=__zpabi_special_inactive_draw__special_row,__zpabi_special_inactive_draw__special_pos_hi,__zpabi_special_inactive_draw__page_flag locals=__local_special_inactive_draw__0 indirect=false in_cycle=false
@@ -21,13 +20,11 @@ special_inactive_draw:
 
 .special_inactive_draw@asm_ssa_block@0:
    LDX   __zpabi_special_inactive_draw__special_pos_hi
-   LDA   proj_screen_col,X
-   STA   __local_special_inactive_draw__0
    LDA   #$02
    STA   __zpabi_draw_sprite__width
    LDA   #$06
    STA   __zpabi_draw_sprite__height
-   LDA   __local_special_inactive_draw__0
+   LDA   proj_screen_col,X
    STA   __zpabi_draw_sprite__sprite_x
    LDA   __zpabi_special_inactive_draw__special_row
    STA   __zpabi_draw_sprite__sprite_y

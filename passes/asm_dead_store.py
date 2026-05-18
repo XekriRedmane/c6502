@@ -105,8 +105,8 @@ _POOL_HI = 0x100
 # regions). Treating them as opaque would needlessly mark every
 # STA dead inside an indirect-Y store's `PHA src; ... ; PLA` save
 # bracket as live — which is exactly the shape that blocks
-# `apply_indirect_base_prop`'s downstream DPTR-staging cleanup.
-# `_read_operands` and `_write_operand` handle Push / Pop
+# `apply_memory_value_propagation`'s downstream DPTR-staging
+# cleanup. `_read_operands` and `_write_operand` handle Push / Pop
 # precisely below.
 #
 # `LoadAddress` is also NOT opaque: its memory effect is a bounded

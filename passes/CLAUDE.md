@@ -56,7 +56,12 @@ this directory:
   optimizer pass.
 - `identifier_resolution.py` — pass 2 (see below).
 - `inc_peephole.py` — multi-byte INC peephole (see below).
-- `indirect_base_prop.py` — `apply_indirect_base_prop` peephole.
+- `memory_value_propagation.py` —
+  `apply_memory_value_propagation`. CFG-aware forward dataflow
+  that tracks ZP-cell → recomputable-source equivalences and
+  rewrites reads at use sites. Subsumes the former
+  `indirect_base_prop` (DPTR-stage rewrite, now CFG-wide) and
+  overlaps with `apply_remat` for Imm / Data / ImmLabel sources.
 - `label_resolution.py` — pass 4 (see below).
 - `linker.py` — `compile.py --link` driver; multi-TU re-allocates
   `__zpabi_*` and `__local_*` symbols across per-TU outputs.
@@ -597,11 +602,19 @@ Always-on (runs in both optimized AND unoptimized pipelines):
 - `apply_cpx_cpy_peephole` — `Mov(X|Y, A); Compare(A, imm)` →
   `Compare(X|Y, imm)` (`CPX` / `CPY`) when the compare's left is
   already in X or Y. Loop-induction-variable test shape.
-- `apply_indirect_base_prop` — detects the 4-instruction DPTR stage
-  from a ZP-resolvable pair `(N, N+1)` and rewrites subsequent
-  `Indirect(off)` / `IndirectY()` operands to `IndirectZp(N, off)` /
-  `IndirectZpY(N)`, bypassing DPTR. Composes with DSE to drop the now-
-  dead `STA DPTR` / `STA DPTR+1` writes.
+- `apply_memory_value_propagation` — CFG-aware forward dataflow
+  tracking ZP-cell → recomputable-source equivalences. Two
+  rewrite families: (1) `Indirect` / `IndirectY` operands rewrite
+  to `IndirectZp(N)` / `IndirectZpY(N)` when DPTR's bytes are
+  proven equal to a stable ZP pair at `N` (subsumes the former
+  `apply_indirect_base_prop`); (2) `Mov(M, dst)` reads of a stage
+  cell `M` whose tracked Expr is `Imm` / `Data` / `ImmLabelLow` /
+  `ImmLabelHigh` rewrite to `Mov(<recomp>, dst)` directly,
+  collapsing the staging round-trip (overlaps with `apply_remat`
+  for these source kinds; the IndexedData source is still
+  apply_remat's). The CFG-aware reach catches patterns that
+  block-local passes miss (preheader stages used inside loop
+  bodies, indirect bases that survive labels, etc.).
 
 Only meaningful with `--optimize` (the unoptimized pipeline skips
 them):

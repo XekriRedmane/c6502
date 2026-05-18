@@ -104,10 +104,11 @@ ZP byte address of an operand is determined by:
 # Where to run
 
 After `replace_pseudoregisters_bare_exit` (operands concrete) and
-inside the `_peephole_fixedpoint` loop. Replaces
-`apply_indirect_base_prop` directly; deletion of that pass is
-deferred until later milestones have demonstrated coverage parity
-on the test corpus.
+inside the `_peephole_fixedpoint` loop. Replaces the former
+`apply_indirect_base_prop` (deleted; this pass is its CFG-aware
+successor) and overlaps with `apply_remat`'s rewrites for Imm /
+Data / ImmLabel sources (the remaining apply_remat coverage is
+the IndexedData source, which this pass doesn't yet handle).
 """
 from __future__ import annotations
 

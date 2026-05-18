@@ -72,7 +72,6 @@ from passes.asm_licm import apply_licm
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
-from passes.indirect_base_prop import apply_indirect_base_prop
 from passes.memory_value_propagation import (
     apply_memory_value_propagation,
 )
@@ -179,9 +178,6 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_direct_index_load(new_prog)
         new_prog = apply_dead_pha_pla(new_prog)
         new_prog = apply_cpx_cpy_peephole(new_prog)
-        new_prog = apply_indirect_base_prop(
-            new_prog, zp_symbol_addrs=zp_slot_symbols,
-        )
         new_prog = apply_memory_value_propagation(
             new_prog, zp_symbol_addrs=zp_slot_symbols,
         )

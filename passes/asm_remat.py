@@ -119,9 +119,10 @@ def _rewrite_uses(
 ) -> list[asm_ast.Type_instruction]:
     out: list[asm_ast.Type_instruction] = list(instrs)
     for i, defn in enumerate(out):
-        if not _is_stage_def(defn):
+        stage = _classify_stage_def(out, i)
+        if stage is None:
             continue
-        recomp = defn.src
+        recomp, range_start = stage
         local_name = defn.dst.name
         # Walk forward in the same block for matching uses; rewrite
         # each that's still eligible. Multiple uses are allowed —
@@ -138,7 +139,7 @@ def _rewrite_uses(
                 and _matches_local(cur.src, local_name)
             ):
                 continue
-            if not _can_remat(recomp, out, i, j, writable):
+            if not _can_remat(recomp, out, range_start, j, writable):
                 break
             out[j] = asm_ast.Mov(
                 src=recomp,
@@ -146,6 +147,120 @@ def _rewrite_uses(
                 is_volatile=cur.is_volatile,
             )
     return out
+
+
+def _classify_stage_def(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> tuple[asm_ast.Type_operand, int] | None:
+    """Determine the recomputable source for a staging def at index
+    `i`, plus the range-start index from which `_can_remat` should
+    validate. Returns `(recomp, range_start)` or None if `i` isn't a
+    staging def.
+
+    Two shapes:
+
+      1. `Mov(<recomputable>, Data(__local_<fn>__*))` — single
+         mem-to-mem atom. `recomp = instrs[i].src`, range_start = i.
+
+      2. `Mov(Reg(A), Data(__local_<fn>__*))` — two-atom shape,
+         where the producer is an immediately preceding (modulo
+         flag-only ops) `Mov(<recomputable>, Reg(A))`. The two-atom
+         form appears after the asm-SSA round-trip splits a
+         mem-to-mem Mov into its emit-time `LDA src; STA dst`
+         pair. `recomp = producer.src`, range_start = producer_idx.
+         The validation range covers the producer through the use,
+         catching any X / Y / Call that would invalidate the
+         recompute.
+    """
+    defn = instrs[i]
+    if not isinstance(defn, asm_ast.Mov):
+        return None
+    if defn.is_volatile:
+        return None
+    if not isinstance(defn.dst, asm_ast.Data):
+        return None
+    if not defn.dst.name.startswith("__local_"):
+        return None
+    if defn.dst.offset != 0:
+        return None
+    # Shape 1.
+    if _is_recomputable_shape(defn.src):
+        return defn.src, i
+    # Shape 2: src is Reg(A); find producer.
+    if isinstance(defn.src, asm_ast.Reg) and isinstance(
+        defn.src.reg, asm_ast.A,
+    ):
+        prod_idx = _find_a_producer(instrs, i)
+        if prod_idx is None:
+            return None
+        producer = instrs[prod_idx]
+        if not isinstance(producer, asm_ast.Mov):
+            return None
+        if producer.is_volatile:
+            return None
+        if not _is_recomputable_shape(producer.src):
+            return None
+        return producer.src, prod_idx
+    return None
+
+
+def _find_a_producer(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> int | None:
+    """Walk backward from index `i` to find the most recent
+    instruction whose destination is `Reg(A)`. Returns its index, or
+    None if a block boundary is hit first or A's value comes from an
+    instruction whose effect we can't model as a clean producer
+    (e.g. an arithmetic op like `Add` / `Sub` / `And` that combines
+    A with another value — those clobber A but their "produced"
+    value isn't recomputable from a single operand).
+
+    Producer shapes accepted:
+      * `Mov(_, Reg(A))` — load into A.
+
+    Anything else that writes A (`Add`, `Sub`, `And`, `Or`, `Xor`,
+    `ASL`/`LSR`/`ROL`/`ROR` on Reg(A), `Pop(Reg(A))`) blocks the
+    search — A's value at `i` isn't the result of a single
+    recomputable load.
+    """
+    for k in range(i - 1, -1, -1):
+        instr = instrs[k]
+        if _is_block_boundary(instr):
+            return None
+        if isinstance(instr, asm_ast.Mov):
+            if (isinstance(instr.dst, asm_ast.Reg)
+                    and isinstance(instr.dst.reg, asm_ast.A)):
+                return k
+            continue
+        # Any other instruction that writes A blocks the search.
+        if _writes_a(instr):
+            return None
+    return None
+
+
+def _writes_a(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` writes Reg(A) via something other than a
+    Mov (those are caught by the caller). Arithmetic / logic ops
+    on Reg(A) write A; in-place shifts on Reg(A) too; Pop(A)
+    writes A."""
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    )):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, asm_ast.A))
+    if isinstance(instr, asm_ast.Xor):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, asm_ast.A))
+    if isinstance(instr, (
+        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+        asm_ast.RotateLeft, asm_ast.RotateRight,
+    )):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, asm_ast.A))
+    if isinstance(instr, asm_ast.Pop):
+        return (isinstance(instr.dst, asm_ast.Reg)
+                and isinstance(instr.dst.reg, asm_ast.A))
+    return False
 
 
 def _drop_dead_stage_dsts(
@@ -184,6 +299,16 @@ def _drop_dead_stage_dsts(
             and instr.dst.name in zp_slot_symbols
             and zp_slot_symbols[instr.dst.name] not in referenced_addrs
         ):
+            # If src is already Reg(A) the staging def collapsed
+            # from `STA local` was the second half of a two-atom
+            # `LDA <src>; STA local` pair (the first half is still
+            # in the IR as the producer Mov). Re-emitting it as
+            # `Mov(Reg(A), Reg(A))` would just be a self-Mov that
+            # no peephole drops at IR level; just omit the
+            # instruction outright — A already holds the value.
+            if (isinstance(instr.src, asm_ast.Reg)
+                    and isinstance(instr.src.reg, asm_ast.A)):
+                continue
             out.append(asm_ast.Mov(
                 src=instr.src,
                 dst=reg_a,

@@ -16,10 +16,8 @@ apply_bobble:
    BPL   .if_else@1
 .apply_bobble@asm_ssa_block@1:
    AND   #$7F
-   STA   __local_apply_bobble__1
-   LDA   entity_floor_pos,Y
    CLC
-   ADC   __local_apply_bobble__1
+   ADC   entity_floor_pos,Y
    STA   entity_floor_pos,Y
    JMP   .if_end@0
 .if_else@1:

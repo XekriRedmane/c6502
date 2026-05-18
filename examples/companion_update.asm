@@ -28,12 +28,10 @@ __zpabi_player_catch__player_col	EQU	$89
 __zpabi_smc_body_draw__sprite_y	EQU	$89
 __local_active_neg_step__1	EQU	$8A
 __local_active_pos_step__1	EQU	$8A
-__local_compute_screen_x__0	EQU	$8A
 __local_drift_step__pos_1	EQU	$8A
 __local_player_catch__0	EQU	$8A
 __zpabi_find_active_entity__hit_max	EQU	$8A
 __zpabi_smc_body_draw__frame_idx	EQU	$8A
-__local_compute_screen_x__1	EQU	$8B
 __local_drift_step__pos_0	EQU	$8B
 __local_player_catch__1	EQU	$8B
 __zpabi_find_active_entity__out_row_0	EQU	$8B
@@ -92,26 +90,18 @@ compute_screen_x:
 .compute_screen_x@asm_ssa_block@0:
    LDX   __zpabi_compute_screen_x__player_y
    LDA   perspective_xoff_lo,X
-   STA   __local_compute_screen_x__1
-   LDA   perspective_xoff_hi,X
-   STA   __local_compute_screen_x__0
-   LDA   __local_compute_screen_x__1
    SEC
    SBC   __zpabi_compute_screen_x__sprite_xref
    STA   __local_compute_screen_x__3
-   LDA   __local_compute_screen_x__0
+   LDA   perspective_xoff_hi,X
    SBC   #$00
    STA   __local_compute_screen_x__2
    LDX   __zpabi_compute_screen_x__slot
    LDA   companion_pos_lo,X
-   STA   __local_compute_screen_x__1
-   LDA   companion_pos_hi,X
-   STA   __local_compute_screen_x__0
-   LDA   __local_compute_screen_x__1
    SEC
    SBC   __local_compute_screen_x__3
    STA   HARGS
-   LDA   __local_compute_screen_x__0
+   LDA   companion_pos_hi,X
    SBC   __local_compute_screen_x__2
    STA   HARGS+1
    RTS
@@ -921,7 +911,7 @@ companion_update:
    LDX   __local_companion_update__slot
    LDA   HARGS
    STA   __local_companion_update__3
-   LDY   __local_companion_update__3
+   LDY   HARGS
    LDA   proj_frame_idx,Y
    STA   __local_companion_update__1
    LDA   companion_state,X

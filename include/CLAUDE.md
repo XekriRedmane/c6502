@@ -17,6 +17,9 @@ automatically; no `-I` flag needed.
   `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t`
   typedefs mapping to c6502's integer model, plus the C99 limit and
   literal-suffix macros (`INT8_MAX`, `INT8_C`, etc.).
+- `stdbool.h` (C99 §7.16) — `bool` / `true` / `false` /
+  `__bool_true_false_are_defined`. `bool` aliases `unsigned char`
+  (c6502 doesn't model `_Bool` as a distinct type).
 
 `size_t`, `ptrdiff_t`, and friends aren't modeled yet — the chapter
 corpus doesn't need them, and c6502 has no `stddef.h` to host them.

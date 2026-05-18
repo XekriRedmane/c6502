@@ -217,6 +217,8 @@ class Replacer:
         coloring=None,
         param_layout=None,  # ParamLayout from passes.abi_selection
         private_pool_addrs: frozenset[int] = frozenset(),
+        address_taken_zp: dict[str, int] | None = None,
+        address_taken_symbols: dict[str, str] | None = None,
     ) -> None:
         self.params = params
         self.param_set = set(params)
@@ -254,6 +256,18 @@ class Replacer:
         # callee_saved() range. For functions without a private
         # pool, this set is empty and the existing logic applies.
         self.private_pool_addrs = private_pool_addrs
+        # Address-taken locals routed to ZP via the function's
+        # private pool. Map: pseudo_name → first byte's ZP address.
+        # Pseudos in this map get resolved to `Data(slot_symbol,
+        # offset)` instead of falling through to a Frame slot. Names
+        # NOT in this map (because no contiguous run was available)
+        # still get a Frame slot via the existing path.
+        self.address_taken_zp: dict[str, int] = dict(
+            address_taken_zp or {}
+        )
+        self.address_taken_symbols: dict[str, str] = dict(
+            address_taken_symbols or {}
+        )
         # Compute the set of callee-saved ZP byte addresses this
         # function uses. Each byte gets a slot at the bottom of the
         # frame (FP+1..FP+S), so locals start at offset S+1. The
@@ -326,6 +340,10 @@ class Replacer:
         if op.name in self.param_set:
             return
         if self._is_colored(op.name):
+            return
+        if op.name in self.address_taken_zp:
+            # Address-taken local that's been routed to ZP via the
+            # private pool. No Frame slot needed.
             return
         if op.name in self.local_bases:
             return
@@ -423,6 +441,23 @@ class Replacer:
         if self._is_colored(op.name):
             base = self.coloring.assignments[op.name]
             return asm_ast.ZP(address=base, offset=op.offset)
+        if op.name in self.address_taken_zp:
+            # Address-taken local routed into the function's private
+            # ZP pool. Resolve to the slot-symbol `Data` form so the
+            # asm-emit stage can pick zp vs. absolute addressing from
+            # the EQU'd address, and so `LoadAddress(src=Data(slot))`
+            # lowers to a 2-byte `LDA #<slot; STA dst.lo; LDA #>slot;
+            # STA dst.hi` immediate pair instead of the 6-byte FP+off
+            # runtime add.
+            slot_name = self.address_taken_symbols.get(op.name)
+            if slot_name is not None:
+                return asm_ast.Data(
+                    name=slot_name, offset=op.offset,
+                )
+            return asm_ast.ZP(
+                address=self.address_taken_zp[op.name],
+                offset=op.offset,
+            )
         if op.name in self.local_bases:
             return asm_ast.Frame(
                 offset=self.local_bases[op.name] + op.offset,
@@ -559,6 +594,8 @@ def replace_function_bare_exit(
     coloring=None,
     param_layout=None,
     private_pool_addrs: frozenset[int] = frozenset(),
+    address_taken_zp: dict[str, int] | None = None,
+    address_taken_symbols: dict[str, str] | None = None,
 ) -> tuple[asm_ast.Function, FrameDims]:
     """`--optimize-asm` variant: same Pseudo / Frame / ZP rewrite,
     but skips the `FunctionPrologue` prepend and leaves each bare
@@ -586,6 +623,8 @@ def replace_function_bare_exit(
         coloring=coloring, bare_exit=True,
         param_layout=param_layout,
         private_pool_addrs=private_pool_addrs,
+        address_taken_zp=address_taken_zp,
+        address_taken_symbols=address_taken_symbols,
     )
 
 
@@ -598,6 +637,8 @@ def _replace_function_impl(
     bare_exit: bool,
     param_layout=None,
     private_pool_addrs: frozenset[int] = frozenset(),
+    address_taken_zp: dict[str, int] | None = None,
+    address_taken_symbols: dict[str, str] | None = None,
 ) -> tuple[asm_ast.Function, FrameDims]:
     match fn:
         case asm_ast.Function(
@@ -609,6 +650,8 @@ def _replace_function_impl(
                 symbols=symbols, types=types, coloring=coloring,
                 param_layout=param_layout,
                 private_pool_addrs=private_pool_addrs,
+                address_taken_zp=address_taken_zp,
+                address_taken_symbols=address_taken_symbols,
             )
             # Pass 1: discover all local Pseudos in encounter order.
             for instr in instrs:
@@ -733,6 +776,8 @@ def replace_program_bare_exit(
     colorings=None,
     param_layouts=None,
     local_pools: dict[str, list[int]] | None = None,
+    address_taken_assignments: dict[str, dict[str, int]] | None = None,
+    address_taken_symbols: dict[str, dict[str, str]] | None = None,
 ) -> tuple[asm_ast.Type_program, dict[str, FrameDims]]:
     """`--optimize-asm` variant of `replace_program`. Produces an asm
     program whose functions still end with bare `Return(save_a)`
@@ -775,10 +820,22 @@ def replace_program_bare_exit(
                         frozenset(local_pools.get(tl.name, ()))
                         if local_pools is not None else frozenset()
                     )
+                    addr_taken_zp = (
+                        address_taken_assignments.get(tl.name, {})
+                        if address_taken_assignments is not None
+                        else {}
+                    )
+                    addr_taken_syms = (
+                        address_taken_symbols.get(tl.name, {})
+                        if address_taken_symbols is not None
+                        else {}
+                    )
                     fn_out, dims = replace_function_bare_exit(
                         tl, statics, symbols, types, coloring=coloring,
                         param_layout=layout,
                         private_pool_addrs=private,
+                        address_taken_zp=addr_taken_zp,
+                        address_taken_symbols=addr_taken_syms,
                     )
                     new_top.append(fn_out)
                     dims_by_fn[tl.name] = dims

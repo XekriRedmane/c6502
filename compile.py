@@ -83,7 +83,12 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes.abi_selection import select_abi
-from passes.function_local_sizing import compute_local_bytes
+from passes.function_local_sizing import (
+    compute_local_bytes, compute_address_taken_bytes,
+)
+from passes.address_taken_zp import (
+    compute_address_taken_assignments, slot_symbols as _addr_taken_slot_symbols,
+)
 from passes.zp_link_metadata import build_metadata, format_metadata
 from passes.zp_local_allocation import (
     allocate_function_locals, build_local_slot_symbols,
@@ -277,13 +282,30 @@ def _run_stage(
                 symbols=symbols,
             )
             local_bytes = compute_local_bytes(asm_prelim)
+            # Address-taken locals would otherwise spill to the
+            # soft-stack frame (forcing a prologue/epilogue + an
+            # LDY/(FP),Y indirect-read at every access). For
+            # functions with a private local pool, we can reserve
+            # extra ZP bytes in the pool and route each address-
+            # taken local to a stable ZP byte — `&local` then
+            # becomes a 2-byte immediate constant instead of a
+            # 6-byte FP-relative compute. Add the byte demand here
+            # so `allocate_function_locals` sizes the pool
+            # appropriately.
+            addr_taken_bytes = compute_address_taken_bytes(
+                asm_prelim, symbols, types,
+            )
+            combined_local_bytes = {
+                fn: local_bytes.get(fn, 0) + addr_taken_bytes.get(fn, 0)
+                for fn in set(local_bytes) | set(addr_taken_bytes)
+            }
             # Call-graph-disjoint private pools per function. The
             # asm regalloc draws from these for eligible functions;
             # ineligible functions (recursive, indirect-calling,
             # or with non-zp_abi extern callees) fall back to the
             # conservative pool.
             local_pools = allocate_function_locals(
-                tac, abi, local_bytes,
+                tac, abi, combined_local_bytes,
             )
             # Final optimizer pass with private pools threaded
             # through to the regalloc.
@@ -291,10 +313,27 @@ def _run_stage(
                 asm0, extra_statics=statics, param_layouts=abi,
                 symbols=symbols, local_pools=local_pools,
             )
+            # Compute per-function address-taken Pseudo → ZP-byte
+            # assignments from the pool addresses the regalloc
+            # didn't claim. Names that don't fit (no contiguous
+            # run of the required width is free) get omitted and
+            # fall back to the Frame path inside
+            # `replace_pseudoregisters`.
+            addr_taken_assignments = compute_address_taken_assignments(
+                asm0, local_pools, asm_colorings, symbols, types,
+            )
+            addr_taken_symbols = {
+                fn: _addr_taken_slot_symbols(
+                    fn, assignments, symbols, types,
+                )
+                for fn, assignments in addr_taken_assignments.items()
+            }
             asm1, dims_by_fn = replace_pseudoregs_bare_exit(
                 asm0, extra_statics=statics, symbols=symbols,
                 types=types, colorings=asm_colorings,
                 param_layouts=abi, local_pools=local_pools,
+                address_taken_assignments=addr_taken_assignments,
+                address_taken_symbols=addr_taken_symbols,
             )
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             # LICM-lite: hoist loop-invariant constant stores out
@@ -313,6 +352,8 @@ def _run_stage(
             from passes.zp_slot_naming import compute_local_slot_names
             slot_names_by_fn = compute_local_slot_names(
                 local_pools, asm_colorings,
+                address_taken_assignments=addr_taken_assignments,
+                address_taken_symbols=addr_taken_symbols,
             )
             local_slot_symbols = build_local_slot_symbols(
                 local_pools, slot_names_by_fn=slot_names_by_fn,

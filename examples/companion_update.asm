@@ -45,6 +45,7 @@ __local_entity_proximity__0	EQU	$8D
 __zpabi_draw_sprite__width	EQU	$8D
 __local_entity_proximity__1	EQU	$8E
 __zpabi_draw_sprite__height	EQU	$8E
+__local_entity_proximity__entity_row	EQU	$8F
 __zpabi_draw_sprite__sprite_x	EQU	$8F
 __zpabi_draw_sprite__sprite_y	EQU	$90
 __zpabi_draw_sprite__tile_src_0	EQU	$91
@@ -55,17 +56,18 @@ __local_companion_update__1	EQU	$95
 __local_companion_update__3	EQU	$97
 __local_companion_update__4	EQU	$98
 __local_companion_update__slot	EQU	$99
-__local_smc_body_draw__hi	EQU	$9A
-__local_smc_body_draw__lo	EQU	$9B
-__local_smc_body_draw__0	EQU	$9C
+__local_companion_update__sprite_y	EQU	$9A
+__local_smc_body_draw__hi	EQU	$9B
+__local_smc_body_draw__lo	EQU	$9C
+__local_smc_body_draw__0	EQU	$9D
 
 ; @zp-link-meta-begin
 ; def active_neg_step params=__zpabi_active_neg_step__slot,__zpabi_active_neg_step__player_floor locals=__local_active_neg_step__0,__local_active_neg_step__1 indirect=false in_cycle=false
 ; def active_pos_step params=__zpabi_active_pos_step__slot,__zpabi_active_pos_step__player_floor locals=__local_active_pos_step__0,__local_active_pos_step__1 indirect=false in_cycle=false
-; def companion_update params=__zpabi_companion_update__gate,__zpabi_companion_update__player_y,__zpabi_companion_update__sprite_xref,__zpabi_companion_update__player_col,__zpabi_companion_update__player_floor,__zpabi_companion_update__hit_max,__zpabi_companion_update__page_flag locals=__local_companion_update__0,__local_companion_update__1,__local_companion_update__2,__local_companion_update__3,__local_companion_update__4,__local_companion_update__slot indirect=false in_cycle=false
+; def companion_update params=__zpabi_companion_update__gate,__zpabi_companion_update__player_y,__zpabi_companion_update__sprite_xref,__zpabi_companion_update__player_col,__zpabi_companion_update__player_floor,__zpabi_companion_update__hit_max,__zpabi_companion_update__page_flag locals=__local_companion_update__0,__local_companion_update__1,__local_companion_update__2,__local_companion_update__3,__local_companion_update__4,__local_companion_update__slot,__local_companion_update__sprite_y indirect=false in_cycle=false
 ; def compute_screen_x params=__zpabi_compute_screen_x__slot,__zpabi_compute_screen_x__player_y,__zpabi_compute_screen_x__sprite_xref locals=__local_compute_screen_x__0,__local_compute_screen_x__1,__local_compute_screen_x__2,__local_compute_screen_x__3 indirect=false in_cycle=false
 ; def drift_step params=__zpabi_drift_step__slot,__zpabi_drift_step__out_sprite_y_0,__zpabi_drift_step__out_sprite_y_1 locals=__local_drift_step__pos_1,__local_drift_step__pos_0,__local_drift_step__0 indirect=false in_cycle=false
-; def entity_proximity params=__zpabi_entity_proximity__slot,__zpabi_entity_proximity__screen_x,__zpabi_entity_proximity__hit_max locals=__local_entity_proximity__0,__local_entity_proximity__1 indirect=false in_cycle=false
+; def entity_proximity params=__zpabi_entity_proximity__slot,__zpabi_entity_proximity__screen_x,__zpabi_entity_proximity__hit_max locals=__local_entity_proximity__0,__local_entity_proximity__1,__local_entity_proximity__entity_row indirect=false in_cycle=false
 ; def find_active_entity params=__zpabi_find_active_entity__hit_max,__zpabi_find_active_entity__out_row_0,__zpabi_find_active_entity__out_row_1 locals=__local_find_active_entity__0 indirect=false in_cycle=false
 ; def player_catch params=__zpabi_player_catch__slot,__zpabi_player_catch__screen_x,__zpabi_player_catch__player_col locals=__local_player_catch__0,__local_player_catch__1 indirect=false in_cycle=false
 ; def smc_body_draw params=__zpabi_smc_body_draw__slot,__zpabi_smc_body_draw__sprite_x,__zpabi_smc_body_draw__sprite_y,__zpabi_smc_body_draw__frame_idx,__zpabi_smc_body_draw__state,__zpabi_smc_body_draw__page_flag locals=__local_smc_body_draw__hi,__local_smc_body_draw__lo,__local_smc_body_draw__0 indirect=false in_cycle=false
@@ -153,32 +155,10 @@ find_active_entity:
 entity_proximity:
    SUBROUTINE
 
-   ; prologue: 0 arg bytes, 1 local bytes
-   SEC
-   LDA   SSP
-   SBC   #$03
-   STA   SSP
-   LDA   SSP+1
-   SBC   #$00
-   STA   SSP+1
-   LDA   FP
-   LDY   #$02
-   STA   (SSP),Y
-   LDA   FP+1
-   INY
-   STA   (SSP),Y
-   LDA   SSP
-   STA   FP
-   LDA   SSP+1
-   STA   FP+1
-
 .entity_proximity@asm_ssa_block@0:
-   CLC
-   LDA   FP
-   ADC   #$01
+   LDA   #<__local_entity_proximity__entity_row
    STA   __local_entity_proximity__0
-   LDA   FP+1
-   ADC   #$00
+   LDA   #>__local_entity_proximity__entity_row
    STA   __local_entity_proximity__0+1
    LDA   __zpabi_entity_proximity__hit_max
    STA   __zpabi_find_active_entity__hit_max
@@ -197,50 +177,15 @@ entity_proximity:
    ORA   #$00
    BEQ   .if_end@1
 .entity_proximity@asm_ssa_block@2:
-
-   ; epilogue
-   CLC
-   LDA   FP
-   ADC   #$03
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$02
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
    RTS
 .if_end@1:
    LDX   __zpabi_entity_proximity__slot
    LDA   companion_row,X
    STA   __local_entity_proximity__0
-   LDY   #$01
-   LDA   (FP),Y
+   LDA   __local_entity_proximity__entity_row
    CMP   __local_entity_proximity__0
    BEQ   .if_end@2
 .entity_proximity@asm_ssa_block@3:
-
-   ; epilogue
-   CLC
-   LDA   FP
-   ADC   #$03
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$02
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
    RTS
 .if_end@2:
    LDA   __zpabi_entity_proximity__screen_x
@@ -272,23 +217,6 @@ entity_proximity:
    CLC
    ADC   #$04
    STA   companion_row,X
-
-   ; epilogue
-   CLC
-   LDA   FP
-   ADC   #$03
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$02
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
    RTS
 .if_end@5:
    LDX   __zpabi_entity_proximity__slot
@@ -350,23 +278,6 @@ entity_proximity:
    STA   companion_state,X
 .if_end@13:
 .if_end@6:
-
-   ; epilogue
-   CLC
-   LDA   FP
-   ADC   #$03
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$02
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
    RTS
 
 smc_body_draw:
@@ -836,46 +747,10 @@ drift_step:
 companion_update:
    SUBROUTINE
 
-   ; prologue: 0 arg bytes, 1 local bytes
-   SEC
-   LDA   SSP
-   SBC   #$03
-   STA   SSP
-   LDA   SSP+1
-   SBC   #$00
-   STA   SSP+1
-   LDA   FP
-   LDY   #$02
-   STA   (SSP),Y
-   LDA   FP+1
-   INY
-   STA   (SSP),Y
-   LDA   SSP
-   STA   FP
-   LDA   SSP+1
-   STA   FP+1
-
 .companion_update@asm_ssa_block@0:
    LDA   __zpabi_companion_update__gate
    BPL   .if_end@41
 .companion_update@asm_ssa_block@1:
-
-   ; epilogue
-   CLC
-   LDA   FP
-   ADC   #$03
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$02
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
    RTS
 .if_end@41:
    LDX   #$01
@@ -886,12 +761,9 @@ companion_update:
    JMP   .if_end@42
 .lb_skip@0:
 .companion_update@asm_ssa_block@2:
-   CLC
-   LDA   FP
-   ADC   #$01
+   LDA   #<__local_companion_update__sprite_y
    STA   __local_companion_update__0
-   LDA   FP+1
-   ADC   #$00
+   LDA   #>__local_companion_update__sprite_y
    STA   __local_companion_update__0+1
    STX   __zpabi_drift_step__slot
    LDA   __local_companion_update__0
@@ -919,8 +791,7 @@ companion_update:
    STX   __zpabi_smc_body_draw__slot
    LDA   proj_screen_col,Y
    STA   __zpabi_smc_body_draw__sprite_x
-   LDY   #$01
-   LDA   (FP),Y
+   LDA   __local_companion_update__sprite_y
    STA   __zpabi_smc_body_draw__sprite_y
    LDA   proj_frame_idx,Y
    STA   __zpabi_smc_body_draw__frame_idx
@@ -1047,23 +918,6 @@ companion_update:
    DEX
    BPL   .companion_update@asm_ssa_split@0
 .companion_update@asm_ssa_block@8:
-
-   ; epilogue
-   CLC
-   LDA   FP
-   ADC   #$03
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$02
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
    RTS
 .companion_update@asm_ssa_split@0:
    JMP   .loop@1_start

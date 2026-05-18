@@ -84,6 +84,106 @@ def compute_local_byte_addresses(
     return out
 
 
+def compute_address_taken_bytes(
+    prog: asm_ast.Program, symbols=None, types=None,
+) -> dict[str, int]:
+    """Return `{function_name: byte_count}` summing the sizes of
+    address-taken Pseudo locals per function.
+
+    An address-taken local is a Pseudo whose name appears as
+    `LoadAddress.src.name` somewhere in the function body. These
+    Pseudos are excluded from SSA renaming and from regalloc
+    coloring (because they need a stable, addressable storage
+    location), so they don't appear in
+    `compute_local_bytes`. To put them in ZP (instead of forcing a
+    Frame slot via `replace_pseudoregisters`), the function's
+    private local pool needs to be sized to include them, and
+    `replace_pseudoregisters_bare_exit` needs to know which Pseudos
+    to route into ZP slot symbols.
+
+    Run on the preliminary post-regalloc asm IR (same as
+    `compute_local_bytes`). `symbols` / `types` are the type-
+    checker tables, used to size each address-taken Pseudo by its
+    declared C type. Params and static-storage objects can also
+    appear as `LoadAddress.src` but are NOT counted here — they
+    have their own (non-private-pool) storage already. We exclude
+    them by checking the function's `params` list and the program-
+    wide statics set; the caller passes `statics` explicitly so
+    this module stays free of symbol-table imports.
+    """
+    if symbols is None:
+        return {tl.name: 0 for tl in prog.top_level
+                if isinstance(tl, asm_ast.Function)}
+    statics = _statics_set(symbols)
+    out: dict[str, int] = {}
+    for tl in prog.top_level:
+        if not isinstance(tl, asm_ast.Function):
+            continue
+        names = _address_taken_local_names(tl, statics)
+        total = 0
+        for name in names:
+            total += _size_of_name(name, symbols, types)
+        out[tl.name] = total
+    return out
+
+
+def compute_address_taken_local_names(
+    prog: asm_ast.Program, symbols=None,
+) -> dict[str, list[str]]:
+    """Like `compute_address_taken_bytes` but returns the ordered
+    list of address-taken local Pseudo names per function (instead
+    of the sum of their byte sizes). Used by the replace-pseudos
+    stage to know which Pseudos to route into ZP slot symbols.
+    """
+    statics = _statics_set(symbols) if symbols is not None else frozenset()
+    out: dict[str, list[str]] = {}
+    for tl in prog.top_level:
+        if not isinstance(tl, asm_ast.Function):
+            continue
+        out[tl.name] = _address_taken_local_names(tl, statics)
+    return out
+
+
+def _statics_set(symbols) -> frozenset[str]:
+    from passes.type_checking import StaticAttr
+    return frozenset(
+        n for n, s in symbols.items()
+        if isinstance(s.attrs, StaticAttr)
+    )
+
+
+def _size_of_name(name, symbols, types) -> int:
+    from passes.replace_pseudoregisters import size_of_name
+    return size_of_name(name, symbols, types)
+
+
+def _address_taken_local_names(
+    fn: asm_ast.Function, statics: frozenset[str],
+) -> list[str]:
+    """Ordered, de-duplicated list of Pseudo names appearing as
+    `LoadAddress.src.name` in `fn`'s body, EXCLUDING param names
+    (those have their own Frame storage) and static names. Order
+    is first-occurrence order in the instruction stream so the
+    downstream slot-symbol minting is stable across compiles."""
+    seen: set[str] = set()
+    out: list[str] = []
+    param_set = set(fn.params)
+    for instr in fn.instructions:
+        if isinstance(instr, asm_ast.LoadAddress):
+            if not isinstance(instr.src, asm_ast.Pseudo):
+                continue
+            name = instr.src.name
+            if name in param_set:
+                continue
+            if name in statics:
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 def _zp_bytes_used(fn: asm_ast.Function) -> set[int]:
     addrs: set[int] = set()
     for instr in fn.instructions:

@@ -217,6 +217,8 @@ def local_slot_names(
 def compute_local_slot_names(
     local_pools: dict[str, list[int]],
     colorings: dict[str, Coloring],
+    address_taken_assignments: dict[str, dict[str, int]] | None = None,
+    address_taken_symbols: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, list[str]]:
     """Per-function ordered slot-symbol lists, parallel to each
     pool's address list. `compile.py` computes this once after the
@@ -225,15 +227,39 @@ def compute_local_slot_names(
     (linker round-trip).
 
     Functions missing from `colorings` fall back to numeric temp
-    naming (`__local_<fn>__<k>`)."""
+    naming (`__local_<fn>__<k>`).
+
+    When `address_taken_assignments` and `address_taken_symbols` are
+    supplied (the typical optimize-mode pipeline that includes the
+    address-taken-in-ZP allocation step), each pool address that
+    received an address-taken local takes that local's slot symbol
+    (`__local_<fn>__<source_name>`) instead of the default
+    coloring-derived or numeric-temp name. Address-taken
+    assignments win over numeric-temp fallback (since the address-
+    taken Pseudo isn't in `coloring.assignments`); colored bytes
+    keep their source-derived name as before."""
     out: dict[str, list[str]] = {}
     for fn_name, pool in local_pools.items():
         coloring = colorings.get(fn_name)
+        # Build override map: address → slot symbol for any
+        # address-taken local that landed at that address.
+        overrides: dict[int, str] = {}
+        if (address_taken_assignments is not None
+                and address_taken_symbols is not None):
+            assignments = address_taken_assignments.get(fn_name, {})
+            symbols = address_taken_symbols.get(fn_name, {})
+            for pname, addr in assignments.items():
+                sym = symbols.get(pname)
+                if sym is not None:
+                    overrides[addr] = sym
         if coloring is None:
             out[fn_name] = [
-                f"__local_{fn_name}__{k}" for k in range(len(pool))
+                overrides.get(addr, f"__local_{fn_name}__{k}")
+                for k, addr in enumerate(pool)
             ]
             continue
         name_map = local_slot_names(fn_name, coloring, pool)
+        # Apply address-taken overrides on top.
+        name_map.update(overrides)
         out[fn_name] = [name_map[addr] for addr in pool]
     return out

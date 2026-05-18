@@ -114,10 +114,6 @@ find_active_entity:
 .find_active_entity@asm_ssa_preheader@0:
 .find_active_entity@ssa_block@0:
    LDX   __zpabi_find_active_entity__hit_max
-   LDA   __zpabi_find_active_entity__out_row_0
-   STA   DPTR
-   LDA   __zpabi_find_active_entity__out_row_1
-   STA   DPTR+1
 .loop@0_start:
    TXA
    BMI   .loop@0_break
@@ -141,7 +137,7 @@ find_active_entity:
    SEC
    SBC   #$08
    LDY   #$00
-   STA   (DPTR),Y
+   STA   (__local_player_catch__1),Y
    LDA   #$01
    RTS
 .if_end@0:

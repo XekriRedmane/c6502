@@ -124,12 +124,43 @@ from passes.optimization_asm.cfg import (
 
 @dataclass(frozen=True)
 class ZPRef:
-    """The byte value currently at ZP address `addr`."""
+    """The byte value currently at ZP address `addr`. Invalidated
+    when `addr` is written."""
     addr: int
 
 
-# Union type for future expansion.
-Expr = ZPRef
+@dataclass(frozen=True)
+class ImmExpr:
+    """An 8-bit literal value. Never invalidated."""
+    value: int
+
+
+@dataclass(frozen=True)
+class ImmLabelLowExpr:
+    """The low byte of the link-time address `name + offset`. Never
+    invalidated (link-time symbols are immutable at runtime)."""
+    name: str
+    offset: int
+
+
+@dataclass(frozen=True)
+class ImmLabelHighExpr:
+    """The high byte of the link-time address `name + offset`."""
+    name: str
+    offset: int
+
+
+@dataclass(frozen=True)
+class DataExpr:
+    """The byte value at the link-time address `name + offset`,
+    where `name` resolves to a non-ZP memory location (statics).
+    Invalidated when any byte of `name` is written."""
+    name: str
+    offset: int
+
+
+# Union of recomputable expression types.
+Expr = ZPRef | ImmExpr | ImmLabelLowExpr | ImmLabelHighExpr | DataExpr
 
 
 # ---- Lattice state ----
@@ -206,18 +237,61 @@ def _rewrite_function(
         cfg = build_cfg(fn)
     except KeyError:
         return fn
-    in_states = _solve(cfg, zp_addrs)
-    new_instrs = _rewrite(cfg, in_states, zp_addrs)
+    # Precompute the set of `Data(name)` symbols this function
+    # writes anywhere. A DataExpr fact about an unmutated name is
+    # safe to recompute at any program point (modulo the kill rules
+    # for direct writes the dataflow already handles). A DataExpr
+    # whose name appears here is too risky — we conservatively
+    # exclude it.
+    writable = _writable_data_names(fn)
+    in_states = _solve(cfg, zp_addrs, writable)
+    new_instrs = _rewrite(cfg, in_states, zp_addrs, writable)
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
     )
 
 
+def _writable_data_names(fn: asm_ast.Function) -> frozenset[str]:
+    """Set of Data symbol names that appear as the destination of
+    any write in `fn`. A `DataExpr(name, _)` is safe to recompute
+    only when `name` is NOT in this set."""
+    out: set[str] = set()
+    for instr in fn.instructions:
+        dst = _instr_write_dst(instr)
+        if dst is None:
+            continue
+        if isinstance(dst, asm_ast.Data):
+            out.add(dst.name)
+        elif isinstance(dst, asm_ast.IndexedData):
+            out.add(dst.name)
+    return frozenset(out)
+
+
+def _instr_write_dst(
+    instr: asm_ast.Type_instruction,
+) -> asm_ast.Type_operand | None:
+    if isinstance(instr, asm_ast.Mov):
+        return instr.dst
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+        asm_ast.Inc, asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
+        asm_ast.LogicalShiftRight, asm_ast.RotateLeft,
+        asm_ast.RotateRight,
+    )):
+        return instr.dst
+    if isinstance(instr, asm_ast.Xor):
+        return instr.dst
+    if isinstance(instr, asm_ast.Pop):
+        return instr.dst
+    return None
+
+
 # ---- Dataflow ----
 
 def _solve(
     cfg: CFG, zp_addrs: dict[str, int],
+    writable: frozenset[str],
 ) -> dict[int, _StateOrTop]:
     """Forward worklist dataflow. Returns per-block in-states. Block
     in-state is the meet of its predecessors' out-states; out-state
@@ -268,7 +342,7 @@ def _solve(
         seen.add(bid)
         in_state[bid] = new_in
         new_out = _transfer_block(
-            cfg.blocks[bid], new_in, zp_addrs,
+            cfg.blocks[bid], new_in, zp_addrs, writable,
         )
         if new_out != out_state[bid]:
             out_state[bid] = new_out
@@ -293,17 +367,17 @@ def _meet(a: _StateOrTop, b: _StateOrTop) -> _StateOrTop:
 
 def _transfer_block(
     block: BasicBlock, in_state: State,
-    zp_addrs: dict[str, int],
+    zp_addrs: dict[str, int], writable: frozenset[str],
 ) -> State:
     state = in_state.copy()
     for instr in block.instructions:
-        _transfer(instr, state, zp_addrs)
+        _transfer(instr, state, zp_addrs, writable)
     return state
 
 
 def _transfer(
     instr: asm_ast.Type_instruction, state: State,
-    zp_addrs: dict[str, int],
+    zp_addrs: dict[str, int], writable: frozenset[str] = frozenset(),
 ) -> None:
     """In-place transfer of `instr`'s effects on `state`."""
     # Calls / compound atoms: opaque, kill everything.
@@ -328,7 +402,7 @@ def _transfer(
         return
     # Mov: the main vehicle for establishing and killing facts.
     if isinstance(instr, asm_ast.Mov):
-        _transfer_mov(instr, state, zp_addrs)
+        _transfer_mov(instr, state, zp_addrs, writable)
         return
     # Arithmetic / logic on Reg(A): clobbers A; some kill cells.
     if isinstance(instr, (
@@ -372,11 +446,13 @@ def _transfer(
 
 def _transfer_mov(
     instr: asm_ast.Mov, state: State, zp_addrs: dict[str, int],
+    writable: frozenset[str],
 ) -> None:
     src, dst = instr.src, instr.dst
-    # Emit-time A clobber for any Mov whose dst is a register OR
-    # whose src is not Reg(A) (mem-to-mem routes through A).
-    src_zp = _zp_addr(src, zp_addrs)
+    # `src_expr` is the recomputable Expr that `src` represents at
+    # this point, if any. None means "src isn't recomputable as
+    # tracked" (or it's a Reg, handled separately).
+    src_expr = _src_expr(src, zp_addrs, writable)
     dst_zp = _zp_addr(dst, zp_addrs)
 
     # Compute the new A value and whether A is clobbered.
@@ -385,37 +461,23 @@ def _transfer_mov(
     if isinstance(dst, asm_ast.Reg):
         if _is_reg_a(dst):
             # `Mov(src, Reg(A))` — LDA src / TXA / TYA. A := src.
-            if src_zp is not None:
-                new_a = ZPRef(src_zp)
-            elif isinstance(src, asm_ast.Reg):
-                # Inter-register move: TXA / TYA. We don't track X/Y,
-                # so A's new value is unknown.
+            if isinstance(src, asm_ast.Reg):
+                # TXA / TYA: inter-register; we don't track X/Y
+                # values yet, so A's new value is unknown.
                 new_a = None
             else:
-                # Imm / IndexedData / Frame / Indirect — we don't
-                # track these as Exprs yet (deferred to later
-                # milestones). A's value is unknown.
-                new_a = None
+                new_a = src_expr
             a_clobbered = True
-        # Mov into Reg(X) / Reg(Y): A is preserved (LDX/LDY/TAX/TAY
-        # don't clobber A's value), so a_value stays.
+        # Mov into Reg(X) / Reg(Y): A is preserved.
     else:
         # Mov(_, memory_dst): at emit time this is `LDA src; STA
         # dst` (or just STA when src is Reg(A); STX/STY for X/Y).
-        # The STX/STY variants don't clobber A; LDA-then-STA does.
         if isinstance(src, asm_ast.Reg):
-            if _is_reg_a(src):
-                # STA dst: A unchanged.
-                pass
-            else:
-                # STX/STY dst: A unchanged.
-                pass
+            # STA/STX/STY dst: A unchanged.
+            pass
         else:
             # LDA src; STA dst: A := src's value.
-            if src_zp is not None:
-                new_a = ZPRef(src_zp)
-            else:
-                new_a = None
+            new_a = src_expr
             a_clobbered = True
 
     # Apply the kill side of the dst write FIRST.
@@ -433,15 +495,43 @@ def _transfer_mov(
     fact: Optional[Expr] = None
     if isinstance(src, asm_ast.Reg):
         if _is_reg_a(src):
-            # STA dst: dst := A's value.
             fact = state.a_value
         # STX/STY: dst := X/Y. We don't track X/Y values yet.
-    elif src_zp is not None:
-        # mem-to-mem with ZP src: dst := value at src.
-        fact = ZPRef(src_zp)
-    # Imm / IndexedData / Frame: not tracked yet.
+    else:
+        fact = src_expr
     if fact is not None:
+        # Don't record `cells[M] = ZPRef(M)` — a trivial self-
+        # reference; rewriting M to itself is a no-op and the fact
+        # adds noise to the lattice.
+        if isinstance(fact, ZPRef) and fact.addr == dst_zp:
+            return
         state.cells[dst_zp] = fact
+
+
+def _src_expr(
+    src: asm_ast.Type_operand,
+    zp_addrs: dict[str, int],
+    writable: frozenset[str],
+) -> Optional[Expr]:
+    """Return the Expr that `src` represents, if recomputable.
+    Returns None for sources we don't track (Frame, Stack, Indirect,
+    IndexedData, Reg, or mutable Data names)."""
+    if isinstance(src, asm_ast.Imm):
+        return ImmExpr(value=src.value)
+    if isinstance(src, asm_ast.ImmLabelLow):
+        return ImmLabelLowExpr(name=src.name, offset=src.offset)
+    if isinstance(src, asm_ast.ImmLabelHigh):
+        return ImmLabelHighExpr(name=src.name, offset=src.offset)
+    if isinstance(src, asm_ast.ZP):
+        return ZPRef(addr=src.address + src.offset)
+    if isinstance(src, asm_ast.Data):
+        zp = _zp_addr(src, zp_addrs)
+        if zp is not None:
+            return ZPRef(addr=zp)
+        if src.name in writable:
+            return None
+        return DataExpr(name=src.name, offset=src.offset)
+    return None
 
 
 def _kill_writes(
@@ -452,8 +542,10 @@ def _kill_writes(
     if isinstance(dst, (asm_ast.ZP, asm_ast.Data)):
         addr = _zp_addr(dst, zp_addrs)
         if addr is None:
-            # Static-storage / above-ZP byte; doesn't affect tracked
-            # ZP facts.
+            # Non-ZP static cell: kill any fact referring to this
+            # Data symbol's byte.
+            if isinstance(dst, asm_ast.Data):
+                _kill_data_name(dst.name, dst.offset, state)
             return
         _kill_cell(addr, state)
         return
@@ -482,6 +574,20 @@ def _kill_cell(addr: int, state: State) -> None:
         state.a_value = None
 
 
+def _kill_data_name(name: str, offset: int, state: State) -> None:
+    """Kill facts that depend on the named static-storage byte. Used
+    when a `Mov(_, Data(name, offset))` writes to a non-ZP static
+    cell — any tracked fact whose RHS is `DataExpr(name, offset)`
+    becomes stale."""
+    target = (name, offset)
+    for k, v in list(state.cells.items()):
+        if isinstance(v, DataExpr) and (v.name, v.offset) == target:
+            state.cells.pop(k, None)
+    if (isinstance(state.a_value, DataExpr)
+            and (state.a_value.name, state.a_value.offset) == target):
+        state.a_value = None
+
+
 def _zp_addr(
     op: asm_ast.Type_operand, zp_addrs: dict[str, int],
 ) -> Optional[int]:
@@ -507,6 +613,7 @@ def _is_reg_a(op: asm_ast.Type_operand) -> bool:
 def _rewrite(
     cfg: CFG, in_states: dict[int, _StateOrTop],
     zp_addrs: dict[str, int],
+    writable: frozenset[str],
 ) -> list[asm_ast.Type_instruction]:
     """Walk every block in CFG order, computing per-instruction
     in-states from the block's in-state and rewriting operands."""
@@ -516,21 +623,107 @@ def _rewrite(
         bin = in_states.get(bid) or State()
         state = bin.copy()
         for instr in block.instructions:
-            out.append(_rewrite_instr(instr, state))
-            _transfer(instr, state, zp_addrs)
+            out.append(_rewrite_instr(instr, state, zp_addrs))
+            _transfer(instr, state, zp_addrs, writable)
     return out
 
 
 def _rewrite_instr(
     instr: asm_ast.Type_instruction, state: State,
+    zp_addrs: dict[str, int],
 ) -> asm_ast.Type_instruction:
-    """Apply per-operand rewrites based on `state`. The only
-    milestone-1 rewrite: indirect-via-DPTR operands when DPTR's
-    pair source is known."""
+    """Apply per-operand rewrites based on `state`. Two rewrite
+    families:
+
+      1. Indirect-via-DPTR (`Indirect` / `IndirectY`) operands
+         rewrite to `IndirectZp` / `IndirectZpY` when DPTR's bytes
+         match a known stable ZP pair.
+
+      2. Reads of a tracked ZP cell whose value is a recomputable
+         Expr rewrite to read from the canonical source directly
+         (subsumes `apply_remat`'s rewrite at CFG scope)."""
+    # First pass: DPTR substitution (depends on cells[DPTR]).
     base = _dptr_base(state)
-    if base is None:
-        return instr
-    return _rewrite_operands_for_dptr(instr, base)
+    if base is not None:
+        instr = _rewrite_operands_for_dptr(instr, base)
+    # Second pass: substitute cell-reads with their tracked Expr.
+    return _rewrite_cell_reads(instr, state, zp_addrs)
+
+
+def _rewrite_cell_reads(
+    instr: asm_ast.Type_instruction, state: State,
+    zp_addrs: dict[str, int],
+) -> asm_ast.Type_instruction:
+    """For each src operand that resolves to a tracked ZP cell `M`
+    where `state.cells[M]` is a recomputable Expr different from
+    `ZPRef(M)`, rewrite the operand to express the Expr directly."""
+    if isinstance(instr, asm_ast.Mov):
+        new_src = _rewrite_src(instr.src, state, zp_addrs)
+        if new_src is instr.src:
+            return instr
+        return asm_ast.Mov(
+            src=new_src, dst=instr.dst, is_volatile=instr.is_volatile,
+        )
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    )):
+        new_src = _rewrite_src(instr.src, state, zp_addrs)
+        if new_src is instr.src:
+            return instr
+        return type(instr)(src=new_src, dst=instr.dst)
+    if isinstance(instr, asm_ast.Xor):
+        new_s1 = _rewrite_src(instr.src1, state, zp_addrs)
+        new_s2 = _rewrite_src(instr.src2, state, zp_addrs)
+        if new_s1 is instr.src1 and new_s2 is instr.src2:
+            return instr
+        return asm_ast.Xor(
+            src1=new_s1, src2=new_s2, dst=instr.dst,
+        )
+    if isinstance(instr, asm_ast.Compare):
+        new_right = _rewrite_src(instr.right, state, zp_addrs)
+        if new_right is instr.right:
+            return instr
+        return asm_ast.Compare(left=instr.left, right=new_right)
+    if isinstance(instr, asm_ast.Push):
+        new_src = _rewrite_src(instr.src, state, zp_addrs)
+        if new_src is instr.src:
+            return instr
+        return asm_ast.Push(src=new_src)
+    return instr
+
+
+def _rewrite_src(
+    op: asm_ast.Type_operand, state: State,
+    zp_addrs: dict[str, int],
+) -> asm_ast.Type_operand:
+    """If `op` resolves to a tracked ZP cell with a recomputable
+    Expr, return the operand form of that Expr. Otherwise return
+    `op` unchanged."""
+    addr = _zp_addr(op, zp_addrs)
+    if addr is None:
+        return op
+    fact = state.cells.get(addr)
+    if fact is None:
+        return op
+    if isinstance(fact, ZPRef):
+        if fact.addr == addr:
+            return op   # trivial self-reference
+        # Don't substitute a ZP cell with another ZP cell — that's
+        # what apply_indirect_base_prop and the DPTR-specific
+        # rewrite handle (only for indirect operands). For plain
+        # reads, substituting a ZP read with another ZP read isn't
+        # strictly a win (both are zp addressing, same cycles),
+        # and chains can blow up. Skip.
+        return op
+    if isinstance(fact, ImmExpr):
+        return asm_ast.Imm(value=fact.value)
+    if isinstance(fact, ImmLabelLowExpr):
+        return asm_ast.ImmLabelLow(name=fact.name, offset=fact.offset)
+    if isinstance(fact, ImmLabelHighExpr):
+        return asm_ast.ImmLabelHigh(name=fact.name, offset=fact.offset)
+    if isinstance(fact, DataExpr):
+        return asm_ast.Data(name=fact.name, offset=fact.offset)
+    return op
 
 
 def _dptr_base(state: State) -> Optional[int]:

@@ -193,17 +193,12 @@ entity_proximity:
 .entity_proximity@ssa_block@4:
    LDA   #$01
    STA   __local_entity_proximity__1
-   LDA   #$00
-   STA   __local_entity_proximity__0
    JMP   .and_end@4
 .and_false@3:
    LDA   #$00
    STA   __local_entity_proximity__1
-   LDA   #$00
-   STA   __local_entity_proximity__0
 .and_end@4:
    LDA   __local_entity_proximity__1
-   ORA   __local_entity_proximity__0
    BEQ   .if_end@5
 .entity_proximity@asm_ssa_block@5:
    LDX   __zpabi_entity_proximity__slot
@@ -228,17 +223,12 @@ entity_proximity:
 .entity_proximity@ssa_block@8:
    LDA   #$01
    STA   __local_entity_proximity__1
-   LDA   #$00
-   STA   __local_entity_proximity__0
    JMP   .and_end@9
 .and_false@8:
    LDA   #$00
    STA   __local_entity_proximity__1
-   LDA   #$00
-   STA   __local_entity_proximity__0
 .and_end@9:
    LDA   __local_entity_proximity__1
-   ORA   __local_entity_proximity__0
    BEQ   .if_end@10
 .entity_proximity@asm_ssa_block@8:
    LDX   __zpabi_entity_proximity__slot
@@ -256,17 +246,12 @@ entity_proximity:
 .entity_proximity@ssa_block@11:
    LDA   #$01
    STA   __local_entity_proximity__1
-   LDA   #$00
-   STA   __local_entity_proximity__0
    JMP   .and_end@12
 .and_false@11:
    LDA   #$00
    STA   __local_entity_proximity__1
-   LDA   #$00
-   STA   __local_entity_proximity__0
 .and_end@12:
    LDA   __local_entity_proximity__1
-   ORA   __local_entity_proximity__0
    BEQ   .if_end@13
 .entity_proximity@asm_ssa_block@10:
    LDX   __zpabi_entity_proximity__slot
@@ -470,17 +455,12 @@ player_catch:
 .player_catch@ssa_block@2:
    LDA   #$00
    STA   __local_player_catch__1
-   LDA   #$00
-   STA   __local_player_catch__0
    JMP   .or_end@21
 .or_true@20:
    LDA   #$01
    STA   __local_player_catch__1
-   LDA   #$00
-   STA   __local_player_catch__0
 .or_end@21:
    LDA   __local_player_catch__1
-   ORA   __local_player_catch__0
    BEQ   .if_end@22
 .player_catch@asm_ssa_block@2:
    RTS
@@ -552,17 +532,12 @@ active_pos_step:
 .active_pos_step@ssa_block@3:
    LDA   #$01
    STA   __local_active_pos_step__1
-   LDA   #$00
-   STA   __local_active_pos_step__0
    JMP   .and_end@27
 .and_false@26:
    LDA   #$00
    STA   __local_active_pos_step__1
-   LDA   #$00
-   STA   __local_active_pos_step__0
 .and_end@27:
    LDA   __local_active_pos_step__1
-   ORA   __local_active_pos_step__0
    BEQ   .if_end@28
 .active_pos_step@asm_ssa_block@4:
    LDA   #$FF
@@ -612,17 +587,12 @@ active_neg_step:
 .active_neg_step@ssa_block@3:
    LDA   #$01
    STA   __local_active_neg_step__1
-   LDA   #$00
-   STA   __local_active_neg_step__0
    JMP   .and_end@31
 .and_false@30:
    LDA   #$00
    STA   __local_active_neg_step__1
-   LDA   #$00
-   STA   __local_active_neg_step__0
 .and_end@31:
    LDA   __local_active_neg_step__1
-   ORA   __local_active_neg_step__0
    BEQ   .if_end@32
 .active_neg_step@asm_ssa_block@3:
    LDA   #$01
@@ -653,17 +623,12 @@ drift_step:
 .drift_step@ssa_block@2:
    LDA   #$00
    STA   __local_drift_step__pos_0
-   LDA   #$00
-   STA   __local_drift_step__pos_1
    JMP   .or_end@36
 .or_true@35:
    LDA   #$01
    STA   __local_drift_step__pos_0
-   LDA   #$00
-   STA   __local_drift_step__pos_1
 .or_end@36:
    LDA   __local_drift_step__pos_0
-   ORA   __local_drift_step__pos_1
    BNE   .or_true@33
 .drift_step@asm_ssa_block@2:
    LDA   __local_drift_step__0
@@ -672,17 +637,12 @@ drift_step:
 .drift_step@ssa_block@4:
    LDA   #$00
    STA   __local_drift_step__pos_0
-   LDA   #$00
-   STA   __local_drift_step__pos_1
    JMP   .or_end@34
 .or_true@33:
    LDA   #$01
    STA   __local_drift_step__pos_0
-   LDA   #$00
-   STA   __local_drift_step__pos_1
 .or_end@34:
    LDA   __local_drift_step__pos_0
-   ORA   __local_drift_step__pos_1
    BEQ   .if_else@38
 .drift_step@asm_ssa_block@3:
    LDA   __local_drift_step__0

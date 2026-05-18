@@ -248,12 +248,20 @@ class Simulation:
         runtime: rt_mod.Runtime,
         origin: int,
         code_end: int,
+        function_names: set[str] | None = None,
     ) -> None:
         self.mpu = mpu
         self.symbols = symbols
         self.runtime = runtime
         self.origin = origin
         self.code_end = code_end
+        # Names of top-level `asm_ast.Function` entry points in the
+        # assembled program (no static-variable labels, no internal
+        # `.foo@N` block labels). Used by `run_bucketed` to attribute
+        # cycles to source-level functions.
+        self.function_names: set[str] = (
+            set(function_names) if function_names is not None else set()
+        )
 
     # The harness's step loop. Each iteration either fires a helper
     # hook (if PC matches a trap address) or asks py65 to run one
@@ -302,6 +310,69 @@ class Simulation:
             timed_out=timed_out,
         )
 
+    def run_bucketed(
+        self, max_cycles: int = DEFAULT_MAX_CYCLES,
+    ) -> tuple[SimResult, dict[str, int]]:
+        """Like `run()` but also returns a per-function cycle-bucket
+        map. Each step's cycle delta is attributed to the function
+        whose entry-point address is the largest in `function_names`
+        not exceeding the current PC. Cycles spent at the boot stub,
+        inside runtime-helper hooks, or anywhere outside a named
+        function fall into the `<other>` bucket.
+
+        Useful for optimization measurement: the whole-program
+        `SimResult.cycles` total mixes the function under test with
+        test instrumentation (`record()`, stubbed callees, `main()`
+        setup), which dilutes the optimization-relevant delta. The
+        bucket map lets callers quote the function-under-test slice
+        directly."""
+        import bisect
+        mpu = self.mpu
+        boundaries = sorted(
+            (self.symbols[name], name)
+            for name in self.function_names
+            if name in self.symbols
+        )
+        boundary_addrs = [a for a, _ in boundaries]
+        boundary_names = [n for _, n in boundaries]
+        cycles_by_fn: dict[str, int] = {n: 0 for n in boundary_names}
+        cycles_by_fn["<other>"] = 0
+
+        def _bucket_for(pc: int) -> str:
+            # Largest boundary <= pc; "<other>" if no boundary fits
+            # (pc before the first function or in static-data tail).
+            idx = bisect.bisect_right(boundary_addrs, pc) - 1
+            if idx < 0:
+                return "<other>"
+            return boundary_names[idx]
+
+        timed_out = False
+        prev_c = mpu.processorCycles
+        while mpu.processorCycles < max_cycles:
+            pc = mpu.pc
+            if pc in self.runtime.hooks:
+                self._hook_and_rts()
+                cycles_by_fn["<other>"] += (
+                    mpu.processorCycles - prev_c
+                )
+                prev_c = mpu.processorCycles
+                continue
+            if mpu.memory[pc] == 0x00:  # BRK
+                break
+            bucket = _bucket_for(pc)
+            mpu.step()
+            cycles_by_fn[bucket] += mpu.processorCycles - prev_c
+            prev_c = mpu.processorCycles
+        else:
+            timed_out = True
+        result = SimResult(
+            a=mpu.a, x=mpu.x, y=mpu.y, pc=mpu.pc, sp=mpu.sp,
+            cycles=mpu.processorCycles,
+            memory=bytearray(mpu.memory),
+            timed_out=timed_out,
+        )
+        return result, cycles_by_fn
+
 
 # -------- top-level helpers --------
 
@@ -336,9 +407,14 @@ def build_sim(
     # depend on py65's `start_pc` default.
     mpu.pc = runtime.boot_addr
     mpu.processorCycles = 0
+    function_names = {
+        tl.name for tl in asm_prog.top_level
+        if isinstance(tl, asm_ast.Function)
+    }
     return Simulation(
         mpu=mpu, symbols=assembled.symbols, runtime=runtime,
         origin=assembled.origin, code_end=assembled.code_end,
+        function_names=function_names,
     )
 
 

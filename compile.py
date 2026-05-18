@@ -67,6 +67,7 @@ from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 from passes.tail_call import apply_tail_call
 from passes.loop_counter_to_x import apply_loop_counter_to_x
+from passes.x_save_slot_load import apply_x_save_slot_load
 from passes.asm_licm import apply_licm
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
@@ -319,6 +320,14 @@ def _run_stage(
             all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
             asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=all_slot_symbols)
             asm3 = apply_loop_counter_to_x(asm3)
+            # Catch cases the X-pivot promotion couldn't reach: a
+            # Pseudo that got X-colored upstream but kept an
+            # `LDA M`-style read of its spill home M for arg
+            # passing, which reads stale M after DEX. Rewrite those
+            # LDA M to TXA. Runs before the post-promotion peephole
+            # fixedpoint so the now-dead STX M / LDX M wraps get
+            # cleaned up downstream.
+            asm3 = apply_x_save_slot_load(asm3)
             # Second pass of peephole catches what the promotion
             # exposed (e.g., redundant LDX/STX pairs after the
             # Y-pivot embedded in loop_counter_to_x freed up X).

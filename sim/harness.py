@@ -138,11 +138,13 @@ def compile_to_asm(
         )
         from compile import _peephole_fixedpoint
         from passes.loop_counter_to_x import apply_loop_counter_to_x
+        from passes.x_save_slot_load import apply_x_save_slot_load
         asm2_synth = synthesize_prologue(asm1, dims_by_fn)
         asm3 = _peephole_fixedpoint(
             asm2_synth, zp_slot_symbols=zp_slot_symbols,
         )
         asm3 = apply_loop_counter_to_x(asm3)
+        asm3 = apply_x_save_slot_load(asm3)
         asm3 = _peephole_fixedpoint(
             asm3, zp_slot_symbols=zp_slot_symbols,
         )

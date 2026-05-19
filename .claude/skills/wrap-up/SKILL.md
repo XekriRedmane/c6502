@@ -130,13 +130,17 @@ that could be published. Look for:
 - **r/6502** — the subreddit for 6502 programming, retrocomputing, and
   hardware. Audience already knows 6502 assembly and opcode quirks.
   Best fit: technical posts with concrete asm, narrow scope, a hook
-  that lands fast. ~600-1000 words. Save drafts to `docs/drafts/r6502/<slug>.md`.
+  that lands fast. ~600-1000 words. Save drafts to
+  `docs/drafts/r6502/<NNN>_<slug>.md` where `<NNN>` is the next
+  three-digit index after the highest existing one in that directory.
 
 - **Personal blog (log)** — long-form narrative for a personal
   audience. Best fit: walkthroughs, design rationales, project
   retrospectives, the why-and-how behind a change. Typically
   2000-3000+ words with code samples, subsections, and reflection.
-  Save drafts to `docs/drafts/log/<slug>.md`.
+  Save drafts to `docs/drafts/log/<NNN>_<slug>.md` where `<NNN>` is
+  the next three-digit index after the highest existing one in that
+  directory.
 
 A single session may produce material that fits both — the same change
 written as a tight Reddit post AND as a longer blog walkthrough is
@@ -145,29 +149,22 @@ when both apply.
 
 **If publishable material exists:**
 
-Draft the article(s) and save to the appropriate folder(s) above.
-Present suggestions with the drafts:
+Draft the article(s), save to the appropriate folder(s) above, then
+auto-commit and push them to main. Drafts are kept as a personal
+archive, not published anywhere — there's no platform handoff to wait
+for, so don't ask the user to approve or post. Present a summary of
+what was drafted and pushed:
 
-All wrap-up steps complete. I also found potential content to publish:
+All wrap-up steps complete. Drafted and pushed:
 
 1. "Title of Post" — 1-2 sentence description of the angle.
    Platform: r/6502
-   Draft saved to: docs/drafts/r6502/title-of-post.md
+   docs/drafts/r6502/NNN_title-of-post.md
 
 2. "Title of Post" — 1-2 sentence description of the angle.
    Platform: personal blog
-   Draft saved to: docs/drafts/log/title-of-post.md
-
-Wait for the user to respond. If they approve, post or prepare per platform.
-If they decline, the drafts remain for later.
+   docs/drafts/log/NNN_title-of-post.md
 
 **If no publishable material exists:**
 
-Say "Nothing worth publishing from this session" and you're done.
-
-**Scheduling considerations:**
-- If the session produced multiple publishable items, do not post them all
-  at once
-- Space posts at least a few hours apart per platform
-- If multiple posts are needed, post the most time-sensitive one now and
-  present a schedule for the rest
+Say "Nothing worth drafting from this session" and you're done.

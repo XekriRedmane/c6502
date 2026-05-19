@@ -78,10 +78,21 @@ this directory:
 - `redundant_store.py` — `apply_redundant_store_elimination`.
 - `replace_pseudoregisters.py` — pass 9 (see below).
 - `round_trip_load.py` — `apply_round_trip_load_drop`.
+- `split_mem_to_mem.py` — `apply_split_mem_to_mem`. Lowers `Mov(mem,
+  mem)` to `Mov(mem, Reg(A)); Mov(Reg(A), mem)` so every downstream
+  peephole sees the LDA + STA pair as separate atoms instead of one
+  opaque compound. Volatile mem-to-mem is skipped (the conservative
+  is_volatile bit doesn't tell which operand is volatile). Self-Movs
+  `Mov(M, M)` are dropped entirely. See "Mem-to-mem splitting" below.
 - `self_store_drop.py` — `apply_self_store_drop`.
 - `string_lifting.py` — pass 3 (see below).
 - `sub1_test_zero_peephole.py` — `apply_sub1_test_zero_peephole`.
 - `type_checking.py` — pass 6 (see below).
+- `via_a_store_fold.py` — `apply_via_a_store_fold`. Folds
+  `Mov(Reg(X), Reg(A)); Mov(Reg(A), Data|ZP)` to `Mov(Reg(X),
+  Data|ZP)` (TXA;STA → STX), same shape for Y. Recovers what
+  `x_save_slot_load`'s Pass 3 mem-to-mem case used to do directly
+  before `split_mem_to_mem` started breaking the mem-to-mem apart.
 - `y_peephole.py` — `apply_y_peephole` (LDY collapse, outside
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at
@@ -619,6 +630,16 @@ Always-on (runs in both optimized AND unoptimized pipelines):
 Only meaningful with `--optimize` (the unoptimized pipeline skips
 them):
 
+- `apply_split_mem_to_mem` — splits `Mov(mem, mem)` into the
+  `Mov(mem, Reg(A)); Mov(Reg(A), mem)` pair it would emit as,
+  exposing both halves to every downstream peephole. Volatile
+  mem-to-mem skipped (see "Mem-to-mem splitting" below). Self-Movs
+  dropped. Runs at the top of the fixedpoint so subsequent passes
+  in the same iteration see the split form.
+- `apply_via_a_store_fold` — folds `TXA;STA M` (and TYA;STA M)
+  to STX M (STY M) when A and flags are dead at the next
+  instruction. Recovers the STX/STY-direct form for the post-split
+  shape of an X-save-slot mem-to-mem read.
 - `apply_redundant_load_after_rmw` — drops `LDA M` after `INC M` /
   `DEC M` / shift-on-M when only the N/Z flag effect was needed (the
   RMW already set N/Z off M's new value).
@@ -673,6 +694,62 @@ Two more asm-only peepholes run OUTSIDE the fixed-point loop:
   branches whose target is out of the ±127-byte range into
   `Branch(inverted_cond, .skip); Jump(target); .skip:`. Runs once,
   after every other peephole has settled.
+
+## Mem-to-mem splitting (`split_mem_to_mem.py`)
+
+The asm IR allows a `Mov` atom whose src AND dst are both memory
+operands. The 6502 has no `MOV mem, mem` opcode, so `asm_emit`
+lowers such an atom to `LDA src; STA dst` using A as the staging
+register. Historically this compound form was opaque to every
+instruction-stream peephole — `redundant_load_elimination`
+couldn't see the implicit LDA, `apply_and_sign_bit_branch` lost
+adjacency with the AND it was trying to fold, and so on. The
+fix used to be a growing list of per-pass mem-to-mem-aware
+carve-outs (`_update_for_mov`'s volatile branch,
+`x_save_slot_load`'s Pass 3, `round_trip_load`'s Pattern B).
+
+`apply_split_mem_to_mem` runs at the top of the asm-peephole
+fixedpoint and rewrites every non-volatile `Mov(mem_src, mem_dst)`
+into the explicit pair:
+
+    Mov(mem_src, Reg(A))     # LDA src
+    Mov(Reg(A), mem_dst)     # STA dst
+
+Every downstream peephole then sees the LDA + STA as separate
+atoms and applies its normal logic — `redundant_load_elimination`
+drops the LDA if A already mirrors src, `asm_dead_store` drops
+the STA if dst is dead, etc.
+
+**Volatile mem-to-mem stays compound.** The `is_volatile` flag on
+a Mov atom is conservative: it's True when *either* operand is a
+volatile-typed cell, with no way to tell which. Splitting would
+force both halves to inherit the bit, blocking
+`redundant_load_elimination` (which never drops volatile loads)
+and regressing on cases like the `volatile uint8_t y` inner loop
+in `sfx_tone`. The existing volatile-aware branch in
+`redundant_load._update_for_mov` already handles these correctly
+without splitting.
+
+**Self-Mov `Mov(M, M)` is dropped, not split.** Mirrors the
+existing emit-time peephole at `asm_emit.py:513`.
+
+**Other passes that produce mem-to-mem.** `apply_memory_value_
+propagation` can substitute a tracked-Expr into an operand slot
+and create a fresh mem-to-mem atom; the split runs at the top of
+each fixedpoint iteration so any such mid-fixedpoint creation is
+caught on the next pass through.
+
+**Supporting peepholes.** Two follow-ups recover what the split
+broke for specific patterns:
+
+  * `apply_via_a_store_fold` — `TXA;STA M → STX M` (and Y).
+    Recovers the STX/STY-direct form for an X-save-slot mem-to-
+    mem read after `x_save_slot_load`'s Pass 3 rewrites the LDA
+    half to TXA but leaves the STA in place.
+  * `apply_and_sign_bit_branch`'s 4-instr variant — tolerates an
+    intermediate STA between the LDA-shape atom and `AND #80;
+    Branch`. The STA is what the split inserts when the original
+    mem-to-mem-LDA was the source value.
 
 ## Direct-into-X/Y peephole (`direct_index_load.py`)
 

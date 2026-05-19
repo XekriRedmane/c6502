@@ -77,17 +77,37 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):
+        # The classic 3-instruction window: LDA; AND #80; Branch.
         if (i + 2 < len(instrs)
                 and _is_lda_to_a(instrs[i])
                 and _is_and_imm80(instrs[i + 1])
                 and _is_eq_ne_branch(instrs[i + 2])
                 and a_dead_at(instrs, i + 3)):
-            # Keep the LDA, drop the AND, flip the branch condition.
             br = instrs[i + 2]
             new_cond = asm_ast.PL() if isinstance(br.cond, asm_ast.EQ) else asm_ast.MI()
             out.append(instrs[i])
             out.append(asm_ast.Branch(cond=new_cond, target=br.target))
             i += 3
+            continue
+        # The 4-instruction variant with an intermediate STA. Arises
+        # after passes.split_mem_to_mem lowers the LDA+STA mem-to-mem
+        # into two atoms — what used to be `Mov(M, dst_mem); AND #80;
+        # Branch` (3-instr, matched by the case above via the mem-to-
+        # mem-aware `_is_lda_to_a`) is now `Mov(M, A); Mov(A, dst);
+        # AND #80; Branch`. STA doesn't touch A or N/Z, so the same
+        # fold applies: drop AND, flip the branch.
+        if (i + 3 < len(instrs)
+                and _is_lda_to_a(instrs[i])
+                and _is_a_store_to_mem(instrs[i + 1])
+                and _is_and_imm80(instrs[i + 2])
+                and _is_eq_ne_branch(instrs[i + 3])
+                and a_dead_at(instrs, i + 4)):
+            br = instrs[i + 3]
+            new_cond = asm_ast.PL() if isinstance(br.cond, asm_ast.EQ) else asm_ast.MI()
+            out.append(instrs[i])
+            out.append(instrs[i + 1])
+            out.append(asm_ast.Branch(cond=new_cond, target=br.target))
+            i += 4
             continue
         out.append(instrs[i])
         i += 1
@@ -95,6 +115,17 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _is_a_store_to_mem(instr) -> bool:
+    """True iff `instr` is `Mov(Reg(A), <stable mem>)` — a STA that
+    preserves A's value AND leaves N/Z untouched. The destination's
+    addressing mode doesn't matter for this fold; we just need to
+    know the atom is a STA, not something that clobbers A."""
+    return (isinstance(instr, asm_ast.Mov)
+            and not instr.is_volatile
+            and _is_reg_a(instr.src)
+            and not isinstance(instr.dst, asm_ast.Reg))
 
 
 def _is_lda_to_a(instr) -> bool:

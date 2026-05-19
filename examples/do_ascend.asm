@@ -60,9 +60,7 @@ do_ascend:
    BNE   .if_end@2
    LDA   __zpabi_do_ascend__asc_floor
    STA   beam_seed_floor
-   LDA   __zpabi_do_ascend__asc_floor
    STA   floor_mirror
-   LDA   __zpabi_do_ascend__asc_floor
    STA   dsc_floor
    LDA   #$FF
    STA   ent_rescued

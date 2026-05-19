@@ -67,6 +67,8 @@ from passes.prune_unused_slots import prune_unused_locals
 from passes.cmp_sbc_fusion import apply_cmp_sbc_fusion
 from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 from passes.tail_call import apply_tail_call
+from passes.split_mem_to_mem import apply_split_mem_to_mem
+from passes.via_a_store_fold import apply_via_a_store_fold
 from passes.loop_counter_to_x import apply_loop_counter_to_x
 from passes.x_save_slot_load import apply_x_save_slot_load
 from passes.asm_licm import apply_licm
@@ -173,7 +175,8 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
     chain. `redundant_load_after_rmw` runs after dec/inc — it
     needs the rmw form to exist to recognize its pattern."""
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
-        new_prog = apply_inc_peephole(prog)
+        new_prog = apply_split_mem_to_mem(prog)
+        new_prog = apply_inc_peephole(new_prog)
         new_prog = apply_dec_peephole(new_prog)
         new_prog = apply_sub1_test_zero_peephole(new_prog)
         new_prog = apply_direct_index_load(new_prog)
@@ -201,6 +204,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_cmp_sbc_fusion(new_prog)
         new_prog = apply_dec_inc_branch_fold(new_prog)
         new_prog = apply_tail_call(new_prog)
+        new_prog = apply_via_a_store_fold(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog

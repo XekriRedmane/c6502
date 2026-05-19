@@ -90,5 +90,62 @@ class TestAndSignBitBranch(unittest.TestCase):
         self.assertEqual(len(out), 4)
 
 
+class TestIntermediateStoreVariant(unittest.TestCase):
+    """4-instruction form with a STA between LDA and AND. Arises
+    after `passes.split_mem_to_mem` lowers a mem-to-mem
+    `Mov(M, dst); AND #80; Branch` into `Mov(M, A); Mov(A, dst);
+    AND #80; Branch`."""
+
+    def test_lda_sta_and_bne_folds(self):
+        x = asm_ast.Data(name="x", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        prog = _wrap([
+            asm_ast.Mov(src=x, dst=_A),
+            asm_ast.Mov(src=_A, dst=dst),
+            asm_ast.And(src=asm_ast.Imm(value=0x80), dst=_A),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".target"),
+            _ret(),
+        ])
+        out = _instrs(apply_and_sign_bit_branch(prog))
+        # AND dropped; Branch converted to MI.
+        self.assertEqual(len(out), 4)
+        self.assertEqual(out[0].src, x)
+        self.assertEqual(out[1].dst, dst)  # STA preserved
+        self.assertEqual(out[2], asm_ast.Branch(
+            cond=asm_ast.MI(), target=".target",
+        ))
+
+    def test_lda_sta_and_beq_folds(self):
+        x = asm_ast.Data(name="x", offset=0)
+        dst = asm_ast.ZP(address=0x85, offset=0)
+        prog = _wrap([
+            asm_ast.Mov(src=x, dst=_A),
+            asm_ast.Mov(src=_A, dst=dst),
+            asm_ast.And(src=asm_ast.Imm(value=0x80), dst=_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".target"),
+            _ret(),
+        ])
+        out = _instrs(apply_and_sign_bit_branch(prog))
+        self.assertEqual(out[2], asm_ast.Branch(
+            cond=asm_ast.PL(), target=".target",
+        ))
+
+    def test_skipped_when_a_live_after_branch(self):
+        # If A is still live after the Branch, the original AND's
+        # value matters — don't drop.
+        x = asm_ast.Data(name="x", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        prog = _wrap([
+            asm_ast.Mov(src=x, dst=_A),
+            asm_ast.Mov(src=_A, dst=dst),
+            asm_ast.And(src=asm_ast.Imm(value=0x80), dst=_A),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".target"),
+            asm_ast.Mov(src=_A, dst=asm_ast.Data(name="y", offset=0)),
+            _ret(),
+        ])
+        out = _instrs(apply_and_sign_bit_branch(prog))
+        self.assertEqual(len(out), 6)  # unchanged
+
+
 if __name__ == "__main__":
     unittest.main()

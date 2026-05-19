@@ -634,7 +634,6 @@ companion_update:
    CMP   #$9A
    BCS   .loop@1_continue
    STX   __zpabi_entity_proximity__slot
-   LDA   __local_companion_update__4
    STA   __zpabi_entity_proximity__screen_x
    LDA   __zpabi_companion_update__hit_max
    STA   __zpabi_entity_proximity__hit_max

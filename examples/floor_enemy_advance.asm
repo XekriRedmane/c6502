@@ -14,8 +14,6 @@ __local_floor_enemy_advance__slot	EQU	$86
 floor_enemy_advance:
    SUBROUTINE
 
-.floor_enemy_advance@asm_ssa_preheader@0:
-.floor_enemy_advance@ssa_block@0:
    LDA   #$03
    STA   __local_floor_enemy_advance__slot
 .loop@0_start:
@@ -23,20 +21,16 @@ floor_enemy_advance:
    BPL   .lb_skip@0
    JMP   .loop@0_break
 .lb_skip@0:
-.floor_enemy_advance@asm_ssa_block@0:
    LDX   __local_floor_enemy_advance__slot
    LDA   enemy_flag,X
    BNE   .if_else@1
-.floor_enemy_advance@asm_ssa_block@1:
    LDA   jump_flag
    BPL   .if_end@2
-.floor_enemy_advance@asm_ssa_block@2:
    LDA   #$00
    STA   jump_flag
    LDX   __zpabi_floor_enemy_advance__player_col
    LDA   floor_enemy_spawn_sched,X
    BMI   .if_end@3
-.floor_enemy_advance@asm_ssa_block@3:
    LDA   #$20
    STA   __zpabi_snd_delay_down__pitch
    LDA   #$0A
@@ -50,7 +44,6 @@ floor_enemy_advance:
    LDA   (DPTR),Y
    CMP   #$20
    BNE   .if_else@5
-.floor_enemy_advance@asm_ssa_block@4:
    LDX   __local_floor_enemy_advance__slot
    LDA   #$FF
    STA   enemy_flag,X
@@ -75,17 +68,14 @@ floor_enemy_advance:
 .if_else@1:
    AND   #$80
    BEQ   .if_else@7
-.floor_enemy_advance@asm_ssa_block@5:
    LDA   __zpabi_floor_enemy_advance__move_dir
    BNE   .if_else@9
-.floor_enemy_advance@ssa_block@7:
    LDA   #$07
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@8
 .if_else@9:
    AND   #$80
    BEQ   .if_else@11
-.floor_enemy_advance@ssa_block@8:
    LDA   #$05
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@10
@@ -103,7 +93,6 @@ floor_enemy_advance:
    SBC   #$02
    CMP   #$8D
    BCC   .if_end@12
-.floor_enemy_advance@asm_ssa_block@6:
    LDA   #$00
    STA   enemy_flag,X
 .if_end@12:
@@ -111,14 +100,12 @@ floor_enemy_advance:
 .if_else@7:
    LDA   __zpabi_floor_enemy_advance__move_dir
    BNE   .if_else@14
-.floor_enemy_advance@ssa_block@10:
    LDA   #$07
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@13
 .if_else@14:
    AND   #$80
    BEQ   .if_else@16
-.floor_enemy_advance@ssa_block@11:
    LDA   #$09
    STA   __local_floor_enemy_advance__step
    JMP   .if_end@15
@@ -134,13 +121,11 @@ floor_enemy_advance:
    STA   enemy_col,X
    CMP   #$8F
    BCC   .if_end@17
-.floor_enemy_advance@asm_ssa_block@7:
    LDA   #$00
    STA   enemy_flag,X
 .if_end@17:
 .if_end@6:
 .if_end@0:
-.loop@0_continue:
    DEC   __local_floor_enemy_advance__slot
    JMP   .loop@0_start
 .loop@0_break:

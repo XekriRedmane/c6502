@@ -20,12 +20,8 @@ __local_draw_sprite_opaque__y	EQU	$8D
 draw_sprite_opaque:
    SUBROUTINE
 
-.draw_sprite_opaque@asm_ssa_block@0:
    LDA   __zpabi_draw_sprite_opaque__page_flag
-   BPL   .cond_else@0
-.draw_sprite_opaque@ssa_block@1:
-   JMP   .cond_end@1
-.cond_else@0:
+   BMI   .cond_end@1
 .cond_end@1:
    LDA   #$00
    STA   __local_draw_sprite_opaque__y
@@ -35,7 +31,6 @@ draw_sprite_opaque:
 .loop@0_start:
    LDA   __local_draw_sprite_opaque__h
    BEQ   .loop@0_break
-.draw_sprite_opaque@ssa_block@2:
    LDA   #<screen_row_addr_hi
    STA   DPTR
    LDA   #>screen_row_addr_hi
@@ -56,11 +51,9 @@ draw_sprite_opaque:
 .loop@1_start:
    LDA   __local_draw_sprite_opaque__row_remain
    BMI   .loop@1_break
-.draw_sprite_opaque@asm_ssa_block@1:
    LDA   __local_draw_sprite_opaque__x
    CMP   #$28
    BCS   .if_end@2
-.draw_sprite_opaque@asm_ssa_block@2:
    LDY   __local_draw_sprite_opaque__y
    LDA   (__zpabi_draw_sprite_opaque__tile_src_0),Y
    STA   __local_draw_sprite_opaque__0
@@ -72,13 +65,11 @@ draw_sprite_opaque:
    LDY   __local_draw_sprite_opaque__x
    STA   (__local_draw_sprite_opaque__1),Y
 .if_end@2:
-.loop@1_continue:
    DEC   __local_draw_sprite_opaque__row_remain
    DEC   __local_draw_sprite_opaque__x
    INC   __local_draw_sprite_opaque__y
    JMP   .loop@1_start
 .loop@1_break:
-.loop@0_continue:
    DEC   __local_draw_sprite_opaque__h
    INX
    JMP   .loop@0_start

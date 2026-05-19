@@ -55,6 +55,7 @@ from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
 from passes.branch_invert import apply_branch_invert
+from passes.dead_label_drop import apply_dead_label_drop
 from passes.const_arith_fold import apply_const_arith_fold
 from passes.mem_const_prop import apply_mem_const_prop
 from passes.round_trip_load import apply_round_trip_load_drop
@@ -189,6 +190,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
             new_prog, zp_slot_symbols=zp_slot_symbols,
         )
         new_prog = apply_dead_a_arith_elimination(new_prog)
+        new_prog = apply_dead_label_drop(new_prog)
         new_prog = apply_branch_invert(new_prog)
         new_prog = apply_mem_const_prop(new_prog)
         new_prog = apply_const_arith_fold(new_prog)

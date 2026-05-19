@@ -7,7 +7,6 @@ __zpabi_spawn_pos_dir__slot	EQU	$80
 spawn_pos_dir:
    SUBROUTINE
 
-.spawn_pos_dir@asm_ssa_block@0:
    LDX   __zpabi_spawn_pos_dir__slot
    LDA   #$01
    STA   entity_active,X

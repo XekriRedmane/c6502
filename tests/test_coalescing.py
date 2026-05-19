@@ -260,19 +260,20 @@ class TestCoalescingEndToEnd(unittest.TestCase):
             "}\n"
         )
         asm = self._compile(src)
-        # Find the .loop@0_continue: block — between that label
-        # and the next label, we should see a single `INC $XX`
-        # for `i++`, not the LDA-CLC-ADC-STA-LDA-STA chain.
-        cont_idx = asm.find(".loop@0_continue:")
-        self.assertNotEqual(cont_idx, -1)
-        # Slice from cont_idx to the next label (line starting with
-        # `.` after a newline).
-        rest = asm[cont_idx:]
-        # The continue block should contain `INC` somewhere before
-        # the next label or branch out — and crucially not `ADC #$01`
-        # (which would be the unfolded ADC-chain shape).
-        # Simple substring check: between continue and break/start.
-        end_idx = rest.find(".loop@0_break")
+        # The loop's tail (between .loop@0_start: and the
+        # back-edge JMP / loop_break) should contain a single
+        # `INC` for `i++`, not the LDA-CLC-ADC-STA-LDA-STA chain.
+        # Use .loop@0_start: as the anchor — that label is always
+        # referenced by the back-edge jump and survives the
+        # unreferenced-label cleanup; .loop@0_continue: gets
+        # dropped when no `continue` statement targets it.
+        start_idx = asm.find(".loop@0_start:")
+        self.assertNotEqual(start_idx, -1)
+        rest = asm[start_idx:]
+        # Match `.loop@0_break:` (with colon) — the label, not the
+        # branch-target reference inside an instruction like
+        # `BCS .loop@0_break`.
+        end_idx = rest.find(".loop@0_break:")
         if end_idx == -1:
             end_idx = len(rest)
         block = rest[:end_idx]

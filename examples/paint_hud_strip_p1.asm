@@ -7,8 +7,6 @@ __local_paint_hud_strip_p1__y	EQU	$81
 paint_hud_strip_p1:
    SUBROUTINE
 
-.paint_hud_strip_p1@asm_ssa_preheader@0:
-.paint_hud_strip_p1@ssa_block@0:
    LDA   #$00
    STA   __local_paint_hud_strip_p1__y
    LDY   #$0F
@@ -65,10 +63,8 @@ paint_hud_strip_p1:
    STA   $358C,Y
    STA   $398C,Y
    STA   $3D8C,Y
-.loop@0_continue:
    DEY
    BPL   .paint_hud_strip_p1@asm_ssa_split@0
-.paint_hud_strip_p1@asm_ssa_block@0:
    RTS
 .paint_hud_strip_p1@asm_ssa_split@0:
    JMP   .loop@0_start

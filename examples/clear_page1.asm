@@ -13,8 +13,6 @@ __local_clear_page1__x	EQU	$84
 clear_page1:
    SUBROUTINE
 
-.clear_page1@asm_ssa_preheader@0:
-.clear_page1@ssa_block@0:
    LDA   __zpabi_clear_page1__zp_clear_col
    STA   __local_clear_page1__x
 .loop@0_start:
@@ -61,12 +59,8 @@ clear_page1:
    JSR   interlace_fill_p1
    LDA   __local_clear_page1__x
    CMP   __zpabi_clear_page1__zp_clear_col_end
-   BNE   .if_end@0
-.clear_page1@asm_ssa_block@0:
-   JMP   .loop@0_break
-.if_end@0:
+   BEQ   .loop@0_break
    DEC   __local_clear_page1__x
-.loop@0_continue:
    JMP   .loop@0_start
 .loop@0_break:
    LDX   #$27
@@ -85,12 +79,8 @@ clear_page1:
    STA   $3950,X
    STA   $3D50,X
    TXA
-   BNE   .if_end@1
-.clear_page1@asm_ssa_block@1:
-   JMP   .loop@1_break
-.if_end@1:
+   BEQ   .loop@1_break
    DEX
-.loop@1_continue:
    JMP   .loop@1_start
 .loop@1_break:
    RTS

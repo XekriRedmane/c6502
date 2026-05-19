@@ -21,15 +21,12 @@ __local_floor_enemy_draw__slot	EQU	$8C
 floor_enemy_draw:
    SUBROUTINE
 
-.floor_enemy_draw@asm_ssa_preheader@0:
-.floor_enemy_draw@ssa_block@0:
    LDX   #$03
 .loop@0_start:
    LDA   enemy_flag,X
-   BNE   .if_end@0
-.floor_enemy_draw@asm_ssa_block@0:
+   BNE   .lb_skip@0
    JMP   .loop@0_continue
-.if_end@0:
+.lb_skip@0:
    LDY   enemy_col,X
    LDA   proj_screen_col,Y
    STA   __local_floor_enemy_draw__3
@@ -38,13 +35,10 @@ floor_enemy_draw:
    TXA
    CMP   #$00
    BEQ   .dispatch@0@case@0
-.floor_enemy_draw@asm_ssa_block@1:
    CMP   #$01
    BEQ   .dispatch@0@case@1
-.floor_enemy_draw@asm_ssa_block@2:
    CMP   #$02
    BEQ   .dispatch@0@case@2
-.floor_enemy_draw@asm_ssa_block@3:
    LDA   floor_enemy_spr_s3_lo,Y
    STA   __local_floor_enemy_draw__2
    JMP   .dispatch@0@end
@@ -64,13 +58,10 @@ floor_enemy_draw:
    TXA
    CMP   #$00
    BEQ   .dispatch@1@case@0
-.floor_enemy_draw@asm_ssa_block@4:
    CMP   #$01
    BEQ   .dispatch@1@case@1
-.floor_enemy_draw@asm_ssa_block@5:
    CMP   #$02
    BEQ   .dispatch@1@case@2
-.floor_enemy_draw@asm_ssa_block@6:
    LDA   floor_enemy_spr_s3_hi,Y
    STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
@@ -111,7 +102,6 @@ floor_enemy_draw:
 .loop@0_continue:
    DEX
    BPL   .floor_enemy_draw@asm_ssa_split@0
-.floor_enemy_draw@asm_ssa_block@7:
    RTS
 .floor_enemy_draw@asm_ssa_split@0:
    JMP   .loop@0_start

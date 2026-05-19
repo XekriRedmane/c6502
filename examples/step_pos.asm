@@ -15,7 +15,6 @@ __local_step_pos__2	EQU	$86
 step_pos:
    SUBROUTINE
 
-.step_pos@asm_ssa_block@0:
    LDA   __zpabi_step_pos__anim_in
    SEC
    SBC   #$01

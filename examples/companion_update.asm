@@ -89,7 +89,6 @@ __local_smc_body_draw__0	EQU	$9D
 compute_screen_x:
    SUBROUTINE
 
-.compute_screen_x@asm_ssa_block@0:
    LDX   __zpabi_compute_screen_x__player_y
    LDA   perspective_xoff_lo,X
    SEC
@@ -111,16 +110,12 @@ compute_screen_x:
 find_active_entity:
    SUBROUTINE
 
-.find_active_entity@asm_ssa_preheader@0:
-.find_active_entity@ssa_block@0:
    LDX   __zpabi_find_active_entity__hit_max
 .loop@0_start:
    TXA
    BMI   .loop@0_break
-.find_active_entity@asm_ssa_block@0:
    LDA   entity_hit_state,X
    BMI   .if_end@0
-.find_active_entity@asm_ssa_block@1:
    LDA   entity_hit_row,X
    SEC
    SBC   #$08
@@ -129,7 +124,6 @@ find_active_entity:
    LDA   #$01
    RTS
 .if_end@0:
-.loop@0_continue:
    DEX
    JMP   .loop@0_start
 .loop@0_break:
@@ -139,7 +133,6 @@ find_active_entity:
 entity_proximity:
    SUBROUTINE
 
-.entity_proximity@asm_ssa_block@0:
    LDA   #<__local_entity_proximity__entity_row
    STA   __local_entity_proximity__0
    LDA   #>__local_entity_proximity__entity_row
@@ -152,7 +145,6 @@ entity_proximity:
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
    BEQ   .lnot_true@0
-.entity_proximity@asm_ssa_block@1:
    LDA   #$00
    JMP   .lnot_end@1
 .lnot_true@0:
@@ -160,7 +152,6 @@ entity_proximity:
 .lnot_end@1:
    ORA   #$00
    BEQ   .if_end@1
-.entity_proximity@asm_ssa_block@2:
    RTS
 .if_end@1:
    LDX   __zpabi_entity_proximity__slot
@@ -169,16 +160,13 @@ entity_proximity:
    LDA   __local_entity_proximity__entity_row
    CMP   __local_entity_proximity__0
    BEQ   .if_end@2
-.entity_proximity@asm_ssa_block@3:
    RTS
 .if_end@2:
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$40
    BCC   .and_false@3
-.entity_proximity@asm_ssa_block@4:
    CMP   #$47
    BCS   .and_false@3
-.entity_proximity@ssa_block@4:
    LDA   #$01
    STA   __local_entity_proximity__1
    JMP   .and_end@4
@@ -188,7 +176,6 @@ entity_proximity:
 .and_end@4:
    LDA   __local_entity_proximity__1
    BEQ   .if_end@5
-.entity_proximity@asm_ssa_block@5:
    LDX   __zpabi_entity_proximity__slot
    LDA   #$FF
    STA   companion_state,X
@@ -201,14 +188,11 @@ entity_proximity:
    LDX   __zpabi_entity_proximity__slot
    LDA   companion_dir,X
    BMI   .if_else@7
-.entity_proximity@asm_ssa_block@6:
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$30
    BCC   .and_false@8
-.entity_proximity@asm_ssa_block@7:
    CMP   #$38
    BCS   .and_false@8
-.entity_proximity@ssa_block@8:
    LDA   #$01
    STA   __local_entity_proximity__1
    JMP   .and_end@9
@@ -218,7 +202,6 @@ entity_proximity:
 .and_end@9:
    LDA   __local_entity_proximity__1
    BEQ   .if_end@10
-.entity_proximity@asm_ssa_block@8:
    LDX   __zpabi_entity_proximity__slot
    LDA   #$00
    STA   companion_state,X
@@ -228,10 +211,8 @@ entity_proximity:
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$50
    BCC   .and_false@11
-.entity_proximity@asm_ssa_block@9:
    CMP   #$58
    BCS   .and_false@11
-.entity_proximity@ssa_block@11:
    LDA   #$01
    STA   __local_entity_proximity__1
    JMP   .and_end@12
@@ -241,7 +222,6 @@ entity_proximity:
 .and_end@12:
    LDA   __local_entity_proximity__1
    BEQ   .if_end@13
-.entity_proximity@asm_ssa_block@10:
    LDX   __zpabi_entity_proximity__slot
    LDA   #$00
    STA   companion_state,X
@@ -252,7 +232,6 @@ entity_proximity:
 smc_body_draw:
    SUBROUTINE
 
-.smc_body_draw@asm_ssa_block@0:
    LDX   __zpabi_smc_body_draw__slot
    LDA   companion_dir,X
    AND   #$80
@@ -261,12 +240,10 @@ smc_body_draw:
    STA   __local_smc_body_draw__hi
    CMP   #$00
    BNE   .cmp_differ@4
-.smc_body_draw@asm_ssa_block@1:
    LDA   __local_smc_body_draw__lo
    CMP   #$00
 .cmp_differ@4:
    BNE   .cmp_true@2
-.smc_body_draw@asm_ssa_block@2:
    LDA   #$00
    JMP   .cmp_end@3
 .cmp_true@2:
@@ -275,16 +252,12 @@ smc_body_draw:
    STA   __local_smc_body_draw__0
    LDA   __zpabi_smc_body_draw__state
    BNE   .if_else@15
-.smc_body_draw@ssa_block@1:
    LDA   #$00
    STA   __local_smc_body_draw__hi
    JMP   .if_end@14
 .if_else@15:
    LDA   __local_smc_body_draw__0
-   BEQ   .cond_else@16
-.smc_body_draw@ssa_block@2:
-   JMP   .cond_end@17
-.cond_else@16:
+   BNE   .cond_end@17
 .cond_end@17:
    LDA   #<pos_walk_next
    STA   DPTR
@@ -322,14 +295,11 @@ smc_body_draw:
 .if_end@14:
    LDA   __local_smc_body_draw__0
    BEQ   .if_else@19
-.smc_body_draw@ssa_block@3:
    LDA   __local_smc_body_draw__hi
    CMP   #$00
    BEQ   .dispatch@0@case@0
-.smc_body_draw@asm_ssa_block@3:
    CMP   #$01
    BEQ   .dispatch@0@case@1
-.smc_body_draw@asm_ssa_block@4:
    LDX   __zpabi_smc_body_draw__frame_idx
    LDA   companion_neg_pose3_lo,X
    STA   __local_smc_body_draw__lo
@@ -348,10 +318,8 @@ smc_body_draw:
    LDA   __local_smc_body_draw__hi
    CMP   #$00
    BEQ   .dispatch@1@case@0
-.smc_body_draw@asm_ssa_block@5:
    CMP   #$01
    BEQ   .dispatch@1@case@1
-.smc_body_draw@asm_ssa_block@6:
    LDX   __zpabi_smc_body_draw__frame_idx
    LDA   companion_neg_pose3_hi,X
    STA   __local_smc_body_draw__hi
@@ -372,10 +340,8 @@ smc_body_draw:
    LDA   __local_smc_body_draw__hi
    CMP   #$00
    BEQ   .dispatch@2@case@0
-.smc_body_draw@asm_ssa_block@7:
    CMP   #$01
    BEQ   .dispatch@2@case@1
-.smc_body_draw@asm_ssa_block@8:
    LDX   __zpabi_smc_body_draw__frame_idx
    LDA   companion_pos_pose3_lo,X
    STA   __local_smc_body_draw__lo
@@ -394,10 +360,8 @@ smc_body_draw:
    LDA   __local_smc_body_draw__hi
    CMP   #$00
    BEQ   .dispatch@3@case@0
-.smc_body_draw@asm_ssa_block@9:
    CMP   #$01
    BEQ   .dispatch@3@case@1
-.smc_body_draw@asm_ssa_block@10:
    LDX   __zpabi_smc_body_draw__frame_idx
    LDA   companion_pos_pose3_hi,X
    STA   __local_smc_body_draw__hi
@@ -433,14 +397,11 @@ smc_body_draw:
 player_catch:
    SUBROUTINE
 
-.player_catch@asm_ssa_block@0:
    LDA   __zpabi_player_catch__screen_x
    CMP   #$40
    BCC   .or_true@20
-.player_catch@asm_ssa_block@1:
    CMP   #$50
    BCS   .or_true@20
-.player_catch@ssa_block@2:
    LDA   #$00
    STA   __local_player_catch__1
    JMP   .or_end@21
@@ -450,7 +411,6 @@ player_catch:
 .or_end@21:
    LDA   __local_player_catch__1
    BEQ   .if_end@22
-.player_catch@asm_ssa_block@2:
    RTS
 .if_end@22:
    LDA   __zpabi_player_catch__player_col
@@ -463,7 +423,6 @@ player_catch:
    LDA   __local_player_catch__1
    CMP   __local_player_catch__0
    BCC   .if_end@23
-.player_catch@asm_ssa_block@3:
    RTS
 .if_end@23:
    CLC
@@ -474,7 +433,6 @@ player_catch:
    LDA   __local_player_catch__1
    CMP   __local_player_catch__0
    BCS   .if_end@24
-.player_catch@asm_ssa_block@4:
    RTS
 .if_end@24:
    LDA   #$FF
@@ -484,12 +442,10 @@ player_catch:
 active_pos_step:
    SUBROUTINE
 
-.active_pos_step@asm_ssa_block@0:
    LDY   __zpabi_active_pos_step__slot
    JSR   prng
    CMP   #$05
    BCS   .if_end@25
-.active_pos_step@asm_ssa_block@1:
    LDA   #$FF
    STA   companion_dir,Y
 .if_end@25:
@@ -509,15 +465,12 @@ active_pos_step:
    LDA   #$00
    CMP   #$00
    BNE   .and_false@26
-.active_pos_step@asm_ssa_block@2:
    LDA   __local_active_pos_step__0
    CMP   #$03
    BNE   .and_false@26
-.active_pos_step@asm_ssa_block@3:
    LDA   __local_active_pos_step__1
    CMP   #$52
    BCC   .and_false@26
-.active_pos_step@ssa_block@3:
    LDA   #$01
    STA   __local_active_pos_step__1
    JMP   .and_end@27
@@ -527,7 +480,6 @@ active_pos_step:
 .and_end@27:
    LDA   __local_active_pos_step__1
    BEQ   .if_end@28
-.active_pos_step@asm_ssa_block@4:
    LDA   #$FF
    STA   companion_dir,Y
    LDX   __zpabi_active_pos_step__player_floor
@@ -544,12 +496,10 @@ active_pos_step:
 active_neg_step:
    SUBROUTINE
 
-.active_neg_step@asm_ssa_block@0:
    LDY   __zpabi_active_neg_step__slot
    JSR   prng
    CMP   #$05
    BCS   .if_end@29
-.active_neg_step@asm_ssa_block@1:
    LDA   #$01
    STA   companion_dir,Y
 .if_end@29:
@@ -568,11 +518,9 @@ active_neg_step:
    STA   companion_pos_hi,Y
    ORA   #$00
    BNE   .and_false@30
-.active_neg_step@asm_ssa_block@2:
    LDA   __local_active_neg_step__1
    CMP   #$3E
    BCS   .and_false@30
-.active_neg_step@ssa_block@3:
    LDA   #$01
    STA   __local_active_neg_step__1
    JMP   .and_end@31
@@ -582,7 +530,6 @@ active_neg_step:
 .and_end@31:
    LDA   __local_active_neg_step__1
    BEQ   .if_end@32
-.active_neg_step@asm_ssa_block@3:
    LDA   #$01
    STA   companion_dir,Y
    LDX   __zpabi_active_neg_step__player_floor
@@ -599,16 +546,13 @@ active_neg_step:
 drift_step:
    SUBROUTINE
 
-.drift_step@asm_ssa_block@0:
    LDX   __zpabi_drift_step__slot
    LDA   companion_row,X
    STA   __local_drift_step__0
    CMP   #$63
    BEQ   .or_true@35
-.drift_step@asm_ssa_block@1:
    CMP   #$8B
    BEQ   .or_true@35
-.drift_step@ssa_block@2:
    LDA   #$00
    STA   __local_drift_step__pos_0
    JMP   .or_end@36
@@ -618,11 +562,9 @@ drift_step:
 .or_end@36:
    LDA   __local_drift_step__pos_0
    BNE   .or_true@33
-.drift_step@asm_ssa_block@2:
    LDA   __local_drift_step__0
    CMP   #$B3
    BEQ   .or_true@33
-.drift_step@ssa_block@4:
    LDA   #$00
    STA   __local_drift_step__pos_0
    JMP   .or_end@34
@@ -632,7 +574,6 @@ drift_step:
 .or_end@34:
    LDA   __local_drift_step__pos_0
    BEQ   .if_else@38
-.drift_step@asm_ssa_block@3:
    LDA   __local_drift_step__0
    SEC
    SBC   #$04
@@ -653,7 +594,6 @@ drift_step:
    STA   __local_drift_step__0
    LDA   companion_dir,X
    BPL   .if_else@40
-.drift_step@ssa_block@6:
    LDA   __local_drift_step__pos_0
    SEC
    SBC   #$03
@@ -691,20 +631,17 @@ drift_step:
 companion_update:
    SUBROUTINE
 
-.companion_update@asm_ssa_block@0:
    LDA   __zpabi_companion_update__gate
    BPL   .if_end@41
-.companion_update@asm_ssa_block@1:
    RTS
 .if_end@41:
    LDX   #$01
 .loop@1_start:
    LDA   companion_state,X
    STA   __local_companion_update__0
-   BMI   .lb_skip@0
+   BMI   .lb_skip@1
    JMP   .if_end@42
-.lb_skip@0:
-.companion_update@asm_ssa_block@2:
+.lb_skip@1:
    LDA   #<__local_companion_update__sprite_y
    STA   __local_companion_update__0
    LDA   #>__local_companion_update__sprite_y
@@ -757,7 +694,6 @@ companion_update:
    JMP   .loop@1_continue
 .if_end@42:
    BNE   .if_else@44
-.companion_update@asm_ssa_block@3:
    LDA   #$01
    STA   companion_state,X
    JMP   .if_end@43
@@ -766,7 +702,6 @@ companion_update:
    STA   __local_companion_update__0
    LDA   companion_dir,X
    BPL   .cond_else@45
-.companion_update@ssa_block@4:
    STX   __zpabi_active_neg_step__slot
    LDA   __zpabi_companion_update__player_floor
    STA   __zpabi_active_neg_step__player_floor
@@ -786,7 +721,6 @@ companion_update:
 .cond_end@46:
    LDA   __local_companion_update__0
    BEQ   .lnot_true@5
-.companion_update@asm_ssa_block@4:
    LDA   #$00
    JMP   .lnot_end@6
 .lnot_true@5:
@@ -794,10 +728,9 @@ companion_update:
 .lnot_end@6:
    STA   __local_companion_update__0
    ORA   #$00
-   BEQ   .if_end@47
-.companion_update@asm_ssa_block@5:
+   BEQ   .lb_skip@0
    JMP   .loop@1_continue
-.if_end@47:
+.lb_skip@0:
 .if_end@43:
    STX   __zpabi_compute_screen_x__slot
    LDA   __zpabi_companion_update__player_y
@@ -812,16 +745,10 @@ companion_update:
    LDA   HARGS+1
    STA   __local_companion_update__0
    ORA   #$00
-   BEQ   .if_end@48
-.companion_update@asm_ssa_block@6:
-   JMP   .loop@1_continue
-.if_end@48:
+   BNE   .loop@1_continue
    LDA   __local_companion_update__4
    CMP   #$9A
-   BCC   .if_end@49
-.companion_update@asm_ssa_block@7:
-   JMP   .loop@1_continue
-.if_end@49:
+   BCS   .loop@1_continue
    STX   __zpabi_entity_proximity__slot
    LDA   __local_companion_update__4
    STA   __zpabi_entity_proximity__screen_x
@@ -862,7 +789,6 @@ companion_update:
 .loop@1_continue:
    DEX
    BPL   .companion_update@asm_ssa_split@0
-.companion_update@asm_ssa_block@8:
    RTS
 .companion_update@asm_ssa_split@0:
    JMP   .loop@1_start

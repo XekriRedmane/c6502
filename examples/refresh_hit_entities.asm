@@ -22,22 +22,18 @@ __local_refresh_hit_entities__x	EQU	$8D
 refresh_hit_entities:
    SUBROUTINE
 
-.refresh_hit_entities@asm_ssa_preheader@0:
-.refresh_hit_entities@ssa_block@0:
    LDX   __zpabi_refresh_hit_entities__hit_max
 .loop@0_start:
    LDA   entity_hit_y,X
+   CMP   __zpabi_refresh_hit_entities__player_y
+   BCC   .if_end@0
    SEC
    SBC   __zpabi_refresh_hit_entities__player_y
-   BCC   .if_end@0
-.refresh_hit_entities@asm_ssa_block@0:
    STA   __local_refresh_hit_entities__1
    CMP   #$2F
    BCS   .if_end@1
-.refresh_hit_entities@asm_ssa_block@1:
    LDA   entity_hit_state,X
    BPL   .if_else@3
-.refresh_hit_entities@ssa_block@3:
    LDY   __zpabi_refresh_hit_entities__sprite_xref
    LDA   hit_spr_neg_hi,Y
    STA   __local_refresh_hit_entities__hi
@@ -73,9 +69,7 @@ refresh_hit_entities:
 .if_end@1:
 .if_end@0:
    DEX
-.loop@0_continue:
    BPL   .refresh_hit_entities@asm_ssa_split@0
-.refresh_hit_entities@asm_ssa_block@2:
    RTS
 .refresh_hit_entities@asm_ssa_split@0:
    JMP   .loop@0_start

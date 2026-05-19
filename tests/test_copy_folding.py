@@ -259,13 +259,11 @@ class TestCopyFoldingEndToEnd(unittest.TestCase):
             "}\n"
         )
         asm = self._compile(src)
-        # Loop continue should have an INC chain for i.
-        self.assertIn(".loop@0_continue:", asm)
-        # The continue block (between loop@0_continue and the
-        # next label) should have INC + BNE + INC for the 16-bit
-        # i++. Body locals emit as
-        # `__local_<fn>__<source>[_<byte>]` symbols; check the
-        # INC + done-label chain.
+        # The loop body should have INC + BNE + INC for the 16-bit
+        # i++. The `.loop@0_continue:` label is dropped when no
+        # `continue` statement targets it (unreferenced-label
+        # cleanup); the `.inc_done@` label remains (it's the
+        # target of the multi-byte INC's BNE).
         import re
         self.assertRegex(asm, r"INC\s+__local_\w+__\w+")
         self.assertIn(".inc_done@", asm)

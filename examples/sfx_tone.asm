@@ -11,8 +11,6 @@ __local_sfx_tone__duration	EQU	$84
 sfx_tone:
    SUBROUTINE
 
-.sfx_tone@asm_ssa_preheader@0:
-.sfx_tone@ssa_preheader@0:
    LDA   __zpabi_sfx_tone__duration
    STA   __local_sfx_tone__duration
    LDA   sfx_click_ptr
@@ -29,16 +27,11 @@ sfx_tone:
    STA   __local_sfx_tone__0
    LDA   __local_sfx_tone__0
    STA   __local_sfx_tone__y
-   BEQ   .loop@1_break
-.sfx_tone@asm_ssa_block@0:
-   JMP   .loop@1_continue
-.loop@1_break:
+   BNE   .loop@1_continue
    LDY   #$00
    LDA   (DPTR),Y
-.loop@0_continue:
    DEC   __local_sfx_tone__duration
    BNE   .sfx_tone@asm_ssa_split@0
-.sfx_tone@asm_ssa_block@1:
    RTS
 .sfx_tone@asm_ssa_split@0:
    JMP   .loop@0_start

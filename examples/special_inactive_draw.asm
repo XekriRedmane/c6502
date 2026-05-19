@@ -18,7 +18,6 @@ __zpabi_draw_sprite__page_flag	EQU	$89
 special_inactive_draw:
    SUBROUTINE
 
-.special_inactive_draw@asm_ssa_block@0:
    LDX   __zpabi_special_inactive_draw__special_pos_hi
    LDA   #$02
    STA   __zpabi_draw_sprite__width

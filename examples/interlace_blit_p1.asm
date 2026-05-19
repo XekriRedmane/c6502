@@ -10,14 +10,11 @@ __zpabi_interlace_blit_p1__zp_blit_x_end	EQU	$83
 interlace_blit_p1:
    SUBROUTINE
 
-.interlace_blit_p1@asm_ssa_preheader@0:
-.interlace_blit_p1@ssa_block@0:
    LDY   #$00
    LDX   __zpabi_interlace_blit_p1__zp_blit_x_start
 .loop@0_start:
    CPX   #$28
    BCC   .if_else@1
-.interlace_blit_p1@ssa_block@1:
    TYA
    CLC
    ADC   #$23
@@ -201,10 +198,8 @@ interlace_blit_p1:
    INY
 .if_end@0:
    DEX
-.loop@0_continue:
    CPX   __zpabi_interlace_blit_p1__zp_blit_x_end
    BNE   .interlace_blit_p1@asm_ssa_split@0
-.interlace_blit_p1@asm_ssa_block@0:
    RTS
 .interlace_blit_p1@asm_ssa_split@0:
    JMP   .loop@0_start

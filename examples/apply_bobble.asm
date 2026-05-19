@@ -9,12 +9,10 @@ __local_apply_bobble__1	EQU	$83
 apply_bobble:
    SUBROUTINE
 
-.apply_bobble@asm_ssa_block@0:
    LDY   __zpabi_apply_bobble__slot
    LDX   __zpabi_apply_bobble__bobble_idx
    LDA   rescue_bobble,X
    BPL   .if_else@1
-.apply_bobble@asm_ssa_block@1:
    AND   #$7F
    CLC
    ADC   entity_floor_pos,Y

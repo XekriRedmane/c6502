@@ -8,7 +8,6 @@ __zpabi_interlace_fill_p1__col	EQU	$81
 interlace_fill_p1:
    SUBROUTINE
 
-.interlace_fill_p1@asm_ssa_block@0:
    LDX   __zpabi_interlace_fill_p1__col
    LDA   __zpabi_interlace_fill_p1__value
    STA   $20A8,X

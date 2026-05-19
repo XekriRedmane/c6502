@@ -52,7 +52,6 @@ __zpabi_draw_sprite__tile_src_0	EQU	$91
 __zpabi_draw_sprite__tile_src_1	EQU	$92
 __zpabi_draw_sprite__page_flag	EQU	$93
 __local_companion_update__0	EQU	$94
-__local_companion_update__1	EQU	$95
 __local_companion_update__3	EQU	$97
 __local_companion_update__4	EQU	$98
 __local_companion_update__slot	EQU	$99
@@ -60,6 +59,8 @@ __local_companion_update__sprite_y	EQU	$9A
 __local_smc_body_draw__hi	EQU	$9B
 __local_smc_body_draw__lo	EQU	$9C
 __local_smc_body_draw__0	EQU	$9D
+__local_smc_body_draw__1	EQU	$9E
+__local_smc_body_draw__2	EQU	$9F
 
 ; @zp-link-meta-begin
 ; def active_neg_step params=__zpabi_active_neg_step__slot,__zpabi_active_neg_step__player_floor locals=__local_active_neg_step__0,__local_active_neg_step__1 indirect=false in_cycle=false
@@ -70,7 +71,7 @@ __local_smc_body_draw__0	EQU	$9D
 ; def entity_proximity params=__zpabi_entity_proximity__slot,__zpabi_entity_proximity__screen_x,__zpabi_entity_proximity__hit_max locals=__local_entity_proximity__0,__local_entity_proximity__1,__local_entity_proximity__entity_row indirect=false in_cycle=false
 ; def find_active_entity params=__zpabi_find_active_entity__hit_max,__zpabi_find_active_entity__out_row_0,__zpabi_find_active_entity__out_row_1 locals=__local_find_active_entity__0 indirect=false in_cycle=false
 ; def player_catch params=__zpabi_player_catch__slot,__zpabi_player_catch__screen_x,__zpabi_player_catch__player_col locals=__local_player_catch__0,__local_player_catch__1 indirect=false in_cycle=false
-; def smc_body_draw params=__zpabi_smc_body_draw__slot,__zpabi_smc_body_draw__sprite_x,__zpabi_smc_body_draw__sprite_y,__zpabi_smc_body_draw__frame_idx,__zpabi_smc_body_draw__state,__zpabi_smc_body_draw__page_flag locals=__local_smc_body_draw__hi,__local_smc_body_draw__lo,__local_smc_body_draw__0 indirect=false in_cycle=false
+; def smc_body_draw params=__zpabi_smc_body_draw__slot,__zpabi_smc_body_draw__sprite_x,__zpabi_smc_body_draw__sprite_y,__zpabi_smc_body_draw__frame_idx,__zpabi_smc_body_draw__state,__zpabi_smc_body_draw__page_flag locals=__local_smc_body_draw__hi,__local_smc_body_draw__lo,__local_smc_body_draw__0,__local_smc_body_draw__1,__local_smc_body_draw__2 indirect=false in_cycle=false
 ; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag
 ; ext prng params=
 ; call active_neg_step -> prng
@@ -133,15 +134,11 @@ find_active_entity:
 entity_proximity:
    SUBROUTINE
 
-   LDA   #<__local_entity_proximity__entity_row
-   STA   __local_entity_proximity__0
-   LDA   #>__local_entity_proximity__entity_row
-   STA   __local_entity_proximity__0+1
    LDA   __zpabi_entity_proximity__hit_max
    STA   __zpabi_find_active_entity__hit_max
-   LDA   __local_entity_proximity__0
+   LDA   #<__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_0
-   LDA   __local_entity_proximity__1
+   LDA   #>__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
    BEQ   .lnot_true@0
@@ -232,6 +229,7 @@ entity_proximity:
 smc_body_draw:
    SUBROUTINE
 
+   LDY   __zpabi_smc_body_draw__frame_idx
    LDX   __zpabi_smc_body_draw__slot
    LDA   companion_dir,X
    AND   #$80
@@ -249,29 +247,34 @@ smc_body_draw:
 .cmp_true@2:
    LDA   #$01
 .cmp_end@3:
-   STA   __local_smc_body_draw__0
+   STA   __local_smc_body_draw__2
    LDA   __zpabi_smc_body_draw__state
    BNE   .if_else@15
    LDA   #$00
    STA   __local_smc_body_draw__hi
    JMP   .if_end@14
 .if_else@15:
-   LDA   __local_smc_body_draw__0
-   BNE   .cond_end@17
-.cond_end@17:
+   LDA   __local_smc_body_draw__2
+   BEQ   .cond_else@16
+   LDA   #<neg_walk_next
+   STA   __local_smc_body_draw__0
+   LDA   #>neg_walk_next
+   STA   __local_smc_body_draw__1
+   JMP   .cond_end@17
+.cond_else@16:
    LDA   #<pos_walk_next
-   STA   DPTR
+   STA   __local_smc_body_draw__0
    LDA   #>pos_walk_next
+   STA   __local_smc_body_draw__1
+.cond_end@17:
+   LDA   __local_smc_body_draw__0
+   STA   DPTR
+   LDA   __local_smc_body_draw__1
    STA   DPTR+1
    LDY   #$00
-   LDA   (DPTR),Y
+   LDA   (__local_smc_body_draw__0),Y
    STA   __local_smc_body_draw__hi
-   LDA   #<pos_walk_next
-   STA   DPTR
-   LDA   #>pos_walk_next
-   STA   DPTR+1
-   LDA   (DPTR),Y
-   STA   __local_smc_body_draw__lo
+   LDA   (__local_smc_body_draw__0),Y
    CLC
    ADC   #$01
    STA   HARGS
@@ -285,33 +288,30 @@ smc_body_draw:
    JSR   sdivmod16
    LDA   HARGS+6
    STA   __local_smc_body_draw__lo
-   LDA   #<pos_walk_next
+   LDA   __local_smc_body_draw__0
    STA   DPTR
-   LDA   #>pos_walk_next
+   LDA   __local_smc_body_draw__1
    STA   DPTR+1
    LDA   __local_smc_body_draw__lo
    LDY   #$00
-   STA   (DPTR),Y
+   STA   (__local_smc_body_draw__0),Y
 .if_end@14:
-   LDA   __local_smc_body_draw__0
+   LDA   __local_smc_body_draw__2
    BEQ   .if_else@19
    LDA   __local_smc_body_draw__hi
    CMP   #$00
    BEQ   .dispatch@0@case@0
    CMP   #$01
    BEQ   .dispatch@0@case@1
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_neg_pose3_lo,X
+   LDA   companion_neg_pose3_lo,Y
    STA   __local_smc_body_draw__lo
    JMP   .dispatch@0@end
 .dispatch@0@case@0:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_neg_pose1_lo,X
+   LDA   companion_neg_pose1_lo,Y
    STA   __local_smc_body_draw__lo
    JMP   .dispatch@0@end
 .dispatch@0@case@1:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_neg_pose2_lo,X
+   LDA   companion_neg_pose2_lo,Y
    STA   __local_smc_body_draw__lo
    JMP   .dispatch@0@end
 .dispatch@0@end:
@@ -320,18 +320,15 @@ smc_body_draw:
    BEQ   .dispatch@1@case@0
    CMP   #$01
    BEQ   .dispatch@1@case@1
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_neg_pose3_hi,X
+   LDA   companion_neg_pose3_hi,Y
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@1@end
 .dispatch@1@case@0:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_neg_pose1_hi,X
+   LDA   companion_neg_pose1_hi,Y
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@1@end
 .dispatch@1@case@1:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_neg_pose2_hi,X
+   LDA   companion_neg_pose2_hi,Y
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@1@end
 .dispatch@1@end:
@@ -342,18 +339,15 @@ smc_body_draw:
    BEQ   .dispatch@2@case@0
    CMP   #$01
    BEQ   .dispatch@2@case@1
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_pos_pose3_lo,X
+   LDA   companion_pos_pose3_lo,Y
    STA   __local_smc_body_draw__lo
    JMP   .dispatch@2@end
 .dispatch@2@case@0:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_pos_pose1_lo,X
+   LDA   companion_pos_pose1_lo,Y
    STA   __local_smc_body_draw__lo
    JMP   .dispatch@2@end
 .dispatch@2@case@1:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_pos_pose2_lo,X
+   LDA   companion_pos_pose2_lo,Y
    STA   __local_smc_body_draw__lo
    JMP   .dispatch@2@end
 .dispatch@2@end:
@@ -362,18 +356,15 @@ smc_body_draw:
    BEQ   .dispatch@3@case@0
    CMP   #$01
    BEQ   .dispatch@3@case@1
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_pos_pose3_hi,X
+   LDA   companion_pos_pose3_hi,Y
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@3@end
 .dispatch@3@case@0:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_pos_pose1_hi,X
+   LDA   companion_pos_pose1_hi,Y
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@3@end
 .dispatch@3@case@1:
-   LDX   __zpabi_smc_body_draw__frame_idx
-   LDA   companion_pos_pose2_hi,X
+   LDA   companion_pos_pose2_hi,Y
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@3@end
 .dispatch@3@end:
@@ -638,18 +629,13 @@ companion_update:
    LDX   #$01
 .loop@1_start:
    LDA   companion_state,X
-   STA   __local_companion_update__0
    BMI   .lb_skip@1
    JMP   .if_end@42
 .lb_skip@1:
-   LDA   #<__local_companion_update__sprite_y
-   STA   __local_companion_update__0
-   LDA   #>__local_companion_update__sprite_y
-   STA   __local_companion_update__0+1
    STX   __zpabi_drift_step__slot
-   LDA   __local_companion_update__0
+   LDA   #<__local_companion_update__sprite_y
    STA   __zpabi_drift_step__out_sprite_y_0
-   LDA   __local_companion_update__1
+   LDA   #>__local_companion_update__sprite_y
    STA   __zpabi_drift_step__out_sprite_y_1
    STX   __local_companion_update__slot
    JSR   drift_step
@@ -665,8 +651,6 @@ companion_update:
    LDA   HARGS
    STA   __local_companion_update__3
    LDY   HARGS
-   LDA   proj_frame_idx,Y
-   STA   __local_companion_update__1
    LDA   companion_state,X
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
@@ -699,8 +683,6 @@ companion_update:
    JMP   .if_end@43
 .if_else@44:
    LDA   companion_dir,X
-   STA   __local_companion_update__0
-   LDA   companion_dir,X
    BPL   .cond_else@45
    STX   __zpabi_active_neg_step__slot
    LDA   __zpabi_companion_update__player_floor
@@ -726,7 +708,6 @@ companion_update:
 .lnot_true@5:
    LDA   #$01
 .lnot_end@6:
-   STA   __local_companion_update__0
    ORA   #$00
    BEQ   .lb_skip@0
    JMP   .loop@1_continue
@@ -743,8 +724,6 @@ companion_update:
    LDA   HARGS
    STA   __local_companion_update__4
    LDA   HARGS+1
-   STA   __local_companion_update__0
-   ORA   #$00
    BNE   .loop@1_continue
    LDA   __local_companion_update__4
    CMP   #$9A
@@ -757,11 +736,7 @@ companion_update:
    STX   __local_companion_update__slot
    JSR   entity_proximity
    LDX   __local_companion_update__slot
-   LDA   companion_row,X
-   STA   __local_companion_update__3
    LDY   __local_companion_update__4
-   LDA   proj_frame_idx,Y
-   STA   __local_companion_update__1
    LDA   companion_state,X
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
@@ -854,4 +829,7 @@ companion_neg_pose3_hi:
    DC.B  $9F, $9F, $9F, $9F, $9F, $A0, $A0
 
 pos_walk_next:
+   DS.B  1
+
+neg_walk_next:
    DS.B  1

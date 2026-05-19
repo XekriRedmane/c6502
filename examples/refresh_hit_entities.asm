@@ -49,8 +49,6 @@ refresh_hit_entities:
 .if_end@2:
    LDA   __local_refresh_hit_entities__hi
    STA   __local_refresh_hit_entities__0
-   LDA   entity_hit_row,X
-   STA   __local_refresh_hit_entities__hi
    LDA   #$07
    STA   __zpabi_draw_sprite_opaque__width
    LDA   #$05

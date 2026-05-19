@@ -80,8 +80,6 @@ floor_enemy_draw:
 .dispatch@1@end:
    LDA   __local_floor_enemy_draw__0
    STA   __local_floor_enemy_draw__1
-   LDA   enemy_y,X
-   STA   __local_floor_enemy_draw__0
    LDA   #$01
    STA   __zpabi_draw_sprite__width
    LDA   #$05

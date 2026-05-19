@@ -164,13 +164,24 @@ def _rewrite_function(
         keeping the load while dropping the store."""
     instrs = fn.instructions
     label_to_index = _build_label_map(instrs)
+    # Set of label names whose address is constructed somewhere in
+    # this function (`ImmLabelLow.name` / `ImmLabelHigh.name`).
+    # Used to decide whether a `Call` is transparent for a target
+    # in this function's `__local_<fn>__*` pool — see
+    # `_is_dead_cfg`'s Call branch.
+    address_taken_names = _collect_address_taken_names(instrs)
+    local_prefix = f"__local_{fn.name}__"
     out: list[asm_ast.Type_instruction] = []
     for i, instr in enumerate(instrs):
         kind = _dse_candidate_kind(instr)
         if kind is None:
             out.append(instr)
             continue
-        if not _is_dead_cfg(instrs, i, label_to_index, zp_slot_symbols):
+        if not _is_dead_cfg(
+            instrs, i, label_to_index, zp_slot_symbols,
+            local_prefix=local_prefix,
+            address_taken_names=address_taken_names,
+        ):
             out.append(instr)
             continue
         if kind == "pure_sta":
@@ -185,6 +196,48 @@ def _rewrite_function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _collect_address_taken_names(
+    instrs: list[asm_ast.Type_instruction],
+) -> frozenset[str]:
+    """Set of label names referenced by any `ImmLabelLow` /
+    `ImmLabelHigh` operand anywhere in `instrs`. A slot symbol in
+    this set has had its address constructed at least once in the
+    function, so a callee that received that pointer could observe
+    its value — the relaxation in `_is_dead_cfg`'s Call branch does
+    not apply.
+
+    Other shapes that could in principle leak a slot's address
+    (`Imm(numeric_value)` with the value equal to the slot's ZP
+    address) aren't constructed by the c6502 codegen — the
+    compiler always builds addresses via `ImmLabel*` so they
+    survive linking — so scanning `ImmLabel*` is precise enough
+    here. C source can't directly write a slot address either
+    (no integer-to-pointer cast at known addresses), so user
+    code can't slip a slot address in through an `Imm` either."""
+    out: set[str] = set()
+    for instr in instrs:
+        for op in _all_operands(instr):
+            if isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
+                out.add(op.name)
+    return frozenset(out)
+
+
+def _all_operands(
+    instr: asm_ast.Type_instruction,
+) -> list[asm_ast.Type_operand]:
+    """Every operand attribute on `instr` that holds a single
+    `Type_operand` (no lists; the IR doesn't use operand lists).
+    Used by `_collect_address_taken_names` to scan for ImmLabel*
+    references; over-inclusive is safe (we only filter on operand
+    type)."""
+    ops: list[asm_ast.Type_operand] = []
+    for attr in ("src", "dst", "operand"):
+        v = getattr(instr, attr, None)
+        if v is not None:
+            ops.append(v)
+    return ops
 
 
 def _dse_candidate_kind(instr: asm_ast.Type_instruction) -> str | None:
@@ -306,13 +359,28 @@ def _is_dead_cfg(
     instrs: list[asm_ast.Type_instruction], start: int,
     label_to_index: dict[str, int],
     zp_slot_symbols: dict[str, int] | None = None,
+    *,
+    local_prefix: str | None = None,
+    address_taken_names: frozenset[str] | None = None,
 ) -> bool:
     """True iff the STA at `instrs[start]` is dead by CFG-wide
     forward search: every path from start+1 forward either
     overwrites `target` at the same address before any read, or
     reaches a function exit with `target` dead-at-exit. Any path
     that finds a read (or hits an opaque instruction) returns
-    LIVE."""
+    LIVE.
+
+    `local_prefix` and `address_taken_names` together let a direct
+    `Call` be treated transparently for `target`s that the callee
+    provably can't reach: a `Data(name)` whose `name` starts with
+    `local_prefix` (the current function's `__local_<fn>__`
+    namespace) and is NOT in `address_taken_names` (no
+    `ImmLabelLow` / `ImmLabelHigh` reference in the function body)
+    sits in the function's call-graph-disjoint private pool with
+    its address never leaked — by construction, no callee can
+    read or write it. The `icall` trampoline is excluded; its
+    eventual target is unknown, so the allocator guarantee can't
+    apply."""
     sta = instrs[start]
     target = sta.dst
     visited: set[int] = set()
@@ -323,6 +391,22 @@ def _is_dead_cfg(
             continue
         visited.add(j)
         nxt = instrs[j]
+        # Direct (non-icall) Call transparency: if the STA's
+        # target sits in this function's private pool AND the
+        # function never constructs its address, no callee can
+        # reach the byte. Continue past the Call to its
+        # successors instead of returning LIVE.
+        if (
+            isinstance(nxt, asm_ast.Call)
+            and nxt.name != "icall"
+            and local_prefix is not None
+            and address_taken_names is not None
+            and _call_cannot_touch(
+                target, local_prefix, address_taken_names,
+            )
+        ):
+            stack.extend(_successors(instrs, j, label_to_index))
+            continue
         # Opaque instructions: assume they may read `target`.
         # `Call` is here because, even though DPTR is documented
         # caller-saved scratch (no user callee should rely on its
@@ -354,7 +438,7 @@ def _is_dead_cfg(
                 return False
             continue
         # Read of `target`: LIVE.
-        if _reads(nxt, target):
+        if _reads(nxt, target, zp_slot_symbols):
             return False
         # Exact-address overwrite: kill on this path, don't
         # propagate. (Aliasing-but-not-equal writes don't count as
@@ -363,6 +447,37 @@ def _is_dead_cfg(
             continue
         # Otherwise: continue to successors.
         stack.extend(_successors(instrs, j, label_to_index))
+    return True
+
+
+def _call_cannot_touch(
+    target: asm_ast.Type_operand,
+    local_prefix: str,
+    address_taken_names: frozenset[str],
+) -> bool:
+    """True iff a direct `Call` instruction can be treated as
+    transparent for `target` — i.e., the callee cannot read OR
+    write the byte at `target`.
+
+    Holds when `target` is `Data(name, _)` with:
+      * `name` starts with `local_prefix` — sits in the current
+        function's call-graph-disjoint private pool, AND
+      * `name` not in `address_taken_names` — the function never
+        constructs its address via `ImmLabelLow` / `ImmLabelHigh`,
+        so no callee could have received a pointer to it.
+
+    The call-graph-disjoint allocator's invariant is the
+    soundness anchor: the function's `__local_<fn>__*` byte range
+    is by construction disjoint from every transitively-reachable
+    callee's `__local_*` / `__zpabi_*` allocations, so unless the
+    address was leaked through a pointer, no callee can name the
+    byte at all."""
+    if not isinstance(target, asm_ast.Data):
+        return False
+    if not target.name.startswith(local_prefix):
+        return False
+    if target.name in address_taken_names:
+        return False
     return True
 
 
@@ -383,11 +498,20 @@ def _is_dse_candidate(instr: asm_ast.Type_instruction) -> bool:
     return True
 
 
-def _reads(instr: asm_ast.Type_instruction, target: asm_ast.Type_operand) -> bool:
+def _reads(
+    instr: asm_ast.Type_instruction,
+    target: asm_ast.Type_operand,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> bool:
     """True iff `instr` may read the byte at `target`. Conservative:
-    if any operand we can't classify might alias, return True."""
+    if any operand we can't classify might alias, return True.
+    `zp_slot_symbols` lets the ZP-vs-Data alias check resolve slot
+    symbols to addresses for the precise compare; the indirect-Y
+    read-of-pointer-bytes case (`_ptr_source_reads` yields `ZP`
+    operands) needs this to recognize that the indirect aliases the
+    Data-form slot symbol the pointer was initialized through."""
     for op in _read_operands(instr):
-        if _may_alias(op, target):
+        if _may_alias(op, target, zp_slot_symbols=zp_slot_symbols):
             return True
     return False
 

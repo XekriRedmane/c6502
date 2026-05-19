@@ -174,5 +174,228 @@ class TestLoadAddressNotOpaque(unittest.TestCase):
         self.assertEqual(len(movs_to_b0), 0)
 
 
+class TestCallTransparentForNonAddressTakenLocal(unittest.TestCase):
+    """A `Call` to a known function cannot read or write any
+    `__local_<curfn>__*` byte that the function itself never
+    constructs the address of (no `ImmLabelLow` / `ImmLabelHigh`
+    referencing the slot name). The call-graph-disjoint allocator
+    guarantees the callee's private pool and the caller's private
+    pool are disjoint, and a slot whose address is never built
+    cannot have been leaked to a callee through a pointer
+    parameter.
+
+    Motivating case (from `examples/companion_update.asm`'s
+    `entity_proximity`): `apply_remat` rewrites a staged
+    `LDA #<entity_row; STA __local_fn__0` / `LDA __local_fn__0;
+    STA <callee_arg>` chain to recompute the immediate at the use
+    site, leaving the original `STA __local_fn__0` dead. The
+    `JSR <callee>` that follows blocks the within-function DSE
+    walk; teaching DSE that the callee can't observe
+    `__local_fn__0` lets the dead STA drop.
+    """
+
+    def _fn_named(self, name, instrs):
+        return asm_ast.Program(top_level=[asm_ast.Function(
+            name=name, is_global=True, params=[], instructions=instrs,
+        )])
+
+    def _run_named(self, name, instrs, **kwargs):
+        prog = self._fn_named(name, instrs)
+        return apply_asm_dead_store(prog, **kwargs).top_level[0].instructions
+
+    def test_call_transparent_for_compiler_temp_local(self):
+        """STA `__local_fn__0` (numeric-suffix temp; never
+        address-taken) followed by `JSR callee` followed by a
+        kill-overwrite of the same slot. The STA is dead because
+        the call-graph-disjoint allocator's guarantee says
+        `callee` cannot reach `__local_fn__0`."""
+        slot = _data("__local_fn__0", 0)
+        instrs = [
+            # The dead STA.
+            asm_ast.Mov(src=asm_ast.Imm(0x42), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            # JSR — currently treated opaquely; should be
+            # transparent for `__local_fn__0` (no ImmLabelLow /
+            # ImmLabelHigh references this slot anywhere in `fn`).
+            asm_ast.Call(name="callee"),
+            # Kill: overwrite the same slot before reading.
+            asm_ast.Mov(src=asm_ast.Imm(0x99), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            # Read of the new value keeps the second STA live.
+            asm_ast.Mov(src=slot, dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        zp_slot_symbols = {"__local_fn__0": 0x8D}
+        out = self._run_named(
+            "fn", instrs, zp_slot_symbols=zp_slot_symbols,
+        )
+        stas_to_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "__local_fn__0"
+        ]
+        # Only the live STA survives (the kill-overwrite).
+        self.assertEqual(len(stas_to_slot), 1)
+
+    def test_call_not_transparent_for_address_taken_local(self):
+        """STA `__local_fn__entity_row` followed by `JSR callee`
+        followed by a kill-overwrite. The function elsewhere
+        constructs the address of this slot via `ImmLabelLow /
+        ImmLabelHigh`, so the callee may have received a pointer
+        to it. The STA must NOT be dropped — the callee may
+        observe its value."""
+        slot = _data("__local_fn__entity_row", 0)
+        out_lo = _data("__zpabi_callee__out_lo", 0)
+        out_hi = _data("__zpabi_callee__out_hi", 0)
+        instrs = [
+            # The candidate STA (must survive).
+            asm_ast.Mov(src=asm_ast.Imm(0x42), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            # Construct the address of `slot` and pass it as a
+            # pointer argument — this is the "address taken" leak.
+            asm_ast.Mov(
+                src=asm_ast.ImmLabelLow(
+                    name="__local_fn__entity_row", offset=0,
+                ),
+                dst=_REG_A,
+            ),
+            asm_ast.Mov(src=_REG_A, dst=out_lo),
+            asm_ast.Mov(
+                src=asm_ast.ImmLabelHigh(
+                    name="__local_fn__entity_row", offset=0,
+                ),
+                dst=_REG_A,
+            ),
+            asm_ast.Mov(src=_REG_A, dst=out_hi),
+            asm_ast.Call(name="callee"),
+            # Kill-overwrite of the slot.
+            asm_ast.Mov(src=asm_ast.Imm(0x99), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Mov(src=slot, dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        zp_slot_symbols = {"__local_fn__entity_row": 0x8F}
+        out = self._run_named(
+            "fn", instrs, zp_slot_symbols=zp_slot_symbols,
+        )
+        stas_to_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "__local_fn__entity_row"
+        ]
+        # Both STAs survive — the first is potentially observable
+        # by the callee through the leaked pointer.
+        self.assertEqual(len(stas_to_slot), 2)
+
+    def test_call_transparent_for_source_named_non_address_taken(self):
+        """A source-named slot whose address is never constructed
+        anywhere in the function is treated the same as a numeric-
+        suffix compiler temp — the callee can't reach it."""
+        slot = _data("__local_fn__sprite_x", 0)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(0x42), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Call(name="callee"),
+            asm_ast.Mov(src=asm_ast.Imm(0x99), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Mov(src=slot, dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        zp_slot_symbols = {"__local_fn__sprite_x": 0x90}
+        out = self._run_named(
+            "fn", instrs, zp_slot_symbols=zp_slot_symbols,
+        )
+        stas_to_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "__local_fn__sprite_x"
+        ]
+        self.assertEqual(len(stas_to_slot), 1)
+
+    def test_call_not_transparent_for_zpabi_arg_slot(self):
+        """`__zpabi_callee__*` slots are READ by the callee — they
+        carry argument bytes. A prior STA to a `__zpabi_*` slot
+        followed by the JSR is LIVE; the relaxation applies only
+        to `__local_<curfn>__*` slots."""
+        arg = _data("__zpabi_callee__p0", 0)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(0x42), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=arg),
+            asm_ast.Call(name="callee"),
+            asm_ast.Return(save_a=False),
+        ]
+        zp_slot_symbols = {"__zpabi_callee__p0": 0x80}
+        out = self._run_named(
+            "fn", instrs, zp_slot_symbols=zp_slot_symbols,
+        )
+        stas_to_arg = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "__zpabi_callee__p0"
+        ]
+        self.assertEqual(len(stas_to_arg), 1)
+
+    def test_call_not_transparent_for_other_function_local(self):
+        """A slot belonging to a DIFFERENT function
+        (`__local_other__0` when we're inside `fn`) is not in
+        `fn`'s private pool — the relaxation can't assume the
+        callee respects it. Conservative: stay LIVE."""
+        slot = _data("__local_other__0", 0)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(0x42), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Call(name="callee"),
+            asm_ast.Mov(src=asm_ast.Imm(0x99), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Mov(src=slot, dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        zp_slot_symbols = {"__local_other__0": 0x90}
+        out = self._run_named(
+            "fn", instrs, zp_slot_symbols=zp_slot_symbols,
+        )
+        stas_to_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "__local_other__0"
+        ]
+        # Both STAs stay live — the callee may touch the other
+        # function's slot, since we have no allocator guarantee
+        # about it from `fn`'s perspective.
+        self.assertEqual(len(stas_to_slot), 2)
+
+    def test_icall_remains_opaque_even_for_local(self):
+        """The `icall` trampoline (`JMP (DPTR)`) dispatches to an
+        unknown callee — the allocator guarantee doesn't apply.
+        STA to `__local_fn__0` before a `Call(name="icall")` must
+        stay LIVE."""
+        slot = _data("__local_fn__0", 0)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(0x42), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Call(name="icall"),
+            asm_ast.Mov(src=asm_ast.Imm(0x99), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Mov(src=slot, dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        zp_slot_symbols = {"__local_fn__0": 0x8D}
+        out = self._run_named(
+            "fn", instrs, zp_slot_symbols=zp_slot_symbols,
+        )
+        stas_to_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Data)
+            and i.dst.name == "__local_fn__0"
+        ]
+        self.assertEqual(len(stas_to_slot), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

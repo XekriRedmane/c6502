@@ -79,6 +79,18 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   static fold path) has already done so — otherwise this pass would
   prematurely lock in (zp),Y for a chain that would have qualified for
   the cheaper absolute,X form.
+- `short_circuit_jump_fold.py` — `fold_short_circuit_jump`. Post-
+  destruction one-shot (iterated to a fixed point). Rewrites the
+  canonical `&&` / `||` 0-or-1-materialize tail + adjacent
+  `JumpIf{True,False}` consumer into direct conditional branches:
+  the chain's short-circuit jumps retarget to the consumer's
+  destination, the 5-instruction tail and 1-instruction consumer
+  are deleted, and the "flipped" sub-case (consumer's branch
+  direction routes the short-circuit value to fall-through) emits
+  `Jump(T); Label(.<fn>@scfold@<N>)` to materialize the fall-
+  through. Covers all four `(C_ft, C_sc) × consumer-kind`
+  combinations and nested short-circuits (`(a && b) || c` style)
+  via transitive closure on the retarget map.
 - `sink_increment.py` — `sink_increments`. Moves `Y = X + c` past the
   last in-line use of `X` when `Y`'s only consumer follows, exposing
   `recognize_indexed_*` patterns the original ordering hid.
@@ -107,6 +119,7 @@ fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
    → recognize_indirect_indexed (post-fixedpoint, one-shot)
    → from_ssa
    → fold_copies                                  (post-from_ssa)
+   → fold_short_circuit_jump*                     (post-from_ssa, fixedpoint)
    → fn'
 ```
 
@@ -149,8 +162,32 @@ stage:
    ordering by topological sort fixes the "lost copy" problem; cycles
    break with a fresh `<funcname>.cycle_tmp@N`.
 
-7. After `from_ssa` the function is non-SSA TAC, ready for
-   `tac_to_asm` in bare-exit mode.
+7. **Post-destruction folds**.
+   - **`fold_copies`** (`copy_folding.py`) — fuses the Copy round
+     trip emitted at predecessor block ends to feed Phi sources
+     into Phi dsts (covered above).
+   - **`fold_short_circuit_jump`** (`short_circuit_jump_fold.py`,
+     iterated to fixed point) — recognizes the 5-instruction
+     short-circuit tail (`Copy(C_ft, %t); Jump(end);
+     Label(branch); Copy(C_sc, %t); Label(end)`) with adjacent
+     `JumpIf{True,False}(%t, T)` consumer (single-use %t,
+     single-use end_label, `{C_ft, C_sc} == {0, 1}`), retargets
+     the chain's short-circuit jumps to where the consumer
+     would route `%t == C_sc`, and deletes the
+     tail+consumer. Covers `&&` / `||` × `JumpIfFalse` /
+     `JumpIfTrue` (4 cases). The "natural" sub-case (consumer's
+     branch direction matches `C_sc`) is a clean delete; the
+     "flipped" sub-case mints a fresh
+     `.<funcname>@scfold@<N>` label and inserts `Jump(T);
+     Label(.scfold@N)` to materialize the fall-through path.
+     Nested patterns (`(a && b) || c` and similar) resolve in a
+     single sweep via transitive closure on the retarget map.
+     Sound only post-destruction: pre-destruction the tail is
+     split across two SSA-renamed `%t` defs merged by a Phi,
+     which complicates the pattern match.
+
+8. After post-destruction folds the function is non-SSA TAC,
+   ready for `tac_to_asm` in bare-exit mode.
 
 The asm-level SSA round-trip that follows `tac_to_asm` is documented
 in [../optimization_asm/CLAUDE.md](../optimization_asm/CLAUDE.md).

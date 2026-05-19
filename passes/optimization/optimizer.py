@@ -13,7 +13,10 @@ Pipeline shape:
        → (CF → strength_reduce → cmp_zero_jump_fold → and_zero_jump_fold →
           lnot_jump_fold → dead_loop_elim → UCE → CopyProp → DSE →
           CopyFold → ...)*
-       → SSA destruction → fn'
+       → SSA destruction
+       → CopyFold (post-destruction)
+       → fold_short_circuit_jump* (post-destruction, until converged)
+       → fn'
 
 `loop_rotate` runs before SSA because the rewrite is a structural
 shuffle of instruction ranges with no name updates — pre-SSA the
@@ -89,6 +92,9 @@ from passes.optimization.loop_rotate import (
     rotate_signed_countdown_loops,
 )
 from passes.optimization.reassoc_const import reassoc_constants
+from passes.optimization.short_circuit_jump_fold import (
+    fold_short_circuit_jump,
+)
 from passes.optimization.truncate_extend_fold import fold_truncate_extend
 from passes.optimization.recognize_indexed_load import (
     recognize_indexed_load,
@@ -203,4 +209,17 @@ def optimize_function(
     # fixed-point loop) is enough because nothing later in the TAC
     # pipeline produces fresh fusable patterns.
     fn = fold_copies(fn)
+    # Post-destruction short-circuit fold: the `&&` / `||` 0-or-1
+    # materialize tail + adjacent JumpIf consumer collapses to
+    # direct conditional branches. Pre-destruction the tail is
+    # split across two SSA-renamed defs of `%t` merged by a Phi;
+    # post-destruction (and after the fold_copies above) it's the
+    # canonical 5-instruction tail this pass matches. Loop until
+    # convergence so nested patterns (`(a && b) || c` and similar)
+    # peel off one short-circuit at a time.
+    while True:
+        prev = fn
+        fn = fold_short_circuit_jump(fn)
+        if fn == prev:
+            break
     return fn

@@ -43,7 +43,6 @@ __zpabi_smc_body_draw__page_flag	EQU	$8C
 __local_compute_screen_x__3	EQU	$8D
 __local_entity_proximity__0	EQU	$8D
 __zpabi_draw_sprite__width	EQU	$8D
-__local_entity_proximity__1	EQU	$8E
 __zpabi_draw_sprite__height	EQU	$8E
 __local_entity_proximity__entity_row	EQU	$8F
 __zpabi_draw_sprite__sprite_x	EQU	$8F
@@ -154,19 +153,9 @@ entity_proximity:
 .if_end@2:
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$40
-   BCC   .and_false@3
+   BCC   .if_end@5
    CMP   #$47
-   BCS   .and_false@3
-   LDA   #$01
-   STA   __local_entity_proximity__1
-   JMP   .and_end@4
-.and_false@3:
-   LDA   #$00
-   STA   __local_entity_proximity__1
-.and_end@4:
-   LDA   __local_entity_proximity__1
-   BEQ   .if_end@5
-   LDX   __zpabi_entity_proximity__slot
+   BCS   .if_end@5
    LDA   #$FF
    STA   companion_state,X
    LDA   companion_row,X
@@ -180,19 +169,9 @@ entity_proximity:
    BMI   .if_else@7
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$30
-   BCC   .and_false@8
+   BCC   .if_end@10
    CMP   #$38
-   BCS   .and_false@8
-   LDA   #$01
-   STA   __local_entity_proximity__1
-   JMP   .and_end@9
-.and_false@8:
-   LDA   #$00
-   STA   __local_entity_proximity__1
-.and_end@9:
-   LDA   __local_entity_proximity__1
-   BEQ   .if_end@10
-   LDX   __zpabi_entity_proximity__slot
+   BCS   .if_end@10
    LDA   #$00
    STA   companion_state,X
 .if_end@10:
@@ -200,19 +179,9 @@ entity_proximity:
 .if_else@7:
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$50
-   BCC   .and_false@11
+   BCC   .if_end@13
    CMP   #$58
-   BCS   .and_false@11
-   LDA   #$01
-   STA   __local_entity_proximity__1
-   JMP   .and_end@12
-.and_false@11:
-   LDA   #$00
-   STA   __local_entity_proximity__1
-.and_end@12:
-   LDA   __local_entity_proximity__1
-   BEQ   .if_end@13
-   LDX   __zpabi_entity_proximity__slot
+   BCS   .if_end@13
    LDA   #$00
    STA   companion_state,X
 .if_end@13:
@@ -383,18 +352,10 @@ player_catch:
 
    LDA   __zpabi_player_catch__screen_x
    CMP   #$40
-   BCC   .or_true@20
+   BCC   .player_catch@scfold@0
    CMP   #$50
-   BCS   .or_true@20
-   LDA   #$00
-   STA   __local_player_catch__1
-   JMP   .or_end@21
-.or_true@20:
-   LDA   #$01
-   STA   __local_player_catch__1
-.or_end@21:
-   LDA   __local_player_catch__1
-   BEQ   .if_end@22
+   BCC   .if_end@22
+.player_catch@scfold@0:
    RTS
 .if_end@22:
    LDA   __zpabi_player_catch__player_col
@@ -448,24 +409,15 @@ active_pos_step:
    STA   companion_pos_hi,Y
    LDA   #$00
    CMP   #$00
-   BNE   .and_false@26
+   BNE   .if_end@28
    LDA   __local_active_pos_step__0
    CMP   #$03
-   BNE   .and_false@26
+   BNE   .if_end@28
    LDA   __local_active_pos_step__1
    CMP   #$52
-   BCC   .and_false@26
-   LDA   #$01
-   STA   __local_active_pos_step__1
-   JMP   .and_end@27
-.and_false@26:
-   LDA   #$00
-   STA   __local_active_pos_step__1
-.and_end@27:
-   LDA   __local_active_pos_step__1
-   BEQ   .if_end@28
+   BCC   .if_end@28
    LDA   #$FF
-   STA   companion_dir,Y
+   STA   companion_dir,X
    LDX   __zpabi_active_pos_step__player_floor
    LDA   floor_thresh,X
    CLC
@@ -501,21 +453,12 @@ active_neg_step:
    LDA   __local_active_neg_step__0
    STA   companion_pos_hi,Y
    ORA   #$00
-   BNE   .and_false@30
+   BNE   .if_end@32
    LDA   __local_active_neg_step__1
    CMP   #$3E
-   BCS   .and_false@30
+   BCS   .if_end@32
    LDA   #$01
-   STA   __local_active_neg_step__1
-   JMP   .and_end@31
-.and_false@30:
-   LDA   #$00
-   STA   __local_active_neg_step__1
-.and_end@31:
-   LDA   __local_active_neg_step__1
-   BEQ   .if_end@32
-   LDA   #$01
-   STA   companion_dir,Y
+   STA   companion_dir,X
    LDX   __zpabi_active_neg_step__player_floor
    LDA   floor_thresh,X
    CLC
@@ -532,33 +475,15 @@ drift_step:
 
    LDX   __zpabi_drift_step__slot
    LDA   companion_row,X
-   STA   __local_drift_step__0
+   STA   __local_drift_step__pos_1
    CMP   #$63
-   BEQ   .or_true@35
+   BEQ   .drift_step@scfold@0
    CMP   #$8B
-   BEQ   .or_true@35
-   LDA   #$00
-   STA   __local_drift_step__pos_0
-   JMP   .or_end@36
-.or_true@35:
-   LDA   #$01
-   STA   __local_drift_step__pos_0
-.or_end@36:
-   LDA   __local_drift_step__pos_0
-   BNE   .or_true@33
-   LDA   __local_drift_step__0
+   BEQ   .drift_step@scfold@0
    CMP   #$B3
-   BEQ   .or_true@33
-   LDA   #$00
-   STA   __local_drift_step__pos_0
-   JMP   .or_end@34
-.or_true@33:
-   LDA   #$01
-   STA   __local_drift_step__pos_0
-.or_end@34:
-   LDA   __local_drift_step__pos_0
-   BEQ   .if_else@38
-   LDA   __local_drift_step__0
+   BNE   .if_else@38
+.drift_step@scfold@0:
+   LDA   __local_drift_step__pos_1
    SEC
    SBC   #$04
    STA   __local_drift_step__pos_1
@@ -602,10 +527,8 @@ drift_step:
    STA   companion_pos_hi,X
    JMP   .if_end@37
 .if_else@38:
-   LDA   __local_drift_step__0
    CLC
    ADC   #$04
-   LDX   __zpabi_drift_step__slot
    STA   companion_row,X
    LDY   #$00
    STA   (__zpabi_drift_step__out_sprite_y_0),Y

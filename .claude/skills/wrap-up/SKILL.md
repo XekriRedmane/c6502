@@ -130,8 +130,7 @@ that could be published. Look for:
 - **r/6502** — the subreddit for 6502 programming, retrocomputing, and
   hardware. Audience already knows 6502 assembly and opcode quirks.
   Best fit: technical posts with concrete asm, narrow scope, a hook
-  that lands fast. ~600-1000 words, ends with a question or invitation
-  to discuss. Save drafts to `docs/drafts/r6502/<slug>.md`.
+  that lands fast. ~600-1000 words. Save drafts to `docs/drafts/r6502/<slug>.md`.
 
 - **Personal blog (log)** — long-form narrative for a personal
   audience. Best fit: walkthroughs, design rationales, project

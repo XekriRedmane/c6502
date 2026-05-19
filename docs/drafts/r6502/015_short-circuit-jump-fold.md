@@ -1,7 +1,7 @@
 # Short-circuit jump fold: collapsing 0-or-1 materialize patterns at the TAC level
 
-A few weeks back I wrote a TAC-level fold for `!cond` immediately
-followed by a `JumpIf` — `Unary(LogicalNot, x, %t);
+In an earlier round I wrote a TAC-level fold for `!cond`
+immediately followed by a `JumpIf` — `Unary(LogicalNot, x, %t);
 JumpIfFalse(%t, T)` becomes `JumpIfTrue(x, T)`, dropping the
 0/1 materialize. While reading another generated example file
 I noticed the same materialize-then-test shape on `&&` and `||`
@@ -117,7 +117,7 @@ to a clean three-jump chain.
 
 ## Results on one file
 
-Two-week-old companion logic, ~820 lines of asm, three `&&` and
+A companion-update example, ~820 lines of asm, three `&&` and
 two `||` blocks scattered through five functions. Re-blessing the
 example:
 

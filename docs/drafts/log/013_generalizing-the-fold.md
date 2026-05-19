@@ -1,6 +1,6 @@
 # Generalizing the fold
 
-A couple of weeks ago I shipped a small TAC-level optimization in
+In an earlier session I shipped a small TAC-level optimization in
 c6502: when the compiler had emitted
 
 ```
@@ -26,7 +26,8 @@ sense-flipped JumpIf in its place) is much cheaper. I wrote that
 up at the time. The retrospective is log/012 in this repo, the
 public-facing version is r6502/014.
 
-Yesterday I was reading another example file's output and noticed
+In a follow-up session I was reading another example file's
+output and noticed
 the same shape on the `&&` and `||` lowerings:
 
 ```
@@ -323,7 +324,8 @@ instead of 2, two of which mint fresh labels), but the
 consumer, retarget, delete the producer, let DSE and the
 asm-level peepholes clean up downstream.
 
-Two folds in two weeks, both prompted by reading the asm output
+Two folds in close succession, both prompted by reading the asm
+output
 of a function I hadn't been planning to touch. The "find folds
 by reading what the compiler actually emits" technique keeps
 paying out. I'd bet there's one more fold-shaped wins in this

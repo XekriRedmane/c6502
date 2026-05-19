@@ -147,6 +147,17 @@ written as a tight Reddit post AND as a longer blog walkthrough is
 fine; they're different formats for different audiences. Draft both
 when both apply.
 
+**Don't reference time when drafting.** Drafts may be published any
+time after writing, so wall-clock references go stale. Avoid phrases
+like "a week ago", "yesterday", "took a few days", "in a few days",
+"recently", "last month", or "earlier today". When you need to point
+at a past change, reference it by identity (commit, draft number,
+feature name) rather than by elapsed time — "log/012", "the
+LogicalNot fold", "commit abc1234" all stay correct regardless of
+when the draft ships. Same rule for present-tense / future-tense
+time anchors: "right now", "this afternoon", "soon", "in the next
+release" all rot.
+
 **If publishable material exists:**
 
 Draft the article(s), save to the appropriate folder(s) above, then

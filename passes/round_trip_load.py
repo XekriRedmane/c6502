@@ -1,8 +1,9 @@
 """Drop adjacent `STA M; LDA M` round-trip when A's value already
 reflects M, AND the preceding A-writer already set the flags to
-A's value.
+A's value. Also rewrites the mem-to-mem variant where the hidden
+`LDA M` lives inside a `Mov(M, dst_mem)` atom.
 
-# Pattern
+# Pattern A — explicit LDA
 
 Three consecutive instructions:
 
@@ -11,6 +12,29 @@ Three consecutive instructions:
     [i+1]   Mov(<mem M>, Reg(A))    # LDA M  (same M)
 
 → drop [i+1].
+
+# Pattern B — mem-to-mem Mov
+
+Same first two instructions; [i+1] is a mem-to-mem `Mov(M, dst)`
+which emits as `LDA M; STA dst`:
+
+    [i-1]   <writes Reg(A), sets N/Z to bit7(A) / (A==0)>
+    [i]     Mov(Reg(A), <mem M>)    # STA M
+    [i+1]   Mov(<mem M>, <dst_mem>) # LDA M; STA dst (mem-to-mem)
+
+→ rewrite [i+1] to `Mov(Reg(A), <dst_mem>)`, dropping the hidden
+LDA. Saves the bytes / cycles of one load and preserves A's value.
+
+Pattern B is the only way to catch this redundancy at IR level —
+`redundant_load_elimination`'s A-tracker drops EXPLICIT `LDA M`
+atoms once it knows A mirrors M, but a mem-to-mem Mov is a single
+atom whose internal `LDA M` is invisible to instruction-level
+peepholes. The same flag-soundness gate that justifies Pattern A
+also justifies Pattern B: the rewritten `Mov(Reg(A), dst)` emits
+as a flag-preserving `STA dst`, while the original mem-to-mem
+emitted an `LDA M; STA dst` pair where the `LDA M` set N/Z =
+N/Z(M) = N/Z(A) (because A == M after [i]) — same flag state at
+the rewrite's exit as before.
 
 # Soundness
 
@@ -84,13 +108,28 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         # Look for the 3-instruction window [i, i+1, i+2].
         if (i + 2 < len(instrs)
                 and _writes_a_with_flag_effect(instrs[i])
-                and _is_sta(instrs[i + 1])
-                and _is_lda_same_addr(instrs[i + 2], instrs[i + 1])):
-            out.append(instrs[i])
-            out.append(instrs[i + 1])
-            # Drop instrs[i + 2].
-            i += 3
-            continue
+                and _is_sta(instrs[i + 1])):
+            third = instrs[i + 2]
+            sta = instrs[i + 1]
+            if _is_lda_same_addr(third, sta):
+                # Pattern A: drop the explicit `LDA M`.
+                out.append(instrs[i])
+                out.append(sta)
+                i += 3
+                continue
+            if _is_mem_to_mem_from(third, sta):
+                # Pattern B: rewrite `Mov(M, dst_mem)` to
+                # `Mov(Reg(A), dst_mem)`, collapsing the hidden
+                # `LDA M` into a no-op.
+                out.append(instrs[i])
+                out.append(sta)
+                out.append(asm_ast.Mov(
+                    src=asm_ast.Reg(reg=asm_ast.A()),
+                    dst=third.dst,
+                    is_volatile=third.is_volatile,
+                ))
+                i += 3
+                continue
         out.append(instrs[i])
         i += 1
     return asm_ast.Function(
@@ -147,6 +186,20 @@ def _is_lda_same_addr(instr, sta) -> bool:
     if instr.is_volatile:
         return False
     if not _is_reg_a(instr.dst):
+        return False
+    return _operands_equal(instr.src, sta.dst)
+
+
+def _is_mem_to_mem_from(instr, sta) -> bool:
+    """True iff `instr` is a mem-to-mem `Mov(M, dst_mem)` whose
+    source is structurally identical to `sta.dst`, dst is a
+    non-Reg operand, and the Mov isn't volatile (a volatile read
+    must actually happen)."""
+    if not isinstance(instr, asm_ast.Mov):
+        return False
+    if instr.is_volatile:
+        return False
+    if isinstance(instr.dst, asm_ast.Reg):
         return False
     return _operands_equal(instr.src, sta.dst)
 

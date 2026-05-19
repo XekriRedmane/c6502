@@ -120,7 +120,7 @@ find_active_entity:
    SEC
    SBC   #$08
    LDY   #$00
-   STA   (__local_player_catch__1),Y
+   STA   (__zpabi_find_active_entity__out_row_0),Y
    LDA   #$01
    RTS
 .if_end@0:

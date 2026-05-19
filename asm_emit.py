@@ -213,28 +213,62 @@ _FP = "FP"
 _DPTR = "DPTR"
 
 
-# Per-emit_program context: reverse map `int → str` from ZP byte
-# address to the symbol that names it (runtime symbols like DPTR /
-# FP / SSP, plus any zp_slot_symbols passed in). Used to render
-# `IndirectZp` / `IndirectZpY` operands as `(symbol),Y` instead of
-# `($XX),Y` — preserves the source-level reference and makes the
-# emitted asm self-documenting. Reset to empty between calls so
-# unit-test paths that call individual emit helpers directly see
-# the raw-address rendering.
-_ADDR_TO_SYMBOL: dict[int, str] = {}
+# Per-emit_program context: reverse map `int → list[str]` from ZP
+# byte address to every symbol that names it (runtime symbols like
+# DPTR / FP / SSP, plus any zp_slot_symbols passed in). Used to
+# render `IndirectZp` / `IndirectZpY` operands as `(symbol),Y`
+# instead of `($XX),Y`. Multiple symbols can share an address: the
+# call-graph-disjoint allocator gives non-coexisting functions the
+# same ZP bytes, so `__zpabi_fn_a__x` and `__local_fn_b__y` can
+# both resolve to the same byte. The renderer picks the symbol
+# that "belongs" to the current function being emitted (matching
+# `__zpabi_<current_fn>__*` or `__local_<current_fn>__*`),
+# falling back to the first registered symbol when no in-function
+# candidate exists. Reset to empty between calls so unit-test
+# paths see the raw-address rendering.
+_ADDR_TO_SYMBOLS: dict[int, list[str]] = {}
+
+# Name of the function whose body is currently being emitted, used
+# by the indirect-operand renderer to prefer that function's own
+# slot symbols when multiple candidates resolve to the same ZP
+# byte. `None` outside a function body (during the top-level EQU
+# block, etc.).
+_CURRENT_FUNCTION: str | None = None
 
 
 def _zpy_operand(address: int) -> str:
     """Render the `(addr),Y` indirect-Y addressing operand. Uses a
-    known symbol when `_ADDR_TO_SYMBOL` has one for this address;
-    falls back to the raw `($XX),Y` form otherwise. Symbol form
-    keeps the asm readable when the address comes from a regalloc-
-    assigned slot (`__local_<fn>_b<k>`) or a zp_abi param slot
-    (`__zpabi_<fn>_p<k>`); raw form is the safe default."""
-    sym = _ADDR_TO_SYMBOL.get(address)
+    known symbol when `_ADDR_TO_SYMBOLS` has one for this address;
+    falls back to the raw `($XX),Y` form otherwise.
+
+    When multiple symbols resolve to the same ZP byte (the
+    call-graph-disjoint local pool's intentional sharing), prefer
+    the one whose `__zpabi_<fn>__*` or `__local_<fn>__*` prefix
+    matches `_CURRENT_FUNCTION`. Inside `find_active_entity`, an
+    indirect base at the same byte as `__zpabi_find_active_entity_
+    _out_row_0` should render with that name rather than another
+    function's slot that happens to share the address."""
+    sym = _pick_symbol(address)
     if sym is not None:
         return f"({sym}),Y"
     return f"(${address:02X}),Y"
+
+
+def _pick_symbol(address: int) -> str | None:
+    """Return the best slot-symbol name for `address`, preferring
+    one that belongs to `_CURRENT_FUNCTION`. None if the address
+    has no registered symbols."""
+    candidates = _ADDR_TO_SYMBOLS.get(address)
+    if not candidates:
+        return None
+    current = _CURRENT_FUNCTION
+    if current is not None:
+        zpabi_prefix = f"__zpabi_{current}__"
+        local_prefix = f"__local_{current}__"
+        for sym in candidates:
+            if sym.startswith(zpabi_prefix) or sym.startswith(local_prefix):
+                return sym
+    return candidates[0]
 
 
 def _instr_line(opcode: str, operand: str = "") -> str:
@@ -973,15 +1007,21 @@ def emit_function(fn: asm_ast.Function) -> list[str]:
             # lines are collapsed — the prologue's trailing blank and
             # the epilogue's leading blank otherwise pile up when a
             # function has no body between them.
-            lines = [f"{name}:", _instr_line("SUBROUTINE")]
-            if instrs:
-                lines.append("")
-                for instr in instrs:
-                    for line in emit_instruction(instr):
-                        if line == "" and lines and lines[-1] == "":
-                            continue
-                        lines.append(line)
-            return lines
+            global _CURRENT_FUNCTION
+            prev_fn = _CURRENT_FUNCTION
+            _CURRENT_FUNCTION = name
+            try:
+                lines = [f"{name}:", _instr_line("SUBROUTINE")]
+                if instrs:
+                    lines.append("")
+                    for instr in instrs:
+                        for line in emit_instruction(instr):
+                            if line == "" and lines and lines[-1] == "":
+                                continue
+                            lines.append(line)
+                return lines
+            finally:
+                _CURRENT_FUNCTION = prev_fn
         case _:
             raise TypeError(f"unexpected function: {fn!r}")
 
@@ -1192,28 +1232,29 @@ def emit_program(
     --link`). Emitted immediately after the EQU block. Dasm
     ignores comments, so the asm assembles unchanged in single-TU
     mode."""
-    global _ADDR_TO_SYMBOL
+    global _ADDR_TO_SYMBOLS
     # Build the reverse map for the duration of this emit so
     # `IndirectZp` / `IndirectZpY` operands render as
     # `(symbol),Y` when the runtime ZP base address matches a
     # named slot. Runtime symbols (SSP / FP / HARGS / DPTR) get
-    # mapped first; caller-supplied zp_slot_symbols may override
-    # (a slot symbol on the same byte as a runtime symbol would
-    # be a layout bug, but the override is harmless if it
-    # happens). Pairs that resolve outside zero page are skipped
-    # — only ZP-base indirect-Y rendering uses this map.
-    addr_to_sym: dict[int, str] = {
-        0x00: "SSP",
-        0x02: "FP",
-        0x04: "HARGS",
-        0x24: "DPTR",
+    # mapped first; caller-supplied zp_slot_symbols append their
+    # candidates. Multiple slot symbols on the same byte (from the
+    # call-graph-disjoint allocator's intentional sharing) are
+    # all retained; the renderer picks per current function.
+    # Pairs that resolve outside zero page are skipped — only
+    # ZP-base indirect-Y rendering uses this map.
+    addr_to_syms: dict[int, list[str]] = {
+        0x00: ["SSP"],
+        0x02: ["FP"],
+        0x04: ["HARGS"],
+        0x24: ["DPTR"],
     }
     if zp_slot_symbols:
         for name, addr in zp_slot_symbols.items():
             if 0 <= addr <= 0xFF:
-                addr_to_sym[addr] = name
-    prev_addr_to_sym = _ADDR_TO_SYMBOL
-    _ADDR_TO_SYMBOL = addr_to_sym
+                addr_to_syms.setdefault(addr, []).append(name)
+    prev_addr_to_syms = _ADDR_TO_SYMBOLS
+    _ADDR_TO_SYMBOLS = addr_to_syms
     try:
         return _emit_program_body(
             prog,
@@ -1221,7 +1262,7 @@ def emit_program(
             link_metadata_lines=link_metadata_lines,
         )
     finally:
-        _ADDR_TO_SYMBOL = prev_addr_to_sym
+        _ADDR_TO_SYMBOLS = prev_addr_to_syms
 
 
 def _emit_program_body(

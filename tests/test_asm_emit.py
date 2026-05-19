@@ -1445,5 +1445,65 @@ class TestEmitOr(unittest.TestCase):
                     emit_instruction(asm_ast.Or(src=src, dst=_reg(_A)))
 
 
+class TestIndirectZpSymbolSelection(unittest.TestCase):
+    """When multiple slot symbols resolve to the same ZP byte (the
+    call-graph-disjoint allocator's intentional sharing), the
+    indirect-Y operand renderer should prefer the symbol that
+    belongs to the function being emitted — `__zpabi_<fn>__*` or
+    `__local_<fn>__*` whose `<fn>` matches the current function."""
+
+    def _emit(self, fn_name, instr, zp_slot_symbols):
+        fn = asm_ast.Function(
+            name=fn_name, is_global=True, params=[],
+            instructions=[instr],
+        )
+        prog = asm_ast.Program(top_level=[fn])
+        return emit_program(prog, zp_slot_symbols=zp_slot_symbols)
+
+    def test_prefers_current_functions_zpabi_slot(self):
+        # Two slot symbols at the same ZP byte. Inside
+        # `find_active_entity`, rendering should use
+        # `__zpabi_find_active_entity__out_row_0`, not
+        # `__local_player_catch__1`.
+        slot_syms = {
+            "__zpabi_find_active_entity__out_row_0": 0x8B,
+            "__local_player_catch__1": 0x8B,
+        }
+        instr = asm_ast.Mov(
+            src=_reg(_A),
+            dst=asm_ast.IndirectZpY(address=0x8B),
+        )
+        out = self._emit("find_active_entity", instr, slot_syms)
+        self.assertIn(
+            "(__zpabi_find_active_entity__out_row_0),Y", out,
+        )
+        self.assertNotIn("(__local_player_catch__1),Y", out)
+
+    def test_prefers_current_functions_local_slot(self):
+        # When no `__zpabi_<fn>__*` exists for the current
+        # function but a `__local_<fn>__*` does, that wins.
+        slot_syms = {
+            "__local_other_fn__0": 0x88,
+            "__local_player_catch__1": 0x88,
+        }
+        instr = asm_ast.Mov(
+            src=_reg(_A),
+            dst=asm_ast.IndirectZpY(address=0x88),
+        )
+        out = self._emit("player_catch", instr, slot_syms)
+        self.assertIn("(__local_player_catch__1),Y", out)
+
+    def test_falls_back_when_no_match(self):
+        # No symbol belongs to the current function — render with
+        # whichever symbol got registered first.
+        slot_syms = {"__local_other_fn__0": 0x90}
+        instr = asm_ast.Mov(
+            src=_reg(_A),
+            dst=asm_ast.IndirectZpY(address=0x90),
+        )
+        out = self._emit("some_fn", instr, slot_syms)
+        self.assertIn("(__local_other_fn__0),Y", out)
+
+
 if __name__ == "__main__":
     unittest.main()

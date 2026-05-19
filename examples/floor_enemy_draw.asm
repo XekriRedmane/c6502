@@ -6,7 +6,6 @@ __zpabi_draw_sprite__sprite_y	EQU	$84
 __zpabi_draw_sprite__tile_src_0	EQU	$85
 __zpabi_draw_sprite__tile_src_1	EQU	$86
 __zpabi_draw_sprite__page_flag	EQU	$87
-__local_floor_enemy_draw__0	EQU	$88
 __local_floor_enemy_draw__1	EQU	$89
 __local_floor_enemy_draw__2	EQU	$8A
 __local_floor_enemy_draw__3	EQU	$8B
@@ -63,22 +62,17 @@ floor_enemy_draw:
    CMP   #$02
    BEQ   .dispatch@1@case@2
    LDA   floor_enemy_spr_s3_hi,Y
-   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@case@0:
    LDA   floor_enemy_spr_s0_hi,Y
-   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@case@1:
    LDA   floor_enemy_spr_s1_hi,Y
-   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@case@2:
    LDA   floor_enemy_spr_s2_hi,Y
-   STA   __local_floor_enemy_draw__0
    JMP   .dispatch@1@end
 .dispatch@1@end:
-   LDA   __local_floor_enemy_draw__0
    STA   __local_floor_enemy_draw__1
    LDA   #$01
    STA   __zpabi_draw_sprite__width

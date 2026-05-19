@@ -177,30 +177,53 @@ class TestRedundantLoadAliasing(unittest.TestCase):
 
 
 class TestRedundantLoadBlockBoundaries(unittest.TestCase):
-    def test_label_resets_state_when_multi_pred(self) -> None:
-        # A label with multiple predecessors (two Jumps targeting
-        # it, or a Jump plus a fall-through) is a real join point
-        # — state at entry could come from anywhere. We can't
-        # restore a single saved state; reset.
+    def test_multi_pred_disagreeing_preserves_load(self) -> None:
+        # Both predecessor blocks are reachable, but they leave A
+        # in *different* states (zp80 vs zp82). The intersection-
+        # based join drops every equivalence at L — no single value
+        # A is known to hold on every incoming path. The Mov at L
+        # is preserved.
         zp80 = asm_ast.ZP(address=0x80, offset=0)
         zp82 = asm_ast.ZP(address=0x82, offset=0)
         instrs = [
-            asm_ast.Mov(src=zp80, dst=_REG_A),
-            asm_ast.Jump(target="L"),
-            # An unreachable Mov + Jump to make L have two preds.
+            asm_ast.Mov(src=zp80, dst=_REG_A),       # A = zp80
+            asm_ast.Branch(cond=asm_ast.EQ(), target="X"),
+            asm_ast.Jump(target="L"),                 # fall path: A = zp80
             asm_ast.Label(name="X"),
-            asm_ast.Mov(src=zp82, dst=_REG_A),
+            asm_ast.Mov(src=zp82, dst=_REG_A),        # branch path: A = zp82
             asm_ast.Jump(target="L"),
             asm_ast.Label(name="L"),
-            asm_ast.Mov(src=zp80, dst=_REG_A),      # KEEP — multi-pred reset
+            asm_ast.Mov(src=zp80, dst=_REG_A),        # KEEP — preds disagree
             asm_ast.Return(save_a=False),
         ]
         out = _rewritten(instrs)
-        # The Mov at L is preserved; multi-pred → reset.
-        last_mov = out[-2]
-        assert isinstance(last_mov, asm_ast.Mov)
+        # The Mov immediately before the Return must still be the
+        # `LDA zp80`.
+        last_mov = next(
+            i for i in reversed(out) if isinstance(i, asm_ast.Mov)
+        )
         self.assertEqual(last_mov.src, zp80)
         self.assertEqual(last_mov.dst, _REG_A)
+
+    def test_multi_pred_agreeing_drops_load(self) -> None:
+        # Both predecessors leave A = zp80 — the multi-pred join
+        # finds the agreement and the LDA at L is dropped. This
+        # is the cross-block win the CFG dataflow recovers.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),       # A = zp80
+            asm_ast.Jump(target="L"),
+            asm_ast.Label(name="X"),
+            asm_ast.Mov(src=zp80, dst=_REG_A),       # A = zp80 on this path too
+            asm_ast.Jump(target="L"),
+            asm_ast.Label(name="L"),
+            asm_ast.Mov(src=zp80, dst=_REG_A),       # DROP — both preds agree
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # The label-following Mov is gone; both prior Movs remain.
+        movs = [i for i in out if isinstance(i, asm_ast.Mov)]
+        self.assertEqual(len(movs), 2)
 
     def test_unique_pred_jump_restores_state(self) -> None:
         # A label whose only predecessor is a single Jump (no
@@ -285,6 +308,135 @@ class TestRedundantLoadBlockBoundaries(unittest.TestCase):
         ]
         out = _rewritten(instrs)
         self.assertEqual(len(out), 4)
+
+
+class TestRedundantLoadCfgJoin(unittest.TestCase):
+    """Cross-block must-availability dataflow: at a multi-pred
+    label, the intersection of every predecessor's exit state
+    survives. Covers the shape that motivated the CFG dataflow —
+    `entity_proximity` in examples/companion_update.asm, where an
+    LDX of `__zpabi_..._slot` after a diamond merge gets dropped
+    because both incoming branches still leave X holding the slot.
+    """
+
+    def test_diamond_merge_drops_redundant_ldx(self) -> None:
+        # The motivating entity_proximity shape (slimmed):
+        #     LDX M; LDA arr,X; CMP #c1; BCC merge
+        #                       CMP #c2; BCS merge
+        #     ; body (doesn't write X or M)
+        # merge: LDX M    ; both incoming paths still have X = M
+        slot = asm_ast.Data(name="__zpabi_f__slot", offset=0)
+        arr = asm_ast.IndexedData(
+            name="arr", offset=0, index=asm_ast.X(),
+        )
+        instrs = [
+            asm_ast.Mov(src=slot, dst=_REG_X),         # LDX M
+            asm_ast.Mov(src=arr, dst=_REG_A),          # LDA arr,X
+            asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=0x40)),
+            asm_ast.Branch(cond=asm_ast.CC(), target="merge"),
+            asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=0x47)),
+            asm_ast.Branch(cond=asm_ast.CS(), target="merge"),
+            # Body — doesn't touch X or M.
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_REG_A),
+            asm_ast.Label(name="merge"),
+            asm_ast.Mov(src=slot, dst=_REG_X),         # DROP — X still = M
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # Only ONE `LDX slot` should remain (the initial one).
+        ldx_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Reg)
+            and isinstance(i.dst.reg, asm_ast.X)
+            and isinstance(i.src, asm_ast.Data)
+            and i.src.name == "__zpabi_f__slot"
+        ]
+        self.assertEqual(len(ldx_slot), 1)
+
+    def test_diamond_merge_clobbered_on_one_path_keeps_ldx(self) -> None:
+        # Same shape, but one path writes M between the initial LDX
+        # and the merge → on that path X may no longer mirror M
+        # after the write. (Actually, X isn't itself written here —
+        # but the equivalence is conservatively dropped at the write
+        # to the cell.) The post-merge LDX is preserved.
+        slot = asm_ast.Data(name="__zpabi_f__slot", offset=0)
+        instrs = [
+            asm_ast.Mov(src=slot, dst=_REG_X),         # LDX M
+            asm_ast.Branch(cond=asm_ast.EQ(), target="path2"),
+            # path1 — preserves X = M.
+            asm_ast.Jump(target="merge"),
+            asm_ast.Label(name="path2"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),         # STA M — clobbers tracking
+            asm_ast.Label(name="merge"),
+            asm_ast.Mov(src=slot, dst=_REG_X),         # KEEP — M may have changed
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        ldx_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Reg)
+            and isinstance(i.dst.reg, asm_ast.X)
+            and isinstance(i.src, asm_ast.Data)
+            and i.src.name == "__zpabi_f__slot"
+        ]
+        self.assertEqual(len(ldx_slot), 2)
+
+    def test_loop_back_edge_preserves_equivalence(self) -> None:
+        # X is loaded once before the loop and never written in the
+        # body. On every back-edge to the header, X still mirrors M.
+        # The fixed-point dataflow recovers this — the LDX inside
+        # the loop body is redundant.
+        slot = asm_ast.Data(name="__zpabi_f__slot", offset=0)
+        arr = asm_ast.IndexedData(
+            name="arr", offset=0, index=asm_ast.X(),
+        )
+        instrs = [
+            asm_ast.Mov(src=slot, dst=_REG_X),         # LDX M (preheader)
+            asm_ast.Label(name="loop"),
+            asm_ast.Mov(src=slot, dst=_REG_X),         # DROP — X still = M
+            asm_ast.Mov(src=arr, dst=_REG_A),
+            asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=0)),
+            asm_ast.Branch(cond=asm_ast.NE(), target="loop"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        ldx_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Reg)
+            and isinstance(i.dst.reg, asm_ast.X)
+            and isinstance(i.src, asm_ast.Data)
+            and i.src.name == "__zpabi_f__slot"
+        ]
+        self.assertEqual(len(ldx_slot), 1)
+
+    def test_loop_body_clobbers_x_keeps_ldx(self) -> None:
+        # X IS clobbered inside the loop body (DEX). The fixed-
+        # point join at the loop header sees the back-edge's
+        # out-state with empty state.x → intersection wipes X's
+        # equivalence → the LDX inside the body is preserved.
+        slot = asm_ast.Data(name="__zpabi_f__slot", offset=0)
+        instrs = [
+            asm_ast.Mov(src=slot, dst=_REG_X),         # LDX M (preheader)
+            asm_ast.Label(name="loop"),
+            asm_ast.Mov(src=slot, dst=_REG_X),         # KEEP — X gets DEX'd
+            asm_ast.Dec(dst=_REG_X),                   # DEX clobbers X
+            asm_ast.Branch(cond=asm_ast.NE(), target="loop"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        ldx_slot = [
+            i for i in out
+            if isinstance(i, asm_ast.Mov)
+            and isinstance(i.dst, asm_ast.Reg)
+            and isinstance(i.dst.reg, asm_ast.X)
+            and isinstance(i.src, asm_ast.Data)
+            and i.src.name == "__zpabi_f__slot"
+        ]
+        self.assertEqual(len(ldx_slot), 2)
 
 
 class TestRedundantLoadRegisterClobbers(unittest.TestCase):

@@ -60,7 +60,6 @@ floor_enemy_advance:
    LDA   __zpabi_floor_enemy_advance__player_col
    CLC
    ADC   #$09
-   LDX   __local_floor_enemy_advance__slot
    STA   enemy_y,X
 .if_end@3:
 .if_end@2:
@@ -84,7 +83,6 @@ floor_enemy_advance:
    STA   __local_floor_enemy_advance__step
 .if_end@10:
 .if_end@8:
-   LDX   __local_floor_enemy_advance__slot
    LDA   enemy_col,X
    SEC
    SBC   __local_floor_enemy_advance__step
@@ -114,7 +112,6 @@ floor_enemy_advance:
    STA   __local_floor_enemy_advance__step
 .if_end@15:
 .if_end@13:
-   LDX   __local_floor_enemy_advance__slot
    LDA   enemy_col,X
    CLC
    ADC   __local_floor_enemy_advance__step

@@ -38,15 +38,14 @@ refresh_hit_entities:
    LDA   hit_spr_neg_hi,Y
    STA   __local_refresh_hit_entities__hi
    LDA   hit_spr_neg_lo,Y
-   STA   __local_refresh_hit_entities__lo
    JMP   .if_end@2
 .if_else@3:
    LDY   __zpabi_refresh_hit_entities__sprite_xref
    LDA   hit_spr_pos_hi,Y
    STA   __local_refresh_hit_entities__hi
    LDA   hit_spr_pos_lo,Y
-   STA   __local_refresh_hit_entities__lo
 .if_end@2:
+   STA   __local_refresh_hit_entities__lo
    LDA   __local_refresh_hit_entities__hi
    STA   __local_refresh_hit_entities__0
    LDA   #$07

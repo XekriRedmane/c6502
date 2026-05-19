@@ -164,7 +164,6 @@ entity_proximity:
    STA   companion_row,X
    RTS
 .if_end@5:
-   LDX   __zpabi_entity_proximity__slot
    LDA   companion_dir,X
    BMI   .if_else@7
    LDA   __zpabi_entity_proximity__screen_x
@@ -282,15 +281,15 @@ smc_body_draw:
    BEQ   .dispatch@1@case@0
    CMP   #$01
    BEQ   .dispatch@1@case@1
-   LDA   companion_neg_pose3_hi,Y
+   LDA   companion_neg_pose3_hi,X
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@1@end
 .dispatch@1@case@0:
-   LDA   companion_neg_pose1_hi,Y
+   LDA   companion_neg_pose1_hi,X
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@1@end
 .dispatch@1@case@1:
-   LDA   companion_neg_pose2_hi,Y
+   LDA   companion_neg_pose2_hi,X
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@1@end
 .dispatch@1@end:
@@ -318,15 +317,15 @@ smc_body_draw:
    BEQ   .dispatch@3@case@0
    CMP   #$01
    BEQ   .dispatch@3@case@1
-   LDA   companion_pos_pose3_hi,Y
+   LDA   companion_pos_pose3_hi,X
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@3@end
 .dispatch@3@case@0:
-   LDA   companion_pos_pose1_hi,Y
+   LDA   companion_pos_pose1_hi,X
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@3@end
 .dispatch@3@case@1:
-   LDA   companion_pos_pose2_hi,Y
+   LDA   companion_pos_pose2_hi,X
    STA   __local_smc_body_draw__hi
    JMP   .dispatch@3@end
 .dispatch@3@end:
@@ -475,7 +474,6 @@ drift_step:
 
    LDX   __zpabi_drift_step__slot
    LDA   companion_row,X
-   STA   __local_drift_step__pos_1
    CMP   #$63
    BEQ   .drift_step@scfold@0
    CMP   #$8B
@@ -483,7 +481,6 @@ drift_step:
    CMP   #$B3
    BNE   .if_else@38
 .drift_step@scfold@0:
-   LDA   __local_drift_step__pos_1
    SEC
    SBC   #$04
    STA   __local_drift_step__pos_1
@@ -520,7 +517,6 @@ drift_step:
    ADC   #$00
    STA   __local_drift_step__pos_1
 .if_end@39:
-   LDX   __zpabi_drift_step__slot
    LDA   __local_drift_step__pos_0
    STA   companion_pos_lo,X
    LDA   __local_drift_step__pos_1

@@ -1,9 +1,9 @@
 """Redundant load elimination.
 
-A 6502 register tracker. Per basic block, walk linearly and remember
-which operand each of A / X / Y is currently a copy of. When the
-next instruction is `LDA M` (or `LDX M` / `LDY M`) and the target
-register already mirrors `M`, the load is redundant and we drop it.
+A 6502 register tracker. Tracks which operand each of A / X / Y
+is currently a copy of. When the next instruction is `LDA M` (or
+`LDX M` / `LDY M`) and the target register already mirrors `M`,
+the load is redundant and we drop it.
 
 The win is heaviest after loop unrolling: a 105-iteration unrolled
 fill emits 105 copies of `LDA value; LDX col; STA $XXXX,X` even
@@ -66,14 +66,43 @@ Z reflects M === N === P. Same shape as `state.a/x/y`. Update
 rules track every flag-affecting opcode (LDA, ADC, SBC, AND,
 ORA, EOR, INC, DEC, shifts, CMP, BIT, mem-to-mem Movs).
 
-# Basic blocks
+# Cross-block must-availability dataflow
 
-State resets at every basic-block boundary: `Label`, `Jump`,
-`Branch`, `Call`, `Ret`, `Return`. Conservatively, we treat
-`FunctionPrologue`, `AllocateStack`, and `LoadAddress` as full
-register clobbers — they expand into multi-instruction sequences
-inside `asm_to_asm2`, and tracking the inner state would mean
-mirroring the expansion here.
+The tracker runs as a forward must-analysis over the function's
+CFG: at each basic block's entry, the state is the intersection
+of every predecessor's exit state. A register equivalence (A ===
+M, say) is preserved into a successor block iff every path from
+ENTRY to that successor's entry leaves the equivalence intact.
+
+The headline shape this catches that a per-block tracker misses
+is the diamond merge:
+
+    LDX __zpabi_..._slot       ; entry sets X = slot
+    ...
+    BCC .merge                  ; both preds carry X = slot through —
+    ...                         ; neither branch path modifies X or
+    BCS .merge                  ; slot
+.merge:
+    LDX __zpabi_..._slot       ; redundant on both incoming paths
+
+Per-block tracking forgets X's equivalence at .merge (multiple
+preds → reset). The intersection-based join recovers it whenever
+*every* incoming path agreed on the value.
+
+State lattice (per register / per z_reflects):
+
+  * Bottom = `[]` (no equivalences known).
+  * Per-block transfer ADDS equivalences (loads, stores tracked
+    as new mirrors) and REMOVES them (clobbering writes via the
+    aliasing lattice).
+  * Join at multi-pred labels = list intersection on `_operands_
+    equal`. Anything not present on *every* incoming path drops.
+
+`Call`, `FunctionPrologue`, `AllocateStack`, and `LoadAddress`
+are treated as full register clobbers inside the transfer —
+they expand into multi-instruction sequences inside
+`asm_to_asm2`, and tracking the inner state would mean mirroring
+the expansion here.
 
 # Where it runs
 
@@ -86,11 +115,15 @@ keeps us symmetric with `inc_peephole` and
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
+from passes.optimization_asm.cfg import (
+    CFG, ENTRY_ID, EXIT_ID, BasicBlock, build_cfg,
+)
 
 
 # Operand kinds with stable (non-index-dependent) addresses — the
@@ -151,58 +184,182 @@ class _RegState:
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
-    state = _RegState()
+    """CFG-based forward must-availability dataflow.
+
+    Two-phase: (1) iterate IN / OUT register-equivalence states
+    over the function's CFG to a fixed point, joining at multi-pred
+    labels by list intersection on `_operands_equal`; (2) walk the
+    original instruction list with IN[block] as the starting state
+    at each block boundary and drop redundant loads as we go.
+
+    Soundness: an equivalence in `in_state[B]` means every path
+    from ENTRY to B's entry leaves that equivalence intact. So a
+    load whose dst register's IN-state list contains the load's
+    src is genuinely redundant.
+    """
+    if not fn.instructions:
+        return fn
+
+    cfg = _build_cfg_tolerant(fn)
+
+    # Forward must-availability dataflow.
+    # in_state[bid] = state at block entry (after its leading
+    #                 Label, if any).
+    # out_state[bid] = state at block exit (just before its
+    #                  terminator, if any).
+    # `None` = the block hasn't been reached from ENTRY yet; treat
+    # as "skip in the join" so loops with not-yet-computed back
+    # edges don't immediately collapse to empty.
+    in_state: dict[int, _RegState | None] = {
+        bid: None for bid in cfg.blocks
+    }
+    out_state: dict[int, _RegState | None] = {
+        bid: None for bid in cfg.blocks
+    }
+    in_state[ENTRY_ID] = _RegState()
+    out_state[ENTRY_ID] = _RegState()
+
+    # Seed the worklist with every reachable-from-entry block id in
+    # source order. Subsequent iterations re-add successors as
+    # their predecessors' out-states change. Bounded by lattice
+    # height × block count.
+    worklist: list[int] = list(cfg.block_order)
+    in_worklist: set[int] = set(worklist)
+    max_iters = 1000 * (len(cfg.blocks) + 1)
+    iters = 0
+    while worklist and iters < max_iters:
+        iters += 1
+        bid = worklist.pop(0)
+        in_worklist.discard(bid)
+        if bid in (ENTRY_ID, EXIT_ID):
+            continue
+        block = cfg.blocks[bid]
+        # Compute new IN as the intersection over initialized
+        # predecessors only. Uninitialized predecessors (back
+        # edges on the first sweep, unreachable preds) are skipped
+        # — the lattice only narrows, so they get folded in later
+        # when they get computed.
+        init_pred_outs = [
+            out_state[pid] for pid in block.predecessors
+            if out_state[pid] is not None
+        ]
+        if not init_pred_outs:
+            continue
+        new_in = _join_states(init_pred_outs)
+        old_in = in_state[bid]
+        if old_in is not None and _state_equal(new_in, old_in):
+            continue
+        in_state[bid] = new_in
+        new_out = _transfer_block(block, new_in)
+        old_out = out_state[bid]
+        if old_out is None or not _state_equal(new_out, old_out):
+            out_state[bid] = new_out
+            for sid in block.successors:
+                if sid == EXIT_ID:
+                    continue
+                if sid not in in_worklist:
+                    worklist.append(sid)
+                    in_worklist.add(sid)
+
+    return _rewrite_with_in_states(fn, cfg, in_state)
+
+
+def _build_cfg_tolerant(fn: asm_ast.Function) -> CFG:
+    """Wrap `build_cfg` to tolerate Branch / Jump targets that
+    aren't defined as Labels in the function. Real compiled
+    functions always have every target resolve (the assembler
+    would reject otherwise), but synthetic test inputs sometimes
+    use a target as a stand-in placeholder. We append a synthetic
+    `Label + Return` to the (temporary) instruction list for each
+    such target so `build_cfg` produces a well-formed CFG; the
+    final rewrite walks only the ORIGINAL instructions, so the
+    synthetics never appear in the output.
+    """
+    labels_in_fn = {
+        instr.name for instr in fn.instructions
+        if isinstance(instr, asm_ast.Label)
+    }
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for instr in fn.instructions:
+        if isinstance(instr, (asm_ast.Branch, asm_ast.Jump)):
+            if instr.target not in labels_in_fn and instr.target not in seen:
+                seen.add(instr.target)
+                unresolved.append(instr.target)
+    if not unresolved:
+        return build_cfg(fn)
+    new_instrs = list(fn.instructions)
+    for target in unresolved:
+        new_instrs.append(asm_ast.Label(name=target))
+        new_instrs.append(asm_ast.Return(save_a=False))
+    synthetic = asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=new_instrs,
+    )
+    return build_cfg(synthetic)
+
+
+def _transfer_block(
+    block: BasicBlock, in_state: _RegState,
+) -> _RegState:
+    """Apply `block`'s instructions to a copy of `in_state` and
+    return the resulting out-state. Skips the block's leading
+    `Label` (a marker, not a state-changing instruction) and its
+    trailing terminator (`Jump` / `Branch` / `Ret` / `Return`)
+    — terminators don't modify register state in our model; the
+    CFG carries the state into successors directly."""
+    state = _clone_state(in_state)
+    for instr in block.instructions:
+        if isinstance(instr, asm_ast.Label):
+            continue
+        if isinstance(instr, (asm_ast.Jump, asm_ast.Branch,
+                              asm_ast.Ret, asm_ast.Return)):
+            continue
+        _update_state(instr, state)
+    return state
+
+
+def _rewrite_with_in_states(
+    fn: asm_ast.Function, cfg: CFG,
+    in_state: dict[int, _RegState | None],
+) -> asm_ast.Function:
+    """Final walk: visit each instruction in source order with
+    IN[block] as the starting state at each block boundary. Drop
+    redundant loads as the per-instruction tracker discovers them.
+    Unreachable blocks (IN still `None`) fall back to an empty
+    state — conservative but correct."""
+    # Map each instruction's source position to its owning block id.
+    pos_to_block: dict[int, int] = {}
+    pos = 0
+    for bid in cfg.block_order:
+        for _ in cfg.blocks[bid].instructions:
+            pos_to_block[pos] = bid
+            pos += 1
+
     instrs = fn.instructions
-    # Per-label CFG-summary info. `branch_targets` is the legacy
-    # set used by `_update_state`'s Label-reset logic;
-    # `total_preds` counts each label's predecessors so we can
-    # identify Labels whose single incoming edge is a Branch or
-    # Jump (and therefore preserves A across the transition).
-    branch_targets, total_preds = _analyze_labels(instrs)
-    # Cross-block A-tracking. Snapshot the register state right
-    # before each Branch/Jump and key it by the target label. When
-    # we later reach a Label whose unique predecessor IS that
-    # Branch/Jump (no fall-through, no other branches targeting
-    # it), restore the snapshot instead of resetting to empty.
-    #
-    # Soundness: a Branch instruction doesn't modify any register
-    # or flag. The path Branch-taken → Target executes no other
-    # instructions, so the registers / flags AT the target match
-    # the snapshot. Same for an unconditional Jump. With multi-pred
-    # Labels we can't make this claim — different incoming paths
-    # may have left A in different states — so the multi-pred case
-    # still resets (conservative).
-    #
-    # Motivating shape (after the TAC sinker fires on apply_bobble):
-    #     LDA bobble
-    #     STA b0              ; A still mirrors bobble; b0 too
-    #     BPL .else
-    #     ; (add path: uses A directly)
-    #     ...
-    #     JMP .end
-    # .else:                   ; unique-pred from BPL
-    #     LDA b0              ; redundant — A still = b0 (which =
-    #                         ; bobble) coming out of the BPL
-    #
-    # Dropping the `LDA b0` cascades: `STA b0` becomes a dead store
-    # for asm_dead_store to collect next sweep.
-    saved_at: dict[str, _RegState] = {}
+    state = _RegState()
+    last_block: int | None = None
     out: list[asm_ast.Type_instruction] = []
     for i, instr in enumerate(instrs):
-        # Cross-block restore: at a unique-pred branch-target
-        # Label, restore the saved state instead of letting
-        # `_update_state` reset it.
-        if (
-            isinstance(instr, asm_ast.Label)
-            and instr.name in branch_targets
-            and total_preds.get(instr.name, 0) == 1
-            and instr.name in saved_at
-        ):
-            saved = saved_at[instr.name]
-            state.a = list(saved.a)
-            state.x = list(saved.x)
-            state.y = list(saved.y)
-            state.z_reflects = list(saved.z_reflects)
+        cur_block = pos_to_block.get(i)
+        if cur_block != last_block:
+            block_in = (
+                in_state.get(cur_block) if cur_block is not None
+                else None
+            )
+            state = _clone_state(block_in) if block_in is not None else _RegState()
+            last_block = cur_block
+        # Labels are block markers — skip the per-instruction
+        # update (no state change) but keep them in the output.
+        if isinstance(instr, asm_ast.Label):
+            out.append(instr)
+            continue
+        # Terminators don't modify state in our model; emit them
+        # as-is. (`_update_state` would reset on Jump/Ret/Return,
+        # which is moot because the next instruction starts a new
+        # block where we restore IN[block] anyway.)
+        if isinstance(instr, (asm_ast.Jump, asm_ast.Branch,
+                              asm_ast.Ret, asm_ast.Return)):
             out.append(instr)
             continue
         if _is_redundant_load(instr, state) and _flags_redundant_at(
@@ -210,29 +367,99 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         ):
             # Drop the load entirely — A / X / Y already mirror
             # the load's source, and either:
-            #   - The Z flag is already set to what the LDA would
-            #     set it to (z_reflects covers the LDA's src), so
-            #     dropping doesn't disturb a downstream Branch, OR
+            #   - Z is already set to what the LDA would set it to
+            #     (z_reflects covers src), so dropping doesn't
+            #     disturb a downstream Branch, OR
             #   - No reachable Branch reads Z before another
             #     instruction overwrites it (`_flags_dead_at`).
             continue
-        # Snapshot the state at every Branch/Jump for later
-        # restoration. Must be captured BEFORE `_update_state` —
-        # Jump's update resets state to empty, which would
-        # invalidate the snapshot.
-        if isinstance(instr, (asm_ast.Branch, asm_ast.Jump)):
-            saved_at[instr.target] = _RegState(
-                a=list(state.a),
-                x=list(state.x),
-                y=list(state.y),
-                z_reflects=list(state.z_reflects),
-            )
         out.append(instr)
-        _update_state(instr, state, branch_targets)
+        _update_state(instr, state)
+
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _clone_state(s: _RegState) -> _RegState:
+    return _RegState(
+        a=list(s.a), x=list(s.x), y=list(s.y),
+        z_reflects=list(s.z_reflects),
+    )
+
+
+def _join_states(states: Iterable[_RegState]) -> _RegState:
+    """Intersection over `_RegState`s on `_operands_equal`. Caller
+    guarantees at least one input — empty iterable would yield TOP,
+    which we don't represent.
+
+    `z_reflects` is dropped (not intersected) at any block with more
+    than one predecessor. The two state kinds differ in how they're
+    *produced*: A/X/Y equivalences are produced by the load itself
+    (e.g., `LDA M` makes A === M, observable at the load), so a
+    later drop based on cross-block agreement doesn't disturb the
+    producer. `z_reflects` entries record that Z was set by some
+    *upstream* flag-affecting instruction — possibly a different
+    one on each incoming path. Dropping a consumer load based on
+    "Z is already (M == 0)" relies on at least one producer per
+    path surviving, but downstream DSE / dead-A passes don't see
+    the cross-block Z dependency and may delete an upstream STA /
+    LDA that was the only thing keeping Z set on one path. The
+    safe rule: only carry `z_reflects` across an edge with no
+    other incoming alternative."""
+    states = list(states)
+    assert states, "join over zero predecessors"
+    result = _clone_state(states[0])
+    for s in states[1:]:
+        result.a = _intersect_operands(result.a, s.a)
+        result.x = _intersect_operands(result.x, s.x)
+        result.y = _intersect_operands(result.y, s.y)
+    if len(states) > 1:
+        result.z_reflects = []
+    return result
+
+
+def _intersect_operands(
+    l1: list[asm_ast.Type_operand],
+    l2: list[asm_ast.Type_operand],
+) -> list[asm_ast.Type_operand]:
+    """Multiset-style intersection on `_operands_equal`. Preserves
+    `l1`'s element order so the dataflow is deterministic."""
+    return [
+        op for op in l1
+        if any(_operands_equal(op, b) for b in l2)
+    ]
+
+
+def _state_equal(s1: _RegState, s2: _RegState) -> bool:
+    return (
+        _operand_list_equal(s1.a, s2.a)
+        and _operand_list_equal(s1.x, s2.x)
+        and _operand_list_equal(s1.y, s2.y)
+        and _operand_list_equal(s1.z_reflects, s2.z_reflects)
+    )
+
+
+def _operand_list_equal(
+    l1: list[asm_ast.Type_operand],
+    l2: list[asm_ast.Type_operand],
+) -> bool:
+    """Order-insensitive equality on `_operands_equal`. Used by the
+    dataflow fixed-point check — two states are equal iff their
+    register equivalence lists contain the same operands (any
+    order)."""
+    if len(l1) != len(l2):
+        return False
+    matched = [False] * len(l2)
+    for op in l1:
+        for j, op2 in enumerate(l2):
+            if not matched[j] and _operands_equal(op, op2):
+                matched[j] = True
+                break
+        else:
+            return False
+    return True
 
 
 def _flags_redundant_at(
@@ -268,83 +495,6 @@ def _flags_redundant_at(
     if any(_operands_equal(z, instr.src) for z in state.z_reflects):
         return True
     return _flags_dead_at(instrs, i + 1)
-
-
-def _collect_branch_targets(instrs) -> set[str]:
-    """Set of label names referenced by any `Jump` or `Branch` in
-    `instrs`. Used to decide whether a `Label` introduces a new
-    block: a label that nothing branches/jumps to has only the
-    fall-through predecessor, so the prior instruction's register
-    state still applies at the label."""
-    out: set[str] = set()
-    for instr in instrs:
-        if isinstance(instr, asm_ast.Jump):
-            out.add(instr.target)
-        elif isinstance(instr, asm_ast.Branch):
-            out.add(instr.target)
-    return out
-
-
-def _analyze_labels(
-    instrs: list[asm_ast.Type_instruction],
-) -> tuple[set[str], dict[str, int]]:
-    """Compute per-label CFG summary info.
-
-    Returns `(branch_targets, total_preds)`:
-
-      - `branch_targets`: set of label names targeted by any
-        `Branch` or `Jump` (the legacy `_collect_branch_targets`
-        output).
-      - `total_preds`: per-label count of predecessors, where each
-        predecessor is one of:
-          + a `Branch`/`Jump` instruction whose target is this
-            label (counted once per such instruction),
-          + a fall-through edge from the immediately-preceding
-            source-order instruction, if that instruction isn't
-            an unconditional terminator (`Jump` / `Ret` /
-            `Return`). `Branch` is NOT a terminator — its
-            fall-through edge counts as a pred for the next
-            label.
-
-    The cross-block A-tracking restore in `_rewrite_function`
-    fires only when `total_preds == 1` AND the label is in
-    `branch_targets` — i.e., the unique predecessor IS the
-    saved-from Branch/Jump. Single-pred fall-through labels
-    (not in `branch_targets`) already preserve state under the
-    existing logic, so they need no special handling here.
-    """
-    branch_targets: set[str] = set()
-    bj_preds: dict[str, int] = {}
-    fallthru_preds: dict[str, bool] = {}
-    for i, instr in enumerate(instrs):
-        if isinstance(instr, asm_ast.Jump):
-            branch_targets.add(instr.target)
-            bj_preds[instr.target] = bj_preds.get(instr.target, 0) + 1
-        elif isinstance(instr, asm_ast.Branch):
-            branch_targets.add(instr.target)
-            bj_preds[instr.target] = bj_preds.get(instr.target, 0) + 1
-        if isinstance(instr, asm_ast.Label):
-            if i == 0:
-                # Function-entry label has no fall-through pred;
-                # ENTRY-edge is treated as "reset" by virtue of the
-                # state starting empty.
-                fallthru_preds[instr.name] = False
-            else:
-                prev = instrs[i - 1]
-                # `Branch` can fall through (when not taken);
-                # everything except an unconditional terminator
-                # naturally falls through.
-                fallthru_preds[instr.name] = not isinstance(
-                    prev, (asm_ast.Jump, asm_ast.Ret, asm_ast.Return),
-                )
-    total_preds: dict[str, int] = {}
-    names = set(bj_preds.keys()) | set(fallthru_preds.keys())
-    for name in names:
-        total_preds[name] = (
-            bj_preds.get(name, 0)
-            + (1 if fallthru_preds.get(name, False) else 0)
-        )
-    return branch_targets, total_preds
 
 
 def _is_redundant_load(
@@ -601,6 +751,14 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
     # may be an index-dependent operand whose value future code
     # can change; the dst-side tracking is sufficient for the
     # common `LDA M; STA N; LDA N` shape.
+    #
+    # Self-Mov `Mov(M, M)` is a no-op: `asm_emit` drops both the
+    # LDA and STA (`src == dst` peephole at `asm_emit.py:513`), so
+    # A is NOT loaded and state shouldn't pretend it was. This
+    # arises from SSA destruction emitting an intra-color copy
+    # when a Phi src and dst land at the same byte.
+    if _operands_equal(mov.src, mov.dst):
+        return
     _invalidate_aliasing(state, mov.dst)
     _invalidate_z_aliasing(state, mov.dst)
     if isinstance(mov.dst, _STABLE_MEM_TYPES):

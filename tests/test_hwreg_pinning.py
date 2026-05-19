@@ -242,11 +242,11 @@ class TestHwRegPinningEndToEnd(unittest.TestCase):
     """End-to-end checks on real C programs: HwReg pinning fires
     where expected and produces the right asm shape."""
 
-    def _compile(self, src: str, *, unroll: bool = False) -> str:
+    def _compile(self, src: str) -> str:
         from compile import _run_stage
         from preprocessor import preprocess
         return _run_stage(
-            "codegen", preprocess(src), optimize=True, unroll=unroll,
+            "codegen", preprocess(src), optimize=True,
         )
 
     def test_loop_iv_used_as_indexed_store_pin(self):

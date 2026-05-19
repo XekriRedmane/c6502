@@ -463,7 +463,7 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
         from preprocessor import preprocess
         return _run_stage(
             "codegen", preprocess(src),
-            optimize=True, unroll=False,
+            optimize=True,
         )
 
     def test_void_deref_emits_load_through_pointer(self):
@@ -523,7 +523,7 @@ class TestVolatileLocalSurvives(unittest.TestCase):
         from preprocessor import preprocess
         return _run_stage(
             "codegen", preprocess(src),
-            optimize=True, unroll=False,
+            optimize=True,
         )
 
     def test_volatile_decrement_loop_keeps_explicit_rmw(self):

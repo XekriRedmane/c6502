@@ -155,11 +155,14 @@ class TestLinkerErrors(unittest.TestCase):
             self.assertIn("multiple TUs", err)
             self.assertIn("helper", err)
 
-    def test_non_zp_abi_extern_rejected(self) -> None:
-        # main calls `regular_lib_fn` which isn't zp_abi.
-        # Per-TU compile makes main ineligible (no symbolic
-        # locals). The linker errors because the callee isn't
-        # in any def or zp_abi extern.
+    def test_unannotated_extern_accepted_under_default_zp_abi(self) -> None:
+        # Under the default-zp_abi policy (`--optimize`), every
+        # extern is treated as zp_abi at the call site: args land
+        # in `__zpabi_<callee>_p<k>` slots, and the per-TU output
+        # advertises the extern in `; @zp-link-meta-begin`. The
+        # linker therefore accepts the link — the user is on the
+        # hook for ensuring the actual definition uses a matching
+        # ABI.
         src = (
             "extern int regular_lib_fn(int x); "
             "int main(void) { return regular_lib_fn(7); }"
@@ -170,15 +173,7 @@ class TestLinkerErrors(unittest.TestCase):
             out = tmp / "linked.asm"
             self.assertEqual(_compile_to_asm(src, p), 0)
             rc, err = _link_capture_stderr([p], out)
-            self.assertEqual(rc, 1)
-            # Either "non-zp_abi externs" or "ineligible" should
-            # appear in the error.
-            self.assertTrue(
-                "non-zp_abi externs" in err
-                or "IndirectCall" in err
-                or "cycle" in err,
-                f"Expected eligibility error, got: {err!r}",
-            )
+            self.assertEqual(rc, 0, f"Expected link to succeed, stderr: {err!r}")
 
     def test_no_inputs_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

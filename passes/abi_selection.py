@@ -299,6 +299,25 @@ def _validate_zp_abi(
     """Validate that `fn` can be given the ZP-passing ABI; return
     the computed `ZpLayout`. Raises `AbiSelectionError` on any
     violation."""
+    # Struct/union return: c99_to_tac prepends a hidden sret-pointer
+    # param to the TAC param list (see `c99_to_tac.py` near
+    # `make_temporary_variable_name` in the FunctionCall arm). The
+    # FunType's `params` list doesn't include this hidden param, so
+    # `_param_byte_count` undercounts and the call site's arg
+    # iteration runs off the end of the ZpLayout's slot_symbols.
+    # The cleanest accommodation is to reject struct/union returns
+    # outright — the unannotated default-zp_abi path falls back to
+    # soft-stack, which already handles sret correctly.
+    fun_type = fn_decl.data_type
+    if isinstance(fun_type, c99_ast.FunType) and isinstance(
+        fun_type.ret, (c99_ast.Structure, c99_ast.Union),
+    ):
+        raise AbiSelectionError(
+            f"function `{fn.name}` declared "
+            f"`__attribute__((zp_abi))` but returns a struct / "
+            f"union; the implicit sret-pointer parameter doesn't "
+            f"fit the ZP-layout slot scheme",
+        )
     if _has_indirect_call(fn):
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
@@ -354,6 +373,16 @@ def _validate_zp_abi_extern(
     checks apply — the IndirectCall and recursion checks need a
     body to inspect, and for cross-TU functions we trust the
     programmer's annotation."""
+    fun_type = fn_decl.data_type
+    if isinstance(fun_type, c99_ast.FunType) and isinstance(
+        fun_type.ret, (c99_ast.Structure, c99_ast.Union),
+    ):
+        raise AbiSelectionError(
+            f"function `{name}` declared "
+            f"`__attribute__((zp_abi))` but returns a struct / "
+            f"union; the implicit sret-pointer parameter doesn't "
+            f"fit the ZP-layout slot scheme",
+        )
     if name in address_taken:
         raise AbiSelectionError(
             f"function `{name}` declared "
@@ -394,7 +423,14 @@ def select_abi(
 ) -> dict[str, ParamLayout]:
     """Compute per-function ABI for every function in `prog`.
     Returns `dict[name, ParamLayout]`. Raises `AbiSelectionError`
-    if any `__attribute__((zp_abi))` annotation can't be honored.
+    if any explicit `__attribute__((zp_abi))` annotation can't be
+    honored.
+
+    Under `--optimize`, every function defaults to zp_abi: an
+    unannotated function attempts zp_abi and SILENTLY falls back
+    to `SoftStackLayout` on ineligibility (indirect calls,
+    recursion, address taken, params don't fit). An annotated
+    function keeps the strict contract — ineligibility raises.
 
     `types` is the type-checker's struct/union TypeTable, needed
     for parameter-byte-size computation when parameters have
@@ -426,7 +462,20 @@ def select_abi(
                 tl, fn_decl, address_taken, callgraph, pool, types,
             )
         elif ann is None:
-            out[tl.name] = SoftStackLayout()
+            # Default-zp_abi: try, silently fall back to soft-stack
+            # on any eligibility failure. The error messages from
+            # `_validate_zp_abi` mention the annotation explicitly,
+            # but they're swallowed here, so the user-facing
+            # behavior is just "this function got soft-stack."
+            if fn_decl is None:
+                out[tl.name] = SoftStackLayout()
+                continue
+            try:
+                out[tl.name] = _validate_zp_abi(
+                    tl, fn_decl, address_taken, callgraph, pool, types,
+                )
+            except AbiSelectionError:
+                out[tl.name] = SoftStackLayout()
         else:
             # Defensive — the parser already filters annotation
             # names, so any value other than "zp_abi" or None
@@ -435,17 +484,36 @@ def select_abi(
                 f"function `{tl.name}` has unrecognized abi "
                 f"annotation {ann!r}",
             )
-    # zp_abi-annotated externs: declared in this TU but defined
-    # elsewhere. Call sites in this TU need their `ZpLayout` so
-    # arg writes go to the callee's pinned ZP slots instead of
-    # the soft stack.
+    # Externs declared in this TU but defined elsewhere. Call
+    # sites in this TU need the callee's `ZpLayout` so arg writes
+    # go to the callee's pinned ZP slots instead of the soft
+    # stack. Annotated externs raise on ineligibility (matching
+    # the strict contract); unannotated externs attempt zp_abi
+    # and silently fall back, mirroring the definition-site
+    # default-zp_abi policy.
     for name, ann in annotations.items():
-        if ann != "zp_abi" or name in defined:
+        if name in defined:
             continue
         fn_decl = decls.get(name)
         if fn_decl is None:
             continue
-        out[name] = _validate_zp_abi_extern(
-            name, fn_decl, address_taken, pool, types,
-        )
+        if ann == "zp_abi":
+            out[name] = _validate_zp_abi_extern(
+                name, fn_decl, address_taken, pool, types,
+            )
+    for name, fn_decl in decls.items():
+        if name in defined or name in out:
+            continue
+        if annotations.get(name) is not None:
+            continue
+        try:
+            out[name] = _validate_zp_abi_extern(
+                name, fn_decl, address_taken, pool, types,
+            )
+        except AbiSelectionError:
+            # Extern got rejected (address-taken or param window
+            # overflow). Don't record an entry — the call site
+            # will fall back to soft-stack via the `abi.get(name)
+            # is None` path in tac_to_asm.
+            pass
     return out

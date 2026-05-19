@@ -54,12 +54,19 @@ def _compile_to_tac(src: str):
 
 
 class TestSelectAbi(unittest.TestCase):
-    def test_no_annotation_is_soft_stack(self) -> None:
+    def test_no_annotation_eligible_defaults_to_zp_abi(self) -> None:
+        # Without `__attribute__((zp_abi))`, an eligible function
+        # (no indirect calls, no recursion, no address taken,
+        # params fit the ZP window) defaults to zp_abi under
+        # `select_abi` — this matches the `--optimize` policy of
+        # "every function gets zp_abi when it can."
         tac, c99, types = _compile_to_tac(
             "int main(void) { return 0; }",
         )
         abi = select_abi(tac, c99, types)
-        self.assertIsInstance(abi["main"], SoftStackLayout)
+        self.assertIsInstance(abi["main"], ZpLayout)
+        # main takes no params, so the slot list is empty.
+        self.assertEqual(abi["main"].addrs, [])
 
     def test_zp_abi_leaf_with_int_param(self) -> None:
         tac, c99, types = _compile_to_tac(
@@ -70,8 +77,6 @@ class TestSelectAbi(unittest.TestCase):
         self.assertIsInstance(abi["f"], ZpLayout)
         # Int = 2 bytes; ZP window starts at $80 (default Pool).
         self.assertEqual(abi["f"].addrs, [0x80, 0x81])
-        # main isn't annotated, so SoftStack.
-        self.assertIsInstance(abi["main"], SoftStackLayout)
 
     def test_zp_abi_two_int_params(self) -> None:
         tac, c99, types = _compile_to_tac(
@@ -81,10 +86,10 @@ class TestSelectAbi(unittest.TestCase):
         abi = select_abi(tac, c99, types)
         self.assertEqual(abi["f"].addrs, [0x80, 0x81, 0x82, 0x83])
 
-    def test_zp_abi_with_nonrecursive_call_accepted(self) -> None:
-        # A direct, non-recursive call from a zp_abi function is
-        # fine: the optimizer's regalloc blocks the callee's param
-        # ZP slots from being used by `f`'s locals, so no clobbering.
+    def test_unannotated_eligible_helper_defaults_to_zp_abi(self) -> None:
+        # `helper` has no annotation but qualifies (no recursion,
+        # no indirect call, params fit) — under the default-zp_abi
+        # policy it lands as ZpLayout, not SoftStack.
         tac, c99, types = _compile_to_tac(
             "int helper(int x) { return x + 1; } "
             "__attribute__((zp_abi)) int f(int x) { return helper(x); } "
@@ -92,7 +97,22 @@ class TestSelectAbi(unittest.TestCase):
         )
         abi = select_abi(tac, c99, types)
         self.assertIsInstance(abi["f"], ZpLayout)
-        self.assertIsInstance(abi["helper"], SoftStackLayout)
+        self.assertIsInstance(abi["helper"], ZpLayout)
+
+    def test_unannotated_recursive_silently_falls_back(self) -> None:
+        # `r` is directly recursive — ineligible for zp_abi because
+        # a recursive call would overwrite the outer activation's
+        # param slots. Without an annotation, the default-zp_abi
+        # policy silently downgrades it to SoftStack instead of
+        # raising.
+        tac, c99, types = _compile_to_tac(
+            "int r(int x) { return x ? r(x - 1) : 0; } "
+            "int main(void) { return 0; }",
+        )
+        abi = select_abi(tac, c99, types)
+        self.assertIsInstance(abi["r"], SoftStackLayout)
+        # main is eligible and gets zp_abi.
+        self.assertIsInstance(abi["main"], ZpLayout)
 
     def test_zp_abi_direct_recursion_rejected(self) -> None:
         with self.assertRaises(AbiSelectionError) as cm:

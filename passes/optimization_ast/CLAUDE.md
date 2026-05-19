@@ -1,12 +1,13 @@
 # passes/optimization_ast/CLAUDE.md
 
-AST-level optimization. The only consumer today is the `--unroll`
-modifier flag; the directory exists so the same shape (`passes/
-optimization_*/`) generalizes when more AST-level optimizations land.
+AST-level optimization. The only consumer today is `unroll_program`,
+which runs as part of the `--optimize` pipeline; the directory exists
+so the same shape (`passes/optimization_*/`) generalizes when more
+AST-level optimizations land.
 
 ## Module roster
 
-- `unroll.py` — `unroll_program`. Active under `--optimize --unroll`.
+- `unroll.py` — `unroll_program`. Active under `--optimize`.
 
 ## `unroll_program`
 

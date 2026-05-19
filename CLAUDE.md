@@ -50,7 +50,7 @@ C source
   → label_resolution
   → loop_labeling
   → type_checking                       → c99_ast (+ SymbolTable, TypeTable)
-  → (--unroll: unroll_program — #pragma c6502 loop unroll(enable))
+  → (--optimize: unroll_program — #pragma c6502 loop unroll(enable))
   → c99_to_tac                          → tac_ast
   → (--optimize: TAC fixed-point opts)
   → (--optimize: select_abi + allocate_zp_slots)
@@ -79,13 +79,18 @@ Two key runtime conventions:
   SSP, `$02-$03` FP, `$04-$23` HARGS (runtime-helper exchange block),
   `$24-$25` DPTR (caller-saved indirect-pointer scratch). Full layout
   in "Function stack frame" below.
-- **`__attribute__((zp_abi))` + call-graph-disjoint private pools**
-  put params AND body locals in ZP for eligible leaf / non-recursive
-  / non-indirect-calling functions; ineligible functions fall back to
-  the default caller/callee partition (`$80..$BF` / `$C0..$FF`).
-  Eligible functions emit as bare body + RTS. Details in
-  [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint ZP
-  allocation".
+- **zp_abi + call-graph-disjoint private pools** put params AND
+  body locals in ZP for eligible leaf / non-recursive /
+  non-indirect-calling functions; ineligible functions fall back
+  to the default caller/callee partition (`$80..$BF` / `$C0..$FF`).
+  Eligible functions emit as bare body + RTS. Under `--optimize`
+  every function defaults to zp_abi when eligible — the explicit
+  `__attribute__((zp_abi))` annotation is no longer required but
+  remains supported as a strict-mode opt-in: an annotated
+  function hard-errors on ineligibility (recursion, address
+  taken, etc.) instead of silently falling back. Details in
+  [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
+  ZP allocation".
 
 ## Common commands
 
@@ -111,11 +116,16 @@ Stage-selection flags (mutually exclusive, one required with
 `--resolve` runs the three name-resolution passes (identifier
 resolution, label resolution, loop labeling) in that order.
 
-Modifier flags (orthogonal to the stage flags; both apply to `--tac`
+Modifier flag (orthogonal to the stage flags; applies to `--tac`
 and `--codegen`):
 
 - `--optimize` runs the optimizer pipeline:
 
+  0. AST-level unroll (`passes.optimization_ast.unroll.unroll_
+     program`) — fully unrolls every for-loop carrying
+     `#pragma c6502 loop unroll(enable)`. Runs after parsing and
+     before identifier resolution. See
+     [passes/optimization_ast/CLAUDE.md](passes/optimization_ast/CLAUDE.md).
   1. TAC SSA construction (`passes.optimization.ssa_construction`).
   2. One-shot scalar const-static read fold — replaces `Var(static
      const scalar)` USE positions with `Constant(value)`.
@@ -140,15 +150,14 @@ and `--codegen`):
       [passes/CLAUDE.md](passes/CLAUDE.md).
   11. `expand_long_branches`, `asm_to_asm2`, `emit_program`.
 
-  Also enables `__attribute__((zp_abi))` and the call-graph-disjoint
-  body-local allocator. The INC / DEC peepholes run in the
-  unoptimized pipeline too (their win is addressing-mode-aware, not
-  regalloc-dependent).
-
-- `--unroll` (only meaningful with `--optimize`) runs `passes.
-  optimization_ast.unroll.unroll_program` after parsing and before
-  identifier resolution. See
-  [passes/optimization_ast/CLAUDE.md](passes/optimization_ast/CLAUDE.md).
+  Also enables the default zp_abi calling convention: every function
+  that is eligible (no IndirectCall, not in a call-graph cycle,
+  address not taken, params fit) gets zp_abi without needing the
+  explicit `__attribute__((zp_abi))` annotation. Ineligible
+  functions silently fall back to soft-stack. Annotated functions
+  keep today's strict contract: ineligibility is a hard error.
+  The INC / DEC peepholes run in the unoptimized pipeline too
+  (their win is addressing-mode-aware, not regalloc-dependent).
 
 Linker mode:
 

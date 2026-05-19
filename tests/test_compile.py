@@ -799,16 +799,31 @@ class TestCodegenWithRegalloc(unittest.TestCase):
         import re
         self.assertNotRegex(out, r"LDA\s+\$[89A-F][0-9A-F]")
 
-    def test_optimize_param_still_uses_frame(self):
-        # Per the MVP rule, params always use Frame addressing
-        # regardless of any color regalloc may have assigned —
-        # the calling convention dictates the on-entry layout.
+    def test_optimize_eligible_param_uses_zp_slot(self):
+        # Under `--optimize`, every eligible function defaults to
+        # zp_abi: the param lives in a `__zpabi_<fn>__<name>`
+        # ZP slot rather than `(FP),Y` Frame addressing.
         src = "int main(int p) { return p + 1; }"
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
         )
         self.assertEqual(rc, 0)
-        # The param's read should still go through (FP),Y.
+        self.assertIn("__zpabi_main__p_0", out)
+        self.assertNotIn("(FP),Y", out)
+
+    def test_optimize_recursive_param_falls_back_to_frame(self):
+        # A recursive function can't use zp_abi (the recursive call
+        # would clobber the outer activation's param slots) — under
+        # the default-zp_abi policy it silently falls back to soft-
+        # stack, so the param goes through `(FP),Y` again.
+        src = (
+            "int r(int x) { return x ? r(x - 1) : 0; } "
+            "int main(void) { return r(3); }"
+        )
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--codegen", "--optimize"], stdin=src,
+        )
+        self.assertEqual(rc, 0)
         self.assertIn("(FP),Y", out)
 
 

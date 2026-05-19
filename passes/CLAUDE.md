@@ -829,12 +829,11 @@ functions — there's nothing to save in the prologue because no
 caller's storage overlaps with the callee's range. Eligible functions
 emit as bare body + RTS.
 
-### `__attribute__((zp_abi))` (param passing)
+### zp_abi (param passing)
 
 Caller writes arg bytes directly to the callee's ZP slot symbols
 (`STA __zpabi_<callee>_p<k>`); callee reads its params from those same
-symbols. No `AllocateStack`, no Frame-resident param storage. Compile-
-time validation (error otherwise):
+symbols. No `AllocateStack`, no Frame-resident param storage. Eligibility:
 
 - No `IndirectCall` in body (callee's ABI unknowable at the indirect
   site).
@@ -846,6 +845,12 @@ time validation (error otherwise):
   When the chain saturates, slots spill into a non-ZP fallback region
   (default $0200–$FFFF); dasm picks absolute addressing automatically,
   so the call-site / callee IR is unchanged.
+
+Under `--optimize`, every function defaults to zp_abi when eligible.
+The explicit `__attribute__((zp_abi))` annotation is a strict-mode
+opt-in: an annotated function hard-errors on ineligibility, an
+unannotated one silently falls back to soft-stack. Same eligibility
+rules apply either way.
 
 ### Body-local private pools (every eligible function)
 

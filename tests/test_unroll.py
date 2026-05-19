@@ -850,37 +850,12 @@ class TestUnrollCli(unittest.TestCase):
             rc = main(argv)
         return rc, out.getvalue(), err.getvalue()
 
-    def test_unroll_without_optimize_rejected(self) -> None:
-        rc, _, err = self._run(
-            ["compile.py", "-", "--tac", "--unroll"],
-            stdin="int main(void) { return 0; }",
-        )
-        self.assertEqual(rc, 2)
-        self.assertIn("--unroll requires --optimize", err)
-
-    def test_unroll_with_optimize_compiles(self) -> None:
-        src = """
-        int main(void) {
-            int s = 0;
-            #pragma c6502 loop unroll(enable)
-            for (int i = 0; i < 4; i++) s += i;
-            return s;
-        }
-        """
-        rc, out, _ = self._run(
-            ["compile.py", "-", "--tac", "--optimize", "--unroll"],
-            stdin=src,
-        )
-        self.assertEqual(rc, 0)
-        # The for-loop is gone (no `_continue` / `_break` labels in
-        # the TAC) — proof that the unrolling fired before the
-        # loop_labeling pass would have minted those.
-        self.assertNotIn("_continue", out)
-        self.assertNotIn("_break", out)
-
-    def test_unroll_without_flag_leaves_loop_intact(self) -> None:
-        # Pragma is parsed but ignored when --unroll isn't passed;
-        # the loop lowers normally with continue / break labels.
+    def test_pragma_unrolls_under_optimize(self) -> None:
+        # Under `--optimize`, the AST-level unroll pass fires on
+        # every for-loop carrying the pragma (with the canonical
+        # init=const; cond=var<const; step=var=var+const shape).
+        # Verify the loop is gone from the TAC (no continue/break
+        # labels mint).
         src = """
         int main(void) {
             int s = 0;
@@ -891,6 +866,25 @@ class TestUnrollCli(unittest.TestCase):
         """
         rc, out, _ = self._run(
             ["compile.py", "-", "--tac", "--optimize"], stdin=src,
+        )
+        self.assertEqual(rc, 0)
+        self.assertNotIn("_continue", out)
+        self.assertNotIn("_break", out)
+
+    def test_pragma_ignored_without_optimize(self) -> None:
+        # Without `--optimize`, the unroll pass is skipped. The
+        # pragma parses but the loop lowers normally with continue
+        # / break labels.
+        src = """
+        int main(void) {
+            int s = 0;
+            #pragma c6502 loop unroll(enable)
+            for (int i = 0; i < 4; i++) s += i;
+            return s;
+        }
+        """
+        rc, out, _ = self._run(
+            ["compile.py", "-", "--tac"], stdin=src,
         )
         self.assertEqual(rc, 0)
         self.assertIn("_continue", out)

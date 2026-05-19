@@ -117,13 +117,13 @@ from passes.type_checking import (
 from c99_to_tac import translate_program as translate_to_tac
 
 
-def _resolved(source: str, *, unroll: bool = False):
+def _resolved(source: str, *, optimize: bool = False):
     """Run parse + (optional unroll) + name resolution + string
     lifting. Order matters:
       1. parse — c99 AST
-      2. (optional) unroll — when --optimize --unroll is set, every
-         for-loop carrying `#pragma c6502 loop unroll(enable)` is
-         fully unrolled here, BEFORE identifier_resolution, so each
+      2. (optional) unroll — when --optimize is set, every for-loop
+         carrying `#pragma c6502 loop unroll(enable)` is fully
+         unrolled here, BEFORE identifier_resolution, so each
          cloned body's locals get fresh per-iteration `@N.<name>`
          rewrites for free.
       3. identifier_resolution — user names get unique
@@ -139,7 +139,7 @@ def _resolved(source: str, *, unroll: bool = False):
          labels get `.loop@<N>` etc.
     """
     parsed = parse(source)
-    if unroll:
+    if optimize:
         parsed = unroll_program(parsed)
     resolved = resolve_identifiers(parsed)
     lifted = lift_strings(resolved)
@@ -219,21 +219,21 @@ def _format_tokens(source: str) -> str:
 
 
 def _run_stage(
-    stage: str, source: str, optimize: bool = False, unroll: bool = False,
+    stage: str, source: str, optimize: bool = False,
 ) -> str:
     if stage == "lex":
         return _format_tokens(source)
     if stage == "parse":
         return pretty(parse(source)) + "\n"
     if stage == "resolve":
-        return pretty(_resolved(source, unroll=unroll)) + "\n"
+        return pretty(_resolved(source, optimize=optimize)) + "\n"
     if stage == "tac":
         # Thread the symbol + type tables from type_checking into
         # c99_to_tac so the latter can read function-linkage flags,
         # emit StaticVariable entries for static-storage objects,
         # and resolve struct/union sizes.
         prog, symbols, types = type_check_program(
-            _resolved(source, unroll=unroll),
+            _resolved(source, optimize=optimize),
         )
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
@@ -241,7 +241,7 @@ def _run_stage(
         return pretty(tac) + "\n"
     if stage == "codegen":
         prog, symbols, types = type_check_program(
-            _resolved(source, unroll=unroll),
+            _resolved(source, optimize=optimize),
         )
         # `replace_pseudoregisters` needs to recognize every static-
         # storage object — including extern references that don't
@@ -457,24 +457,13 @@ def main(argv: list[str]) -> int:
              "store elimination), then asm-level SSA round-trip "
              "(byte-granular forward + backward copy-prop, byte-DCE, "
              "byte-granular regalloc), then late prologue / epilogue "
-             "synthesis. Also enables the `__attribute__((zp_abi))` "
-             "calling-convention optimization. Applies to --tac and "
+             "synthesis. Also enables AST-level loop unrolling for "
+             "`#pragma c6502 loop unroll(enable)` loops and the "
+             "`__attribute__((zp_abi))` calling-convention "
+             "optimization. Applies to --resolve, --tac, and "
              "--codegen.",
     )
-    ap.add_argument(
-        "--unroll", dest="unroll", action="store_true",
-        help="fully unroll every for-loop carrying `#pragma c6502 "
-             "loop unroll(enable)`. Requires --optimize. Applies to "
-             "--resolve, --tac, and --codegen.",
-    )
     args, pcpp_args = ap.parse_known_args(argv[1:])
-
-    if args.unroll and not args.optimize:
-        print(
-            "compile.py: --unroll requires --optimize",
-            file=sys.stderr,
-        )
-        return 2
 
     if (args.stage == "codegen"
             and args.output is not None
@@ -493,7 +482,7 @@ def main(argv: list[str]) -> int:
 
     text = _run_stage(
         args.stage, preprocess(source, pcpp_args),
-        optimize=args.optimize, unroll=args.unroll,
+        optimize=args.optimize,
     )
 
     if args.output is not None:

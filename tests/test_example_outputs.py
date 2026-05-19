@@ -1,9 +1,9 @@
 """Gold-output regression tests for examples/.
 
 Each `examples/<name>.c` file ships with a checked-in
-`examples/<name>.asm` showing its blessed `--optimize --unroll`
-output. These tests recompile each example and assert that the
-fresh output is byte-identical to the committed asm. The committed
+`examples/<name>.asm` showing its blessed `--optimize` output.
+These tests recompile each example and assert that the fresh
+output is byte-identical to the committed asm. The committed
 files are the "gold" output — any pipeline change that alters them
 must be deliberate and re-committed.
 
@@ -24,7 +24,7 @@ Failure handling: when a test fails because an optimization
 improved output, regenerate the committed file:
 
     uv run python compile.py examples/<name>.c \\
-        --codegen --optimize --unroll -o examples/<name>.asm
+        --codegen --optimize -o examples/<name>.asm
 
 and inspect the diff before committing the new gold output.
 """
@@ -60,10 +60,10 @@ def _examples() -> list[str]:
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestExampleOutputs(unittest.TestCase):
-    """Recompile each example with --optimize --unroll and compare
-    against the committed .asm file. A failure means the pipeline
-    produces different output than the gold output — either an
-    improvement that needs to be blessed, or a regression."""
+    """Recompile each example with --optimize and compare against
+    the committed .asm file. A failure means the pipeline produces
+    different output than the gold output — either an improvement
+    that needs to be blessed, or a regression."""
 
     def test_gold_outputs(self) -> None:
         examples = _examples()
@@ -77,7 +77,7 @@ class TestExampleOutputs(unittest.TestCase):
                     source = f.read()
                 actual = _run_stage(
                     "codegen", preprocess(source),
-                    optimize=True, unroll=True,
+                    optimize=True,
                 )
                 with open(gold) as f:
                     expected = f.read()
@@ -90,5 +90,5 @@ class TestExampleOutputs(unittest.TestCase):
                         f"{actual_lines} lines). To bless the new "
                         f"output:\n  uv run python compile.py "
                         f"examples/{name}.c --codegen --optimize "
-                        f"--unroll -o examples/{name}.asm"
+                        f"-o examples/{name}.asm"
                     )

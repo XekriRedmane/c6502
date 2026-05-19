@@ -218,6 +218,16 @@ def _collect_address_taken_names(
     code can't slip a slot address in through an `Imm` either."""
     out: set[str] = set()
     for instr in instrs:
+        # `LoadAddress(src=Data(name), dst=…)` is the compound form
+        # of "take the address of `name`". Pre-`lower_data_load_
+        # address` it's still a single atom — its bytes haven't yet
+        # been split into the `Mov(ImmLabelLow(name), …)` /
+        # `Mov(ImmLabelHigh(name), …)` pair that the operand walk
+        # below catches. Treat the inner Data name as address-taken
+        # so we don't mis-decide that a callee can't see the byte.
+        if isinstance(instr, asm_ast.LoadAddress):
+            if isinstance(instr.src, asm_ast.Data):
+                out.add(instr.src.name)
         for op in _all_operands(instr):
             if isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
                 out.add(op.name)

@@ -2,15 +2,17 @@
 name: compile-example
 description: Use when user says "compile example", "compile <name>",
   or invokes /compile-example with a filename — compiles a C source
-  file from the examples/ directory with full optimization (--optimize
-  --unroll) and writes the resulting 6502 assembly to examples/<name>.asm
+  file from the examples/ directory with full optimization
+  (--optimize) and writes the resulting 6502 assembly to
+  examples/<name>.asm
 ---
 
 # Compile Example
 
 Takes a filename argument naming a source file in `examples/` and runs
-it through `compile.py --codegen --optimize --unroll`, writing the
-output to the matching `.asm` file in `examples/`.
+it through `compile.py --codegen --optimize`, writing the output to
+the matching `.asm` file in `examples/`. `--optimize` enables loop
+unrolling and the default zp_abi pipeline.
 
 ## Input
 
@@ -28,7 +30,7 @@ for output. If the input `.c` doesn't exist, report it and stop.
 From the project root (`/project/c6502`):
 
 ```sh
-uv run python compile.py examples/<base>.c --codegen --optimize --unroll -o examples/<base>.asm
+uv run python compile.py examples/<base>.c --codegen --optimize -o examples/<base>.asm
 ```
 
 The `-o` path must end in `.asm` (compile.py enforces this).

@@ -5,23 +5,34 @@ __zpabi_draw_sprite_opaque__sprite_y	EQU	$83
 __zpabi_draw_sprite_opaque__tile_src_0	EQU	$84
 __zpabi_draw_sprite_opaque__tile_src_1	EQU	$85
 __zpabi_draw_sprite_opaque__page_flag	EQU	$86
-__local_draw_sprite_opaque__0	EQU	$87
 __local_draw_sprite_opaque__x	EQU	$88
 __local_draw_sprite_opaque__row_remain	EQU	$89
 __local_draw_sprite_opaque__1	EQU	$8A
 __local_draw_sprite_opaque__2	EQU	$8B
 __local_draw_sprite_opaque__h	EQU	$8C
 __local_draw_sprite_opaque__y	EQU	$8D
+__local_draw_sprite_opaque__3	EQU	$8E
+__local_draw_sprite_opaque__4	EQU	$8F
 
 ; @zp-link-meta-begin
-; def draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1,__zpabi_draw_sprite_opaque__page_flag locals=__local_draw_sprite_opaque__0,__local_draw_sprite_opaque__x,__local_draw_sprite_opaque__row_remain,__local_draw_sprite_opaque__1,__local_draw_sprite_opaque__2,__local_draw_sprite_opaque__h,__local_draw_sprite_opaque__y indirect=false in_cycle=false
+; def draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1,__zpabi_draw_sprite_opaque__page_flag locals=__local_draw_sprite_opaque__0,__local_draw_sprite_opaque__x,__local_draw_sprite_opaque__row_remain,__local_draw_sprite_opaque__1,__local_draw_sprite_opaque__2,__local_draw_sprite_opaque__h,__local_draw_sprite_opaque__y,__local_draw_sprite_opaque__3,__local_draw_sprite_opaque__4 indirect=false in_cycle=false
 ; @zp-link-meta-end
 
 draw_sprite_opaque:
    SUBROUTINE
 
    LDA   __zpabi_draw_sprite_opaque__page_flag
-   BMI   .cond_end@1
+   BPL   .cond_else@0
+   LDA   #<screen_row_addr_hi2
+   STA   __local_draw_sprite_opaque__3
+   LDA   #>screen_row_addr_hi2
+   STA   __local_draw_sprite_opaque__4
+   JMP   .cond_end@1
+.cond_else@0:
+   LDA   #<screen_row_addr_hi
+   STA   __local_draw_sprite_opaque__3
+   LDA   #>screen_row_addr_hi
+   STA   __local_draw_sprite_opaque__4
 .cond_end@1:
    LDA   #$00
    STA   __local_draw_sprite_opaque__y
@@ -31,16 +42,11 @@ draw_sprite_opaque:
 .loop@0_start:
    LDA   __local_draw_sprite_opaque__h
    BEQ   .loop@0_break
-   LDA   #<screen_row_addr_hi
-   STA   DPTR
-   LDA   #>screen_row_addr_hi
-   STA   DPTR+1
    TXA
    TAY
-   LDA   (DPTR),Y
+   LDA   (__local_draw_sprite_opaque__3),Y
    STA   __local_draw_sprite_opaque__x
    LDA   screen_row_addr_lo,X
-   STA   __local_draw_sprite_opaque__0
    STA   __local_draw_sprite_opaque__1
    LDA   __local_draw_sprite_opaque__x
    STA   __local_draw_sprite_opaque__2
@@ -56,12 +62,6 @@ draw_sprite_opaque:
    BCS   .if_end@2
    LDY   __local_draw_sprite_opaque__y
    LDA   (__zpabi_draw_sprite_opaque__tile_src_0),Y
-   STA   __local_draw_sprite_opaque__0
-   LDA   __local_draw_sprite_opaque__1
-   STA   DPTR
-   LDA   __local_draw_sprite_opaque__2
-   STA   DPTR+1
-   LDA   __local_draw_sprite_opaque__0
    LDY   __local_draw_sprite_opaque__x
    STA   (__local_draw_sprite_opaque__1),Y
 .if_end@2:
@@ -103,3 +103,17 @@ screen_row_addr_lo:
    DC.B  $50, $50, $50, $50, $50, $50, $50, $50, $D0, $D0, $D0, $D0, $D0, $D0, $D0, $D0
    DC.B  $50, $50, $50, $50, $50, $50, $50, $50, $D0, $D0, $D0, $D0, $D0, $D0, $D0, $D0
    DC.B  $50, $50, $50, $50, $50, $50, $50, $50, $D0, $D0, $D0, $D0, $D0, $D0, $D0, $D0
+
+screen_row_addr_hi2:
+   DC.B  $40, $44, $48, $4C, $50, $54, $58, $5C, $40, $44, $48, $4C, $50, $54, $58, $5C
+   DC.B  $41, $45, $49, $4D, $51, $55, $59, $5D, $41, $45, $49, $4D, $51, $55, $59, $5D
+   DC.B  $42, $46, $4A, $4E, $52, $56, $5A, $5E, $42, $46, $4A, $4E, $52, $56, $5A, $5E
+   DC.B  $43, $47, $4B, $4F, $53, $57, $5B, $5F, $43, $47, $4B, $4F, $53, $57, $5B, $5F
+   DC.B  $40, $44, $48, $4C, $50, $54, $58, $5C, $40, $44, $48, $4C, $50, $54, $58, $5C
+   DC.B  $41, $45, $49, $4D, $51, $55, $59, $5D, $41, $45, $49, $4D, $51, $55, $59, $5D
+   DC.B  $42, $46, $4A, $4E, $52, $56, $5A, $5E, $42, $46, $4A, $4E, $52, $56, $5A, $5E
+   DC.B  $43, $47, $4B, $4F, $53, $57, $5B, $5F, $43, $47, $4B, $4F, $53, $57, $5B, $5F
+   DC.B  $40, $44, $48, $4C, $50, $54, $58, $5C, $40, $44, $48, $4C, $50, $54, $58, $5C
+   DC.B  $41, $45, $49, $4D, $51, $55, $59, $5D, $41, $45, $49, $4D, $51, $55, $59, $5D
+   DC.B  $42, $46, $4A, $4E, $52, $56, $5A, $5E, $42, $46, $4A, $4E, $52, $56, $5A, $5E
+   DC.B  $43, $47, $4B, $4F, $53, $57, $5B, $5F, $43, $47, $4B, $4F, $53, $57, $5B, $5F

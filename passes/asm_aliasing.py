@@ -99,15 +99,32 @@ def may_alias(
     *,
     pool_lo: int = DEFAULT_POOL_LO,
     pool_hi: int = DEFAULT_POOL_HI,
+    zp_slot_symbols: dict[str, int] | None = None,
 ) -> bool:
     """True iff we can't prove the two operands refer to disjoint
     memory cells. Conservative — see module docstring for the rule
     list. `pool_lo` / `pool_hi` define the half-open range
     `[pool_lo, pool_hi)` of asm-level regalloc-pool ZP addresses
     (i.e. addresses for which a `(DPTR),Y` read is provably
-    non-aliasing under the c6502 convention)."""
-    # Imm is a value, not memory — never aliases.
-    if isinstance(a, asm_ast.Imm) or isinstance(b, asm_ast.Imm):
+    non-aliasing under the c6502 convention).
+
+    `zp_slot_symbols` is the optional slot-name → ZP-address map
+    (e.g. `__local_foo__bar` → `$8A`). When provided, the ZP-vs-Data
+    rule resolves the Data name through it and compares addresses
+    — so `Data("__local_..._1")` at $8A aliases `ZP($8A)` exactly,
+    catching the case where an `IndirectZp(addr=$8A)` reads the
+    pointer pair that an `STA __local_..._1` initialized. Without
+    the map, the rule falls back to conservative aliasing for any
+    Data name that *looks* like a ZP slot symbol (per
+    `_is_zp_symbol`) — sound but pessimistic; callers that have
+    the map should always pass it."""
+    # Imm / ImmLabelLow / ImmLabelHigh are values, not memory —
+    # they never alias a memory operand. `LDA #<label` loads the
+    # immediate low byte of the resolved address; it doesn't read
+    # the memory the label names. Same byte-emit shape as `LDA
+    # #imm`, same aliasing behaviour.
+    _imm_kinds = (asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)
+    if isinstance(a, _imm_kinds) or isinstance(b, _imm_kinds):
         return False
     # Normalize so the same-kind cases each get one branch by
     # checking both orderings against canonical type-pair tests.
@@ -117,15 +134,23 @@ def may_alias(
     # Data vs Data: alias iff same name+offset.
     if isinstance(a, asm_ast.Data) and isinstance(b, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
-    # ZP vs Data / IndexedData: distinct namespaces by c6502's
-    # emission convention.
-    if isinstance(a, asm_ast.ZP) and isinstance(
-        b, (asm_ast.Data, asm_ast.IndexedData),
-    ):
+    # ZP vs Data: by c6502's emission convention these are distinct
+    # namespaces, EXCEPT for `__local_*` / `__zpabi_*` / runtime
+    # (`SSP` / `FP` / `HARGS` / `DPTR`) symbols which resolve to
+    # ZP byte addresses via EQU bindings. For those, compare
+    # resolved addresses when the slot map is available; without
+    # the map, fall back to conservative (may alias) for any
+    # ZP-symbol Data — sound but pessimistic.
+    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.Data):
+        return _zp_data_alias(a, b, zp_slot_symbols)
+    if isinstance(b, asm_ast.ZP) and isinstance(a, asm_ast.Data):
+        return _zp_data_alias(b, a, zp_slot_symbols)
+    # ZP vs IndexedData: distinct namespaces (IndexedData operands
+    # name link-time statics — own namespace — or raw absolute
+    # addresses ≥ $0100 whose offset exceeds the ZP range).
+    if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.IndexedData):
         return False
-    if isinstance(b, asm_ast.ZP) and isinstance(
-        a, (asm_ast.Data, asm_ast.IndexedData),
-    ):
+    if isinstance(b, asm_ast.ZP) and isinstance(a, asm_ast.IndexedData):
         return False
     # ZP-symbol Data (`__local_*`, `__zpabi_*`) vs IndexedData:
     # these symbols resolve to ZP byte addresses via EQU
@@ -220,6 +245,47 @@ def may_alias(
 # static)" — only the user-static side could possibly be reached
 # by a user pointer.
 _RUNTIME_ZP_NAMES = frozenset({"SSP", "FP", "HARGS", "DPTR"})
+
+# Fixed base addresses for the runtime ZP symbols. These are
+# pinned by the c6502 ABI (`sim/runtime.py:57-62`) and never
+# move, so `_zp_data_alias` can resolve them precisely without a
+# caller-supplied slot map. The address layout is documented in
+# the project root `CLAUDE.md` under "Function stack frame".
+_RUNTIME_ZP_ADDRS: dict[str, int] = {
+    "SSP": 0x00,
+    "FP": 0x02,
+    "HARGS": 0x04,
+    "DPTR": 0x24,
+}
+
+
+def _zp_data_alias(
+    zp: asm_ast.ZP,
+    data: asm_ast.Data,
+    zp_slot_symbols: dict[str, int] | None,
+) -> bool:
+    """Aliasing decision for `ZP(addr)` vs `Data(name, off)`.
+    Three cases:
+
+    1. `data.name` isn't a known ZP-resolving symbol (`_is_zp_symbol`
+       false) — it names a non-ZP static, addresses ≥ $0100. Can't
+       alias a ZP byte.
+    2. `data.name` IS a ZP symbol AND `zp_slot_symbols` resolves it
+       — compare resolved addresses (the exact alias check).
+    3. `data.name` IS a ZP symbol but the slot map isn't supplied
+       (or doesn't contain this name) — fall back to conservative
+       MAY-alias. Sound; callers with the map should always pass
+       it to get the precise answer."""
+    if not _is_zp_symbol(data.name):
+        return False
+    # Runtime symbols are pinned at fixed addresses; no slot map
+    # needed.
+    base = _RUNTIME_ZP_ADDRS.get(data.name)
+    if base is None and zp_slot_symbols is not None:
+        base = zp_slot_symbols.get(data.name)
+    if base is not None:
+        return (zp.address + zp.offset) == (base + data.offset)
+    return True
 
 
 def _is_zp_symbol(name: str) -> bool:

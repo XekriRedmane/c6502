@@ -242,6 +242,42 @@ class TestCopyPropagation(unittest.TestCase):
         out = copy_propagate(fn)
         self.assertEqual(out.instructions[2].src, _ps("%x"))
 
+    def test_dptr_staged_pointer_excluded(self) -> None:
+        """A 2-byte Pseudo `%p` staged through DPTR (the canonical
+        4-instr sequence `Mov(%p[0], A); STA DPTR; Mov(%p[1], A);
+        STA DPTR+1`) is excluded from byte-versioned SSA by
+        `ssa_construction` and must also be excluded by this
+        pass. Otherwise, when two control-flow paths write
+        different values to `%p` and merge, copy_propagate would
+        pick the last source-order write as THE definition and
+        propagate it past the merge — exactly the bug that broke
+        `examples/draw_sprite_opaque.c`'s page_flag ternary."""
+        # Two branches writing different ImmLabels to %p (a
+        # DPTR-staged pointer), then the staging Movs that mark
+        # %p as DPTR-staged.
+        fn = _fn(
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".else"),
+            _mov(asm_ast.ImmLabelLow(name="table_a", offset=0), _ps("%p", 0)),
+            _mov(asm_ast.ImmLabelHigh(name="table_a", offset=0), _ps("%p", 1)),
+            asm_ast.Jump(target=".merge"),
+            asm_ast.Label(name=".else"),
+            _mov(asm_ast.ImmLabelLow(name="table_b", offset=0), _ps("%p", 0)),
+            _mov(asm_ast.ImmLabelHigh(name="table_b", offset=0), _ps("%p", 1)),
+            asm_ast.Label(name=".merge"),
+            # DPTR staging: this is what triggers the DPTR-staged
+            # exclusion in `ssa_construction._dptr_staged_pointer_names`.
+            _mov(_ps("%p", 0), _A()),
+            _mov(_A(), asm_ast.Data(name="DPTR", offset=0)),
+            _mov(_ps("%p", 1), _A()),
+            _mov(_A(), asm_ast.Data(name="DPTR", offset=1)),
+            _ret_bare(),
+        )
+        out = copy_propagate(fn)
+        # The reads at positions 8 and 10 must stay as Pseudo(%p)
+        # — substituting either branch's ImmLabel would be unsound.
+        self.assertEqual(out.instructions[8].src, _ps("%p", 0))
+        self.assertEqual(out.instructions[10].src, _ps("%p", 1))
+
     def test_load_address_src_never_substituted(self) -> None:
         # Mov #$05 -> %target ; LoadAddress(%target, %p).
         # The "src" of LoadAddress names the storage cell whose

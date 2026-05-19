@@ -72,6 +72,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes.optimization_asm.ssa_construction import excluded_pseudo_names
 from passes.asm_liveness import (
     a_dead_at as _a_dead_at,
     flags_dead_at as _flags_dead_at,
@@ -107,7 +108,7 @@ def backward_copy_propagate(
 def _one_pass(
     fn: asm_ast.Function, statics: frozenset[str],
 ) -> asm_ast.Function:
-    excluded = _excluded_names(fn) | statics
+    excluded = excluded_pseudo_names(fn) | statics
     use_counts = _compute_use_counts(fn)
     instrs = fn.instructions
 
@@ -457,28 +458,5 @@ def _all_operands(
                 yield a.source
 
 
-def _excluded_names(fn: asm_ast.Function) -> set[str]:
-    """Pseudo names that aren't in SSA form: address-taken
-    (`LoadAddress.src`), 2-byte address holders (`LoadAddress.dst`),
-    and read-modify-write targets (`Inc / Dec / ASL / LSR / ROL /
-    ROR.dst`). Same set used by `ssa_construction` and
-    `copy_propagation`."""
-    excluded: set[str] = set()
-    for instr in fn.instructions:
-        match instr:
-            case asm_ast.LoadAddress(src=src, dst=dst):
-                if isinstance(src, asm_ast.Pseudo):
-                    excluded.add(src.name)
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-            case (
-                asm_ast.Inc(dst=dst)
-                | asm_ast.Dec(dst=dst)
-                | asm_ast.ArithmeticShiftLeft(dst=dst)
-                | asm_ast.LogicalShiftRight(dst=dst)
-                | asm_ast.RotateLeft(dst=dst)
-                | asm_ast.RotateRight(dst=dst)
-            ):
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-    return excluded
+# Excluded-from-SSA names are defined once in
+# `ssa_construction.excluded_pseudo_names` — see import above.

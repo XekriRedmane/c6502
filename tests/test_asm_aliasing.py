@@ -48,6 +48,26 @@ class TestImmediates(unittest.TestCase):
         self.assertFalse(may_alias(imm, _zp(0x80)))
         self.assertFalse(may_alias(_data("DPTR"), imm))
 
+    def test_imm_label_low_never_aliases_anything(self) -> None:
+        """`ImmLabelLow(name)` lowers to `LDA #<name` — a value
+        load, not a memory read. It must not alias `Data(name)` or
+        any other memory operand, even when names happen to match
+        (the immediate carries the low byte of `&name`, not name's
+        content). See passes/lower_data_load_address.py:
+        a STA at `Data(slot)` followed by `Mov(ImmLabelLow(slot),
+        Data(...))` must NOT be classified as a read of slot."""
+        iml = asm_ast.ImmLabelLow(name="slot", offset=0)
+        self.assertFalse(may_alias(iml, _data("slot")))
+        self.assertFalse(may_alias(_data("slot"), iml))
+        self.assertFalse(may_alias(iml, _zp(0x80)))
+        self.assertFalse(may_alias(iml, iml))
+
+    def test_imm_label_high_never_aliases_anything(self) -> None:
+        imh = asm_ast.ImmLabelHigh(name="slot", offset=0)
+        self.assertFalse(may_alias(imh, _data("slot")))
+        self.assertFalse(may_alias(_data("slot"), imh))
+        self.assertFalse(may_alias(imh, _zp(0x80)))
+
 
 class TestZpVsZp(unittest.TestCase):
     def test_same_address_aliases(self) -> None:

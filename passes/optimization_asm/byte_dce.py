@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes.optimization_asm.ssa_construction import excluded_pseudo_names
 
 
 def byte_dce(
@@ -59,7 +60,7 @@ def byte_dce(
     read them — so they're never considered dead even if the local
     function never reads them. Same set the SSA construction pass
     uses to exclude statics from versioning."""
-    excluded = _excluded_names(fn)
+    excluded = excluded_pseudo_names(fn)
     while True:
         prev = fn
         fn = _one_pass(fn, statics, excluded)
@@ -125,32 +126,8 @@ def _is_dead(
     return False
 
 
-def _excluded_names(fn: asm_ast.Function) -> frozenset[str]:
-    """Pseudo names that asm-level SSA construction excludes from
-    byte-granular versioning — address-taken (via LoadAddress) and
-    read-modify-write targets. Mirror of
-    `passes.optimization_asm.ssa_construction._excluded_names`.
-    Kept in sync defensively: a name not promoted to SSA can't be
-    safely DCE'd at the byte level either."""
-    excluded: set[str] = set()
-    for instr in fn.instructions:
-        match instr:
-            case asm_ast.LoadAddress(src=src, dst=dst):
-                if isinstance(src, asm_ast.Pseudo):
-                    excluded.add(src.name)
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-            case (
-                asm_ast.Inc(dst=dst)
-                | asm_ast.Dec(dst=dst)
-                | asm_ast.ArithmeticShiftLeft(dst=dst)
-                | asm_ast.LogicalShiftRight(dst=dst)
-                | asm_ast.RotateLeft(dst=dst)
-                | asm_ast.RotateRight(dst=dst)
-            ):
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-    return frozenset(excluded)
+# Excluded-from-SSA names are defined once in
+# `ssa_construction.excluded_pseudo_names` — see import above.
 
 
 def _collect_pseudo_uses(

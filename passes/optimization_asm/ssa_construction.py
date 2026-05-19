@@ -93,7 +93,7 @@ def to_ssa(
     cfg = build_cfg(fn)
     _ensure_block_labels(cfg, fn.name)
 
-    excluded = _excluded_names(fn) | statics
+    excluded = excluded_pseudo_names(fn) | statics
     promotable = _promotable_byte_vars(cfg, excluded)
     if not promotable:
         return cfg_to_function(fn, cfg)
@@ -183,9 +183,19 @@ def _block_label(blk: BasicBlock) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _excluded_names(fn: asm_ast.Function) -> set[str]:
+def excluded_pseudo_names(fn: asm_ast.Function) -> set[str]:
     """Pseudo names that must keep their original spelling and
     multi-byte coherence — not eligible for byte-granular SSA.
+
+    PUBLIC API — shared with the SSA-aware passes downstream
+    (`copy_propagation`, `backward_copy_propagation`, `byte_dce`).
+    All of them must agree on which Pseudos are byte-versioned;
+    if `copy_propagation` treats a name as SSA-promotable while
+    `ssa_construction` excluded it, the pass picks the last
+    source-order write as THE definition and propagates it past
+    conditional control flow — observed bug, broke
+    `examples/draw_sprite_opaque.c`'s `(page_flag & 0x80) ?
+    screen_row_addr_hi2 : screen_row_addr_hi` ternary.
     Includes:
 
     * `LoadAddress.src` — address-taken; its bytes have to stay

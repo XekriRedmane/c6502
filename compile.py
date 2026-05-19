@@ -339,6 +339,13 @@ def _run_stage(
                 address_taken_assignments=addr_taken_assignments,
                 address_taken_symbols=addr_taken_symbols,
             )
+            # Split `LoadAddress(src=Data, dst=mem)` into two
+            # `Mov(ImmLabel*, mem)` atoms so the peephole loop's
+            # memory_value_propagation can fold the dst round trip.
+            from passes.lower_data_load_address import (
+                lower_data_load_address,
+            )
+            asm1 = lower_data_load_address(asm1)
             asm2 = synthesize_prologue(asm1, dims_by_fn)
             # LICM-lite: hoist loop-invariant constant stores out
             # of natural loops (only fires when the loop body has

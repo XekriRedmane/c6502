@@ -69,6 +69,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import asm_ast
+from passes.optimization_asm.ssa_construction import excluded_pseudo_names
 
 
 # A byte-level Pseudo identity is `(name, offset)` — same key as
@@ -89,7 +90,7 @@ def copy_propagate(
     in the program can read them) and reads can be invalidated by
     intervening function calls, so static-named Pseudos are
     excluded from both copy dsts and copy srcs."""
-    excluded = _excluded_names(fn) | statics
+    excluded = excluded_pseudo_names(fn) | statics
     copy_src = _collect_copy_sources(fn, excluded)
     if not copy_src:
         return fn
@@ -234,40 +235,10 @@ def _rewrite(
     return instr
 
 
-# ---------------------------------------------------------------------------
-# Excluded names. Mirrors `ssa_construction._excluded_names` — kept here so
-# the pass is self-contained, same way `byte_dce` keeps its own use-walker.
-# ---------------------------------------------------------------------------
-
-
-def _excluded_names(fn: asm_ast.Function) -> set[str]:
-    """Pseudo names that asm-SSA construction skipped: address-taken
-    (`LoadAddress.src`), 2-byte address holders (`LoadAddress.dst`),
-    read-modify-write targets (`Inc / Dec / ASL / LSR / ROL /
-    ROR.dst`), and names accessed by any volatile-flagged Mov. Their
-    values can change without an SSA-versioned def OR have external
-    observers, so they're unsafe both as copy dsts AND as copy srcs."""
-    excluded: set[str] = set()
-    for instr in fn.instructions:
-        match instr:
-            case asm_ast.LoadAddress(src=src, dst=dst):
-                if isinstance(src, asm_ast.Pseudo):
-                    excluded.add(src.name)
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-            case (
-                asm_ast.Inc(dst=dst)
-                | asm_ast.Dec(dst=dst)
-                | asm_ast.ArithmeticShiftLeft(dst=dst)
-                | asm_ast.LogicalShiftRight(dst=dst)
-                | asm_ast.RotateLeft(dst=dst)
-                | asm_ast.RotateRight(dst=dst)
-            ):
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-            case asm_ast.Mov(src=src, dst=dst, is_volatile=True):
-                if isinstance(src, asm_ast.Pseudo):
-                    excluded.add(src.name)
-                if isinstance(dst, asm_ast.Pseudo):
-                    excluded.add(dst.name)
-    return excluded
+# Excluded-from-SSA names are now defined once in
+# `ssa_construction.excluded_pseudo_names` — see the import above.
+# A local copy that drifts out of sync is what caused the
+# draw_sprite_opaque conditional-collapse bug (DPTR-staged Pseudo
+# %2.3 was excluded by SSA construction but treated as
+# SSA-promotable here, so the last source-order write to %2.3
+# was forward-propagated past the merge of two conditional arms).

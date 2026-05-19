@@ -72,6 +72,7 @@ fixedpoint iteration by the existing DSE/DCE peepholes.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import _RUNTIME_ZP_ADDRS
 
 
 def apply_remat(
@@ -346,7 +347,40 @@ def _collect_referenced_addrs(
     for instr in instrs:
         for src in _read_operands(instr):
             _add_referenced_addrs(src, zp_slot_symbols, out)
+        # Indirect-Y addressing on the DST side of a Mov (e.g.
+        # `STA (ptr),Y`) reads the pointer-source ZP bytes to
+        # compute the effective address — even though the
+        # operand is the write target. Surface those reads here
+        # so a `__local_*` slot that holds the pointer doesn't
+        # get classified as dead. Mirrors
+        # `asm_dead_store._ptr_source_reads`.
+        for dst in _dsts_of(instr):
+            _add_indirect_ptr_reads(dst, zp_slot_symbols, out)
     return out
+
+
+def _add_indirect_ptr_reads(
+    op: asm_ast.Type_operand,
+    zp_slot_symbols: dict[str, int],
+    referenced: set[int],
+) -> None:
+    """Indirect-Y operand kinds read 2 bytes of a ZP pointer pair
+    to compute the effective address. For dst-side operands (where
+    the byte is being written but the pointer is still read),
+    record those pointer-source bytes."""
+    if isinstance(op, asm_ast.IndirectZp):
+        referenced.add(op.address + op.offset)
+        referenced.add(op.address + op.offset + 1)
+    elif isinstance(op, asm_ast.IndirectZpY):
+        referenced.add(op.address)
+        referenced.add(op.address + 1)
+    elif isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY)):
+        # `(DPTR),Y` reads DPTR/DPTR+1. Record their fixed
+        # addresses (the runtime ZP pair sits at $24/$25).
+        dptr = _RUNTIME_ZP_ADDRS.get("DPTR")
+        if dptr is not None:
+            referenced.add(dptr)
+            referenced.add(dptr + 1)
 
 
 def _add_referenced_addrs(

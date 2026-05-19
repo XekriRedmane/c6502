@@ -201,7 +201,12 @@ def _try_recognize(
     if ext_def_idx is None:
         return None
     ext_def = all_instrs[ext_def_idx]
-    if not isinstance(ext_def, tac_ast.ZeroExtend):
+    # See `recognize_indexed_load._try_recognize` for the
+    # soundness rationale on SignExtend: the 6502's absolute,X
+    # addressing observes only the index's low byte; negative-i
+    # array access is C99 §6.5.6 undefined behavior, so accepting
+    # SignExtend yields a defined-but-UB-permissive lowering.
+    if not isinstance(ext_def, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
         return None
     if not isinstance(ext_def.src, tac_ast.Var):
         return None

@@ -87,6 +87,7 @@ from passes.optimization.loop_rotate import (
     rotate_signed_countdown_loops,
 )
 from passes.optimization.reassoc_const import reassoc_constants
+from passes.optimization.truncate_extend_fold import fold_truncate_extend
 from passes.optimization.recognize_indexed_load import (
     recognize_indexed_load,
 )
@@ -168,6 +169,9 @@ def optimize_function(
         fn = reassoc_constants(fn)
         fn = recognize_indexed_store(fn, symbols=symbols)
         fn = recognize_indexed_load(fn, symbols=symbols)
+        fn = fold_truncate_extend(
+            fn, symbols=symbols, ssa_dsts=ssa_dsts,
+        )
         fn = sink_increments(fn)
         fn = sink_and_past_branch(fn, symbols=symbols)
         if fn == prev:

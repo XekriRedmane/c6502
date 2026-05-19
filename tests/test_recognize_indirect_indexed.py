@@ -206,10 +206,12 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         # ptr.
         self.assertEqual(out.instructions, instrs)
 
-    def test_non_zero_extend_def_does_not_fold(self) -> None:
-        # %ext is a SignExtend rather than a ZeroExtend — the
-        # high byte may carry a non-zero sign extension, which
-        # `(zp),Y` semantics don't account for.
+    def test_sign_extend_def_folds(self) -> None:
+        # SignExtend from a 1-byte source is now accepted. The
+        # (zp),Y addressing mode observes only the index's low
+        # byte; negative array indices are C99 §6.5.6 undefined
+        # behavior. The fold yields the same IndirectIndexedLoad
+        # as ZeroExtend would.
         instrs = [
             tac_ast.SignExtend(src=_var("y"), dst=_var("%ext")),
             tac_ast.Binary(
@@ -223,7 +225,14 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         out = recognize_indirect_indexed(
             _fn(instrs), symbols=_canonical_symbols(),
         )
-        self.assertEqual(out.instructions, instrs)
+        # Recognizer drops both the SignExtend and the Add, leaving
+        # just the IndirectIndexedLoad.
+        self.assertEqual(len(out.instructions), 1)
+        self.assertIsInstance(
+            out.instructions[0], tac_ast.IndirectIndexedLoad,
+        )
+        self.assertEqual(out.instructions[0].ptr, _var("p"))
+        self.assertEqual(out.instructions[0].index, _var("y"))
 
     def test_non_uchar_index_does_not_fold(self) -> None:
         # `y` is `int`, not uchar. The ZeroExtend's high-byte-

@@ -162,10 +162,12 @@ class TestRecognizeIndexedStoreUnit(unittest.TestCase):
         )
         self.assertEqual(out.instructions, instrs)
 
-    def test_non_zero_extend_def_does_not_fold(self) -> None:
-        # %ext is defined by something other than ZeroExtend
-        # (e.g., SignExtend — which could put non-zero into the
-        # high byte for negative values, breaking absolute,X).
+    def test_sign_extend_def_folds(self) -> None:
+        # SignExtend from a 1-byte source is now accepted under the
+        # UB-permissive interpretation: the 6502's absolute,X uses
+        # only the index's low byte, and negative array indices are
+        # C99 §6.5.6 undefined behavior. The fold yields the same
+        # absolute,X store as ZeroExtend would.
         instrs = [
             tac_ast.SignExtend(src=_var("col"), dst=_var("%ext")),
             tac_ast.Binary(
@@ -190,7 +192,12 @@ class TestRecognizeIndexedStoreUnit(unittest.TestCase):
             ),
         })
         out = recognize_indexed_store(_fn(instrs), symbols=symbols)
-        self.assertEqual(out.instructions, instrs)
+        # Recognizer drops both the SignExtend and the Add, leaving
+        # just the IndexedStore.
+        self.assertEqual(len(out.instructions), 1)
+        self.assertIsInstance(out.instructions[0], tac_ast.IndexedStore)
+        self.assertEqual(out.instructions[0].address, 0x4000)
+        self.assertEqual(out.instructions[0].index, _var("col"))
 
     def test_non_uchar_index_does_not_fold(self) -> None:
         # The Var underlying the ZeroExtend is `int`, not uchar.

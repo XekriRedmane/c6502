@@ -161,7 +161,23 @@ def _try_recognize(
     if ext_def_idx is None:
         return None
     ext_def = all_instrs[ext_def_idx]
-    if not isinstance(ext_def, tac_ast.ZeroExtend):
+    # Accept both ZeroExtend (unsigned-uchar promotion) and
+    # SignExtend (signed-int8_t promotion). The 6502's absolute,X
+    # addressing reads only the index's low byte, so the high-byte
+    # portion of either extension is irrelevant to the byte-address
+    # computation. SignExtend is sound iff the index is non-negative
+    # at runtime — guaranteed by C99 §6.5.6, which leaves arr[i]
+    # undefined when i would address outside arr's bounds, including
+    # negative i for arrays declared at their natural base.
+    #
+    # The dead high-byte computation in the SignExtend's lowering
+    # (LDA src.high → A; BMI sx_neg; LDA #$00; JMP sx_done; sx_neg:;
+    # LDA #$FF; sx_done:; STA dst.byte_1) becomes residue that
+    # byte_dce + dead_a_arith eliminate once the dst is no longer
+    # referenced — the recognizer rewrites away the chain's only
+    # consumer (the Add + Load), so SSA-DCE drops the SignExtend
+    # entirely on the next iteration.
+    if not isinstance(ext_def, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
         return None
     if not isinstance(ext_def.src, tac_ast.Var):
         return None

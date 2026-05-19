@@ -208,9 +208,13 @@ def _try_recognize(
         return None
     ext_def_idx = def_idx[ext_var.name]
     ext_def = all_instrs[ext_def_idx]
-    # _split_var_var already verified that `ext_var` is defined by
-    # a ZeroExtend; pull the source.
-    assert isinstance(ext_def, tac_ast.ZeroExtend)
+    # `_split_var_var` already verified that `ext_var` is defined
+    # by a ZeroExtend or SignExtend; pull the source. SignExtend is
+    # accepted under the same UB-permissive reasoning as in
+    # `recognize_indexed_load` — (zp),Y addressing observes only
+    # the index's low byte, and negative array indices are C99
+    # §6.5.6 undefined.
+    assert isinstance(ext_def, (tac_ast.ZeroExtend, tac_ast.SignExtend))
     if not isinstance(ext_def.src, tac_ast.Var):
         return None
     idx_var = ext_def.src
@@ -239,18 +243,18 @@ def _split_var_var(
 ) -> tuple[tac_ast.Var | None, tac_ast.Var | None]:
     """Given the two operands of the address-computing Add, return
     `(ptr_var, ext_var)` where `ext_var` is the side defined by a
-    `ZeroExtend` and `ptr_var` is the other side. The Add is
-    commutative so we accept either argument order. Returns (None,
-    None) if neither side fits."""
+    `ZeroExtend` or `SignExtend` and `ptr_var` is the other side.
+    The Add is commutative so we accept either argument order.
+    Returns (None, None) if neither side fits."""
     if isinstance(a, tac_ast.Var) and isinstance(b, tac_ast.Var):
-        if _defined_by_zero_extend(b, def_idx, all_instrs):
+        if _defined_by_extend(b, def_idx, all_instrs):
             return (a, b)
-        if _defined_by_zero_extend(a, def_idx, all_instrs):
+        if _defined_by_extend(a, def_idx, all_instrs):
             return (b, a)
     return (None, None)
 
 
-def _defined_by_zero_extend(
+def _defined_by_extend(
     v: tac_ast.Var,
     def_idx: dict[str, int],
     all_instrs: list[tac_ast.Type_instruction],
@@ -258,7 +262,9 @@ def _defined_by_zero_extend(
     idx = def_idx.get(v.name)
     if idx is None:
         return False
-    return isinstance(all_instrs[idx], tac_ast.ZeroExtend)
+    return isinstance(
+        all_instrs[idx], (tac_ast.ZeroExtend, tac_ast.SignExtend),
+    )
 
 
 def _resolves_to_constant(

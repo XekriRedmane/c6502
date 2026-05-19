@@ -118,21 +118,9 @@ find_active_entity:
    TXA
    BMI   .loop@0_break
 .find_active_entity@asm_ssa_block@0:
-   TXA
-   BMI   .sx_neg@0
-.find_active_entity@asm_ssa_block@1:
-   JMP   .sx_done@1
-.sx_neg@0:
-.sx_done@1:
    LDA   entity_hit_state,X
    BMI   .if_end@0
-.find_active_entity@asm_ssa_block@2:
-   TXA
-   BMI   .sx_neg@2
-.find_active_entity@asm_ssa_block@3:
-   JMP   .sx_done@3
-.sx_neg@2:
-.sx_done@3:
+.find_active_entity@asm_ssa_block@1:
    LDA   entity_hit_row,X
    SEC
    SBC   #$08
@@ -163,13 +151,13 @@ entity_proximity:
    LDA   __local_entity_proximity__1
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
-   BEQ   .lnot_true@4
+   BEQ   .lnot_true@0
 .entity_proximity@asm_ssa_block@1:
    LDA   #$00
-   JMP   .lnot_end@5
-.lnot_true@4:
+   JMP   .lnot_end@1
+.lnot_true@0:
    LDA   #$01
-.lnot_end@5:
+.lnot_end@1:
    ORA   #$00
    BEQ   .if_end@1
 .entity_proximity@asm_ssa_block@2:
@@ -272,18 +260,18 @@ smc_body_draw:
    LDA   #$00
    STA   __local_smc_body_draw__hi
    CMP   #$00
-   BNE   .cmp_differ@8
+   BNE   .cmp_differ@4
 .smc_body_draw@asm_ssa_block@1:
    LDA   __local_smc_body_draw__lo
    CMP   #$00
-.cmp_differ@8:
-   BNE   .cmp_true@6
+.cmp_differ@4:
+   BNE   .cmp_true@2
 .smc_body_draw@asm_ssa_block@2:
    LDA   #$00
-   JMP   .cmp_end@7
-.cmp_true@6:
+   JMP   .cmp_end@3
+.cmp_true@2:
    LDA   #$01
-.cmp_end@7:
+.cmp_end@3:
    STA   __local_smc_body_draw__0
    LDA   __zpabi_smc_body_draw__state
    BNE   .if_else@15
@@ -797,13 +785,13 @@ companion_update:
    STA   __local_companion_update__0
 .cond_end@46:
    LDA   __local_companion_update__0
-   BEQ   .lnot_true@9
+   BEQ   .lnot_true@5
 .companion_update@asm_ssa_block@4:
    LDA   #$00
-   JMP   .lnot_end@10
-.lnot_true@9:
+   JMP   .lnot_end@6
+.lnot_true@5:
    LDA   #$01
-.lnot_end@10:
+.lnot_end@6:
    STA   __local_companion_update__0
    ORA   #$00
    BEQ   .if_end@47

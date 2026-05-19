@@ -141,14 +141,7 @@ entity_proximity:
    LDA   #>__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
-   BEQ   .lnot_true@0
-   LDA   #$00
-   JMP   .lnot_end@1
-.lnot_true@0:
-   LDA   #$01
-.lnot_end@1:
-   ORA   #$00
-   BEQ   .if_end@1
+   BNE   .if_end@1
    RTS
 .if_end@1:
    LDX   __zpabi_entity_proximity__slot
@@ -237,16 +230,16 @@ smc_body_draw:
    LDA   #$00
    STA   __local_smc_body_draw__hi
    CMP   #$00
-   BNE   .cmp_differ@4
+   BNE   .cmp_differ@2
    LDA   __local_smc_body_draw__lo
    CMP   #$00
-.cmp_differ@4:
-   BNE   .cmp_true@2
+.cmp_differ@2:
+   BNE   .cmp_true@0
    LDA   #$00
-   JMP   .cmp_end@3
-.cmp_true@2:
+   JMP   .cmp_end@1
+.cmp_true@0:
    LDA   #$01
-.cmp_end@3:
+.cmp_end@1:
    STA   __local_smc_body_draw__2
    LDA   __zpabi_smc_body_draw__state
    BNE   .if_else@15
@@ -702,14 +695,7 @@ companion_update:
    STA   __local_companion_update__0
 .cond_end@46:
    LDA   __local_companion_update__0
-   BEQ   .lnot_true@5
-   LDA   #$00
-   JMP   .lnot_end@6
-.lnot_true@5:
-   LDA   #$01
-.lnot_end@6:
-   ORA   #$00
-   BEQ   .lb_skip@0
+   BNE   .lb_skip@0
    JMP   .loop@1_continue
 .lb_skip@0:
 .if_end@43:

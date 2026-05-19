@@ -11,7 +11,8 @@ Pipeline shape:
     fn → loop_rotate (one-shot, pre-SSA)
        → SSA construction
        → (CF → strength_reduce → cmp_zero_jump_fold → and_zero_jump_fold →
-          dead_loop_elim → UCE → CopyProp → DSE → CopyFold → ...)*
+          lnot_jump_fold → dead_loop_elim → UCE → CopyProp → DSE →
+          CopyFold → ...)*
        → SSA destruction → fn'
 
 `loop_rotate` runs before SSA because the rewrite is a structural
@@ -75,6 +76,7 @@ import tac_ast
 from passes.optimization.and_zero_jump_fold import fold_narrow_and_jump
 from passes.optimization.cmp_zero_jump_fold import fold_cmp_zero_jump
 from passes.optimization.constant_folding import constant_fold
+from passes.optimization.lnot_jump_fold import fold_lnot_jump
 from passes.optimization.copy_folding import fold_copies
 from passes.optimization.copy_propagation import copy_propagate
 from passes.optimization.dead_loop_elimination import (
@@ -161,6 +163,7 @@ def optimize_function(
         fn = reduce_strength(fn, symbols=symbols)
         fn = fold_cmp_zero_jump(fn, symbols=symbols)
         fn = fold_narrow_and_jump(fn, symbols=symbols)
+        fn = fold_lnot_jump(fn, symbols=symbols)
         fn = eliminate_dead_loops(fn, ssa_dsts=ssa_dsts)
         fn = eliminate_unreachable_code(fn)
         fn = copy_propagate(fn, ssa_dsts=ssa_dsts)

@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snd_delay_up: closing the gap to hand-written</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+
+  /* ---------- TOC ---------- */
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+    font-weight: 600;
+  }
+  aside.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: tocnum; }
+  aside.toc li { counter-increment: tocnum; margin: 0.35em 0; }
+  aside.toc li a {
+    color: var(--ink-soft);
+    text-decoration: none;
+    display: block;
+    padding: 0.15em 0;
+    border-radius: 3px;
+    transition: color 0.15s;
+  }
+  aside.toc li a::before {
+    content: counter(tocnum, decimal-leading-zero);
+    color: var(--ink-mute);
+    font-variant-numeric: tabular-nums;
+    margin-right: 0.6em;
+    font-size: 0.85em;
+  }
+  aside.toc li a:hover { color: var(--accent); }
+  aside.toc li a.active { color: var(--accent); font-weight: 500; }
+
+  /* ---------- Article ---------- */
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.74em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.6em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 1.25em;
+    margin: 0 0 1.5em;
+    line-height: 1.4;
+  }
+  .meta {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.84em;
+    color: var(--ink-mute);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.6em 0;
+    margin: 0 0 2.5em;
+    display: flex;
+    gap: 1.5em;
+    flex-wrap: wrap;
+  }
+  .meta span { display: inline-flex; align-items: center; gap: 0.4em; }
+  .meta strong { color: var(--ink-soft); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.6em;
+    margin: 2.6em 0 0.7em;
+    line-height: 1.2;
+    position: relative;
+    padding-left: 0;
+  }
+  h2 .step {
+    font-family: 'Inter', system-ui, sans-serif;
+    display: inline-block;
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-size: 0.55em;
+    font-weight: 600;
+    padding: 0.3em 0.7em;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-right: 0.7em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.2em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink-soft);
+  }
+  p { margin: 0.8em 0; }
+  a { color: var(--accent); }
+
+  /* ---------- Code ---------- */
+  pre, code {
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-variant-ligatures: none;
+  }
+  code {
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code);
+    border-radius: 8px;
+    padding: 1em 1.2em;
+    font-size: 0.78em;
+    line-height: 1.55;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    margin: 1.1em 0;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+
+  .asm-mnem { color: var(--asm-mnem); font-weight: 600; }
+  .asm-comment { color: var(--asm-comment); font-style: italic; }
+  .asm-num { color: var(--asm-num); }
+  .asm-label { color: var(--asm-label); font-weight: 500; }
+  .asm-reg { color: var(--asm-reg); font-weight: 500; }
+
+  pre .add-line { background: rgba(46,107,58,.10); display: inline-block; min-width: 100%; }
+  pre .del-line { background: rgba(160,74,38,.10); display: inline-block; min-width: 100%; text-decoration: line-through; text-decoration-color: rgba(160,74,38,.4); }
+  pre .hi-line  { background: var(--highlight); display: inline-block; min-width: 100%; }
+
+  /* ---------- Side-by-side compare ---------- */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1em;
+    margin: 1.2em 0;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .compare > div { min-width: 0; }
+  .compare pre { margin: 0; height: 100%; }
+  .compare .label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    margin-bottom: 0.4em;
+    font-weight: 600;
+  }
+  .compare .label.before { color: var(--accent); }
+  .compare .label.after { color: var(--good); }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  /* ---------- Stats row ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.8em;
+    margin: 1.2em 0;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 0.9em 1em;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .stat .num {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.9em;
+    color: var(--accent);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .lbl {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    margin-top: 0.4em;
+  }
+
+  /* ---------- Diagrams ---------- */
+  figure {
+    margin: 1.6em 0;
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 1.2em;
+    box-shadow: var(--shadow);
+  }
+  figure svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-soft);
+    text-align: center;
+    margin-top: 0.8em;
+    line-height: 1.5;
+  }
+  figcaption strong { color: var(--ink); }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+  hr.fancy.with-mark { position: relative; height: 24px; }
+  hr.fancy.with-mark::after {
+    content: "§";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg);
+    color: var(--ink-mute);
+    padding: 0 0.6em;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.2em;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#residue">The residue</a></li>
+      <li><a href="#provenance">Where it came from</a></li>
+      <li><a href="#two-passes">Two peepholes</a></li>
+      <li><a href="#failure">Ship it, break 84 tests</a></li>
+      <li><a href="#trace">Tracing a fixedpoint</a></li>
+      <li><a href="#invariant">The flag-dead convention</a></li>
+      <li><a href="#fix">Drop the label, save the chain</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #018</p>
+    <h1>The orphan label</h1>
+    <p class="subtitle">A two-line peephole, 84 broken tests, and a codegen convention I didn't know I was leaning on.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Target</strong> Apple II beam state machine</span>
+      <span><strong>Result</strong> 6 bytes / 23 cycles saved</span>
+      <span><strong>Lesson</strong> within-iteration invariants matter</span>
+    </div>
+
+    <!-- ============================================================
+         RESIDUE
+         ============================================================ -->
+    <section id="residue">
+    <h2>The residue</h2>
+
+    <p>I was reading the optimized output of a freshly-compiled Apple II routine — <code>beam_target_tick</code>, the state machine that drives a player-tracking beam — when I tripped over this:</p>
+
+<pre><code><span class="asm-mnem">LDX</span>   beam_snd_ctr
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">BMI</span>   .if_end@0
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">BPL</span>   .sx_done@1
+.sx_done@1:
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">SEC</span>
+<span class="asm-mnem">SBC</span>   #$01
+<span class="asm-mnem">STA</span>   beam_snd_ctr
+</code></pre>
+
+    <p>Three things look wrong. The first <code>TXA</code> sets flags for <code>BMI</code> — that's expected. The second <code>TXA</code> sets flags that the next instruction (<code>BPL</code>) reads, fine in isolation. But the branch goes to <code>.sx_done@1</code>, which is the immediately-following label. Both arms (taken and fall-through) reach the same instruction — the branch is a pure no-op. And after we arrive at <code>.sx_done@1</code>, a third <code>TXA</code> sets A to X's value, which A was already equal to from the previous two TXAs.</p>
+
+    <p>Three useless instructions in a row. The simulator says the program is correct; the assembler is happy; the diff against the gold .asm file passes because the gold .asm has the same residue. But six bytes and a handful of cycles are sitting there doing nothing on every call.</p>
+
+    </section>
+
+    <!-- ============================================================
+         PROVENANCE
+         ============================================================ -->
+    <section id="provenance">
+    <h2>Where it came from</h2>
+
+    <p>The label name is the clue. <code>.sx_done@1</code> — sign-extension done. The C source was doing this:</p>
+
+<pre><code>int8_t snd_ctr = (int8_t)beam_snd_ctr;
+if (snd_ctr &gt;= 0) {
+    uint8_t pitch = beam_jingle[snd_ctr];
+    beam_snd_ctr = (uint8_t)(snd_ctr - 1);
+    snd_delay_up(pitch, 0x0A);
+}
+</code></pre>
+
+    <p>C99 §6.3.1.1.2 says any <code>int8_t</code> at an arithmetic operand position promotes to <code>int</code> — a 2-byte signed type on this compiler. The <code>&gt;= 0</code> comparison, the array index, and the <code>snd_ctr - 1</code> subtraction all happen at <code>int</code> width. So the TAC lowering sign-extends the byte to two bytes before any of those operations.</p>
+
+    <p>The sign-extension lowering in <code>tac_to_asm._translate_sign_extend</code> emits this diamond:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   src.high          <span class="asm-comment">; copy of src byte; sets N</span>
+<span class="asm-mnem">BMI</span>   sx_neg
+<span class="asm-mnem">LDA</span>   #$00              <span class="asm-comment">; high byte = 0 for non-negative</span>
+<span class="asm-mnem">JMP</span>   sx_done
+sx_neg:
+<span class="asm-mnem">LDA</span>   #$FF              <span class="asm-comment">; high byte = 0xFF for negative</span>
+sx_done:
+<span class="asm-mnem">STA</span>   dst.high
+</code></pre>
+
+    <p>That's the textbook 6502 sign-extension. But every use of the widened value in this routine only touches the low byte: the bit-7 test (one byte's worth of sign), the indexed lookup (an 11-byte table, low byte is enough), the subtract followed by truncation back to <code>uint8_t</code> (high byte of result is dead). The byte-granular DCE in the asm-SSA pipeline notices <code>dst.high</code> has no readers and drops the <code>STA</code>. With the store gone, both <code>LDA #$00</code> and <code>LDA #$FF</code> have nothing to do, and <code>dead_a_arith</code> reaps them too. <code>branch_invert</code> sees <code>BMI sx_neg; JMP sx_done; sx_neg:</code> and rewrites it to <code>BPL sx_done</code>. <code>dead_label_drop</code> removes the now-orphan <code>sx_neg</code>.</p>
+
+    <p>What's left, after all those passes, is the skeleton of a diamond with both arms gone and the label of the join point still in place:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   src.high
+<span class="asm-mnem">BPL</span>   sx_done
+sx_done:
+</code></pre>
+
+    <p>The body of <code>beam_target_tick</code> then needs the low byte of the widened value for the indexed load and the subtract, which is held in X (because <code>direct_index_load</code> fused a <code>LDA; TAX</code> into <code>LDX</code> earlier). So we get a few <code>TXA</code>s for various flag-setting and arithmetic-staging purposes, and the diamond skeleton sits in the middle, three useless bytes wide.</p>
+
+    <p>The <code>BPL</code> to next instruction is unreachable as a state change. So is at least one of the bracketing <code>TXA</code>s. Nothing in the existing pass pipeline catches either.</p>
+
+    </section>
+
+    <!-- ============================================================
+         TWO PASSES
+         ============================================================ -->
+    <section id="two-passes">
+    <h2>Two peepholes</h2>
+
+    <p>The two cleanups are independent and both straightforward.</p>
+
+    <h3>1. Drop <code>Branch(_, L); Label(L)</code></h3>
+
+    <p>If a conditional branch's target is the immediately following label, both arms reach the same instruction. The branch reads flags but writes nothing — no register, no memory, no flag, no PC change relative to fall-through. Drop it. About thirty lines of code, including the linear walk and the test class.</p>
+
+    <h3>2. Drop redundant register-to-register Movs</h3>
+
+    <p>The existing <code>redundant_load_elimination</code> tracks which memory operand each of A, X, Y currently mirrors. If <code>LDA M</code> is about to load A and A already mirrors M, drop the load (gated on flag-deadness — the load also sets N/Z, and if downstream code reads those, we can't elide).</p>
+
+    <p>That same machinery covers register-to-register transfers naturally. After <code>LDX M</code>, X's mirror list contains M. After a following <code>TXA</code>, A's mirror list also contains M. A second <code>TXA</code>, no intervening writes — A and X both still mirror M, both still hold M's value. The transfer is a no-op for the value; if flags are dead too (or the Z-reflects tracker already covers the operand the transfer would set Z from), drop it.</p>
+
+    <p>Six new lines in <code>_is_redundant_load</code> and <code>_flags_redundant_at</code>, plus seven test cases covering the various preserves/drops. The existing 30 tests stayed green.</p>
+
+    <p>Wire them in, recompile <code>beam_target_tick</code>, look at the output. Clean:</p>
+
+<pre><code><span class="asm-mnem">LDX</span>   beam_snd_ctr
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">BMI</span>   .if_end@0
+<span class="asm-mnem">SEC</span>
+<span class="asm-mnem">SBC</span>   #$01
+<span class="asm-mnem">STA</span>   beam_snd_ctr
+</code></pre>
+
+    <p>Six bytes saved on this hot path. Run the full test suite to make sure nothing else broke.</p>
+
+    </section>
+
+    <!-- ============================================================
+         FAILURE
+         ============================================================ -->
+    <section id="failure">
+    <h2>Ship it, break 84 tests</h2>
+
+    <pre><code>Ran 2739 tests in 82.493s
+
+FAILED (failures=84, skipped=26)</code></pre>
+
+    <p>The failures spanned the chapter test corpus — <code>chapter_7/nested_if</code>, <code>chapter_8/while</code>, <code>chapter_8/for_decl</code>, <code>chapter_9/stack_arguments</code>, basically any program with a loop and a comparison. Whatever broke, it broke broadly.</p>
+
+    <p>First step: bisect. The two peepholes are independent. Stash one, retry.</p>
+
+<pre><code>$ git stash push passes/redundant_load.py tests/test_redundant_load.py
+$ uv run python -m unittest tests.test_inc_peephole.<wbr>TestIncPeepholeCorrectness.<wbr>test_byte_overflow_propagates_to_high_byte
+AssertionError: 0 != 300</code></pre>
+
+    <p>The reg-to-reg pass is innocent. <code>branch_to_next_drop</code> alone breaks loops. So the question is: what does dropping a no-op branch have to do with a 16-bit-counter loop terminating immediately?</p>
+
+    <p>The failing program is the simplest possible motivator:</p>
+
+<pre><code>long sum300(void) {
+    long s = 0;
+    for (int i = 0; i &lt; 300; i++) s += 1;
+    return s;
+}</code></pre>
+
+    <p>The loop should iterate 300 times. The optimized output runs zero iterations. Look at it:</p>
+
+<pre><code>.loop@0_start:
+   <span class="asm-mnem">SEC</span>
+   <span class="asm-mnem">BPL</span>   .loop@0_break
+   <span class="asm-mnem">INC</span>   __local_sum300__s_0
+   ...</code></pre>
+
+    <p>That's the loop header. The comparison sequence — <code>LDA i_0; SEC; SBC #$2C; LDA i_1; SBC #$01</code> — is <em>gone</em>. There's nothing computing <code>i &lt; 300</code>. The <code>BPL</code> reads whatever N was left over from the prologue's last instruction (an <code>LDA #$00</code>), which means N=0, branch taken, loop exits before the body runs.</p>
+
+    <p>The new pass dropped one <code>BVC</code>. How did that turn into deleting an entire 16-bit comparison?</p>
+
+    </section>
+
+    <!-- ============================================================
+         TRACE
+         ============================================================ -->
+    <section id="trace">
+    <h2>Tracing a fixedpoint</h2>
+
+    <p>The asm-peephole loop runs a sequence of 30-odd passes in order until a full sweep produces no changes. With 84 tests failing, the question is which pass in which iteration drops the comparison chain. So I instrumented the loop — print the instruction count, the <code>Sub</code> count, and the <code>LDA-into-A</code> count after every pass, every iteration, for the failing function.</p>
+
+<pre><code>--- iter 0 ---
+  after asm_dead_store:   total=44 sub=2 lda-into-A=6
+  after dead_a_arith:     total=43 sub=2 lda-into-A=6     <span class="asm-comment">; 1 dropped</span>
+  after dead_label_drop:  total=38 sub=2 lda-into-A=6     <span class="asm-comment">; orphan labels reaped</span>
+  after branch_invert:    total=38 sub=2 lda-into-A=6
+  after <strong>branch_to_next_drop</strong>: total=37 sub=2 lda-into-A=6     <span class="asm-comment">; BVC + Label dropped</span>
+--- iter 1 ---
+  after asm_dead_store:   total=37 sub=2 lda-into-A=6
+  after <strong>dead_a_arith</strong>:     total=33 <span class="asm-num">sub=0</span> lda-into-A=4     <span class="asm-comment">; 4 dropped — SBC chain gone</span>
+</code></pre>
+
+    <p>Iteration 0 is mine: <code>branch_to_next_drop</code> drops one branch. Iteration 1, before anything else gets a chance: <code>dead_a_arith</code> takes out four instructions. Both <code>Sub</code>s (the SBC #$2C and the SBC #$01) and two of the LDAs. The entire 16-bit comparison.</p>
+
+    <p>So <code>dead_a_arith</code> believed those instructions' effects were dead. Look at what the IR looks like going into it:</p>
+
+<pre><code>  6: Label .loop@0_start
+  7: <span class="asm-mnem">LDA</span> i_0 → A
+  8: <span class="asm-mnem">SEC</span>
+  9: <span class="asm-mnem">SUB</span> Imm(44) → A          <span class="asm-comment">; SBC #$2C — writes A, N, Z, C, V</span>
+ 10: <span class="asm-mnem">LDA</span> i_1 → A
+ 11: <span class="asm-mnem">SUB</span> Imm(1) → A           <span class="asm-comment">; SBC #$01 — writes A, N, Z, C, V</span>
+ 12: <strong>Label .jcmp_novf@0</strong>
+ 13: <span class="asm-mnem">Branch</span> PL → .loop@0_break  <span class="asm-comment">; reads N</span>
+</code></pre>
+
+    <p>There's the smoking gun. <code>.jcmp_novf@0</code>. The label that the original <code>BVC</code> targeted is still sitting there at position 12 — orphaned (the only thing referencing it was the <code>BVC</code> I just dropped) but not yet reaped, because <code>dead_label_drop</code> ran <em>before</em> <code>branch_to_next_drop</code> in the iteration's pass order.</p>
+
+    <p>And <code>dead_a_arith</code>, walking forward from the <code>SBC #$01</code> at position 11, looking to decide whether to drop it, asks <code>all_flags_dead_at(12)</code>: "are flags dead starting at position 12?"</p>
+
+    </section>
+
+    <!-- ============================================================
+         INVARIANT
+         ============================================================ -->
+    <section id="invariant">
+    <h2>The flag-dead convention</h2>
+
+    <p>Here's what <code>all_flags_dead_at</code> does, paraphrased:</p>
+
+<pre><code>while idx &lt; len(instrs):
+    if isinstance(instrs[idx], Branch):     return False
+    if isinstance(instrs[idx], (Add, Sub)): return False  <span class="asm-comment">; reads C</span>
+    if isinstance(instrs[idx], (Jump, Ret, Return, <strong>Label</strong>)): return True
+    if _overwrites_all_flags(instrs[idx]):  return True
+    idx += 1</code></pre>
+
+    <p>The forward walk treats any <code>Label</code> as a safe terminator — "flags are dead from here onward, drop the writer." The docstring justifies this on a codegen invariant:</p>
+
+    <blockquote>"The N/Z status of subsequent paths is each block's responsibility; if the next block's first instruction is a Branch, the soundness of declaring flags dead here depends on c6502's emission convention always setting N/Z before any Branch the lowering needs to read — which it does."</blockquote>
+
+    <p>That invariant is true at <code>tac_to_asm</code> emit time. Every block that ends in a Branch has its own flag-setter inside it; the analysis can rely on that and skip the cross-block walk. It's an honest performance optimization — the alternative is a real CFG dataflow on flag liveness, which costs more.</p>
+
+    <p>But the invariant is brittle, and I just broke it. My pass dropped the <code>BVC</code>. The orphan <code>Label(.jcmp_novf@0)</code> remained, immediately followed by <code>BPL .loop@0_break</code>. The "block" beginning at that label has exactly one instruction in it — the BPL — and that instruction is a Branch that reads flags it didn't itself set. The walk hits the Label, returns "flags dead," and <code>dead_a_arith</code> drops the SBC.</p>
+
+    <p>One pass later, <code>dead_label_drop</code> would have reaped <code>.jcmp_novf@0</code> (no remaining references). Two iterations later, the structure would look right. But within iteration 1, the orphan label is enough to lie to <code>all_flags_dead_at</code>, and the damage compounds: drop SBC #$01, then in the next inner pass of <code>dead_a_arith</code> the LDA i_1 becomes A-dead too, then SBC #$2C, then LDA i_0. By the end of one outer iteration, the whole comparison is gone.</p>
+
+    </section>
+
+    <!-- ============================================================
+         FIX
+         ============================================================ -->
+    <section id="fix">
+    <h2>Drop the label, save the chain</h2>
+
+    <p>The fix is one extra clause in the new pass: when dropping <code>Branch(_, L); Label(L)</code>, also drop the <code>Label(L)</code> if no other Branch / Jump / Phi-arg references it. Pre-scan the function once, count refs, and use the count to decide.</p>
+
+<pre><code>def _rewrite_function(fn):
+    ref_counts = _label_ref_counts(fn.instructions)
+    out = []
+    i = 0
+    while i &lt; len(fn.instructions):
+        a = fn.instructions[i]
+        if (isinstance(a, asm_ast.Branch)
+                and i + 1 &lt; len(fn.instructions)
+                and isinstance(fn.instructions[i + 1], asm_ast.Label)
+                and a.target == fn.instructions[i + 1].name):
+            # The Branch owns one reference. If that's the only one,
+            # the Label is orphan after we drop the Branch — drop
+            # both in the same sweep, so flags_dead_at doesn't see
+            # a fall-through-only Label between a flag-setter and
+            # the next-block's Branch within this iteration.
+            label_name = fn.instructions[i + 1].name
+            if ref_counts.get(label_name, 0) &lt;= 1:
+                i += 2     <span class="asm-comment">; drop both</span>
+            else:
+                i += 1     <span class="asm-comment">; drop only the branch</span>
+            continue
+        out.append(a)
+        i += 1
+    return asm_ast.Function(..., instructions=out)
+</code></pre>
+
+    <p>That's it. Same-iteration label cleanup closes the window. <code>dead_a_arith</code> in iteration 1 now sees <code>SBC #$01; BPL .loop@0_break</code> directly — no intervening label — and <code>all_flags_dead_at</code> walks past the SBC, hits the Branch, returns False. The SBC stays. The whole chain stays. The loop terminates.</p>
+
+    <p>Full suite: <code>Ran 2740 tests in 79s. OK</code>.</p>
+
+    <p>On <code>beam_target_tick</code> itself, the original target: 810 → 804 bytes, 3516 → 3493 whole-program cycles, 427 → 404 function cycles.</p>
+
+    </section>
+
+    <!-- ============================================================
+         LESSON
+         ============================================================ -->
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p>Two things in tension.</p>
+
+    <p>The first is mundane: <strong>peephole passes don't compose freely with each other inside a fixedpoint loop.</strong> Each pass has a contract over what IR shapes it produces and consumes. When pass A produces a shape that pass B in the same iteration interprets differently, you can get one-iteration-window bugs that look like the world ending. The pass order matters; the within-iteration transient states matter.</p>
+
+    <p>The second is more specific to this codebase: <strong>convention-based fast paths in analyses leave debt for new peepholes to repay.</strong> The Label-as-flag-terminator rule in <code>all_flags_dead_at</code> is correct given the codegen invariant, and the alternative (true CFG dataflow) would cost real compile time. So the analysis takes the shortcut, the codegen agrees to maintain the invariant, and every peephole author thereafter inherits the obligation to either honor the invariant or be loud about breaking it.</p>
+
+    <p>My pass broke it by accident — not because the analysis was wrong, and not because my rewrite was wrong, but because there's a transient state inside one fixedpoint iteration where neither contract holds. That's the kind of thing the test corpus catches and a unit test for the pass in isolation will not catch. It's also the kind of thing you find only when you walk the per-pass IR snapshot through the fixedpoint by hand, watching counts change.</p>
+
+    <p>The fix isn't to make <code>all_flags_dead_at</code> conservative at Labels — that would slow down a workhorse analysis to defend against future bad citizens. The fix is to make the new pass a good citizen: maintain the invariant by reaping the orphan label in the same sweep, so the analysis never sees a violated state.</p>
+
+    <p>I've added the rule to project memory. The next pass that drops a control-flow instruction will start from "if this could leave an orphan label adjacent to a Branch, drop the label too." Future me will probably still re-discover it once.</p>
+
+    </section>
+
+    <hr class="fancy with-mark">
+
+    <p class="meta" style="border: none; padding-top: 0;">
+      <span><strong>Files</strong>
+        <code>passes/branch_to_next_drop.py</code>,
+        <code>passes/redundant_load.py</code>,
+        <code>passes/CLAUDE.md</code>,
+        <code>tests/test_branch_to_next_drop.py</code>,
+        <code>tests/test_redundant_load.py</code>
+      </span>
+    </p>
+
+  </article>
+
+</div>
+
+<script>
+  // TOC active link on scroll
+  const headings = document.querySelectorAll('section[id]');
+  const tocLinks = document.querySelectorAll('aside.toc a');
+  const linkByHash = {};
+  tocLinks.forEach(a => { linkByHash[a.getAttribute('href')] = a; });
+  function setActive() {
+    let active = null;
+    headings.forEach(h => {
+      const rect = h.getBoundingClientRect();
+      if (rect.top &lt; window.innerHeight * 0.35) active = h.id;
+    });
+    tocLinks.forEach(a => a.classList.remove('active'));
+    if (active && linkByHash['#' + active]) linkByHash['#' + active].classList.add('active');
+  }
+  window.addEventListener('scroll', setActive, { passive: true });
+  setActive();
+</script>
+
+</body>
+</html>

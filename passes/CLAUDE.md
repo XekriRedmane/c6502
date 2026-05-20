@@ -65,6 +65,17 @@ this directory:
   shape `tac_to_asm` emits for loop tails when the loop body's
   conditional exit straddles the Return.
 - `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
+- `cmp_through_tmp_fold.py` — `apply_cmp_through_tmp_fold`. Folds
+  the 4-instr `Mov(src, A); Mov(A, tmp); Mov(other, A); Compare(A,
+  tmp)` shape (LDA src; STA tmp; LDA other; CMP tmp) to the 2-instr
+  `Mov(other, A); Compare(A, src)` (LDA other; CMP src) when `tmp`
+  is `Data` / `ZP`, `src` is a CMP-supported addressing mode that
+  the intervening LDA can't clobber, and `other` provably can't
+  alias `tmp`. Headline source: `beam_y == floor_y_table[idx]` —
+  the RHS stages through a local before the LDA-LHS / CMP-tmp;
+  IndexedData on the right is exactly the addressing mode CMP can
+  consume directly once `asm_emit._emit_compare` and the in-sim
+  `_emit_compare` dispatch IndexedData (added alongside this pass).
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
   folding; validation hook for future enum / array-size / bitfield-
@@ -763,6 +774,11 @@ them):
   cycles per occurrence and preserves A for downstream use.
 - `apply_self_store_drop` — `Mov(M, A); ...; Mov(A, M)` where the body
   doesn't modify M and A reads M → drop the trailing self-store.
+- `apply_cmp_through_tmp_fold` — `Mov(src, A); Mov(A, tmp); Mov(other,
+  A); Compare(A, tmp)` → `Mov(other, A); Compare(A, src)`. Drops the
+  RHS-stage-through-tmp pattern so CMP reads `src` directly (incl.
+  `IndexedData` like `floor_y_table,X` once Compare-emit dispatches
+  it). See module docstring for the eligibility / aliasing rules.
 - `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; ...; SBC` pattern
   where the SBC's effect duplicates the Compare's flag set.
 - `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A);

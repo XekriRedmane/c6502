@@ -35,10 +35,8 @@ beam_target_tick:
    BPL   .if_end@1
    AND   #$0F
    TAX
-   LDA   floor_y_table,X
-   STA   __local_beam_target_tick__0
    LDA   beam_y
-   CMP   __local_beam_target_tick__0
+   CMP   floor_y_table,X
    BNE   .if_end@2
    LDA   #$00
    STA   beam_state

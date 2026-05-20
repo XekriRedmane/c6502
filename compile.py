@@ -62,6 +62,7 @@ from passes.mem_const_prop import apply_mem_const_prop
 from passes.round_trip_load import apply_round_trip_load_drop
 from passes.and_sign_bit_branch import apply_and_sign_bit_branch
 from passes.self_store_drop import apply_self_store_drop
+from passes.cmp_through_tmp_fold import apply_cmp_through_tmp_fold
 from passes.adc_commute import apply_adc_commute
 from passes.dual_index_promotion import apply_dual_index_promotion
 from passes.prune_unused_slots import prune_unused_locals
@@ -212,6 +213,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)
+        new_prog = apply_cmp_through_tmp_fold(new_prog)
         new_prog = apply_adc_commute(new_prog)
         new_prog = apply_cmp_sbc_fusion(new_prog)
         new_prog = apply_dec_inc_branch_fold(new_prog)

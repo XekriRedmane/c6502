@@ -1045,6 +1045,14 @@ def _compare_size(
         return 2
     if _is_data_or_zp(right):
         return 2 if _abs_fits_zp(right) else 3
+    if _is_indexed_data(right):
+        if not isinstance(left.reg, asm_ast.A):
+            raise AssemblerError(
+                f"Compare with left={left!r} can't use an IndexedData "
+                f"right (CPX/CPY have no absolute,X / absolute,Y "
+                f"addressing modes)"
+            )
+        return 3
     if _is_indirect_y(right):
         if not isinstance(left.reg, asm_ast.A):
             raise AssemblerError(
@@ -1105,6 +1113,16 @@ def _emit_compare(
         return bytes([_IMM[opcode], _resolve_imm_label(right, syms)])
     if _is_data_or_zp(right):
         return _emit_zp_or_abs(opcode, _resolve_abs_addr(right, syms))
+    if _is_indexed_data(right):
+        if opcode != "CMP":
+            raise AssemblerError(
+                f"Compare with left={left!r} can't use an IndexedData "
+                f"right (CPX/CPY have no absolute,X / absolute,Y "
+                f"addressing modes)"
+            )
+        return _emit_abs_indexed(
+            opcode, _resolve_indexed_data_addr(right, syms), right.index,
+        )
     if _is_indirect_y(right):
         if opcode != "CMP":
             raise AssemblerError(

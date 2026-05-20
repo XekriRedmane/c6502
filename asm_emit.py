@@ -822,6 +822,14 @@ def _emit_compare(
             return [_instr_line(opcode, _imm_label_text(right))]
         case asm_ast.Data() | asm_ast.ZP():
             return [_instr_line(opcode, _abs_addr(right))]
+        case asm_ast.IndexedData():
+            if opcode != "CMP":
+                raise ValueError(
+                    f"Compare with left={left!r} can't use an "
+                    f"IndexedData right operand: CPX/CPY have no "
+                    f"absolute,X or absolute,Y addressing modes"
+                )
+            return [_instr_line(opcode, _indexed_data_addr(right))]
         case asm_ast.Stack() | asm_ast.Frame():
             if opcode != "CMP":
                 raise ValueError(

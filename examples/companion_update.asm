@@ -29,11 +29,9 @@ __zpabi_smc_body_draw__sprite_y	EQU	$89
 __local_active_neg_step__1	EQU	$8A
 __local_active_pos_step__1	EQU	$8A
 __local_drift_step__pos_1	EQU	$8A
-__local_player_catch__0	EQU	$8A
 __zpabi_find_active_entity__hit_max	EQU	$8A
 __zpabi_smc_body_draw__frame_idx	EQU	$8A
 __local_drift_step__pos_0	EQU	$8B
-__local_player_catch__1	EQU	$8B
 __zpabi_find_active_entity__out_row_0	EQU	$8B
 __zpabi_smc_body_draw__state	EQU	$8B
 __local_compute_screen_x__2	EQU	$8C
@@ -41,7 +39,6 @@ __local_drift_step__0	EQU	$8C
 __zpabi_find_active_entity__out_row_1	EQU	$8C
 __zpabi_smc_body_draw__page_flag	EQU	$8C
 __local_compute_screen_x__3	EQU	$8D
-__local_entity_proximity__0	EQU	$8D
 __zpabi_draw_sprite__width	EQU	$8D
 __zpabi_draw_sprite__height	EQU	$8E
 __local_entity_proximity__entity_row	EQU	$8F
@@ -144,10 +141,8 @@ entity_proximity:
    RTS
 .if_end@1:
    LDX   __zpabi_entity_proximity__slot
-   LDA   companion_row,X
-   STA   __local_entity_proximity__0
    LDA   __local_entity_proximity__entity_row
-   CMP   __local_entity_proximity__0
+   CMP   companion_row,X
    BEQ   .if_end@2
    RTS
 .if_end@2:
@@ -359,22 +354,14 @@ player_catch:
    LDA   __zpabi_player_catch__player_col
    SEC
    SBC   #$08
-   STA   __local_player_catch__1
    LDX   __zpabi_player_catch__slot
-   LDA   companion_row,X
-   STA   __local_player_catch__0
-   LDA   __local_player_catch__1
-   CMP   __local_player_catch__0
+   CMP   companion_row,X
    BCC   .if_end@23
    RTS
 .if_end@23:
    CLC
    ADC   #$1A
-   STA   __local_player_catch__1
-   LDA   companion_row,X
-   STA   __local_player_catch__0
-   LDA   __local_player_catch__1
-   CMP   __local_player_catch__0
+   CMP   companion_row,X
    BCS   .if_end@24
    RTS
 .if_end@24:

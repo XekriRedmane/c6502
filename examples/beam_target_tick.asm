@@ -19,7 +19,6 @@ beam_target_tick:
    SUBROUTINE
 
    LDX   beam_snd_ctr
-   TXA
    BMI   .if_end@0
    LDA   beam_jingle,X
    STA   __local_beam_target_tick__2

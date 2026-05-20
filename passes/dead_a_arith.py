@@ -39,7 +39,11 @@ The instruction is droppable when:
     walk via `asm_liveness.a_dead_at`).
   * The flags are dead after the instruction (within-block walk
     via `asm_liveness.flags_dead_at` — bails at any Branch, ends
-    safely at any flag-overwriting instruction or block exit).
+    safely at any flag-overwriting instruction or block exit). For
+    the register-transfer subset (`TXA` / `TYA`) we additionally
+    accept the case where the current N/Z flags already reflect
+    the src register's value via `_flags_reflect_src_reg` — see
+    "Redundant-flag drop for TXA / TYA" below.
 
 Handled instruction kinds:
 
@@ -49,6 +53,29 @@ Handled instruction kinds:
     `dst = Reg(A)` — ADC/SBC/AND/ORA. Reads A, writes A + flags.
   * `Xor` with `src1, src2 ∈ {Imm, Data, ZP, Reg(A)}` and
     `dst = Reg(A)` — EOR. Reads operands, writes A + N/Z.
+
+# Redundant-flag drop for TXA / TYA
+
+A TXA whose only flag consumer is a downstream Branch (and whose
+A-side is dead) is usually NOT droppable by the flags-dead check
+— `flags_dead_at` bails at the Branch. But when the most-recent
+flag-setter before the TXA was itself a write to the same source
+register (e.g. `LDX M; TXA; BMI L` — LDX set N/Z based on the
+loaded value, which IS X's current value), the TXA's own flag
+effect (N/Z based on A_new = X) duplicates the current flag state.
+Dropping the TXA leaves the Branch reading the LDX-set flags,
+which match what the TXA would have produced. Sound iff:
+
+  * A is dead at i+1 (the TXA's A-side has no observers), AND
+  * `_flags_reflect_src_reg` returns True — the most recent
+    flag-setter on the backward straight-line path wrote the same
+    register the TXA reads, so the current flags already reflect
+    that register's value.
+
+This is what was missing on the beam_target_tick `LDX
+beam_snd_ctr; TXA; BMI .if_end@0` shape: A is killed on both
+arms (LDA on fall-through, TXA on the branch target), flags ARE
+read by BMI, but LDX already set them to beam_snd_ctr's value.
 
 # Iteration
 
@@ -65,6 +92,7 @@ from __future__ import annotations
 import asm_ast
 from passes.asm_liveness import (
     a_dead_at, all_flags_dead_at, flags_dead_at, is_reg_a,
+    sets_flags,
 )
 
 
@@ -110,7 +138,16 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                     continue
             else:
                 if not flags_dead_at(instrs, after):
-                    continue
+                    # Redundant-flag fallback for TXA / TYA: the
+                    # current N/Z already reflect src reg's value
+                    # (set by a prior LDX / LDY / INX / ...), so
+                    # the transfer's flag effect is redundant.
+                    # Other Mov shapes (LDA imm / LDA mem) and the
+                    # ALU ops don't have an analog — their flag
+                    # effect depends on the loaded / computed value,
+                    # not on a register's current value.
+                    if not _flags_reflect_src_reg(instrs, i):
+                        continue
             drop[i] = True
         instrs = [
             instr for i, instr in enumerate(instrs) if not drop[i]
@@ -179,3 +216,93 @@ def _is_xy_reg(op: asm_ast.Type_operand) -> bool:
         isinstance(op, asm_ast.Reg)
         and isinstance(op.reg, (asm_ast.X, asm_ast.Y))
     )
+
+
+def _flags_reflect_src_reg(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> bool:
+    """True iff `instrs[i]` is `Mov(Reg(X|Y), Reg(A))` and the CPU
+    N/Z flags at position `i` already reflect the src register's
+    current value. When True, the Mov's own flag effect (N/Z based
+    on A_new = src_reg) is a no-op against the current flag state
+    and the Mov can be dropped (provided A is also dead).
+
+    Backward scan within the basic block from `i-1`. The first
+    flag-setter we encounter is the one that produced the current
+    N/Z. If it wrote the same register the Mov reads, flags
+    reflect that register's new value — and since any later
+    register write would have been a flag-setter we'd have stopped
+    at first, the src register's value hasn't changed since.
+
+    Bails on labels, terminators, calls, prologues, and
+    `LoadAddress` — any cross-block reasoning isn't worth the
+    complexity for this pattern and these atoms either expand into
+    multi-instruction sequences (`asm_to_asm2`) or are CFG joins
+    where the prior-flag-setter on different predecessors could
+    differ.
+    """
+    instr = instrs[i]
+    if not isinstance(instr, asm_ast.Mov):
+        return False
+    if not is_reg_a(instr.dst):
+        return False
+    if not _is_xy_reg(instr.src):
+        return False
+    src_reg_type = type(instr.src.reg)
+    j = i - 1
+    while j >= 0:
+        prev = instrs[j]
+        if isinstance(prev, (
+            asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
+            asm_ast.Ret, asm_ast.Return, asm_ast.Call,
+            asm_ast.FunctionPrologue, asm_ast.AllocateStack,
+            asm_ast.LoadAddress,
+        )):
+            return False
+        if not sets_flags(prev):
+            j -= 1
+            continue
+        return _writes_reg_setting_n_z(prev, src_reg_type)
+    return False
+
+
+def _writes_reg_setting_n_z(
+    instr: asm_ast.Type_instruction, reg_type: type,
+) -> bool:
+    """True iff `instr` writes `Reg(reg_type)` and sets N/Z based
+    on the new register value — the standard 6502 behavior of
+    every register-writing opcode the IR models (LDA/LDX/LDY,
+    TAX/TAY/TXA/TYA, INX/INY/DEX/DEY, ADC/SBC/AND/ORA/EOR on A,
+    ASL/LSR/ROL/ROR on A, PLA).
+
+    Store / mem-to-mem Movs return False because they either don't
+    touch flags (STA) or set them based on the loaded mem value
+    rather than the register's value (mem-to-mem `LDA src; STA
+    dst`).
+    """
+    if isinstance(instr, asm_ast.Mov):
+        if isinstance(instr.dst, asm_ast.Reg):
+            return isinstance(instr.dst.reg, reg_type)
+        return False
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        if isinstance(instr.dst, asm_ast.Reg):
+            return isinstance(instr.dst.reg, reg_type)
+        return False
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+        asm_ast.Xor,
+    )):
+        # ADC / SBC / AND / ORA / EOR always write Reg(A).
+        return reg_type is asm_ast.A
+    if isinstance(instr, (
+        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+        asm_ast.RotateLeft, asm_ast.RotateRight,
+    )):
+        if isinstance(instr.dst, asm_ast.Reg):
+            return isinstance(instr.dst.reg, reg_type)
+        return False
+    if isinstance(instr, asm_ast.Pop):
+        if isinstance(instr.dst, asm_ast.Reg):
+            return isinstance(instr.dst.reg, reg_type)
+        return False
+    return False

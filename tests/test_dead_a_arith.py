@@ -247,3 +247,197 @@ class TestDeadAArithLiveness(unittest.TestCase):
         ]
         out = _rewritten(instrs)
         self.assertEqual(out, instrs)
+
+
+class TestDeadAArithRedundantFlag(unittest.TestCase):
+    """`TXA` / `TYA` whose only flag consumer is a Branch can drop
+    when the prior flag-setter already wrote the same src register
+    — the Branch reads the prior-set flags (same as what the
+    transfer would have set) and A's value is dead.
+
+    Headline case: the beam_target_tick shape `LDX
+    beam_snd_ctr; TXA; BMI .if_end@0; LDA beam_jingle,X ; ...` —
+    LDX sets N/Z based on beam_snd_ctr (== X), BMI reads them,
+    LDA on the fall-through kills A, and the branch target also
+    kills A before reading. The TXA is pointless."""
+
+    def test_txa_after_ldx_branch_drops(self) -> None:
+        # `LDX M; TXA; BMI .L; LDA other; STA dst` — drop the TXA.
+        # BMI reads the N flag, but LDX already set it to (M & 0x80).
+        # The fall-through LDA's result IS used (by STA) so it
+        # survives — checking that the TXA specifically drops, not
+        # the surrounding atoms.
+        m = asm_ast.Data(name="m", offset=0)
+        other = asm_ast.Data(name="other", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — drop
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
+            asm_ast.Mov(src=other, dst=_REG_A),             # LDA other
+            asm_ast.Mov(src=_REG_A, dst=dst),               # STA dst
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 6)
+        # The dropped instruction is the TXA — no Mov(X, A) left.
+        self.assertFalse(any(
+            isinstance(o, asm_ast.Mov)
+            and isinstance(o.src, asm_ast.Reg)
+            and isinstance(o.src.reg, asm_ast.X)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+            for o in out
+        ))
+
+    def test_tya_after_ldy_branch_drops(self) -> None:
+        # Symmetric Y case.
+        m = asm_ast.Data(name="m", offset=0)
+        other = asm_ast.Data(name="other", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_Y),                 # LDY M
+            asm_ast.Mov(src=_REG_Y, dst=_REG_A),            # TYA — drop
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".L"),
+            asm_ast.Mov(src=other, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 6)
+
+    def test_txa_with_intervening_sta_drops(self) -> None:
+        # `LDX M; STA other; TXA; BMI .L` — STA doesn't touch N/Z
+        # (it's `STA other`, src=A), so the most recent flag-setter
+        # is still the LDX. TXA is still droppable.
+        m = asm_ast.Data(name="m", offset=0)
+        other = asm_ast.Data(name="other", offset=0)
+        kill = asm_ast.Data(name="kill", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Mov(src=_REG_A, dst=other),             # STA other
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — drop
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
+            asm_ast.Mov(src=kill, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 7)
+
+    def test_txa_with_intervening_alu_keeps(self) -> None:
+        # `LDX M; ADC #0; TXA; BMI .L` — ADC clobbers N/Z. After
+        # ADC the flags reflect A (the ADC result), not X. Dropping
+        # the TXA would leave BMI reading the wrong flags. Keep.
+        # The fall-through LDA/STA keeps A alive so the ADC also
+        # survives (otherwise dead_a_arith would drop it).
+        m = asm_ast.Data(name="m", offset=0)
+        kill = asm_ast.Data(name="kill", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),  # LDA #0
+            asm_ast.Add(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — keep
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
+            asm_ast.Mov(src=kill, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # TXA must remain at index 3.
+        self.assertEqual(
+            out[3], asm_ast.Mov(src=_REG_X, dst=_REG_A),
+        )
+
+    def test_txa_with_a_live_on_fallthrough_keeps(self) -> None:
+        # `LDX M; TXA; BMI .L; AND #$0F` — fall-through AND reads
+        # A, so A is live at the TXA's position. Keep.
+        m = asm_ast.Data(name="m", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — keep
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
+            asm_ast.And(
+                src=asm_ast.Imm(value=0x0F), dst=_REG_A,
+            ),  # reads A
+            asm_ast.Mov(
+                src=_REG_A,
+                dst=asm_ast.Data(name="out", offset=0),
+            ),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_txa_after_label_keeps(self) -> None:
+        # `LDX M; .L: TXA; BMI .L2` — the label between LDX and
+        # TXA means execution could enter TXA's block from a
+        # predecessor that didn't run LDX. Bail (the backward scan
+        # stops at the label and returns False).
+        m = asm_ast.Data(name="m", offset=0)
+        kill = asm_ast.Data(name="kill", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Label(name=".L"),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — keep
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L2"),
+            asm_ast.Mov(src=kill, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst),
+            asm_ast.Label(name=".L2"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_txa_after_inx_drops(self) -> None:
+        # `LDX M; INX; TXA; BMI .L; LDA/STA` — INX sets N/Z based on
+        # X's new value, which IS X's current value at the TXA. So
+        # flags reflect X. Drop.
+        m = asm_ast.Data(name="m", offset=0)
+        kill = asm_ast.Data(name="kill", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Inc(dst=_REG_X),                        # INX
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — drop
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
+            asm_ast.Mov(src=kill, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 7)
+
+    def test_txa_after_cmp_keeps(self) -> None:
+        # `LDX M; CMP K; TXA; BMI .L` — CMP sets flags from A - K,
+        # not from X. Dropping TXA would leave BMI reading the
+        # CMP's result instead of X's sign. Keep.
+        m = asm_ast.Data(name="m", offset=0)
+        k = asm_ast.Imm(value=5)
+        kill = asm_ast.Data(name="kill", offset=0)
+        dst = asm_ast.Data(name="dst", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),  # LDA #0 (preset A)
+            asm_ast.Compare(left=_REG_A, right=k),          # CMP K
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — keep
+            asm_ast.Branch(cond=asm_ast.MI(), target=".L"),
+            asm_ast.Mov(src=kill, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=dst),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # TXA must remain at index 3.
+        self.assertEqual(
+            out[3], asm_ast.Mov(src=_REG_X, dst=_REG_A),
+        )

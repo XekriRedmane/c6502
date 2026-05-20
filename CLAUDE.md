@@ -91,6 +91,20 @@ Two key runtime conventions:
   taken, etc.) instead of silently falling back. Details in
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
+- **`__attribute__((reg("A"|"X"|"Y")))`** pins a 1-byte (Char /
+  SChar / UChar) parameter, return value, or local to a specific
+  6502 register, refining the zp_abi calling convention. On a
+  function-level prefix, it names the return register; on a
+  parameter-postfix, it names the arg-passing register; on a
+  local var_decl, it pins the local to that register across its
+  lifetime. Requires zp_abi eligibility (no IndirectCall, no
+  recursion, address not taken, params fit). `&x` on a
+  reg-attributed object is a hard error per C99 §6.5.3.2.1.
+  Locals are HARD pins (failure to honor → compilation error);
+  parameters are SOFT (failure falls back to slot-based passing,
+  with the entry stub still in place). See `passes/abi_selection.py`
+  + `passes/optimization_asm/{hwreg_eligibility,regalloc}.py`
+  + `passes/dead_reg_entry_stub.py` for the implementation.
 
 ## Common commands
 

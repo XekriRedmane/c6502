@@ -40,6 +40,16 @@ this directory:
   overhead once `direct_index_load` fuses the `LDA idx; TAY` into
   a flag-preserving `LDY idx`.
 - `branch_invert.py` — `apply_branch_invert` peephole.
+- `branch_through_jump.py` — `apply_branch_through_jump` peephole.
+  Rewrites `Branch(cond, L); X; L: Jump(T)` → `Branch(cond, T); X`
+  when L is an in-function label and the Jump goes to another
+  in-function label. Drops the orphaned Label+Jump trampoline
+  when L's reference count drops to zero AND the preceding
+  instruction is a control-flow terminator (Return / Ret / Jump)
+  so fall-through can't reach it. Targets the
+  `Branch(cond, .ssa_split); Return; .ssa_split: Jump(.loop)`
+  shape `tac_to_asm` emits for loop tails when the loop body's
+  conditional exit straddles the Return.
 - `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
@@ -47,6 +57,38 @@ this directory:
   width consumers).
 - `cpx_cpy_peephole.py` — `apply_cpx_cpy_peephole` peephole.
 - `dead_a_arith.py` — `apply_dead_a_arith_elimination` peephole.
+  Iterates to a local fixed point in a single call: one walk drops
+  the trailing atom of an LDA-and-dependent-ADC chain, the next
+  round drops the LDA that's no longer kept alive by the ADC. The
+  outer peephole fixedpoint relies on dead_a_arith leaving NO
+  droppable atom behind in one call, because downstream passes
+  (e.g. `volatile_void_read_cmp`) can extend A's liveness across
+  a rewrite and lock in a still-droppable atom.
+- `dead_reg_entry_stub.py` — `apply_dead_reg_entry_stub_drop`.
+  Targeted DSE for `Mov(Reg(R), Data(__zpabi_<fn>__<param>))`
+  entry stubs emitted by tac_to_asm for reg-attributed params.
+  Drops them when the param's body Pseudos pinned to R and the
+  slot is never read in the body. The general asm_dead_store can't
+  drop these under a body that contains a volatile Indirect
+  (conservative aliasing assumes Indirect may alias any address);
+  the targeted pass exploits the structural fact that user code
+  can't construct the slot's address (no syntax for `&__zpabi_*`;
+  `&param` on a reg-attributed param is rejected by type-check).
+- `dec_branch_indirect_y_fold.py` —
+  `apply_dec_branch_indirect_y_fold`. After `Dec(Reg(Y));
+  Branch(NE, _)` fall-through, Y is provably 0. Rewrites a
+  following `Indirect(0)` operand on a Mov / Compare to
+  `IndirectY()` — the emit-time variant that uses Y as-is, with
+  no LDY setup. Drops 2 bytes / 2 cycles per occurrence.
+- `dec_register_peephole.py` — `apply_dec_register_peephole`.
+  Folds the 6-instruction `Mov(R, A); SEC; Sub(Imm(1), A);
+  Mov(A, tmp); Mov(tmp, R); Branch(NE|EQ, _)` chain to
+  `Dec(R); Branch(NE|EQ, _)` when R is X / Y and A is dead at
+  both Branch successors. Volatile-safe because DEC R is a single
+  R-M-W of the named register, which IS the pinned volatile
+  variable's storage. Targets the inner-counter shape of
+  `while (--counter != 0) { … }` when the counter is pinned to
+  X / Y.
 - `dec_inc_branch_fold.py` — `apply_dec_inc_branch_fold` peephole.
 - `dec_peephole.py` — `apply_dec_peephole` peephole.
 - `direct_index_load.py` — `apply_direct_index_load` peephole (see
@@ -70,6 +112,17 @@ this directory:
   Jump(target); .skip:`. Iterative.
 - `loop_counter_to_x.py` — X-pivot promotion (see "Asm-level
   promotions" below).
+- `promote_loop_carried_to_a.py` —
+  `apply_promote_loop_carried_to_a`. Scalar promotion of a
+  function-entry-saved reg('A') param's body-local to live in A
+  across the loop body. Recognizes the pattern: function entry
+  STA `__local_<fn>__*`, in-loop `LDY M; Inc(M)` as the only
+  slot accesses, A clean through the body (CMP-with-dead-flags
+  OK). Rewrites entry STA → TAY, inserts TYA at end of preamble
+  (parks pitch in Y across DPTR staging), in-loop LDY → TAY,
+  in-loop INC → CLC+ADC. Drops the local, A carries the
+  incremented value across the loop back-edge. The A-pinning
+  analog of `loop_counter_to_x` (which does the same for X).
 - `loop_labeling.py` — pass 5 (see below).
 - `mem_const_prop.py` — `apply_mem_const_prop` peephole.
 - `prologue_synthesis.py` — late prologue / epilogue synthesis.
@@ -93,6 +146,13 @@ this directory:
   Data|ZP)` (TXA;STA → STX), same shape for Y. Recovers what
   `x_save_slot_load`'s Pass 3 mem-to-mem case used to do directly
   before `split_mem_to_mem` started breaking the mem-to-mem apart.
+- `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
+  Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
+  `Compare(Reg(A), <indirect>)` when the loaded A is dead and
+  the next instruction clobbers N/Z. CMP performs the same
+  memory read (preserving volatile semantics) but doesn't
+  clobber A — enables `reg('A')` body-pinning to survive across
+  `(void)*sfx_click_ptr`-style discarded volatile reads.
 - `y_peephole.py` — `apply_y_peephole` (LDY collapse, outside
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at

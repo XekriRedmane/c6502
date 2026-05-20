@@ -45,13 +45,17 @@ uint8_t snd_down_calls;
 uint8_t snd_down_last_pitch;
 uint8_t snd_down_last_clicks;
 
-void snd_delay_up(uint8_t pitch, uint8_t clicks) {
+void snd_delay_up(
+    uint8_t pitch __attribute__((reg("A"))),
+    uint8_t clicks __attribute__((reg("X")))) {
     snd_up_calls = (uint8_t)(snd_up_calls + 1);
     snd_up_last_pitch = pitch;
     snd_up_last_clicks = clicks;
 }
 
-void snd_delay_down(uint8_t pitch, uint8_t clicks) {
+void snd_delay_down(
+    uint8_t pitch __attribute__((reg("A"))),
+    uint8_t clicks __attribute__((reg("X")))) {
     snd_down_calls = (uint8_t)(snd_down_calls + 1);
     snd_down_last_pitch = pitch;
     snd_down_last_clicks = clicks;
@@ -65,6 +69,13 @@ static const uint8_t beam_jingle[11] = {
     0x1E, 0x09, 0x16, 0x18, 0x1B, 0x0A, 0x07, 0x05,
     0x1E, 0x1B, 0x19,
 };
+
+void snd_delay_up(
+    uint8_t pitch __attribute__((reg("A"))),
+    uint8_t clicks __attribute__((reg("X"))));
+void snd_delay_down(
+    uint8_t pitch __attribute__((reg("A"))),
+    uint8_t clicks __attribute__((reg("X"))));
 
 void beam_target_tick(uint8_t beam_tick, uint8_t beam_seed_floor)
 {

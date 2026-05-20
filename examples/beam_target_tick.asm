@@ -5,11 +5,12 @@ __zpabi_snd_delay_up__pitch	EQU	$82
 __zpabi_snd_delay_down__clicks	EQU	$83
 __zpabi_snd_delay_up__clicks	EQU	$83
 __local_beam_target_tick__0	EQU	$84
+__local_beam_target_tick__2	EQU	$86
 
 ; @zp-link-meta-begin
 ; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0,__local_beam_target_tick__1,__local_beam_target_tick__2 indirect=false in_cycle=false
-; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks
-; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks
+; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks param_regs=A,X
+; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks param_regs=A,X
 ; call beam_target_tick -> snd_delay_down
 ; call beam_target_tick -> snd_delay_up
 ; @zp-link-meta-end
@@ -20,13 +21,14 @@ beam_target_tick:
    LDX   beam_snd_ctr
    TXA
    BMI   .if_end@0
+   LDA   beam_jingle,X
+   STA   __local_beam_target_tick__2
+   TXA
    SEC
    SBC   #$01
    STA   beam_snd_ctr
-   LDA   beam_jingle,X
-   STA   __zpabi_snd_delay_up__pitch
-   LDA   #$0A
-   STA   __zpabi_snd_delay_up__clicks
+   LDX   #$0A
+   LDA   __local_beam_target_tick__2
    JSR   snd_delay_up
 .if_end@0:
    LDX   beam_state
@@ -46,10 +48,8 @@ beam_target_tick:
    CLC
    ADC   #$02
    STA   beam_y
+   LDX   #$0A
    LDA   #$10
-   STA   __zpabi_snd_delay_down__pitch
-   LDA   #$0A
-   STA   __zpabi_snd_delay_down__clicks
    JMP   snd_delay_down
 .if_end@1:
    BEQ   .if_end@3
@@ -68,10 +68,8 @@ beam_target_tick:
    SEC
    SBC   #$02
    STA   beam_y
+   LDX   #$0A
    LDA   #$10
-   STA   __zpabi_snd_delay_up__pitch
-   LDA   #$0A
-   STA   __zpabi_snd_delay_up__clicks
    JMP   snd_delay_up
 .if_end@3:
    LDA   __zpabi_beam_target_tick__beam_tick

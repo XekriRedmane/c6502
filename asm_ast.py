@@ -138,6 +138,7 @@ class Sub(Type_instruction):
 @dataclass
 class Call(Type_instruction):
     name: str = ''
+    reg_args: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -217,6 +218,7 @@ class Label(Type_instruction):
 @dataclass
 class Jump(Type_instruction):
     target: str = ''
+    reg_args: list[str] = field(default_factory=list)
 
 
 @dataclass

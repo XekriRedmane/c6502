@@ -93,7 +93,10 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         if (i + 1 < len(instrs)
                 and isinstance(instrs[i], asm_ast.Call)
                 and isinstance(instrs[i + 1], asm_ast.Return)):
-            out.append(asm_ast.Jump(target=instrs[i].name))
+            out.append(asm_ast.Jump(
+                target=instrs[i].name,
+                reg_args=list(instrs[i].reg_args),
+            ))
             i += 2
             continue
         out.append(instrs[i])

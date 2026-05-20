@@ -238,9 +238,14 @@ def _a_dead_at(
             return True
         # An unconditional Jump moves to its target.
         if isinstance(instr, asm_ast.Jump):
+            # Tail-call Jump reading A: not dead (the callee
+            # consumes A as a reg-attributed arg).
+            if "A" in instr.reg_args:
+                return False
             tgt = label_to_index.get(instr.target)
             if tgt is None:
-                # External — callee owns A.
+                # External (long-branch trampoline or similar) —
+                # treat as callee-owns-A.
                 return True
             i = tgt + 1
             continue
@@ -249,10 +254,13 @@ def _a_dead_at(
         # Here we just bail conservatively.
         if isinstance(instr, asm_ast.Branch):
             return False
-        # Call / Return clobber everything (A definitely dies).
-        if isinstance(instr, (
-            asm_ast.Call, asm_ast.Ret, asm_ast.Return,
-        )):
+        # Call reading A as a reg-attributed arg is not dead.
+        if isinstance(instr, asm_ast.Call):
+            if "A" in instr.reg_args:
+                return False
+            return True
+        # Other Ret / Return clobber everything (A definitely dies).
+        if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
             return True
         # Other instructions: not A-touching, continue.
         i += 1

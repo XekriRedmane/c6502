@@ -50,9 +50,15 @@ counts as a read.
 - `LoadAddress` is treated as a kill: its expansion in
   `asm_to_asm2` always writes A through immediates, never
   preserving the prior A value.
-- `Call` is treated as a kill: callees clobber A (1-byte returns
-  leave the result there; HARGS-returning calls leave A
-  unspecified).
+- `Call` is treated as both a read AND a kill of A iff the
+  callee's reg-arg list (`Call.reg_args`) names A: the JSR reads A
+  as the incoming arg before the callee clobbers it. Without "A"
+  in `reg_args` it's only a kill (callees clobber A on return —
+  1-byte returns leave the result there; HARGS-returning calls
+  leave A unspecified). The read-before-kill check in
+  `_path_dead_from` runs `reads_a` first, so when a Call reads A
+  the path correctly returns "A live" before we'd otherwise
+  declare it dead from the kill.
 - `Pop(dst=A)` is a kill — fresh value from the hw stack.
 - The ALU instructions (Add/Sub/And/Or/Xor) RMW A: they read A
   before writing it, so they're a read, not a kill.
@@ -106,6 +112,15 @@ def _path_dead_from(
         if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
             return not instr.save_a
         if isinstance(instr, asm_ast.Jump):
+            # Tail-call Jumps (rewritten from `Call(reg_args); Return`
+            # by the tail-call peephole) read A iff the target callee
+            # took A as a reg-attributed arg. Detect via `reg_args`
+            # rather than "target not in label_to_index" so we don't
+            # also flag long-branch trampolines (which target an
+            # in-function `.skip` label — `label_to_index` would
+            # still resolve them).
+            if "A" in instr.reg_args:
+                return False
             tgt = label_to_index.get(instr.target)
             if tgt is not None:
                 stack.append(tgt)
@@ -164,6 +179,13 @@ def reads_a(instr: asm_ast.Type_instruction) -> bool:
         return is_reg_a(instr.dst)
     if isinstance(instr, asm_ast.Phi):
         return any(is_reg_a(a.source) for a in instr.args)
+    if isinstance(instr, asm_ast.Call):
+        return "A" in instr.reg_args
+    if isinstance(instr, asm_ast.Jump):
+        # Tail-call Jump (target is a function, not an in-function
+        # label) inherits the original Call's `reg_args`. In-function
+        # gotos have `reg_args=[]` and don't show up as A-readers.
+        return "A" in instr.reg_args
     return False
 
 

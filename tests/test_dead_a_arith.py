@@ -208,3 +208,42 @@ class TestDeadAArithLiveness(unittest.TestCase):
         # the STA so it stays.
         self.assertEqual(len(out), 3)
         self.assertEqual(out[0].src, asm_ast.Imm(value=42))
+
+    def test_call_reading_a_blocks_drop(self) -> None:
+        # `Call` with `reg_args=["A"]` reads A as a reg-attributed
+        # parameter — the LDA that materializes the arg must NOT be
+        # dropped. Without this, every `LDA #imm` before a
+        # `reg("A")`-passing JSR vanishes.
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0x10), dst=_REG_A),
+            asm_ast.Call(name="snd_delay_down", reg_args=["A", "X"]),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_call_not_reading_a_allows_drop(self) -> None:
+        # A `Call` with no A-arg still clobbers A (callees may
+        # return in A), so an LDA before it is dead.
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0x10), dst=_REG_A),
+            asm_ast.Call(name="some_void_fn", reg_args=[]),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 2)
+        self.assertIsInstance(out[0], asm_ast.Call)
+
+    def test_tail_call_jump_reading_a_blocks_drop(self) -> None:
+        # The tail-call peephole rewrites `Call(reg_args=[...]) ;
+        # Return` to `Jump(target=..., reg_args=[...])`. The Jump
+        # must still report A as live so the LDA materializing the
+        # arg survives.
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0x10), dst=_REG_A),
+            asm_ast.Jump(
+                target="snd_delay_down", reg_args=["A", "X"],
+            ),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)

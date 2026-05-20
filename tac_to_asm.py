@@ -1834,11 +1834,23 @@ class Translator:
         from passes.abi_selection import SoftStackLayout, ZpLayout
         layout = self._abi.get(name, SoftStackLayout())
         emitted: list[asm_ast.Type_instruction] = []
+        reg_args: list[str] = []
         if isinstance(layout, ZpLayout):
             emitted.extend(self._emit_zp_arg_writes(args, layout))
+            # De-duplicated insertion-order list of the registers the
+            # callee reads as parameters. Threads through to the asm-
+            # level liveness predicates so an `LDA #imm` materializing
+            # an A-passed arg isn't dropped by `dead_a_arith` (which
+            # would otherwise treat the Call as a kill-without-read of
+            # A and conclude the LDA is dead).
+            seen: set[str] = set()
+            for r in layout.param_registers:
+                if r and r not in seen:
+                    seen.add(r)
+                    reg_args.append(r)
         else:
             emitted.extend(self._emit_softstack_arg_writes(args))
-        emitted.append(asm_ast.Call(name=name))
+        emitted.append(asm_ast.Call(name=name, reg_args=reg_args))
         # `dst is None` means a void-returning callee: nothing to
         # capture, the return-value slot stays whatever it was.
         if dst is not None:

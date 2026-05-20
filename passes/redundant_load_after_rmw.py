@@ -291,6 +291,10 @@ def _reads_a(instr: asm_ast.Type_instruction) -> bool:
         asm_ast.RotateLeft, asm_ast.RotateRight,
     )):
         return _is_reg_a(instr.dst)
+    if isinstance(instr, asm_ast.Call):
+        return "A" in instr.reg_args
+    if isinstance(instr, asm_ast.Jump):
+        return "A" in instr.reg_args
     return False
 
 

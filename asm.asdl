@@ -106,7 +106,19 @@ module ASM {
         | AllocateStack(int bytes)
         | Add(operand src, operand dst)
         | Sub(operand src, operand dst)
-        | Call(identifier name)
+        -- `reg_args` lists the registers ("A" / "X" / "Y") the
+        -- callee reads as parameters under its zp_abi calling
+        -- convention (i.e. the `reg("...")` attribute on each param).
+        -- Insertion order mirrors `ZpLayout.param_registers` (left-
+        -- to-right param order, low byte first), with `None` entries
+        -- and duplicates omitted. Used by asm-level liveness
+        -- predicates (`reads_a` / `reads_x` / `reads_y`) so passes
+        -- that ask "is A dead just before this Call?" see A as a
+        -- read of the Call's incoming-arg register before the
+        -- callee clobbers it. Empty for callees that pass every
+        -- arg via the ZP-slot convention (or take no args), and
+        -- for the indirect-call trampoline / runtime helpers.
+        | Call(identifier name, string* reg_args)
         | ClearCarry
         | SetCarry
         | Inc(operand dst)
@@ -121,7 +133,13 @@ module ASM {
         | RotateLeft(operand dst)
         | RotateRight(operand dst)
         | Label(identifier name)
-        | Jump(identifier target)
+        -- `reg_args` parallels `Call.reg_args`: populated by the
+        -- tail-call peephole when it rewrites `Call(name, reg_args) ;
+        -- Return(_)` to `Jump(name, reg_args)` so liveness predicates
+        -- can still see that A / X / Y are read at the inter-function
+        -- transfer. Empty for in-function gotos / branch-jump fan-out
+        -- — those have no reg-arg semantics.
+        | Jump(identifier target, string* reg_args)
         | Branch(condition cond, identifier target)
         | Compare(operand left, operand right)
         -- BitTest(src) — emits `BIT src` (NMOS 6502: zp and abs

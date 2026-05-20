@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The TXA that only set flags</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#shape">A TXA that did nothing</a></li>
+      <li><a href="#deadarith">What dead_a_arith already does</a></li>
+      <li><a href="#redundant">A different kind of dead</a></li>
+      <li><a href="#scan">The backward scan</a></li>
+      <li><a href="#cascade">Why not extend redundant_load</a></li>
+      <li><a href="#pattern2">The second TXA, which stays</a></li>
+      <li><a href="#tests">A test that cascade-dropped itself</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #020</p>
+    <h1>The TXA that only set flags</h1>
+    <p class="subtitle">A peephole's "is the flag dead?" question was the wrong question. The right one was "would re-setting it change anything?"</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Target</strong> Apple II beam state machine</span>
+      <span><strong>Bug class</strong> over-conservative liveness check</span>
+      <span><strong>Result</strong> 1 byte, 2 cycles per TXA-before-Bxx site</span>
+    </div>
+
+    <section id="shape">
+    <h2>A TXA that did nothing</h2>
+
+    <p>The opening of <code>beam_target_tick</code>'s post-hit jingle dispatch looked like this:</p>
+
+<pre><code><span class="asm-mnem">LDX</span>   beam_snd_ctr
+<span class="hl"><span class="asm-mnem">TXA</span></span>
+<span class="asm-mnem">BMI</span>   .if_end@0
+<span class="asm-mnem">LDA</span>   beam_jingle,X
+<span class="asm-mnem">STA</span>   __local_beam_target_tick__2
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">SEC</span>
+<span class="asm-mnem">SBC</span>   #$01
+<span class="asm-mnem">STA</span>   beam_snd_ctr
+</code></pre>
+
+    <p>The highlighted <code>TXA</code> is doing nothing useful. <code>LDX beam_snd_ctr</code> on the line above already sets <code>N</code> and <code>Z</code> based on the loaded value. The branch reads <code>N</code>. On either side of the branch the very next instruction kills <code>A</code> — the fall-through does <code>LDA beam_jingle,X</code> (loading from the table; A's previous value irrelevant), and the branch target opens with its own <code>LDX; TXA</code> pair (overwriting A before any read).</p>
+
+    <p>So this TXA's flag effect is something the LDX already produced. Its register write is into something nobody reads. One byte and two cycles down the drain, with the additional irritation of being right at the front of a hot function.</p>
+
+    <p>The C source that produced it is innocuous:</p>
+
+<pre><code>int8_t snd_ctr = (int8_t)beam_snd_ctr;
+if (snd_ctr &gt;= 0) {
+    uint8_t pitch = beam_jingle[snd_ctr];
+    beam_snd_ctr = (uint8_t)(snd_ctr - 1);
+    snd_delay_up(pitch, 0x0A);
+}
+</code></pre>
+
+    <p>The cast to <code>int8_t</code> goes through TAC as a sign-checking read; the <code>&gt;= 0</code> test lowers to a sign-bit test on the byte, which on the 6502 is just "is N clear after a load?" — i.e. <code>LDX; BPL</code> or <code>LDA; BPL</code>. The compiler picked the LDX form (because the X-indexed load <code>beam_jingle,X</code> wants X anyway), and a separate path inserted a redundant TXA to "set the flag", unaware that LDX already had.</p>
+
+    </section>
+
+    <section id="deadarith">
+    <h2>What dead_a_arith already does</h2>
+
+    <p>c6502 has a peephole called <code>apply_dead_a_arith_elimination</code> whose entire job is to drop instructions that only affect <code>A</code> and the flags, when both are dead afterward. Its check is short:</p>
+
+<pre><code>if not _writes_only_a_and_flags(instr):
+    continue
+if not a_dead_at(instrs, after):
+    continue
+if isinstance(instr, (Add, Sub)):
+    if not all_flags_dead_at(instrs, after):
+        continue
+else:
+    <span class="hl">if not flags_dead_at(instrs, after):
+        continue</span>
+drop[i] = True
+</code></pre>
+
+    <p>The pass cheerfully drops <code>LDA #$00</code> before a JMP, <code>ADC #$00</code> when its result is the dead high byte of an int-promoted uchar add, and TXA / TYA whose entire output is going to be overwritten before being read.</p>
+
+    <p>The TXA-before-BMI case satisfied two of three conditions and failed the third:</p>
+
+    <table class="cmp">
+      <tr><th>Condition</th><th>Check</th><th>Verdict</th></tr>
+      <tr><td>Writes only A + flags?</td><td><code>Mov(Reg(X), Reg(A))</code> ✓</td><td>pass</td></tr>
+      <tr><td>A dead at i+1?</td><td>both arms kill A before reading</td><td>pass</td></tr>
+      <tr><td><span class="hl">Flags dead at i+1?</span></td><td>BMI reads N → flags live</td><td><span class="hl">fail</span></td></tr>
+    </table>
+
+    <p>So dead_a_arith left the TXA in place. The flag was live; the pass had no way to know that the live flag was already correct.</p>
+
+    </section>
+
+    <section id="redundant">
+    <h2>A different kind of dead</h2>
+
+    <p>"Flags are dead" and "the flag side-effect doesn't matter" sound related but are different soundness arguments. The first one says nobody reads the flag before something else overwrites it, so its value is unobservable. The second says <em>something</em> reads the flag, but the value it would read is the same one that's already there — re-setting it to the value it already has is a no-op.</p>
+
+    <p>For a TXA specifically, the flag effect is "set <code>N</code> and <code>Z</code> from the byte being copied into A". That byte is whatever X holds at the moment. So the flag effect is redundant if the current <code>N</code> and <code>Z</code> already reflect X's current value.</p>
+
+    <p>And that's exactly what the LDX on the line above provided: <code>LDX M</code> sets <code>N</code> and <code>Z</code> based on the loaded value, which is X's new value. Nothing between the LDX and the TXA modifies X or the flags, so at the TXA's position the flags still reflect X. The TXA would re-set them to <code>(X == 0)</code> and <code>(X &amp; 0x80) &gt;&gt; 7</code> — values the BMI was already going to see. No change, no observation.</p>
+
+    <p>Same shape, different reason:</p>
+
+    <table class="cmp">
+      <tr><th>Existing dead_a_arith drop</th><th>New extension</th></tr>
+      <tr>
+        <td>
+          <strong>Reason:</strong> flags are dead afterward<br>
+          <strong>Soundness:</strong> nobody observes the flag the dropped Mov would have set
+        </td>
+        <td>
+          <strong>Reason:</strong> flags already reflect src reg's value<br>
+          <strong>Soundness:</strong> dropped Mov would have set the same value the current flags already hold
+        </td>
+      </tr>
+    </table>
+
+    <p>Both apply only when A is also dead — the value-side of the Mov has to be irrelevant. The new branch isn't a substitute for the flags-dead check; it's a parallel one.</p>
+
+    </section>
+
+    <section id="scan">
+    <h2>The backward scan</h2>
+
+    <p>The "are the current flags reflecting src's value?" question becomes a simple backward walk within the basic block. Start at the instruction before the TXA. Find the most recent flag-setter on the straight-line path. If that flag-setter wrote the same register the TXA reads, the answer is yes. If it wrote anything else (a different register, a memory cell), the answer is no.</p>
+
+    <p>Skipped along the way: instructions that don't touch <code>N</code> or <code>Z</code> at all. SEC and CLC only affect carry. STA from A doesn't touch flags. PHA and PHP don't either. These pass through the scan without disturbing the search.</p>
+
+    <p>Stopped at: labels, branches, jumps, calls, prologues. These are control-flow joins or opaque sequences. Crossing one means the most-recent-flag-setter could be different on different predecessors; the scan bails rather than reason cross-block. (A more aggressive version of this could do per-predecessor analysis like <code>redundant_load</code> does, but the within-block version catches the common shape and that was enough for the corpus.)</p>
+
+    <p>The scan body looks like this:</p>
+
+<pre><code>j = i - 1
+while j &gt;= 0:
+    prev = instrs[j]
+    if isinstance(prev, (Label, Jump, Branch, Ret, Return,
+                         Call, FunctionPrologue, AllocateStack,
+                         LoadAddress)):
+        return False
+    if not sets_flags(prev):
+        j -= 1
+        continue
+    <span class="hl">return _writes_reg_setting_n_z(prev, src_reg_type)</span>
+return False
+</code></pre>
+
+    <p>The first non-neutral instruction we hit decides it. The most recent flag-setter is the one that produced the current <code>N</code> / <code>Z</code>; nothing else matters.</p>
+
+    <p><code>_writes_reg_setting_n_z</code> enumerates the 6502 register-writing ops that set flags from the new register value — every one except TXS, which c6502 doesn't model. LDA / LDX / LDY, TAX / TAY / TXA / TYA, INX / INY / DEX / DEY, ADC / SBC / AND / ORA / EOR (always on A), ASL / LSR / ROL / ROR on a register, PLA / PLX / PLY. Each writes one of A / X / Y and sets <code>N</code> + <code>Z</code> off the new value. If the dst register matches the source register the TXA reads, the flags reflect that register's value.</p>
+
+    <p>For the motivating shape — <code>LDX beam_snd_ctr; TXA; BMI .L</code> — the scan walks one step back from the TXA, finds the LDX, asks "does this write register X with N/Z reflecting the new value?", gets yes, and the TXA drops.</p>
+
+    </section>
+
+    <section id="cascade">
+    <h2>Why not extend redundant_load</h2>
+
+    <p>There's another pass that already has a lot of the machinery for this kind of reasoning. <code>apply_redundant_load_elimination</code> tracks which operand each of A / X / Y currently mirrors, runs a CFG-wide must-availability dataflow to propagate the tracking across blocks, and uses a <code>z_reflects</code> list to remember which operands' zeroness the <code>Z</code> flag is currently set from. Dropping a TXA when <code>z_reflects</code> intersects X's tracked operands would have been a natural addition there.</p>
+
+    <p>It would also have been wrong, in a way that took some tracing to convince myself of.</p>
+
+    <p>redundant_load's drop check for a register-to-register Mov requires both the source register and the destination register to currently mirror something <em>and</em> share at least one operand. The reasoning is "both registers hold the same value already, so the transfer wouldn't change dst". That's true for the original <code>LDA M; TAX; TXA</code> case — A and X both mirror M, the TXA is a no-op.</p>
+
+    <p>The new TXA-after-LDX case is structurally different. The destination register A doesn't currently mirror anything we can prove equal to X — A's contents are unrelated noise from before the LDX. The drop has to fire for a different reason: "dst is dead, so dst's new value doesn't matter".</p>
+
+    <p>The problem with stitching that into redundant_load is the dataflow. redundant_load computes its <code>in_state[block]</code> map once per call, walking the CFG until the must-availability lattice stabilizes. Then it walks the IR with that map and drops things based on the per-instruction state.</p>
+
+    <p>When it drops a TXA via the existing "src and dst mirror the same" reason, the dataflow stays correct — the dropped Mov was provably a no-op on the register state, so removing it doesn't change <code>state.a</code>'s post-Mov contents. The pre-computed <code>in_state[B]</code> for the successor block still matches the IR being walked.</p>
+
+    <p>If we added a "drop when dst dead" branch, that invariant breaks. Consider:</p>
+
+<pre><code><span class="asm-mnem">LDX</span>   M           <span class="asm-comment">; X = M, flags = N/Z(M)</span>
+<span class="asm-mnem">TXA</span>               <span class="asm-comment">; A = X = M, flags unchanged in value</span>
+<span class="asm-mnem">BMI</span>   .if_end
+<span class="asm-mnem">TXA</span>               <span class="asm-comment">; A = X = M (still — reason A would drop this)</span>
+<span class="asm-mnem">TXA</span>               <span class="asm-comment">; A = X = M (also reason A)</span>
+<span class="asm-mnem">SEC</span>
+<span class="asm-mnem">SBC</span>   #$01        <span class="asm-comment">; reads A, computes A - 1</span>
+<span class="asm-mnem">STA</span>   M
+.if_end:
+<span class="asm-mnem">RTS</span>
+</code></pre>
+
+    <p>The dataflow computes <code>in_state[fallthrough_block]</code> as <code>A = [M], X = [M]</code> — because the first TXA executed, putting M into A. The two interior TXAs see <code>state.a = state.x = [M]</code>, share an operand, and drop by reason A. The SBC reads the A-mirror that the first TXA put there.</p>
+
+    <p>If we also dropped the first TXA via "A is dead at i+1" (because the next interior TXA kills A), the dataflow lies. <code>in_state[fallthrough_block]</code> still says <code>A = [M]</code>, but the actual machine state has A holding whatever was in A before the LDX — garbage. The interior TXAs still drop. The SBC reads garbage. The program is broken.</p>
+
+    <p>The fix would be to re-run the dataflow after each drop, which is expensive, or to drop in a smaller, simpler pass that has no precomputed dataflow to invalidate. dead_a_arith is exactly that — per-instruction, no cross-block analysis, iterates locally. Adding the new reason there composes cleanly with redundant_load's reason-A drops: redundant_load runs first and removes the interior duplicates (its dataflow sees the original shape, correctly), then dead_a_arith runs and looks at the now-bare first TXA. Without the interior TXAs to "kill" A on the fall-through, A is now live there (the SBC reads it), and dead_a_arith correctly leaves the first TXA alone in that program.</p>
+
+    <p>For the beam_target_tick shape, where the fall-through after the BMI is <code>LDA beam_jingle,X; STA local</code> — A genuinely killed by a load whose target IS used — the first TXA drops as intended.</p>
+
+    <div class="callout">
+      <div class="tag">Architecture</div>
+      <p>Passes that precompute analysis state once per call (dataflow, dominators, liveness) are fragile to in-sweep mutations that would have changed the analysis. Drop-by-deadness extensions belong in passes that operate per-instruction with no precomputed state to invalidate, even when the more-capable pass has tempting infrastructure.</p>
+    </div>
+
+    </section>
+
+    <section id="pattern2">
+    <h2>The second TXA, which stays</h2>
+
+    <p>Further down the same function, there's a similar-looking shape that the new check deliberately does not fire on:</p>
+
+<pre><code>.if_end@0:
+<span class="asm-mnem">LDX</span>   beam_state
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">BPL</span>   .if_end@1
+<span class="asm-mnem">AND</span>   #$0F
+<span class="asm-mnem">TAX</span>
+<span class="asm-mnem">LDA</span>   floor_y_table,X
+...
+</code></pre>
+
+    <p>Same recipe: LDX, TXA, branch on N. But the fall-through after BPL is <code>AND #$0F</code>, which reads A. A is live, dead_a_arith correctly leaves this TXA alone.</p>
+
+    <p>The TXA still <em>looks</em> pointless — it's only between the LDX and the branch to set flags the LDX already set. The flag part is redundant; the A-load part is needed for the AND on the fall-through. The optimal transformation would be to sink the TXA <em>past</em> the BPL onto the fall-through path:</p>
+
+<pre><code><span class="asm-mnem">LDX</span>   beam_state
+<span class="asm-mnem">BPL</span>   .if_end@1   <span class="asm-comment">; uses N from LDX directly</span>
+<span class="asm-mnem">TXA</span>               <span class="asm-comment">; only needed on this path, for the AND</span>
+<span class="asm-mnem">AND</span>   #$0F
+...
+</code></pre>
+
+    <p>That's a different transformation though — branch-sinking with per-path liveness — and the cost-benefit is small (1 byte, 2 cycles per call site at most, only on the branch-not-taken path). For now this TXA stays. The general "drop-when-dead" generalization landed; the path-sensitive sink is a different pass that hasn't been built.</p>
+
+    </section>
+
+    <section id="tests">
+    <h2>A test that cascade-dropped itself</h2>
+
+    <p>The new check needed unit tests. I wrote what I thought was a clean fixture for the headline case:</p>
+
+<pre><code>instrs = [
+    Mov(src=M, dst=Reg(X)),                  <span class="asm-comment"># LDX M</span>
+    Mov(src=Reg(X), dst=Reg(A)),             <span class="asm-comment"># TXA — should drop</span>
+    Branch(cond=MI(), target=".L"),
+    Mov(src=other, dst=Reg(A)),              <span class="asm-comment"># LDA other — "kill A"</span>
+    Label(name=".L"),
+    Return(save_a=False),
+]
+out = _rewritten(instrs)
+self.assertEqual(len(out), 5)
+</code></pre>
+
+    <p>The <code>LDA other</code> was padding — meant to give the CFG walker a reason to declare A dead at the TXA's position. The TXA should drop; the LDA should stay; the result should be 5 instructions.</p>
+
+    <p>The result was 4.</p>
+
+    <p>The fixture forgot that dead_a_arith iterates locally to a fixed point in a single call. Round 1 dropped the TXA, as designed. Round 2 looked at the <code>LDA other</code> and noticed that A is dead after it (the Label leads to a save_a=False Return; no observer for A). flags_dead_at returned True for the same reason — no Branch reads the flags before the Return. <code>LDA other</code> satisfied the pass's drop criteria perfectly and was dropped.</p>
+
+    <p>The fix to the test was a single extra atom: a <code>STA dst</code> after the LDA, giving the loaded value a real consumer.</p>
+
+<pre><code>    Mov(src=other, dst=Reg(A)),              <span class="asm-comment"># LDA other</span>
+    <span class="add-line">Mov(src=Reg(A), dst=dst),                </span><span class="asm-comment"># STA dst — observes A</span>
+    Label(name=".L"),
+</code></pre>
+
+    <p>With the STA, the LDA's effect is observable, dead_a_arith leaves it alone, and the length assertion lands at 6. Every padding atom in every test for this pattern needed the same treatment.</p>
+
+    <div class="callout win">
+      <div class="tag">Lesson</div>
+      <p>Padding atoms in peephole tests need real consumers. An LDA used as "A-kill so the pass declares A dead at the SUT" is itself eligible for the same drop the SUT is — once the SUT goes, A becomes dead after the LDA too, and the LDA cascades out. Pair every load with a store.</p>
+    </div>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p>Three things, roughly ordered from most concrete to most general:</p>
+
+    <p><strong>1. "Dead" and "redundant" are different soundness arguments.</strong> A peephole's drop check often phrases the question as "is the side effect observable?" — and then conflates "observable" with "dead". The two are usually the same for arithmetic ops whose output is a fresh value, but for transfer ops (TXA, TYA, TAX, TAY, and the moral equivalents in any other ISA) the flag side-effect is a function of an existing register, and "the current flag state already reflects that register" is a separate, parallel reason for the side-effect to be moot. Code-generators that produce TXA-before-Bxx shapes (and there are several paths that produce them in c6502 — sign-checks on chars, comparisons folded into branches, post-load tests) get the extra collapse for free once the pass knows to ask the second question.</p>
+
+    <p><strong>2. Architecture matters in <em>where</em> a fix goes.</strong> redundant_load had the prettier machinery — <code>z_reflects</code> tracks exactly this kind of "flag reflects an operand" relationship, with a CFG-wide dataflow that would catch cross-block cases the in-block scan misses. But its dataflow is a precomputed map, and the soundness of its existing drops depends on the IR not changing under it. Adding a drop reason that does change the IR (in a way the dataflow can't predict) breaks the contract for every other drop in the same sweep. dead_a_arith, the smaller per-instruction pass with no precomputed analysis, is the safer home — even though the in-block backward scan is a less powerful version of what z_reflects already does.</p>
+
+    <p><strong>3. Test padding cascades the same way the SUT does.</strong> When a peephole iterates to a fixed point, atoms used as scaffolding (loads to "kill" registers, stores to "observe" memory) are subject to the pass's own drop rules. The reflex of "throw an LDA in there to mark A as dead at the SUT" sets up a cascade: drop the SUT, now the LDA's effect is unobservable, drop the LDA, now the length assert fails by one. The fix is to give every padding atom a real consumer that survives independently — the same hygiene that makes a peephole correct on real code is what makes it ergonomic to test.</p>
+
+    <p>The win on this specific example is small — one TXA per call to beam_target_tick, 1 byte and 2 cycles. The interesting part isn't the numbers; it's that the check now exists at all, and applies anywhere in the corpus where a code-generator path emits a sign-or-zero-check sequence as <code>LDX; TXA; Bxx</code> without realizing the LDX already paid for the flag set. Several other examples in the corpus have similar shapes that this pass now handles silently.</p>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

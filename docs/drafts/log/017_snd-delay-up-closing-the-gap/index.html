@@ -2,35 +2,423 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>snd_delay_up: closing the gap to hand-written</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: Georgia, serif; max-width: 760px; margin: 2em auto; padding: 0 1em; line-height: 1.55; color: #222; }
-  h1 { font-size: 1.8em; margin-bottom: 0.2em; }
-  h2 { font-size: 1.3em; margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.2em; }
-  h3 { font-size: 1.1em; margin-top: 1.5em; }
-  pre, code { font-family: "Menlo", "Consolas", monospace; }
-  pre { background: #f6f6f6; padding: 0.8em 1em; overflow-x: auto; font-size: 0.85em; line-height: 1.45; border-left: 3px solid #ccc; }
-  code { font-size: 0.9em; background: #f0f0f0; padding: 0.1em 0.25em; border-radius: 2px; }
-  pre code { background: none; padding: 0; }
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
-  .compare pre { margin: 0; }
-  .compare .label { font-size: 0.85em; color: #666; margin-bottom: 0.3em; }
-  table { border-collapse: collapse; margin: 1em 0; font-size: 0.9em; }
-  th, td { border: 1px solid #ddd; padding: 0.4em 0.7em; text-align: left; }
-  th { background: #f0f0f0; }
-  td.savings { font-family: monospace; }
-  blockquote { border-left: 3px solid #888; margin-left: 0; padding-left: 1em; color: #555; }
-  .diagram { font-family: monospace; font-size: 0.85em; background: #fafafa; padding: 1em; border: 1px solid #ddd; white-space: pre; overflow-x: auto; }
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+
+  /* ---------- TOC ---------- */
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+    font-weight: 600;
+  }
+  aside.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: tocnum; }
+  aside.toc li { counter-increment: tocnum; margin: 0.35em 0; }
+  aside.toc li a {
+    color: var(--ink-soft);
+    text-decoration: none;
+    display: block;
+    padding: 0.15em 0;
+    border-radius: 3px;
+    transition: color 0.15s;
+  }
+  aside.toc li a::before {
+    content: counter(tocnum, decimal-leading-zero);
+    color: var(--ink-mute);
+    font-variant-numeric: tabular-nums;
+    margin-right: 0.6em;
+    font-size: 0.85em;
+  }
+  aside.toc li a:hover { color: var(--accent); }
+  aside.toc li a.active { color: var(--accent); font-weight: 500; }
+
+  /* ---------- Article ---------- */
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.74em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.6em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 1.25em;
+    margin: 0 0 1.5em;
+    line-height: 1.4;
+  }
+  .meta {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.84em;
+    color: var(--ink-mute);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.6em 0;
+    margin: 0 0 2.5em;
+    display: flex;
+    gap: 1.5em;
+    flex-wrap: wrap;
+  }
+  .meta span { display: inline-flex; align-items: center; gap: 0.4em; }
+  .meta strong { color: var(--ink-soft); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.6em;
+    margin: 2.6em 0 0.7em;
+    line-height: 1.2;
+    position: relative;
+    padding-left: 0;
+  }
+  h2 .step {
+    font-family: 'Inter', system-ui, sans-serif;
+    display: inline-block;
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-size: 0.55em;
+    font-weight: 600;
+    padding: 0.3em 0.7em;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-right: 0.7em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.2em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink-soft);
+  }
+  p { margin: 0.8em 0; }
+  a { color: var(--accent); }
+
+  /* ---------- Code ---------- */
+  pre, code {
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-variant-ligatures: none;
+  }
+  code {
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code);
+    border-radius: 8px;
+    padding: 1em 1.2em;
+    font-size: 0.78em;
+    line-height: 1.55;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    margin: 1.1em 0;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+
+  .asm-mnem { color: var(--asm-mnem); font-weight: 600; }
+  .asm-comment { color: var(--asm-comment); font-style: italic; }
+  .asm-num { color: var(--asm-num); }
+  .asm-label { color: var(--asm-label); font-weight: 500; }
+  .asm-reg { color: var(--asm-reg); font-weight: 500; }
+
+  pre .add-line { background: rgba(46,107,58,.10); display: inline-block; min-width: 100%; }
+  pre .del-line { background: rgba(160,74,38,.10); display: inline-block; min-width: 100%; text-decoration: line-through; text-decoration-color: rgba(160,74,38,.4); }
+  pre .hi-line  { background: var(--highlight); display: inline-block; min-width: 100%; }
+
+  /* ---------- Side-by-side compare ---------- */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1em;
+    margin: 1.2em 0;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .compare > div { min-width: 0; }
+  .compare pre { margin: 0; height: 100%; }
+  .compare .label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    margin-bottom: 0.4em;
+    font-weight: 600;
+  }
+  .compare .label.before { color: var(--accent); }
+  .compare .label.after { color: var(--good); }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  /* ---------- Stats row ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.8em;
+    margin: 1.2em 0;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 0.9em 1em;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .stat .num {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.9em;
+    color: var(--accent);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .lbl {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    margin-top: 0.4em;
+  }
+
+  /* ---------- Diagrams ---------- */
+  figure {
+    margin: 1.6em 0;
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 1.2em;
+    box-shadow: var(--shadow);
+  }
+  figure svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-soft);
+    text-align: center;
+    margin-top: 0.8em;
+    line-height: 1.5;
+  }
+  figcaption strong { color: var(--ink); }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+  hr.fancy.with-mark { position: relative; height: 24px; }
+  hr.fancy.with-mark::after {
+    content: "§";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg);
+    color: var(--ink-mute);
+    padding: 0 0.6em;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.2em;
+  }
 </style>
 </head>
 <body>
 
-<h1>snd_delay_up: closing the gap to hand-written</h1>
+<div class="layout">
 
-<p>A small Apple II sound-effects routine. The hand-written 6502 emits speaker
-clicks with a descending pitch, busy-looping for an inner delay between each
-click. Nine instructions in the body, eight of them load-bearing. The C
-source is straightforward:</p>
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#intro">The target</a></li>
+      <li><a href="#start">Where we started</a></li>
+      <li><a href="#opt1">Tail-jump merging</a></li>
+      <li><a href="#opt2">DEY for register volatiles</a></li>
+      <li><a href="#opt3">CMP for discarded reads</a></li>
+      <li><a href="#opt4">Loop-carried scalar to A</a></li>
+      <li><a href="#opt5">The last byte</a></li>
+      <li><a href="#landed">Where we landed</a></li>
+      <li><a href="#lessons">What the journey teaches</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #017</p>
+    <h1>snd_delay_up</h1>
+    <p class="subtitle">Closing the gap to hand-written 6502, five optimizations at a time.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Date</strong> 2026-05-20</span>
+      <span><strong>Target</strong> Apple II speaker click</span>
+      <span><strong>Result</strong> byte-identical body</span>
+    </div>
+
+    <!-- ============================================================
+         Hero diagram: register pinning map
+         ============================================================ -->
+    <figure>
+      <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Register pinning diagram showing pitch→A, clicks→X, y→Y">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#a04a26"/>
+          </marker>
+        </defs>
+        <!-- C source box -->
+        <rect x="20" y="20" width="280" height="180" rx="8" fill="#fbf8f1" stroke="#e3dccc"/>
+        <text x="40" y="45" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-weight="600" letter-spacing="1">C SOURCE</text>
+        <text x="40" y="80" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17">uint8_t <tspan font-weight="700" fill="#a04a26">pitch</tspan></text>
+        <text x="40" y="100" font-family="JetBrains Mono,monospace" font-size="11" fill="#5b5249">  <tspan fill="#7c2d12">__attribute__((reg("A")))</tspan></text>
+        <text x="40" y="130" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17">uint8_t <tspan font-weight="700" fill="#a04a26">clicks</tspan></text>
+        <text x="40" y="150" font-family="JetBrains Mono,monospace" font-size="11" fill="#5b5249">  <tspan fill="#7c2d12">__attribute__((reg("X")))</tspan></text>
+        <text x="40" y="180" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17">volatile uint8_t <tspan font-weight="700" fill="#a04a26">y</tspan></text>
+        <text x="40" y="200" font-family="JetBrains Mono,monospace" font-size="11" fill="#5b5249">  <tspan fill="#7c2d12">__attribute__((reg("Y")))</tspan></text>
+
+        <!-- Arrows -->
+        <path d="M 305 90 L 425 70" stroke="#a04a26" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+        <path d="M 305 130 L 425 120" stroke="#a04a26" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+        <path d="M 305 180 L 425 170" stroke="#a04a26" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+        <!-- 6502 registers -->
+        <rect x="440" y="40" width="260" height="60" rx="8" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="460" y="65" font-family="Inter,sans-serif" font-size="11" fill="#a04a26" font-weight="700">6502 REGISTER A</text>
+        <text x="460" y="88" font-family="JetBrains Mono,monospace" font-size="13" fill="#1e1b17">accumulator — pitch lives here</text>
+
+        <rect x="440" y="105" width="260" height="38" rx="8" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="460" y="121" font-family="Inter,sans-serif" font-size="11" fill="#a04a26" font-weight="700">6502 REGISTER X</text>
+        <text x="460" y="137" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17">index — outer click counter</text>
+
+        <rect x="440" y="148" width="260" height="42" rx="8" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="460" y="165" font-family="Inter,sans-serif" font-size="11" fill="#a04a26" font-weight="700">6502 REGISTER Y</text>
+        <text x="460" y="181" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17">index — inner delay counter</text>
+      </svg>
+      <figcaption>Three <code>__attribute__((reg(...)))</code> annotations pin every variable in the function to a specific 6502 register. <strong>This post is about everything else the compiler had to do to honor that contract.</strong></figcaption>
+    </figure>
+
+    <!-- ============================================================
+         INTRO
+         ============================================================ -->
+    <section id="intro">
+
+    <p>A small Apple II sound-effects routine. The hand-written 6502 emits speaker clicks with a descending pitch, busy-looping for an inner delay between each click. Nine instructions in the body, eight of them load-bearing. The C source is straightforward:</p>
 
 <pre><code>void snd_delay_up(uint8_t pitch __attribute__((reg("A"))),
                   uint8_t clicks __attribute__((reg("X"))))
@@ -44,16 +432,11 @@ source is straightforward:</p>
 }
 </code></pre>
 
-<p>Two parameters and a local, each pinned to a specific 6502 register via
-<code>__attribute__((reg("..")))</code>. The local <code>y</code> is volatile —
-the inner delay loop must execute, even though nothing observes its result.
-The volatile read through <code>sfx_click_ptr</code> triggers the speaker
-click (it points at <code>$C030</code>, the speaker toggle soft-switch on
-the Apple II).</p>
+    <p>Two parameters and a local, each pinned to a specific 6502 register via <code>__attribute__((reg("..")))</code>. The local <code>y</code> is <em>volatile</em> — the inner delay loop must execute, even though nothing observes its result. The volatile read through <code>sfx_click_ptr</code> triggers the speaker click; it points at <code>$C030</code>, the speaker toggle soft-switch on the Apple II.</p>
 
-<p>The hand-written version of the same routine:</p>
+    <p>The hand-written version of the same routine is the goal:</p>
 
-<pre><code>SND_DELAY_UP:
+<pre data-lang="asm6502"><code>SND_DELAY_UP:
         TAY                             ; Y &lt;- current pitch
         CLC
         ADC #$01                        ; A &lt;- A + 1 (next pitch)
@@ -66,22 +449,22 @@ the Apple II).</p>
         RTS
 </code></pre>
 
-<p>Pitch lives in A across the entire loop. TAY copies the current pitch
-into Y for the inner delay; CLC+ADC #1 advances A to the next iteration's
-pitch. The inner loop is two instructions. The click uses CMP instead of
-LDA so A survives. Nine instructions total.</p>
+    <p>Pitch lives in A across the entire loop. <code>TAY</code> copies the current pitch into Y for the inner delay; <code>CLC+ADC #1</code> advances A to the next iteration's pitch. The inner loop is two instructions. The click uses <code>CMP</code> instead of <code>LDA</code> so A survives. Nine instructions total.</p>
 
-<p>This is what we're trying to match. The starting point — what the
-compiler emitted before any of this work began — was twenty-something
-instructions and a soft-stack frame. We'll walk through the five
-optimizations that closed the gap to byte-identity in the body.</p>
+    <p>This is what we're trying to match. The starting point — what the compiler emitted before any of this work began — was twenty-something instructions and a soft-stack frame. We'll walk through the five optimizations that closed the gap to byte-identity in the body.</p>
 
-<h2>Where we started</h2>
+    </section>
+    <hr class="fancy with-mark">
 
-<p>The first cut, right after <code>__attribute__((reg("..")))</code> landed
-end-to-end through the codegen, looked like this:</p>
+    <!-- ============================================================
+         STARTING POINT
+         ============================================================ -->
+    <section id="start">
+    <h2>Where we started</h2>
 
-<pre><code>snd_delay_up:
+    <p>The first cut, right after <code>__attribute__((reg("..")))</code> landed end-to-end through the codegen, looked like this:</p>
+
+<pre data-lang="asm6502"><code>snd_delay_up:
    STA   __zpabi_snd_delay_up__pitch      ; entry stub for A param
    STX   __zpabi_snd_delay_up__clicks     ; entry stub for X param
    STA   __local_snd_delay_up__pitch      ; body copy of pitch
@@ -110,67 +493,117 @@ end-to-end through the codegen, looked like this:</p>
    JMP   .loop@0_start
 </code></pre>
 
-<p>Twenty-three instructions in the body, plus the trampoline. The
-<code>reg("Y")</code> on the volatile local <code>y</code> wasn't
-honored — the local lived in a ZP slot, and <code>--y</code> compiled
-to a six-instruction read-modify-write through that slot. The
-<code>reg("X")</code>-passed <code>clicks</code> param lived in another
-ZP slot for the same reason. The reg attributes were recognized at the
-parser and the calling-convention level, but the body didn't take
-advantage of them.</p>
+    <div class="stats">
+      <div class="stat"><div class="num">23</div><div class="lbl">body instructions</div></div>
+      <div class="stat"><div class="num">6</div><div class="lbl">inner-loop instr</div></div>
+      <div class="stat"><div class="num">3</div><div class="lbl">ZP slots used</div></div>
+      <div class="stat"><div class="num">1</div><div class="lbl">trampoline</div></div>
+    </div>
 
-<p>Five optimizations later, the body would be ten instructions —
-identical to the hand-written version modulo the DPTR staging block.
-Each optimization was motivated by what was left over after the
-previous one, not designed up front.</p>
+    <p>Twenty-three instructions in the body, plus the trampoline. The <code>reg("Y")</code> on the volatile local <code>y</code> wasn't honored — the local lived in a ZP slot, and <code>--y</code> compiled to a six-instruction read-modify-write through that slot. The <code>reg("X")</code>-passed <code>clicks</code> param lived in another ZP slot for the same reason. The reg attributes were recognized at the parser and the calling-convention level, but the body didn't take advantage of them.</p>
 
-<h2>The first peephole: tail-jump merging</h2>
+    <p>Five optimizations later, the body would be ten instructions — identical to the hand-written version modulo the DPTR staging block. Each optimization was motivated by what was left over after the previous one, not designed up front.</p>
 
-<p>The trampoline at the bottom of the function caught my eye first
-because it's structural, not register-allocation-dependent. The
-compiler emits</p>
+    </section>
+    <hr class="fancy">
 
-<pre><code>BNE .snd_delay_up@asm_ssa_split@0
+    <!-- ============================================================
+         OPT 1: TAIL JUMP
+         ============================================================ -->
+    <section id="opt1">
+    <h2><span class="step">Opt 1</span>The first peephole: tail-jump merging</h2>
+
+    <p>The trampoline at the bottom of the function caught my eye first because it's structural, not register-allocation-dependent. The compiler emits</p>
+
+<pre data-lang="asm6502"><code>BNE .snd_delay_up@asm_ssa_split@0
 RTS
 .snd_delay_up@asm_ssa_split@0:
 JMP .loop@0_start
 </code></pre>
 
-<p>where the hand-written has just</p>
+    <p>where the hand-written has just</p>
 
-<pre><code>BNE SND_DELAY_UP
+<pre data-lang="asm6502"><code>BNE SND_DELAY_UP
 RTS
 </code></pre>
 
-<p>The shape <code>Branch(cond, L); X; L: Jump(T)</code> can always be
-rewritten to <code>Branch(cond, T); X</code> — branch directly to T
-instead of branching to a trampoline that jumps to T. When L has only
-the one reference (this Branch) AND the preceding instruction X is a
-control-flow terminator (Return / Jump / another Ret), the trampoline
-itself becomes dead and can be dropped along with its Label.</p>
+    <figure>
+      <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Trampoline before-and-after CFG">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#5b5249"/>
+          </marker>
+          <marker id="arrow2g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#2e6b3a"/>
+          </marker>
+        </defs>
 
-<p>The "terminator before the Label" check matters. Without it, the
-fall-through path from above the Label would have flowed into the
-Jump, and dropping the Jump would change semantics. <code>RTS</code>
-terminates, so in our case the trampoline is unreachable after the
-retarget.</p>
+        <!-- BEFORE -->
+        <text x="20" y="25" font-family="Inter,sans-serif" font-size="12" fill="#a04a26" font-weight="700" letter-spacing="1">BEFORE</text>
 
-<p>A first attempt dropped the trampoline whenever the Label's
-reference count went to zero, with no terminator check. That broke
-forty-five tests across the chapter corpus — functions where the Label
-sat between two reachable basic blocks, and the "orphan" Jump was
-actually reached by fall-through from above. The terminator gate
-killed the regressions without losing the snd_delay_up win.</p>
+        <rect x="20" y="40" width="160" height="38" rx="6" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="100" y="63" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#1e1b17">BNE L</text>
 
-<h2>The inner loop: DEY for register-pinned volatile counters</h2>
+        <rect x="20" y="100" width="160" height="38" rx="6" fill="#fbf8f1" stroke="#e3dccc"/>
+        <text x="100" y="123" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#1e1b17">RTS</text>
 
-<p>The biggest cycle savings hide in the inner delay. The compiler
-emits six instructions per iteration for what should be two:</p>
+        <rect x="20" y="160" width="160" height="38" rx="6" fill="#fbe9dc" stroke="#d97757" stroke-dasharray="4,3"/>
+        <text x="100" y="178" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a04a26">L:</text>
+        <text x="100" y="192" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#1e1b17">JMP start</text>
 
-<div class="compare">
-  <div>
-    <div class="label">compiler (before)</div>
-    <pre><code>LDA __local_..._y
+        <!-- arrow: fall-through BNE -> RTS -->
+        <path d="M 100 78 L 100 100" stroke="#5b5249" stroke-width="1.5" fill="none" marker-end="url(#arrow2)"/>
+        <!-- arrow: BNE taken -> L -->
+        <path d="M 180 59 Q 230 59 230 179 Q 230 179 180 179" stroke="#5b5249" stroke-width="1.5" fill="none" marker-end="url(#arrow2)"/>
+        <!-- arrow: L -> start (off page) -->
+        <path d="M 180 179 L 260 179" stroke="#5b5249" stroke-width="1.5" fill="none" marker-end="url(#arrow2)"/>
+        <text x="262" y="183" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-style="italic">to .loop_start</text>
+
+        <!-- divider -->
+        <line x1="385" y1="30" x2="385" y2="220" stroke="#e3dccc" stroke-dasharray="3,3"/>
+
+        <!-- AFTER -->
+        <text x="430" y="25" font-family="Inter,sans-serif" font-size="12" fill="#2e6b3a" font-weight="700" letter-spacing="1">AFTER</text>
+
+        <rect x="430" y="40" width="160" height="38" rx="6" fill="#e1efd8" stroke="#2e6b3a"/>
+        <text x="510" y="63" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#1e1b17">BNE start</text>
+
+        <rect x="430" y="100" width="160" height="38" rx="6" fill="#fbf8f1" stroke="#e3dccc"/>
+        <text x="510" y="123" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#1e1b17">RTS</text>
+
+        <!-- arrow: fall-through BNE -> RTS -->
+        <path d="M 510 78 L 510 100" stroke="#2e6b3a" stroke-width="1.5" fill="none" marker-end="url(#arrow2g)"/>
+        <!-- arrow: BNE taken -> start (curves out) -->
+        <path d="M 590 59 Q 650 59 650 180 Q 650 230 510 230 Q 460 230 460 79" stroke="#2e6b3a" stroke-width="1.5" fill="none" marker-end="url(#arrow2g)"/>
+        <text x="600" y="200" font-family="Inter,sans-serif" font-size="11" fill="#2e6b3a" font-style="italic">direct</text>
+      </svg>
+      <figcaption>The trampoline label <code>L</code> has only one reference (the BNE), and the preceding RTS terminates control flow — so dropping the entire trampoline block is safe.</figcaption>
+    </figure>
+
+    <p>The shape <code>Branch(cond, L); X; L: Jump(T)</code> can always be rewritten to <code>Branch(cond, T); X</code> — branch directly to T instead of branching to a trampoline that jumps to T. When L has only the one reference (this Branch) AND the preceding instruction X is a control-flow terminator (Return / Jump / another Ret), the trampoline itself becomes dead and can be dropped along with its Label.</p>
+
+    <p>The "terminator before the Label" check matters. Without it, the fall-through path from above the Label would have flowed into the Jump, and dropping the Jump would change semantics. <code>RTS</code> terminates, so in our case the trampoline is unreachable after the retarget.</p>
+
+    <div class="callout">
+      <div class="tag">Failure mode</div>
+      <p>A first attempt dropped the trampoline whenever the Label's reference count went to zero, with no terminator check. That broke <strong>forty-five tests</strong> across the chapter corpus — functions where the Label sat between two reachable basic blocks, and the "orphan" Jump was actually reached by fall-through from above. The terminator gate killed the regressions without losing the snd_delay_up win.</p>
+    </div>
+
+    </section>
+    <hr class="fancy">
+
+    <!-- ============================================================
+         OPT 2: DEY for register volatiles
+         ============================================================ -->
+    <section id="opt2">
+    <h2><span class="step">Opt 2</span>The inner loop: DEY for register-pinned volatile counters</h2>
+
+    <p>The biggest cycle savings hide in the inner delay. The compiler emits six instructions per iteration for what should be two:</p>
+
+    <div class="compare">
+      <div>
+        <div class="label before">Compiler (before) — 6 instr / iter</div>
+<pre data-lang="asm6502"><code>LDA __local_..._y
 SEC
 SBC #$01
 STA __local_..._0
@@ -178,90 +611,127 @@ LDA __local_..._0
 STA __local_..._y
 BNE .loop@1_continue
 </code></pre>
-  </div>
-  <div>
-    <div class="label">hand-written</div>
-    <pre><code>DEY
+      </div>
+      <div>
+        <div class="label after">Hand-written — 2 instr / iter</div>
+<pre data-lang="asm6502"><code>DEY
 BNE .inner
 </code></pre>
-  </div>
-</div>
+      </div>
+    </div>
 
-<p>The compiler's six-instruction sequence is the natural lowering of
-<code>--y</code> when <code>y</code> is volatile-pinned to Y: read y
-(volatile), compute y-1, write y (volatile, routed through a temp by
-SSA destruction). The existing <code>dec_peephole</code> folds
-single-byte SBC-#1 chains on stable memory to <code>DEC</code>, but
-it conservatively skips register operands when the volatile bit is
-set — partly because volatile semantics generally require explicit
-memory accesses.</p>
+    <figure>
+      <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Inner loop cycle cost comparison">
+        <text x="20" y="25" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-weight="600" letter-spacing="1">CYCLES PER ITERATION</text>
+        <text x="20" y="48" font-family="Inter,sans-serif" font-size="12" fill="#5b5249">Compiler before</text>
+        <rect x="160" y="38" width="468" height="18" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="640" y="52" font-family="JetBrains Mono,monospace" font-size="12" fill="#a04a26" font-weight="700">~18 cy</text>
 
-<p>For a register-pinned volatile, that defensiveness is too strong.
-The C standard requires each volatile access to execute "as if" it
-were a memory access. When the storage IS a register, the register
-access IS the access. <code>DEY</code> performs a single read-modify-
-write of Y in one instruction — exactly one volatile-observable read
-plus one volatile-observable write, matching what
-<code>--y</code> demands.</p>
+        <text x="20" y="78" font-family="Inter,sans-serif" font-size="12" fill="#5b5249">Hand-written</text>
+        <rect x="160" y="68" width="130" height="18" fill="#e1efd8" stroke="#2e6b3a"/>
+        <text x="298" y="82" font-family="JetBrains Mono,monospace" font-size="12" fill="#2e6b3a" font-weight="700">5 cy</text>
 
-<p>The new <code>dec_register_peephole</code> recognizes the six-
-instruction shape <code>Mov(R, A); SEC; Sub(Imm(1), A); Mov(A, tmp);
-Mov(tmp, R); Branch(NE|EQ, _)</code> when R is X or Y, and folds it to
-<code>Dec(R); Branch(NE|EQ, _)</code>. The soundness gates are:</p>
+        <text x="20" y="120" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-weight="600" letter-spacing="1">FULL INNER DELAY · pitch = 128</text>
+        <text x="20" y="143" font-family="Inter,sans-serif" font-size="12" fill="#5b5249">Compiler before</text>
+        <rect x="160" y="133" width="494" height="18" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="666" y="147" font-family="JetBrains Mono,monospace" font-size="12" fill="#a04a26" font-weight="700">~2.3k</text>
 
-<ul>
-  <li>R is X or Y (DEX or DEY).</li>
-  <li>A is dead at both successors of the Branch — DEC R doesn't
-    touch A, so the original sequence's A=y-1 result must be
-    unobserved.</li>
-  <li>The spill temp is dead after the rewrite — its only role was
-    to route the value through memory.</li>
-</ul>
+        <text x="20" y="173" font-family="Inter,sans-serif" font-size="12" fill="#5b5249">Hand-written</text>
+        <rect x="160" y="163" width="137" height="18" fill="#e1efd8" stroke="#2e6b3a"/>
+        <text x="305" y="177" font-family="JetBrains Mono,monospace" font-size="12" fill="#2e6b3a" font-weight="700">640 cy</text>
+      </svg>
+      <figcaption>For an outer call with <code>pitch=128</code>, the inner delay alone goes from roughly 2.3k cycles to 640 — a 3.5× shrink that dominates the call's wall-clock time.</figcaption>
+    </figure>
 
-<p>After this lands, the inner loop drops from 17 bytes to 5 bytes,
-from a measured ~14 cycles per iteration to 5. For a function called
-with pitch=128, that's the difference between 1800 cycles and 640
-cycles in the inner loop alone.</p>
+    <p>The compiler's six-instruction sequence is the natural lowering of <code>--y</code> when <code>y</code> is volatile-pinned to Y: read y (volatile), compute y−1, write y (volatile, routed through a temp by SSA destruction). The existing <code>dec_peephole</code> folds single-byte SBC-#1 chains on stable memory to <code>DEC</code>, but it conservatively skips register operands when the volatile bit is set — partly because volatile semantics generally require explicit memory accesses.</p>
 
-<h2>The volatile click: CMP for discarded reads</h2>
+    <p>For a register-pinned volatile, that defensiveness is too strong. The C standard requires each volatile access to execute "as if" it were a memory access. When the storage <em>is</em> a register, the register access <em>is</em> the access. <code>DEY</code> performs a single read-modify-write of Y in one instruction — exactly one volatile-observable read plus one volatile-observable write, matching what <code>--y</code> demands.</p>
 
-<p>The next thing standing in the way of A-pinning is the volatile
-click. The compiler emits <code>LDA (DPTR),Y</code> for
-<code>(void)*sfx_click_ptr</code>. The LDA performs the volatile
-read, but it also clobbers A — destroying whatever value pitch had
-been kept in.</p>
+    <p>The new <code>dec_register_peephole</code> recognizes the six-instruction shape <code>Mov(R, A); SEC; Sub(Imm(1), A); Mov(A, tmp); Mov(tmp, R); Branch(NE|EQ, _)</code> when R is X or Y, and folds it to <code>Dec(R); Branch(NE|EQ, _)</code>. The soundness gates are:</p>
 
-<p>The hand-written version uses <code>CMP (DPTR),Y</code> instead.
-CMP performs the same memory read (same volatile semantics), but
-only sets flags — A is unchanged. When the loaded value is discarded
-(as it is here, since the C code is <code>(void)*ptr</code>) AND the
-flags from the load aren't observed downstream, CMP and LDA are
-interchangeable for the read's side effect.</p>
+    <ul>
+      <li><strong>R is X or Y</strong> (DEX or DEY).</li>
+      <li><strong>A is dead at both successors of the Branch</strong> — DEC R doesn't touch A, so the original sequence's <code>A = y-1</code> result must be unobserved.</li>
+      <li><strong>The spill temp is dead after the rewrite</strong> — its only role was to route the value through memory.</li>
+    </ul>
 
-<p>The new <code>volatile_void_read_cmp</code> peephole matches</p>
+    <div class="callout win">
+      <div class="tag">Result</div>
+      <p>After this lands, the inner loop drops from <strong>17 bytes to 5 bytes</strong>, from a measured ~14 cycles per iteration to 5. For a function called with <code>pitch=128</code>, that's the difference between ~1800 cycles and 640 cycles in the inner loop alone.</p>
+    </div>
 
-<pre><code>Mov(&lt;indirect&gt;, Reg(A), is_volatile=True)
+    </section>
+    <hr class="fancy">
+
+    <!-- ============================================================
+         OPT 3: CMP for discarded reads
+         ============================================================ -->
+    <section id="opt3">
+    <h2><span class="step">Opt 3</span>The volatile click: CMP for discarded reads</h2>
+
+    <p>The next thing standing in the way of A-pinning is the volatile click. The compiler emits <code>LDA (DPTR),Y</code> for <code>(void)*sfx_click_ptr</code>. The LDA performs the volatile read, but it also clobbers A — destroying whatever value pitch had been kept in.</p>
+
+    <p>The hand-written version uses <code>CMP (DPTR),Y</code> instead. CMP performs the same memory read (same volatile semantics), but only sets flags — A is unchanged. When the loaded value is discarded (as it is here, since the C code is <code>(void)*ptr</code>) AND the flags from the load aren't observed downstream, CMP and LDA are interchangeable for the read's side effect.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LDA vs CMP for a discarded volatile read">
+        <!-- header -->
+        <text x="20" y="22" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-weight="600" letter-spacing="1">EFFECTS</text>
+        <text x="220" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#a04a26" font-weight="700">LDA (DPTR),Y</text>
+        <text x="500" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#2e6b3a" font-weight="700">CMP (DPTR),Y</text>
+
+        <!-- row: memory read -->
+        <text x="30" y="60" font-family="Inter,sans-serif" font-size="13" fill="#1e1b17">Memory read</text>
+        <text x="220" y="60" text-anchor="middle" font-family="Inter,sans-serif" font-size="20" fill="#2e6b3a">✓</text>
+        <text x="500" y="60" text-anchor="middle" font-family="Inter,sans-serif" font-size="20" fill="#2e6b3a">✓</text>
+
+        <line x1="20" y1="74" x2="700" y2="74" stroke="#e3dccc"/>
+
+        <!-- row: volatile observable -->
+        <text x="30" y="100" font-family="Inter,sans-serif" font-size="13" fill="#1e1b17">Volatile observable</text>
+        <text x="220" y="100" text-anchor="middle" font-family="Inter,sans-serif" font-size="20" fill="#2e6b3a">✓</text>
+        <text x="500" y="100" text-anchor="middle" font-family="Inter,sans-serif" font-size="20" fill="#2e6b3a">✓</text>
+
+        <line x1="20" y1="114" x2="700" y2="114" stroke="#e3dccc"/>
+
+        <!-- row: A clobbered -->
+        <text x="30" y="140" font-family="Inter,sans-serif" font-size="13" fill="#1e1b17">A clobbered</text>
+        <text x="220" y="140" text-anchor="middle" font-family="Inter,sans-serif" font-size="20" fill="#a04a26">✗ yes</text>
+        <text x="500" y="140" text-anchor="middle" font-family="Inter,sans-serif" font-size="20" fill="#2e6b3a">— no</text>
+
+        <line x1="20" y1="154" x2="700" y2="154" stroke="#e3dccc"/>
+
+        <!-- row: N/Z flags -->
+        <text x="30" y="180" font-family="Inter,sans-serif" font-size="13" fill="#1e1b17">N/Z flags</text>
+        <text x="220" y="180" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#5b5249">based on byte</text>
+        <text x="500" y="180" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#5b5249">based on A − byte</text>
+
+        <text x="360" y="210" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-style="italic">Both instructions trigger the speaker. Only CMP preserves the accumulator.</text>
+      </svg>
+      <figcaption>The volatile read is for the side-effect, not the value. <code>CMP</code> reads memory exactly like <code>LDA</code> but throws away the byte instead of stashing it in A.</figcaption>
+    </figure>
+
+    <p>The new <code>volatile_void_read_cmp</code> peephole matches</p>
+
+<pre data-lang="asm6502"><code>Mov(&lt;indirect&gt;, Reg(A), is_volatile=True)
 </code></pre>
 
-<p>and rewrites to <code>Compare(Reg(A), &lt;indirect&gt;)</code>
-when A is dead after the Mov and the next instruction overwrites N/Z
-(so the Compare's flag effect is unobservable). The flag check
-matters because LDA sets N/Z based on the loaded byte while CMP sets
-them based on <code>A - byte</code> — different values when A and the
-loaded byte differ. The next instruction in our case is
-<code>DEX</code>, which clobbers N/Z; the rewrite is safe.</p>
+    <p>and rewrites to <code>Compare(Reg(A), &lt;indirect&gt;)</code> when A is dead after the Mov and the next instruction overwrites N/Z (so the Compare's flag effect is unobservable). The flag check matters because LDA sets N/Z based on the loaded byte while CMP sets them based on <code>A − byte</code> — different values when A and the loaded byte differ. The next instruction in our case is <code>DEX</code>, which clobbers N/Z; the rewrite is safe.</p>
 
-<p>This rewrite alone is a small win (A is preserved across the click)
-but it unlocks the next bigger optimization.</p>
+    <p>This rewrite alone is a small win (A is preserved across the click) but it unlocks the next bigger optimization.</p>
 
-<h2>The big one: loop-carried scalar promotion to A</h2>
+    </section>
+    <hr class="fancy">
 
-<p>With CMP-for-discarded-read in place, A survives the click. With
-<code>DEY; BNE</code> in the inner loop, A isn't touched in the inner
-delay either. The body, after the two prior optimizations, looks like
-this:</p>
+    <!-- ============================================================
+         OPT 4: Loop-carried scalar to A
+         ============================================================ -->
+    <section id="opt4">
+    <h2><span class="step">Opt 4</span>The big one: loop-carried scalar promotion to A</h2>
 
-<pre><code>snd_delay_up:
+    <p>With CMP-for-discarded-read in place, A survives the click. With <code>DEY; BNE</code> in the inner loop, A isn't touched in the inner delay either. The body, after the two prior optimizations, looks like this:</p>
+
+<pre data-lang="asm6502"><code>snd_delay_up:
    STA __local_..._pitch         ; save A to local
    ; DPTR staging clobbers A here
 .loop@0_start:
@@ -277,94 +747,109 @@ this:</p>
    RTS
 </code></pre>
 
-<p>The local <code>__local_..._pitch</code> serves only as a "pitch
-register" — written at function entry from A, read at the top of
-each iteration into Y, then incremented in place. Nothing outside
-the function observes it, and nothing inside the function reads it
-besides those two sites. If A is free in the loop body (and it now
-is), the local can be promoted to A:</p>
+    <p>The local <code>__local_..._pitch</code> serves only as a "pitch register" — written at function entry from A, read at the top of each iteration into Y, then incremented in place. Nothing outside the function observes it, and nothing inside the function reads it besides those two sites. If A is free in the loop body (and it now is), the local can be promoted to A:</p>
 
-<ul>
-  <li><strong>Entry STA</strong>: replace with <code>TAY</code> —
-    park pitch in Y while the DPTR staging clobbers A.</li>
-  <li><strong>End of preamble</strong>: insert <code>TYA</code> —
-    restore pitch to A just before the loop starts.</li>
-  <li><strong>In-loop LDY M</strong>: replace with <code>TAY</code>
-    (Y = pitch).</li>
-  <li><strong>In-loop INC M</strong>: replace with <code>CLC; ADC
-    #$01</code> (A = pitch + 1, ready to carry across the loop edge
-    into the next iteration's <code>TAY</code>).</li>
-  <li>The local disappears entirely.</li>
-</ul>
+    <figure>
+      <svg viewBox="0 0 720 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Loop-carried scalar promotion to A">
+        <!-- Before column -->
+        <text x="20" y="22" font-family="Inter,sans-serif" font-size="12" fill="#a04a26" font-weight="700" letter-spacing="1">BEFORE</text>
+        <rect x="20" y="34" width="300" height="240" rx="6" fill="#fbe9dc" stroke="#d97757"/>
+        <text x="35" y="58" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">STA</tspan> __local_..._pitch</text>
+        <text x="35" y="78" font-family="JetBrains Mono,monospace" font-size="11" fill="#8a8378" font-style="italic">; DPTR staging</text>
+        <text x="35" y="105" font-family="JetBrains Mono,monospace" font-size="12" fill="#6b4a17">.loop_start:</text>
+        <text x="50" y="125" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">LDY</tspan> __local_..._pitch</text>
+        <text x="50" y="145" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">INC</tspan> __local_..._pitch</text>
+        <text x="35" y="170" font-family="JetBrains Mono,monospace" font-size="12" fill="#6b4a17">.inner:</text>
+        <text x="50" y="190" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">DEY</tspan></text>
+        <text x="50" y="210" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">BNE</tspan> .inner</text>
+        <text x="50" y="230" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">CMP</tspan> (DPTR),Y</text>
+        <text x="50" y="250" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">DEX</tspan></text>
+        <text x="50" y="270" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">BNE</tspan> .loop_start</text>
 
-<p>This is scalar promotion of a loop-carried memory cell to a
-register — the same family as <code>loop_counter_to_x</code> (which
-does it for X-pinned counters), but for A and with a specific
-trigger pattern (entry STA + in-loop LDY/INC).</p>
+        <!-- arrow -->
+        <text x="360" y="158" font-family="Inter,sans-serif" font-size="28" fill="#a04a26">→</text>
 
-<p>The new <code>promote_loop_carried_to_a</code> pass walks each
-function looking for this exact shape. The eligibility gates are
-strict: exactly one entry STA from <code>Reg(A)</code> to a
-<code>__local_&lt;fn&gt;__*</code> slot, exactly one
-<code>LDY M; Inc(M)</code> pair, the slot has no other access sites,
-Y is unused across the preamble (so the parked value survives), and
-A is unwritten between the in-loop INC site and the back-edge Branch
-(allowing only CMP-with-dead-flags as an A-read in that region).</p>
+        <!-- After column -->
+        <text x="400" y="22" font-family="Inter,sans-serif" font-size="12" fill="#2e6b3a" font-weight="700" letter-spacing="1">AFTER</text>
+        <rect x="400" y="34" width="300" height="240" rx="6" fill="#e1efd8" stroke="#2e6b3a"/>
+        <text x="415" y="58" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#2e6b3a">TAY</tspan><tspan fill="#8a8378" font-style="italic">              ; park pitch in Y</tspan></text>
+        <text x="415" y="78" font-family="JetBrains Mono,monospace" font-size="11" fill="#8a8378" font-style="italic">; DPTR staging</text>
+        <text x="415" y="98" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#2e6b3a">TYA</tspan><tspan fill="#8a8378" font-style="italic">              ; restore pitch</tspan></text>
+        <text x="415" y="125" font-family="JetBrains Mono,monospace" font-size="12" fill="#6b4a17">.loop_start:</text>
+        <text x="430" y="145" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#2e6b3a">TAY</tspan></text>
+        <text x="430" y="165" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#2e6b3a">CLC</tspan> <tspan font-weight="600" fill="#2e6b3a">/</tspan> <tspan font-weight="600" fill="#2e6b3a">ADC #$01</tspan></text>
+        <text x="415" y="190" font-family="JetBrains Mono,monospace" font-size="12" fill="#6b4a17">.inner:</text>
+        <text x="430" y="210" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">DEY</tspan></text>
+        <text x="430" y="230" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">BNE</tspan> .inner</text>
+        <text x="430" y="250" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">CMP</tspan> (DPTR),Y / <tspan font-weight="600" fill="#7c2d12">DEX</tspan></text>
+        <text x="430" y="270" font-family="JetBrains Mono,monospace" font-size="12" fill="#1e1b17"><tspan font-weight="600" fill="#7c2d12">BNE</tspan> .loop_start</text>
+      </svg>
+      <figcaption>The local <code>__local_..._pitch</code> disappears entirely. Pitch lives in <strong>A</strong> across the loop edge — <code>ADC #$01</code> at the bottom of one iteration feeds the <code>TAY</code> at the top of the next.</figcaption>
+    </figure>
 
-<p>The pass also has to deal with the SSA name layering. A Pseudo's
-name at this point may carry two stacked suffixes:
-<code>@1.pitch</code> becomes <code>@1.pitch.2</code> (TAC-SSA's
-def counter) and then <code>@1.pitch.2.b0.v3</code> (asm-SSA's
-byte+version suffix). Recovering the c99-level base name requires
-stripping both. The first attempt at the SSA-name-matching helper
-stripped only the asm-SSA suffix; pins for the resulting
-<code>@1.pitch.2</code>-rooted names never matched the
-<code>@1.pitch</code>-keyed pin map, and the pass silently did
-nothing.</p>
+    <ul>
+      <li><strong>Entry STA</strong>: replace with <code>TAY</code> — park pitch in Y while the DPTR staging clobbers A.</li>
+      <li><strong>End of preamble</strong>: insert <code>TYA</code> — restore pitch to A just before the loop starts.</li>
+      <li><strong>In-loop LDY M</strong>: replace with <code>TAY</code> (Y = pitch).</li>
+      <li><strong>In-loop INC M</strong>: replace with <code>CLC; ADC #$01</code> (A = pitch + 1, ready to carry across the loop edge into the next iteration's <code>TAY</code>).</li>
+      <li>The local disappears entirely.</li>
+    </ul>
 
-<h2>The last byte: dropping a redundant LDY</h2>
+    <p>This is scalar promotion of a loop-carried memory cell to a register — the same family as <code>loop_counter_to_x</code> (which does it for X-pinned counters), but for A and with a specific trigger pattern (entry STA + in-loop LDY/INC).</p>
 
-<p>After the four prior optimizations, one small wart remained:</p>
+    <p>The new <code>promote_loop_carried_to_a</code> pass walks each function looking for this exact shape. The eligibility gates are strict: exactly one entry STA from <code>Reg(A)</code> to a <code>__local_&lt;fn&gt;__*</code> slot, exactly one <code>LDY M; Inc(M)</code> pair, the slot has no other access sites, Y is unused across the preamble (so the parked value survives), and A is unwritten between the in-loop INC site and the back-edge Branch (allowing only CMP-with-dead-flags as an A-read in that region).</p>
 
-<pre><code>.loop@1_continue:
+    <div class="callout">
+      <div class="tag">Subtle bug</div>
+      <p>The pass also has to deal with the <strong>SSA name layering</strong>. A Pseudo's name at this point may carry two stacked suffixes: <code>@1.pitch</code> becomes <code>@1.pitch.2</code> (TAC-SSA's def counter) and then <code>@1.pitch.2.b0.v3</code> (asm-SSA's byte+version suffix). Recovering the c99-level base name requires stripping both. The first attempt at the SSA-name-matching helper stripped only the asm-SSA suffix; pins for the resulting <code>@1.pitch.2</code>-rooted names never matched the <code>@1.pitch</code>-keyed pin map, and the pass silently did nothing.</p>
+    </div>
+
+    </section>
+    <hr class="fancy">
+
+    <!-- ============================================================
+         OPT 5: The last byte
+         ============================================================ -->
+    <section id="opt5">
+    <h2><span class="step">Opt 5</span>The last byte: dropping a redundant LDY</h2>
+
+    <p>After the four prior optimizations, one small wart remained:</p>
+
+<pre data-lang="asm6502"><code>.loop@1_continue:
    DEY
    BNE .loop@1_continue
-   LDY #$00                       ← redundant, Y already 0
+<span class="del-line">   LDY #$00                       ; redundant — Y is already 0 here</span>
    CMP (DPTR),Y
 </code></pre>
 
-<p>The <code>DEY; BNE</code> fall-through has Y == 0 by definition
-(the BNE wouldn't have fallen through otherwise). The
-<code>LDY #$00</code> sets Y to a value it already holds. But the
-<code>LDY</code> isn't in the asm IR as a separate atom — it's
-emitted by <code>asm_emit</code> as setup for the
-<code>Indirect(0)</code> operand on the Compare. The IR is just
-<code>Compare(Reg(A), Indirect(0))</code>.</p>
+    <p>The <code>DEY; BNE</code> fall-through has Y == 0 by definition (the BNE wouldn't have fallen through otherwise). The <code>LDY #$00</code> sets Y to a value it already holds. But the <code>LDY</code> isn't in the asm IR as a separate atom — it's emitted by <code>asm_emit</code> as setup for the <code>Indirect(0)</code> operand on the Compare. The IR is just <code>Compare(Reg(A), Indirect(0))</code>.</p>
 
-<p>The fix isn't an IR-level peephole on the LDY (it doesn't exist
-yet) but an operand rewrite. The asm IR has two indirect-Y variants:
-<code>Indirect(offset)</code> emits <code>LDY #offset; &lt;op&gt;
-(DPTR),Y</code> (forces Y to the offset), and <code>IndirectY()</code>
-emits just <code>&lt;op&gt; (DPTR),Y</code> (uses Y as-is). When we
-know Y is already 0 at the access point, rewriting
-<code>Indirect(0)</code> to <code>IndirectY()</code> drops the
-emit-time LDY.</p>
+    <p>The fix isn't an IR-level peephole on the LDY (it doesn't exist yet) but an <em>operand rewrite</em>. The asm IR has two indirect-Y variants:</p>
 
-<p>The new <code>dec_branch_indirect_y_fold</code> peephole matches
-the specific three-instruction adjacency <code>Dec(Reg(Y));
-Branch(NE, _); &lt;op with Indirect(0)&gt;</code> and rewrites the
-<code>Indirect(0)</code> to <code>IndirectY()</code>. Two bytes and
-two cycles per call, the smallest of the wins but the one that
-finally makes the body byte-identical.</p>
+    <ul>
+      <li><code>Indirect(offset)</code> emits <code>LDY #offset; &lt;op&gt; (DPTR),Y</code> (forces Y to the offset)</li>
+      <li><code>IndirectY()</code> emits just <code>&lt;op&gt; (DPTR),Y</code> (uses Y as-is)</li>
+    </ul>
 
-<h2>Where we landed</h2>
+    <p>When we know Y is already 0 at the access point, rewriting <code>Indirect(0)</code> to <code>IndirectY()</code> drops the emit-time LDY.</p>
 
-<p>After all five optimizations:</p>
+    <p>The new <code>dec_branch_indirect_y_fold</code> peephole matches the specific three-instruction adjacency <code>Dec(Reg(Y)); Branch(NE, _); &lt;op with Indirect(0)&gt;</code> and rewrites the <code>Indirect(0)</code> to <code>IndirectY()</code>. Two bytes and two cycles per call, the smallest of the wins but the one that finally makes the body byte-identical.</p>
 
-<div class="compare">
-  <div>
-    <div class="label">compiler output (body)</div>
-    <pre><code>.loop@0_start:
+    </section>
+    <hr class="fancy with-mark">
+
+    <!-- ============================================================
+         WHERE WE LANDED
+         ============================================================ -->
+    <section id="landed">
+    <h2>Where we landed</h2>
+
+    <p>After all five optimizations:</p>
+
+    <div class="compare">
+      <div>
+        <div class="label after">Compiler output (body)</div>
+<pre data-lang="asm6502"><code>.loop@0_start:
    TAY
    CLC
    ADC #$01
@@ -376,10 +861,10 @@ finally makes the body byte-identical.</p>
    BNE .loop@0_start
    RTS
 </code></pre>
-  </div>
-  <div>
-    <div class="label">hand-written</div>
-    <pre><code>        TAY
+      </div>
+      <div>
+        <div class="label after">Hand-written</div>
+<pre data-lang="asm6502"><code>        TAY
         CLC
         ADC #$01
 .inner:
@@ -390,19 +875,84 @@ finally makes the body byte-identical.</p>
         BNE SND_DELAY_UP
         RTS
 </code></pre>
-  </div>
-</div>
+      </div>
+    </div>
 
-<p>Identical opcodes, identical addressing modes, identical cycle
-counts. The only delta is the indirect pointer: the compiler uses
-DPTR (the runtime's scratch indirect-pointer pair), the hand-written
-uses ZP_SFX_CLICK (a fixed ZP location holding the pointer to
-<code>$C030</code>).</p>
+    <p>Identical opcodes, identical addressing modes, identical cycle counts. The only delta is the indirect pointer: the compiler uses <code>DPTR</code> (the runtime's scratch indirect-pointer pair), the hand-written uses <code>ZP_SFX_CLICK</code> (a fixed ZP location holding the pointer to <code>$C030</code>).</p>
 
-<p>The compiler still emits a six-instruction DPTR staging block at
-the top of the function:</p>
+    <!-- Progression chart -->
+    <figure>
+      <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Body instruction count after each optimization">
+        <text x="20" y="22" font-family="Inter,sans-serif" font-size="11" fill="#8a8378" font-weight="600" letter-spacing="1">BODY INSTRUCTION COUNT</text>
 
-<pre><code>TAY                          ; park pitch in Y across staging
+        <!-- y-axis baseline & scale -->
+        <line x1="120" y1="50" x2="120" y2="240" stroke="#e3dccc"/>
+        <line x1="120" y1="240" x2="700" y2="240" stroke="#e3dccc"/>
+
+        <!-- grid lines for 5, 10, 15, 20, 25 -->
+        <g font-family="Inter,sans-serif" font-size="10" fill="#8a8378">
+          <line x1="120" y1="50" x2="700" y2="50" stroke="#f1ede4"/>
+          <text x="114" y="54" text-anchor="end">25</text>
+          <line x1="120" y1="88" x2="700" y2="88" stroke="#f1ede4"/>
+          <text x="114" y="92" text-anchor="end">20</text>
+          <line x1="120" y1="126" x2="700" y2="126" stroke="#f1ede4"/>
+          <text x="114" y="130" text-anchor="end">15</text>
+          <line x1="120" y1="164" x2="700" y2="164" stroke="#f1ede4"/>
+          <text x="114" y="168" text-anchor="end">10</text>
+          <line x1="120" y1="202" x2="700" y2="202" stroke="#f1ede4"/>
+          <text x="114" y="206" text-anchor="end">5</text>
+          <text x="114" y="244" text-anchor="end">0</text>
+        </g>
+
+        <!-- bars: 23, 21, 16, 16, 11, 10 -->
+        <!-- each bar 64 wide, gap 30, start at x=140 -->
+        <g>
+          <!-- 23 -->
+          <rect x="140" y="65" width="64" height="175" fill="#fbe9dc" stroke="#d97757"/>
+          <text x="172" y="60" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#a04a26" font-weight="700">23</text>
+          <!-- 21 -->
+          <rect x="234" y="80" width="64" height="160" fill="#fbe9dc" stroke="#d97757"/>
+          <text x="266" y="75" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#a04a26" font-weight="700">21</text>
+          <!-- 16 -->
+          <rect x="328" y="118" width="64" height="122" fill="#fbe9dc" stroke="#d97757"/>
+          <text x="360" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#a04a26" font-weight="700">16</text>
+          <!-- 16 (cmp doesn't drop count, sets up next) -->
+          <rect x="422" y="118" width="64" height="122" fill="#fbe9dc" stroke="#d97757"/>
+          <text x="454" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#a04a26" font-weight="700">16</text>
+          <!-- 11 -->
+          <rect x="516" y="156" width="64" height="84" fill="#e1efd8" stroke="#2e6b3a"/>
+          <text x="548" y="151" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#2e6b3a" font-weight="700">11</text>
+          <!-- 10 -->
+          <rect x="610" y="164" width="64" height="76" fill="#e1efd8" stroke="#2e6b3a"/>
+          <text x="642" y="151" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#2e6b3a" font-weight="700">10</text>
+        </g>
+
+        <!-- labels -->
+        <g font-family="Inter,sans-serif" font-size="10" fill="#5b5249">
+          <text x="172" y="258" text-anchor="middle">start</text>
+          <text x="266" y="258" text-anchor="middle">+ opt 1</text>
+          <text x="266" y="270" text-anchor="middle" fill="#8a8378">tail-jump</text>
+          <text x="360" y="258" text-anchor="middle">+ opt 2</text>
+          <text x="360" y="270" text-anchor="middle" fill="#8a8378">DEY/DEX</text>
+          <text x="454" y="258" text-anchor="middle">+ opt 3</text>
+          <text x="454" y="270" text-anchor="middle" fill="#8a8378">CMP</text>
+          <text x="548" y="258" text-anchor="middle">+ opt 4</text>
+          <text x="548" y="270" text-anchor="middle" fill="#8a8378">A-promote</text>
+          <text x="642" y="258" text-anchor="middle">+ opt 5</text>
+          <text x="642" y="270" text-anchor="middle" fill="#8a8378">indirect-Y</text>
+        </g>
+
+        <!-- hand-written line -->
+        <line x1="140" y1="164" x2="700" y2="164" stroke="#2e6b3a" stroke-width="1.5" stroke-dasharray="5,4"/>
+        <text x="708" y="168" font-family="Inter,sans-serif" font-size="11" fill="#2e6b3a" font-weight="600">hand</text>
+        <text x="708" y="180" font-family="Inter,sans-serif" font-size="11" fill="#2e6b3a" font-weight="600">≈ 10</text>
+      </svg>
+      <figcaption>The five optimizations brought the function body from <strong>23</strong> instructions to <strong>10</strong>, matching the hand-written version. Opt 3 (CMP) doesn't shrink the instruction count on its own — it preserves A so Opt 4 can promote pitch to the accumulator.</figcaption>
+    </figure>
+
+    <p>The compiler still emits a six-instruction DPTR staging block at the top of the function:</p>
+
+<pre data-lang="asm6502"><code>TAY                          ; park pitch in Y across staging
 LDA sfx_click_ptr
 STA DPTR
 LDA sfx_click_ptr+1
@@ -410,56 +960,128 @@ STA DPTR+1
 TYA                          ; restore pitch to A
 </code></pre>
 
-<p>That's the remaining cost. The hand-written sidesteps it by
-arranging for ZP_SFX_CLICK to be set up by the input handler when
-the speaker is muted/unmuted — no per-call staging needed. To match
-that in C source, we'd need an attribute like
-<code>__attribute__((zp)) extern const volatile uint8_t *
-sfx_click_ptr;</code> telling the compiler the pointer is
-ZP-resident, and a corresponding lowering that emits
-<code>(sfx_click_ptr),Y</code> directly instead of staging through
-DPTR. That's deferred.</p>
+    <p>That's the remaining cost. The hand-written sidesteps it by arranging for <code>ZP_SFX_CLICK</code> to be set up by the input handler when the speaker is muted/unmuted — no per-call staging needed. To match that in C source, we'd need an attribute like <code>__attribute__((zp)) extern const volatile uint8_t *sfx_click_ptr;</code> telling the compiler the pointer is ZP-resident, and a corresponding lowering that emits <code>(sfx_click_ptr),Y</code> directly instead of staging through DPTR. That's deferred.</p>
 
-<h2>What the journey teaches</h2>
+    </section>
+    <hr class="fancy with-mark">
 
-<p>Each optimization was motivated by what was left after the
-previous one. None of them were designed up front. The order
-matters: CMP-for-discarded-read had to land before
-loop-carried-promotion would have a clean body to promote into.
-<code>dec_register_peephole</code> had to land before
-<code>promote_loop_carried_to_a</code> would see an A-clean inner
-loop. The order fell out naturally from looking at the
-intermediate output and asking "what's the next thing that doesn't
-match hand-written?"</p>
+    <!-- ============================================================
+         LESSONS
+         ============================================================ -->
+    <section id="lessons">
+    <h2>What the journey teaches</h2>
 
-<p>The eligibility gates on the new passes are strict — every one
-of them is a structural pattern match with explicit constraints
-("R must be X or Y", "A must be dead at both successors", "Y must
-be unused across the preamble"). General loop-aware analyses would
-catch more cases, but the cost is a much bigger pass with more
-correctness surface. The structural matches caught the snd_delay_up
-case without disturbing any of the existing 2700+ tests.</p>
+    <p>Each optimization was motivated by what was left after the previous one. None of them were designed up front. <strong>The order matters</strong>: CMP-for-discarded-read had to land before loop-carried-promotion would have a clean body to promote into. <code>dec_register_peephole</code> had to land before <code>promote_loop_carried_to_a</code> would see an A-clean inner loop. The order fell out naturally from looking at the intermediate output and asking "what's the next thing that doesn't match hand-written?"</p>
 
-<p>The most interesting failure along the way was a generalization
-attempt I had to back out. Extending
-<code>passes/asm_aliasing.may_alias</code> with a rule that
-"indirect-Y reads don't alias <code>Data(__zpabi_*)</code> /
-<code>Data(__local_*)</code> slot symbols" looked clean — the
-slots are compiler-synthesized ZP, the user can't construct their
-addresses, no indirect read should reach them. It broke forty-five
-tests. Address-taken locals get routed to the same pool by the
-call-graph-disjoint allocator: <code>&local</code> gives a pointer
-to a pool byte, and an indirect-Y read through that pointer DOES
-alias the local's slot. The general rule was unsound;
-<code>__zpabi_*</code> slots specifically aren't address-takable
-in C (no syntax for <code>&__zpabi_*</code>;
-<code>&param</code> on a reg-attributed param is a type-check
-error), so the narrow rule held. The targeted
-<code>dead_reg_entry_stub_drop</code> uses that narrow invariant
-without touching the general aliasing rule.</p>
+    <p>The eligibility gates on the new passes are strict — every one of them is a structural pattern match with explicit constraints ("R must be X or Y", "A must be dead at both successors", "Y must be unused across the preamble"). General loop-aware analyses would catch more cases, but the cost is a much bigger pass with more correctness surface. The structural matches caught the snd_delay_up case without disturbing any of the existing 2700+ tests.</p>
 
-<p>"Generalize what works, don't generalize what's narrow" is the
-takeaway. The narrow rule is true. The broad rule isn't.</p>
+    <div class="callout">
+      <div class="tag">The interesting failure</div>
+      <p>The most interesting failure along the way was a generalization attempt I had to back out. Extending <code>passes/asm_aliasing.may_alias</code> with a rule that "indirect-Y reads don't alias <code>Data(__zpabi_*)</code> / <code>Data(__local_*)</code> slot symbols" looked clean — the slots are compiler-synthesized ZP, the user can't construct their addresses, no indirect read should reach them. It broke <strong>forty-five tests</strong>. Address-taken locals get routed to the same pool by the call-graph-disjoint allocator: <code>&amp;local</code> gives a pointer to a pool byte, and an indirect-Y read through that pointer <em>does</em> alias the local's slot. The general rule was unsound; <code>__zpabi_*</code> slots specifically aren't address-takable in C (no syntax for <code>&amp;__zpabi_*</code>; <code>&amp;param</code> on a reg-attributed param is a type-check error), so the narrow rule held. The targeted <code>dead_reg_entry_stub_drop</code> uses that narrow invariant without touching the general aliasing rule.</p>
+    </div>
+
+    <blockquote>"Generalize what works, don't generalize what's narrow" is the takeaway. The narrow rule is true. The broad rule isn't.</blockquote>
+
+    </section>
+
+  </article>
+</div>
+
+<script>
+  // ------------------------------------------------------------
+  // Tiny 6502-assembly syntax highlighter.
+  // Runs over <pre data-lang="asm6502"><code>...</code></pre> blocks
+  // and wraps mnemonics / comments / numbers / labels in spans.
+  // ------------------------------------------------------------
+  (function () {
+    const MNEMS = new Set([
+      "LDA","LDX","LDY","STA","STX","STY","TAX","TAY","TXA","TYA","TSX","TXS",
+      "ADC","SBC","AND","ORA","EOR","ASL","LSR","ROL","ROR","BIT","CMP","CPX","CPY",
+      "INC","INX","INY","DEC","DEX","DEY","JMP","JSR","RTS","RTI","BNE","BEQ","BCC",
+      "BCS","BMI","BPL","BVC","BVS","CLC","SEC","CLD","SED","CLI","SEI","CLV","NOP",
+      "PHA","PHP","PLA","PLP","BRK",
+      // sentinel IR-ish forms we use in prose code blocks
+      "Mov","Sub","Imm","Reg","Branch","Compare","Indirect","IndirectY","Dec","Inc","Jump"
+    ]);
+
+    // `innerHTML` returns text that is already entity-escaped; passing it
+    // through again would double-encode `&lt;` to `&amp;lt;`. So we keep the
+    // already-encoded form and only inject our wrapping spans around it.
+    function highlightLine(line) {
+      // If the line already contains span markup (e.g. del-line wrappers), leave it.
+      if (line.indexOf("<span") !== -1) return line;
+
+      let out = "";
+      let rest = line;
+
+      // comment split
+      const semi = rest.indexOf(";");
+      let comment = "";
+      if (semi !== -1) {
+        comment = rest.slice(semi);
+        rest = rest.slice(0, semi);
+      }
+
+      // label at end of line (foo:)
+      const labelMatch = rest.match(/^(\s*)([A-Za-z_.][\w@.]*):\s*$/);
+      if (labelMatch) {
+        out = labelMatch[1] + '<span class="asm-label">' + labelMatch[2] + ':</span>';
+        if (comment) out += '<span class="asm-comment">' + comment + '</span>';
+        return out;
+      }
+
+      const parts = rest.split(/([\s,()])/);
+      for (const p of parts) {
+        if (!p) continue;
+        const upper = p.toUpperCase();
+        if (MNEMS.has(upper)) {
+          out += '<span class="asm-mnem">' + p + '</span>';
+        } else if (/^#?\$[0-9A-Fa-f]+$/.test(p) || /^#?[0-9]+$/.test(p) || /^\$[0-9A-Fa-f]+$/.test(p)) {
+          out += '<span class="asm-num">' + p + '</span>';
+        } else if (/^[A-Za-z_.][\w@.]*:$/.test(p)) {
+          out += '<span class="asm-label">' + p + '</span>';
+        } else {
+          out += p;
+        }
+      }
+      if (comment) out += '<span class="asm-comment">' + comment + '</span>';
+      return out;
+    }
+
+    function highlight(codeEl) {
+      // Preserve already-marked spans by splitting on <span...>...</span>.
+      const raw = codeEl.innerHTML;
+      const lines = raw.split("\n");
+      const out = lines.map(highlightLine).join("\n");
+      codeEl.innerHTML = out;
+    }
+
+    document.querySelectorAll('pre[data-lang="asm6502"] > code').forEach(highlight);
+  })();
+
+  // ------------------------------------------------------------
+  // TOC active-section highlighting on scroll.
+  // ------------------------------------------------------------
+  (function () {
+    const links = Array.from(document.querySelectorAll('aside.toc a'));
+    const sections = links
+      .map(a => document.getElementById(a.getAttribute('href').slice(1)))
+      .filter(Boolean);
+
+    function onScroll() {
+      const top = window.scrollY + 80;
+      let active = sections[0];
+      for (const s of sections) {
+        if (s.offsetTop <= top) active = s;
+      }
+      links.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + active.id);
+      });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  })();
+</script>
 
 </body>
 </html>

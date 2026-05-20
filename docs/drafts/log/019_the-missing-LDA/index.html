@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The missing LDA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc li { margin: 0.35em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); text-decoration: underline; }
+  article { max-width: 760px; }
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.74em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.6em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 1.25em;
+    margin: 0 0 1.5em;
+    line-height: 1.4;
+  }
+  .meta {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.84em;
+    color: var(--ink-mute);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.6em 0;
+    margin: 0 0 2.5em;
+    display: flex;
+    gap: 1.5em;
+    flex-wrap: wrap;
+  }
+  .meta span { display: inline-flex; align-items: center; gap: 0.4em; }
+  .meta strong { color: var(--ink-soft); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.6em;
+    margin: 2.6em 0 0.7em;
+    line-height: 1.2;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 1.2em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink-soft);
+  }
+  p { margin: 0.8em 0; }
+  a { color: var(--accent); }
+
+  pre, code {
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-variant-ligatures: none;
+  }
+  code {
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code);
+    border-radius: 8px;
+    padding: 1em 1.2em;
+    font-size: 0.78em;
+    line-height: 1.55;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    margin: 1.1em 0;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+
+  .asm-mnem { color: var(--asm-mnem); font-weight: 600; }
+  .asm-comment { color: var(--asm-comment); font-style: italic; }
+  .asm-num { color: var(--asm-num); }
+  .asm-label { color: var(--asm-label); font-weight: 500; }
+  .asm-reg { color: var(--asm-reg); font-weight: 500; }
+  pre .add-line { background: rgba(46,107,58,.10); display: inline-block; min-width: 100%; }
+  pre .del-line { background: rgba(160,74,38,.10); display: inline-block; min-width: 100%; text-decoration: line-through; text-decoration-color: rgba(160,74,38,.4); }
+  pre .hi-line  { background: var(--highlight); display: inline-block; min-width: 100%; }
+
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1em;
+    margin: 1.2em 0;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .compare > div { min-width: 0; }
+  .compare pre { margin: 0; height: 100%; }
+  .compare .label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    margin-bottom: 0.4em;
+    font-weight: 600;
+  }
+  .compare .label.before { color: var(--accent); }
+  .compare .label.after { color: var(--good); }
+
+  .callout {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#anomaly">A pitch arg, vanished</a></li>
+      <li><a href="#abi">A register IS a calling convention</a></li>
+      <li><a href="#bisect">Bisecting the peepholes</a></li>
+      <li><a href="#kill">The kills_a contract</a></li>
+      <li><a href="#fix">Two atoms, one field</a></li>
+      <li><a href="#tail">The tail-call rewrite, again</a></li>
+      <li><a href="#test">Why the test let it through</a></li>
+      <li><a href="#scan">The local copies</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #019</p>
+    <h1>The missing LDA</h1>
+    <p class="subtitle">Three call sites silently lost their argument, the sim test agreed it was fine, and the bug had been there as long as <code>reg("A")</code> had.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Target</strong> Apple II beam state machine</span>
+      <span><strong>Bug class</strong> A-liveness across reg-attr Calls</span>
+      <span><strong>Result</strong> three calls now pass their pitch</span>
+    </div>
+
+    <section id="anomaly">
+    <h2>A pitch arg, vanished</h2>
+
+    <p>I was reading the optimized output of <code>beam_target_tick.c</code> — the state machine that drives a player-tracking beam on an Apple II — and an instruction I expected to see wasn't there. Two of the three calls into the click-helper trampolines looked like this:</p>
+
+<pre><code><span class="asm-mnem">CLC</span>
+<span class="asm-mnem">ADC</span>   #$02
+<span class="asm-mnem">STA</span>   beam_y
+<span class="asm-mnem">LDX</span>   #$0A
+<span class="asm-mnem">JMP</span>   snd_delay_down
+</code></pre>
+
+    <p>The C source calls <code>snd_delay_down(0x10, 0x0A)</code> — pitch is <code>$10</code>, clicks is <code>$0A</code>. The <code>LDX #$0A</code> at the bottom carries the clicks argument; the <code>JMP</code> tail-calls into the helper. But where's the <code>LDA #$10</code> for the pitch? It's never set up. The <code>A</code> register at the point of the JMP holds <code>beam_y + 2</code> — the side effect of the <code>ADC; STA</code> three lines earlier.</p>
+
+    <p>The third call, the jingle tick, was worse:</p>
+
+<pre><code><span class="asm-mnem">LDX</span>   beam_snd_ctr
+<span class="asm-mnem">TXA</span>
+<span class="asm-mnem">BMI</span>   .if_end@0
+<span class="asm-mnem">SEC</span>
+<span class="asm-mnem">SBC</span>   #$01
+<span class="asm-mnem">STA</span>   beam_snd_ctr
+<span class="asm-mnem">LDX</span>   #$0A
+<span class="asm-mnem">JSR</span>   snd_delay_up
+</code></pre>
+
+    <p>The C source asks for <code>snd_delay_up(beam_jingle[snd_ctr], 0x0A)</code>. There's no <code>LDA beam_jingle,X</code> anywhere. The <code>A</code> register at the JSR holds the decremented counter — neither the jingle byte the call wanted nor anything meaningful as a pitch.</p>
+
+    <p>Three calls. Three missing LDAs. And the test suite, which includes a per-example sim differential that re-runs each example under unoptimized and optimized pipelines and asserts they produce identical observable state, was perfectly happy.</p>
+
+    </section>
+
+    <section id="abi">
+    <h2>A register IS a calling convention</h2>
+
+    <p>The example declares its externs with c6502's <code>reg(...)</code> attribute:</p>
+
+<pre><code>extern void snd_delay_up(
+    uint8_t pitch __attribute__((reg("A"))),
+    uint8_t clicks __attribute__((reg("X"))));
+</code></pre>
+
+    <p>The annotation pins each parameter to a 6502 register at the calling-convention boundary. The caller writes pitch directly into <code>A</code> and clicks into <code>X</code> before the JSR. The callee reads its parameters straight out of those registers — no zero-page slot, no soft-stack push, just the registers. For one-byte arguments to leaf helpers, it's the cheapest calling convention the machine offers.</p>
+
+    <p>This is how snd_delay_up / snd_delay_down were declared, and the @zp-link-meta block at the top of the .asm confirmed it:</p>
+
+<pre><code>; <span class="asm-comment">ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks param_regs=A,X</span>
+; <span class="asm-comment">ext snd_delay_up   params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks   param_regs=A,X</span>
+</code></pre>
+
+    <p>So the compiler knew. The link metadata, written by <code>passes/zp_link_metadata.py</code>, faithfully recorded that the callees take A and X as arg registers. The lowering pass <code>tac_to_asm</code> emitted the right shape too — I checked. The Mov-into-A was present in the asm IR immediately after the SSA round-trip:</p>
+
+<pre><code>Mov(Imm(<span class="asm-num">10</span>), Reg(A))     <span class="asm-comment">; LDA #10 — clicks, staged through A for TAX</span>
+Mov(Reg(A), Reg(X))     <span class="asm-comment">; TAX     — clicks now in X</span>
+Mov(Imm(<span class="asm-num">16</span>), Reg(A))     <span class="asm-comment">; LDA #$10 — pitch</span>
+Call(name='snd_delay_down', reg_args=[])
+</code></pre>
+
+    <p>The Mov(Imm(16), Reg(A)) was there at IR level. Something after that point dropped it.</p>
+
+    </section>
+
+    <section id="bisect">
+    <h2>Bisecting the peepholes</h2>
+
+    <p>c6502's asm-level peephole fixedpoint runs around thirty passes per iteration. I wrote a small bisection script: build the IR up to the point where the peephole loop starts, then run each pass in order, asserting after each that the offending atom — <code>Mov(Imm(16), Reg(A))</code> — was still present.</p>
+
+<pre><code>after split_mem_to_mem: present
+after inc_peephole:     present
+after dec_peephole:     present
+... (eleven more passes)
+after asm_dead_store:   present
+after dead_a_arith:     <strong>dropped!</strong>
+</code></pre>
+
+    <p>The killer was <code>apply_dead_a_arith_elimination</code>, the pass that drops instructions whose only observable side effects are writes to <code>A</code> and the flags, when A and the flags are dead afterward. Its eligibility check is a single predicate: <em>is A dead at the instruction right after this one?</em>.</p>
+
+    </section>
+
+    <section id="kill">
+    <h2>The kills_a contract</h2>
+
+    <p>dead_a_arith asks <code>asm_liveness.a_dead_at(instrs, after)</code>. That function walks the CFG forward from the position. At each instruction it asks two binary questions:</p>
+
+    <ul>
+      <li><strong>reads_a?</strong> — does this instruction read A's current value? If yes, A is live; return False.</li>
+      <li><strong>kills_a?</strong> — does this instruction write A without reading it first? If yes, A's prior value is dead from this point; terminate this CFG path safely.</li>
+    </ul>
+
+    <p>The order matters. <code>reads_a</code> is checked first; if it fires, we don't even ask about the kill. The same instruction can be a read-then-kill — ALU ops like <code>ADC #imm</code> read A as the accumulator and write A as the result, and they're correctly modeled as a read.</p>
+
+    <p>A <code>Call</code> instruction — a 6502 JSR — was modeled like this:</p>
+
+<pre><code>def reads_a(instr):
+    ...
+    return False              <span class="asm-comment"># Call is not a read</span>
+
+def kills_a(instr):
+    ...
+    if isinstance(instr, asm_ast.Call):
+        return True            <span class="asm-comment"># Callees clobber A</span>
+    return False
+</code></pre>
+
+    <p>The "callees clobber A" half is fine. A JSR may land in a function that uses A as scratch, then return with whatever 1-byte value it wants to leave in A as a return slot. Without knowing what the callee does, the conservative move is to say "treat A as redefined after this JSR" — i.e., the JSR is a kill.</p>
+
+    <p>The "Call is not a read" half is where the model fell apart. For most callees, that's right too — under the default zp_abi calling convention, the caller writes parameters into ZP slot bytes <em>before</em> the JSR; the callee reads them from those slots, not from A. The JSR doesn't observe A's contents at the moment of transfer.</p>
+
+    <p>But for a callee declared with <code>reg("A")</code> on a parameter, the JSR <em>does</em> observe A's contents. The compiler arranged for A to hold the argument <em>just before</em> the JSR; the callee depends on that. Treating Call as kill-without-read drops the very LDA the calling convention was set up to demand.</p>
+
+    <div class="callout">
+      <div class="tag">Diagnosis</div>
+      <p>The model "Call kills A, never reads A" was a global statement that quietly stopped being true the moment c6502 grew a register-passing calling convention. The same code that had been correct for years became incorrect — silently — when <code>reg("A")</code> shipped.</p>
+    </div>
+
+    </section>
+
+    <section id="fix">
+    <h2>Two atoms, one field</h2>
+
+    <p>The fix needs the liveness model to know <em>which</em> registers each call site reads as incoming arguments. That information already exists — <code>tac_to_asm</code> has the callee's <code>ZpLayout.param_registers</code> in hand when it emits the Call atom. It just needed to travel with the atom into the asm IR.</p>
+
+    <p>I added a <code>reg_args</code> field to the asm IR's Call node — a list of register names ("A", "X", "Y") naming the registers the callee reads as parameters:</p>
+
+<pre><code>-- before
+| Call(identifier name)
+
+-- after
+| Call(identifier name, string* reg_args)
+</code></pre>
+
+    <p>And taught <code>tac_to_asm</code> to populate it. At the direct-call site, after walking the callee's per-byte <code>param_registers</code> list and emitting the per-byte Mov-into-register sequence, it collects the register names that were used and threads them onto the Call:</p>
+
+<pre><code>seen: set[str] = set()
+for r in layout.param_registers:
+    if r and r not in seen:
+        seen.add(r)
+        reg_args.append(r)
+...
+emitted.append(asm_ast.Call(name=name, reg_args=reg_args))
+</code></pre>
+
+    <p>The liveness predicate consults it. <code>reads_a(Call)</code> now returns True iff "A" is in the Call's <code>reg_args</code>. <code>kills_a</code> still returns True for every Call — that part was always right, and read-then-kill ordering means <code>reads_a</code> wins.</p>
+
+    <p>I built the test program, ran <code>compile.py</code>, looked at the output. The LDA #$0A — the clicks-staging that gets folded to <code>LDX #$0A</code> — was still there. The Mov(Imm(16), Reg(A)) was still gone.</p>
+
+    </section>
+
+    <section id="tail">
+    <h2>The tail-call rewrite, again</h2>
+
+    <p>The peephole loop runs to a fixed point. Each pass is a candidate rewriter; the loop iterates until a full sweep produces no change. Pass interactions can be subtle: one pass enables another, two passes might interfere, and a bug that looks like it lives in pass A might actually live in pass B's effect on A's input.</p>
+
+    <p>I extended the bisection one more pass at a time. The fix held through the entire fixedpoint. The Mov(Imm(16), Reg(A)) survived all the way to the last iteration. Then I looked at what happened <em>between</em> fixedpoint iterations and found it.</p>
+
+    <p>There's a peephole called <code>apply_tail_call</code> that rewrites the pattern <code>Call(name); Return(_)</code> at the end of a function into <code>Jump(target=name)</code> — a JMP instead of JSR+RTS, saving a byte and a stack push/pop pair. It's the optimization that turns "call snd_delay_down, then return" into "jump straight to snd_delay_down and let its RTS unwind both layers".</p>
+
+    <p>The rewrite was dropping the <code>reg_args</code>. The Jump atom didn't carry the field at all. So on the iteration after tail_call fired, the liveness walker saw a <code>Jump</code> to an extern target — no in-function label index — and its handling of Jump was the same as for any intra-function goto: follow the target if local, otherwise terminate the CFG path silently. A's load looked dead again. Round two of dead_a_arith dropped it.</p>
+
+    <p>Same fix, second atom: add <code>reg_args</code> to Jump, propagate it in tail_call, consult it in the liveness walker:</p>
+
+<pre><code>if isinstance(instr, asm_ast.Jump):
+    if "A" in instr.reg_args:
+        return False              <span class="asm-comment"># tail-call reads A</span>
+    tgt = label_to_index.get(instr.target)
+    if tgt is not None:
+        stack.append(tgt)
+    return True
+</code></pre>
+
+    <p>The check is on <code>reg_args</code>, not on "is the target an in-function label". Long-branch trampolines target in-function <code>.skip</code> labels too, and their <code>reg_args</code> is empty — those keep working the way they always did. The distinction is intrinsic to the atom, not derived from naming.</p>
+
+    <p>Rebuilt, ran the example, and the LDA was finally there:</p>
+
+<pre><code><span class="asm-mnem">CLC</span>
+<span class="asm-mnem">ADC</span>   #$02
+<span class="asm-mnem">STA</span>   beam_y
+<span class="asm-mnem">LDX</span>   #$0A
+<span class="add-line"><span class="asm-mnem">LDA</span>   #$10</span>
+<span class="asm-mnem">JMP</span>   snd_delay_down
+</code></pre>
+
+    </section>
+
+    <section id="test">
+    <h2>Why the test let it through</h2>
+
+    <p>The example has a sim differential test — <code>tests/test_beam_target_tick_sim.py</code>. It inlines the example source, adds a <code>main()</code> driver that exercises each branch of the dispatch under known inputs, records observable state to a flat byte array, and asserts three things: the unoptimized output matches a hand-computed expected, the optimized output matches the same expected, and unopt and opt produce identical bytes.</p>
+
+    <p>The test was passing. With the bug. For a while.</p>
+
+    <p>The inline source defined its own stubs for the click helpers, with bodies that recorded the arguments they received into observable state. But the stubs were declared like this:</p>
+
+<pre><code>void snd_delay_up(uint8_t pitch, uint8_t clicks) {
+    snd_up_calls = (uint8_t)(snd_up_calls + 1);
+    snd_up_last_pitch = pitch;
+    snd_up_last_clicks = clicks;
+}
+</code></pre>
+
+    <p>Plain parameters. No <code>reg(...)</code> attribute. The example's actual extern declaration uses reg-attr; the test program's inline definitions don't. Inside the test's single-TU compilation, snd_delay_up resolved to the local definition — and the local definition's calling convention was the default zp_abi-with-slots, not reg-passing.</p>
+
+    <p>The bug only triggers when the call goes through the reg-passing path. The test exercised the slot-passing path. Same surface program, fundamentally different ABI under the hood. The differential test was correctly proving that the slot-passing pipeline was self-consistent — which it was — and was structurally incapable of catching a bug in a calling convention it wasn't using.</p>
+
+    <p>The fix to the test was a five-line change: copy the extern declaration's attributes onto the inline definitions. With reg-attr on both sides, the test compiled the same program shape as the real example. With the optimizer fix removed, the test failed loudly: pitch <code>$19</code> vs expected <code>$19</code>, then pitch <code>$09</code> on the next scenario where expected was <code>$19</code> — every <code>snd_up_last_pitch</code> field was off by however much the residual A register happened to be after the previous control flow.</p>
+
+    <div class="callout win">
+      <div class="tag">Lesson</div>
+      <p>A sim differential test is only as good as the ABI of its inline stubs. If the example uses an attribute-controlled calling convention, the test stubs need to mirror those attributes — otherwise the test exercises a different program than the example does, and is structurally blind to bugs in the example's ABI path.</p>
+    </div>
+
+    </section>
+
+    <section id="scan">
+    <h2>The local copies</h2>
+
+    <p>Central asm-liveness predicates aren't the only place where "is A dead?" gets asked. A handful of peepholes that need the predicate maintain their own local copies — usually because they wanted slight variations on the eligibility (different kinds of "kill", different CFG-walk semantics) when the central version didn't quite fit. The local copies were written before <code>reg_args</code> existed; they all had the same bug, latent until exercised.</p>
+
+    <ul>
+      <li><strong><code>redundant_load_after_rmw.py</code></strong> — local <code>_reads_a</code> and <code>_kills_a</code> mirror the central pair. Patched both to consult <code>reg_args</code>.</li>
+      <li><strong><code>dec_register_peephole.py</code></strong> — has a more aggressive local <code>_a_dead_at</code> that follows unconditional Jumps. Patched to recognize a tail-call Jump (reads_a via <code>reg_args</code>) as not dead.</li>
+    </ul>
+
+    <p>None of these fired on the example I was working with — the example's shape didn't trigger them — but every pass that scans for A-liveness near a Call now needs the same insight. Better to patch them all together than to discover the next missing LDA from a different angle.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p>Three things, ordered loosely from most concrete to most general:</p>
+
+    <p><strong>An asm atom is a structural carrier for ABI information, not just an opcode.</strong> Adding <code>reg_args</code> to Call (and to Jump, via the tail-call rewrite) wasn't just a fix for one liveness predicate — it makes the calling convention's reads visible to every pass that walks the IR. Future passes that ask "what does this Call observe?" can answer it locally instead of having to recover the information by joining against a sibling table.</p>
+
+    <p><strong>Compiler invariants quietly stop being true.</strong> "A Call kills A and never reads A" was a valid statement of c6502's semantics for most of the project's life — until the day <code>reg("A")</code> shipped and made it false at every reg-attr call site. There was no compile error to catch the moment of invalidation. Nothing in the type system flagged it. The condition was implicit, encoded in three or four predicate functions, and it broke silently the day the precondition no longer held universally.</p>
+
+    <p><strong>Tests have ABIs too.</strong> The sim differential test was the right idea — same surface program, run through both pipelines, assert identical observable state. But the test program's ABI mattered. The example's externs had attributes the test's inline stubs didn't, so the test compiled a related-but-different program, and the differential said "the related program passes through both pipelines unchanged" — which was true, and not the question being asked.</p>
+
+    <p>The next time I'm adding a sim differential for an example that uses any ABI-affecting attribute — reg, zp_abi, whatever lands next — the first thing I'll do is copy the extern declarations verbatim into the inline stubs. If the test passes <em>too easily</em>, that's the first place to look.</p>
+
+    </section>
+
+  </article>
+</div>
+</body>
+</html>

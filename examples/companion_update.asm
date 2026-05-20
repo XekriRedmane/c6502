@@ -168,12 +168,11 @@ entity_proximity:
    BMI   .if_else@7
    LDA   __zpabi_entity_proximity__screen_x
    CMP   #$30
-   BCC   .if_end@10
+   BCC   .if_end@6
    CMP   #$38
-   BCS   .if_end@10
+   BCS   .if_end@6
    LDA   #$00
    STA   companion_state,X
-.if_end@10:
    JMP   .if_end@6
 .if_else@7:
    LDA   __zpabi_entity_proximity__screen_x
@@ -541,9 +540,9 @@ companion_update:
    LDX   #$01
 .loop@1_start:
    LDA   companion_state,X
-   BMI   .lb_skip@1
+   BMI   .lb_skip@2
    JMP   .if_end@42
-.lb_skip@1:
+.lb_skip@2:
    STX   __zpabi_drift_step__slot
    LDA   #<__local_companion_update__sprite_y
    STA   __zpabi_drift_step__out_sprite_y_0
@@ -614,9 +613,9 @@ companion_update:
    STA   __local_companion_update__0
 .cond_end@46:
    LDA   __local_companion_update__0
-   BNE   .lb_skip@0
+   BNE   .lb_skip@1
    JMP   .loop@1_continue
-.lb_skip@0:
+.lb_skip@1:
 .if_end@43:
    STX   __zpabi_compute_screen_x__slot
    LDA   __zpabi_companion_update__player_y
@@ -667,10 +666,10 @@ companion_update:
    LDX   __local_companion_update__slot
 .loop@1_continue:
    DEX
-   BPL   .companion_update@asm_ssa_split@0
-   RTS
-.companion_update@asm_ssa_split@0:
+   BMI   .lb_skip@0
    JMP   .loop@1_start
+.lb_skip@0:
+   RTS
 
 proj_screen_col:
    DC.B  $00, $00, $00, $00, $01, $01, $01, $02, $02, $02, $02, $03, $03, $03, $04, $04

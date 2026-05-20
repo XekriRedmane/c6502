@@ -29,9 +29,7 @@ sfx_tone:
    STA   __local_sfx_tone__y
    BNE   .loop@1_continue
    LDY   #$00
-   LDA   (DPTR),Y
+   CMP   (DPTR),Y
    DEC   __local_sfx_tone__duration
-   BNE   .sfx_tone@asm_ssa_split@0
+   BNE   .loop@0_start
    RTS
-.sfx_tone@asm_ssa_split@0:
-   JMP   .loop@0_start

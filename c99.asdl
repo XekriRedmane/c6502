@@ -38,15 +38,37 @@ module C99 {
     -- converted to the switch's promoted control type).
     switch_case = (exp value, identifier label)
     declaration = FunctionDecl(function_decl) | VarDecl(var_decl) | StructDecl(struct_decl)
-    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation)
-    -- abi_annotation carries the value of any
-    -- `__attribute__((<name>))` prefix on the declaration.
-    -- Currently the only recognized name is "zp_abi" — used
-    -- by the leaf-ZP-ABI optimization to mark a function as
-    -- a candidate for caller-saved-ZP parameter passing
-    -- (see docs/leaf_zp_abi.md). Unknown names are rejected
-    -- at parse time. None when no annotation was given.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation)
+    -- register_class names the 6502 register a local variable is
+    -- pinned to, when the var_decl carries a postfix
+    -- `__attribute__((reg("A"|"X"|"Y")))`. Hard-error at parse time
+    -- if the type isn't 1-byte (Char/SChar/UChar). None when no reg
+    -- attribute was given.
+    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation, string? register_class)
+    -- abi_annotation carries the value of any prefix bare-identifier
+    -- attribute (currently only "zp_abi"; see docs/leaf_zp_abi.md).
+    -- Used by the leaf-ZP-ABI optimization. None when no such
+    -- annotation was given. The `reg(...)` arg-form is recorded
+    -- separately on `return_register` / `param_annotations` (for
+    -- function_decl) or `register_class` (for var_decl on locals).
+    --
+    -- return_register names the 6502 register the function returns
+    -- its 1-byte result in, when the function-level prefix attribute
+    -- carries `reg("A"|"X"|"Y")`. None when no return-register
+    -- attribute was given. v1 restriction: only valid on
+    -- zp_abi-eligible functions (enforced post-parse).
+    --
+    -- param_registers is a parallel array to `params`. Each entry is
+    -- either "" (empty sentinel — no annotation; default ABI for that
+    -- parameter) or one of "A" / "X" / "Y" — naming the register that
+    -- carries the arg at the calling convention level. The list length
+    -- always matches `params` length; the parser fills with "" for
+    -- unannotated params. ASDL has no "list of optional strings" type
+    -- (no `?*`), so we encode None as "" in this list. Downstream
+    -- consumers (abi_selection, c99_to_tac, tac_to_asm) convert empty
+    -- back to None. v1 restriction: any non-empty entry requires the
+    -- corresponding parameter type to be 1-byte and the function to
+    -- be zp_abi-eligible.
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string? return_register, string* param_registers)
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct

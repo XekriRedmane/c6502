@@ -93,6 +93,50 @@ class TestLinkerHappyPath(unittest.TestCase):
                 "Should have exactly one (merged) metadata block",
             )
 
+    def test_reg_attribute_propagates_across_tus(self) -> None:
+        # Reg-attributed extern in TU A; definition in TU B. The
+        # linker must reconstruct the ZpLayout with the param's
+        # register attribute so the per-TU asm bodies agree on the
+        # calling convention. TU A's main calls helper, expecting
+        # to pass the arg in X; TU B's helper definition uses the
+        # entry-stub copy from X. The metadata block carries the
+        # param register info between them.
+        tu_a = (
+            'extern char helper(char x __attribute__((reg("X"))));'
+            'int main(void) { return helper(5); }'
+        )
+        tu_b = (
+            'char helper(char x __attribute__((reg("X")))) {'
+            '    return (char)(x + 1);'
+            '}'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a = tmp / "a.asm"
+            b = tmp / "b.asm"
+            out = tmp / "linked.asm"
+            self.assertEqual(_compile_to_asm(tu_a, a), 0)
+            self.assertEqual(_compile_to_asm(tu_b, b), 0)
+            self.assertEqual(_link([a, b], out), 0)
+            text = out.read_text()
+            # TU A's main should load the arg into X before JSR
+            # (the direct-into-X peephole renders `LDA #imm; TAX`
+            # as a single LDX #imm). NOT `STA __zpabi_helper__x`
+            # — that's the soft-stack-style slot write the linker
+            # would emit if it lost the reg attribute.
+            main_idx = text.index("main:")
+            helper_idx = text.index("helper:")
+            if main_idx < helper_idx:
+                main_body = text[main_idx:helper_idx]
+            else:
+                main_body = text[main_idx:]
+            self.assertRegex(main_body, r"LDX\s+#")
+            self.assertNotIn("STA\t__zpabi_helper__x_0", main_body)
+            # And the metadata block at the top of the linked
+            # output should carry the param_regs annotation for
+            # helper.
+            self.assertIn("param_regs=X", text)
+
     def test_linker_dedupe_externs(self) -> None:
         # Two TUs that both declare the same extern. The linker
         # collapses them into one entry (no error).

@@ -263,16 +263,32 @@ def _synthesize(
     abi: dict[str, ParamLayout] = {}
     for d in merged.defs:
         if d.params:
+            # Per-param register attributes preserved from per-TU
+            # metadata so cross-TU callers emit the right register-
+            # passing sequence at call sites. Empty-string entries
+            # in `param_regs` normalize back to None for the layout.
+            regs = [r if r else None for r in d.param_regs]
+            # Pad to params length when the metadata was emitted
+            # without param_regs (older TU output).
+            while len(regs) < len(d.params):
+                regs.append(None)
             abi[d.name] = ZpLayout(
                 slot_symbols=list(d.params),
                 addrs=[],
+                param_registers=regs,
+                return_register=d.return_reg,
             )
         else:
             abi[d.name] = SoftStackLayout()
     for e in merged.externs:
+        regs = [r if r else None for r in e.param_regs]
+        while len(regs) < len(e.params):
+            regs.append(None)
         abi[e.name] = ZpLayout(
             slot_symbols=list(e.params),
             addrs=[],
+            param_registers=regs,
+            return_register=e.return_reg,
         )
     local_bytes = {d.name: d.local_bytes for d in merged.defs}
     return prog, abi, local_bytes

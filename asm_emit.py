@@ -833,6 +833,44 @@ def _emit_compare(
                 _emit_load_y(right.offset),
                 _instr_line(opcode, _indirect_addr(right)),
             ]
+        case asm_ast.Indirect(offset=off):
+            # `CMP (DPTR),Y` — used by the volatile-void-read
+            # rewrite to do a memory access for its side effect
+            # while preserving A. CPX/CPY have no indirect mode.
+            if opcode != "CMP":
+                raise ValueError(
+                    f"Compare with left={left!r} can't use an "
+                    f"Indirect right operand: CPX/CPY have no "
+                    f"indirect-Y addressing mode"
+                )
+            return [
+                _emit_load_y(off),
+                _instr_line(opcode, "(DPTR),Y"),
+            ]
+        case asm_ast.IndirectY():
+            if opcode != "CMP":
+                raise ValueError(
+                    f"Compare with left={left!r} can't use an "
+                    f"IndirectY right operand"
+                )
+            return [_instr_line(opcode, "(DPTR),Y")]
+        case asm_ast.IndirectZp(address=addr, offset=off):
+            if opcode != "CMP":
+                raise ValueError(
+                    f"Compare with left={left!r} can't use an "
+                    f"IndirectZp right operand"
+                )
+            return [
+                _emit_load_y(off),
+                _instr_line(opcode, f"(${addr:02X}),Y"),
+            ]
+        case asm_ast.IndirectZpY(address=addr):
+            if opcode != "CMP":
+                raise ValueError(
+                    f"Compare with left={left!r} can't use an "
+                    f"IndirectZpY right operand"
+                )
+            return [_instr_line(opcode, f"(${addr:02X}),Y")]
         case _:
             raise ValueError(
                 f"cannot emit Compare(left={left!r}, right={right!r})"

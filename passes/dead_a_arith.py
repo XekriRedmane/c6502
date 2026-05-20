@@ -81,33 +81,45 @@ def apply_dead_a_arith_elimination(
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
-    instrs = fn.instructions
-    drop: list[bool] = [False] * len(instrs)
-    for i, instr in enumerate(instrs):
-        if not _writes_only_a_and_flags(instr):
-            continue
-        after = i + 1
-        if not a_dead_at(instrs, after):
-            continue
-        # Add/Sub also write C/V. Dropping such an instruction must
-        # not strand a downstream C-reader (e.g. a subsequent SBC
-        # in the multi-byte chain that threads carry without an
-        # intervening CLC/SEC). For non-C-writing A-arithmetic
-        # (Mov/And/Or/Xor — LDA/TXA/TYA/AND/ORA/EOR), the C/V flags
-        # carry through unchanged, so only N/Z liveness matters.
-        if isinstance(instr, (asm_ast.Add, asm_ast.Sub)):
-            if not all_flags_dead_at(instrs, after):
+    """Iterate the single-walk drop step to a local fixed point.
+    A single walk catches the trailing atom of a chain (e.g. the
+    ADC #0 in `LDA #0; ADC #0`); the next round catches the LDA
+    that was previously kept alive by the ADC reading A. Without
+    iterating, a downstream pass like the volatile-void-read CMP
+    rewrite can lock in a still-droppable atom by extending A's
+    liveness across it before dead_a_arith next runs."""
+    instrs = list(fn.instructions)
+    while True:
+        prev_len = len(instrs)
+        drop: list[bool] = [False] * len(instrs)
+        for i, instr in enumerate(instrs):
+            if not _writes_only_a_and_flags(instr):
                 continue
-        else:
-            if not flags_dead_at(instrs, after):
+            after = i + 1
+            if not a_dead_at(instrs, after):
                 continue
-        drop[i] = True
-    out = [
-        instr for i, instr in enumerate(instrs) if not drop[i]
-    ]
+            # Add/Sub also write C/V. Dropping such an instruction
+            # must not strand a downstream C-reader (e.g. a
+            # subsequent SBC in the multi-byte chain that threads
+            # carry without an intervening CLC/SEC). For non-C-
+            # writing A-arithmetic (Mov/And/Or/Xor — LDA/TXA/TYA/
+            # AND/ORA/EOR), the C/V flags carry through unchanged,
+            # so only N/Z liveness matters.
+            if isinstance(instr, (asm_ast.Add, asm_ast.Sub)):
+                if not all_flags_dead_at(instrs, after):
+                    continue
+            else:
+                if not flags_dead_at(instrs, after):
+                    continue
+            drop[i] = True
+        instrs = [
+            instr for i, instr in enumerate(instrs) if not drop[i]
+        ]
+        if len(instrs) == prev_len:
+            break
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=out,
+        params=list(fn.params), instructions=instrs,
     )
 
 

@@ -301,6 +301,17 @@ from passes.type_checking import StaticAttr, SymbolTable
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
 _REG_X = asm_ast.Reg(reg=asm_ast.X())
+_REG_Y = asm_ast.Reg(reg=asm_ast.Y())
+
+# Map the `reg("...")` attribute's register name to the asm_ast
+# Reg operand the codegen uses. The parser already validated the
+# argument against {"A", "X", "Y"} so any other key is an error
+# upstream of this point.
+_REG_BY_NAME = {
+    "A": _REG_A,
+    "X": _REG_X,
+    "Y": _REG_Y,
+}
 
 # Runtime helpers exchange operands through a shared 24-byte block
 # in zero page (`$04`–`$1B`). The asm symbol `HARGS` names the
@@ -885,6 +896,12 @@ class Translator:
         # Each call site gets its own number; the helper's cycle
         # counter is fresh per call.
         self._zp_call_site_counter = 0
+        # The function currently being lowered (set by
+        # `translate_function`). `_translate_ret` reads it to look
+        # up the function's own ZpLayout — needed when the function
+        # carries a `reg("...")` return attribute so the result
+        # goes into the named register instead of A.
+        self._current_fn_name: str | None = None
 
     def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a Var whose c99 symbol type is Pointer.
@@ -1096,9 +1113,37 @@ class Translator:
                 # here; replace_pseudoregisters distinguishes them
                 # by name and rewrites them as `Data(name, offset=k)`
                 # for absolute-addressed access.
+                prior_fn = self._current_fn_name
+                self._current_fn_name = name
+                # Reg-attribute entry stub: when a parameter is
+                # register-passed (caller leaves the value in A/X/Y
+                # before the JSR), copy it into the slot symbol so
+                # the rest of the function reads the param like any
+                # other zp_abi byte. The slot still has a ZP byte
+                # allocated to it — the caller just doesn't write
+                # to it. Ordered to mirror the caller's load order
+                # (X, Y, A) so A's still-fresh value isn't clobbered
+                # by stores that would touch a register holding A
+                # transiently (the 6502 has no such interactions,
+                # but the symmetry keeps the lowering uniform).
                 out: list[asm_ast.Type_instruction] = []
+                from passes.abi_selection import ZpLayout
+                own_layout = self._abi.get(name)
+                if isinstance(own_layout, ZpLayout):
+                    for k, target_reg in enumerate(
+                        own_layout.param_registers
+                    ):
+                        if target_reg is None:
+                            continue
+                        sym = own_layout.slot_symbols[k]
+                        src = _REG_BY_NAME[target_reg]
+                        out.append(asm_ast.Mov(
+                            src=src,
+                            dst=asm_ast.Data(name=sym, offset=0),
+                        ))
                 for instr in instrs:
                     out.extend(self.translate_instruction(instr))
+                self._current_fn_name = prior_fn
                 # Mark Movs whose src or dst Pseudo names a
                 # volatile-typed user variable. Mov atoms emitted by
                 # Load / Store / IndexedLoad / etc. for volatile
@@ -1326,6 +1371,38 @@ class Translator:
             # `Mov(Imm(-10), A)` would emit `LDA #-10` which trips
             # the 8-bit-immediate range check in asm_emit. For
             # non-Imm operands `_byte_at` is a no-op at offset 0.
+            #
+            # Reg-attribute: when the function carries a
+            # `reg("...")` return attribute, leave the result in the
+            # named register instead of A. The epilogue's PHA/PLA
+            # save is still around A (which is the soft-stack-
+            # arithmetic working register), but for X / Y returns
+            # we route through the named register and skip the A
+            # save (the result isn't in A; A is free to clobber).
+            from passes.abi_selection import ZpLayout
+            own_layout = (
+                self._abi.get(self._current_fn_name)
+                if self._current_fn_name is not None else None
+            )
+            ret_reg_name = (
+                own_layout.return_register
+                if isinstance(own_layout, ZpLayout) else None
+            )
+            if ret_reg_name in ("X", "Y"):
+                # Result goes into X / Y; A's preservation isn't
+                # needed because the caller reads X / Y, not A.
+                # zp_abi functions have a trivial epilogue (bare
+                # RTS) so save_a is moot anyway, but flag it
+                # explicitly: the value isn't in A.
+                return [
+                    asm_ast.Mov(
+                        src=_byte_at(src_op, 0),
+                        dst=_REG_BY_NAME[ret_reg_name],
+                    ),
+                    self._exit(save_a=False),
+                ]
+            # A return (the default) — preserve A across the
+            # epilogue's SSP/FP arithmetic.
             return [
                 asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
                 self._exit(save_a=True),
@@ -1768,8 +1845,18 @@ class Translator:
             dst_op = translate_val(dst)
             dst_size = self._size_of(dst)
             if dst_size == 1:
-                # Int: from A directly.
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+                # 1-byte return: from the named return register if
+                # the callee has a reg("...") return attribute,
+                # else from A (the default ABI).
+                ret_reg_name = (
+                    layout.return_register
+                    if isinstance(layout, ZpLayout) else None
+                )
+                src_reg = (
+                    _REG_BY_NAME[ret_reg_name]
+                    if ret_reg_name is not None else _REG_A
+                )
+                emitted.append(asm_ast.Mov(src=src_reg, dst=dst_op))
             else:
                 # Wider returns: read back byte-by-byte through A
                 # from the HARGS slot for this width. 2B at +0..1,
@@ -1809,43 +1896,80 @@ class Translator:
         args: list[tac_ast.Type_val],
         layout,  # ZpLayout
     ) -> list[asm_ast.Type_instruction]:
-        """Emit `Mov(arg_byte, ZP(addr))` writes per the callee's
-        `ZpLayout.addrs`. Each Mov's src may be any operand kind
-        (Imm, Pseudo, Frame, Data, ZP, ...); the dst is a `ZP`
-        operand at the addr from the layout.
+        """Emit per-byte arg writes for a ZpLayout call site.
 
-        When two arg writes alias each other through ZP — a write
-        to ZP $X whose source is something at ZP $Y, paired with
-        a write to ZP $Y whose source is at ZP $X (a swap) — the
-        parallel-copy ordering helper from
-        `passes.optimization_asm.ssa_destruction` topologically
-        sorts the Movs and breaks any cycle with a fresh Pseudo.
-        Reusing the helper keeps the cycle-break logic in one place."""
+        Three byte categories:
+          1. Default zp_abi byte (`layout.param_registers[i]` is None):
+             `Mov(src, Data(slot_sym))` — writes to the callee's ZP
+             slot. Ordered with the parallel-copy helper so swaps
+             between ZP cells thread through a temp.
+          2. Register-passed byte (`layout.param_registers[i]` is
+             "A"/"X"/"Y"): `Mov(src, Reg(<reg>))`. Emitted AFTER all
+             ZP-slot writes so the ZP-write ordering helper doesn't
+             see the register destination (it isn't a swap-cycle
+             participant). Within the reg-passed group: X / Y loaded
+             before A, so A's final state at `JSR` is the A-passed
+             arg (and A doesn't get clobbered by the TAX / TAY
+             transfers — TAX and TAY are register-to-register, but
+             the LDA src before TAX/TAY does clobber A, so A's load
+             must happen last).
+        """
         from passes.optimization_asm.ssa_destruction import (
             _order_parallel_copies,
         )
-        movs: list[asm_ast.Mov] = []
+        slot_movs: list[asm_ast.Mov] = []
+        # Per reg-passed byte: a (target_register_name, src_operand)
+        # pair. We don't emit the Mov yet — the register name picks
+        # the ordering (X / Y before A).
+        reg_writes: list[tuple[str, asm_ast.Type_operand]] = []
         flat_idx = 0
         for arg in args:
             arg_op = translate_val(arg)
             sz = self._size_of(arg)
             for k in range(sz):
-                sym = layout.slot_symbols[flat_idx + k]
-                movs.append(asm_ast.Mov(
-                    src=_byte_at(arg_op, k),
-                    dst=asm_ast.Data(name=sym, offset=0),
-                ))
+                target_reg = layout.param_registers[flat_idx + k] if (
+                    flat_idx + k < len(layout.param_registers)
+                ) else None
+                src = _byte_at(arg_op, k)
+                if target_reg is None:
+                    sym = layout.slot_symbols[flat_idx + k]
+                    slot_movs.append(asm_ast.Mov(
+                        src=src,
+                        dst=asm_ast.Data(name=sym, offset=0),
+                    ))
+                else:
+                    reg_writes.append((target_reg, src))
             flat_idx += sz
         # Each call site gets its own unique fn_name for any cycle-
         # break temps the helper might mint, so temps from different
         # call sites can't collide.
         self._zp_call_site_counter += 1
-        ordered = _order_parallel_copies(
-            movs,
+        ordered_slots = _order_parallel_copies(
+            slot_movs,
             fn_name=f"argwrite_{self._zp_call_site_counter}",
             cycle_counter=[0],
         )
-        return list(ordered)
+        emitted: list[asm_ast.Type_instruction] = list(ordered_slots)
+        # Reg-passed args, ordered so A's load is last. The TAX / TAY
+        # transfers preserve A, but the LDA before each transfer
+        # clobbers A — so if A is among the reg-passed registers, we
+        # do it after X and Y.
+        x_writes = [(r, s) for (r, s) in reg_writes if r == "X"]
+        y_writes = [(r, s) for (r, s) in reg_writes if r == "Y"]
+        a_writes = [(r, s) for (r, s) in reg_writes if r == "A"]
+        for r, src in x_writes + y_writes + a_writes:
+            target = _REG_BY_NAME[r]
+            if r == "A":
+                # Direct load into A.
+                emitted.append(asm_ast.Mov(src=src, dst=target))
+            else:
+                # Load via A, then transfer. The `direct_index_load`
+                # peephole later collapses `LDA src; TAX` to `LDX
+                # src` when `src` is Imm / Data / ZP — so we don't
+                # need to specialize that case here.
+                emitted.append(asm_ast.Mov(src=src, dst=_REG_A))
+                emitted.append(asm_ast.Mov(src=_REG_A, dst=target))
+        return emitted
 
     def _translate_indirect_call(
         self,

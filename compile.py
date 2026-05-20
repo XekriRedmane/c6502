@@ -104,6 +104,12 @@ from passes.optimization.dispatch_pointer_array import (
     dispatch_const_pointer_arrays,
 )
 from passes.optimization_asm import optimizer as asm_opt
+from passes.branch_through_jump import apply_branch_through_jump
+from passes.dead_reg_entry_stub import apply_dead_reg_entry_stub_drop
+from passes.dec_branch_indirect_y_fold import apply_dec_branch_indirect_y_fold
+from passes.dec_register_peephole import apply_dec_register_peephole
+from passes.promote_loop_carried_to_a import apply_promote_loop_carried_to_a
+from passes.volatile_void_read_cmp import apply_volatile_void_read_cmp
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
 from passes.replace_pseudoregisters import (
     replace_program as replace_pseudoregs,
@@ -195,6 +201,10 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_dead_a_arith_elimination(new_prog)
         new_prog = apply_dead_label_drop(new_prog)
         new_prog = apply_branch_invert(new_prog)
+        new_prog = apply_branch_through_jump(new_prog)
+        new_prog = apply_dec_register_peephole(new_prog)
+        new_prog = apply_volatile_void_read_cmp(new_prog)
+        new_prog = apply_dec_branch_indirect_y_fold(new_prog)
         new_prog = apply_mem_const_prop(new_prog)
         new_prog = apply_const_arith_fold(new_prog)
         new_prog = apply_round_trip_load_drop(new_prog)
@@ -375,6 +385,13 @@ def _run_stage(
             )
             all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
             asm3 = _peephole_fixedpoint(asm2, zp_slot_symbols=all_slot_symbols)
+            # Promote a reg('A')-param's body-local spill to live in
+            # A across the loop body (parks it in Y during the
+            # preamble's A-clobbering staging). Runs alongside the
+            # X-pivot promotion below — both target a memory cell
+            # whose lifetime is a single loop. See the pass docstring
+            # for the exact eligibility shape.
+            asm3 = apply_promote_loop_carried_to_a(asm3)
             asm3 = apply_loop_counter_to_x(asm3)
             # Catch cases the X-pivot promotion couldn't reach: a
             # Pseudo that got X-colored upstream but kept an
@@ -396,6 +413,21 @@ def _run_stage(
             # collected.
             asm3 = apply_dual_index_promotion(asm3)
             asm3 = _peephole_fixedpoint(asm3, zp_slot_symbols=all_slot_symbols)
+            # Drop dead reg-attributed-param entry stubs. The
+            # peephole loop above has by now collapsed any
+            # `LDA __zpabi_<fn>__<param>; TAX` initialization
+            # sequence into a direct `LDX` (via direct_index_load)
+            # and then dropped that LDX entirely when the param's
+            # value is already in X from the calling convention
+            # (via redundant_load_elimination). At THIS point the
+            # slot is genuinely unread in the body, so the entry
+            # stub `STX __zpabi_<fn>__<param>` is dead. The general
+            # asm_dead_store pass can't drop it when the body
+            # contains a volatile Indirect (which conservatively
+            # aliases every byte); the targeted pass below knows
+            # the function's own `__zpabi_*` slots can't be
+            # aliased by an Indirect and drops the stub directly.
+            asm3 = apply_dead_reg_entry_stub_drop(asm3, abi)
             asm4 = expand_long_branches(asm3)
             # Drop EQU entries for `__local_*` symbols that the
             # peephole catalog rendered unreferenced. Walks asm_ast

@@ -199,7 +199,7 @@ interlace_blit_p1:
 .if_end@0:
    DEX
    CPX   __zpabi_interlace_blit_p1__zp_blit_x_end
-   BNE   .interlace_blit_p1@asm_ssa_split@0
-   RTS
-.interlace_blit_p1@asm_ssa_split@0:
+   BEQ   .lb_skip@0
    JMP   .loop@0_start
+.lb_skip@0:
+   RTS

@@ -80,10 +80,18 @@ class TestDeadAArithBasic(unittest.TestCase):
 
 
 class TestDeadAArithIteration(unittest.TestCase):
-    """The headline case: LDA #$00; ADC #$00; JMP. Iteration 1
-    drops ADC. Re-run drops LDA."""
+    """The headline case: LDA #$00; ADC #$00; JMP. The pass now
+    iterates to a local fixed point in a single call — first round
+    drops the ADC (A dead after JMP), second round drops the LDA
+    (its only consumer was the ADC, now gone). The outer peephole
+    fixedpoint depended on dead_a_arith leaving NO droppable atom
+    behind in one call: a downstream pass (e.g. volatile_void_read_
+    cmp) that extends A's liveness by rewriting LDA-from-indirect
+    into CMP-from-indirect would otherwise lock in a still-
+    droppable LDA #imm by extending A's liveness across the
+    Compare it introduced."""
 
-    def test_pair_drops_in_two_iterations(self) -> None:
+    def test_pair_drops_in_one_call(self) -> None:
         instrs = [
             asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
             asm_ast.Add(src=asm_ast.Imm(value=0), dst=_REG_A),
@@ -91,16 +99,12 @@ class TestDeadAArithIteration(unittest.TestCase):
             asm_ast.Label(name="L"),
             asm_ast.Return(save_a=False),
         ]
-        # First pass: ADC drops (A dead after JMP). LDA stays —
-        # the ADC was its consumer, but we haven't dropped the
-        # ADC yet at the time we check the LDA.
-        out1 = _rewritten(instrs)
-        self.assertEqual(len(out1), 4)
-        # Second pass on the result: LDA's only consumer (the
-        # ADC) is gone, so A is dead after LDA. Drops.
-        out2 = _rewritten(out1)
-        self.assertEqual(len(out2), 3)
-        self.assertIsInstance(out2[0], asm_ast.Jump)
+        # Single call now drops BOTH: ADC dropped in round 1, then
+        # LDA dropped in round 2 (now that the ADC's A-read is
+        # gone). Local fixed point converges in 2 rounds.
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 3)
+        self.assertIsInstance(out[0], asm_ast.Jump)
 
 
 class TestDeadAArithOperandShape(unittest.TestCase):

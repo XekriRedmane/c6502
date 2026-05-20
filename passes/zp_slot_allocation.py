@@ -165,7 +165,10 @@ def allocate_zp_slots(
             continue
         new_addrs = addrs_by_fn.get(fn_name, list(layout.addrs))
         new_layout = ZpLayout(
-            slot_symbols=list(layout.slot_symbols), addrs=new_addrs,
+            slot_symbols=list(layout.slot_symbols),
+            addrs=new_addrs,
+            param_registers=list(layout.param_registers),
+            return_register=layout.return_register,
         )
         updated_abi[fn_name] = new_layout
         for sym, addr in zip(new_layout.slot_symbols, new_addrs):

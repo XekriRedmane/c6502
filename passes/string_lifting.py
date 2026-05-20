@@ -112,6 +112,8 @@ class StringLifter:
         return c99_ast.Type_var_decl(
             name=vd.name, init=new_init,
             data_type=vd.data_type, storage_class=vd.storage_class,
+            abi_annotation=vd.abi_annotation,
+            register_class=vd.register_class,
         )
 
     def _lift_init(self, init, declared_type):
@@ -215,6 +217,8 @@ class StringLifter:
             body=self._lift_block(fd.body),
             data_type=fd.data_type, storage_class=fd.storage_class,
             abi_annotation=fd.abi_annotation,
+            return_register=fd.return_register,
+            param_registers=list(fd.param_registers),
         )
 
     # ------------------------------------------------------------------

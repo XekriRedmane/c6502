@@ -18,19 +18,23 @@ floor_enemy_advance:
    STA   __local_floor_enemy_advance__slot
 .loop@0_start:
    LDA   __local_floor_enemy_advance__slot
-   BPL   .lb_skip@0
+   BPL   .lb_skip@2
    JMP   .loop@0_break
-.lb_skip@0:
+.lb_skip@2:
    LDX   __local_floor_enemy_advance__slot
    LDA   enemy_flag,X
    BNE   .if_else@1
    LDA   jump_flag
-   BPL   .if_end@2
+   BMI   .lb_skip@1
+   JMP   .if_end@0
+.lb_skip@1:
    LDA   #$00
    STA   jump_flag
    LDX   __zpabi_floor_enemy_advance__player_col
    LDA   floor_enemy_spawn_sched,X
-   BMI   .if_end@3
+   BPL   .lb_skip@0
+   JMP   .if_end@0
+.lb_skip@0:
    LDA   #$20
    STA   __zpabi_snd_delay_down__pitch
    LDA   #$0A
@@ -61,8 +65,6 @@ floor_enemy_advance:
    CLC
    ADC   #$09
    STA   enemy_y,X
-.if_end@3:
-.if_end@2:
    JMP   .if_end@0
 .if_else@1:
    AND   #$80
@@ -90,10 +92,9 @@ floor_enemy_advance:
    SEC
    SBC   #$02
    CMP   #$8D
-   BCC   .if_end@12
+   BCC   .if_end@6
    LDA   #$00
    STA   enemy_flag,X
-.if_end@12:
    JMP   .if_end@6
 .if_else@7:
    LDA   __zpabi_floor_enemy_advance__move_dir

@@ -64,6 +64,14 @@ from passes.optimization_asm.hwreg_eligibility import HwRegEligibility
 from passes.optimization_asm.liveness import Liveness, _defs_in
 
 
+class RegallocError(Exception):
+    """Raised when the byte-granular allocator can't honor a hard
+    constraint — currently only `__attribute__((reg("X"|"Y")))` on
+    a c99 local, whose required-HwReg pinning fails (the IR's use
+    of the value isn't compatible with the requested register, or
+    two required pinnings conflict)."""
+
+
 def color_graph(
     fn: asm_ast.Function,
     graph: InterferenceGraph,
@@ -325,6 +333,53 @@ def _try_hwreg_assign(
     # stores: lots of references, lots of savings if pinned.
     def _priority(name: str) -> tuple:
         return (-eligibility.use_count.get(name, 0), name)
+
+    # Required pinning (from `__attribute__((reg("X"|"Y")))` on a
+    # c99 local OR parameter). These are HARD: if we can't pin to
+    # the requested register, the compilation fails — silently
+    # falling back to the other reg or to a ZP slot would violate
+    # the user's contract. Process before the hint-based passes so
+    # required names claim their registers before any hint-driven
+    # candidate competes.
+    #
+    # `register_pins` (the upstream source) maps c99-level base
+    # names; `_ssa_base` expands those to every SSA-renamed
+    # version. Some derived names — notably the parameter-arrival
+    # spelling that ssa_construction pushes as the initial value
+    # for a promoted param — aren't promoted to their own byte-var
+    # in the interference graph; they only appear as immediate
+    # values on the renaming stack. Skip names absent from the
+    # graph (they have no node to pin; the pinned SSA versions of
+    # the same base still get assigned, which is what reaches the
+    # body).
+    for name in sorted(eligibility.required_x):
+        if name in hwreg_assignments:
+            continue
+        if name not in graph.nodes:
+            continue
+        if not _can_pin(name, "X"):
+            raise RegallocError(
+                f"can't pin `{name}` to X — the user's "
+                f"`__attribute__((reg(\"X\")))` annotation conflicts "
+                f"with the IR's use of X for this value (operand "
+                f"shape, call-clobber, or interference with another "
+                f"required-X value)"
+            )
+        hwreg_assignments[name] = "X"
+    for name in sorted(eligibility.required_y):
+        if name in hwreg_assignments:
+            continue
+        if name not in graph.nodes:
+            continue
+        if not _can_pin(name, "Y"):
+            raise RegallocError(
+                f"can't pin `{name}` to Y — the user's "
+                f"`__attribute__((reg(\"Y\")))` annotation conflicts "
+                f"with the IR's use of Y for this value (operand "
+                f"shape, call-clobber, or interference with another "
+                f"required-Y value)"
+            )
+        hwreg_assignments[name] = "Y"
 
     # hints_x: prefer X, fall back to Y. Names already pinned (by
     # earlier iterations) skip cleanly. The per-HwReg gate in

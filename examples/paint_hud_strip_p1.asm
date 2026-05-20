@@ -64,7 +64,7 @@ paint_hud_strip_p1:
    STA   $398C,Y
    STA   $3D8C,Y
    DEY
-   BPL   .paint_hud_strip_p1@asm_ssa_split@0
-   RTS
-.paint_hud_strip_p1@asm_ssa_split@0:
+   BMI   .lb_skip@0
    JMP   .loop@0_start
+.lb_skip@0:
+   RTS

@@ -105,6 +105,8 @@ class LabelResolver:
             data_type=fd.data_type,
             storage_class=fd.storage_class,
             abi_annotation=fd.abi_annotation,
+            return_register=fd.return_register,
+            param_registers=list(fd.param_registers),
         )
 
     def resolve_function(

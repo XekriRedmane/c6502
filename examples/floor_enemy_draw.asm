@@ -23,9 +23,9 @@ floor_enemy_draw:
    LDX   #$03
 .loop@0_start:
    LDA   enemy_flag,X
-   BNE   .lb_skip@0
+   BNE   .lb_skip@1
    JMP   .loop@0_continue
-.lb_skip@0:
+.lb_skip@1:
    LDY   enemy_col,X
    LDA   proj_screen_col,Y
    STA   __local_floor_enemy_draw__3
@@ -93,10 +93,10 @@ floor_enemy_draw:
    LDX   __local_floor_enemy_draw__slot
 .loop@0_continue:
    DEX
-   BPL   .floor_enemy_draw@asm_ssa_split@0
-   RTS
-.floor_enemy_draw@asm_ssa_split@0:
+   BMI   .lb_skip@0
    JMP   .loop@0_start
+.lb_skip@0:
+   RTS
 
 proj_screen_col:
    DC.B  $00, $00, $00, $00, $01, $01, $01, $02, $02, $02, $02, $03, $03, $03, $04, $04

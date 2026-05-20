@@ -66,10 +66,8 @@ refresh_hit_entities:
 .if_end@1:
 .if_end@0:
    DEX
-   BPL   .refresh_hit_entities@asm_ssa_split@0
+   BPL   .loop@0_start
    RTS
-.refresh_hit_entities@asm_ssa_split@0:
-   JMP   .loop@0_start
 
 entity_hit_y:
    DS.B  12

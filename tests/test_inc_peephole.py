@@ -67,13 +67,19 @@ class TestIncPeepholeAsmShape(unittest.TestCase):
         # Easiest: just check no `ADC   #$01` survives (the ADC #$01
         # only ever appears in this program for the i++ increment).
         self.assertNotIn("ADC   #$01", asm)
-        # And the INC + BNE done-label chain should appear. The
-        # INC target is a body-local slot symbol
-        # (`__local_<fn>__<source>[_<byte>]`), bound to a ZP
-        # address via the EQU directive emitted at the top.
+        # And the INC + BNE chain should appear. The INC target is
+        # a body-local slot symbol (`__local_<fn>__<source>[_<byte>]`),
+        # bound to a ZP address via the EQU directive emitted at the
+        # top. The branch-through-jump peephole rewrites the BNE to
+        # skip directly past the high-byte INC to the loop start,
+        # so the original `.inc_done@N` label gets folded away by
+        # the downstream dead-label drop; check for the simpler
+        # INC + BNE shape instead.
         import re
         self.assertRegex(asm, r"INC\s+__local_\w+__\w+")
-        self.assertIn(".inc_done@", asm)
+        self.assertRegex(
+            asm, r"INC\s+__local_\w+__\w+\s*\n\s*BNE\s+",
+        )
 
     def test_one_byte_inc_no_branch(self) -> None:
         # 1-byte add-1 collapses to a bare INC — no BNE, no done

@@ -126,6 +126,15 @@ class HwRegEligibility:
     hints_x: set[str] = field(default_factory=set)
     hints_y: set[str] = field(default_factory=set)
     use_count: dict[str, int] = field(default_factory=dict)
+    # Names that MUST be pinned to a specific HwReg (the user wrote
+    # `__attribute__((reg("X"|"Y")))` on the corresponding c99
+    # local). The regalloc raises if it can't honor the pinning —
+    # falling back to ZP would silently violate the user's contract.
+    # Required-A entries don't fit the same model (A is the universal
+    # arithmetic scratch — pinning a value to A across any operation
+    # is unsound), so reg("A") on a local is rejected upstream.
+    required_x: set[str] = field(default_factory=set)
+    required_y: set[str] = field(default_factory=set)
 
     @property
     def eligible(self) -> set[str]:
@@ -136,7 +145,12 @@ class HwRegEligibility:
         return self.eligible_x | self.eligible_y
 
 
-def scan_function(fn: asm_ast.Function) -> HwRegEligibility:
+def scan_function(
+    fn: asm_ast.Function,
+    *,
+    register_pins: dict[str, str] | None = None,
+    register_hints: dict[str, str] | None = None,
+) -> HwRegEligibility:
     """Compute the per-Pseudo eligibility sets for HwReg coloring,
     plus X/Y hint sets derived from the index-setup chain pattern.
     Single forward pass over `fn.instructions`.
@@ -145,7 +159,27 @@ def scan_function(fn: asm_ast.Function) -> HwRegEligibility:
     `eligible_x` iff every def/use is X-encodable, and similarly
     for `eligible_y`. A name can be in both (the common case for
     Imm / ZP / Data / Reg peers), in one (when an IndexedData
-    peer is asymmetric), or in neither (any disqualifying role)."""
+    peer is asymmetric), or in neither (any disqualifying role).
+
+    `register_pins` maps a c99 IR base name (e.g. `@2.y`) to its
+    REQUIRED register ("X" or "Y"). Any derived name pinned to X
+    joins `required_x`; similarly Y. Required pinning is hard:
+    coloring raises if the IR's use pattern conflicts with the
+    requested register. Use for locals where the user wrote
+    `__attribute__((reg("X"|"Y")))` and has no fallback storage.
+
+    `register_hints` is the soft variant — add the matching SSA
+    names to `hints_x` / `hints_y` so the regalloc TRIES to pin
+    but FALLS BACK on infeasibility. Use for parameters with
+    `__attribute__((reg(...)))`: the calling convention still
+    leaves the value in the named register on entry (the
+    tac_to_asm entry stub writes the param's ZP slot), so the
+    body has a valid slot fallback when pinning the body's
+    Pseudos to the register doesn't fit.
+
+    Both maps go through `_ssa_base` so the same base spelling
+    matches every SSA-renamed version (TAC-SSA `.<N>` and asm-SSA
+    `.b<offset>.v<counter>` suffixes both stripped)."""
     seen: set[str] = set()
     disqualified_x: set[str] = set()
     disqualified_y: set[str] = set()
@@ -204,11 +238,63 @@ def scan_function(fn: asm_ast.Function) -> HwRegEligibility:
     eligible_any = eligible_x | eligible_y
     hints_x &= eligible_any
     hints_y &= eligible_any
+    required_x: set[str] = set()
+    required_y: set[str] = set()
+    # Each base name (e.g. `@2.y`) may have many SSA-renamed
+    # versions in `seen`. Match them all and gather into
+    # required (hard) and hints (soft) sets per the per-base
+    # target registers.
+    for name in seen:
+        base = _ssa_base(name)
+        if register_pins:
+            target = register_pins.get(base)
+            if target == "X":
+                required_x.add(name)
+            elif target == "Y":
+                required_y.add(name)
+        if register_hints:
+            target = register_hints.get(base)
+            if target == "X":
+                hints_x.add(name)
+            elif target == "Y":
+                hints_y.add(name)
+    # Re-apply the eligibility restriction so a hint added here
+    # for a name disqualified from both X and Y still drops out
+    # (matches the original chain-derived hints' invariant).
+    hints_x &= eligible_any
+    hints_y &= eligible_any
     return HwRegEligibility(
         eligible_x=eligible_x, eligible_y=eligible_y,
         hints_x=hints_x, hints_y=hints_y,
         use_count=use_count,
+        required_x=required_x, required_y=required_y,
     )
+
+
+def _ssa_base(name: str) -> str:
+    """Recover the c99-level base spelling from an SSA-renamed name.
+    Two suffix layers ride above the original name:
+
+      - **TAC-SSA** (`passes.optimization.ssa_construction.fresh`)
+        appends `.<counter>` per def, so `@1.acc` becomes
+        `@1.acc.1`, `@1.acc.2`, ... .
+      - **Asm-SSA** (`passes.optimization_asm.ssa_construction.fresh`)
+        appends `.b<offset>.v<counter>` per byte+version.
+
+    Combined, a 1-byte local `@1.acc` may surface as
+    `@1.acc.2.b0.v3`. Strip the asm-SSA suffix first (greedy match
+    on `.b<digits>.v<digits>$`), then any trailing TAC-SSA suffix
+    (`.<digits>$`). The original identifier-resolution rename
+    (`@<counter>.<orig>`) has a non-digit `<orig>` segment so it
+    survives both strips."""
+    import re
+    asm_ssa = re.match(r"^(.*?)\.b\d+\.v\d+$", name)
+    if asm_ssa:
+        name = asm_ssa.group(1)
+    tac_ssa = re.match(r"^(.*?)\.\d+$", name)
+    if tac_ssa:
+        name = tac_ssa.group(1)
+    return name
 
 
 # ---------------------------------------------------------------------------

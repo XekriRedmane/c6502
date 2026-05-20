@@ -131,10 +131,15 @@ BOOL: "_Bool"
 COMPLEX: "_Complex"
 IMAGINARY: "_Imaginary"
 
-// GCC-style attribute annotation. The only recognized form today is
-// `__attribute__((<name>))`, with `<name>` being a plain IDENTIFIER.
-// Used to attach an ABI annotation (e.g. `zp_abi`) to a function
-// declaration; see docs/leaf_zp_abi.md.
+// GCC-style attribute annotation. Two recognized spec shapes:
+//   * Bare identifier:   `__attribute__((zp_abi))`
+//   * Identifier + arg:  `__attribute__((reg("X")))`
+// Multiple comma-separated specs are allowed in one clause, e.g.
+// `__attribute__((zp_abi, reg("A")))`. Used to attach ABI / codegen
+// annotations to function, variable, or parameter declarations
+// (see docs/leaf_zp_abi.md for zp_abi, and the reg("A"|"X"|"Y")
+// extension that pins a parameter / local / return value to a
+// specific 6502 register).
 ATTRIBUTE: "__attribute__"
 
 // Sentinel emitted by the preprocessor in place of `#pragma c6502
@@ -223,11 +228,17 @@ declaration: function_decl | var_decl
 // combinations.
 specifier: type_specifier | type_qualifier | STATIC | EXTERN
 // Optional GCC-style attribute prefix on a declaration (function or
-// var). Today the only legal annotation name is `zp_abi`; the
-// transformer rejects any other name. Attribute appears BEFORE the
-// declaration specifiers; placing it after the declarator (also
-// legal in GCC) is not supported.
-attribute_clause: ATTRIBUTE LPAREN LPAREN IDENTIFIER RPAREN RPAREN
+// var). Recognized annotation names: `zp_abi` (function-level, bare
+// identifier) and `reg("A"|"X"|"Y")` (with a string-literal
+// argument). The transformer rejects any other name. A single clause
+// may carry multiple comma-separated specs. On a function-level
+// prefix, `reg(...)` names the return register; on an init_declarator
+// postfix it names the local-variable register; on a
+// parameter_declaration postfix it names the argument-passing
+// register.
+attribute_clause: ATTRIBUTE LPAREN LPAREN attribute_spec (COMMA attribute_spec)* RPAREN RPAREN
+attribute_spec: IDENTIFIER                                  -> attr_name_only
+              | IDENTIFIER LPAREN STRING_LITERAL RPAREN     -> attr_name_arg
 
 // Pragma clause prefixed to a `for` statement. The preprocessor maps
 // every `#pragma c6502 loop unroll(enable)` line to the
@@ -251,7 +262,13 @@ pragma_clause: PRAGMA_UNROLL                                         -> pragma_u
 var_decl: attribute_clause? specifier+ init_declarator (COMMA init_declarator)* SEMICOLON
         | attribute_clause? specifier+ SEMICOLON                -> tag_only_decl
 
-init_declarator: declarator (ASSIGN initializer)?
+// Postfix `attribute_clause?` attaches register / ABI annotations to
+// this specific declarator — used for `int x __attribute__((reg("X")))`
+// style local annotations. The prefix attribute on var_decl applies
+// to the WHOLE declaration; the postfix here applies to the single
+// init-declarator (so a multi-init-declarator declaration can target
+// individual identifiers).
+init_declarator: declarator attribute_clause? (ASSIGN initializer)?
 
 // Initializer per C99 §6.7.8: either a single assignment-level
 // expression, or a brace-enclosed list of initializers. The list
@@ -593,7 +610,12 @@ parameter_or_ellipsis: parameter_declaration | ELLIPSIS
 // grammar to accept both shapes; the AST builder for parameters
 // (when wired through) will inspect the resulting tree to pick
 // which alternative was actually meant.
-parameter_declaration: specifier+ declarator
+// Postfix `attribute_clause?` on the named-parameter form lets a
+// caller's prototype say `int foo(char x __attribute__((reg("X"))))`,
+// pinning the argument to a specific 6502 register at the calling
+// convention level. Abstract-declarator parameters don't carry a
+// name and can't be reg-annotated.
+parameter_declaration: specifier+ declarator attribute_clause?
                      | specifier+ abstract_declarator?
 
 // Old-style K&R identifier list (§6.7.5). Accepted for grammar

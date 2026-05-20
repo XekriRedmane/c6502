@@ -289,7 +289,16 @@ class LocalAttr(IdAttr):
     or function parameter. No `is_global` (it isn't visible across
     TUs / can't be), no `initial_value` (the initializer, if any, is
     lowered as a regular TAC `Copy` at the declaration's source
-    position)."""
+    position).
+
+    `register_class` is the 6502 register name ("A"/"X"/"Y") this
+    object is pinned to, when the declaration carried a
+    `__attribute__((reg("...")))` annotation; None otherwise. Used
+    by the AddressOf check below (taking the address of a
+    reg-attributed object is rejected per C99 §6.5.3.2.1's `register`
+    constraint) and by codegen to route the object through the
+    named register at the call boundary."""
+    register_class: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1881,9 +1890,17 @@ class TypeChecker:
             # parameter's type comes from the FunType's params list,
             # paired with the param name in the function_decl's
             # `params` array.
-            for p_name, p_type in zip(fd.params, ftype.params):
+            # Per-param register attributes ride parallel to `params`.
+            # An empty entry ("" sentinel) becomes None.
+            param_regs = list(fd.param_registers) + [""] * (
+                len(fd.params) - len(fd.param_registers)
+            )
+            for p_name, p_type, p_reg in zip(
+                fd.params, ftype.params, param_regs,
+            ):
                 self.symbols[p_name] = Symbol(
-                    type=p_type, attrs=LocalAttr(),
+                    type=p_type,
+                    attrs=LocalAttr(register_class=p_reg or None),
                 )
             saved = self._return_type
             self._return_type = ftype.ret
@@ -2154,7 +2171,8 @@ class TypeChecker:
         # explicit Cast for any narrowing/widening (same shape as
         # Assignment / Return / arg conversion).
         self.symbols[vd.name] = Symbol(
-            type=vd.data_type, attrs=LocalAttr(),
+            type=vd.data_type,
+            attrs=LocalAttr(register_class=vd.register_class),
         )
         if vd.init is not None:
             # `Const(Array(...))` / `Const(Structure(...))` shouldn't
@@ -2655,7 +2673,10 @@ class TypeChecker:
                         auto_introduce=self._auto_introduce_tag,
                     )
                     self.symbols[vd.name] = Symbol(
-                        type=vd.data_type, attrs=LocalAttr(),
+                        type=vd.data_type,
+                        attrs=LocalAttr(
+                            register_class=vd.register_class,
+                        ),
                     )
                     if vd.init is None:
                         continue
@@ -3916,6 +3937,24 @@ class TypeChecker:
                 # `_check_exp` doesn't trip the guard.
                 if isinstance(inner, c99_ast.Var):
                     sym = self.symbols.get(inner.name)
+                    # Reject `&x` on a reg-attributed object (param
+                    # or local) per C99 §6.5.3.2.1: the operand of
+                    # `&` shall not be declared with the `register`
+                    # storage class. Our `reg("...")` attribute is
+                    # the explicit-register form of that rule.
+                    if (
+                        sym is not None
+                        and isinstance(sym.attrs, LocalAttr)
+                        and sym.attrs.register_class is not None
+                    ):
+                        raise TypeCheckError(
+                            f"can't take the address of `{inner.name}`: "
+                            f"declared with "
+                            f"`__attribute__((reg("
+                            f"{sym.attrs.register_class!r})))` so it "
+                            f"lives in a 6502 register, not memory "
+                            f"(C99 §6.5.3.2.1)"
+                        )
                     if sym is not None and isinstance(sym.type, FunType):
                         inner.data_type = sym.type
                         result = Pointer(referenced_type=sym.type)

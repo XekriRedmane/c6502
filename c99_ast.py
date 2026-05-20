@@ -184,6 +184,7 @@ class Type_var_decl:
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
     abi_annotation: str | None = None
+    register_class: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -194,6 +195,8 @@ class Type_function_decl:
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
     abi_annotation: str | None = None
+    return_register: str | None = None
+    param_registers: list[str] = field(default_factory=list)
 
 
 @dataclass

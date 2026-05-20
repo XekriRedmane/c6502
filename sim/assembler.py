@@ -1052,6 +1052,14 @@ def _compare_size(
                 "(no indirect-Y for CPX/CPY)"
             )
         return 4
+    if isinstance(right, asm_ast.IndirectY):
+        if not isinstance(left.reg, asm_ast.A):
+            raise AssemblerError(
+                f"Compare with left={left!r} can't use an IndirectY "
+                f"right (no indirect-Y for CPX/CPY)"
+            )
+        # CMP (DPTR),Y — no LDY setup, just the indirect-Y op.
+        return 2
     raise AssemblerError(f"unsupported Compare right: {right!r}")
 
 
@@ -1104,6 +1112,12 @@ def _emit_compare(
                 f"got {right!r}"
             )
         return _emit_indy(opcode, right)
+    if isinstance(right, asm_ast.IndirectY):
+        if opcode != "CMP":
+            raise AssemblerError(
+                f"Compare with left={left!r} can't use IndirectY right"
+            )
+        return _emit_indy_no_y_setup(opcode)
     raise AssemblerError(f"unsupported Compare right: {right!r}")
 
 

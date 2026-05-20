@@ -121,6 +121,13 @@ def optimize_program(
         if isinstance(tl, (asm_ast.StaticVariable, asm_ast.Function))
     }
     statics_frozen = frozenset(statics)
+    # Derive `register_pins: dict[base_name, "X"|"Y"]` from the
+    # c99 symbol table. Each LocalAttr.register_class identifies a
+    # variable that the user pinned via `__attribute__((reg("...")))`.
+    # The asm regalloc's HwReg pre-pass consumes this dict so
+    # those Pseudos color directly to Reg(X) / Reg(Y) rather than
+    # to a ZP byte.
+    register_pins = _register_pins_from_symbols(symbols)
     new_top: list[asm_ast.Type_top_level] = []
     colorings: dict[str, Coloring] = {}
     for tl in prog.top_level:
@@ -134,6 +141,7 @@ def optimize_program(
             new_fn, coloring = _optimize_function(
                 tl, statics_frozen, blocked_addrs, allowed_range,
                 local_pool=pool_for_fn,
+                register_pins=register_pins,
             )
             new_top.append(new_fn)
             colorings[new_fn.name] = coloring
@@ -205,11 +213,37 @@ def _allowed_range_for(
     return range(lo, hi)
 
 
+def _register_pins_from_symbols(symbols) -> dict[str, str]:
+    """Walk the c99 symbol table for every LocalAttr that carries a
+    `register_class` attribute and return a `{name: register}` dict.
+    The names are the c99 IR's resolved spellings (`@<N>.<orig>`),
+    which the asm-level SSA construction will use as the base of
+    each renamed version. Returns an empty dict when `symbols` is
+    None or no such attributes exist."""
+    if symbols is None:
+        return {}
+    from passes.type_checking import LocalAttr
+    out: dict[str, str] = {}
+    # SymbolTable exposes the underlying dict via the iterable-of-
+    # items protocol (or .__iter__); access the private dict for
+    # robustness across that boundary.
+    table = getattr(symbols, "_table", None)
+    if table is None:
+        return {}
+    for name, sym in table.items():
+        attrs = sym.attrs
+        if isinstance(attrs, LocalAttr) and attrs.register_class is not None:
+            out[name] = attrs.register_class
+    return out
+
+
 def _optimize_function(
     fn: asm_ast.Function, statics: frozenset[str],
     blocked_addrs: set[int],
     allowed_range: range | None = None,
     local_pool: list[int] | None = None,
+    *,
+    register_pins: dict[str, str] | None = None,
 ) -> tuple[asm_ast.Function, Coloring]:
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
     # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
@@ -266,7 +300,27 @@ def _optimize_function(
     # — those are the candidates with the largest payoff. We scan
     # the IR (pre-coalescing names), then project to rep level
     # using the coalescing result.
-    raw_eligibility = scan_hwreg_eligibility(fn)
+    # Locals' reg-attributes are HARD pins: the user has no
+    # fallback storage so failure must surface as an error.
+    # Params' reg-attributes are SOFT hints: the calling-convention
+    # entry stub already writes the param's ZP slot, so the body
+    # has a valid fallback if the IR shape doesn't fit the requested
+    # register (e.g. `n` used in `LDA #0; CMP n` — CMP doesn't
+    # accept X/Y as the right operand). When the hint succeeds the
+    # entry-stub slot store becomes dead and gets dropped.
+    if register_pins:
+        local_pins = {
+            n: r for n, r in register_pins.items() if n not in fn.params
+        }
+        param_hints = {
+            n: r for n, r in register_pins.items() if n in fn.params
+        }
+    else:
+        local_pins = None
+        param_hints = None
+    raw_eligibility = scan_hwreg_eligibility(
+        fn, register_pins=local_pins, register_hints=param_hints,
+    )
     rep_eligibility = _project_eligibility(
         raw_eligibility, coalesce_result, all_names=_all_pseudo_names(fn),
     )
@@ -378,6 +432,8 @@ def _project_eligibility(
     rep_eligible_y: set[str] = set()
     rep_hints_x: set[str] = set()
     rep_hints_y: set[str] = set()
+    rep_required_x: set[str] = set()
+    rep_required_y: set[str] = set()
     rep_use_count: dict[str, int] = {}
     for rep, members in members_by_rep.items():
         if all(m in raw.eligible_x for m in members):
@@ -388,6 +444,17 @@ def _project_eligibility(
             rep_hints_x.add(rep)
         if any(m in raw.hints_y for m in members):
             rep_hints_y.add(rep)
+        # Required transfers if ANY member is required — coalescing
+        # is symmetric, so a rep that swallows a pinned member is
+        # itself pinned. The regalloc will check that the rep is in
+        # the matching eligible set; if coalescing merged a pinned
+        # name with one that isn't HwReg-eligible, the rep won't be
+        # in `rep_eligible_<x|y>` and the regalloc will hard-error
+        # with a useful message.
+        if any(m in raw.required_x for m in members):
+            rep_required_x.add(rep)
+        if any(m in raw.required_y for m in members):
+            rep_required_y.add(rep)
         # Use count is the sum across all merged members.
         rep_use_count[rep] = sum(
             raw.use_count.get(m, 0) for m in members
@@ -401,4 +468,6 @@ def _project_eligibility(
         hints_x=rep_hints_x,
         hints_y=rep_hints_y,
         use_count=rep_use_count,
+        required_x=rep_required_x,
+        required_y=rep_required_y,
     )

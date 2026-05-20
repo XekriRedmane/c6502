@@ -653,5 +653,181 @@ class TestRedundantLoadZReflects(unittest.TestCase):
         self.assertEqual(len(out), 5)
 
 
+class TestRedundantLoadRegToReg(unittest.TestCase):
+    """Reg-to-reg transfers (TXA / TYA / TAX / TAY) drop when both
+    src and dst already mirror a common operand AND flags don't
+    need re-setting."""
+
+    def test_txa_after_lda_tax_drops_flags_dead(self) -> None:
+        # `LDA M; TAX; TXA` — after LDA M, A === M. After TAX,
+        # X === M too. The second TXA is redundant for value
+        # (A still === M === X) and droppable when flags are dead.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),       # LDA M
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),     # TAX
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # TXA — drop
+            asm_ast.Mov(src=_REG_A, dst=zp82),       # STA N
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 4)
+        # Ensure the dropped one is the TXA.
+        self.assertFalse(any(
+            isinstance(o, asm_ast.Mov)
+            and isinstance(o.src, asm_ast.Reg)
+            and isinstance(o.src.reg, asm_ast.X)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+            for o in out
+        ))
+
+    def test_txa_kept_when_dst_mirrors_empty(self) -> None:
+        # `LDX M; TXA` — X mirrors M, but A's mirror list is empty
+        # (we don't know what's in A). Can't drop — the TXA is
+        # what makes A === M.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_X),       # LDX M
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # TXA — keep
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_txa_dropped_z_survives_clc(self) -> None:
+        # CLC writes only the C flag; N/Z (and so z_reflects) are
+        # untouched. After `LDA M; TAX; CLC; TXA; BEQ L`, z_reflects
+        # still covers M, and src=X mirrors M, so the TXA's flag
+        # effect is redundant. Drop.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),                  # LDA M
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),                # TAX
+            asm_ast.ClearCarry(),                               # CLC
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),                # TXA — drop
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 5)
+
+    def test_txa_kept_when_intervening_arith_clobbers_z(self) -> None:
+        # `LDA M; TAX; LDA #1; ADC #2; TXA; BEQ L` — the ADC
+        # clobbers Z. By the second TXA, A.mirrors is cleared
+        # (ADC wrote A) and z_reflects is cleared. No common
+        # mirror; can't drop.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),                  # LDA M
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),                # TAX
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),  # LDA #1
+            asm_ast.Add(src=asm_ast.Imm(value=2), dst=_REG_A),  # ADC #2
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),                # TXA — keep
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_txa_dropped_via_zreflects_match(self) -> None:
+        # `LDA M; TAX; TXA; BEQ L` — Z still reflects M (no flag-
+        # disturbing instruction between LDA and the second TXA).
+        # Both A and X mirror M. The second TXA's flag effect (Z
+        # = M == 0) is the same as the current Z; drop.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),       # LDA M (Z = M==0)
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),     # TAX (Z = X==0 = M==0)
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # TXA — drop
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 4)
+
+    def test_tax_droppable_symmetric(self) -> None:
+        # Same as txa case, but the other direction. After LDA M;
+        # TAX, a redundant `TAX` (src=A, dst=X) drops.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),     # redundant TAX
+            asm_ast.Mov(src=_REG_X, dst=zp82),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 4)
+
+    def test_residual_sx_diamond_txas_drop(self) -> None:
+        # Headline beam_target_tick shape (BPL-to-next has been
+        # dropped by branch_to_next_drop already):
+        #   LDX M; TXA; BMI L1; TXA; TXA; SBC #1; STA M
+        # The two interior TXAs are both redundant — A and X both
+        # mirror M after the first TXA, and neither subsequent
+        # SEC/SBC reads N/Z.
+        m = asm_ast.Data(name="m", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),          # LDX M
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # TXA
+            asm_ast.Branch(cond=asm_ast.MI(), target=".if_end"),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # redundant TXA
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # redundant TXA
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=m),
+            asm_ast.Label(name=".if_end"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # Both interior TXAs dropped (instructions go 10 → 8).
+        self.assertEqual(len(out), 8)
+        # First TXA still there (sets flags for BMI).
+        self.assertEqual(
+            out[1], asm_ast.Mov(src=_REG_X, dst=_REG_A),
+        )
+        # Branch immediately follows the surviving TXA.
+        self.assertIsInstance(out[2], asm_ast.Branch)
+        # After the BMI, no more TXAs — directly SEC.
+        self.assertIsInstance(out[3], asm_ast.SetCarry)
+
+    def test_txa_join_disagrees_keeps(self) -> None:
+        # Two predecessors, only one has A === X. The join clears
+        # the equivalence, so a TXA at the join point can't drop.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Branch(cond=asm_ast.EQ(), target="P2"),
+            # P1: LDA M; TAX  (A === X === M)
+            asm_ast.Mov(src=zp80, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_REG_X),
+            asm_ast.Jump(target="JOIN"),
+            asm_ast.Label(name="P2"),
+            # P2: LDA M2; LDX M2 (different M, but matching)
+            # Actually let me make this clearly diverge: one pred
+            # has A === M, X === M; the other has A === M', X === M.
+            asm_ast.Mov(src=zp82, dst=_REG_A),
+            asm_ast.Mov(src=zp80, dst=_REG_X),
+            asm_ast.Label(name="JOIN"),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),     # TXA — must keep
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # The TXA must remain (X.mirrors=[M] on both preds, but
+        # A.mirrors = {[M], [M']} — intersection empty → no overlap
+        # with X.mirrors).
+        self.assertTrue(any(
+            isinstance(o, asm_ast.Mov)
+            and isinstance(o.src, asm_ast.Reg)
+            and isinstance(o.src.reg, asm_ast.X)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+            for o in out
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

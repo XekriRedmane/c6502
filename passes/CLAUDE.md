@@ -40,6 +40,20 @@ this directory:
   overhead once `direct_index_load` fuses the `LDA idx; TAY` into
   a flag-preserving `LDY idx`.
 - `branch_invert.py` — `apply_branch_invert` peephole.
+- `branch_to_next_drop.py` — `apply_branch_to_next_drop` peephole.
+  Drops `Branch(_, L); Label(L)` adjacency (the Branch is a no-op
+  — both arms reach L's position) and drops the orphaned Label
+  in the same sweep when L has no other Branch/Jump/Phi refs.
+  Same-iteration label cleanup is load-bearing: `flags_dead_at`
+  treats any Label on its forward walk as "flags dead", which
+  relies on the codegen invariant that every block sets its own
+  flags before any reachable Branch. Leaving an orphan Label
+  immediately before a `Branch(_, _)` would let `dead_a_arith`
+  in the same iteration walk over the Label, see "flags dead",
+  and drop the preceding flag setter whose output the Branch
+  actually reads. Headline source: the sign-extension diamond
+  residue from `_translate_sign_extend` (BVC / BPL skip-empty-arm
+  pattern left over when the widened high byte is dead).
 - `branch_through_jump.py` — `apply_branch_through_jump` peephole.
   Rewrites `Branch(cond, L); X; L: Jump(T)` → `Branch(cond, T); X`
   when L is an in-function label and the Jump goes to another
@@ -705,7 +719,11 @@ them):
   RMW already set N/Z off M's new value).
 - `apply_redundant_load_elimination` — per-block A/X/Y tracker: if
   `LDA M` (or LDX/LDY M) is about to read M and the target register
-  already mirrors M, drop the load. Heaviest after loop unrolling.
+  already mirrors M, drop the load. Also drops reg-to-reg Movs
+  (TXA / TYA / TAX / TAY) when src's and dst's equivalence classes
+  share at least one mirrored operand AND flags are dead (or the
+  Z flag already reflects src's value). Heaviest after loop
+  unrolling.
 - `apply_redundant_store_elimination` — drops STAs whose written cell
   is overwritten before any read. Memory-to-memory transfer redundancy
   (e.g. the unrolled DPTR-staging sequences `redundant_load`'s A-
@@ -723,6 +741,12 @@ them):
 - `apply_branch_invert` — `Branch(cond, L); Jump(target); L:` →
   `Branch(inverted_cond, target)` when L is the immediate next
   instruction.
+- `apply_branch_to_next_drop` — `Branch(_, L); Label(L)` →
+  (both dropped if L is only referenced here, else just the
+  Branch). Closes the residual diamond left by `branch_invert`
+  when the original arms were DCE'd. Same-iteration Label
+  cleanup is required to keep `flags_dead_at` honest — see the
+  module roster entry above.
 - `apply_mem_const_prop` — per-block memory-cell value tracker
   (`Data(name, off)` / `ZP(addr, off)`); substitutes the known
   immediate at any downstream operand slot that accepts `Imm`.

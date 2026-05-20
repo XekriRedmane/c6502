@@ -492,6 +492,20 @@ def _flags_redundant_at(
         # `_is_redundant_load` already gates on Mov, so this branch
         # is dead in practice — defensive only.
         return _flags_dead_at(instrs, i + 1)
+    if isinstance(instr.src, asm_ast.Reg):
+        # Reg-to-reg transfer: the dropped TXA / TAX / TYA / TAY
+        # would set Z to (src register's value == 0). z_reflects
+        # already covers that when it intersects src's equivalence
+        # class — Z is currently set to (some operand M's value
+        # == 0), and src.mirrors contains M, so src equals M and
+        # Z reflects (src == 0).
+        src_cur = _get_reg(state, instr.src.reg)
+        if any(
+            _operands_equal(z, sm)
+            for z in state.z_reflects for sm in src_cur
+        ):
+            return True
+        return _flags_dead_at(instrs, i + 1)
     if any(_operands_equal(z, instr.src) for z in state.z_reflects):
         return True
     return _flags_dead_at(instrs, i + 1)
@@ -507,12 +521,22 @@ def _is_redundant_load(
     # value from an earlier read.
     if instr.is_volatile:
         return False
-    # Register-to-register Movs aren't redundant in the load sense
-    # — they're transfers, handled by _update_state.
-    if isinstance(instr.src, asm_ast.Reg):
-        return False
     if not isinstance(instr.dst, asm_ast.Reg):
         return False
+    if isinstance(instr.src, asm_ast.Reg):
+        # Register-to-register transfer (TXA / TYA / TAX / TAY).
+        # Droppable iff src's and dst's equivalence classes share
+        # at least one operand — both registers currently hold the
+        # same value, so the transfer wouldn't change dst. The
+        # caller still has to check the N/Z flag effect separately
+        # via `_flags_redundant_at`.
+        src_cur = _get_reg(state, instr.src.reg)
+        dst_cur = _get_reg(state, instr.dst.reg)
+        if not src_cur or not dst_cur:
+            return False
+        return any(
+            _operands_equal(s, d) for s in src_cur for d in dst_cur
+        )
     cur = _get_reg(state, instr.dst.reg)
     return any(_operands_equal(c, instr.src) for c in cur)
 

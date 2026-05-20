@@ -118,7 +118,7 @@ No action needed:
 ## Phase 4: Publish It
 
 After all other phases are complete, review the full conversation for material
-that could be published. Look for:
+that can be published to a personal log. Look for:
 
 - Interesting technical solutions or debugging stories
 - Community-relevant announcements or updates
@@ -127,25 +127,15 @@ that could be published. Look for:
 
 **Two target platforms — both worth drafting independently when material fits:**
 
-- **r/6502** — the subreddit for 6502 programming, retrocomputing, and
-  hardware. Audience already knows 6502 assembly and opcode quirks.
-  Best fit: technical posts with concrete asm, narrow scope, a hook
-  that lands fast. ~600-1000 words. Save drafts to
-  `docs/drafts/r6502/<NNN>_<slug>.md` where `<NNN>` is the next
-  three-digit index after the highest existing one in that directory.
-
 - **Personal blog (log)** — long-form narrative for a personal
-  audience. Best fit: walkthroughs, design rationales, project
+  audience. Best fit: technical posts with concrete asm, narrow scope, a hook
+  that lands fast, walkthroughs, design rationales, project
   retrospectives, the why-and-how behind a change. Typically
-  2000-3000+ words with code samples, subsections, and reflection.
-  Save drafts to `docs/drafts/log/<NNN>_<slug>.md` where `<NNN>` is
+  2000-3000+ words with code samples, diagrams, subsections, and reflection,
+  formatted as HTML.
+  Save drafts to `docs/drafts/log/<NNN>_<slug>/index.html` where `<NNN>` is
   the next three-digit index after the highest existing one in that
   directory.
-
-A single session may produce material that fits both — the same change
-written as a tight Reddit post AND as a longer blog walkthrough is
-fine; they're different formats for different audiences. Draft both
-when both apply.
 
 **Don't reference time when drafting.** Drafts may be published any
 time after writing, so wall-clock references go stale. Avoid phrases
@@ -164,17 +154,13 @@ Draft the article(s), save to the appropriate folder(s) above, then
 auto-commit and push them to main. Drafts are kept as a personal
 archive, not published anywhere — there's no platform handoff to wait
 for, so don't ask the user to approve or post. Present a summary of
-what was drafted and pushed:
+what was drafted and pushed, as an html page. Use diagrams and make
 
 All wrap-up steps complete. Drafted and pushed:
 
 1. "Title of Post" — 1-2 sentence description of the angle.
-   Platform: r/6502
-   docs/drafts/r6502/NNN_title-of-post.md
-
-2. "Title of Post" — 1-2 sentence description of the angle.
    Platform: personal blog
-   docs/drafts/log/NNN_title-of-post.md
+   docs/drafts/log/NNN_title-of-post/index.html
 
 **If no publishable material exists:**
 

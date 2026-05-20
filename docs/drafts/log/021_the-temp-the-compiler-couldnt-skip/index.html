@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The temp the compiler couldn't skip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#diff">Two assemblers, one comparison</a></li>
+      <li><a href="#why-temp">Why the temp existed</a></li>
+      <li><a href="#dispatch">Three lines of dispatch</a></li>
+      <li><a href="#peephole">The four-instruction window</a></li>
+      <li><a href="#eligibility">Eligibility, conservatively</a></li>
+      <li><a href="#cascade">The local that vanished</a></li>
+      <li><a href="#shape">Why this generalizes</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #021</p>
+    <h1>The temp the compiler couldn't skip</h1>
+    <p class="subtitle">An equality compare wrote its right operand to a zero-page local before reading it back. The opcode the compiler needed was sitting in the encoding table, waiting for a dispatch arm that nobody had written.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Target</strong> Apple II beam state machine</span>
+      <span><strong>Bug class</strong> back-end addressing-mode gap</span>
+      <span><strong>Result</strong> 5 bytes / 8 cycles per occurrence; three example files shrank</span>
+    </div>
+
+    <section id="diff">
+    <h2>Two assemblers, one comparison</h2>
+
+    <p>The C source was a single line out of the beam state machine's attack-phase dispatch:</p>
+
+<pre><code>if (beam_y == floor_y_table[floor_idx]) {
+    beam_state = 0x00;
+    return;
+}
+</code></pre>
+
+    <p>Two reads, one compare, one branch. The hand-written 6502 for the same logic packed it into four instructions:</p>
+
+<pre><code>        <span class="asm-mnem">AND</span> #$0F                  <span class="asm-comment">; extract floor idx from state</span>
+        <span class="asm-mnem">TAX</span>
+        <span class="asm-mnem">LDA</span> BEAM_Y
+        <span class="asm-mnem">CMP</span> FLOOR_Y_TABLE,X
+        <span class="asm-mnem">BNE</span> .attack_step          <span class="asm-comment">; not yet at floor row</span>
+</code></pre>
+
+    <p>c6502 produced this:</p>
+
+<pre><code>   <span class="asm-mnem">AND</span>   #$0F
+   <span class="asm-mnem">TAX</span>
+   <span class="hl"><span class="asm-mnem">LDA</span>   floor_y_table,X</span>
+   <span class="hl"><span class="asm-mnem">STA</span>   __local_beam_target_tick__0</span>
+   <span class="asm-mnem">LDA</span>   beam_y
+   <span class="asm-mnem">CMP</span>   __local_beam_target_tick__0
+   <span class="asm-mnem">BNE</span>   .if_end@2
+</code></pre>
+
+    <p>The two highlighted lines are a memory ping-pong: load the table entry into <code>A</code>, then immediately store it to a function-local byte at <code>$84</code>, only to read it back two instructions later. Both the load and the store address byte-sized memory that <code>CMP</code> can address directly. The compiler was paying five bytes and eight cycles to stage a value that the comparison instruction could have read in place.</p>
+
+    <p>This isn't an exotic case. It's what c6502 emits for every equality compare. The fix turned out to be a few lines in one place and a small peephole pass in another — but only after admitting that the lowering wasn't wrong, it was just optimistic about what the back end could consume.</p>
+
+    </section>
+
+    <section id="why-temp">
+    <h2>Why the temp existed</h2>
+
+    <p>c6502's TAC stage lowers a binary equality test by reading the right-hand side into a value-temp, then the left-hand side into another, then comparing the two:</p>
+
+<pre><code>t0 = floor_y_table[floor_idx]
+t1 = beam_y
+t2 = (t1 == t0)
+JumpIfZero(t2, .if_end@2)
+</code></pre>
+
+    <p>The two operand temps fall into one ZP slot apiece. When the asm-level pipeline lays out those slots, <code>t0</code> gets the local byte at <code>$84</code>, <code>t1</code> gets coalesced into <code>A</code> (it's the immediate operand to the compare, and there's no reason to spill it), and the compare gets lowered as <code>CMP</code> against <code>t0</code>'s slot.</p>
+
+    <p>That's how every other equality compare in c6502 works too. <code>x == 3</code> doesn't trip the pattern because <code>3</code> never gets a temp — it's an immediate. <code>x == y</code> for two scalars in static storage trips a degenerate form of it, but copy propagation usually collapses one side back into the LDA before emit. The shape that survives all the way to the asm output is "the RHS is something whose addressing mode the back end can't fold into the CMP — so it stages through a memory cell first".</p>
+
+    <p>The motivating C, <code>beam_y == floor_y_table[floor_idx]</code>, lowers the RHS as an indexed array read. That's <code>IndexedData</code> in the asm IR — addressed as <code>LDA name+off,X</code> or <code>LDA name+off,Y</code> on the chip. Both are valid 6502 addressing modes. <code>CMP</code> has both of them too: <code>CMP $XXXX,X</code> at opcode <code>0xDD</code>, <code>CMP $XXXX,Y</code> at opcode <code>0xD9</code>. The encoding table in the emitter knew this:</p>
+
+<pre><code><span class="asm-comment"># Absolute,X (3 bytes: opcode + lo + hi)</span>
+_ABSX = {
+    "LDA": 0xBD, "STA": 0x9D,
+    "ADC": 0x7D, "SBC": 0xFD,
+    "AND": 0x3D, "ORA": 0x1D, "EOR": 0x5D,
+    <span class="hl">"CMP": 0xDD,</span> "LDY": 0xBC,
+    "ASL": 0x1E, "LSR": 0x5E, "ROL": 0x3E, "ROR": 0x7E,
+    "INC": 0xFE, "DEC": 0xDE,
+}
+</code></pre>
+
+    <p>But the function that dispatched <code>Compare</code> operands to addressing modes didn't:</p>
+
+<pre><code>match right:
+    case asm_ast.Imm(value=v):
+        ...
+    case asm_ast.ImmLabelLow() | asm_ast.ImmLabelHigh():
+        ...
+    case asm_ast.Data() | asm_ast.ZP():
+        return [_instr_line(opcode, _abs_addr(right))]
+    case asm_ast.Stack() | asm_ast.Frame():
+        ...
+    case asm_ast.Indirect(offset=off):
+        ...
+    case asm_ast.IndirectY():
+        ...
+    case asm_ast.IndirectZp(...):
+        ...
+    case asm_ast.IndirectZpY(...):
+        ...
+    case _:
+        raise ValueError(
+            f"cannot emit Compare(left={left!r}, right={right!r})"
+        )
+</code></pre>
+
+    <p><code>IndexedData</code> isn't in the match. Nine operand kinds, eight dispatch arms, one missing. When the asm-level optimizer offered <code>CMP IndexedData</code>, the emit table would have happily encoded it — but the emitter raised before that ever got a chance. So upstream passes never produced the shape, downstream peepholes never saw it, and the lowering always staged through a temp.</p>
+
+    <div class="callout">
+      <div class="tag">Pattern</div>
+      <p>Encoding tables and dispatch functions drift independently. The encoding table is data, edited once when the ISA is set up; dispatch functions are written one operand kind at a time, in response to whatever the lowering currently produces. The set of (operand × instruction) pairs the table can encode is always a superset of what dispatch handles, and the gap is where opportunities for code-shape changes hide.</p>
+    </div>
+
+    </section>
+
+    <section id="dispatch">
+    <h2>Three lines of dispatch</h2>
+
+    <p>The fix in the emitter was three lines:</p>
+
+<pre><code>case asm_ast.Data() | asm_ast.ZP():
+    return [_instr_line(opcode, _abs_addr(right))]
+<span class="add-line">case asm_ast.IndexedData():
+    if opcode != "CMP":
+        raise ValueError(...)
+    return [_instr_line(opcode, _indexed_data_addr(right))]</span>
+case asm_ast.Stack() | asm_ast.Frame():
+    ...
+</code></pre>
+
+    <p>The <code>CPX</code> and <code>CPY</code> guard exists because the 6502 doesn't have an indexed form of those — there's no <code>CPX abs,Y</code>. Only <code>CMP</code> (the A-side compare) has the indexed modes. The guard documents that, and turns a silent encoding error into a loud one if a future pass ever produces <code>Compare(X, IndexedData)</code>.</p>
+
+    <p>An identical edit went into the in-process simulator's assembler, which has its own copy of the same dispatch (different code, same shape — the simulator emits to a memory image rather than a text file, and they share the encoding tables but not the dispatch logic). Adding <code>IndexedData</code> to only one of the two would have meant the optimizer's text output worked but the simulator couldn't run it, which is exactly the failure mode that a prior memory entry — about emit dispatch lagging opcode tables — warns me to check both sides.</p>
+
+    <p>With dispatch in place, the optimizer was free to produce <code>CMP IndexedData</code>. But it didn't, because no pass had ever needed to construct one — the existing copy-prop / DSE passes only knew how to drop or substitute, not how to reshape four instructions into two.</p>
+
+    </section>
+
+    <section id="peephole">
+    <h2>The four-instruction window</h2>
+
+    <p>The peephole that recognizes the shape is short. Match four consecutive instructions:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   src        <span class="asm-comment">; Mov(<src>, Reg(A))</span>
+<span class="asm-mnem">STA</span>   tmp        <span class="asm-comment">; Mov(Reg(A), <tmp>)</span>
+<span class="asm-mnem">LDA</span>   other      <span class="asm-comment">; Mov(<other>, Reg(A))</span>
+<span class="asm-mnem">CMP</span>   tmp        <span class="asm-comment">; Compare(Reg(A), <tmp>)</span>
+</code></pre>
+
+    <p>And rewrite to:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   other
+<span class="asm-mnem">CMP</span>   src
+</code></pre>
+
+    <p>The semantic argument is straightforward. After the original sequence, <code>A</code> holds <code>other</code> and the flags reflect <code>A - tmp</code>. Since <code>tmp</code> was just written from <code>src</code> and the only instruction in between (the LDA of <code>other</code>) doesn't write to memory, <code>tmp</code>'s value equals <code>src</code>'s value at the CMP. <code>CMP tmp</code> and <code>CMP src</code> produce the same flag set. After the rewrite, <code>A</code> still holds <code>other</code>; flags still reflect <code>A - src</code>; downstream observers see no difference.</p>
+
+    <p>The dropped <code>STA tmp</code> would have written a byte that the original code then immediately re-read at the CMP. With the rewrite, <code>tmp</code> is no longer written and no longer read. If <code>tmp</code> was used only by this comparison — and in c6502's lowering it usually is, because each temp is a fresh slot per comparison — its zero-page byte becomes dead. The general dead-store pass collects it; the slot allocator stops emitting an <code>EQU</code> for it.</p>
+
+    </section>
+
+    <section id="eligibility">
+    <h2>Eligibility, conservatively</h2>
+
+    <p>The rewrite is sound on the headline case but has corners. Three of them mattered enough to write checks for; the rest get covered by "if any check fails, leave the four instructions alone".</p>
+
+    <p><strong>Source addressing-mode support.</strong> The rewritten CMP has to be encodeable. <code>CMP</code> can use <code>Imm</code>, <code>ImmLabel</code>, <code>Data</code>, <code>ZP</code>, <code>IndexedData</code>, <code>Stack</code>, <code>Frame</code>, <code>Indirect</code>, <code>IndirectY</code>, <code>IndirectZp</code>, <code>IndirectZpY</code> — most of LDA's modes. The peephole restricts itself to the first five (<code>Imm</code> through <code>IndexedData</code>), which covers every case the lowering actually produces today. The frame-relative and indirect modes are reachable in theory; the peephole leaves them to a future extension that can convince itself the LDY setup they emit doesn't clobber state the CMP needs.</p>
+
+    <p><strong>Index register clobber.</strong> <code>IndexedData(name, off, Y)</code> reads <code>Y</code> at access time. If the intervening LDA — the one loading <code>other</code> — emits an <code>LDY #off</code> as part of its addressing-mode setup, <code>Y</code> won't hold the same value at the rewritten CMP that it held at the original LDA of <code>src</code>. The check is: when <code>src</code> indexes through <code>Y</code>, reject if <code>other</code> is one of the Frame / Stack / Indirect / IndirectZp modes that emit a load of Y. Indexing through <code>X</code> is always safe — no LDA addressing mode writes <code>X</code>.</p>
+
+    <p><strong>Other / tmp aliasing.</strong> If <code>other</code> happens to read the same byte that <code>tmp</code> names, the rewrite breaks the load order. In the original sequence, <code>LDA other</code> reads <code>tmp</code> <em>after</em> <code>STA tmp</code> wrote it — so <code>A</code> holds <code>src</code>'s value. In the rewritten sequence, <code>LDA other</code> reads <code>tmp</code> with no preceding STA, so <code>A</code> holds whatever <code>tmp</code> held before. Different program. The check is: if both are <code>Data</code> or <code>ZP</code>, accept only when their structural identities differ; for any indirect / indexed <code>other</code>, reject (the bytes they read can't be pinned at compile time).</p>
+
+    <p>The corner-case set is small but worth a table in the comment block. The peephole's actual code body is around 30 lines:</p>
+
+<pre><code>def _matches_pattern(a, b, c, d) -&gt; tuple[Operand, Operand] | None:
+    if not (
+        isinstance(a, Mov) and not a.is_volatile
+        and _is_reg_a(a.dst)
+        and isinstance(b, Mov) and not b.is_volatile
+        and _is_reg_a(b.src) and _is_stable_mem(b.dst)
+        and isinstance(c, Mov) and not c.is_volatile
+        and _is_reg_a(c.dst)
+        and isinstance(d, Compare)
+        and _is_reg_a(d.left) and _is_stable_mem(d.right)
+    ):
+        return None
+    src, tmp_sta, other, tmp_cmp = a.src, b.dst, c.src, d.right
+    if not _operands_equal(tmp_sta, tmp_cmp): return None
+    if not _src_eligible(src): return None
+    if (isinstance(src, IndexedData)
+            and isinstance(src.index, Y)
+            and not _y_safe_other(other)):
+        return None
+    if not _other_alias_safe(other, tmp_sta): return None
+    return src, other
+</code></pre>
+
+    <p>Five guards, all rejection-mode. When they all pass, the rewrite is mechanical: emit a new <code>LDA other</code>, a new <code>CMP src</code>, skip the four matched instructions, continue.</p>
+
+    </section>
+
+    <section id="cascade">
+    <h2>The local that vanished</h2>
+
+    <p>Running the new pass over the example corpus, three files shortened: <code>beam_target_tick</code> by two lines, <code>companion_update</code> by thirteen, and <code>do_ascend</code> by thirteen.</p>
+
+    <p>The first two were direct hits — each had one or more of the exact four-instruction window, and each window collapsed into two instructions plus the drop of a per-comparison local. The byte-and-cycle ledger was easy to read off the diffs.</p>
+
+    <p><code>do_ascend</code>'s diff was bigger than the others because of a secondary effect. The C is:</p>
+
+<pre><code>uint8_t col = player_col;
+if (col == floor_ceil[asc_floor]) {
+    ...
+}
+col = (uint8_t)(col - 0x04);
+player_col = col;
+if (col == floor_ceil[asc_floor]) {
+    ...
+}
+if (col == floor_thresh[asc_floor]) {
+    ...
+}
+</code></pre>
+
+    <p><code>col</code> is read once into a local, then used three times: two compares against <code>floor_ceil[X]</code> and one against <code>floor_thresh[X]</code>. In the unoptimized form, each of those compares produced its own LDA-STA-LDA-CMP window, and each rewrote independently. So far so unsurprising.</p>
+
+    <p>What surprised me was what happened next. After all three windows collapsed, the only thing referencing the <code>col</code> local was the initial <code>STA col</code> that put <code>player_col</code> into it. With the three CMPs no longer reading <code>col</code>, the STA had nothing to feed. The dead-store pass collected it. The local-slot allocator noticed it had no users. The <code>EQU __local_do_ascend__col $85</code> line at the top of the file disappeared.</p>
+
+    <p>The cascade is mechanical: collapse one instruction window, the value that window staged through becomes useless, the value's storage becomes useless, the storage's declaration becomes useless. Five lines turn into one line; the slot vanishes from the symbol table.</p>
+
+    <div class="callout win">
+      <div class="tag">Side effect</div>
+      <p>A four-instruction peephole that drops one local per occurrence can also drop the local that <em>fed</em> the compared value, if that local was kept alive only by the compares. The cascade is invisible from the peephole's own implementation — it shows up in the diff against the previous snapshot, two passes later.</p>
+    </div>
+
+    </section>
+
+    <section id="shape">
+    <h2>Why this generalizes</h2>
+
+    <p>The reason this peephole works at all is that the four-instruction shape isn't an accident of one C source — it's the c99-to-TAC lowering for any equality compare whose right-hand side doesn't immediate-fold. Every <code>arr[idx]</code>, <code>*ptr</code>, or non-static struct field on the right of <code>==</code> or <code>!=</code> goes through the same pattern: read RHS, stage it, read LHS, compare. Until something downstream collapses it.</p>
+
+    <p>The full list of "things that stage on the right" includes, in c6502 today:</p>
+
+    <ul>
+      <li><strong>Array reads</strong>: <code>x == arr[i]</code>, <code>x == table[idx]</code>. The motivating case. Lowers as <code>IndexedData</code> source.</li>
+      <li><strong>Pointer deferences</strong>: <code>x == *p</code>. Lowers via indirect addressing, which the current peephole rejects (the indirect setup is non-trivial to preserve through a rewrite).</li>
+      <li><strong>Compound expressions</strong>: <code>x == (a + b)</code>. The sub-expression already gets a temp; the equality compare just reads it. Often handled by the existing copy-folding passes before this peephole sees the IR.</li>
+      <li><strong>Static-storage reads</strong>: <code>x == another_static</code>. Two LDA-from-Data forms. Usually folded by copy propagation, but the four-instruction window matches and the peephole handles it.</li>
+    </ul>
+
+    <p>The peephole catches the first and the last; the middle two are still on the table but require more invariants than the rewrite-as-written can prove. Cumulatively, the cases the peephole does catch turn out to be the bulk of the equality compares in the corpus that weren't already short.</p>
+
+    <p>What's pleasant is that all of this falls out of a single observation: c99 says "evaluate the right operand and the left operand of <code>==</code> in some order, then test for equality". c6502's TAC picks "right then left". The asm-level rewrite then picks "actually, no — left into A, compare directly against right". Both forms produce the same answer; the second is shorter. The order was an artifact of the IR's value-temp discipline, not anything semantically required.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p><strong>1. Lowering optimism is a real cost.</strong> The TAC stage was right to lower the comparison the way it did — uniformly, without trying to predict back-end addressing modes. The cost of that uniformity is exactly this kind of staging: a value moves through a temp because the lowering doesn't know whether the comparison can consume it directly. The fix isn't to make TAC peek at the back end; it's to give the back end a peephole that recognizes the staging and reshapes it.</p>
+
+    <p><strong>2. Encoding tables outrun dispatch.</strong> An encoding table is set up once, tries to be comprehensive, and stays static. A dispatch function grows one arm at a time, only when a lowering pass produces a shape that hits it. The gap between the two — operand × instruction combinations the table can encode but dispatch never sees — is where opportunities live. The way to find them isn't to read the dispatch (it'll look complete by inspection); it's to look at the encoding table and ask, "for each row, do I have a dispatch arm that uses it?".</p>
+
+    <p><strong>3. Peepholes have downstream cascades.</strong> Two instructions saved per match is the first-order story. The second-order story is the dead temp, the dead local, the dropped <code>EQU</code>, sometimes the dropped <code>STA</code> that fed the temp. None of that is in the peephole's code or comments; it's the natural composition of the existing dead-store and slot-allocation passes against the new shorter shape. The diff is the only place those second-order effects show up, and they're the most satisfying part to read.</p>
+
+    <p>The win on the headline example is five bytes and eight cycles per attack-phase tick of the beam. The win across the corpus is more like 28 lines of assembly and three unused zero-page slots. Both numbers are smaller than the impression the diff leaves. The diff shows a compiler getting visibly less apologetic — emitting the comparison the human would have written, against the addressing mode the chip was always willing to use.</p>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

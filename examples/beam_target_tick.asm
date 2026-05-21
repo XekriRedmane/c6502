@@ -4,8 +4,6 @@ __zpabi_snd_delay_down__pitch	EQU	$82
 __zpabi_snd_delay_up__pitch	EQU	$82
 __zpabi_snd_delay_down__clicks	EQU	$83
 __zpabi_snd_delay_up__clicks	EQU	$83
-__local_beam_target_tick__0	EQU	$84
-__local_beam_target_tick__2	EQU	$86
 
 ; @zp-link-meta-begin
 ; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0,__local_beam_target_tick__1,__local_beam_target_tick__2 indirect=false in_cycle=false
@@ -21,18 +19,14 @@ beam_target_tick:
    LDX   beam_snd_ctr
    BMI   .if_end@0
    LDA   beam_jingle,X
-   STA   __local_beam_target_tick__2
-   TXA
-   SEC
-   SBC   #$01
-   STA   beam_snd_ctr
+   DEX
+   STX   beam_snd_ctr
    LDX   #$0A
-   LDA   __local_beam_target_tick__2
    JSR   snd_delay_up
 .if_end@0:
    LDX   beam_state
-   TXA
    BPL   .if_end@1
+   TXA
    AND   #$0F
    TAX
    LDA   beam_y
@@ -50,11 +44,9 @@ beam_target_tick:
    JMP   snd_delay_down
 .if_end@1:
    BEQ   .if_end@3
-   LDA   floor_ceil,X
-   STA   __local_beam_target_tick__0
-   INC   __local_beam_target_tick__0
-   LDA   __local_beam_target_tick__0
-   CMP   beam_y
+   LDY   floor_ceil,X
+   INY
+   CPY   beam_y
    BNE   .if_end@4
    TXA
    ORA   #$F0
@@ -74,8 +66,7 @@ beam_target_tick:
    LDX   __zpabi_beam_target_tick__beam_seed_floor
    LDA   floor_y_table,X
    STA   beam_y
-   LDA   __zpabi_beam_target_tick__beam_seed_floor
-   STA   beam_state
+   STX   beam_state
 .if_end@5:
    RTS
 

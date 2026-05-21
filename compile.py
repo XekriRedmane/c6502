@@ -71,6 +71,9 @@ from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 from passes.tail_call import apply_tail_call
 from passes.split_mem_to_mem import apply_split_mem_to_mem
 from passes.via_a_store_fold import apply_via_a_store_fold
+from passes.transfer_pm1_store import apply_transfer_pm1_store
+from passes.transfer_past_branch import apply_transfer_past_branch
+from passes.index_inc_cmp_y import apply_index_inc_cmp_y
 from passes.loop_counter_to_x import apply_loop_counter_to_x
 from passes.x_save_slot_load import apply_x_save_slot_load
 from passes.asm_licm import apply_licm
@@ -206,6 +209,8 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_branch_to_next_drop(new_prog)
         new_prog = apply_branch_through_jump(new_prog)
         new_prog = apply_dec_register_peephole(new_prog)
+        new_prog = apply_transfer_past_branch(new_prog)
+        new_prog = apply_index_inc_cmp_y(new_prog)
         new_prog = apply_volatile_void_read_cmp(new_prog)
         new_prog = apply_dec_branch_indirect_y_fold(new_prog)
         new_prog = apply_mem_const_prop(new_prog)
@@ -219,6 +224,14 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_dec_inc_branch_fold(new_prog)
         new_prog = apply_tail_call(new_prog)
         new_prog = apply_via_a_store_fold(new_prog)
+        # Runs last so the round-trip-through-temp shape
+        # (`STA __local; LDA __local; STA M`) has already been
+        # collapsed by `round_trip_load_drop` + `asm_dead_store` into
+        # the canonical `STA M` form. If this pass fired earlier, it
+        # would rewrite to `STX __local; LDA __local; STA M` — a
+        # shape no downstream pass collapses (the LDA reads from X-
+        # synced storage, not A-synced).
+        new_prog = apply_transfer_pm1_store(new_prog)
         if new_prog == prog:
             return new_prog
         prog = new_prog

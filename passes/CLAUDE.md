@@ -171,6 +171,45 @@ this directory:
   Data|ZP)` (TXA;STA → STX), same shape for Y. Recovers what
   `x_save_slot_load`'s Pass 3 mem-to-mem case used to do directly
   before `split_mem_to_mem` started breaking the mem-to-mem apart.
+- `index_inc_cmp_y.py` — `apply_index_inc_cmp_y`. Promotes the
+  5-atom `Mov(IndexedData(_, index=X), Reg(A)); Mov(Reg(A),
+  <tmp>); Inc/Dec(<tmp>); Mov(<tmp>, Reg(A)); Compare(Reg(A),
+  <Imm|Data|ZP>)` shape (LDA m,X; STA tmp; INC/DEC tmp; LDA
+  tmp; CMP n) to the 3-atom `Mov(IndexedData(_, index=X),
+  Reg(Y)); Inc/Dec(Reg(Y)); Compare(Reg(Y), <Imm|Data|ZP>)`
+  (LDY m,X; INY/DEY; CPY n). Saves 4 bytes / 6 cycles per
+  occurrence. Gated on Y dead at entry, A dead post-CMP, and
+  the staging tmp unused in the rest of the function.
+  Headline source: the chase-branch target computation in
+  `beam_target_tick` — `floor_ceil[idx]+1` compared to
+  `beam_y` lowers to the 5-atom shape because the regalloc
+  doesn't consider Y as a candidate color for short-lived
+  byte temps.
+- `transfer_past_branch.py` — `apply_transfer_past_branch`. Sinks
+  `TXA` / `TYA` past an adjacent conditional Branch when (a) the
+  prior instruction wrote Reg(X|Y) and set N/Z from the new value
+  (so the Branch reads the same flags whether TXA happens before
+  or after), (b) A is dead on the branch's taken arm, and (c) A
+  is live on the fall-through arm. Saves the TXA's 2 execution
+  cycles on the taken-arm path; code size unchanged. Headline
+  source: `if (state & 0x80)` dispatch where the chase/idle arm
+  doesn't need A and only the attack arm does.
+- `transfer_pm1_store.py` — `apply_transfer_pm1_store`. Folds
+  the 4-atom `Mov(Reg(R), Reg(A)); SetCarry; Sub(Imm(1), Reg(A));
+  Mov(Reg(A), Data|ZP)` chain to `Dec(Reg(R)); Mov(Reg(R),
+  Data|ZP)` (TXA;SEC;SBC #1;STA M → DEX;STX M) when R is X or Y
+  and A / X / N-Z-C-V are all dead at the boundary. Same shape
+  for the +1 form (`ClearCarry; Add(Imm(1), …)` → `Inc(Reg(R));
+  …`) and the Y mirror. Direct win is 3 bytes / 4 cycles; the
+  bigger payoff is the cascade — once A is no longer clobbered
+  by the arithmetic, any spill `STA __local; ... LDA __local`
+  the regalloc inserted to preserve A across the SBC becomes
+  dead and is cleaned up on a later fixedpoint iteration. Runs
+  at the END of the fixedpoint, after `round_trip_load_drop` and
+  `asm_dead_store` have collapsed through-temp routing into the
+  canonical `STA M` shape — otherwise this pass would rewrite
+  to `STX __local; LDA __local; STA M`, which no downstream
+  collapser can simplify.
 - `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
   Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
   `Compare(Reg(A), <indirect>)` when the loaded A is dead and
@@ -725,6 +764,29 @@ them):
   to STX M (STY M) when A and flags are dead at the next
   instruction. Recovers the STX/STY-direct form for the post-split
   shape of an X-save-slot mem-to-mem read.
+- `apply_index_inc_cmp_y` — promotes the 5-atom
+  `LDA m,X; STA tmp; INC tmp; LDA tmp; CMP n` shape to the
+  3-atom `LDY m,X; INY; CPY n` (and DEC/DEY mirror) when Y is
+  dead at entry, A is dead post-CMP, and the staging tmp is
+  unused in the rest of the function. Saves 4 bytes / 6 cycles
+  per occurrence.
+- `apply_transfer_past_branch` — sinks `TXA`/`TYA` past an
+  adjacent conditional Branch when A is dead on the taken arm
+  but live on the fall-through, and the prior instruction
+  already set N/Z based on X/Y. Saves 2 cycles per
+  branch-taken iteration; code size unchanged. Complements
+  `dead_a_arith._flags_reflect_src_reg`, which drops the TXA
+  outright when A is dead on BOTH arms.
+- `apply_transfer_pm1_store` — folds `TXA;SEC;SBC #1;STA M` to
+  `DEX;STX M` (and the CLC;ADC #1 / Y mirrors) when A, X (or Y),
+  and all flags are dead at the post-STA boundary, and M is
+  `Data` / `ZP`. Direct win is ~3 bytes / 4 cycles; the cascade
+  is bigger when a spill was inserted to protect A across the
+  arithmetic — once the arithmetic moves to X/Y, the spill
+  becomes dead. Runs at the END of the fixedpoint (after
+  `round_trip_load_drop` collapses through-temp routing) so the
+  STA M operand is the real destination, not a `__local_*`
+  staging slot.
 - `apply_redundant_load_after_rmw` — drops `LDA M` after `INC M` /
   `DEC M` / shift-on-M when only the N/Z flag effect was needed (the
   RMW already set N/Z off M's new value).
@@ -733,7 +795,11 @@ them):
   already mirrors M, drop the load. Also drops reg-to-reg Movs
   (TXA / TYA / TAX / TAY) when src's and dst's equivalence classes
   share at least one mirrored operand AND flags are dead (or the
-  Z flag already reflects src's value). Heaviest after loop
+  Z flag already reflects src's value). Also REWRITES `LDA M` to
+  `TXA` (or `TYA`) when A doesn't mirror M but X (or Y) does —
+  saves 1-2 bytes / 2-3 cycles per occurrence and leaves A
+  mirroring M too, so a subsequent `STA N` folds to `STX N` /
+  `STY N` via `apply_via_a_store_fold`. Heaviest after loop
   unrolling.
 - `apply_redundant_store_elimination` — drops STAs whose written cell
   is overwritten before any read. Memory-to-memory transfer redundancy

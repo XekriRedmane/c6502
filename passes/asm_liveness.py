@@ -74,6 +74,14 @@ def is_reg_a(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
 
 
+def is_reg_x(op: asm_ast.Type_operand) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.X)
+
+
+def is_reg_y(op: asm_ast.Type_operand) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.Y)
+
+
 def a_dead_at(
     instrs: list[asm_ast.Type_instruction], idx: int,
 ) -> bool:
@@ -81,6 +89,34 @@ def a_dead_at(
     every forward path through the instruction stream encounters a
     kill of A before any read of A. Uses a CFG-wide forward DFS to
     handle inter-block paths."""
+    return _reg_dead_at(instrs, idx, "A")
+
+
+def x_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff `Reg(X)`'s current value is dead at `instrs[idx]`.
+    Same CFG-walk machinery as `a_dead_at`; uses X-specific
+    reads/kills predicates. The soft-stack epilogue scratches X (low
+    byte of the reloaded caller FP routes through X) so Ret/Return
+    is treated as a kill regardless of `save_a`. Tail-call Jumps
+    read X iff the callee names X in `reg_args`."""
+    return _reg_dead_at(instrs, idx, "X")
+
+
+def y_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff `Reg(Y)`'s current value is dead at `instrs[idx]`.
+    Same as `x_dead_at` for Y. The soft-stack epilogue scratches Y
+    (the indirect-Y offset for the (FP),Y reload), so Ret/Return is
+    a kill of Y."""
+    return _reg_dead_at(instrs, idx, "Y")
+
+
+def _reg_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int, reg: str,
+) -> bool:
     label_to_index = _build_label_map(instrs)
     visited: set[int] = set()
     stack: list[int] = [idx]
@@ -89,7 +125,7 @@ def a_dead_at(
         if j in visited:
             continue
         visited.add(j)
-        if not _path_dead_from(instrs, j, label_to_index, stack):
+        if not _path_dead_from(instrs, j, label_to_index, stack, reg):
             return False
     return True
 
@@ -99,27 +135,36 @@ def _path_dead_from(
     start: int,
     label_to_index: dict[str, int],
     stack: list[int],
+    reg: str,
 ) -> bool:
     """Walk forward from `start` along the straight-line successor
-    chain. Returns False if this path observes a read of A before
-    a kill. Returns True if the path terminates without observing
-    one (kill, Ret-with-save_a=False, end of instructions). At
-    branches / jumps, push successors onto `stack` and return True
-    (the dispatching loop checks each successor)."""
+    chain. Returns False if this path observes a read of `reg`
+    before a kill. Returns True if the path terminates without
+    observing one (kill, Ret-with-save_a=False for A / Ret for X/Y,
+    end of instructions). At branches / jumps, push successors onto
+    `stack` and return True (the dispatching loop checks each
+    successor)."""
     idx = start
     while idx < len(instrs):
         instr = instrs[idx]
         if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
-            return not instr.save_a
+            if reg == "A":
+                return not instr.save_a
+            # X and Y are scratched by the soft-stack epilogue (low
+            # byte of reloaded caller FP through X, indirect-Y
+            # offset for the (FP),Y reload). For a bare Return the
+            # epilogue is empty, but X/Y are still callee-clobberable
+            # by convention — treat as kill.
+            return True
         if isinstance(instr, asm_ast.Jump):
             # Tail-call Jumps (rewritten from `Call(reg_args); Return`
-            # by the tail-call peephole) read A iff the target callee
-            # took A as a reg-attributed arg. Detect via `reg_args`
-            # rather than "target not in label_to_index" so we don't
-            # also flag long-branch trampolines (which target an
-            # in-function `.skip` label — `label_to_index` would
-            # still resolve them).
-            if "A" in instr.reg_args:
+            # by the tail-call peephole) read `reg` iff the target
+            # callee took `reg` as a reg-attributed arg. Detect via
+            # `reg_args` rather than "target not in label_to_index"
+            # so we don't also flag long-branch trampolines (which
+            # target an in-function `.skip` label — `label_to_index`
+            # would still resolve them).
+            if reg in instr.reg_args:
                 return False
             tgt = label_to_index.get(instr.target)
             if tgt is not None:
@@ -135,12 +180,28 @@ def _path_dead_from(
         if isinstance(instr, asm_ast.Label):
             idx += 1
             continue
-        if reads_a(instr):
+        if _reads_reg(instr, reg):
             return False
-        if kills_a(instr):
+        if _kills_reg(instr, reg):
             return True
         idx += 1
     return True
+
+
+def _reads_reg(instr: asm_ast.Type_instruction, reg: str) -> bool:
+    if reg == "A":
+        return reads_a(instr)
+    if reg == "X":
+        return reads_x(instr)
+    return reads_y(instr)
+
+
+def _kills_reg(instr: asm_ast.Type_instruction, reg: str) -> bool:
+    if reg == "A":
+        return kills_a(instr)
+    if reg == "X":
+        return kills_x(instr)
+    return kills_y(instr)
 
 
 def _build_label_map(
@@ -201,6 +262,169 @@ def kills_a(instr: asm_ast.Type_instruction) -> bool:
         return True
     if isinstance(instr, asm_ast.LoadAddress):
         return True
+    return False
+
+
+def _operand_indexes_with(op: asm_ast.Type_operand, reg_cls) -> bool:
+    """True iff `op` references the named index register (X or Y)
+    as part of its addressing mode."""
+    if isinstance(op, asm_ast.IndexedData):
+        return isinstance(op.index, reg_cls)
+    if reg_cls is asm_ast.Y and isinstance(
+        op, (asm_ast.IndirectY, asm_ast.IndirectZpY),
+    ):
+        return True
+    return False
+
+
+def _operand_setup_clobbers_y(op: asm_ast.Type_operand) -> bool:
+    """True iff `op`'s emit-time addressing-mode setup writes Y.
+    `Indirect(off)` and `IndirectZp(addr, off)` emit `LDY #off`
+    before the underlying op, so any instruction whose src or dst
+    is one of these clobbers Y as a side effect."""
+    return isinstance(op, (asm_ast.Indirect, asm_ast.IndirectZp))
+
+
+def reads_x(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` reads `Reg(X)` (uses it as a source, an
+    index for `IndexedData(_, index=X)`, or RMW's it via INX/DEX)."""
+    if isinstance(instr, asm_ast.Mov):
+        if is_reg_x(instr.src):
+            return True
+        if _operand_indexes_with(instr.src, asm_ast.X):
+            return True
+        if _operand_indexes_with(instr.dst, asm_ast.X):
+            return True
+        return False
+    if isinstance(instr, asm_ast.Push):
+        return is_reg_x(instr.src)
+    if isinstance(instr, asm_ast.Compare):
+        if is_reg_x(instr.left) or is_reg_x(instr.right):
+            return True
+        return (
+            _operand_indexes_with(instr.left, asm_ast.X)
+            or _operand_indexes_with(instr.right, asm_ast.X)
+        )
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        if is_reg_x(instr.dst):
+            return True
+        return _operand_indexes_with(instr.dst, asm_ast.X)
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    )):
+        return (
+            _operand_indexes_with(instr.src, asm_ast.X)
+            or _operand_indexes_with(instr.dst, asm_ast.X)
+        )
+    if isinstance(instr, asm_ast.Xor):
+        return any(
+            _operand_indexes_with(o, asm_ast.X)
+            for o in (instr.src1, instr.src2, instr.dst)
+        )
+    if isinstance(instr, (
+        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+        asm_ast.RotateLeft, asm_ast.RotateRight,
+    )):
+        return _operand_indexes_with(instr.dst, asm_ast.X)
+    if isinstance(instr, asm_ast.BitTest):
+        return _operand_indexes_with(instr.operand, asm_ast.X)
+    if isinstance(instr, asm_ast.Phi):
+        return any(is_reg_x(a.source) for a in instr.args)
+    if isinstance(instr, (asm_ast.Call, asm_ast.Jump)):
+        return "X" in instr.reg_args
+    return False
+
+
+def kills_x(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` writes `Reg(X)` without reading it first."""
+    if isinstance(instr, asm_ast.Mov):
+        if isinstance(instr.dst, asm_ast.Reg) and isinstance(
+            instr.dst.reg, asm_ast.X,
+        ):
+            return not is_reg_x(instr.src)
+        return False
+    if isinstance(instr, asm_ast.Call):
+        return True
+    return False
+
+
+def reads_y(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` reads `Reg(Y)` — same shapes as `reads_x`
+    plus the `IndirectY` / `IndirectZpY` operand forms that consume
+    Y as the indirect-indexed offset."""
+    if isinstance(instr, asm_ast.Mov):
+        if is_reg_y(instr.src):
+            return True
+        if _operand_indexes_with(instr.src, asm_ast.Y):
+            return True
+        if _operand_indexes_with(instr.dst, asm_ast.Y):
+            return True
+        return False
+    if isinstance(instr, asm_ast.Push):
+        return is_reg_y(instr.src)
+    if isinstance(instr, asm_ast.Compare):
+        if is_reg_y(instr.left) or is_reg_y(instr.right):
+            return True
+        return (
+            _operand_indexes_with(instr.left, asm_ast.Y)
+            or _operand_indexes_with(instr.right, asm_ast.Y)
+        )
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        if is_reg_y(instr.dst):
+            return True
+        return _operand_indexes_with(instr.dst, asm_ast.Y)
+    if isinstance(instr, (
+        asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or,
+    )):
+        return (
+            _operand_indexes_with(instr.src, asm_ast.Y)
+            or _operand_indexes_with(instr.dst, asm_ast.Y)
+        )
+    if isinstance(instr, asm_ast.Xor):
+        return any(
+            _operand_indexes_with(o, asm_ast.Y)
+            for o in (instr.src1, instr.src2, instr.dst)
+        )
+    if isinstance(instr, (
+        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+        asm_ast.RotateLeft, asm_ast.RotateRight,
+    )):
+        return _operand_indexes_with(instr.dst, asm_ast.Y)
+    if isinstance(instr, asm_ast.BitTest):
+        return _operand_indexes_with(instr.operand, asm_ast.Y)
+    if isinstance(instr, asm_ast.Phi):
+        return any(is_reg_y(a.source) for a in instr.args)
+    if isinstance(instr, (asm_ast.Call, asm_ast.Jump)):
+        return "Y" in instr.reg_args
+    return False
+
+
+def kills_y(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` writes `Reg(Y)` without reading it first.
+    Includes the implicit `LDY #off` setup that `Indirect(off)` and
+    `IndirectZp(addr, off)` operands emit before the underlying op."""
+    if isinstance(instr, asm_ast.Mov):
+        if isinstance(instr.dst, asm_ast.Reg) and isinstance(
+            instr.dst.reg, asm_ast.Y,
+        ):
+            return not is_reg_y(instr.src)
+        # An indirect-Y addressing-mode setup with a non-zero offset
+        # clobbers Y via the implicit `LDY #off` the emitter inserts.
+        if (
+            _operand_setup_clobbers_y(instr.src)
+            or _operand_setup_clobbers_y(instr.dst)
+        ):
+            return True
+        return False
+    if isinstance(instr, asm_ast.Call):
+        return True
+    if isinstance(instr, asm_ast.LoadAddress):
+        # The dst-write step may insert `LDY #1` for the high-byte
+        # store if the dst is indirect-Y. Conservative: treat as a
+        # Y kill (rare in practice — LoadAddress dst is usually a
+        # Frame slot whose offset fits the same indirect-Y setup,
+        # but we don't model that precisely).
+        return _operand_setup_clobbers_y(instr.dst)
     return False
 
 

@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two compares, one tmp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#silent">A silent miscompile</a></li>
+      <li><a href="#shape">The shape that broke it</a></li>
+      <li><a href="#assumption">The unstated assumption</a></li>
+      <li><a href="#first-fix">First fix, over-conservative</a></li>
+      <li><a href="#reads-vs-writes">Reads matter, writes don't</a></li>
+      <li><a href="#group">Group by tmp, own every read</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #023</p>
+    <h1>Two compares, one tmp</h1>
+    <p class="subtitle">A peephole that dropped the only store to a memory cell without checking whether anyone else was still reading from it. The miscompile was silent — the asm was syntactically valid, the simulator ran it without complaint, and the only signal was a game-logic branch that never fired.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Target</strong> Apple II beam state machine</span>
+      <span><strong>Bug class</strong> peephole soundness, sole-writer drop</span>
+      <span><strong>Surfaced by</strong> one new example, ten scenarios, a sim differential</span>
+    </div>
+
+    <section id="silent">
+    <h2>A silent miscompile</h2>
+
+    <p>The example was <code>beam_target_draw</code> — the routine that paints the beam's trail and runs a four-slot enemy collision check. Five passes per call: gate on idle, compute height to the target row, draw the trail, walk slots 3..0 looking for one whose screen column lands in the beam's two-pixel band, and trigger the hit if it does.</p>
+
+    <p>The sim-differential harness exercises ten scenarios: idle, target-reached, chase-without-enemies (two height-clamp boundaries), three flavors of hit (slot 3, slot 0, slot-3-shadows-slot-0), and three flavors of near-miss (column too low, row out of range, inactive flag). The unoptimized pipeline matched all ten expected snapshots. The optimized pipeline diverged on three of them — every scenario that should have fired the hit branch.</p>
+
+<pre><code>!!! s5: opt=03800000<span class="hl">0000010000</span>03020424804000
+        exp=00800a000000<span class="hl">0001</span>03020424804001
+!!! s6: opt=03<span class="hl">8000aa00</span>00000000040204248000<span class="hl">00</span>
+        exp=00800a000000<span class="hl">0001</span>040204248000<span class="hl">02</span>
+!!! s7: opt=03<span class="hl">800055</span>0000550000050204248000<span class="hl">00</span>
+        exp=00800a55000000<span class="hl">0001</span>050204248000<span class="hl">03</span>
+</code></pre>
+
+    <p>In each diverging case the optimized output had <code>beam_state = 0x03</code> (unchanged from input — the hit clears it to <code>0x00</code>), <code>beam_snd_ctr = 0x00</code> (the hit sets it to <code>0x0A</code>), and a <code>score_calls</code> counter stuck at zero. The enemy was unscathed; its flag was still <code>0xFF</code>. The beam drew its trail and walked off without noticing the target right under it.</p>
+
+    <p>The asm for the hit-detection loop, after <code>--optimize</code>:</p>
+
+<pre><code><span class="asm-label">.loop@0_start:</span>
+   <span class="asm-mnem">LDA</span>   enemy_flag,Y
+   <span class="asm-mnem">BEQ</span>   <span class="asm-label">.loop@0_continue</span>
+   <span class="asm-mnem">LDX</span>   enemy_col,Y
+   <span class="asm-mnem">LDA</span>   #$25
+   <span class="hl"><span class="asm-mnem">CMP</span>   proj_screen_col,X</span>
+   <span class="asm-mnem">BCC</span>   <span class="asm-label">.loop@0_continue</span>
+   <span class="asm-mnem">LDA</span>   #$23
+   <span class="hl"><span class="asm-mnem">CMP</span>   __local_beam_target_draw__state</span>
+   <span class="asm-mnem">BCS</span>   <span class="asm-label">.loop@0_continue</span>
+</code></pre>
+
+    <p>The two highlighted lines are the two halves of the C-source band check:</p>
+
+<pre><code>uint8_t screen_col = proj_screen_col[enemy_col[slot]];
+if (screen_col > 0x25)  continue;
+if (screen_col &lt;= 0x23) continue;
+</code></pre>
+
+    <p>The first comparison is reading <code>proj_screen_col,X</code> directly. The second is reading <code>__local_beam_target_draw__state</code> — a function-local zero-page slot that earlier in the routine held the post-clamp <code>height</code> value (<code>0x01</code>, <code>0x02</code>, <code>0x03</code>, or <code>0x04</code>). The chip dutifully compared <code>0x23</code> against whatever stale byte was sitting in that slot from the height computation. The branch decision then depended on the height the routine had drawn with — which is unrelated to the enemy's screen column, so it answered the wrong question every time.</p>
+
+    <p>The two comparisons are supposed to be testing the same value: <code>screen_col</code>. Some peephole earlier in the pipeline had rewritten the first compare to read from the indexed table directly, but had forgotten that the staging slot it was retiring was still being read by the second.</p>
+
+    </section>
+
+    <section id="shape">
+    <h2>The shape that broke it</h2>
+
+    <p>The peephole was <code>cmp_through_tmp_fold</code> — the one introduced in log/021. It looks for a four-instruction window:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   src       <span class="asm-comment">; Mov(<src>, Reg(A))</span>
+<span class="asm-mnem">STA</span>   tmp       <span class="asm-comment">; Mov(Reg(A), <tmp>)</span>
+<span class="asm-mnem">LDA</span>   other     <span class="asm-comment">; Mov(<other>, Reg(A))</span>
+<span class="asm-mnem">CMP</span>   tmp       <span class="asm-comment">; Compare(Reg(A), <tmp>)</span>
+</code></pre>
+
+    <p>and rewrites it to two instructions:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   other
+<span class="asm-mnem">CMP</span>   src
+</code></pre>
+
+    <p>The rewrite drops the <code>LDA src</code> (its only purpose was to feed the temp) and the <code>STA tmp</code> (the temp is no longer needed because the new <code>CMP</code> reads <code>src</code> directly). The intuition is that <code>tmp</code> exists only to bridge the <code>LDA src</code> and the <code>CMP</code>; with the <code>CMP</code> now reading <code>src</code>, the bridge is dead.</p>
+
+    <p>That intuition holds in every case the pass was designed for. The motivating shape from <code>beam_target_tick</code> — <code>beam_y == floor_y_table[idx]</code> — produces exactly one such window, with exactly one <code>STA</code> feeding exactly one <code>CMP</code>. Drop the window, drop the slot, save five bytes and eight cycles. Three example files shrank when the pass shipped.</p>
+
+    <p>The C source from <code>beam_target_draw</code> produces a different shape:</p>
+
+<pre><code>uint8_t screen_col = proj_screen_col[enemy_col[slot]];
+if (screen_col > 0x25)  continue;
+if (screen_col &lt;= 0x23) continue;
+</code></pre>
+
+    <p><code>screen_col</code> is loaded once and then compared twice. The TAC lowering, faithfully, stages it through a local exactly once and reads from that local twice:</p>
+
+<pre><code>   <span class="asm-mnem">LDA</span>   proj_screen_col,X     <span class="asm-comment">; load screen_col into A</span>
+   <span class="asm-mnem">STA</span>   __local_*             <span class="asm-comment">; stage into tmp</span>
+   <span class="asm-mnem">LDA</span>   #$25                  <span class="asm-comment">; first comparison: $25 vs screen_col</span>
+   <span class="asm-mnem">CMP</span>   __local_*
+   <span class="asm-mnem">BCC</span>   <span class="asm-label">continue</span>
+   <span class="asm-mnem">LDA</span>   #$23                  <span class="asm-comment">; second comparison: $23 vs screen_col</span>
+   <span class="asm-mnem">CMP</span>   __local_*
+   <span class="asm-mnem">BCS</span>   <span class="asm-label">continue</span>
+</code></pre>
+
+    <p>The peephole scanned forward, found the first four-instruction window (<code>LDA proj_screen_col,X; STA tmp; LDA #$25; CMP tmp</code>), matched it, and rewrote it. The second <code>CMP tmp</code> wasn't part of any matched window — there's no <code>STA tmp</code> immediately before it — so the scan walked right past it. The rewrite dropped the only <code>STA tmp</code> the pass had visibility into. The second <code>CMP</code> kept reading <code>tmp</code>; the slot held whatever the regalloc had put there earlier; the branch decision was nondeterministic-looking but deterministically wrong.</p>
+
+    </section>
+
+    <section id="assumption">
+    <h2>The unstated assumption</h2>
+
+    <p>The pass's docstring said this about soundness:</p>
+
+    <blockquote>
+      The rewrite drops both the LDA src and STA tmp. After the rewrite, <code>tmp</code> becomes dead-after-rewrite; downstream <code>asm_dead_store</code> handles any remaining STAs to tmp elsewhere in the function.
+    </blockquote>
+
+    <p>"Dead-after-rewrite" was the assumption. It held for every case the author had thought to test. It also held for every existing example in the corpus, because the lowering that produces the staging shape almost always uses each staged value exactly once — the value-temp discipline that gave the temp its own slot is the same discipline that makes the slot a write-once / read-once cell.</p>
+
+    <p>The exception is when one C expression is reused across two compares without an intervening assignment. <code>screen_col</code> in the band test is one example; any <code>x == A &amp;&amp; x == B</code> shape would be another; so would <code>if (x &gt; LO &amp;&amp; x &lt; HI)</code> with <code>x</code> as an indexed read. The TAC lowering, sensibly, doesn't re-load <code>x</code> for each compare — it loads it once into a temp and reads the temp twice. The peephole sees the first read, rewrites it, and silently breaks the second.</p>
+
+    <p>The dead-store pass doesn't help. Its job is to drop writes whose value is unread. Here the value <em>is</em> read — by the orphaned second <code>CMP</code>. The store is being dropped not by dead-store but by <code>cmp_through_tmp_fold</code> itself, before dead-store ever runs. There's no consumer of the rewrite that's positioned to notice that one of the original readers got cut off.</p>
+
+    <div class="callout bad">
+      <div class="tag">Bug class</div>
+      <p>A peephole that's the only writer of a memory cell within its pattern must verify that nothing else in the function still reads that cell. If something does, the rewrite drops a store whose value those other readers depend on — and they'll quietly read whatever was in the slot from a prior use. The miscompile is silent because the asm is syntactically and structurally fine; the only sign is a runtime value drift that depends on what the regalloc had previously parked there.</p>
+    </div>
+
+    </section>
+
+    <section id="first-fix">
+    <h2>First fix, over-conservative</h2>
+
+    <p>The natural fix is to gate the rewrite on an eligibility check: <em>before</em> dropping the <code>STA tmp</code>, verify that no other instruction in the function references <code>tmp</code>. If something does, bail.</p>
+
+    <p>The first version of the check did exactly that, treating "reference" as "appears as any operand of any instruction":</p>
+
+<pre><code><span class="asm-comment"># reject the fold if tmp appears anywhere outside the matched window</span>
+outside_uses = any(
+    _references_tmp(other_instr, tmp)
+    for j, other_instr in enumerate(instrs)
+    if j &lt; i or j &gt; i + 3
+)
+if not outside_uses:
+    <span class="asm-comment"># ...rewrite...</span>
+</code></pre>
+
+    <p>The two new failing unit tests for the bug passed immediately. The end-to-end sim differential for <code>beam_target_draw</code> went green. Both pipelines produced identical observable state across all ten scenarios. Confidence at this point was high.</p>
+
+    <p>The full test suite then surfaced two regressions in the snapshot tests for other examples — <code>do_ascend</code> grew from 68 lines to 81, and <code>companion_update</code> grew from 725 to 735. Neither was wrong, just longer. The check was rejecting folds that had been doing real work in those files.</p>
+
+    </section>
+
+    <section id="reads-vs-writes">
+    <h2>Reads matter, writes don't</h2>
+
+    <p>The first thing the diff for <code>do_ascend</code> showed was that the regressed examples weren't reading <code>tmp</code> elsewhere — they were writing it. The same slot was being reused for multiple short-lived temporaries:</p>
+
+<pre><code><span class="asm-mnem">LDA</span>   floor_ceil,X
+<span class="asm-mnem">STA</span>   <span class="hl">__local_do_ascend__0</span>     <span class="asm-comment">; first compare's stage</span>
+<span class="asm-mnem">LDA</span>   __local_do_ascend__col
+<span class="asm-mnem">CMP</span>   <span class="hl">__local_do_ascend__0</span>
+   ...
+<span class="asm-mnem">LDA</span>   floor_ceil,X
+<span class="asm-mnem">STA</span>   <span class="hl">__local_do_ascend__0</span>     <span class="asm-comment">; second compare's stage (overwrite)</span>
+<span class="asm-mnem">LDA</span>   __local_do_ascend__col
+<span class="asm-mnem">CMP</span>   <span class="hl">__local_do_ascend__0</span>
+</code></pre>
+
+    <p>Outside the first matched window, the slot appears as the destination of the second <code>STA</code>. That's a write — the original value the first window stored is overwritten before any other read happens. Dropping the first window's <code>STA</code> would be sound: the slot's value would be uninitialized between the rewrite and the second <code>STA</code>, but nothing reads it, so it doesn't matter.</p>
+
+    <p>The conservative version of the check treats writes and reads identically. That was over-rejection. The right check counts only reads — places where the slot's value flows out to something else (the <code>src</code> of a <code>Mov</code>, either operand of a <code>Compare</code>, the read side of a read-modify-write like <code>INC</code> or <code>DEC</code>). Refining the check to count only reads got <code>companion_update</code>'s diff to zero — but <code>do_ascend</code> was still long.</p>
+
+    </section>
+
+    <section id="group">
+    <h2>Group by tmp, own every read</h2>
+
+    <p>What <code>do_ascend</code> actually does is reuse the slot for three independent compares:</p>
+
+<pre><code>uint8_t col = player_col;
+if (col == floor_ceil[asc_floor])    { ... }
+col = (uint8_t)(col - 0x04);
+player_col = col;
+if (col == floor_ceil[asc_floor])    { ... }
+if (col == floor_thresh[asc_floor])  { ... }
+</code></pre>
+
+    <p>Each compare produces its own four-instruction window: <code>LDA &lt;table&gt;,X; STA __local_*__0; LDA col; CMP __local_*__0</code>. Three windows. Three <code>STA</code>s. Three <code>CMP</code>s. The slot is overwritten before each compare, so each compare reads the value its own window wrote. There are no orphan readers.</p>
+
+    <p>Folding any single window in isolation, with my read-counting check, still got rejected — because the OTHER two windows' <code>CMP</code>s are reads of the slot. The check sees three reads of <code>tmp</code> and only one is in the current matched window; it bails. None of the windows fold. The diff stays long.</p>
+
+    <p>The right check works across windows. Group all candidate windows by their <code>tmp</code>. For each group, every read of the slot in the function must sit at one of the group's matched <code>CMP</code> positions. When that holds, folding all the windows in the group as a batch leaves zero unowned readers — every read is rewritten away by some member of the group.</p>
+
+<pre><code><span class="asm-comment"># enumerate all candidate windows</span>
+candidates = [(i, src, other, tmp)
+              for i in range(len(instrs) - 3)
+              if (m := _matches_pattern(...)) is not None]
+
+<span class="asm-comment"># group by tmp; collect "owned" CMP positions per group</span>
+owned_cmp_idxs_by_key = {}
+for i, _, _, tmp in candidates:
+    owned_cmp_idxs_by_key.setdefault(_tmp_key(tmp), set()).add(i + 3)
+
+<span class="asm-comment"># a group folds iff every read of its tmp lives at an owned position</span>
+foldable_keys = {
+    key for key, owned in owned_cmp_idxs_by_key.items()
+    if all((k in owned) or not _reads_tmp(instr, tmp_by_key[key])
+           for k, instr in enumerate(instrs))
+}
+</code></pre>
+
+    <p>Under this check, <code>do_ascend</code>'s three windows form a single group with three owned reads; every read of the slot in the function is owned; the group folds and the three local-store-and-CMP pairs collapse to three direct <code>CMP &lt;table&gt;,X</code>s. <code>beam_target_draw</code>'s back-to-back band check forms a one-candidate group with one owned read, but the slot has two reads in the function — only one is owned, so the group bails and the staging stays in place. The asm grows slightly compared to the (incorrect) pre-fix output, and the second <code>CMP</code> reads from a slot that's actually been written.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p><strong>1. The dangerous peepholes are the ones that drop a write.</strong> A peephole that drops an arithmetic instruction is easy to reason about — the value isn't needed, so removing the producer is safe. A peephole that drops a <em>store</em> is reasoning about other parts of the program too: every reader of the cell the store was feeding. If the pattern is the only writer, every reader becomes the rewrite's responsibility. The pass either has to rewrite all of them or refuse the fold; quietly dropping the store and hoping nobody else needed it is the failure mode.</p>
+
+    <p><strong>2. "Dead-after-rewrite" needs to be a check, not a comment.</strong> The original docstring asserted that the temp was dead after the rewrite. That assertion was true in every case the author had in mind. It was false in one case the author hadn't. The way to make sure the assertion holds is to verify it — walk the function, look for readers, only fold if none survive. Comments don't run; checks do.</p>
+
+    <p><strong>3. The conservative version of a check is usually too conservative.</strong> "Reject the fold if <code>tmp</code> appears anywhere else" passes every soundness test but rejects too many real opportunities. "Reject the fold if <code>tmp</code> is <em>read</em> elsewhere" is tighter but still rejects every multi-window group that shares a slot. "Group windows by tmp and verify every read is owned by some window's CMP" is the level of specificity the actual rewrite needs. Each refinement is a step toward exactly capturing what the rewrite assumes about the surrounding code — no less, no more.</p>
+
+    <p><strong>4. A test case is worth more than a proof.</strong> The bug was missed in the original review because the original review was thinking about the four-instruction window in isolation. It didn't occur to either of us that one <code>STA</code> could feed two <code>CMP</code>s — that's not a shape any pass produces on purpose, so it's not the kind of thing an inspection would surface. The thing that surfaced it was a new example exercising new C source, with a sim-differential test that compared opt to unopt and noticed the answer was wrong. Routine new-example writing turns out to be the most reliable bug-discovery tool the project has — better than reading the pass code, better than reading the asm output, better than anything else short of fuzzing.</p>
+
+    <p>The fix is six lines of group-collection and a one-line predicate. The miscompile it prevents is invisible from the asm and silent in the type checker. The difference between the right version of the eligibility check and the wrong one is the difference between four sound examples and four sound examples plus three that turn into a coin flip at runtime. There's no extra cleverness in the fix; the cleverness was in writing the test that found it.</p>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

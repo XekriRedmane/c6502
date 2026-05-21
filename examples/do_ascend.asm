@@ -45,7 +45,7 @@ do_ascend:
 .if_end@1:
    CMP   floor_thresh,X
    BNE   .if_end@2
-   LDA   __zpabi_do_ascend__asc_floor
+   TXA
    STA   beam_seed_floor
    STA   floor_mirror
    STA   dsc_floor

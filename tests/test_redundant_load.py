@@ -829,5 +829,130 @@ class TestRedundantLoadRegToReg(unittest.TestCase):
         ))
 
 
+class TestRedirectLdaToTransfer(unittest.TestCase):
+    """`LDA M` rewrites to `TXA` (or `TYA`) when X (or Y) already
+    mirrors M and A doesn't. Saves bytes, leaves A mirroring the
+    same value so a downstream STA M can fold to STX/STY via
+    `via_a_store_fold`."""
+
+    def test_lda_redirects_to_txa_when_x_mirrors(self) -> None:
+        # LDX M; ... ; LDA M → LDX M; ... ; TXA.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_X),  # LDX M (X mirrors M)
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),  # kill A
+            asm_ast.Mov(src=_REG_A, dst=zp82),  # STA other (A intact)
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # LDA M → should be TXA
+            asm_ast.Mov(src=_REG_A, dst=zp82),  # STA other
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # Find the rewritten Mov where the original was `LDA M`.
+        rewrites = [
+            o for o in out
+            if isinstance(o, asm_ast.Mov)
+            and isinstance(o.src, asm_ast.Reg)
+            and isinstance(o.src.reg, asm_ast.X)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+        ]
+        self.assertEqual(len(rewrites), 1,
+                         f"expected exactly one TXA rewrite; got: {out}")
+
+    def test_lda_redirects_to_tya_when_y_mirrors(self) -> None:
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_Y),  # LDY M
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp82),
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # LDA M → TYA
+            asm_ast.Mov(src=_REG_A, dst=zp82),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        rewrites = [
+            o for o in out
+            if isinstance(o, asm_ast.Mov)
+            and isinstance(o.src, asm_ast.Reg)
+            and isinstance(o.src.reg, asm_ast.Y)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+        ]
+        self.assertEqual(len(rewrites), 1)
+
+    def test_no_redirect_when_only_a_mirrors(self) -> None:
+        # If A already mirrors M, the load is fully redundant — no
+        # rewrite, just drop (existing behavior).
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # LDA M
+            asm_ast.Mov(src=_REG_A, dst=zp82),  # STA other; A intact
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # LDA M — drop
+            asm_ast.Mov(src=_REG_A, dst=zp82),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # No TXA should appear; the second LDA dropped entirely.
+        lda_count = sum(
+            1 for o in out
+            if isinstance(o, asm_ast.Mov)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+            and not isinstance(o.src, asm_ast.Reg)
+        )
+        self.assertEqual(lda_count, 1)
+
+    def test_no_redirect_when_x_clobbered(self) -> None:
+        # LDX M; INX (clobbers X); LDA M — X no longer mirrors M,
+        # so no rewrite. (INX is a Pseudo-clobber here just to break
+        # the X.mirror invariant.)
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_X),
+            asm_ast.Inc(dst=_REG_X),  # X mutates
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp82),
+            asm_ast.Mov(src=zp80, dst=_REG_A),  # LDA M — keep as LDA
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        # The trailing instruction should still be LDA zp80.
+        kept_lda = [
+            o for o in out
+            if isinstance(o, asm_ast.Mov)
+            and isinstance(o.dst, asm_ast.Reg)
+            and isinstance(o.dst.reg, asm_ast.A)
+            and not isinstance(o.src, asm_ast.Reg)
+        ]
+        # Two LDAs survive: the LDA Imm(0) and the final LDA zp80.
+        self.assertEqual(len(kept_lda), 2)
+        self.assertEqual(kept_lda[1].src, zp80)
+
+    def test_volatile_lda_not_redirected(self) -> None:
+        # Volatile LDA must re-read memory; no rewrite to TXA.
+        zp80 = asm_ast.ZP(address=0x80, offset=0)
+        zp82 = asm_ast.ZP(address=0x82, offset=0)
+        instrs = [
+            asm_ast.Mov(src=zp80, dst=_REG_X),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=zp82),
+            asm_ast.Mov(src=zp80, dst=_REG_A, is_volatile=True),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        volatile_lda = [
+            o for o in out
+            if isinstance(o, asm_ast.Mov)
+            and o.is_volatile
+            and not isinstance(o.src, asm_ast.Reg)
+        ]
+        self.assertEqual(len(volatile_lda), 1)
+        self.assertEqual(volatile_lda[0].src, zp80)
+
+
 if __name__ == "__main__":
     unittest.main()

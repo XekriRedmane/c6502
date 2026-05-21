@@ -12,8 +12,7 @@ __local_main__1	EQU	$83
 paint_strip_reg:
    SUBROUTINE
 
-   STY   __zpabi_paint_strip_reg__color
-   LDA   __zpabi_paint_strip_reg__color
+   TYA
    STA   hud_buf,X
    RTS
 

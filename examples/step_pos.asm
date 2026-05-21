@@ -34,8 +34,7 @@ step_pos:
    STA   entity_floor_col,X
    LDA   __local_step_pos__0
    STA   entity_xoff_idx,X
-   LDA   __zpabi_step_pos__slot
-   STA   __zpabi_apply_bobble__slot
+   STX   __zpabi_apply_bobble__slot
    LDA   __local_step_pos__2
    STA   __zpabi_apply_bobble__bobble_idx
    JMP   apply_bobble

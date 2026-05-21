@@ -373,6 +373,18 @@ def _rewrite_with_in_states(
             #   - No reachable Branch reads Z before another
             #     instruction overwrites it (`_flags_dead_at`).
             continue
+        redirected = _redirect_lda_to_transfer(instr, state)
+        if redirected is not None:
+            # Rewrite `LDA M` to `TXA` / `TYA` when X or Y already
+            # mirrors M. Saves 1 byte (TXA/TYA = 1 byte vs LDA M = 2-3
+            # bytes) and leaves A mirroring M too. The flag effect is
+            # identical: LDA M and TXA both set N/Z to bit7(M)/(M==0)
+            # since X == M under the mirror invariant. Pairs with
+            # `via_a_store_fold` downstream, which then collapses
+            # `TXA;STA N` to `STX N` when A is dead at N+1.
+            out.append(redirected)
+            _update_state(redirected, state)
+            continue
         out.append(instr)
         _update_state(instr, state)
 
@@ -539,6 +551,54 @@ def _is_redundant_load(
         )
     cur = _get_reg(state, instr.dst.reg)
     return any(_operands_equal(c, instr.src) for c in cur)
+
+
+def _redirect_lda_to_transfer(
+    instr: asm_ast.Type_instruction, state: _RegState,
+) -> asm_ast.Mov | None:
+    """When `instr` is `LDA M` (memory load into A) and X or Y
+    already mirrors M, return a rewritten `Mov(Reg(X|Y), Reg(A))`
+    — TXA or TYA. Otherwise return None.
+
+    The original `LDA M` sets A := M and N/Z to bit7(M)/(M==0).
+    The rewrite `TXA` sets A := X and N/Z to bit7(X)/(X==0). Under
+    the X-mirrors-M invariant (X == M), both effects are
+    identical, so no separate flag-soundness check is needed.
+
+    Volatile loads are exempt — C99 §6.7.3.6 requires the read
+    to actually happen against the memory cell. (`_is_redundant_
+    load` also rejects volatile.)
+
+    Saves 1-2 bytes / 2-3 cycles per occurrence and leaves A
+    mirroring the same value, so downstream `STA M` becomes
+    foldable to STX/STY via `via_a_store_fold` when A is dead.
+    Reg-to-reg sources (TXA / TYA / TAX / TAY) skip: they're
+    handled by `_is_redundant_load`'s transfer branch instead."""
+    if not isinstance(instr, asm_ast.Mov):
+        return None
+    if instr.is_volatile:
+        return None
+    # dst must be Reg(A); src must be memory (not a register).
+    if not (
+        isinstance(instr.dst, asm_ast.Reg)
+        and isinstance(instr.dst.reg, asm_ast.A)
+    ):
+        return None
+    if isinstance(instr.src, asm_ast.Reg):
+        return None
+    # Already-mirrors-A is `_is_redundant_load`'s territory.
+    if any(_operands_equal(c, instr.src) for c in state.a):
+        return None
+    # Search X first, then Y. Both transfers are the same length;
+    # X-first is arbitrary.
+    for reg_cls, mirror in ((asm_ast.X, state.x), (asm_ast.Y, state.y)):
+        if any(_operands_equal(m, instr.src) for m in mirror):
+            return asm_ast.Mov(
+                src=asm_ast.Reg(reg=reg_cls()),
+                dst=instr.dst,
+                is_volatile=False,
+            )
+    return None
 
 
 def _update_state(

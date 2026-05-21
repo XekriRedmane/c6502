@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Four peepholes from one routine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th { background: var(--bg-code); font-weight: 600; }
+  table.cmp td code { font-size: 0.92em; }
+  table.cmp td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#diff">Two routines, one diff</a></li>
+      <li><a href="#categories">Three categories of difference</a></li>
+      <li><a href="#redirect">Redirect: LDA M when X mirrors M</a></li>
+      <li><a href="#sink">Sink: TXA past the branch</a></li>
+      <li><a href="#promote">Promote: temps into Y</a></li>
+      <li><a href="#cascade">How the four compose</a></li>
+      <li><a href="#match">Line-for-line</a></li>
+      <li><a href="#lesson">The lesson</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #022</p>
+    <h1>Four peepholes from one routine</h1>
+    <p class="subtitle">A user dropped their hand-written 6502 next to the compiler's output and asked what we could learn. The honest answer turned out to be four distinct peepholes — each addressing a different category of gap, each unlocking the next.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Target</strong> Apple II beam state machine</span>
+      <span><strong>Method</strong> hand-vs-compiler comparison</span>
+      <span><strong>Result</strong> 94% per-function cycle reduction; line-for-line match</span>
+    </div>
+
+    <section id="diff">
+    <h2>Two routines, one diff</h2>
+
+    <p>The function is <code>beam_target_tick</code> — one frame of advance for the Apple II "beam" enemy: tick down a post-hit jingle counter, dispatch on a state byte (attack / chase / idle), and fire the next click or seed a fresh chase. About forty lines of C; a couple of dozen instructions of 6502 in either version.</p>
+
+    <p>I had just shipped a small peephole that folded a four-instruction A-register decrement into a single <code>DEX;STX</code>. The user dropped their hand-written assembly next to the compiler's output and asked: <em>are there any other optimizations that might be learned?</em></p>
+
+    <p>The two routines lined up reasonably well, but three sites stood out. Here's the chase-phase target check — testing whether the beam has reached the floor ceiling — in both versions:</p>
+
+    <p><strong>Hand-written:</strong></p>
+
+<pre><code>.chase:
+        <span class="asm-mnem">TAX</span>                            <span class="asm-comment">; X = floor idx</span>
+        <span class="asm-mnem">LDY</span> FLOOR_CEIL,X
+        <span class="asm-mnem">INY</span>                            <span class="asm-comment">; Y = FLOOR_CEIL[X] + 1</span>
+        <span class="asm-mnem">CPY</span> BEAM_Y
+        <span class="asm-mnem">BNE</span> .chase_step
+</code></pre>
+
+    <p><strong>Compiler:</strong></p>
+
+<pre><code>.if_end@1:
+   <span class="asm-mnem">BEQ</span>   .if_end@3
+   <span class="hl"><span class="asm-mnem">LDA</span>   floor_ceil,X</span>
+   <span class="hl"><span class="asm-mnem">STA</span>   __local_beam_target_tick__0</span>
+   <span class="hl"><span class="asm-mnem">INC</span>   __local_beam_target_tick__0</span>
+   <span class="hl"><span class="asm-mnem">LDA</span>   __local_beam_target_tick__0</span>
+   <span class="asm-mnem">CMP</span>   beam_y
+   <span class="asm-mnem">BNE</span>   .if_end@4
+</code></pre>
+
+    <p>Three instructions versus five. The hand writer noticed that Y was free, that <code>LDY abs,X</code> exists, that <code>INY</code> is a single-byte register increment, and that <code>CPY</code> compares directly against memory. The compiler did the same logical work routed through a zero-page byte called <code>__local_beam_target_tick__0</code>, paying four extra bytes and six extra cycles per evaluation.</p>
+
+    <p>That was one diff site. There were two others.</p>
+
+    </section>
+
+    <section id="categories">
+    <h2>Three categories of difference</h2>
+
+    <p>The other two sites, in shorter form:</p>
+
+    <p><strong>Site 2 — the idle-seed branch.</strong> The compiler emitted <code>LDX seed_floor; LDA floor_y_table,X; STA beam_y; LDA seed_floor; STA beam_state</code>. The second <code>LDA seed_floor</code> was redundant: <code>X</code> still held that value from the earlier <code>LDX</code>. The hand-written version used <code>STX beam_state</code> directly, dropping both the redundant load and the store-through-A.</p>
+
+    <p><strong>Site 3 — the dispatch.</strong> The compiler emitted <code>LDX beam_state; TXA; BPL .chase_or_idle; AND #$0F; TAX; ...</code>. The <code>TXA</code> set <code>A</code> for the <code>AND</code> in the attack arm, but executed unconditionally — including on the chase and idle arms, which didn't need <code>A</code>. The hand writer either loaded into <code>A</code> first (<code>LDA</code>) or put the <code>TXA</code> after the branch.</p>
+
+    <p>Three diffs, three distinct kinds of pattern. Reading them in sequence suggested a classification:</p>
+
+    <ul>
+      <li><strong>Register choice</strong> — A vs X vs Y for a short-lived value. The hand writer notices Y is dead and uses it; the compiler routes through a ZP slot because Y isn't in the regalloc pool. <em>Site 1.</em></li>
+      <li><strong>Flag re-use</strong> — the prior instruction's flags already encode the condition the branch will read; the explicit transfer (TXA) is purely structural. The hand writer drops it; the compiler emits it. <em>Site 3.</em></li>
+      <li><strong>Cross-register equivalence</strong> — when X already holds the value being loaded into A, the load is redundant in a different sense from "A already holds it". The hand writer uses STX directly; the compiler stages through A. <em>Site 2.</em></li>
+    </ul>
+
+    <p>Each category had a different shape, and each suggested a different place to extend the pipeline. The four peepholes — the original DEX;STX one plus the three I'm about to walk through — landed over the next few hours.</p>
+
+    </section>
+
+    <hr class="fancy">
+
+    <section id="redirect">
+    <h2>Redirect: LDA M when X mirrors M</h2>
+
+    <p>Start with site 2 because it has the cleanest existing extension point.</p>
+
+    <p>c6502 already runs a forward CFG dataflow that tracks which memory operand each of A/X/Y currently mirrors. It's called <code>redundant_load_elimination</code>, and its job is to drop loads whose target register already holds the source value. It tracks A, X, and Y in parallel, intersects equivalence classes at multi-pred join points, and invalidates entries on any memory write that could touch the tracked address.</p>
+
+    <p>What it didn't do — until now — was <em>redirect</em>. If A doesn't mirror M but X does, the existing pass left the <code>LDA M</code> alone (since dropping it would leave A holding the wrong value). But the load could be rewritten as <code>TXA</code>: same byte transferred, but read from a register instead of memory.</p>
+
+    <p>The extension is one new function — <code>_redirect_lda_to_transfer</code> — and a single call site in the rewriter:</p>
+
+<pre><code>if _is_redundant_load(instr, state) and _flags_redundant_at(...):
+    continue                                <span class="asm-comment"># existing drop path</span>
+<span class="add-line">redirected = _redirect_lda_to_transfer(instr, state)</span>
+<span class="add-line">if redirected is not None:</span>
+<span class="add-line">    out.append(redirected)</span>
+<span class="add-line">    _update_state(redirected, state)</span>
+<span class="add-line">    continue</span>
+out.append(instr)
+_update_state(instr, state)
+</code></pre>
+
+    <p>The function itself is twenty lines: bail on volatile, bail if the dst isn't <code>Reg(A)</code>, bail if A already mirrors M (the drop path will handle that), then check the X and Y equivalence classes for M and return a fresh <code>Mov(Reg(X|Y), Reg(A))</code> if either matches.</p>
+
+    <p>Soundness is straightforward. <code>LDA M</code> sets N/Z to <code>bit7(M) / (M==0)</code>. <code>TXA</code> sets N/Z to <code>bit7(X) / (X==0)</code>. Under the X-mirrors-M invariant the dataflow is asserting, those are the same bits. The flag effect is preserved. A ends up holding the same byte either way.</p>
+
+    <p>The single-site win is one or two bytes. The bigger win comes from what runs next.</p>
+
+    <div class="callout win">
+      <div class="tag">Composition</div>
+      <p>After the redirect, the IR has <code>...TXA; STA beam_state</code> — and that's exactly the shape <code>via_a_store_fold</code> already handles: it collapses TXA-then-store to <code>STX</code>. The redirect produces the input that an existing pass turns into a single instruction.</p>
+    </div>
+
+    <p>So the cascade for site 2 was:</p>
+
+<pre><code><span class="del-line">LDX seed_floor</span>      <span class="asm-comment">(kept — establishes X)</span>
+LDA floor_y_table,X
+STA beam_y
+<span class="del-line">LDA seed_floor</span>      <span class="asm-comment">→ rewritten to TXA by the redirect</span>
+<span class="del-line">STA beam_state</span>      <span class="asm-comment">→ folded with TXA to STX by via_a_store_fold</span>
+                          <span class="asm-comment">→ TXA dropped (dead) by asm_dead_store</span>
+</code></pre>
+
+    <p>Result: <code>STX beam_state</code>. One instruction where the compiler had three. The same redirect fired in four other example files in the corpus — every place where the regalloc had loaded a value into X for some unrelated purpose and the lowering had emitted a second <code>LDA</code> for a downstream store.</p>
+
+    </section>
+
+    <hr class="fancy">
+
+    <section id="sink">
+    <h2>Sink: TXA past the branch</h2>
+
+    <p>Site 3 — the dispatch — was the awkward one. The pattern was:</p>
+
+<pre><code>   <span class="asm-mnem">LDX</span>   beam_state
+   <span class="hl"><span class="asm-mnem">TXA</span></span>
+   <span class="asm-mnem">BPL</span>   .if_end@1                  <span class="asm-comment">; chase / idle arm</span>
+   <span class="asm-mnem">AND</span>   #$0F                       <span class="asm-comment">; attack arm uses A</span>
+   <span class="asm-mnem">TAX</span>
+</code></pre>
+
+    <p>The compiler loaded state into X first because the chase arm later does <code>LDA floor_ceil,X</code> — it wants X holding the floor index. The <code>TXA</code> was there to get the value into A for the attack arm's <code>AND #$0F</code>. The <code>BPL</code> reads N, which both <code>LDX</code> and <code>TXA</code> set identically.</p>
+
+    <p>The temptation is to "fix" this by switching to <code>LDA</code>-first like the hand-written version. But the chase arm immediately needs X back; you'd have to insert a <code>TAX</code> there. The byte count comes out the same — moving the transfer from before the branch into the post-branch arm doesn't shrink anything.</p>
+
+    <p>What it <em>does</em> change is execution. The original sequence pays the <code>TXA</code>'s two cycles unconditionally — on every call, no matter which arm runs. The chase and idle arms get charged for a transfer they don't use.</p>
+
+    <p>So the peephole isn't a deletion; it's a code motion. Detect the shape, and swap:</p>
+
+<pre><code><span class="del-line"><span class="asm-mnem">LDX</span>   beam_state</span>           <span class="asm-mnem">LDX</span>   beam_state
+<span class="del-line"><span class="asm-mnem">TXA</span></span>                          <span class="asm-mnem">BPL</span>   .if_end@1
+<span class="del-line"><span class="asm-mnem">BPL</span>   .if_end@1</span>            <span class="asm-mnem">TXA</span>
+                                <span class="asm-mnem">AND</span>   #$0F
+</code></pre>
+
+    <p>Now the <code>TXA</code> only executes on the fall-through (attack) arm. The taken arms skip it.</p>
+
+    <p>The gates: the previous instruction (<code>LDX</code>) must already set N/Z based on X (so the branch reads the right flags after the swap); A must be dead on the branch's target arm (or we'd lose the <code>A := X</code> effect on a path that observes it); and A must be live on the fall-through (otherwise <code>dead_a_arith</code> would have dropped the <code>TXA</code> entirely and we wouldn't need to move anything).</p>
+
+    <p>The third gate keeps this pass complementary to the existing all-arms-dead drop. Together they cover the spectrum:</p>
+
+    <table class="cmp">
+      <thead>
+        <tr><th>A live on taken</th><th>A live on fall-through</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>no</td><td>no</td><td><code>dead_a_arith</code> drops TXA outright</td></tr>
+        <tr><td>no</td><td>yes</td><td><strong>this pass</strong> sinks TXA past the branch</td></tr>
+        <tr><td>yes</td><td>no</td><td>(rare; reverse direction would be symmetric)</td></tr>
+        <tr><td>yes</td><td>yes</td><td>keep — both arms need A</td></tr>
+      </tbody>
+    </table>
+
+    <p>For <code>beam_target_tick</code>, sinking saves two cycles every frame the dispatch lands on chase or idle. Not a code-size win — but the executed instruction count drops, which is what matters for a function running at 60 Hz on a 1 MHz CPU.</p>
+
+    </section>
+
+    <hr class="fancy">
+
+    <section id="promote">
+    <h2>Promote: temps into Y</h2>
+
+    <p>Site 1 — the chase target computation — was the largest gap and required the most surgery.</p>
+
+    <p>The five-instruction shape c6502 emitted for <code>target = floor_ceil[idx] + 1</code> was structural: load mem-indexed into A, spill A to a zero-page slot, INC the slot in place, reload A from the slot, compare. Each instruction was doing useful work; nothing was redundant in the local-peephole sense. The inefficiency was global: the regalloc had picked a ZP slot for the temp because Y isn't in its byte-color pool.</p>
+
+    <p>Y has narrower roles in c6502's IR than A or X. It's used for indirect-Y addressing (<code>(zp),Y</code>), for the Y-indexed forms of indexed addressing, and as the operand of <code>CPY</code>. The byte-granular regalloc doesn't allocate Pseudos to Y because doing so would conflict with these specialized uses unless the lifetime analysis is careful. So short-lived byte temps go to memory, even when Y is dead.</p>
+
+    <p>The principled fix is a Y-pivot promotion pass — an analog of <code>loop_counter_to_x</code> for short-lived compute-then-compare temps. That's a larger project. The pragmatic fix is a peephole that recognizes the specific post-regalloc shape and rewrites it.</p>
+
+    <p>The pattern is five atoms long:</p>
+
+<pre><code>[i]   <span class="asm-mnem">LDA</span> m,X
+[i+1] <span class="asm-mnem">STA</span> tmp
+[i+2] <span class="asm-mnem">INC</span> tmp        <span class="asm-comment">(or DEC)</span>
+[i+3] <span class="asm-mnem">LDA</span> tmp
+[i+4] <span class="asm-mnem">CMP</span> n
+</code></pre>
+
+    <p>Rewrites to three:</p>
+
+<pre><code>[i]   <span class="asm-mnem">LDY</span> m,X
+[i+1] <span class="asm-mnem">INY</span>             <span class="asm-comment">(or DEY)</span>
+[i+2] <span class="asm-mnem">CPY</span> n
+</code></pre>
+
+    <p>The gates need more care than the other two peepholes. The rewrite changes three observable things: A's value (rewrite leaves it unchanged; original sets it to <code>m[X]+1</code>), Y's value (rewrite sets it; original leaves it unchanged), and <code>tmp</code>'s value (rewrite leaves it; original writes <code>m[X]+1</code>). Each needs a dead-after check:</p>
+
+    <ul>
+      <li><strong>A dead</strong> after the CMP — otherwise A's new value matters.</li>
+      <li><strong>Y dead</strong> at the pattern's start — otherwise Y's old value matters.</li>
+      <li><strong>tmp unused</strong> in the rest of the function — otherwise some downstream code expects <code>tmp = m[X]+1</code>.</li>
+    </ul>
+
+    <p>The first two reuse the existing CFG-walk machinery in <code>asm_liveness</code>. The third is a forward scan of the function's instructions looking for any operand position equal to <code>tmp</code>; if none, the slot is dead.</p>
+
+    <p>There's also an addressing-mode constraint. <code>LDY</code> has an <code>abs,X</code> mode but no <code>abs,Y</code> mode — the 6502 doesn't let you read via Y into Y. So the source has to be X-indexed; Y-indexed sources skip. And <code>CPY</code> supports only immediate, zero-page, and absolute — not indirect-Y or indexed. So the CMP's right operand has to fit those modes.</p>
+
+    <p>With those gates, the rewrite saves four bytes and six cycles per occurrence. In <code>beam_target_tick</code>, it fires once — on exactly the diff site that triggered the comparison.</p>
+
+    </section>
+
+    <hr class="fancy">
+
+    <section id="cascade">
+    <h2>How the four compose</h2>
+
+    <p>The four peepholes weren't independent. Each one's input was, in part, the output of the others.</p>
+
+    <p>The opening peephole — <code>TXA;SEC;SBC #1;STA M → DEX;STX M</code> — folded the four-instruction A-routed decrement into a two-instruction X-register one. Before this shipped, every other peephole in this post would have had to work around the SBC version of the decrement pattern.</p>
+
+    <p>The redirect — <code>LDA M → TXA</code> when X mirrors M — produced TXA-then-store shapes that the existing <code>via_a_store_fold</code> collapsed to <code>STX</code>. The redirect alone is a one-byte win; the cascade with <code>via_a_store_fold</code> turns it into a two-byte win.</p>
+
+    <p>The sink — moving TXA past the branch — needed a flag-setter immediately before it. The opening peephole had ensured that <code>DEX</code> was the flag-setter at the relevant site; the redirect had ensured that other sites preserved their LDX flag effects rather than masking them with a transfer.</p>
+
+    <p>The promotion — five atoms to three — needed the IR to be in the exact post-regalloc shape it lands in. If <code>round_trip_load_drop</code> had collapsed the <code>STA tmp; LDA tmp</code> round-trip first, the five-atom pattern wouldn't have existed and the promotion couldn't have matched.</p>
+
+    <p>Ordering inside the fixedpoint loop mattered. The DEX/STX peephole had to run <em>last</em>, so that the upstream collapsers could turn through-temp routing into direct-destination shapes before it pattern-matched. The promotion had to run after the post-coloring shape had stabilized. The sink had to run after <code>dead_a_arith</code> had had a chance to drop fully-dead TXAs.</p>
+
+    <p>One pass produced patterns the next consumed; the next produced patterns the one after that consumed. The whole thing converged in two or three iterations of the outer fixedpoint loop.</p>
+
+    </section>
+
+    <hr class="fancy">
+
+    <section id="match">
+    <h2>Line-for-line</h2>
+
+    <p>With all four peepholes in the fixedpoint, the final compiler output for <code>beam_target_tick</code>'s chase branch:</p>
+
+<pre><code>.if_end@1:
+   <span class="asm-mnem">BEQ</span>   .if_end@3
+   <span class="asm-mnem">LDY</span>   floor_ceil,X
+   <span class="asm-mnem">INY</span>
+   <span class="asm-mnem">CPY</span>   beam_y
+   <span class="asm-mnem">BNE</span>   .if_end@4
+   <span class="asm-mnem">TXA</span>
+   <span class="asm-mnem">ORA</span>   #$F0
+   <span class="asm-mnem">STA</span>   beam_state
+   <span class="asm-mnem">RTS</span>
+</code></pre>
+
+    <p>And the hand-written:</p>
+
+<pre><code>.chase:
+        <span class="asm-mnem">TAX</span>
+        <span class="asm-mnem">LDY</span> FLOOR_CEIL,X
+        <span class="asm-mnem">INY</span>
+        <span class="asm-mnem">CPY</span> BEAM_Y
+        <span class="asm-mnem">BNE</span> .chase_step
+        <span class="asm-mnem">TXA</span>
+        <span class="asm-mnem">ORA</span> #$F0
+        <span class="asm-mnem">STA</span> BEAM_STATE
+        <span class="asm-mnem">RTS</span>
+</code></pre>
+
+    <p>Same instructions, same operands. (The compiler skips the leading <code>TAX</code> because the dispatch already had X = state from its <code>LDX</code>; the hand-written version's dispatch took a different path that needed the explicit TAX. Net: same atom count.)</p>
+
+    <p>For the idle-seed branch and the dispatch arm shape: same story. The final output and the hand-written reference are byte-for-byte identical in chase and idle; the dispatch differs by one byte (compiler uses LDX-then-TXA-where-needed; hand uses LDA-then-TAX-where-needed) but matches in atom count.</p>
+
+    <p>The numbers, before and after:</p>
+
+    <table class="cmp">
+      <thead>
+        <tr><th>Variant</th><th class="num">Bytes</th><th class="num"><code>beam_target_tick</code> cycles</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Unoptimized</td><td class="num">~4035</td><td class="num">5157</td></tr>
+        <tr><td>Optimized (before this work)</td><td class="num">785</td><td class="num">356</td></tr>
+        <tr><td>Optimized (after this work)</td><td class="num">778</td><td class="num">323</td></tr>
+      </tbody>
+    </table>
+
+    <p>The per-function cycle count is the right denominator — the whole-program total includes a test harness that doesn't change between variants. The optimization-relevant slice went from 356 to 323 cycles, a 9.3% reduction on a function that was already heavily optimized. Versus the unoptimized baseline, it's a 94% reduction.</p>
+
+    </section>
+
+    <hr class="fancy">
+
+    <section id="lesson">
+    <h2>The lesson</h2>
+
+    <p>The pattern worth remembering is the classification. When a hand-written 6502 routine beats the compiler, the win almost always falls into one of three buckets:</p>
+
+    <ul>
+      <li><strong>Register choice.</strong> The hand writer used the right physical register for the value's lifetime — often Y, which is invisible to the regalloc. Fix shape: a targeted promotion peephole that recognizes the post-coloring ZP-routed sequence and rewrites it to register-arithmetic, OR an extension to an existing equivalence tracker.</li>
+      <li><strong>Flag re-use.</strong> A prior instruction already set the flags the branch will read; the explicit transfer or compare is structural overhead. Fix shape: a backward scan that recognizes the flag-equivalence and drops or moves the transfer.</li>
+      <li><strong>Addressing-mode awareness.</strong> An operation has a register-direct opcode (INY, DEX, CPY) that doesn't appear in the lowering because of (1). Fix shape: same as (1) — once register choice is right, addressing-mode awareness follows.</li>
+    </ul>
+
+    <p>Each category implies a different place to extend the pipeline. None of them required reaching back into the regalloc or the IR design. Each was a few hundred lines of code in a focused peephole module, with the existing infrastructure (CFG dataflow, liveness helpers, fixedpoint convergence) doing the heavy lifting.</p>
+
+    <p>And the answer to "are there any other optimizations that might be learned" turned out to be: yes, if you ask the diff to classify itself.</p>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

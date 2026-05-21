@@ -135,6 +135,43 @@ class TestCmpThroughTmpFold(unittest.TestCase):
         out = _instrs(apply_cmp_through_tmp_fold(prog))
         self.assertEqual(len(out), 4)
 
+    def test_downstream_cmp_against_tmp_rejected(self):
+        # `LDA src; STA tmp; LDA o1; CMP tmp; ...; LDA o2; CMP tmp`
+        # The second CMP also reads tmp — folding the first occurrence
+        # would drop the only STA tmp and leave the second CMP reading
+        # a stale slot. Headline shape: the back-to-back column-band
+        # test in beam_target_draw (`screen_col > 0x25` followed by
+        # `screen_col <= 0x23`).
+        src = asm_ast.IndexedData(
+            name="proj_screen_col", offset=0, index=asm_ast.X(),
+        )
+        tmp = asm_ast.Data(name="T", offset=0)
+        o1 = asm_ast.Imm(value=0x25)
+        o2 = asm_ast.Imm(value=0x23)
+        prog = _wrap([
+            _lda(src), _sta(tmp),
+            _lda(o1), _cmp(tmp),
+            _lda(o2), _cmp(tmp),
+        ])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        # Must NOT fold: the second CMP downstream still reads tmp.
+        self.assertEqual(len(out), 6)
+        self.assertEqual(out[1], _sta(tmp))  # STA tmp preserved
+
+    def test_downstream_lda_of_tmp_rejected(self):
+        # Any downstream read of tmp (not just CMP) blocks the fold.
+        src = asm_ast.Data(name="S", offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        downstream_dst = asm_ast.Data(name="dst", offset=0)
+        prog = _wrap([
+            _lda(src), _sta(tmp), _lda(other), _cmp(tmp),
+            _lda(tmp), _sta(downstream_dst),
+        ])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        self.assertEqual(len(out), 6)
+        self.assertEqual(out[1], _sta(tmp))
+
 
 if __name__ == "__main__":
     unittest.main()

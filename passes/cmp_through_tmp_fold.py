@@ -65,14 +65,28 @@ collects the `__local_*` symbol when it's no longer referenced.
     can't be statically ruled out.
   * `tmp` and `src` need not differ — a `LDA M; STA M; LDA other;
     CMP M` self-store is also collapsed soundly.
+  * Every read of `tmp` in the function must be "owned" by a
+    matching candidate window — i.e. it must sit at one of the
+    candidates' CMP positions. When that holds, folding every
+    candidate in the group as a batch leaves no orphaned reader.
+    Outside writes are fine (asm_dead_store cleans the orphaned
+    stores up). Counter-examples this guards against:
+      - Back-to-back column-band test in `beam_target_draw`
+        (`screen_col > $25` then `screen_col <= $23`): one STA tmp
+        feeds TWO `CMP tmp` reads — only one is matched, so the
+        second is unowned and the whole group bails.
+      - Three independent `col == floor_*[idx]` comparisons in
+        `do_ascend` against the SAME staged tmp slot: each
+        comparison has its own STA tmp + CMP tmp pair, so every
+        read IS owned by a candidate; the group folds.
 
 The rewrite drops both the LDA src and STA tmp. After the rewrite:
 
   * Reg(A)'s final value matches the original (A = other in both).
   * Flags after the rewritten CMP match the original CMP's flags.
   * No memory write was dropped that downstream code observes
-    (`tmp` becomes dead-after-rewrite; downstream `asm_dead_store`
-    handles any remaining STAs to tmp elsewhere in the function).
+    (`tmp` is verifiably unread elsewhere by the all-function check
+    above, so dropping the only STA tmp is sound).
 
 # Why this isn't covered by other passes
 
@@ -162,6 +176,37 @@ def _other_alias_safe(other, tmp) -> bool:
     return False
 
 
+def _read_operands(instr) -> list:
+    """Operand positions on `instr` that READ from memory. dst-only
+    writes don't count — overwriting tmp from elsewhere is harmless
+    once the matched CMP is gone (asm_dead_store cleans up the
+    orphan store). RMW positions (Inc / Dec / shifts; the dst of
+    Add / Sub / And / Or / Xor which is normally Reg(A) but treated
+    as a read here for safety) DO count as reads."""
+    if isinstance(instr, asm_ast.Mov):
+        return [instr.src]
+    if isinstance(instr, asm_ast.Compare):
+        return [instr.left, instr.right]
+    if isinstance(instr, (asm_ast.Add, asm_ast.Sub, asm_ast.And,
+                          asm_ast.Or, asm_ast.Xor)):
+        return [instr.src, instr.dst]
+    if isinstance(instr, asm_ast.Push):
+        return [instr.src]
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec,
+                          asm_ast.ArithmeticShiftLeft,
+                          asm_ast.LogicalShiftRight,
+                          asm_ast.RotateLeft,
+                          asm_ast.RotateRight)):
+        return [instr.dst]
+    if isinstance(instr, asm_ast.BitTest):
+        return [instr.operand]
+    return []
+
+
+def _reads_tmp(instr, tmp) -> bool:
+    return any(_operands_equal(op, tmp) for op in _read_operands(instr))
+
+
 def _matches_pattern(a, b, c, d) -> tuple[
     asm_ast.Type_operand, asm_ast.Type_operand
 ] | None:
@@ -196,17 +241,68 @@ def _matches_pattern(a, b, c, d) -> tuple[
     return src, other
 
 
+def _tmp_key(tmp):
+    """Hashable identity for a Data / ZP tmp operand."""
+    if isinstance(tmp, asm_ast.Data):
+        return ("D", tmp.name, tmp.offset)
+    if isinstance(tmp, asm_ast.ZP):
+        return ("Z", tmp.address, tmp.offset)
+    return None
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
-    out: list[asm_ast.Type_instruction] = []
-    i = 0
-    while i + 3 < len(instrs):
+
+    # Pass 1: enumerate every candidate 4-atom window. A candidate
+    # is a (start_index, src, other, tmp) tuple; the matched CMP
+    # sits at start_index + 3.
+    candidates: list[tuple[int, asm_ast.Type_operand,
+                           asm_ast.Type_operand,
+                           asm_ast.Type_operand]] = []
+    for i in range(len(instrs) - 3):
         matched = _matches_pattern(
             instrs[i], instrs[i + 1], instrs[i + 2], instrs[i + 3],
         )
-        if matched is not None:
-            src, other = matched
-            # Emit: LDA other; CMP src.
+        if matched is None:
+            continue
+        src, other = matched
+        tmp = instrs[i + 1].dst
+        candidates.append((i, src, other, tmp))
+
+    # Pass 2: group candidates by tmp. For each group, every read of
+    # tmp in the function must be "owned" by some candidate in the
+    # group (i.e. sit at one of the candidates' CMP positions);
+    # then folding all candidates in the group leaves no orphaned
+    # reader. If even one read of tmp lives outside the owned set,
+    # NO candidate in the group is safe to fold.
+    owned_cmp_idxs_by_key: dict[tuple, set[int]] = {}
+    tmp_by_key: dict[tuple, asm_ast.Type_operand] = {}
+    for i, _src, _other, tmp in candidates:
+        key = _tmp_key(tmp)
+        owned_cmp_idxs_by_key.setdefault(key, set()).add(i + 3)
+        tmp_by_key[key] = tmp
+
+    foldable_keys: set[tuple] = set()
+    for key, owned_idxs in owned_cmp_idxs_by_key.items():
+        tmp = tmp_by_key[key]
+        if all(
+            (k in owned_idxs) or not _reads_tmp(instr, tmp)
+            for k, instr in enumerate(instrs)
+        ):
+            foldable_keys.add(key)
+
+    cand_by_start = {i: (src, other, tmp)
+                     for i, src, other, tmp in candidates
+                     if _tmp_key(tmp) in foldable_keys}
+
+    # Pass 3: linear emit, folding every candidate whose tmp-group
+    # cleared the eligibility check.
+    out: list[asm_ast.Type_instruction] = []
+    i = 0
+    while i < len(instrs):
+        if i in cand_by_start:
+            _src, other, _tmp = cand_by_start[i]
+            src = cand_by_start[i][0]
             out.append(asm_ast.Mov(
                 src=other, dst=asm_ast.Reg(reg=asm_ast.A()),
                 is_volatile=False,
@@ -218,7 +314,6 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             continue
         out.append(instrs[i])
         i += 1
-    out.extend(instrs[i:])
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,

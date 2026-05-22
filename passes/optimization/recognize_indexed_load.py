@@ -46,6 +46,10 @@ from collections import Counter
 import c99_ast
 import tac_ast
 from passes.optimization.var_visit import uses_in
+from passes.optimization.framework import (
+    DefUsePass, DefUseEnv, PassContext, MatchResult,
+    m_Load, m_Var, m_Any,
+)
 
 
 def recognize_indexed_load(
@@ -211,81 +215,65 @@ def _is_1_byte_var(v: tac_ast.Var, symbols) -> bool:
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
 
 
-from passes.optimization.framework import (  # noqa: E402
-    WindowPass, FixedpointPass, PassContext, MatchResult,
-    m_Cast, m_Commutative, m_Load, m_Var, m_Constant, m_Any,
-)
-
-
-class RecognizeIndexedLoad(WindowPass):
-    """WindowPass version: matches adjacent `ZeroExtend/SignExtend;
-    Binary(Add, Const, %ext); Load(%addr, dst)` triples."""
+class RecognizeIndexedLoad(DefUsePass):
+    """DefUsePass: matches Load(src_ptr=Var, dst=Var). For each match,
+    walks back twice through the SSA def-chain to find the
+    ZeroExtend/SignExtend → Binary(Add, Const, %ext) → Load
+    pattern. Uses the full def-idx so the Load and its producers
+    need not be index-adjacent."""
     name = "recognize_indexed_load"
-    window_size = 3
-    pattern = [
-        m_Cast(
-            kind=(tac_ast.ZeroExtend, tac_ast.SignExtend),
-            dst=m_Var(capture='ext_dst'),
-            capture='ext_instr',
-        ),
-        m_Commutative(
-            op=tac_ast.Add,
-            lhs=m_Constant(capture='addr_const'),
-            rhs=m_Any(capture='add_rhs'),
-            dst=m_Var(capture='addr_dst'),
-        ),
-        m_Load(
-            src_ptr=m_Any(capture='load_ptr'),
-            dst=m_Var(capture='load_dst'),
-            capture='load_instr',
-        ),
-    ]
+    pattern = m_Load(
+        src_ptr=m_Var(capture='addr_var'),
+        dst=m_Var(capture='load_dst'),
+        capture='load_instr',
+    )
 
-    def prepare(self, fn, ctx):
+    def prepare_extra(self, fn, ctx):
         return _count_uses(fn.instructions)
 
-    def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
+    def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         if ctx.symbols is None:
             return None
-        ext_instr = m.bindings['ext_instr']
-        ext_dst = m.bindings['ext_dst']
-        addr_const = m.bindings['addr_const']
-        add_rhs = m.bindings['add_rhs']
-        addr_dst = m.bindings['addr_dst']
-        load_ptr = m.bindings['load_ptr']
-        load_dst = m.bindings['load_dst']
         load_instr = m.bindings['load_instr']
-
-        # Verify backrefs: add_rhs must be ext's dst, load_ptr must be Add's dst.
-        if not (isinstance(add_rhs, tac_ast.Var) and add_rhs.name == ext_dst.name):
-            return None
-        if not (isinstance(load_ptr, tac_ast.Var) and load_ptr.name == addr_dst.name):
-            return None
-
-        # Single-use gates.
-        if use_counts.get(ext_dst.name, 0) != 1:
-            return None
-        if use_counts.get(addr_dst.name, 0) != 1:
-            return None
-
-        # Dst must be 1-byte typed.
+        addr_var = m.bindings['addr_var']
+        load_dst = m.bindings['load_dst']
+        # dst must be 1-byte typed.
         if not _is_1_byte_var(load_dst, ctx.symbols):
             return None
-
-        # Address bounds check.
+        # addr_var must be SSA-renamed (single-def guarantee).
+        if ctx.ssa_dsts is None or addr_var.name not in ctx.ssa_dsts:
+            return None
+        # Single-use gate on %addr.
+        if env.extra.get(addr_var.name, 0) != 1:
+            return None
+        # Walk back to the Binary(Add, Const, %ext) def.
+        binary = env.def_of(addr_var)
+        if not isinstance(binary, tac_ast.Binary) or not isinstance(binary.op, tac_ast.Add):
+            return None
+        addr_const, ext_var = _split_const_var(binary.src1, binary.src2)
+        if addr_const is None or ext_var is None:
+            return None
         addr_value = addr_const.const.value
         if not (0 <= addr_value <= 0xFF00):
             return None
-
-        # Index source must be a Var with 1-byte type.
-        if not isinstance(ext_instr.src, tac_ast.Var):
+        # ext_var must be SSA-renamed and single-use.
+        if ext_var.name not in ctx.ssa_dsts:
             return None
-        idx_var = ext_instr.src
+        if env.extra.get(ext_var.name, 0) != 1:
+            return None
+        # Walk back to the ZeroExtend/SignExtend def.
+        ext = env.def_of(ext_var)
+        if not isinstance(ext, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
+            return None
+        if not isinstance(ext.src, tac_ast.Var):
+            return None
+        idx_var = ext.src
         if not _is_1_byte_var(idx_var, ctx.symbols):
             return None
-
-        indexed = tac_ast.IndexedConstLoad(
+        # All checks pass. The two intermediate defs (%ext, %addr)
+        # become dead after this rewrite; SSA-DCE drops them on the
+        # next fixedpoint iteration.
+        return tac_ast.IndexedConstLoad(
             address=addr_value, index=idx_var, dst=load_dst,
             is_volatile=load_instr.is_volatile,
         )
-        return [indexed]

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>instructions_view</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); background: var(--good-bg); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#chain">The chained-fusion problem</a></li>
+      <li><a href="#shape">What reassoc_const does</a></li>
+      <li><a href="#naive">The naive walk-back</a></li>
+      <li><a href="#fix">The fix: instructions_view</a></li>
+      <li><a href="#drops">The eager-drop angle</a></li>
+      <li><a href="#beyond">Beyond reassoc_const</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #025</p>
+    <h1>instructions_view</h1>
+    <p class="subtitle">A pattern-matching framework that walks back through SSA def-use chains has to see its own rewrites as it goes — or chained fusions leave dangling references and require multiple outer iterations to converge.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Subject</strong> DefUsePass framework design</span>
+      <span><strong>Pass</strong> <code>reassoc_const</code> (motivating case)</span>
+      <span><strong>Files</strong> <code>passes/optimization/framework/defuse.py</code></span>
+    </div>
+
+    <section id="chain">
+    <h2>The chained-fusion problem</h2>
+
+    <p>Consider this C source, which appears in a video-game renderer that blits pixels into a known framebuffer layout:</p>
+
+<pre><code>static uint8_t * const hires_page1 = (uint8_t * const)0x2000;
+static const uint16_t row_offsets[192] = { 0x000, 0x400, 0x080, ... };
+static const uint16_t col_offsets[40]  = { 0x000, 0x100, 0x200, ... };
+
+hires_page1[row_offsets[row] + col_offsets[col] + byte_idx] = value;
+</code></pre>
+
+    <p>After the static-const fold replaces <code>hires_page1</code> with <code>Constant(0x2000)</code> and the const-array-subscript fold resolves both table lookups to compile-time constants (say <code>row_offsets[2] = 0x080</code>, <code>col_offsets[1] = 0x100</code>), the TAC for the address computation looks roughly like:</p>
+
+<pre><code>Binary(Add, Constant(0x100), byte_idx_ext, %a)
+Binary(Add, Constant(0x080), %a,            %b)
+Binary(Add, Constant(0x2000), %b,           %addr)
+Store(value, %addr)
+</code></pre>
+
+    <p>Three runtime 16-bit Adds, computing <code>0x100 + 0x080 + 0x2000 + byte_idx</code>. The three constants could collapse to a single <code>0x2180</code>. One Add instead of three. The question is whether <code>reassoc_const</code> can get there in a single pass.</p>
+
+    <p>The pass lives in <code>passes/optimization/reassoc_const.py</code>. It's a <code>DefUsePass</code> — a subclass of the base in <code>passes/optimization/framework/defuse.py</code> that provides a structured way to walk from a USE site backward through the SSA def-use chain to inspect producers. The framework was designed specifically so each pass doesn't have to hand-roll def-index bookkeeping. The question is what happens when two fusable pairs appear in the same function, back-to-back.</p>
+
+    </section>
+
+    <section id="shape">
+    <h2>What reassoc_const does</h2>
+
+    <p><code>ReassocConstants</code> matches every instruction of the form:</p>
+
+<pre><code>Binary(Add, Constant(C1), %inner, %outer)   <span class="asm-comment"># outer — the USE site</span>
+</code></pre>
+
+    <p>When it finds one, it walks back via the SSA def-index to the instruction that defined <code>%inner</code>. If that instruction is also a <code>Binary(Add, Constant(C2), V, %inner)</code> — with <code>%inner</code> used exactly once — it fuses the two into:</p>
+
+<pre><code>Binary(Add, Constant(C1 + C2), V, %outer)
+</code></pre>
+
+    <p>The inner def is dropped atomically (via <code>Rewrite.drop_defs</code>, discussed later). The two constant additions collapse at compile time; the runtime work is one Add instead of two.</p>
+
+    <p>Applied once to the three-Add chain above, the first fusable pair is i=1 and i=0:</p>
+
+<pre><code>i=0: Binary(Add, Constant(0x100), byte_idx_ext, %a)
+i=1: Binary(Add, Constant(0x080), %a,            %b)   <span class="asm-comment"># outer matches here</span>
+i=2: Binary(Add, Constant(0x2000), %b,            %addr)
+i=3: Store(value, %addr)
+</code></pre>
+
+    <p>The match at i=1 walks back to i=0 and fuses: <code>%b = Constant(0x180) + byte_idx_ext</code>. The next fusable pair is i=2 and the new i=1 result. Whether that second fusion fires in the same pass iteration — or forces another outer fixed-point loop — is the load-bearing design question.</p>
+
+    </section>
+
+    <section id="naive">
+    <h2>The naive walk-back</h2>
+
+    <p>A naive <code>DefUsePass</code> builds a def-index once from <code>fn.instructions</code> and hands it to the subclass's <code>rewrite</code> method via a <code>DefUseEnv</code>. Here is the naive shape:</p>
+
+<pre><code>def run(self, fn, ctx):
+    def_idx = _build_def_idx(fn.instructions)
+    env = DefUseEnv(def_idx=def_idx, instructions=fn.instructions)
+    rewrites: dict[int, object] = {}
+    drop_indices: set[int] = set()
+
+    for i, instr in enumerate(fn.instructions):
+        m = MatchResult()
+        if not self.pattern.match(instr, m):
+            continue
+        result = self.rewrite(m, env, ctx)
+        if result is None:
+            continue
+        rewrites[i] = result.replacement
+        drop_indices.update(...)
+    # rebuild ...
+</code></pre>
+
+    <p>Walk through what happens to the three-Add chain under this design.</p>
+
+    <p><strong>i=1</strong>: the pattern matches. <code>env.def_of(%a)</code> reads <code>fn.instructions[0]</code>, gets <code>Binary(Add, 0x100, byte_idx_ext, %a)</code>. Fuse: record <code>rewrites[1] = Binary(Add, 0x180, byte_idx_ext, %b)</code>. Record <code>drop_indices = {0}</code>.</p>
+
+    <p><strong>i=2</strong>: the pattern matches. <code>env.def_of(%b)</code> reads <code>fn.instructions[1]</code>. <code>fn.instructions</code> is immutable — it's the original list. So <code>env.def_of(%b)</code> returns the original <code>Binary(Add, 0x080, %a, %b)</code>, not the fused form. The pass tries to fuse i=2 with that stale instruction. The inner operand would be <code>%a</code> from the original inner Add — but the rewrite at i=1 already dropped i=0, which defined <code>%a</code>. The combined Constant would be <code>0x2000 + 0x080 = 0x2080</code> (still wrong because we missed the 0x100), and the fused instruction would reference <code>%a</code> — a Var whose def was just dropped. Dangling reference.</p>
+
+    <p>The exact failure mode depends on the drop-conflict guard. If the guard fires (noting that <code>%a</code>'s def index 0 is already in <code>drop_indices</code>), the second fusion is skipped entirely. The function exits the pass with one fusion done, two still needed. The outer fixed-point loop picks it up on the next iteration. Three-pair chains take two outer iterations; N-pair chains take N−1.</p>
+
+    <div class="callout bad">
+      <div class="tag">Failure mode</div>
+      <p><code>env.def_of(var)</code> reads from the original <code>fn.instructions</code>. After a rewrite at i=1, the def-index for <code>%b</code> still points at the pre-rewrite form. A fusion at i=2 sees a stale producer — either producing a wrong result, or being blocked by the conflict guard.</p>
+    </div>
+
+    </section>
+
+    <section id="fix">
+    <h2>The fix: instructions_view</h2>
+
+    <p>The actual <code>DefUsePass.run</code> in <code>passes/optimization/framework/defuse.py</code> adds one list alongside the iteration:</p>
+
+<pre><code>def run(self, fn, ctx):
+    if ctx.ssa_dsts is None:
+        return fn
+    def_idx = _build_def_idx(fn.instructions)
+    <span class="hl">instructions_view = list(fn.instructions)</span>
+    env = DefUseEnv(
+        def_idx=def_idx,
+        <span class="hl">instructions=instructions_view,</span>
+        extra=self.prepare_extra(fn, ctx),
+    )
+    rewrites: dict[int, object] = {}
+    drop_indices: set[int] = set()
+    changed = False
+    for i, instr in enumerate(fn.instructions):
+        m = MatchResult()
+        if not self.pattern.match(instr, m):
+            continue
+        result = self.rewrite(m, env, ctx)
+        if result is None:
+            continue
+        if isinstance(result, Rewrite):
+            # ... conflict guard ...
+            rewrites[i] = result.replacement
+            <span class="hl">instructions_view[i] = result.replacement</span>
+            drop_indices.update(new_drops)
+            changed = True
+        elif result is not instr:
+            rewrites[i] = result
+            <span class="hl">instructions_view[i] = result</span>
+            changed = True
+    # rebuild from fn.instructions using rewrites / drop_indices
+    ...
+</code></pre>
+
+    <p><code>instructions_view</code> starts as a copy of <code>fn.instructions</code>. After every successful rewrite, the framework immediately writes the new instruction into <code>instructions_view[i]</code>. <code>env.instructions</code> points at this same list — so any subsequent call to <code>env.def_of(var)</code> reads from the list as it exists <em>after</em> the rewrites already committed in this pass.</p>
+
+    <p>The outer iteration still walks the original <code>fn.instructions</code> (so the loop variable <code>instr</code> is always the original pre-rewrite form of instruction i, which is what the pattern should match). The <code>rewrites</code> dict and the final rebuild read from <code>fn.instructions</code> too, applying <code>rewrites</code> as overrides. But def-lookups read from <code>instructions_view</code>.</p>
+
+    <p>Walk through the three-Add chain again under this design.</p>
+
+    <p><strong>i=1</strong>: pattern matches. <code>env.def_of(%a)</code> reads <code>instructions_view[0]</code> = original i=0. Fuse: <code>rewrites[1] = Binary(Add, 0x180, byte_idx_ext, %b)</code>. <strong>Also: <code>instructions_view[1] = Binary(Add, 0x180, byte_idx_ext, %b)</code></strong>. <code>drop_indices = {0}</code>.</p>
+
+    <p><strong>i=2</strong>: pattern matches. <code>env.def_of(%b)</code> reads <code>instructions_view[1]</code> = <strong>the fused form</strong>: <code>Binary(Add, 0x180, byte_idx_ext, %b)</code>. The inner operand is now <code>byte_idx_ext</code>, not the stale <code>%a</code>. The inner constant is <code>0x180</code>. Fuse with the outer constant <code>0x2000</code>: produce <code>Binary(Add, 0x2180, byte_idx_ext, %addr)</code>. Drop <code>%b</code>'s def (the updated i=1). No conflict — the new drop index is 1, not 0.</p>
+
+    <p>Final rebuild: drop indices 0 and 1, replace i=2 with <code>Binary(Add, 0x2180, byte_idx_ext, %addr)</code>. The output is:</p>
+
+<pre><code>Binary(Add, Constant(0x2180), byte_idx_ext, %addr)
+Store(value, %addr)
+</code></pre>
+
+    <p>Two instructions instead of four. A three-pair chain collapsed in a single pass. The outer fixed-point loop sees no change on the next iteration and moves on.</p>
+
+    <div class="callout win">
+      <div class="tag">Result</div>
+      <p>Three sequential Add(Constant) pairs fuse to one in a single <code>DefUsePass.run</code> call. The <code>instructions_view</code> list is updated after each rewrite, so the next <code>env.def_of</code> lookup sees the already-fused form rather than the stale original.</p>
+    </div>
+
+    </section>
+
+    <section id="drops">
+    <h2>The eager-drop angle</h2>
+
+    <p>The mechanism above handles the READ side: lookups see the rewritten form. The WRITE side — actually removing the now-dead inner defs from the output — is handled by <code>Rewrite</code>.</p>
+
+    <p>A <code>DefUsePass.rewrite</code> method returns one of three things:</p>
+
+    <ul>
+      <li><strong>None</strong> — leave the instruction unchanged.</li>
+      <li><strong>A plain instruction</strong> — replace the USE site. Leave any now-dead producers for DSE to collect on the next fixed-point iteration.</li>
+      <li><strong>Rewrite(replacement, drop_defs=(var1, ...))</strong> — replace the USE site AND atomically drop the defs of the named vars in the same rebuild pass.</li>
+    </ul>
+
+    <p>For <code>reassoc_const</code>, returning a plain instruction would leave the inner Binary in the output. SSA dead-store elimination would remove it on the next iteration. That works, but it adds an outer iteration for every dropped def. For a post-fixed-point pass — one that runs after the main loop has converged and no further DSE will follow — leaving dead defs leaks IR into the asm lowering.</p>
+
+    <p><code>recognize_indirect_indexed</code> is exactly that case. It's a post-fixedpoint one-shot (<code>PostFixedpointPass</code>) that collapses <code>ZeroExtend(uchar) + Binary(Add, ptr) + Load</code> into a single <code>IndirectIndexed</code> instruction for the 6502's <code>(zp),Y</code> addressing mode. There's no DSE after it. Without eager drops, the ZeroExtend and Binary would survive into <code>tac_to_asm</code>, which would lower them as real instructions despite their results being unused. Eager drops via <code>Rewrite</code> are what keep the asm output clean.</p>
+
+    <p>The conflict guard prevents double-drops when two rewrites in the same <code>run</code> call would both try to drop the same inner def:</p>
+
+<pre><code>if isinstance(result, Rewrite):
+    new_drops: set[int] = set()
+    for v in result.drop_defs:
+        d = def_idx.get(v.name)
+        if d is not None:
+            new_drops.add(d)
+    if new_drops &amp; drop_indices:
+        # Already claimed by an earlier rewrite — skip.
+        continue
+    rewrites[i] = result.replacement
+    instructions_view[i] = result.replacement
+    drop_indices.update(new_drops)
+    changed = True
+</code></pre>
+
+    <p>This guard is conservative: it rejects the second rewrite entirely rather than trying to merge the drops. In the chained case above, the drops are at different indices (0 and 1), so there's no conflict. If they did overlap — because two distinct USE sites both walked back to the same inner def — the second rewrite is simply deferred to the next fixed-point iteration, when DSE will have cleaned up the stale def and the conflict no longer exists.</p>
+
+    </section>
+
+    <section id="beyond">
+    <h2>Beyond reassoc_const</h2>
+
+    <p>The <code>instructions_view</code> mechanism and the <code>Rewrite</code> return type are both general. Any pass built on <code>DefUsePass</code> gets them automatically. The design question for a new subclass is: do any two USE sites in the same function share a producer through the def-use chain?</p>
+
+    <p>If not — if every USE site's walk-back leads to a distinct producer — then <code>instructions_view</code> doesn't matter: no rewrite at i affects the producer seen at j. A plain instruction return is fine, and eager drops are optional (just a latency optimization against DSE).</p>
+
+    <p>If yes — if a USE site's producer is itself an instruction that was already rewritten earlier in the same pass — then <code>instructions_view</code> is load-bearing. The canonical example is exactly the chained Add shape: the outer USE at i=2 walks back through the producer at i=1, which was itself a USE site that just fired.</p>
+
+    <p>Two other <code>DefUsePass</code> subclasses in the optimizer are worth checking against this criterion:</p>
+
+    <table class="cmp">
+      <tr><th>Pass</th><th>Pattern</th><th>Chain possible?</th><th>Notes</th></tr>
+      <tr>
+        <td><code>FoldTruncateExtend</code></td>
+        <td><code>Truncate(SignExtend|ZeroExtend(x))</code></td>
+        <td>No</td>
+        <td>The USE is always a <code>Truncate</code>; the producer is always a cast. A <code>Truncate</code> is never itself the producer of another <code>Truncate</code> via this pattern.</td>
+      </tr>
+      <tr>
+        <td><code>NarrowWidenedArith</code></td>
+        <td><code>Truncate(Binary(op, Extend(a), Extend(b)))</code></td>
+        <td>No</td>
+        <td>The USE is a <code>Truncate</code>; the two producers are a <code>Binary</code> and two casts. The narrow <code>Binary</code> the pass writes out is not itself the producer of any outer <code>Truncate</code> in the same chain.</td>
+      </tr>
+      <tr>
+        <td><code>ReassocConstants</code></td>
+        <td><code>Binary(Add, Constant, %inner)</code></td>
+        <td><strong>Yes</strong></td>
+        <td>The output of one fusion is itself a <code>Binary(Add, Constant, V, %dst)</code> — exactly the shape the next outer match looks for as a producer.</td>
+      </tr>
+    </table>
+
+    <p>For <code>RecognizeIndexedStore</code> and <code>RecognizeIndexedLoad</code> — the passes that collapse <code>ZeroExtend + Binary(Add, Constant) + Store/Load</code> into <code>IndexedStore</code> / <code>IndexedLoad</code> — the output is a new instruction kind that the pattern doesn't match, so chaining isn't possible either.</p>
+
+    <p>The summary: <code>instructions_view</code> matters exactly when a pass can produce output that it can also consume. <code>ReassocConstants</code> is the only current subclass in that category. For the others, the mechanism is a no-cost invariant: it's always correct, sometimes useful.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p><strong>1. A pattern-matching framework's state is more than its def-index.</strong> The def-index maps names to instruction indices. That's static — it doesn't change during the pass because indices don't change. What DOES change is the instruction at each index, once a rewrite fires. A framework that maintains the def-index but not the instruction content under rewrites has a stale-read problem for any lookup that fires after a write. <code>instructions_view</code> is the minimal patch: one extra list, updated alongside <code>rewrites</code>, pointed at by <code>env.instructions</code>.</p>
+
+    <p><strong>2. The outer fixed-point loop is not free.</strong> Each TAC fixed-point iteration runs twelve passes over the whole function. For a three-pair constant chain with the naive design, the second fusion takes an extra outer iteration — twelve passes, then another twelve, before the result is stable. For deeply nested constant arithmetic (pointer + table offset + column index + ...) the cost compounds. The <code>instructions_view</code> fix collapses all pairs in one pass of one outer iteration.</p>
+
+    <p><strong>3. Eager drops are necessary for post-fixedpoint passes.</strong> Inside the fixed-point loop, leaving dead defs is fine — DSE is one of the twelve passes, and it runs on every iteration until convergence. Outside the loop — in <code>PostFixedpointPass</code> and <code>PostDestructionPass</code> — there is no following DSE. A pass that drops its inner defs lazily, expecting cleanup later, will instead see those defs survive into <code>tac_to_asm</code>. <code>Rewrite.drop_defs</code> gives post-fixedpoint passes the ability to atomically remove what they've consumed, without depending on a later sweep that won't come.</p>
+
+    <p><strong>4. The general principle is composability with self.</strong> A rewrite system is sound if each rewrite in isolation produces a correct result. But a rewrite system where the rules compose — where a rule's output can be the input to the same rule — needs the intermediate state to be visible to later rule applications in the same pass. LLVM's instruction combiner handles this by working backward (from the current instruction toward its defs) and re-adding instructions to a worklist when their operands change. <code>DefUsePass</code> handles it by keeping a mutable view of the instruction stream that reflects in-progress rewrites. Both approaches share the same underlying insight: a pattern matcher that can only see the original IR is a pattern matcher that can only peel one layer per pass.</p>
+
+    <p>The implementation is five lines of additional mechanism in <code>DefUsePass.run</code>: one list creation, two assignments inside the rewrite loop, and the <code>env.instructions</code> field pointer. The correctness argument is correspondingly local: any subsequent <code>env.def_of</code> reads the list at its current state, which includes all rewrites committed so far. That's all it takes to make chained fusions work.</p>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

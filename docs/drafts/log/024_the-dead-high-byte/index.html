@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The dead high byte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); background: var(--good-bg); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#spot">A line you can spot without context</a></li>
+      <li><a href="#why">Why it's there</a></li>
+      <li><a href="#asm-cant">Why the asm-level pass can't always drop it</a></li>
+      <li><a href="#two-options">Two places to fix it</a></li>
+      <li><a href="#safe-ops">Which ops are safe to narrow</a></li>
+      <li><a href="#pass">The pass</a></li>
+      <li><a href="#regression">The instruction that came back</a></li>
+      <li><a href="#order">The ordering rule</a></li>
+      <li><a href="#wins">What landed</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #024</p>
+    <h1>The dead high byte</h1>
+    <p class="subtitle">A two-instruction skeleton sitting in the middle of every <code>uint8_t op uint8_t</code> result: <code>LDA #$00; SBC #$00</code>, computing a value nobody reads. The asm-level dead-code pass can see almost every variant of this shape. The one variant it can't see is the one this routine happened to produce.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Subject</strong> C99 integer promotion residue</span>
+      <span><strong>Pass added</strong> narrow_widened_arith (TAC-level)</span>
+      <span><strong>Wins</strong> 3 examples, &minus;8 instrs total, 2 locals freed</span>
+    </div>
+
+    <section id="spot">
+    <h2>A line you can spot without context</h2>
+
+    <p>Halfway through <code>beam_target_draw</code>, after computing the trail height as a difference between two byte tables, the asm goes:</p>
+
+<pre><code>   <span class="asm-mnem">LDA</span>   floor_y_table,X
+   <span class="asm-mnem">SEC</span>
+   <span class="asm-mnem">SBC</span>   beam_y
+   <span class="asm-mnem">STA</span>   __local_beam_target_draw__state
+   <span class="hl"><span class="asm-mnem">LDA</span>   #$00</span>
+   <span class="hl"><span class="asm-mnem">SBC</span>   #$00</span>
+   <span class="asm-mnem">LDA</span>   __local_beam_target_draw__state
+   <span class="asm-mnem">BNE</span>   <span class="asm-label">.if_end@1</span>
+   <span class="asm-mnem">RTS</span>
+</code></pre>
+
+    <p>The first three instructions compute <code>floor_y_table[X] &minus; beam_y</code> with carry-in seeded by <code>SEC</code>. The <code>STA</code> commits the low byte to a one-byte local. Then comes the headline: <code>LDA #$00; SBC #$00</code>, which would compute the high byte of a 16-bit subtraction... if anyone read it. Nobody does. The very next instruction is <code>LDA __local_*__state</code>, which loads the low byte back into <code>A</code> and walks straight into a <code>BNE</code> that tests <code>Z</code> from the load. The high-byte SBC's result, and every flag it set, dies on the floor.</p>
+
+    <p>That's two bytes of code and three cycles per call doing nothing. The shape is local enough that you don't have to know the routine to spot it: any time you see <code>LDA #$00; SBC #$00</code> (or <code>LDA #$00; ADC #$00</code>) followed by an unconditional re-load of <code>A</code> without a flag-consuming instruction in between, you're looking at a dead high byte.</p>
+
+    </section>
+
+    <section id="why">
+    <h2>Why it's there</h2>
+
+    <p>The C source for the computation is one line:</p>
+
+<pre><code>uint8_t delta = (uint8_t)(floor_y_table[floor_idx] - beam_y);
+</code></pre>
+
+    <p>Both operands are <code>uint8_t</code>. The subtraction promotes them to <code>int</code> per C99 §6.3.1.1, computes the result at <code>int</code> width, and the explicit cast truncates back to <code>uint8_t</code>. At TAC the rendering is exact:</p>
+
+<pre><code>ZeroExtend(floor_y_table[floor_idx] -&gt; %a:int)
+ZeroExtend(beam_y                    -&gt; %b:int)
+Binary(Subtract, %a, %b               -&gt; %r:int)    <span class="asm-comment"># 16-bit subtract</span>
+Truncate(%r                           -&gt; %d:uchar)  <span class="asm-comment"># cast back to 1 byte</span>
+</code></pre>
+
+    <p>The asm lowering can't shed the widening on its own. <code>Binary(Subtract, ..., ..., %r:int)</code> is a two-byte subtract; <code>tac_to_asm</code> dutifully emits the per-byte chain. The <code>Truncate</code> downstream drops the high byte by simply not loading it back, but the high-byte <code>SBC</code> has already been emitted by then. The <code>STA</code> commits only the low byte, the high byte's destination is the live <code>A</code> register, and the very next instruction overwrites that <code>A</code> with the truncated value the routine actually wants.</p>
+
+    <p>This is the shape that's everywhere in C-targeting-an-8-bit-machine code. Every <code>uint8 + uint8</code>, <code>uint8 - uint8</code>, <code>uint8 &amp; mask</code>, <code>uint8 | bits</code> that gets stored or compared as <code>uint8</code> goes through it. If the compiler doesn't kill the widening somewhere along the way, it ships as a 6502 routine that does roughly twice the work it should.</p>
+
+    </section>
+
+    <section id="asm-cant">
+    <h2>Why the asm-level pass can't always drop it</h2>
+
+    <p>c6502 has an asm-level peephole, <code>dead_a_arith</code>, whose whole job is to drop instructions whose only effects are writes to <code>A</code> and the N/Z/C/V flags, when both <code>A</code> and the flags are dead afterward. Its motivating case was almost exactly the shape above — and the pass iterates a local fixed point so a single sweep can drop the trailing atom of a chain, then a follow-up sweep drops the LDA the chain previously kept alive.</p>
+
+    <p>To drop an <code>SBC</code>, <code>dead_a_arith</code> needs <em>all four</em> of N/Z/C/V dead at the position right after it. The N/Z check has a forward-walk helper, <code>flags_dead_at</code>, that returns true if no <code>Branch</code> reads N/Z before some later flag-setter overwrites them. The all-four check is stricter: <code>all_flags_dead_at</code> also bails when it sees an instruction that reads C or V (subsequent <code>ADC</code>/<code>SBC</code> on a carry chain, <code>ROL</code>/<code>ROR</code> using C as the shift-in bit). And both functions bail at any <code>Branch</code>, because they don't know which flag the <code>Branch</code> consumes.</p>
+
+    <p>That last detail is the trap. In the snippet above, the sequence after <code>SBC #$00</code> is <code>LDA mem; BNE .if_end@1</code>:</p>
+
+    <ul>
+      <li><strong>N, Z</strong> &mdash; the <code>LDA</code> overwrites them. Dead from the SBC's perspective.</li>
+      <li><strong>C, V</strong> &mdash; the <code>LDA</code> doesn't touch them. They survive past the load and reach the <code>BNE</code>.</li>
+      <li>The <code>BNE</code> reads only <code>Z</code>, which is from the <code>LDA</code>, not the SBC. Nobody reads C or V before they're overwritten again (downstream, the <code>CMP #$05</code> rewrites C).</li>
+    </ul>
+
+    <p>So C and V from the SBC are genuinely dead — but proving it requires knowing that the <code>BNE</code> reads only Z, not C/V, and that downstream paths overwrite C before anyone reads it. The current <code>all_flags_dead_at</code> doesn't carry that bookkeeping. It sees the <code>Branch</code> and returns False. The <code>SBC</code> stays.</p>
+
+    <p>Refining the helper is doable — track per-flag liveness, walk forward through the CFG, intersect at joins. But it's a bigger lift than the headline case warrants, and it doesn't address the underlying problem: the wasted SBC was generated in the first place because TAC carried the widening through to the asm boundary.</p>
+
+    </section>
+
+    <section id="two-options">
+    <h2>Two places to fix it</h2>
+
+    <p>That left two clean options:</p>
+
+    <table class="cmp">
+      <tr><th>Layer</th><th>Approach</th><th>Catches</th><th>Cost</th></tr>
+      <tr>
+        <td>asm</td>
+        <td>Refine <code>all_flags_dead_at</code> to track per-flag liveness across branches.</td>
+        <td>Any dead-flag arith, regardless of how it got there.</td>
+        <td>Cross-block dataflow for C and V; intersections at joins; care with V's V-correction patterns.</td>
+      </tr>
+      <tr>
+        <td>TAC</td>
+        <td>Recognize <code>Truncate(Binary(safe_op, Extend, Extend|Const))</code> and rewrite to a narrow Binary at the truncate's width.</td>
+        <td>Every <code>uint8 op uint8</code>-style cast-back-to-narrow in the source, before asm lowering gets a chance to widen the work.</td>
+        <td>Per-op soundness reasoning; a structural pass similar to the existing <code>truncate_extend_fold</code>.</td>
+      </tr>
+    </table>
+
+    <p>The TAC fix is the broader generalization. It kills the work at the source — no widened <code>Subtract</code> is ever emitted, so no dead high-byte <code>SBC</code> exists to drop later. The asm-level refinement is a downstream sweep that would always be playing catch-up.</p>
+
+    </section>
+
+    <section id="safe-ops">
+    <h2>Which ops are safe to narrow</h2>
+
+    <p>The TAC rewrite says: <code>Truncate(Binary(op, Extend(a), Extend(b)), u_n)</code> is equivalent to <code>Binary(op, a, b, u_n)</code> at the narrow width, whenever the low <code>n</code> bytes of <code>op(extend(a), extend(b))</code> depend only on the low <code>n</code> bytes of <code>extend(a)</code> and <code>extend(b)</code>. Modular arithmetic, in other words.</p>
+
+    <p>For 6502, that gates the list cleanly:</p>
+
+    <table class="cmp">
+      <tr><th>Op</th><th>Low byte dep</th><th>Narrowable?</th><th>Why</th></tr>
+      <tr><td><code>Add</code></td><td>carry flows low→high</td><td>yes</td><td>Result's low n bytes are the n-byte add of the low n bytes of the operands.</td></tr>
+      <tr><td><code>Subtract</code></td><td>borrow flows low→high</td><td>yes</td><td>Same as Add. The 6502 borrow direction matches modular arithmetic.</td></tr>
+      <tr><td><code>Multiply</code></td><td>partials sum into low</td><td>yes</td><td>Two's-complement and unsigned multiply agree mod 2<sup>8n</sup>; low n bytes depend only on low n bytes.</td></tr>
+      <tr><td><code>BitwiseAnd</code></td><td>per-byte</td><td>yes</td><td>Trivial: each byte is independent.</td></tr>
+      <tr><td><code>BitwiseOr</code></td><td>per-byte</td><td>yes</td><td>Same.</td></tr>
+      <tr><td><code>BitwiseXor</code></td><td>per-byte</td><td>yes</td><td>Same.</td></tr>
+      <tr><td><code>Divide</code></td><td>high bytes feed quotient</td><td>no</td><td>Long-division partials pull from the high bytes; narrowing changes the answer.</td></tr>
+      <tr><td><code>Modulo</code></td><td>same as Divide</td><td>no</td><td>Same.</td></tr>
+      <tr><td><code>RightShift</code></td><td>high bytes shift into low</td><td>no</td><td>A right-shift moves data downward; truncating after preserves bits the narrow op would have lost.</td></tr>
+      <tr><td><code>LeftShift</code></td><td>none</td><td><em>safe but deferred</em></td><td>Low bytes are independent of high bytes for left shift, but the 6502 shift helpers consume only one byte of the count anyway, so the high-byte work is already cheap. Marginal win; revisit if a motivating case appears.</td></tr>
+    </table>
+
+    <p>For constant operands, the modular-arithmetic argument extends without conditions — narrowing a Constant to the target width is just masking modulo 2<sup>8n</sup>. <code>Subtract(extend(a), 0x1234)</code> truncated to <code>uchar</code> equals <code>Subtract(a, 0x34)</code> at the narrow width, because 0x1234 mod 256 = 0x34 and modular arithmetic preserves the equivalence.</p>
+
+    </section>
+
+    <section id="pass">
+    <h2>The pass</h2>
+
+    <p>The new pass, <code>narrow_widened_arith</code>, sits in the TAC fixed-point loop next to the existing <code>truncate_extend_fold</code>. The two are structural siblings:</p>
+
+    <ul>
+      <li><strong>truncate_extend_fold</strong> matches <code>Truncate(Extend(x))</code> with nothing between — the identity round-trip. Replaces with a Copy (or a narrower Truncate if dst is narrower than the original source).</li>
+      <li><strong>narrow_widened_arith</strong> looks through a single <code>Binary</code> in the middle. Matches <code>Truncate(Binary(safe_op, Extend(a), Extend(b)|Const))</code>. Rewrites the Truncate to a narrow Binary at the target width, leaving the original Binary and Extends for SSA-DCE to collect.</li>
+    </ul>
+
+    <p>The single-pattern soundness story is local: the rewrite only changes what's at the Truncate position. The original Extends and Binary stay in place; if they have other consumers they survive, if not, the next sweep drops them. The pass doesn't have to reason about whether the widened values are needed elsewhere — that's SSA-DCE's job.</p>
+
+<pre><code><span class="asm-comment"># before</span>
+ZeroExtend(a   -&gt; %ea:int)
+ZeroExtend(b   -&gt; %eb:int)
+Binary(Subtract, %ea, %eb -&gt; %r:int)
+Truncate(%r -&gt; %d:uchar)
+
+<span class="asm-comment"># after one pass</span>
+ZeroExtend(a   -&gt; %ea:int)               <span class="asm-comment"># now dead</span>
+ZeroExtend(b   -&gt; %eb:int)               <span class="asm-comment"># now dead</span>
+Binary(Subtract, %ea, %eb -&gt; %r:int)     <span class="asm-comment"># now dead</span>
+Binary(Subtract, a, b -&gt; %d:uchar)       <span class="asm-comment"># the narrow form</span>
+
+<span class="asm-comment"># after SSA-DCE on the next iteration</span>
+Binary(Subtract, a, b -&gt; %d:uchar)
+</code></pre>
+
+    <p>Soundness gates: both Extends' dsts and the Binary's dst must be SSA-renamed names (their single-def guarantee is what makes the def chain unambiguous); the Binary's dst width must be strictly wider than the Truncate's dst width; each Extend's source width must match the Truncate's dst width. The pass is a no-op without <code>ssa_dsts</code> or the symbol table.</p>
+
+    </section>
+
+    <section id="regression">
+    <h2>The instruction that came back</h2>
+
+    <p>The first run of the full test suite after the pass landed surfaced four gold-output mismatches. Three were the wins we wanted — <code>beam_target_draw</code> dropped its dead <code>LDA #$00; SBC #$00; LDA local</code> triple, <code>companion_update</code> dropped the same shape at another site, and <code>beam_target_tick</code> shrank by one instruction with two locals collapsed away by a downstream cascade. The fourth was a regression: <code>apply_bobble</code> grew by one instruction.</p>
+
+    <p><code>apply_bobble</code>'s C source has this shape:</p>
+
+<pre><code>uint8_t bobble    = rescue_bobble[bobble_idx];
+uint8_t magnitude = bobble &amp; 0x7F;
+if (bobble &amp; 0x80) {
+    entity_floor_pos[slot] = (uint8_t)(entity_floor_pos[slot] + magnitude);
+} else {
+    entity_floor_pos[slot] = (uint8_t)(entity_floor_pos[slot] - magnitude);
+}
+</code></pre>
+
+    <p>Before the new pass, the optimized asm was:</p>
+
+<pre><code>   <span class="asm-mnem">LDA</span>   rescue_bobble,X
+   <span class="asm-mnem">BPL</span>   <span class="asm-label">.if_else@1</span>          <span class="asm-comment"># tests sign of bobble</span>
+   <span class="asm-mnem">AND</span>   #$7F                <span class="asm-comment"># then-branch: A = magnitude</span>
+   <span class="asm-mnem">CLC</span>
+   <span class="asm-mnem">ADC</span>   entity_floor_pos,Y
+   <span class="asm-mnem">STA</span>   entity_floor_pos,Y
+   <span class="asm-mnem">JMP</span>   <span class="asm-label">.if_end@0</span>
+<span class="asm-label">.if_else@1:</span>
+   <span class="asm-mnem">AND</span>   #$7F                <span class="asm-comment"># else-branch: A = magnitude</span>
+   <span class="asm-mnem">STA</span>   __local_apply_bobble__1
+   <span class="asm-mnem">LDA</span>   entity_floor_pos,Y
+   <span class="asm-mnem">SEC</span>
+   <span class="asm-mnem">SBC</span>   __local_apply_bobble__1
+   <span class="asm-mnem">STA</span>   entity_floor_pos,Y
+</code></pre>
+
+    <p>The trick: <code>magnitude</code> is computed <em>inside</em> each branch, not before. The <code>BPL</code> tests the sign bit of <code>bobble</code> directly from the <code>LDA</code>'s flags, then each branch redoes the <code>AND #$7F</code> to derive magnitude. The then-branch keeps magnitude in <code>A</code> and adds <code>entity_floor_pos[Y]</code> from memory; the else-branch has to subtract magnitude from <code>entity_floor_pos[Y]</code>, so it stashes magnitude to a local first.</p>
+
+    <p>After the new pass, the asm changed to:</p>
+
+<pre><code>   <span class="asm-mnem">LDA</span>   rescue_bobble,X
+   <span class="hl"><span class="asm-mnem">AND</span>   #$7F</span>
+   <span class="hl"><span class="asm-mnem">STA</span>   __local_apply_bobble__1</span>     <span class="asm-comment"># magnitude computed before the branch</span>
+   <span class="hl"><span class="asm-mnem">LDA</span>   rescue_bobble,X</span>            <span class="asm-comment"># reload bobble to test sign</span>
+   <span class="asm-mnem">BPL</span>   <span class="asm-label">.if_else@1</span>
+   <span class="asm-mnem">LDA</span>   entity_floor_pos,Y
+   <span class="asm-mnem">CLC</span>
+   <span class="asm-mnem">ADC</span>   __local_apply_bobble__1
+   ...
+</code></pre>
+
+    <p>One AND, one STA, one reload of <code>bobble</code> to recover its sign bit for the <code>BPL</code>. Net: +1 instruction.</p>
+
+    <p>The new pass had narrowed the magnitude computation into a single <code>Binary(BitwiseAnd, bobble, 0x7F:uchar, %magnitude)</code> at TAC level. That fold is sound and locally a win. But it changed the <em>shape</em> of the IR that a downstream pass — <code>sink_and_past_branch</code> — was looking for.</p>
+
+    </section>
+
+    <section id="order">
+    <h2>The ordering rule</h2>
+
+    <p><code>sink_and_past_branch</code> is the pass that produces the duplicated-AND-per-branch pattern. Its match window is a strict four-instruction adjacency:</p>
+
+<pre><code>ZeroExtend(%x, %x_ext)
+Binary(BitwiseAnd, %x_ext, ConstInt(C), %x_and)
+Truncate(%x_and, %t)
+JumpIfMasked(%x, _, _, target)              <span class="asm-comment"># block terminator</span>
+</code></pre>
+
+    <p>When the window matches, it mints fresh per-branch SSA names for the trio, duplicates the trio into the start of both successor blocks, and drops the original. Each successor now computes <code>magnitude</code> independently from <code>bobble</code> — and the asm-level pipeline reduces each duplicated trio to <code>AND #$7F</code> in its own branch, with <code>bobble</code>'s live range cut down to the <code>LDA</code> that feeds the <code>BPL</code>.</p>
+
+    <p>That window has three load-bearing parts: the leading <code>ZeroExtend</code>, the middle <code>Binary(BitwiseAnd, _, ConstInt)</code>, and the trailing <code>Truncate</code>. <code>narrow_widened_arith</code> collapses all three into a single <code>Binary(BitwiseAnd, bobble, ConstUChar(0x7F), magnitude)</code> at the narrow width. To <code>sink_and_past_branch</code>, the new shape is unrecognizable. It sees a single <code>Binary</code> followed by a <code>JumpIfMasked</code> — no leading <code>ZeroExtend</code>, no trailing <code>Truncate</code> — and skips. The narrowed Binary stays before the branch, magnitude has to live across the test, and the asm-level lowering writes it to a local because there's no other place for it to go.</p>
+
+    <p>The fix was one line of ordering. <code>narrow_widened_arith</code> moves to <em>after</em> <code>sink_and_past_branch</code> in the fixed-point loop:</p>
+
+<pre><code>fn = fold_truncate_extend(fn, ...)
+fn = sink_increments(fn)
+fn = sink_and_past_branch(fn, symbols=symbols)
+<span class="add-line">fn = narrow_widened_arith(fn, symbols=symbols, ssa_dsts=ssa_dsts)</span>
+</code></pre>
+
+    <p>Now in iteration 1: <code>sink_and_past_branch</code> matches the wide trio first and duplicates it into the successor blocks; then <code>narrow_widened_arith</code> sees the duplicated trios — one in each successor — and narrows each independently. The result is the optimal shape: <code>AND #$7F</code> recomputed inside each branch, no precomputation across the branch, no live range spanning the test. <code>apply_bobble</code>'s asm went back to its original length.</p>
+
+    <div class="callout">
+      <div class="tag">Cross-pass dependency</div>
+      <p>Any TAC pass that simplifies the <code>ZeroExtend &middot; BitwiseAnd &middot; Truncate</code> shape has to run <em>after</em> <code>sink_and_past_branch</code>. The latter's pattern is strict — the simplified form doesn't match it — and the duplication-into-both-branches win is fragile. This is the kind of constraint that doesn't show up in a docstring of either pass, only in the gold-output diff of <code>apply_bobble</code>.</p>
+    </div>
+
+    </section>
+
+    <section id="wins">
+    <h2>What landed</h2>
+
+    <p>With the ordering settled, the three wins are clean:</p>
+
+    <table class="cmp">
+      <tr><th>Example</th><th>Δ instrs</th><th>Notes</th></tr>
+      <tr>
+        <td><code>beam_target_draw</code></td>
+        <td>&minus;3</td>
+        <td>The motivating case. The dead <code>LDA #$00; SBC #$00; LDA local</code> triple is gone; a downstream peephole then noticed the <code>STA local; BNE</code> pair could test <code>A</code> directly, so the trailing <code>LDA local</code> went away too.</td>
+      </tr>
+      <tr>
+        <td><code>companion_update</code></td>
+        <td>&minus;4</td>
+        <td>Same pattern at another site &mdash; the same 16-bit subtraction lowering, the same dead high byte. The pass kills it without knowing or caring which routine produced it.</td>
+      </tr>
+      <tr>
+        <td><code>beam_target_tick</code></td>
+        <td>&minus;1, &minus;2 locals</td>
+        <td>The instruction count win is small, but the local-byte count went from 3 to 1. Two locals were holding intermediate high-byte staging that the dead-arith elimination caused subsequent passes to recognize as unused. The cascade rewrote a TXA-then-AND into AND-after-pre-TXA, and the saved locals would otherwise have been ZP bytes spent on stashing values that nobody read.</td>
+      </tr>
+    </table>
+
+    <p>Total: 8 fewer instructions across the corpus, 2 ZP bytes freed for other functions to use, no regressions in the 2819-test suite. The 18 new unit tests for the pass cover the safe ops, the unsafe ops, constant narrowing (including the modular-reduction case and a negative signed constant), and the non-SSA-name soundness gates.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p><strong>1. The dead high byte is a C-targeting-an-8-bit-machine signature.</strong> Any C compiler that lowers <code>uint8_t op uint8_t</code> through the spec's integer-promotion path, on a target whose natural width is one byte, will emit work for high bytes that the source code never asked for. Some downstream pass — at TAC, at asm, somewhere — has to put the work back. Knowing what the dead shape looks like (<code>LDA #$00; SBC #$00</code> or <code>LDA #$00; ADC #$00</code>, sitting between a low-byte commit and a use that re-loads A) makes it spottable in the asm without context. That's a useful debugging eyeball: if you see it, the optimizer left something on the table.</p>
+
+    <p><strong>2. TAC-level narrowing is the right place to fix it.</strong> The asm-level pass is structurally constrained by the per-flag bookkeeping cost. C from an SBC survives past an LDA, V survives past everything that isn't a CMP / shift / call, and a <code>Branch</code> reads only one of N/Z/C/V — the rest have to wait for the next overwriter. Tracking that across a CFG is doable but rarely worth the carry-cost compared to just not generating the work in the first place. The TAC rewrite is local: match a shape, write a narrower shape, let SSA-DCE clean up.</p>
+
+    <p><strong>3. Modular arithmetic is the right soundness argument.</strong> "Does this op's low n bytes depend only on the operands' low n bytes?" is a sharper question than "is this op narrowable?" It admits a clear yes-list (Add / Subtract / Multiply / AND / OR / XOR) and a clear no-list (Divide / Modulo / RightShift), without per-op cleverness. LeftShift sits in the yes-list but stays on the bench because the asm helpers already consume only one byte of the count; the rule still gives a clean answer, the choice not to fire is a separate decision.</p>
+
+    <p><strong>4. Pass ordering surprises live in the gold-output diff.</strong> The <code>sink_and_past_branch</code> dependency wasn't obvious from reading the new pass, or from reading <code>sink_and_past_branch</code>'s docstring, or from any local soundness check. It showed up as one specific example growing by one instruction, in a test suite where the other 2818 cases were green. That asymmetry — a passing test suite with one boring-looking gold-mismatch — is the optimizer's normal mode of telling you about a missed interaction. The remedy isn't more local soundness checks; it's reading the diff carefully enough to ask <em>why</em> the gold grew. The answer is almost always a pass earlier in the pipeline that depended on the shape you just simplified.</p>
+
+    <p>The pass is 100 lines. The ordering fix is one line. The story of why both are needed is the whole post.</p>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

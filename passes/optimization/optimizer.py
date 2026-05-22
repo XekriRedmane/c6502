@@ -7,12 +7,14 @@ sweeps every pass regardless of whether earlier passes converged,
 since a pass already at fixed point is cheap to re-run and the
 between-pass interleaving is part of the optimizer's contract.
 
-Pipeline shape:
+Pipeline shape (now driven by PhaseDriver):
     fn → loop_rotate (one-shot, pre-SSA)
        → SSA construction
+       → fold_static_const_reads (one-shot, pre-fixedpoint)
        → (CF → strength_reduce → cmp_zero_jump_fold → and_zero_jump_fold →
           lnot_jump_fold → dead_loop_elim → UCE → CopyProp → DSE →
           CopyFold → ...)*
+       → recognize_indirect_indexed (one-shot, post-fixedpoint)
        → SSA destruction
        → CopyFold (post-destruction)
        → fold_short_circuit_jump* (post-destruction, until converged)
@@ -76,50 +78,113 @@ operates on the post-`tac_to_asm` IR with byte-granular precision.
 from __future__ import annotations
 
 import tac_ast
-from passes.optimization.and_zero_jump_fold import fold_narrow_and_jump
-from passes.optimization.cmp_zero_jump_fold import fold_cmp_zero_jump
-from passes.optimization.constant_folding import constant_fold
-from passes.optimization.lnot_jump_fold import fold_lnot_jump
-from passes.optimization.copy_folding import fold_copies
-from passes.optimization.copy_propagation import copy_propagate
-from passes.optimization.dead_loop_elimination import (
-    eliminate_dead_loops,
+from passes.optimization.framework import PhaseDriver, PassContext
+from passes.optimization.loop_rotate import RotateSignedCountdownLoops
+from passes.optimization.static_const_fold import FoldStaticConstReads
+from passes.optimization.constant_folding import ConstantFold
+from passes.optimization.strength_reduction import ReduceStrength
+from passes.optimization.cmp_zero_jump_fold import FoldCmpZeroJump
+from passes.optimization.and_zero_jump_fold import FoldNarrowAndJump
+from passes.optimization.lnot_jump_fold import FoldLnotJump
+from passes.optimization.dead_loop_elimination import EliminateDeadLoops
+from passes.optimization.unreachable_code_elimination import EliminateUnreachableCode
+from passes.optimization.copy_propagation import CopyPropagate
+from passes.optimization.dead_store_elimination import EliminateDeadStores
+from passes.optimization.copy_folding import (
+    FoldCopiesInFixedpoint,
+    FoldCopiesPostDestruction,
 )
-from passes.optimization.dead_store_elimination import (
-    eliminate_dead_stores,
-)
-from passes.optimization.loop_rotate import (
-    rotate_signed_countdown_loops,
-)
-from passes.optimization.narrow_widened_arith import (
-    narrow_widened_arith,
-)
-from passes.optimization.reassoc_const import reassoc_constants
-from passes.optimization.short_circuit_jump_fold import (
-    fold_short_circuit_jump,
-)
-from passes.optimization.truncate_extend_fold import fold_truncate_extend
-from passes.optimization.recognize_indexed_load import (
-    recognize_indexed_load,
-)
-from passes.optimization.recognize_indexed_store import (
-    recognize_indexed_store,
-)
-from passes.optimization.recognize_indirect_indexed import (
-    recognize_indirect_indexed,
-)
-from passes.optimization.sink_and_past_branch import (
-    sink_and_past_branch,
-)
-from passes.optimization.sink_increment import sink_increments
-from passes.optimization.ssa_construction import to_ssa
-from passes.optimization.ssa_destruction import from_ssa
-from passes.optimization.static_const_fold import (
-    fold_static_const_reads,
-)
-from passes.optimization.strength_reduction import reduce_strength
-from passes.optimization.unreachable_code_elimination import (
-    eliminate_unreachable_code,
+from passes.optimization.reassoc_const import ReassocConstants
+from passes.optimization.recognize_indexed_store import RecognizeIndexedStore
+from passes.optimization.recognize_indexed_load import RecognizeIndexedLoad
+from passes.optimization.truncate_extend_fold import FoldTruncateExtend
+from passes.optimization.sink_increment import SinkIncrements
+from passes.optimization.sink_and_past_branch import SinkAndPastBranch
+from passes.optimization.narrow_widened_arith import NarrowWidenedArith
+from passes.optimization.recognize_indirect_indexed import RecognizeIndirectIndexed
+from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
+
+
+# Module-level driver instance, reused across all optimize_function calls.
+_DRIVER = PhaseDriver(
+    pre_ssa=[
+        # Pre-SSA: rotate signed-countdown for-loops to test-at-bottom
+        # shape. Operates on the canonical c99_to_tac for-loop layout
+        # where x_var carries one name across init, body, and post.
+        # After this, `to_ssa` rebuilds Phis for the rotated control flow.
+        RotateSignedCountdownLoops(),
+    ],
+    pre_fixedpoint=[
+        # One-shot: replace `Var(static_const_scalar)` USE-position
+        # operands with `Constant(value)` so the fixed-point loop's
+        # constant_fold can collapse downstream arithmetic. SSA
+        # construction has already finished, so the substitution
+        # doesn't disturb def/use chains (statics aren't promoted
+        # in any case).
+        FoldStaticConstReads(),
+    ],
+    fixedpoint=[
+        ConstantFold(),
+        ReduceStrength(),
+        FoldCmpZeroJump(),
+        FoldNarrowAndJump(),
+        FoldLnotJump(),
+        EliminateDeadLoops(),
+        EliminateUnreachableCode(),
+        CopyPropagate(),
+        EliminateDeadStores(),
+        FoldCopiesInFixedpoint(),
+        ReassocConstants(),
+        RecognizeIndexedStore(),
+        RecognizeIndexedLoad(),
+        FoldTruncateExtend(),
+        SinkIncrements(),
+        SinkAndPastBranch(),
+        # Run AFTER sink_and_past_branch so the latter sees the
+        # canonical wide `ZeroExtend + BitwiseAnd + Truncate +
+        # JumpIfMasked` trio it pattern-matches. The narrow form
+        # this pass produces (Binary(BitwiseAnd, %x, ConstUChar(C),
+        # %t)) wouldn't match sink's strict shape, which would
+        # force the AND result to live across the branch and spill
+        # to memory.
+        NarrowWidenedArith(),
+    ],
+    post_fixedpoint=[
+        # Run the indirect-indexed recognizer AFTER the fixed-point
+        # loop has converged on constant folding. If we ran it inside
+        # the loop, it could prematurely lock in an IndirectIndexed
+        # form for an address chain whose pointer side is going to
+        # fold to a Constant on the next iteration — preempting the
+        # cheaper `recognize_indexed_store` lowering. Running it last
+        # guarantees: every chain that COULD become absolute,X already
+        # has (via recognize_indexed_store); only the genuine
+        # runtime-pointer cases (zp_abi params, address-taken pointer
+        # locals) remain for the (zp),Y lowering.
+        RecognizeIndirectIndexed(),
+    ],
+    post_destruction=[
+        # Post-from_ssa copy folding. SSA destruction emits a Copy at
+        # the end of each predecessor block to feed each Phi's source
+        # into the Phi's dst. For a loop-counter `i++`, that pattern
+        # looks like `Binary(Add, i.vK, 1, %t); Copy(%t, i.vJ)` at the
+        # end of the loop's continue block — which the fold pass
+        # collapses to in-place `Binary(Add, i.vK, 1, i.vJ)`. Doing
+        # this once post-destruction (rather than re-running the full
+        # fixed-point loop) is enough because nothing later in the TAC
+        # pipeline produces fresh fusable patterns.
+        FoldCopiesPostDestruction(),
+    ],
+    post_destruction_fixedpoint=[
+        # Post-destruction short-circuit fold: the `&&` / `||` 0-or-1
+        # materialize tail + adjacent JumpIf consumer collapses to
+        # direct conditional branches. Pre-destruction the tail is
+        # split across two SSA-renamed defs of `%t` merged by a Phi;
+        # post-destruction (and after the fold_copies above) it's the
+        # canonical 5-instruction tail this pass matches. Loop until
+        # convergence so nested patterns (`(a && b) || c` and similar)
+        # peel off one short-circuit at a time.
+        FoldShortCircuitJump(),
+    ],
 )
 
 
@@ -150,89 +215,5 @@ def optimize_function(
     in that mode.
 
     Returns the optimized function."""
-    ssa_dsts: set[str] | None = None
-    if symbols is not None:
-        # Pre-SSA: rotate signed-countdown for-loops to test-at-
-        # bottom shape. Operates on the canonical c99_to_tac for-
-        # loop layout where x_var carries one name across init,
-        # body, and post. After this, `to_ssa` rebuilds Phis for
-        # the rotated control flow.
-        fn = rotate_signed_countdown_loops(fn, symbols)
-        fn, ssa_dsts = to_ssa(fn, symbols)
-        # One-shot: replace `Var(static_const_scalar)` USE-position
-        # operands with `Constant(value)` so the fixed-point loop's
-        # constant_fold can collapse downstream arithmetic. SSA
-        # construction has already finished, so the substitution
-        # doesn't disturb def/use chains (statics aren't promoted
-        # in any case).
-        fn = fold_static_const_reads(fn, symbols)
-    while True:
-        prev = fn
-        fn = constant_fold(fn, symbols=symbols)
-        fn = reduce_strength(fn, symbols=symbols)
-        fn = fold_cmp_zero_jump(fn, symbols=symbols)
-        fn = fold_narrow_and_jump(fn, symbols=symbols)
-        fn = fold_lnot_jump(fn, symbols=symbols)
-        fn = eliminate_dead_loops(fn, ssa_dsts=ssa_dsts)
-        fn = eliminate_unreachable_code(fn)
-        fn = copy_propagate(fn, ssa_dsts=ssa_dsts)
-        fn = eliminate_dead_stores(fn, ssa_dsts=ssa_dsts)
-        fn = fold_copies(fn)
-        fn = reassoc_constants(fn)
-        fn = recognize_indexed_store(fn, symbols=symbols)
-        fn = recognize_indexed_load(fn, symbols=symbols)
-        fn = fold_truncate_extend(
-            fn, symbols=symbols, ssa_dsts=ssa_dsts,
-        )
-        fn = sink_increments(fn)
-        fn = sink_and_past_branch(fn, symbols=symbols)
-        # Run AFTER sink_and_past_branch so the latter sees the
-        # canonical wide `ZeroExtend + BitwiseAnd + Truncate +
-        # JumpIfMasked` trio it pattern-matches. The narrow form
-        # this pass produces (Binary(BitwiseAnd, %x, ConstUChar(C),
-        # %t)) wouldn't match sink's strict shape, which would
-        # force the AND result to live across the branch and spill
-        # to memory.
-        fn = narrow_widened_arith(
-            fn, symbols=symbols, ssa_dsts=ssa_dsts,
-        )
-        if fn == prev:
-            break
-    # Run the indirect-indexed recognizer AFTER the fixed-point
-    # loop has converged on constant folding. If we ran it inside
-    # the loop, it could prematurely lock in an IndirectIndexed
-    # form for an address chain whose pointer side is going to
-    # fold to a Constant on the next iteration — preempting the
-    # cheaper `recognize_indexed_store` lowering. Running it last
-    # guarantees: every chain that COULD become absolute,X already
-    # has (via recognize_indexed_store); only the genuine
-    # runtime-pointer cases (zp_abi params, address-taken pointer
-    # locals) remain for the (zp),Y lowering.
-    if symbols is not None:
-        fn = recognize_indirect_indexed(fn, symbols=symbols)
-    if symbols is not None:
-        fn = from_ssa(fn, symbols=symbols)
-    # Post-from_ssa copy folding. SSA destruction emits a Copy at
-    # the end of each predecessor block to feed each Phi's source
-    # into the Phi's dst. For a loop-counter `i++`, that pattern
-    # looks like `Binary(Add, i.vK, 1, %t); Copy(%t, i.vJ)` at the
-    # end of the loop's continue block — which the fold pass
-    # collapses to in-place `Binary(Add, i.vK, 1, i.vJ)`. Doing
-    # this once post-destruction (rather than re-running the full
-    # fixed-point loop) is enough because nothing later in the TAC
-    # pipeline produces fresh fusable patterns.
-    fn = fold_copies(fn)
-    # Post-destruction short-circuit fold: the `&&` / `||` 0-or-1
-    # materialize tail + adjacent JumpIf consumer collapses to
-    # direct conditional branches. Pre-destruction the tail is
-    # split across two SSA-renamed defs of `%t` merged by a Phi;
-    # post-destruction (and after the fold_copies above) it's the
-    # canonical 5-instruction tail this pass matches. Loop until
-    # convergence so nested patterns (`(a && b) || c` and similar)
-    # peel off one short-circuit at a time.
-    while True:
-        prev = fn
-        fn = fold_short_circuit_jump(fn)
-        if fn == prev:
-            break
-    return fn
+    ctx = PassContext(symbols=symbols)
+    return _DRIVER.apply(fn, ctx)

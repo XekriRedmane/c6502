@@ -66,6 +66,10 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
+from passes.optimization.framework import (
+    DefUsePass, DefUseEnv, PassContext, MatchResult,
+    m_Cast, m_Var,
+)
 
 
 def fold_truncate_extend(
@@ -81,73 +85,10 @@ def fold_truncate_extend(
     information from the Cast's sign/zero-replicated high bytes.
 
     `ssa_dsts` is the set of names introduced by `to_ssa` (Vars
-    that have exactly one def in SSA form). The rewrite is sound
-    only when both `t` (the Cast's dst, which is also the
-    Truncate's src) and `x` (the Cast's source, propagated into
-    the rewrite) are SSA-renamed names — otherwise the same name
-    can be re-defined elsewhere in the function and the
-    "Cast's def reaches the Truncate" assumption breaks. Without
-    `ssa_dsts`, the pass is a no-op (safe default for non-SSA TAC)."""
-    if ssa_dsts is None:
-        return fn
-    def_idx: dict[str, int] = {}
-    for i, instr in enumerate(fn.instructions):
-        if isinstance(instr, (
-            tac_ast.SignExtend, tac_ast.ZeroExtend,
-        )):
-            if (isinstance(instr.dst, tac_ast.Var)
-                    and instr.dst.name in ssa_dsts):
-                def_idx[instr.dst.name] = i
-    if not def_idx:
-        return fn
-    out: list[tac_ast.Type_instruction] = []
-    for instr in fn.instructions:
-        out.append(_maybe_rewrite(
-            instr, fn.instructions, def_idx, symbols, ssa_dsts,
-        ))
-    return tac_ast.Function(
-        name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=out,
-    )
-
-
-def _maybe_rewrite(
-    instr: tac_ast.Type_instruction,
-    all_instrs: list[tac_ast.Type_instruction],
-    def_idx: dict[str, int],
-    symbols,
-    ssa_dsts: set[str],
-) -> tac_ast.Type_instruction:
-    if not isinstance(instr, tac_ast.Truncate):
-        return instr
-    if not isinstance(instr.src, tac_ast.Var):
-        return instr
-    # The Truncate's src must be the Cast's dst — only single-def
-    # SSA-renamed names guarantee the Cast actually reaches this
-    # Truncate (vs. another def of the same name reaching first).
-    if instr.src.name not in ssa_dsts:
-        return instr
-    cast_idx = def_idx.get(instr.src.name)
-    if cast_idx is None:
-        return instr
-    cast = all_instrs[cast_idx]
-    if not isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
-        return instr
-    if not isinstance(cast.src, tac_ast.Var):
-        return instr
-    src_width = _byte_width(cast.src, symbols)
-    dst_width = _byte_width(instr.dst, symbols)
-    if src_width is None or dst_width is None:
-        return instr
-    if dst_width > src_width:
-        # `u` is wider than the cast's input — the rewrite would
-        # lose the high bytes the cast supplied. Leave alone.
-        return instr
-    if dst_width == src_width:
-        return tac_ast.Copy(src=cast.src, dst=instr.dst)
-    # dst is strictly narrower than cast.src — emit a narrowing
-    # Truncate that bypasses the round-trip.
-    return tac_ast.Truncate(src=cast.src, dst=instr.dst)
+    that have exactly one def in SSA form). Without `ssa_dsts`,
+    the pass is a no-op (safe default for non-SSA TAC)."""
+    ctx = PassContext(symbols=symbols, ssa_dsts=ssa_dsts)
+    return FoldTruncateExtend().run(fn, ctx)
 
 
 def _byte_width(v: tac_ast.Var, symbols) -> int | None:
@@ -174,11 +115,41 @@ def _byte_width(v: tac_ast.Var, symbols) -> int | None:
     return None
 
 
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
-
-
-class FoldTruncateExtend(FixedpointPass):
+class FoldTruncateExtend(DefUsePass):
+    """DefUsePass: matches Truncate(src=Var, dst=Var). For each match,
+    walks back to the src's SSA def to find a SignExtend or ZeroExtend;
+    if found and widths align, rewrites to Copy or narrower Truncate."""
     name = "fold_truncate_extend"
+    pattern = m_Cast(
+        kind=tac_ast.Truncate,
+        src=m_Var(capture='src'),
+        dst=m_Var(capture='dst'),
+        capture='truncate',
+    )
 
-    def run(self, fn, ctx):
-        return fold_truncate_extend(fn, symbols=ctx.symbols, ssa_dsts=ctx.ssa_dsts)
+    def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
+        src_var = m.bindings['src']
+        dst_var = m.bindings['dst']
+        truncate = m.bindings['truncate']
+
+        # src_var must be SSA-renamed (single-def guarantee).
+        if ctx.ssa_dsts is None or src_var.name not in ctx.ssa_dsts:
+            return None
+
+        # Walk back to find the defining SignExtend or ZeroExtend.
+        cast = env.def_of(src_var)
+        if not isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
+            return None
+        if not isinstance(cast.src, tac_ast.Var):
+            return None
+
+        # Width check: rewrite is only sound when dst is no wider than cast.src.
+        src_width = _byte_width(cast.src, ctx.symbols)
+        dst_width = _byte_width(dst_var, ctx.symbols)
+        if src_width is None or dst_width is None:
+            return None
+        if dst_width > src_width:
+            return None
+        if dst_width == src_width:
+            return tac_ast.Copy(src=cast.src, dst=dst_var)
+        return tac_ast.Truncate(src=cast.src, dst=dst_var)

@@ -30,9 +30,6 @@ beam_target_draw:
    SEC
    SBC   beam_y
    STA   __local_beam_target_draw__state
-   LDA   #$00
-   SBC   #$00
-   LDA   __local_beam_target_draw__state
    BNE   .if_end@1
    RTS
 .if_end@1:

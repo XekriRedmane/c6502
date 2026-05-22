@@ -469,10 +469,6 @@ drift_step:
 .drift_step@scfold@0:
    SEC
    SBC   #$04
-   STA   __local_drift_step__pos_1
-   LDA   #$00
-   SBC   #$00
-   LDA   __local_drift_step__pos_1
    LDY   #$00
    STA   (__zpabi_drift_step__out_sprite_y_0),Y
    LDX   __zpabi_drift_step__slot

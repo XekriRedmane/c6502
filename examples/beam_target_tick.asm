@@ -6,7 +6,7 @@ __zpabi_snd_delay_down__clicks	EQU	$83
 __zpabi_snd_delay_up__clicks	EQU	$83
 
 ; @zp-link-meta-begin
-; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0,__local_beam_target_tick__1,__local_beam_target_tick__2 indirect=false in_cycle=false
+; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0 indirect=false in_cycle=false
 ; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks param_regs=A,X
 ; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks param_regs=A,X
 ; call beam_target_tick -> snd_delay_down
@@ -25,8 +25,8 @@ beam_target_tick:
    JSR   snd_delay_up
 .if_end@0:
    LDX   beam_state
-   BPL   .if_end@1
    TXA
+   BPL   .if_end@1
    AND   #$0F
    TAX
    LDA   beam_y
@@ -48,7 +48,6 @@ beam_target_tick:
    INY
    CPY   beam_y
    BNE   .if_end@4
-   TXA
    ORA   #$F0
    STA   beam_state
    RTS

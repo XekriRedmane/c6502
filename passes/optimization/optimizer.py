@@ -91,6 +91,9 @@ from passes.optimization.dead_store_elimination import (
 from passes.optimization.loop_rotate import (
     rotate_signed_countdown_loops,
 )
+from passes.optimization.narrow_widened_arith import (
+    narrow_widened_arith,
+)
 from passes.optimization.reassoc_const import reassoc_constants
 from passes.optimization.short_circuit_jump_fold import (
     fold_short_circuit_jump,
@@ -183,6 +186,16 @@ def optimize_function(
         )
         fn = sink_increments(fn)
         fn = sink_and_past_branch(fn, symbols=symbols)
+        # Run AFTER sink_and_past_branch so the latter sees the
+        # canonical wide `ZeroExtend + BitwiseAnd + Truncate +
+        # JumpIfMasked` trio it pattern-matches. The narrow form
+        # this pass produces (Binary(BitwiseAnd, %x, ConstUChar(C),
+        # %t)) wouldn't match sink's strict shape, which would
+        # force the AND result to live across the branch and spill
+        # to memory.
+        fn = narrow_widened_arith(
+            fn, symbols=symbols, ssa_dsts=ssa_dsts,
+        )
         if fn == prev:
             break
     # Run the indirect-indexed recognizer AFTER the fixed-point

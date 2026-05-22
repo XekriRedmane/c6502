@@ -94,6 +94,20 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 - `sink_increment.py` — `sink_increments`. Moves `Y = X + c` past the
   last in-line use of `X` when `Y`'s only consumer follows, exposing
   `recognize_indexed_*` patterns the original ordering hid.
+- `narrow_widened_arith.py` — `narrow_widened_arith`. Folds
+  `Truncate(Binary(safe_op, Extend(a), Extend(b) | Constant), u_n)`
+  → `Binary(safe_op, a, b | narrowed_Constant, u_n)` at the narrow
+  width. Wraparound-safe ops are Add / Subtract / Multiply /
+  BitwiseAnd / BitwiseOr / BitwiseXor (Divide / Modulo / RightShift
+  excluded because high bytes contribute to low bytes of the
+  result; LeftShift excluded today as a marginal win). Eliminates
+  the dead high-byte arithmetic that C99's `uint8_t op uint8_t`
+  integer-promotion-then-truncate idiom otherwise leaves in the
+  IR. MUST run AFTER `sink_and_past_branch` inside the fixed-point
+  loop — sink's strict 4-instr trio (`ZE; AND; Trunc; JumpIfMasked`)
+  wouldn't match the narrow form this pass produces, and the AND
+  result would spill across the branch (apply_bobble regression
+  observed at +1 instr).
 - `dispatch_pointer_array.py` — `dispatch_const_pointer_arrays`. Runs
   at the program level after `optimize_tac` (post-from_ssa).
   Recognizes the `Binary(LeftShift|Multiply, i, 1|2) + IndexedLoad(arr,

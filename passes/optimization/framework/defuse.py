@@ -16,7 +16,7 @@ Subclass interface::
             cast = env.def_of(src_var)
             if not isinstance(cast, tac_ast.ZeroExtend):
                 return None
-            # ... return replacement instruction or None
+            # ... return replacement instruction, Rewrite, or None
 
 Optional hook:
   - prepare_extra(fn, ctx) -> object — stored at env.extra; use for
@@ -27,13 +27,33 @@ is a no-op (def_idx wouldn't be sound for names with multiple defs).
 """
 from __future__ import annotations
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 import tac_ast
 from passes.optimization.framework.base import PassContext
 from passes.optimization.framework.phases import FixedpointPass
 from passes.optimization.framework.patterns import MatchResult, Pattern
+
+
+@dataclass
+class Rewrite:
+    """Return value for DefUsePass.rewrite when the rewrite should
+    atomically drop additional defs (e.g. the inner Binary that fed
+    the matched use site). The framework looks up each Var in
+    drop_defs via env.def_idx and drops the resulting indices from
+    the rebuilt instruction list.
+
+    Caller's responsibility: ensure each named Var is unused after
+    the rewrite (single-use gate). If two Rewrites in the same run()
+    would drop the same index, the second one is skipped (conflict)."""
+    replacement: object  # tac_ast.Type_instruction
+    drop_defs: tuple = ()  # tuple of tac_ast.Var
+
+    def __post_init__(self):
+        # Normalize drop_defs to a tuple in case caller passed a list.
+        if not isinstance(self.drop_defs, tuple):
+            self.drop_defs = tuple(self.drop_defs)
 
 
 @dataclass
@@ -90,24 +110,52 @@ class DefUsePass(FixedpointPass):
         if ctx.ssa_dsts is None:
             return fn
         def_idx = _build_def_idx(fn.instructions)
+        # instructions_view is a mutable list that gets updated as
+        # rewrites are recorded, so subsequent env.def_of() lookups
+        # see the rewritten form (critical for chained-fusion correctness,
+        # e.g. A→B then B→C in a single run for reassoc_const).
+        instructions_view = list(fn.instructions)
         env = DefUseEnv(
             def_idx=def_idx,
-            instructions=fn.instructions,
+            instructions=instructions_view,
             extra=self.prepare_extra(fn, ctx),
         )
-        out = []
+        rewrites: dict[int, object] = {}
+        drop_indices: set[int] = set()
         changed = False
-        for instr in fn.instructions:
+        for i, instr in enumerate(fn.instructions):
             m = MatchResult()
-            if self.pattern.match(instr, m):
-                rep = self.rewrite(m, env, ctx)
-                if rep is not None and rep is not instr:
-                    out.append(rep)
-                    changed = True
+            if not self.pattern.match(instr, m):
+                continue
+            result = self.rewrite(m, env, ctx)
+            if result is None:
+                continue
+            if isinstance(result, Rewrite):
+                new_drops: set[int] = set()
+                for v in result.drop_defs:
+                    d = def_idx.get(v.name)
+                    if d is not None:
+                        new_drops.add(d)
+                if new_drops & drop_indices:
+                    # An earlier rewrite already consumed one of the
+                    # same inner defs — skip this rewrite to avoid
+                    # double-drop conflicts.
                     continue
-            out.append(instr)
+                rewrites[i] = result.replacement
+                instructions_view[i] = result.replacement
+                drop_indices.update(new_drops)
+                changed = True
+            elif result is not instr:
+                rewrites[i] = result
+                instructions_view[i] = result
+                changed = True
         if not changed:
             return fn
+        out = []
+        for i, instr in enumerate(fn.instructions):
+            if i in drop_indices:
+                continue
+            out.append(rewrites.get(i, instr))
         return tac_ast.Function(
             name=fn.name, is_global=fn.is_global,
             params=list(fn.params), instructions=out,

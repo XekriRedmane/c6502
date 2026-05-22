@@ -58,6 +58,43 @@ loop handles in subsequent rounds.
 from __future__ import annotations
 
 import tac_ast
+from passes.optimization.framework import (
+    WindowPass, PassContext,
+    m_Unary, m_Any, m_Var, m_OneOf, m_JumpIfTrue, m_JumpIfFalse, m_Specific,
+    MatchResult,
+)
+
+
+class FoldLnotJump(WindowPass):
+    name = "fold_lnot_jump"
+    window_size = 2
+    pattern = [
+        m_Unary(
+            op=tac_ast.LogicalNot,
+            src=m_Any(capture='src'),
+            dst=m_Var(capture='not_dst'),
+        ),
+        m_OneOf(
+            m_JumpIfTrue(condition=m_Specific('not_dst'), capture='jmp'),
+            m_JumpIfFalse(condition=m_Specific('not_dst'), capture='jmp'),
+        ),
+    ]
+
+    def prepare(self, fn, ctx):
+        return _count_var_uses(fn)
+
+    def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
+        not_dst = m.bindings['not_dst']
+        if use_counts.get(not_dst.name, 0) != 1:
+            return None
+        jmp = m.bindings['jmp']
+        src = m.bindings['src']
+        cls = (
+            tac_ast.JumpIfFalse
+            if isinstance(jmp, tac_ast.JumpIfTrue)
+            else tac_ast.JumpIfTrue
+        )
+        return [cls(condition=src, target=jmp.target)]
 
 
 def fold_lnot_jump(
@@ -72,62 +109,7 @@ def fold_lnot_jump(
     in the fixed-point loop; this pass doesn't need it (width-
     agnostic rewrite)."""
     del symbols
-    use_count = _count_var_uses(fn)
-
-    new_instrs: list[tac_ast.Type_instruction] = []
-    skip_next = False
-    for i, instr in enumerate(fn.instructions):
-        if skip_next:
-            skip_next = False
-            continue
-        rewrite = _try_fold(fn.instructions, i, use_count)
-        if rewrite is None:
-            new_instrs.append(instr)
-            continue
-        new_instrs.append(rewrite)
-        skip_next = True
-    if len(new_instrs) == len(fn.instructions):
-        return fn
-    return tac_ast.Function(
-        name=fn.name,
-        is_global=fn.is_global,
-        params=list(fn.params),
-        instructions=new_instrs,
-    )
-
-
-def _try_fold(
-    instrs: list[tac_ast.Type_instruction],
-    i: int,
-    use_count: dict[str, int],
-) -> tac_ast.Type_instruction | None:
-    """If `instrs[i:i+2]` is `Unary(LogicalNot, src, %t);
-    JumpIf{True,False}(%t, target)` with single-use `%t`, return the
-    sense-flipped JumpIf on `src`. Otherwise None."""
-    if i + 1 >= len(instrs):
-        return None
-    unary = instrs[i]
-    if not isinstance(unary, tac_ast.Unary):
-        return None
-    if not isinstance(unary.op, tac_ast.LogicalNot):
-        return None
-    if not isinstance(unary.dst, tac_ast.Var):
-        return None
-    jumpif = instrs[i + 1]
-    if not isinstance(jumpif, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse)):
-        return None
-    if not isinstance(jumpif.condition, tac_ast.Var):
-        return None
-    if jumpif.condition.name != unary.dst.name:
-        return None
-    if use_count.get(unary.dst.name, 0) != 1:
-        return None
-    cls = (
-        tac_ast.JumpIfTrue
-        if isinstance(jumpif, tac_ast.JumpIfFalse)
-        else tac_ast.JumpIfFalse
-    )
-    return cls(condition=unary.src, target=jumpif.target)
+    return FoldLnotJump().run(fn, PassContext())
 
 
 def _count_var_uses(fn: tac_ast.Function) -> dict[str, int]:
@@ -223,13 +205,3 @@ def _vars_used_in(instr: tac_ast.Type_instruction):
             for a in args:
                 if isinstance(a.source, tac_ast.Var):
                     yield a.source
-
-
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
-
-
-class FoldLnotJump(FixedpointPass):
-    name = "fold_lnot_jump"
-
-    def run(self, fn, ctx):
-        return fold_lnot_jump(fn, symbols=ctx.symbols)

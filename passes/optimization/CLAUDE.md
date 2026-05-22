@@ -9,6 +9,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 
 ## Module roster
 
+- `framework/` — `Pass` ABC, phase ABCs, `PhaseDriver`, pattern
+  combinator DSL, `WindowPass` / `DefUsePass` / `OperandRewritePass` /
+  `SinkPass` bases. See [framework/CLAUDE.md](framework/CLAUDE.md).
 - `cfg.py` — control-flow graph helpers (basic-block construction,
   dominator tree, natural-loops detection).
 - `interference.py` — TAC-level interference graph builder (used by
@@ -22,118 +25,145 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   topological sort fixes the "lost copy" problem; cycles break with a
   fresh `<funcname>.cycle_tmp@N`.
 - `var_visit.py` — utility for visiting / rewriting TAC operands.
-- `optimizer.py` — driver (`optimize_function`, `optimize_tac`).
-- `loop_rotate.py` — `rotate_signed_countdown_loops`. Pre-SSA one-
-  shot.
-- `static_const_fold.py` — `fold_static_const_reads`. One-shot post-
-  SSA.
-- `constant_folding.py` — `constant_fold` (Unary / Binary / comparison
-  / cast / conditional-jump-with-constant-cond / Phis with agreeing
-  args). Width-correct wraparound at the operand's declared width.
-  Const-array-subscript fold (`_fold_indexed_load`) is part of this
-  pass.
-- `strength_reduction.py` — `reduce_strength`. `Multiply(x, 2^k)` →
-  `LeftShift`, unsigned `Divide(x, 2^k)` → `RightShift`, unsigned
-  `Modulo(x, 2^k)` → `BitwiseAnd`. Signed Divide / Modulo skipped
-  (C99 truncation differs from arithmetic shift).
-- `cmp_zero_jump_fold.py` — `fold_cmp_zero_jump`. Fuses
-  `Binary(cmp, ...); JumpIf*` to direct conditional jumps. `== 0` /
-  `!= 0` traces through ZeroExtend; ordering ops emit
+- `optimizer.py` — `optimize_function` / `optimize_program`. Constructs
+  a module-level `PhaseDriver` (`_DRIVER`) and calls `_DRIVER.apply`
+  per function. `PhaseDriver` is defined in `framework/driver.py`.
+- `loop_rotate.py` — `rotate_signed_countdown_loops`
+  (`RotateSignedCountdownLoops`, PreSsaPass). Pre-SSA one-shot.
+- `static_const_fold.py` — `fold_static_const_reads`
+  (`FoldStaticConstReads`, PreFixedpointPass wrapping an internal
+  `OperandRewritePass`). One-shot post-SSA.
+- `constant_folding.py` — `constant_fold` (`ConstantFold`, WindowPass).
+  Unary / Binary / comparison / cast / conditional-jump-with-constant-
+  cond / Phis with agreeing args. Width-correct wraparound at the
+  operand's declared width. Const-array-subscript fold
+  (`_fold_indexed_load`) is part of this pass.
+- `strength_reduction.py` — `reduce_strength` (`ReduceStrength`,
+  WindowPass). `Multiply(x, 2^k)` → `LeftShift`, unsigned
+  `Divide(x, 2^k)` → `RightShift`, unsigned `Modulo(x, 2^k)` →
+  `BitwiseAnd`. Signed Divide / Modulo skipped (C99 truncation differs
+  from arithmetic shift).
+- `cmp_zero_jump_fold.py` — `fold_cmp_zero_jump` (`FoldCmpZeroJump`,
+  WindowPass). Fuses `Binary(cmp, ...); JumpIf*` to direct conditional
+  jumps. `== 0` / `!= 0` traces through ZeroExtend; ordering ops emit
   `JumpIfCmp(op, src1, src2)` for the per-byte compare-chain lowering.
   Operand narrowing through ZeroExtend folds `(uint8_t)i < 105` to
   3-instr `LDA / CMP / BCS`.
-- `and_zero_jump_fold.py` — `fold_narrow_and_jump`. Folds
-  `(ZeroExtend(uchar); BitwiseAnd(_, 0x80); JumpIf*)` to
-  `JumpIfMasked` when the operand can be narrowed to 1 byte —
+- `and_zero_jump_fold.py` — `fold_narrow_and_jump` (`FoldNarrowAndJump`,
+  WindowPass). Folds `(ZeroExtend(uchar); BitwiseAnd(_, 0x80); JumpIf*)`
+  to `JumpIfMasked` when the operand can be narrowed to 1 byte —
   produces the direct `LDA / BPL/BMI` pattern at asm lowering instead
   of an 8-bit AND + 16-bit Z.
-- `dead_loop_elimination.py` — `eliminate_dead_loops`. Detects natural
-  loops (back-edges via `cfg.natural_loops()`) whose body has no
-  `Call` / `Store` / `Ret` and whose every SSA def is loop-local. When
-  the gates pass, rewrites the header to `[Label, Jump(exit)]` so UCE
-  prunes the now-unreachable body on the next sweep. Single-exit-edge
-  gate keeps Phi-arg retagging at the exit unambiguous. Collapses
-  nested empty-loop shapes like `do { while(--y); } while(--d);` to
-  nothing. NOTE: lacking volatile semantics (the parser silently drops
-  the qualifier), this pass will currently delete loops the programmer
-  marked volatile; preserving them requires plumbing volatile through
-  the type system.
-- `unreachable_code_elimination.py` — forward DFS from ENTRY; prunes
-  dead Phi args; folds singleton Phis to Copies; drops useless jumps /
-  labels.
-- `copy_propagation.py` — `copy_propagate`. SSA-aware: replaces every
-  use of a Copy's dst with its src; chains too.
-- `dead_store_elimination.py` — SSA-aware: drops pure defs with no
-  reads. Calls keep the call (side effects) but drop unused dst.
-- `copy_folding.py` — `fold_copies`. See "Copy folding" below.
-- `reassoc_const.py` — `reassoc_constants`. See "Add-with-Constant
-  reassociation" below.
+- `lnot_jump_fold.py` — `fold_lnot_jump` (`FoldLnotJump`, WindowPass).
+  Folds `Unary(LogicalNot, src, %t); JumpIf{True,False}(%t, target)` to
+  a sense-flipped direct JumpIf when %t is single-use.
+- `dead_loop_elimination.py` — `eliminate_dead_loops`
+  (`EliminateDeadLoops`, raw FixedpointPass — CFG-shaped back-edge
+  detection). Detects natural loops (back-edges via
+  `cfg.natural_loops()`) whose body has no `Call` / `Store` / `Ret` and
+  whose every SSA def is loop-local. When the gates pass, rewrites the
+  header to `[Label, Jump(exit)]` so UCE prunes the now-unreachable body
+  on the next sweep. Single-exit-edge gate keeps Phi-arg retagging at
+  the exit unambiguous. Collapses nested empty-loop shapes like
+  `do { while(--y); } while(--d);` to nothing. NOTE: lacking volatile
+  semantics (the parser silently drops the qualifier), this pass will
+  currently delete loops the programmer marked volatile; preserving them
+  requires plumbing volatile through the type system.
+- `unreachable_code_elimination.py` — `EliminateUnreachableCode` (raw
+  FixedpointPass — forward DFS from ENTRY). Prunes dead Phi args; folds
+  singleton Phis to Copies; drops useless jumps / labels.
+- `copy_propagation.py` — `copy_propagate` (`CopyPropagate`, raw
+  FixedpointPass — CFG-shaped forward dataflow). SSA-aware: replaces
+  every use of a Copy's dst with its src; chains too.
+- `dead_store_elimination.py` — `EliminateDeadStores` (raw
+  FixedpointPass — SSA-aware whole-def-use liveness). Drops pure defs
+  with no reads. Calls keep the call (side effects) but drop unused dst.
+- `copy_folding.py` — `fold_copies` (`FoldCopiesInFixedpoint` /
+  `FoldCopiesPostDestruction`). See "Copy folding" below. Internally
+  delegates to `_FoldCopiesWindow` (WindowPass).
+- `reassoc_const.py` — `reassoc_constants` (`ReassocConstants`,
+  DefUsePass). See "Add-with-Constant reassociation" below.
 - `recognize_indexed_store.py` / `recognize_indexed_load.py` —
-  collapse `ZeroExtend(uchar) + Binary(Add, C) + Store/Load` chains to
+  `RecognizeIndexedStore` / `RecognizeIndexedLoad` (DefUsePass). Collapse
+  `ZeroExtend(uchar) + Binary(Add, C) + Store/Load` chains to
   `IndexedStore` / `IndexedLoad` (absolute,X addressing). See
   "IndexedStore recognizer" below.
-- `recognize_indirect_indexed.py` — post-fixedpoint one-shot.
-  Collapses `ZeroExtend(uchar) + Binary(Add, ptr) + Load` to
-  `IndirectIndexed` for the `(zp),Y` lowering. Deliberately runs LAST
-  so any pointer that's going to fold to a Constant (via the const-
-  static fold path) has already done so — otherwise this pass would
-  prematurely lock in (zp),Y for a chain that would have qualified for
-  the cheaper absolute,X form.
-- `short_circuit_jump_fold.py` — `fold_short_circuit_jump`. Post-
-  destruction one-shot (iterated to a fixed point). Rewrites the
-  canonical `&&` / `||` 0-or-1-materialize tail + adjacent
-  `JumpIf{True,False}` consumer into direct conditional branches:
-  the chain's short-circuit jumps retarget to the consumer's
-  destination, the 5-instruction tail and 1-instruction consumer
-  are deleted, and the "flipped" sub-case (consumer's branch
-  direction routes the short-circuit value to fall-through) emits
-  `Jump(T); Label(.<fn>@scfold@<N>)` to materialize the fall-
-  through. Covers all four `(C_ft, C_sc) × consumer-kind`
-  combinations and nested short-circuits (`(a && b) || c` style)
-  via transitive closure on the retarget map.
-- `sink_increment.py` — `sink_increments`. Moves `Y = X + c` past the
-  last in-line use of `X` when `Y`'s only consumer follows, exposing
-  `recognize_indexed_*` patterns the original ordering hid.
-- `narrow_widened_arith.py` — `narrow_widened_arith`. Folds
-  `Truncate(Binary(safe_op, Extend(a), Extend(b) | Constant), u_n)`
-  → `Binary(safe_op, a, b | narrowed_Constant, u_n)` at the narrow
-  width. Wraparound-safe ops are Add / Subtract / Multiply /
-  BitwiseAnd / BitwiseOr / BitwiseXor (Divide / Modulo / RightShift
-  excluded because high bytes contribute to low bytes of the
-  result; LeftShift excluded today as a marginal win). Eliminates
-  the dead high-byte arithmetic that C99's `uint8_t op uint8_t`
-  integer-promotion-then-truncate idiom otherwise leaves in the
-  IR. MUST run AFTER `sink_and_past_branch` inside the fixed-point
-  loop — sink's strict 4-instr trio (`ZE; AND; Trunc; JumpIfMasked`)
-  wouldn't match the narrow form this pass produces, and the AND
-  result would spill across the branch (apply_bobble regression
-  observed at +1 instr).
-- `dispatch_pointer_array.py` — `dispatch_const_pointer_arrays`. Runs
-  at the program level after `optimize_tac` (post-from_ssa).
-  Recognizes the `Binary(LeftShift|Multiply, i, 1|2) + IndexedLoad(arr,
-  _, %ptr) + IndirectIndexedLoad(%ptr, j, %v)` chain when `arr` is a
-  file-scope `static const T * const[N]` with N ≤ 8 and all-
-  AddressInit elements; rewrites to a CMP/BEQ dispatch on `i` with
-  per-case direct `IndexedLoad(target_k, j, %v)`. Eliminates DPTR
-  staging and (zp),Y indirection at the cost of a small dispatch
-  chain; frees X and Y from the dual-index conflict so loop counters
-  can stay pinned to X across the dispatch.
+- `truncate_extend_fold.py` — `fold_truncate_extend`
+  (`FoldTruncateExtend`, DefUsePass). Folds `Truncate(SignExtend|
+  ZeroExtend(x))` → `Copy(x)` (or narrower `Truncate`) when the
+  round-trip is the identity at the destination's width.
+- `sink_increment.py` — `sink_increments` (`SinkIncrements`, SinkPass).
+  Moves `Y = X + c` past the last in-line use of `X` when `Y`'s only
+  consumer follows, exposing `recognize_indexed_*` patterns the original
+  ordering hid.
+- `sink_and_past_branch.py` — `SinkAndPastBranch` (raw FixedpointPass —
+  duplicates a trio into multiple successors with SSA renaming; different
+  shape from SinkPass). See "sink_and_past_branch" in the peephole
+  catalog.
+- `narrow_widened_arith.py` — `narrow_widened_arith` (`NarrowWidenedArith`,
+  DefUsePass). Folds `Truncate(Binary(safe_op, Extend(a), Extend(b) |
+  Constant), u_n)` → `Binary(safe_op, a, b | narrowed_Constant, u_n)`
+  at the narrow width. Wraparound-safe ops are Add / Subtract / Multiply
+  / BitwiseAnd / BitwiseOr / BitwiseXor (Divide / Modulo / RightShift
+  excluded because high bytes contribute to low bytes of the result;
+  LeftShift excluded today as a marginal win). Eliminates the dead
+  high-byte arithmetic that C99's `uint8_t op uint8_t`
+  integer-promotion-then-truncate idiom otherwise leaves in the IR. MUST
+  run AFTER `sink_and_past_branch` inside the fixed-point loop — sink's
+  strict 4-instr trio (`ZE; AND; Trunc; JumpIfMasked`) wouldn't match
+  the narrow form this pass produces, and the AND result would spill
+  across the branch (apply_bobble regression observed at +1 instr).
+- `recognize_indirect_indexed.py` — post-fixedpoint one-shot
+  (`RecognizeIndirectIndexed`, PostFixedpointPass wrapping an internal
+  `DefUsePass`). Collapses `ZeroExtend(uchar) + Binary(Add, ptr) + Load`
+  to `IndirectIndexed` for the `(zp),Y` lowering. Deliberately runs LAST
+  so any pointer that's going to fold to a Constant (via the const-static
+  fold path) has already done so — otherwise this pass would prematurely
+  lock in (zp),Y for a chain that would have qualified for the cheaper
+  absolute,X form.
+- `short_circuit_jump_fold.py` — `fold_short_circuit_jump`
+  (`FoldShortCircuitJump`, raw PostDestructionFixedpointPass — multi-
+  block retarget map with transitive closure). Post-destruction fixedpoint.
+  Rewrites the canonical `&&` / `||` 0-or-1-materialize tail + adjacent
+  `JumpIf{True,False}` consumer into direct conditional branches: the
+  chain's short-circuit jumps retarget to the consumer's destination, the
+  5-instruction tail and 1-instruction consumer are deleted, and the
+  "flipped" sub-case emits `Jump(T); Label(.<fn>@scfold@<N>)` to
+  materialize the fall-through. Covers all four `(C_ft, C_sc) ×
+  consumer-kind` combinations and nested short-circuits (`(a && b) || c`
+  style) via transitive closure on the retarget map.
+- `dispatch_pointer_array.py` — `dispatch_const_pointer_arrays`
+  (`DispatchConstPointerArrays`, ProgramPass). Runs at the program level
+  after `optimize_tac` (post-from_ssa). Recognizes the
+  `Binary(LeftShift|Multiply, i, 1|2) + IndexedLoad(arr, _, %ptr) +
+  IndirectIndexedLoad(%ptr, j, %v)` chain when `arr` is a file-scope
+  `static const T * const[N]` with N ≤ 8 and all-AddressInit elements;
+  rewrites to a CMP/BEQ dispatch on `i` with per-case direct
+  `IndexedLoad(target_k, j, %v)`. Eliminates DPTR staging and (zp),Y
+  indirection at the cost of a small dispatch chain; frees X and Y from
+  the dual-index conflict so loop counters can stay pinned to X across
+  the dispatch.
 
 ## Per-function pipeline shape
 
+The pipeline is run by `_DRIVER` (`PhaseDriver`) in `optimizer.py`.
+`optimize_function` calls `_DRIVER.apply(fn, ctx)`.
+
 ```
-fn → rotate_signed_countdown_loops (one-shot, pre-SSA)
-   → to_ssa
-   → fold_static_const_reads (one-shot)
+fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
+   → to_ssa                        (owned by PhaseDriver)
+   → fold_static_const_reads       (PreFixedpointPass, one-shot)
    → [constant_fold → reduce_strength → fold_cmp_zero_jump
-      → fold_narrow_and_jump → eliminate_dead_loops → UCE
+      → fold_narrow_and_jump → fold_lnot_jump
+      → eliminate_dead_loops → UCE
       → copy_propagate → DSE → fold_copies → reassoc_constants
       → recognize_indexed_store → recognize_indexed_load
-      → sink_increments]*
-   → recognize_indirect_indexed (post-fixedpoint, one-shot)
-   → from_ssa
-   → fold_copies                                  (post-from_ssa)
-   → fold_short_circuit_jump*                     (post-from_ssa, fixedpoint)
+      → fold_truncate_extend → sink_increments
+      → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)
+   → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
+   → from_ssa                      (owned by PhaseDriver)
+   → fold_copies                   (PostDestructionPass, one-shot)
+   → fold_short_circuit_jump*      (PostDestructionFixedpointPass)
    → fn'
 ```
 

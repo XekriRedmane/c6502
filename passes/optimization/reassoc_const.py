@@ -83,46 +83,31 @@ from collections import Counter
 
 import tac_ast
 from passes.optimization.var_visit import uses_in
+from passes.optimization.framework import (
+    DefUsePass, DefUseEnv, Rewrite, FixedpointPass, PassContext, MatchResult,
+    m_Commutative, m_Constant, m_Var, m_Any,
+)
 
 
 def reassoc_constants(fn: tac_ast.Function) -> tac_ast.Function:
     """Walk `fn`'s instructions; for each outer Add(Const, %inner)
     where the inner is a single-use Pseudo defined by another
     Add(Const, ...), combine the two Constants. Returns a new
-    Function; doesn't mutate the input.
+    Function; doesn't mutate the input."""
+    return _IMPL.run(fn, PassContext(ssa_dsts=_all_dsts(fn)))
 
-    Two passes: pass 1 scans for rewrites and records which inner-
-    Binary indices to drop and which outer-Binary indices to
-    replace; pass 2 rebuilds the instruction list. The split is
-    needed because the inner def precedes the outer in source
-    order — a single-pass loop would emit the inner before
-    realizing the outer subsumes it."""
-    use_counts = _count_uses(fn.instructions)
-    inner_def = _build_inner_def_index(fn.instructions)
-    # Pass 1: record rewrites. When an earlier outer fusion has
-    # already rewritten an instruction in this pass, later outers
-    # that look up its dst as their inner must see the REWRITTEN
-    # form — otherwise the second fusion uses stale operands and
-    # the dropped-defs cascade leaves dangling references.
-    rewrites: dict[int, tac_ast.Type_instruction] = {}
-    dropped_def_indices: set[int] = set()
-    for i, instr in enumerate(fn.instructions):
-        rewritten = _try_reassoc(
-            instr, fn.instructions, inner_def, use_counts,
-            dropped_def_indices, rewrites,
-        )
-        if rewritten is not instr:
-            rewrites[i] = rewritten
-    # Pass 2: rebuild.
-    new_instrs: list[tac_ast.Type_instruction] = []
-    for i, instr in enumerate(fn.instructions):
-        if i in dropped_def_indices:
-            continue
-        new_instrs.append(rewrites.get(i, instr))
-    return tac_ast.Function(
-        name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=new_instrs,
-    )
+
+def _all_dsts(fn: tac_ast.Function) -> set[str]:
+    """Return the set of all Var dst names in `fn`. Used as a
+    stand-in for ssa_dsts to satisfy the DefUsePass.run gate when
+    calling from the free function (which may not be in SSA form).
+    reassoc_constants is only called during the SSA fixed-point loop,
+    so all named temps are SSA-renamed in practice."""
+    out: set[str] = set()
+    for instr in fn.instructions:
+        if hasattr(instr, 'dst') and isinstance(instr.dst, tac_ast.Var):
+            out.add(instr.dst.name)
+    return out
 
 
 def _count_uses(
@@ -133,105 +118,6 @@ def _count_uses(
         for v in uses_in(instr):
             counts[v.name] += 1
     return counts
-
-
-def _build_inner_def_index(
-    instrs: list[tac_ast.Type_instruction],
-) -> dict[str, int]:
-    """Map each Var name to the index of its (single) defining
-    instruction in `instrs`. Only Binary(Add)-shape defs are
-    recorded — those are the only candidates for reassoc fusion."""
-    out: dict[str, int] = {}
-    for i, instr in enumerate(instrs):
-        if (
-            isinstance(instr, tac_ast.Binary)
-            and isinstance(instr.op, tac_ast.Add)
-            and isinstance(instr.dst, tac_ast.Var)
-        ):
-            out[instr.dst.name] = i
-    return out
-
-
-def _try_reassoc(
-    instr: tac_ast.Type_instruction,
-    all_instrs: list[tac_ast.Type_instruction],
-    inner_def: dict[str, int],
-    use_counts: Counter[str],
-    dropped_def_indices: set[int],
-    rewrites: dict[int, tac_ast.Type_instruction] | None = None,
-) -> tac_ast.Type_instruction:
-    """If `instr` is an outer Add(Const, %inner) (or Add(%inner,
-    Const)) where `%inner`'s single-use def is itself an Add with
-    a Constant operand of the same width, return the combined
-    Add. The inner def's index is added to `dropped_def_indices`
-    so the caller skips emitting it. Otherwise return `instr`
-    unchanged."""
-    if not (
-        isinstance(instr, tac_ast.Binary)
-        and isinstance(instr.op, tac_ast.Add)
-    ):
-        return instr
-    outer_const, outer_var = _split_const_var(instr.src1, instr.src2)
-    if outer_const is None or outer_var is None:
-        return instr
-    inner_idx = inner_def.get(outer_var.name)
-    if inner_idx is None:
-        return instr
-    if use_counts.get(outer_var.name, 0) != 1:
-        return instr
-    if inner_idx in dropped_def_indices:
-        return instr
-    # If an earlier rewrite in this same pass replaced the inner
-    # def's instruction, use the REWRITTEN form — it reflects the
-    # current effective definition of `outer_var`. Without this,
-    # chained Add fusions (A→B; B→C) read stale operands from the
-    # pre-rewrite A→B instruction and drop B's def, leaving the
-    # final C→? referencing an already-dropped name.
-    if rewrites is not None and inner_idx in rewrites:
-        inner = rewrites[inner_idx]
-    else:
-        inner = all_instrs[inner_idx]
-    if inner is instr:
-        # Self-update shape `x = x + C` (non-SSA name with the dst
-        # equal to a src). The fusion target is the same instruction
-        # — fusing with itself produces a no-op replacement that the
-        # rebuild loop then drops as `dropped_def_indices`, silently
-        # erasing the increment. Reject.
-        return instr
-    if not (
-        isinstance(inner, tac_ast.Binary)
-        and isinstance(inner.op, tac_ast.Add)
-    ):
-        return instr
-    inner_const, inner_other = _split_const_var_or_const(
-        inner.src1, inner.src2,
-    )
-    if inner_const is None:
-        return instr
-    outer_bits = _BITS_FOR_VARIANT.get(type(outer_const.const))
-    inner_bits = _BITS_FOR_VARIANT.get(type(inner_const.const))
-    if outer_bits is None or outer_bits != inner_bits:
-        # Different bit widths → can't combine directly. Same-width
-        # signed vs unsigned IS allowed: the bit pattern of an Add
-        # is signedness-agnostic, and the result wraps modulo 2^N
-        # the same way either way. We pick the outer's variant for
-        # the combined Constant — downstream consumers see the
-        # expected result type.
-        return instr
-    combined_value = _wrap(
-        outer_const.const.value + inner_const.const.value,
-        outer_const.const,
-    )
-    combined = tac_ast.Constant(
-        const=type(outer_const.const)(value=combined_value),
-    )
-    dropped_def_indices.add(inner_idx)
-    return tac_ast.Binary(
-        op=tac_ast.Add(),
-        src1=combined,
-        src2=inner_other,
-        dst=instr.dst,
-    )
 
 
 def _split_const_var(
@@ -298,19 +184,87 @@ _SIGNED_VARIANTS: tuple[type, ...] = (
     tac_ast.ConstLong, tac_ast.ConstLongLong,
 )
 
+# Inner-Binary pattern: Add with one Constant and one arbitrary operand.
+_inner_pattern = m_Commutative(
+    op=tac_ast.Add,
+    lhs=m_Constant(capture='inner_const'),
+    rhs=m_Any(capture='inner_other'),
+)
 
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
 
-
-class ReassocConstants(FixedpointPass):
-    """Kept as raw FixedpointPass. A DefUsePass migration was attempted
-    but produces incorrect results: the lazy-drop design (inner defs left
-    for DSE) changes observable semantics when callers (tests + the
-    free-function API) expect the inner def to be eagerly dropped within
-    a single `reassoc_constants` call. The eager-drop two-pass approach
-    in `reassoc_constants` is inherently incompatible with DefUsePass's
-    single-instruction replacement contract."""
+class ReassocConstants(DefUsePass):
+    """Fuses nested Add(Constant, Add(Constant, V)) chains into a single
+    Add with the combined Constant, dropping the inner def atomically
+    via Rewrite.drop_defs. The instructions_view trick in DefUsePass.run
+    ensures chained fusions (A→B then B→C) see the rewritten form on the
+    second match so they don't reference a stale already-dropped def."""
     name = "reassoc_constants"
 
-    def run(self, fn, ctx):
-        return reassoc_constants(fn)
+    pattern = m_Commutative(
+        op=tac_ast.Add,
+        lhs=m_Constant(capture='outer_const'),
+        rhs=m_Var(capture='outer_var'),
+        dst=m_Var(capture='outer_dst'),
+    )
+
+    def prepare_extra(self, fn, ctx):
+        return _count_uses(fn.instructions)
+
+    def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
+        outer_var: tac_ast.Var = m.bindings['outer_var']
+        outer_const: tac_ast.Constant = m.bindings['outer_const']
+        outer_dst: tac_ast.Var = m.bindings['outer_dst']
+
+        # Gate on SSA-renamed inner var (single-def guarantee).
+        if ctx.ssa_dsts is None or outer_var.name not in ctx.ssa_dsts:
+            return None
+
+        # Single-use gate: only fuse when %inner has exactly one reader.
+        if env.extra.get(outer_var.name, 0) != 1:
+            return None
+
+        # Walk back to the inner Binary(Add) def.
+        inner = env.def_of(outer_var)
+        if inner is None:
+            return None
+
+        # Reject self-update shape (non-SSA `x = x + C` where
+        # outer_var.name == outer_dst.name). The def_of would point at
+        # the current instruction being matched, causing a fusion with
+        # itself that would silently erase the increment.
+        if inner is env.instructions[env.def_idx.get(outer_dst.name, -1)] \
+                and outer_var.name == outer_dst.name:
+            return None
+
+        # Match the inner instruction.
+        inner_m = MatchResult()
+        if not _inner_pattern.match(inner, inner_m):
+            return None
+
+        inner_const: tac_ast.Constant = inner_m.bindings['inner_const']
+        inner_other: tac_ast.Type_val = inner_m.bindings['inner_other']
+
+        # Width gate: must share the same bit width (same-width signed vs
+        # unsigned IS allowed — the bit pattern of Add is signedness-agnostic).
+        outer_bits = _BITS_FOR_VARIANT.get(type(outer_const.const))
+        inner_bits = _BITS_FOR_VARIANT.get(type(inner_const.const))
+        if outer_bits is None or outer_bits != inner_bits:
+            return None
+
+        combined_value = _wrap(
+            outer_const.const.value + inner_const.const.value,
+            outer_const.const,
+        )
+        combined = tac_ast.Constant(
+            const=type(outer_const.const)(value=combined_value),
+        )
+        replacement = tac_ast.Binary(
+            op=tac_ast.Add(),
+            src1=combined,
+            src2=inner_other,
+            dst=outer_dst,
+        )
+        return Rewrite(replacement=replacement, drop_defs=(outer_var,))
+
+
+_IMPL = ReassocConstants()

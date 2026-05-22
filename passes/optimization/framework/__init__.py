@@ -24,6 +24,8 @@ from passes.optimization.framework.patterns import (
     m_Cast,
     m_JumpIfTrue,
     m_JumpIfFalse,
+    m_Store,
+    m_Load,
     m_OneOf,
     m_Commutative,
 )
@@ -53,6 +55,8 @@ __all__ = [
     "m_Cast",
     "m_JumpIfTrue",
     "m_JumpIfFalse",
+    "m_Store",
+    "m_Load",
     "m_OneOf",
     "m_Commutative",
 ]

@@ -294,6 +294,46 @@ class m_JumpIfFalse(Pattern):
         return True
 
 
+@dataclass
+class m_Store(Pattern):
+    """Match a tac_ast.Store. `src`/`dst_ptr` are child patterns
+    (default m_Any). `capture` binds the whole Store node."""
+    src: Pattern = field(default_factory=m_Any)
+    dst_ptr: Pattern = field(default_factory=m_Any)
+    capture: str | None = None
+
+    def match(self, node, m):
+        if not isinstance(node, tac_ast.Store):
+            return False
+        snap = m.snapshot()
+        if not (self.src.match(node.src, m) and self.dst_ptr.match(node.dst_ptr, m)):
+            m.restore(snap)
+            return False
+        if self.capture:
+            m.bindings[self.capture] = node
+        return True
+
+
+@dataclass
+class m_Load(Pattern):
+    """Match a tac_ast.Load. `src_ptr`/`dst` are child patterns
+    (default m_Any). `capture` binds the whole Load node."""
+    src_ptr: Pattern = field(default_factory=m_Any)
+    dst: Pattern = field(default_factory=m_Any)
+    capture: str | None = None
+
+    def match(self, node, m):
+        if not isinstance(node, tac_ast.Load):
+            return False
+        snap = m.snapshot()
+        if not (self.src_ptr.match(node.src_ptr, m) and self.dst.match(node.dst, m)):
+            m.restore(snap)
+            return False
+        if self.capture:
+            m.bindings[self.capture] = node
+        return True
+
+
 # -- Combinators ----------------------------------------------------
 
 class m_OneOf(Pattern):

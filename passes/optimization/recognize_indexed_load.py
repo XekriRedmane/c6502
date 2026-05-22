@@ -209,3 +209,13 @@ def _is_1_byte_var(v: tac_ast.Var, symbols) -> bool:
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class RecognizeIndexedLoad(FixedpointPass):
+    name = "recognize_indexed_load"
+
+    def run(self, fn, ctx):
+        return recognize_indexed_load(fn, symbols=ctx.symbols)

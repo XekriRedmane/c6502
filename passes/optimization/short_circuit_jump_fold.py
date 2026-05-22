@@ -440,3 +440,13 @@ def _vars_used_in(instr) -> Iterable[tac_ast.Var]:
             for a in args:
                 if isinstance(a.source, tac_ast.Var):
                     yield a.source
+
+
+from passes.optimization.framework import PostDestructionFixedpointPass, PassContext  # noqa: E402
+
+
+class FoldShortCircuitJump(PostDestructionFixedpointPass):
+    name = "fold_short_circuit_jump"
+
+    def run(self, fn, ctx):
+        return fold_short_circuit_jump(fn)

@@ -205,3 +205,13 @@ def _try_eliminate(
         tac_ast.Jump(target=exit_label),
     ]
     return True
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class EliminateDeadLoops(FixedpointPass):
+    name = "eliminate_dead_loops"
+
+    def run(self, fn, ctx):
+        return eliminate_dead_loops(fn, ssa_dsts=ctx.ssa_dsts)

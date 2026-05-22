@@ -229,3 +229,13 @@ def _remove_useless_labels(cfg: CFG) -> None:
         if blk.instructions and isinstance(blk.instructions[0], tac_ast.Label):
             if blk.instructions[0].name not in targets:
                 blk.instructions = blk.instructions[1:]
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class EliminateUnreachableCode(FixedpointPass):
+    name = "eliminate_unreachable_code"
+
+    def run(self, fn, ctx):
+        return eliminate_unreachable_code(fn)

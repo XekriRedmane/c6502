@@ -315,3 +315,13 @@ def _is_1_byte_val(v: tac_ast.Type_val, symbols) -> bool:
     if isinstance(v, tac_ast.Var):
         return _is_1_byte_var(v, symbols)
     return False
+
+
+from passes.optimization.framework import PostFixedpointPass, PassContext  # noqa: E402
+
+
+class RecognizeIndirectIndexed(PostFixedpointPass):
+    name = "recognize_indirect_indexed"
+
+    def run(self, fn, ctx):
+        return recognize_indirect_indexed(fn, symbols=ctx.symbols)

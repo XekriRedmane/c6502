@@ -1018,3 +1018,13 @@ def _fp_comparison_result(
         case _:
             return None
     return tac_ast.ConstInt(value=1 if r else 0)
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class ConstantFold(FixedpointPass):
+    name = "constant_fold"
+
+    def run(self, fn, ctx):
+        return constant_fold(fn, symbols=ctx.symbols)

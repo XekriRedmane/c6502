@@ -395,3 +395,13 @@ def _is_int_constant(val, target: int) -> bool:
     if hasattr(c, 'value'):
         return c.value == target
     return False
+
+
+from passes.optimization.framework import ProgramPass, PassContext  # noqa: E402
+
+
+class DispatchConstPointerArrays(ProgramPass):
+    name = "dispatch_const_pointer_arrays"
+
+    def run_program(self, prog, ctx):
+        return dispatch_const_pointer_arrays(prog, ctx.symbols)

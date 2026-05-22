@@ -619,3 +619,13 @@ def _rewrite_signextend_iv_to_zeroextend(
         else:
             out.append(ins)
     return out
+
+
+from passes.optimization.framework import PreSsaPass, PassContext  # noqa: E402
+
+
+class RotateSignedCountdownLoops(PreSsaPass):
+    name = "rotate_signed_countdown_loops"
+
+    def run(self, fn, ctx):
+        return rotate_signed_countdown_loops(fn, ctx.symbols)

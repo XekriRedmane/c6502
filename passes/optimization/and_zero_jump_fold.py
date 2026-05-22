@@ -226,3 +226,13 @@ def _try_narrow_pair(
     if not isinstance(sym.type, _NARROW_UNSIGNED_TYPES):
         return None
     return src, c.value
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class FoldNarrowAndJump(FixedpointPass):
+    name = "fold_narrow_and_jump"
+
+    def run(self, fn, ctx):
+        return fold_narrow_and_jump(fn, symbols=ctx.symbols)

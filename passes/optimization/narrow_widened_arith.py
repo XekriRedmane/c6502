@@ -322,3 +322,13 @@ def _is_unsigned(v: tac_ast.Var, symbols) -> bool | None:
     if isinstance(t, c99_ast.ULongLong):
         return True
     return None
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class NarrowWidenedArith(FixedpointPass):
+    name = "narrow_widened_arith"
+
+    def run(self, fn, ctx):
+        return narrow_widened_arith(fn, symbols=ctx.symbols, ssa_dsts=ctx.ssa_dsts)

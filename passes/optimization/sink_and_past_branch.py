@@ -570,3 +570,13 @@ def _rewrite_instr_uses(
         )
     # Label / Jump / no-operand instructions: pass through.
     return instr
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class SinkAndPastBranch(FixedpointPass):
+    name = "sink_and_past_branch"
+
+    def run(self, fn, ctx):
+        return sink_and_past_branch(fn, symbols=ctx.symbols)

@@ -172,3 +172,13 @@ def _byte_width(v: tac_ast.Var, symbols) -> int | None:
     )):
         return 8
     return None
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class FoldTruncateExtend(FixedpointPass):
+    name = "fold_truncate_extend"
+
+    def run(self, fn, ctx):
+        return fold_truncate_extend(fn, symbols=ctx.symbols, ssa_dsts=ctx.ssa_dsts)

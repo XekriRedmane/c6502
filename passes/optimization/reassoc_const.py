@@ -297,3 +297,13 @@ _SIGNED_VARIANTS: tuple[type, ...] = (
     tac_ast.ConstChar, tac_ast.ConstInt,
     tac_ast.ConstLong, tac_ast.ConstLongLong,
 )
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class ReassocConstants(FixedpointPass):
+    name = "reassoc_constants"
+
+    def run(self, fn, ctx):
+        return reassoc_constants(fn)

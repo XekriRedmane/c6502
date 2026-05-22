@@ -269,3 +269,13 @@ def _is_1_byte_val(
     if isinstance(v, tac_ast.Var):
         return _is_1_byte_var(v, symbols)
     return False
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class RecognizeIndexedStore(FixedpointPass):
+    name = "recognize_indexed_store"
+
+    def run(self, fn, ctx):
+        return recognize_indexed_store(fn, symbols=ctx.symbols)

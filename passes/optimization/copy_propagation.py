@@ -235,3 +235,13 @@ def _rewrite(
                 ],
             )
     return instr
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class CopyPropagate(FixedpointPass):
+    name = "copy_propagate"
+
+    def run(self, fn, ctx):
+        return copy_propagate(fn, ssa_dsts=ctx.ssa_dsts)

@@ -221,3 +221,13 @@ def _rewrite_instr(
                 ],
             )
     return instr
+
+
+from passes.optimization.framework import PreFixedpointPass, PassContext  # noqa: E402
+
+
+class FoldStaticConstReads(PreFixedpointPass):
+    name = "fold_static_const_reads"
+
+    def run(self, fn, ctx):
+        return fold_static_const_reads(fn, ctx.symbols)

@@ -183,3 +183,13 @@ def _collect_uses(
         for v in uses_in(instr):
             used.add(v.name)
     return used
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class EliminateDeadStores(FixedpointPass):
+    name = "eliminate_dead_stores"
+
+    def run(self, fn, ctx):
+        return eliminate_dead_stores(fn, ssa_dsts=ctx.ssa_dsts)

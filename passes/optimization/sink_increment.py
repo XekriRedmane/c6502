@@ -268,3 +268,13 @@ def _find_sink_offset(
             last_x_use_offset = j - start
         j += 1
     return last_x_use_offset
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class SinkIncrements(FixedpointPass):
+    name = "sink_increments"
+
+    def run(self, fn, ctx):
+        return sink_increments(fn)

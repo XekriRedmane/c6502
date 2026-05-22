@@ -223,3 +223,13 @@ def _vars_used_in(instr: tac_ast.Type_instruction):
             for a in args:
                 if isinstance(a.source, tac_ast.Var):
                     yield a.source
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class FoldLnotJump(FixedpointPass):
+    name = "fold_lnot_jump"
+
+    def run(self, fn, ctx):
+        return fold_lnot_jump(fn, symbols=ctx.symbols)

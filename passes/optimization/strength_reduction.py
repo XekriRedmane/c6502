@@ -310,3 +310,13 @@ _ZERO_FOR_VARIANT: dict[type, type] = {
     tac_ast.ConstULong: lambda: tac_ast.ConstULong(value=0),
     tac_ast.ConstULongLong: lambda: tac_ast.ConstULongLong(value=0),
 }
+
+
+from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+
+
+class ReduceStrength(FixedpointPass):
+    name = "reduce_strength"
+
+    def run(self, fn, ctx):
+        return reduce_strength(fn, symbols=ctx.symbols)

@@ -213,3 +213,22 @@ def _redirect_dst(
                 ptr=p, args=args, dst=new_dst,
             )
     return None
+
+
+from passes.optimization.framework import (  # noqa: E402
+    FixedpointPass, PostDestructionPass, PassContext,
+)
+
+
+class FoldCopiesInFixedpoint(FixedpointPass):
+    name = "fold_copies_in_fixedpoint"
+
+    def run(self, fn, ctx):
+        return fold_copies(fn)
+
+
+class FoldCopiesPostDestruction(PostDestructionPass):
+    name = "fold_copies_post_destruction"
+
+    def run(self, fn, ctx):
+        return fold_copies(fn)

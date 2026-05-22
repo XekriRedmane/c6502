@@ -173,17 +173,7 @@ def constant_fold(
     `ZeroExtend` / `Truncate`) and FP→integer conversions, since
     those need the dst Var's c99 type to pick the result variant /
     width. FP↔FP and the safe Int→FP folds work without it."""
-    out: list[tac_ast.Type_instruction] = []
-    for instr in fn.instructions:
-        folded = _fold(instr, symbols)
-        if folded is not None:
-            out.append(folded)
-    return tac_ast.Function(
-        name=fn.name,
-        is_global=fn.is_global,
-        params=list(fn.params),
-        instructions=out,
-    )
+    return ConstantFold().run(fn, PassContext(symbols=symbols))
 
 
 def _fold(
@@ -1020,11 +1010,33 @@ def _fp_comparison_result(
     return tac_ast.ConstInt(value=1 if r else 0)
 
 
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+from passes.optimization.framework import (  # noqa: E402
+    WindowPass, PassContext, MatchResult,
+    m_Any,
+)
 
 
-class ConstantFold(FixedpointPass):
+class ConstantFold(WindowPass):
+    """WindowPass(window_size=1): matches any instruction via m_Any;
+    rewrite dispatches to _fold for per-op constant folding.
+
+    _fold return semantics → WindowPass.rewrite return semantics:
+      None       (drop the instruction)  → [] (empty replacement list)
+      instr      (no fold applicable)    → None (decline; advance by 1)
+      new_instr  (folded replacement)    → [new_instr]
+    """
     name = "constant_fold"
+    window_size = 1
+    pattern = m_Any(capture='instr')
 
-    def run(self, fn, ctx):
-        return constant_fold(fn, symbols=ctx.symbols)
+    def prepare(self, fn, ctx):
+        return ctx.symbols
+
+    def rewrite(self, m: MatchResult, symbols, ctx: PassContext) -> list | None:
+        instr = m.bindings['instr']
+        folded = _fold(instr, symbols)
+        if folded is instr:
+            return None       # no fold applicable; advance by 1
+        if folded is None:
+            return []         # instruction dropped (dead branch)
+        return [folded]       # successfully folded

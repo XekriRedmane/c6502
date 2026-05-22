@@ -74,9 +74,9 @@ to `Binary(Subtract, uc, Constant(0x34:uchar))`.
 
 The Truncate is rewritten to a narrow Binary that writes
 directly to the Truncate's dst. The original Binary and Extends
-become dead and SSA-DCE collects them on the next iteration. (If
-they have other consumers they survive — the rewrite is purely
-local to the Truncate.)
+become dead; single-use Extend dsts are dropped eagerly via
+Rewrite(drop_defs=...) and SSA-DCE collects any remaining
+orphaned instructions on the next iteration.
 
 # Iteration
 
@@ -87,8 +87,15 @@ Constant), and SSA-DCE (which collects the orphaned chain).
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import c99_ast
 import tac_ast
+from passes.optimization.framework import (
+    DefUsePass, DefUseEnv, PassContext, MatchResult, Rewrite,
+    m_Cast, m_Var,
+)
+from passes.optimization.var_visit import uses_in
 
 
 # Wraparound-safe ops: the low n bytes of op(W(a), W(b)) depend only
@@ -103,6 +110,105 @@ _SAFE_OPS = (
 )
 
 
+def _count_uses(instrs) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for instr in instrs:
+        for v in uses_in(instr):
+            counts[v.name] += 1
+    return counts
+
+
+class NarrowWidenedArith(DefUsePass):
+    """DefUsePass: matches Truncate(src=Var, dst=Var). For each match,
+    walks back via env.def_of to find a wraparound-safe Binary on
+    widened operands; if found, rewrites the Truncate to a narrow
+    Binary that produces the Truncate's dst directly.
+
+    Drops the Binary's def eagerly via Rewrite(drop_defs=...) and
+    also drops any single-use Extend defs that fed the Binary,
+    so SSA-DCE doesn't need a separate sweep to clean them up."""
+    name = "narrow_widened_arith"
+    pattern = m_Cast(
+        kind=tac_ast.Truncate,
+        src=m_Var(capture='trunc_src'),
+        dst=m_Var(capture='dst'),
+        capture='trunc',
+    )
+
+    def prepare_extra(self, fn, ctx):
+        return _count_uses(fn.instructions)
+
+    def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
+        if ctx.ssa_dsts is None or ctx.symbols is None:
+            return None
+        trunc_src = m.bindings['trunc_src']
+        dst_var = m.bindings['dst']
+
+        # trunc_src must be SSA-renamed (single-def guarantee).
+        if trunc_src.name not in ctx.ssa_dsts:
+            return None
+
+        # Walk back: trunc_src must be defined by a wraparound-safe Binary.
+        bin_instr = env.def_of(trunc_src)
+        if not isinstance(bin_instr, tac_ast.Binary):
+            return None
+        if not isinstance(bin_instr.op, _SAFE_OPS):
+            return None
+        if not isinstance(bin_instr.dst, tac_ast.Var):
+            return None
+
+        dst_width = _byte_width(dst_var, ctx.symbols)
+        bin_width = _byte_width(bin_instr.dst, ctx.symbols)
+        if dst_width is None or bin_width is None:
+            return None
+        if dst_width >= bin_width:
+            # No widening to undo. fold_truncate_extend or constant_fold
+            # handles the trivial cases.
+            return None
+
+        dst_unsigned = _is_unsigned(dst_var, ctx.symbols)
+        if dst_unsigned is None:
+            return None
+
+        narrow_s1 = _narrow_operand(
+            bin_instr.src1, dst_width, dst_unsigned,
+            env.instructions, env.def_idx, ctx.symbols, ctx.ssa_dsts,
+        )
+        if narrow_s1 is None:
+            return None
+        narrow_s2 = _narrow_operand(
+            bin_instr.src2, dst_width, dst_unsigned,
+            env.instructions, env.def_idx, ctx.symbols, ctx.ssa_dsts,
+        )
+        if narrow_s2 is None:
+            return None
+
+        narrow_binary = tac_ast.Binary(
+            op=bin_instr.op, src1=narrow_s1, src2=narrow_s2,
+            dst=dst_var,
+        )
+
+        # Eagerly drop the Binary's dst. Also drop each single-use Extend
+        # dst that fed the Binary: use_counts[operand.name] == 1 means
+        # only the Binary reads it, so after the Binary is gone it's dead.
+        # (The Truncate is the current USE site; it's replaced, not dropped.)
+        use_counts = env.extra
+        drop_vars: list[tac_ast.Var] = [bin_instr.dst]
+        for operand in (bin_instr.src1, bin_instr.src2):
+            if not isinstance(operand, tac_ast.Var):
+                continue
+            if operand.name not in ctx.ssa_dsts:
+                continue
+            ext = env.def_of(operand)
+            if not isinstance(ext, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
+                continue
+            # Only drop the Extend if the Binary was its sole consumer.
+            if use_counts.get(operand.name, 0) == 1:
+                drop_vars.append(operand)
+
+        return Rewrite(replacement=narrow_binary, drop_defs=tuple(drop_vars))
+
+
 def narrow_widened_arith(
     fn: tac_ast.Function, *,
     symbols=None, ssa_dsts: set[str] | None = None,
@@ -115,79 +221,8 @@ def narrow_widened_arith(
     rewrite requires both the Binary's dst and each Extend's dst to
     be SSA-renamed so the def chain is unambiguous. Without it (or
     without `symbols`), the pass is a no-op."""
-    if ssa_dsts is None or symbols is None:
-        return fn
-    def_idx: dict[str, int] = {}
-    for i, instr in enumerate(fn.instructions):
-        if isinstance(instr, (
-            tac_ast.SignExtend, tac_ast.ZeroExtend, tac_ast.Binary,
-        )):
-            if (isinstance(instr.dst, tac_ast.Var)
-                    and instr.dst.name in ssa_dsts):
-                def_idx[instr.dst.name] = i
-    if not def_idx:
-        return fn
-    out: list[tac_ast.Type_instruction] = []
-    for instr in fn.instructions:
-        out.append(_maybe_rewrite(
-            instr, fn.instructions, def_idx, symbols, ssa_dsts,
-        ))
-    return tac_ast.Function(
-        name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=out,
-    )
-
-
-def _maybe_rewrite(
-    instr: tac_ast.Type_instruction,
-    all_instrs: list[tac_ast.Type_instruction],
-    def_idx: dict[str, int],
-    symbols,
-    ssa_dsts: set[str],
-) -> tac_ast.Type_instruction:
-    if not isinstance(instr, tac_ast.Truncate):
-        return instr
-    if not isinstance(instr.src, tac_ast.Var):
-        return instr
-    if instr.src.name not in ssa_dsts:
-        return instr
-    bin_idx = def_idx.get(instr.src.name)
-    if bin_idx is None:
-        return instr
-    bin_instr = all_instrs[bin_idx]
-    if not isinstance(bin_instr, tac_ast.Binary):
-        return instr
-    if not isinstance(bin_instr.op, _SAFE_OPS):
-        return instr
-    if not isinstance(bin_instr.dst, tac_ast.Var):
-        return instr
-    dst_width = _byte_width(instr.dst, symbols)
-    bin_width = _byte_width(bin_instr.dst, symbols)
-    if dst_width is None or bin_width is None:
-        return instr
-    if dst_width >= bin_width:
-        # No widening to undo. fold_truncate_extend or constant_fold
-        # handles the trivial cases.
-        return instr
-    dst_unsigned = _is_unsigned(instr.dst, symbols)
-    if dst_unsigned is None:
-        return instr
-    narrow_s1 = _narrow_operand(
-        bin_instr.src1, dst_width, dst_unsigned,
-        all_instrs, def_idx, symbols, ssa_dsts,
-    )
-    if narrow_s1 is None:
-        return instr
-    narrow_s2 = _narrow_operand(
-        bin_instr.src2, dst_width, dst_unsigned,
-        all_instrs, def_idx, symbols, ssa_dsts,
-    )
-    if narrow_s2 is None:
-        return instr
-    return tac_ast.Binary(
-        op=bin_instr.op, src1=narrow_s1, src2=narrow_s2,
-        dst=instr.dst,
-    )
+    ctx = PassContext(symbols=symbols, ssa_dsts=ssa_dsts)
+    return NarrowWidenedArith().run(fn, ctx)
 
 
 def _narrow_operand(
@@ -322,13 +357,3 @@ def _is_unsigned(v: tac_ast.Var, symbols) -> bool | None:
     if isinstance(t, c99_ast.ULongLong):
         return True
     return None
-
-
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
-
-
-class NarrowWidenedArith(FixedpointPass):
-    name = "narrow_widened_arith"
-
-    def run(self, fn, ctx):
-        return narrow_widened_arith(fn, symbols=ctx.symbols, ssa_dsts=ctx.ssa_dsts)

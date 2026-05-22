@@ -75,6 +75,10 @@ from collections import Counter
 import c99_ast
 import tac_ast
 from passes.optimization.var_visit import uses_in
+from passes.optimization.framework import (
+    DefUsePass, DefUseEnv, PostFixedpointPass, PassContext, MatchResult,
+    m_Store, m_Load, m_Var, m_Any, m_OneOf,
+)
 
 
 def recognize_indirect_indexed(
@@ -317,120 +321,107 @@ def _is_1_byte_val(v: tac_ast.Type_val, symbols) -> bool:
     return False
 
 
-from passes.optimization.framework import (  # noqa: E402
-    WindowPass, PostFixedpointPass, PassContext, MatchResult,
-    m_Cast, m_Binary, m_Store, m_Load, m_Var, m_Any, m_OneOf,
-)
+class _RecognizeIndirectIndexedDefUse(DefUsePass):
+    """DefUsePass: matches Load(src_ptr=Var) or Store(dst_ptr=Var) at
+    the use site. For each match, walks back twice through the SSA
+    def-chain to find the ZeroExtend/SignExtend → Binary(Add, ptr,
+    %ext) → Load/Store pattern. Uses the full def-idx so the use and
+    its producers need not be index-adjacent.
 
+    This replaces only the use-site instruction. The two intermediate
+    defs (%addr Binary, %ext ZeroExtend) become dead and are cleaned
+    up by SSA-DCE on the next fixedpoint iteration. Because this pass
+    runs as a PostFixedpointPass (no subsequent DSE pass), the actual
+    RecognizeIndirectIndexed.run delegates to the free function
+    recognize_indirect_indexed instead, which drops all three
+    instructions atomically. This class is retained as the DefUsePass
+    model for non-PostFixedpoint contexts."""
+    name = "recognize_indirect_indexed_defuse"
+    pattern = m_OneOf(
+        m_Load(
+            src_ptr=m_Var(capture='addr_var'),
+            dst=m_Var(capture='load_dst'),
+            capture='load_instr',
+        ),
+        m_Store(
+            src=m_Any(capture='store_src'),
+            dst_ptr=m_Var(capture='addr_var'),
+            capture='store_instr',
+        ),
+    )
 
-class _RecognizeIndirectIndexedWindow(WindowPass):
-    """WindowPass: matches adjacent `ZeroExtend/SignExtend;
-    Binary(Add, ptr_var, %ext); Load/Store(...)` triples for the
-    indirect-indexed (zp),Y lowering. `ptr_var` is a Var (not a
-    Constant), distinguishing this from the absolute,X pattern."""
-    name = "recognize_indirect_indexed_window"
-    window_size = 3
-    pattern = [
-        m_Cast(
-            kind=(tac_ast.ZeroExtend, tac_ast.SignExtend),
-            dst=m_Var(capture='ext_dst'),
-            capture='ext_instr',
-        ),
-        m_Binary(
-            op=tac_ast.Add,
-            src1=m_Any(capture='add_src1'),
-            src2=m_Any(capture='add_src2'),
-            dst=m_Var(capture='addr_dst'),
-        ),
-        m_OneOf(
-            m_Load(
-                src_ptr=m_Any(capture='access_ptr'),
-                dst=m_Var(capture='load_dst'),
-                capture='load_instr',
-            ),
-            m_Store(
-                src=m_Any(capture='store_src'),
-                dst_ptr=m_Any(capture='access_ptr'),
-                capture='store_instr',
-            ),
-        ),
-    ]
-
-    def prepare(self, fn, ctx):
+    def prepare_extra(self, fn, ctx):
         return _count_uses(fn.instructions)
 
-    def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
+    def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         if ctx.symbols is None:
             return None
-        ext_instr = m.bindings['ext_instr']
-        ext_dst = m.bindings['ext_dst']
-        add_src1 = m.bindings['add_src1']
-        add_src2 = m.bindings['add_src2']
-        addr_dst = m.bindings['addr_dst']
-        access_ptr = m.bindings['access_ptr']
-
-        # Verify access_ptr matches addr_dst (the Add's result feeds the Load/Store).
-        if not (isinstance(access_ptr, tac_ast.Var) and access_ptr.name == addr_dst.name):
+        addr_var = m.bindings['addr_var']
+        # addr_var must be SSA-renamed (single-def guarantee).
+        if ctx.ssa_dsts is None or addr_var.name not in ctx.ssa_dsts:
             return None
-
-        # Single-use gate on addr_dst.
-        if use_counts.get(addr_dst.name, 0) != 1:
+        # Single-use gate on %addr.
+        if env.extra.get(addr_var.name, 0) != 1:
             return None
-
-        # Identify which Add operand is ext_dst (the ZeroExtend dst) and which is ptr_var.
-        src1_is_ext = isinstance(add_src1, tac_ast.Var) and add_src1.name == ext_dst.name
-        src2_is_ext = isinstance(add_src2, tac_ast.Var) and add_src2.name == ext_dst.name
-        if src1_is_ext and isinstance(add_src2, tac_ast.Var):
-            ext_var, ptr_var = add_src1, add_src2
-        elif src2_is_ext and isinstance(add_src1, tac_ast.Var):
-            ext_var, ptr_var = add_src2, add_src1
-        else:
+        # Walk back to the Binary(Add) def.
+        binary = env.def_of(addr_var)
+        if not isinstance(binary, tac_ast.Binary) or not isinstance(binary.op, tac_ast.Add):
             return None
-
-        # Single-use gate on ext_var.
-        if use_counts.get(ext_var.name, 0) != 1:
+        # Both operands must be Vars (not Constant + Var — that's the
+        # absolute,X pattern handled by recognize_indexed_store/load).
+        ptr_var, ext_var = _split_var_var(
+            binary.src1, binary.src2, env.def_idx, env.instructions,
+        )
+        if ptr_var is None or ext_var is None:
             return None
-
-        # ptr_var must not resolve to a Constant (those are absolute,X cases).
-        # We don't have the full def_idx here, but the brief says to skip if
-        # ptr_var was defined by a Copy-of-Constant chain. We can only check
-        # what's available in the 3-instruction window. The existing free
-        # function does full def-chain tracing; we approximate by requiring
-        # ptr_var is not itself a Constant (Constant would be src, not Var).
-        # This is sound because if the ptr-side Var IS a wrapped constant,
-        # the recognize_indexed_store/load passes should have fired first.
-
-        # Index source must be a Var with 1-byte type.
-        if not isinstance(ext_instr.src, tac_ast.Var):
+        # Defer to recognize_indexed_* when ptr resolves to a Constant.
+        if _resolves_to_constant(ptr_var, env.def_idx, env.instructions):
             return None
-        idx_var = ext_instr.src
+        # ext_var must be SSA-renamed and single-use.
+        if ext_var.name not in ctx.ssa_dsts:
+            return None
+        if env.extra.get(ext_var.name, 0) != 1:
+            return None
+        # Walk back to the ZeroExtend/SignExtend def.
+        ext = env.def_of(ext_var)
+        if not isinstance(ext, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
+            return None
+        if not isinstance(ext.src, tac_ast.Var):
+            return None
+        idx_var = ext.src
         if not _is_1_byte_var(idx_var, ctx.symbols):
             return None
-
-        # Determine if this is a Load or Store.
+        # Determine Load or Store and check the access value's width.
         if 'load_instr' in m.bindings:
             load_dst = m.bindings['load_dst']
             if not _is_1_byte_var(load_dst, ctx.symbols):
                 return None
-            return [tac_ast.IndirectIndexedLoad(
+            return tac_ast.IndirectIndexedLoad(
                 ptr=ptr_var, index=idx_var, dst=load_dst,
                 is_volatile=m.bindings['load_instr'].is_volatile,
-            )]
+            )
         else:
             store_src = m.bindings['store_src']
             if not _is_1_byte_val(store_src, ctx.symbols):
                 return None
-            return [tac_ast.IndirectIndexedStore(
+            return tac_ast.IndirectIndexedStore(
                 ptr=ptr_var, index=idx_var, src=store_src,
                 is_volatile=m.bindings['store_instr'].is_volatile,
-            )]
+            )
 
 
-_IMPL = _RecognizeIndirectIndexedWindow()
+_IMPL = _RecognizeIndirectIndexedDefUse()
 
 
 class RecognizeIndirectIndexed(PostFixedpointPass):
+    """PostFixedpointPass wrapper. Delegates to the free function
+    recognize_indirect_indexed, which atomically replaces the Load/Store
+    use site AND drops the two now-dead def instructions (Binary(Add)
+    and ZeroExtend/SignExtend) in the same rebuild pass. This is
+    necessary because PostFixedpointPass runs after the fixedpoint loop,
+    so there is no subsequent DSE pass to clean up the dead intermediates
+    that DefUsePass would leave behind."""
     name = "recognize_indirect_indexed"
 
     def run(self, fn, ctx):
-        return _IMPL.run(fn, ctx)
+        return recognize_indirect_indexed(fn, symbols=ctx.symbols)

@@ -65,6 +65,72 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
+from passes.optimization.framework import (
+    WindowPass, PassContext, MatchResult,
+    m_Binary, m_Var, m_OneOf, m_JumpIfTrue, m_JumpIfFalse, m_Specific,
+)
+
+
+_CMP_OPS: tuple[type, ...] = (
+    tac_ast.Equal, tac_ast.NotEqual,
+    tac_ast.LessThan, tac_ast.GreaterThan,
+    tac_ast.LessOrEqual, tac_ast.GreaterOrEqual,
+)
+
+
+class FoldCmpZeroJump(WindowPass):
+    name = "fold_cmp_zero_jump"
+    window_size = 2
+    pattern = [
+        m_Binary(
+            op=_CMP_OPS,
+            dst=m_Var(capture='cond_dst'),
+            capture='binop',
+        ),
+        m_OneOf(
+            m_JumpIfTrue(condition=m_Specific('cond_dst'), capture='jmp'),
+            m_JumpIfFalse(condition=m_Specific('cond_dst'), capture='jmp'),
+        ),
+    ]
+
+    def prepare(self, fn, ctx):
+        return (
+            _count_var_uses(fn),
+            _index_var_defs(fn),
+            fn.instructions,
+        )
+
+    def rewrite(self, m: MatchResult, prep, ctx: PassContext) -> list | None:
+        use_count, var_def_idx, instrs = prep
+        binop = m.bindings['binop']
+        cond_dst = m.bindings['cond_dst']
+        jmp = m.bindings['jmp']
+
+        if use_count.get(cond_dst.name, 0) != 1:
+            return None
+
+        if isinstance(binop.op, (tac_ast.Equal, tac_ast.NotEqual)):
+            x = _zero_compare_other_operand(binop.src1, binop.src2)
+            if x is not None:
+                x = _trace_through_zero_extend(x, instrs, var_def_idx, use_count)
+                return [_build_replacement_jump(binop.op, jmp, x)]
+
+        src1, src2 = binop.src1, binop.src2
+        narrowed = _try_narrow_compare(
+            src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
+        )
+        if narrowed is not None:
+            src1, src2 = narrowed
+        else:
+            narrowed_signed = _try_narrow_signed_against_zero(
+                binop.op, src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
+            )
+            if narrowed_signed is not None:
+                src1, src2 = narrowed_signed
+        new_op = _adjusted_op_for_jumpif(binop.op, jmp)
+        return [tac_ast.JumpIfCmp(
+            op=new_op, src1=src1, src2=src2, target=jmp.target,
+        )]
 
 
 def fold_cmp_zero_jump(
@@ -77,100 +143,7 @@ def fold_cmp_zero_jump(
     `symbols` table is needed for the narrowing path (we read each
     Var's c99 type to decide if a 1-byte unsigned narrowing is sound);
     without it the pass falls back to non-narrowing rewrites."""
-    use_count = _count_var_uses(fn)
-    var_def_idx = _index_var_defs(fn)
-
-    new_instrs: list[tac_ast.Type_instruction] = []
-    skip_next = False
-    for i, instr in enumerate(fn.instructions):
-        if skip_next:
-            skip_next = False
-            continue
-        rewrite = _try_fold(
-            fn.instructions, i, use_count, var_def_idx, symbols,
-        )
-        if rewrite is None:
-            new_instrs.append(instr)
-            continue
-        new_instrs.append(rewrite)
-        skip_next = True
-    if len(new_instrs) == len(fn.instructions):
-        return fn
-    return tac_ast.Function(
-        name=fn.name,
-        is_global=fn.is_global,
-        params=list(fn.params),
-        instructions=new_instrs,
-    )
-
-
-_CMP_OPS: tuple[type, ...] = (
-    tac_ast.Equal, tac_ast.NotEqual,
-    tac_ast.LessThan, tac_ast.GreaterThan,
-    tac_ast.LessOrEqual, tac_ast.GreaterOrEqual,
-)
-
-
-def _try_fold(
-    instrs: list[tac_ast.Type_instruction],
-    i: int,
-    use_count: dict[str, int],
-    var_def_idx: dict[str, int],
-    symbols,
-) -> tac_ast.Type_instruction | None:
-    """If `instrs[i:i+2]` is the foldable pattern, return the
-    replacement instruction. Otherwise None."""
-    if i + 1 >= len(instrs):
-        return None
-    binop = instrs[i]
-    if not isinstance(binop, tac_ast.Binary):
-        return None
-    if not isinstance(binop.op, _CMP_OPS):
-        return None
-    if not isinstance(binop.dst, tac_ast.Var):
-        return None
-    jumpif = instrs[i + 1]
-    if not isinstance(jumpif, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse)):
-        return None
-    if not isinstance(jumpif.condition, tac_ast.Var):
-        return None
-    if jumpif.condition.name != binop.dst.name:
-        return None
-    if use_count.get(binop.dst.name, 0) != 1:
-        return None
-
-    # Special case: ==/!= against zero. Lowering already produces
-    # the optimal `LDA x; BEQ/BNE t` (1 byte) or `LDA x.b0; ORA
-    # x.b1; ...; BEQ/BNE t` (multi-byte) for JumpIfTrue/False on x.
-    if isinstance(binop.op, (tac_ast.Equal, tac_ast.NotEqual)):
-        x = _zero_compare_other_operand(binop.src1, binop.src2)
-        if x is not None:
-            x = _trace_through_zero_extend(
-                x, instrs, var_def_idx, use_count,
-            )
-            return _build_replacement_jump(binop.op, jumpif, x)
-
-    # General case: rewrite as JumpIfCmp. Try to narrow both
-    # operands to 1-byte unsigned via ZeroExtend tracing — that
-    # turns a 16-bit SBC chain into a 1-byte CMP. Optional: even
-    # without narrowing the JumpIfCmp form is still a win (skips
-    # the 0/1 materialize).
-    src1, src2 = binop.src1, binop.src2
-    narrowed = _try_narrow_compare(
-        src1, src2, instrs, var_def_idx, use_count, symbols,
-    )
-    if narrowed is not None:
-        src1, src2 = narrowed
-    else:
-        narrowed_signed = _try_narrow_signed_against_zero(
-            binop.op, src1, src2, instrs, var_def_idx, use_count, symbols,
-        )
-        if narrowed_signed is not None:
-            src1, src2 = narrowed_signed
-    new_op = _adjusted_op_for_jumpif(binop.op, jumpif)
-    return tac_ast.JumpIfCmp(
-        op=new_op, src1=src1, src2=src2, target=jumpif.target,
-    )
+    return FoldCmpZeroJump().run(fn, PassContext(symbols=symbols))
 
 
 def _adjusted_op_for_jumpif(
@@ -576,11 +549,3 @@ def _vars_used_in(instr: tac_ast.Type_instruction):
                     yield a.source
 
 
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
-
-
-class FoldCmpZeroJump(FixedpointPass):
-    name = "fold_cmp_zero_jump"
-
-    def run(self, fn, ctx):
-        return fold_cmp_zero_jump(fn, symbols=ctx.symbols)

@@ -76,8 +76,8 @@ import c99_ast
 import tac_ast
 from passes.optimization.var_visit import uses_in
 from passes.optimization.framework import (
-    DefUsePass, DefUseEnv, PostFixedpointPass, PassContext, MatchResult,
-    m_Store, m_Load, m_Var, m_Any, m_OneOf,
+    DefUsePass, DefUseEnv, Rewrite, PostFixedpointPass, PassContext,
+    MatchResult, m_Store, m_Load, m_Var, m_Any, m_OneOf,
 )
 
 
@@ -87,36 +87,26 @@ def recognize_indirect_indexed(
     """Walk `fn`'s instructions; for each foldable triple
     (`ZeroExtend; Binary(Add); Load|Store`), splice in an
     `IndirectIndexedLoad` / `IndirectIndexedStore` and drop the
-    three original instructions. Without `symbols`, the pass is a
-    no-op (we need symbol-table types to verify operand widths)."""
+    two intermediate def instructions. Without `symbols`, the pass
+    is a no-op (we need symbol-table types to verify operand widths)."""
     if symbols is None:
         return fn
-    use_counts = _count_uses(fn.instructions)
-    def_idx: dict[str, int] = {}
-    for i, instr in enumerate(fn.instructions):
-        for d in _defs(instr):
-            def_idx[d.name] = i
-    rewrites: dict[int, tac_ast.Type_instruction] = {}
-    dropped: set[int] = set()
-    for i, instr in enumerate(fn.instructions):
-        rewritten = _try_recognize(
-            instr, fn.instructions, def_idx, use_counts, symbols,
-        )
-        if rewritten is not None:
-            replacement, dropped_indices = rewritten
-            if dropped_indices & dropped:
-                continue
-            rewrites[i] = replacement
-            dropped.update(dropped_indices)
-    new_instrs: list[tac_ast.Type_instruction] = []
-    for i, instr in enumerate(fn.instructions):
-        if i in dropped:
-            continue
-        new_instrs.append(rewrites.get(i, instr))
-    return tac_ast.Function(
-        name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=new_instrs,
+    return _IMPL.run(
+        fn,
+        PassContext(ssa_dsts=_all_dsts(fn), symbols=symbols),
     )
+
+
+def _all_dsts(fn: tac_ast.Function) -> set[str]:
+    """Return the set of all Var dst names in `fn`. Used as ssa_dsts
+    when calling from the free function — the free function is invoked
+    from the PostFixedpointPass context where SSA has already been
+    constructed, so all temps are uniquely defined."""
+    out: set[str] = set()
+    for instr in fn.instructions:
+        if hasattr(instr, 'dst') and isinstance(instr.dst, tac_ast.Var):
+            out.add(instr.dst.name)
+    return out
 
 
 def _count_uses(
@@ -129,121 +119,11 @@ def _count_uses(
     return counts
 
 
-def _defs(instr: tac_ast.Type_instruction):
-    """Single-dst defs. Used to build a name → defining-instruction-
-    index map. Mirrors the analogous helper in
-    `recognize_indexed_store.py`."""
-    match instr:
-        case tac_ast.SignExtend(dst=d) | tac_ast.ZeroExtend(dst=d) \
-                | tac_ast.Truncate(dst=d) \
-                | tac_ast.IntToFloat(dst=d) | tac_ast.IntToDouble(dst=d) \
-                | tac_ast.FloatToInt(dst=d) | tac_ast.DoubleToInt(dst=d) \
-                | tac_ast.FloatToDouble(dst=d) | tac_ast.DoubleToFloat(dst=d) \
-                | tac_ast.Unary(dst=d) | tac_ast.Binary(dst=d) \
-                | tac_ast.Copy(dst=d) \
-                | tac_ast.GetAddress(dst=d) \
-                | tac_ast.Load(dst=d) \
-                | tac_ast.IndexedLoad(dst=d) \
-                | tac_ast.IndexedConstLoad(dst=d) \
-                | tac_ast.IndirectIndexedLoad(dst=d) \
-                | tac_ast.Phi(dst=d):
-            if isinstance(d, tac_ast.Var):
-                yield d
-        case tac_ast.FunctionCall(dst=d) | tac_ast.IndirectCall(dst=d):
-            if d is not None and isinstance(d, tac_ast.Var):
-                yield d
-
-
-def _try_recognize(
-    instr: tac_ast.Type_instruction,
-    all_instrs: list[tac_ast.Type_instruction],
-    def_idx: dict[str, int],
-    use_counts: Counter[str],
-    symbols,
-) -> tuple[tac_ast.Type_instruction, set[int]] | None:
-    """If `instr` is the foldable `Load`/`Store` head of an
-    eligible triple, return the IndirectIndexedLoad/Store
-    replacement plus the set of original-instruction indices to
-    drop. Otherwise None."""
-    if isinstance(instr, tac_ast.Load):
-        if not isinstance(instr.dst, tac_ast.Var):
-            return None
-        if not _is_1_byte_var(instr.dst, symbols):
-            return None
-        addr_val = instr.src_ptr
-        head_kind = "load"
-        head_value_for_check = instr.dst  # already verified 1-byte
-        head_is_volatile = instr.is_volatile
-    elif isinstance(instr, tac_ast.Store):
-        if not _is_1_byte_val(instr.src, symbols):
-            return None
-        addr_val = instr.dst_ptr
-        head_kind = "store"
-        head_value_for_check = instr.src
-        head_is_volatile = instr.is_volatile
-    else:
-        return None
-    if not isinstance(addr_val, tac_ast.Var):
-        return None
-    addr_name = addr_val.name
-    if use_counts.get(addr_name, 0) != 1:
-        return None
-    addr_def_idx = def_idx.get(addr_name)
-    if addr_def_idx is None:
-        return None
-    addr_def = all_instrs[addr_def_idx]
-    if not (
-        isinstance(addr_def, tac_ast.Binary)
-        and isinstance(addr_def.op, tac_ast.Add)
-    ):
-        return None
-    ptr_var, ext_var = _split_var_var(addr_def.src1, addr_def.src2, def_idx, all_instrs)
-    if ptr_var is None or ext_var is None:
-        return None
-    # Defer to `recognize_indexed_store` / `recognize_indexed_load`
-    # when the pointer-side Var transitively holds a Constant.
-    # Forcing the indirect-(zp),Y form here would lock in DPTR-
-    # staging-via-IndirectIndexed for what's really an absolute,X
-    # pattern, which IndexedStore lowers more cheaply
-    # (`STA $C,X` vs. `STA (DPTR),Y` plus the staging).
-    if _resolves_to_constant(ptr_var, def_idx, all_instrs):
-        return None
-    if use_counts.get(ext_var.name, 0) != 1:
-        return None
-    ext_def_idx = def_idx[ext_var.name]
-    ext_def = all_instrs[ext_def_idx]
-    # `_split_var_var` already verified that `ext_var` is defined
-    # by a ZeroExtend or SignExtend; pull the source. SignExtend is
-    # accepted under the same UB-permissive reasoning as in
-    # `recognize_indexed_load` — (zp),Y addressing observes only
-    # the index's low byte, and negative array indices are C99
-    # §6.5.6 undefined.
-    assert isinstance(ext_def, (tac_ast.ZeroExtend, tac_ast.SignExtend))
-    if not isinstance(ext_def.src, tac_ast.Var):
-        return None
-    idx_var = ext_def.src
-    if not _is_1_byte_var(idx_var, symbols):
-        return None
-    # Build the replacement. The collapsed instruction inherits
-    # the original Load/Store's `is_volatile` bit.
-    if head_kind == "load":
-        replacement: tac_ast.Type_instruction = tac_ast.IndirectIndexedLoad(
-            ptr=ptr_var, index=idx_var, dst=head_value_for_check,
-            is_volatile=head_is_volatile,
-        )
-    else:
-        replacement = tac_ast.IndirectIndexedStore(
-            ptr=ptr_var, index=idx_var, src=head_value_for_check,
-            is_volatile=head_is_volatile,
-        )
-    return (replacement, {addr_def_idx, ext_def_idx})
-
-
 def _split_var_var(
     a: tac_ast.Type_val,
     b: tac_ast.Type_val,
     def_idx: dict[str, int],
-    all_instrs: list[tac_ast.Type_instruction],
+    all_instrs: list,
 ) -> tuple[tac_ast.Var | None, tac_ast.Var | None]:
     """Given the two operands of the address-computing Add, return
     `(ptr_var, ext_var)` where `ext_var` is the side defined by a
@@ -261,7 +141,7 @@ def _split_var_var(
 def _defined_by_extend(
     v: tac_ast.Var,
     def_idx: dict[str, int],
-    all_instrs: list[tac_ast.Type_instruction],
+    all_instrs: list,
 ) -> bool:
     idx = def_idx.get(v.name)
     if idx is None:
@@ -274,7 +154,7 @@ def _defined_by_extend(
 def _resolves_to_constant(
     v: tac_ast.Var,
     def_idx: dict[str, int],
-    all_instrs: list[tac_ast.Type_instruction],
+    all_instrs: list,
 ) -> bool:
     """True iff `v`'s SSA def chain ends in a Constant. Follows
     `Copy` chains of arbitrary depth; gives up on non-Copy defs.
@@ -328,15 +208,10 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
     %ext) → Load/Store pattern. Uses the full def-idx so the use and
     its producers need not be index-adjacent.
 
-    This replaces only the use-site instruction. The two intermediate
-    defs (%addr Binary, %ext ZeroExtend) become dead and are cleaned
-    up by SSA-DCE on the next fixedpoint iteration. Because this pass
-    runs as a PostFixedpointPass (no subsequent DSE pass), the actual
-    RecognizeIndirectIndexed.run delegates to the free function
-    recognize_indirect_indexed instead, which drops all three
-    instructions atomically. This class is retained as the DefUsePass
-    model for non-PostFixedpoint contexts."""
-    name = "recognize_indirect_indexed_defuse"
+    Returns Rewrite(replacement, drop_defs=(addr_var, ext_var)) so the
+    two intermediate defs are dropped atomically in the same rebuild
+    pass — no subsequent DSE pass is needed to clean them up."""
+    name = "recognize_indirect_indexed"
     pattern = m_OneOf(
         m_Load(
             src_ptr=m_Var(capture='addr_var'),
@@ -396,7 +271,7 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             load_dst = m.bindings['load_dst']
             if not _is_1_byte_var(load_dst, ctx.symbols):
                 return None
-            return tac_ast.IndirectIndexedLoad(
+            replacement: tac_ast.Type_instruction = tac_ast.IndirectIndexedLoad(
                 ptr=ptr_var, index=idx_var, dst=load_dst,
                 is_volatile=m.bindings['load_instr'].is_volatile,
             )
@@ -404,24 +279,25 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             store_src = m.bindings['store_src']
             if not _is_1_byte_val(store_src, ctx.symbols):
                 return None
-            return tac_ast.IndirectIndexedStore(
+            replacement = tac_ast.IndirectIndexedStore(
                 ptr=ptr_var, index=idx_var, src=store_src,
                 is_volatile=m.bindings['store_instr'].is_volatile,
             )
+        # Drop the two intermediate defs (Binary(Add) and ZeroExtend)
+        # atomically — no subsequent DSE pass needed.
+        return Rewrite(replacement=replacement, drop_defs=(addr_var, ext_var))
 
 
 _IMPL = _RecognizeIndirectIndexedDefUse()
 
 
 class RecognizeIndirectIndexed(PostFixedpointPass):
-    """PostFixedpointPass wrapper. Delegates to the free function
-    recognize_indirect_indexed, which atomically replaces the Load/Store
-    use site AND drops the two now-dead def instructions (Binary(Add)
-    and ZeroExtend/SignExtend) in the same rebuild pass. This is
-    necessary because PostFixedpointPass runs after the fixedpoint loop,
-    so there is no subsequent DSE pass to clean up the dead intermediates
-    that DefUsePass would leave behind."""
+    """PostFixedpointPass wrapper. Delegates to _IMPL which uses
+    Rewrite.drop_defs to atomically drop the two dead intermediate
+    defs (Binary(Add) and ZeroExtend/SignExtend) in the same rebuild
+    pass. This is sound even in PostFixedpointPass context — there
+    is no need for a subsequent DSE pass."""
     name = "recognize_indirect_indexed"
 
     def run(self, fn, ctx):
-        return recognize_indirect_indexed(fn, symbols=ctx.symbols)
+        return _IMPL.run(fn, ctx)

@@ -57,23 +57,7 @@ def reduce_strength(
     — needed to construct typed zeros for the modulo-by-1 case and
     to detect the signedness of Var operands for unsigned-only
     rewrites (Divide, Modulo)."""
-    out: list[tac_ast.Type_instruction] = []
-    changed = False
-    for instr in fn.instructions:
-        replacement = _reduce(instr, symbols)
-        if replacement is None:
-            out.append(instr)
-            continue
-        changed = True
-        out.append(replacement)
-    if not changed:
-        return fn
-    return tac_ast.Function(
-        name=fn.name,
-        is_global=fn.is_global,
-        params=list(fn.params),
-        instructions=out,
-    )
+    return ReduceStrength().run(fn, PassContext(symbols=symbols))
 
 
 def _reduce(
@@ -312,11 +296,27 @@ _ZERO_FOR_VARIANT: dict[type, type] = {
 }
 
 
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
+from passes.optimization.framework import (  # noqa: E402
+    WindowPass, PassContext, MatchResult,
+    m_Any,
+)
 
 
-class ReduceStrength(FixedpointPass):
+class ReduceStrength(WindowPass):
+    """WindowPass(window_size=1): matches any instruction via m_Any;
+    rewrite dispatches to _reduce for the per-op strength-reduction
+    logic. Returns a 1-element replacement list on a successful
+    rewrite, or None to leave the instruction unchanged."""
     name = "reduce_strength"
+    window_size = 1
+    pattern = m_Any(capture='instr')
 
-    def run(self, fn, ctx):
-        return reduce_strength(fn, symbols=ctx.symbols)
+    def prepare(self, fn, ctx):
+        return ctx.symbols
+
+    def rewrite(self, m: MatchResult, symbols, ctx: PassContext) -> list | None:
+        instr = m.bindings['instr']
+        replacement = _reduce(instr, symbols)
+        if replacement is None:
+            return None
+        return [replacement]

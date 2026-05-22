@@ -93,6 +93,65 @@ from passes.optimization.cmp_zero_jump_fold import (
     _index_var_defs,
     _NARROW_UNSIGNED_TYPES,
 )
+from passes.optimization.framework import (
+    WindowPass, PassContext,
+    m_Binary, m_Var, m_OneOf, m_JumpIfTrue, m_JumpIfFalse, m_Specific,
+    MatchResult,
+)
+
+
+class FoldNarrowAndJump(WindowPass):
+    name = "fold_narrow_and_jump"
+    window_size = 2
+    pattern = [
+        m_Binary(
+            op=tac_ast.BitwiseAnd,
+            dst=m_Var(capture='and_dst'),
+            capture='binop',
+        ),
+        m_OneOf(
+            m_JumpIfTrue(condition=m_Specific('and_dst'), capture='jmp'),
+            m_JumpIfFalse(condition=m_Specific('and_dst'), capture='jmp'),
+        ),
+    ]
+
+    def prepare(self, fn, ctx):
+        """Return (use_count, var_def_idx, instructions) for the window
+        rewrite's backward ZeroExtend lookup."""
+        return (
+            _count_var_uses(fn),
+            _index_var_defs(fn),
+            fn.instructions,
+        )
+
+    def rewrite(self, m: MatchResult, prep, ctx: PassContext) -> list | None:
+        if ctx.symbols is None:
+            return None
+        use_count, var_def_idx, instrs = prep
+        binop = m.bindings['binop']
+        and_dst = m.bindings['and_dst']
+        jmp = m.bindings['jmp']
+
+        if use_count.get(and_dst.name, 0) != 1:
+            return None
+
+        # AND is commutative — try (narrow_arg, const_arg) in either order.
+        narrow_arg = _try_narrow_pair(
+            binop.src1, binop.src2, instrs, var_def_idx, use_count, ctx.symbols,
+        )
+        if narrow_arg is None:
+            narrow_arg = _try_narrow_pair(
+                binop.src2, binop.src1, instrs, var_def_idx, use_count, ctx.symbols,
+            )
+        if narrow_arg is None:
+            return None
+        narrow_val, mask = narrow_arg
+        return [tac_ast.JumpIfMasked(
+            val=narrow_val,
+            mask=mask,
+            jump_when_nonzero=isinstance(jmp, tac_ast.JumpIfTrue),
+            target=jmp.target,
+        )]
 
 
 def fold_narrow_and_jump(
@@ -108,78 +167,7 @@ def fold_narrow_and_jump(
     the narrowing path; without it the pass is a no-op."""
     if symbols is None:
         return fn
-    use_count = _count_var_uses(fn)
-    var_def_idx = _index_var_defs(fn)
-
-    new_instrs: list[tac_ast.Type_instruction] = []
-    skip_next = False
-    for i, instr in enumerate(fn.instructions):
-        if skip_next:
-            skip_next = False
-            continue
-        rewrite = _try_fold(
-            fn.instructions, i, use_count, var_def_idx, symbols,
-        )
-        if rewrite is None:
-            new_instrs.append(instr)
-            continue
-        new_instrs.append(rewrite)
-        skip_next = True
-    return tac_ast.Function(
-        name=fn.name,
-        is_global=fn.is_global,
-        params=list(fn.params),
-        instructions=new_instrs,
-    )
-
-
-def _try_fold(
-    instrs: list[tac_ast.Type_instruction],
-    i: int,
-    use_count: dict[str, int],
-    var_def_idx: dict[str, int],
-    symbols,
-) -> tac_ast.Type_instruction | None:
-    """Test whether `instrs[i:i+2]` matches the narrow-and-jump
-    pattern. Returns the rewritten `JumpIfMasked` or None."""
-    if i + 1 >= len(instrs):
-        return None
-    binop = instrs[i]
-    if not isinstance(binop, tac_ast.Binary):
-        return None
-    if not isinstance(binop.op, tac_ast.BitwiseAnd):
-        return None
-    if not isinstance(binop.dst, tac_ast.Var):
-        return None
-    jumpif = instrs[i + 1]
-    if not isinstance(jumpif, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse)):
-        return None
-    if not isinstance(jumpif.condition, tac_ast.Var):
-        return None
-    if jumpif.condition.name != binop.dst.name:
-        return None
-    if use_count.get(binop.dst.name, 0) != 1:
-        return None
-
-    # AND is commutative — try (narrow_arg, const_arg) in either
-    # order. Exactly one operand must be a Constant in 0..255; the
-    # other must trace through ZeroExtend to a 1-byte unsigned Var.
-    narrow_arg = _try_narrow_pair(
-        binop.src1, binop.src2, instrs, var_def_idx, use_count, symbols,
-    )
-    if narrow_arg is None:
-        narrow_arg = _try_narrow_pair(
-            binop.src2, binop.src1, instrs, var_def_idx, use_count, symbols,
-        )
-    if narrow_arg is None:
-        return None
-    narrow_val, mask = narrow_arg
-    return tac_ast.JumpIfMasked(
-        val=narrow_val,
-        mask=mask,
-        jump_when_nonzero=isinstance(jumpif, tac_ast.JumpIfTrue),
-        target=jumpif.target,
-    )
+    return FoldNarrowAndJump().run(fn, PassContext(symbols=symbols))
 
 
 def _try_narrow_pair(
@@ -226,13 +214,3 @@ def _try_narrow_pair(
     if not isinstance(sym.type, _NARROW_UNSIGNED_TYPES):
         return None
     return src, c.value
-
-
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
-
-
-class FoldNarrowAndJump(FixedpointPass):
-    name = "fold_narrow_and_jump"
-
-    def run(self, fn, ctx):
-        return fold_narrow_and_jump(fn, symbols=ctx.symbols)

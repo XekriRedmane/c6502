@@ -216,19 +216,53 @@ def _redirect_dst(
 
 
 from passes.optimization.framework import (  # noqa: E402
-    FixedpointPass, PostDestructionPass, PassContext,
+    WindowPass, FixedpointPass, PostDestructionPass, PassContext,
+    MatchResult, m_Copy, m_Var, m_Any,
 )
+
+
+class _FoldCopiesWindow(WindowPass):
+    """WindowPass implementation of copy folding.
+
+    Matches any instruction followed by `Copy(producer_dst, final_dst)`
+    where `producer_dst` is single-use. The producer check (whether the
+    instruction has a redirectable Var dst) is done in `rewrite` via
+    `_redirect_dst`, since the large set of eligible producer shapes is
+    most clearly expressed as a Python isinstance check."""
+    name = "fold_copies_window"
+    window_size = 2
+    pattern = [
+        m_Any(capture='producer'),
+        m_Copy(src=m_Var(capture='copy_src'), dst=m_Any(capture='final_dst')),
+    ]
+
+    def prepare(self, fn, ctx):
+        return _count_uses(fn.instructions)
+
+    def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
+        producer = m.bindings['producer']
+        copy_src = m.bindings['copy_src']
+        final_dst = m.bindings['final_dst']
+        if use_counts.get(copy_src.name, 0) != 1:
+            return None
+        fused = _redirect_dst(producer, copy_src.name, final_dst)
+        if fused is None:
+            return None
+        return [fused]
+
+
+_IMPL = _FoldCopiesWindow()
 
 
 class FoldCopiesInFixedpoint(FixedpointPass):
     name = "fold_copies_in_fixedpoint"
 
     def run(self, fn, ctx):
-        return fold_copies(fn)
+        return _IMPL.run(fn, ctx)
 
 
 class FoldCopiesPostDestruction(PostDestructionPass):
     name = "fold_copies_post_destruction"
 
     def run(self, fn, ctx):
-        return fold_copies(fn)
+        return _IMPL.run(fn, ctx)

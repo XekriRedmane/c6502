@@ -11,6 +11,7 @@ from passes.optimization.framework.phases import (
 from passes.optimization.framework.driver import PhaseDriver
 from passes.optimization.framework.window import WindowPass
 from passes.optimization.framework.defuse import DefUsePass, DefUseEnv, Rewrite
+from passes.optimization.framework.operand_rewrite import OperandRewritePass
 from passes.optimization.framework.patterns import (
     MatchResult,
     Pattern,
@@ -63,4 +64,5 @@ __all__ = [
     "m_Load",
     "m_OneOf",
     "m_Commutative",
+    "OperandRewritePass",
 ]

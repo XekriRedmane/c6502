@@ -575,6 +575,12 @@ def _rewrite_instr_uses(
 from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
 
 
+# This pass DOES NOT use SinkPass because its shape is different:
+# it duplicates the 4-instruction trio into each CFG successor with
+# fresh SSA names, not just moving a single instruction forward.
+# A base class general enough to cover both this and sink_increments
+# would have to expose CFG + renaming machinery to its subclasses,
+# which makes the abstraction over-general for a 2-pass corpus.
 class SinkAndPastBranch(FixedpointPass):
     name = "sink_and_past_branch"
 

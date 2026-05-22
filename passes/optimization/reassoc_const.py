@@ -303,6 +303,13 @@ from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E
 
 
 class ReassocConstants(FixedpointPass):
+    """Kept as raw FixedpointPass. A DefUsePass migration was attempted
+    but produces incorrect results: the lazy-drop design (inner defs left
+    for DSE) changes observable semantics when callers (tests + the
+    free-function API) expect the inner def to be eagerly dropped within
+    a single `reassoc_constants` call. The eager-drop two-pass approach
+    in `reassoc_constants` is inherently incompatible with DefUsePass's
+    single-instruction replacement contract."""
     name = "reassoc_constants"
 
     def run(self, fn, ctx):

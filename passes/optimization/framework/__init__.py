@@ -9,6 +9,24 @@ from passes.optimization.framework.phases import (
     ProgramPass,
 )
 from passes.optimization.framework.driver import PhaseDriver
+from passes.optimization.framework.window import WindowPass
+from passes.optimization.framework.patterns import (
+    MatchResult,
+    Pattern,
+    match,
+    m_Any,
+    m_Constant,
+    m_Var,
+    m_Specific,
+    m_Binary,
+    m_Unary,
+    m_Copy,
+    m_Cast,
+    m_JumpIfTrue,
+    m_JumpIfFalse,
+    m_OneOf,
+    m_Commutative,
+)
 
 __all__ = [
     "Pass",
@@ -21,4 +39,20 @@ __all__ = [
     "PostDestructionFixedpointPass",
     "ProgramPass",
     "PhaseDriver",
+    "WindowPass",
+    "MatchResult",
+    "Pattern",
+    "match",
+    "m_Any",
+    "m_Constant",
+    "m_Var",
+    "m_Specific",
+    "m_Binary",
+    "m_Unary",
+    "m_Copy",
+    "m_Cast",
+    "m_JumpIfTrue",
+    "m_JumpIfFalse",
+    "m_OneOf",
+    "m_Commutative",
 ]

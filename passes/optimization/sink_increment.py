@@ -125,6 +125,11 @@ from __future__ import annotations
 
 import tac_ast
 from passes.optimization.var_visit import defs_in, uses_in
+from passes.optimization.framework import (
+    SinkPass, PassContext,
+    m_Binary, m_Var, m_Constant,
+)
+from passes.optimization.framework.patterns import MatchResult
 
 
 # Instructions whose presence ends a "basic-block segment" for the
@@ -142,50 +147,6 @@ _BLOCK_TERMINATORS: tuple[type, ...] = (
     tac_ast.FunctionCall,
     tac_ast.IndirectCall,
 )
-
-
-def sink_increments(fn: tac_ast.Function) -> tac_ast.Function:
-    """Walk `fn.instructions` and move sinkable `Binary(Add |
-    Subtract, X, Constant, Y)` instructions past X's last use
-    within the enclosing block segment. Returns the rewritten
-    function. SSA-form input expected; the move preserves the
-    one-def-per-name invariant since we don't change the def
-    location of any name other than Y (and Y still has only
-    one def, just at a different position)."""
-    instrs = list(fn.instructions)
-    out: list[tac_ast.Type_instruction] = []
-    i = 0
-    n = len(instrs)
-    while i < n:
-        instr = instrs[i]
-        # Identify the candidate Binary; if not a candidate, copy
-        # through.
-        cand = _sink_candidate(instr)
-        if cand is None:
-            out.append(instr)
-            i += 1
-            continue
-        x_name, y_name = cand
-        # Find X's last use within the current block segment, and
-        # verify no intervening Y-read.
-        offset = _find_sink_offset(instrs, i, x_name, y_name)
-        if offset is None:
-            # No legal move; keep the Binary in place.
-            out.append(instr)
-            i += 1
-            continue
-        # Move: emit instructions[i+1 .. i+1+offset] then the
-        # Binary, advancing i past all of them.
-        for k in range(1, offset + 1):
-            out.append(instrs[i + k])
-        out.append(instr)
-        i += offset + 1
-    return tac_ast.Function(
-        name=fn.name,
-        is_global=fn.is_global,
-        params=list(fn.params),
-        instructions=out,
-    )
 
 
 def _sink_candidate(
@@ -270,11 +231,38 @@ def _find_sink_offset(
     return last_x_use_offset
 
 
-from passes.optimization.framework import FixedpointPass, PassContext  # noqa: E402
-
-
-class SinkIncrements(FixedpointPass):
+class SinkIncrements(SinkPass):
     name = "sink_increments"
+    pattern = m_Binary(
+        op=(tac_ast.Add, tac_ast.Subtract),
+        src1=m_Var(capture='x'),
+        src2=m_Constant(capture='c'),
+        dst=m_Var(capture='y'),
+    )
 
-    def run(self, fn, ctx):
-        return sink_increments(fn)
+    def find_target(
+        self, m: MatchResult, instrs: list, src_idx: int, prep, ctx: PassContext,
+    ) -> int | None:
+        x = m.bindings['x']
+        y = m.bindings['y']
+        if x.name == y.name:
+            return None
+        offset = _find_sink_offset(instrs, src_idx, x.name, y.name)
+        if offset is None:
+            return None
+        # offset >= 1 always (j starts at src_idx+1 in _find_sink_offset).
+        # target = src_idx + offset means the Binary ends up after
+        # instrs[src_idx + offset], which is X's last use — matching
+        # the original sink_increments behaviour exactly.
+        return src_idx + offset
+
+
+def sink_increments(fn: tac_ast.Function) -> tac_ast.Function:
+    """Walk `fn.instructions` and move sinkable `Binary(Add |
+    Subtract, X, Constant, Y)` instructions past X's last use
+    within the enclosing block segment. Returns the rewritten
+    function. SSA-form input expected; the move preserves the
+    one-def-per-name invariant since we don't change the def
+    location of any name other than Y (and Y still has only
+    one def, just at a different position)."""
+    return SinkIncrements().run(fn, PassContext())

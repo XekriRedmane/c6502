@@ -44,23 +44,11 @@ from c99_to_tac import _tac_const_for
 from passes.type_checking import (
     AddressInit, Initial, StaticAttr, SymbolTable,
 )
-
-
-def fold_static_const_reads(
-    fn: tac_ast.Function, symbols: SymbolTable,
-) -> tac_ast.Function:
-    """Walk `fn`'s instructions, replace `Var(name)` USE operands
-    with `Constant(value)` where `name` is a foldable scalar const
-    static (per the module docstring's eligibility rules). Returns
-    a new Function; doesn't mutate the input."""
-    cache = _build_cache(symbols)
-    if not cache:
-        return fn
-    new_instrs = [_rewrite_instr(i, cache) for i in fn.instructions]
-    return tac_ast.Function(
-        name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=new_instrs,
-    )
+from passes.optimization.framework import (
+    OperandRewritePass, PreFixedpointPass, PassContext,
+    m_Var,
+)
+from passes.optimization.framework.patterns import MatchResult
 
 
 def _build_cache(
@@ -121,113 +109,35 @@ def _scalar_type(t):
     return None
 
 
-def _rewrite_instr(
-    instr: tac_ast.Type_instruction,
-    cache: dict[str, tac_ast.Constant],
-) -> tac_ast.Type_instruction:
-    """Rewrite USE-position Var operands in `instr` to their
-    cached Constant. DEF-position operands and operand fields that
-    aren't Var values (e.g. `IndexedLoad.name`) are left alone."""
+class _FoldStaticConstReadsImpl(OperandRewritePass):
+    name = "fold_static_const_reads"
+    operand_pattern = m_Var(capture='var')
 
-    def sub(v: tac_ast.Type_val) -> tac_ast.Type_val:
-        if isinstance(v, tac_ast.Var) and v.name in cache:
-            return cache[v.name]
-        return v
+    def prepare(self, fn, ctx):
+        if ctx.symbols is None:
+            return {}
+        return _build_cache(ctx.symbols)
 
-    match instr:
-        case tac_ast.Ret(val=v) if v is not None:
-            return tac_ast.Ret(val=sub(v))
-        case tac_ast.SignExtend(src=s, dst=d):
-            return tac_ast.SignExtend(src=sub(s), dst=d)
-        case tac_ast.ZeroExtend(src=s, dst=d):
-            return tac_ast.ZeroExtend(src=sub(s), dst=d)
-        case tac_ast.Truncate(src=s, dst=d):
-            return tac_ast.Truncate(src=sub(s), dst=d)
-        case tac_ast.IntToFloat(src=s, dst=d):
-            return tac_ast.IntToFloat(src=sub(s), dst=d)
-        case tac_ast.IntToDouble(src=s, dst=d):
-            return tac_ast.IntToDouble(src=sub(s), dst=d)
-        case tac_ast.FloatToInt(src=s, dst=d):
-            return tac_ast.FloatToInt(src=sub(s), dst=d)
-        case tac_ast.DoubleToInt(src=s, dst=d):
-            return tac_ast.DoubleToInt(src=sub(s), dst=d)
-        case tac_ast.FloatToDouble(src=s, dst=d):
-            return tac_ast.FloatToDouble(src=sub(s), dst=d)
-        case tac_ast.DoubleToFloat(src=s, dst=d):
-            return tac_ast.DoubleToFloat(src=sub(s), dst=d)
-        case tac_ast.GetAddress(operand=o, dst=d):
-            # GetAddress.operand names a storage cell (its address
-            # is what we want); folding its value would be wrong.
-            return instr
-        case tac_ast.Load(src_ptr=p, dst=d, is_volatile=v):
-            return tac_ast.Load(src_ptr=sub(p), dst=d, is_volatile=v)
-        case tac_ast.Store(src=s, dst_ptr=p, is_volatile=v):
-            return tac_ast.Store(
-                src=sub(s), dst_ptr=sub(p), is_volatile=v,
-            )
-        case tac_ast.IndexedLoad(name=n, index=idx, dst=d, is_volatile=v):
-            # IndexedLoad.name is the array's symbol identifier, not
-            # a value — leave it alone. Only the index is a USE.
-            return tac_ast.IndexedLoad(
-                name=n, index=sub(idx), dst=d, is_volatile=v,
-            )
-        case tac_ast.IndexedStore(address=a, index=idx, src=s, is_volatile=v):
-            return tac_ast.IndexedStore(
-                address=a, index=sub(idx), src=sub(s), is_volatile=v,
-            )
-        case tac_ast.IndexedSymbolStore(name=n, index=idx, src=s, is_volatile=v):
-            return tac_ast.IndexedSymbolStore(
-                name=n, index=sub(idx), src=sub(s), is_volatile=v,
-            )
-        case tac_ast.Unary(op=op, src=s, dst=d):
-            return tac_ast.Unary(op=op, src=sub(s), dst=d)
-        case tac_ast.Binary(op=op, src1=s1, src2=s2, dst=d):
-            return tac_ast.Binary(
-                op=op, src1=sub(s1), src2=sub(s2), dst=d,
-            )
-        case tac_ast.Copy(src=s, dst=d):
-            return tac_ast.Copy(src=sub(s), dst=d)
-        case tac_ast.JumpIfTrue(condition=c, target=t):
-            return tac_ast.JumpIfTrue(condition=sub(c), target=t)
-        case tac_ast.JumpIfFalse(condition=c, target=t):
-            return tac_ast.JumpIfFalse(condition=sub(c), target=t)
-        case tac_ast.JumpIfCmp(op=op, src1=s1, src2=s2, target=t):
-            return tac_ast.JumpIfCmp(
-                op=op, src1=sub(s1), src2=sub(s2), target=t,
-            )
-        case tac_ast.JumpIfMasked(
-            val=v, mask=m, jump_when_nonzero=jnz, target=t,
-        ):
-            return tac_ast.JumpIfMasked(
-                val=sub(v), mask=m,
-                jump_when_nonzero=jnz, target=t,
-            )
-        case tac_ast.FunctionCall(name=n, args=args, dst=d):
-            return tac_ast.FunctionCall(
-                name=n, args=[sub(a) for a in args], dst=d,
-            )
-        case tac_ast.IndirectCall(ptr=p, args=args, dst=d):
-            return tac_ast.IndirectCall(
-                ptr=sub(p), args=[sub(a) for a in args], dst=d,
-            )
-        case tac_ast.Phi(dst=d, args=args):
-            return tac_ast.Phi(
-                dst=d,
-                args=[
-                    tac_ast.PhiArg(
-                        pred_label=a.pred_label, source=sub(a.source),
-                    )
-                    for a in args
-                ],
-            )
-    return instr
+    def rewrite_operand(self, m: MatchResult, cache, ctx: PassContext):
+        var = m.bindings['var']
+        return cache.get(var.name)  # Constant or None
 
 
-from passes.optimization.framework import PreFixedpointPass, PassContext  # noqa: E402
+_IMPL = _FoldStaticConstReadsImpl()
+
+
+def fold_static_const_reads(
+    fn: tac_ast.Function, symbols: SymbolTable,
+) -> tac_ast.Function:
+    """Walk `fn`'s instructions, replace `Var(name)` USE operands
+    with `Constant(value)` where `name` is a foldable scalar const
+    static (per the module docstring's eligibility rules). Returns
+    a new Function; doesn't mutate the input."""
+    return _IMPL.run(fn, PassContext(symbols=symbols))
 
 
 class FoldStaticConstReads(PreFixedpointPass):
     name = "fold_static_const_reads"
 
     def run(self, fn, ctx):
-        return fold_static_const_reads(fn, ctx.symbols)
+        return _IMPL.run(fn, ctx)

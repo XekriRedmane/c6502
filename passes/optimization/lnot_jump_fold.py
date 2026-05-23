@@ -57,6 +57,8 @@ loop handles in subsequent rounds.
 """
 from __future__ import annotations
 
+from typing import Iterable
+
 import tac_ast
 from passes.optimization.framework import (
     WindowPass, PassContext,
@@ -65,7 +67,7 @@ from passes.optimization.framework import (
 )
 
 
-class FoldLnotJump(WindowPass):
+class FoldLnotJump(WindowPass[dict[str, int]]):
     name = "fold_lnot_jump"
     window_size = 2
     pattern = [
@@ -80,15 +82,23 @@ class FoldLnotJump(WindowPass):
         ),
     ]
 
-    def prepare(self, fn, ctx):
+    def prepare(self, fn: tac_ast.Function, ctx: PassContext) -> dict[str, int]:
         return _count_var_uses(fn)
 
-    def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
+    def rewrite(
+        self,
+        m: MatchResult,
+        prep: dict[str, int],
+        ctx: PassContext,
+    ) -> list[tac_ast.Type_instruction] | None:
         not_dst = m.bindings['not_dst']
-        if use_counts.get(not_dst.name, 0) != 1:
+        assert isinstance(not_dst, tac_ast.Var)
+        if prep.get(not_dst.name, 0) != 1:
             return None
         jmp = m.bindings['jmp']
+        assert isinstance(jmp, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse))
         src = m.bindings['src']
+        assert isinstance(src, tac_ast.Type_val)
         cls = (
             tac_ast.JumpIfFalse
             if isinstance(jmp, tac_ast.JumpIfTrue)
@@ -100,7 +110,7 @@ class FoldLnotJump(WindowPass):
 def fold_lnot_jump(
     fn: tac_ast.Function,
     *,
-    symbols=None,
+    symbols: object | None = None,
 ) -> tac_ast.Function:
     """Walk `fn.instructions`, find adjacent `Unary(LogicalNot, ...);
     JumpIfTrue/False` pairs with single-use `%t`, and replace the
@@ -121,7 +131,9 @@ def _count_var_uses(fn: tac_ast.Function) -> dict[str, int]:
     return out
 
 
-def _vars_used_in(instr: tac_ast.Type_instruction):
+def _vars_used_in(
+    instr: tac_ast.Type_instruction,
+) -> Iterable[tac_ast.Var]:
     """Yield every Var read by `instr`. Mirrors the use-site set in
     cmp_zero_jump_fold._vars_used_in."""
     match instr:

@@ -40,14 +40,17 @@ the function is structurally unchanged.
 """
 from __future__ import annotations
 import abc
-from typing import ClassVar, Sequence
+from typing import ClassVar, Generic, Sequence, TypeVar
 import tac_ast
 from passes.optimization.framework.base import PassContext
 from passes.optimization.framework.phases import FixedpointPass
 from passes.optimization.framework.patterns import MatchResult, Pattern
 
 
-class WindowPass(FixedpointPass):
+PrepT = TypeVar("PrepT")
+
+
+class WindowPass(FixedpointPass, Generic[PrepT]):
     """Adjacency-based peephole base. Subclass declares:
 
       - window_size: ClassVar[int] — number of consecutive instructions
@@ -75,15 +78,17 @@ class WindowPass(FixedpointPass):
     same pass (the outer fixedpoint handles re-iteration).
     """
     window_size: ClassVar[int] = 1
-    pattern: ClassVar
+    pattern: ClassVar[Pattern | Sequence[Pattern]]
 
-    def prepare(self, fn, ctx):
-        return None
+    def prepare(self, fn: tac_ast.Function, ctx: PassContext) -> PrepT:
+        return None  # type: ignore[return-value]
 
     @abc.abstractmethod
-    def rewrite(self, m: MatchResult, prep, ctx: PassContext) -> list | None: ...
+    def rewrite(
+        self, m: MatchResult, prep: PrepT, ctx: PassContext,
+    ) -> list[tac_ast.Type_instruction] | None: ...
 
-    def run(self, fn, ctx):
+    def run(self, fn: tac_ast.Function, ctx: PassContext) -> tac_ast.Function:
         prep = self.prepare(fn, ctx)
         instrs = fn.instructions
         N = len(instrs)

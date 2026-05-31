@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three recognizers, one walk-back</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); background: var(--good-bg); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#chain">The chain all three match</a></li>
+      <li><a href="#twins">The twin you inherit</a></li>
+      <li><a href="#core">One walk-back</a></li>
+      <li><a href="#split">Unifying the split</a></li>
+      <li><a href="#boundary">Not a RuleSet job</a></li>
+      <li><a href="#drops">Eager drops, one contract</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #027</p>
+    <h1>Three recognizers, one walk-back</h1>
+    <p class="subtitle">Setting out to dedup three near-identical addressing-mode recognizers, I found each carried not one implementation but two — frozen at three different stages of a migration nobody finished.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Subject</strong> recognizer consolidation</span>
+      <span><strong>New</strong> <code>extend_add_chain.py</code></span>
+      <span><strong>Net</strong> −226 lines</span>
+    </div>
+
+    <section id="chain">
+    <h2>The chain all three match</h2>
+
+    <p>c6502 has three TAC passes that turn pointer-arithmetic-plus-load/store into a single 6502 addressing mode. They all key off the same upstream shape. After the front end lowers <code>arr[i]</code> for a 1-byte index, you get a three-instruction chain:</p>
+
+<pre><code>%ext  := ZeroExtend|SignExtend(idx_var)     <span class="asm-comment"># 1-byte idx promoted to int</span>
+%addr := Binary(Add, base, %ext)             <span class="asm-comment"># pointer arithmetic</span>
+Load(%addr, dst)  /  Store(src, %addr)
+</code></pre>
+
+    <p>What <code>base</code> is decides the addressing mode:</p>
+
+    <table class="cmp">
+      <tr><th>Pass</th><th><code>base</code></th><th>Emits</th><th>6502</th></tr>
+      <tr><td><code>recognize_indexed_load</code></td><td>Constant</td><td><code>IndexedConstLoad</code></td><td><code>LDA $C,X</code></td></tr>
+      <tr><td><code>recognize_indexed_store</code></td><td>Constant</td><td><code>IndexedStore</code></td><td><code>STA $C,X</code></td></tr>
+      <tr><td><code>recognize_indirect_indexed</code></td><td>pointer Var</td><td><code>IndirectIndexed*</code></td><td><code>LDA ($zp),Y</code></td></tr>
+    </table>
+
+    <p>The walk-back from the Load/Store to the extend — <code>%addr → Binary(Add) → %ext → ZeroExtend</code> — plus the soundness gates (the temps must be single-use, SSA-renamed; the index must be a 1-byte type) is line-for-line identical across all three. That's the duplication I went in to remove.</p>
+
+    </section>
+
+    <section id="twins">
+    <h2>The twin you inherit</h2>
+
+    <p>Opening the files, the duplication was worse than three-way — because each pass contained <em>two</em> implementations of itself.</p>
+
+    <p>There was an older, loop-based free function (<code>recognize_indexed_load(fn, symbols=…)</code>) that scanned the instruction list, called a <code>_try_recognize</code> helper, and rebuilt the list dropping the matched defs. And there was a newer <code>DefUsePass</code> subclass — the framework base for SSA def-use-chain peepholes — that did the same recognition through <code>env.def_of(var)</code> walk-backs. The pipeline used the class. The free function was the fossil.</p>
+
+    <p>The interesting part: the fossil was at a different stage of decay in each file.</p>
+
+    <div class="callout">
+      <div class="tag">Three states of one migration</div>
+      <p><strong>load</strong> — free function fully <em>dead</em>: nothing called it, not even a test.<br>
+      <strong>store</strong> — free function <em>test-only</em>: the unit tests still drove <code>_try_recognize</code>, while the pipeline drove the class.<br>
+      <strong>indirect</strong> — already <em>converged</em>: the free function was a one-line wrapper delegating to the class.</p>
+    </div>
+
+    <p>This is what a half-finished migration looks like once it's been sitting long enough that the surrounding code moved on. The <code>indirect</code> pass shows where the other two were headed; <code>store</code> shows why it stalled (its tests pinned the old path); <code>load</code> shows the cost of stopping (a dead 90-line function nobody noticed). A grep for "duplication" would have flagged the three-way overlap. It would <em>not</em> have flagged that each file's two copies needed to be collapsed to one before the cross-file dedup even made sense.</p>
+
+    </section>
+
+    <section id="core">
+    <h2>One walk-back</h2>
+
+    <p>The consolidation is a shared module, <code>extend_add_chain.py</code>, with a single recognizer:</p>
+
+<pre><code>def recognize_extend_add_chain(addr_var, env, ctx) -> ExtendAddChain | None:
+    # symbols present; addr_var SSA-renamed and single-use
+    binary = env.def_of(addr_var)
+    if not (isinstance(binary, Binary) and isinstance(binary.op, Add)):
+        return None
+    base, ext_var = _split_extend_operand(binary.src1, binary.src2, env)
+    # ext_var SSA-renamed and single-use; its def is an extend
+    ext = env.def_of(ext_var)
+    idx_var = ext.src
+    if not is_1_byte_var(idx_var, ctx.symbols):
+        return None
+    return ExtendAddChain(base=base, idx_var=idx_var,
+                          addr_var=addr_var, ext_var=ext_var)
+</code></pre>
+
+    <p>Each pass shrinks to: call the helper, post-check <code>base</code>'s kind, emit its node. The load pass, in full:</p>
+
+<pre><code>chain = recognize_extend_add_chain(m.bindings['addr_var'], env, ctx)
+if chain is None or not isinstance(chain.base, Constant):
+    return None
+addr_value = chain.base.const.value
+if not (0 <= addr_value <= 0xFF00):          <span class="asm-comment"># C+255 ≤ $FFFF</span>
+    return None
+return Rewrite(
+    replacement=IndexedConstLoad(address=addr_value, index=chain.idx_var,
+                                 dst=load_dst, ...),
+    drop_defs=(chain.addr_var, chain.ext_var),
+)
+</code></pre>
+
+    <p>The three byte-width predicates (<code>is_1_byte_var</code>, <code>is_1_byte_val</code>) that had been copy-pasted into all three files moved into the same module. They had already drifted once before — a recurring hazard worth its own treatment — so a single home matters.</p>
+
+    </section>
+
+    <section id="split">
+    <h2>Unifying the split</h2>
+
+    <p>The one genuine divergence was how each pass pulled the two Add operands apart. The absolute,X recognizers used a <code>_split_const_var</code> (one operand is the Constant base, the other is <code>%ext</code>). The indirect recognizer used <code>_split_var_var</code> (both operands are Vars; the one defined by an extend is <code>%ext</code>, the other is the pointer).</p>
+
+    <p>Both collapse into one rule once you state it right: <strong>of the Add's two operands, the one whose def is an extend is <code>%ext</code>; the other is <code>base</code>.</strong></p>
+
+<pre><code>def _split_extend_operand(a, b, env):
+    if _defined_by_extend(b, env): return a, b
+    if _defined_by_extend(a, env): return b, a
+    return a, None
+</code></pre>
+
+    <p>For the const case, <code>base</code> comes back a Constant; for the indirect case, a pointer Var. The caller's <code>isinstance(chain.base, …)</code> post-check is what was previously baked into the two different splitters. The const recognizers reject a Var base (defers to nothing — it just doesn't fold); the indirect one rejects a Constant base (that's the absolute,X case, already handled upstream). Same outcomes, one splitter.</p>
+
+    </section>
+
+    <section id="boundary">
+    <h2>Not a RuleSet job</h2>
+
+    <p>The previous two consolidations in this codebase merged passes onto a table-based <code>RuleSet</code> — a list of <code>(pattern, guard, build)</code> rules applied over an instruction window. The obvious question was whether the recognizers should go there too. They shouldn't, and the reason draws the boundary cleanly.</p>
+
+    <blockquote><code>RuleSet</code> matches an adjacency window — N consecutive instructions. The recognizers don't. They match one use site and then walk <em>backward through the SSA def-chain</em>, which can span arbitrary distance.</blockquote>
+
+    <p>That backward walk is exactly what the <code>DefUsePass</code> base exists for: it hands the rewrite an <code>env.def_of(var)</code> and an atomic <code>Rewrite(drop_defs=…)</code>. Forcing the recognizers onto <code>RuleSet</code> would mean teaching <code>RuleSet</code> about def-chain walks and eager def-dropping — reinventing <code>DefUsePass</code> inside it. The right consolidation for a family of def-chain walks isn't a shared <em>base class</em>; it's a shared <em>recognition function</em> they all call. Same instinct as the table-merge, one rung lower: extract the common procedure, leave the framework base alone.</p>
+
+    </section>
+
+    <section id="drops">
+    <h2>Eager drops, one contract</h2>
+
+    <p>Unifying surfaced a behavioral inconsistency. The indirect pass returned <code>Rewrite(drop_defs=(addr, ext))</code> — dropping the two now-dead intermediate instructions in the same rebuild. The absolute,X classes returned a bare replacement and left the dead defs for a later dead-store-elimination sweep.</p>
+
+    <p>Both converge to the same fixed point, so in the pipeline it never mattered. But the <code>store</code> unit tests asserted the three instructions collapse to exactly <em>one</em> — which only holds if the drop is eager. That assertion was quietly testing the old <code>_try_recognize</code> path's immediate-drop behavior. Pointing the free function at the class meant the class had to drop eagerly too. So all three now return <code>Rewrite(drop_defs=…)</code>: one drop contract, and the test that used to pin a dead code path now pins the live one.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p>The dedup itself was unremarkable — extract a function, call it from three places, delete the copies. Net −226 lines, every test green, generated assembly byte-identical. The lesson was upstream of that.</p>
+
+    <ul>
+      <li><strong>Duplication in a migrating codebase hides as half-finished transitions.</strong> Before deduping across files, check whether each file has already been deduped <em>within</em> itself — a live implementation and a fossil of the previous one.</li>
+      <li><strong>A test that drives a dead path is a tripwire.</strong> The <code>store</code> tests looked like they exercised the pass; they exercised its fossil. Redirecting them to the live class was the real fix, and it forced the drop-contract unification that made the three passes genuinely uniform.</li>
+      <li><strong>Match the consolidation to the shape.</strong> Drifted helper copies want a canonical home; parallel window-passes want a table; a family of def-chain walks wants a shared recognition function on the base they already share. Three different shapes, three different tools — reaching for the wrong one is how a framework grows a second job.</li>
+    </ul>
+
+    <blockquote>The fossil shows you where the code was going. Finishing the trip is usually the cheapest cleanup on the table.</blockquote>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

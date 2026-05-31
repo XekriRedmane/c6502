@@ -87,15 +87,13 @@ Constant), and SSA-DCE (which collects the orphaned chain).
 """
 from __future__ import annotations
 
-from collections import Counter
-
 import c99_ast
 import tac_ast
 from passes.optimization.framework import (
     DefUsePass, DefUseEnv, PassContext, MatchResult, Rewrite,
     m_Cast, m_Var,
 )
-from passes.optimization.var_visit import uses_in
+from passes.optimization.var_visit import count_uses
 
 
 # Wraparound-safe ops: the low n bytes of op(W(a), W(b)) depend only
@@ -108,14 +106,6 @@ _SAFE_OPS = (
     tac_ast.BitwiseOr,
     tac_ast.BitwiseXor,
 )
-
-
-def _count_uses(instrs) -> Counter[str]:
-    counts: Counter[str] = Counter()
-    for instr in instrs:
-        for v in uses_in(instr):
-            counts[v.name] += 1
-    return counts
 
 
 class NarrowWidenedArith(DefUsePass):
@@ -136,7 +126,7 @@ class NarrowWidenedArith(DefUsePass):
     )
 
     def prepare_extra(self, fn, ctx):
-        return _count_uses(fn.instructions)
+        return count_uses(fn.instructions)
 
     def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         if ctx.ssa_dsts is None or ctx.symbols is None:

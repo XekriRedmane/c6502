@@ -88,70 +88,53 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
-from passes.optimization.cmp_zero_jump_fold import (
-    _count_var_uses,
-    _index_var_defs,
-    _NARROW_UNSIGNED_TYPES,
-)
+from passes.optimization.cmp_zero_jump_fold import _NARROW_UNSIGNED_TYPES
 from passes.optimization.framework import (
-    WindowPass, PassContext,
-    m_Binary, m_Var, m_OneOf, m_JumpIfTrue, m_JumpIfFalse, m_Specific,
-    MatchResult,
+    RuleSet, Rule, producer_then_jump, single_use, have_symbols,
+    PassContext, MatchResult, RuleEnv,
+    m_Binary, m_Var,
 )
 
 
-class FoldNarrowAndJump(WindowPass):
-    name = "fold_narrow_and_jump"
-    window_size = 2
-    pattern = [
-        m_Binary(
-            op=tac_ast.BitwiseAnd,
-            dst=m_Var(capture='and_dst'),
-            capture='binop',
-        ),
-        m_OneOf(
-            m_JumpIfTrue(condition=m_Specific('and_dst'), capture='jmp'),
-            m_JumpIfFalse(condition=m_Specific('and_dst'), capture='jmp'),
-        ),
-    ]
+def _build_narrow_and_jump(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """Fold `Binary(BitwiseAnd, ...); JumpIf{True,False}(%res, T)` to a
+    single `JumpIfMasked` when one operand traces back (through a
+    ZeroExtend) to a 1-byte unsigned value and the other is an integer
+    constant fitting in 0..255. AND is commutative, so try both
+    operand orders."""
+    use_count, var_def_idx, instrs = env.use_count, env.def_idx, env.instructions
+    binop = m.bindings['binop']
+    jmp = m.bindings['jmp']
 
-    def prepare(self, fn, ctx):
-        """Return (use_count, var_def_idx, instructions) for the window
-        rewrite's backward ZeroExtend lookup."""
-        return (
-            _count_var_uses(fn),
-            _index_var_defs(fn),
-            fn.instructions,
-        )
-
-    def rewrite(self, m: MatchResult, prep, ctx: PassContext) -> list | None:
-        if ctx.symbols is None:
-            return None
-        use_count, var_def_idx, instrs = prep
-        binop = m.bindings['binop']
-        and_dst = m.bindings['and_dst']
-        jmp = m.bindings['jmp']
-
-        if use_count.get(and_dst.name, 0) != 1:
-            return None
-
-        # AND is commutative — try (narrow_arg, const_arg) in either order.
+    narrow_arg = _try_narrow_pair(
+        binop.src1, binop.src2, instrs, var_def_idx, use_count, ctx.symbols,
+    )
+    if narrow_arg is None:
         narrow_arg = _try_narrow_pair(
-            binop.src1, binop.src2, instrs, var_def_idx, use_count, ctx.symbols,
+            binop.src2, binop.src1, instrs, var_def_idx, use_count, ctx.symbols,
         )
-        if narrow_arg is None:
-            narrow_arg = _try_narrow_pair(
-                binop.src2, binop.src1, instrs, var_def_idx, use_count, ctx.symbols,
-            )
-        if narrow_arg is None:
-            return None
-        narrow_val, mask = narrow_arg
-        return [tac_ast.JumpIfMasked(
-            val=narrow_val,
-            mask=mask,
-            jump_when_nonzero=isinstance(jmp, tac_ast.JumpIfTrue),
-            target=jmp.target,
-        )]
+    if narrow_arg is None:
+        return None
+    narrow_val, mask = narrow_arg
+    return [tac_ast.JumpIfMasked(
+        val=narrow_val,
+        mask=mask,
+        jump_when_nonzero=isinstance(jmp, tac_ast.JumpIfTrue),
+        target=jmp.target,
+    )]
+
+
+AND_ZERO_RULE = Rule(
+    name="fold_narrow_and_jump",
+    pattern=producer_then_jump(
+        m_Binary(op=tac_ast.BitwiseAnd, dst=m_Var(capture='and_dst'), capture='binop'),
+        on='and_dst',
+    ),
+    where=[single_use('and_dst'), have_symbols()],
+    build=_build_narrow_and_jump,
+)
 
 
 def fold_narrow_and_jump(
@@ -167,7 +150,7 @@ def fold_narrow_and_jump(
     the narrowing path; without it the pass is a no-op."""
     if symbols is None:
         return fn
-    return FoldNarrowAndJump().run(fn, PassContext(symbols=symbols))
+    return RuleSet(AND_ZERO_RULE).run(fn, PassContext(symbols=symbols))
 
 
 def _try_narrow_pair(

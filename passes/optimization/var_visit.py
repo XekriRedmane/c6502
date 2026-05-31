@@ -14,6 +14,8 @@ interference graph construction, and dead-store elimination:
                          special-cases Phis to handle them as
                          per-edge predecessor uses instead.
   * `defs_in(instr)`  — Var operands that are WRITTEN.
+  * `count_uses(instrs)` — Counter of USE-position Var names across an
+                         instruction sequence (built on `uses_in`).
 
 These helpers are intentionally signature-stable and SSA-agnostic —
 both SSA-form and non-SSA-form TAC pass through unchanged.
@@ -21,6 +23,7 @@ both SSA-form and non-SSA-form TAC pass through unchanged.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Callable, Iterable
 
 import tac_ast
@@ -398,3 +401,17 @@ def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
                 if isinstance(a.source, tac_ast.Var):
                     out.append(a.source)
     return out
+
+
+def count_uses(
+    instrs: Iterable[tac_ast.Type_instruction],
+) -> Counter[str]:
+    """Count how many times each Var name appears in a USE position
+    (per `uses_in`) across `instrs`. Returns a Counter, so an absent
+    name reads as 0 — usable both as a single-use gate
+    (`counts[name] == 1`) and a `.get`-style lookup."""
+    counts: Counter[str] = Counter()
+    for instr in instrs:
+        for v in uses_in(instr):
+            counts[v.name] += 1
+    return counts

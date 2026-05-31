@@ -57,54 +57,43 @@ loop handles in subsequent rounds.
 """
 from __future__ import annotations
 
-from typing import Iterable
-
 import tac_ast
 from passes.optimization.framework import (
-    WindowPass, PassContext,
-    m_Unary, m_Any, m_Var, m_OneOf, m_JumpIfTrue, m_JumpIfFalse, m_Specific,
-    MatchResult,
+    RuleSet, Rule, producer_then_jump, single_use,
+    PassContext, MatchResult, RuleEnv,
+    m_Unary, m_Any, m_Var,
 )
 
 
-class FoldLnotJump(WindowPass[dict[str, int]]):
-    name = "fold_lnot_jump"
-    window_size = 2
-    pattern = [
+def _build_lnot_jump(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list[tac_ast.Type_instruction] | None:
+    """Replace `LogicalNot(src, %t); JumpIf{True,False}(%t, T)` with the
+    sense-flipped `JumpIf{False,True}(src, T)`. Pure structural rewrite —
+    `!x` jumped-on is `x` jumped-on with the opposite sense."""
+    jmp = m.bindings['jmp']
+    src = m.bindings['src']
+    cls = (
+        tac_ast.JumpIfFalse
+        if isinstance(jmp, tac_ast.JumpIfTrue)
+        else tac_ast.JumpIfTrue
+    )
+    return [cls(condition=src, target=jmp.target)]
+
+
+LNOT_RULE = Rule(
+    name="fold_lnot_jump",
+    pattern=producer_then_jump(
         m_Unary(
             op=tac_ast.LogicalNot,
             src=m_Any(capture='src'),
             dst=m_Var(capture='not_dst'),
         ),
-        m_OneOf(
-            m_JumpIfTrue(condition=m_Specific('not_dst'), capture='jmp'),
-            m_JumpIfFalse(condition=m_Specific('not_dst'), capture='jmp'),
-        ),
-    ]
-
-    def prepare(self, fn: tac_ast.Function, ctx: PassContext) -> dict[str, int]:
-        return _count_var_uses(fn)
-
-    def rewrite(
-        self,
-        m: MatchResult,
-        prep: dict[str, int],
-        ctx: PassContext,
-    ) -> list[tac_ast.Type_instruction] | None:
-        not_dst = m.bindings['not_dst']
-        assert isinstance(not_dst, tac_ast.Var)
-        if prep.get(not_dst.name, 0) != 1:
-            return None
-        jmp = m.bindings['jmp']
-        assert isinstance(jmp, (tac_ast.JumpIfTrue, tac_ast.JumpIfFalse))
-        src = m.bindings['src']
-        assert isinstance(src, tac_ast.Type_val)
-        cls = (
-            tac_ast.JumpIfFalse
-            if isinstance(jmp, tac_ast.JumpIfTrue)
-            else tac_ast.JumpIfTrue
-        )
-        return [cls(condition=src, target=jmp.target)]
+        on='not_dst',
+    ),
+    where=[single_use('not_dst')],
+    build=_build_lnot_jump,
+)
 
 
 def fold_lnot_jump(
@@ -119,101 +108,4 @@ def fold_lnot_jump(
     in the fixed-point loop; this pass doesn't need it (width-
     agnostic rewrite)."""
     del symbols
-    return FoldLnotJump().run(fn, PassContext())
-
-
-def _count_var_uses(fn: tac_ast.Function) -> dict[str, int]:
-    """Count Var uses by name across the whole function."""
-    out: dict[str, int] = {}
-    for instr in fn.instructions:
-        for v in _vars_used_in(instr):
-            out[v.name] = out.get(v.name, 0) + 1
-    return out
-
-
-def _vars_used_in(
-    instr: tac_ast.Type_instruction,
-) -> Iterable[tac_ast.Var]:
-    """Yield every Var read by `instr`. Mirrors the use-site set in
-    cmp_zero_jump_fold._vars_used_in."""
-    match instr:
-        case tac_ast.Ret(val=val):
-            if isinstance(val, tac_ast.Var):
-                yield val
-        case tac_ast.SignExtend(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.ZeroExtend(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Truncate(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IntToFloat(src=s) | tac_ast.IntToDouble(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.FloatToInt(src=s) | tac_ast.DoubleToInt(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.FloatToDouble(src=s) | tac_ast.DoubleToFloat(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Unary(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Binary(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                yield s1
-            if isinstance(s2, tac_ast.Var):
-                yield s2
-        case tac_ast.Copy(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.GetAddress():
-            return
-        case tac_ast.Load(src_ptr=p):
-            if isinstance(p, tac_ast.Var):
-                yield p
-        case tac_ast.Store(src=s, dst_ptr=p):
-            if isinstance(s, tac_ast.Var):
-                yield s
-            if isinstance(p, tac_ast.Var):
-                yield p
-        case tac_ast.IndexedLoad(index=i):
-            if isinstance(i, tac_ast.Var):
-                yield i
-        case tac_ast.IndexedStore(index=i, src=s):
-            if isinstance(i, tac_ast.Var):
-                yield i
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IndexedSymbolStore(index=i, src=s):
-            if isinstance(i, tac_ast.Var):
-                yield i
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
-            if isinstance(c, tac_ast.Var):
-                yield c
-        case tac_ast.JumpIfCmp(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                yield s1
-            if isinstance(s2, tac_ast.Var):
-                yield s2
-        case tac_ast.JumpIfMasked(val=v):
-            if isinstance(v, tac_ast.Var):
-                yield v
-        case tac_ast.FunctionCall(args=args):
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    yield a
-        case tac_ast.IndirectCall(ptr=p, args=args):
-            if isinstance(p, tac_ast.Var):
-                yield p
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    yield a
-        case tac_ast.Phi(args=args):
-            for a in args:
-                if isinstance(a.source, tac_ast.Var):
-                    yield a.source
+    return RuleSet(LNOT_RULE).run(fn, PassContext())

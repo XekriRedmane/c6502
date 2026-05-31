@@ -78,14 +78,14 @@ operates on the post-`tac_to_asm` IR with byte-granular precision.
 from __future__ import annotations
 
 import tac_ast
-from passes.optimization.framework import PhaseDriver, PassContext
+from passes.optimization.framework import PhaseDriver, PassContext, RuleSet
 from passes.optimization.loop_rotate import RotateSignedCountdownLoops
 from passes.optimization.static_const_fold import FoldStaticConstReads
 from passes.optimization.constant_folding import ConstantFold
 from passes.optimization.strength_reduction import ReduceStrength
-from passes.optimization.cmp_zero_jump_fold import FoldCmpZeroJump
-from passes.optimization.and_zero_jump_fold import FoldNarrowAndJump
-from passes.optimization.lnot_jump_fold import FoldLnotJump
+from passes.optimization.cmp_zero_jump_fold import CMP_ZERO_RULE
+from passes.optimization.and_zero_jump_fold import AND_ZERO_RULE
+from passes.optimization.lnot_jump_fold import LNOT_RULE
 from passes.optimization.dead_loop_elimination import EliminateDeadLoops
 from passes.optimization.unreachable_code_elimination import EliminateUnreachableCode
 from passes.optimization.copy_propagation import CopyPropagate
@@ -126,9 +126,14 @@ _DRIVER = PhaseDriver(
     fixedpoint=[
         ConstantFold(),
         ReduceStrength(),
-        FoldCmpZeroJump(),
-        FoldNarrowAndJump(),
-        FoldLnotJump(),
+        # Three disjoint jump-folds — comparison / BitwiseAnd /
+        # LogicalNot producers each feeding a single-use JumpIf —
+        # merged into one RuleSet. They share the producer+JumpIf
+        # window and the single-use gate, and their producer opcodes
+        # are disjoint, so one sweep applies whichever rule matches
+        # each position instead of three separate sweeps.
+        RuleSet(CMP_ZERO_RULE, AND_ZERO_RULE, LNOT_RULE,
+                name="fold_producer_jumps"),
         EliminateDeadLoops(),
         EliminateUnreachableCode(),
         CopyPropagate(),

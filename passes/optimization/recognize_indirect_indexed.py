@@ -70,11 +70,9 @@ constraint matches the single LDA / STA the lowering emits.
 
 from __future__ import annotations
 
-from collections import Counter
-
 import c99_ast
 import tac_ast
-from passes.optimization.var_visit import uses_in
+from passes.optimization.var_visit import count_uses
 from passes.optimization.framework import (
     DefUsePass, DefUseEnv, Rewrite, PostFixedpointPass, PassContext,
     MatchResult, m_Store, m_Load, m_Var, m_Any, m_OneOf,
@@ -107,16 +105,6 @@ def _all_dsts(fn: tac_ast.Function) -> set[str]:
         if hasattr(instr, 'dst') and isinstance(instr.dst, tac_ast.Var):
             out.add(instr.dst.name)
     return out
-
-
-def _count_uses(
-    instrs: list[tac_ast.Type_instruction],
-) -> Counter[str]:
-    counts: Counter[str] = Counter()
-    for instr in instrs:
-        for v in uses_in(instr):
-            counts[v.name] += 1
-    return counts
 
 
 def _split_var_var(
@@ -226,7 +214,7 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
     )
 
     def prepare_extra(self, fn, ctx):
-        return _count_uses(fn.instructions)
+        return count_uses(fn.instructions)
 
     def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         if ctx.symbols is None:

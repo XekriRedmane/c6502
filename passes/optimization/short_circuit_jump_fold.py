@@ -120,9 +120,8 @@ per-arm Copy chains into the canonical 5-instruction tail above.
 """
 from __future__ import annotations
 
-from typing import Iterable
-
 import tac_ast
+from passes.optimization.var_visit import count_uses
 
 
 def fold_short_circuit_jump(
@@ -136,7 +135,7 @@ def fold_short_circuit_jump(
     otherwise. `symbols` is accepted for signature uniformity with
     other folds in the optimizer driver."""
     del symbols
-    use_count = _count_var_uses(fn)
+    use_count = count_uses(fn.instructions)
     jump_target_count = _count_jump_targets(fn)
     existing_labels = {
         i.name for i in fn.instructions if isinstance(i, tac_ast.Label)
@@ -325,121 +324,6 @@ def _jump_target_of(instr) -> str | None:
     )):
         return instr.target
     return None
-
-
-def _count_var_uses(fn: tac_ast.Function) -> dict[str, int]:
-    """Count `Var` uses by name across the whole function. Mirrors
-    the use-site enumeration in
-    `cmp_zero_jump_fold` / `lnot_jump_fold`."""
-    out: dict[str, int] = {}
-    for instr in fn.instructions:
-        for v in _vars_used_in(instr):
-            out[v.name] = out.get(v.name, 0) + 1
-    return out
-
-
-def _vars_used_in(instr) -> Iterable[tac_ast.Var]:
-    """Yield every `Var` read by `instr`. Must enumerate every TAC
-    variant — missing one would silently inflate or deflate the
-    use_count for a candidate temp and either over- or under-fire
-    the gate. Kept in sync with the sibling fold passes'
-    `_vars_used_in`."""
-    match instr:
-        case tac_ast.Ret(val=val):
-            if isinstance(val, tac_ast.Var):
-                yield val
-        case tac_ast.SignExtend(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.ZeroExtend(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Truncate(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IntToFloat(src=s) | tac_ast.IntToDouble(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.FloatToInt(src=s) | tac_ast.DoubleToInt(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.FloatToDouble(src=s) | tac_ast.DoubleToFloat(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.GetAddress():
-            return
-        case tac_ast.Load(src_ptr=p):
-            if isinstance(p, tac_ast.Var):
-                yield p
-        case tac_ast.Store(src=s, dst_ptr=p):
-            if isinstance(s, tac_ast.Var):
-                yield s
-            if isinstance(p, tac_ast.Var):
-                yield p
-        case tac_ast.IndexedLoad(index=idx):
-            if isinstance(idx, tac_ast.Var):
-                yield idx
-        case tac_ast.IndexedStore(index=idx, src=s):
-            if isinstance(idx, tac_ast.Var):
-                yield idx
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IndexedSymbolStore(index=idx, src=s):
-            if isinstance(idx, tac_ast.Var):
-                yield idx
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IndexedConstLoad(index=idx):
-            if isinstance(idx, tac_ast.Var):
-                yield idx
-        case tac_ast.IndirectIndexedLoad(ptr=p, index=idx):
-            if isinstance(p, tac_ast.Var):
-                yield p
-            if isinstance(idx, tac_ast.Var):
-                yield idx
-        case tac_ast.IndirectIndexedStore(ptr=p, index=idx, src=s):
-            if isinstance(p, tac_ast.Var):
-                yield p
-            if isinstance(idx, tac_ast.Var):
-                yield idx
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Unary(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Binary(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                yield s1
-            if isinstance(s2, tac_ast.Var):
-                yield s2
-        case tac_ast.Copy(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
-            if isinstance(c, tac_ast.Var):
-                yield c
-        case tac_ast.JumpIfCmp(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                yield s1
-            if isinstance(s2, tac_ast.Var):
-                yield s2
-        case tac_ast.JumpIfMasked(val=v):
-            if isinstance(v, tac_ast.Var):
-                yield v
-        case tac_ast.FunctionCall(args=args):
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    yield a
-        case tac_ast.IndirectCall(ptr=p, args=args):
-            if isinstance(p, tac_ast.Var):
-                yield p
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    yield a
-        case tac_ast.Phi(args=args):
-            for a in args:
-                if isinstance(a.source, tac_ast.Var):
-                    yield a.source
 
 
 from passes.optimization.framework import PostDestructionFixedpointPass, PassContext  # noqa: E402

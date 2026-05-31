@@ -73,7 +73,7 @@ from collections import Counter
 
 import c99_ast
 import tac_ast
-from passes.optimization.var_visit import uses_in
+from passes.optimization.var_visit import count_uses, defs_in
 from passes.optimization.framework import (
     DefUsePass, DefUseEnv, PassContext, MatchResult,
     m_Store, m_Var, m_Any,
@@ -97,12 +97,12 @@ def recognize_indexed_store(
     before reaching the Store."""
     if symbols is None:
         return fn
-    use_counts = _count_uses(fn.instructions)
+    use_counts = count_uses(fn.instructions)
     # Build a map: instruction index → instruction. We need to find
     # the def of each Pseudo and check the chain.
     def_idx: dict[str, int] = {}
     for i, instr in enumerate(fn.instructions):
-        for d in _defs(instr):
+        for d in defs_in(instr):
             def_idx[d.name] = i
     # Pass 1: identify rewrites.
     rewrites: dict[int, tac_ast.Type_instruction] = {}
@@ -129,40 +129,6 @@ def recognize_indexed_store(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
     )
-
-
-def _count_uses(
-    instrs: list[tac_ast.Type_instruction],
-) -> Counter[str]:
-    counts: Counter[str] = Counter()
-    for instr in instrs:
-        for v in uses_in(instr):
-            counts[v.name] += 1
-    return counts
-
-
-def _defs(instr: tac_ast.Type_instruction):
-    """Defs (single-dst writes). Used to build a name → defining-
-    instruction-index map. IndexedStore has no def, so this just
-    mirrors var_visit's defs_in but without the SSA-restricted
-    behavior."""
-    match instr:
-        case tac_ast.SignExtend(dst=d) | tac_ast.ZeroExtend(dst=d) \
-                | tac_ast.Truncate(dst=d) \
-                | tac_ast.IntToFloat(dst=d) | tac_ast.IntToDouble(dst=d) \
-                | tac_ast.FloatToInt(dst=d) | tac_ast.DoubleToInt(dst=d) \
-                | tac_ast.FloatToDouble(dst=d) | tac_ast.DoubleToFloat(dst=d) \
-                | tac_ast.Unary(dst=d) | tac_ast.Binary(dst=d) \
-                | tac_ast.Copy(dst=d) \
-                | tac_ast.GetAddress(dst=d) \
-                | tac_ast.Load(dst=d) \
-                | tac_ast.IndexedLoad(dst=d) \
-                | tac_ast.Phi(dst=d):
-            if isinstance(d, tac_ast.Var):
-                yield d
-        case tac_ast.FunctionCall(dst=d) | tac_ast.IndirectCall(dst=d):
-            if d is not None and isinstance(d, tac_ast.Var):
-                yield d
 
 
 def _try_recognize(
@@ -289,7 +255,7 @@ class RecognizeIndexedStore(DefUsePass):
     )
 
     def prepare_extra(self, fn, ctx):
-        return _count_uses(fn.instructions)
+        return count_uses(fn.instructions)
 
     def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         if ctx.symbols is None:

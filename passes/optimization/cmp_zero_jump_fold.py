@@ -66,8 +66,9 @@ from __future__ import annotations
 import c99_ast
 import tac_ast
 from passes.optimization.framework import (
-    WindowPass, PassContext, MatchResult,
-    m_Binary, m_Var, m_OneOf, m_JumpIfTrue, m_JumpIfFalse, m_Specific,
+    RuleSet, Rule, producer_then_jump, single_use,
+    PassContext, MatchResult, RuleEnv,
+    m_Binary, m_Var,
 )
 
 
@@ -78,59 +79,51 @@ _CMP_OPS: tuple[type, ...] = (
 )
 
 
-class FoldCmpZeroJump(WindowPass):
-    name = "fold_cmp_zero_jump"
-    window_size = 2
-    pattern = [
-        m_Binary(
-            op=_CMP_OPS,
-            dst=m_Var(capture='cond_dst'),
-            capture='binop',
-        ),
-        m_OneOf(
-            m_JumpIfTrue(condition=m_Specific('cond_dst'), capture='jmp'),
-            m_JumpIfFalse(condition=m_Specific('cond_dst'), capture='jmp'),
-        ),
-    ]
+def _build_cmp_zero_jump(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """Fold `Binary(cmp_op, ...); JumpIf{True,False}(cond, T)` to a
+    direct conditional jump. `== 0` / `!= 0` trace through ZeroExtend to
+    a bare sense-flipped JumpIf; everything else emits a `JumpIfCmp`
+    (op inverted for the JumpIfFalse sense), narrowing both operands to
+    1 byte where the ZeroExtend / SignExtend chain permits."""
+    use_count, var_def_idx, instrs = env.use_count, env.def_idx, env.instructions
+    binop = m.bindings['binop']
+    jmp = m.bindings['jmp']
 
-    def prepare(self, fn, ctx):
-        return (
-            _count_var_uses(fn),
-            _index_var_defs(fn),
-            fn.instructions,
+    if isinstance(binop.op, (tac_ast.Equal, tac_ast.NotEqual)):
+        x = _zero_compare_other_operand(binop.src1, binop.src2)
+        if x is not None:
+            x = _trace_through_zero_extend(x, instrs, var_def_idx, use_count)
+            return [_build_replacement_jump(binop.op, jmp, x)]
+
+    src1, src2 = binop.src1, binop.src2
+    narrowed = _try_narrow_compare(
+        src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
+    )
+    if narrowed is not None:
+        src1, src2 = narrowed
+    else:
+        narrowed_signed = _try_narrow_signed_against_zero(
+            binop.op, src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
         )
+        if narrowed_signed is not None:
+            src1, src2 = narrowed_signed
+    new_op = _adjusted_op_for_jumpif(binop.op, jmp)
+    return [tac_ast.JumpIfCmp(
+        op=new_op, src1=src1, src2=src2, target=jmp.target,
+    )]
 
-    def rewrite(self, m: MatchResult, prep, ctx: PassContext) -> list | None:
-        use_count, var_def_idx, instrs = prep
-        binop = m.bindings['binop']
-        cond_dst = m.bindings['cond_dst']
-        jmp = m.bindings['jmp']
 
-        if use_count.get(cond_dst.name, 0) != 1:
-            return None
-
-        if isinstance(binop.op, (tac_ast.Equal, tac_ast.NotEqual)):
-            x = _zero_compare_other_operand(binop.src1, binop.src2)
-            if x is not None:
-                x = _trace_through_zero_extend(x, instrs, var_def_idx, use_count)
-                return [_build_replacement_jump(binop.op, jmp, x)]
-
-        src1, src2 = binop.src1, binop.src2
-        narrowed = _try_narrow_compare(
-            src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
-        )
-        if narrowed is not None:
-            src1, src2 = narrowed
-        else:
-            narrowed_signed = _try_narrow_signed_against_zero(
-                binop.op, src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
-            )
-            if narrowed_signed is not None:
-                src1, src2 = narrowed_signed
-        new_op = _adjusted_op_for_jumpif(binop.op, jmp)
-        return [tac_ast.JumpIfCmp(
-            op=new_op, src1=src1, src2=src2, target=jmp.target,
-        )]
+CMP_ZERO_RULE = Rule(
+    name="fold_cmp_zero_jump",
+    pattern=producer_then_jump(
+        m_Binary(op=_CMP_OPS, dst=m_Var(capture='cond_dst'), capture='binop'),
+        on='cond_dst',
+    ),
+    where=[single_use('cond_dst')],
+    build=_build_cmp_zero_jump,
+)
 
 
 def fold_cmp_zero_jump(
@@ -143,7 +136,7 @@ def fold_cmp_zero_jump(
     `symbols` table is needed for the narrowing path (we read each
     Var's c99 type to decide if a 1-byte unsigned narrowing is sound);
     without it the pass falls back to non-narrowing rewrites."""
-    return FoldCmpZeroJump().run(fn, PassContext(symbols=symbols))
+    return RuleSet(CMP_ZERO_RULE).run(fn, PassContext(symbols=symbols))
 
 
 def _adjusted_op_for_jumpif(
@@ -422,130 +415,3 @@ def _build_replacement_jump(
     new_is_true = outer_is_true if not is_equal else not outer_is_true
     cls = tac_ast.JumpIfTrue if new_is_true else tac_ast.JumpIfFalse
     return cls(condition=x, target=outer.target)
-
-
-def _count_var_uses(fn: tac_ast.Function) -> dict[str, int]:
-    """Count Var uses by name across the whole function."""
-    out: dict[str, int] = {}
-    for instr in fn.instructions:
-        for v in _vars_used_in(instr):
-            out[v.name] = out.get(v.name, 0) + 1
-    return out
-
-
-def _index_var_defs(fn: tac_ast.Function) -> dict[str, int]:
-    """Map each Var name to the index of its defining instruction.
-    Assumes SSA single-def — multiple defs would overwrite."""
-    out: dict[str, int] = {}
-    for i, instr in enumerate(fn.instructions):
-        d = _var_def_in(instr)
-        if d is not None:
-            out[d.name] = i
-    return out
-
-
-def _var_def_in(
-    instr: tac_ast.Type_instruction,
-) -> tac_ast.Var | None:
-    """Return the Var defined by `instr`, or None if no def."""
-    match instr:
-        case tac_ast.Copy(dst=dst):
-            return dst if isinstance(dst, tac_ast.Var) else None
-        case tac_ast.SignExtend(dst=dst):
-            return dst if isinstance(dst, tac_ast.Var) else None
-        case tac_ast.ZeroExtend(dst=dst):
-            return dst if isinstance(dst, tac_ast.Var) else None
-        case tac_ast.Truncate(dst=dst):
-            return dst if isinstance(dst, tac_ast.Var) else None
-        case tac_ast.Unary(dst=dst):
-            return dst if isinstance(dst, tac_ast.Var) else None
-        case tac_ast.Binary(dst=dst):
-            return dst if isinstance(dst, tac_ast.Var) else None
-    return None
-
-
-def _vars_used_in(instr: tac_ast.Type_instruction):
-    """Yield every Var read by `instr`."""
-    match instr:
-        case tac_ast.Ret(val=val):
-            if isinstance(val, tac_ast.Var):
-                yield val
-        case tac_ast.SignExtend(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.ZeroExtend(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Truncate(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IntToFloat(src=s) | tac_ast.IntToDouble(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.FloatToInt(src=s) | tac_ast.DoubleToInt(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.FloatToDouble(src=s) | tac_ast.DoubleToFloat(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Unary(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.Binary(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                yield s1
-            if isinstance(s2, tac_ast.Var):
-                yield s2
-        case tac_ast.Copy(src=s):
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.GetAddress():
-            return
-        case tac_ast.Load(src_ptr=p):
-            if isinstance(p, tac_ast.Var):
-                yield p
-        case tac_ast.Store(src=s, dst_ptr=p):
-            if isinstance(s, tac_ast.Var):
-                yield s
-            if isinstance(p, tac_ast.Var):
-                yield p
-        case tac_ast.IndexedLoad(index=i):
-            if isinstance(i, tac_ast.Var):
-                yield i
-        case tac_ast.IndexedStore(index=i, src=s):
-            if isinstance(i, tac_ast.Var):
-                yield i
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.IndexedSymbolStore(index=i, src=s):
-            if isinstance(i, tac_ast.Var):
-                yield i
-            if isinstance(s, tac_ast.Var):
-                yield s
-        case tac_ast.JumpIfTrue(condition=c) | tac_ast.JumpIfFalse(condition=c):
-            if isinstance(c, tac_ast.Var):
-                yield c
-        case tac_ast.JumpIfCmp(src1=s1, src2=s2):
-            if isinstance(s1, tac_ast.Var):
-                yield s1
-            if isinstance(s2, tac_ast.Var):
-                yield s2
-        case tac_ast.JumpIfMasked(val=v):
-            if isinstance(v, tac_ast.Var):
-                yield v
-        case tac_ast.FunctionCall(args=args):
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    yield a
-        case tac_ast.IndirectCall(ptr=p, args=args):
-            if isinstance(p, tac_ast.Var):
-                yield p
-            for a in args:
-                if isinstance(a, tac_ast.Var):
-                    yield a
-        case tac_ast.Phi(args=args):
-            for a in args:
-                if isinstance(a.source, tac_ast.Var):
-                    yield a.source
-
-

@@ -35,6 +35,11 @@ PhaseDriver, WindowPass, m_Binary, …`.
   replacement or None.
 - `sink.py` — `SinkPass`: single-instruction forward move base. Finds
   a target index for a matching instruction and slides it forward.
+- `rules.py` — `RuleSet`, `Rule`, `RuleEnv` + guard combinators
+  (`single_use`, `have_symbols`) + window helper `producer_then_jump`.
+  Table-based multi-rule peephole base: a `RuleSet` carries a list of
+  `(pattern, where, build)` rules and tries them in order at each
+  position. See "RuleSet" below.
 - `__init__.py` — re-exports all public names from the submodules
   (everything in `__all__`) so callers can `from
   passes.optimization.framework import …` without knowing the
@@ -386,6 +391,72 @@ gate structure: it walks forward from `src_idx` looking for the last
 use of the instruction's dst, checking at each step that no intervening
 instruction reads the dst or aliases its def.
 
+## RuleSet
+
+Use when: a pass is naturally several `(pattern, guards, replacement)`
+rules — especially when the rules share a window shape and a soundness
+gate but match disjoint producer opcodes. `RuleSet` is the table-based
+counterpart to `WindowPass`: instead of one `pattern` + one `rewrite`
+method, it carries a list of `Rule`s and tries them in order at each
+position.
+
+```python
+LNOT_RULE = Rule(
+    name="fold_lnot_jump",
+    pattern=producer_then_jump(
+        m_Unary(op=tac_ast.LogicalNot,
+                src=m_Any(capture='src'), dst=m_Var(capture='t')),
+        on='t',
+    ),
+    where=[single_use('t')],            # declarative guard combinators
+    build=_build_lnot_jump,             # (m, env, ctx) -> list | None
+)
+
+# Standalone entry point / unit tests: one rule.
+def fold_lnot_jump(fn, *, symbols=None):
+    return RuleSet(LNOT_RULE).run(fn, PassContext())
+
+# Pipeline: several disjoint rules in one sweep, not one pass each.
+RuleSet(CMP_ZERO_RULE, AND_ZERO_RULE, LNOT_RULE, name="fold_producer_jumps")
+```
+
+Components:
+
+- **`Rule(pattern, build, where=(), name="")`** — `pattern` is a window
+  (a `Pattern` or a sequence; `pattern[k]` matches offset `k`).
+  `where` is a tuple of guard combinators, all of which must pass
+  after the pattern matches and before `build` is called. `build` is
+  `(m, env, ctx) -> list | None` — the replacement list (empty =
+  delete), or None to decline.
+- **`RuleEnv`** — per-run shared analyses, built once per `run`:
+  `use_count` (a `var_visit.count_uses` Counter), a `def_idx`
+  (`var_visit.defs_in`-based name → defining-instruction index), and
+  the helpers `def_of(var)` and `is_single_use(var)`. The `build`
+  callable reads these instead of computing its own.
+- **Guard combinators** — `single_use(capture)` (the producer-dst-dead
+  gate, ~6 passes used to hand-roll it), `have_symbols()` (skip when
+  no symbol table). Guards are the *declarative* part; `build` stays a
+  callable so computational rewrites (constant folding, width
+  narrowing, def-chain walks) keep their real Python logic rather than
+  being forced into a value-level meta-language.
+- **`producer_then_jump(producer, on=…)`** — the shared jump-fold
+  window: a producer writing `Var(on)` immediately followed by a
+  `JumpIfTrue`/`JumpIfFalse` on that same Var (bound at `jmp`).
+
+Iteration mirrors `WindowPass`: first rule whose pattern matches, whose
+guards all pass, and whose `build` returns non-None wins; advance by
+that rule's window size, else by 1. Merging disjoint rules into one
+`RuleSet` is sound when the rules can't rewrite each other's output —
+the jump-fold trio qualifies (disjoint producer opcodes; outputs are
+jumps, not producers), so the merged pipeline pass reaches the same
+fixed point as three separate sweeps.
+
+The jump-fold family (`cmp_zero_jump_fold.py`, `and_zero_jump_fold.py`,
+`lnot_jump_fold.py`) is the worked example: each module exports a
+`*_RULE`, keeps its `build` + computational helpers, and exposes its
+standalone `fold_*` entry point as a one-rule `RuleSet`; `optimizer.py`
+runs all three as a single merged `RuleSet` in the fixedpoint.
+
 ## Adding a new pass — decision tree
 
 - **N adjacent instructions → M instructions**: `WindowPass`. Set
@@ -400,6 +471,9 @@ instruction reads the dst or aliases its def.
 - **Move a single instruction forward without rewriting it**:
   `SinkPass`. Declare `pattern`, implement `find_target` with all
   soundness gates.
+- **Several `(pattern, guard, replacement)` rules, often sharing a
+  window shape / gate**: `RuleSet`. Declare each as a `Rule` with
+  `where=[…]` guard combinators; merge disjoint rules into one sweep.
 - **None of the above** (CFG-shaped dataflow, multi-block analysis,
   bespoke structural transform): subclass the appropriate phase ABC
   directly (`FixedpointPass`, `PostFixedpointPass`, etc.) and

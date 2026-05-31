@@ -25,6 +25,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   topological sort fixes the "lost copy" problem; cycles break with a
   fresh `<funcname>.cycle_tmp@N`.
 - `var_visit.py` — utility for visiting / rewriting TAC operands.
+  Canonical home for `uses_in` / `defs_in` (Var read / write operands
+  of an instruction) and `count_uses(instrs)` (a `Counter` of
+  USE-position Var names, built on `uses_in`). Passes that need
+  use-counts or def/use enumeration call these rather than rolling
+  their own — several stale local copies were consolidated here.
 - `optimizer.py` — `optimize_function` / `optimize_program`. Constructs
   a module-level `PhaseDriver` (`_DRIVER`) and calls `_DRIVER.apply`
   per function. `PhaseDriver` is defined in `framework/driver.py`.
@@ -43,20 +48,26 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `Divide(x, 2^k)` → `RightShift`, unsigned `Modulo(x, 2^k)` →
   `BitwiseAnd`. Signed Divide / Modulo skipped (C99 truncation differs
   from arithmetic shift).
-- `cmp_zero_jump_fold.py` — `fold_cmp_zero_jump` (`FoldCmpZeroJump`,
-  WindowPass). Fuses `Binary(cmp, ...); JumpIf*` to direct conditional
-  jumps. `== 0` / `!= 0` traces through ZeroExtend; ordering ops emit
-  `JumpIfCmp(op, src1, src2)` for the per-byte compare-chain lowering.
-  Operand narrowing through ZeroExtend folds `(uint8_t)i < 105` to
-  3-instr `LDA / CMP / BCS`.
-- `and_zero_jump_fold.py` — `fold_narrow_and_jump` (`FoldNarrowAndJump`,
-  WindowPass). Folds `(ZeroExtend(uchar); BitwiseAnd(_, 0x80); JumpIf*)`
-  to `JumpIfMasked` when the operand can be narrowed to 1 byte —
-  produces the direct `LDA / BPL/BMI` pattern at asm lowering instead
-  of an 8-bit AND + 16-bit Z.
-- `lnot_jump_fold.py` — `fold_lnot_jump` (`FoldLnotJump`, WindowPass).
-  Folds `Unary(LogicalNot, src, %t); JumpIf{True,False}(%t, target)` to
-  a sense-flipped direct JumpIf when %t is single-use.
+- **Jump-fold family** (`cmp_zero_jump_fold.py`, `and_zero_jump_fold.py`,
+  `lnot_jump_fold.py`) — three `RuleSet` rules (`CMP_ZERO_RULE`,
+  `AND_ZERO_RULE`, `LNOT_RULE`) sharing the `producer_then_jump` window
+  and the `single_use` gate. Each module keeps its `build` +
+  computational helpers and exposes a standalone `fold_*` entry point
+  as a one-rule `RuleSet`; `optimizer.py` runs all three as a single
+  merged `RuleSet` (`fold_producer_jumps`) in the fixedpoint. See
+  "RuleSet" in [framework/CLAUDE.md](framework/CLAUDE.md).
+  - `fold_cmp_zero_jump` (`CMP_ZERO_RULE`): fuses `Binary(cmp, ...);
+    JumpIf*` to direct conditional jumps. `== 0` / `!= 0` traces through
+    ZeroExtend; ordering ops emit `JumpIfCmp(op, src1, src2)` for the
+    per-byte compare-chain lowering. Operand narrowing through
+    ZeroExtend folds `(uint8_t)i < 105` to 3-instr `LDA / CMP / BCS`.
+  - `fold_narrow_and_jump` (`AND_ZERO_RULE`): folds `(ZeroExtend(uchar);
+    BitwiseAnd(_, 0x80); JumpIf*)` to `JumpIfMasked` when the operand
+    narrows to 1 byte — direct `LDA / BPL/BMI` at asm lowering instead
+    of an 8-bit AND + 16-bit Z.
+  - `fold_lnot_jump` (`LNOT_RULE`): folds `Unary(LogicalNot, src, %t);
+    JumpIf{True,False}(%t, target)` to a sense-flipped direct JumpIf
+    when %t is single-use.
 - `dead_loop_elimination.py` — `eliminate_dead_loops`
   (`EliminateDeadLoops`, raw FixedpointPass — CFG-shaped back-edge
   detection). Detects natural loops (back-edges via
@@ -153,8 +164,8 @@ The pipeline is run by `_DRIVER` (`PhaseDriver`) in `optimizer.py`.
 fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → to_ssa                        (owned by PhaseDriver)
    → fold_static_const_reads       (PreFixedpointPass, one-shot)
-   → [constant_fold → reduce_strength → fold_cmp_zero_jump
-      → fold_narrow_and_jump → fold_lnot_jump
+   → [constant_fold → reduce_strength → fold_producer_jumps
+      (cmp_zero ∪ narrow_and ∪ lnot, one merged RuleSet)
       → eliminate_dead_loops → UCE
       → copy_propagate → DSE → fold_copies → reassoc_constants
       → recognize_indexed_store → recognize_indexed_load
@@ -192,8 +203,9 @@ stage:
    `Initial(c)` initializer and a const-qualified type. See "Static-
    const reads + array-subscript folding" below.
 
-4. **Fixed-point loop**. Twelve passes rotated to convergence (see
-   the module roster above for the per-pass entry points).
+4. **Fixed-point loop**. Passes rotated to convergence (see the module
+   roster above for the per-pass entry points; the three jump-folds run
+   as one merged `fold_producer_jumps` RuleSet).
 
 5. **`recognize_indirect_indexed`** (`recognize_indirect_indexed.py`).
    Post-fixedpoint one-shot.

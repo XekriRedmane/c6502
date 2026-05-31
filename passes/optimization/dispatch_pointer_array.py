@@ -67,6 +67,7 @@ eligibility check enforces single-use on both.
 from __future__ import annotations
 
 import tac_ast
+from passes.optimization.var_visit import count_uses
 
 
 # Maximum number of cases to dispatch inline. 8 covers every
@@ -160,7 +161,7 @@ def _find_one_chain(
 ):
     """Walk `instrs` looking for an eligible chain. Returns a dict
     describing the chain on success, or None on no match."""
-    use_count = _count_uses(instrs)
+    use_count = count_uses(instrs)
     def_of: dict[str, int] = {}
     for k, inst in enumerate(instrs):
         dst = _instr_dst_name(inst)
@@ -285,84 +286,12 @@ def _apply_dispatch(
     return new_instrs
 
 
-def _count_uses(instrs):
-    counts: dict[str, int] = {}
-    def add(v):
-        if isinstance(v, tac_ast.Var):
-            counts[v.name] = counts.get(v.name, 0) + 1
-    for inst in instrs:
-        for v in _instr_use_vals(inst):
-            add(v)
-    return counts
-
-
 def _instr_dst_name(inst) -> str | None:
     if hasattr(inst, 'dst'):
         v = getattr(inst, 'dst')
         if isinstance(v, tac_ast.Var):
             return v.name
     return None
-
-
-def _instr_use_vals(inst):
-    """Yield every Val in a USE position of `inst`."""
-    if isinstance(inst, tac_ast.Copy):
-        yield inst.src
-    elif isinstance(inst, tac_ast.Binary):
-        yield inst.src1
-        yield inst.src2
-    elif isinstance(inst, tac_ast.Unary):
-        yield inst.src
-    elif isinstance(inst, (tac_ast.SignExtend, tac_ast.ZeroExtend,
-                           tac_ast.Truncate, tac_ast.IntToFloat,
-                           tac_ast.IntToDouble, tac_ast.FloatToInt,
-                           tac_ast.DoubleToInt, tac_ast.FloatToDouble,
-                           tac_ast.DoubleToFloat)):
-        yield inst.src
-    elif isinstance(inst, tac_ast.JumpIfTrue):
-        yield inst.condition
-    elif isinstance(inst, tac_ast.JumpIfFalse):
-        yield inst.condition
-    elif isinstance(inst, tac_ast.JumpIfCmp):
-        yield inst.src1
-        yield inst.src2
-    elif isinstance(inst, tac_ast.JumpIfMasked):
-        yield inst.val
-    elif isinstance(inst, tac_ast.IndexedLoad):
-        yield inst.index
-    elif isinstance(inst, tac_ast.IndexedStore):
-        yield inst.index
-        yield inst.src
-    elif isinstance(inst, tac_ast.IndexedSymbolStore):
-        yield inst.index
-        yield inst.src
-    elif isinstance(inst, tac_ast.IndexedConstLoad):
-        yield inst.index
-    elif isinstance(inst, tac_ast.IndirectIndexedLoad):
-        yield inst.ptr
-        yield inst.index
-    elif isinstance(inst, tac_ast.IndirectIndexedStore):
-        yield inst.ptr
-        yield inst.index
-        yield inst.src
-    elif isinstance(inst, tac_ast.Load):
-        yield inst.src_ptr
-    elif isinstance(inst, tac_ast.Store):
-        yield inst.dst_ptr
-        yield inst.src
-    elif isinstance(inst, tac_ast.FunctionCall):
-        for a in inst.args:
-            yield a
-    elif isinstance(inst, tac_ast.IndirectCall):
-        yield inst.ptr
-        for a in inst.args:
-            yield a
-    elif isinstance(inst, tac_ast.Ret):
-        if inst.val is not None:
-            yield inst.val
-    elif isinstance(inst, tac_ast.Phi):
-        for a in inst.args:
-            yield a.source if hasattr(a, 'source') else a
 
 
 def _match_scale_by_two(inst):

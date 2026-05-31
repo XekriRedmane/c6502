@@ -87,14 +87,14 @@ from __future__ import annotations
 from collections import Counter
 
 import tac_ast
-from passes.optimization.var_visit import uses_in
+from passes.optimization.var_visit import count_uses
 
 
 def fold_copies(fn: tac_ast.Function) -> tac_ast.Function:
     """Walk the function once, fuse adjacent `producer; Copy` pairs
     where the producer's dst is a single-use Pseudo. Returns a new
     Function with the fusions applied. Pure: doesn't mutate `fn`."""
-    use_counts = _count_uses(fn.instructions)
+    use_counts = count_uses(fn.instructions)
     new_instrs: list[tac_ast.Type_instruction] = []
     i = 0
     while i < len(fn.instructions):
@@ -112,19 +112,6 @@ def fold_copies(fn: tac_ast.Function) -> tac_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
     )
-
-
-def _count_uses(
-    instrs: list[tac_ast.Type_instruction],
-) -> Counter[str]:
-    """Count how many times each Var name appears in a USE position
-    across `instrs`. The Copy's `src` counts as one use of its name;
-    multiple-use names are excluded from fusion."""
-    counts: Counter[str] = Counter()
-    for instr in instrs:
-        for v in uses_in(instr):
-            counts[v.name] += 1
-    return counts
 
 
 def _try_fuse(
@@ -237,7 +224,7 @@ class _FoldCopiesWindow(WindowPass):
     ]
 
     def prepare(self, fn, ctx):
-        return _count_uses(fn.instructions)
+        return count_uses(fn.instructions)
 
     def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
         producer = m.bindings['producer']

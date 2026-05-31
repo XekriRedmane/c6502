@@ -70,12 +70,14 @@ constraint matches the single LDA / STA the lowering emits.
 
 from __future__ import annotations
 
-import c99_ast
 import tac_ast
 from passes.optimization.var_visit import count_uses
 from passes.optimization.framework import (
     DefUsePass, DefUseEnv, Rewrite, PostFixedpointPass, PassContext,
     MatchResult, m_Store, m_Load, m_Var, m_Any, m_OneOf,
+)
+from passes.optimization.extend_add_chain import (
+    recognize_extend_add_chain, is_1_byte_var, is_1_byte_val, all_dsts,
 )
 
 
@@ -91,51 +93,7 @@ def recognize_indirect_indexed(
         return fn
     return _IMPL.run(
         fn,
-        PassContext(ssa_dsts=_all_dsts(fn), symbols=symbols),
-    )
-
-
-def _all_dsts(fn: tac_ast.Function) -> set[str]:
-    """Return the set of all Var dst names in `fn`. Used as ssa_dsts
-    when calling from the free function — the free function is invoked
-    from the PostFixedpointPass context where SSA has already been
-    constructed, so all temps are uniquely defined."""
-    out: set[str] = set()
-    for instr in fn.instructions:
-        if hasattr(instr, 'dst') and isinstance(instr.dst, tac_ast.Var):
-            out.add(instr.dst.name)
-    return out
-
-
-def _split_var_var(
-    a: tac_ast.Type_val,
-    b: tac_ast.Type_val,
-    def_idx: dict[str, int],
-    all_instrs: list,
-) -> tuple[tac_ast.Var | None, tac_ast.Var | None]:
-    """Given the two operands of the address-computing Add, return
-    `(ptr_var, ext_var)` where `ext_var` is the side defined by a
-    `ZeroExtend` or `SignExtend` and `ptr_var` is the other side.
-    The Add is commutative so we accept either argument order.
-    Returns (None, None) if neither side fits."""
-    if isinstance(a, tac_ast.Var) and isinstance(b, tac_ast.Var):
-        if _defined_by_extend(b, def_idx, all_instrs):
-            return (a, b)
-        if _defined_by_extend(a, def_idx, all_instrs):
-            return (b, a)
-    return (None, None)
-
-
-def _defined_by_extend(
-    v: tac_ast.Var,
-    def_idx: dict[str, int],
-    all_instrs: list,
-) -> bool:
-    idx = def_idx.get(v.name)
-    if idx is None:
-        return False
-    return isinstance(
-        all_instrs[idx], (tac_ast.ZeroExtend, tac_ast.SignExtend),
+        PassContext(ssa_dsts=all_dsts(fn), symbols=symbols),
     )
 
 
@@ -169,26 +127,6 @@ def _resolves_to_constant(
         return False
 
 
-def _is_1_byte_var(v: tac_ast.Var, symbols) -> bool:
-    sym = symbols.get(v.name) if hasattr(symbols, "get") else None
-    if sym is None:
-        return False
-    t = sym.type
-    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
-        t = t.referenced_type
-    return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
-
-
-def _is_1_byte_val(v: tac_ast.Type_val, symbols) -> bool:
-    if isinstance(v, tac_ast.Constant):
-        return isinstance(
-            v.const, (tac_ast.ConstChar, tac_ast.ConstUChar),
-        )
-    if isinstance(v, tac_ast.Var):
-        return _is_1_byte_var(v, symbols)
-    return False
-
-
 class _RecognizeIndirectIndexedDefUse(DefUsePass):
     """DefUsePass: matches Load(src_ptr=Var) or Store(dst_ptr=Var) at
     the use site. For each match, walks back twice through the SSA
@@ -217,47 +155,22 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
         return count_uses(fn.instructions)
 
     def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
-        if ctx.symbols is None:
+        chain = recognize_extend_add_chain(m.bindings['addr_var'], env, ctx)
+        if chain is None:
             return None
-        addr_var = m.bindings['addr_var']
-        # addr_var must be SSA-renamed (single-def guarantee).
-        if ctx.ssa_dsts is None or addr_var.name not in ctx.ssa_dsts:
+        # (zp),Y needs a pointer Var base — a Constant base is the
+        # absolute,X case handled by recognize_indexed_store/load.
+        ptr_var = chain.base
+        if not isinstance(ptr_var, tac_ast.Var):
             return None
-        # Single-use gate on %addr.
-        if env.extra.get(addr_var.name, 0) != 1:
-            return None
-        # Walk back to the Binary(Add) def.
-        binary = env.def_of(addr_var)
-        if not isinstance(binary, tac_ast.Binary) or not isinstance(binary.op, tac_ast.Add):
-            return None
-        # Both operands must be Vars (not Constant + Var — that's the
-        # absolute,X pattern handled by recognize_indexed_store/load).
-        ptr_var, ext_var = _split_var_var(
-            binary.src1, binary.src2, env.def_idx, env.instructions,
-        )
-        if ptr_var is None or ext_var is None:
-            return None
-        # Defer to recognize_indexed_* when ptr resolves to a Constant.
+        # Defer to recognize_indexed_* when the ptr resolves to a Constant.
         if _resolves_to_constant(ptr_var, env.def_idx, env.instructions):
             return None
-        # ext_var must be SSA-renamed and single-use.
-        if ext_var.name not in ctx.ssa_dsts:
-            return None
-        if env.extra.get(ext_var.name, 0) != 1:
-            return None
-        # Walk back to the ZeroExtend/SignExtend def.
-        ext = env.def_of(ext_var)
-        if not isinstance(ext, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
-            return None
-        if not isinstance(ext.src, tac_ast.Var):
-            return None
-        idx_var = ext.src
-        if not _is_1_byte_var(idx_var, ctx.symbols):
-            return None
+        idx_var = chain.idx_var
         # Determine Load or Store and check the access value's width.
         if 'load_instr' in m.bindings:
             load_dst = m.bindings['load_dst']
-            if not _is_1_byte_var(load_dst, ctx.symbols):
+            if not is_1_byte_var(load_dst, ctx.symbols):
                 return None
             replacement: tac_ast.Type_instruction = tac_ast.IndirectIndexedLoad(
                 ptr=ptr_var, index=idx_var, dst=load_dst,
@@ -265,7 +178,7 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             )
         else:
             store_src = m.bindings['store_src']
-            if not _is_1_byte_val(store_src, ctx.symbols):
+            if not is_1_byte_val(store_src, ctx.symbols):
                 return None
             replacement = tac_ast.IndirectIndexedStore(
                 ptr=ptr_var, index=idx_var, src=store_src,
@@ -273,7 +186,10 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             )
         # Drop the two intermediate defs (Binary(Add) and ZeroExtend)
         # atomically — no subsequent DSE pass needed.
-        return Rewrite(replacement=replacement, drop_defs=(addr_var, ext_var))
+        return Rewrite(
+            replacement=replacement,
+            drop_defs=(chain.addr_var, chain.ext_var),
+        )
 
 
 _IMPL = _RecognizeIndirectIndexedDefUse()

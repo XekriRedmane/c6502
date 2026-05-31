@@ -99,11 +99,21 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   delegates to `_FoldCopiesWindow` (WindowPass).
 - `reassoc_const.py` — `reassoc_constants` (`ReassocConstants`,
   DefUsePass). See "Add-with-Constant reassociation" below.
+- `extend_add_chain.py` — shared recognizer core. `recognize_extend_add_
+  chain(addr_var, env, ctx)` walks back `%addr → Binary(Add, base, %ext)
+  → %ext := ZeroExtend|SignExtend(idx)` applying the gates all three
+  addressing-mode recognizers share (symbols present; `%addr` / `%ext`
+  SSA-renamed + single-use; 1-byte `idx`). Plus `is_1_byte_var` /
+  `is_1_byte_val` / `all_dsts`. Each recognizer post-checks `base`'s kind
+  (Constant for absolute,X; pointer Var for (zp),Y) and emits its node.
 - `recognize_indexed_store.py` / `recognize_indexed_load.py` —
-  `RecognizeIndexedStore` / `RecognizeIndexedLoad` (DefUsePass). Collapse
-  `ZeroExtend(uchar) + Binary(Add, C) + Store/Load` chains to
-  `IndexedStore` / `IndexedLoad` (absolute,X addressing). See
-  "IndexedStore recognizer" below.
+  `RecognizeIndexedStore` / `RecognizeIndexedLoad` (DefUsePass, on
+  `recognize_extend_add_chain`). Collapse `ZeroExtend(uchar) +
+  Binary(Add, C) + Store/Load` chains to `IndexedStore` / `IndexedLoad`
+  (absolute,X) when `base` is a Constant in 0..0xFF00. Drop the two
+  intermediate defs via `Rewrite.drop_defs`. The standalone `fold_*`
+  entry points delegate to the same class. See "IndexedStore recognizer"
+  below.
 - `truncate_extend_fold.py` — `fold_truncate_extend`
   (`FoldTruncateExtend`, DefUsePass). Folds `Truncate(SignExtend|
   ZeroExtend(x))` → `Copy(x)` (or narrower `Truncate`) when the
@@ -131,8 +141,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   across the branch (apply_bobble regression observed at +1 instr).
 - `recognize_indirect_indexed.py` — post-fixedpoint one-shot
   (`RecognizeIndirectIndexed`, PostFixedpointPass wrapping an internal
-  `DefUsePass`). Collapses `ZeroExtend(uchar) + Binary(Add, ptr) + Load`
-  to `IndirectIndexed` for the `(zp),Y` lowering. Deliberately runs LAST
+  `DefUsePass`, on `recognize_extend_add_chain`). Collapses
+  `ZeroExtend(uchar) + Binary(Add, ptr) + Load` to `IndirectIndexed`
+  for the `(zp),Y` lowering when `base` is a pointer Var that doesn't
+  resolve to a Constant. Deliberately runs LAST
   so any pointer that's going to fold to a Constant (via the const-static
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper

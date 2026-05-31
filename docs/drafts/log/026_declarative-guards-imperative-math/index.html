@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declarative guards, imperative math</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); background: var(--good-bg); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#hope">The hope</a></li>
+      <li><a href="#already">Half of it was already declarative</a></li>
+      <li><a href="#three">Three kinds of rewrite</a></li>
+      <li><a href="#ceiling">Where the table stops</a></li>
+      <li><a href="#guards">The part that does factor: guards</a></li>
+      <li><a href="#ruleset">RuleSet</a></li>
+      <li><a href="#merge">Three passes, one sweep</a></li>
+      <li><a href="#scorecard">The honest scorecard</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #026</p>
+    <h1>Declarative guards, imperative math</h1>
+    <p class="subtitle">The wish was for a table-driven optimizer where each peephole is data, not code. Most of that wish runs into a wall — but the wall is in a precise, nameable place, and on the near side of it there's a real win.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Subject</strong> table-based peephole framework</span>
+      <span><strong>New</strong> <code>RuleSet</code> / <code>Rule</code> / <code>RuleEnv</code></span>
+      <span><strong>Files</strong> <code>passes/optimization/framework/rules.py</code></span>
+    </div>
+
+    <section id="hope">
+    <h2>The hope</h2>
+
+    <p>c6502's TAC optimizer is a fixed-point loop over a couple dozen peephole passes. Each one had grown into the same shape: a class with a pattern, a <code>prepare</code> hook for whole-function analysis, and a <code>rewrite</code> method full of bespoke logic. The pattern-matching had already been factored into an LLVM-style combinator DSL — <code>m_Binary</code>, <code>m_Unary</code>, <code>m_OneOf</code> — but the <code>rewrite</code> bodies were still hand-written per pass.</p>
+
+    <p>The wish was the obvious next step: make the rewrite half table-based too. A pass becomes <em>data</em> — a list of <code>(pattern, guard, replacement)</code> rows — and a generic engine applies them. Less unique code per pass; ideally, fewer passes. The model is a term-rewriting system: <code>LHS ⇒ RHS</code> with side conditions, declared rather than coded.</p>
+
+    <p>Before building anything, I read the actual <code>rewrite</code> bodies. That reading is the whole story, because it draws a sharp line between the part of the wish that's achievable and the part that's a trap.</p>
+
+    </section>
+
+    <section id="already">
+    <h2>Half of it was already declarative</h2>
+
+    <p>The patterns were the easy half, and they were done. Here's the canonical shape shared by a whole family of folds — a boolean-producing instruction immediately consumed by a conditional jump:</p>
+
+<pre><code>[ m_Unary(op=LogicalNot, src=m_Any(capture='src'), dst=m_Var(capture='t')),
+  m_OneOf(
+    m_JumpIfTrue(condition=m_Specific('t'),  capture='jmp'),
+    m_JumpIfFalse(condition=m_Specific('t'), capture='jmp'),
+  ) ]
+</code></pre>
+
+    <p><code>m_Specific('t')</code> is a back-reference: the jump's condition must be the very same Var the producer wrote. That's already a declarative description of "a single-use boolean feeding the next branch." Nothing imperative about it. The question was never the pattern — it was what happens after a match.</p>
+
+    </section>
+
+    <section id="three">
+    <h2>Three kinds of rewrite</h2>
+
+    <p>Sorting the folds by what their <code>rewrite</code> actually does, three categories fall out, and they behave very differently under "turn this into a table."</p>
+
+    <h3>Category 1 — structural</h3>
+
+    <p>The replacement is the captured fields, reassembled. The <code>LogicalNot</code>-into-jump fold is the poster child: <code>!x</code> jumped-on is <code>x</code> jumped-on with the opposite sense. The entire transform:</p>
+
+<pre><code>jmp = m.bindings['jmp']
+src = m.bindings['src']
+cls = JumpIfFalse if isinstance(jmp, JumpIfTrue) else JumpIfTrue
+return [cls(condition=src, target=jmp.target)]
+</code></pre>
+
+    <p>No value is computed. This <em>is</em> a template — pick a class, reuse two fields. Category 1 genuinely collapses to near-zero unique code.</p>
+
+    <h3>Category 2 — computational</h3>
+
+    <p>The replacement requires arithmetic. Strength reduction turns <code>Multiply(x, 2^k)</code> into a left shift — but it has to compute <code>k = log2(const)</code>, and <code>Modulo(x, 2^k)</code> into <code>BitwiseAnd(x, 2^k - 1)</code>, building a mask constant of the right type variant. Constant reassociation folds <code>C1 + C2</code> with width-correct wraparound at the operand's declared width.</p>
+
+    <p>You can put these in a table — but the table cell has to hold a Python callable that does exactly that math. You've moved the code into a <code>build=</code> field, not eliminated it.</p>
+
+    <h3>Category 3 — multi-step</h3>
+
+    <p>The comparison-fold and the addressing-mode recognizers walk backward through the SSA def-chain, query the symbol table for operand widths, range-check constants, and drop several dead defs atomically. The comparison fold's narrowing path traces a value back through a <code>ZeroExtend</code>, checks the source is a 1-byte unsigned type, and only then rewrites <code>(uint8_t)i &lt; 105</code> into a 3-instruction <code>LDA / CMP / BCS</code>. That's control flow, not a template.</p>
+
+    </section>
+
+    <section id="ceiling">
+    <h2>Where the table stops</h2>
+
+    <div class="callout bad">
+      <div class="tag">The trap</div>
+      <p>Forcing categories 2 and 3 into a value-level meta-DSL produces something <em>harder</em> to read than the <code>if isinstance(op, Multiply)</code> ladder it replaced. The arithmetic is the pass. A meta-language for "compute log2, build a constant of the matching variant, wrap modulo the width" is just a worse Python.</p>
+    </div>
+
+    <p>And there's a fourth bucket that never enters the conversation at all: the roughly nine CFG-shaped passes — SSA construction and destruction, copy propagation, dead-store and dead-loop elimination, unreachable-code elimination. Those are whole-function dataflow. No per-site pattern applies. They stay hand-written, and should.</p>
+
+    <p>So the table tops out well short of "the whole optimizer." The honest target is not <em>everything is a table</em>. It's: <strong>declarative pattern, declarative guards, imperative math</strong>.</p>
+
+    </section>
+
+    <section id="guards">
+    <h2>The part that does factor: guards</h2>
+
+    <p>Here's the thing the category taxonomy reveals. The recurring content across these passes isn't in the <em>builds</em> — those are either trivial (category 1) or irreducibly unique (2 and 3). It's in the <strong>guards</strong>. The same soundness checks appear over and over:</p>
+
+    <ul>
+      <li><strong>single-use</strong> — the producer's dst is read exactly once, so folding its sole consumer leaves it dead. Six passes hand-rolled this.</li>
+      <li><strong>SSA-renamed</strong> — gate a def-chain walk on the name having a single def.</li>
+      <li><strong>byte-typed</strong> — the operand's C type is one byte. Copy-pasted across all three addressing-mode recognizers.</li>
+      <li><strong>have-symbols</strong> — skip the pass when no symbol table is present.</li>
+    </ul>
+
+    <p>These are exactly what wants to be declarative. So the framework that pays off isn't a replacement-template engine — it's a <em>guard library</em> plus a thin shell that owns the recurring scaffolding:</p>
+
+<pre><code>LNOT_RULE = Rule(
+    name="fold_lnot_jump",
+    pattern=producer_then_jump(
+        m_Unary(op=tac_ast.LogicalNot,
+                src=m_Any(capture='src'), dst=m_Var(capture='not_dst')),
+        on='not_dst',
+    ),
+    where=[single_use('not_dst')],     <span class="asm-comment"># declarative guard combinator</span>
+    build=_build_lnot_jump,            <span class="asm-comment"># (m, env, ctx) -> list | None</span>
+)
+</code></pre>
+
+    <p>The <code>where=[...]</code> list is the declarative part. The <code>build</code> is a callable — a one-liner for category 1, a real function for 2 and 3. Guards declarative, math imperative, on purpose.</p>
+
+    </section>
+
+    <section id="ruleset">
+    <h2>RuleSet</h2>
+
+    <p>The shell is <code>RuleSet</code>: a fixed-point pass driven by a list of <code>Rule</code>s. It owns three things every fold used to repeat by hand.</p>
+
+    <p><strong>The window scan.</strong> Slide over the instruction list; at each position try each rule's pattern, then its guards, then its build. First rule that fires wins; advance past the window it consumed.</p>
+
+    <p><strong>The shared analyses.</strong> A <code>RuleEnv</code>, built once per run, carries the use-count map and a name-to-defining-instruction index, with <code>def_of(var)</code> and <code>is_single_use(var)</code> helpers. The <code>build</code> reads these instead of recomputing its own — and they're built on the codebase's canonical operand-walkers, so they can't drift out of sync with the IR the way the old per-pass copies did.</p>
+
+    <p><strong>The guard evaluation.</strong> Guards are small closures over a capture name:</p>
+
+<pre><code>def single_use(capture):
+    return lambda m, env, ctx: env.is_single_use(m.bindings.get(capture))
+</code></pre>
+
+    <p>What a fold used to spell as a class with <code>window_size</code>, <code>pattern</code>, a <code>prepare</code> that built a three-tuple of analyses, and a <code>rewrite</code> that opened with a hand-written single-use check — is now a <code>Rule</code> value plus, for category 1, a six-line <code>build</code>.</p>
+
+    </section>
+
+    <section id="merge">
+    <h2>Three passes, one sweep</h2>
+
+    <p>The payoff that best honors "fewer passes" is that disjoint rules compose. Three folds in the pipeline matched the identical window — a producer feeding a single-use jump — differing only in the producer's opcode:</p>
+
+    <table class="cmp">
+      <tr><th>Fold</th><th>Producer</th><th>Emits</th></tr>
+      <tr><td><code>fold_lnot_jump</code></td><td><code>Unary(LogicalNot)</code></td><td>sense-flipped <code>JumpIf</code></td></tr>
+      <tr><td><code>fold_cmp_zero_jump</code></td><td><code>Binary(==, &lt;, …)</code></td><td><code>JumpIfCmp</code> / bare <code>JumpIf</code></td></tr>
+      <tr><td><code>fold_narrow_and_jump</code></td><td><code>Binary(BitwiseAnd)</code></td><td><code>JumpIfMasked</code></td></tr>
+    </table>
+
+    <p>They had been three separate passes, each sweeping the whole function in turn. As three <code>Rule</code>s in one <code>RuleSet</code>, they apply in a single sweep — whichever rule matches at each position.</p>
+
+    <div class="callout win">
+      <div class="tag">Why the merge is sound</div>
+      <p>The producer opcodes are disjoint, so at most one rule can match any window. And every rule emits a <em>jump</em>, never a producer — so no rule can rewrite another's output. The merged sweep therefore reaches the same fixed point as three separate sweeps. The full test suite, including the byte-exact assembly golden files, came out identical.</p>
+    </div>
+
+    <p>Each module still exports its own rule and keeps its standalone entry point — as a one-rule <code>RuleSet</code> — so the unit tests that drive each fold in isolation are untouched. The pipeline is the only place the three combine.</p>
+
+    </section>
+
+    <section id="scorecard">
+    <h2>The honest scorecard</h2>
+
+    <p>Raw line count came out roughly flat. About 240 lines of per-pass boilerplate — class scaffolding, <code>prepare</code> hooks, duplicated single-use gates — became one reusable <code>rules.py</code>. That's not a shrink; it's a relocation.</p>
+
+    <p>But line count was never the goal. What changed is structural:</p>
+
+    <ul>
+      <li>The recurring guards are named once and reused, instead of re-spelled at the top of every <code>rewrite</code>.</li>
+      <li>The category-1 fold dropped to a declarative rule plus a six-line build — exactly the table-based form the wish asked for.</li>
+      <li>Three pipeline passes became one.</li>
+      <li>The next pass that wants this shape inherits the whole apparatus for free.</li>
+    </ul>
+
+    <p>And the categories-2-and-3 folds shed their scaffolding without anyone pretending their arithmetic is data. They kept their real builds. That restraint is the point: the win came from knowing where the table stops. A peephole framework earns its keep on the structural rewrites and the shared guards; it loses by an over-reach into computational replacement that reads worse than the code it abstracts.</p>
+
+    <blockquote>The pattern was always declarative. The guards wanted to be. The math never did.</blockquote>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

@@ -43,11 +43,16 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   cond / Phis with agreeing args. Width-correct wraparound at the
   operand's declared width. Const-array-subscript fold
   (`_fold_indexed_load`) is part of this pass.
-- `strength_reduction.py` — `reduce_strength` (`ReduceStrength`,
-  WindowPass). `Multiply(x, 2^k)` → `LeftShift`, unsigned
-  `Divide(x, 2^k)` → `RightShift`, unsigned `Modulo(x, 2^k)` →
-  `BitwiseAnd`. Signed Divide / Modulo skipped (C99 truncation differs
-  from arithmetic shift).
+- `strength_reduction.py` — `reduce_strength` (three `RuleSet` rules
+  `MULTIPLY_RULE` / `DIVIDE_RULE` / `MODULO_RULE`, bundled as
+  `STRENGTH_RULES`; `optimizer.py` runs them as one merged RuleSet).
+  `Multiply(x, 2^k)` → `LeftShift`, unsigned `Divide(x, 2^k)` →
+  `RightShift`, unsigned `Modulo(x, 2^k)` → `BitwiseAnd`. Signed
+  Divide / Modulo skipped (C99 truncation differs from arithmetic
+  shift). Each `build` is computational (log2 / mask construction) —
+  the table form splits the per-op dispatch into rules but keeps the
+  arithmetic in the build, per "RuleSet" in
+  [framework/CLAUDE.md](framework/CLAUDE.md).
 - **Jump-fold family** (`cmp_zero_jump_fold.py`, `and_zero_jump_fold.py`,
   `lnot_jump_fold.py`) — three `RuleSet` rules (`CMP_ZERO_RULE`,
   `AND_ZERO_RULE`, `LNOT_RULE`) sharing the `producer_then_jump` window

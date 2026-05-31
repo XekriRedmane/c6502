@@ -82,7 +82,7 @@ from passes.optimization.framework import PhaseDriver, PassContext, RuleSet
 from passes.optimization.loop_rotate import RotateSignedCountdownLoops
 from passes.optimization.static_const_fold import FoldStaticConstReads
 from passes.optimization.constant_folding import ConstantFold
-from passes.optimization.strength_reduction import ReduceStrength
+from passes.optimization.strength_reduction import STRENGTH_RULES
 from passes.optimization.cmp_zero_jump_fold import CMP_ZERO_RULE
 from passes.optimization.and_zero_jump_fold import AND_ZERO_RULE
 from passes.optimization.lnot_jump_fold import LNOT_RULE
@@ -125,7 +125,9 @@ _DRIVER = PhaseDriver(
     ],
     fixedpoint=[
         ConstantFold(),
-        ReduceStrength(),
+        # Strength reduction split into per-op rules (Multiply / Divide
+        # / Modulo by powers of two) in one RuleSet.
+        RuleSet(*STRENGTH_RULES, name="reduce_strength"),
         # Three disjoint jump-folds — comparison / BitwiseAnd /
         # LogicalNot producers each feeding a single-use JumpIf —
         # merged into one RuleSet. They share the producer+JumpIf

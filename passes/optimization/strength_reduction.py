@@ -44,6 +44,9 @@ folding.
 from __future__ import annotations
 
 import tac_ast
+from passes.optimization.framework import (
+    RuleSet, Rule, PassContext, MatchResult, RuleEnv, m_Binary,
+)
 
 
 def reduce_strength(
@@ -57,93 +60,108 @@ def reduce_strength(
     — needed to construct typed zeros for the modulo-by-1 case and
     to detect the signedness of Var operands for unsigned-only
     rewrites (Divide, Modulo)."""
-    return ReduceStrength().run(fn, PassContext(symbols=symbols))
+    return RuleSet(*STRENGTH_RULES, name="reduce_strength").run(
+        fn, PassContext(symbols=symbols),
+    )
 
 
-def _reduce(
-    instr: tac_ast.Type_instruction,
-    symbols,
-) -> tac_ast.Type_instruction | None:
-    """Try to rewrite `instr`. Returns the replacement or None if
-    no rewrite applies."""
-    if not isinstance(instr, tac_ast.Binary):
+def _build_multiply(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """`Multiply(x, 2^k)` → `LeftShift(x, k)`; `Multiply(x, 1)` →
+    `Copy(x)`. Commutative, so try either operand as the constant.
+    All-constant operands defer to `constant_fold`."""
+    binop = m.bindings['binop']
+    src1, src2, dst = binop.src1, binop.src2, binop.dst
+    if isinstance(src1, tac_ast.Constant) and isinstance(src2, tac_ast.Constant):
         return None
-    op = instr.op
-    src1, src2, dst = instr.src1, instr.src2, instr.dst
-
-    if isinstance(op, tac_ast.Multiply):
-        # When both sides are constants, defer to constant_folding —
-        # it'll collapse the whole thing to a Copy(Constant, dst)
-        # at the right value.
-        if isinstance(src1, tac_ast.Constant) and isinstance(
-            src2, tac_ast.Constant,
-        ):
-            return None
-        # Multiply is commutative — try both orderings.
-        for var_side, const_side in ((src1, src2), (src2, src1)):
-            c = _power_of_two_const(const_side)
-            if c is None:
-                continue
-            k, _ = c
-            if k == 0:
-                return tac_ast.Copy(src=var_side, dst=dst)
-            count = _shift_count_const(k, var_side, symbols)
-            return tac_ast.Binary(
-                op=tac_ast.LeftShift(),
-                src1=var_side, src2=count, dst=dst,
-            )
-        return None
-
-    if isinstance(op, tac_ast.Divide):
-        # Only `x / Constant` is reducible — not `Constant / x`
-        # (commutativity doesn't hold for division).
-        c = _power_of_two_const(src2)
+    for var_side, const_side in ((src1, src2), (src2, src1)):
+        c = _power_of_two_const(const_side)
         if c is None:
-            return None
+            continue
         k, _ = c
         if k == 0:
-            # x / 1 → Copy(x, dst). Same ordering caveat as above.
-            if isinstance(src1, tac_ast.Constant):
-                return None
-            return tac_ast.Copy(src=src1, dst=dst)
-        # Signed → arithmetic right shift would round toward
-        # negative infinity, but C99 truncates toward zero. Skip.
-        if not _is_unsigned(src1, symbols):
-            return None
-        count = _shift_count_const(k, src1, symbols)
-        return tac_ast.Binary(
-            op=tac_ast.RightShift(),
-            src1=src1, src2=count, dst=dst,
-        )
-
-    if isinstance(op, tac_ast.Modulo):
-        c = _power_of_two_const(src2)
-        if c is None:
-            return None
-        k, value = c
-        if k == 0:
-            # x % 1 == 0 — Copy(typed-zero, dst).
-            zero = _zero_const(src1, symbols)
-            if zero is None:
-                return None
-            return tac_ast.Copy(
-                src=tac_ast.Constant(const=zero), dst=dst,
-            )
-        if not _is_unsigned(src1, symbols):
-            return None
-        # x % 2^k → x & (2^k - 1). Build the mask as a constant of
-        # the same variant as src2 (which the type checker has
-        # stamped to match src1's promoted type).
-        mask = value - 1
-        mask_const = _const_with_value(src2, mask)
-        if mask_const is None:
-            return None
-        return tac_ast.Binary(
-            op=tac_ast.BitwiseAnd(),
-            src1=src1, src2=tac_ast.Constant(const=mask_const), dst=dst,
-        )
-
+            return [tac_ast.Copy(src=var_side, dst=dst)]
+        count = _shift_count_const(k, var_side, ctx.symbols)
+        return [tac_ast.Binary(
+            op=tac_ast.LeftShift(), src1=var_side, src2=count, dst=dst,
+        )]
     return None
+
+
+def _build_divide(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """Unsigned `Divide(x, 2^k)` → `RightShift(x, k)`; `Divide(x, 1)`
+    → `Copy(x)`. Not commutative — only `x / const`. Signed `/2^k`
+    skipped: arithmetic shift rounds toward -inf, C99 toward zero."""
+    binop = m.bindings['binop']
+    src1, src2, dst = binop.src1, binop.src2, binop.dst
+    c = _power_of_two_const(src2)
+    if c is None:
+        return None
+    k, _ = c
+    if k == 0:
+        if isinstance(src1, tac_ast.Constant):
+            return None
+        return [tac_ast.Copy(src=src1, dst=dst)]
+    if not _is_unsigned(src1, ctx.symbols):
+        return None
+    count = _shift_count_const(k, src1, ctx.symbols)
+    return [tac_ast.Binary(
+        op=tac_ast.RightShift(), src1=src1, src2=count, dst=dst,
+    )]
+
+
+def _build_modulo(
+    m: MatchResult, env: RuleEnv, ctx: PassContext,
+) -> list | None:
+    """Unsigned `Modulo(x, 2^k)` → `BitwiseAnd(x, 2^k - 1)`;
+    `Modulo(x, 1)` → `Copy(typed-zero)`. Signed `%2^k` skipped (the
+    result sign follows the dividend; bit-AND can't be negative)."""
+    binop = m.bindings['binop']
+    src1, src2, dst = binop.src1, binop.src2, binop.dst
+    c = _power_of_two_const(src2)
+    if c is None:
+        return None
+    k, value = c
+    if k == 0:
+        zero = _zero_const(src1, ctx.symbols)
+        if zero is None:
+            return None
+        return [tac_ast.Copy(src=tac_ast.Constant(const=zero), dst=dst)]
+    if not _is_unsigned(src1, ctx.symbols):
+        return None
+    # x % 2^k → x & (2^k - 1). Build the mask as a constant of the same
+    # variant as src2 (the type checker stamped it to match src1's
+    # promoted type).
+    mask_const = _const_with_value(src2, value - 1)
+    if mask_const is None:
+        return None
+    return [tac_ast.Binary(
+        op=tac_ast.BitwiseAnd(),
+        src1=src1, src2=tac_ast.Constant(const=mask_const), dst=dst,
+    )]
+
+
+MULTIPLY_RULE = Rule(
+    name="reduce_multiply",
+    pattern=m_Binary(op=tac_ast.Multiply, capture='binop'),
+    build=_build_multiply,
+)
+DIVIDE_RULE = Rule(
+    name="reduce_divide",
+    pattern=m_Binary(op=tac_ast.Divide, capture='binop'),
+    build=_build_divide,
+)
+MODULO_RULE = Rule(
+    name="reduce_modulo",
+    pattern=m_Binary(op=tac_ast.Modulo, capture='binop'),
+    build=_build_modulo,
+)
+
+# Bundled for the pipeline (one merged RuleSet) and the entry point.
+STRENGTH_RULES = (MULTIPLY_RULE, DIVIDE_RULE, MODULO_RULE)
 
 
 # ---------------------------------------------------------------------------
@@ -294,29 +312,3 @@ _ZERO_FOR_VARIANT: dict[type, type] = {
     tac_ast.ConstULong: lambda: tac_ast.ConstULong(value=0),
     tac_ast.ConstULongLong: lambda: tac_ast.ConstULongLong(value=0),
 }
-
-
-from passes.optimization.framework import (  # noqa: E402
-    WindowPass, PassContext, MatchResult,
-    m_Any,
-)
-
-
-class ReduceStrength(WindowPass):
-    """WindowPass(window_size=1): matches any instruction via m_Any;
-    rewrite dispatches to _reduce for the per-op strength-reduction
-    logic. Returns a 1-element replacement list on a successful
-    rewrite, or None to leave the instruction unchanged."""
-    name = "reduce_strength"
-    window_size = 1
-    pattern = m_Any(capture='instr')
-
-    def prepare(self, fn, ctx):
-        return ctx.symbols
-
-    def rewrite(self, m: MatchResult, symbols, ctx: PassContext) -> list | None:
-        instr = m.bindings['instr']
-        replacement = _reduce(instr, symbols)
-        if replacement is None:
-            return None
-        return [replacement]

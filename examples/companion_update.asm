@@ -518,56 +518,52 @@ drift_step:
 companion_update:
    SUBROUTINE
 
+   LDY   __local_companion_update__slot
    LDA   __zpabi_companion_update__gate
    BPL   .if_end@41
    RTS
 .if_end@41:
-   LDX   #$01
+   LDA   #$01
+   STA   __local_companion_update__slot
 .loop@1_start:
-   LDA   companion_state,X
+   LDA   companion_state,Y
    BPL   .if_end@42
    STX   __zpabi_drift_step__slot
    LDA   #<__local_companion_update__sprite_y
    STA   __zpabi_drift_step__out_sprite_y_0
    LDA   #>__local_companion_update__sprite_y
    STA   __zpabi_drift_step__out_sprite_y_1
-   STX   __local_companion_update__slot
    JSR   drift_step
-   LDX   __local_companion_update__slot
-   STX   __zpabi_compute_screen_x__slot
+   LDA   __local_companion_update__slot
+   STA   __zpabi_compute_screen_x__slot
    LDA   __zpabi_companion_update__player_y
    STA   __zpabi_compute_screen_x__player_y
    LDA   __zpabi_companion_update__sprite_xref
    STA   __zpabi_compute_screen_x__sprite_xref
-   STX   __local_companion_update__slot
    JSR   compute_screen_x
-   LDX   __local_companion_update__slot
    STA   __local_companion_update__3
-   LDY   __local_companion_update__3
-   LDA   companion_state,X
+   LDX   __local_companion_update__3
+   LDA   companion_state,Y
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
-   LDA   proj_screen_col,Y
+   LDA   proj_screen_col,X
    STA   __zpabi_smc_body_draw__sprite_x
    LDA   __local_companion_update__sprite_y
    STA   __zpabi_smc_body_draw__sprite_y
-   LDA   proj_frame_idx,Y
+   LDA   proj_frame_idx,X
    STA   __zpabi_smc_body_draw__frame_idx
    LDA   __local_companion_update__0
    STA   __zpabi_smc_body_draw__state
    LDA   __zpabi_companion_update__page_flag
    STA   __zpabi_smc_body_draw__page_flag
-   STX   __local_companion_update__slot
    JSR   smc_body_draw
-   LDX   __local_companion_update__slot
-   STX   __zpabi_player_catch__slot
+   LDA   __local_companion_update__slot
+   STA   __zpabi_player_catch__slot
    LDA   __local_companion_update__3
    STA   __zpabi_player_catch__screen_x
    LDA   __zpabi_companion_update__player_col
    STA   __zpabi_player_catch__player_col
-   STX   __local_companion_update__slot
    JSR   player_catch
-   LDX   __local_companion_update__slot
    JMP   .loop@1_continue
 .if_end@42:
    BNE   .if_else@44
@@ -580,71 +576,63 @@ companion_update:
    STX   __zpabi_active_neg_step__slot
    LDA   __zpabi_companion_update__player_floor
    STA   __zpabi_active_neg_step__player_floor
-   STX   __local_companion_update__slot
    JSR   active_neg_step
-   LDX   __local_companion_update__slot
    STA   __local_companion_update__0
    JMP   .cond_end@46
 .cond_else@45:
    STX   __zpabi_active_pos_step__slot
    LDA   __zpabi_companion_update__player_floor
    STA   __zpabi_active_pos_step__player_floor
-   STX   __local_companion_update__slot
    JSR   active_pos_step
-   LDX   __local_companion_update__slot
    STA   __local_companion_update__0
 .cond_end@46:
    LDA   __local_companion_update__0
-   BNE   .lb_skip@1
-   JMP   .loop@1_continue
-.lb_skip@1:
+   BEQ   .loop@1_continue
 .if_end@43:
-   STX   __zpabi_compute_screen_x__slot
+   LDA   __local_companion_update__slot
+   STA   __zpabi_compute_screen_x__slot
    LDA   __zpabi_companion_update__player_y
    STA   __zpabi_compute_screen_x__player_y
    LDA   __zpabi_companion_update__sprite_xref
    STA   __zpabi_compute_screen_x__sprite_xref
-   STX   __local_companion_update__slot
    JSR   compute_screen_x
-   LDX   __local_companion_update__slot
    STA   __local_companion_update__4
+   TXA
    BNE   .loop@1_continue
+   LDA   __local_companion_update__4
    CMP   #$9A
    BCS   .loop@1_continue
-   STX   __zpabi_entity_proximity__slot
+   LDA   __local_companion_update__slot
+   STA   __zpabi_entity_proximity__slot
+   LDA   __local_companion_update__4
    STA   __zpabi_entity_proximity__screen_x
    LDA   __zpabi_companion_update__hit_max
    STA   __zpabi_entity_proximity__hit_max
-   STX   __local_companion_update__slot
    JSR   entity_proximity
-   LDX   __local_companion_update__slot
-   LDY   __local_companion_update__4
-   LDA   companion_state,X
+   LDX   __local_companion_update__4
+   LDA   companion_state,Y
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
-   LDA   proj_screen_col,Y
+   LDA   proj_screen_col,X
    STA   __zpabi_smc_body_draw__sprite_x
-   LDA   companion_row,X
+   LDA   companion_row,Y
    STA   __zpabi_smc_body_draw__sprite_y
-   LDA   proj_frame_idx,Y
+   LDA   proj_frame_idx,X
    STA   __zpabi_smc_body_draw__frame_idx
    LDA   __local_companion_update__0
    STA   __zpabi_smc_body_draw__state
    LDA   __zpabi_companion_update__page_flag
    STA   __zpabi_smc_body_draw__page_flag
-   STX   __local_companion_update__slot
    JSR   smc_body_draw
-   LDX   __local_companion_update__slot
-   STX   __zpabi_player_catch__slot
+   LDA   __local_companion_update__slot
+   STA   __zpabi_player_catch__slot
    LDA   __local_companion_update__4
    STA   __zpabi_player_catch__screen_x
    LDA   __zpabi_companion_update__player_col
    STA   __zpabi_player_catch__player_col
-   STX   __local_companion_update__slot
    JSR   player_catch
-   LDX   __local_companion_update__slot
 .loop@1_continue:
-   DEX
+   DEC   __local_companion_update__slot
    BMI   .lb_skip@0
    JMP   .loop@1_start
 .lb_skip@0:

@@ -356,7 +356,9 @@ def _validate_init(
             "variable (multi-declarator forms aren't supported)",
         )
     vd = init.var_decls[0]
-    if vd.storage_class is not None:
+    if vd.storage_class is not None and not isinstance(
+        vd.storage_class, c99_ast.Register,
+    ):
         raise UnrollError(
             "unroll: induction variable cannot have a storage class",
         )

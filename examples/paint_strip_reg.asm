@@ -14,9 +14,7 @@ paint_strip_reg:
 
    STA   __zpabi_paint_strip_reg__x_pixel
    LDX   __zpabi_paint_strip_reg__x_pixel
-   TYA
    STA   hud_buf,X
-   TYA
    RTS
 
 main:

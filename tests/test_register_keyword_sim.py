@@ -87,12 +87,12 @@ class TestRegisterKeywordSim(unittest.TestCase):
 
     def test_local_pinned_to_y(self) -> None:
         # A `register` local pins to Y; the body reads / writes Y for
-        # `acc` instead of a ZP byte. (`n` is a plain param here — a
-        # `register` param AND a `register` local together currently
-        # force a soft-stack frame whose prologue clobbers the
-        # incoming register arg; tracked as a follow-up.)
+        # `acc` instead of a ZP byte. Exercised alongside a `register`
+        # param (`n` -> A) — both together must stay bare-exit (no
+        # soft-stack frame whose prologue would clobber the incoming
+        # register arg).
         src = (
-            "char sum_n(char n) {"
+            "char sum_n(register char n) {"
             "    register char acc = 0;"
             "    while (n > 0) {"
             "        acc = (char)(acc + n);"

@@ -959,13 +959,15 @@ class Resolver:
     ) -> c99_ast.Type_for_init:
         match init:
             case c99_ast.InitDecl(var_decls=vds):
-                # C99 §6.8.5.3: the for-init is restricted to *non-
-                # extern, non-static* declarations. Reject any
-                # storage class up front so the resolver doesn't
-                # silently accept ill-formed C.
+                # C99 §6.8.5.3: a for-init declaration may carry only
+                # the `auto` or `register` storage class — `static` /
+                # `extern` are rejected up front. (`register` pins the
+                # induction variable to Y like any other local.)
                 resolved: list[c99_ast.Type_var_decl] = []
                 for vd in vds:
-                    if vd.storage_class is not None:
+                    if vd.storage_class is not None and not isinstance(
+                        vd.storage_class, c99_ast.Register,
+                    ):
                         raise IdentifierResolutionError(
                             f"storage-class specifier not allowed on a "
                             f"for-init declaration: {vd.name!r}"

@@ -1386,9 +1386,11 @@ class Translator:
         # objects with static storage duration — their definitions
         # appear in the program's StaticVariable list assembled from
         # the symbol table. They don't run any code at the
-        # declaration's source location, so we drop them here. The
-        # `storage_class is not None` check is sufficient to make the
-        # split: identifier_resolution / type-check have already
+        # declaration's source location, so we drop them here. Gate on
+        # `Static` / `Extern` specifically: a `register` local has a
+        # `storage_class` too (`Register()`), but it's an AUTOMATIC-
+        # storage object — its initializer must run like any other
+        # local's. identifier_resolution / type-check have already
         # rejected any block-scope storage-class specifier other than
         # `static` / `extern`.
         #
@@ -1397,7 +1399,9 @@ class Translator:
         # runtime effect, so it lowers to nothing.
         match decl:
             case c99_ast.VarDecl(var_decl=vd):
-                if vd.storage_class is not None:
+                if isinstance(
+                    vd.storage_class, (c99_ast.Static, c99_ast.Extern),
+                ):
                     return
                 if vd.init is not None:
                     if isinstance(vd.init, c99_ast.InitList):

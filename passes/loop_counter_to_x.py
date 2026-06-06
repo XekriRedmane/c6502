@@ -197,6 +197,18 @@ def _plan_promotion(instrs):
         if _is_x_write_other_than(instr, m_key):
             # Some non-counter X-write. Must be Y-pivotable or a Call.
             if isinstance(instr, asm_ast.Call):
+                # The promotion wraps each Call with `STX M` before /
+                # `LDX M` after to preserve the counter across the JSR.
+                # That model assumes the callee delivers NOTHING in X.
+                # A function returning a non-pointer value of 2 bytes
+                # now returns its high byte in X — and the caller
+                # captures it (`STX slot_hi` / `TXA`) right after the
+                # JSR. Inserting `LDX M` there would clobber the live
+                # return high byte before it's captured. If X is read
+                # after this Call before being redefined, the callee
+                # returned a live value in X — refuse the promotion.
+                if _call_returns_live_x(instrs, i):
+                    return None
                 call_indices.append(i)
                 i += 1
                 continue
@@ -229,6 +241,97 @@ def _plan_promotion(instrs):
         'call_indices': call_indices,
         'lda_m_indices': cand['lda_m_indices'],
     }
+
+
+def _reads_x(instr) -> bool:
+    """True iff `instr` reads Reg(X) in any operand role — a source, a
+    compare operand, an RMW dst, or an `abs,X` index. (A pure write to
+    X, e.g. `LDX`/`TAX`/`Pop(X)`, does NOT count.)"""
+    def op_uses_x(op, *, is_dst=False, rmw=False) -> bool:
+        if op is None:
+            return False
+        if _is_reg_x(op):
+            return (not is_dst) or rmw
+        # Indexed addressing through X reads X regardless of role.
+        idx = getattr(op, "index", None)
+        return idx is not None and isinstance(idx, asm_ast.X)
+    match instr:
+        case asm_ast.Mov(src=s, dst=d):
+            return op_uses_x(s) or op_uses_x(d, is_dst=True)
+        case asm_ast.Compare(left=lt, right=rt):
+            return op_uses_x(lt) or op_uses_x(rt)
+        case (asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d)
+              | asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d)):
+            return op_uses_x(s) or op_uses_x(d, is_dst=True, rmw=True)
+        case asm_ast.Xor(src1=a, src2=b, dst=d):
+            return op_uses_x(a) or op_uses_x(b) or op_uses_x(d, is_dst=True, rmw=True)
+        case (asm_ast.Inc(dst=d) | asm_ast.Dec(dst=d)
+              | asm_ast.ArithmeticShiftLeft(dst=d)
+              | asm_ast.LogicalShiftRight(dst=d)
+              | asm_ast.RotateLeft(dst=d) | asm_ast.RotateRight(dst=d)):
+            return op_uses_x(d, is_dst=True, rmw=True)
+        case asm_ast.Push(src=s) | asm_ast.BitTest(src=s):
+            return op_uses_x(s)
+        case asm_ast.LoadAddress(src=s, dst=d):
+            return op_uses_x(s) or op_uses_x(d, is_dst=True)
+    return False
+
+
+def _call_returns_live_x(instrs, call_idx: int) -> bool:
+    """True iff Reg(X) is read on some path after the Call at
+    `call_idx` before it is redefined — i.e. the callee returned a
+    live value in X (the high byte of a 2-byte register return,
+    captured by `STX`/`TXA` right after the JSR). The normal
+    loop-counter case instead reloads the counter with `LDX M` (a pure
+    write) before any X use — often at the loop top reached across the
+    back-edge — so X is redefined first on every path and this returns
+    False. Follows control flow (both arms of a Branch, Jump targets),
+    pruning a path at the first X-redefine or another Call (which
+    clobbers X)."""
+    label_idx = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    seen: set[int] = set()
+    stack: list[int] = [call_idx + 1]
+    while stack:
+        j = stack.pop()
+        while 0 <= j < len(instrs):
+            if j in seen:
+                break
+            seen.add(j)
+            instr = instrs[j]
+            # A read of X means the Call's return-in-X is live.
+            if _reads_x(instr):
+                return True
+            # A pure write to X (LDX / TAX / Pop X) redefines it — the
+            # Call's X output is dead from here; prune this path.
+            if (isinstance(instr, asm_ast.Mov)
+                    and _is_reg_x(instr.dst)):
+                break
+            if isinstance(instr, asm_ast.Pop) and _is_reg_x(instr.dst):
+                break
+            if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+                if instr.save_x:
+                    return True   # the epilogue reads X (return high).
+                break
+            if isinstance(instr, asm_ast.Jump):
+                t = label_idx.get(instr.target)
+                if t is not None:
+                    stack.append(t)
+                break
+            if isinstance(instr, asm_ast.Branch):
+                t = label_idx.get(instr.target)
+                if t is not None:
+                    stack.append(t)
+                j += 1
+                continue
+            if isinstance(instr, asm_ast.Call):
+                # Another Call clobbers X — the original Call's X
+                # output can't survive past it; prune this path.
+                break
+            j += 1
+    return False
 
 
 def _is_x_write_other_than(instr, m_key) -> bool:

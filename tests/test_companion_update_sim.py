@@ -705,23 +705,11 @@ class TestCompanionUpdateSim(unittest.TestCase):
         )
         self.assertEqual(log, _expected())
 
-    # KNOWN OPTIMIZER DIVERGENCE (pinned). `compute_screen_x` returns
-    # `uint16_t`, which under the register-return ABI now comes back in
-    # A (low) / X (high) instead of HARGS. In this subsystem's
-    # two-`compute_screen_x`-per-iteration loop, the high byte's
-    # residence in X interacts with `dec_peephole`'s (correct) SBC→DEC
-    # fold and the downstream regalloc/scheduling to clobber the X-held
-    # high byte before its `!= 0` test, so the optimized run diverges
-    # from the (correct) unoptimized run. The unoptimized path is
-    # unaffected and still asserted above. Tracked as a follow-up —
-    # see the register-keyword migration notes.
-    @unittest.expectedFailure
     def test_optimized_matches_expected(self):
         result, log = self._run(optimize=True)
         self.assertEqual(result.return_int() & 0xFFFF, 8 * 16)
         self.assertEqual(log, _expected())
 
-    @unittest.expectedFailure
     def test_opt_and_unopt_agree(self):
         _, unopt_log = self._run(optimize=False)
         _, opt_log = self._run(optimize=True)

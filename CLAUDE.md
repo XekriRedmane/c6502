@@ -110,11 +110,11 @@ Two key runtime conventions:
   `passes/abi_selection.py` (positional assignment, type-driven
   return) + `passes/optimization_asm/{hwreg_eligibility,regalloc}.py`
   (Y-only local pins) + `passes/dead_reg_entry_stub.py` for the
-  implementation. (Known follow-up: a 2-byte register return from a
-  *soft-stack* function is preserved across teardown; a `register`
-  param AND `register` local together can force a frame whose
-  prologue clobbers the incoming register arg — see
-  `tests/test_register_keyword_sim.py`.)
+  implementation. A 2-byte register return from a *soft-stack*
+  function is preserved across the teardown (the `save_x` flag on the
+  asm `Ret`/`Return` atoms); `loop_counter_to_x` refuses to promote a
+  counter to X across a `Call` that returns a live value in X (the
+  high byte would race the counter restore).
 
 ## Common commands
 

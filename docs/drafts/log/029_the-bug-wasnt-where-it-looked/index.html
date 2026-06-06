@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The bug wasn’t where it looked</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .asm-bad { background: rgba(220,90,70,.28); color: #ffb4a6; padding: 0 0.2em; border-radius: 2px; font-weight: 600; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); background: var(--good-bg); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#two">Two symptoms, two scenes</a></li>
+      <li><a href="#promoter">The promoter that didn’t know</a></li>
+      <li><a href="#guard">A guard that follows the branches</a></li>
+      <li><a href="#frame">A prologue eats an argument</a></li>
+      <li><a href="#root">One <code>is not None</code> too many</a></li>
+      <li><a href="#diagnostic">The un-versioned name</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #029</p>
+    <h1>The bug wasn’t where it looked</h1>
+    <p class="subtitle">The register-ABI change (<a href="../028_putting-the-return-in-x/">#028</a>) left two bugs I pinned rather than fixed. Coming back to them, both turned out to present several passes away from their actual cause — one in a register allocator that didn’t know the calling convention had changed under it, one in a single <code>is not None</code> three passes upstream that had been silently deleting code for far longer than the new feature.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Subject</strong> root-cause distance</span>
+      <span><strong>Bugs</strong> 2 follow-ups</span>
+      <span><strong>Fixes</strong> 1 guard · 1 gate</span>
+    </div>
+
+    <section id="two">
+    <h2>Two symptoms, two scenes</h2>
+
+    <p>Two loose ends came out of moving 2-byte integer returns into the A/X register pair. Both were real miscompiles I'd written down and deferred, because each one's <em>symptom</em> sat somewhere that looked nothing like a calling-convention problem.</p>
+
+    <p>The first lived in a game subsystem's update loop. A helper returns a <code>uint16_t</code> screen coordinate; under the new ABI that comes back in A and X. The loop calls it twice per iteration, tests the high byte for zero, uses the low byte as an array index. Optimized, it computed garbage. Disabling any one of three different optimization passes made it go away — which is the signature of an interaction, not a single broken pass.</p>
+
+    <p>The second was simpler to trigger and stranger to look at. A leaf function with a <code>register</code> parameter and a <code>register</code> local — each fine on its own — grew a soft-stack frame when combined, and the frame's prologue clobbered the incoming argument before the function could read it:</p>
+
+<pre><code>sum_n:
+   <span class="asm-comment"># ... prologue does its 16-bit SSP/FP math, trashing A ...</span>
+   STA   __zpabi_sum_n__n      <span class="asm-comment"># save the arg — but A is already gone</span>
+</code></pre>
+
+    <p>That second one looks like an ordering bug: the entry stub that saves the register argument runs after the prologue, so move the stub earlier. I almost fixed it that way. That would have been patching the symptom.</p>
+
+    </section>
+
+    <section id="promoter">
+    <h2>The promoter that didn’t know</h2>
+
+    <p>The loop bug first. Bisecting — patch each candidate pass to the identity function, recompile, see which removal makes the miscompile vanish — pointed at three optimizations that all promote a value into the X register: a loop-counter-to-X pass, a dual-index promoter, an increment-compare fusion. Disabling any one fixed it. They were chaining.</p>
+
+    <p>The shared mechanism was the loop-counter promotion. It takes a counter that lives in a zero-page cell and keeps it in X across the whole loop body — the classic hand-written 6502 idiom. The complication is calls: a <code>JSR</code> clobbers X, so the pass brackets every call in the loop with a save and a restore:</p>
+
+<pre><code>   STX   counter_slot      <span class="asm-comment"># save X before the call</span>
+   JSR   helper
+   LDX   counter_slot      <span class="asm-comment"># restore X after the call</span>
+</code></pre>
+
+    <p>That bracket encodes an assumption: <strong>the callee delivers nothing in X.</strong> X is the counter's home; the call can only damage it, so we save and restore around the damage. True for the entire prior life of the compiler — and false the day a 2-byte return started handing its high byte back in X. Now the instruction right after the <code>JSR</code> isn't free real estate; it's where the caller captures the return:</p>
+
+<pre><code>   STX   counter_slot      <span class="asm-comment"># save counter</span>
+   JSR   helper            <span class="asm-comment"># returns high byte in X</span>
+   <span class="asm-bad">LDX   counter_slot</span>      <span class="asm-comment"># restore — clobbers the return high byte!</span>
+   STX   result_hi         <span class="asm-comment"># captures the counter, not the return</span>
+</code></pre>
+
+    <p>Two live values, one register. The counter and the return high byte both want X across the same instruction, and the promoter happily wrote code that pretends only one of them exists. The other passes in the chain were just shuffling enough around to make this promotion fire.</p>
+
+    </section>
+
+    <section id="guard">
+    <h2>A guard that follows the branches</h2>
+
+    <p>The fix is to teach the promoter the thing it didn't know: refuse to promote across a call whose return value is live in X. The tell is right there in the instruction stream — does anything <em>read</em> X after the <code>JSR</code> before X is overwritten? A return capture (<code>STX result_hi</code>, or <code>TXA</code>) reads X. The ordinary counter case instead reloads X with <code>LDX counter_slot</code> — a pure write — before any use.</p>
+
+    <p>The subtlety is that the counter's reload often happens at the <em>top</em> of the loop, reached across the back-edge, not on the straight line after the call. A linear scan that stops at the first branch over-rejects and kills the optimization on every normal loop. So the check follows control flow — both arms of a conditional branch, jump targets, the loop back-edge — and resolves each path independently:</p>
+
+<pre><code>def _call_returns_live_x(instrs, call_idx):
+    <span class="asm-comment"># walk forward from the call, following branches</span>
+    for each reachable instr:
+        if instr reads X:              return True   <span class="asm-comment"># live return in X — refuse</span>
+        if instr is a pure write to X: prune path    <span class="asm-comment"># LDX/TAX — counter reload</span>
+        if instr is another Call:      prune path    <span class="asm-comment"># clobbers X anyway</span>
+        if instr is Ret with save_x:   return True    <span class="asm-comment"># epilogue returns X</span>
+    return False
+</code></pre>
+
+    <p>For the buggy loop the first instruction after the call reads X — refuse, leave the counter in its zero-page cell, done. For an honest counter loop the only thing that touches X is the reload at the loop top, reached around the branch — a pure write, every path prunes clean, the promotion proceeds exactly as before. The existing loop-counter tests stayed green, which is how you know the guard is narrow and not a sledgehammer.</p>
+
+    </section>
+
+    <section id="frame">
+    <h2>A prologue eats an argument</h2>
+
+    <p>Now the frame bug. The instinct is strong here: the entry stub that saves the register argument is emitted as the first body instruction; the prologue gets prepended later; the prologue runs first and trashes A. Reorder them. It would even work.</p>
+
+    <p>But the question that stops you is: <em>why is there a prologue at all?</em> <code>sum_n</code> is a leaf, non-recursive, address never taken. It is exactly the shape that's supposed to get a private zero-page slice for its locals and emit as bare body + <code>RTS</code> — no frame, no prologue, nothing to reorder. Something forced the frame. Chasing <em>that</em> is the difference between a patch and a fix.</p>
+
+    <p>I handed the trace to a sub-agent: figure out why <code>sum_n</code> isn't bare-exit. The answer came back with a value name I didn't expect — <code>@1.acc</code>, the <code>register char acc = 0</code> local, sitting on the frame as a read with no reaching definition. The function got its private pool correctly. The Y-pinned <code>acc</code> got its register correctly. But there was a <em>second</em>, ghost <code>acc</code> — a use of a value that was never written — and that ghost is what landed on the frame and dragged the prologue in with it.</p>
+
+    </section>
+
+    <section id="root">
+    <h2>One <code>is not None</code> too many</h2>
+
+    <p>A read with no write means the write was dropped. In the AST-to-TAC lowering, block-scope declarations are handled like this:</p>
+
+<pre><code>case VarDecl(var_decl=vd):
+    if vd.storage_class is not None:
+        return                 <span class="asm-comment"># static / extern: defined elsewhere, no code here</span>
+    ... emit the initializer ...
+</code></pre>
+
+    <p>The intent: a block-scope <code>static int x = 1;</code> or <code>extern int y;</code> has static storage duration — its definition lives in the program's data section, and the declaration emits no code at its source location. The <code>storage_class is not None</code> test was the shorthand for "has static storage duration."</p>
+
+    <p>It used to be exact. There were only two storage classes that reached this point: <code>static</code> and <code>extern</code>. Adding the <code>register</code> keyword added a third — and a <code>register</code> local is <em>automatic</em> storage. Its initializer absolutely must run. But it carries a <code>storage_class</code> too, so <code>is not None</code> swept it into the static bucket and <strong>the entire <code>acc = 0</code> was dropped on the floor.</strong></p>
+
+    <p>The fix is to say what was always meant:</p>
+
+<pre><code>    if isinstance(vd.storage_class, (Static, Extern)):
+        return
+</code></pre>
+
+    <p>And the part that turns a corner-case fix into a real one: this had nothing to do with the frame, or the combination of param and local, or any of the symptoms. <strong>Every <code>register T x = init;</code> in the language was silently dropping its initializer.</strong> The only reason it hadn't surfaced was luck — when the dropped initializer didn't happen to force a frame, the uninitialized garbage got overwritten before anyone read it, or coalesced into a register that was about to be loaded anyway. The combination in <code>sum_n</code> was just the first arrangement unlucky enough to make a silent miscompile visible.</p>
+
+    </section>
+
+    <section id="diagnostic">
+    <h2>The un-versioned name</h2>
+
+    <p>The thread that unravels this is worth keeping. In the SSA form, every name gets a per-definition version suffix — <code>@1.acc</code> becomes <code>@1.acc.1.b0.v2</code> and so on. The construction only versions names that have a reaching definition. A use with no def stays <em>bare</em>: <code>@1.acc</code>, no suffix. And a bare name is invisible to register coloring — it's in neither the color map nor the hardware-register-pin map — so it falls straight through to the frame.</p>
+
+    <blockquote>An un-versioned Pseudo on the frame is a fingerprint. It doesn't mean the allocator made a bad choice; it means the value was never defined, and the bug is upstream in whatever should have defined it.</blockquote>
+
+    <p>From there the confirmation is a one-line diff: dump the TAC for the working variant (a plain <code>char acc = 0</code>) next to the broken one (<code>register char acc = 0</code>) and look for the missing instruction. The working one has a <code>Copy(0 → acc)</code>. The broken one has nothing. The smoking gun is the absence.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p>Both fixes were small — a guard function, a corrected type check. Both bugs were a non-trivial distance from where they showed up, and that distance is the whole story.</p>
+
+    <ul>
+      <li><strong>Bisect to the pass; then trace to the cause. They are usually not the same pass.</strong> Disabling the loop-counter promotion made the miscompile vanish, but the promotion wasn't wrong in isolation — it was correct against an assumption the ABI change had quietly invalidated. The prologue was where the second bug hurt, but the defect was three passes upstream in the lowering. The pass you can disable to hide a bug is a lead, not a verdict.</li>
+      <li><strong>A symptom you can patch is a temptation to stop early.</strong> "Move the entry stub before the prologue" would have made <code>sum_n</code> correct and left every other <code>register T x = init;</code> silently broken. The patch that fixes the visible case is worth distrusting precisely because it works.</li>
+      <li><strong>Old code carries assumptions in its tests' blind spots.</strong> <code>storage_class is not None</code> meaning "static storage" was <em>exactly</em> true with two storage classes and quietly wrong with three. The save-before-call / restore-after model was exactly right while nothing returned in X. Neither had a test that could fail, because the thing that would make them fail didn't exist yet. Adding a feature is partly an audit of every "always true" the codebase had been resting on.</li>
+      <li><strong>Learn your compiler's fingerprints.</strong> An un-versioned SSA name on the frame meant "never defined" and pointed straight at a dropped declaration. Knowing what a specific kind of wrongness <em>looks like</em> in your IR collapses an afternoon of tracing into a one-line diff.</li>
+    </ul>
+
+    <blockquote>Where a bug hurts and where a bug lives are different addresses. The first one is loud; the second one is the fix.</blockquote>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

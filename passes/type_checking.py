@@ -291,14 +291,13 @@ class LocalAttr(IdAttr):
     lowered as a regular TAC `Copy` at the declaration's source
     position).
 
-    `register_class` is the 6502 register name ("A"/"X"/"Y") this
-    object is pinned to, when the declaration carried a
-    `__attribute__((reg("...")))` annotation; None otherwise. Used
-    by the AddressOf check below (taking the address of a
-    reg-attributed object is rejected per C99 §6.5.3.2.1's `register`
-    constraint) and by codegen to route the object through the
-    named register at the call boundary."""
-    register_class: str | None = None
+    `register` is True when the declaration carried the `register`
+    storage-class keyword (a `register` local pins to Y; a `register`
+    parameter is passed positionally in A / X). Used by the AddressOf
+    check below (taking the address of a `register` object is rejected
+    per C99 §6.5.3.2.1) and by codegen to route the object through a
+    6502 register at the call boundary."""
+    register: bool = False
 
 
 @dataclass(frozen=True)
@@ -900,6 +899,32 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     raise TypeCheckError(
         f"cannot take sizeof an incomplete or function type: {t!r}"
     )
+
+
+def _check_register_object(t: Type, *, max_bytes: int, where: str) -> None:
+    """Validate that a `register` object's type can live in 6502
+    register(s): not a pointer, a scalar arithmetic type, and at most
+    `max_bytes` wide (2 for a parameter spread across A / X, 1 for a
+    Y-pinned local). Raises TypeCheckError otherwise. The concrete
+    register is assigned positionally downstream (abi_selection /
+    optimizer); this only enforces the type constraints."""
+    if _is_pointer_type(t):
+        raise TypeCheckError(
+            f"{where}: a pointer can't be placed in a register "
+            f"(`register` is not allowed on pointer types)"
+        )
+    if isinstance(_strip_quals(t), (Array, Structure, Union, FunType)):
+        raise TypeCheckError(
+            f"{where}: only a scalar integer object can be placed in "
+            f"a register"
+        )
+    n = _sizeof(t)
+    if n > max_bytes:
+        raise TypeCheckError(
+            f"{where}: a {n}-byte value doesn't fit the register "
+            f"budget (at most {max_bytes} "
+            f"byte{'s' if max_bytes != 1 else ''})"
+        )
 
 
 def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = None, require_complete: bool = False, tag_visible=None, auto_introduce=None) -> None:
@@ -1674,6 +1699,12 @@ class TypeChecker:
         # `extern` + init    → Initial(c) (definition by initializer)
         # else (no spec / static), no init → Tentative
         # else (no spec / static), init    → Initial(c)
+        if isinstance(vd.storage_class, c99_ast.Register):
+            raise TypeCheckError(
+                f"file-scope object {vd.name!r} can't be declared "
+                f"`register` (C99 §6.7.1 — only block-scope objects "
+                f"and function parameters)"
+            )
         if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"file-scope object {vd.name!r} declared with non-"
@@ -1890,17 +1921,22 @@ class TypeChecker:
             # parameter's type comes from the FunType's params list,
             # paired with the param name in the function_decl's
             # `params` array.
-            # Per-param register attributes ride parallel to `params`.
-            # An empty entry ("" sentinel) becomes None.
-            param_regs = list(fd.param_registers) + [""] * (
+            # Per-param `register` markers ride parallel to `params`
+            # (1 = the param carried the `register` keyword, 0 = not).
+            param_regs = list(fd.param_registers) + [0] * (
                 len(fd.params) - len(fd.param_registers)
             )
             for p_name, p_type, p_reg in zip(
                 fd.params, ftype.params, param_regs,
             ):
+                if p_reg:
+                    _check_register_object(
+                        p_type, max_bytes=2,
+                        where=f"register parameter {p_name!r}",
+                    )
                 self.symbols[p_name] = Symbol(
                     type=p_type,
-                    attrs=LocalAttr(register_class=p_reg or None),
+                    attrs=LocalAttr(register=bool(p_reg)),
                 )
             saved = self._return_type
             self._return_type = ftype.ret
@@ -2170,9 +2206,15 @@ class TypeChecker:
         # convert to the declared type so the AST carries an
         # explicit Cast for any narrowing/widening (same shape as
         # Assignment / Return / arg conversion).
+        is_register = isinstance(vd.storage_class, c99_ast.Register)
+        if is_register:
+            _check_register_object(
+                vd.data_type, max_bytes=1,
+                where=f"register local {vd.name!r}",
+            )
         self.symbols[vd.name] = Symbol(
             type=vd.data_type,
-            attrs=LocalAttr(register_class=vd.register_class),
+            attrs=LocalAttr(register=is_register),
         )
         if vd.init is not None:
             # `Const(Array(...))` / `Const(Structure(...))` shouldn't
@@ -2672,11 +2714,17 @@ class TypeChecker:
                         tag_visible=self._tag_visible,
                         auto_introduce=self._auto_introduce_tag,
                     )
+                    vd_is_register = isinstance(
+                        vd.storage_class, c99_ast.Register,
+                    )
+                    if vd_is_register:
+                        _check_register_object(
+                            vd.data_type, max_bytes=1,
+                            where=f"register local {vd.name!r}",
+                        )
                     self.symbols[vd.name] = Symbol(
                         type=vd.data_type,
-                        attrs=LocalAttr(
-                            register_class=vd.register_class,
-                        ),
+                        attrs=LocalAttr(register=vd_is_register),
                     )
                     if vd.init is None:
                         continue
@@ -3937,23 +3985,19 @@ class TypeChecker:
                 # `_check_exp` doesn't trip the guard.
                 if isinstance(inner, c99_ast.Var):
                     sym = self.symbols.get(inner.name)
-                    # Reject `&x` on a reg-attributed object (param
-                    # or local) per C99 §6.5.3.2.1: the operand of
-                    # `&` shall not be declared with the `register`
-                    # storage class. Our `reg("...")` attribute is
-                    # the explicit-register form of that rule.
+                    # Reject `&x` on a `register` object (param or
+                    # local) per C99 §6.5.3.2.1: the operand of `&`
+                    # shall not be declared with the `register`
+                    # storage class.
                     if (
                         sym is not None
                         and isinstance(sym.attrs, LocalAttr)
-                        and sym.attrs.register_class is not None
+                        and sym.attrs.register
                     ):
                         raise TypeCheckError(
                             f"can't take the address of `{inner.name}`: "
-                            f"declared with "
-                            f"`__attribute__((reg("
-                            f"{sym.attrs.register_class!r})))` so it "
-                            f"lives in a 6502 register, not memory "
-                            f"(C99 §6.5.3.2.1)"
+                            f"declared `register` so it lives in a 6502 "
+                            f"register, not memory (C99 §6.5.3.2.1)"
                         )
                     if sym is not None and isinstance(sym.type, FunType):
                         inner.data_type = sym.type

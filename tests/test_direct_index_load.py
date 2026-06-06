@@ -253,10 +253,16 @@ class TestDirectIndexLoadAsmShape(unittest.TestCase):
             "}\n"
         )
         asm = self._compile(src)
-        # Direct absolute,X read.
+        # Direct absolute,X read, with the loop counter living in X
+        # (incremented in place via INX) — no `LDA <i>; TAX` setup
+        # pair feeding the indexed load.
         self.assertIn("LDA   arr,X", asm)
-        # No `LDA <i>; TAX` setup pair feeding the indexed load.
-        self.assertNotIn("TAX", asm)
+        self.assertIn("INX", asm)
+        # The only register transfer into X is the return-value
+        # staging (`TYA; TAX` for the 2-byte int return's high byte),
+        # NOT an index setup. Assert no `LDA <slot>; TAX` index pair.
+        self.assertNotIn("TAX\n   LDA   arr,X", asm)
+        self.assertNotRegex(asm, r"LDA   __local[^\n]*\n   TAX")
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")

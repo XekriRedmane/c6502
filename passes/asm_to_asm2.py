@@ -341,27 +341,47 @@ def _function_prologue(
 
 
 def _ret(
-    arg_bytes: int, local_bytes: int, save_a: bool,
+    arg_bytes: int, local_bytes: int, save_a: bool, save_x: bool,
     callee_saved_addrs: list[int],
 ) -> list[asm2_ast.Type_instruction]:
     if arg_bytes + local_bytes == 0:
-        # No frame to tear down — `Return` (RTS) by itself.
+        # No frame to tear down — `Return` (RTS) by itself. RTS
+        # clobbers nothing, so A / X survive trivially.
         return [asm2_ast.Return()]
     rewind = arg_bytes + local_bytes + 2
     out: list[asm2_ast.Type_instruction] = [
         asm2_ast.Blank(),
         asm2_ast.Comment(text="epilogue"),
     ]
+    A = _reg_a()
+    X = _reg_x()
+    # Park the live return bytes on the hardware stack across the WHOLE
+    # epilogue — both the callee-save restore (which uses A as scratch)
+    # and the SSP/FP teardown (which clobbers A as the 16-bit add
+    # accumulator and X as the FP-low scratch in
+    # `_restore_fp_from_slot`) would otherwise destroy them. A 2-byte
+    # register return has its low byte in A and high byte in X; a
+    # 1-byte return only A. Save BEFORE the restore.
+    if save_x:
+        # Push low (A), then high (X routed through A): [low, high].
+        out.append(asm2_ast.Push(src=A))
+        out.append(asm2_ast.Mov(src=X, dst=A))
+        out.append(asm2_ast.Push(src=A))
+    elif save_a:
+        out.append(asm2_ast.Push(src=A))
     # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown so
     # FP is still valid for the indirect-Y reads.
     for i, addr in enumerate(callee_saved_addrs):
         out += _restore_zp_byte_from_frame(addr, i + 1)
-    A = _reg_a()
-    if save_a:
-        out.append(asm2_ast.Push(src=A))
     out += _set_ssp_to_fp_plus(rewind)
     out += _restore_fp_from_slot(local_bytes)
-    if save_a:
+    if save_x:
+        # Pull high → X, then low → A, restoring the (A=low, X=high)
+        # return convention just before RTS.
+        out.append(asm2_ast.Pop(dst=A))
+        out.append(asm2_ast.Mov(src=A, dst=X))
+        out.append(asm2_ast.Pop(dst=A))
+    elif save_a:
         out.append(asm2_ast.Pop(dst=A))
     out.append(asm2_ast.Return())
     return out
@@ -454,10 +474,10 @@ def _xlate_instruction(
         ):
             return _function_prologue(ab, lb, list(csa))
         case asm_ast.Ret(
-            arg_bytes=ab, local_bytes=lb, save_a=sa,
+            arg_bytes=ab, local_bytes=lb, save_a=sa, save_x=sx,
             callee_saved_addrs=csa,
         ):
-            return _ret(ab, lb, sa, list(csa))
+            return _ret(ab, lb, sa, sx, list(csa))
         case asm_ast.Return():
             # Bare exit — just RTS, no SSP/FP teardown. Emitted on
             # the `--optimize-asm` path between phase 9 and the

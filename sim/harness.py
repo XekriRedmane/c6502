@@ -227,9 +227,16 @@ class SimResult:
         return v - 0x100 if v & 0x80 else v
 
     def return_int(self) -> int:
-        """Return value as an unsigned 2-byte integer (Int / UInt /
-        Pointer): bytes read from HARGS+0..1 — the slot that 2-byte
-        returns land in per the calling convention."""
+        """Return value as an unsigned 2-byte integer (Int / UInt):
+        low byte in A, high byte in X per the calling convention (a
+        non-pointer return of <=2 bytes rides in registers)."""
+        return (self.a & 0xFF) | ((self.x & 0xFF) << 8)
+
+    def return_pointer(self) -> int:
+        """Return value as a 2-byte pointer: bytes read from
+        HARGS+0..1. Pointers don't ride in registers (the register-
+        passing rules exclude them), so a pointer-returning function
+        leaves its result in HARGS like a wider return."""
         return (
             self.memory[rt_mod.HARGS + 0]
             | (self.memory[rt_mod.HARGS + 1] << 8)

@@ -133,7 +133,17 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             key = _op_key(instr.dst)
             if key is not None:
                 candidates.add(key)
-    if not candidates:
+    # The whole-function "X mirrors M" invariant the rewrite relies on
+    # only holds when X carries a SINGLE logical value spilled to ONE
+    # home slot (the X-promoted loop counter). If X is stored to two
+    # or more distinct slots, it carries multiple logical values over
+    # its lifetime — e.g. capturing the high byte of two different
+    # register-returning calls (`STX $C0` for the first result,
+    # `STX $81` for the second) — and rewriting a read of one slot to
+    # `TXA` would read whichever value X happens to hold, not the
+    # slot's. Skip the whole function in that case; the unrewritten
+    # `LDA M` reads the correct memory value.
+    if len(candidates) != 1:
         return fn
 
     # Pass 2: reject any candidate that has a write to it which

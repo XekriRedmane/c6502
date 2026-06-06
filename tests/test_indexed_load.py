@@ -42,10 +42,12 @@ class TestIndexedLoadAsmShape(unittest.TestCase):
             "int main(int i) { return arr[i]; }\n"
         )
         asm = self._compile(src)
-        # Should see `LDA arr,X` (low byte) and `LDA arr+1,X` (high
-        # byte) — absolute,X reads.
+        # Should see `LDA arr,X` (low byte) and an absolute,X read of
+        # the high byte (`arr+1,X`). The 2-byte int return now rides
+        # in A (low) / X (high); the high byte is loaded with
+        # `LDY arr+1,X` (there's no `LDX abs,X`) and transferred to X.
         self.assertIn("LDA   arr,X", asm)
-        self.assertIn("LDA   arr+1,X", asm)
+        self.assertIn("arr+1,X", asm)
         # Should NOT have a DPTR setup for this access (the regular
         # pointer-arithmetic path uses DPTR).
         # Some other code may still use DPTR, so this is a softer

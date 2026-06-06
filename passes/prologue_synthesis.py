@@ -116,6 +116,7 @@ def _synthesize_function(
                 arg_bytes=dims.arg_bytes,
                 local_bytes=dims.local_bytes,
                 save_a=instr.save_a,
+                save_x=instr.save_x,
                 callee_saved_addrs=list(dims.callee_saved_addrs),
             ))
             continue

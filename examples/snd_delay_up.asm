@@ -1,5 +1,6 @@
 __zpabi_snd_delay_up__pitch	EQU	$80
 __zpabi_snd_delay_up__clicks	EQU	$81
+__local_snd_delay_up__pitch	EQU	$83
 
 ; @zp-link-meta-begin
 ; def snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks locals=__local_snd_delay_up__0,__local_snd_delay_up__pitch indirect=false in_cycle=false param_regs=A,X
@@ -8,16 +9,13 @@ __zpabi_snd_delay_up__clicks	EQU	$81
 snd_delay_up:
    SUBROUTINE
 
-   TAY
+   STA   __local_snd_delay_up__pitch
    LDA   sfx_click_ptr
    STA   DPTR
    LDA   sfx_click_ptr+1
    STA   DPTR+1
-   TYA
 .loop@0_start:
-   TAY
-   CLC
-   ADC   #$01
+   INC   __local_snd_delay_up__pitch
 .loop@1_continue:
    DEY
    BNE   .loop@1_continue

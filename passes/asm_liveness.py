@@ -97,10 +97,11 @@ def x_dead_at(
 ) -> bool:
     """True iff `Reg(X)`'s current value is dead at `instrs[idx]`.
     Same CFG-walk machinery as `a_dead_at`; uses X-specific
-    reads/kills predicates. The soft-stack epilogue scratches X (low
-    byte of the reloaded caller FP routes through X) so Ret/Return
-    is treated as a kill regardless of `save_a`. Tail-call Jumps
-    read X iff the callee names X in `reg_args`."""
+    reads/kills predicates. A `Ret`/`Return` with `save_x=True` READS
+    X (the high byte of a 2-byte register return), so X is live there;
+    otherwise the soft-stack epilogue scratches X (the reloaded caller
+    FP's low byte routes through X) and Ret/Return is a kill. Tail-call
+    Jumps read X iff the callee names X in `reg_args`."""
     return _reg_dead_at(instrs, idx, "X")
 
 
@@ -149,12 +150,19 @@ def _path_dead_from(
         instr = instrs[idx]
         if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
             if reg == "A":
+                # `save_a` ⇒ the low return byte rides in A; the
+                # epilogue PHAs it (a read) and the caller reads it.
                 return not instr.save_a
-            # X and Y are scratched by the soft-stack epilogue (low
-            # byte of reloaded caller FP through X, indirect-Y
-            # offset for the (FP),Y reload). For a bare Return the
-            # epilogue is empty, but X/Y are still callee-clobberable
-            # by convention — treat as kill.
+            if reg == "X":
+                # `save_x` ⇒ the high byte of a 2-byte return rides in
+                # X; the epilogue preserves it across teardown and the
+                # caller reads it — so X is LIVE at the boundary.
+                # Otherwise X is callee-clobberable (and the soft-stack
+                # teardown scratches it) — treat as a kill.
+                return not instr.save_x
+            # Y is scratched by the soft-stack epilogue (indirect-Y
+            # offset for the (FP),Y reload) and never carries a return
+            # value — always a kill.
             return True
         if isinstance(instr, asm_ast.Jump):
             # Tail-call Jumps (rewritten from `Call(reg_args); Return`

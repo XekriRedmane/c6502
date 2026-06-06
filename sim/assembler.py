@@ -327,9 +327,10 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
         ):
             return _prologue_size(ab, lb, csa)
         case asm_ast.Ret(
-            arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
+            arg_bytes=ab, local_bytes=lb, save_a=sa, save_x=sx,
+            callee_saved_addrs=csa,
         ):
-            return _ret_size(ab, lb, sa, csa)
+            return _ret_size(ab, lb, sa, sx, csa)
         case asm_ast.Return():
             return 1   # RTS
         case asm_ast.LoadAddress(src=src, dst=dst):
@@ -482,9 +483,10 @@ def _emit_instr(
         ):
             return _emit_prologue(ab, lb, csa)
         case asm_ast.Ret(
-            arg_bytes=ab, local_bytes=lb, save_a=sa, callee_saved_addrs=csa,
+            arg_bytes=ab, local_bytes=lb, save_a=sa, save_x=sx,
+            callee_saved_addrs=csa,
         ):
-            return _emit_ret(ab, lb, sa, csa)
+            return _emit_ret(ab, lb, sa, sx, csa)
         case asm_ast.Return():
             return bytes([_IMPLIED["RTS"]])
         case asm_ast.LoadAddress(src=src, dst=dst):
@@ -1334,7 +1336,7 @@ def _emit_prologue(
 
 
 def _ret_size(
-    arg_bytes: int, local_bytes: int, save_a: bool,
+    arg_bytes: int, local_bytes: int, save_a: bool, save_x: bool,
     callee_saved_addrs: list[int] = (),
 ) -> int:
     if arg_bytes + local_bytes == 0:
@@ -1358,15 +1360,20 @@ def _ret_size(
     size += 2 + 2 + 1 + 2 + 2 + 2 + 1 + 2
     # Per callee-saved byte restore: LDY #off (2) + LDA (FP),Y (2) + STA $addr (2)
     size += len(callee_saved_addrs) * 6
-    # PHA + PLA wrap if save_a; trailing RTS.
-    if save_a:
+    # Return-byte preservation across the teardown (matches
+    # `passes.asm_to_asm2._ret`): save_x parks both A (low) and X
+    # (high) via PHA / TXA / PHA … PLA / TAX / PLA (6 bytes); save_a
+    # alone parks A via PHA … PLA (2 bytes).
+    if save_x:
+        size += 3 + 3
+    elif save_a:
         size += 1 + 1
     size += 1   # RTS
     return size
 
 
 def _emit_ret(
-    arg_bytes: int, local_bytes: int, save_a: bool,
+    arg_bytes: int, local_bytes: int, save_a: bool, save_x: bool,
     callee_saved_addrs: list[int] = (),
 ) -> bytes:
     if arg_bytes + local_bytes == 0:
@@ -1378,6 +1385,17 @@ def _emit_ret(
     rewind = arg_bytes + local_bytes + 2
 
     out = bytearray()
+    # Park the live return bytes on the hardware stack across the WHOLE
+    # epilogue (the callee-save restore uses A as scratch, and the
+    # SSP/FP teardown clobbers A and X). 2-byte register return: push
+    # low (A) then high (X via A); 1-byte: just A. Save BEFORE the
+    # restore. (Matches `passes.asm_to_asm2._ret`.)
+    if save_x:
+        out += bytes([_IMPLIED["PHA"]])
+        out += bytes([_IMPLIED["TXA"]])
+        out += bytes([_IMPLIED["PHA"]])
+    elif save_a:
+        out += bytes([_IMPLIED["PHA"]])
     # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown so
     # FP is still valid for the indirect-Y reads.
     for i, addr in enumerate(callee_saved_addrs):
@@ -1388,8 +1406,6 @@ def _emit_ret(
         out += bytes([_IMM["LDY"], i + 1])
         out += bytes([_INDY["LDA"], fp])
         out += _emit_zp("STA", addr)
-    if save_a:
-        out += bytes([_IMPLIED["PHA"]])
     # SSP = FP + rewind.
     if rewind == 0:
         out += _emit_zp("LDA", fp)
@@ -1418,7 +1434,12 @@ def _emit_ret(
     out += _emit_zp("STA", fp + 1)
     out += bytes([_IMPLIED["TXA"]])
     out += _emit_zp("STA", fp)
-    if save_a:
+    # Pull the parked return bytes back: high → X, then low → A.
+    if save_x:
+        out += bytes([_IMPLIED["PLA"]])
+        out += bytes([_IMPLIED["TAX"]])
+        out += bytes([_IMPLIED["PLA"]])
+    elif save_a:
         out += bytes([_IMPLIED["PLA"]])
     out += bytes([_IMPLIED["RTS"]])
     return bytes(out)

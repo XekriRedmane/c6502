@@ -149,7 +149,38 @@ def _try_match(
             break
         mem_ops.append(nxt)
         consumed += 3
+    # Soundness: the INC chain doesn't set the carry flag, but the
+    # original ADC chain's carry-out threads into any FURTHER
+    # continuation byte (`Mov(src, A); Add(Imm(0), A); ...`) we did
+    # NOT fold — e.g. a high byte whose result flows to a register
+    # (the register-return high byte) instead of an in-place store.
+    # If such a carry-consuming `Add` follows, folding to INC would
+    # drop the carry it needs. Refuse the whole match in that case.
+    if _carry_consumed_after(instrs, start + consumed):
+        return None
     return (consumed, mem_ops)
+
+
+def _carry_consumed_after(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff a downstream `Add` (ADC) reads the carry the folded
+    chain would have produced, before any instruction resets it. Movs
+    (LDA / STA / register transfers) are carry-transparent, so scan
+    over them; an `Add` consumes the carry (return True); anything
+    else (ClearCarry / SetCarry / Compare / Branch / Inc / Dec / …)
+    resets or doesn't depend on it (return False). c6502 only emits a
+    carry-reading `Add` without a preceding CLC/SEC for multi-byte
+    add continuations, so this precisely catches an unfolded
+    continuation byte."""
+    j = idx
+    while j < len(instrs):
+        ins = instrs[j]
+        if isinstance(ins, asm_ast.Mov):
+            j += 1
+            continue
+        return isinstance(ins, asm_ast.Add)
+    return False
 
 
 def _try_match_first_byte(

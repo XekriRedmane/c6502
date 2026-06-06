@@ -55,6 +55,7 @@ address-taken set — used by the per-function validation step.
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 
 import c99_ast
@@ -106,27 +107,26 @@ class ZpLayout:
     function's own param storage. Both fields are kept in sync.
 
     `param_registers` is a parallel list to `slot_symbols`; each
-    entry is None (the byte arrives via the ZP slot) or "A"/"X"/"Y"
-    (the byte arrives in the named 6502 register at the call
-    boundary). When a byte's `param_registers[i]` is set, the slot
-    symbol still exists and gets a ZP byte — the callee body reads
-    it like any other zp_abi param byte — but the caller does NOT
-    write to it: instead the caller loads the byte into the named
+    entry is None (the byte arrives via the ZP slot) or "A"/"X"
+    (the byte arrives in that 6502 register at the call boundary).
+    Registers are assigned POSITIONALLY: the first register arg-byte
+    goes in A, the second in X — so a 1-byte `register` param gets
+    one A/X entry, and a 2-byte `register` param spreads its low byte
+    to A and high byte to X. The whole arg list has at most two
+    register bytes (A, X). When a byte's `param_registers[i]` is set,
+    the slot symbol still exists and gets a ZP byte — the callee body
+    reads it like any other zp_abi param byte — but the caller does
+    NOT write to it: instead the caller loads the byte into the
     register before `JSR`, and the callee's entry stub stores the
-    register into the slot. v1 supports register-passed params for
-    1-byte types only, so `param_registers[i]` is set on exactly
-    one slot per reg-attributed parameter (the parameter's single
-    byte).
+    register into the slot.
 
-    `return_register` names the 6502 register the callee leaves
-    the result in just before `RTS`: None (the default A), or
-    "A"/"X"/"Y" explicitly. The caller captures from the named
-    register immediately after `JSR`. v1 supports a register
-    return for 1-byte return types only."""
+    The return value's register placement is NOT recorded here — it's
+    type-driven and computed identically on both sides in tac_to_asm
+    (a non-pointer return of <=2 bytes returns low byte in A, high
+    byte in X)."""
     slot_symbols: list[str] = field(default_factory=list)
     addrs: list[int] = field(default_factory=list)
     param_registers: list[str | None] = field(default_factory=list)
-    return_register: str | None = None
 
 
 ParamLayout = SoftStackLayout | ZpLayout
@@ -211,107 +211,79 @@ def _per_param_byte_sizes(
     return [sizeof(p, types) for p in fun_type.params]
 
 
-def _is_one_byte_type(t) -> bool:
-    """True iff `t` is a 1-byte integer type — the only types that
-    fit a single 6502 register. Strips Const/Volatile wrappers."""
+# The arg-passing registers, in positional order: the first register
+# arg-byte goes in A, the second in X. (Y is reserved for `register`
+# locals; the return value reuses A/X, computed separately.)
+_ARG_REGISTERS = ("A", "X")
+
+
+def _strip_quals(t):
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
-    return isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
+    return t
 
 
-def _validate_reg_attributes(
-    fn_decl: c99_ast.Type_function_decl, where: str,
-) -> tuple[list[str | None], str | None]:
-    """Validate `fn_decl.param_registers` and `fn_decl.return_register`
-    against the v1 contract (1-byte types only; no overlap among
-    registers used by simultaneously-live values). Returns
-    `(per_param_register_list, return_register)`, with the empty-
-    string sentinel from `param_registers` normalized back to None.
+def _assign_param_registers(
+    fn_decl: c99_ast.Type_function_decl,
+    per_param_bytes: list[int],
+    where: str,
+) -> list[str | None]:
+    """Assign 6502 registers to the bytes of `register`-marked
+    parameters, positionally: the first register arg-byte goes in A,
+    the second in X. So a 1-byte `register` param gets one entry, and
+    a 2-byte `register` param spreads its low byte to A and high byte
+    to X.
 
-    Raises `AbiSelectionError` on:
-      - reg("...") on a param whose type isn't 1-byte.
-      - reg("...") on a return whose type isn't 1-byte.
-      - The same register named on two different params, or on a
-        param and the return at the same time. "Same time" means
-        both values are alive at the call boundary, which is true
-        for every (param-in, return-out) pair (the caller must
-        save the param register's content before reading the
-        return register from the same register). v1 takes the
-        conservative line: no overlap allowed.
+    Returns a per-byte list parallel to the function's flattened param
+    bytes (the `slot_symbols` order — low byte of param 0 first), each
+    entry "A" / "X" or None.
 
-    `where` is a short label for error messages (e.g. the function
-    name)."""
+    Raises `AbiSelectionError` if a `register` param is a pointer, is
+    wider than 2 bytes, or the marked params together need more than
+    the two available arg registers (A, X). `where` is a short label
+    for error messages (e.g. the function name)."""
     fun_type = fn_decl.data_type
-    assert isinstance(fun_type, c99_ast.FunType)
-    # Normalize the empty-string sentinel back to None for cleaner
-    # downstream code.
-    per_param: list[str | None] = [
-        r if r else None for r in fn_decl.param_registers
-    ]
-    # If param_registers wasn't filled (older AST construction sites),
-    # default to an empty annotation per parameter.
-    while len(per_param) < len(fun_type.params):
-        per_param.append(None)
-    # 1-byte check for each reg-attributed param.
-    for i, (param_t, reg) in enumerate(zip(fun_type.params, per_param)):
-        if reg is None:
+    markers = list(fn_decl.param_registers)
+    while len(markers) < len(per_param_bytes):
+        markers.append(0)
+    per_byte: list[str | None] = []
+    next_reg = 0
+    for i, (n_bytes, marker) in enumerate(zip(per_param_bytes, markers)):
+        if not marker:
+            per_byte.extend([None] * n_bytes)
             continue
-        if not _is_one_byte_type(param_t):
-            raise AbiSelectionError(
-                f"function `{where}` parameter {i} declared "
-                f"`__attribute__((reg({reg!r})))` but its type "
-                f"isn't 1-byte (Char/SChar/UChar required); v1 "
-                f"can't fit a multi-byte value in a single 6502 "
-                f"register"
-            )
-    # 1-byte check for the return register.
-    if (
-        fn_decl.return_register is not None
-        and not _is_one_byte_type(fun_type.ret)
-    ):
-        raise AbiSelectionError(
-            f"function `{where}` declared "
-            f"`__attribute__((reg({fn_decl.return_register!r})))` "
-            f"on its return slot but the return type isn't 1-byte "
-            f"(Char/SChar/UChar required)"
+        param_t = (
+            _strip_quals(fun_type.params[i])
+            if isinstance(fun_type, c99_ast.FunType) else None
         )
-    # Overlap check. Two reg-attributed params can't share a
-    # register (both values are simultaneously live at the call
-    # boundary on the caller side). A param register can't also be
-    # the return register (the param value must survive past the
-    # function body's use of it into the return slot, but the
-    # callee body is free to clobber any register, so the caller
-    # must save the param value before the JSR — see Task #8
-    # ordering).
-    seen: dict[str, str] = {}
-    for i, reg in enumerate(per_param):
-        if reg is None:
-            continue
-        slot = f"param {i} (`{fn_decl.params[i]}`)"
-        if reg in seen:
+        pname = fn_decl.params[i] if i < len(fn_decl.params) else f"#{i}"
+        if isinstance(param_t, c99_ast.Pointer):
             raise AbiSelectionError(
-                f"function `{where}`: register {reg!r} is named on "
-                f"{seen[reg]} AND on {slot}; each reg(...) register "
-                f"must be unique across parameters"
+                f"function `{where}` parameter `{pname}` is a pointer "
+                f"and can't be passed in a register"
             )
-        seen[reg] = slot
-    if fn_decl.return_register is not None:
-        if fn_decl.return_register in seen:
+        if n_bytes > 2:
             raise AbiSelectionError(
-                f"function `{where}`: return register "
-                f"{fn_decl.return_register!r} conflicts with "
-                f"{seen[fn_decl.return_register]} — caller can't "
-                f"hold the parameter and the return in the same "
-                f"register at the same time"
+                f"function `{where}` parameter `{pname}` is {n_bytes} "
+                f"bytes — a `register` parameter must fit in at most 2 "
+                f"bytes (A, X)"
             )
-    return per_param, fn_decl.return_register
+        for _k in range(n_bytes):
+            if next_reg >= len(_ARG_REGISTERS):
+                raise AbiSelectionError(
+                    f"function `{where}`: too many `register` argument "
+                    f"bytes — at most two are available (A, X)"
+                )
+            per_byte.append(_ARG_REGISTERS[next_reg])
+            next_reg += 1
+    return per_byte
 
 
 def _check_forward_def_match(c99_prog: c99_ast.Program) -> None:
     """Across multiple declarations / definitions of the same
     function name, every forward decl + definition must agree on
-    `param_registers` and `return_register`. Mismatch is a hard
-    error (an `extern T fn(...)` in a header and the body
+    `param_registers` (the per-param `register` markers). Mismatch is
+    a hard error (an `extern T fn(...)` in a header and the body
     `T fn(...) { ... }` in the source must declare the same ABI).
     Raises `AbiSelectionError` on mismatch."""
     seen: dict[str, c99_ast.Type_function_decl] = {}
@@ -323,28 +295,21 @@ def _check_forward_def_match(c99_prog: c99_ast.Program) -> None:
         if prior is None:
             seen[fn.name] = fn
             continue
-        # Normalize the empty-string sentinel for comparison so
-        # `[""]` vs `[None]` doesn't false-positive.
-        a = [r or None for r in prior.param_registers]
-        b = [r or None for r in fn.param_registers]
-        # Pad to the shorter list's length so old AST construction
-        # sites (which leave `param_registers=[]`) compare cleanly
-        # with parser-built decls that fill the list.
+        # `register` markers are 0/1 ints parallel to `params`. Pad to
+        # the longer list's length so an empty `param_registers=[]`
+        # (older AST construction sites) compares cleanly with a
+        # parser-built decl.
+        a = [bool(r) for r in prior.param_registers]
+        b = [bool(r) for r in fn.param_registers]
         if len(a) < len(b):
-            a = a + [None] * (len(b) - len(a))
+            a = a + [False] * (len(b) - len(a))
         if len(b) < len(a):
-            b = b + [None] * (len(a) - len(b))
+            b = b + [False] * (len(a) - len(b))
         if a != b:
             raise AbiSelectionError(
-                f"function `{fn.name}`: param_registers attribute "
-                f"differs between declarations — {a!r} vs {b!r}; "
-                f"the calling convention must match"
-            )
-        if prior.return_register != fn.return_register:
-            raise AbiSelectionError(
-                f"function `{fn.name}`: return_register attribute "
-                f"differs between declarations — "
-                f"{prior.return_register!r} vs {fn.return_register!r}"
+                f"function `{fn.name}`: `register` parameter markers "
+                f"differ between declarations — {a!r} vs {b!r}; the "
+                f"calling convention must match"
             )
         # Adopt whichever had a body (or just keep prior).
         if fn.body is not None:
@@ -520,52 +485,45 @@ def _validate_zp_abi(
         list(fn_decl.params),
         per_param_bytes,
     )
-    # Reg-attribute layout: validate types + uniqueness, then expand
-    # the per-parameter register list to a per-byte list parallel to
-    # `symbols`.
-    per_param_regs, return_register = _validate_reg_attributes(
-        fn_decl, where=fn.name,
-    )
-    per_byte_regs = _expand_param_registers_to_per_byte(
-        per_param_regs, per_param_bytes,
+    # Register params: assign A / X positionally over the marked
+    # params' bytes, yielding a per-byte list parallel to `symbols`.
+    per_byte_regs = _assign_param_registers(
+        fn_decl, per_param_bytes, where=fn.name,
     )
     return ZpLayout(
         slot_symbols=symbols, addrs=addrs,
         param_registers=per_byte_regs,
-        return_register=return_register,
     )
 
 
-def _expand_param_registers_to_per_byte(
-    per_param: list[str | None], per_param_bytes: list[int],
-) -> list[str | None]:
-    """Expand a per-parameter register-name list (parallel to
-    `params`) to a per-byte list parallel to `slot_symbols`. Each
-    reg-attributed param is 1-byte (validated upstream) so it
-    contributes exactly one entry; non-reg params contribute their
-    full byte width of None entries. Used by both the in-TU and
-    extern zp_abi validators."""
-    out: list[str | None] = []
-    for reg, n_bytes in zip(per_param, per_param_bytes):
-        if reg is None:
-            out.extend([None] * n_bytes)
-        else:
-            assert n_bytes == 1, (
-                f"reg-attributed param expected 1 byte, got "
-                f"{n_bytes} — should have been rejected upstream"
-            )
-            out.append(reg)
-    return out
+def _has_register_local(node) -> bool:
+    """True iff a `register`-storage local variable appears anywhere
+    in `node` (recursively). Used to detect a `register` local in a
+    function body so the default-zp_abi path can upgrade
+    ineligibility from a silent fallback to a hard error."""
+    if isinstance(node, c99_ast.Type_var_decl):
+        if isinstance(node.storage_class, c99_ast.Register):
+            return True
+    if dataclasses.is_dataclass(node):
+        for f in dataclasses.fields(node):
+            if _has_register_local(getattr(node, f.name)):
+                return True
+    elif isinstance(node, (list, tuple)):
+        for it in node:
+            if _has_register_local(it):
+                return True
+    return False
 
 
-def _has_reg_attributes(fn_decl: c99_ast.Type_function_decl) -> bool:
-    """True iff `fn_decl` carries any `reg("...")` annotation on its
-    return slot or on any parameter. Used in the default-zp_abi path
-    to upgrade ineligibility from a silent fallback to a hard error
-    — a reg-attributed function can't be served by SoftStackLayout."""
-    if fn_decl.return_register is not None:
+def _has_register_request(fn_decl: c99_ast.Type_function_decl) -> bool:
+    """True iff `fn_decl` requests a 6502 register for any parameter
+    or body local (the `register` keyword). Used in the default-zp_abi
+    path to upgrade ineligibility from a silent fallback to a hard
+    error — a function with a `register` object can't be served by
+    SoftStackLayout (params in A/X, a local pinned to Y)."""
+    if any(fn_decl.param_registers):
         return True
-    return any(r for r in fn_decl.param_registers)
+    return _has_register_local(fn_decl.body)
 
 
 def _validate_zp_abi_extern(
@@ -614,16 +572,12 @@ def _validate_zp_abi_extern(
         list(fn_decl.params),
         per_param_bytes,
     )
-    per_param_regs, return_register = _validate_reg_attributes(
-        fn_decl, where=name,
-    )
-    per_byte_regs = _expand_param_registers_to_per_byte(
-        per_param_regs, per_param_bytes,
+    per_byte_regs = _assign_param_registers(
+        fn_decl, per_param_bytes, where=name,
     )
     return ZpLayout(
         slot_symbols=symbols, addrs=addrs,
         param_registers=per_byte_regs,
-        return_register=return_register,
     )
 
 
@@ -690,8 +644,8 @@ def select_abi(
             # but they're swallowed here, so the user-facing
             # behavior is just "this function got soft-stack."
             #
-            # Exception: if the function carries any reg(...)
-            # annotation, ineligibility is a HARD error — the
+            # Exception: if the function requests a `register` object
+            # (param or local), ineligibility is a HARD error — the
             # SoftStackLayout fallback can't honor register-passing.
             if fn_decl is None:
                 out[tl.name] = SoftStackLayout()
@@ -701,25 +655,22 @@ def select_abi(
                     tl, fn_decl, address_taken, callgraph, pool, types,
                 )
             except AbiSelectionError as exc:
-                if _has_reg_attributes(fn_decl):
+                if _has_register_request(fn_decl):
                     # If the validator failed for a reason that's
-                    # specific to reg(...) (1-byte type, register
-                    # conflict, ...), the error already explains
-                    # the problem in user terms — re-raise it as-is.
-                    # Otherwise wrap a more general explanation
-                    # that names the reg(...) constraint.
+                    # specific to the register request (pointer in a
+                    # register, too many register bytes, ...), the
+                    # error already explains the problem in user
+                    # terms — re-raise it as-is. Otherwise wrap a more
+                    # general explanation that names the `register`
+                    # constraint.
                     msg = str(exc)
-                    reg_specific = (
-                        "reg(" in msg
-                        or "1-byte" in msg
-                        or "register" in msg
-                    )
+                    reg_specific = "register" in msg
                     if reg_specific:
                         raise
                     raise AbiSelectionError(
-                        f"function `{tl.name}` carries "
-                        f"`__attribute__((reg(...)))` but isn't "
-                        f"eligible for the ZP-passing ABI: {exc}"
+                        f"function `{tl.name}` declares a `register` "
+                        f"parameter or local but isn't eligible for "
+                        f"the ZP-passing ABI: {exc}"
                     ) from exc
                 out[tl.name] = SoftStackLayout()
         else:
@@ -762,15 +713,13 @@ def select_abi(
             # will fall back to soft-stack via the `abi.get(name)
             # is None` path in tac_to_asm.
             #
-            # Exception: an extern carrying reg(...) attributes
-            # MUST be served by ZpLayout — the caller can't
-            # synthesize register-passing on a SoftStackLayout
-            # callee. Re-raise.
-            if _has_reg_attributes(fn_decl):
+            # Exception: an extern with a `register` parameter MUST
+            # be served by ZpLayout — the caller can't synthesize
+            # register-passing on a SoftStackLayout callee. Re-raise.
+            if _has_register_request(fn_decl):
                 raise AbiSelectionError(
-                    f"extern function `{name}` carries "
-                    f"`__attribute__((reg(...)))` but isn't "
-                    f"eligible for the ZP-passing ABI; reg(...) "
-                    f"requires zp_abi eligibility"
+                    f"extern function `{name}` declares a `register` "
+                    f"parameter but isn't eligible for the ZP-passing "
+                    f"ABI; `register` requires zp_abi eligibility"
                 )
     return out

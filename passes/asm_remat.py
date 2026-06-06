@@ -310,6 +310,16 @@ def _drop_dead_stage_dsts(
             if (isinstance(instr.src, asm_ast.Reg)
                     and isinstance(instr.src.reg, asm_ast.A)):
                 continue
+            # A register-source dead store (`STX local` / `STY local`)
+            # has NO flag or A side effect, so the dead slot store is
+            # pure dead code — drop it. Re-emitting it as
+            # `Mov(Reg(X|Y), Reg(A))` (TXA / TYA) would clobber A and
+            # set N/Z, which is unsound when A holds a live value
+            # (e.g. the low byte of a 2-byte register return staged
+            # to A while its high byte is stored from X to a slot).
+            if (isinstance(instr.src, asm_ast.Reg)
+                    and isinstance(instr.src.reg, (asm_ast.X, asm_ast.Y))):
+                continue
             out.append(asm_ast.Mov(
                 src=instr.src,
                 dst=reg_a,

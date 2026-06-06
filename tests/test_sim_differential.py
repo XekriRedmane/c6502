@@ -115,18 +115,18 @@ _OPT_DIVERGES: dict[str, str] = {
 }
 
 
-def _return_int_bytes(memory: bytearray) -> bytes:
-    """Return the 2 bytes at HARGS+0..1 — the Int return window.
-    Every chapter program in `EXPECTED_RETURNS` has `int main(void)`,
-    so this is where the comparable return lands. Higher HARGS
-    bytes (2..7) hold transient state from helper calls and aren't
-    part of the return value."""
-    return bytes(memory[rt_mod.HARGS:rt_mod.HARGS + 2])
+def _return_int_bytes(result) -> bytes:
+    """The 2 bytes of an `int main(void)` return: low byte in A, high
+    byte in X per the calling convention (a non-pointer return of
+    <=2 bytes rides in registers). Every chapter program in
+    `EXPECTED_RETURNS` has `int main(void)`, so this is where the
+    comparable return lands."""
+    return bytes([result.a & 0xFF, result.x & 0xFF])
 
 
-def _format_state(name: str, result, hargs: bytes) -> str:
+def _format_state(name: str, result, ret: bytes) -> str:
     return (
-        f"{name}: HARGS+0..1={hargs.hex()} "
+        f"{name}: A:X={ret.hex()} "
         f"A=${result.a:02X} X=${result.x:02X} Y=${result.y:02X} "
         f"cycles={result.cycles}"
         + (" TIMED_OUT" if result.timed_out else "")
@@ -169,8 +169,8 @@ class TestOptUnoptDifferential(unittest.TestCase):
                     )
                 except Exception as e:
                     self.fail(f"{rel_path}: opt compile/sim error: {e}")
-                unopt_hargs = _return_int_bytes(unopt.memory)
-                opt_hargs = _return_int_bytes(opt.memory)
+                unopt_hargs = _return_int_bytes(unopt)
+                opt_hargs = _return_int_bytes(opt)
                 if unopt.timed_out:
                     self.fail(
                         f"{rel_path}: unopt timed out — "

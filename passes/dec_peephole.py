@@ -154,39 +154,82 @@ def _try_match_sub1(
 def _next_branch_reads_c_or_v(
     instrs: list[asm_ast.Type_instruction], pos: int,
 ) -> bool:
-    """True iff the next flag-relevant instruction at or after
-    `pos` is a Branch on C (BCC/BCS) or V (BVC/BVS). Walks past
-    instructions that don't read flags (LDA / STA / etc. — these
-    set N/Z but don't read prior flag state) until hitting a
-    Branch or another instruction that resets all flags."""
-    j = pos
+    """True iff the SBC's C / V flags can be read by a `BCC`/`BCS` /
+    `BVC`/`BVS` branch before C and V are both redefined. DEC sets
+    only N/Z (not C/V), so folding the SBC to DEC is unsound whenever
+    such a branch is reachable.
+
+    The 6502's C/V flags are NOT touched by LDA / STA / register
+    transfers (`Mov`), logical ops (`And`/`Or`/`Xor`), `Inc`/`Dec`,
+    `Push`/`Pop`, or `BitTest` (BIT sets N/V but not C). So the
+    SBC's carry threads through those — we must keep scanning past
+    them. C and V ARE redefined by another `Add`/`Sub` (ADC/SBC),
+    `Compare` (CMP/CPX/CPY set C; clear nothing for V but a fresh
+    SBC/ADC would), the shifts/rotates (set C), and `SetCarry`/
+    `ClearCarry` (set C). Once C is redefined the SBC's carry can't
+    reach any later branch, so the fold is safe.
+
+    Anything that splits or leaves control flow without first
+    redefining C — a non-C/V `Branch`, a `Label`/`Jump`/`Call`/`Ret`
+    — is treated conservatively as "the carry might be read on some
+    path" → unsafe."""
+    label_idx = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
     n = len(instrs)
-    while j < n:
-        instr = instrs[j]
-        if isinstance(instr, asm_ast.Branch):
-            return isinstance(
-                instr.cond, (asm_ast.CC, asm_ast.CS, asm_ast.VC, asm_ast.VS),
-            )
-        # Any flag-setting instruction other than a Branch: assume
-        # we're not the relevant flag source anymore. Conservative:
-        # reset all flags means the SBC's flags don't reach the
-        # branch, so the peephole is safe regardless.
-        if isinstance(instr, (
-            asm_ast.Mov, asm_ast.Add, asm_ast.Sub, asm_ast.And,
-            asm_ast.Or, asm_ast.Xor, asm_ast.Compare, asm_ast.Inc,
-            asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
-            asm_ast.LogicalShiftRight, asm_ast.RotateLeft,
-            asm_ast.RotateRight, asm_ast.Pop,
-            asm_ast.SetCarry, asm_ast.ClearCarry,
-        )):
-            return False
-        # Labels, Jumps, Calls, etc. — control flow boundary; we
-        # can't reason cross-block here, so be safe.
-        if isinstance(instr, (asm_ast.Label, asm_ast.Jump,
-                              asm_ast.Call, asm_ast.Ret,
-                              asm_ast.Return)):
-            return False
-        j += 1
+    seen: set[int] = set()
+    stack: list[int] = [pos]
+    while stack:
+        j = stack.pop()
+        while 0 <= j < n:
+            if j in seen:
+                break
+            seen.add(j)
+            instr = instrs[j]
+            if isinstance(instr, asm_ast.Branch):
+                if isinstance(
+                    instr.cond,
+                    (asm_ast.CC, asm_ast.CS, asm_ast.VC, asm_ast.VS),
+                ):
+                    return True   # reads the SBC's C / V — unsafe.
+                # Non-C/V branch (BEQ/BNE/BMI/BPL): reads only N/Z
+                # (DEC sets those correctly). The carry threads down
+                # BOTH arms, so follow the target and keep scanning
+                # the fall-through.
+                t = label_idx.get(instr.target)
+                if t is not None:
+                    stack.append(t)
+                j += 1
+                continue
+            # C/V-redefining instructions: the SBC's carry can't reach
+            # any later branch on this path — prune (safe).
+            if isinstance(instr, (
+                asm_ast.Add, asm_ast.Sub, asm_ast.Compare,
+                asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+                asm_ast.RotateLeft, asm_ast.RotateRight,
+                asm_ast.SetCarry, asm_ast.ClearCarry,
+            )):
+                break
+            # C/V-transparent instructions — they DON'T touch C (LDA /
+            # STA / transfers, logical ops, INC/DEC, push/pop, BIT), so
+            # the carry threads through; keep scanning.
+            if isinstance(instr, (
+                asm_ast.Mov, asm_ast.And, asm_ast.Or, asm_ast.Xor,
+                asm_ast.Inc, asm_ast.Dec, asm_ast.Pop, asm_ast.Push,
+                asm_ast.BitTest, asm_ast.Label,
+            )):
+                j += 1
+                continue
+            if isinstance(instr, asm_ast.Jump):
+                t = label_idx.get(instr.target)
+                if t is not None:
+                    stack.append(t)
+                break
+            # Call (callee clobbers the flags) or Ret/Return (function
+            # exit) — the SBC's carry doesn't reach a later branch on
+            # this path. Prune (safe).
+            break
     return False
 
 

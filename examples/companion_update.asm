@@ -28,6 +28,7 @@ __zpabi_player_catch__player_col	EQU	$89
 __zpabi_smc_body_draw__sprite_y	EQU	$89
 __local_active_neg_step__1	EQU	$8A
 __local_active_pos_step__1	EQU	$8A
+__local_compute_screen_x__0	EQU	$8A
 __local_drift_step__pos_1	EQU	$8A
 __zpabi_find_active_entity__hit_max	EQU	$8A
 __zpabi_smc_body_draw__frame_idx	EQU	$8A
@@ -98,10 +99,11 @@ compute_screen_x:
    LDA   companion_pos_lo,X
    SEC
    SBC   __local_compute_screen_x__3
-   STA   HARGS
+   STA   __local_compute_screen_x__0
    LDA   companion_pos_hi,X
    SBC   __local_compute_screen_x__2
-   STA   HARGS+1
+   TAX
+   LDA   __local_compute_screen_x__0
    RTS
 
 find_active_entity:
@@ -523,9 +525,7 @@ companion_update:
    LDX   #$01
 .loop@1_start:
    LDA   companion_state,X
-   BMI   .lb_skip@2
-   JMP   .if_end@42
-.lb_skip@2:
+   BPL   .if_end@42
    STX   __zpabi_drift_step__slot
    LDA   #<__local_companion_update__sprite_y
    STA   __zpabi_drift_step__out_sprite_y_0
@@ -542,9 +542,8 @@ companion_update:
    STX   __local_companion_update__slot
    JSR   compute_screen_x
    LDX   __local_companion_update__slot
-   LDA   HARGS
    STA   __local_companion_update__3
-   LDY   HARGS
+   LDY   __local_companion_update__3
    LDA   companion_state,X
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
@@ -608,11 +607,8 @@ companion_update:
    STX   __local_companion_update__slot
    JSR   compute_screen_x
    LDX   __local_companion_update__slot
-   LDA   HARGS
    STA   __local_companion_update__4
-   LDA   HARGS+1
    BNE   .loop@1_continue
-   LDA   __local_companion_update__4
    CMP   #$9A
    BCS   .loop@1_continue
    STX   __zpabi_entity_proximity__slot

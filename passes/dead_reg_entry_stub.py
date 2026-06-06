@@ -1,13 +1,14 @@
-"""Targeted dead-store elimination for `__attribute__((reg(...)))`
-parameter entry stubs.
+"""Targeted dead-store elimination for `register` parameter entry
+stubs.
 
-When `tac_to_asm` lowers a function with one or more reg-attributed
+When `tac_to_asm` lowers a function with one or more `register`
 parameters, it emits an entry stub `Mov(Reg(R), Data(__zpabi_<fn>__
 <param>))` at the function head — copying the calling-convention's
-incoming register into the param's ZP slot so the body can read the
-param like any other zp_abi byte. After the asm-level regalloc pins
-the param's body Pseudos to the same register R, the slot is never
-read in the body and the entry stub becomes dead.
+incoming register (A / X, assigned positionally) into the param's ZP
+slot so the body can read the param like any other zp_abi byte. After
+the asm-level regalloc pins the param's body Pseudos to the same
+register R, the slot is never read in the body and the entry stub
+becomes dead.
 
 The general `apply_asm_dead_store` pass can't drop the stub when the
 body contains an `Indirect` read through DPTR (which conservatively
@@ -16,8 +17,8 @@ aliases every byte). But we know more here:
   - The slot name follows the `__zpabi_<fn>__<param>` convention, so
     it sits in this function's calling-convention namespace.
   - User code can't construct the slot's address: there's no syntax
-    to take `&__zpabi_*` directly, and `&param` for a reg-attributed
-    parameter is a type-check error. For non-reg params an `&param`
+    to take `&__zpabi_*` directly, and `&param` for a `register`
+    parameter is a type-check error. For non-register params an `&param`
     would force a frame copy upstream, so it still wouldn't yield a
     pointer to the slot.
   - Therefore any `Indirect` read in this function's body cannot

@@ -131,15 +131,13 @@ BOOL: "_Bool"
 COMPLEX: "_Complex"
 IMAGINARY: "_Imaginary"
 
-// GCC-style attribute annotation. Two recognized spec shapes:
+// GCC-style attribute annotation. One recognized spec shape:
 //   * Bare identifier:   `__attribute__((zp_abi))`
-//   * Identifier + arg:  `__attribute__((reg("X")))`
-// Multiple comma-separated specs are allowed in one clause, e.g.
-// `__attribute__((zp_abi, reg("A")))`. Used to attach ABI / codegen
-// annotations to function, variable, or parameter declarations
-// (see docs/leaf_zp_abi.md for zp_abi, and the reg("A"|"X"|"Y")
-// extension that pins a parameter / local / return value to a
-// specific 6502 register).
+// Multiple comma-separated specs are allowed in one clause. Used to
+// attach ABI / codegen annotations to function declarations (see
+// docs/leaf_zp_abi.md for zp_abi). Register pinning of params /
+// locals / return values is expressed with the C `register` keyword
+// (a storage-class specifier), not an attribute.
 ATTRIBUTE: "__attribute__"
 
 // Sentinel emitted by the preprocessor in place of `#pragma c6502
@@ -226,16 +224,12 @@ declaration: function_decl | var_decl
 // type qualifier. C99 §6.7 allows these in any order. The
 // `_split_specifiers` helper sorts them out and rejects illegal
 // combinations.
-specifier: type_specifier | type_qualifier | STATIC | EXTERN
+specifier: type_specifier | type_qualifier | STATIC | EXTERN | REGISTER
 // Optional GCC-style attribute prefix on a declaration (function or
-// var). Recognized annotation names: `zp_abi` (function-level, bare
-// identifier) and `reg("A"|"X"|"Y")` (with a string-literal
-// argument). The transformer rejects any other name. A single clause
-// may carry multiple comma-separated specs. On a function-level
-// prefix, `reg(...)` names the return register; on an init_declarator
-// postfix it names the local-variable register; on a
-// parameter_declaration postfix it names the argument-passing
-// register.
+// var). Recognized annotation name: `zp_abi` (function-level, bare
+// identifier). The transformer rejects any other name. A single
+// clause may carry multiple comma-separated specs. Register pinning
+// uses the `register` keyword instead (see the `specifier` rule).
 attribute_clause: ATTRIBUTE LPAREN LPAREN attribute_spec (COMMA attribute_spec)* RPAREN RPAREN
 attribute_spec: IDENTIFIER                                  -> attr_name_only
               | IDENTIFIER LPAREN STRING_LITERAL RPAREN     -> attr_name_arg

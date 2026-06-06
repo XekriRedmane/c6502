@@ -1326,30 +1326,103 @@ class Translator:
     # Per-instruction lowerings
     # ------------------------------------------------------------------
 
+    def _fn_return_type(self, fn_name: str | None):
+        """The declared return type of `fn_name` (its FunType.ret in
+        the symbol table), or None if unavailable. Both the callee
+        (`_translate_ret`) and the caller (`_translate_function_call`)
+        consult this so they agree on the return convention."""
+        if fn_name is None or self._symbols is None:
+            return None
+        sym = self._symbols.get(fn_name)
+        if sym is None:
+            return None
+        ft = sym.type
+        return ft.ret if isinstance(ft, c99_ast.FunType) else None
+
+    def _type_of_val(self, val):
+        """The c99 type of a TAC val from the symbol table, or None
+        (constants / unknown synthetic vars). Used to key the return
+        convention at indirect call sites, where there's no callee
+        name to read a FunType from."""
+        if not isinstance(val, tac_ast.Var) or self._symbols is None:
+            return None
+        sym = self._symbols.get(val.name)
+        return sym.type if sym is not None else None
+
+    def _capture_reg_return(
+        self, dst_op: asm_ast.Type_operand, reg_bytes: int,
+    ) -> list[asm_ast.Type_instruction]:
+        """Capture a register return into `dst_op`: low byte from A,
+        high byte (for a 2-byte return) from X.
+
+        Under `--optimize` (`bare_exit`), the call-result temp colors
+        to a ZP byte, so the high byte stores with a direct `STX`
+        (`Mov(Reg(X), dst.hi)`) — no staging through A. The unoptimized
+        pipeline resolves the temp to a Frame slot, which `STX` can't
+        address (no `STX (zp),Y`), so the high byte routes through A
+        (`TXA; STA`) with the low byte stored first to free A. Keeping
+        the optimized path free of the `TXA` staging avoids confusing
+        the X-mirror peepholes (`via_a_store_fold` / `x_save_slot_load`),
+        which assume X holds a single logical value."""
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)),
+        ]
+        if reg_bytes >= 2:
+            if self._bare_exit:
+                out.append(asm_ast.Mov(src=_REG_X, dst=_byte_at(dst_op, 1)))
+            else:
+                out.append(asm_ast.Mov(src=_REG_X, dst=_REG_A))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 1)))
+        return out
+
+    def _reg_return_bytes(self, ret_type, size: int) -> int:
+        """Number of return bytes carried in registers, combining the
+        type-driven rule (`_return_reg_bytes`) with a fallback for
+        synthetic IR that has no symbol table: when the declared type
+        is unknown, use the historical size rule — a 1-byte return
+        rides in A, everything wider in HARGS."""
+        if ret_type is not None:
+            return self._return_reg_bytes(ret_type)
+        return 1 if size == 1 else 0
+
+    @staticmethod
+    def _return_reg_bytes(ret_type) -> int:
+        """Number of bytes a return of type `ret_type` passes in
+        6502 registers: 1 (low byte in A) for a 1-byte integer, 2
+        (low in A, high in X) for Int / UInt. 0 — rides HARGS — for
+        a pointer, a >2-byte type, void, or anything else. Pointers
+        are excluded because a pointer can't live in a register per
+        the c6502 register-passing rules."""
+        t = ret_type
+        while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+            t = t.referenced_type
+        if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+            return 1
+        if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+            return 2
+        return 0
+
     def _translate_ret(
         self, val: tac_ast.Type_val | None,
     ) -> list[asm_ast.Type_instruction]:
-        """Stage the return value, then Ret. Convention by width:
-          Int (1B)              → A.
-          Long / ULong /
-            Pointer (2B)        → HARGS+0..1.
-          LongLong / Float (4B) → HARGS+8..11.
-          Double (8B)           → HARGS+16..23.
-        Only the 1-byte case rides in a register; everything wider
-        lives in zero-page HARGS slots. The epilogue's PHA/PLA
-        wrap (controlled by `save_a`) preserves A for the Int case;
-        wider returns set `save_a=False` since their result isn't in
-        any register the SSP/FP arithmetic touches. Slots:
-        FP arithmetic helpers `fadd`/`fsub`/`fmul`/`fdiv` write to
-        HARGS+8..11; `dadd`/`dsub`/`dmul`/`ddiv` write to
-        HARGS+16..23 — so `return a OP b;` for FP operands leaves
-        the result in the right slot already, no epilogue copy.
-        LongLong (4B integer) reuses the Float return slot
-        HARGS+8..11; types are exclusive per call so the overlap
-        is fine, and `mul32`/`divmod32` write to that same offset
-        for the same no-copy-when-possible reason. Long uses
-        HARGS+0..1, the same slot `mul8`/`divmod8` use for inputs
-        — fine for the same reason: types and timing don't overlap.
+        """Stage the return value, then Ret. Convention by return type:
+          Char / SChar / UChar (1B) → A.
+          Int / UInt (2B)           → low byte A, high byte X.
+          Pointer (2B)              → HARGS+0..1.
+          Long / ULong / Float (4B) → HARGS+8..11.
+          LongLong / ULongLong /
+            Double (8B)             → HARGS+16..23.
+        A non-pointer return of <=2 bytes rides in registers (A, and
+        X for the high byte of a 2-byte return); the epilogue
+        preserves them across the SSP/FP teardown (controlled by
+        `save_a` / `save_x`). Pointer and wider returns leave their
+        result in zero-page HARGS slots, which the SSP/FP arithmetic
+        doesn't touch (`save_a=save_x=False`). FP arithmetic helpers
+        `fadd`/`fsub`/`fmul`/`fdiv` write HARGS+8..11;
+        `dadd`/`dsub`/`dmul`/`ddiv` write HARGS+16..23 — so
+        `return a OP b;` for FP operands leaves the result in place.
+        LongLong (4B integer) reuses the Float slot HARGS+8..11
+        (types are exclusive per call).
 
         HARGS is caller-saved by the existing helper convention, so
         the caller has to capture the return value immediately after
@@ -1359,74 +1432,59 @@ class Translator:
         replace_pseudoregisters.
 
         Void return (`val=None`): no value to stage, just the
-        epilogue. `save_a=False` since A carries nothing meaningful
-        across the SSP/FP arithmetic."""
+        epilogue (`save_a=save_x=False`)."""
         if val is None:
-            return [self._exit(save_a=False)]
+            return [self._exit(save_a=False, save_x=False)]
         src_op = translate_val(val)
         size = self._size_of(val)
-        if size == 1:
+        # The register convention is keyed off the function's DECLARED
+        # return type — not the value's type — so a constant null
+        # (`return 0;` from a pointer function) and the caller's
+        # capture agree. The value has already been converted to the
+        # return type by the type checker, so its byte width matches.
+        ret_type = self._fn_return_type(self._current_fn_name)
+        reg_bytes = self._reg_return_bytes(ret_type, size)
+        if reg_bytes:
             # `_byte_at` masks `Imm` to 0..255 — necessary when the
-            # constant is signed-negative (SChar, etc.); a direct
-            # `Mov(Imm(-10), A)` would emit `LDA #-10` which trips
-            # the 8-bit-immediate range check in asm_emit. For
-            # non-Imm operands `_byte_at` is a no-op at offset 0.
-            #
-            # Reg-attribute: when the function carries a
-            # `reg("...")` return attribute, leave the result in the
-            # named register instead of A. The epilogue's PHA/PLA
-            # save is still around A (which is the soft-stack-
-            # arithmetic working register), but for X / Y returns
-            # we route through the named register and skip the A
-            # save (the result isn't in A; A is free to clobber).
-            from passes.abi_selection import ZpLayout
-            own_layout = (
-                self._abi.get(self._current_fn_name)
-                if self._current_fn_name is not None else None
-            )
-            ret_reg_name = (
-                own_layout.return_register
-                if isinstance(own_layout, ZpLayout) else None
-            )
-            if ret_reg_name in ("X", "Y"):
-                # Result goes into X / Y; A's preservation isn't
-                # needed because the caller reads X / Y, not A.
-                # zp_abi functions have a trivial epilogue (bare
-                # RTS) so save_a is moot anyway, but flag it
-                # explicitly: the value isn't in A.
-                return [
-                    asm_ast.Mov(
-                        src=_byte_at(src_op, 0),
-                        dst=_REG_BY_NAME[ret_reg_name],
-                    ),
-                    self._exit(save_a=False),
-                ]
-            # A return (the default) — preserve A across the
-            # epilogue's SSP/FP arithmetic.
-            return [
-                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
-                self._exit(save_a=True),
-            ]
-        # All wider returns: write src bytes into the HARGS slot for
-        # this width (Long → +0..1, LongLong/Float → +8..11, Double
-        # → +16..23) and exit with save_a=False.
+            # constant is signed-negative (SChar, etc.); for non-Imm
+            # operands it's a no-op at offset k.
+            seq: list[asm_ast.Type_instruction] = []
+            if reg_bytes >= 2:
+                # High byte → X, staged through A (`LDA hi; TAX`)
+                # FIRST, so the trailing `LDA lo` leaves the low byte
+                # in A. There's no `LDX (zp),Y`, so a Frame-resident
+                # high byte must route through A; the
+                # `direct_index_load` peephole collapses `LDA M; TAX`
+                # → `LDX M` when M is directly X-addressable.
+                seq.append(asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A))
+                seq.append(asm_ast.Mov(src=_REG_A, dst=_REG_X))
+            seq.append(asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A))
+            seq.append(self._exit(save_a=True, save_x=reg_bytes >= 2))
+            return seq
+        # Pointer / wider returns: write src bytes into the HARGS slot
+        # for this width and exit without register preservation.
         out_off = _RET_HARGS_OFFSET[size]
-        seq: list[asm_ast.Type_instruction] = []
+        seq = []
         for k in range(size):
             seq.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
             seq.append(asm_ast.Mov(src=_REG_A, dst=_hargs(out_off + k)))
-        seq.append(self._exit(save_a=False))
+        seq.append(self._exit(save_a=False, save_x=False))
         return seq
 
-    def _exit(self, *, save_a: bool) -> asm_ast.Type_instruction:
+    def _exit(
+        self, *, save_a: bool, save_x: bool,
+    ) -> asm_ast.Type_instruction:
         """Emit either the legacy compound `Ret(...)` (with placeholder
         arg_bytes / local_bytes that `replace_pseudoregisters` later
-        patches) or — under `--optimize-asm` — a bare `Return(save_a)`
-        atom that the synthesis pass picks up after regalloc."""
+        patches) or — under `--optimize-asm` — a bare
+        `Return(save_a, save_x)` atom that the synthesis pass picks up
+        after regalloc. `save_a` / `save_x` flag which return bytes
+        ride in A / X so the epilogue can preserve them across the
+        frame teardown."""
         if self._bare_exit:
-            return asm_ast.Return(save_a=save_a)
+            return asm_ast.Return(save_a=save_a, save_x=save_x)
         return asm_ast.Ret(
-            arg_bytes=0, local_bytes=0, save_a=save_a,
+            arg_bytes=0, local_bytes=0, save_a=save_a, save_x=save_x,
         )
 
     def _translate_copy(
@@ -1856,23 +1914,20 @@ class Translator:
         if dst is not None:
             dst_op = translate_val(dst)
             dst_size = self._size_of(dst)
-            if dst_size == 1:
-                # 1-byte return: from the named return register if
-                # the callee has a reg("...") return attribute,
-                # else from A (the default ABI).
-                ret_reg_name = (
-                    layout.return_register
-                    if isinstance(layout, ZpLayout) else None
+            # The return convention is keyed off the CALLEE's declared
+            # return type, the same way the callee's `_translate_ret`
+            # decides where to put the value.
+            reg_bytes = self._reg_return_bytes(
+                self._fn_return_type(name), dst_size,
+            )
+            if reg_bytes:
+                emitted.extend(
+                    self._capture_reg_return(dst_op, reg_bytes),
                 )
-                src_reg = (
-                    _REG_BY_NAME[ret_reg_name]
-                    if ret_reg_name is not None else _REG_A
-                )
-                emitted.append(asm_ast.Mov(src=src_reg, dst=dst_op))
             else:
-                # Wider returns: read back byte-by-byte through A
-                # from the HARGS slot for this width. 2B at +0..1,
-                # 4B at +8..11, 8B at +16..23.
+                # Pointer / wider returns: read back byte-by-byte
+                # through A from the HARGS slot for this width. 2B at
+                # +0..1, 4B at +8..11, 8B at +16..23.
                 in_off = _RET_HARGS_OFFSET[dst_size]
                 for k in range(dst_size):
                     emitted.append(asm_ast.Mov(src=_hargs(in_off + k), dst=_REG_A))
@@ -2022,12 +2077,20 @@ class Translator:
         emitted.extend(self._stage_dptr(translate_val(ptr)))
         emitted.append(asm_ast.Call(name=_ICALL))
         # Capture return value — same byte plan as the direct path.
-        # `dst is None` means a void-returning callee: skip capture.
+        # The indirect callee has no name here, so the register
+        # convention is keyed off the result temp's type (which is
+        # the call's return type — what the callee's `_translate_ret`
+        # also sees). `dst is None` means a void-returning callee.
         if dst is not None:
             dst_op = translate_val(dst)
             dst_size = self._size_of(dst)
-            if dst_size == 1:
-                emitted.append(asm_ast.Mov(src=_REG_A, dst=dst_op))
+            reg_bytes = self._reg_return_bytes(
+                self._type_of_val(dst), dst_size,
+            )
+            if reg_bytes:
+                emitted.extend(
+                    self._capture_reg_return(dst_op, reg_bytes),
+                )
             else:
                 in_off = _RET_HARGS_OFFSET[dst_size]
                 for k in range(dst_size):

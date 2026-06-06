@@ -39,16 +39,20 @@ module ASM {
                 | StringInit(string str, int bytes)
                 | ZeroInit(int bytes)
 
-    -- Ret's `save_a` flag controls whether the epilogue brackets the
-    -- SSP/FP arithmetic with PHA/PLA to preserve A across the
-    -- 16-bit add. Only 1-byte returns (Char / SChar / UChar) ride in
-    -- A and need this; everything wider (Int / UInt / Pointer at
-    -- HARGS+0..1, Long / ULong / Float at HARGS+8..11, LongLong /
-    -- ULongLong / Double at HARGS+16..23) leaves its result in HARGS
-    -- — the SSP/FP arithmetic doesn't touch HARGS, so the epilogue
-    -- can skip the PHA/PLA pair (`save_a=False`). The flag has no
-    -- effect when arg_bytes + local_bytes == 0 (the collapsed
-    -- epilogue is just `RTS` either way).
+    -- Ret's `save_a` / `save_x` flags control whether the epilogue
+    -- preserves A / X across the SSP/FP teardown (which clobbers
+    -- both — A as the add accumulator, X as the FP-low scratch).
+    -- A non-pointer return of <=2 bytes rides in registers: the low
+    -- byte in A (`save_a=True`), and for a 2-byte return the high
+    -- byte in X (`save_x=True`). The teardown then brackets itself by
+    -- pushing the live return bytes to the hardware stack and pulling
+    -- them back into A / X just before RTS. Pointer (2-byte) and
+    -- wider returns leave their result in HARGS (Long / ULong / Float
+    -- at HARGS+8..11, LongLong / ULongLong / Double at HARGS+16..23,
+    -- pointer at HARGS+0..1) — the SSP/FP arithmetic doesn't touch
+    -- HARGS, so both flags are False. The flags have no effect when
+    -- arg_bytes + local_bytes == 0 (the collapsed epilogue is just
+    -- `RTS`, which clobbers nothing).
     --
     -- `callee_saved_addrs` (FunctionPrologue / Ret) lists the
     -- zero-page byte addresses the function uses from the callee-
@@ -78,7 +82,7 @@ module ASM {
         -- frame-pointer setup / etc.) — those access compiler-
         -- managed memory that has no observer outside the function.
         Mov(operand src, operand dst, bool is_volatile)
-        | Ret(int arg_bytes, int local_bytes, bool save_a, int* callee_saved_addrs)
+        | Ret(int arg_bytes, int local_bytes, bool save_a, bool save_x, int* callee_saved_addrs)
         -- Bare `Return` atom: equivalent to `RTS` with no SSP/FP
         -- teardown. Used by the `--optimize-asm` path between
         -- `tac_to_asm` and the post-regalloc synthesis pass: phase 9
@@ -93,15 +97,17 @@ module ASM {
         -- function-exit boundary without dragging in the frame-
         -- teardown semantics.
         --
-        -- `save_a` mirrors `Ret.save_a` — same per-return-value-shape
-        -- info: True iff the return value rides in A (1-byte
-        -- returns) and so the synthesized epilogue has to bracket
-        -- its 16-bit SSP/FP add with PHA/PLA. False for void / wider
-        -- returns whose value lives in HARGS, untouched by SSP/FP
-        -- arithmetic. Carried on the atom (rather than recomputed at
-        -- synthesis time) because it's intrinsic to the return-value
-        -- staging the body just emitted.
-        | Return(bool save_a)
+        -- `save_a` / `save_x` mirror `Ret.save_a` / `Ret.save_x` —
+        -- same per-return-value-shape info: `save_a` is True iff the
+        -- return's low byte rides in A, `save_x` iff a 2-byte return's
+        -- high byte rides in X, so the synthesized epilogue (when it
+        -- adds a frame teardown) must preserve them across the SSP/FP
+        -- arithmetic. Both False for void / pointer / wider returns
+        -- whose value lives in HARGS, untouched by SSP/FP arithmetic.
+        -- Carried on the atom (rather than recomputed at synthesis
+        -- time) because it's intrinsic to the return-value staging the
+        -- body just emitted.
+        | Return(bool save_a, bool save_x)
         | FunctionPrologue(int arg_bytes, int local_bytes, int* callee_saved_addrs)
         | AllocateStack(int bytes)
         | Add(operand src, operand dst)

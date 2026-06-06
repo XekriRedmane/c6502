@@ -68,21 +68,19 @@ class FunctionMeta:
     code.
 
     `param_regs` is a parallel list to `params`: each entry is "",
-    "A", "X", or "Y" — the register the corresponding param byte
-    is passed in at the calling convention, or "" if the byte rides
-    the default zp_abi ZP-slot path. `return_reg` names the
-    register the function returns its 1-byte result in (or "" /
-    None for the default A). Both fields are produced from the
-    function's `ZpLayout.param_registers` / `return_register` so
-    a cross-TU caller can synthesize the right caller-side
-    register-passing for an `__attribute__((reg(...)))` extern."""
+    "A", or "X" — the register the corresponding param byte is passed
+    in at the calling convention, or "" if the byte rides the default
+    zp_abi ZP-slot path. Produced from the function's
+    `ZpLayout.param_registers` so a cross-TU caller can synthesize the
+    right caller-side register-passing for a `register`-param extern.
+    (The return value's register placement isn't serialized — it's
+    type-driven and recomputed identically on both sides.)"""
     name: str
     params: list[str]
     locals: list[str]
     indirect: bool
     in_cycle: bool
     param_regs: list[str] = field(default_factory=list)
-    return_reg: str | None = None
 
     @property
     def param_bytes(self) -> int:
@@ -98,12 +96,11 @@ class ExternMeta:
     """Per-declared-extern metadata (zp_abi externs only). `params`
     carries the flat per-byte slot symbols the caller TU references
     at call sites — the linker re-binds them to fresh ZP addresses
-    while preserving the strings. `param_regs` + `return_reg` mirror
-    FunctionMeta's reg-attribute layout."""
+    while preserving the strings. `param_regs` mirrors FunctionMeta's
+    register-passing layout."""
     name: str
     params: list[str]
     param_regs: list[str] = field(default_factory=list)
-    return_reg: str | None = None
 
     @property
     def param_bytes(self) -> int:
@@ -173,11 +170,6 @@ def build_metadata(
         for n, layout in abi.items()
         if isinstance(layout, ZpLayout)
     }
-    return_reg_for: dict[str, str | None] = {
-        n: layout.return_register
-        for n, layout in abi.items()
-        if isinstance(layout, ZpLayout)
-    }
     for name in sorted(in_tu_names):
         locals_list: list[str]
         if slot_names_by_fn is not None and name in slot_names_by_fn:
@@ -194,7 +186,6 @@ def build_metadata(
             indirect=indirect_per_fn.get(name, False),
             in_cycle=name in in_cycle,
             param_regs=param_regs_for.get(name, []),
-            return_reg=return_reg_for.get(name),
         ))
     # zp_abi extern declarations: ZpLayout entries in `abi` whose
     # name isn't defined in this TU.
@@ -207,7 +198,6 @@ def build_metadata(
                 name=name,
                 params=list(layout.slot_symbols),
                 param_regs=param_regs_for.get(name, []),
-                return_reg=return_reg_for.get(name),
             ))
     # Call edges. Sorted for deterministic output.
     seen_calls: set[tuple[str, str]] = set()
@@ -299,8 +289,6 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         ]
         if d.param_regs and any(d.param_regs):
             parts.append(f"param_regs={','.join(d.param_regs)}")
-        if d.return_reg:
-            parts.append(f"return_reg={d.return_reg}")
         lines.append(" ".join(parts))
     for e in meta.externs:
         parts = [
@@ -309,8 +297,6 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         ]
         if e.param_regs and any(e.param_regs):
             parts.append(f"param_regs={','.join(e.param_regs)}")
-        if e.return_reg:
-            parts.append(f"return_reg={e.return_reg}")
         lines.append(" ".join(parts))
     for caller, callee in meta.calls:
         lines.append(f"; call {caller} -> {callee}")
@@ -376,7 +362,6 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             indirect=kvs["indirect"] == "true",
             in_cycle=kvs["in_cycle"] == "true",
             param_regs=_split_csv(kvs.get("param_regs", "")),
-            return_reg=kvs.get("return_reg") or None,
         ))
     elif kind == "ext":
         if len(parts) < 3:
@@ -387,7 +372,6 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             name=name,
             params=_split_csv(kvs["params"]),
             param_regs=_split_csv(kvs.get("param_regs", "")),
-            return_reg=kvs.get("return_reg") or None,
         ))
     elif kind == "call":
         # Format: `call <caller> -> <callee>`

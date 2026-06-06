@@ -10,11 +10,11 @@ extern const uint8_t floor_ceil[];   /* 5 entries; chase ends at FLOOR_CEIL[X]+1
 
 /* === Speaker-click helpers === */
 extern void snd_delay_up(
-    uint8_t pitch __attribute__((reg("A"))),
-    uint8_t clicks __attribute__((reg("X"))));
+    register uint8_t pitch,
+    register uint8_t clicks);
 extern void snd_delay_down(
-    uint8_t pitch __attribute__((reg("A"))),
-    uint8_t clicks __attribute__((reg("X"))));
+    register uint8_t pitch,
+    register uint8_t clicks);
 
 
 /* FLOOR_Y_TABLE: per-floor walk-row Y anchors.  Five entries indexed by

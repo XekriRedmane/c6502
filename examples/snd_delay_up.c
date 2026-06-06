@@ -34,7 +34,7 @@ extern const volatile uint8_t *sfx_click_ptr;
 * @param clicks  Number of clicks to emit.  0 is likewise treated as
 *                256 by the same wrap-around rule.
 */
-void snd_delay_up(uint8_t pitch __attribute__((reg("A"))), uint8_t clicks __attribute__((reg("X"))))
+void snd_delay_up(register uint8_t pitch, register uint8_t clicks)
 {
     do {
         /* volatile is essential: without it the compiler would observe
@@ -42,7 +42,7 @@ void snd_delay_up(uint8_t pitch __attribute__((reg("A"))), uint8_t clicks __attr
         * and delete it, collapsing the audible delay to nothing.
         * The volatile-qualified accesses are required side effects
         * per C99 6.7.3, so the read-modify-write must execute. */
-        volatile uint8_t y __attribute__((reg("Y"))) = pitch;
+        register volatile uint8_t y = pitch;
         pitch = (uint8_t)(pitch + 1);   /* next click's delay grows by 1 */
         while (--y != 0) { }            /* inner delay: count y down to 0 */
         (void)*sfx_click_ptr;           /* volatile read = click or silent */

@@ -127,12 +127,11 @@ class HwRegEligibility:
     hints_y: set[str] = field(default_factory=set)
     use_count: dict[str, int] = field(default_factory=dict)
     # Names that MUST be pinned to a specific HwReg (the user wrote
-    # `__attribute__((reg("X"|"Y")))` on the corresponding c99
-    # local). The regalloc raises if it can't honor the pinning —
-    # falling back to ZP would silently violate the user's contract.
-    # Required-A entries don't fit the same model (A is the universal
-    # arithmetic scratch — pinning a value to A across any operation
-    # is unsound), so reg("A") on a local is rejected upstream.
+    # `register` on the corresponding c99 local — always Y). The
+    # regalloc raises if it can't honor the pinning — falling back to
+    # ZP would silently violate the user's contract. `register` locals
+    # only ever pin to Y (a local gets one byte, Y); `required_x` is
+    # kept for symmetry but stays empty under the `register` keyword.
     required_x: set[str] = field(default_factory=set)
     required_y: set[str] = field(default_factory=set)
 
@@ -165,13 +164,13 @@ def scan_function(
     REQUIRED register ("X" or "Y"). Any derived name pinned to X
     joins `required_x`; similarly Y. Required pinning is hard:
     coloring raises if the IR's use pattern conflicts with the
-    requested register. Use for locals where the user wrote
-    `__attribute__((reg("X"|"Y")))` and has no fallback storage.
+    requested register. Use for `register` locals (always Y), which
+    have no fallback storage.
 
     `register_hints` is the soft variant — add the matching SSA
     names to `hints_x` / `hints_y` so the regalloc TRIES to pin
-    but FALLS BACK on infeasibility. Use for parameters with
-    `__attribute__((reg(...)))`: the calling convention still
+    but FALLS BACK on infeasibility. Use for `register` parameters
+    (their X-byte): the calling convention still
     leaves the value in the named register on entry (the
     tac_to_asm entry stub writes the param's ZP slot), so the
     body has a valid slot fallback when pinning the body's

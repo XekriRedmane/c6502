@@ -437,15 +437,17 @@ class TestVoid(unittest.TestCase):
             "int main(void) { f(); return 0; }",
         )
         self.assertIn("JSR   f", out)
-        # Right after the JSR f, the next non-blank line should be
-        # the `LDA #$00` that stages the return-0 — i.e. NOT a
-        # capture sequence.
+        # Right after the JSR f, the next non-blank line should stage
+        # the return-0 directly with an immediate load — i.e. NOT a
+        # capture sequence (no `STA <frame slot>` reading the call's
+        # A/HARGS result). `return 0` from `int main` now stages both
+        # bytes in registers (`LDX #$00` high, `LDA #$00` low).
         lines = [
             ln.strip() for ln in out.splitlines()
             if ln.strip() and not ln.strip().startswith(";")
         ]
         idx = lines.index("JSR   f")
-        self.assertEqual(lines[idx + 1], "LDA   #$00")
+        self.assertIn(lines[idx + 1], ("LDA   #$00", "LDX   #$00"))
 
     def test_codegen_cast_to_void_evaluates_for_side_effects(self):
         # `(void)(1+2)` — the binary still evaluates (LDA #$01; CLC;

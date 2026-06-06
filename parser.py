@@ -75,6 +75,7 @@ _COMPOUND_ASSIGN_OPS = {
 _STORAGE_CLASSES = {
     "STATIC": c99_ast.Static,
     "EXTERN": c99_ast.Extern,
+    "REGISTER": c99_ast.Register,
 }
 
 # Token types of every leaf the `specifier` rule can produce. After the
@@ -85,7 +86,7 @@ _STORAGE_CLASSES = {
 # both shapes).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "VOID",
-                           "STATIC", "EXTERN",
+                           "STATIC", "EXTERN", "REGISTER",
                            "STRUCT", "UNION",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
@@ -371,17 +372,13 @@ def _consume_specifiers(items, start):
 # a frozenset of valid string-literal arguments (arg-form, must match
 # one). The attribute_spec transformer checks against this table.
 #
-# `zp_abi`           — bare-identifier; opts a function into the
-#                       leaf-ZP-ABI calling convention. Valid only as
-#                       a function-level prefix.
-# `reg("A"|"X"|"Y")` — arg-form; pins a parameter / local / return
-#                       value to the named 6502 register. Valid as
-#                       function-level prefix (return slot),
-#                       parameter postfix (arg-passing slot), or
-#                       init-declarator postfix (local-binding slot).
+# `zp_abi` — bare-identifier; opts a function into the leaf-ZP-ABI
+#            calling convention. Valid only as a function-level prefix.
+#
+# Register pinning of params / locals / return values is NOT an
+# attribute — it uses the C `register` storage-class keyword.
 _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
     "zp_abi": None,
-    "reg": frozenset({"A", "X", "Y"}),
 }
 
 
@@ -400,37 +397,23 @@ def _consume_attribute_clause(items, start):
     (an `_AttributeClause`), return `(specs, start+1)`. Otherwise the
     optional `attribute_clause?` in the grammar didn't fire and we
     return `(None, start)`. `specs` is a list of `(name, arg_or_None)`
-    tuples — the validator helpers (`_extract_function_attributes`,
-    `_extract_register_class`) split it into the relevant fields."""
+    tuples — the validator helper (`_extract_function_attributes`)
+    splits it into the relevant fields."""
     if start < len(items) and isinstance(items[start], _AttributeClause):
         return items[start].specs, start + 1
     return None, start
 
 
-def _validate_register_name(name: str) -> str:
-    """Check `name` is one of "A"/"X"/"Y" and return it normalized.
-    Used by every site that consumes a `reg(...)` arg."""
-    if name not in _KNOWN_ATTRIBUTES["reg"]:
-        raise ParserError(
-            f"`__attribute__((reg({name!r})))`: register name must "
-            f"be one of {sorted(_KNOWN_ATTRIBUTES['reg'])}; got "
-            f"{name!r}"
-        )
-    return name
+def _extract_function_attributes(specs, where: str) -> str | None:
+    """Reduce a list of `(name, arg_or_None)` specs to the
+    `abi_annotation` carried on a function_decl. `where` is a short
+    label ("function declaration" / "extern function declaration")
+    used in error messages.
 
-
-def _extract_function_attributes(specs, where: str):
-    """Split a list of `(name, arg_or_None)` specs into the
-    `(abi_annotation, return_register)` pair carried on a
-    function_decl. `where` is a short label ("function declaration" /
-    "extern function declaration") used in error messages.
-
-    Rejects any spec name that isn't `zp_abi` or `reg`, any duplicate
-    spec, any `zp_abi` carrying an argument, and any `reg` whose arg
-    isn't a valid register name. Returns the two fields (each None if
-    not present in the clause)."""
+    Rejects any spec name that isn't `zp_abi`, any duplicate spec, and
+    any `zp_abi` carrying an argument. Returns the abi_annotation
+    (None if not present in the clause)."""
     abi_annotation = None
-    return_register = None
     seen: set[str] = set()
     for name, arg in specs:
         if name not in _KNOWN_ATTRIBUTES:
@@ -450,48 +433,7 @@ def _extract_function_attributes(specs, where: str):
                     "argument"
                 )
             abi_annotation = "zp_abi"
-        elif name == "reg":
-            if arg is None:
-                raise ParserError(
-                    "`__attribute__((reg(...)))` requires a "
-                    "string-literal register-name argument"
-                )
-            return_register = _validate_register_name(arg)
-    return abi_annotation, return_register
-
-
-def _extract_register_class(specs, where: str) -> str | None:
-    """Pull a single `reg("...")` spec out of a postfix clause used in
-    parameter or init-declarator position. `where` is a label for
-    error messages. `zp_abi` isn't valid in this position; neither is
-    any other unknown name. Returns the register name or None if the
-    clause was empty."""
-    register = None
-    seen: set[str] = set()
-    for name, arg in specs:
-        if name not in _KNOWN_ATTRIBUTES:
-            raise ParserError(
-                f"unknown attribute name {name!r} on {where}; expected "
-                f"one of {sorted(_KNOWN_ATTRIBUTES)}"
-            )
-        if name in seen:
-            raise ParserError(
-                f"duplicate `__attribute__(({name}...))` on {where}"
-            )
-        seen.add(name)
-        if name == "zp_abi":
-            raise ParserError(
-                f"`__attribute__((zp_abi))` isn't valid on {where} "
-                f"— it's a function-level attribute only"
-            )
-        if name == "reg":
-            if arg is None:
-                raise ParserError(
-                    "`__attribute__((reg(...)))` requires a "
-                    "string-literal register-name argument"
-                )
-            register = _validate_register_name(arg)
-    return register
+    return abi_annotation
 
 
 def _consume_pragma_clause(items, start):
@@ -850,13 +792,12 @@ def _apply_declarator(decl_tree, base_type):
                           the OUTERMOST direct_declarator's function
                           suffix (or None if the declarator has no
                           such suffix).
-      outer_param_registers — parallel list[str | None] of per-
-                          parameter `__attribute__((reg("...")))`
-                          register names (None when the parameter
-                          carried no postfix attribute). Same length
-                          and ordering as outer_param_names. Also
-                          None if the declarator has no outermost
-                          function suffix.
+      outer_param_registers — parallel list[bool] of per-parameter
+                          `register` storage-class markers (True when
+                          the parameter carried the `register`
+                          keyword). Same length and ordering as
+                          outer_param_names. None if the declarator
+                          has no outermost function suffix.
 
     Caller checks composed_type to decide whether these are real
     function params: `composed_type is FunType` → they're the
@@ -1213,9 +1154,9 @@ def _apply_direct_abstract_declarator(dad_tree, base_type):
 def _parse_function_suffix_middle(middle):
     """Decode the middle children of a function-suffix declarator
     (between LPAREN and RPAREN) into a list of `(name_or_None, type,
-    register_or_None)` triples. Shared between the named and abstract
-    walkers; abstract-declarator paths drop the name and register
-    fields since unnamed parameters can't carry either."""
+    is_register)` triples. Shared between the named and abstract
+    walkers; abstract-declarator paths drop the name (unnamed params
+    have no identifier) but keep the `register` marker."""
     if not middle:
         # `f()` — K&R-style empty list. Treat as no params.
         return []
@@ -1249,10 +1190,11 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def specifier(self, token):
-        # `specifier: type_specifier | STATIC | EXTERN`. Either branch
-        # contributes a single token (after `type_specifier` unwraps
-        # its tree), so this method just passes the token through for
-        # var_decl / function_decl to scan.
+        # `specifier: type_specifier | type_qualifier | STATIC |
+        # EXTERN | REGISTER`. Either branch contributes a single token
+        # (after `type_specifier` unwraps its tree), so this method
+        # just passes the token through for var_decl / function_decl
+        # to scan.
         return token
 
     @v_args(inline=True)
@@ -1445,15 +1387,13 @@ class _ASTBuilder(Transformer):
     def parameter_declaration(self, items):
         # `parameter_declaration: specifier+ declarator attribute_clause?
         #                       | specifier+ abstract_declarator?`
-        # Returns `(name_or_None, data_type, register_or_None)`. An
-        # unnamed parameter — `int foo(int *)` — gives `name=None`
-        # and `register=None`. An empty abstract_declarator gives
-        # `name=None`, the bare specifier type, and `register=None`.
-        # The postfix attribute_clause (when present) is only legal
-        # on the named-declarator alternative; abstract-declarator
-        # params can't be reg-annotated because there's no name to
-        # bind. The clause's specs must be `reg("...")` shape (`zp_abi`
-        # is a function-level attribute, rejected here).
+        # Returns `(name_or_None, data_type, is_register)`. An unnamed
+        # parameter — `int foo(int *)` — gives `name=None` and
+        # `is_register=False`. C99 §6.7.5.3.2 permits only one storage
+        # class on a parameter — `register` — which routes the arg
+        # through a 6502 register (positional A/X assignment happens
+        # downstream). No `__attribute__` is valid on a parameter
+        # (zp_abi is function-level; register pinning uses the keyword).
         specs = []
         rest = []
         attr_clause: _AttributeClause | None = None
@@ -1476,46 +1416,33 @@ class _ASTBuilder(Transformer):
                     "struct/union definition isn't permitted in a "
                     "parameter declaration"
                 )
+        if attr_clause is not None:
+            raise ParserError(
+                "`__attribute__` isn't permitted on a function "
+                "parameter"
+            )
         base, storage = _split_specifiers(specs)
-        # C99 §6.7.5.3.2: "The only storage-class specifier that shall
-        # occur in a parameter declaration is register." c6502 doesn't
-        # model `register` (the keyword lexes but no parser rule
-        # accepts it), so any storage class reaching here is `static`
-        # or `extern` and is a constraint violation.
-        if storage is not None:
+        # C99 §6.7.5.3.2: the only storage class allowed on a parameter
+        # is `register`. `static` / `extern` are constraint violations.
+        is_register = isinstance(storage, c99_ast.Register)
+        if storage is not None and not is_register:
             raise ParserError(
                 f"storage class "
                 f"{type(storage).__name__.lower()!r} isn't permitted "
-                f"on a function parameter (C99 §6.7.5.3.2)"
-            )
-        register = None
-        if attr_clause is not None:
-            register = _extract_register_class(
-                attr_clause.specs, where="function parameter",
+                f"on a function parameter (C99 §6.7.5.3.2 — only "
+                f"register)"
             )
         if not rest:
-            if register is not None:
-                raise ParserError(
-                    "`__attribute__((reg(...)))` requires a named "
-                    "parameter — saw it on an abstract-declarator "
-                    "parameter"
-                )
-            return (None, base, None)
+            return (None, base, is_register)
         decl_tree = rest[0]
         if decl_tree.data == "declarator":
             name, composed, _outer, _outer_regs = _apply_declarator(
                 decl_tree, base,
             )
-            return (name, _adjust_param_type(composed), register)
+            return (name, _adjust_param_type(composed), is_register)
         if decl_tree.data == "abstract_declarator":
-            if register is not None:
-                raise ParserError(
-                    "`__attribute__((reg(...)))` requires a named "
-                    "parameter — saw it on an abstract-declarator "
-                    "parameter"
-                )
             t = _apply_abstract_declarator(decl_tree, base)
-            return (None, _adjust_param_type(t), None)
+            return (None, _adjust_param_type(t), is_register)
         raise AssertionError(
             f"unexpected parameter_declaration child: {decl_tree.data}"
         )
@@ -1660,25 +1587,24 @@ class _ASTBuilder(Transformer):
     def init_declarator(self, items):
         # `init_declarator: declarator attribute_clause?
         #                    (ASSIGN initializer)?`. Returns a
-        # `(declarator_tree, init_or_None, register_class_or_None)`
-        # triple so var_decl can iterate the list emitted by
-        # `init_declarator (COMMA init_declarator)*`. The postfix
-        # attribute_clause's specs must all be `reg("...")` shape —
-        # `zp_abi` and unknown names are rejected here (a local
-        # variable can't be `zp_abi`). The register name is validated
-        # against {"A", "X", "Y"}.
+        # `(declarator_tree, init_or_None)` pair so var_decl can
+        # iterate the list emitted by `init_declarator (COMMA
+        # init_declarator)*`. No `__attribute__` is valid in the
+        # postfix object-declarator position — zp_abi is function-
+        # level, and register pinning of a local uses the `register`
+        # storage-class keyword (parsed with the leading specifiers).
         decl_tree = items[0]
         i = 1
-        register_class: str | None = None
         if i < len(items) and isinstance(items[i], _AttributeClause):
-            register_class = _extract_register_class(
-                items[i].specs, where="object declaration",
+            raise ParserError(
+                "`__attribute__` isn't valid on an object "
+                "declaration; pin a local to a register with the "
+                "`register` keyword"
             )
-            i += 1
         init = None
         if i < len(items) and _is_token(items[i], "ASSIGN"):
             init = items[i + 1]
-        return (decl_tree, init, register_class)
+        return (decl_tree, init)
 
     def var_decl(self, items):
         # `var_decl: attribute_clause? specifier+ init_declarator
@@ -1698,14 +1624,14 @@ class _ASTBuilder(Transformer):
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
-        # Split the prefix attribute clause into the function-decl
-        # fields (abi_annotation + return_register). On object decls
-        # the prefix clause must be empty; we validate that below per
-        # init-declarator (after we know the composed type).
+        # Reduce the prefix attribute clause to the function-decl
+        # abi_annotation. On object decls the prefix clause must be
+        # empty; we validate that below per init-declarator (after we
+        # know the composed type).
         if prefix_specs is None:
-            prefix_abi, prefix_return_reg = None, None
+            prefix_abi = None
         else:
-            prefix_abi, prefix_return_reg = _extract_function_attributes(
+            prefix_abi = _extract_function_attributes(
                 prefix_specs, where="function declaration",
             )
         # Remaining items are init_declarator results (tuples) and
@@ -1715,7 +1641,7 @@ class _ASTBuilder(Transformer):
             if isinstance(it, tuple)
         ]
         tails: list = []
-        for decl_tree, init, register_class in init_decls:
+        for decl_tree, init in init_decls:
             name, composed, outer_param_names, outer_param_regs = (
                 _apply_declarator(decl_tree, base_type)
             )
@@ -1724,20 +1650,13 @@ class _ASTBuilder(Transformer):
                     raise ParserError(
                         "function declaration cannot have an initializer"
                     )
-                if register_class is not None:
-                    # Postfix `reg(...)` on a function-typed
-                    # init-declarator is ambiguous with the prefix
-                    # return_register slot, so disallow it. Users
-                    # should put the return-register attribute on the
-                    # function-level prefix.
+                if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
-                        f"`__attribute__((reg(...)))` on function "
-                        f"declaration {name!r} must appear as a "
-                        f"prefix attribute (carrying the return "
-                        f"register), not as a postfix attribute"
+                        f"storage class 'register' isn't permitted on "
+                        f"function declaration {name!r}"
                     )
                 param_names = outer_param_names or []
-                param_regs = outer_param_regs or [None] * len(param_names)
+                param_regs = outer_param_regs or [False] * len(param_names)
                 tails.append(c99_ast.FunctionDecl(
                     function_decl=c99_ast.Type_function_decl(
                         name=name,
@@ -1746,12 +1665,11 @@ class _ASTBuilder(Transformer):
                         data_type=composed,
                         storage_class=storage_class,
                         abi_annotation=prefix_abi,
-                        return_register=prefix_return_reg,
-                        param_registers=[r or "" for r in param_regs],
+                        param_registers=[1 if r else 0 for r in param_regs],
                     )
                 ))
             else:
-                if prefix_abi is not None or prefix_return_reg is not None:
+                if prefix_abi is not None:
                     raise ParserError(
                         f"`__attribute__((...))` is only valid on "
                         f"function declarations; saw it on object "
@@ -1763,7 +1681,6 @@ class _ASTBuilder(Transformer):
                         init=init,
                         data_type=composed,
                         storage_class=storage_class,
-                        register_class=register_class,
                     )
                 ))
         return struct_decls + tails
@@ -1851,9 +1768,9 @@ class _ASTBuilder(Transformer):
         # appeared in the return-type specifier).
         prefix_specs, i = _consume_attribute_clause(items, 0)
         if prefix_specs is None:
-            prefix_abi, prefix_return_reg = None, None
+            prefix_abi = None
         else:
-            prefix_abi, prefix_return_reg = _extract_function_attributes(
+            prefix_abi = _extract_function_attributes(
                 prefix_specs, where="function definition",
             )
         specs, i = _consume_specifiers(items, i)
@@ -1869,8 +1786,13 @@ class _ASTBuilder(Transformer):
                 f"function definition's declarator must compose to a "
                 f"function type; got {type(composed).__name__}"
             )
+        if isinstance(storage_class, c99_ast.Register):
+            raise ParserError(
+                f"storage class 'register' isn't permitted on "
+                f"function definition {name!r}"
+            )
         param_names = outer_param_names or []
-        param_regs = outer_param_regs or [None] * len(param_names)
+        param_regs = outer_param_regs or [False] * len(param_names)
         tail = c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
             name=name,
             params=param_names,
@@ -1878,8 +1800,7 @@ class _ASTBuilder(Transformer):
             data_type=composed,
             storage_class=storage_class,
             abi_annotation=prefix_abi,
-            return_register=prefix_return_reg,
-            param_registers=[r or "" for r in param_regs],
+            param_registers=[1 if r else 0 for r in param_regs],
         ))
         return struct_decls + [tail]
 
@@ -1990,7 +1911,9 @@ class _ASTBuilder(Transformer):
                             "in a for-loop initializer (C99 §6.8.5.3)"
                         )
                     vd = inner.var_decl
-                    if vd.storage_class is not None:
+                    if vd.storage_class is not None and not isinstance(
+                        vd.storage_class, c99_ast.Register
+                    ):
                         raise ParserError(
                             f"storage class "
                             f"{type(vd.storage_class).__name__.lower()!r} "

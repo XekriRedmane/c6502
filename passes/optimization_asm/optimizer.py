@@ -121,13 +121,11 @@ def optimize_program(
         if isinstance(tl, (asm_ast.StaticVariable, asm_ast.Function))
     }
     statics_frozen = frozenset(statics)
-    # Derive `register_pins: dict[base_name, "X"|"Y"]` from the
-    # c99 symbol table. Each LocalAttr.register_class identifies a
-    # variable that the user pinned via `__attribute__((reg("...")))`.
-    # The asm regalloc's HwReg pre-pass consumes this dict so
-    # those Pseudos color directly to Reg(X) / Reg(Y) rather than
-    # to a ZP byte.
-    register_pins = _register_pins_from_symbols(symbols)
+    # The set of c99 names carrying the `register` keyword (locals +
+    # params). A `register` local is a HARD pin to Y; a `register`
+    # param is a SOFT hint to its calling-convention arg register
+    # (A / X), derived per-function from the ABI layout below.
+    register_names = _register_var_names(symbols)
     new_top: list[asm_ast.Type_top_level] = []
     colorings: dict[str, Coloring] = {}
     for tl in prog.top_level:
@@ -138,10 +136,21 @@ def optimize_program(
                 local_pools.get(tl.name)
                 if local_pools is not None else None
             )
+            # `register` locals (not in fn.params) → hard Y pins.
+            local_pins = {
+                n: "Y" for n in register_names if n not in tl.params
+            }
+            # `register` params → soft hints to their A / X slot.
+            layout = (
+                param_layouts.get(tl.name)
+                if param_layouts is not None else None
+            )
+            param_hints = _param_register_hints(tl, layout, symbols)
             new_fn, coloring = _optimize_function(
                 tl, statics_frozen, blocked_addrs, allowed_range,
                 local_pool=pool_for_fn,
-                register_pins=register_pins,
+                local_pins=local_pins or None,
+                param_hints=param_hints or None,
             )
             new_top.append(new_fn)
             colorings[new_fn.name] = coloring
@@ -213,28 +222,56 @@ def _allowed_range_for(
     return range(lo, hi)
 
 
-def _register_pins_from_symbols(symbols) -> dict[str, str]:
-    """Walk the c99 symbol table for every LocalAttr that carries a
-    `register_class` attribute and return a `{name: register}` dict.
-    The names are the c99 IR's resolved spellings (`@<N>.<orig>`),
-    which the asm-level SSA construction will use as the base of
-    each renamed version. Returns an empty dict when `symbols` is
-    None or no such attributes exist."""
+def _register_var_names(symbols) -> set[str]:
+    """The set of c99 IR names (`@<N>.<orig>` resolved spellings) that
+    carry the `register` storage class — both `register` locals and
+    `register` parameters. The asm-level SSA construction uses these
+    as the base of each renamed version. Empty when `symbols` is None
+    or no `register` objects exist."""
     if symbols is None:
-        return {}
+        return set()
     from passes.type_checking import LocalAttr
-    out: dict[str, str] = {}
-    # SymbolTable exposes the underlying dict via the iterable-of-
-    # items protocol (or .__iter__); access the private dict for
-    # robustness across that boundary.
+    table = getattr(symbols, "_table", None)
+    if table is None:
+        return set()
+    return {
+        name for name, sym in table.items()
+        if isinstance(sym.attrs, LocalAttr) and sym.attrs.register
+    }
+
+
+def _param_register_hints(fn, layout, symbols) -> dict[str, str]:
+    """Soft body-register hints for `fn`'s 1-byte `register`
+    parameters: each maps to the arg register (A / X) the calling
+    convention passes it in, so the regalloc can keep the value in
+    that register and the entry-stub slot store becomes dead. Only X
+    hints have a regalloc effect (A isn't a colorable register);
+    `hwreg_eligibility` ignores the A ones. 2-byte `register` params
+    can't be pinned to a single register, so they get no hint."""
+    from passes.abi_selection import ZpLayout
+    from passes.replace_pseudoregisters import sizeof
+    from passes.type_checking import LocalAttr
+    if not isinstance(layout, ZpLayout) or symbols is None:
+        return {}
     table = getattr(symbols, "_table", None)
     if table is None:
         return {}
-    for name, sym in table.items():
-        attrs = sym.attrs
-        if isinstance(attrs, LocalAttr) and attrs.register_class is not None:
-            out[name] = attrs.register_class
-    return out
+    hints: dict[str, str] = {}
+    off = 0
+    for pname in fn.params:
+        sym = table.get(pname)
+        n = sizeof(sym.type, None) if sym is not None else 1
+        is_reg = (
+            sym is not None
+            and isinstance(sym.attrs, LocalAttr)
+            and sym.attrs.register
+        )
+        if is_reg and n == 1 and off < len(layout.param_registers):
+            reg = layout.param_registers[off]
+            if reg is not None:
+                hints[pname] = reg
+        off += n
+    return hints
 
 
 def _optimize_function(
@@ -243,7 +280,8 @@ def _optimize_function(
     allowed_range: range | None = None,
     local_pool: list[int] | None = None,
     *,
-    register_pins: dict[str, str] | None = None,
+    local_pins: dict[str, str] | None = None,
+    param_hints: dict[str, str] | None = None,
 ) -> tuple[asm_ast.Function, Coloring]:
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
     # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
@@ -300,24 +338,15 @@ def _optimize_function(
     # — those are the candidates with the largest payoff. We scan
     # the IR (pre-coalescing names), then project to rep level
     # using the coalescing result.
-    # Locals' reg-attributes are HARD pins: the user has no
+    # `register` locals are HARD pins (always Y): the user has no
     # fallback storage so failure must surface as an error.
-    # Params' reg-attributes are SOFT hints: the calling-convention
-    # entry stub already writes the param's ZP slot, so the body
-    # has a valid fallback if the IR shape doesn't fit the requested
-    # register (e.g. `n` used in `LDA #0; CMP n` — CMP doesn't
-    # accept X/Y as the right operand). When the hint succeeds the
-    # entry-stub slot store becomes dead and gets dropped.
-    if register_pins:
-        local_pins = {
-            n: r for n, r in register_pins.items() if n not in fn.params
-        }
-        param_hints = {
-            n: r for n, r in register_pins.items() if n in fn.params
-        }
-    else:
-        local_pins = None
-        param_hints = None
+    # `register` params are SOFT hints to their A / X arg register:
+    # the calling-convention entry stub already writes the param's ZP
+    # slot, so the body has a valid fallback if the IR shape doesn't
+    # fit the requested register (e.g. `n` used in `LDA #0; CMP n` —
+    # CMP doesn't accept X/Y as the right operand). When the hint
+    # succeeds the entry-stub slot store becomes dead and gets
+    # dropped.
     raw_eligibility = scan_hwreg_eligibility(
         fn, register_pins=local_pins, register_hints=param_hints,
     )

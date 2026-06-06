@@ -528,17 +528,17 @@ class Replacer:
                     left=self.replace(left),
                     right=self.replace(right),
                 )
-            case asm_ast.Ret(save_a=save_a):
+            case asm_ast.Ret(save_a=save_a, save_x=save_x):
                 # Patch arg_bytes / local_bytes from the function's
-                # totals; carry save_a through unchanged — tac_to_asm
-                # set it based on whether the return value is in
-                # registers (Int / Long) or in HARGS (LongLong /
-                # Float / Double). Pass through the function's
+                # totals; carry save_a / save_x through unchanged —
+                # tac_to_asm set them based on which return bytes ride
+                # in A / X (a non-pointer <=2-byte return) vs. HARGS
+                # (pointer / wider). Pass through the function's
                 # callee-saved address list so the epilogue can
                 # restore them before SSP/FP teardown.
                 return asm_ast.Ret(
                     arg_bytes=arg_bytes, local_bytes=local_bytes,
-                    save_a=save_a,
+                    save_a=save_a, save_x=save_x,
                     callee_saved_addrs=list(self.callee_saved_addrs),
                 )
             case asm_ast.LoadAddress(src=src, dst=dst):

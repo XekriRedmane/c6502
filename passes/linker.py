@@ -276,7 +276,6 @@ def _synthesize(
                 slot_symbols=list(d.params),
                 addrs=[],
                 param_registers=regs,
-                return_register=d.return_reg,
             )
         else:
             abi[d.name] = SoftStackLayout()
@@ -288,7 +287,6 @@ def _synthesize(
             slot_symbols=list(e.params),
             addrs=[],
             param_registers=regs,
-            return_register=e.return_reg,
         )
     local_bytes = {d.name: d.local_bytes for d in merged.defs}
     return prog, abi, local_bytes

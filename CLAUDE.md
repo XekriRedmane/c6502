@@ -91,20 +91,30 @@ Two key runtime conventions:
   taken, etc.) instead of silently falling back. Details in
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
-- **`__attribute__((reg("A"|"X"|"Y")))`** pins a 1-byte (Char /
-  SChar / UChar) parameter, return value, or local to a specific
-  6502 register, refining the zp_abi calling convention. On a
-  function-level prefix, it names the return register; on a
-  parameter-postfix, it names the arg-passing register; on a
-  local var_decl, it pins the local to that register across its
-  lifetime. Requires zp_abi eligibility (no IndirectCall, no
-  recursion, address not taken, params fit). `&x` on a
-  reg-attributed object is a hard error per C99 §6.5.3.2.1.
-  Locals are HARD pins (failure to honor → compilation error);
-  parameters are SOFT (failure falls back to slot-based passing,
-  with the entry stub still in place). See `passes/abi_selection.py`
-  + `passes/optimization_asm/{hwreg_eligibility,regalloc}.py`
-  + `passes/dead_reg_entry_stub.py` for the implementation.
+- **The `register` keyword** requests 6502-register placement,
+  refining the zp_abi calling convention. Placement is POSITIONAL:
+  the first register arg-byte goes in **A**, the second in **X**
+  (so `foo(register uint8_t a, register uint8_t b)` puts `a` in A
+  and `b` in X; `foo(register uint16_t a)` spreads `a`'s low byte
+  to A and high byte to X — at most two register arg-bytes). A
+  `register` local uses **Y** only — exactly one byte. **Pointers
+  may never be placed in registers.** Return values are type-driven
+  (no keyword): any non-pointer return of ≤2 bytes comes back low
+  byte in A, high byte in X; pointer / wider returns ride HARGS.
+  Requires zp_abi eligibility (no IndirectCall, no recursion, address
+  not taken, params fit) — a `register` param/local on an ineligible
+  function is a hard error. `&x` on a `register` object is a hard
+  error per C99 §6.5.3.2.1. Locals are HARD pins (failure to honor →
+  compilation error); parameters are SOFT (failure falls back to
+  slot-based passing, with the entry stub still in place). See
+  `passes/abi_selection.py` (positional assignment, type-driven
+  return) + `passes/optimization_asm/{hwreg_eligibility,regalloc}.py`
+  (Y-only local pins) + `passes/dead_reg_entry_stub.py` for the
+  implementation. (Known follow-up: a 2-byte register return from a
+  *soft-stack* function is preserved across teardown; a `register`
+  param AND `register` local together can force a frame whose
+  prologue clobbers the incoming register arg — see
+  `tests/test_register_keyword_sim.py`.)
 
 ## Common commands
 

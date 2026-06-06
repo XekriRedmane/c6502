@@ -334,13 +334,13 @@ def _try_hwreg_assign(
     def _priority(name: str) -> tuple:
         return (-eligibility.use_count.get(name, 0), name)
 
-    # Required pinning (from `__attribute__((reg("X"|"Y")))` on a
-    # c99 local OR parameter). These are HARD: if we can't pin to
-    # the requested register, the compilation fails — silently
-    # falling back to the other reg or to a ZP slot would violate
-    # the user's contract. Process before the hint-based passes so
-    # required names claim their registers before any hint-driven
-    # candidate competes.
+    # Required pinning (from a `register` local — always Y). These
+    # are HARD: if we can't pin to the requested register, the
+    # compilation fails — silently falling back to a ZP slot would
+    # violate the user's contract. Process before the hint-based
+    # passes so required names claim their registers before any hint-
+    # driven candidate competes. (`register` params use the soft hint
+    # path, not these required sets.)
     #
     # `register_pins` (the upstream source) maps c99-level base
     # names; `_ssa_base` expands those to every SSA-renamed
@@ -359,11 +359,10 @@ def _try_hwreg_assign(
             continue
         if not _can_pin(name, "X"):
             raise RegallocError(
-                f"can't pin `{name}` to X — the user's "
-                f"`__attribute__((reg(\"X\")))` annotation conflicts "
-                f"with the IR's use of X for this value (operand "
-                f"shape, call-clobber, or interference with another "
-                f"required-X value)"
+                f"can't pin `{name}` to X — the `register` "
+                f"declaration conflicts with the IR's use of X for "
+                f"this value (operand shape, call-clobber, or "
+                f"interference with another required-X value)"
             )
         hwreg_assignments[name] = "X"
     for name in sorted(eligibility.required_y):
@@ -373,11 +372,10 @@ def _try_hwreg_assign(
             continue
         if not _can_pin(name, "Y"):
             raise RegallocError(
-                f"can't pin `{name}` to Y — the user's "
-                f"`__attribute__((reg(\"Y\")))` annotation conflicts "
-                f"with the IR's use of Y for this value (operand "
-                f"shape, call-clobber, or interference with another "
-                f"required-Y value)"
+                f"can't pin `{name}` to Y — the `register` "
+                f"declaration conflicts with the IR's use of Y for "
+                f"this value (operand shape, call-clobber, or "
+                f"interference with another required-Y value)"
             )
         hwreg_assignments[name] = "Y"
 

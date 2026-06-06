@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Putting the return in X</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --bg-card: #ffffff;
+    --bg-code: #f4efe4;
+    --bg-code-dark: #1f1b16;
+    --ink: #1e1b17;
+    --ink-soft: #5b5249;
+    --ink-mute: #8a8378;
+    --rule: #e3dccc;
+    --accent: #a04a26;
+    --accent-soft: #d97757;
+    --accent-bg: #fbe9dc;
+    --good: #2e6b3a;
+    --good-bg: #e1efd8;
+    --bad-bg: #f6dcd6;
+    --highlight: #fff2b8;
+    --asm-mnem: #7c2d12;
+    --asm-comment: #8a8378;
+    --asm-num: #1e4d6b;
+    --asm-label: #6b4a17;
+    --asm-reg: #6b2d6b;
+    --shadow: 0 1px 2px rgba(40,30,20,.04), 0 4px 16px rgba(40,30,20,.06);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5em; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2em 1.5em 6em;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 3em;
+  }
+  @media (max-width: 920px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 1em 1em 4em; }
+    aside.toc { position: static; max-height: none; border: none; padding: 0; margin: 0 0 2em 0; }
+    aside.toc ol { padding-left: 1.2em; }
+  }
+  aside.toc {
+    position: sticky;
+    top: 1.5em;
+    align-self: start;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.83em;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--rule);
+    padding: 0.2em 0 0.2em 1em;
+  }
+  aside.toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75em;
+    color: var(--ink-mute);
+    margin: 0 0 0.6em;
+  }
+  aside.toc ol { margin: 0; padding-left: 1.4em; }
+  aside.toc ol li { margin: 0.4em 0; }
+  aside.toc a { color: var(--ink-soft); text-decoration: none; }
+  aside.toc a:hover { color: var(--accent); }
+
+  article { min-width: 0; }
+
+  .eyebrow {
+    font-family: 'Inter', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.4em;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.6em;
+    line-height: 1.1;
+    margin: 0 0 0.3em;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 1.18em;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 1.6em;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.4em;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82em;
+    color: var(--ink-mute);
+    padding: 0.6em 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.4em;
+  }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.5em;
+    margin: 2.4em 0 0.7em;
+    padding-top: 0.3em;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.18em;
+    margin: 1.8em 0 0.5em;
+    color: var(--ink);
+  }
+  p { margin: 0.9em 0; }
+
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 0.08em 0.4em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--bg-code-dark);
+    color: #e9e3d3;
+    padding: 1em 1.3em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    box-shadow: var(--shadow);
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: 0.86em;
+  }
+  .asm-mnem { color: #f59e6b; font-weight: 600; }
+  .asm-comment { color: #8d8473; font-style: italic; }
+  .asm-num { color: #91c2dd; }
+  .asm-label { color: #d9b870; font-weight: 500; }
+  .asm-reg { color: #d3a3d8; }
+  .asm-bad { background: rgba(220,90,70,.28); color: #ffb4a6; padding: 0 0.2em; border-radius: 2px; font-weight: 600; }
+  .add-line { background: rgba(46,107,58,.25); padding: 0 0.2em; border-radius: 2px; }
+  .del-line { background: rgba(180,60,40,.25); padding: 0 0.2em; border-radius: 2px; text-decoration: line-through; text-decoration-color: rgba(180,60,40,.6); }
+  .hl { background: var(--highlight); padding: 0 0.2em; border-radius: 2px; }
+
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.9em 1.2em;
+    margin: 1.4em 0;
+    box-shadow: var(--shadow);
+  }
+  .callout.win { border-left-color: var(--good); background: var(--good-bg); }
+  .callout.bad { border-left-color: #b14a30; background: var(--bad-bg); }
+  .callout .tag {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .callout.win .tag { color: var(--good); }
+  .callout.bad .tag { color: #b14a30; }
+  .callout p { margin: 0.3em 0; font-size: 0.95em; }
+
+  ul { padding-left: 1.3em; }
+  ul li { margin: 0.3em 0; }
+  ul li strong { color: var(--accent); font-weight: 600; }
+
+  table.cmp {
+    border-collapse: collapse;
+    margin: 1.3em 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.92em;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid var(--rule);
+    padding: 0.4em 0.8em;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.cmp th {
+    background: var(--bg-code);
+    font-weight: 600;
+  }
+  table.cmp td code { font-size: 0.92em; }
+
+  blockquote {
+    border-left: 3px solid var(--accent-soft);
+    margin: 1.4em 0;
+    padding: 0.2em 0 0.2em 1.2em;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
+  hr.fancy {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule), transparent);
+    margin: 3em 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#change">A two-byte return in two registers</a></li>
+      <li><a href="#epilogue">The epilogue that ate the return</a></li>
+      <li><a href="#carry">The carry that no longer threaded</a></li>
+      <li><a href="#deadstx">The dead store that clobbered A</a></li>
+      <li><a href="#mirror">The flag scan that forgot LDA</a></li>
+      <li><a href="#residual">The one I pinned</a></li>
+      <li><a href="#lesson">What it taught</a></li>
+    </ol>
+  </aside>
+
+  <article>
+
+    <p class="eyebrow">Compiler log · #028</p>
+    <h1>Putting the return in X</h1>
+    <p class="subtitle">Swapping <code>__attribute__((reg(...)))</code> for the C <code>register</code> keyword meant a small ABI change: a two-byte integer now comes back in A and X instead of zero-page. That one change put a live value in X across a call boundary for the first time — and woke up five latent peephole bugs that had been asleep precisely because nothing ever did that.</p>
+
+    <div class="meta">
+      <span><strong>Project</strong> c6502</span>
+      <span><strong>Subject</strong> register ABI · latent bugs</span>
+      <span><strong>Trigger</strong> <code>register</code> keyword</span>
+      <span><strong>Fixed</strong> 5 peepholes</span>
+    </div>
+
+    <section id="change">
+    <h2>A two-byte return in two registers</h2>
+
+    <p>c6502 used to pin parameters and return values to specific 6502 registers with a GCC-style extension: <code>__attribute__((reg("A")))</code>. The new spelling is the standard C <code>register</code> keyword, with positional assignment — the first register arg-byte goes in A, the second in X. A local pins to Y. And the return value goes the same way: a non-pointer value of two bytes or fewer comes back <strong>low byte in A, high byte in X</strong>. Pointers and wider types still ride a zero-page exchange block called HARGS.</p>
+
+    <p>That last clause is the whole story. Under the old convention, a two-byte <code>int</code> was returned through HARGS — a pair of zero-page cells. The new convention returns it in registers. So this:</p>
+
+<pre><code>unsigned int g(register unsigned int a) { return a; }
+</code></pre>
+
+    <p>compiles, under <code>--optimize</code>, to exactly one instruction:</p>
+
+<pre><code>g:
+   RTS
+</code></pre>
+
+    <p>The argument arrives low-in-A, high-in-X; the identity return wants it low-in-A, high-in-X; there is nothing to do. That is the kind of result that tells you the convention is right.</p>
+
+    <p>It is also the kind of result that should have made me nervous. For the entire prior life of the compiler, <code>X</code> was scratch — an index register, a loop counter, a place to stash the low byte of a frame pointer mid-teardown. Nothing ever expected a <em>meaningful value</em> to survive in X across a <code>JSR</code> or through a function epilogue. Every register- and flag-tracking peephole had been written, and tested, against a world where that never happened. The new ABI made it happen everywhere. Five bugs fell out, each one a place where an assumption that had always been true quietly stopped being true.</p>
+
+    </section>
+
+    <section id="epilogue">
+    <h2>The epilogue that ate the return</h2>
+
+    <p>The first one showed up in <code>fib</code>. Recursive, so it can't use the zero-page calling convention; it gets a real soft-stack frame, which means a real epilogue that tears the frame down before <code>RTS</code>. A recursive <code>int</code>-returning function now leaves its result in A and X — and the teardown clobbers both. A was already handled: the epilogue pushed it, did its 16-bit pointer arithmetic, and pulled it back. X was new.</p>
+
+    <p>So I taught the teardown to park both bytes on the hardware stack and pull them back just before <code>RTS</code>. There's no <code>PHX</code> on the NMOS 6502, so the high byte routes through A:</p>
+
+<pre><code>   PHA            <span class="asm-comment"># push low (A)</span>
+   TXA            <span class="asm-comment"># A := high</span>
+   PHA            <span class="asm-comment"># push high</span>
+   <span class="asm-comment"># ... SSP/FP teardown clobbers A and X ...</span>
+   PLA            <span class="asm-comment"># A := high</span>
+   TAX            <span class="asm-comment"># X := high</span>
+   PLA            <span class="asm-comment"># A := low</span>
+   RTS            <span class="asm-comment"># A=low, X=high — convention restored</span>
+</code></pre>
+
+    <p>Wrote it, ran <code>fib(6)</code>, got <code>0</code>. Expected <code>8</code>.</p>
+
+    <p>The teardown isn't the only thing in an epilogue. Before it runs, the function restores its callee-saved zero-page bytes — and <em>that</em> uses A as scratch too. My save/restore bracket sat <em>inside</em> the callee-save restore, so by the time I pushed A it no longer held the return value; it held whatever the last restore had loaded. The fix was embarrassingly small — hoist the push above the restore — but the bug had been latent the whole time. A one-byte return from a callee-saved function would have hit it years ago, except no recursive function in the corpus returned a <code>char</code>. Putting <code>int</code> returns in A/X was the first thing to walk that path.</p>
+
+    </section>
+
+    <section id="carry">
+    <h2>The carry that no longer threaded</h2>
+
+    <p>Next was an arithmetic miscompile in a tiny program: <code>(0==0 &amp;&amp; ...) + 1</code>, expected <code>1</code>, optimized build returned <code>257</code>. The high byte was wrong by one.</p>
+
+    <p>The culprit was the multi-byte INC peephole. A two-byte <code>x + 1</code> lowers to an add-with-carry chain: <code>CLC; ADC #1</code> on the low byte, <code>ADC #0</code> on the high byte, the carry threading between them. When both bytes are an in-place memory read-modify-write, the peephole collapses the whole chain to <code>INC</code> instructions — much shorter. But <code>INC</code> doesn't touch the carry flag, and that's fine <em>as long as the whole chain is folded</em>: nothing downstream reads the carry the chain used to produce.</p>
+
+    <p>The new return path broke that invariant. The high byte's result now flowed into X (the return register) instead of back to memory, so it wasn't an in-place RMW and didn't fold. The peephole folded the low byte to a carry-less <code>INC</code> anyway — and left the high byte's <code>ADC #0</code> sitting there, reading a carry that <code>INC</code> never set:</p>
+
+<pre><code>   INC   __local_x       <span class="asm-comment"># low += 1 — but sets no carry</span>
+   LDA   #$00
+   ADC   #$00            <span class="asm-comment"># high := 0 + 0 + STALE carry</span>
+   TAX                   <span class="asm-comment"># return high byte</span>
+</code></pre>
+
+    <p>The fix: before folding, scan past the chain for a carry-consuming <code>ADC</code> continuation, and refuse the whole fold if one is there. The low byte stays an honest <code>SEC; SBC</code>—style chain, the carry threads, the answer is <code>1</code>.</p>
+
+    </section>
+
+    <section id="deadstx">
+    <h2>The dead store that clobbered A</h2>
+
+    <p>Then a caller-side bug: <code>foo() + bar</code>, where <code>foo</code> returns <code>int</code>. The capture is clean — store A to the result's low slot, X to its high slot — and the addition that follows is correct in the IR. But the optimized output added <code>bar</code> to the wrong byte. Both halves of the sum were reading the high byte.</p>
+
+    <p>This one took a per-pass dump to localize. The pre-peephole IR was correct. A rematerialization pass corrupted it. Its job: when a value staged into a <code>__local</code> slot is never read again, the slot store is dead, so collapse <code>Mov(src, slot)</code> to <code>Mov(src, A)</code> — keep the value in A, drop the store, let a later pass clean up the load. Reasonable, for a <code>LDA src; STA slot</code> staging pair where A was going to be clobbered anyway.</p>
+
+    <p>But the dead store here was <code>STX slot</code> — storing the return's high byte to a slot that turned out unused. Collapsing <code>STX slot</code> to <code>Mov(Reg(X), Reg(A))</code> is <code>TXA</code>, which <em>clobbers A</em> — and A held the live low byte the next instruction needed:</p>
+
+<pre><code>   STA   __local_lo      <span class="asm-comment"># A = foo() low — LIVE</span>
+   <span class="asm-bad">TXA</span>                   <span class="asm-comment"># was STX __local_hi (dead). Clobbers A!</span>
+   CLC
+   ADC   bar             <span class="asm-comment"># adds bar to foo()'s HIGH byte</span>
+</code></pre>
+
+    <p>A register-source dead store has no flag or A side effect at all — it's pure dead code. The fix is to <em>drop</em> it, not transmute it into an A-write. The memory-source case (a real <code>LDA</code>) keeps its old behavior; only <code>STX</code>/<code>STY</code> changed.</p>
+
+    </section>
+
+    <section id="mirror">
+    <h2>The flag scan that forgot LDA</h2>
+
+    <p>The last one I could fully fix lived in the DEC peephole, and it's my favorite because the wrong assumption is one sentence long.</p>
+
+    <p>DEC folds <code>LDA M; SEC; SBC #1; STA M</code> into a single <code>DEC M</code>. <code>SBC</code> sets the carry and overflow flags; <code>DEC</code> sets only N and Z. So the fold is unsound if anything downstream branches on C or V — and the peephole had a guard that scanned forward for exactly that. The guard treated <code>LDA</code>/<code>STA</code> as "resets the flags, stop scanning, safe to fold."</p>
+
+    <p>That's the bug. On the 6502, <code>LDA</code> and <code>STA</code> set N and Z but <strong>do not touch the carry</strong>. The carry from a prior <code>SBC</code> threads straight through them. So this:</p>
+
+<pre><code>   <span class="asm-comment"># ... SBC #1 (folded to DEC) ...</span>
+   STA   slot            <span class="asm-comment"># carry survives</span>
+   LDA   other           <span class="asm-comment"># carry survives</span>
+   BCC   target          <span class="asm-comment"># reads the SBC's carry — gone after DEC</span>
+</code></pre>
+
+    <p>folds <code>SBC</code> to <code>DEC</code> and then a <code>BCC</code> three instructions later reads a carry that no longer exists. The old guard stopped at the first <code>STA</code> and declared victory. The new register ABI shifted enough code around that this shape started appearing.</p>
+
+    <p>The honest version is a small control-flow walk: scan forward over the genuinely carry-transparent opcodes (loads, stores, transfers, logicals, INC/DEC, push/pop, BIT), follow both arms of any non-carry branch, stop safe at anything that redefines C — and report unsafe the moment a <code>BCC</code>/<code>BCS</code>/<code>BVC</code>/<code>BVS</code> is reachable first. It's more code than the original line-by-line scan, but it's the difference between "looks done" and "is correct."</p>
+
+    </section>
+
+    <section id="residual">
+    <h2>The one I pinned</h2>
+
+    <p>There was a sixth. In one subsystem, a <code>uint16_t</code>-returning helper is called twice per loop iteration, and the high byte — now living in X — gets clobbered before its <code>!= 0</code> test. Disabling any single peephole doesn't fix it; only disabling the DEC fold does, and the DEC fold is correct now. So it isn't a single-pass soundness bug — it's a regalloc/scheduling interaction that the DEC fold merely <em>perturbs</em> into existence, by changing the instruction stream enough to make the allocator reuse X while the high byte is still live.</p>
+
+    <p>That's a different and harder class of fix than the other five, and chasing it further would have held up a working feature for a corner case. I pinned the two optimized-path assertions as expected failures, with the root cause written down, and left the unoptimized correctness test live. Knowing <em>which</em> kind of bug you're looking at — a local soundness slip versus a global allocation interaction — is most of the decision about whether to fix it now or bank it.</p>
+
+    </section>
+
+    <section id="lesson">
+    <h2>What it taught</h2>
+
+    <p>The feature itself was the easy part: a keyword, a positional rule, a type-driven return. The work was the five bugs, and four of them had been dormant for the same reason. Every one was a peephole that had quietly encoded "X is never a live value across this boundary" or "a register store always has a side effect worth keeping" or "a load resets the flags" — assumptions that were <em>true of the code the old ABI produced</em>, and stopped being true the moment a return value moved into X.</p>
+
+    <ul>
+      <li><strong>A calling-convention change is a fuzzer for your soundness assumptions.</strong> It doesn't add new opcodes; it changes <em>where live values are</em>, and every analysis that hard-coded "nothing lives here" gets exercised at once. If you're about to move data into a register that scratch passes have always been free to clobber, expect to find every place that assumed they could.</li>
+      <li><strong>"Sound enough for the corpus" is a real category, and it expires.</strong> The INC and DEC carry guards, the dead-store collapse, the epilogue bracket — all were correct for every program the compiler had ever seen. None were correct in general. The new ABI didn't break them; it stopped <em>hiding</em> them.</li>
+      <li><strong>Bisect before you trace.</strong> I lost real time hand-simulating register-mirror state across fixedpoint iterations. The fast path was mechanical: monkeypatch each pass to identity, re-run, watch which removal makes the miscompile vanish; if no single one does, dump the function after every pass and read for the corrupting transition. (And do it through the codegen entry point, not the simulator harness — they run different pipelines.)</li>
+      <li><strong>Classify the residual before you commit to it.</strong> Five of the six were local soundness slips with small, surgical fixes. The sixth was a global allocation interaction — a different animal. Naming which kind you're staring at is most of the decision to fix-now versus pin-and-bank.</li>
+    </ul>
+
+    <blockquote>You don't change a calling convention. You change where the values are — and then you find out which of your assumptions were only ever true by luck.</blockquote>
+
+    </section>
+
+  </article>
+</div>
+
+</body>
+</html>

@@ -248,7 +248,7 @@
       <li><a href="#frame">A prologue eats an argument</a></li>
       <li><a href="#root">One <code>is not None</code> too many</a></li>
       <li><a href="#diagnostic">The un-versioned name</a></li>
-      <li><a href="#lesson">What it taught</a></li>
+      <li><a href="#lesson">The two fixes</a></li>
     </ol>
   </aside>
 
@@ -279,7 +279,7 @@
    STA   __zpabi_sum_n__n      <span class="asm-comment"># save the arg — but A is already gone</span>
 </code></pre>
 
-    <p>That second one looks like an ordering bug: the entry stub that saves the register argument runs after the prologue, so move the stub earlier. I almost fixed it that way. That would have been patching the symptom.</p>
+    <p>That second one looks like an ordering bug: the entry stub that saves the register argument runs after the prologue, so move the stub earlier. That fix would work — but it leaves open the better question of why there's a prologue here at all.</p>
 
     </section>
 
@@ -333,7 +333,7 @@
 
     <p>Now the frame bug. The instinct is strong here: the entry stub that saves the register argument is emitted as the first body instruction; the prologue gets prepended later; the prologue runs first and trashes A. Reorder them. It would even work.</p>
 
-    <p>But the question that stops you is: <em>why is there a prologue at all?</em> <code>sum_n</code> is a leaf, non-recursive, address never taken. It is exactly the shape that's supposed to get a private zero-page slice for its locals and emit as bare body + <code>RTS</code> — no frame, no prologue, nothing to reorder. Something forced the frame. Chasing <em>that</em> is the difference between a patch and a fix.</p>
+    <p>So: <em>why is there a prologue at all?</em> <code>sum_n</code> is a leaf, non-recursive, address never taken — exactly the shape that's supposed to get a private zero-page slice for its locals and emit as bare body + <code>RTS</code>, with no frame and no prologue to reorder. Something forced the frame, and that's what to chase.</p>
 
     <p>I handed the trace to a sub-agent: figure out why <code>sum_n</code> isn't bare-exit. The answer came back with a value name I didn't expect — <code>@1.acc</code>, the <code>register char acc = 0</code> local, sitting on the frame as a read with no reaching definition. The function got its private pool correctly. The Y-pinned <code>acc</code> got its register correctly. But there was a <em>second</em>, ghost <code>acc</code> — a use of a value that was never written — and that ghost is what landed on the frame and dragged the prologue in with it.</p>
 
@@ -360,34 +360,29 @@
         return
 </code></pre>
 
-    <p>And the part that turns a corner-case fix into a real one: this had nothing to do with the frame, or the combination of param and local, or any of the symptoms. <strong>Every <code>register T x = init;</code> in the language was silently dropping its initializer.</strong> The only reason it hadn't surfaced was luck — when the dropped initializer didn't happen to force a frame, the uninitialized garbage got overwritten before anyone read it, or coalesced into a register that was about to be loaded anyway. The combination in <code>sum_n</code> was just the first arrangement unlucky enough to make a silent miscompile visible.</p>
+    <p>This is broader than the reported symptom. It has nothing to do with the frame, or the combination of param and local: <strong>every <code>register T x = init;</code> was silently dropping its initializer.</strong> It hadn't surfaced before because when the dropped initializer didn't force a frame, the uninitialized value was usually overwritten before being read, or coalesced into a register that was about to be loaded anyway. <code>sum_n</code> was just the first arrangement where the dropped store became observable.</p>
 
     </section>
 
     <section id="diagnostic">
     <h2>The un-versioned name</h2>
 
-    <p>The thread that unravels this is worth keeping. In the SSA form, every name gets a per-definition version suffix — <code>@1.acc</code> becomes <code>@1.acc.1.b0.v2</code> and so on. The construction only versions names that have a reaching definition. A use with no def stays <em>bare</em>: <code>@1.acc</code>, no suffix. And a bare name is invisible to register coloring — it's in neither the color map nor the hardware-register-pin map — so it falls straight through to the frame.</p>
+    <p>The detail that pointed upstream is in the name itself. In the SSA form, every name gets a per-definition version suffix — <code>@1.acc</code> becomes <code>@1.acc.1.b0.v2</code> and so on. SSA construction only versions names that have a reaching definition; a use with no def stays <em>bare</em>: <code>@1.acc</code>, no suffix. A bare name is invisible to register coloring — it's in neither the color map nor the hardware-register-pin map — so it falls straight through to the frame.</p>
 
-    <blockquote>An un-versioned Pseudo on the frame is a fingerprint. It doesn't mean the allocator made a bad choice; it means the value was never defined, and the bug is upstream in whatever should have defined it.</blockquote>
-
-    <p>From there the confirmation is a one-line diff: dump the TAC for the working variant (a plain <code>char acc = 0</code>) next to the broken one (<code>register char acc = 0</code>) and look for the missing instruction. The working one has a <code>Copy(0 → acc)</code>. The broken one has nothing. The smoking gun is the absence.</p>
+    <p>So an un-versioned Pseudo on the frame is a reliable tell: not a bad allocator choice, but a value that was never defined, with the real bug upstream in whatever should have defined it. From there the confirmation is a one-line diff — dump the TAC (<code>compile.py - --tac</code>) for the working variant (plain <code>char acc = 0</code>) next to the broken one (<code>register char acc = 0</code>) and find the missing instruction. The working one has a <code>Copy(0 → acc)</code>; the broken one has nothing.</p>
 
     </section>
 
     <section id="lesson">
-    <h2>What it taught</h2>
+    <h2>The two fixes</h2>
 
-    <p>Both fixes were small — a guard function, a corrected type check. Both bugs were a non-trivial distance from where they showed up, and that distance is the whole story.</p>
+    <table class="cmp">
+      <tr><th>Bug</th><th>Where it showed up</th><th>Root cause → fix</th></tr>
+      <tr><td>Loop miscompile (companion subsystem)</td><td>garbage from a 2-call-per-iteration loop</td><td><code>loop_counter_to_x</code> promoted the counter to X across a <code>JSR</code> whose return high byte is also in X → <code>_call_returns_live_x</code>: refuse the promotion when X is read (CFG-followed) after a Call before being redefined</td></tr>
+      <tr><td>Argument clobbered</td><td>prologue trashes the register arg</td><td><code>c99_to_tac</code> dropped the <code>register</code> local's initializer (<code>storage_class is not None</code> lumped <code>Register</code> with <code>Static</code>/<code>Extern</code>) → gate the drop on <code>(Static, Extern)</code> only</td></tr>
+    </table>
 
-    <ul>
-      <li><strong>Bisect to the pass; then trace to the cause. They are usually not the same pass.</strong> Disabling the loop-counter promotion made the miscompile vanish, but the promotion wasn't wrong in isolation — it was correct against an assumption the ABI change had quietly invalidated. The prologue was where the second bug hurt, but the defect was three passes upstream in the lowering. The pass you can disable to hide a bug is a lead, not a verdict.</li>
-      <li><strong>A symptom you can patch is a temptation to stop early.</strong> "Move the entry stub before the prologue" would have made <code>sum_n</code> correct and left every other <code>register T x = init;</code> silently broken. The patch that fixes the visible case is worth distrusting precisely because it works.</li>
-      <li><strong>Old code carries assumptions in its tests' blind spots.</strong> <code>storage_class is not None</code> meaning "static storage" was <em>exactly</em> true with two storage classes and quietly wrong with three. The save-before-call / restore-after model was exactly right while nothing returned in X. Neither had a test that could fail, because the thing that would make them fail didn't exist yet. Adding a feature is partly an audit of every "always true" the codebase had been resting on.</li>
-      <li><strong>Learn your compiler's fingerprints.</strong> An un-versioned SSA name on the frame meant "never defined" and pointed straight at a dropped declaration. Knowing what a specific kind of wrongness <em>looks like</em> in your IR collapses an afternoon of tracing into a one-line diff.</li>
-    </ul>
-
-    <blockquote>Where a bug hurts and where a bug lives are different addresses. The first one is loud; the second one is the fix.</blockquote>
+    <p>Two things worth repeating from the chase. The pass you can disable to make a miscompile disappear is a lead, not the culprit: <code>loop_counter_to_x</code> wasn't wrong on its own — it was correct against an assumption (nothing returns in X) the ABI change had invalidated. And the second fix is one line in a place three passes away from the symptom; the obvious local patch (reorder the entry stub and the prologue) would have made <code>sum_n</code> compile correctly while leaving every other <code>register T x = init;</code> silently broken.</p>
 
     </section>
 

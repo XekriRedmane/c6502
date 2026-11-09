@@ -29,10 +29,10 @@ __zpabi_smc_body_draw__sprite_y	EQU	$89
 __local_active_neg_step__1	EQU	$8A
 __local_active_pos_step__1	EQU	$8A
 __local_compute_screen_x__0	EQU	$8A
-__local_drift_step__pos_1	EQU	$8A
+__local_drift_step__pos_0	EQU	$8A
 __zpabi_find_active_entity__hit_max	EQU	$8A
 __zpabi_smc_body_draw__frame_idx	EQU	$8A
-__local_drift_step__pos_0	EQU	$8B
+__local_drift_step__pos_1	EQU	$8B
 __zpabi_find_active_entity__out_row_0	EQU	$8B
 __zpabi_smc_body_draw__state	EQU	$8B
 __local_compute_screen_x__2	EQU	$8C
@@ -64,7 +64,7 @@ __local_smc_body_draw__2	EQU	$9F
 ; def active_pos_step params=__zpabi_active_pos_step__slot,__zpabi_active_pos_step__player_floor locals=__local_active_pos_step__0,__local_active_pos_step__1 indirect=false in_cycle=false
 ; def companion_update params=__zpabi_companion_update__gate,__zpabi_companion_update__player_y,__zpabi_companion_update__sprite_xref,__zpabi_companion_update__player_col,__zpabi_companion_update__player_floor,__zpabi_companion_update__hit_max,__zpabi_companion_update__page_flag locals=__local_companion_update__0,__local_companion_update__1,__local_companion_update__2,__local_companion_update__3,__local_companion_update__4,__local_companion_update__slot,__local_companion_update__sprite_y indirect=false in_cycle=false
 ; def compute_screen_x params=__zpabi_compute_screen_x__slot,__zpabi_compute_screen_x__player_y,__zpabi_compute_screen_x__sprite_xref locals=__local_compute_screen_x__0,__local_compute_screen_x__1,__local_compute_screen_x__2,__local_compute_screen_x__3 indirect=false in_cycle=false
-; def drift_step params=__zpabi_drift_step__slot,__zpabi_drift_step__out_sprite_y_0,__zpabi_drift_step__out_sprite_y_1 locals=__local_drift_step__pos_1,__local_drift_step__pos_0,__local_drift_step__0 indirect=false in_cycle=false
+; def drift_step params=__zpabi_drift_step__slot,__zpabi_drift_step__out_sprite_y_0,__zpabi_drift_step__out_sprite_y_1 locals=__local_drift_step__pos_0,__local_drift_step__pos_1,__local_drift_step__0 indirect=false in_cycle=false
 ; def entity_proximity params=__zpabi_entity_proximity__slot,__zpabi_entity_proximity__screen_x,__zpabi_entity_proximity__hit_max locals=__local_entity_proximity__0,__local_entity_proximity__1,__local_entity_proximity__entity_row indirect=false in_cycle=false
 ; def find_active_entity params=__zpabi_find_active_entity__hit_max,__zpabi_find_active_entity__out_row_0,__zpabi_find_active_entity__out_row_1 locals=__local_find_active_entity__0 indirect=false in_cycle=false
 ; def player_catch params=__zpabi_player_catch__slot,__zpabi_player_catch__screen_x,__zpabi_player_catch__player_col locals=__local_player_catch__0,__local_player_catch__1 indirect=false in_cycle=false
@@ -88,20 +88,22 @@ compute_screen_x:
    SUBROUTINE
 
    LDX   __zpabi_compute_screen_x__player_y
+   LDA   perspective_xoff_hi,X
+   STA   __local_compute_screen_x__3
    LDA   perspective_xoff_lo,X
    SEC
    SBC   __zpabi_compute_screen_x__sprite_xref
-   STA   __local_compute_screen_x__3
-   LDA   perspective_xoff_hi,X
-   SBC   #$00
    STA   __local_compute_screen_x__2
+   BCS   .carry_inc@0
+   DEC   __local_compute_screen_x__3
+.carry_inc@0:
    LDX   __zpabi_compute_screen_x__slot
    LDA   companion_pos_lo,X
    SEC
-   SBC   __local_compute_screen_x__3
+   SBC   __local_compute_screen_x__2
    STA   __local_compute_screen_x__0
    LDA   companion_pos_hi,X
-   SBC   __local_compute_screen_x__2
+   SBC   __local_compute_screen_x__3
    TAX
    LDA   __local_compute_screen_x__0
    RTS
@@ -382,25 +384,24 @@ active_pos_step:
    STA   companion_dir,Y
 .if_end@25:
    LDA   companion_pos_hi,Y
-   STA   __local_active_pos_step__0
+   STA   __local_active_pos_step__1
    LDA   companion_pos_lo,Y
    CLC
    ADC   #$03
-   STA   __local_active_pos_step__1
-   LDA   __local_active_pos_step__0
-   ADC   #$00
    STA   __local_active_pos_step__0
+   BCC   .carry_inc@1
+   INC   __local_active_pos_step__1
+.carry_inc@1:
+   STA   companion_pos_lo,X
    LDA   __local_active_pos_step__1
-   STA   companion_pos_lo,Y
-   LDA   __local_active_pos_step__0
-   STA   companion_pos_hi,Y
+   STA   companion_pos_hi,X
    LDA   #$00
    CMP   #$00
    BNE   .if_end@28
-   LDA   __local_active_pos_step__0
+   LDA   __local_active_pos_step__1
    CMP   #$03
    BNE   .if_end@28
-   LDA   __local_active_pos_step__1
+   LDA   __local_active_pos_step__0
    CMP   #$52
    BCC   .if_end@28
    LDA   #$FF
@@ -427,21 +428,21 @@ active_neg_step:
    STA   companion_dir,Y
 .if_end@29:
    LDA   companion_pos_hi,Y
-   STA   __local_active_neg_step__0
+   STA   __local_active_neg_step__1
    LDA   companion_pos_lo,Y
    SEC
    SBC   #$03
-   STA   __local_active_neg_step__1
-   LDA   __local_active_neg_step__0
-   SBC   #$00
    STA   __local_active_neg_step__0
    LDA   __local_active_neg_step__1
-   STA   companion_pos_lo,Y
+   SBC   #$00
+   STA   __local_active_neg_step__1
    LDA   __local_active_neg_step__0
+   STA   companion_pos_lo,Y
+   LDA   __local_active_neg_step__1
    STA   companion_pos_hi,Y
    ORA   #$00
    BNE   .if_end@32
-   LDA   __local_active_neg_step__1
+   LDA   __local_active_neg_step__0
    CMP   #$3E
    BCS   .if_end@32
    LDA   #$01
@@ -477,31 +478,27 @@ drift_step:
    LDA   #$01
    STA   companion_state,X
    LDA   companion_pos_hi,X
-   STA   __local_drift_step__pos_1
-   LDA   companion_pos_lo,X
    STA   __local_drift_step__pos_0
-   LDA   __local_drift_step__pos_1
+   LDA   companion_pos_lo,X
    STA   __local_drift_step__0
+   LDA   __local_drift_step__pos_0
+   STA   __local_drift_step__pos_1
    LDA   companion_dir,X
    BPL   .if_else@40
-   LDA   __local_drift_step__pos_0
+   LDA   __local_drift_step__0
    SEC
    SBC   #$03
-   STA   __local_drift_step__pos_0
-   LDA   __local_drift_step__0
-   SBC   #$00
-   STA   __local_drift_step__pos_1
+   BCS   .if_end@39
+   DEC   __local_drift_step__pos_1
    JMP   .if_end@39
 .if_else@40:
-   LDA   __local_drift_step__pos_0
+   LDA   __local_drift_step__0
    CLC
    ADC   #$03
-   STA   __local_drift_step__pos_0
-   LDA   __local_drift_step__0
-   ADC   #$00
-   STA   __local_drift_step__pos_1
+   BCC   .carry_inc@3
+   INC   __local_drift_step__pos_1
+.carry_inc@3:
 .if_end@39:
-   LDA   __local_drift_step__pos_0
    STA   companion_pos_lo,X
    LDA   __local_drift_step__pos_1
    STA   companion_pos_hi,X

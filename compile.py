@@ -53,6 +53,7 @@ from passes.direct_index_load import apply_direct_index_load
 from passes.dead_pha_pla import apply_dead_pha_pla
 from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
+from passes.carry_inc import apply_carry_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
 from passes.branch_invert import apply_branch_invert
 from passes.branch_to_next_drop import apply_branch_to_next_drop
@@ -190,6 +191,7 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
     for _ in range(_PEEPHOLE_FIXEDPOINT_CAP):
         new_prog = apply_split_mem_to_mem(prog)
         new_prog = apply_inc_peephole(new_prog)
+        new_prog = apply_carry_inc_peephole(new_prog)
         new_prog = apply_dec_peephole(new_prog)
         new_prog = apply_sub1_test_zero_peephole(new_prog)
         new_prog = apply_direct_index_load(new_prog)

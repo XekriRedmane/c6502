@@ -109,6 +109,15 @@ ends up with too-high degree to fit in any pool, spilling kicks in.
 With the default 128-byte ZP pool this hasn't been observed in
 practice on c6502 programs.
 
+A second round, after the move pairs, merges the two ends of each
+carry byte `Mov(P_a, A); Add(Imm(0), A); Mov(A, P_b)` (or `Sub`), so
+`passes/carry_inc.py` can turn it into `BCC skip; INC P`. P_a is
+often one byte of a multi-byte shift temp that asm-SSA leaves whole,
+since ASL / ROL rewrite it in place. P_b then takes that byte of the
+block, and `CoalesceResult.byte_offset` records its position so the
+coloring projection adds it to the block's address. See "Carry
+bytes" in the module docstring.
+
 The `CoalesceResult.representative` map projects every coalesced non-
 rep name to its rep. The optimizer driver expands the post-coloring
 assignments through this map so `apply_coloring` sees every original

@@ -12,11 +12,11 @@ A `(name, offset)` pair is **promotable** iff `name` is not in:
     Address-taken values must keep their multi-byte coherence at one
     frame slot, so they can't be split across SSA versions.
   * **read-modify-write target** names — names that appear as the
-    `dst` of `Inc / Dec / ASL / LSR / ROL / ROR`. These are
-    defensive: today's `tac_to_asm` doesn't emit those forms with
-    Pseudo dsts, but the IR allows them and a future optimization
-    might. The instruction's single operand serves as both use and
-    def, which doesn't decompose cleanly into separate SSA versions.
+    `dst` of `Inc / Dec / ASL / LSR / ROL / ROR`. `tac_to_asm` emits
+    these for a constant shift, which it inlines as ASL / ROL (or
+    LSR / ROR) on the destination in place. The instruction's single
+    operand serves as both use and def, which doesn't decompose
+    cleanly into separate SSA versions.
 
 Renaming convention. A def of byte `k` of `name` mints a fresh
 Pseudo `Pseudo("<name>.b<k>.v<N>", offset=0)`. The byte position is
@@ -210,8 +210,8 @@ def excluded_pseudo_names(fn: asm_ast.Function) -> set[str]:
       2-byte Frame slot instead.
     * Read-modify-write targets (Inc / Dec / ASL / LSR / ROL / ROR
       `.dst`) — single-operand RMW doesn't decompose cleanly into
-      separate SSA versions. Defensive: today's `tac_to_asm` doesn't
-      emit these forms with Pseudo dsts.
+      separate SSA versions. `tac_to_asm` emits these on the
+      destination of an inline constant shift.
     * **DPTR-staged pointer Pseudos** — when both bytes of a Pseudo
       P are staged through DPTR (the canonical 4-instruction
       sequence `Mov(P[0], A); STA DPTR; Mov(P[1], A); STA DPTR+1`),

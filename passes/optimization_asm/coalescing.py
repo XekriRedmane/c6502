@@ -69,6 +69,28 @@ Steps:
      non-self-representative name. The caller projects coloring
      assignments through this map.
 
+# Carry bytes
+
+After the move pairs, a second round looks at each carry-propagating
+byte `Mov(P_a, A); Add(Imm(0), A); Mov(A, P_b)`. That's the high
+byte of an add whose other operand's high byte is zero, such as
+`t + (uint16_t)c` or `t + 53`, or the same with `Sub(Imm(0), A)`
+for a subtract's borrow. When P_a and P_b share a byte, the peephole
+in `passes/carry_inc.py` rewrites the three instructions to `BCC
+skip; INC P; skip:` (or `BCS skip; DEC P; skip:`), the way hand-
+written 6502 code adds a byte to a 16-bit value. These pairs come after the move pairs, so they
+never take a slot away from a copy the move pairs would remove.
+
+P_a is often byte k of a multi-byte name. A constant shift is
+lowered to ASL / ROL on its destination in place, and asm-SSA keeps
+any name that's the target of such a read-modify-write as one
+contiguous block. P_b, a 1-byte SSA name, then merges into that
+block's node at byte k, and `CoalesceResult.byte_offset` records k
+so the coloring projection gives P_b the block's address plus k.
+That's sound for the same reason as an ordinary merge, since there
+is no interference edge between P_b and any byte of the block, and
+P_b's neighbors become neighbors of the whole block.
+
 # Soundness
 
 Merging two non-interfering nodes never introduces new
@@ -106,6 +128,11 @@ class CoalesceResult:
     coalescing. Use `resolve(name)` to get the final coloring slot
     for any name (it walks the chain to the rep)."""
     representative: dict[str, str] = field(default_factory=dict)
+    # Byte position of a name inside its parent's storage, for a
+    # 1-byte name merged into one byte of a multi-byte node (see
+    # "Carry bytes" in the module docstring). A name missing here
+    # sits at offset 0 of its parent.
+    byte_offset: dict[str, int] = field(default_factory=dict)
 
     def resolve(self, name: str) -> str:
         """Return `name`'s representative (transitively). Returns
@@ -114,6 +141,16 @@ class CoalesceResult:
         while cur in self.representative:
             cur = self.representative[cur]
         return cur
+
+    def offset_of(self, name: str) -> int:
+        """Returns the byte position of `name` inside its
+        representative's storage, summed along the chain."""
+        total = 0
+        cur = name
+        while cur in self.representative:
+            total += self.byte_offset.get(cur, 0)
+            cur = self.representative[cur]
+        return total
 
 
 def coalesce_moves(
@@ -127,16 +164,28 @@ def coalesce_moves(
     assignments back over every original SSA name."""
     pairs = list(_move_related_pairs(fn))
     rep_map: dict[str, str] = {}
+    offsets: dict[str, int] = {}
 
     def find(name: str) -> str:
-        # Path compression via the rep_map.
+        # Path compression via the rep_map. Each compressed link
+        # keeps the byte offset summed along the path it replaces.
         path = []
         while name in rep_map:
             path.append(name)
             name = rep_map[name]
-        for p in path:
+        total = 0
+        for p in reversed(path):
+            total += offsets.get(p, 0)
             rep_map[p] = name
+            if total:
+                offsets[p] = total
+            else:
+                offsets.pop(p, None)
         return name
+
+    def offset(name: str) -> int:
+        find(name)
+        return offsets.get(name, 0)
 
     for a, b in pairs:
         a_rep = find(a)
@@ -154,7 +203,44 @@ def coalesce_moves(
         # Merge b_rep into a_rep.
         _merge(graph, dst=a_rep, src=b_rep)
         rep_map[b_rep] = a_rep
-    return CoalesceResult(representative=rep_map)
+    for src, dst in _carry_byte_pairs(fn):
+        _coalesce_carry_byte(graph, src, dst, find, offset, rep_map, offsets)
+    return CoalesceResult(
+        representative=rep_map, byte_offset=dict(offsets),
+    )
+
+
+def _coalesce_carry_byte(
+    graph: InterferenceGraph,
+    src: asm_ast.Pseudo, dst: asm_ast.Pseudo,
+    find, offset, rep_map: dict[str, str], offsets: dict[str, int],
+) -> None:
+    """Puts `src` and `dst` in one byte of storage when they don't
+    interfere. Either both are 1-byte nodes, which merge the way a
+    Mov pair does, or one of them is a byte of a multi-byte node and
+    the other is a 1-byte node, which then takes that byte."""
+    s_rep, d_rep = find(src.name), find(dst.name)
+    if s_rep == d_rep:
+        return
+    if s_rep not in graph.nodes or d_rep not in graph.nodes:
+        return
+    if graph.has_edge(s_rep, d_rep):
+        return
+    s_width = graph.nodes[s_rep].width
+    d_width = graph.nodes[d_rep].width
+    # Byte position of each operand inside its representative.
+    s_pos = offset(src.name) + src.offset
+    d_pos = offset(dst.name) + dst.offset
+    if d_width == 1 and d_pos == 0 and s_pos < s_width:
+        big, small, pos = s_rep, d_rep, s_pos
+    elif s_width == 1 and s_pos == 0 and d_pos < d_width:
+        big, small, pos = d_rep, s_rep, d_pos
+    else:
+        return
+    _merge(graph, dst=big, src=small)
+    rep_map[small] = big
+    if pos:
+        offsets[small] = pos
 
 
 def _move_related_pairs(
@@ -237,6 +323,40 @@ def _move_related_pairs(
         if a.src.name == b.dst.name:
             continue
         yield (a.src.name, b.dst.name)
+
+
+def _carry_byte_pairs(fn: asm_ast.Function):
+    """Yields `(src, dst)` Pseudo operands for each carry-propagating
+    byte `Mov(src, A); Add(Imm(0), A); Mov(A, dst)`, the high byte of
+    an add whose other operand's high byte is zero, and for the same
+    shape with `Sub` (a subtract's borrow). Unlike the Mov
+    pairs, `src` may be a byte of a multi-byte name (a shift temp
+    that asm-SSA leaves whole because ASL / ROL rewrite it in
+    place)."""
+    instrs = fn.instructions
+    for i in range(len(instrs) - 2):
+        a, op, b = instrs[i], instrs[i + 1], instrs[i + 2]
+        if not (isinstance(a, asm_ast.Mov)
+                and isinstance(op, (asm_ast.Add, asm_ast.Sub))
+                and isinstance(b, asm_ast.Mov)):
+            continue
+        if a.is_volatile or b.is_volatile:
+            continue
+        if not (op.src == asm_ast.Imm(value=0)
+                and isinstance(op.dst, asm_ast.Reg)
+                and isinstance(op.dst.reg, asm_ast.A)):
+            continue
+        if not (isinstance(a.src, asm_ast.Pseudo)
+                and isinstance(a.dst, asm_ast.Reg)
+                and isinstance(a.dst.reg, asm_ast.A)):
+            continue
+        if not (isinstance(b.src, asm_ast.Reg)
+                and isinstance(b.src.reg, asm_ast.A)
+                and isinstance(b.dst, asm_ast.Pseudo)):
+            continue
+        if a.src.name == b.dst.name:
+            continue
+        yield (a.src, b.dst)
 
 
 def _merge(

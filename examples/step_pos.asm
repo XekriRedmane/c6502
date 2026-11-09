@@ -2,7 +2,6 @@ __zpabi_step_pos__slot	EQU	$80
 __zpabi_step_pos__anim_in	EQU	$81
 __zpabi_apply_bobble__slot	EQU	$82
 __zpabi_apply_bobble__bobble_idx	EQU	$83
-__local_step_pos__0	EQU	$84
 __local_step_pos__1	EQU	$85
 __local_step_pos__2	EQU	$86
 
@@ -22,17 +21,15 @@ step_pos:
    LDX   __zpabi_step_pos__slot
    STA   rescue_anim,X
    LDA   entity_xoff_idx,X
-   STA   __local_step_pos__0
+   STA   __local_step_pos__1
    LDA   entity_floor_col,X
    CLC
    ADC   #$03
-   STA   __local_step_pos__1
-   LDA   __local_step_pos__0
-   ADC   #$00
-   STA   __local_step_pos__0
-   LDA   __local_step_pos__1
+   BCC   .carry_inc@0
+   INC   __local_step_pos__1
+.carry_inc@0:
    STA   entity_floor_col,X
-   LDA   __local_step_pos__0
+   LDA   __local_step_pos__1
    STA   entity_xoff_idx,X
    STX   __zpabi_apply_bobble__slot
    LDA   __local_step_pos__2

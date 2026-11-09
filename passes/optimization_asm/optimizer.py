@@ -369,7 +369,10 @@ def _optimize_function(
         if rep in coloring.hwreg_assignments:
             coloring.hwreg_assignments[name] = coloring.hwreg_assignments[rep]
         elif rep in coloring.assignments:
-            coloring.assignments[name] = coloring.assignments[rep]
+            coloring.assignments[name] = (
+                coloring.assignments[rep]
+                + coalesce_result.offset_of(name)
+            )
         elif rep in coloring.spilled:
             coloring.spilled.add(name)
     # Apply the coloring to the SSA function BEFORE destruction so

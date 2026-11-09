@@ -118,6 +118,13 @@ this directory:
 - `function_local_sizing.py` — `compute_local_bytes`. Counts each
   function's regalloc-colored ZP byte footprint from a preliminary
   optimizer pass.
+- `carry_inc.py` — `apply_carry_inc_peephole`. Rewrites the in-place
+  carry bytes of an add, `LDA M; ADC #0; STA M` repeated, to `BCC
+  done; INC M1; BNE done; INC M2; ...; done:`, and a subtract's top
+  borrow byte `LDA M; SBC #0; STA M` to `BCS skip; DEC M; skip:`,
+  when A and every flag are dead after. Move coalescing's carry-byte
+  pairs (`optimization_asm/coalescing.py`) put both ends of such a
+  byte in one slot.
 - `identifier_resolution.py` — pass 2 (see below).
 - `inc_peephole.py` — multi-byte INC peephole (see below).
 - `memory_value_propagation.py` —
@@ -754,6 +761,10 @@ Always-on (runs in both optimized AND unoptimized pipelines):
 
 - `apply_inc_peephole` — multi-byte ADC-#1 chains on stable memory →
   `INC + BNE` chains. See "Multi-byte INC peephole" below.
+- `apply_carry_inc_peephole` — the carry bytes of any add in place,
+  `LDA M; ADC #0; STA M`, → `BCC done; INC M; ...` chains, and a
+  subtract's top `SBC #0` byte → `BCS skip; DEC M`. See the module
+  docstring in `carry_inc.py`.
 - `apply_dec_peephole` — single-byte SBC-#1 chains on stable memory →
   `DEC`. (No multi-byte form: DEC sets N/Z off the post-decrement
   value, so the underflow check would have to sit BEFORE the DEC, not

@@ -7,10 +7,12 @@ multiply as `8x + x` (three ASL / ROL pairs and an add). It's run with
 py65 on the same header and object numbers as the compiled function,
 and both are timed from entry to RTS.
 
-The compiled function is 49 instructions and 960 cycles over the six
+The compiled function is 48 instructions and 938 cycles over the six
 calls, against the original's 30 and 580, so the 5% comparisons are
 expected failures. The multiply is now `(x << 3) + x` inline, as in
-the original. Most of what remains comes from three things.
+the original, and its high byte takes the carry with `BCC` / `INC`
+(`passes/carry_inc.py`). Most of what remains comes from three
+things.
 
 - The original keeps the header pointer in zero page and reads
   through it directly. `z_header_addr` is an ordinary global (c6502
@@ -19,8 +21,13 @@ the original. Most of what remains comes from three things.
 - The original relies on the header being page-aligned and adds only
   the pointer's high byte. The C adds the whole pointer.
 - The original adds `+ 53` and the table offset into SCRATCH2 in
-  place, carrying with `BCC` / `INC`. c6502 does three separate 16-bit
-  adds of 7 instructions each.
+  place, carrying with `BCC` / `INC` and keeping the low byte in A
+  between adds. c6502 adds the table offset and the product as full
+  16-bit adds, and the `+ 53` reads the sum from a temp and writes
+  it to HARGS, so its high byte isn't in place and keeps the `ADC
+  #0` form. Putting that sum in HARGS from the start would need the
+  return value's bytes assigned to HARGS before register
+  allocation.
 
 `test_no_regression` holds the current numbers as ceilings."""
 
@@ -117,8 +124,8 @@ class TestGetObjectAddr(unittest.TestCase):
 
     def test_no_regression(self) -> None:
         compiled = sum(self._run_compiled(o)[0] for o in _OBJECTS)
-        self.assertLessEqual(self.compiled_count, 49)
-        self.assertLessEqual(compiled, 960)
+        self.assertLessEqual(self.compiled_count, 48)
+        self.assertLessEqual(compiled, 938)
 
 
 if __name__ == "__main__":

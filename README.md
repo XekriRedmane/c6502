@@ -620,6 +620,12 @@ Distinguishing features:
   `ASL low; ROL b1; ...` chain when that's at most 8 shift
   instructions (`passes/shift_cost.py`), so `x * 9` on an `int` is
   `(x << 3) + x` with no helper call.
+- **Carry bytes with BCC / INC.** When an add's other operand has
+  zero high bytes (`p + c`, `p + 53`, `g += c`) and the high bytes are
+  updated in place, they become `BCC done; INC hi; BNE done; ...`
+  instead of `LDA hi; ADC #0; STA hi`, and a subtract's top byte
+  becomes `BCS skip; DEC hi`. Move coalescing puts the sum's high
+  byte in the same slot as the operand's where they don't interfere.
 - **Comparison-against-zero / jump fold.** `if (uint8_t a == 0)`
   lowers to bare `LDA a; BNE end` (3 bytes) instead of a
   ~13-instruction CMP-and-select sequence, by tracing through

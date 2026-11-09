@@ -223,3 +223,6 @@ __marimo__/
 # settings.local.json, etc.) but allow the shared skills tree.
 .claude/*
 !.claude/skills/
+
+# Failing programs written by the fuzzers in fuzz/.
+fuzz_out/

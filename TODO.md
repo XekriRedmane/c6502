@@ -94,9 +94,9 @@ return p + l; }` with a recursive `rec` read a clobbered `p`.
 The rule costs a lot. One recursive function, one function whose
 address is taken, or one indirect call demotes every function that
 can reach it, and a demoted function loses zp_abi parameters and its
-private pool. A function that uses `register` or
-`__attribute__((zp_abi))` can't be demoted, so it fails to compile
-instead.
+private pool. A function marked `__attribute__((zp_abi))` or using
+`register` can't be demoted, so calling a soft-stack function makes
+it fail to compile instead.
 
 Possible approaches, roughly in order of effort:
 

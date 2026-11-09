@@ -58,6 +58,12 @@ collects the `__local_*` symbol when it's no longer referenced.
         when other is `Frame` / `Stack` / `Indirect` / `IndirectZp`
         (those emit an `LDY #off` setup). Allowed only when other
         is not one of those.
+      - `IndirectY` / `IndirectZpY` (`(DPTR),Y` / `(zp),Y` with Y
+        already loaded) and `IndirectZp` (which loads its own Y).
+        These need the same Y-safe `other` as `IndexedData(_, _, Y)`,
+        and `other` is a plain read that can't move the pointer.
+        This is the `LDA key; CMP (p),Y` shape of comparing a byte
+        against one read through a pointer.
   * `other` doesn't alias `tmp`. Conservatively: `other` must be
     `Imm` / `ImmLabelLow/High`, or `Data` / `ZP` differing structurally
     from `tmp`. Indirect / IndexedData / Frame / Stack / IndirectY /
@@ -65,8 +71,13 @@ collects the `__local_*` symbol when it's no longer referenced.
     can't be statically ruled out.
   * `tmp` and `src` need not differ — a `LDA M; STA M; LDA other;
     CMP M` self-store is also collapsed soundly.
-  * Every read of `tmp` in the function must be "owned" by a
-    matching candidate window — i.e. it must sit at one of the
+  * `tmp` is dead after the CMP on every path forward
+    (`asm_dead_store.mem_dead_after`), so dropping its store loses
+    nothing. Register allocation reuses a `__local_*` slot for
+    unrelated values, so this is checked per candidate. When it
+    doesn't hold, the group rule below can still apply.
+  * Otherwise, every read of `tmp` in the function must be "owned"
+    by a matching candidate window — i.e. it must sit at one of the
     candidates' CMP positions. When that holds, folding every
     candidate in the group as a batch leaves no orphaned reader.
     Outside writes are fine (asm_dead_store cleans the orphaned
@@ -111,11 +122,17 @@ from __future__ import annotations
 import asm_ast
 
 
-def apply_cmp_through_tmp_fold(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_cmp_through_tmp_fold(
+    prog: asm_ast.Program,
+    *,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> asm_ast.Program:
+    """`zp_slot_symbols` maps slot-symbol names to ZP addresses, for
+    the per-candidate dead-temp check (see `asm_dead_store`)."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(_rewrite_function(tl, zp_slot_symbols))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
@@ -147,6 +164,9 @@ def _src_eligible(src) -> bool:
     if isinstance(src, (asm_ast.Data, asm_ast.ZP)):
         return True
     if isinstance(src, asm_ast.IndexedData):
+        return True
+    if isinstance(src, (asm_ast.IndirectY, asm_ast.IndirectZpY,
+                        asm_ast.IndirectZp)):
         return True
     return False
 
@@ -235,10 +255,13 @@ def _matches_pattern(a, b, c, d) -> tuple[
         return None
     if not _src_eligible(src):
         return None
-    # IndexedData(_, _, Y) src: forbid `other` shapes that emit LDY.
-    if (isinstance(src, asm_ast.IndexedData)
-            and isinstance(src.index, asm_ast.Y)
-            and not _y_safe_other(other)):
+    # A src that reads Y: forbid `other` shapes that emit LDY.
+    reads_y = (
+        isinstance(src, asm_ast.IndexedData)
+        and isinstance(src.index, asm_ast.Y)
+    ) or isinstance(src, (asm_ast.IndirectY, asm_ast.IndirectZpY,
+                          asm_ast.IndirectZp))
+    if reads_y and not _y_safe_other(other):
         return None
     if not _other_alias_safe(other, tmp_sta):
         return None
@@ -254,7 +277,11 @@ def _tmp_key(tmp):
     return None
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _rewrite_function(
+    fn: asm_ast.Function,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> asm_ast.Function:
+    from passes.asm_dead_store import mem_dead_after
     instrs = fn.instructions
 
     # Pass 1: enumerate every candidate 4-atom window. A candidate
@@ -295,9 +322,15 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         ):
             foldable_keys.add(key)
 
-    cand_by_start = {i: (src, other, tmp)
-                     for i, src, other, tmp in candidates
-                     if _tmp_key(tmp) in foldable_keys}
+    cand_by_start = {
+        i: (src, other, tmp)
+        for i, src, other, tmp in candidates
+        if _tmp_key(tmp) in foldable_keys
+        or mem_dead_after(
+            instrs, i + 3, tmp,
+            fn_name=fn.name, zp_slot_symbols=zp_slot_symbols,
+        )
+    }
 
     # Pass 3: linear emit, folding every candidate whose tmp-group
     # cleared the eligibility check.

@@ -397,5 +397,51 @@ class TestCallTransparentForNonAddressTakenLocal(unittest.TestCase):
         self.assertEqual(len(stas_to_slot), 2)
 
 
+
+class TestPrivateSlotNotReadThroughPointer(unittest.TestCase):
+    """A byte in the function's private pool whose address is never
+    taken can't be read through a pointer."""
+
+    def test_store_dead_across_indirect_read(self):
+        a = asm_ast.Reg(reg=asm_ast.A())
+        slot = _data("__local_f__0")
+        instrs = [
+            asm_ast.Mov(src=a, dst=slot, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.IndirectZpY(address=0x90), dst=a,
+                        is_volatile=False),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _run(instrs, zp_slot_symbols={"__local_f__0": 0x84})
+        self.assertNotIn(instrs[0], out)
+
+    def test_pointer_byte_still_read(self):
+        # The slot is the pointer itself, which `(p),Y` does read.
+        a = asm_ast.Reg(reg=asm_ast.A())
+        slot = _data("__local_f__0")
+        instrs = [
+            asm_ast.Mov(src=a, dst=slot, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.IndirectZpY(address=0x84), dst=a,
+                        is_volatile=False),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _run(instrs, zp_slot_symbols={"__local_f__0": 0x84})
+        self.assertIn(instrs[0], out)
+
+    def test_global_store_kept_across_indirect_read(self):
+        a = asm_ast.Reg(reg=asm_ast.A())
+        g = _data("g")
+        instrs = [
+            asm_ast.Mov(src=a, dst=g, is_volatile=False),
+            asm_ast.Mov(src=a, dst=g, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.IndirectZpY(address=0x90), dst=a,
+                        is_volatile=False),
+            asm_ast.Mov(src=a, dst=g, is_volatile=False),
+            asm_ast.Return(save_a=False, save_x=False),
+        ]
+        out = _run(instrs, zp_slot_symbols={})
+        # The second store (read by the indirect load, possibly) stays.
+        self.assertEqual(out.count(instrs[1]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

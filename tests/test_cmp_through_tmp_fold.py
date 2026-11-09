@@ -190,5 +190,59 @@ class TestCmpThroughTmpFoldXor(unittest.TestCase):
         self.assertEqual(out[-1], xor)
 
 
+
+class TestCmpThroughTmpFoldIndirect(unittest.TestCase):
+    """The `LDA (p),Y; STA tmp; LDA key; CMP tmp` shape of comparing a
+    key against a byte read through a pointer."""
+
+    def test_indirect_zp_y_src_folds(self):
+        src = asm_ast.IndirectZpY(address=0x90)
+        tmp = asm_ast.ZP(address=0x84, offset=0)
+        key = asm_ast.Data(name="key", offset=1)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(key), _cmp(tmp),
+            asm_ast.Return(save_a=False, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(instrs)))
+        self.assertEqual(out[:2], [_lda(key), _cmp(src)])
+
+    def test_tmp_reused_later_still_folds_when_dead(self):
+        # The slot is written again (for an unrelated value) and read
+        # after that, but the value this CMP read is dead after it.
+        src = asm_ast.IndirectZpY(address=0x90)
+        tmp = asm_ast.ZP(address=0x84, offset=0)
+        key = asm_ast.Data(name="key", offset=1)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(key), _cmp(tmp),
+            _lda(asm_ast.Imm(value=3)), _sta(tmp), _lda(tmp),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(instrs)))
+        self.assertEqual(out[:2], [_lda(key), _cmp(src)])
+
+    def test_tmp_read_after_kept(self):
+        src = asm_ast.IndirectZpY(address=0x90)
+        tmp = asm_ast.ZP(address=0x84, offset=0)
+        key = asm_ast.Data(name="key", offset=1)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(key), _cmp(tmp),
+            _lda(tmp), asm_ast.Return(save_a=True, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+    def test_y_setup_other_blocks_fold(self):
+        # `other` loaded through an operand with an LDY setup would
+        # change the Y that `(p),Y` reads.
+        src = asm_ast.IndirectZpY(address=0x90)
+        tmp = asm_ast.ZP(address=0x84, offset=0)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(asm_ast.Frame(offset=3)), _cmp(tmp),
+            asm_ast.Return(save_a=False, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

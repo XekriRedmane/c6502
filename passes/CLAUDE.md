@@ -44,6 +44,8 @@ this directory:
   Drops `Branch(_, L); Label(L)` adjacency (the Branch is a no-op
   — both arms reach L's position) and drops the orphaned Label
   in the same sweep when L has no other Branch/Jump/Phi refs.
+  Also drops a `Jump` to one of the labels right after it, as left
+  by `BCC top; JMP done; done:`.
   Headline source: the sign-extension diamond residue from
   `_translate_sign_extend` (BVC / BPL skip-empty-arm pattern left
   over when the widened high byte is dead). `flags_dead_at` walks
@@ -62,6 +64,14 @@ this directory:
   shape `tac_to_asm` emits for loop tails when the loop body's
   conditional exit straddles the Return.
 - `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
+- `redundant_compare.py` — `apply_redundant_compare`. Drops a
+  `Compare` at a label reached only by the `Branch` right after an
+  identical `Compare`, since A, the operand, and the flags are all
+  unchanged. That's the second of `if (k < e) ...; if (k == e) ...`.
+- `tail_merge.py` — `apply_tail_merge`. Turns `Bcc L; <tail>; L:`
+  into `B!cc T` when the same return tail (2 to 4 instructions
+  ending in `Return`, such as `LDX #0; TXA; RTS`) appears later at
+  label `T`, and the branch is within estimated reach.
 - `cmp_through_tmp_fold.py` — `apply_cmp_through_tmp_fold`. Folds
   the 4-instr `Mov(src, A); Mov(A, tmp); Mov(other, A); Compare(A,
   tmp)` shape (LDA src; STA tmp; LDA other; CMP tmp) to the 2-instr
@@ -797,7 +807,12 @@ Always-on (runs in both optimized AND unoptimized pipelines):
   for these source kinds; the IndexedData source is still
   apply_remat's). The CFG-aware reach catches patterns that
   block-local passes miss (preheader stages used inside loop
-  bodies, indirect bases that survive labels, etc.).
+  bodies, indirect bases that survive labels, etc.). Both this pass
+  and `apply_remat` count an operand lowered with an `LDY #off`
+  setup (`Indirect`, `IndirectZp`, `Frame`, `Stack`) as a write to
+  Y (`asm_liveness.sets_up_y`), so an `abs,Y` load isn't reused past
+  one. Without that, `floor_enemy_draw` read `proj_screen_col,Y`
+  after a `(zp),Y` access had loaded Y with 0.
 
 Only meaningful with `--optimize` (the unoptimized pipeline skips
 them):
@@ -859,7 +874,11 @@ them):
   DPTR / pool ZP / local-pool slot symbols as dead-at-exit.
   `LoadAddress` is modeled precisely (read FP/FP+1 only for Frame src;
   bounded 2-byte write at dst) rather than opaque. `Call` /
-  `FunctionPrologue` / `AllocateStack` are opaque.
+  `FunctionPrologue` / `AllocateStack` are opaque. A store to this
+  function's private `__local_<fn>__*` slot whose address is never
+  taken isn't read by an indirect access (only the pointer's own
+  bytes are), the same reasoning that makes a `Call` transparent for
+  such a slot. `mem_dead_after` exposes the walk for other passes.
 - `apply_dead_a_arith_elimination` — drops instructions whose only
   observable effect is a write to `Reg(A)` and the N/Z/C/V flags, when
   both A and the flags are dead afterward.
@@ -892,7 +911,14 @@ them):
   A); Compare(A, tmp)` → `Mov(other, A); Compare(A, src)`. Drops the
   RHS-stage-through-tmp pattern so CMP reads `src` directly (incl.
   `IndexedData` like `floor_y_table,X` once Compare-emit dispatches
-  it). See module docstring for the eligibility / aliasing rules.
+  it, and `(zp),Y` / `(DPTR),Y`). A candidate folds when `tmp` is
+  dead after the CMP on every path (`asm_dead_store.mem_dead_after`),
+  or when every read of `tmp` is a candidate. See module docstring
+  for the eligibility / aliasing rules.
+- `apply_redundant_compare` — drops the second of two identical
+  compares when the only way to it is a branch right after the first.
+- `apply_tail_merge` — branches to one shared copy of a repeated
+  return tail instead of branching over each copy.
 - `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; ...; SBC` pattern
   where the SBC's effect duplicates the Compare's flag set.
 - `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A);

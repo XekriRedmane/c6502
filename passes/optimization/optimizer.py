@@ -89,12 +89,15 @@ from passes.optimization.lnot_jump_fold import LNOT_RULE
 from passes.optimization.dead_loop_elimination import EliminateDeadLoops
 from passes.optimization.unreachable_code_elimination import EliminateUnreachableCode
 from passes.optimization.copy_propagation import CopyPropagate
+from passes.optimization.cse import EliminateCommonSubexpressions
+from passes.optimization.licm import HoistLoopInvariants
 from passes.optimization.dead_store_elimination import EliminateDeadStores
 from passes.optimization.copy_folding import (
     FoldCopiesInFixedpoint,
     FoldCopiesPostDestruction,
 )
 from passes.optimization.reassoc_const import ReassocConstants
+from passes.optimization.reassoc_offset import ReassocOffsetConstant
 from passes.optimization.recognize_indexed_store import RecognizeIndexedStore
 from passes.optimization.recognize_indexed_load import RecognizeIndexedLoad
 from passes.optimization.truncate_extend_fold import FoldTruncateExtend
@@ -138,10 +141,15 @@ _DRIVER = PhaseDriver(
                 name="fold_producer_jumps"),
         EliminateDeadLoops(),
         EliminateUnreachableCode(),
+        # Replaces a repeated computation or load with a Copy from the
+        # first one, which copy_propagate then forwards.
+        EliminateCommonSubexpressions(),
+        HoistLoopInvariants(),
         CopyPropagate(),
         EliminateDeadStores(),
         FoldCopiesInFixedpoint(),
         ReassocConstants(),
+        ReassocOffsetConstant(),
         RecognizeIndexedStore(),
         RecognizeIndexedLoad(),
         FoldTruncateExtend(),

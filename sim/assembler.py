@@ -1070,6 +1070,14 @@ def _compare_size(
             )
         # CMP (DPTR),Y — no LDY setup, just the indirect-Y op.
         return 2
+    if isinstance(right, (asm_ast.IndirectZpY, asm_ast.IndirectZp)):
+        if not isinstance(left.reg, asm_ast.A):
+            raise AssemblerError(
+                f"Compare with left={left!r} can't use an indirect "
+                f"right (no indirect-Y for CPX/CPY)"
+            )
+        # CMP (zp),Y, after an LDY # for IndirectZp.
+        return 2 if isinstance(right, asm_ast.IndirectZpY) else 4
     raise AssemblerError(f"unsupported Compare right: {right!r}")
 
 
@@ -1138,6 +1146,14 @@ def _emit_compare(
                 f"Compare with left={left!r} can't use IndirectY right"
             )
         return _emit_indy_no_y_setup(opcode)
+    if isinstance(right, (asm_ast.IndirectZpY, asm_ast.IndirectZp)):
+        if opcode != "CMP":
+            raise AssemblerError(
+                f"Compare with left={left!r} can't use an indirect right"
+            )
+        if isinstance(right, asm_ast.IndirectZpY):
+            return _emit_indy_zp_no_y_setup(opcode, right.address)
+        return _emit_indy_zp(opcode, right.address, right.offset)
     raise AssemblerError(f"unsupported Compare right: {right!r}")
 
 

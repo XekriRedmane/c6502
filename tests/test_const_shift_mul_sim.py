@@ -115,5 +115,36 @@ class TestConstShiftMul(unittest.TestCase):
         self._check(optimize=True)
 
 
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestByteShift(unittest.TestCase):
+    """`(uint8_t)(x << k)` narrows to a 1-byte shift, which runs in A."""
+
+    def test_narrowed_left_shift(self):
+        xs = [0x00, 0x01, 0x5A, 0x80, 0xA5, 0xFF]
+        src = "unsigned char r[56];\n"
+        src += "unsigned char xs[6] = {" + ", ".join(map(str, xs)) + "};\n"
+        for k in range(1, 8):
+            src += (
+                f"unsigned char s{k}(unsigned char x) "
+                f"{{ return (unsigned char)(x << {k}); }}\n"
+            )
+        src += "int main(void) {\n    for (unsigned char i = 0; i < 6; i++) {\n"
+        for k in range(1, 8):
+            src += f"        r[i * 7 + {k - 1}] = s{k}(xs[i]);\n"
+        src += "    }\n    return 0;\n}\n"
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                sim.run()
+                base = sim.symbols["r"]
+                for i, x in enumerate(xs):
+                    for k in range(1, 8):
+                        got = sim.mpu.memory[base + i * 7 + k - 1]
+                        self.assertEqual(
+                            got, (x << k) & 0xFF, msg=f"{x:#x} << {k}",
+                        )
+
+
 if __name__ == "__main__":
     unittest.main()

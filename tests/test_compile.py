@@ -90,11 +90,16 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("LDA   #$02", out)
 
     def test_codegen_goto_and_label(self):
-        # `goto foo; foo: return 0;` should emit a JMP to the
+        # A `goto` over a statement should emit a JMP to the
         # function-prefixed label and the matching label definition.
+        # (A `goto` to the very next statement is dropped as a jump
+        # to the next instruction.)
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
-            stdin="int main(void) { goto foo; foo: return 0; }",
+            stdin=(
+                "int main(void) { int a = 0; goto foo; a = 1; "
+                "foo: return a; }"
+            ),
         )
         self.assertEqual(rc, 0)
         self.assertIn("JMP   .main@foo", out)

@@ -152,15 +152,21 @@ class TestRecognizeIndexedStoreUnit(unittest.TestCase):
         )
         self.assertEqual(out.instructions, instrs)
 
-    def test_multi_use_ext_does_not_fold(self) -> None:
-        # %ext has a second use → don't fold.
+    def test_multi_use_ext_folds_and_keeps_ext(self) -> None:
+        # %ext has a second use, as when common-subexpression
+        # elimination shares one extend among several subscripts.
+        # The store folds, and the extend stays for the other use.
         instrs = _canonical_pattern() + [
             tac_ast.Copy(src=_var("%ext"), dst=_var("%other")),
         ]
         out = recognize_indexed_store(
             _fn(instrs), symbols=_canonical_symbols(),
         )
-        self.assertEqual(out.instructions, instrs)
+        self.assertEqual(out.instructions[0], instrs[0])
+        self.assertTrue(any(
+            isinstance(i, tac_ast.IndexedStore) for i in out.instructions
+        ))
+        self.assertEqual(out.instructions[-1], instrs[-1])
 
     def test_sign_extend_def_folds(self) -> None:
         # SignExtend from a 1-byte source is now accepted under the

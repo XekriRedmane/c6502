@@ -49,8 +49,11 @@ all of these to be dead after the store:
   * N, Z, and V. They come from the ADC in one form, and from the
     INC or the low byte's ADC in the other.
 
-`asm_liveness.a_dead_at` and `all_flags_dead_at` check those
-conditions along every path from the store. A volatile M is left
+`asm_liveness.a_dead_at` and `flags_dead_at` (N and Z) check those
+conditions along every path from the store, and `_flag_dead` checks C
+and V the same way, each on its own. A `BEQ` after the `LDA`/`ORA`
+that tests a 16-bit counter for zero reads N/Z, which the LDA set,
+and doesn't make C or V live. A volatile M is left
 alone, the same as in `inc_peephole`, since INC is one read-modify-
 write access where the ADC form reads and writes separately.
 
@@ -64,7 +67,7 @@ from __future__ import annotations
 import re
 
 import asm_ast
-from passes.asm_liveness import a_dead_at, all_flags_dead_at
+from passes.asm_liveness import a_dead_at, flags_dead_at
 from passes.inc_peephole import _is_inc_eligible_operand, _operands_equal
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
@@ -159,9 +162,70 @@ def _match(
     end = i + 3 * len(mems)
     if not a_dead_at(instrs, end):
         return None
-    if not all_flags_dead_at(instrs, end):
+    if not flags_dead_at(instrs, end):
+        return None
+    if not _flag_dead(instrs, end, _C_READERS, _C_BRANCHES, _C_WRITERS):
+        return None
+    if not _flag_dead(instrs, end, (), _V_BRANCHES, _V_WRITERS):
         return None
     return mems, is_add
+
+
+# Instructions that read C before writing it, and those that write it
+# without reading it. A `Call` defines every flag.
+_C_READERS = (
+    asm_ast.Add, asm_ast.Sub, asm_ast.RotateLeft, asm_ast.RotateRight,
+)
+_C_BRANCHES = (asm_ast.CC, asm_ast.CS)
+_C_WRITERS = (
+    asm_ast.ClearCarry, asm_ast.SetCarry, asm_ast.Compare,
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight, asm_ast.Call,
+)
+# ADC and SBC write V without reading it, and so does BIT.
+_V_BRANCHES = (asm_ast.VC, asm_ast.VS)
+_V_WRITERS = (asm_ast.Add, asm_ast.Sub, asm_ast.BitTest, asm_ast.Call)
+# Compound atoms that expand to arithmetic `asm_to_asm2` writes out
+# later. They're treated as reading every flag.
+_OPAQUE = (asm_ast.LoadAddress, asm_ast.AllocateStack,
+           asm_ast.FunctionPrologue)
+
+
+def _flag_dead(instrs, idx, readers, branches, writers) -> bool:
+    """True iff the flag that `readers` read (along with a `Branch`
+    on one of `branches`) is dead at `instrs[idx]`, on every path
+    forward until one of `writers` sets it. A `Return` or `Ret` ends
+    a path with the flag dead."""
+    labels = {
+        x.name: i for i, x in enumerate(instrs)
+        if isinstance(x, asm_ast.Label)
+    }
+    visited: set[int] = set()
+    stack = [idx]
+    while stack:
+        i = stack.pop()
+        while i < len(instrs) and i not in visited:
+            visited.add(i)
+            x = instrs[i]
+            if isinstance(x, readers) or isinstance(x, _OPAQUE):
+                return False
+            if isinstance(x, asm_ast.Branch):
+                if isinstance(x.cond, branches):
+                    return False
+                if x.target in labels:
+                    stack.append(labels[x.target])
+                else:
+                    return False
+            if isinstance(x, (asm_ast.Return, asm_ast.Ret)):
+                break
+            if isinstance(x, asm_ast.Jump):
+                if x.target in labels:
+                    stack.append(labels[x.target])
+                    break
+                return False
+            if isinstance(x, writers):
+                break
+            i += 1
+    return True
 
 
 def _carry_byte(

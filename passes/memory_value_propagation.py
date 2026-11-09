@@ -116,6 +116,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import asm_ast
+from passes.asm_liveness import sets_up_y
 from passes.optimization_asm.cfg import (
     BasicBlock, CFG, build_cfg, ENTRY_ID, EXIT_ID,
 )
@@ -340,6 +341,9 @@ def _writes_y(instr: asm_ast.Type_instruction) -> bool:
 
 
 def _writes_reg(instr: asm_ast.Type_instruction, reg_cls) -> bool:
+    # An operand lowered with an `LDY #off` setup writes Y.
+    if reg_cls is asm_ast.Y and sets_up_y(instr):
+        return True
     if isinstance(instr, asm_ast.Mov):
         return (isinstance(instr.dst, asm_ast.Reg)
                 and isinstance(instr.dst.reg, reg_cls))

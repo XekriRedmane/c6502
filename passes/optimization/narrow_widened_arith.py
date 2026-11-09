@@ -44,12 +44,13 @@ Wraparound-safe ops:
 NOT safe (high bytes contribute to low bytes of the result):
   - Divide, Modulo — long division pulls from high bytes.
   - RightShift — high bytes shift down into the low bytes.
-  - LeftShift — narrowable in principle (low bytes of `x<<k`
-    depend only on low bytes of `x` for any `k`), but excluded
-    here because the asm shift helpers consume only one byte of
-    the count anyway, so the high-byte work of an `int` LHS is
-    already cheap and the win is marginal; revisit if a
-    motivating case appears.
+
+LeftShift is safe in its first operand, since the low bytes of
+`x << k` depend only on the low bytes of `x`. It's narrowed only
+when the count is a Constant below the narrow width in bits. A
+constant shift is inlined as ASL / ROL steps over every byte of the
+operand, so `(uint8_t)(len << 4)` with `len` promoted to `int` would
+otherwise shift a high byte that's thrown away.
 
 For a Constant operand, narrowing reduces the value modulo
 2^(8n). Modular arithmetic preserves equivalence regardless of
@@ -142,7 +143,8 @@ class NarrowWidenedArith(DefUsePass):
         bin_instr = env.def_of(trunc_src)
         if not isinstance(bin_instr, tac_ast.Binary):
             return None
-        if not isinstance(bin_instr.op, _SAFE_OPS):
+        is_shift = isinstance(bin_instr.op, tac_ast.LeftShift)
+        if not (isinstance(bin_instr.op, _SAFE_OPS) or is_shift):
             return None
         if not isinstance(bin_instr.dst, tac_ast.Var):
             return None
@@ -159,6 +161,12 @@ class NarrowWidenedArith(DefUsePass):
         dst_unsigned = _is_unsigned(dst_var, ctx.symbols)
         if dst_unsigned is None:
             return None
+        if is_shift:
+            count = bin_instr.src2
+            if not (isinstance(count, tac_ast.Constant)
+                    and isinstance(getattr(count.const, "value", None), int)
+                    and 0 <= count.const.value < 8 * dst_width):
+                return None
 
         narrow_s1 = _narrow_operand(
             bin_instr.src1, dst_width, dst_unsigned,

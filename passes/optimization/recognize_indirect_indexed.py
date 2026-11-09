@@ -164,7 +164,7 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
         chain = recognize_extend_add_chain(m.bindings['addr_var'], env, ctx)
         if chain is not None:
             ptr_var, idx_var = chain.base, chain.idx_var
-            drop = (chain.addr_var, chain.ext_var)
+            drop = chain.drop_defs()
         else:
             const_chain = _const_offset_chain(m.bindings['addr_var'], env, ctx)
             if const_chain is None:

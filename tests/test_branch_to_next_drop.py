@@ -177,5 +177,43 @@ class TestBranchToNextDrop(unittest.TestCase):
         ])
 
 
+
+class TestJumpToNextDrop(unittest.TestCase):
+
+    def test_jump_to_next_label_dropped(self):
+        # `BCC top; JMP done; done:` — the JMP goes, the label stays
+        # for dead_label_drop to judge.
+        prog = _wrap([
+            asm_ast.Label(name=".top"),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".top"),
+            asm_ast.Jump(target=".done", reg_args=[]),
+            asm_ast.Label(name=".done"),
+            asm_ast.Return(save_a=False, save_x=False),
+        ])
+        out = _instrs(apply_branch_to_next_drop(prog))
+        self.assertFalse(any(isinstance(i, asm_ast.Jump) for i in out))
+        self.assertIn(asm_ast.Label(name=".done"), out)
+
+    def test_jump_past_run_of_labels_dropped(self):
+        prog = _wrap([
+            asm_ast.Jump(target=".b", reg_args=[]),
+            asm_ast.Label(name=".a"),
+            asm_ast.Label(name=".b"),
+            asm_ast.Return(save_a=False, save_x=False),
+        ])
+        out = _instrs(apply_branch_to_next_drop(prog))
+        self.assertFalse(any(isinstance(i, asm_ast.Jump) for i in out))
+
+    def test_jump_over_code_kept(self):
+        instrs = [
+            asm_ast.Jump(target=".b", reg_args=[]),
+            asm_ast.Return(save_a=False, save_x=False),
+            asm_ast.Label(name=".b"),
+            asm_ast.Return(save_a=False, save_x=False),
+        ]
+        out = _instrs(apply_branch_to_next_drop(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

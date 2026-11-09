@@ -19,7 +19,7 @@ and rewrite it to an addressing-mode-specific node. They differ only in:
 
 `recognize_extend_add_chain` captures the identical walk-back and the
 gates every recognizer applies — symbol table present; `%addr` and `%ext`
-both SSA-renamed and single-use; the Add recognized; `idx_var` a 1-byte
+both SSA-renamed, and `%addr` single-use; the Add recognized; `idx_var` a 1-byte
 Var. Each caller post-checks `base`'s kind and supplies its own emit /
 drop. `is_1_byte_var` / `is_1_byte_val` are the shared width predicates
 (formerly copy-pasted into all three passes)."""
@@ -39,12 +39,24 @@ class ExtendAddChain:
       * `base` — the non-`%ext` operand of the Add (a `Constant` for the
         absolute,X recognizers, a pointer `Var` for the indirect one).
       * `idx_var` — the 1-byte index (the extend's source).
-      * `addr_var` / `ext_var` — the Add's dst and the extend's dst, both
-        single-use; droppable (eagerly, or by a later DSE sweep)."""
+      * `addr_var` / `ext_var` — the Add's dst and the extend's dst.
+        `addr_var` is single-use and droppable.
+      * `ext_droppable` — True when the Add is `ext_var`'s only use, so
+        its def can go too. Common-subexpression elimination shares one
+        extend among several subscripts with the same index, and then
+        each chain is rewritten but the extend stays for the others
+        (DSE drops it once the last one is gone)."""
     base: tac_ast.Type_val
     idx_var: tac_ast.Var
     addr_var: tac_ast.Var
     ext_var: tac_ast.Var
+    ext_droppable: bool = True
+
+    def drop_defs(self) -> tuple[tac_ast.Var, ...]:
+        """The defs a recognizer drops along with the rewrite."""
+        if self.ext_droppable:
+            return (self.addr_var, self.ext_var)
+        return (self.addr_var,)
 
 
 def recognize_extend_add_chain(
@@ -73,8 +85,6 @@ def recognize_extend_add_chain(
         return None
     if ext_var.name not in ctx.ssa_dsts:
         return None
-    if env.extra.get(ext_var.name, 0) != 1:  # %ext single-use
-        return None
 
     # Accept both ZeroExtend (uchar promotion) and SignExtend (signed
     # 1-byte promotion). The 6502's indexed addressing reads only the
@@ -83,8 +93,8 @@ def recognize_extend_add_chain(
     # address outside the array, which C99 §6.5.6 leaves undefined.
     # The dead high-byte extension residue is cleaned up by SSA-DCE /
     # byte-DCE once this rewrite removes the chain's only consumer.
-    ext = env.def_of(ext_var)
-    if not isinstance(ext, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
+    ext = _extend_def(ext_var, env)
+    if ext is None:
         return None
     if not isinstance(ext.src, tac_ast.Var):
         return None
@@ -94,6 +104,7 @@ def recognize_extend_add_chain(
 
     return ExtendAddChain(
         base=base, idx_var=idx_var, addr_var=addr_var, ext_var=ext_var,
+        ext_droppable=env.extra.get(ext_var.name, 0) == 1,
     )
 
 
@@ -116,9 +127,33 @@ def _split_extend_operand(
 
 
 def _defined_by_extend(v: tac_ast.Type_val, env: DefUseEnv) -> bool:
-    return isinstance(v, tac_ast.Var) and isinstance(
-        env.def_of(v), (tac_ast.ZeroExtend, tac_ast.SignExtend),
-    )
+    return isinstance(v, tac_ast.Var) and _extend_def(v, env) is not None
+
+
+# How many Copies `_extend_def` follows back to the extend.
+_MAX_COPY_HOPS = 4
+
+
+def _extend_def(
+    v: tac_ast.Var, env: DefUseEnv,
+) -> tac_ast.ZeroExtend | tac_ast.SignExtend | None:
+    """Returns the ZeroExtend / SignExtend that defines `v`, looking
+    through a few `Copy`s, or None. A `Copy` between same-width types
+    of different signedness (the lowering of an `int` to `unsigned`
+    cast) isn't propagated by copy propagation, so after common-
+    subexpression elimination shares one extend among several
+    subscripts, each subscript's index can be a Copy of it. The
+    addressing modes read only the index's low byte, which the Copy
+    doesn't change."""
+    for _ in range(_MAX_COPY_HOPS + 1):
+        instr = env.def_of(v)
+        if isinstance(instr, (tac_ast.ZeroExtend, tac_ast.SignExtend)):
+            return instr
+        if not (isinstance(instr, tac_ast.Copy)
+                and isinstance(instr.src, tac_ast.Var)):
+            return None
+        v = instr.src
+    return None
 
 
 def is_1_byte_var(v: tac_ast.Var, symbols) -> bool:

@@ -81,6 +81,11 @@ skip; INC P; skip:` (or `BCS skip; DEC P; skip:`), the way hand-
 written 6502 code adds a byte to a 16-bit value. These pairs come after the move pairs, so they
 never take a slot away from a copy the move pairs would remove.
 
+The same round also takes each byte copy that the move pairs skip
+because one side is a byte of a multi-byte name, such as a pointer
+used as a `(zp),Y` base being advanced through 1-byte SSA temps at
+the bottom of a loop.
+
 P_a is often byte k of a multi-byte name. A constant shift is
 lowered to ASL / ROL on its destination in place, and asm-SSA keeps
 any name that's the target of such a read-modify-write as one
@@ -203,44 +208,170 @@ def coalesce_moves(
         # Merge b_rep into a_rep.
         _merge(graph, dst=a_rep, src=b_rep)
         rep_map[b_rep] = a_rep
+    merger = _ByteMerger(fn, graph, find, offset, rep_map, offsets)
+    for src, dst in _byte_copy_pairs(fn):
+        merger.coalesce(src, dst)
     for src, dst in _carry_byte_pairs(fn):
-        _coalesce_carry_byte(graph, src, dst, find, offset, rep_map, offsets)
+        merger.coalesce(src, dst)
     return CoalesceResult(
         representative=rep_map, byte_offset=dict(offsets),
     )
 
 
-def _coalesce_carry_byte(
-    graph: InterferenceGraph,
-    src: asm_ast.Pseudo, dst: asm_ast.Pseudo,
-    find, offset, rep_map: dict[str, str], offsets: dict[str, int],
-) -> None:
-    """Puts `src` and `dst` in one byte of storage when they don't
-    interfere. Either both are 1-byte nodes, which merge the way a
-    Mov pair does, or one of them is a byte of a multi-byte node and
-    the other is a 1-byte node, which then takes that byte."""
-    s_rep, d_rep = find(src.name), find(dst.name)
-    if s_rep == d_rep:
-        return
-    if s_rep not in graph.nodes or d_rep not in graph.nodes:
-        return
-    if graph.has_edge(s_rep, d_rep):
-        return
-    s_width = graph.nodes[s_rep].width
-    d_width = graph.nodes[d_rep].width
-    # Byte position of each operand inside its representative.
-    s_pos = offset(src.name) + src.offset
-    d_pos = offset(dst.name) + dst.offset
-    if d_width == 1 and d_pos == 0 and s_pos < s_width:
-        big, small, pos = s_rep, d_rep, s_pos
-    elif s_width == 1 and s_pos == 0 and d_pos < d_width:
-        big, small, pos = d_rep, s_rep, d_pos
-    else:
-        return
-    _merge(graph, dst=big, src=small)
-    rep_map[small] = big
-    if pos:
-        offsets[small] = pos
+class _ByteMerger:
+    """Merges byte-copy and carry-byte pairs (see "Carry bytes" in the
+    module docstring), tracking which byte of its representative each
+    coalesced name occupies.
+
+    The interference graph is per name, and a multi-byte name is live
+    while any of its bytes is. So a 1-byte name defined while the
+    other byte of a pointer is still to be read has an edge to the
+    whole pointer, even when the byte it would share is already dead.
+    When such an edge blocks a merge into a multi-byte node,
+    `_byte_edges` decides it at byte granularity instead: every byte of a multi-byte name is renamed to
+    its own name, liveness is recomputed, and the merge goes ahead
+    when no two names that would share a byte are live at once."""
+
+    def __init__(self, fn, graph, find, offset, rep_map, offsets):
+        self.fn = fn
+        self.graph = graph
+        self.find = find
+        self.offset = offset
+        self.rep_map = rep_map
+        self.offsets = offsets
+        self._edges: set[frozenset[str]] | None = None
+        self._widths = {
+            n: node.width for n, node in graph.nodes.items()
+        }
+
+    def coalesce(self, src: asm_ast.Pseudo, dst: asm_ast.Pseudo) -> None:
+        """Puts the bytes `src` and `dst` in one byte of storage when
+        that's sound, by merging one node into the other at the offset
+        that lines the two bytes up. The merged node has to fit inside
+        the one it joins."""
+        graph = self.graph
+        s_rep, d_rep = self.find(src.name), self.find(dst.name)
+        if s_rep == d_rep:
+            return
+        if s_rep not in graph.nodes or d_rep not in graph.nodes:
+            return
+        s_width = graph.nodes[s_rep].width
+        d_width = graph.nodes[d_rep].width
+        # Byte position of each operand inside its representative.
+        s_pos = self.offset(src.name) + src.offset
+        d_pos = self.offset(dst.name) + dst.offset
+        # Merging `small` into `big` puts small's byte j at big's byte
+        # j + pos.
+        if 0 <= s_pos - d_pos and s_pos - d_pos + d_width <= s_width:
+            big, small, pos = s_rep, d_rep, s_pos - d_pos
+        elif 0 <= d_pos - s_pos and d_pos - s_pos + s_width <= d_width:
+            big, small, pos = d_rep, s_rep, d_pos - s_pos
+        else:
+            return
+        if graph.has_edge(s_rep, d_rep):
+            # A name-level edge is imprecise only through a multi-byte
+            # name, which is live while any byte is.
+            if graph.nodes[big].width == 1:
+                return
+            if self._conflicts(big, small, pos):
+                return
+        _merge(graph, dst=big, src=small)
+        self.rep_map[small] = big
+        if pos:
+            self.offsets[small] = pos
+
+    def _members(self, rep: str) -> list[tuple[str, int]]:
+        """The original graph names coalesced into `rep`, each with its
+        byte position in rep's storage."""
+        return [
+            (n, self.offset(n)) for n in self._widths
+            if self.find(n) == rep
+        ]
+
+    def _bytes(self, rep: str, shift: int) -> dict[int, list[str]]:
+        """Maps each byte position of `rep`'s storage, plus `shift`, to
+        the byte-level names that occupy it."""
+        out: dict[int, list[str]] = {}
+        for n, p in self._members(rep):
+            w = self._widths[n]
+            for j in range(w):
+                out.setdefault(p + j + shift, []).append(
+                    n if w == 1 else f"{n}#{j}",
+                )
+        return out
+
+    def _conflicts(self, big: str, small: str, pos: int) -> bool:
+        """True iff a name in `small`'s class and a name in `big`'s
+        class that would share a byte are live at the same time."""
+        if self._edges is None:
+            multi = {n for n, w in self._widths.items() if w > 1}
+            self._edges = _byte_edges(self.fn, multi)
+        big_bytes = self._bytes(big, 0)
+        for k, names in self._bytes(small, pos).items():
+            for a in names:
+                for b in big_bytes.get(k, []):
+                    if frozenset((a, b)) in self._edges:
+                        return True
+        return False
+
+
+def _byte_edges(
+    fn: asm_ast.Function, multi: set[str],
+) -> set[frozenset[str]]:
+    """Interference edges with every byte of each name in `multi`
+    renamed to `<name>#<j>`, over every Pseudo in `fn`. A def the
+    rename can't see, such as the implicit high-byte write of a
+    `LoadAddress`, only makes that byte look live for longer, which
+    adds edges and never removes one."""
+    import dataclasses
+    from passes.optimization_asm.liveness import (
+        _defs_in, _uses_in, compute_liveness,
+    )
+
+    def rename(x):
+        if isinstance(x, asm_ast.Pseudo):
+            if x.name in multi:
+                return asm_ast.Pseudo(name=f"{x.name}#{x.offset}", offset=0)
+            return x
+        if isinstance(x, list):
+            return [rename(v) for v in x]
+        if dataclasses.is_dataclass(x) and not isinstance(x, type):
+            return dataclasses.replace(x, **{
+                f.name: rename(getattr(x, f.name))
+                for f in dataclasses.fields(x)
+            })
+        return x
+
+    renamed = asm_ast.Function(
+        name=fn.name, is_global=fn.is_global, params=list(fn.params),
+        instructions=[rename(i) for i in fn.instructions],
+    )
+    liveness = compute_liveness(renamed)
+    edges: set[frozenset[str]] = set()
+    for bid, blk in liveness.cfg.blocks.items():
+        live = set(liveness.live_out[bid])
+        for instr in reversed(blk.instructions):
+            if isinstance(instr, asm_ast.Phi):
+                continue
+            for dv in _defs_in(instr):
+                for n in live:
+                    if n != dv.name:
+                        edges.add(frozenset((dv.name, n)))
+                live.discard(dv.name)
+            for u in _uses_in(instr):
+                live.add(u.name)
+        phi_dsts = [
+            i.dst.name for i in blk.instructions
+            if isinstance(i, asm_ast.Phi)
+            and isinstance(i.dst, asm_ast.Pseudo)
+        ]
+        for k, dst in enumerate(phi_dsts):
+            for other in phi_dsts[k + 1:]:
+                edges.add(frozenset((dst, other)))
+            for n in live:
+                if n != dst:
+                    edges.add(frozenset((dst, n)))
+    return edges
 
 
 def _move_related_pairs(
@@ -323,6 +454,40 @@ def _move_related_pairs(
         if a.src.name == b.dst.name:
             continue
         yield (a.src.name, b.dst.name)
+
+
+def _byte_copy_pairs(fn: asm_ast.Function):
+    """Yields `(src, dst)` Pseudo operands for each byte copy, a
+    `Mov(Pseudo, Pseudo)` or an A-routed `Mov(Pseudo, A); Mov(A,
+    Pseudo)`. The move pairs already took the copies between two
+    1-byte names; what's left is typically a multi-byte pointer that
+    asm-SSA leaves whole (it's the base of a `(zp),Y` access) being
+    copied a byte at a time to or from 1-byte SSA names, as at the
+    bottom of a loop that advances the pointer."""
+    instrs = fn.instructions
+
+    def wanted(a, b) -> bool:
+        return (
+            isinstance(a, asm_ast.Pseudo) and isinstance(b, asm_ast.Pseudo)
+            and a.name != b.name
+        )
+
+    for instr in instrs:
+        if (isinstance(instr, asm_ast.Mov) and not instr.is_volatile
+                and wanted(instr.src, instr.dst)):
+            yield (instr.src, instr.dst)
+    for a, b in zip(instrs, instrs[1:]):
+        if not (isinstance(a, asm_ast.Mov) and isinstance(b, asm_ast.Mov)):
+            continue
+        if a.is_volatile or b.is_volatile:
+            continue
+        if not (isinstance(a.dst, asm_ast.Reg)
+                and isinstance(a.dst.reg, asm_ast.A)
+                and isinstance(b.src, asm_ast.Reg)
+                and isinstance(b.src.reg, asm_ast.A)):
+            continue
+        if wanted(a.src, b.dst):
+            yield (a.src, b.dst)
 
 
 def _carry_byte_pairs(fn: asm_ast.Function):

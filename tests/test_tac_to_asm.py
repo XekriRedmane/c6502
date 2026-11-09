@@ -428,11 +428,12 @@ class TestTranslateInstruction(unittest.TestCase):
 
     def test_binary_left_shift_lowered_to_asl8_call(self):
         # asl8: value → HARGS+0, count → HARGS+1, Call, result
-        # (HARGS+2) → dst.
+        # (HARGS+2) → dst. The count is a variable, since a constant
+        # count is inlined as ASL steps.
         instr = tac_ast.Binary(
             op=tac_ast.LeftShift(),
             src1=tac_ast.Var(name="%0"),
-            src2=tac_ast.Constant(const=tac_ast.ConstChar(value=2)),
+            src2=tac_ast.Var(name="%c"),
             dst=tac_ast.Var(name="%1"),
         )
         self.assertEqual(
@@ -440,7 +441,7 @@ class TestTranslateInstruction(unittest.TestCase):
             [
                 asm_ast.Mov(src=asm_ast.Pseudo(name="%0", offset=0), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
-                asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%c", offset=0), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="asl8"),
                 asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
@@ -452,10 +453,11 @@ class TestTranslateInstruction(unittest.TestCase):
         # `>>` is arithmetic — c6502 currently treats every integer
         # as signed for shift purposes, so it goes through asr8
         # (sign-preserving) rather than a logical-right-shift helper.
+        # The count is a variable, since a constant count is inlined.
         instr = tac_ast.Binary(
             op=tac_ast.RightShift(),
             src1=tac_ast.Constant(const=tac_ast.ConstChar(value=64)),
-            src2=tac_ast.Constant(const=tac_ast.ConstChar(value=1)),
+            src2=tac_ast.Var(name="%c"),
             dst=tac_ast.Var(name="%0"),
         )
         self.assertEqual(
@@ -463,7 +465,7 @@ class TestTranslateInstruction(unittest.TestCase):
             [
                 asm_ast.Mov(src=asm_ast.Imm(value=64), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=0)),
-                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Mov(src=asm_ast.Pseudo(name="%c", offset=0), dst=_REG_A),
                 asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="HARGS", offset=1)),
                 asm_ast.Call(name="asr8"),
                 asm_ast.Mov(src=asm_ast.Data(name="HARGS", offset=2), dst=_REG_A),
@@ -1968,6 +1970,64 @@ class TestTranslateJumpIfCmp(unittest.TestCase):
         # (%b), since we computed b < a.
         first_mov_src = out[0].src
         self.assertEqual(first_mov_src.name, "%b")
+
+
+
+class TestConstantIndexAndByteShift(unittest.TestCase):
+    """A constant index into a named array is an absolute address,
+    and a 1-byte constant shift runs in A."""
+
+    def _translator(self, types):
+        from tac_to_asm import Translator
+        from passes.type_checking import LocalAttr, Symbol, SymbolTable
+        symbols = SymbolTable()
+        for name, t in types.items():
+            symbols[name] = Symbol(type=t, attrs=LocalAttr())
+        return Translator(symbols=symbols)
+
+    def test_indexed_load_constant_index(self):
+        import c99_ast
+        t = self._translator({"%v": c99_ast.UInt()})
+        out = t.translate_instruction(tac_ast.IndexedLoad(
+            name="arr", index=tac_ast.Constant(
+                const=tac_ast.ConstUChar(value=3)),
+            dst=tac_ast.Var(name="%v"), is_volatile=False,
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Data(name="arr", offset=3),
+                        dst=asm_ast.Pseudo(name="%v", offset=0)),
+            asm_ast.Mov(src=asm_ast.Data(name="arr", offset=4),
+                        dst=asm_ast.Pseudo(name="%v", offset=1)),
+        ])
+
+    def test_indexed_symbol_store_constant_index(self):
+        import c99_ast
+        t = self._translator({"%v": c99_ast.UChar()})
+        out = t.translate_instruction(tac_ast.IndexedSymbolStore(
+            name="arr", index=tac_ast.Constant(
+                const=tac_ast.ConstUChar(value=5)),
+            src=tac_ast.Var(name="%v"), is_volatile=False,
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Pseudo(name="%v", offset=0), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="arr", offset=5)),
+        ])
+
+    def test_byte_left_shift_in_a(self):
+        import c99_ast
+        t = self._translator({"%x": c99_ast.UChar(), "%y": c99_ast.UChar()})
+        out = t.translate_instruction(tac_ast.Binary(
+            op=tac_ast.LeftShift(), src1=tac_ast.Var(name="%x"),
+            src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=3)),
+            dst=tac_ast.Var(name="%y"),
+        ))
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Pseudo(name="%x", offset=0), dst=_REG_A),
+            asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+            asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+            asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Pseudo(name="%y", offset=0)),
+        ])
 
 
 if __name__ == "__main__":

@@ -118,6 +118,16 @@ block, and `CoalesceResult.byte_offset` records its position so the
 coloring projection adds it to the block's address. See "Carry
 bytes" in the module docstring.
 
+The same round takes every byte copy, direct or through A, including
+one between a multi-byte name and a 1-byte name, and merges one node
+into the other at the byte offset that lines the two bytes up. A
+name-level edge through a multi-byte node is imprecise, since such a
+node is live while any of its bytes is. For a merge into one, the
+pass renames each byte of every multi-byte name, recomputes liveness,
+and allows the merge when no two names that would share a byte are
+live at once. That's what lets a loop advance a `(zp),Y` base
+pointer in place, as `LDA p; CLC; ADC len; STA p; BCC; INC p+1`.
+
 The `CoalesceResult.representative` map projects every coalesced non-
 rep name to its rep. The optimizer driver expands the post-coloring
 assignments through this map so `apply_coloring` sees every original

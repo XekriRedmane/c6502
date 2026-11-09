@@ -52,7 +52,6 @@ floor_enemy_draw:
 .dispatch@0@case@2:
    LDA   floor_enemy_spr_s2_lo,Y
    STA   __local_floor_enemy_draw__2
-   JMP   .dispatch@0@end
 .dispatch@0@end:
    TXA
    CMP   #$00
@@ -71,7 +70,6 @@ floor_enemy_draw:
    JMP   .dispatch@1@end
 .dispatch@1@case@2:
    LDA   floor_enemy_spr_s2_hi,Y
-   JMP   .dispatch@1@end
 .dispatch@1@end:
    STA   __local_floor_enemy_draw__1
    LDA   #$01

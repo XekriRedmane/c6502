@@ -278,5 +278,38 @@ class TestMeetAcrossBranches(unittest.TestCase):
                               "predecessor doesn't have it")
 
 
+
+class TestYSetupInvalidates(unittest.TestCase):
+    """`floor_enemy_draw` regression: a cell holding `arr,Y` was read
+    back as `LDA arr,Y` after a `(zp),Y` access had loaded Y with 0.
+    An operand lowered with an `LDY #off` setup writes Y."""
+
+    def _program(self, middle):
+        return [
+            asm_ast.Mov(src=asm_ast.IndexedData(
+                name="arr", offset=0, index=asm_ast.Y(),
+            ), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_zp(0x84), is_volatile=False),
+            middle,
+            asm_ast.Mov(src=_zp(0x84), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+
+    def test_indirect_zp_setup_kills_fact(self):
+        middle = asm_ast.Mov(
+            src=asm_ast.IndirectZp(address=0x90, offset=0), dst=_A(),
+            is_volatile=False,
+        )
+        out = _instrs(_wrap(self._program(middle)))
+        self.assertEqual(out[3].src, _zp(0x84))
+
+    def test_frame_setup_kills_fact(self):
+        middle = asm_ast.Mov(
+            src=asm_ast.Frame(offset=2), dst=_A(), is_volatile=False,
+        )
+        out = _instrs(_wrap(self._program(middle)))
+        self.assertEqual(out[3].src, _zp(0x84))
+
+
 if __name__ == "__main__":
     unittest.main()

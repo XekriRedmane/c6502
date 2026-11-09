@@ -216,10 +216,15 @@ class TestCarryByteCoalescing(unittest.TestCase):
         self.assertEqual(result.offset_of("b"), 0)
 
     def test_interfering_not_merged(self) -> None:
-        instrs = _carry_byte(
-            asm_ast.Pseudo(name="t", offset=1),
-            asm_ast.Pseudo(name="s", offset=0),
-        )
+        # t[1] is read again after s is defined, so the two can't
+        # share t's byte 1.
+        t1 = asm_ast.Pseudo(name="t", offset=1)
+        instrs = _carry_byte(t1, asm_ast.Pseudo(name="s", offset=0)) + [
+            asm_ast.Mov(src=t1, dst=_A, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Pseudo(name="s", offset=0), dst=_A,
+                        is_volatile=False),
+            _ret(),
+        ]
         g = InterferenceGraph()
         g.nodes["t"] = _node("t", 2)
         g.nodes["s"] = _node("s")

@@ -870,7 +870,7 @@ def _emit_compare(
                 )
             return [
                 _emit_load_y(off),
-                _instr_line(opcode, f"(${addr:02X}),Y"),
+                _instr_line(opcode, _zpy_operand(addr)),
             ]
         case asm_ast.IndirectZpY(address=addr):
             if opcode != "CMP":
@@ -878,7 +878,7 @@ def _emit_compare(
                     f"Compare with left={left!r} can't use an "
                     f"IndirectZpY right operand"
                 )
-            return [_instr_line(opcode, f"(${addr:02X}),Y")]
+            return [_instr_line(opcode, _zpy_operand(addr))]
         case _:
             raise ValueError(
                 f"cannot emit Compare(left={left!r}, right={right!r})"

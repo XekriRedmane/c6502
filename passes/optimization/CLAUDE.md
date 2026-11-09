@@ -94,6 +94,25 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 - `unreachable_code_elimination.py` — `EliminateUnreachableCode` (raw
   FixedpointPass — forward DFS from ENTRY). Prunes dead Phi args; folds
   singleton Phis to Copies; drops useless jumps / labels.
+- `cse.py` — `eliminate_common_subexpressions`
+  (`EliminateCommonSubexpressions`, raw FixedpointPass — dominator-
+  tree walk). Replaces a repeated pure computation (`Binary`, `Unary`,
+  extends, `Truncate` on SSA operands) by a Copy from the first one
+  whose block dominates it. A repeated non-volatile load is replaced
+  only along a chain of single-predecessor blocks with no store, call,
+  volatile access, or write to a non-SSA name in between. Keys include
+  the dst type and the whole constant node (the FP constants keep
+  their value in `bits`).
+- `licm.py` — `hoist_loop_invariants` (`HoistLoopInvariants`, raw
+  FixedpointPass). Moves a loop-invariant extend or `Truncate` to the
+  loop's preheader. Adds aren't moved, since one used once on a
+  conditional path costs a store and a load to hold across the loop.
+- `reassoc_offset.py` — `reassoc_offset_constant`
+  (`ReassocOffsetConstant`, raw FixedpointPass). `p + (x + k)` →
+  `(p + x) + k` when the offset has one use and every operand has the
+  same width, so `dict[n + 1]`, `dict[n + 2]`, ... share `dict + n`
+  (CSE) and each `+ k` becomes `LDY #k`. A Constant `p` is left to
+  `reassoc_constants`.
 - `copy_propagation.py` — `copy_propagate` (`CopyPropagate`, raw
   FixedpointPass — CFG-shaped forward dataflow). SSA-aware: replaces
   every use of a Copy's dst with its src; chains too. A Copy whose
@@ -113,7 +132,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   chain(addr_var, env, ctx)` walks back `%addr → Binary(Add, base, %ext)
   → %ext := ZeroExtend|SignExtend(idx)` applying the gates all three
   addressing-mode recognizers share (symbols present; `%addr` / `%ext`
-  SSA-renamed + single-use; 1-byte `idx`). Plus `is_1_byte_var` /
+  SSA-renamed, `%addr` single-use; 1-byte `idx`). The walk looks
+  through a few `Copy`s to the extend (an `int` to `unsigned` cast is
+  a Copy copy propagation keeps). A multi-use `%ext`, as CSE leaves
+  when subscripts share an index, still folds, and the chain's
+  `drop_defs()` leaves its def for the other uses. Plus `is_1_byte_var` /
   `is_1_byte_val` / `all_dsts`. Each recognizer post-checks `base`'s kind
   (Constant for absolute,X; pointer Var for (zp),Y) and emits its node.
 - `recognize_indexed_store.py` / `recognize_indexed_load.py` —
@@ -140,9 +163,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   DefUsePass). Folds `Truncate(Binary(safe_op, Extend(a), Extend(b) |
   Constant), u_n)` → `Binary(safe_op, a, b | narrowed_Constant, u_n)`
   at the narrow width. Wraparound-safe ops are Add / Subtract / Multiply
-  / BitwiseAnd / BitwiseOr / BitwiseXor (Divide / Modulo / RightShift
-  excluded because high bytes contribute to low bytes of the result;
-  LeftShift excluded today as a marginal win). Eliminates the dead
+  / BitwiseAnd / BitwiseOr / BitwiseXor, plus LeftShift by a constant
+  below the narrow width (Divide / Modulo / RightShift excluded
+  because high bytes contribute to low bytes of the result). Eliminates the dead
   high-byte arithmetic that C99's `uint8_t op uint8_t`
   integer-promotion-then-truncate idiom otherwise leaves in the IR. MUST
   run AFTER `sink_and_past_branch` inside the fixed-point loop — sink's
@@ -196,8 +219,9 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
    → fold_static_const_reads       (PreFixedpointPass, one-shot)
    → [constant_fold → reduce_strength → fold_producer_jumps
       (cmp_zero ∪ narrow_and ∪ lnot, one merged RuleSet)
-      → eliminate_dead_loops → UCE
+      → eliminate_dead_loops → UCE → cse → licm
       → copy_propagate → DSE → fold_copies → reassoc_constants
+      → reassoc_offset_constant
       → recognize_indexed_store → recognize_indexed_load
       → fold_truncate_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)

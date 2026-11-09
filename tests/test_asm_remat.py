@@ -135,5 +135,34 @@ class TestApplyRemat(unittest.TestCase):
                 )
 
 
+
+class TestRematYSetup(unittest.TestCase):
+    """An operand lowered with an `LDY #off` setup writes Y, so an
+    `abs,Y` load can't be recomputed past it."""
+
+    def _indexed_y(self):
+        return asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.Y())
+
+    def test_blocked_by_indirect_zp_setup(self):
+        prog = _wrap([
+            asm_ast.Mov(src=self._indexed_y(), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=asm_ast.IndirectZp(address=0x90, offset=0),
+                        dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_data(), dst=_A(), is_volatile=False),
+        ], slot_symbols={"__local_f__0": 0x80})
+        self.assertEqual(_instrs(prog)[-1].src, _data())
+
+    def test_not_blocked_without_y_write(self):
+        prog = _wrap([
+            asm_ast.Mov(src=self._indexed_y(), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A(),
+                        is_volatile=False),
+            asm_ast.Mov(src=_data(), dst=_A(), is_volatile=False),
+        ], slot_symbols={"__local_f__0": 0x80})
+        self.assertEqual(_instrs(prog)[-1].src, self._indexed_y())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -72,6 +72,7 @@ fixedpoint iteration by the existing DSE/DCE peepholes.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import sets_up_y
 from passes.asm_aliasing import _RUNTIME_ZP_ADDRS
 
 
@@ -572,6 +573,9 @@ def _writes_y(instr: asm_ast.Type_instruction) -> bool:
 
 
 def _writes_reg(instr: asm_ast.Type_instruction, reg_cls) -> bool:
+    # An operand lowered with an `LDY #off` setup writes Y.
+    if reg_cls is asm_ast.Y and sets_up_y(instr):
+        return True
     if isinstance(instr, asm_ast.Mov):
         if isinstance(instr.dst, asm_ast.Reg) and isinstance(
             instr.dst.reg, reg_cls,

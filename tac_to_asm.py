@@ -191,7 +191,12 @@ byte moves and then `r` one-bit ASL / ROL (or LSR / ROR) steps over
 the bytes that aren't known zero. A signed right shift is inlined
 only with `q == 0`, since the vacated high bytes would need a sign
 fill. A count of 1, or of a multiple of 8, is always inlined (see
-`_inline_left_shift_const` / `_inline_right_shift_const`).
+`_inline_left_shift_const` / `_inline_right_shift_const`). A 1-byte
+shift runs in A (`LDA src; ASL A` ...; `STA dst`), which is 3 cycles
+a step faster than `ASL` on a zero-page byte.
+
+An `IndexedLoad` or `IndexedSymbolStore` with a constant index needs
+no X. It reads or writes `name+k` with absolute addressing.
 
 Inline comparison and LogicalNot lowerings (no runtime helper —
 the 6502's CMP / SBC + branch atoms cover these):
@@ -735,6 +740,7 @@ def _shift_count_const_value(val) -> int | None:
     if not isinstance(c, (
         tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
         tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
+        tac_ast.ConstChar, tac_ast.ConstUChar,
     )):
         return None
     if c.value < 0:
@@ -807,7 +813,15 @@ def _inline_left_shift_const(
     When `src` and `dst` coalesce to the same slot, the copy becomes
     self-Movs that the peepholes drop, leaving just the in-place
     shifts. `passes.shift_cost.inline_shift_ok` decides when this is
-    used instead of the `asl*` helper."""
+    used instead of the `asl*` helper.
+
+    A 1-byte shift runs in A instead, `LDA src; ASL A` x count; `STA
+    dst`, which is as many instructions and 3 cycles a step faster
+    than `ASL` on a zero-page byte."""
+    if size == 1:
+        return _shift_byte_in_a(
+            src_op, dst_op, [asm_ast.ArithmeticShiftLeft(dst=_REG_A)] * count,
+        )
     q, r = divmod(count, 8)
     if q:
         out = _inline_left_shift_byte_aligned(src_op, dst_op, size, q)
@@ -842,7 +856,20 @@ def _inline_right_shift_const(
     `ROR` on the lower bytes.
 
     `passes.shift_cost.inline_shift_ok` decides when this is used
-    instead of the `lsr*` / `asr*` helper."""
+    instead of the `lsr*` / `asr*` helper.
+
+    A 1-byte shift runs in A, as `LSR A` steps, or for a signed shift
+    `CMP #$80; ROR A` steps (the compare copies bit 7 into C, which
+    the rotate shifts back in)."""
+    if size == 1:
+        if signed:
+            step = [
+                asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=0x80)),
+                asm_ast.RotateRight(dst=_REG_A),
+            ]
+        else:
+            step = [asm_ast.LogicalShiftRight(dst=_REG_A)]
+        return _shift_byte_in_a(src_op, dst_op, step * count)
     q, r = divmod(count, 8)
     if q:
         out = _inline_right_shift_byte_aligned_unsigned(
@@ -864,6 +891,19 @@ def _inline_right_shift_const(
         for k in range(top - 1, -1, -1):
             out.append(asm_ast.RotateRight(dst=_byte_at(dst_op, k)))
     return out
+
+
+def _shift_byte_in_a(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    steps: list[asm_ast.Type_instruction],
+) -> list[asm_ast.Type_instruction]:
+    """`LDA src; <steps>; STA dst` for a 1-byte shift done in A."""
+    return (
+        [asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A)]
+        + list(steps)
+        + [asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0))]
+    )
 
 
 def _load_y_index(idx_op: asm_ast.Type_operand) -> list[asm_ast.Type_instruction]:
@@ -2282,10 +2322,23 @@ class Translator:
 
         The index is staged via Reg(A) → Reg(X) (LDA + TAX) rather
         than a direct LDX because the index source can be a
-        Frame/Stack operand, and LDX doesn't have indirect-Y mode."""
+        Frame/Stack operand, and LDX doesn't have indirect-Y mode.
+
+        A constant index needs no X at all. The bytes are read from
+        `name+k+0..N-1` with absolute addressing."""
         index_op = translate_val(index)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
+        if isinstance(index_op, asm_ast.Imm):
+            base = index_op.value & 0xFF
+            return [
+                asm_ast.Mov(
+                    src=asm_ast.Data(name=name, offset=base + k),
+                    dst=_byte_at(dst_op, k),
+                    is_volatile=is_volatile,
+                )
+                for k in range(n)
+            ]
         out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=index_op, dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),
@@ -2353,10 +2406,24 @@ class Translator:
         than a direct LDX because the index source may be a Frame
         operand and LDX doesn't have indirect-Y mode. The
         `direct_index_load` peephole collapses the LDA/TAX pair to
-        a single LDX when `index` resolves to Imm/Data/ZP."""
+        a single LDX when `index` resolves to Imm/Data/ZP.
+
+        A constant index needs no X at all. The bytes are written to
+        `name+k+0..N-1` with absolute addressing."""
         index_op = translate_val(index)
         src_op = translate_val(src)
         n = self._size_of(src)
+        if isinstance(index_op, asm_ast.Imm):
+            base = index_op.value & 0xFF
+            out = []
+            for k in range(n):
+                out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
+                out.append(asm_ast.Mov(
+                    src=_REG_A,
+                    dst=asm_ast.Data(name=name, offset=base + k),
+                    is_volatile=is_volatile,
+                ))
+            return out
         out: list[asm_ast.Type_instruction] = [
             asm_ast.Mov(src=index_op, dst=_REG_A),
             asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.X())),

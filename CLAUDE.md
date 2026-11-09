@@ -159,9 +159,11 @@ and `--codegen`):
   3. TAC fixed-point loop: constant folding (incl. const-array-
      subscript fold), strength reduction, comparison-against-zero /
      jump fold, AND-zero-jump fold, unreachable-code elimination,
+     common-subexpression elimination, loop-invariant extends,
      copy propagation, dead-store elimination, copy folding, Add-
-     with-Constant reassociation, loop rotation, sink-increment,
-     IndexedLoad / IndexedStore / IndirectIndexed recognizers.
+     with-Constant and offset-constant reassociation, loop rotation,
+     sink-increment, IndexedLoad / IndexedStore / IndirectIndexed
+     recognizers.
   4. TAC SSA destruction + post-destruction copy folding.
   5. Asm-level const-static fold (drops scalar `static T const`
      storage, replacing references with immediates).

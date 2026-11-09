@@ -141,19 +141,61 @@ class TestCoalescingUnit(unittest.TestCase):
         self.assertIn("b", graph.nodes)
         self.assertEqual(result.representative, {})
 
-    def test_different_widths_not_coalesced(self) -> None:
-        # 1-byte and 2-byte nodes can't coalesce — the coloring
-        # pool's width-aware fit assumes uniform width.
+    def test_different_widths_coalesce_at_byte(self) -> None:
+        # A copy between a 1-byte node and byte 1 of a 2-byte node
+        # puts the 1-byte node in that byte of the block, which the
+        # coloring projection reaches through `offset_of`.
         instrs = [
-            asm_ast.Mov(src=_pseudo("a"), dst=_pseudo("b")),
+            asm_ast.Mov(src=_pseudo("a"), dst=_pseudo("b", 1)),
         ]
         graph = InterferenceGraph()
         graph.nodes["a"] = _node("a", width=1)
         graph.nodes["b"] = _node("b", width=2)
         result = coalesce_moves(_fn(instrs), graph)
-        self.assertIn("a", graph.nodes)
-        self.assertIn("b", graph.nodes)
-        self.assertEqual(result.representative, {})
+        self.assertNotIn("a", graph.nodes)
+        self.assertEqual(result.resolve("a"), "b")
+        self.assertEqual(result.offset_of("a"), 1)
+
+    def test_byte_level_check_allows_dead_byte(self) -> None:
+        # `s` is defined while p[1] is still to be read, so the
+        # name-level graph has an edge between s and p. p[0] is dead
+        # by then, so s can share byte 0.
+        p = lambda k: _pseudo("p", k)
+        a = asm_ast.Reg(reg=asm_ast.A())
+        instrs = [
+            asm_ast.Mov(src=p(0), dst=a),
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_pseudo("s")),
+            asm_ast.Mov(src=p(1), dst=a),
+            asm_ast.Mov(src=_pseudo("s"), dst=p(0)),
+            asm_ast.Mov(src=p(0), dst=a),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        graph = InterferenceGraph()
+        graph.nodes["p"] = _node("p", width=2)
+        graph.nodes["s"] = _node("s")
+        graph.add_edge("p", "s")
+        result = coalesce_moves(_fn(instrs), graph)
+        self.assertEqual(result.resolve("s"), "p")
+        self.assertEqual(result.offset_of("s"), 0)
+
+    def test_byte_level_check_rejects_live_byte(self) -> None:
+        # Here p[0] is read after `s` is defined, so the two can't
+        # share byte 0.
+        p = lambda k: _pseudo("p", k)
+        a = asm_ast.Reg(reg=asm_ast.A())
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_pseudo("s")),
+            asm_ast.Mov(src=p(0), dst=a),
+            asm_ast.Mov(src=_pseudo("s"), dst=p(0)),
+            asm_ast.Mov(src=p(0), dst=a),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+        graph = InterferenceGraph()
+        graph.nodes["p"] = _node("p", width=2)
+        graph.nodes["s"] = _node("s")
+        graph.add_edge("p", "s")
+        result = coalesce_moves(_fn(instrs), graph)
+        self.assertEqual(result.resolve("s"), "s")
 
     def test_excluded_name_not_coalesced(self) -> None:
         # Static / address-taken / param names aren't in the graph

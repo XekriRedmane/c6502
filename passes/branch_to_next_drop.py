@@ -1,4 +1,10 @@
-"""Drop a `Branch` whose target is the immediately-following label.
+"""Drop a `Branch` whose target is the immediately-following label,
+and a `Jump` whose target is one of the labels right after it.
+
+A `Jump` to the next label can be left when a conditional branch over
+it was inverted to reach the other target, as in `BCC top; JMP done;
+done:`. Like a Branch, it changes no register, flag, or memory, so it
+goes.
 
 # Motivating shape
 
@@ -128,6 +134,18 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             else:
                 i += 1
             continue
+        if isinstance(a, asm_ast.Jump):
+            j = i + 1
+            while j < n and isinstance(instrs[j], asm_ast.Label):
+                if instrs[j].name == a.target:
+                    break
+                j += 1
+            if j < n and isinstance(instrs[j], asm_ast.Label):
+                # Drop the Jump. The labels stay, since another site
+                # may still reference them and `dead_label_drop`
+                # removes the ones that aren't.
+                i += 1
+                continue
         out.append(a)
         i += 1
     if len(out) == len(instrs):

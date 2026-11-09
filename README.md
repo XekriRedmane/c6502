@@ -620,6 +620,12 @@ Distinguishing features:
   `ASL low; ROL b1; ...` chain when that's at most 8 shift
   instructions (`passes/shift_cost.py`), so `x * 9` on an `int` is
   `(x << 3) + x` with no helper call.
+- **Common-subexpression elimination, offset reassociation, and
+  invariant extends.** A repeated computation or load is reused when
+  nothing could have changed it, `p[n + 1]` / `p[n + 2]` share `p + n`
+  and become `LDY #1` / `LDY #2`, and a loop-invariant zero-extend
+  moves out of the loop. Two tests of the same operands in a row
+  compare once, and repeated `return` tails share one copy.
 - **Carry bytes with BCC / INC.** When an add's other operand has
   zero high bytes (`p + c`, `p + 53`, `g += c`) and the high bytes are
   updated in place, they become `BCC done; INC hi; BNE done; ...`

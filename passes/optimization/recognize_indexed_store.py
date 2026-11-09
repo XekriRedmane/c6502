@@ -128,7 +128,7 @@ class RecognizeIndexedStore(DefUsePass):
                 address=addr_value, index=chain.idx_var, src=val,
                 is_volatile=store_instr.is_volatile,
             ),
-            drop_defs=(chain.addr_var, chain.ext_var),
+            drop_defs=chain.drop_defs(),
         )
 
 

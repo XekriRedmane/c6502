@@ -365,6 +365,25 @@ def _is_dead_at_tail_call(target: asm_ast.Type_operand) -> bool:
     return False
 
 
+def mem_dead_after(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+    target: asm_ast.Type_operand,
+    *,
+    fn_name: str,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> bool:
+    """True iff the value of memory byte `target` after `instrs[idx]`
+    isn't read on any path forward, by the same CFG walk that decides
+    whether a store is dead. For a pass that removes the last reader
+    of a temp and wants to know whether the temp's store goes too."""
+    return _is_dead_cfg(
+        instrs, idx, _build_label_map(instrs), zp_slot_symbols,
+        local_prefix=f"__local_{fn_name}__",
+        address_taken_names=_collect_address_taken_names(instrs),
+        target=target,
+    )
+
+
 def _is_dead_cfg(
     instrs: list[asm_ast.Type_instruction], start: int,
     label_to_index: dict[str, int],
@@ -372,6 +391,7 @@ def _is_dead_cfg(
     *,
     local_prefix: str | None = None,
     address_taken_names: frozenset[str] | None = None,
+    target: asm_ast.Type_operand | None = None,
 ) -> bool:
     """True iff the STA at `instrs[start]` is dead by CFG-wide
     forward search: every path from start+1 forward either
@@ -391,8 +411,16 @@ def _is_dead_cfg(
     read or write it. The `icall` trampoline is excluded; its
     eventual target is unknown, so the allocator guarantee can't
     apply."""
-    sta = instrs[start]
-    target = sta.dst
+    if target is None:
+        target = instrs[start].dst
+    # A byte in this function's private pool whose address is never
+    # taken can't be reached through a pointer, so an indirect access
+    # reads only its pointer's bytes as far as `target` goes.
+    private = (
+        local_prefix is not None
+        and address_taken_names is not None
+        and _call_cannot_touch(target, local_prefix, address_taken_names)
+    )
     visited: set[int] = set()
     stack: list[int] = list(_successors(instrs, start, label_to_index))
     while stack:
@@ -448,7 +476,7 @@ def _is_dead_cfg(
                 return False
             continue
         # Read of `target`: LIVE.
-        if _reads(nxt, target, zp_slot_symbols):
+        if _reads(nxt, target, zp_slot_symbols, private=private):
             return False
         # Exact-address overwrite: kill on this path, don't
         # propagate. (Aliasing-but-not-equal writes don't count as
@@ -512,6 +540,8 @@ def _reads(
     instr: asm_ast.Type_instruction,
     target: asm_ast.Type_operand,
     zp_slot_symbols: dict[str, int] | None = None,
+    *,
+    private: bool = False,
 ) -> bool:
     """True iff `instr` may read the byte at `target`. Conservative:
     if any operand we can't classify might alias, return True.
@@ -521,9 +551,23 @@ def _reads(
     operands) needs this to recognize that the indirect aliases the
     Data-form slot symbol the pointer was initialized through."""
     for op in _read_operands(instr):
+        if private and isinstance(op, _INDIRECT_KINDS):
+            # Only the pointer bytes can be `target`.
+            if any(
+                _may_alias(p, target, zp_slot_symbols=zp_slot_symbols)
+                for p in _ptr_source_reads(op)
+            ):
+                return True
+            continue
         if _may_alias(op, target, zp_slot_symbols=zp_slot_symbols):
             return True
     return False
+
+
+_INDIRECT_KINDS = (
+    asm_ast.Indirect, asm_ast.IndirectY,
+    asm_ast.IndirectZp, asm_ast.IndirectZpY,
+)
 
 
 def _writes_same(

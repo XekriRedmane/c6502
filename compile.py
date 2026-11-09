@@ -64,6 +64,8 @@ from passes.round_trip_load import apply_round_trip_load_drop
 from passes.and_sign_bit_branch import apply_and_sign_bit_branch
 from passes.self_store_drop import apply_self_store_drop
 from passes.cmp_through_tmp_fold import apply_cmp_through_tmp_fold
+from passes.redundant_compare import apply_redundant_compare
+from passes.tail_merge import apply_tail_merge
 from passes.adc_commute import apply_adc_commute
 from passes.dual_index_promotion import apply_dual_index_promotion
 from passes.prune_unused_slots import prune_unused_locals
@@ -222,11 +224,15 @@ def _peephole_fixedpoint(prog, *, zp_slot_symbols=None):
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)
-        new_prog = apply_cmp_through_tmp_fold(new_prog)
+        new_prog = apply_redundant_compare(new_prog)
+        new_prog = apply_cmp_through_tmp_fold(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
         new_prog = apply_adc_commute(new_prog)
         new_prog = apply_cmp_sbc_fusion(new_prog)
         new_prog = apply_dec_inc_branch_fold(new_prog)
         new_prog = apply_tail_call(new_prog)
+        new_prog = apply_tail_merge(new_prog)
         new_prog = apply_via_a_store_fold(new_prog)
         # Runs last so the round-trip-through-temp shape
         # (`STA __local; LDA __local; STA M`) has already been

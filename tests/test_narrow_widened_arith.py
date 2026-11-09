@@ -4,8 +4,9 @@ Covers the `Truncate(Binary(safe_op, Extend(a), Extend(b) | Const),
 u_n)` → `Binary(safe_op, a, b | narrowed_Const, u_n)` rewrite for
 the wraparound-safe ops (Add / Subtract / Multiply / BitwiseAnd /
 BitwiseOr / BitwiseXor), the soundness gates that exclude
-non-wraparound-safe ops (Divide / Modulo / RightShift / LeftShift)
-and non-SSA-renamed names, and the constant-narrowing logic that
+non-wraparound-safe ops (Divide / Modulo / RightShift, and LeftShift
+by anything but a constant below the narrow width) and non-SSA-renamed
+names, and the constant-narrowing logic that
 masks Constants modulo the target width.
 """
 
@@ -271,16 +272,49 @@ class TestNarrowWidenedArith(unittest.TestCase):
         )
         self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
 
-    def test_left_shift_not_narrowed_today(self):
-        # LeftShift COULD be narrowed in principle (low bytes
-        # depend only on low bytes), but is deliberately excluded
-        # by this pass — the asm shift helpers consume only one
-        # byte of the count anyway, so the win is marginal.
+    def test_left_shift_by_variable_not_narrowed(self):
+        # LeftShift narrows only by a constant count, which is
+        # inlined; a variable count goes to the `asl*` helper either
+        # way.
         instrs, symbols, ssa_dsts = _zext_add_trunc(tac_ast.LeftShift)
         out = narrow_widened_arith(
             _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
         )
         self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
+
+    def _shift_by(self, count):
+        instrs = [
+            tac_ast.ZeroExtend(src=_var("a"), dst=_var("ea")),
+            tac_ast.Binary(
+                op=tac_ast.LeftShift(), src1=_var("ea"),
+                src2=_const_int(count), dst=_var("r"),
+            ),
+            tac_ast.Truncate(src=_var("r"), dst=_var("d")),
+        ]
+        symbols = {
+            "a": _local(c99_ast.UChar()),
+            "ea": _local(c99_ast.Int()),
+            "r": _local(c99_ast.Int()),
+            "d": _local(c99_ast.UChar()),
+        }
+        return narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts={"ea", "r", "d"},
+        ).instructions
+
+    def test_left_shift_by_constant_narrowed(self):
+        # `(uint8_t)(len << 4)`: the low byte of the shift depends
+        # only on the low byte of `len`.
+        new = self._shift_by(4)[-1]
+        self.assertIsInstance(new, tac_ast.Binary)
+        self.assertIsInstance(new.op, tac_ast.LeftShift)
+        self.assertEqual(new.src1, _var("a"))
+        self.assertEqual(new.src2.const.value, 4)
+        self.assertEqual(new.dst, _var("d"))
+
+    def test_left_shift_by_width_not_narrowed(self):
+        # A count of 8 or more shifts every bit out of the narrow
+        # width, which the narrow shift's lowering doesn't handle.
+        self.assertIsInstance(self._shift_by(8)[-1], tac_ast.Truncate)
 
     def test_dst_width_equals_extend_width_left_alone(self):
         # `Truncate(int -> int)` is a no-op of zero width gap;

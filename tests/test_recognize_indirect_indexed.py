@@ -175,14 +175,35 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         )
         self.assertEqual(out.instructions, instrs)
 
-    def test_multi_use_ext_does_not_fold(self) -> None:
+    def test_multi_use_ext_folds_and_keeps_ext(self) -> None:
+        # The load folds, and the extend stays for its other use.
         instrs = _canonical_load() + [
             tac_ast.Copy(src=_var("%ext"), dst=_var("%other")),
         ]
         out = recognize_indirect_indexed(
             _fn(instrs), symbols=_canonical_symbols(),
         )
-        self.assertEqual(out.instructions, instrs)
+        self.assertEqual(out.instructions[0], instrs[0])
+        self.assertTrue(any(
+            isinstance(i, tac_ast.IndirectIndexedLoad)
+            for i in out.instructions
+        ))
+        self.assertEqual(out.instructions[-1], instrs[-1])
+
+    def test_ext_through_sign_changing_copy_folds(self) -> None:
+        # An `int` to `unsigned` cast is a Copy that copy propagation
+        # keeps, here between the extend and the subscript's Add.
+        instrs = [
+            tac_ast.ZeroExtend(src=_var("y"), dst=_var("%e0")),
+            tac_ast.Copy(src=_var("%e0"), dst=_var("%ext")),
+        ] + _canonical_load()[1:]
+        symbols = _canonical_symbols()
+        symbols["%e0"] = Symbol(type=c99_ast.Int(), attrs=LocalAttr())
+        out = recognize_indirect_indexed(_fn(instrs), symbols=symbols)
+        self.assertTrue(any(
+            isinstance(i, tac_ast.IndirectIndexedLoad)
+            for i in out.instructions
+        ))
 
     def test_constant_addend_does_not_fold(self) -> None:
         # The "ptr" side is a Constant — that's the

@@ -100,7 +100,7 @@ class RecognizeIndexedLoad(DefUsePass):
                 address=addr_value, index=chain.idx_var, dst=load_dst,
                 is_volatile=load_instr.is_volatile,
             ),
-            drop_defs=(chain.addr_var, chain.ext_var),
+            drop_defs=chain.drop_defs(),
         )
 
 

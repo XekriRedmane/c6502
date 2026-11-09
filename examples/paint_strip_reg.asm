@@ -1,7 +1,6 @@
 __zpabi_paint_strip_reg__x_pixel	EQU	$80
 __zpabi_paint_strip_reg__color	EQU	$81
 __local_main__0	EQU	$82
-__local_main__1	EQU	$83
 
 ; @zp-link-meta-begin
 ; def main params= locals=__local_main__0,__local_main__1 indirect=false in_cycle=false
@@ -28,15 +27,9 @@ main:
    LDX   #$40
    LDA   #$07
    JSR   paint_strip_reg
-   LDX   #$03
-   LDA   hud_buf,X
-   STA   __local_main__1
-   LDX   #$07
-   LDA   hud_buf,X
-   STA   __local_main__0
-   LDA   __local_main__1
+   LDA   hud_buf+3
    CLC
-   ADC   __local_main__0
+   ADC   hud_buf+7
    STA   __local_main__0
    LDA   #$00
    ADC   #$00

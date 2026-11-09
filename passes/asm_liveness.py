@@ -293,6 +293,24 @@ def _operand_setup_clobbers_y(op: asm_ast.Type_operand) -> bool:
     return isinstance(op, (asm_ast.Indirect, asm_ast.IndirectZp))
 
 
+# Operands whose addressing setup `asm_emit` lowers with an `LDY
+# #off` in front of the access: `Indirect(off)` and `IndirectZp(addr,
+# off)`, and `Frame` / `Stack` (`LDY #off; LDA (FP),Y`).
+Y_SETUP_OPERANDS = (
+    asm_ast.Indirect, asm_ast.IndirectZp, asm_ast.Frame, asm_ast.Stack,
+)
+
+
+def sets_up_y(instr: asm_ast.Type_instruction) -> bool:
+    """True iff any operand of `instr` is lowered with an `LDY #off`
+    setup, so the instruction writes Y whatever it does otherwise.
+    For a pass that has to know every write to Y, such as one that
+    reuses an `abs,Y` load at a later point."""
+    return any(
+        isinstance(op, Y_SETUP_OPERANDS) for op in vars(instr).values()
+    )
+
+
 def reads_x(instr: asm_ast.Type_instruction) -> bool:
     """True iff `instr` reads `Reg(X)` (uses it as a source, an
     index for `IndexedData(_, index=X)`, or RMW's it via INX/DEX)."""

@@ -84,6 +84,9 @@ _TYPE_INFO: dict[type, tuple[bool, int, bool]] = {
 
 
 def _type_info(t: Type) -> tuple[bool, int, bool]:
+    # `const` / `volatile` don't change a value's representation.
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
     info = _TYPE_INFO.get(type(t))
     if info is None:
         raise TacSimError(f"unsupported type in simulator: {type(t).__name__}")

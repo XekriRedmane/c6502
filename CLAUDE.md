@@ -172,10 +172,13 @@ and `--codegen`):
   7. `replace_pseudoregisters_bare_exit` resolves Pseudos.
   8. Late prologue / epilogue synthesis (collapses to bare body +
      RTS when no save / spill is needed).
-  9. `loop_counter_to_x` (X-pivot promotion for hot loop counters).
+  9. `loop_counter_to_x` (X-pivot promotion for hot loop counters),
+     then `counter_to_index_reg` (a pure count-down counter into X
+     or Y).
   10. Peephole fixed-point loop — see the peephole catalog in
       [passes/CLAUDE.md](passes/CLAUDE.md).
-  11. `expand_long_branches`, `asm_to_asm2`, `emit_program`.
+  11. `loop_invariant_a` (a loop-invariant compare key kept in A),
+      `expand_long_branches`, `asm_to_asm2`, `emit_program`.
 
   Also enables the default zp_abi calling convention: every function
   that is eligible (no IndirectCall, not in a call-graph cycle,

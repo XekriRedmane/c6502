@@ -16,6 +16,8 @@ compute, then rewrite the instruction:
     (same bit pattern; only `.value`'s number form changes)
   - JumpIfTrue(true)   /  JumpIfFalse(false)      → Jump(target)
   - JumpIfTrue(false)  /  JumpIfFalse(true)       → dropped
+  - JumpIfCmp(op, C1, C2) → Jump(target) when `C1 op C2` holds,
+    dropped otherwise
 
 Integer width and signedness, matching `tac_to_asm`:
 
@@ -225,6 +227,22 @@ def _fold(
             if tv is None:
                 return instr
             return None if tv else tac_ast.Jump(target=t)
+        case tac_ast.JumpIfCmp(
+            op=op,
+            src1=tac_ast.Constant(const=c1),
+            src2=tac_ast.Constant(const=c2),
+            target=t,
+        ):
+            # A compare-and-jump of two constants, such as the guard
+            # loop rotation puts in front of `for (i = 0; i < 105;
+            # i++)`.
+            res = _fold_binary(op, c1, c2)
+            if res is None:
+                return instr
+            tv = _truth_value(res)
+            if tv is None:
+                return instr
+            return tac_ast.Jump(target=t) if tv else None
         case tac_ast.IndexedLoad(
             name=name,
             index=tac_ast.Constant(const=c),

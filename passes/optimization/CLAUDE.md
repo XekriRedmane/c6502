@@ -40,7 +40,8 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `OperandRewritePass`). One-shot post-SSA.
 - `constant_folding.py` — `constant_fold` (`ConstantFold`, WindowPass).
   Unary / Binary / comparison / cast / conditional-jump-with-constant-
-  cond / Phis with agreeing args. Width-correct wraparound at the
+  cond (including a `JumpIfCmp` of two constants) / Phis with agreeing
+  args. Width-correct wraparound at the
   operand's declared width. Const-array-subscript fold
   (`_fold_indexed_load`) is part of this pass.
 - `strength_reduction.py` — `reduce_strength` (three `RuleSet` rules
@@ -237,7 +238,13 @@ stage:
 6. **`from_ssa`** (`ssa_destruction.py`). One Copy per PhiArg in the
    matching predecessor, before the terminator. Parallel-copy
    ordering by topological sort fixes the "lost copy" problem; cycles
-   break with a fresh `<funcname>.cycle_tmp@N`.
+   break with a fresh `<funcname>.cycle_tmp@N`. When the predecessor
+   ends in a conditional jump, the copies can't go in front of it if
+   they'd change something the jump or the other successor reads, or
+   if the other edge has copies too (a do/while's bottom test feeds
+   both the header's and the exit's Phis). Then they go on the edge:
+   after the jump for the fall-through successor, or in a new
+   `.<fn>@ssa_split@N` block the jump is retargeted to.
 
 7. **Post-destruction folds**.
    - **`fold_copies`** (`copy_folding.py`) — fuses the Copy round

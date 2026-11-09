@@ -33,6 +33,7 @@ fits entirely in ZP shrink their epilogue to a bare RTS.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import a_dead_at
 from passes.replace_pseudoregisters import FrameDims
 
 
@@ -63,6 +64,39 @@ def synthesize_program(
             return asm_ast.Program(top_level=new_top)
         case _:
             raise TypeError(f"unexpected program node: {prog!r}")
+
+
+_REG_A = asm_ast.Reg(reg=asm_ast.A())
+
+
+def _split_entry_stubs(instrs, fn_name):
+    """Pull the register-parameter entry stubs out of the start of
+    `instrs`: the leading `Mov(Reg(A|X), Data(__zpabi_<fn>__...))`
+    stores, skipping labels. Returns `(stubs, rest)` with the labels
+    left in `rest`."""
+    prefix = f"__zpabi_{fn_name}__"
+    stubs: list = []
+    rest: list = []
+    i = 0
+    while i < len(instrs):
+        ins = instrs[i]
+        if isinstance(ins, asm_ast.Label):
+            rest.append(ins)
+            i += 1
+            continue
+        if (
+            isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+            and isinstance(ins.src, asm_ast.Reg)
+            and isinstance(ins.src.reg, (asm_ast.A, asm_ast.X))
+            and isinstance(ins.dst, asm_ast.Data)
+            and ins.dst.name.startswith(prefix)
+        ):
+            stubs.append(ins)
+            i += 1
+            continue
+        break
+    rest.extend(instrs[i:])
+    return stubs, rest
 
 
 def _synthesize_function(
@@ -109,8 +143,24 @@ def _synthesize_function(
         local_bytes=dims.local_bytes,
         callee_saved_addrs=list(dims.callee_saved_addrs),
     )
-    new_instrs: list[asm_ast.Type_instruction] = [prologue]
-    for instr in fn.instructions:
+    # The prologue's SSP / FP arithmetic runs through A (and Y), so it
+    # would overwrite a `register` parameter that arrives in A. The
+    # entry stubs that store register parameters into their zp_abi
+    # slots move in front of it; they only write those slots. If the
+    # body still reads A on entry after that (a parameter kept in A
+    # with its stub dropped), the prologue is wrapped in PHA / PLA.
+    # X is never touched by the prologue, and no parameter arrives
+    # in Y.
+    body = list(fn.instructions)
+    stubs, body = _split_entry_stubs(body, fn.name)
+    new_instrs: list[asm_ast.Type_instruction] = list(stubs)
+    a_live = not a_dead_at(body, 0)
+    if a_live:
+        new_instrs.append(asm_ast.Push(src=_REG_A))
+    new_instrs.append(prologue)
+    if a_live:
+        new_instrs.append(asm_ast.Pop(dst=_REG_A))
+    for instr in body:
         if isinstance(instr, asm_ast.Return):
             new_instrs.append(asm_ast.Ret(
                 arg_bytes=dims.arg_bytes,

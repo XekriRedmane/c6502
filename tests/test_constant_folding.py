@@ -1481,5 +1481,32 @@ class TestFoldCopy(unittest.TestCase):
         self.assertEqual(out[0], instr)
 
 
+
+class TestFoldJumpIfCmp(unittest.TestCase):
+
+    def test_true_compare_becomes_jump(self) -> None:
+        fn = _fn(
+            tac_ast.JumpIfCmp(op=tac_ast.LessThan(), src1=_ci(0),
+                              src2=_ci(105), target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions,
+                         [tac_ast.Jump(target="L"), _ret()])
+
+    def test_false_compare_dropped(self) -> None:
+        fn = _fn(
+            tac_ast.JumpIfCmp(op=tac_ast.GreaterThan(), src1=_ci(0),
+                              src2=_ci(10), target="L"),
+            _ret(),
+        )
+        self.assertEqual(constant_fold(fn).instructions, [_ret()])
+
+    def test_variable_operand_left_alone(self) -> None:
+        instr = tac_ast.JumpIfCmp(op=tac_ast.Equal(), src1=_var("x"),
+                                  src2=_ci(0), target="L")
+        fn = _fn(instr, _ret())
+        self.assertEqual(constant_fold(fn).instructions[0], instr)
+
+
 if __name__ == "__main__":
     unittest.main()

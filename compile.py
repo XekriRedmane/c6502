@@ -75,8 +75,10 @@ from passes.transfer_pm1_store import apply_transfer_pm1_store
 from passes.transfer_past_branch import apply_transfer_past_branch
 from passes.index_inc_cmp_y import apply_index_inc_cmp_y
 from passes.loop_counter_to_x import apply_loop_counter_to_x
+from passes.counter_to_index_reg import apply_counter_to_index_reg
 from passes.x_save_slot_load import apply_x_save_slot_load
 from passes.asm_licm import apply_licm
+from passes.loop_invariant_a import apply_loop_invariant_a
 from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.cpx_cpy_peephole import apply_cpx_cpy_peephole
 from passes.dead_a_arith import apply_dead_a_arith_elimination
@@ -410,6 +412,9 @@ def _run_stage(
             # for the exact eligibility shape.
             asm3 = apply_promote_loop_carried_to_a(asm3)
             asm3 = apply_loop_counter_to_x(asm3)
+            # A count-down counter used only by its DEC goes in X (or
+            # Y) when the loop leaves that register alone.
+            asm3 = apply_counter_to_index_reg(asm3)
             # Catch cases the X-pivot promotion couldn't reach: a
             # Pseudo that got X-colored upstream but kept an
             # `LDA M`-style read of its spill home M for arg
@@ -445,6 +450,12 @@ def _run_stage(
             # the function's own `__zpabi_*` slots can't be
             # aliased by an Indirect and drops the stub directly.
             asm3 = apply_dead_reg_entry_stub_drop(asm3, abi)
+            # Keep a loop-invariant compare key in A across its loop
+            # (see passes/loop_invariant_a.py). Runs after the
+            # peepholes have settled the layout it inspects.
+            asm3 = apply_loop_invariant_a(
+                asm3, zp_slot_symbols=all_slot_symbols,
+            )
             asm4 = expand_long_branches(asm3)
             # Drop EQU entries for `__local_*` symbols that the
             # peephole catalog rendered unreferenced. Walks asm_ast

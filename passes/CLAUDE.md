@@ -134,6 +134,22 @@ this directory:
   Jump(target); .skip:`. Iterative.
 - `loop_counter_to_x.py` — X-pivot promotion (see "Asm-level
   promotions" below).
+- `counter_to_index_reg.py` — `apply_counter_to_index_reg`. Moves a
+  pure count-down counter (one init store, one `DEC M; BNE` back
+  edge, no other reads) from memory into X, or Y when the loop uses
+  X: `STA M` becomes `TAX` (folded to `LDX n` later) and `DEC M`
+  becomes `DEX`. The register may be touched only where the DEC
+  can't be reached again (an exit path). Runs after
+  `loop_counter_to_x`, which handles counters that are also an
+  index.
+- `loop_invariant_a.py` — `apply_loop_invariant_a`. In a loop whose
+  header starts `LDA x; CMP k; BEQ/BNE` with `k` loop-invariant,
+  swaps the compare to `CMP x` with `k` in A, loads `k` once before
+  the loop, and reloads it only on the in-loop edges that reach the
+  header with A overwritten. Needs A and N / C dead after the branch
+  and a reload stub spot after a `JMP` / `RTS` for taken-edge
+  reloads. Runs just before `expand_long_branches`. Headline case:
+  `examples/find_index_of_page_table.c`.
 - `promote_loop_carried_to_a.py` —
   `apply_promote_loop_carried_to_a`. Scalar promotion of a
   function-entry-saved reg('A') param's body-local to live in A
@@ -1049,7 +1065,11 @@ Limitations / what doesn't fire:
 local_bytes == callee_saved_bytes == 0`, the bare `Return(save_a)`
 atoms stay and no `FunctionPrologue` is prepended. Otherwise prepend
 `FunctionPrologue(N, M, callee_saved_addrs)` and patch each `Return`
-to `Ret(N, M, save_a, callee_saved_addrs)`.
+to `Ret(N, M, save_a, callee_saved_addrs)`. The prologue's SSP / FP
+arithmetic goes through A, so the entry stubs that store `register`
+parameters into their zp_abi slots move in front of it, and if A is
+still read on entry after that, the prologue is wrapped in `PHA` /
+`PLA`.
 
 `asm_licm.apply_licm`: asm-level LICM-lite for loop-invariant constant
 stores. Identifies natural loops by back-edge, hoists `Mov(Imm,

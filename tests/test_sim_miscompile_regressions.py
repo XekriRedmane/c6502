@@ -225,6 +225,30 @@ _CASES: list[tuple[str, str, int]] = [
         }
         int main(void) { f3(); return (int)g1; }
     """, 45),
+    # from_ssa put the copies for every Phi successor of a block in
+    # front of its terminator. A do/while's bottom test feeds Phis at
+    # both the loop header and the exit, so `i = i + 1` for the
+    # header ran before `c = i` for the exit.
+    ("do_while_exit_phi_after_header_phi", """
+        int main(void) {
+            int i = 0; int c = 0;
+            do { c = i; i = i + 1; } while (i <= 10);
+            return c;
+        }
+    """, 10),
+    # A `register` parameter in A was overwritten by the soft-stack
+    # prologue when the function also needed a frame.
+    ("register_param_with_frame", """
+        char sum_n(register char n) {
+            register char acc = 0;
+            if (n > 0) do {
+                acc = (char)(acc + n);
+                n = (char)(n - 1);
+            } while (n > 0);
+            return acc;
+        }
+        int main(void) { return sum_n(5); }
+    """, 15),
     # Array sizes had to be literals, so `buf[N * 2]` was rejected.
     ("array_size_expression", """
         int g[sizeof(long) * 2];

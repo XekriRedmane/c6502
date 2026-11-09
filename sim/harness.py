@@ -172,8 +172,14 @@ def compile_to_asm(
             asm2_synth, zp_slot_symbols=zp_slot_symbols,
         )
         asm3 = apply_loop_counter_to_x(asm3)
+        from passes.counter_to_index_reg import apply_counter_to_index_reg
+        asm3 = apply_counter_to_index_reg(asm3)
         asm3 = apply_x_save_slot_load(asm3)
         asm3 = _peephole_fixedpoint(
+            asm3, zp_slot_symbols=zp_slot_symbols,
+        )
+        from passes.loop_invariant_a import apply_loop_invariant_a
+        asm3 = apply_loop_invariant_a(
             asm3, zp_slot_symbols=zp_slot_symbols,
         )
         asm = expand_long_branches(asm3)

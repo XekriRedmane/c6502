@@ -668,10 +668,10 @@ def _replace_function_impl(
             # Pass 2: replace operands. In bare_exit mode the body
             # ends with `Return(save_a)` (no payload to patch); in
             # normal mode each `Ret` carries the function's dims.
-            new_instrs = [
+            new_instrs = _expand_soft_stack_shifts([
                 r.replace_instruction(i, arg_bytes, local_bytes)
                 for i in instrs
-            ]
+            ])
             if bare_exit:
                 # Leave prologue insertion to the synthesis pass.
                 return (
@@ -704,6 +704,40 @@ def _replace_function_impl(
             )
         case _:
             raise TypeError(f"unexpected function node: {fn!r}")
+
+
+_SHIFT_ATOMS = (
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight,
+)
+
+
+def _expand_soft_stack_shifts(
+    instrs: list[asm_ast.Type_instruction],
+) -> list[asm_ast.Type_instruction]:
+    """Rewrites each in-place shift or rotate of a `Frame` / `Stack`
+    byte as `Mov(byte, A); <shift> A; Mov(A, byte)`.
+
+    The 6502 has no `(zp),Y` mode for ASL / LSR / ROL / ROR, so
+    `asm_emit` would emit exactly this sequence anyway. Spelling it
+    out here means every later pass sees that A is overwritten. The
+    peepholes that track A treat a shift of a memory operand as
+    leaving A alone, which is true for ZP and Data. For a Frame byte
+    it isn't, and `redundant_load` used to drop a reload of A after
+    one (`return 1L << 31` came back as 0x80000080)."""
+    out: list[asm_ast.Type_instruction] = []
+    reg_a = asm_ast.Reg(reg=asm_ast.A())
+    for instr in instrs:
+        if isinstance(instr, _SHIFT_ATOMS) and isinstance(
+            instr.dst, (asm_ast.Frame, asm_ast.Stack),
+        ):
+            byte = instr.dst
+            out.append(asm_ast.Mov(src=byte, dst=reg_a))
+            out.append(type(instr)(dst=reg_a))
+            out.append(asm_ast.Mov(src=reg_a, dst=byte))
+        else:
+            out.append(instr)
+    return out
 
 
 def replace_program(

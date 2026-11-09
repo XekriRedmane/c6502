@@ -253,6 +253,103 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         self.assertEqual(out.instructions, instrs)
 
 
+class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
+    """`Load(ptr + k)` / `Store(v, ptr + k)` with a constant byte
+    offset `0 <= k <= 255` folds to an indirect-indexed node whose
+    index is `ConstUChar(k)`, lowered as `LDY #k`."""
+
+    def _load(self, k: int) -> list[tac_ast.Type_instruction]:
+        return [
+            tac_ast.Binary(
+                op=tac_ast.Add(), src1=_var("p"),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=k)),
+                dst=_var("%addr"),
+            ),
+            tac_ast.Load(
+                src_ptr=_var("%addr"), dst=_var("b"), is_volatile=False,
+            ),
+        ]
+
+    def test_offset_load_folds(self) -> None:
+        for k in (0, 10, 255):
+            with self.subTest(k=k):
+                out = recognize_indirect_indexed(
+                    _fn(self._load(k)), symbols=_canonical_symbols(),
+                )
+                self.assertEqual(out.instructions, [
+                    tac_ast.IndirectIndexedLoad(
+                        ptr=_var("p"),
+                        index=tac_ast.Constant(
+                            const=tac_ast.ConstUChar(value=k),
+                        ),
+                        dst=_var("b"), is_volatile=False,
+                    ),
+                ])
+
+    def test_offset_outside_a_byte_does_not_fold(self) -> None:
+        # Y holds 0..255, so 256 and negative offsets keep the Add.
+        for k in (256, -1):
+            with self.subTest(k=k):
+                instrs = self._load(k)
+                out = recognize_indirect_indexed(
+                    _fn(instrs), symbols=_canonical_symbols(),
+                )
+                self.assertEqual(out.instructions, instrs)
+
+    def test_offset_store_folds(self) -> None:
+        instrs = [
+            tac_ast.Binary(
+                op=tac_ast.Add(),
+                src1=tac_ast.Constant(const=tac_ast.ConstInt(value=11)),
+                src2=_var("p"), dst=_var("%addr"),
+            ),
+            tac_ast.Store(
+                src=_var("value"), dst_ptr=_var("%addr"),
+                is_volatile=False,
+            ),
+        ]
+        out = recognize_indirect_indexed(
+            _fn(instrs), symbols=_canonical_symbols(),
+        )
+        self.assertEqual(out.instructions, [
+            tac_ast.IndirectIndexedStore(
+                ptr=_var("p"),
+                index=tac_ast.Constant(const=tac_ast.ConstUChar(value=11)),
+                src=_var("value"), is_volatile=False,
+            ),
+        ])
+
+    def test_offset_access_end_to_end(self) -> None:
+        # Loads at offsets 0 and 255, and a store of a negative
+        # `signed char` constant, which must be stored as its 2's
+        # complement byte.
+        src = (
+            "#include <stdint.h>\n"
+            "static uint8_t data[256];\n"
+            "static volatile uint8_t a, b;\n"
+            "void f(uint8_t *p, int8_t *q) {\n"
+            "    a = p[0];\n"
+            "    b = p[255];\n"
+            "    q[7] = -122;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    data[0] = 0x11; data[255] = 0x99;\n"
+            "    f(data, (int8_t *)data);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                out = sim.run(max_cycles=5_000_000)
+                self.assertFalse(out.timed_out)
+                self.assertEqual(out.memory[sim.symbols["a"]], 0x11)
+                self.assertEqual(out.memory[sim.symbols["b"]], 0x99)
+                self.assertEqual(
+                    out.memory[sim.symbols["data"] + 7], 0x100 - 122,
+                )
+
+
 class TestRecognizeIndirectIndexedDefersToIndexedStore(unittest.TestCase):
     """The recognizer must defer to `recognize_indexed_store` /
     `recognize_indexed_load` when the pointer-side Var transitively

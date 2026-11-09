@@ -48,7 +48,12 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `MULTIPLY_RULE` / `DIVIDE_RULE` / `MODULO_RULE`, bundled as
   `STRENGTH_RULES`; `optimizer.py` runs them as one merged RuleSet).
   `Multiply(x, 2^k)` → `LeftShift`, unsigned `Divide(x, 2^k)` →
-  `RightShift`, unsigned `Modulo(x, 2^k)` → `BitwiseAnd`. Signed
+  `RightShift`, unsigned `Modulo(x, 2^k)` → `BitwiseAnd`.
+  `Multiply(x, 2^a ± 2^b)` → two `LeftShift`s and an `Add` /
+  `Subtract` through fresh temps `<dst>.sr0` / `<dst>.sr1`
+  (registered in the symbol table and `ctx.ssa_dsts`), made only
+  when `passes/shift_cost.py` says every shift inlines at the dst's
+  width, so `mul*` is never traded for an `asl*` call. Signed
   Divide / Modulo skipped (C99 truncation differs from arithmetic
   shift). Each `build` is computational (log2 / mask construction) —
   the table form splits the per-op dispatch into rules but keeps the
@@ -149,8 +154,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `DefUsePass`, on `recognize_extend_add_chain`). Collapses
   `ZeroExtend(uchar) + Binary(Add, ptr) + Load` to `IndirectIndexed`
   for the `(zp),Y` lowering when `base` is a pointer Var that doesn't
-  resolve to a Constant. Deliberately runs LAST
-  so any pointer that's going to fold to a Constant (via the const-static
+  resolve to a Constant. A constant byte offset, `Binary(Add, ptr,
+  k)` with `0 <= k <= 255` feeding the Load / Store, becomes the same
+  node with index `ConstUChar(k)`, which lowers to `LDY #k` (the
+  shape of `p[10]` and of a byte struct member through a pointer).
+  Deliberately runs LAST so any pointer that's going to fold to a Constant (via the const-static
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper
   absolute,X form.

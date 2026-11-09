@@ -261,3 +261,21 @@ copies for both successors of a conditional block in front of its
 jump (wrong for a do/while's bottom test, which already had this
 shape), and a soft-stack prologue overwrote a `register` parameter
 arriving in A.
+
+## Catch a sim program that grows into the soft stack
+
+The simulator loads code and data at `$0800` (`sim/harness.py`,
+`DEFAULT_ORIGIN`), and the soft stack grows down from `$7FFF`
+(`sim/runtime.py`, `SSP_INIT`). Nothing checks that the image ends
+below the stack, so a program big enough to cross into it runs with
+its own code or data being overwritten by stack frames, and the
+results come back wrong with no error. An unoptimized program with
+148 of the 64-bit shift and multiply functions in
+`tests/test_const_shift_mul_sim.py` reached `$BF0E`, and its 64-bit
+multiplies returned 0. That test now splits its functions into
+programs of 40 to stay clear of it.
+
+`build_sim` could raise when the image's end address is above some
+margin below `SSP_INIT`, and the runtime could also trap a store
+below the image's end through `SSP` or `FP`. The first check is
+cheap and would have pointed at the problem immediately.

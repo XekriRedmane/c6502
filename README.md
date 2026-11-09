@@ -612,10 +612,14 @@ Distinguishing features:
   `Mov(A, D)` at the def site — catches Long-return temps
   that get ZP-colored only to be immediately reloaded into
   HARGS.
-- **Strength reduction + inline shift-by-1.** Power-of-2
-  `Multiply` / `Divide` / `Modulo` rewrite to shifts / masks;
-  the asm layer inlines shift-by-1 as a per-byte
-  `ASL low; ROL b1; ...` chain on ZP-coloreable operands.
+- **Strength reduction + inline constant shifts.** Power-of-2
+  `Multiply` / `Divide` / `Modulo` rewrite to shifts / masks, and a
+  multiply by `2^a + 2^b` or `2^a - 2^b` (3, 5, 7, 9, 10, 12, …)
+  rewrites to two shifts and an add or subtract. The asm layer
+  inlines a constant shift as byte moves plus a per-byte
+  `ASL low; ROL b1; ...` chain when that's at most 8 shift
+  instructions (`passes/shift_cost.py`), so `x * 9` on an `int` is
+  `(x << 3) + x` with no helper call.
 - **Comparison-against-zero / jump fold.** `if (uint8_t a == 0)`
   lowers to bare `LDA a; BNE end` (3 bytes) instead of a
   ~13-instruction CMP-and-select sequence, by tracing through

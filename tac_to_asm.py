@@ -185,6 +185,14 @@ unsigned); for Vars, from the symbol-table c99 type. The 16- and
 32-bit helpers themselves aren't in the repo yet; the lowerings
 emit calls in advance of the runtime header landing.
 
+A shift by a constant count `8q + r` is inlined instead when
+`passes.shift_cost.inline_shift_ok` accepts it. Inlining means `q`
+byte moves and then `r` one-bit ASL / ROL (or LSR / ROR) steps over
+the bytes that aren't known zero. A signed right shift is inlined
+only with `q == 0`, since the vacated high bytes would need a sign
+fill. A count of 1, or of a multiple of 8, is always inlined (see
+`_inline_left_shift_const` / `_inline_right_shift_const`).
+
 Inline comparison and LogicalNot lowerings (no runtime helper —
 the 6502's CMP / SBC + branch atoms cover these):
 
@@ -293,6 +301,7 @@ TAC-level passes (see `passes/optimization/CLAUDE.md`).
 from __future__ import annotations
 
 
+from passes.shift_cost import inline_shift_ok
 import asm_ast
 import c99_ast
 import tac_ast
@@ -613,24 +622,6 @@ def _to_asm_static_init(
     raise TypeError(f"unexpected static_init: {init!r}")
 
 
-def _is_constant_one(val) -> bool:
-    """True iff `val` is a TAC integer Constant with value 1.
-    Used to gate the inline-shift-by-1 fast paths in
-    `LeftShift` / `RightShift` lowering. Any integer variant
-    counts (Const{Int,Long,LongLong,UInt,ULong,ULongLong}) — the
-    shift count's variant doesn't affect what 1-byte the helper
-    would have read."""
-    if not isinstance(val, tac_ast.Constant):
-        return False
-    c = val.const
-    if not isinstance(c, (
-        tac_ast.ConstInt, tac_ast.ConstLong, tac_ast.ConstLongLong,
-        tac_ast.ConstUInt, tac_ast.ConstULong, tac_ast.ConstULongLong,
-    )):
-        return False
-    return c.value == 1
-
-
 def _inline_left_shift_by_one(
     src_op: asm_ast.Type_operand,
     dst_op: asm_ast.Type_operand,
@@ -799,6 +790,93 @@ def _inline_right_shift_byte_aligned_unsigned(
         else:
             out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=dst_byte))
     return out
+
+
+def _inline_left_shift_const(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    count: int,
+) -> list[asm_ast.Type_instruction]:
+    """LeftShift by the constant `count = 8q + r` (0 < count <
+    size*8): place the bytes `q` positions higher (zeroing the low
+    `q`), then shift `dst` left one bit `r` times in place, each step
+    an `ASL` on byte `q` and a `ROL` on each byte above it (bytes
+    below `q` are zero and stay zero). Signedness-agnostic.
+
+    When `src` and `dst` coalesce to the same slot, the copy becomes
+    self-Movs that the peepholes drop, leaving just the in-place
+    shifts. `passes.shift_cost.inline_shift_ok` decides when this is
+    used instead of the `asl*` helper."""
+    q, r = divmod(count, 8)
+    if q:
+        out = _inline_left_shift_byte_aligned(src_op, dst_op, size, q)
+    else:
+        # The first step copies and shifts each byte in turn.
+        out = _inline_left_shift_by_one(src_op, dst_op, size)
+        r -= 1
+    for _ in range(r):
+        for k in range(q, size):
+            dst_byte = _byte_at(dst_op, k)
+            if k == q:
+                out.append(asm_ast.ArithmeticShiftLeft(dst=dst_byte))
+            else:
+                out.append(asm_ast.RotateLeft(dst=dst_byte))
+    return out
+
+
+def _inline_right_shift_const(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    count: int,
+    *,
+    signed: bool,
+) -> list[asm_ast.Type_instruction]:
+    """RightShift by the constant `count = 8q + r` (0 < count <
+    size*8). Unsigned: place the bytes `q` positions lower (zeroing
+    the high `q`), then `r` times shift the low `size - q` bytes right
+    one bit, `LSR` on the top one and `ROR` below. Signed (callers
+    pass q == 0): copy, then each step captures the sign with `LDA
+    top; ASL A` and shifts it back in with `ROR top`, followed by
+    `ROR` on the lower bytes.
+
+    `passes.shift_cost.inline_shift_ok` decides when this is used
+    instead of the `lsr*` / `asr*` helper."""
+    q, r = divmod(count, 8)
+    if q:
+        out = _inline_right_shift_byte_aligned_unsigned(
+            src_op, dst_op, size, q,
+        )
+    else:
+        # The first step copies and shifts each byte in turn.
+        out = _inline_right_shift_by_one(src_op, dst_op, size, signed=signed)
+        r -= 1
+    top = size - 1 - q
+    for _ in range(r):
+        top_byte = _byte_at(dst_op, top)
+        if signed:
+            out.append(asm_ast.Mov(src=top_byte, dst=_REG_A))
+            out.append(asm_ast.ArithmeticShiftLeft(dst=_REG_A))
+            out.append(asm_ast.RotateRight(dst=top_byte))
+        else:
+            out.append(asm_ast.LogicalShiftRight(dst=top_byte))
+        for k in range(top - 1, -1, -1):
+            out.append(asm_ast.RotateRight(dst=_byte_at(dst_op, k)))
+    return out
+
+
+def _load_y_index(idx_op: asm_ast.Type_operand) -> list[asm_ast.Type_instruction]:
+    """Sets Y to the index of an indirect-indexed access. A constant
+    index is a single `LDY #k`. Anything else goes through A (`LDA
+    idx; TAY`), because loading a Frame operand sets Y itself for
+    the `(FP),Y` read."""
+    if isinstance(idx_op, asm_ast.Imm):
+        return [asm_ast.Mov(src=idx_op, dst=_REG_Y)]
+    return [
+        asm_ast.Mov(src=idx_op, dst=_REG_A),
+        asm_ast.Mov(src=_REG_A, dst=_REG_Y),
+    ]
 
 
 def _byte_at(op: asm_ast.Type_operand, k: int) -> asm_ast.Type_operand:
@@ -2353,12 +2431,11 @@ class Translator:
         The recognizer verified `dst` is 1 byte, so no per-byte
         fan-out."""
         ptr_op = translate_val(ptr)
-        idx_op = translate_val(index)
+        idx_op = _byte_at(translate_val(index), 0)
         dst_op = translate_val(dst)
         return [
             *self._stage_dptr(ptr_op),
-            asm_ast.Mov(src=idx_op, dst=_REG_A),
-            asm_ast.Mov(src=_REG_A, dst=asm_ast.Reg(reg=asm_ast.Y())),
+            *_load_y_index(idx_op),
             asm_ast.Mov(
                 src=asm_ast.IndirectY(), dst=_REG_A,
                 is_volatile=is_volatile,
@@ -2394,8 +2471,21 @@ class Translator:
         could collapse the save/restore when both operands prove
         to be ZP-resident post-regalloc — deferred."""
         ptr_op = translate_val(ptr)
-        idx_op = translate_val(index)
-        src_op = translate_val(src)
+        idx_op = _byte_at(translate_val(index), 0)
+        # `_byte_at` takes the low byte of a constant, so a negative
+        # `signed char` constant becomes its 2's complement byte.
+        src_op = _byte_at(translate_val(src), 0)
+        if isinstance(idx_op, asm_ast.Imm):
+            # `LDY #k` leaves A alone, so no save is needed.
+            return [
+                *self._stage_dptr(ptr_op),
+                asm_ast.Mov(src=src_op, dst=_REG_A),
+                asm_ast.Mov(src=idx_op, dst=_REG_Y),
+                asm_ast.Mov(
+                    src=_REG_A, dst=asm_ast.IndirectY(),
+                    is_volatile=is_volatile,
+                ),
+            ]
         return [
             *self._stage_dptr(ptr_op),
             asm_ast.Mov(src=src_op, dst=_REG_A),
@@ -2613,20 +2703,15 @@ class Translator:
                 # chain, avoiding the runtime helper call (and its
                 # cross-call constraint on the value's regalloc
                 # color). Anything else routes to the helper.
-                if _is_constant_one(src2):
-                    return _inline_left_shift_by_one(
-                        src1_op, dst_op, size,
-                    )
-                # Constant shift by a positive multiple of 8 (less
-                # than size*8) is a byte rearrangement — emit byte
-                # moves instead of a JSR to `asl*`. Signedness-
-                # agnostic. Shifts by ≥ size*8 are UB per C99
-                # §6.5.7.4 so the helper-call fallback is fine.
+                # A constant count that `inline_shift_ok` accepts
+                # inlines as byte moves plus a short ASL / ROL chain
+                # (see passes/shift_cost.py). Shifts by >= size*8 are
+                # UB per C99 §6.5.7.4, so the helper-call fallback is
+                # fine for them.
                 cnt = _shift_count_const_value(src2)
-                if (cnt is not None and cnt > 0 and cnt % 8 == 0
-                        and cnt < size * 8):
-                    return _inline_left_shift_byte_aligned(
-                        src1_op, dst_op, size, cnt // 8,
+                if cnt is not None and inline_shift_ok(size, cnt):
+                    return _inline_left_shift_const(
+                        src1_op, dst_op, size, cnt,
                     )
                 # asl8:  1B value + 1B count → 1B result at HARGS+2.
                 # asl16: 2B value + 1B count → 2B result at HARGS+3.
@@ -2669,23 +2754,18 @@ class Translator:
                 # Constant shift by 1 inlines: signed uses a sign-
                 # capturing LDA/ASL A then per-byte ROR; unsigned
                 # starts the chain with an LSR on the high byte.
-                if _is_constant_one(src2):
-                    return _inline_right_shift_by_one(
-                        src1_op, dst_op, size,
-                        signed=not self._is_unsigned_val(src1),
-                    )
-                # Unsigned shift by a positive multiple of 8 (less
-                # than size*8) is a byte rearrangement — emit byte
-                # moves instead of JSR to `lsr*`. Signed shift by
-                # N*8 would need a sign-fill on the vacated high
-                # bytes (analogous to SignExtend); routes through
-                # the helper for now.
+                # A constant count inlines when `inline_shift_ok`
+                # says so: unsigned as byte moves plus an LSR / ROR
+                # chain, signed (no byte moves; the vacated high
+                # bytes would need a sign fill) as a sign-capturing
+                # ROR chain.
                 cnt = _shift_count_const_value(src2)
-                if (cnt is not None and cnt > 0 and cnt % 8 == 0
-                        and cnt < size * 8
-                        and self._is_unsigned_val(src1)):
-                    return _inline_right_shift_byte_aligned_unsigned(
-                        src1_op, dst_op, size, cnt // 8,
+                signed_shift = not self._is_unsigned_val(src1)
+                if cnt is not None and inline_shift_ok(
+                    size, cnt, signed_right=signed_shift,
+                ):
+                    return _inline_right_shift_const(
+                        src1_op, dst_op, size, cnt, signed=signed_shift,
                     )
                 if self._is_unsigned_val(src1):
                     helpers = (_LSR8, _LSR16, _LSR32, _LSR64)

@@ -23,7 +23,13 @@ include the per-iteration index.
 
 This pass detects the three-instruction TAC pattern and rewrites
 to a single `IndirectIndexedLoad(ptr, index, dst)` (or the Store
-mirror). The pattern recognizer doesn't need to know whether ptr
+mirror).
+
+A constant offset `Binary(Add, ptr, k)` with `0 <= k <= 255` feeding
+the Load / Store is recognized too (`_const_offset_chain`), with the
+index a `ConstUChar(k)`. That is the shape of `p[10]` and of a
+byte-sized struct member read through a pointer, and it lowers to
+`LDY #k; LDA (DPTR),Y`. The pattern recognizer doesn't need to know whether ptr
 will end up in ZP — that decision happens in tac_to_asm and asm
 regalloc.
 
@@ -156,17 +162,22 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
 
     def rewrite(self, m: MatchResult, env: DefUseEnv, ctx: PassContext) -> object | None:
         chain = recognize_extend_add_chain(m.bindings['addr_var'], env, ctx)
-        if chain is None:
-            return None
+        if chain is not None:
+            ptr_var, idx_var = chain.base, chain.idx_var
+            drop = (chain.addr_var, chain.ext_var)
+        else:
+            const_chain = _const_offset_chain(m.bindings['addr_var'], env, ctx)
+            if const_chain is None:
+                return None
+            ptr_var, idx_var = const_chain
+            drop = (m.bindings['addr_var'],)
         # (zp),Y needs a pointer Var base — a Constant base is the
         # absolute,X case handled by recognize_indexed_store/load.
-        ptr_var = chain.base
         if not isinstance(ptr_var, tac_ast.Var):
             return None
         # Defer to recognize_indexed_* when the ptr resolves to a Constant.
         if _resolves_to_constant(ptr_var, env.def_idx, env.instructions):
             return None
-        idx_var = chain.idx_var
         # Determine Load or Store and check the access value's width.
         if 'load_instr' in m.bindings:
             load_dst = m.bindings['load_dst']
@@ -184,12 +195,46 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
                 ptr=ptr_var, index=idx_var, src=store_src,
                 is_volatile=m.bindings['store_instr'].is_volatile,
             )
-        # Drop the two intermediate defs (Binary(Add) and ZeroExtend)
-        # atomically — no subsequent DSE pass needed.
-        return Rewrite(
-            replacement=replacement,
-            drop_defs=(chain.addr_var, chain.ext_var),
-        )
+        # Drop the intermediate defs (the Binary(Add), and the
+        # ZeroExtend when there is one) atomically, so no subsequent
+        # DSE pass is needed.
+        return Rewrite(replacement=replacement, drop_defs=drop)
+
+
+def _const_offset_chain(
+    addr_var: tac_ast.Var, env: DefUseEnv, ctx: PassContext,
+) -> tuple[tac_ast.Type_val, tac_ast.Constant] | None:
+    """`(ptr, Constant(k))` when `addr_var` is a single-use SSA name
+    defined by `Binary(Add, ptr, k)` (either operand order) with an
+    integer constant `0 <= k <= 255`, else None. The access then
+    lowers as `LDY #k; LDA (DPTR),Y`, because `(zp),Y` adds Y to the
+    pointer with a carry into the high byte, which is the same 16-bit
+    sum the Add computed. The index comes back as a `ConstUChar` so
+    it satisfies the 1-byte index contract of the indexed nodes."""
+    if ctx.symbols is None or ctx.ssa_dsts is None:
+        return None
+    if addr_var.name not in ctx.ssa_dsts:
+        return None
+    if env.extra.get(addr_var.name, 0) != 1:
+        return None
+    binary = env.def_of(addr_var)
+    if not isinstance(binary, tac_ast.Binary) or not isinstance(
+        binary.op, tac_ast.Add,
+    ):
+        return None
+    for ptr, k in ((binary.src1, binary.src2), (binary.src2, binary.src1)):
+        if not isinstance(k, tac_ast.Constant) or isinstance(
+            ptr, tac_ast.Constant,
+        ):
+            continue
+        value = getattr(k.const, "value", None)
+        if not isinstance(value, int) or isinstance(
+            k.const, (tac_ast.ConstFloat, tac_ast.ConstDouble),
+        ):
+            continue
+        if 0 <= value <= 0xFF:
+            return ptr, tac_ast.Constant(const=tac_ast.ConstUChar(value=value))
+    return None
 
 
 _IMPL = _RecognizeIndirectIndexedDefUse()

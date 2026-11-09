@@ -176,6 +176,11 @@ this directory:
   is_volatile bit doesn't tell which operand is volatile). Self-Movs
   `Mov(M, M)` are dropped entirely. See "Mem-to-mem splitting" below.
 - `self_store_drop.py` — `apply_self_store_drop`.
+- `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
+  the rule for when a constant shift is lowered inline (at most 8
+  one-bit shift instructions after the byte moves) instead of by an
+  `asl*` / `lsr*` / `asr*` call. `tac_to_asm` and the two-term
+  multiply rule in `optimization/strength_reduction.py` both use it.
 - `string_lifting.py` — pass 3 (see below).
 - `sub1_test_zero_peephole.py` — `apply_sub1_test_zero_peephole`.
 - `type_checking.py` — pass 6 (see below).
@@ -684,6 +689,14 @@ Walks each function twice:
   byte from `coloring.assignments` plus the Pseudo's offset); ordinary
   local (uncolored, spilled, or address-taken) → `Frame(base +
   offset)`.
+
+After replacement, each in-place shift or rotate of a `Frame` /
+`Stack` byte is spelled out as `Mov(byte, A); <shift> A; Mov(A,
+byte)` (`_expand_soft_stack_shifts`). The 6502 has no `(zp),Y` shift,
+so `asm_emit` would emit that sequence anyway, and spelling it out
+lets the A-tracking peepholes see that A is overwritten. They treat
+a memory shift as leaving A alone, which holds for ZP and Data
+operands only.
 
 The pass also prepends `FunctionPrologue(arg_bytes=N, local_bytes=M,
 callee_saved_addrs=[...])` and patches every `Ret(...)` with the same

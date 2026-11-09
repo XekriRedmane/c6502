@@ -130,7 +130,7 @@ class TestStrengthReduceMultiply(unittest.TestCase):
         self.assertEqual(out.instructions[0].src1, _var("%x"))
         self.assertEqual(out.instructions[0].src2.const.value, 2)
 
-    def test_non_power_of_two_unchanged(self):
+    def _reduce_uint_multiply(self, c: int) -> list:
         symbols = SymbolTable()
         for k, v in (_sym_uint("%x"), _sym_uint("%dst")):
             symbols[k] = v
@@ -138,11 +138,51 @@ class TestStrengthReduceMultiply(unittest.TestCase):
             symbols,
             tac_ast.Binary(
                 op=tac_ast.Multiply(),
-                src1=_var("%x"), src2=_const_uint(7), dst=_var("%dst"),
+                src1=_var("%x"), src2=_const_uint(c), dst=_var("%dst"),
             ),
         )
-        out = reduce_strength(fn, symbols=symbols)
-        self.assertIsInstance(out.instructions[0].op, tac_ast.Multiply)
+        return reduce_strength(fn, symbols=symbols).instructions
+
+    def _shape(self, instrs: list) -> list:
+        """Each Binary as (op name, src1, src2, dst), with Vars as
+        names and Constants as their values."""
+        def v(x):
+            return x.name if isinstance(x, tac_ast.Var) else x.const.value
+        return [
+            (type(i.op).__name__, v(i.src1), v(i.src2), v(i.dst))
+            for i in instrs
+        ]
+
+    def test_non_power_of_two_unchanged(self):
+        # 11 is neither 2^a + 2^b nor 2^a - 2^b.
+        out = self._reduce_uint_multiply(11)
+        self.assertIsInstance(out[0].op, tac_ast.Multiply)
+
+    def test_power_plus_one_is_shift_and_add(self):
+        self.assertEqual(self._shape(self._reduce_uint_multiply(9)), [
+            ("LeftShift", "%x", 3, "%dst.sr0"),
+            ("Add", "%dst.sr0", "%x", "%dst"),
+        ])
+
+    def test_power_minus_one_is_shift_and_subtract(self):
+        self.assertEqual(self._shape(self._reduce_uint_multiply(7)), [
+            ("LeftShift", "%x", 3, "%dst.sr0"),
+            ("Subtract", "%dst.sr0", "%x", "%dst"),
+        ])
+
+    def test_two_shifted_terms_share_the_low_shift(self):
+        # 10 = 8 + 2: t = x << 1, u = t << 2, dst = u + t.
+        self.assertEqual(self._shape(self._reduce_uint_multiply(10)), [
+            ("LeftShift", "%x", 1, "%dst.sr0"),
+            ("LeftShift", "%dst.sr0", 2, "%dst.sr1"),
+            ("Add", "%dst.sr1", "%dst.sr0", "%dst"),
+        ])
+
+    def test_two_term_rejected_when_shift_would_call_helper(self):
+        # 65 = 64 + 1 needs a 16-bit shift by 6, which `shift_cost`
+        # leaves to `asl16`, so the multiply stays.
+        out = self._reduce_uint_multiply(65)
+        self.assertIsInstance(out[0].op, tac_ast.Multiply)
 
     def test_both_constants_unchanged(self):
         # Defer to constant folding; reduce_strength shouldn't

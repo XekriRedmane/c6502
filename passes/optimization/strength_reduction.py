@@ -8,6 +8,9 @@ Rewrites multiplicative ops by power-of-2 constants into shifts
     by 2^k for both signed and unsigned, with the same wrap-around
     behavior).
   * `Multiply(x, 1)` / `Multiply(1, x)` → `Copy(x, dst)`.
+  * `Multiply(x, 2^a ± 2^b)` → two shifts and an Add or Subtract,
+    when `passes.shift_cost` says both shifts inline
+    (`_two_term_multiply`).
   * `Multiply(x, 0)` / `Multiply(0, x)` → not handled here —
     `constant_folding` catches the all-constant case; the mixed
     `var * 0` case is left alone (constant folding via copy
@@ -44,6 +47,7 @@ folding.
 from __future__ import annotations
 
 import tac_ast
+from passes.shift_cost import inline_shift_ok
 from passes.optimization.framework import (
     RuleSet, Rule, PassContext, MatchResult, RuleEnv, m_Binary,
 )
@@ -86,7 +90,112 @@ def _build_multiply(
         return [tac_ast.Binary(
             op=tac_ast.LeftShift(), src1=var_side, src2=count, dst=dst,
         )]
+    for var_side, const_side in ((src1, src2), (src2, src1)):
+        if isinstance(var_side, tac_ast.Var):
+            rewrite = _two_term_multiply(var_side, const_side, dst, ctx)
+            if rewrite is not None:
+                return rewrite
     return None
+
+
+def _two_term_multiply(
+    x: tac_ast.Var,
+    const_side: tac_ast.Type_val,
+    dst: tac_ast.Var,
+    ctx: PassContext,
+) -> list | None:
+    """`Multiply(x, C)` with `C = 2^a + 2^b` or `C = 2^a - 2^b`
+    (a > b >= 0) → shifts and one Add or Subtract:
+
+        C = 2^a ± 1:     t = x << a;  dst = t ± x
+        C = 2^a ± 2^b:   t = x << b;  u = t << (a-b);  dst = u ± t
+
+    Both forms wrap the same way the multiply does, modulo 2^(8n)
+    for an n-byte dst, for signed and unsigned alike. The rewrite is
+    only made when `passes.shift_cost.inline_shift_ok` accepts every
+    shift at the dst's width, so the multiply helper is never
+    replaced by a shift helper. For example, `x * 9` on a 16-bit int
+    becomes `(x << 3) + x`, which is 6 shift instructions and a
+    16-bit add instead of a `JSR mul16`.
+
+    The temporaries are named after `dst` and registered with its
+    type, and are added to `ctx.ssa_dsts` so later passes treat them
+    like any other SSA name."""
+    c = const_side.const if isinstance(const_side, tac_ast.Constant) else None
+    if not isinstance(c, _INT_CONST_TYPES) or c.value <= 0:
+        return None
+    if ctx.symbols is None or not isinstance(dst, tac_ast.Var):
+        return None
+    dst_sym = ctx.symbols.get(dst.name)
+    if dst_sym is None:
+        return None
+    size = _scalar_int_size(dst_sym.type)
+    if size is None:
+        return None
+    terms = _two_power_terms(c.value)
+    if terms is None:
+        return None
+    a, b, op = terms
+    shifts = [a] if b == 0 else [b, a - b]
+    if not all(inline_shift_ok(size, k) for k in shifts):
+        return None
+    t = tac_ast.Var(name=f"{dst.name}.sr0")
+    _register_temp(ctx, dst.name, t.name)
+    out = [tac_ast.Binary(
+        op=tac_ast.LeftShift(), src1=x,
+        src2=_shift_count_const(shifts[0], x, ctx.symbols), dst=t,
+    )]
+    if b == 0:
+        out.append(tac_ast.Binary(op=op, src1=t, src2=x, dst=dst))
+        return out
+    u = tac_ast.Var(name=f"{dst.name}.sr1")
+    _register_temp(ctx, dst.name, u.name)
+    out.append(tac_ast.Binary(
+        op=tac_ast.LeftShift(), src1=t,
+        src2=_shift_count_const(shifts[1], t, ctx.symbols), dst=u,
+    ))
+    out.append(tac_ast.Binary(op=op, src1=u, src2=t, dst=dst))
+    return out
+
+
+def _two_power_terms(value: int):
+    """`(a, b, op)` with `value == 2^a + 2^b` (op Add) or
+    `value == 2^a - 2^b` (op Subtract), a > b >= 0, or None. A sum
+    is preferred when both forms exist (only for 3 = 2+1 = 4-1)."""
+    low = value & -value
+    rest = value - low
+    if rest and rest & (rest - 1) == 0:
+        return rest.bit_length() - 1, low.bit_length() - 1, tac_ast.Add()
+    top = value + low
+    if top & (top - 1) == 0:
+        return top.bit_length() - 1, low.bit_length() - 1, tac_ast.Subtract()
+    return None
+
+
+def _scalar_int_size(t) -> int | None:
+    """Byte width of an integer type, or None for anything else."""
+    import c99_ast
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+        return 1
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
+        return 2
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong)):
+        return 4
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
+        return 8
+    return None
+
+
+def _register_temp(ctx: PassContext, like: str, name: str) -> None:
+    """Registers `name` as a local with `like`'s type, and as an SSA
+    name when the pass runs in SSA form."""
+    from passes.type_checking import LocalAttr, Symbol
+    if name not in ctx.symbols:
+        ctx.symbols[name] = Symbol(
+            type=ctx.symbols.get(like).type, attrs=LocalAttr(),
+        )
+    if ctx.ssa_dsts is not None:
+        ctx.ssa_dsts.add(name)
 
 
 def _build_divide(

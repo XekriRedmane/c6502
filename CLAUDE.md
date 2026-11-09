@@ -562,23 +562,20 @@ in `sim/` cover all of these so simulation-based tests still pass.
 - Hex floating literals (`0x1.0p3`) lex but the parser rejects them
   — `float()` doesn't parse C hex-float syntax and the conversion
   isn't wired up.
-- Function-pointer expressions don't exist yet — c6502 has no
-  function-pointer call form beyond `IndirectCall` from the parser's
-  restricted callee = identifier rule.
+- A call's callee must reduce to one name: `f(x)`, `fp(x)`,
+  `(*fp)(x)`. Calling through any other expression, such as
+  `pick()(x)`, `t[i](x)`, or `s.g(x)`, is rejected (see TODO.md).
+  Function names do decay to pointers, so `apply(add, 1, 2)` works.
 - Some C99 init-list shapes rejected: scalar init for an array,
   brace init for a scalar, too many initializers, the C99
   subaggregate flat form (`int a[2][3] = {1,2,3,4,5,6};`).
-- Constant-expression evaluator (`passes.constant_expression`)
-  accepts only `Constant` literals optionally wrapped in casts; no
-  Unary / Binary / Conditional folds yet. Affects `case <const-expr>:`
-  and any future enum / array-size / bitfield-width consumer.
+- Variable-length arrays aren't supported. An array size must be
+  an integer constant expression, which the parser folds through
+  the type checker and `passes.constant_expression` (the same folder
+  case labels and static initializers use).
 
 ### Codegen imprecisions
 
-- Comparisons on unsigned multi-byte operands use the signed V-
-  corrected lowering. Correct for values whose high bit isn't set;
-  incorrect for `unsigned long long` operands spanning the sign-bit
-  boundary. Tracked but not fixed.
 - The 8-bit signed `>>` helper (`asr8`) is mostly a placeholder —
   `signed char >>` integer-promotes to int before the shift, so
   `asr16` does the real work; `asr8` exists for completeness.

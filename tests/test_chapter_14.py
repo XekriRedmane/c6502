@@ -61,7 +61,7 @@ class TestChapter14Valid(unittest.TestCase):
         files = sorted((_C14 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_14 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C14 / "valid"))
+            rel = path.relative_to(_C14 / "valid").as_posix()
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
@@ -83,7 +83,7 @@ class TestChapter14InvalidParse(unittest.TestCase):
         files = sorted((_C14 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C14 / "invalid_parse"))
+            rel = path.relative_to(_C14 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
@@ -99,7 +99,7 @@ class TestChapter14InvalidDeclarations(unittest.TestCase):
         files = sorted((_C14 / "invalid_declarations").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_declarations files found")
         for path in files:
-            rel = str(path.relative_to(_C14 / "invalid_declarations"))
+            rel = path.relative_to(_C14 / "invalid_declarations").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(Exception):
@@ -112,7 +112,7 @@ class TestChapter14InvalidTypes(unittest.TestCase):
         files = sorted((_C14 / "invalid_types").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_types files found")
         for path in files:
-            rel = str(path.relative_to(_C14 / "invalid_types"))
+            rel = path.relative_to(_C14 / "invalid_types").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 if rel in _INVALID_TYPES_NOT_REJECTED_TODAY:

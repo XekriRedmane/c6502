@@ -90,7 +90,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   singleton Phis to Copies; drops useless jumps / labels.
 - `copy_propagation.py` — `copy_propagate` (`CopyPropagate`, raw
   FixedpointPass — CFG-shaped forward dataflow). SSA-aware: replaces
-  every use of a Copy's dst with its src; chains too.
+  every use of a Copy's dst with its src; chains too. A Copy whose
+  src and dst differ in signedness is the lowering of a same-width
+  cast like `(unsigned)s`, and isn't propagated (a Constant src is
+  propagated retagged to the dst's variant), because `/`, `%`, `>>`,
+  and ordering compares take their signedness from the operand.
 - `dead_store_elimination.py` — `EliminateDeadStores` (raw
   FixedpointPass — SSA-aware whole-def-use liveness). Drops pure defs
   with no reads. Calls keep the call (side effects) but drop unused dst.
@@ -438,6 +442,11 @@ Soundness gates:
   `%t` (uncommon outside non-SSA) is fine, since after fusion any
   remaining def writes a name nothing reads (DSE picks them up next
   iteration).
+- `%t` is not a static and its address is never taken
+  (`_observable_names`). Other functions read a static, and a `Load`
+  through a pointer reads an address-taken local, and neither read
+  appears in the use count. Without this gate, `g = 7; h = g;` with
+  a global `g` fused into `h = 7` and never stored to `g`.
 - `X` doesn't have to be SSA-renamed. The fusion preserves SSA: if
   `X` was renamed, it had exactly one def (the Copy); after fusion it
   still has one def (the redirected producer). If `X` is non-renamed

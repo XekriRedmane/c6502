@@ -55,6 +55,11 @@ to match X's value at the same point. Specifically:
 If a non-STX write to M exists somewhere in the function, that
 write could break the M == X invariant. The pass conservatively
 skips any function where a non-STX write to an X-save slot exists.
+It also skips any function where X is written by anything other
+than INX / DEX, `LDX M`, the init `TAX`, or a call that is
+immediately followed by `LDX M`. A call that returns a value in X
+is the case that matters: after `STX M; JSR f`, X holds f's result,
+not M.
 
 # Where to run
 
@@ -120,6 +125,54 @@ def _followed_by_tax(instrs, i: int) -> bool:
             continue
         # Anything else: bail. Conservative.
         return False
+    return False
+
+
+def _writes_x(instr) -> bool:
+    """True iff `instr` can change X. Calls count, since the callee
+    may clobber X or return a value in it. `FunctionPrologue` runs
+    before any STX to the slot, and `Ret` / `Return` end the
+    function, so neither matters here."""
+    if isinstance(instr, (asm_ast.Mov, asm_ast.Pop)):
+        return _is_reg_x(instr.dst)
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        return _is_reg_x(instr.dst)
+    return isinstance(instr, (asm_ast.Call, asm_ast.AllocateStack))
+
+
+def _x_write_keeps_slot(instrs, i: int, key) -> bool:
+    """True iff the X write at `instrs[i]` leaves X equal to the
+    slot `key` (or to its in-place successor, for INX / DEX).
+
+    Accepted writes:
+      * `Inc(Reg(X))` / `Dec(Reg(X))` — the counter steps in X.
+      * `Mov(M, Reg(X))` (LDX M) — reloads X from the slot.
+      * `Mov(Reg(A), Reg(X))` (TAX) right after `Mov(_, M)`, the
+        init shape `LDA c; STA M; TAX`.
+      * `Call` immediately followed by `LDX M`, the restore half of
+        the `STX M; JSR f; LDX M` wrap.
+    """
+    instr = instrs[i]
+    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+        return True
+    if isinstance(instr, asm_ast.Mov):
+        if _op_key(instr.src) == key:
+            return True
+        if _is_reg_a(instr.src) and i > 0:
+            prev = instrs[i - 1]
+            return (
+                isinstance(prev, asm_ast.Mov)
+                and _op_key(prev.dst) == key
+                and not _is_reg(prev.src, asm_ast.Y)
+            )
+        return False
+    if isinstance(instr, asm_ast.Call) and i + 1 < len(instrs):
+        nxt = instrs[i + 1]
+        return (
+            isinstance(nxt, asm_ast.Mov)
+            and _is_reg_x(nxt.dst)
+            and _op_key(nxt.src) == key
+        )
     return False
 
 
@@ -197,6 +250,19 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             if key is not None and key in candidates:
                 disqualified.add(key)
             continue
+    # The rewrite also needs every write to X to keep X == M. A call
+    # returning a value in X, or any LDX / TAX / PLX of another
+    # value, leaves X holding something else, and `LDA M` after it
+    # must keep reading memory. (`STX p; JSR f; LDA p` with `f`
+    # returning an int in A/X is the shape that read the callee's
+    # high byte instead of the register parameter `p`.)
+    (key,) = candidates
+    for i, instr in enumerate(instrs):
+        if not _writes_x(instr):
+            continue
+        if not _x_write_keeps_slot(instrs, i, key):
+            disqualified.add(key)
+            break
     final = candidates - disqualified
     if not final:
         return fn

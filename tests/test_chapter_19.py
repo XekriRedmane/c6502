@@ -123,7 +123,6 @@ _C6502_OVERRIDES: dict[str, int] = {
     "whole_pipeline/all_types/extra_credit/fold_compound_assign_all_types.c": 1,
     "whole_pipeline/all_types/extra_credit/fold_compound_bitwise_assign_all_types.c": 2,
     "whole_pipeline/all_types/extra_credit/fold_incr_decr_unsigned.c": 1,
-    "whole_pipeline/all_types/extra_credit/fold_negative_long_bitshift.c": 1,
     "whole_pipeline/all_types/fold_cast_from_double.c": 1,
     "whole_pipeline/all_types/fold_extension_and_truncation.c": 1,
     "whole_pipeline/all_types/fold_negative_values.c": 2,
@@ -199,7 +198,7 @@ class TestChapter19Sim(unittest.TestCase):
         self.assertGreater(len(files), 0, "no chapter_19 files found")
 
         for path in files:
-            rel = str(path.relative_to(_C19))
+            rel = path.relative_to(_C19).as_posix()
             if rel in _NOT_A_TEST:
                 continue
             if rel in _NEEDS_LIBC:

@@ -43,23 +43,19 @@ The validator + integer folder is reusable across:
   * bit-field widths (future, if/when struct support lands)
   * `_Alignas` / `_Static_assert` (future)
   * static initializers — `passes.type_checking._const_init_value`
-    handles a similar but slightly broader shape (also accepts
-    `&staticobj`); it can delegate the integer / FP path here once
-    that refactor lands. Not done in this PR.
+    handles Constants, Casts, and `&staticobj` itself and delegates
+    integer-typed operator expressions here.
 
-Today's coverage
-----------------
-This module accepts the shapes that the writing-a-c-compiler-
-tests corpus exercises for case labels: a single `Constant`
-literal, optionally wrapped in any number of `Cast` nodes whose
-target types are integer (introduced by either user-written casts
-or the type checker's implicit conversion to the switch's promoted
-type), and `sizeof` expressions whose result is a compile-time
-known integer. A non-integer cast target — float / double / pointer
-— is rejected as non-integer. Anything else (Var, Binary, Unary,
-Conditional, ...) is rejected as "not a constant expression";
-expanding to general arithmetic on integer constants is a follow-up
-that drops in via recursion into Unary / Binary / Conditional arms.
+Coverage
+--------
+The integer folder accepts integer and char literals, integer
+casts, `sizeof`, the unary operators `-` / `~` / `!`, every binary
+operator other than assignment, and `?:`. It relies on the type
+checker's `data_type` stamps and implicit Casts, so callers type-
+check the expression first. Floating operands are rejected. The
+static-initializer path in `passes.type_checking._const_init_value`
+handles floating constants on its own and calls this folder for
+integer-typed operator expressions.
 
 Integer-typed cast values are converted to the cast's target type
 modulo its width — same rule as the runtime cast lowering in
@@ -92,19 +88,29 @@ class ConstantExpressionError(Exception):
 # this module can be imported by the type checker without creating a
 # cycle.
 _INT_WIDTH = {
-    c99_ast.Int:       1,
-    c99_ast.UInt:      1,
-    c99_ast.Long:      2,
-    c99_ast.ULong:     2,
-    c99_ast.LongLong:  4,
-    c99_ast.ULongLong: 4,
+    c99_ast.Char:      1,
+    c99_ast.SChar:     1,
+    c99_ast.UChar:     1,
+    c99_ast.Int:       2,
+    c99_ast.UInt:      2,
+    c99_ast.Long:      4,
+    c99_ast.ULong:     4,
+    c99_ast.LongLong:  8,
+    c99_ast.ULongLong: 8,
 }
-_SIGNED = (c99_ast.Int, c99_ast.Long, c99_ast.LongLong)
+# Plain `char` is unsigned in c6502 (C99 §6.2.5.15 leaves the choice
+# to the implementation), so only `signed char` joins the signed set.
+_SIGNED = (c99_ast.Int, c99_ast.Long, c99_ast.LongLong, c99_ast.SChar)
+
+
+def _strip_quals(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    return t
 
 
 def _is_integer_type(t: c99_ast.Type_data_type) -> bool:
-    return isinstance(t, (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
-                          c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong))
+    return type(_strip_quals(t)) in _INT_WIDTH
 
 
 def _sizeof(t: c99_ast.Type_data_type) -> int:
@@ -118,14 +124,14 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     flagged at the type-check boundary too, but a defense in depth
     here keeps the const-evaluator honest if a future caller skips
     the type check."""
-    if isinstance(t, (c99_ast.Int, c99_ast.UInt,
-                      c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+    t = _strip_quals(t)
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
         return 1
-    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Pointer)):
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
         return 2
-    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Float)):
+    if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Float)):
         return 4
-    if isinstance(t, c99_ast.Double):
+    if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong, c99_ast.Double)):
         return 8
     if isinstance(t, c99_ast.Array):
         return _sizeof(t.element_type) * t.size
@@ -139,6 +145,7 @@ def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
     target's signedness — matches the runtime byte-level cast
     sequences in tac_to_asm (Truncate / SignExtend / ZeroExtend all
     boil down to this for compile-time-known integer values)."""
+    t = _strip_quals(t)
     width_bits = 8 * _INT_WIDTH[type(t)]
     mask = (1 << width_bits) - 1
     raw = value & mask
@@ -154,8 +161,9 @@ def _const_int_value(c: c99_ast.Type_const) -> int:
     if isinstance(c, (c99_ast.ConstInt, c99_ast.ConstLong,
                       c99_ast.ConstLongLong,
                       c99_ast.ConstUInt, c99_ast.ConstULong,
-                      c99_ast.ConstULongLong)):
-        return c.value
+                      c99_ast.ConstULongLong,
+                      c99_ast.ConstChar, c99_ast.ConstUChar)):
+        return _coerce_to_integer_type(c.value, _const_type(c))
     raise ConstantExpressionError(
         f"floating constant {c!r} is not an integer constant"
     )
@@ -175,6 +183,10 @@ def _const_type(c: c99_ast.Type_const) -> c99_ast.Type_data_type:
         return c99_ast.ULong()
     if isinstance(c, c99_ast.ConstULongLong):
         return c99_ast.ULongLong()
+    if isinstance(c, c99_ast.ConstChar):
+        return c99_ast.SChar()
+    if isinstance(c, c99_ast.ConstUChar):
+        return c99_ast.UChar()
     raise ConstantExpressionError(
         f"non-integer constant {c!r} has no integer type"
     )
@@ -188,24 +200,30 @@ def evaluate_integer_constant_expression(
     compile-time known integer value, or raises
     `ConstantExpressionError` if `exp` doesn't satisfy §6.6.6.
 
-    Today's accepted shapes:
-      * `Constant(ConstInt | ConstLong | ConstLongLong |
-        ConstUInt | ConstULong | ConstULongLong)` —
-        the six integer literal variants.
-      * `Cast(target_type=integer, exp=integer_constant_expression)`
-        recursively — the target's signedness/width is applied
-        modulo the byte width.
-      * `SizeOfType(target_type=T)` — folds to ULong of the byte
-        size of T. T must be a complete object type.
-      * `SizeOfExp(exp=e)` — folds to ULong of `_sizeof(e.data_type)`.
-        The caller is responsible for type-checking `e` first
-        (otherwise `e.data_type` would be None — the §6.6.6 case-
-        label site does this immediately before calling here).
+    Accepted shapes:
+      * An integer `Constant` (any integer or char variant).
+      * `Cast(target_type=integer, exp=...)`, applied modulo the
+        target's width with the target's signedness.
+      * `SizeOfType(T)` / `SizeOfExp(e)`, which fold to ULong.
+      * `Unary` (`-`, `~`, `!`), `Binary` (arithmetic, bitwise,
+        shift, comparison, `&&`, `||`), and `Conditional` over
+        integer constant expressions.
 
-    `Cast(target_type=Float | Double | Pointer | ...)` is rejected
-    because §6.6.6 requires integer type. A floating-point
-    `Constant` is similarly rejected.
-    """
+    The operator arms read each node's `data_type`, so the caller
+    must type-check `exp` first. By then the type checker has
+    inserted the implicit Casts for integer promotion and the usual
+    arithmetic conversions, so each operator computes in its own
+    result type and its operands already have the right width and
+    signedness. Values are Python ints in the range of their type
+    (negative for a negative signed value).
+
+    Division or remainder by zero, a shift count that is negative or
+    not less than the width, a left shift of a negative value, and
+    signed overflow are undefined behavior (C99 §6.5.5.5, §6.5.7.3,
+    §6.5.7.4, §6.5.5) and are reported as not being constant
+    expressions. `Cast(target_type=Float | Double | Pointer | ...)`
+    and floating `Constant`s are rejected because §6.6.6 requires
+    integer type."""
     match exp:
         case c99_ast.Constant(const=c):
             return _const_int_value(c), _const_type(c)
@@ -219,7 +237,7 @@ def evaluate_integer_constant_expression(
             inner_value, _inner_type = evaluate_integer_constant_expression(
                 inner,
             )
-            return _coerce_to_integer_type(inner_value, target), target
+            return _coerce_to_integer_type(inner_value, target), _strip_quals(target)
         case c99_ast.SizeOfType(target_type=t):
             return _sizeof(t), c99_ast.ULong()
         case c99_ast.SizeOfExp(exp=inner):
@@ -231,8 +249,131 @@ def evaluate_integer_constant_expression(
                     "be type-checked first"
                 )
             return _sizeof(inner_t), c99_ast.ULong()
+        case c99_ast.Unary(op=op, exp=inner):
+            t = _result_type(exp)
+            v, _ = evaluate_integer_constant_expression(inner)
+            if isinstance(op, c99_ast.LogicalNot):
+                return int(v == 0), t
+            if isinstance(op, c99_ast.Negate):
+                return _checked(-v, t), t
+            return _coerce_to_integer_type(~v, t), t
+        case c99_ast.Binary(op=op, left=lhs, right=rhs):
+            return _evaluate_binary(exp, op, lhs, rhs)
+        case c99_ast.Conditional(
+            condition=cond, true_clause=tc, false_clause=fc,
+        ):
+            t = _result_type(exp)
+            c, _ = evaluate_integer_constant_expression(cond)
+            v, _ = evaluate_integer_constant_expression(tc if c else fc)
+            return _coerce_to_integer_type(v, t), t
     raise ConstantExpressionError(
         f"expression is not an integer constant expression: {exp!r}"
+    )
+
+
+def _result_type(exp: c99_ast.Type_exp) -> c99_ast.Type_data_type:
+    """`exp`'s type-checker-stamped integer type, or an error when
+    it is missing or not an integer type."""
+    t = exp.data_type
+    if t is None:
+        raise ConstantExpressionError(
+            "operator in a constant expression has no data_type — "
+            "the constant evaluator requires the expression to be "
+            "type-checked first"
+        )
+    if not _is_integer_type(t):
+        raise ConstantExpressionError(
+            f"integer constant expression has non-integer type {t!r}"
+        )
+    return _strip_quals(t)
+
+
+def _checked(value: int, t: c99_ast.Type_data_type) -> int:
+    """`value` as a value of type `t`. Unsigned arithmetic wraps
+    (C99 §6.2.5.9). A signed result outside `t`'s range is overflow,
+    which is undefined, so it is rejected."""
+    wrapped = _coerce_to_integer_type(value, t)
+    if isinstance(t, _SIGNED) and wrapped != value:
+        raise ConstantExpressionError(
+            f"signed overflow in constant expression ({value} does "
+            f"not fit in {t!r})"
+        )
+    return wrapped
+
+
+def _evaluate_binary(
+    exp: c99_ast.Type_exp, op, lhs: c99_ast.Type_exp,
+    rhs: c99_ast.Type_exp,
+) -> tuple[int, c99_ast.Type_data_type]:
+    """Folds one `Binary` node. See
+    `evaluate_integer_constant_expression` for the rules."""
+    t = _result_type(exp)
+    a, _ = evaluate_integer_constant_expression(lhs)
+    # `&&` / `||` don't evaluate the right operand when the left one
+    # decides the result (C99 §6.5.13.4 / §6.5.14.4).
+    if isinstance(op, c99_ast.LogicalAnd):
+        if not a:
+            return 0, t
+        b, _ = evaluate_integer_constant_expression(rhs)
+        return int(b != 0), t
+    if isinstance(op, c99_ast.LogicalOr):
+        if a:
+            return 1, t
+        b, _ = evaluate_integer_constant_expression(rhs)
+        return int(b != 0), t
+    b, _ = evaluate_integer_constant_expression(rhs)
+    match op:
+        case c99_ast.Equal():
+            return int(a == b), t
+        case c99_ast.NotEqual():
+            return int(a != b), t
+        case c99_ast.LessThan():
+            return int(a < b), t
+        case c99_ast.GreaterThan():
+            return int(a > b), t
+        case c99_ast.LessOrEqual():
+            return int(a <= b), t
+        case c99_ast.GreaterOrEqual():
+            return int(a >= b), t
+        case c99_ast.LeftShift() | c99_ast.RightShift():
+            if b < 0 or b >= 8 * _INT_WIDTH[type(t)]:
+                raise ConstantExpressionError(
+                    f"shift count {b} out of range in constant expression"
+                )
+            if isinstance(op, c99_ast.RightShift):
+                # A negative left operand shifts arithmetically, which
+                # is c6502's implementation-defined choice (asr*).
+                return _coerce_to_integer_type(a >> b, t), t
+            if isinstance(t, _SIGNED) and a < 0:
+                raise ConstantExpressionError(
+                    "left shift of a negative value in constant expression"
+                )
+            return _checked(a << b, t), t
+        case c99_ast.Divide() | c99_ast.Modulo():
+            if b == 0:
+                raise ConstantExpressionError(
+                    "division by zero in constant expression"
+                )
+            # C99 §6.5.5.6: the quotient truncates toward zero.
+            q = abs(a) // abs(b)
+            if (a < 0) != (b < 0):
+                q = -q
+            r = q if isinstance(op, c99_ast.Divide) else a - q * b
+            return _checked(r, t), t
+        case c99_ast.Add():
+            return _checked(a + b, t), t
+        case c99_ast.Subtract():
+            return _checked(a - b, t), t
+        case c99_ast.Multiply():
+            return _checked(a * b, t), t
+        case c99_ast.BitwiseAnd():
+            return _coerce_to_integer_type(a & b, t), t
+        case c99_ast.BitwiseOr():
+            return _coerce_to_integer_type(a | b, t), t
+        case c99_ast.BitwiseXor():
+            return _coerce_to_integer_type(a ^ b, t), t
+    raise ConstantExpressionError(
+        f"operator {op!r} is not allowed in an integer constant expression"
     )
 
 

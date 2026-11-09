@@ -266,12 +266,16 @@ class TestVariableUsedAsFunction(unittest.TestCase):
 
 
 class TestFunctionUsedAsVariable(unittest.TestCase):
+    """A function name decays to a pointer to the function
+    (C99 §6.3.2.1.4). Using that pointer where an arithmetic value is
+    required is still an error, and so is assigning to a function."""
+
     def test_function_in_return(self):
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
                 "int main(void) { int foo(void); return foo; }"
             )
-        self.assertIn("used as a variable", str(ctx.exception))
+        self.assertIn("cannot implicitly convert pointer", str(ctx.exception))
 
     def test_function_in_initializer(self):
         with self.assertRaises(TypeCheckError) as ctx:
@@ -279,14 +283,29 @@ class TestFunctionUsedAsVariable(unittest.TestCase):
                 "int main(void) { int foo(void); int x = foo; "
                 "return x; }"
             )
-        self.assertIn("used as a variable", str(ctx.exception))
+        self.assertIn("cannot implicitly convert pointer", str(ctx.exception))
 
     def test_function_in_arithmetic(self):
         with self.assertRaises(TypeCheckError) as ctx:
             _check(
                 "int main(void) { int foo(void); return foo + 1; }"
             )
-        self.assertIn("used as a variable", str(ctx.exception))
+        self.assertIn("pointer-to-function", str(ctx.exception))
+
+    def test_assign_to_function_rejected(self):
+        with self.assertRaises(TypeCheckError) as ctx:
+            _check(
+                "int main(void) { int foo(void); foo = 0; return 0; }"
+            )
+        self.assertIn("not a modifiable lvalue", str(ctx.exception))
+
+    def test_function_decays_to_pointer_argument(self):
+        _check(
+            "int add(int a, int b) { return a + b; } "
+            "int apply(int (*f)(int, int)) { return f(1, 2); } "
+            "int main(void) { int (*g)(int, int) = add; "
+            "return apply(add) + g(3, 4) + (g == add); }"
+        )
 
 
 class TestCallArity(unittest.TestCase):

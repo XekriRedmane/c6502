@@ -44,16 +44,13 @@ this directory:
   Drops `Branch(_, L); Label(L)` adjacency (the Branch is a no-op
   — both arms reach L's position) and drops the orphaned Label
   in the same sweep when L has no other Branch/Jump/Phi refs.
-  Same-iteration label cleanup is load-bearing: `flags_dead_at`
-  treats any Label on its forward walk as "flags dead", which
-  relies on the codegen invariant that every block sets its own
-  flags before any reachable Branch. Leaving an orphan Label
-  immediately before a `Branch(_, _)` would let `dead_a_arith`
-  in the same iteration walk over the Label, see "flags dead",
-  and drop the preceding flag setter whose output the Branch
-  actually reads. Headline source: the sign-extension diamond
-  residue from `_translate_sign_extend` (BVC / BPL skip-empty-arm
-  pattern left over when the widened high byte is dead).
+  Headline source: the sign-extension diamond residue from
+  `_translate_sign_extend` (BVC / BPL skip-empty-arm pattern left
+  over when the widened high byte is dead). `flags_dead_at` walks
+  through labels and follows jumps, so flags that reach a Branch
+  by fall-through across a label count as live. The signed-compare
+  lowering relies on this, because its `EOR #$80` sits just before
+  `.cmp_novf:` and the `BMI` / `BPL` after the label reads it.
 - `branch_through_jump.py` — `apply_branch_through_jump` peephole.
   Rewrites `Branch(cond, L); X; L: Jump(T)` → `Branch(cond, T); X`
   when L is an in-function label and the Jump goes to another
@@ -584,9 +581,9 @@ fold it to a Python `int`, converted to the promoted type modulo width
 via `_coerce_int_to_type`. Each case's `value` is then replaced by a
 single canonicalized `Constant` of the promoted type so c99_to_tac
 sees a uniform shape. Uniqueness is checked on the converted integer
-values (per §6.8.4.2.3), so e.g. `case 256:` in an Int (1-byte) switch
-wraps to 0 and conflicts with `case 0:`. The case body and any nested
-case / default nodes are type-checked normally.
+values (per §6.8.4.2.3), so e.g. `case 65536L:` in an Int (2-byte)
+switch wraps to 0 and conflicts with `case 0:`. The case body and any
+nested case / default nodes are type-checked normally.
 
 `passes.constant_expression` provides two entry points sharing the
 §6.6 vocabulary: `evaluate_integer_constant_expression` (returns
@@ -594,13 +591,24 @@ case / default nodes are type-checked normally.
 array sizes / bitfield widths) and `validate_constant_expression` (the
 §6.6.3 check without folding, for arbitrary constant-expression
 contexts — currently no consumers, kept for upcoming features).
-Today's integer evaluator accepts a `Constant` integer literal
-optionally wrapped in any number of integer Casts; expanding to Unary
-/ Binary / Conditional folding drops in via additional match arms.
+The integer evaluator folds integer and char literals, integer
+Casts, `sizeof`, unary `-` / `~` / `!`, every non-assignment binary
+operator, and `?:`, computing each operator in the `data_type` the
+type checker stamped on it. Division by zero, out-of-range shift
+counts, and signed overflow are undefined behavior and are reported
+as non-constant. Static-storage initializers use the same folder for
+integer-typed operator expressions (`int g = -5;`, `long b = 1L <<
+20;`), and `_const_init_value` negates a floating constant by
+flipping its sign bit (`double d = -1.5;`).
 
 Errors raised (`TypeCheckError`):
 
-- Function used as a variable / variable called as a function.
+- A function designator where an object is required. A function
+  name decays to a pointer to the function at every operand site
+  (`_decay_if_array` handles both decays, C99 §6.3.2.1.3-4), so
+  `apply(add, 1, 2)` and `int (*f)(int) = g;` are accepted, while
+  `foo + 1`, `int x = foo;`, and `foo = 0;` are rejected. A variable
+  called as a function is also an error.
 - Wrong call arity.
 - Mismatched binary-operator operand types (only when neither is an
   object type — every Int/Long/UInt/ULong/Float/Double mix is handled
@@ -1084,6 +1092,13 @@ symbols. No `AllocateStack`, no Frame-resident param storage. Eligibility:
   would overwrite the outer activation's still-live params).
 - Address never taken (indirect call sites would assume the default
   soft-stack ABI).
+- Every direct callee is zp_abi too. A soft-stack callee uses
+  $80–$BF as caller-saved scratch, the window the param slots come
+  from, so it could overwrite parameters the caller reads after the
+  call. `abi_selection._demote_soft_stack_callers` applies this
+  after the other checks and repeats until nothing changes. A
+  function that is annotated or uses `register` gets an error
+  naming the soft-stack callee instead of the fallback.
 - Param byte count fits the ZP window (default 64 bytes, $80–$BF).
   When the chain saturates, slots spill into a non-ZP fallback region
   (default $0200–$FFFF); dasm picks absolute addressing automatically,

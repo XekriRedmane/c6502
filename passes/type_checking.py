@@ -86,7 +86,9 @@ unless the user wraps it in an explicit cast.
 
 Errors raised (`TypeCheckError`)
 --------------------------------
-- Function used as a variable (`Var(name)` resolving to a `FunType`).
+- Function designator used where an object is required (a `Var`
+  naming a function, in an operand position that doesn't decay it
+  to a function pointer).
 - Variable called as a function.
 - Wrong call arity, or argument type mismatch (now meaningful with
   Int / Long).
@@ -524,6 +526,31 @@ def _const_init_value(
                         f"which doesn't have static storage duration"
                     )
             return AddressInit(name=target, offset=0)
+        case c99_ast.Unary(op=c99_ast.Negate(), exp=inner) if isinstance(
+            _strip_quals(exp.data_type), (Float, Double),
+        ):
+            # `-1.5`: negate the IEEE 754 pattern by flipping its sign
+            # bit, then convert from the operand's type to the target.
+            fp_t = _strip_quals(exp.data_type)
+            bits = _const_init_value(inner, fp_t, name, symbols)
+            bits ^= 1 << (31 if isinstance(fp_t, Float) else 63)
+            return _coerce_init_value(bits, fp_t, target_type)
+        case c99_ast.Unary() | c99_ast.Binary() | c99_ast.Conditional() \
+                | c99_ast.SizeOfExp() | c99_ast.SizeOfType() \
+                if exp.data_type is not None \
+                and _is_integer_type(_strip_quals(exp.data_type)):
+            # An integer operator expression such as `-5`, `1 << 20`,
+            # or `sizeof(long)`. C99 §6.6.6 lets an arithmetic
+            # constant expression use these, and the folder already
+            # applies C's width and signedness rules.
+            try:
+                value, value_type = evaluate_integer_constant_expression(exp)
+            except ConstantExpressionError as e:
+                raise TypeCheckError(
+                    f"initializer for static-storage object {name!r} "
+                    f"is not a constant expression: {e}"
+                ) from e
+            return _coerce_init_value(value, value_type, target_type)
     raise TypeCheckError(
         f"initializer for static-storage object {name!r} is not a "
         f"constant expression"
@@ -1057,6 +1084,16 @@ def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = 
     # decl time via `_check_function_decl`.)
 
 
+def _require_not_function(t: Type, what: str) -> None:
+    """C99 §6.3.2.1.1: a function designator isn't an lvalue, so it
+    can't be the target of an assignment, a compound assignment, or
+    `++` / `--`."""
+    if isinstance(t, FunType):
+        raise TypeCheckError(
+            f"{what} target is a function, not a modifiable lvalue"
+        )
+
+
 def _decay_if_array(exp: c99_ast.Type_exp) -> c99_ast.Type_exp:
     """Implement C99 §6.3.2.1.3 array-to-pointer decay. If `exp.data_type`
     is `Array(elem, N)`, wrap `exp` in an implicit `AddressOf` stamped
@@ -1077,6 +1114,13 @@ def _decay_if_array(exp: c99_ast.Type_exp) -> c99_ast.Type_exp:
             exp=exp, data_type=Pointer(referenced_type=elem),
         )
         return wrapped
+    if isinstance(exp.data_type, FunType):
+        # C99 §6.3.2.1.4: a function designator that isn't the
+        # operand of `&` or `sizeof` converts to a pointer to the
+        # function, so `apply(add, 1, 2)` passes `&add`.
+        return c99_ast.AddressOf(
+            exp=exp, data_type=Pointer(referenced_type=exp.data_type),
+        )
     return exp
 
 
@@ -1192,8 +1236,9 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     store non-negative bit patterns for downstream `_byte_at` shift-
     and-mask consumers, so signed negatives wrap to their two's-
     complement bit pattern at the matching width."""
+    t = _strip_quals(t)
     if isinstance(t, (Int, UInt)):
-        bits = value & 0xFF
+        bits = value & 0xFFFF
         return c99_ast.ConstInt(value=bits) if isinstance(t, Int) else c99_ast.ConstUInt(value=bits)
     if isinstance(t, (Char, SChar, UChar)):
         # ConstChar / ConstUChar exist in the AST but the parser
@@ -1209,10 +1254,10 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
             return c99_ast.ConstChar(value=bits)
         return c99_ast.ConstUChar(value=bits)
     if isinstance(t, (Long, ULong)):
-        bits = value & 0xFFFF
+        bits = value & 0xFFFFFFFF
         return c99_ast.ConstLong(value=bits) if isinstance(t, Long) else c99_ast.ConstULong(value=bits)
     if isinstance(t, (LongLong, ULongLong)):
-        bits = value & 0xFFFFFFFF
+        bits = value & 0xFFFFFFFFFFFFFFFF
         return (
             c99_ast.ConstLongLong(value=bits) if isinstance(t, LongLong)
             else c99_ast.ConstULongLong(value=bits)
@@ -2963,10 +3008,11 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"undeclared identifier {name!r}"
                     )
-                if isinstance(sym.type, FunType):
-                    raise TypeCheckError(
-                        f"function {name!r} used as a variable"
-                    )
+                # A function name is a function designator. Its
+                # FunType stays on the node, and `_decay_if_array`
+                # turns it into a pointer at every operand site
+                # (C99 §6.3.2.1.4). A site that doesn't decay its
+                # operand rejects the FunType as a non-object type.
                 exp.data_type = sym.type
                 return sym.type
             case c99_ast.Unary(op=op, exp=inner):
@@ -3353,6 +3399,7 @@ class TypeChecker:
                 # the new value of lval, with lval's type.
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
+                _require_not_function(tl, "compound assignment")
                 if _is_const_qualified(tl):
                     raise TypeCheckError(
                         f"cannot modify const-qualified lvalue with "
@@ -3375,6 +3422,18 @@ class TypeChecker:
                 rv = _decay_if_array(rv)
                 exp.rval = rv
                 tr = rv.data_type
+                # C99 §6.5.16.2.1: unless the left operand is a
+                # pointer (`p += n` / `p -= n`, checked below), both
+                # operands have arithmetic type. This rejects a
+                # function name on the right, which decays to a
+                # function pointer, and any other pointer operand.
+                if not isinstance(_strip_quals(tl), Pointer) and not (
+                    _is_arithmetic_type(tr)
+                ):
+                    raise TypeCheckError(
+                        f"compound assignment needs an arithmetic "
+                        f"right operand, got {tr!r}"
+                    )
                 # Type constraints by op kind (mirror the Binary
                 # rule in this same `_check_exp`):
                 #   - Modulo / bitwise / shift require integer
@@ -3449,6 +3508,7 @@ class TypeChecker:
             case c99_ast.Assignment(lval=lv, rval=rv):
                 tl = self._check_exp(lv)
                 tr = self._check_exp(rv)
+                _require_not_function(tl, "assignment")
                 # Reject assignment to a const-qualified lvalue
                 # (C99 §6.5.16.1 constraint: "An assignment operator
                 # shall have a modifiable lvalue as its left
@@ -3512,6 +3572,7 @@ class TypeChecker:
                 return tl
             case c99_ast.Postfix(operand=op) | c99_ast.Prefix(operand=op):
                 t = self._check_exp(op)
+                _require_not_function(t, "increment / decrement")
                 # `++` / `--` modify the operand — reject const-
                 # qualified lvalues (C99 §6.5.2.4.1 / §6.5.3.1.1
                 # require a "modifiable lvalue" operand; §6.3.2.1.1

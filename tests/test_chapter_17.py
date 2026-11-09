@@ -81,7 +81,7 @@ class TestChapter17Valid(unittest.TestCase):
         files = sorted((_C17 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_17 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C17 / "valid"))
+            rel = path.relative_to(_C17 / "valid").as_posix()
             if _is_libraries(rel):
                 continue
             if rel in _INCOMPATIBLE_VALID:
@@ -107,7 +107,7 @@ class TestChapter17InvalidParse(unittest.TestCase):
         files = sorted((_C17 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C17 / "invalid_parse"))
+            rel = path.relative_to(_C17 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:
@@ -123,7 +123,7 @@ class TestChapter17InvalidTypes(unittest.TestCase):
         files = sorted((_C17 / "invalid_types").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_types files found")
         for path in files:
-            rel = str(path.relative_to(_C17 / "invalid_types"))
+            rel = path.relative_to(_C17 / "invalid_types").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 if rel in _INVALID_TYPES_NOT_REJECTED_TODAY:

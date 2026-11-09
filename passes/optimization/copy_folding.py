@@ -87,7 +87,7 @@ from __future__ import annotations
 from collections import Counter
 
 import tac_ast
-from passes.optimization.var_visit import count_uses
+from passes.optimization.var_visit import count_uses, defs_in, uses_in
 
 
 def fold_copies(fn: tac_ast.Function) -> tac_ast.Function:
@@ -95,13 +95,14 @@ def fold_copies(fn: tac_ast.Function) -> tac_ast.Function:
     where the producer's dst is a single-use Pseudo. Returns a new
     Function with the fusions applied. Pure: doesn't mutate `fn`."""
     use_counts = count_uses(fn.instructions)
+    observable = _observable_names(fn, None)
     new_instrs: list[tac_ast.Type_instruction] = []
     i = 0
     while i < len(fn.instructions):
         curr = fn.instructions[i]
         if i + 1 < len(fn.instructions):
             nxt = fn.instructions[i + 1]
-            fused = _try_fuse(curr, nxt, use_counts)
+            fused = _try_fuse(curr, nxt, use_counts, observable)
             if fused is not None:
                 new_instrs.append(fused)
                 i += 2
@@ -118,11 +119,13 @@ def _try_fuse(
     producer: tac_ast.Type_instruction,
     consumer: tac_ast.Type_instruction,
     use_counts: Counter[str],
+    observable: set[str],
 ) -> tac_ast.Type_instruction | None:
     """If `consumer` is `Copy(%t, X)`, and `producer` has a single
     dst-position Var named `%t`, and `%t` is used exactly once in
-    the function (this very Copy), return the producer with its
-    dst redirected to `X`. Otherwise None."""
+    the function (this very Copy), and nothing outside the
+    function's instruction operands can read `%t`, return the
+    producer with its dst redirected to `X`. Otherwise None."""
     if not isinstance(consumer, tac_ast.Copy):
         return None
     if not isinstance(consumer.src, tac_ast.Var):
@@ -130,7 +133,39 @@ def _try_fuse(
     src_name = consumer.src.name
     if use_counts.get(src_name, 0) != 1:
         return None
+    if src_name in observable:
+        return None
     return _redirect_dst(producer, src_name, consumer.dst)
+
+
+def _observable_names(fn: tac_ast.Function, symbols) -> set[str]:
+    """Names whose value can be read without appearing as a Var use
+    in `fn`'s instructions. These are the statics (other functions
+    read them) and every local whose address is taken (a `Load`
+    through the pointer reads it). The use count of such a name
+    says nothing about whether its write is dead, so the fusion
+    must keep the write in place. For example, in `g = 7; h = g;`
+    with a global `g`, fusing would store 7 into `h` and never
+    write `g`."""
+    from passes.type_checking import StaticAttr
+    names = {
+        instr.operand.name for instr in fn.instructions
+        if isinstance(instr, tac_ast.GetAddress)
+        and isinstance(instr.operand, tac_ast.Var)
+    }
+    if symbols is not None:
+        for instr in fn.instructions:
+            for v in _vars_in(instr):
+                sym = symbols.get(v)
+                if sym is not None and isinstance(sym.attrs, StaticAttr):
+                    names.add(v)
+    return names
+
+
+def _vars_in(instr: tac_ast.Type_instruction) -> list[str]:
+    """Names of the Var operands of `instr` that sit in a use or def
+    position (the only names the fusion can touch)."""
+    return [v.name for v in (*uses_in(instr), *defs_in(instr))]
 
 
 def _redirect_dst(
@@ -224,13 +259,19 @@ class _FoldCopiesWindow(WindowPass):
     ]
 
     def prepare(self, fn, ctx):
-        return count_uses(fn.instructions)
+        return (
+            count_uses(fn.instructions),
+            _observable_names(fn, ctx.symbols if ctx else None),
+        )
 
-    def rewrite(self, m: MatchResult, use_counts, ctx: PassContext) -> list | None:
+    def rewrite(self, m: MatchResult, prepared, ctx: PassContext) -> list | None:
+        use_counts, observable = prepared
         producer = m.bindings['producer']
         copy_src = m.bindings['copy_src']
         final_dst = m.bindings['final_dst']
         if use_counts.get(copy_src.name, 0) != 1:
+            return None
+        if copy_src.name in observable:
             return None
         fused = _redirect_dst(producer, copy_src.name, final_dst)
         if fused is None:

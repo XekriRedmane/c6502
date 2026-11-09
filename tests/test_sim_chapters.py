@@ -402,7 +402,10 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_11/valid/extra_credit/compound_bitshift.c": 0,
     "chapter_11/valid/extra_credit/compound_bitwise.c": 0,
     "chapter_11/valid/extra_credit/increment_long.c": 0,
-    "chapter_11/valid/extra_credit/switch_int.c": 3,
+    # switch_int.c's cases assume an 8-bit int (`case 256l` becomes
+    # 0). c6502's int is 16 bits, so 256 and 511 keep their values,
+    # `switch_on_int(0)` hits default, and main returns 2.
+    "chapter_11/valid/extra_credit/switch_int.c": 2,
     "chapter_11/valid/extra_credit/switch_long.c": 0,
 
     # --- chapter 12: unsigned types, sign/zero extension, conversions
@@ -430,7 +433,10 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_12/valid/extra_credit/compound_bitshift.c": 2,
     "chapter_12/valid/extra_credit/compound_bitwise.c": 3,
     "chapter_12/valid/extra_credit/postfix_precedence.c": 2,
-    "chapter_12/valid/extra_credit/switch_uint.c": 0,
+    # switch_uint.c assumes a 16-bit unsigned long (`case 131082ull`
+    # becomes 10). c6502's unsigned long is 32 bits, so 131082 keeps
+    # its value, `switch_on_uint(10)` hits default, and main returns 3.
+    "chapter_12/valid/extra_credit/switch_uint.c": 3,
     "chapter_12/valid/extra_credit/unsigned_incr_decr.c": 2,
 
     # --- chapter 13: floating-point (Float / Double)
@@ -553,12 +559,11 @@ EXPECTED_RETURNS: dict[str, int] = {
     "chapter_16/valid/chars/rewrite_movz_regression.c": 0,
     "chapter_16/valid/chars/static_initializers.c": 0,
     "chapter_16/valid/chars/type_specifiers.c": 0,
-    # bitshift_chars.c relies on upstream's `unsigned char → int`
-    # integer promotion (int = 4 bytes covers uchar's 0..255). c6502
-    # promotes `unsigned char → unsigned int` instead (its 1-byte int
-    # can't hold 255), so check #5 — `(-(uc << 5u) >> 5u) != -255l`
-    # — sees `uc << 5u` typed as uint and produces 1, not -255.
-    "chapter_16/valid/extra_credit/bitshift_chars.c": 5,
+    # bitshift_chars.c: `unsigned char` promotes to the 16-bit int,
+    # so check #5's `-(uc << 5u) >> 5u` is `-8160 >> 5 == -255` and
+    # every check passes. The right operand's `5u` doesn't affect
+    # the shift's signedness (C99 §6.5.7.3).
+    "chapter_16/valid/extra_credit/bitshift_chars.c": 0,
     "chapter_16/valid/extra_credit/bitwise_ops_character_constants.c": 2,
     "chapter_16/valid/extra_credit/bitwise_ops_chars.c": 2,
     "chapter_16/valid/extra_credit/char_consts_as_cases.c": 0,

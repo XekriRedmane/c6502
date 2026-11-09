@@ -150,5 +150,50 @@ class TestCopyPropagation(unittest.TestCase):
         self.assertEqual(get_addr.operand, _var("x.1"))
 
 
+
+class TestCopyPropagationSignedness(unittest.TestCase):
+    """A Copy between names of different signedness is the lowering
+    of a same-width cast, and the dst's type decides how `>>`, `/`,
+    `%`, and compares behave."""
+
+    def _symbols(self, **types):
+        from passes.type_checking import LocalAttr, Symbol
+        return {n: Symbol(type=t, attrs=LocalAttr()) for n, t in types.items()}
+
+    def test_var_not_propagated_across_signedness(self) -> None:
+        import c99_ast
+        fn = _fn(
+            tac_ast.Copy(src=_var("s"), dst=_var("u")),
+            tac_ast.Binary(
+                op=tac_ast.RightShift(), src1=_var("u"), src2=_ci(15),
+                dst=_var("r"),
+            ),
+            tac_ast.Ret(val=_var("r")),
+            params=["s"],
+        )
+        symbols = self._symbols(
+            s=c99_ast.Int(), u=c99_ast.UInt(), r=c99_ast.UInt(),
+        )
+        out = copy_propagate(fn, ssa_dsts={"s", "u", "r"}, symbols=symbols)
+        self.assertEqual(out.instructions[1].src1, _var("u"))
+
+    def test_constant_retagged_to_dst_signedness(self) -> None:
+        import c99_ast
+        fn = _fn(
+            tac_ast.Copy(src=_ci(-1), dst=_var("u")),
+            tac_ast.Binary(
+                op=tac_ast.Divide(), src1=_var("u"), src2=_ci(2),
+                dst=_var("r"),
+            ),
+            tac_ast.Ret(val=_var("r")),
+        )
+        symbols = self._symbols(u=c99_ast.UInt(), r=c99_ast.UInt())
+        out = copy_propagate(fn, ssa_dsts={"u", "r"}, symbols=symbols)
+        self.assertEqual(
+            out.instructions[1].src1,
+            tac_ast.Constant(const=tac_ast.ConstUInt(value=0xFFFF)),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

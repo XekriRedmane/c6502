@@ -173,5 +173,22 @@ class TestCmpThroughTmpFold(unittest.TestCase):
         self.assertEqual(out[1], _sta(tmp))
 
 
+
+class TestCmpThroughTmpFoldXor(unittest.TestCase):
+
+    def test_xor_after_candidate_does_not_crash(self):
+        # The tmp-read scan used to read `instr.src` on an Xor, which
+        # has `src1` / `src2`, and crashed on about one random
+        # program in twenty under --optimize. The Xor reads tmp, so
+        # the fold must not fire.
+        src = asm_ast.Data(name="S", offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        xor = asm_ast.Xor(src1=_A, src2=tmp, dst=_A)
+        prog = _wrap([_lda(src), _sta(tmp), _lda(other), _cmp(tmp), xor])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        self.assertEqual(out[-1], xor)
+
+
 if __name__ == "__main__":
     unittest.main()

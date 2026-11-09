@@ -606,7 +606,68 @@ def _update_state(
     branch_targets: set[str] | None = None,
 ) -> None:
     """Apply `instr`'s effect to the tracked register AND z_reflects
-    state. SBC/ADC/AND/OR/XOR/shift-of-A clear state.a and
+    state, including the side effects of its addressing-mode setup.
+
+    `Frame` / `Stack` / `Indirect` / `IndirectZp` operands are
+    emitted with an `LDY #off` in front of the access, which
+    overwrites Y and sets N/Z from the offset. When the access is
+    the instruction's last emitted opcode and doesn't itself set N/Z
+    (a store, as in `LDY #off; STA (FP),Y`), the flags afterwards
+    reflect the offset, so z_reflects is cleared."""
+    _update_state_core(instr, state, branch_targets)
+    ops = _operands_of(instr)
+    if not any(_setup_writes_y(op) for op in ops):
+        return
+    _set_reg(state, asm_ast.Y(), [])
+    state.a = [op for op in state.a if not _depends_on_reg(op, asm_ast.Y())]
+    state.x = [op for op in state.x if not _depends_on_reg(op, asm_ast.Y())]
+    state.z_reflects = [
+        op for op in state.z_reflects
+        if not _depends_on_reg(op, asm_ast.Y())
+    ]
+    if (
+        isinstance(instr, (asm_ast.Mov, asm_ast.Pop))
+        and _setup_writes_y(instr.dst)
+    ):
+        state.z_reflects = []
+
+
+def _setup_writes_y(op: asm_ast.Type_operand) -> bool:
+    """True iff `op`'s emitted addressing-mode setup is an `LDY #off`
+    (soft-stack `Frame` / `Stack` slots and the offset forms of the
+    indirect pointers)."""
+    return isinstance(op, (
+        asm_ast.Frame, asm_ast.Stack,
+        asm_ast.Indirect, asm_ast.IndirectZp,
+    ))
+
+
+def _operands_of(
+    instr: asm_ast.Type_instruction,
+) -> list[asm_ast.Type_operand]:
+    """Every operand of `instr`, read or written."""
+    match instr:
+        case asm_ast.Mov(src=s, dst=d) | asm_ast.LoadAddress(src=s, dst=d):
+            return [s, d]
+        case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d)                 | asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d):
+            return [s, d]
+        case asm_ast.Xor(src1=s1, src2=s2, dst=d):
+            return [s1, s2, d]
+        case asm_ast.Compare(left=l, right=r):
+            return [l, r]
+        case asm_ast.Inc(dst=d) | asm_ast.Dec(dst=d)                 | asm_ast.ArithmeticShiftLeft(dst=d)                 | asm_ast.LogicalShiftRight(dst=d)                 | asm_ast.RotateLeft(dst=d) | asm_ast.RotateRight(dst=d)                 | asm_ast.Pop(dst=d):
+            return [d]
+        case asm_ast.Push(src=s) | asm_ast.BitTest(src=s):
+            return [s]
+    return []
+
+
+def _update_state_core(
+    instr: asm_ast.Type_instruction, state: _RegState,
+    branch_targets: set[str] | None = None,
+) -> None:
+    """Apply `instr`'s own effect to the tracked register AND
+    z_reflects state. SBC/ADC/AND/OR/XOR/shift-of-A clear state.a and
     z_reflects in parallel, which is what the STA equivalence-class
     code in `_update_for_mov` relies on for the "both empty" branch.
     """
@@ -895,10 +956,15 @@ def _depends_on_reg(
     op: asm_ast.Type_operand, reg: asm_ast.Type_reg,
 ) -> bool:
     """True iff `op`'s value depends on the runtime value of the
-    register `reg`. Only `IndexedData(_, _, index=R)` does — its
-    address is `name + offset + R_value`."""
+    register `reg`. `IndexedData(_, _, index=R)` does (its address
+    is `name + offset + R_value`), and so do `IndirectY` /
+    `IndirectZpY`, which index with whatever Y holds."""
     if isinstance(op, asm_ast.IndexedData):
         return type(op.index) is type(reg)
+    if isinstance(reg, asm_ast.Y) and isinstance(
+        op, (asm_ast.IndirectY, asm_ast.IndirectZpY),
+    ):
+        return True
     return False
 
 

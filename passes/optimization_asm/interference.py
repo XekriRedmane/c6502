@@ -89,11 +89,15 @@ def build_interference(
                     if n != d.name:
                         graph.add_edge(d.name, n)
                 live.discard(d.name)
-            # Cross-call detection.
+            # Cross-call detection. A name live across the call may
+            # have no node yet, when its only uses are in a block the
+            # loop hasn't reached, so create it here rather than skip
+            # it. Skipping left the value in a caller-saved byte that
+            # the callee is free to overwrite.
             if isinstance(instr, asm_ast.Call):
                 for n in live:
-                    if n in graph.nodes:
-                        graph.nodes[n].lives_across_call = True
+                    ensure_node(n)
+                    graph.nodes[n].lives_across_call = True
             for u in _uses_in(instr):
                 if not colorable(u.name):
                     continue

@@ -954,5 +954,40 @@ class TestRedirectLdaToTransfer(unittest.TestCase):
         self.assertEqual(volatile_lda[0].src, zp80)
 
 
+
+class TestRedundantLoadLdySetup(unittest.TestCase):
+    """A store into a soft-stack slot is emitted as `LDY #off; STA
+    (FP),Y`, so the flags afterwards reflect the offset."""
+
+    def test_load_before_branch_kept_after_frame_store(self) -> None:
+        # Sign extension of a signed char at Frame(4): the store into
+        # Frame(5) is `LDY #5; STA (FP),Y`, so the second `LDA
+        # Frame(4)` must stay to set N from the value before BMI.
+        f4 = asm_ast.Frame(offset=4)
+        f5 = asm_ast.Frame(offset=5)
+        instrs = [
+            asm_ast.Mov(src=f4, dst=_REG_A, is_volatile=False),
+            asm_ast.Mov(src=_REG_A, dst=f5, is_volatile=False),
+            asm_ast.Mov(src=f4, dst=_REG_A, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.MI(), target=".neg"),
+            asm_ast.Return(save_a=True),
+            asm_ast.Label(name=".neg"),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_rewritten(instrs), instrs)
+
+    def test_y_forgotten_after_frame_access(self) -> None:
+        # `LDY M` ... frame access (LDY #3 setup) ... `LDY M` again:
+        # the second LDY must stay.
+        m = asm_ast.Data(name="M", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_Y, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Frame(offset=3), dst=_REG_A, is_volatile=False),
+            asm_ast.Mov(src=m, dst=_REG_Y, is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_rewritten(instrs), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

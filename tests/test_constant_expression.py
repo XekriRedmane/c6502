@@ -44,16 +44,19 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
         self.assertEqual(t, c99_ast.UInt())
 
     def test_cast_to_int_truncates(self):
-        # Casting 256 to Int (1 byte) wraps to 0.
-        exp = c99_ast.Cast(target_type=c99_ast.Int(), exp=_const_long(256))
+        # Casting 65536 to Int (2 bytes) wraps to 0. 256 fits.
+        exp = c99_ast.Cast(target_type=c99_ast.Int(), exp=_const_long(65536))
         v, t = evaluate_integer_constant_expression(exp)
         self.assertEqual(v, 0)
         self.assertEqual(t, c99_ast.Int())
+        exp = c99_ast.Cast(target_type=c99_ast.Int(), exp=_const_long(256))
+        v, _ = evaluate_integer_constant_expression(exp)
+        self.assertEqual(v, 256)
 
     def test_cast_to_int_sign_extends(self):
-        # Casting Long 0xFF (positive) to Int wraps to -1 (signed
-        # 1-byte interpretation of 0xFF).
-        exp = c99_ast.Cast(target_type=c99_ast.Int(), exp=_const_long(0xFF))
+        # Casting Long 0xFFFF (positive) to Int wraps to -1 (signed
+        # 2-byte interpretation of 0xFFFF).
+        exp = c99_ast.Cast(target_type=c99_ast.Int(), exp=_const_long(0xFFFF))
         v, t = evaluate_integer_constant_expression(exp)
         self.assertEqual(v, -1)
         self.assertEqual(t, c99_ast.Int())
@@ -105,26 +108,26 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
         with self.assertRaises(ConstantExpressionError):
             evaluate_integer_constant_expression(exp)
 
-    def test_sizeof_type_int_returns_one(self):
-        # c6502: sizeof(int) == 1; result type is unsigned long.
+    def test_sizeof_type_int_returns_two(self):
+        # c6502: sizeof(int) == 2; result type is unsigned long.
         value, t = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.Int()),
-        )
-        self.assertEqual(value, 1)
-        self.assertIsInstance(t, c99_ast.ULong)
-
-    def test_sizeof_type_long_returns_two(self):
-        value, t = evaluate_integer_constant_expression(
-            c99_ast.SizeOfType(target_type=c99_ast.Long()),
         )
         self.assertEqual(value, 2)
         self.assertIsInstance(t, c99_ast.ULong)
 
-    def test_sizeof_type_long_long_returns_four(self):
+    def test_sizeof_type_long_returns_four(self):
+        value, t = evaluate_integer_constant_expression(
+            c99_ast.SizeOfType(target_type=c99_ast.Long()),
+        )
+        self.assertEqual(value, 4)
+        self.assertIsInstance(t, c99_ast.ULong)
+
+    def test_sizeof_type_long_long_returns_eight(self):
         value, t = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.LongLong()),
         )
-        self.assertEqual(value, 4)
+        self.assertEqual(value, 8)
         self.assertIsInstance(t, c99_ast.ULong)
 
     def test_sizeof_type_double_returns_eight(self):
@@ -142,13 +145,13 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
         self.assertEqual(value, 2)
 
     def test_sizeof_type_array_multiplies(self):
-        # int[10] = 10 * sizeof(int) = 10. Multi-dim long[3][5] = 30.
+        # int[10] = 10 * sizeof(int) = 20. Multi-dim long[3][5] = 60.
         v1, _ = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.Array(
                 element_type=c99_ast.Int(), size=10,
             )),
         )
-        self.assertEqual(v1, 10)
+        self.assertEqual(v1, 20)
         v2, _ = evaluate_integer_constant_expression(
             c99_ast.SizeOfType(target_type=c99_ast.Array(
                 element_type=c99_ast.Array(
@@ -156,7 +159,7 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
                 ), size=3,
             )),
         )
-        self.assertEqual(v2, 30)
+        self.assertEqual(v2, 60)
 
     def test_sizeof_type_void_rejected(self):
         with self.assertRaisesRegex(ConstantExpressionError, "incomplete"):
@@ -172,7 +175,7 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
         value, t = evaluate_integer_constant_expression(
             c99_ast.SizeOfExp(exp=v),
         )
-        self.assertEqual(value, 2)
+        self.assertEqual(value, 4)
         self.assertIsInstance(t, c99_ast.ULong)
 
     def test_sizeof_exp_without_data_type_rejected(self):
@@ -186,6 +189,86 @@ class TestEvaluateIntegerConstantExpression(unittest.TestCase):
             evaluate_integer_constant_expression(
                 c99_ast.SizeOfExp(exp=v),
             )
+
+
+def _int(v: int) -> c99_ast.Constant:
+    return c99_ast.Constant(
+        const=c99_ast.ConstInt(value=v), data_type=c99_ast.Int(),
+    )
+
+
+def _binary(op, left, right, t=None) -> c99_ast.Binary:
+    return c99_ast.Binary(
+        op=op, left=left, right=right, data_type=t or c99_ast.Int(),
+    )
+
+
+class TestEvaluateOperators(unittest.TestCase):
+    """Operator folding, on hand-built trees stamped the way the type
+    checker stamps them."""
+
+    def test_negate(self):
+        exp = c99_ast.Unary(
+            op=c99_ast.Negate(), exp=_int(1000), data_type=c99_ast.Int(),
+        )
+        self.assertEqual(evaluate_integer_constant_expression(exp)[0], -1000)
+
+    def test_complement_unsigned(self):
+        exp = c99_ast.Unary(
+            op=c99_ast.Complement(),
+            exp=c99_ast.Constant(
+                const=c99_ast.ConstUInt(value=0), data_type=c99_ast.UInt(),
+            ),
+            data_type=c99_ast.UInt(),
+        )
+        self.assertEqual(evaluate_integer_constant_expression(exp)[0], 0xFFFF)
+
+    def test_arithmetic_and_shift(self):
+        # (1 << 8) + 44 == 300, which needs the 16-bit int.
+        exp = _binary(
+            c99_ast.Add(),
+            _binary(c99_ast.LeftShift(), _int(1), _int(8)),
+            _int(44),
+        )
+        self.assertEqual(evaluate_integer_constant_expression(exp)[0], 300)
+
+    def test_division_truncates_toward_zero(self):
+        exp = _binary(
+            c99_ast.Divide(),
+            c99_ast.Unary(
+                op=c99_ast.Negate(), exp=_int(7), data_type=c99_ast.Int(),
+            ),
+            _int(2),
+        )
+        self.assertEqual(evaluate_integer_constant_expression(exp)[0], -3)
+
+    def test_conditional_and_comparison(self):
+        exp = c99_ast.Conditional(
+            condition=_binary(c99_ast.GreaterThan(), _int(3), _int(2)),
+            true_clause=_int(10), false_clause=_int(20),
+            data_type=c99_ast.Int(),
+        )
+        self.assertEqual(evaluate_integer_constant_expression(exp)[0], 10)
+
+    def test_division_by_zero_rejected(self):
+        with self.assertRaisesRegex(ConstantExpressionError, "division by zero"):
+            evaluate_integer_constant_expression(
+                _binary(c99_ast.Divide(), _int(1), _int(0)),
+            )
+
+    def test_signed_overflow_rejected(self):
+        with self.assertRaisesRegex(ConstantExpressionError, "overflow"):
+            evaluate_integer_constant_expression(
+                _binary(c99_ast.Add(), _int(32767), _int(1)),
+            )
+
+    def test_logical_and_skips_right_operand(self):
+        # `0 && (1 / 0)` is 0. The right operand isn't evaluated.
+        exp = _binary(
+            c99_ast.LogicalAnd(), _int(0),
+            _binary(c99_ast.Divide(), _int(1), _int(0)),
+        )
+        self.assertEqual(evaluate_integer_constant_expression(exp)[0], 0)
 
 
 class TestValidateConstantExpression(unittest.TestCase):

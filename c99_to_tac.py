@@ -171,11 +171,19 @@ Mapping:
                                  storage). `data_type` is the lval's
                                  type and the result type of the
                                  expression.
-  C99 Cast(target, inner)     -> width- and signedness-driven (the
-                                 6502 has no signedness distinction
-                                 at the byte level, so same-width
-                                 casts elide):
-                                  * same width                → elide
+  C99 Cast(target, inner)     -> width- and signedness-driven:
+                                  * same type, or same width
+                                    and same signedness       → elide
+                                  * same width, signedness
+                                    differs                   →
+                                      Copy(src, dst) with dst
+                                      typed as the target (a
+                                      Constant src is retagged
+                                      instead). Later passes take
+                                      signedness from the operand
+                                      type, so the temp is what
+                                      makes `(unsigned)s >> 1`
+                                      logical.
                                   * narrower→wider, signed    →
                                                 SignExtend(src, dst)
                                   * narrower→wider, unsigned  →
@@ -593,6 +601,29 @@ def _to_tac_const(c: c99_ast.Type_const) -> tac_ast.Type_const:
     if isinstance(c, c99_ast.ConstDouble):
         return tac_ast.ConstDouble(bits=c.bits)
     raise TypeError(f"unexpected c99 const: {c!r}")
+
+
+def _is_unsigned_integer(t: c99_ast.Type_data_type) -> bool:
+    """True iff `t` is an unsigned integer type or a pointer (an
+    unsigned 16-bit address). Plain `char` is unsigned in c6502.
+    `Const` / `Volatile` qualifiers are transparent. Matches
+    `tac_to_asm`'s `_is_unsigned_val` rule."""
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    return isinstance(t, (
+        c99_ast.Char, c99_ast.UChar, c99_ast.UInt, c99_ast.ULong,
+        c99_ast.ULongLong, c99_ast.Pointer,
+    ))
+
+
+def _reinterpret_int(value: int, width: int, signed: bool) -> int:
+    """`value`'s low `width` bytes read as a signed or unsigned
+    integer. That is, the value a same-width cast produces."""
+    bits = 8 * width
+    value &= (1 << bits) - 1
+    if signed and value >> (bits - 1):
+        value -= 1 << bits
+    return value
 
 
 def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Type_const:
@@ -1793,15 +1824,20 @@ class Translator:
                     self.translate_exp(inner, instrs)
                     return None
                 # Lower `Cast` based on the source/target c99 types.
-                # The 6502 has no signedness distinction, so cross-sign
-                # integer casts at the same width are no-ops; FP types
+                # A cross-sign integer cast at the same width leaves the
+                # bits alone but changes the type later passes read
+                # signedness from; FP types
                 # need explicit conversion nodes because their bit
                 # patterns aren't compatible with integers (or with
                 # each other across precisions):
                 #   src == target                         → no-op
                 #   integer same width (Int↔UInt, Long↔ULong,
                 #                       LongLong↔ULongLong)
-                #                                         → no-op
+                #                                         → Copy into a
+                #                                           temp of the
+                #                                           target type
+                #                                           (Constants
+                #                                           are retagged)
                 #   integer narrower → wider, signed src  → SignExtend
                 #   integer narrower → wider, unsigned src → ZeroExtend
                 #   integer wider → narrower (any signedness) → Truncate
@@ -1825,153 +1861,7 @@ class Translator:
                 source = inner.data_type
                 if source is None or source == target:
                     return inner_val
-                src_fp = isinstance(
-                    source, (c99_ast.Float, c99_ast.Double),
-                )
-                tgt_fp = isinstance(
-                    target, (c99_ast.Float, c99_ast.Double),
-                )
-                # The temp holds the casted value — its type is the
-                # cast's target.
-                dst = tac_ast.Var(
-                    name=self.make_temporary_variable_name(target),
-                )
-                if src_fp or tgt_fp:
-                    # FP-involving cast. If the source is a compile-
-                    # time Constant, fold it in Python here — that
-                    # avoids a runtime helper call. Signedness rides
-                    # on the operand's TAC variant, so the fold needs
-                    # only the target type to pick the result variant.
-                    if isinstance(inner_val, tac_ast.Constant):
-                        return tac_ast.Constant(
-                            const=_fold_fp_cast_constant(
-                                target, inner_val.const,
-                            ),
-                        )
-                    # Char-typed sides go through Int / UInt as a
-                    # routing intermediate. The runtime FP-conversion
-                    # helpers come in three integer widths (2B / 4B /
-                    # 8B) keyed off the c99 type — there's no 1-byte
-                    # variant. Char↔FP integer-promotes through
-                    # Int / UInt at the type-checking level for
-                    # arithmetic; for explicit casts (`(double)c` /
-                    # `(char)d`) we synthesize the same path here:
-                    #   `(double)char_src` → SignExtend char→Int,
-                    #                         then IntToDouble(Int).
-                    #   `(double)uchar_src` → ZeroExtend uchar→UInt,
-                    #                          then IntToDouble(UInt).
-                    #   `(char)double_src` → DoubleToInt (Int dst),
-                    #                         then Truncate(Int→Char).
-                    #   `(uchar)double_src` → DoubleToInt (UInt dst),
-                    #                          then Truncate(UInt→UChar).
-                    char_src = isinstance(
-                        source,
-                        (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
-                    )
-                    char_tgt = isinstance(
-                        target,
-                        (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
-                    )
-                    if char_src:
-                        # Plain Char and UChar are unsigned in c6502;
-                        # only SChar is signed.
-                        src_unsigned = isinstance(
-                            source, (c99_ast.Char, c99_ast.UChar),
-                        )
-                        widened_t = (
-                            c99_ast.UInt() if src_unsigned else c99_ast.Int()
-                        )
-                        widened = tac_ast.Var(
-                            name=self.make_temporary_variable_name(widened_t),
-                        )
-                        node_cls = (
-                            tac_ast.ZeroExtend if src_unsigned
-                            else tac_ast.SignExtend
-                        )
-                        instrs.append(node_cls(src=inner_val, dst=widened))
-                        inner_val = widened
-                        source = widened_t
-                        src_fp = False
-                    if char_tgt:
-                        # Plain Char and UChar route through UInt
-                        # (unsigned 2B); SChar through Int.
-                        tgt_unsigned = isinstance(
-                            target, (c99_ast.Char, c99_ast.UChar),
-                        )
-                        narrow_t = (
-                            c99_ast.UInt() if tgt_unsigned else c99_ast.Int()
-                        )
-                        intermediate = tac_ast.Var(
-                            name=self.make_temporary_variable_name(narrow_t),
-                        )
-                        node_cls = (
-                            tac_ast.FloatToInt
-                            if isinstance(source, c99_ast.Float)
-                            else tac_ast.DoubleToInt
-                        )
-                        instrs.append(node_cls(
-                            src=inner_val, dst=intermediate,
-                        ))
-                        instrs.append(tac_ast.Truncate(
-                            src=intermediate, dst=dst,
-                        ))
-                        return dst
-                    # Otherwise the source is a Var — tac_to_asm picks
-                    # the right helper (signed vs. unsigned, 2B vs.
-                    # 4B vs. 8B for integer side; Float vs. Double for
-                    # FP side) by looking up src/dst types in the
-                    # symbol table.
-                    if src_fp and tgt_fp:
-                        # Float ↔ Double cross-precision (same-precision
-                        # was caught by the source == target check).
-                        node_cls = (
-                            tac_ast.FloatToDouble
-                            if isinstance(source, c99_ast.Float)
-                            else tac_ast.DoubleToFloat
-                        )
-                    elif src_fp:
-                        node_cls = (
-                            tac_ast.FloatToInt
-                            if isinstance(source, c99_ast.Float)
-                            else tac_ast.DoubleToInt
-                        )
-                    else:
-                        node_cls = (
-                            tac_ast.IntToFloat
-                            if isinstance(target, c99_ast.Float)
-                            else tac_ast.IntToDouble
-                        )
-                    instrs.append(node_cls(src=inner_val, dst=dst))
-                    return dst
-                src_w = _byte_width_of(source)
-                tgt_w = _byte_width_of(target)
-                if src_w == tgt_w:
-                    # Same width, different signedness — bit pattern
-                    # is identical, so the cast carries no codegen.
-                    return inner_val
-                if src_w < tgt_w:
-                    if isinstance(
-                        source,
-                        (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
-                         c99_ast.SChar),
-                    ):
-                        instrs.append(tac_ast.SignExtend(
-                            src=inner_val, dst=dst,
-                        ))
-                    else:
-                        # Unsigned source → wider type: zero-fill
-                        # the new high byte rather than replicating
-                        # the sign bit. Plain `Char` and `UChar`
-                        # both take this path (plain char is
-                        # unsigned in c6502).
-                        instrs.append(tac_ast.ZeroExtend(
-                            src=inner_val, dst=dst,
-                        ))
-                else:  # src_w > tgt_w
-                    instrs.append(tac_ast.Truncate(
-                        src=inner_val, dst=dst,
-                    ))
-                return dst
+                return self._emit_cast(inner_val, source, target, instrs)
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
                 # The temp's type is the Unary node's data_type
@@ -3494,6 +3384,183 @@ class Translator:
             binop_dst, intermediate_type, lv_type, instrs,
         )
 
+    def _emit_cast(
+        self,
+        inner_val: tac_ast.Type_val,
+        source: c99_ast.Type_data_type,
+        target: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Convert `inner_val` (typed `source`) to `target`, appending
+        the TAC conversion nodes to `instrs`, and return the converted
+        val. This is the lowering of a `Cast` node, and compound
+        assignment's lval / result conversions use it too. The caller
+        has already handled `source == target`."""
+        src_fp = isinstance(
+            source, (c99_ast.Float, c99_ast.Double),
+        )
+        tgt_fp = isinstance(
+            target, (c99_ast.Float, c99_ast.Double),
+        )
+        # The temp holds the casted value — its type is the
+        # cast's target.
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(target),
+        )
+        if src_fp or tgt_fp:
+            # FP-involving cast. If the source is a compile-
+            # time Constant, fold it in Python here — that
+            # avoids a runtime helper call. Signedness rides
+            # on the operand's TAC variant, so the fold needs
+            # only the target type to pick the result variant.
+            if isinstance(inner_val, tac_ast.Constant):
+                return tac_ast.Constant(
+                    const=_fold_fp_cast_constant(
+                        target, inner_val.const,
+                    ),
+                )
+            # Char-typed sides go through Int / UInt as a
+            # routing intermediate. The runtime FP-conversion
+            # helpers come in three integer widths (2B / 4B /
+            # 8B) keyed off the c99 type — there's no 1-byte
+            # variant. Char↔FP integer-promotes through
+            # Int / UInt at the type-checking level for
+            # arithmetic; for explicit casts (`(double)c` /
+            # `(char)d`) we synthesize the same path here:
+            #   `(double)char_src` → SignExtend char→Int,
+            #                         then IntToDouble(Int).
+            #   `(double)uchar_src` → ZeroExtend uchar→UInt,
+            #                          then IntToDouble(UInt).
+            #   `(char)double_src` → DoubleToInt (Int dst),
+            #                         then Truncate(Int→Char).
+            #   `(uchar)double_src` → DoubleToInt (UInt dst),
+            #                          then Truncate(UInt→UChar).
+            char_src = isinstance(
+                source,
+                (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+            )
+            char_tgt = isinstance(
+                target,
+                (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+            )
+            if char_src:
+                # Plain Char and UChar are unsigned in c6502;
+                # only SChar is signed.
+                src_unsigned = isinstance(
+                    source, (c99_ast.Char, c99_ast.UChar),
+                )
+                widened_t = (
+                    c99_ast.UInt() if src_unsigned else c99_ast.Int()
+                )
+                widened = tac_ast.Var(
+                    name=self.make_temporary_variable_name(widened_t),
+                )
+                node_cls = (
+                    tac_ast.ZeroExtend if src_unsigned
+                    else tac_ast.SignExtend
+                )
+                instrs.append(node_cls(src=inner_val, dst=widened))
+                inner_val = widened
+                source = widened_t
+                src_fp = False
+            if char_tgt:
+                # Plain Char and UChar route through UInt
+                # (unsigned 2B); SChar through Int.
+                tgt_unsigned = isinstance(
+                    target, (c99_ast.Char, c99_ast.UChar),
+                )
+                narrow_t = (
+                    c99_ast.UInt() if tgt_unsigned else c99_ast.Int()
+                )
+                intermediate = tac_ast.Var(
+                    name=self.make_temporary_variable_name(narrow_t),
+                )
+                node_cls = (
+                    tac_ast.FloatToInt
+                    if isinstance(source, c99_ast.Float)
+                    else tac_ast.DoubleToInt
+                )
+                instrs.append(node_cls(
+                    src=inner_val, dst=intermediate,
+                ))
+                instrs.append(tac_ast.Truncate(
+                    src=intermediate, dst=dst,
+                ))
+                return dst
+            # Otherwise the source is a Var — tac_to_asm picks
+            # the right helper (signed vs. unsigned, 2B vs.
+            # 4B vs. 8B for integer side; Float vs. Double for
+            # FP side) by looking up src/dst types in the
+            # symbol table.
+            if src_fp and tgt_fp:
+                # Float ↔ Double cross-precision (same-precision
+                # was caught by the source == target check).
+                node_cls = (
+                    tac_ast.FloatToDouble
+                    if isinstance(source, c99_ast.Float)
+                    else tac_ast.DoubleToFloat
+                )
+            elif src_fp:
+                node_cls = (
+                    tac_ast.FloatToInt
+                    if isinstance(source, c99_ast.Float)
+                    else tac_ast.DoubleToInt
+                )
+            else:
+                node_cls = (
+                    tac_ast.IntToFloat
+                    if isinstance(target, c99_ast.Float)
+                    else tac_ast.IntToDouble
+                )
+            instrs.append(node_cls(src=inner_val, dst=dst))
+            return dst
+        src_w = _byte_width_of(source)
+        tgt_w = _byte_width_of(target)
+        if src_w == tgt_w:
+            # Same width, different signedness. The bit
+            # pattern doesn't change, but the value's type
+            # does: tac_to_asm picks signed or unsigned `/`,
+            # `%`, `>>`, ordering, and widening from the
+            # operand's declared type. Retag a Constant to
+            # the target's variant, and copy a Var into a
+            # temp of the target type, so `(unsigned)s >> 15`
+            # shifts logically.
+            if _is_unsigned_integer(source) == _is_unsigned_integer(target):
+                return inner_val
+            if isinstance(inner_val, tac_ast.Constant):
+                return _tac_const_val(
+                    target,
+                    _reinterpret_int(
+                        inner_val.const.value, tgt_w,
+                        not _is_unsigned_integer(target),
+                    ),
+                )
+            instrs.append(tac_ast.Copy(src=inner_val, dst=dst))
+            return dst
+        if src_w < tgt_w:
+            if isinstance(
+                source,
+                (c99_ast.Int, c99_ast.Long, c99_ast.LongLong,
+                 c99_ast.SChar),
+            ):
+                instrs.append(tac_ast.SignExtend(
+                    src=inner_val, dst=dst,
+                ))
+            else:
+                # Unsigned source → wider type: zero-fill
+                # the new high byte rather than replicating
+                # the sign bit. Plain `Char` and `UChar`
+                # both take this path (plain char is
+                # unsigned in c6502).
+                instrs.append(tac_ast.ZeroExtend(
+                    src=inner_val, dst=dst,
+                ))
+        else:  # src_w > tgt_w
+            instrs.append(tac_ast.Truncate(
+                src=inner_val, dst=dst,
+            ))
+        return dst
+
     def _emit_widen_or_narrow(
         self,
         src_val: tac_ast.Type_val,
@@ -3501,60 +3568,13 @@ class Translator:
         dst_type: c99_ast.Type_data_type,
         instrs: list[tac_ast.Type_instruction],
     ) -> tac_ast.Type_val:
-        """Cast `src_val` (typed `src_type`) to `dst_type`,
-        emitting the appropriate TAC cast node. Returns the new
-        val of type `dst_type`. Mirrors the Cast lowering in
-        translate_exp's c99_ast.Cast case — covers integer↔integer
-        (SignExtend / ZeroExtend / Truncate / no-op), integer↔FP
-        (IntToFloat / IntToDouble / FloatToInt / DoubleToInt), and
-        Float↔Double (FloatToDouble / DoubleToFloat)."""
+        """Cast `src_val` (typed `src_type`) to `dst_type` with the
+        same lowering as a `Cast` node, and return the converted val.
+        Used by compound assignment, where `i /= 2u` converts `i` to
+        unsigned before the divide and the quotient back to int."""
         if src_type == dst_type:
             return src_val
-        src_fp = isinstance(src_type, (c99_ast.Float, c99_ast.Double))
-        dst_fp = isinstance(dst_type, (c99_ast.Float, c99_ast.Double))
-        if src_fp or dst_fp:
-            dst = tac_ast.Var(
-                name=self.make_temporary_variable_name(dst_type),
-            )
-            if src_fp and dst_fp:
-                node_cls = (
-                    tac_ast.FloatToDouble
-                    if isinstance(src_type, c99_ast.Float)
-                    else tac_ast.DoubleToFloat
-                )
-            elif src_fp:
-                node_cls = (
-                    tac_ast.FloatToInt
-                    if isinstance(src_type, c99_ast.Float)
-                    else tac_ast.DoubleToInt
-                )
-            else:
-                node_cls = (
-                    tac_ast.IntToFloat
-                    if isinstance(dst_type, c99_ast.Float)
-                    else tac_ast.IntToDouble
-                )
-            instrs.append(node_cls(src=src_val, dst=dst))
-            return dst
-        src_w = _byte_width_of(src_type)
-        dst_w = _byte_width_of(dst_type)
-        if src_w == dst_w:
-            # Same byte width, just different signedness — no codegen.
-            return src_val
-        dst = tac_ast.Var(
-            name=self.make_temporary_variable_name(dst_type),
-        )
-        if src_w < dst_w:
-            if isinstance(
-                src_type,
-                (c99_ast.Int, c99_ast.Long, c99_ast.LongLong),
-            ):
-                instrs.append(tac_ast.SignExtend(src=src_val, dst=dst))
-            else:
-                instrs.append(tac_ast.ZeroExtend(src=src_val, dst=dst))
-        else:
-            instrs.append(tac_ast.Truncate(src=src_val, dst=dst))
-        return dst
+        return self._emit_cast(src_val, src_type, dst_type, instrs)
 
     def translate_short_circuit(
         self,

@@ -58,7 +58,7 @@ _INVALID_DECL_NOT_REJECTED_TODAY = frozenset()
 def _run_codegen_subtest(test, files, root, not_rejected):
     test.assertGreater(len(files), 0, f"no files in {root}")
     for path in files:
-        rel = str(path.relative_to(root))
+        rel = path.relative_to(root).as_posix()
         with test.subTest(file=rel):
             source = preprocess(path.read_text(), [])
             if rel in not_rejected:
@@ -77,7 +77,7 @@ class TestChapter10Valid(unittest.TestCase):
         files = sorted((_C10 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_10 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C10 / "valid"))
+            rel = path.relative_to(_C10 / "valid").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 if rel in _EXPECTED_FAILURES_CODEGEN:
@@ -102,7 +102,7 @@ class TestChapter10InvalidParse(unittest.TestCase):
         files = sorted((_C10 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C10 / "invalid_parse"))
+            rel = path.relative_to(_C10 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 if rel in _INVALID_PARSE_NOT_REJECTED_TODAY:

@@ -714,12 +714,13 @@ class TestSizeof(unittest.TestCase):
             "default: return 0; "
             "} }",
         )
-        # Three case-dispatch comparisons: against 1, 2, 5
-        # respectively. The constants get coerced to the switch's
-        # promoted control type (Int — `x` is int) modulo width.
+        # Three case-dispatch comparisons: against 1, 4, and 10
+        # (sizeof(char), sizeof(long), 5 * sizeof(int)). The
+        # constants get coerced to the switch's promoted control
+        # type (Int — `x` is int) modulo width.
         self.assertIn("CMP   #$01", out)
-        self.assertIn("CMP   #$02", out)
-        self.assertIn("CMP   #$05", out)
+        self.assertIn("CMP   #$04", out)
+        self.assertIn("CMP   #$0A", out)
 
     def test_sizeof_exp_in_case_label(self):
         # sizeof e form also works — the type checker populates the
@@ -734,13 +735,13 @@ class TestSizeof(unittest.TestCase):
             "default: return 0; "
             "} }",
         )
-        # sizeof(long) = 2, sizeof(long long) = 4.
-        self.assertIn("CMP   #$02", out)
+        # sizeof(long) = 4, sizeof(long long) = 8.
         self.assertIn("CMP   #$04", out)
+        self.assertIn("CMP   #$08", out)
 
     def test_sizeof_case_label_duplicate_detection(self):
         # `sizeof y` and `sizeof(y+y)` both have type Long → both
-        # equal 2 → duplicate case value, rejected.
+        # equal 4 → duplicate case value, rejected.
         err = self._expect_failure(
             "int main(int x) { "
             "long y; "

@@ -789,9 +789,10 @@ def _apply_declarator(decl_tree, base_type):
       name              — identifier the declarator names.
       composed_type     — full c99_ast type for that name.
       outer_param_names — list[str | None] of parameter names from
-                          the OUTERMOST direct_declarator's function
-                          suffix (or None if the declarator has no
-                          such suffix).
+                          the function suffix closest to the
+                          identifier, the one that forms the
+                          top-level FunType (or None if the
+                          declarator has no function suffix).
       outer_param_registers — parallel list[bool] of per-parameter
                           `register` storage-class markers (True when
                           the parameter carried the `register`
@@ -939,14 +940,18 @@ def _apply_direct_declarator(dd_tree, base_type):
     _check_function_return_type(base_type)
     param_types = [t for (_n, t, _r) in param_pairs]
     new_base = c99_ast.FunType(params=param_types, ret=base_type)
-    name, composed, _inner_outer_params, _inner_outer_regs = (
+    name, composed, inner_params, inner_regs = (
         _apply_direct_declarator(inner_dd, new_base)
     )
-    # Our suffix is the OUTERMOST one for this declarator — propagate
-    # our own param names and per-param register annotations up.
-    # (Inner outer-params, if any, are from a deeper recursion and
-    # represent inner function-types — they belong to the type, not
-    # to this declarator's name.)
+    # The declared function's parameters are the ones in the function
+    # suffix closest to the identifier, because that suffix is
+    # applied last and becomes the top-level FunType. In
+    # `int (*pick(int w))(int a, int b)`, `pick`'s parameter is `w`,
+    # and `(int a, int b)` belongs to the returned pointer's pointee
+    # type. So a deeper function suffix's names win, and this
+    # suffix's names propagate up only when no deeper one exists.
+    if inner_params is not None:
+        return name, composed, inner_params, inner_regs
     param_names = [n for (n, _t, _r) in param_pairs]
     param_registers = [r for (_n, _t, r) in param_pairs]
     return name, composed, param_names, param_registers
@@ -1006,6 +1011,32 @@ def _adjust_param_type(t):
     return t
 
 
+def _fold_array_size(size_exp) -> int:
+    """Fold an array size written as an expression, such as
+    `N * 2` after macro expansion or `sizeof(long) + 1`. C99
+    §6.7.5.2.1 requires an integer constant expression for a non-VLA
+    array. The type checker stamps types and implicit conversions on
+    a copy of the expression, and the constant evaluator folds it.
+    Anything that isn't a constant expression (a variable, which
+    would make a VLA) is rejected."""
+    # Imported here because passes.type_checking is far downstream
+    # of the parser in the pipeline.
+    import copy
+    from passes.constant_expression import (
+        ConstantExpressionError, evaluate_integer_constant_expression,
+    )
+    from passes.type_checking import TypeChecker, TypeCheckError
+    exp = copy.deepcopy(size_exp)
+    try:
+        TypeChecker()._check_exp(exp)
+        value, _ = evaluate_integer_constant_expression(exp)
+    except (TypeCheckError, ConstantExpressionError) as e:
+        raise NotImplementedError(
+            f"array size must be an integer constant expression: {e}"
+        ) from e
+    return value
+
+
 def _array_size_from_suffix(suffix):
     """Decode an `array_suffix` parse tree into an int size. Returns 0
     for the unsized form `[]` (the incomplete-array sentinel — the
@@ -1025,9 +1056,10 @@ def _array_size_from_suffix(suffix):
         )
     size_exp = suffix.children[0]
     if not isinstance(size_exp, c99_ast.Constant):
-        raise NotImplementedError(
-            "array size must be an integer constant literal"
-        )
+        value = _fold_array_size(size_exp)
+        if value <= 0:
+            raise ParserError("array size must be positive")
+        return value
     c = size_exp.const
     if not isinstance(c, (
         c99_ast.ConstInt, c99_ast.ConstLong,

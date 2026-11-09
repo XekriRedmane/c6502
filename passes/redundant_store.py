@@ -26,7 +26,8 @@ survives A getting clobbered.
 This pass tracks per-basic-block: for each stable-address memory
 cell `D`, the last memory cell `S` whose value was stored into
 `D`. A `Mov(S, A); Mov(A, D)` pair is dropped when `known[D] = S`
-and no intervening instruction has invalidated either side.
+and no intervening instruction has invalidated either side. When A
+is read after the pair, only the STA is dropped and the LDA stays.
 
 # Aliasing model
 
@@ -91,6 +92,7 @@ memory-vs-memory redundancies.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import a_dead_at as _a_dead_at
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 
 
@@ -139,7 +141,13 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 and dst_id is not None
                 and known.get(dst_id) == src_id
             ):
-                # Redundant — drop both instructions.
+                # The STA is redundant. The LDA goes too unless A is
+                # read afterwards: the pair can sit at the start of
+                # a computation that uses the loaded value, as in
+                # `LDA v3; STA tmp; SEC; SBC x` where tmp already
+                # holds v3.
+                if not _a_dead_at(instrs, i + 2):
+                    out.append(instr)
                 i += 2
                 continue
             # Otherwise: the new STA establishes the equivalence.

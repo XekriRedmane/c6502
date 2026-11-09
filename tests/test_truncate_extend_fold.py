@@ -56,7 +56,7 @@ class TestFoldTruncateExtend(unittest.TestCase):
             "u": _local(c99_ast.SChar()),
         })
         out = fold_truncate_extend(
-            _fn(instrs), symbols=symbols, ssa_dsts={"t", "u"},
+            _fn(instrs), symbols=symbols, ssa_dsts={"i", "t", "u"},
         )
         # The Truncate becomes Copy(i, u). SignExtend still
         # present; SSA-DCE drops it on the next iteration.
@@ -75,7 +75,7 @@ class TestFoldTruncateExtend(unittest.TestCase):
             "u": _local(c99_ast.UChar()),
         })
         out = fold_truncate_extend(
-            _fn(instrs), symbols=symbols, ssa_dsts={"t", "u"},
+            _fn(instrs), symbols=symbols, ssa_dsts={"i", "t", "u"},
         )
         self.assertIsInstance(out.instructions[1], tac_ast.Copy)
         self.assertEqual(out.instructions[1].src, _var("i"))
@@ -126,6 +126,29 @@ class TestFoldTruncateExtend(unittest.TestCase):
         )
         self.assertIsInstance(out.instructions[1], tac_ast.Truncate)
         self.assertEqual(out.instructions[1].src, _var("ui"))
+
+    def test_non_ssa_source_not_folded(self):
+        # `long l2 = (int)g; g += 1; f((signed char)l2);` with a
+        # global `g`: reading `g` at the Truncate would see the
+        # incremented value. The source must be SSA-renamed.
+        instrs = [
+            tac_ast.SignExtend(src=_var("g"), dst=_var("t")),
+            tac_ast.Binary(
+                op=tac_ast.Add(), src1=_var("g"),
+                src2=tac_ast.Constant(const=tac_ast.ConstChar(value=1)),
+                dst=_var("g"),
+            ),
+            tac_ast.Truncate(src=_var("t"), dst=_var("u")),
+        ]
+        symbols = _table({
+            "g": _static(c99_ast.SChar()),
+            "t": _local(c99_ast.Long()),
+            "u": _local(c99_ast.SChar()),
+        })
+        out = fold_truncate_extend(
+            _fn(instrs), symbols=symbols, ssa_dsts={"t", "u"},
+        )
+        self.assertEqual(out.instructions[2], instrs[2])
 
     def test_no_ssa_dsts_is_noop(self):
         # Without an ssa_dsts argument, the pass returns unchanged.

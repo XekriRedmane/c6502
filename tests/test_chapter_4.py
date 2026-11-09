@@ -29,7 +29,7 @@ class TestChapter4Valid(unittest.TestCase):
         files = sorted((_C4 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_4 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C4 / "valid"))
+            rel = path.relative_to(_C4 / "valid").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 _run_stage("codegen", source)
@@ -41,7 +41,7 @@ class TestChapter4InvalidParse(unittest.TestCase):
         files = sorted((_C4 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C4 / "invalid_parse"))
+            rel = path.relative_to(_C4 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_PARSE_FAILURES):

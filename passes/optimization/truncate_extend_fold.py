@@ -53,6 +53,14 @@ the Truncate (which it does to narrow the index for the
 absolute,X / (zp),Y lowering), this pass collapses the
 `SignExtend → Truncate` round-trip on the next iteration.
 
+# Soundness gate: `x` must be SSA-renamed
+
+The rewrite moves the read of `x` from the extend to the Truncate.
+That is only the same value when nothing writes `x` in between,
+which holds for an SSA-renamed name and not for a static or an
+address-taken local (`long l2 = (int)g; g += 1; f((signed char)l2);`
+read the incremented `g`).
+
 # Soundness gate: `%ext` must be the cast's only def
 
 In SSA each name has exactly one def — so checking that
@@ -141,6 +149,13 @@ class FoldTruncateExtend(DefUsePass):
         if not isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
             return None
         if not isinstance(cast.src, tac_ast.Var):
+            return None
+        # The rewrite reads `x` at the Truncate instead of at the
+        # extend, so `x` must hold the same value at both points.
+        # Only an SSA-renamed name guarantees that. A static or an
+        # address-taken local can be written in between, as in
+        # `long l2 = (int)g; g += 1; f((signed char)l2);`.
+        if cast.src.name not in ctx.ssa_dsts:
             return None
 
         # Width check: rewrite is only sound when dst is no wider than cast.src.

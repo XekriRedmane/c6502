@@ -35,11 +35,6 @@ from passes.identifier_resolution import resolve_program as resolve_identifiers
 from passes.string_lifting import lift_program as lift_strings
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.loop_labeling import label_program as label_loops
-from passes.direct_index_load import apply_direct_index_load
-from passes.asm_dead_store import apply_asm_dead_store
-from passes.inc_peephole import apply_inc_peephole
-from passes.dec_peephole import apply_dec_peephole
-from passes.sub1_test_zero_peephole import apply_sub1_test_zero_peephole
 from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
@@ -183,19 +178,16 @@ def compile_to_asm(
         )
         asm = expand_long_branches(asm3)
         return asm, syms, types, zp_slot_symbols
+    # Unoptimized path: the same passes `compile.py --codegen` runs
+    # without `--optimize`, including the full peephole fixedpoint,
+    # so the sim executes the code the CLI emits.
+    from compile import _peephole_fixedpoint
     asm0 = translate_to_asm(tac, syms, types)
-    asm = expand_long_branches(
-        apply_asm_dead_store(
-            apply_direct_index_load(apply_sub1_test_zero_peephole(
-                apply_dec_peephole(apply_inc_peephole(
-                    replace_pseudoregs(
-                        asm0, extra_statics=statics, symbols=syms,
-                        types=types,
-                    ),
-                )),
-            ))
-        )
-    )
+    asm = expand_long_branches(_peephole_fixedpoint(
+        replace_pseudoregs(
+            asm0, extra_statics=statics, symbols=syms, types=types,
+        ),
+    ))
     return asm, syms, types, {}
 
 

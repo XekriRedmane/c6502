@@ -337,7 +337,8 @@ section below.
    error; otherwise the more-defined of two initial-value tags wins
    (`Initial > Tentative > NoInitializer`).
 
-   Other diagnostics: function used as a variable, variable called
+   Other diagnostics: function designator used where an object is
+   required (a function name decays to a pointer elsewhere), variable called
    as a function, wrong call arity, function redefinition, cast
    target that isn't an integer object type, mismatched binary-
    operator operand types (only when neither is an object type —

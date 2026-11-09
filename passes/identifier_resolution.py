@@ -559,7 +559,9 @@ class Resolver:
         signature.
         """
         new_data_type = self._resolve_type(fd.data_type)
-        new_params, param_scope = self._resolve_params(fd.params)
+        new_params, param_scope = self._resolve_params(
+            fd.params, is_definition=fd.body is not None,
+        )
         new_body: c99_ast.Type_block | None
         if fd.body is None:
             new_body = None
@@ -602,14 +604,27 @@ class Resolver:
         )
 
     def _resolve_params(
-        self, params: list[str],
-    ) -> tuple[list[str], _Scope]:
+        self, params: list[str | None], *, is_definition: bool,
+    ) -> tuple[list[str | None], _Scope]:
         """Validate parameter-name uniqueness and rename each param to
         a fresh `@<N>.<orig>`. Returns the renamed names (in order)
-        and the param scope dict."""
+        and the param scope dict.
+
+        A declaration may leave parameters unnamed (`int f(int,
+        int);`). An unnamed one stays None and takes no part in the
+        uniqueness check. A definition must name every parameter
+        (C99 §6.9.1.5)."""
         scope: _Scope = {}
-        renamed: list[str] = []
+        renamed: list[str | None] = []
         for original in params:
+            if original is None:
+                if is_definition:
+                    raise IdentifierResolutionError(
+                        "parameter name omitted in a function "
+                        "definition (C99 §6.9.1.5)"
+                    )
+                renamed.append(None)
+                continue
             if original in scope and scope[original][1]:
                 raise IdentifierResolutionError(
                     f"duplicate parameter name {original!r}"

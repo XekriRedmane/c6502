@@ -57,7 +57,7 @@ class TestChapter8Valid(unittest.TestCase):
         files = sorted((_C8 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_8 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C8 / "valid"))
+            rel = path.relative_to(_C8 / "valid").as_posix()
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
@@ -83,7 +83,7 @@ class TestChapter8InvalidParse(unittest.TestCase):
         files = sorted((_C8 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C8 / "invalid_parse"))
+            rel = path.relative_to(_C8 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_PARSE_FAILURES):
@@ -99,7 +99,7 @@ class TestChapter8InvalidSemantics(unittest.TestCase):
         files = sorted((_C8 / "invalid_semantics").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_semantics files found")
         for path in files:
-            rel = str(path.relative_to(_C8 / "invalid_semantics"))
+            rel = path.relative_to(_C8 / "invalid_semantics").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_ANY_REJECTION):

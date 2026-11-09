@@ -516,6 +516,18 @@ def build_runtime() -> Runtime:
     else:
         trap_cursor = TRAP_BASE
 
+    # `icall`, the indirect-call trampoline. The caller stores the
+    # target address in DPTR and JSRs here, and `JMP (DPTR)` enters
+    # the target with the caller's return address still on the
+    # hardware stack, so the target's RTS returns to the caller.
+    # asm_ast has no indirect-JMP atom, so the 3 bytes are laid down
+    # directly after the assembled helpers.
+    rt.symbols["icall"] = trap_cursor
+    rt.helper_image = bytes(rt.helper_image or b"") + bytes(
+        [0x6C, DPTR, 0x00],  # JMP (DPTR)
+    )
+    trap_cursor += 3
+
     # Python-trap addresses for the rest. Round trap_cursor up to the
     # next 16-byte boundary so trap addresses stay readable.
     trap_cursor = (trap_cursor + 0xF) & ~0xF

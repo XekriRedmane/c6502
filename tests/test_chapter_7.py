@@ -46,7 +46,7 @@ class TestChapter7Valid(unittest.TestCase):
         files = sorted((_C7 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_7 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C7 / "valid"))
+            rel = path.relative_to(_C7 / "valid").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 _run_stage("codegen", source)
@@ -60,7 +60,7 @@ class TestChapter7InvalidParse(unittest.TestCase):
         files = sorted((_C7 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C7 / "invalid_parse"))
+            rel = path.relative_to(_C7 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_PARSE_FAILURES):
@@ -76,7 +76,7 @@ class TestChapter7InvalidSemantics(unittest.TestCase):
         files = sorted((_C7 / "invalid_semantics").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_semantics files found")
         for path in files:
-            rel = str(path.relative_to(_C7 / "invalid_semantics"))
+            rel = path.relative_to(_C7 / "invalid_semantics").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 parse(source)

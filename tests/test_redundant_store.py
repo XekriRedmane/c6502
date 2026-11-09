@@ -235,9 +235,11 @@ class TestRedundantStoreFlagLiveness(unittest.TestCase):
         out = _rewritten(instrs)
         self.assertEqual(len(out), 5)
 
-    def test_arithmetic_resets_flags_so_pair_drops(self) -> None:
+    def test_arithmetic_resets_flags_so_store_drops(self) -> None:
         # The LDA's flag effect is overwritten by the Add before
-        # any Branch — safe to drop the second pair.
+        # any Branch, so the second STA is safe to drop. The Add
+        # reads A, so the second LDA stays (redundant_load drops it
+        # separately when A already mirrors $80).
         instrs = (
             _lda_sta(_zp(0x80), _data("DPTR"))
             + _lda_sta(_zp(0x80), _data("DPTR"))
@@ -248,8 +250,31 @@ class TestRedundantStoreFlagLiveness(unittest.TestCase):
             ]
         )
         out = _rewritten(instrs)
-        # 2 (1st pair) + 0 (2nd pair dropped) + 3 trailer = 5.
-        self.assertEqual(len(out), 5)
+        # 2 (1st pair) + 1 (2nd LDA) + 3 trailer = 6.
+        self.assertEqual(len(out), 6)
+        self.assertNotEqual(out[3], instrs[3])
+
+
+class TestRedundantStoreKeepsLiveLoad(unittest.TestCase):
+    def test_load_kept_when_a_is_read_after_the_pair(self) -> None:
+        # From `(v3 & 1u) > v3`: the first pair stores v3 into a temp,
+        # A is then overwritten, and the second pair reloads v3 as
+        # the SBC's minuend. The second STA is redundant but the LDA
+        # is not, or the SBC would subtract from the stale A.
+        instrs = (
+            _lda_sta(_data("v3"), _zp(0x80))
+            + [asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A)]
+            + _lda_sta(_data("v3"), _zp(0x80))
+            + [
+                asm_ast.SetCarry(),
+                asm_ast.Sub(src=_zp(0x82), dst=_REG_A),
+                asm_ast.Return(save_a=True),
+            ]
+        )
+        out = _rewritten(instrs)
+        self.assertEqual(out[:4], instrs[:4])
+        self.assertEqual(out[4], instrs[5])
+        self.assertEqual(len(out), len(instrs) - 1)
 
 
 class TestRedundantStoreHardwareStack(unittest.TestCase):

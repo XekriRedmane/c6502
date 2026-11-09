@@ -42,6 +42,7 @@ def copy_propagate(
     fn: tac_ast.Function,
     *,
     ssa_dsts: set[str] | None = None,
+    symbols=None,
 ) -> tac_ast.Function:
     """Substitute every use of a Copy's dst with its (chain-resolved)
     src. Phi dsts are not propagated.
@@ -61,7 +62,7 @@ def copy_propagate(
     in that case."""
     if ssa_dsts is None:
         return fn
-    copy_src = _collect_copy_sources(fn, ssa_dsts)
+    copy_src = _collect_copy_sources(fn, ssa_dsts, symbols)
     if not copy_src:
         return fn
     resolved = _resolve_chains(copy_src)
@@ -73,7 +74,7 @@ def copy_propagate(
 
 
 def _collect_copy_sources(
-    fn: tac_ast.Function, ssa_dsts: set[str],
+    fn: tac_ast.Function, ssa_dsts: set[str], symbols=None,
 ) -> dict[str, tac_ast.Type_val]:
     """Build the `copy_src[dst_name] = src_val` map. A `Copy(src,
     dst)` contributes only when:
@@ -92,7 +93,17 @@ def _collect_copy_sources(
     (e.g. `@0.p`) and `to_ssa` adds those names to `ssa_dsts` when
     the param is promotable (not address-taken), so the same
     `name in ssa_dsts` check covers both renamed-temp and
-    param-stable cases uniformly."""
+    param-stable cases uniformly.
+
+    A Copy whose src and dst differ in signedness is the lowering of
+    a same-width cast such as `(unsigned)s`. Later passes take the
+    signedness of `/`, `%`, `>>`, and ordering compares from the
+    operand's type, so substituting `s` for the unsigned dst would
+    turn a logical shift into an arithmetic one. Such a Copy
+    contributes only when its src is a Constant, and then the
+    Constant is retagged to the dst's variant. With `symbols` None
+    (synthetic unit-test input), signedness is unknown and every
+    Copy is treated as same-signedness."""
     out: dict[str, tac_ast.Type_val] = {}
     for instr in fn.instructions:
         if not isinstance(instr, tac_ast.Copy):
@@ -102,15 +113,82 @@ def _collect_copy_sources(
         if instr.dst.name not in ssa_dsts:
             continue
         src = instr.src
+        dst_unsigned = _unsigned_of(instr.dst, symbols)
         if isinstance(src, tac_ast.Constant):
-            out[instr.dst.name] = src
+            retagged = _retag_constant(src, dst_unsigned)
+            if retagged is not None:
+                out[instr.dst.name] = retagged
             continue
         if isinstance(src, tac_ast.Var) and src.name in ssa_dsts:
+            if _unsigned_of(src, symbols) != dst_unsigned:
+                continue
             out[instr.dst.name] = src
             continue
         # src is a non-SSA Var (static, address-taken local) — its
         # value can change between reads. Skip.
     return out
+
+
+_SIGNED_TO_UNSIGNED = {
+    tac_ast.ConstChar: tac_ast.ConstUChar,
+    tac_ast.ConstInt: tac_ast.ConstUInt,
+    tac_ast.ConstLong: tac_ast.ConstULong,
+    tac_ast.ConstLongLong: tac_ast.ConstULongLong,
+}
+_UNSIGNED_TO_SIGNED = {u: s for s, u in _SIGNED_TO_UNSIGNED.items()}
+_CONST_BITS = {
+    tac_ast.ConstChar: 8, tac_ast.ConstUChar: 8,
+    tac_ast.ConstInt: 16, tac_ast.ConstUInt: 16,
+    tac_ast.ConstLong: 32, tac_ast.ConstULong: 32,
+    tac_ast.ConstLongLong: 64, tac_ast.ConstULongLong: 64,
+}
+
+
+def _unsigned_of(val: tac_ast.Type_val, symbols) -> bool | None:
+    """True / False for an unsigned / signed integer (or pointer)
+    Var, None when the type is unknown or not an integer. Mirrors
+    `tac_to_asm._is_unsigned_val`."""
+    if symbols is None or not isinstance(val, tac_ast.Var):
+        return None
+    sym = symbols.get(val.name)
+    if sym is None:
+        return None
+    import c99_ast
+    t = sym.type
+    while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+        t = t.referenced_type
+    if isinstance(t, (
+        c99_ast.UInt, c99_ast.ULong, c99_ast.ULongLong,
+        c99_ast.Char, c99_ast.UChar, c99_ast.Pointer,
+    )):
+        return True
+    if isinstance(t, (
+        c99_ast.Int, c99_ast.Long, c99_ast.LongLong, c99_ast.SChar,
+    )):
+        return False
+    return None
+
+
+def _retag_constant(
+    c: tac_ast.Constant, dst_unsigned: bool | None,
+) -> tac_ast.Constant | None:
+    """`c` re-expressed in the variant of the dst's signedness, or
+    `c` itself when the signedness already matches or is unknown."""
+    cls = type(c.const)
+    if dst_unsigned is None or cls not in _CONST_BITS:
+        return c
+    if dst_unsigned and cls in _SIGNED_TO_UNSIGNED:
+        bits = _CONST_BITS[cls]
+        return tac_ast.Constant(const=_SIGNED_TO_UNSIGNED[cls](
+            value=c.const.value & ((1 << bits) - 1),
+        ))
+    if not dst_unsigned and cls in _UNSIGNED_TO_SIGNED:
+        bits = _CONST_BITS[cls]
+        v = c.const.value & ((1 << bits) - 1)
+        if v >> (bits - 1):
+            v -= 1 << bits
+        return tac_ast.Constant(const=_UNSIGNED_TO_SIGNED[cls](value=v))
+    return c
 
 
 def _resolve_chains(
@@ -244,4 +322,6 @@ class CopyPropagate(FixedpointPass):
     name = "copy_propagate"
 
     def run(self, fn, ctx):
-        return copy_propagate(fn, ssa_dsts=ctx.ssa_dsts)
+        return copy_propagate(
+            fn, ssa_dsts=ctx.ssa_dsts, symbols=ctx.symbols,
+        )

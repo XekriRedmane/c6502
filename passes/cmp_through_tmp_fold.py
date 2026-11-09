@@ -188,8 +188,12 @@ def _read_operands(instr) -> list:
     if isinstance(instr, asm_ast.Compare):
         return [instr.left, instr.right]
     if isinstance(instr, (asm_ast.Add, asm_ast.Sub, asm_ast.And,
-                          asm_ast.Or, asm_ast.Xor)):
+                          asm_ast.Or)):
         return [instr.src, instr.dst]
+    if isinstance(instr, asm_ast.Xor):
+        # Xor is the one ALU atom with two named sources (src1 /
+        # src2) instead of src.
+        return [instr.src1, instr.src2, instr.dst]
     if isinstance(instr, asm_ast.Push):
         return [instr.src]
     if isinstance(instr, (asm_ast.Inc, asm_ast.Dec,

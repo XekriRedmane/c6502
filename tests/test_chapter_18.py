@@ -172,7 +172,7 @@ class TestChapter18Valid(unittest.TestCase):
         files = sorted((_C18 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_18 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C18 / "valid"))
+            rel = path.relative_to(_C18 / "valid").as_posix()
             if _is_libraries(rel):
                 continue
             if rel in _INCOMPATIBLE_VALID:
@@ -200,7 +200,7 @@ class TestChapter18InvalidLex(unittest.TestCase):
         files = sorted((_C18 / "invalid_lex").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_lex files found")
         for path in files:
-            rel = str(path.relative_to(_C18 / "invalid_lex"))
+            rel = path.relative_to(_C18 / "invalid_lex").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(
                     path.read_text(), ["-I", str(path.parent)],
@@ -218,7 +218,7 @@ class TestChapter18InvalidParse(unittest.TestCase):
         files = sorted((_C18 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C18 / "invalid_parse"))
+            rel = path.relative_to(_C18 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(
                     path.read_text(), ["-I", str(path.parent)],
@@ -236,7 +236,7 @@ class TestChapter18InvalidTypes(unittest.TestCase):
         files = sorted((_C18 / "invalid_types").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_types files found")
         for path in files:
-            rel = str(path.relative_to(_C18 / "invalid_types"))
+            rel = path.relative_to(_C18 / "invalid_types").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(
                     path.read_text(), ["-I", str(path.parent)],
@@ -254,7 +254,7 @@ class TestChapter18InvalidStructTags(unittest.TestCase):
         files = sorted((_C18 / "invalid_struct_tags").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_struct_tags files found")
         for path in files:
-            rel = str(path.relative_to(_C18 / "invalid_struct_tags"))
+            rel = path.relative_to(_C18 / "invalid_struct_tags").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(
                     path.read_text(), ["-I", str(path.parent)],

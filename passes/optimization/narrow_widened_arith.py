@@ -178,11 +178,18 @@ class NarrowWidenedArith(DefUsePass):
             dst=dst_var,
         )
 
-        # Eagerly drop the Binary's dst. Also drop each single-use Extend
+        # Eagerly drop the Binary's dst when the Truncate is its only
+        # reader. Also drop each single-use Extend
         # dst that fed the Binary: use_counts[operand.name] == 1 means
         # only the Binary reads it, so after the Binary is gone it's dead.
         # (The Truncate is the current USE site; it's replaced, not dropped.)
         use_counts = env.extra
+        # The wide Binary stays when anything besides this Truncate
+        # reads its result (`l0 ^= f(); l0 += (int)l0;` reads the
+        # wide XOR in the Add as well as through the Truncate). Its
+        # Extend operands then stay alive too.
+        if use_counts.get(bin_instr.dst.name, 0) != 1:
+            return Rewrite(replacement=narrow_binary)
         drop_vars: list[tac_ast.Var] = [bin_instr.dst]
         for operand in (bin_instr.src1, bin_instr.src2):
             if not isinstance(operand, tac_ast.Var):

@@ -37,7 +37,7 @@ class TestChapter2Valid(unittest.TestCase):
         files = sorted((_C2 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_2 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C2 / "valid"))
+            rel = path.relative_to(_C2 / "valid").as_posix()
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
@@ -51,7 +51,7 @@ class TestChapter2InvalidParse(unittest.TestCase):
         files = sorted((_C2 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C2 / "invalid_parse"))
+            rel = path.relative_to(_C2 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_PARSE_FAILURES):

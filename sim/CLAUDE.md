@@ -35,3 +35,9 @@ MPU until the boot stub's BRK fires.
 - See `docs/sim_findings.md` for known divergences between the
   Python-trap runtime and the 6502-asm runtime.
 - The simulator is what `tests/test_sim_*` harnesses drive.
+- `build_sim(optimize=False)` runs the same passes as `compile.py
+  --codegen`, including the peephole fixedpoint, so unoptimized sim
+  tests execute the code the CLI emits.
+- `build_runtime` lays down `icall` (`JMP (DPTR)`, 3 raw bytes) after
+  the assembled helpers, so indirect calls through function pointers
+  run in the sim.

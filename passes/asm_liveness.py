@@ -441,28 +441,21 @@ def flags_dead_at(
 ) -> bool:
     """True iff the N/Z flags' values at position `idx` are dead —
     no `Branch` reads them before some flag-setter overwrites them.
-    Within-block walk: a `Jump` / `Ret` / `Return` / `Label`
-    terminates safely (the N/Z status of subsequent paths is each
-    block's responsibility; if the next block's first instruction
-    is a Branch, the soundness of declaring flags dead here depends
-    on c6502's emission convention always setting N/Z before any
-    Branch the lowering needs to read — which it does).
+
+    The walk follows control flow forward. A `Label` is walked
+    through, because the flags reach it by fall-through and the
+    instructions after it see them. The signed-compare lowering
+    depends on this: its `EOR #$80` sits just before `.cmp_novf`,
+    and the `BMI` / `BPL` after the label reads the EOR's N flag. A
+    `Jump` to an in-function label continues at the target. A `Ret`
+    / `Return` ends the path with the flags dead (no flag rides
+    across a return). A `Branch` reads the flags, so it makes them
+    live.
 
     Only tracks N/Z. Callers that need to know whether C is also
     dead (e.g. dropping an Add/Sub whose C output threads into a
     later SBC chain) must use `all_flags_dead_at`."""
-    while idx < len(instrs):
-        instr = instrs[idx]
-        if isinstance(instr, asm_ast.Branch):
-            return False
-        if isinstance(instr, (
-            asm_ast.Jump, asm_ast.Ret, asm_ast.Return, asm_ast.Label,
-        )):
-            return True
-        if sets_flags(instr):
-            return True
-        idx += 1
-    return True
+    return _flags_dead_walk(instrs, idx, reads_c=False)
 
 
 def all_flags_dead_at(
@@ -476,27 +469,55 @@ def all_flags_dead_at(
     (which read C as the shift-in bit) as flag readers. These are
     common in multi-byte arithmetic chains where the codegen does
     NOT seed CLC/SEC between consecutive ADCs/SBCs because they're
-    deliberately threading carry.
+    deliberately threading carry. The walk follows labels and jumps
+    the same way `flags_dead_at` does.
 
     Use this when dropping or rewriting an instruction whose C/V
     side-effects could be observed downstream."""
-    while idx < len(instrs):
-        instr = instrs[idx]
-        if isinstance(instr, asm_ast.Branch):
-            return False
-        if isinstance(instr, (
-            asm_ast.Add, asm_ast.Sub,
-            asm_ast.RotateLeft, asm_ast.RotateRight,
-        )):
-            # Reads C before (possibly) overwriting it.
-            return False
-        if isinstance(instr, (
-            asm_ast.Jump, asm_ast.Ret, asm_ast.Return, asm_ast.Label,
-        )):
-            return True
-        if _overwrites_all_flags(instr):
-            return True
-        idx += 1
+    return _flags_dead_walk(instrs, idx, reads_c=True)
+
+
+def _flags_dead_walk(
+    instrs: list[asm_ast.Type_instruction], idx: int, *, reads_c: bool,
+) -> bool:
+    """Shared forward walk for `flags_dead_at` (`reads_c=False`,
+    N/Z only) and `all_flags_dead_at` (`reads_c=True`, every flag).
+    Returns False as soon as some path reaches a flag reader before
+    a flag overwriter."""
+    label_to_index = _build_label_map(instrs)
+    visited: set[int] = set()
+    stack = [idx]
+    while stack:
+        i = stack.pop()
+        while i < len(instrs):
+            if i in visited:
+                break
+            visited.add(i)
+            instr = instrs[i]
+            if isinstance(instr, asm_ast.Branch):
+                return False
+            if reads_c and isinstance(instr, (
+                asm_ast.Add, asm_ast.Sub,
+                asm_ast.RotateLeft, asm_ast.RotateRight,
+            )):
+                # Reads C before (possibly) overwriting it.
+                return False
+            if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+                break
+            if isinstance(instr, asm_ast.Jump):
+                tgt = label_to_index.get(instr.target)
+                if tgt is not None:
+                    stack.append(tgt)
+                break
+            if isinstance(instr, asm_ast.Label):
+                i += 1
+                continue
+            if reads_c:
+                if _overwrites_all_flags(instr):
+                    break
+            elif sets_flags(instr):
+                break
+            i += 1
     return True
 
 

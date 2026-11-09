@@ -53,7 +53,7 @@ class TestChapter15Valid(unittest.TestCase):
         self.assertGreater(len(files), 0, "no chapter_15 valid files found")
 
         for path in files:
-            rel = str(path.relative_to(_C15_VALID))
+            rel = path.relative_to(_C15_VALID).as_posix()
             if rel in _INCOMPATIBLE:
                 continue
             with self.subTest(file=rel):

@@ -169,5 +169,44 @@ class TestXSaveSlotLoad(unittest.TestCase):
         self.assertEqual(out[3].dst, callee_slot)
 
 
+class TestXWritesBreakTheSlot(unittest.TestCase):
+    """X must still equal M wherever `LDA M` is rewritten to TXA."""
+
+    def test_call_returning_in_x_blocks_rewrite(self):
+        # `STX p; JSR f; LDA p`: f returns its high byte in X, so X
+        # no longer holds the register parameter saved in p.
+        instrs = [
+            asm_ast.Mov(src=_X(), dst=_M("p"), is_volatile=False),
+            asm_ast.Call(name="f", reg_args=[]),
+            asm_ast.Mov(src=_M("p"), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_instrs(apply_x_save_slot_load(_wrap(instrs))), instrs)
+
+    def test_ldx_of_other_value_blocks_rewrite(self):
+        # paint_strip_reg: `STX color; LDX x_pixel; LDA color` must
+        # read memory, not the x_pixel now in X.
+        instrs = [
+            asm_ast.Mov(src=_X(), dst=_M("color"), is_volatile=False),
+            asm_ast.Mov(src=_M("x_pixel"), dst=_X(), is_volatile=False),
+            asm_ast.Mov(src=_M("color"), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_instrs(apply_x_save_slot_load(_wrap(instrs))), instrs)
+
+    def test_call_with_restore_still_rewrites(self):
+        # `STX M; JSR f; LDX M; ... LDA M` keeps X == M.
+        instrs = [
+            asm_ast.Mov(src=_X(), dst=_M(), is_volatile=False),
+            asm_ast.Call(name="f", reg_args=[]),
+            asm_ast.Mov(src=_M(), dst=_X(), is_volatile=False),
+            asm_ast.Dec(dst=_X()),
+            asm_ast.Mov(src=_M(), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        out = _instrs(apply_x_save_slot_load(_wrap(instrs)))
+        self.assertEqual(out[4], asm_ast.Mov(src=_X(), dst=_A(), is_volatile=False))
+
+
 if __name__ == "__main__":
     unittest.main()

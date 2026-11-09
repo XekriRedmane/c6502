@@ -424,19 +424,15 @@ class Simulator:
 
             case tac_ast.Binary(op=op, src1=a, src2=b, dst=d):
                 va, ta = self._read(frame, a)
-                vb, tb = self._read(frame, b)
-                # C99 §6.3.1.8 usual arithmetic conversions: when the
-                # operands have the same width but different signedness,
-                # the unsigned type wins (relevant for ordering, division
-                # / modulo, and right shift). c99_to_tac elides the
-                # same-width sign-changing cast, leaving the operands
-                # tagged with their original symbol-table types — so
-                # the dispatch has to combine both. This mirrors the
-                # rule tac_to_asm uses for ordering at line ~1226.
-                s_a, w, is_fp = ta
-                s_b, _, _ = tb
-                effective = (s_a and s_b, w, is_fp)
-                self._write(frame, d, self._eval_binary(op, va, vb, effective))
+                vb, _ = self._read(frame, b)
+                # Signedness comes from src1's type. c99_to_tac turns
+                # every same-width signedness cast into a Copy to a
+                # temp of the target type, so the usual arithmetic
+                # conversions leave both operands of `/`, `%`, and
+                # the ordering compares with one signedness. For `>>`
+                # the right operand keeps its own promoted type
+                # (C99 §6.5.7.3) and must not affect the shift kind.
+                self._write(frame, d, self._eval_binary(op, va, vb, ta))
 
             case tac_ast.SignExtend(src=s, dst=d):
                 vu, (_, w_src, _) = self._read(frame, s)

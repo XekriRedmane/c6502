@@ -37,7 +37,7 @@ class TestChapter1Valid(unittest.TestCase):
         files = sorted((_C1 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_1 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C1 / "valid"))
+            rel = path.relative_to(_C1 / "valid").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 _run_stage("codegen", source)
@@ -49,7 +49,7 @@ class TestChapter1InvalidLex(unittest.TestCase):
         files = sorted((_C1 / "invalid_lex").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_lex files found")
         for path in files:
-            rel = str(path.relative_to(_C1 / "invalid_lex"))
+            rel = path.relative_to(_C1 / "invalid_lex").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(LexError):
@@ -62,7 +62,7 @@ class TestChapter1InvalidParse(unittest.TestCase):
         files = sorted((_C1 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C1 / "invalid_parse"))
+            rel = path.relative_to(_C1 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_PARSE_FAILURES):

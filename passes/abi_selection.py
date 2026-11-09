@@ -41,6 +41,16 @@ any check fails):
   4. **Params fit.** The total parameter byte count fits in
      the configured ZP window (`pool.zp_param_window()` —
      defaults to the caller-saved range $80–$BF).
+  5. **Every direct callee is zp_abi too.** A soft-stack function
+     uses $80–$BF as caller-saved scratch, the same window the
+     zp_abi parameter slots come from, so a call to one can
+     overwrite parameters the caller still needs afterwards
+     (`int f(int p) { int l = rec(3); return p + l; }` with a
+     recursive `rec`). `_demote_soft_stack_callers` applies this
+     after the per-function checks, repeating until no function
+     changes, since demoting one function can disqualify its
+     callers. The body-local private pools follow the same rule
+     (see `passes/zp_local_allocation.py`).
 
 The returned dict has an entry for every `Function` top-level in
 `prog`, plus one entry per zp_abi-annotated extern. Functions
@@ -722,4 +732,64 @@ def select_abi(
                     f"parameter but isn't eligible for the ZP-passing "
                     f"ABI; `register` requires zp_abi eligibility"
                 )
+    _demote_soft_stack_callers(prog, c99_prog, out, annotations, decls)
     return out
+
+
+def _direct_callees(prog: tac_ast.Program) -> dict[str, set[str]]:
+    """`name -> names called directly`, including externs (unlike
+    `_build_callgraph`, which keeps only functions defined here)."""
+    out: dict[str, set[str]] = {}
+    for tl in prog.top_level:
+        if not isinstance(tl, tac_ast.Function):
+            continue
+        out[tl.name] = {
+            i.name for i in tl.instructions
+            if isinstance(i, tac_ast.FunctionCall)
+        }
+    return out
+
+
+def _demote_soft_stack_callers(
+    prog: tac_ast.Program,
+    c99_prog: c99_ast.Program,
+    out: dict[str, "ParamLayout"],
+    annotations: dict,
+    decls: dict,
+) -> None:
+    """Rule 5 of the module docstring. Turns every zp_abi function
+    defined here that calls a soft-stack function (directly) into a
+    soft-stack function, until no function changes. A function that
+    is annotated `__attribute__((zp_abi))` or uses `register` can't
+    fall back, so it raises instead."""
+    callees = _direct_callees(prog)
+    changed = True
+    while changed:
+        changed = False
+        for name, called in callees.items():
+            if not isinstance(out.get(name), ZpLayout):
+                continue
+            soft = sorted(
+                c for c in called
+                if not isinstance(out.get(c), ZpLayout)
+            )
+            if not soft:
+                continue
+            fn_decl = decls.get(name)
+            strict = annotations.get(name) == "zp_abi" or (
+                fn_decl is not None and _has_register_request(fn_decl)
+            )
+            if strict:
+                what = (
+                    "declared `__attribute__((zp_abi))`"
+                    if annotations.get(name) == "zp_abi"
+                    else "declares a `register` parameter or local"
+                )
+                raise AbiSelectionError(
+                    f"function `{name}` {what} but calls "
+                    f"`{soft[0]}`, which uses the soft-stack ABI; "
+                    f"`{soft[0]}` may overwrite the $80-$BF ZP "
+                    f"window that holds `{name}`'s parameters"
+                )
+            out[name] = SoftStackLayout()
+            changed = True

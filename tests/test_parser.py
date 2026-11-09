@@ -3431,5 +3431,23 @@ class TestSubscriptParsing(unittest.TestCase):
         self.assertEqual(exp.array.index.const.value, 1)
 
 
+
+class TestFunctionReturningFunctionPointer(unittest.TestCase):
+    """The declared function's parameters come from the function
+    suffix closest to its name, not from the returned type's."""
+
+    def test_params_from_inner_suffix(self):
+        prog = parse("int (*pick(int w))(int a, int b);")
+        fd = prog.declaration[0].function_decl
+        self.assertEqual(fd.name, "pick")
+        self.assertEqual(fd.params, ["w"])
+        self.assertEqual(fd.data_type, c99_ast.FunType(
+            params=[c99_ast.Int()],
+            ret=c99_ast.Pointer(referenced_type=c99_ast.FunType(
+                params=[c99_ast.Int(), c99_ast.Int()], ret=c99_ast.Int(),
+            )),
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -56,16 +56,22 @@ def prune_unused_locals(
 
 def _collect_referenced_data_names(prog: asm_ast.Program) -> set[str]:
     """Walk every operand of every instruction in every function;
-    collect the `name` of every `Data` or `IndexedData` operand
-    seen. Returns the set of referenced symbol names."""
+    collect the `name` of every operand that the emitter renders by
+    symbol name. Returns the set of referenced symbol names.
+
+    `ImmLabelLow` / `ImmLabelHigh` (`#<sym` / `#>sym`) count. An
+    address-taken local whose only references are the two halves of
+    its address would otherwise lose its EQU and leave the emitted
+    file with an undefined symbol."""
     referenced: set[str] = set()
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
             for instr in tl.instructions:
                 for op in _operands_in(instr):
-                    if isinstance(op, asm_ast.Data):
-                        referenced.add(op.name)
-                    elif isinstance(op, asm_ast.IndexedData):
+                    if isinstance(op, (
+                        asm_ast.Data, asm_ast.IndexedData,
+                        asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
+                    )):
                         referenced.add(op.name)
     return referenced
 

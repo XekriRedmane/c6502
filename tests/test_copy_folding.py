@@ -269,5 +269,45 @@ class TestCopyFoldingEndToEnd(unittest.TestCase):
         self.assertIn(".inc_done@", asm)
 
 
+
+class TestCopyFoldingObservableNames(unittest.TestCase):
+    """The intermediate of a fused Copy chain must not be readable
+    outside the function's Var uses."""
+
+    def test_address_taken_intermediate_not_fused(self) -> None:
+        # `Copy(%4, a); Copy(a, b)` with `&a` taken later: fusing to
+        # `Copy(%4, b)` would leave `a` unwritten for the Load.
+        instrs = [
+            tac_ast.Copy(src=_var("%4"), dst=_var("a")),
+            tac_ast.Copy(src=_var("a"), dst=_var("b")),
+            tac_ast.GetAddress(operand=_var("a"), dst=_var("%p")),
+            tac_ast.Load(src_ptr=_var("%p"), dst=_var("%v"), is_volatile=False),
+            tac_ast.Ret(val=_var("%v")),
+        ]
+        out = fold_copies(_fn(instrs))
+        self.assertEqual(out.instructions, instrs)
+
+    def test_static_intermediate_not_fused(self) -> None:
+        # `g = 7; h = g;` with a global `g`: the store to g is
+        # observable by other functions.
+        from passes.optimization.copy_folding import _FoldCopiesWindow
+        from passes.optimization.framework import PassContext
+        from passes.type_checking import StaticAttr, Symbol, Initial
+        import c99_ast
+        symbols = {
+            "g": Symbol(
+                type=c99_ast.Int(),
+                attrs=StaticAttr(initial_value=Initial(0), is_global=True),
+            ),
+        }
+        instrs = [
+            tac_ast.Copy(src=_const(7), dst=_var("g")),
+            tac_ast.Copy(src=_var("g"), dst=_var("h")),
+            tac_ast.Ret(val=_var("h")),
+        ]
+        out = _FoldCopiesWindow().run(_fn(instrs), PassContext(symbols=symbols))
+        self.assertEqual(out.instructions, instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

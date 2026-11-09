@@ -59,7 +59,7 @@ class TestChapter12Valid(unittest.TestCase):
         files = sorted((_C12 / "valid").rglob("*.c"))
         self.assertGreater(len(files), 0, "no chapter_12 valid files found")
         for path in files:
-            rel = str(path.relative_to(_C12 / "valid"))
+            rel = path.relative_to(_C12 / "valid").as_posix()
             if rel in _INCOMPATIBLE_VALID:
                 continue
             with self.subTest(file=rel):
@@ -81,7 +81,7 @@ class TestChapter12InvalidLex(unittest.TestCase):
         files = sorted((_C12 / "invalid_lex").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_lex files found")
         for path in files:
-            rel = str(path.relative_to(_C12 / "invalid_lex"))
+            rel = path.relative_to(_C12 / "invalid_lex").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(LexError):
@@ -94,7 +94,7 @@ class TestChapter12InvalidParse(unittest.TestCase):
         files = sorted((_C12 / "invalid_parse").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_parse files found")
         for path in files:
-            rel = str(path.relative_to(_C12 / "invalid_parse"))
+            rel = path.relative_to(_C12 / "invalid_parse").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(_PARSE_FAILURES):
@@ -107,7 +107,7 @@ class TestChapter12InvalidLabels(unittest.TestCase):
         files = sorted((_C12 / "invalid_labels").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_labels files found")
         for path in files:
-            rel = str(path.relative_to(_C12 / "invalid_labels"))
+            rel = path.relative_to(_C12 / "invalid_labels").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(Exception):
@@ -120,7 +120,7 @@ class TestChapter12InvalidTypes(unittest.TestCase):
         files = sorted((_C12 / "invalid_types").rglob("*.c"))
         self.assertGreater(len(files), 0, "no invalid_types files found")
         for path in files:
-            rel = str(path.relative_to(_C12 / "invalid_types"))
+            rel = path.relative_to(_C12 / "invalid_types").as_posix()
             with self.subTest(file=rel):
                 source = preprocess(path.read_text(), [])
                 with self.assertRaises(Exception):

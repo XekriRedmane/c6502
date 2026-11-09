@@ -88,8 +88,6 @@ SKIPS: dict[str, str] = {
 
     # --- wrong_value: asm sim disagrees with TAC sim. Each is a
     # codegen bug worth tracking down separately.
-    "chapter_16/valid/extra_credit/bitshift_chars.c": "wrong_value",
-    "chapter_18/valid/extra_credit/semantic_analysis/union_namespace.c": "wrong_value",
 }
 
 

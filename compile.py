@@ -539,7 +539,9 @@ def main(argv: list[str]) -> int:
     )
 
     if args.output is not None:
-        with open(args.output, "w", encoding="utf-8") as f:
+        # LF on every platform, so `-o` regenerates the checked-in
+        # examples/*.asm byte-for-byte on Windows too.
+        with open(args.output, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
     else:
         sys.stdout.write(text)

@@ -13,7 +13,9 @@ paint_strip_reg:
    SUBROUTINE
 
    STA   __zpabi_paint_strip_reg__x_pixel
+   STX   __zpabi_paint_strip_reg__color
    LDX   __zpabi_paint_strip_reg__x_pixel
+   LDA   __zpabi_paint_strip_reg__color
    STA   hud_buf,X
    RTS
 

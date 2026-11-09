@@ -140,34 +140,36 @@ def _try_match_sub1(
     #   Mov(M[k+1], A); Sub(Imm 0, A); Mov(A, M[k+1])
     if _is_sbc_continuation(instrs, start + 4):
         return None
-    # Reject if followed by a Branch that reads C or V — DEC
+    # Reject if C or V is read (by a Branch, or by an ADC / SBC /
+    # ROL / ROR) before being redefined — DEC
     # doesn't touch C/V, but SBC sets them, so dropping the SBC
     # would leave C/V at a stale value and BCC/BCS/BVC/BVS would
     # observe wrong flags. The N/Z flags ARE set by DEC and match
     # what the SBC would have set (DEC's N/Z reflect the result),
     # so BMI/BPL/BEQ/BNE remain correct.
-    if _next_branch_reads_c_or_v(instrs, start + 4):
+    if _c_or_v_read_before_redefined(instrs, start + 4):
         return None
     return (4, i0.src)
 
 
-def _next_branch_reads_c_or_v(
+def _c_or_v_read_before_redefined(
     instrs: list[asm_ast.Type_instruction], pos: int,
 ) -> bool:
-    """True iff the SBC's C / V flags can be read by a `BCC`/`BCS` /
-    `BVC`/`BVS` branch before C and V are both redefined. DEC sets
-    only N/Z (not C/V), so folding the SBC to DEC is unsound whenever
-    such a branch is reachable.
+    """True iff the SBC's C / V flags can be read before C and V are
+    both redefined, either by a `BCC`/`BCS`/`BVC`/`BVS` branch or by
+    an ADC / SBC / ROL / ROR that consumes the carry. DEC sets only
+    N/Z (not C/V), so folding the SBC to DEC is unsound whenever such
+    a reader is reachable.
 
     The 6502's C/V flags are NOT touched by LDA / STA / register
     transfers (`Mov`), logical ops (`And`/`Or`/`Xor`), `Inc`/`Dec`,
     `Push`/`Pop`, or `BitTest` (BIT sets N/V but not C). So the
-    SBC's carry threads through those — we must keep scanning past
-    them. C and V ARE redefined by another `Add`/`Sub` (ADC/SBC),
-    `Compare` (CMP/CPX/CPY set C; clear nothing for V but a fresh
-    SBC/ADC would), the shifts/rotates (set C), and `SetCarry`/
-    `ClearCarry` (set C). Once C is redefined the SBC's carry can't
-    reach any later branch, so the fold is safe.
+    SBC's carry threads through those, and we keep scanning past
+    them. `Add`/`Sub`/`RotateLeft`/`RotateRight` read C before
+    writing it, so reaching one is unsafe. `Compare`, `ASL`/`LSR`,
+    and `SetCarry`/`ClearCarry` overwrite C without reading it. Once
+    C is redefined that way, the SBC's carry can't reach any later
+    reader, so the fold is safe.
 
     Anything that splits or leaves control flow without first
     redefining C — a non-C/V `Branch`, a `Label`/`Jump`/`Call`/`Ret`
@@ -202,12 +204,23 @@ def _next_branch_reads_c_or_v(
                     stack.append(t)
                 j += 1
                 continue
-            # C/V-redefining instructions: the SBC's carry can't reach
-            # any later branch on this path — prune (safe).
+            # ADC / SBC / ROL / ROR read C before they overwrite it.
+            # Reaching one means the SBC's borrow feeds a later byte
+            # of a multi-byte chain (for example `LDA hi; SBC #0;
+            # TAX`, where the high byte isn't stored back in place
+            # and so doesn't match `_is_sbc_continuation`). DEC
+            # leaves C untouched, so the fold is unsafe.
             if isinstance(instr, (
-                asm_ast.Add, asm_ast.Sub, asm_ast.Compare,
-                asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+                asm_ast.Add, asm_ast.Sub,
                 asm_ast.RotateLeft, asm_ast.RotateRight,
+            )):
+                return True
+            # C/V-redefining instructions that don't read C first:
+            # the SBC's carry can't reach any later reader on this
+            # path, so prune (safe).
+            if isinstance(instr, (
+                asm_ast.Compare,
+                asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
                 asm_ast.SetCarry, asm_ast.ClearCarry,
             )):
                 break

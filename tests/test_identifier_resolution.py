@@ -1464,5 +1464,27 @@ class TestErrors(unittest.TestCase):
             Resolver().resolve_block_item(stub(), {})
 
 
+
+class TestUnnamedParameters(unittest.TestCase):
+
+    def test_prototype_with_several_unnamed_params(self):
+        resolve_program(parse(
+            "int f(int, int); int main(void) { return 0; }"
+        ))
+
+    def test_definition_requires_names(self):
+        with self.assertRaises(IdentifierResolutionError) as ctx:
+            resolve_program(parse(
+                "int f(int) { return 0; } int main(void) { return 0; }"
+            ))
+        self.assertIn("parameter name omitted", str(ctx.exception))
+
+    def test_duplicate_named_params_still_rejected(self):
+        with self.assertRaises(IdentifierResolutionError):
+            resolve_program(parse(
+                "int f(int a, int a); int main(void) { return 0; }"
+            ))
+
+
 if __name__ == "__main__":
     unittest.main()

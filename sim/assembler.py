@@ -289,6 +289,11 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
     returned by `_emit_instr` exactly, or pass 1 and pass 2 will
     disagree about label addresses."""
     match instr:
+        case asm_ast.Mov(src=src, dst=dst, is_volatile=True) if (
+            _is_volatile_self_mov(src, dst)
+        ):
+            a = asm_ast.Reg(reg=asm_ast.A())
+            return _mov_size(src, a) + _mov_size(a, dst)
         case asm_ast.Mov():
             return _mov_size(instr.src, instr.dst)
         case asm_ast.Add(src=src) | asm_ast.Sub(src=src):
@@ -418,6 +423,13 @@ def _emit_instr(
     position-independent at this layer (absolute addressing is resolved
     at link-time symbol lookup, not at the branch-displacement step)."""
     match instr:
+        case asm_ast.Mov(src=src, dst=dst, is_volatile=True) if (
+            _is_volatile_self_mov(src, dst)
+        ):
+            # Mirrors `asm_to_asm2`: `v = v;` on a volatile `v` is a
+            # read and a write, so it isn't dropped as a self-Mov.
+            a = asm_ast.Reg(reg=asm_ast.A())
+            return _emit_mov(src, a, syms) + _emit_mov(a, dst, syms)
         case asm_ast.Mov(src=src, dst=dst):
             return _emit_mov(src, dst, syms)
         case asm_ast.Add(src=src, dst=dst):
@@ -726,6 +738,12 @@ def _emit_store_a_zp_or_abs(addr: int) -> bytes:
 
 
 # -------- Mov --------
+
+
+def _is_volatile_self_mov(src, dst) -> bool:
+    """A memory Mov whose operands match. The caller checks the
+    volatile bit."""
+    return src == dst and not isinstance(src, asm_ast.Reg)
 
 
 def _mov_size(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> int:

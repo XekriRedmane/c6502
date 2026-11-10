@@ -40,6 +40,20 @@ class TestTacSim(unittest.TestCase):
     def test_arithmetic(self):
         self.assertEqual(_run("int main(void) { return 1 + 2 * 3; }"), 7)
 
+    def test_volatile_scalars(self):
+        # c99_to_tac reads and writes a named volatile scalar with
+        # IndexedLoad / IndexedSymbolStore at index 0, for a local as
+        # well as a static.
+        src = (
+            "volatile int g = 4;\n"
+            "int main(void) {\n"
+            "  volatile unsigned char x = 5;\n"
+            "  x++; x += 2; g *= x;\n"
+            "  return g;\n"
+            "}\n"
+        )
+        self.assertEqual(_run(src), 32)
+
     def test_signed_div_truncates_toward_zero(self):
         # C99 §6.5.5.6: -7 / 2 == -3 (truncate, not floor).
         self.assertEqual(_run("int main(void) { return -7 / 2; }"), -3)

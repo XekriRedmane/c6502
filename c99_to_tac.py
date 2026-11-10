@@ -123,7 +123,12 @@ Mapping:
                                  identifier_resolution; it shares a
                                  namespace with TAC temps `%n` but
                                  can't collide because `@` and `%` are
-                                 both illegal in C identifiers.
+                                 both illegal in C identifiers. A
+                                 volatile scalar is read with a
+                                 volatile IndexedLoad(name, 0, Var(t))
+                                 instead, and written with a volatile
+                                 IndexedSymbolStore, so every TAC pass
+                                 keeps each access (`_volatile_scalar`).
   C99 Assignment(Var(v), rval) -> emit translate(rval) -> rval_val,
                                  then Copy(rval_val, Var(v)); return
                                  Var(v) so chained assignments
@@ -1137,11 +1142,6 @@ class Translator:
     def _is_volatile_var(self, name: str) -> bool:
         """True iff `name` resolves to a variable whose c99 type is
         volatile-qualified (the qualifier may sit underneath a Const).
-        Used by every translate site that reads or writes a Var by
-        name — for volatile Vars we go through the address-taken-
-        equivalent path (`GetAddress` + `Load` / `Store` with
-        `is_volatile=True`) so each access is preserved by every
-        downstream pass that respects the volatile bit.
 
         Synthetic Vars (TAC temps named `%N`) and any name absent
         from the symbol table fall back to False — neither has a
@@ -1150,6 +1150,79 @@ class Translator:
         if sym is None:
             return False
         return _is_volatile_quals_c99(sym.type)
+
+    def _volatile_scalar(self, exp: c99_ast.Type_exp) -> bool:
+        """True iff `exp` names a volatile scalar object.
+
+        A plain `Copy` from or to a `Var` carries no volatile bit, so
+        the TAC optimizer would treat the object as unchanging: it
+        would drop `KBD;`, read `KBD` once for `while (!(KBD & 0x80))
+        ;`, and merge two reads. Every access to such an object goes
+        through `_read_volatile_var` / `_write_volatile_var` instead,
+        which emit the volatile `IndexedLoad` / `IndexedSymbolStore`
+        that every pass already preserves. Aggregates aren't read or
+        written whole through these paths, and a `register` object
+        is pinned to Y, so both keep the plain `Var` form."""
+        if not isinstance(exp, c99_ast.Var):
+            return False
+        sym = self._symbols.get(exp.name)
+        if sym is None or not _is_volatile_quals_c99(sym.type):
+            return False
+        if isinstance(
+            _strip_quals_c99(sym.type),
+            (c99_ast.Array, c99_ast.Structure, c99_ast.Union),
+        ):
+            return False
+        if isinstance(sym.attrs, StaticAttr):
+            return True
+        return isinstance(sym.attrs, LocalAttr) and not getattr(
+            sym.attrs, "register", False,
+        )
+
+    def _read_volatile_var(
+        self, name: str, instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Var:
+        """Read the volatile scalar `name` into a fresh temp, with a
+        volatile `IndexedLoad` at index 0. `tac_to_asm` lowers that
+        to a volatile `LDA` of the object's own storage: `LDA name`
+        for an object with static storage, and the local's slot for
+        an automatic one."""
+        dst = tac_ast.Var(name=self.make_temporary_variable_name(
+            self._symbols[name].type,
+        ))
+        instrs.append(tac_ast.IndexedLoad(
+            name=name,
+            index=tac_ast.Constant(const=tac_ast.ConstUChar(value=0)),
+            dst=dst, is_volatile=True,
+        ))
+        return dst
+
+    def _write_volatile_var(
+        self, name: str, src: tac_ast.Type_val,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """Write `src` to the volatile scalar `name`. The mirror of
+        `_read_volatile_var`."""
+        instrs.append(tac_ast.IndexedSymbolStore(
+            name=name,
+            index=tac_ast.Constant(const=tac_ast.ConstUChar(value=0)),
+            src=src, is_volatile=True,
+        ))
+
+    def _init_scalar(
+        self, vd: c99_ast.Type_var_decl,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> None:
+        """`T x = e;` at block scope, for a plain (non-list)
+        initializer."""
+        init_val = self.translate_exp(vd.init, instrs)
+        target = c99_ast.Var(name=vd.name)
+        if self._volatile_scalar(target):
+            self._write_volatile_var(vd.name, init_val, instrs)
+            return
+        instrs.append(tac_ast.Copy(
+            src=init_val, dst=tac_ast.Var(name=vd.name),
+        ))
 
 
     def make_label(self, prefix: str) -> str:
@@ -1462,10 +1535,7 @@ class Translator:
                         # copies. The Copy lowering reads the dst's
                         # symbol-table size, so a struct-typed Var on
                         # both sides fans out to N byte-copies.
-                        init_val = self.translate_exp(vd.init, instrs)
-                        instrs.append(tac_ast.Copy(
-                            src=init_val, dst=tac_ast.Var(name=vd.name),
-                        ))
+                        self._init_scalar(vd, instrs)
                 return
             case c99_ast.FunctionDecl() | c99_ast.StructDecl():
                 return
@@ -1789,10 +1859,7 @@ class Translator:
                     elif isinstance(vd.init, c99_ast.String):
                         self._translate_string_array_init(vd, instrs)
                     else:
-                        init_val = self.translate_exp(vd.init, instrs)
-                        instrs.append(tac_ast.Copy(
-                            src=init_val, dst=tac_ast.Var(name=vd.name),
-                        ))
+                        self._init_scalar(vd, instrs)
                 return
             case c99_ast.InitExp(exp=exp):
                 if exp is not None:
@@ -1928,10 +1995,10 @@ class Translator:
                 # passes straight through into TAC's Var namespace —
                 # `@` and TAC's `%` are both illegal in C identifiers,
                 # so user vars and translator temps can't collide.
-                # Volatility of the underlying storage is handled at
-                # `tac_to_asm` lowering time, which consults the
-                # symbol table when it emits the load/store atom for
-                # this name.
+                # A volatile scalar is read with a volatile load
+                # instead (see `_volatile_scalar`).
+                if self._volatile_scalar(exp):
+                    return self._read_volatile_var(name, instrs)
                 return tac_ast.Var(name=name)
             case c99_ast.SizeOfExp(exp=inner):
                 # `sizeof e` — fold to a compile-time constant.
@@ -2025,15 +2092,18 @@ class Translator:
                 # is belt-and-braces in case a later refactor lets
                 # a non-lvalue slip through.
                 rval_val = self.translate_exp(rval, instrs)
+                if self._volatile_scalar(lval):
+                    # The assignment's value is the value stored
+                    # (C99 §6.5.16p3), so `b = v = 5` doesn't read the
+                    # volatile `v` back.
+                    self._write_volatile_var(lval.name, rval_val, instrs)
+                    return rval_val
                 if isinstance(lval, c99_ast.Var):
                     dst = tac_ast.Var(name=lval.name)
                     instrs.append(tac_ast.Copy(src=rval_val, dst=dst))
                     # Return the lval so chained assignments compose:
                     # `b = a = 5` -> inner returns Var(@0.a), outer copies
-                    # that into @1.b and returns Var(@1.b). For volatile
-                    # `a`, this means the outer `b = a` re-reads `a` —
-                    # which is fine: a volatile read is the right
-                    # semantics for "read the value of `a` again".
+                    # that into @1.b and returns Var(@1.b).
                     return dst
                 # Volatility of the destination lvalue rides on the
                 # lval's stamped data_type (`*p` has the pointee's
@@ -3154,6 +3224,12 @@ class Translator:
         Assignment); the lowering here trusts that and just sizes
         each temp by the operand's `data_type`."""
         op_type = operand.data_type or c99_ast.Int()
+        if self._volatile_scalar(operand):
+            # One volatile read and one volatile write.
+            cur = self._read_volatile_var(operand.name, instrs)
+            new = self._emit_incdec_step(op, cur, op_type, instrs)
+            self._write_volatile_var(operand.name, new, instrs)
+            return cur if return_old else new
         if isinstance(operand, c99_ast.Var):
             var = tac_ast.Var(name=operand.name)
             old: tac_ast.Type_val | None = None
@@ -3291,6 +3367,15 @@ class Translator:
             isinstance(op, (c99_ast.Add, c99_ast.Subtract))
             and isinstance(lv_type, c99_ast.Pointer)
         )
+        if self._volatile_scalar(lval):
+            # One volatile read and one volatile write.
+            cur = self._read_volatile_var(lval.name, instrs)
+            new_val = self._compute_compound_step(
+                op, cur, lv_type, rval,
+                intermediate_type, is_pointer_arith, instrs,
+            )
+            self._write_volatile_var(lval.name, new_val, instrs)
+            return new_val
         if isinstance(lval, c99_ast.Var):
             lval_var = tac_ast.Var(name=lval.name)
             new_val = self._compute_compound_step(
@@ -3395,7 +3480,14 @@ class Translator:
         the TAC conversion nodes to `instrs`, and return the converted
         val. This is the lowering of a `Cast` node, and compound
         assignment's lval / result conversions use it too. The caller
-        has already handled `source == target`."""
+        has already handled `source == target`.
+
+        A conversion acts on the value, which has the unqualified
+        type (C99 §6.3.2.1p2), so `const` and `volatile` are stripped
+        first. Without that, a `volatile signed char` didn't match
+        `SChar` and was zero-extended."""
+        source = _strip_quals_c99(source)
+        target = _strip_quals_c99(target)
         src_fp = isinstance(
             source, (c99_ast.Float, c99_ast.Double),
         )

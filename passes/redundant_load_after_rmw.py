@@ -310,5 +310,8 @@ def _kills_a(instr: asm_ast.Type_instruction) -> bool:
         # there; HARGS-returning calls leave A undefined.
         return True
     if isinstance(instr, asm_ast.LoadAddress):
-        return _is_reg_a(instr.dst_lo) or _is_reg_a(instr.dst_hi)
+        # Expands to `LDA #<x; STA dst; LDA #>x; STA dst+1`, or to
+        # `LDA FP; ADC #off; ...` for a local. Either way A is
+        # loaded before it's used.
+        return True
     return False

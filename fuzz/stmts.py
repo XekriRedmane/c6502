@@ -166,6 +166,7 @@ class Obj:
                        # struct, gptr, pparam
     init: int = 0
     target: str = ""   # gptr: the global it points to
+    vol: bool = False  # declared `volatile`
     members: list = field(default_factory=list)   # struct: [(name, t)]
 
 
@@ -289,6 +290,8 @@ def render(p: Prog, expected: int) -> str:
              "}"]
     for g in p.globals:
         c = TYPES[g.t][0] if g.t in TYPES else ""
+        if g.vol:
+            c = "volatile " + c
         match g.kind:
             case "global":
                 lines.append(f"{c} {g.name} = {lit(g.init, g.t)};")
@@ -325,10 +328,11 @@ def render(p: Prog, expected: int) -> str:
             ) or "void"
             lines.append(f"{TYPES[f.ret][0]} {f.name}({params}) {{")
         for o in f.statics:
-            lines.append(f"    static {TYPES[o.t][0]} {o.name} = "
+            lines.append(f"    static {_vol(o)}{TYPES[o.t][0]} {o.name} = "
                          f"{lit(o.init, o.t)};")
         for o in f.locals:
-            lines.append(f"    {TYPES[o.t][0]} {o.name} = {lit(o.init, o.t)};")
+            lines.append(f"    {_vol(o)}{TYPES[o.t][0]} {o.name} = "
+                         f"{lit(o.init, o.t)};")
         for c in f.counters:
             lines.append(f"    unsigned char {c};")
         lines += _stmts(f.body, "    ")
@@ -337,6 +341,10 @@ def render(p: Prog, expected: int) -> str:
             lines.append("    return (int)(acc & 0x7FFF);")
         lines.append("}")
     return "\n".join(lines) + "\n"
+
+
+def _vol(o: Obj) -> str:
+    return "volatile " if o.vol else ""
 
 
 def _global_reads(g: Obj) -> list:
@@ -683,8 +691,14 @@ _INTERESTING = [0, 1, 2, 3, 0x7F, 0x80, 0xFF, 0x100, 0x7FFF, 0x8000,
 
 
 class _Gen:
-    def __init__(self, rng: random.Random):
+    def __init__(self, rng: random.Random, vrng: random.Random | None = None):
         self.rng = rng
+        # Picks which objects are `volatile`. It's separate from `rng`
+        # so that adding the qualifier leaves each seed's program
+        # otherwise the same. A volatile object's address is never
+        # taken, since `&v` is a `volatile T *` that a plain `T *`
+        # can't hold.
+        self.vrng = vrng or random.Random(0)
         self.n = 0
         self.zp_bytes = 0
 
@@ -724,8 +738,12 @@ class _Gen:
         globals_.append(Obj(self.fresh("gs"), "", "struct",
                             [self.value(t) for _, t in members],
                             members=members))
+        for g in globals_:
+            if g.kind in ("global", "zp"):
+                g.vol = self.vrng.random() < 0.25
         scalars = [g for g in globals_ if g.kind in ("global", "zp")]
         for target in r.sample(scalars, k=min(len(scalars), r.randint(0, 2))):
+            target.vol = False
             globals_.append(Obj(self.fresh("gp"), target.t, "gptr",
                                 target=target.name))
         self.globals = globals_
@@ -762,6 +780,12 @@ class _Gen:
         if not is_main and r.random() < 0.6:
             t = self.typ()
             statics.append(Obj(self.fresh("s"), t, "static", self.value(t)))
+        # A local whose type some callee takes by pointer may be passed
+        # by address, so it stays plain.
+        by_ptr = {p.t for c in callees for p in c.params if p.kind == "pparam"}
+        for o in locals_ + statics:
+            if o.t not in by_ptr:
+                o.vol = self.vrng.random() < 0.25
         ret = "int" if is_main else self.typ()
         fn = Fn(name, ret, params, locals_, statics, [], [])
         self.fn = fn
@@ -982,7 +1006,7 @@ def make_program(seed: int) -> tuple[str, int]:
     the same seed."""
     for attempt in range(200):
         rng = random.Random(seed * 1000 + attempt)
-        p = _Gen(rng).program()
+        p = _Gen(rng, random.Random(seed * 1000 + attempt + 500)).program()
         interp = _Interp(p)
         try:
             interp.call("main", [])

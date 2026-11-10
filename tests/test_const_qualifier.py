@@ -546,9 +546,12 @@ class TestVolatileLocalSurvives(unittest.TestCase):
             "}\n"
         )
         asm = self._compile_optimized(src)
-        # The loop body has an explicit SBC chain — DEC didn't fire.
-        self.assertIn("SBC   #$01", asm)
-        self.assertNotIn("DEC   __local_delay", asm)
+        # `y` itself gets no DEC. The decrement happens on a
+        # non-volatile copy, between one `LDA y` and one `STA y` in
+        # the loop (the other `STA y` is the initialization).
+        self.assertNotIn("DEC   __local_delay__y", asm)
+        self.assertEqual(asm.count("LDA   __local_delay__y"), 1)
+        self.assertEqual(asm.count("STA   __local_delay__y"), 2)
 
     def test_nonvolatile_decrement_loop_collapses(self):
         # Sanity: the same shape without `volatile` collapses to

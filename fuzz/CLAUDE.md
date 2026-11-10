@@ -91,7 +91,12 @@ compound assignments) as statements and with their value used. The
 objects are locals (some passed to a helper by pointer), block
 statics, globals, zero-page globals, `*gp` through a global pointer,
 array elements, and struct members, across all eight integer types.
-`mix()` folds values into a checksum that main returns.
+About a quarter of the scalar globals, statics, and locals are
+declared `volatile`, chosen with a second RNG so that the qualifier
+doesn't change the rest of a seed's program. An object whose address
+is taken (a `*gp` target, or a local of a type some helper takes by
+pointer) stays plain. `mix()` folds values into a checksum that main
+returns.
 
 The generator builds a tree, renders it, and runs the same tree in a
 Python interpreter under C's rules, so the program carries `// expect:
@@ -115,6 +120,14 @@ more:
 - `redundant_load` taking an empty `z_reflects` to mean "Z reflects
   A", after a soft-stack store's `LDY #off` had set Z (seed 2391, a
   wrong value without --optimize).
+
+Once it declared objects `volatile`, 43 of seeds 4400-4999 came out
+wrong in every path, the TAC interpreter included: `_emit_cast`
+tested a `volatile signed char` as written, didn't match `SChar`,
+and zero-extended it, which `const signed char` also hit (seed 4984).
+`reduce.py` didn't help there, because it kept the stale `// expect`
+line while reducing away the computation, so the cause was found by
+removing `volatile` from one declaration at a time.
 
 ## `reduce.py`
 

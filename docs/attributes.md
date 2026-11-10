@@ -261,16 +261,37 @@ extern volatile uint8_t KBD     __attribute__((address(0xC000)));  // last key, 
 extern volatile uint8_t KBDSTRB __attribute__((address(0xC010)));  // any access clears the strobe
 extern uint16_t CSW             __attribute__((address(0x36)));    // output hook
 
-uint8_t poll_key(void) {
+uint8_t wait_key(void) {
+    while (!(KBD & 0x80))       // wait for a key
+        ;
     uint8_t k = KBD;
-    if (k & 0x80)
-        KBDSTRB = 0;            // clear the strobe so the key is read once
-    return k;
+    KBDSTRB;                    // any access clears the strobe
+    return k & 0x7F;
 }
 ```
 
-Clearing the strobe with a store, as above, works today. A bare read
-such as `KBDSTRB;` doesn't yet (see "Limits").
+Because `KBD` is `volatile`, the loop reads it on every pass, and
+`KBDSTRB;` reads `KBDSTRB` even though the value isn't used. With
+`--optimize`, `wait_key` compiles to the following.
+
+```
+wait_key:
+   SUBROUTINE
+
+.loop@0_continue:
+   LDA   KBD
+   BPL   .loop@0_continue
+   LDA   KBD
+   STA   __local_wait_key__0
+   LDA   KBDSTRB
+   LDA   __local_wait_key__0
+   AND   #$7F
+   RTS
+```
+
+Without `volatile`, the compiler could read `KBD` once and reuse the
+value, and the loop would keep testing that one value after a key
+arrives.
 
 ### Putting the declarations in a header
 
@@ -332,23 +353,6 @@ of the Monitor's way is planned (see `TODO.md`).
 **Registers.** The compiler assumes every call changes A, X, Y, and
 the flags. `COUT1` preserves Y, but there's no way to declare that
 yet, so the compiler doesn't keep a value in X or Y across the call.
-
-**Reads of volatile objects.** Two compiler bugs affect reads of a
-`volatile` object that has a name, such as `KBD`. Stores aren't
-affected, and neither are reads through a pointer.
-
-- A statement that only reads the object, such as `KBDSTRB;` or
-  `(void)KBDSTRB;`, is dropped, with or without `--optimize`.
-- With `--optimize`, a loop that waits for the object to change,
-  such as `while (!(KBD & 0x80)) ;`, is compiled as a single read,
-  so it doesn't wait. The optimizer treats the object as if it can't
-  change.
-
-Until these are fixed (see `TODO.md`), use the value of each read,
-as `poll_key` above does, and don't wait in a loop on a named
-`volatile` object with `--optimize`. Reading through a pointer, as in
-`while (!(*(volatile uint8_t *)0xC000 & 0x80)) ;`, does wait, but it
-costs a `DPTR` setup.
 
 **Arguments.** A ROM routine can take at most 2 bytes of arguments,
 in A and X. A routine that takes an argument in Y, or in a zero-page

@@ -1271,7 +1271,10 @@ class Translator:
                 # volatile-typed local / param / static via Copy /
                 # Binary / Unary / etc., where the resulting Mov
                 # accesses the named cell through standard Pseudo
-                # addressing.
+                # addressing. `c99_to_tac` reads and writes a named
+                # volatile scalar through IndexedLoad /
+                # IndexedSymbolStore, so what reaches this path is
+                # an aggregate or a `register` object.
                 out = [self._mark_volatile_var_access(m) for m in out]
                 return asm_ast.Function(
                     name=name,
@@ -2289,6 +2292,20 @@ class Translator:
             dst=dst_op,
         )]
 
+    def _named_byte(self, name: str, k: int) -> asm_ast.Type_operand:
+        """Byte `k` of the object `name`, for an indexed access with
+        a constant index. An object with static storage is
+        `Data(name, k)`. Any other name is an automatic volatile
+        scalar that `c99_to_tac` accesses through `IndexedLoad` /
+        `IndexedSymbolStore` so the TAC passes keep each access, and
+        it's `Pseudo(name, k)`, the same operand a plain read of the
+        local gets."""
+        if self._symbols is not None:
+            sym = self._symbols.get(name)
+            if sym is not None and not isinstance(sym.attrs, StaticAttr):
+                return asm_ast.Pseudo(name=name, offset=k)
+        return asm_ast.Data(name=name, offset=k)
+
     def _is_static_storage(self, name: str) -> bool:
         """True iff `name` resolves through the symbol table to an
         object with `StaticAttr` (file-scope object or block-scope
@@ -2358,15 +2375,29 @@ class Translator:
         Frame/Stack operand, and LDX doesn't have indirect-Y mode.
 
         A constant index needs no X at all. The bytes are read from
-        `name+k+0..N-1` with absolute addressing."""
+        `name+k+0..N-1` with absolute addressing. A volatile read
+        goes through A as a volatile `LDA` and an ordinary `STA`, so
+        the store into `dst` can be dropped when nothing reads it,
+        as in `while (!(KBD & 0x80)) ;`. A single memory-to-memory
+        Mov would carry the volatile bit to the store as well."""
         index_op = translate_val(index)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
+        if isinstance(index_op, asm_ast.Imm) and is_volatile:
+            base = index_op.value & 0xFF
+            out = []
+            for k in range(n):
+                out.append(asm_ast.Mov(
+                    src=self._named_byte(name, base + k),
+                    dst=_REG_A, is_volatile=True,
+                ))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+            return out
         if isinstance(index_op, asm_ast.Imm):
             base = index_op.value & 0xFF
             return [
                 asm_ast.Mov(
-                    src=asm_ast.Data(name=name, offset=base + k),
+                    src=self._named_byte(name, base + k),
                     dst=_byte_at(dst_op, k),
                     is_volatile=is_volatile,
                 )
@@ -2453,7 +2484,7 @@ class Translator:
                 out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
                 out.append(asm_ast.Mov(
                     src=_REG_A,
-                    dst=asm_ast.Data(name=name, offset=base + k),
+                    dst=self._named_byte(name, base + k),
                     is_volatile=is_volatile,
                 ))
             return out

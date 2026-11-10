@@ -500,6 +500,12 @@ class Simulator:
                 # Static-array indexed load: take name's static
                 # address, add the byte index, read N bytes.
                 base = self._static_addr.get(name)
+                if base is None and self._is_local_access(name, i):
+                    # A volatile automatic scalar, which c99_to_tac
+                    # reads with IndexedLoad at index 0.
+                    v, _ = self._read(frame, tac_ast.Var(name=name))
+                    self._write(frame, d, v)
+                    return None
                 if base is None:
                     raise TacSimError(
                         f"IndexedLoad on unknown static {name!r}",
@@ -515,6 +521,10 @@ class Simulator:
                 # static address, add the byte index, write N
                 # bytes from src.
                 base = self._static_addr.get(name)
+                if base is None and self._is_local_access(name, i):
+                    v, _ = self._read(frame, s)
+                    self._write(frame, tac_ast.Var(name=name), v)
+                    return None
                 if base is None:
                     raise TacSimError(
                         f"IndexedSymbolStore on unknown static {name!r}",
@@ -647,6 +657,16 @@ class Simulator:
             self.memory.store(frame.local_addr[val.name], masked, w)
         else:
             frame.env[val.name] = masked
+
+    def _is_local_access(self, name: str, index) -> bool:
+        """True iff an indexed access to `name` at `index` is the
+        volatile-local form `c99_to_tac` emits: a name with no
+        static address, read or written at constant index 0."""
+        return (
+            name in self.symbols
+            and isinstance(index, tac_ast.Constant)
+            and index.const.value == 0
+        )
 
     def _dst_width(self, val) -> int:
         if not isinstance(val, tac_ast.Var):

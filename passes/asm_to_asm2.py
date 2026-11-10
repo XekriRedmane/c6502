@@ -420,6 +420,17 @@ def _xlate_instruction(
     compound nodes (AllocateStack, FunctionPrologue, Ret) expand
     into multi-atom sequences."""
     match instr:
+        case asm_ast.Mov(src=s, dst=d, is_volatile=True) if (
+            s == d and not isinstance(s, asm_ast.Reg)
+        ):
+            # `v = v;` on a volatile `v` reads and writes it. The
+            # emitter drops a Mov whose operands match, so spell out
+            # the `LDA v; STA v` pair.
+            a = _reg_a()
+            return [
+                asm2_ast.Mov(src=_xlate_op(s), dst=a),
+                asm2_ast.Mov(src=a, dst=_xlate_op(d)),
+            ]
         case asm_ast.Mov(src=s, dst=d):
             return [asm2_ast.Mov(src=_xlate_op(s), dst=_xlate_op(d))]
         case asm_ast.Add(src=s, dst=d):

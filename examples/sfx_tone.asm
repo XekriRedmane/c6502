@@ -20,9 +20,8 @@ sfx_tone:
    STA   __local_sfx_tone__y
 .loop@1_continue:
    LDA   __local_sfx_tone__y
-   SEC
-   SBC   #$01
    STA   __local_sfx_tone__0
+   DEC   __local_sfx_tone__0
    LDA   __local_sfx_tone__0
    STA   __local_sfx_tone__y
    BNE   .loop@1_continue

@@ -52,6 +52,7 @@ which it composes with naturally.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import a_dead_at
 
 
 def apply_dec_peephole(prog: asm_ast.Program) -> asm_ast.Program:
@@ -83,6 +84,10 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             continue
         n_consumed, mem_op = match
         out.append(asm_ast.Dec(dst=mem_op))
+        if not a_dead_at(instrs, i + n_consumed):
+            # The SBC form left M's new value in A, and DEC doesn't
+            # touch A, so load it when something reads A afterwards.
+            out.append(asm_ast.Mov(src=mem_op, dst=_REG_A, is_volatile=False))
         i += n_consumed
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,

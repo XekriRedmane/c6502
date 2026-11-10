@@ -449,5 +449,50 @@ class TestIncPeepholeCorrectness(unittest.TestCase):
         self.assertEqual(result.return_long() & 0xFFFFFFFF, 300)
 
 
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestIncDecLeavesA(unittest.TestCase):
+    """The ADC / SBC form leaves the new value in A and INC / DEC
+    don't, so when A is read afterwards the value is loaded. `return
+    ++c;` for a static `unsigned char` used to return whatever A held
+    before."""
+
+    def _both(self, src, want):
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(src, optimize=optimize).run().return_int()
+                self.assertEqual(got, want)
+
+    def test_return_preincrement_of_static_char(self):
+        self._both(
+            "unsigned char tick(void) {\n"
+            "    static unsigned char c = 10;\n"
+            "    return ++c;\n"
+            "}\n"
+            "int main(void) { tick(); tick(); return tick(); }\n",
+            13,
+        )
+
+    def test_return_predecrement_of_static_char(self):
+        self._both(
+            "unsigned char tock(void) {\n"
+            "    static unsigned char c = 10;\n"
+            "    return --c;\n"
+            "}\n"
+            "int main(void) { tock(); return tock(); }\n",
+            8,
+        )
+
+    def test_return_preincrement_of_static_int(self):
+        self._both(
+            "unsigned int tick(void) {\n"
+            "    static unsigned int w = 0x01FF;\n"
+            "    return ++w;\n"
+            "}\n"
+            "int main(void) { tick(); return tick(); }\n",
+            0x0201,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

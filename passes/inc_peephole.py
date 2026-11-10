@@ -49,6 +49,12 @@ byte with no intervening CLC, every byte in-place RMW'd) is only
 emitted by the multi-byte add-1 lowering — so wherever the bytes
 live, INC + BNE on the matching addresses preserves semantics.
 
+Soundness re A. The ADC chain leaves the top byte's new value in A,
+and the INC chain doesn't touch A. When A is read afterwards (as by
+`return ++counter;` for a static `unsigned char`, whose `Return`
+reads A), the chain is followed by `LDA M[N-1]`, which is still
+shorter than the ADC form. `asm_liveness.a_dead_at` decides.
+
 Soundness re flags. The ADC chain leaves C set per the final ADC
 result; the INC chain doesn't touch C. c6502's codegen never reads
 C across separate operations (every comparison emits its own LDA
@@ -68,6 +74,7 @@ addressing-mode awareness, not from any post-regalloc state.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import a_dead_at
 
 
 def apply_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
@@ -104,6 +111,11 @@ def _rewrite_function(
         n_consumed, mem_ops = match
         replacement, counter = _build_inc_chain(mem_ops, counter)
         out.extend(replacement)
+        if not a_dead_at(instrs, i + n_consumed):
+            # The ADC chain left the top byte's new value in A.
+            out.append(asm_ast.Mov(
+                src=mem_ops[-1], dst=_REG_A, is_volatile=False,
+            ))
         i += n_consumed
     return (
         asm_ast.Function(

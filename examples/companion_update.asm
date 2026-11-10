@@ -42,6 +42,7 @@ __local_drift_step__0	EQU	$8C
 __zpabi_find_active_entity__out_row_1	EQU	$8C
 __zpabi_smc_body_draw__page_flag	EQU	$8C
 __local_compute_screen_x__3	EQU	$8D
+__local_entity_proximity__0	EQU	$8D
 __zpabi_draw_sprite__width	EQU	$8D
 __zpabi_draw_sprite__height	EQU	$8E
 __local_entity_proximity__entity_row	EQU	$8F
@@ -143,6 +144,8 @@ entity_proximity:
    LDA   #>__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
+   STA   __local_entity_proximity__0
+   LDA   __local_entity_proximity__0
    BNE   .if_end@1
    RTS
 .if_end@1:

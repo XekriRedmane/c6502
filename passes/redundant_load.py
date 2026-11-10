@@ -175,12 +175,18 @@ class _RegState:
     x: list[asm_ast.Type_operand] = field(default_factory=list)
     y: list[asm_ast.Type_operand] = field(default_factory=list)
     z_reflects: list[asm_ast.Type_operand] = field(default_factory=list)
+    # True when the last flag-setting instruction set N/Z from A's
+    # current value (a load or computation into A, TAX / TAY). An
+    # empty `z_reflects` alone doesn't say that: the flags may come
+    # from an `LDY #off` setup, a compare, or an `LDX`.
+    z_tracks_a: bool = False
 
     def reset(self) -> None:
         self.a = []
         self.x = []
         self.y = []
         self.z_reflects = []
+        self.z_tracks_a = False
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
@@ -397,7 +403,7 @@ def _rewrite_with_in_states(
 def _clone_state(s: _RegState) -> _RegState:
     return _RegState(
         a=list(s.a), x=list(s.x), y=list(s.y),
-        z_reflects=list(s.z_reflects),
+        z_reflects=list(s.z_reflects), z_tracks_a=s.z_tracks_a,
     )
 
 
@@ -429,6 +435,7 @@ def _join_states(states: Iterable[_RegState]) -> _RegState:
         result.y = _intersect_operands(result.y, s.y)
     if len(states) > 1:
         result.z_reflects = []
+        result.z_tracks_a = False
     return result
 
 
@@ -450,6 +457,7 @@ def _state_equal(s1: _RegState, s2: _RegState) -> bool:
         and _operand_list_equal(s1.x, s2.x)
         and _operand_list_equal(s1.y, s2.y)
         and _operand_list_equal(s1.z_reflects, s2.z_reflects)
+        and s1.z_tracks_a == s2.z_tracks_a
     )
 
 
@@ -615,6 +623,9 @@ def _update_state(
     (a store, as in `LDY #off; STA (FP),Y`), the flags afterwards
     reflect the offset, so z_reflects is cleared."""
     _update_state_core(instr, state, branch_targets)
+    effect = _z_from_a(instr)
+    if effect is not None:
+        state.z_tracks_a = effect
     ops = _operands_of(instr)
     if not any(_setup_writes_y(op) for op in ops):
         return
@@ -630,6 +641,42 @@ def _update_state(
         and _setup_writes_y(instr.dst)
     ):
         state.z_reflects = []
+        state.z_tracks_a = False
+
+
+def _z_from_a(instr: asm_ast.Type_instruction) -> bool | None:
+    """Whether `instr` leaves N/Z set from A's value (True), sets them
+    from something else (False), or leaves them alone (None). The
+    `LDY` of an addressing-mode setup is handled by the caller."""
+    def is_a(op):
+        return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
+
+    def is_reg(op):
+        return isinstance(op, asm_ast.Reg)
+
+    match instr:
+        case asm_ast.Mov(src=s, dst=d):
+            if is_a(d):
+                return True              # LDA / TXA / TYA
+            if is_reg(d):
+                return is_a(s)           # TAX / TAY set Z from A; LDX not
+            if not is_reg(s):
+                return True              # mem-to-mem: LDA src; STA dst
+            return None                  # STA / STX / STY
+        case (asm_ast.Add(dst=d) | asm_ast.Sub(dst=d) | asm_ast.And(dst=d)
+              | asm_ast.Or(dst=d) | asm_ast.Xor(dst=d)):
+            return is_a(d)
+        case (asm_ast.ArithmeticShiftLeft(dst=d)
+              | asm_ast.LogicalShiftRight(dst=d)
+              | asm_ast.RotateLeft(dst=d) | asm_ast.RotateRight(dst=d)):
+            return is_a(d)
+        case asm_ast.Pop(dst=d):
+            return is_a(d)
+        case asm_ast.Push() | asm_ast.SetCarry() | asm_ast.ClearCarry():
+            return None
+        case asm_ast.Branch() | asm_ast.Label():
+            return None
+    return False
 
 
 def _setup_writes_y(op: asm_ast.Type_operand) -> bool:
@@ -883,7 +930,13 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
                 for z in state.z_reflects
                 for c in cur_pre_existing
             )
-            if shared or (not state.z_reflects and cur_was_empty):
+            # Z reflects A's value either through an entry it shares
+            # with A's class, or, when nothing is known about either,
+            # because the last flag-setter set Z from A itself.
+            if shared or (
+                not state.z_reflects and cur_was_empty
+                and state.z_tracks_a
+            ):
                 if not any(
                     _operands_equal(z, mov.dst)
                     for z in state.z_reflects
@@ -906,9 +959,14 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
         return
     _invalidate_aliasing(state, mov.dst)
     _invalidate_z_aliasing(state, mov.dst)
+    # The emitted `LDA src` sets N/Z from the moved value, so Z now
+    # reflects dst (and nothing older).
     if isinstance(mov.dst, _STABLE_MEM_TYPES):
         state.a = [mov.dst]
-        state.z_reflects.append(mov.dst)
+        state.z_reflects = [mov.dst]
+    else:
+        state.a = []
+        state.z_reflects = []
 
 
 def _get_reg(state: _RegState, reg: asm_ast.Type_reg) -> list[asm_ast.Type_operand]:

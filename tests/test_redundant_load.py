@@ -989,5 +989,65 @@ class TestRedundantLoadLdySetup(unittest.TestCase):
         self.assertEqual(_rewritten(instrs), instrs)
 
 
+
+class TestZTracksA(unittest.TestCase):
+    """An empty `z_reflects` means nothing is known about Z, which is
+    different from "Z reflects A". fuzz.stmts seed 2391: after `LDA
+    F12; STA F14` the store's `LDY #off` had set Z from the offset,
+    yet `STA g1; LDA g1; BEQ` dropped the `LDA g1`, and the branch
+    tested Y's offset."""
+
+    _A = asm_ast.Reg(reg=asm_ast.A())
+
+    def _run(self, instrs):
+        out = apply_redundant_load_elimination(_prog(instrs))
+        return out.top_level[0].instructions
+
+    def _mov(self, s, d):
+        return asm_ast.Mov(src=s, dst=d, is_volatile=False)
+
+    def _tail(self):
+        return [
+            asm_ast.Branch(cond=asm_ast.EQ(), target="L"),
+            self._mov(asm_ast.Imm(value=1), self._A),
+            asm_ast.Label(name="L"),
+            asm_ast.Return(save_a=True, save_x=False),
+        ]
+
+    def test_load_kept_after_frame_store(self):
+        f = lambda o: asm_ast.Frame(offset=o)
+        g1 = asm_ast.Data(name="g1", offset=0)
+        instrs = [
+            self._mov(f(12), self._A), self._mov(self._A, f(14)),
+            self._mov(f(14), self._A), self._mov(self._A, g1),
+            self._mov(g1, self._A),
+        ] + self._tail()
+        out = self._run(instrs)
+        i = out.index(asm_ast.Branch(cond=asm_ast.EQ(), target="L"))
+        self.assertEqual(out[i - 1], self._mov(g1, self._A))
+
+    def test_load_kept_after_call(self):
+        # A callee returns its value in A, but its last flag-setter
+        # needn't have been A's load (`LDX hi; RTS`).
+        t = asm_ast.Data(name="__local_f__0", offset=0)
+        instrs = [
+            asm_ast.Call(name="g", reg_args=[]),
+            self._mov(self._A, t), self._mov(t, self._A),
+        ] + self._tail()
+        out = self._run(instrs)
+        self.assertIn(self._mov(t, self._A), out)
+
+    def test_load_dropped_when_z_set_from_a(self):
+        # `LDA #5; STA g; LDA g; BEQ`: Z is set from A, which g now
+        # holds, so the reload goes.
+        g = asm_ast.Data(name="g", offset=0)
+        instrs = [
+            self._mov(asm_ast.Imm(value=5), self._A),
+            self._mov(self._A, g), self._mov(g, self._A),
+        ] + self._tail()
+        out = self._run(instrs)
+        self.assertNotIn(self._mov(g, self._A), out)
+
+
 if __name__ == "__main__":
     unittest.main()

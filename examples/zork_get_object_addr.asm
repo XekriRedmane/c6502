@@ -4,7 +4,6 @@ HARGS	EQU	$04
 DPTR	EQU	$24
 __zpabi_get_object_addr__obj	EQU	$80
 __local_main__0	EQU	$81
-__local_main__1	EQU	$82
 __local_get_object_addr__0	EQU	$83
 __local_get_object_addr__1	EQU	$84
 __local_get_object_addr__2	EQU	$85
@@ -74,24 +73,10 @@ main:
    STA   z_header_addr
    LDA   #>story
    STA   z_header_addr+1
-   LDA   #<story
-   STA   __local_main__0
-   LDA   #>story
-   STA   __local_main__1
    LDA   #$01
-   LDY   #$0A
-   STA   (__local_main__0),Y
-   LDA   #<story
-   STA   __local_main__0
-   LDA   #>story
-   STA   __local_main__1
-   LDA   #<story
-   STA   DPTR
-   LDA   #>story
-   STA   DPTR+1
+   STA   story+10
    LDA   #$00
-   INY
-   STA   (__local_main__0),Y
+   STA   story+11
    LDA   #$03
    STA   __zpabi_get_object_addr__obj
    JSR   get_object_addr

@@ -318,7 +318,15 @@ def defs_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
 def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
     """Var operands of `instr` that are *read*. Excludes
     `GetAddress.operand` (its name names a storage cell, not a value
-    being read). Phi sources ARE returned as uses by this flat walk;
+    being read). `IndexedLoad` and `IndexedSymbolStore` name the
+    object they access, and that name comes back as a read too: the
+    load reads it, and the store rewrites only some of its bytes, so
+    the rest of its earlier value is still needed. Without this, a
+    struct local whose members are accessed in place
+    (`direct_member_access`) looked unread, and copy folding dropped
+    the copy that filled it. The names are never SSA-renamed (they're
+    statics, aggregates, or volatile locals), so passes that rename
+    uses leave them alone. Phi sources ARE returned as uses by this flat walk;
     liveness analysis special-cases Phis to attribute their sources
     to predecessor edges instead of the Phi's own block."""
     out: list[tac_ast.Var] = []
@@ -347,7 +355,8 @@ def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
                 out.append(s)
             if isinstance(p, tac_ast.Var):
                 out.append(p)
-        case tac_ast.IndexedLoad(index=i):
+        case tac_ast.IndexedLoad(name=n, index=i):
+            out.append(tac_ast.Var(name=n))
             if isinstance(i, tac_ast.Var):
                 out.append(i)
         case tac_ast.IndexedStore(index=i, src=s):
@@ -355,7 +364,8 @@ def uses_in(instr: tac_ast.Type_instruction) -> list[tac_ast.Var]:
                 out.append(i)
             if isinstance(s, tac_ast.Var):
                 out.append(s)
-        case tac_ast.IndexedSymbolStore(index=i, src=s):
+        case tac_ast.IndexedSymbolStore(name=n, index=i, src=s):
+            out.append(tac_ast.Var(name=n))
             if isinstance(i, tac_ast.Var):
                 out.append(i)
             if isinstance(s, tac_ast.Var):

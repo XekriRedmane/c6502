@@ -98,6 +98,7 @@ from passes.optimization.copy_folding import (
 )
 from passes.optimization.reassoc_const import ReassocConstants
 from passes.optimization.reassoc_offset import ReassocOffsetConstant
+from passes.optimization.direct_member_access import DirectMemberAccess
 from passes.optimization.recognize_indexed_store import RecognizeIndexedStore
 from passes.optimization.recognize_indexed_load import RecognizeIndexedLoad
 from passes.optimization.truncate_extend_fold import FoldTruncateExtend
@@ -150,6 +151,10 @@ _DRIVER = PhaseDriver(
         FoldCopiesInFixedpoint(),
         ReassocConstants(),
         ReassocOffsetConstant(),
+        # `g.m` and `r.m` as direct byte accesses instead of a store
+        # through `&g + k`. After the reassociations, so the offset is
+        # one Constant.
+        DirectMemberAccess(),
         RecognizeIndexedStore(),
         RecognizeIndexedLoad(),
         FoldTruncateExtend(),

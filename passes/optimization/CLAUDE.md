@@ -139,6 +139,19 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   `drop_defs()` leaves its def for the other uses. Plus `is_1_byte_var` /
   `is_1_byte_val` / `all_dsts`. Each recognizer post-checks `base`'s kind
   (Constant for absolute,X; pointer Var for (zp),Y) and emits its node.
+- `direct_member_access.py` — `direct_member_access`
+  (`DirectMemberAccess`, raw FixedpointPass). A `Load` / `Store` (or
+  `IndirectIndexed*` with a constant index) through `GetAddress(obj)`
+  plus a constant `k` becomes `IndexedLoad` / `IndexedSymbolStore` of
+  `obj` at index `k`, which `tac_to_asm` lowers to `LDA g+k` / `STA
+  g+k`, or to the local's own byte. Applies to statics and to
+  automatic structs, unions, and arrays that aren't parameters (an
+  automatic scalar could be SSA-renamed once its address is gone).
+  A local struct whose every access is rewritten is no longer
+  address-taken, so the asm regalloc gives it zero-page slots.
+  `var_visit.uses_in` returns the name an `IndexedLoad` /
+  `IndexedSymbolStore` accesses as a read, so copy folding and DSE
+  keep the copy that fills such a struct.
 - `recognize_indexed_store.py` / `recognize_indexed_load.py` —
   `RecognizeIndexedStore` / `RecognizeIndexedLoad` (DefUsePass, on
   `recognize_extend_add_chain`). Collapse `ZeroExtend(uchar) +
@@ -221,7 +234,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       (cmp_zero ∪ narrow_and ∪ lnot, one merged RuleSet)
       → eliminate_dead_loops → UCE → cse → licm
       → copy_propagate → DSE → fold_copies → reassoc_constants
-      → reassoc_offset_constant
+      → reassoc_offset_constant → direct_member_access
       → recognize_indexed_store → recognize_indexed_load
       → fold_truncate_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)

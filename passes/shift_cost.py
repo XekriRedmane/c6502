@@ -17,7 +17,11 @@ a 16-bit shift by up to 4 bits, an 8-bit shift by up to 7, or a
 32-bit shift by up to 2 (or by 8q + 2 with the moved bytes).
 
 A shift by exactly 1, or by a multiple of 8, is always inlined,
-whatever the width, as it was before this rule existed.
+whatever the width, as it was before this rule existed. So is a shift
+by `8q + 7`, which is lowered as a shift by `8(q + 1)` and one bit
+back the other way: an `ASL` (or `LSR`) of one byte followed by an
+`LDA` / `ROL A` / `STA` (or `ROR A`) of each remaining byte. For a
+16-bit `w >> 7` that's 8 instructions.
 
 The helper call costs about 8 instructions of argument and result
 staging plus the JSR, and the helper loops once per bit, so up to 8
@@ -33,10 +37,13 @@ def inline_shift_ok(size: int, count: int, *, signed_right: bool = False) -> boo
     """True iff a shift of a `size`-byte value by the constant
     `count` should be lowered inline. A signed right shift is only
     inlined without a byte move (`count < 8`), because the vacated
-    high bytes would need a sign fill."""
+    high bytes would need a sign fill, except for `count = 8q + 7`,
+    whose lowering computes the fill."""
     if not 0 < count < size * 8:
         return False
     q, r = divmod(count, 8)
+    if r == 7:
+        return True
     if signed_right and q:
         return False
     if count == 1 or r == 0:

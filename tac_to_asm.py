@@ -818,6 +818,8 @@ def _inline_left_shift_const(
     A 1-byte shift runs in A instead, `LDA src; ASL A` x count; `STA
     dst`, which is as many instructions and 3 cycles a step faster
     than `ASL` on a zero-page byte."""
+    if count % 8 == 7:
+        return _inline_left_shift_7_mod_8(src_op, dst_op, size, count // 8)
     if size == 1:
         return _shift_byte_in_a(
             src_op, dst_op, [asm_ast.ArithmeticShiftLeft(dst=_REG_A)] * count,
@@ -861,6 +863,10 @@ def _inline_right_shift_const(
     A 1-byte shift runs in A, as `LSR A` steps, or for a signed shift
     `CMP #$80; ROR A` steps (the compare copies bit 7 into C, which
     the rotate shifts back in)."""
+    if count % 8 == 7:
+        return _inline_right_shift_7_mod_8(
+            src_op, dst_op, size, count // 8, signed=signed,
+        )
     if size == 1:
         if signed:
             step = [
@@ -890,6 +896,98 @@ def _inline_right_shift_const(
             out.append(asm_ast.LogicalShiftRight(dst=top_byte))
         for k in range(top - 1, -1, -1):
             out.append(asm_ast.RotateRight(dst=_byte_at(dst_op, k)))
+    return out
+
+
+def _inline_right_shift_7_mod_8(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    q: int,
+    *,
+    signed: bool,
+) -> list[asm_ast.Type_instruction]:
+    """RightShift by `8q + 7`, as a shift by `8(q + 1)` and then one
+    bit left. Byte k of the result is `(src[k+q] >> 7) | (src[k+q+1]
+    << 1)`, so one `ASL` of byte `q` puts its top bit in C, and an
+    `LDA` / `ROL A` / `STA` of each byte above it carries that bit
+    into the byte below. For `w >> 7` on a 16-bit `w`, that's
+
+        LDA w; ASL A; LDA w+1; ROL A; STA r; LDA #0; ROL A; STA r+1
+
+    and for `w >> 15` it's `LDA w+1; ASL A; LDA #0; ROL A; STA r`,
+    with `r+1` zero.
+
+    The bytes above the last one carried into are zero for an
+    unsigned shift. For a signed shift they're the sign fill, $FF
+    when the value is negative and 0 otherwise, which the last
+    rotate (or the `ASL` when there's no rotate) leaves in C.
+    `LDA #0; ADC #$FF; EOR #$FF` turns C into the fill.
+
+    The bytes are written low to high, and byte k is written after
+    every source byte at or below k + q + 1 has been read, so this
+    is correct when `src` and `dst` are the same slot."""
+    out: list[asm_ast.Type_instruction] = [
+        asm_ast.Mov(src=_byte_at(src_op, q), dst=_REG_A),
+        asm_ast.ArithmeticShiftLeft(dst=_REG_A),
+    ]
+    # Bytes 0 .. size-q-2 each take bit 7 of the byte below and the
+    # low 7 bits of the byte above, shifted up.
+    top = size - q - 1
+    for k in range(top):
+        out.append(asm_ast.Mov(src=_byte_at(src_op, q + 1 + k), dst=_REG_A))
+        out.append(asm_ast.RotateLeft(dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+    if signed:
+        out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+        out.append(asm_ast.Add(src=asm_ast.Imm(value=0xFF), dst=_REG_A))
+        out.append(asm_ast.Xor(
+            src1=_REG_A, src2=asm_ast.Imm(value=0xFF), dst=_REG_A,
+        ))
+        for k in range(top, size):
+            out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+        return out
+    out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+    out.append(asm_ast.RotateLeft(dst=_REG_A))
+    out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, top)))
+    for k in range(top + 1, size):
+        out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_byte_at(dst_op, k)))
+    return out
+
+
+def _inline_left_shift_7_mod_8(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    q: int,
+) -> list[asm_ast.Type_instruction]:
+    """LeftShift by `8q + 7`, as a shift by `8(q + 1)` and then one
+    bit right. Byte k of the result, for k > q, is `(src[k-q-1] >> 1)
+    | (src[k-q] << 7)`, and byte q is `src[0] << 7`. One `LSR` of byte
+    `size-q-1` puts its low bit in C (the rest of that byte shifts out
+    of the value), and an `LDA` / `ROR A` / `STA` of each byte below
+    it carries that bit into the byte above. For `w << 7` on a 16-bit
+    `w`, that's
+
+        LDA w+1; LSR A; LDA w; ROR A; STA r+1; LDA #0; ROR A; STA r
+
+    The bytes are written high to low, and byte k is written after
+    every source byte at or above k - q - 1 has been read, so this is
+    correct when `src` and `dst` are the same slot. The bytes below q
+    are zero."""
+    out: list[asm_ast.Type_instruction] = [
+        asm_ast.Mov(src=_byte_at(src_op, size - q - 1), dst=_REG_A),
+        asm_ast.LogicalShiftRight(dst=_REG_A),
+    ]
+    for k in range(size - 1, q, -1):
+        out.append(asm_ast.Mov(src=_byte_at(src_op, k - q - 1), dst=_REG_A))
+        out.append(asm_ast.RotateRight(dst=_REG_A))
+        out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
+    out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+    out.append(asm_ast.RotateRight(dst=_REG_A))
+    out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, q)))
+    for k in range(q - 1, -1, -1):
+        out.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_byte_at(dst_op, k)))
     return out
 
 
@@ -2324,11 +2422,13 @@ class Translator:
     def _named_byte(self, name: str, k: int) -> asm_ast.Type_operand:
         """Byte `k` of the object `name`, for an indexed access with
         a constant index. An object with static storage is
-        `Data(name, k)`. Any other name is an automatic volatile
-        scalar that `c99_to_tac` accesses through `IndexedLoad` /
-        `IndexedSymbolStore` so the TAC passes keep each access, and
+        `Data(name, k)`. Any other name is an automatic object, and
         it's `Pseudo(name, k)`, the same operand a plain read of the
-        local gets."""
+        local gets. That's either a volatile scalar, which
+        `c99_to_tac` accesses through `IndexedLoad` /
+        `IndexedSymbolStore` so the TAC passes keep each access, or a
+        struct, union, or array whose member `direct_member_access`
+        reads or writes in place."""
         if self._symbols is not None:
             sym = self._symbols.get(name)
             if sym is not None and not isinstance(sym.attrs, StaticAttr):

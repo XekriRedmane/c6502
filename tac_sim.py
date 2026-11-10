@@ -506,6 +506,10 @@ class Simulator:
                 # Static-array indexed load: take name's static
                 # address, add the byte index, read N bytes.
                 base = self._static_addr.get(name)
+                if base is None and self._is_local_aggregate(name):
+                    # A member of an automatic struct, union, or
+                    # array, read in place (direct_member_access).
+                    base = self._address_of(frame, tac_ast.Var(name=name))
                 if base is None and self._is_local_access(name, i):
                     # A volatile automatic scalar, which c99_to_tac
                     # reads with IndexedLoad at index 0.
@@ -527,6 +531,8 @@ class Simulator:
                 # static address, add the byte index, write N
                 # bytes from src.
                 base = self._static_addr.get(name)
+                if base is None and self._is_local_aggregate(name):
+                    base = self._address_of(frame, tac_ast.Var(name=name))
                 if base is None and self._is_local_access(name, i):
                     v, _ = self._read(frame, s)
                     self._write(frame, tac_ast.Var(name=name), v)
@@ -674,6 +680,17 @@ class Simulator:
             self.memory.store(frame.local_addr[val.name], masked, w)
         else:
             frame.env[val.name] = masked
+
+    def _is_local_aggregate(self, name: str) -> bool:
+        """True iff `name` is an automatic struct, union, or array,
+        which lives in memory here."""
+        sym = self.symbols.get(name)
+        if sym is None or isinstance(sym.attrs, StaticAttr):
+            return False
+        t = sym.type
+        while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+            t = t.referenced_type
+        return isinstance(t, (c99_ast.Structure, c99_ast.Union, c99_ast.Array))
 
     def _is_local_access(self, name: str, index) -> bool:
         """True iff an indexed access to `name` at `index` is the

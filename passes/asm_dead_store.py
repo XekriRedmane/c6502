@@ -80,6 +80,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
+from passes.asm_liveness import all_flags_dead_at, flags_dead_at
 
 
 # Asm-level regalloc pool range (default `Pool(start=0x80)` splits
@@ -187,6 +188,18 @@ def _rewrite_function(
         if kind == "pure_sta":
             # Drop entirely.
             continue
+        if kind == "dead_rmw":
+            # The new value isn't read. The flags it sets have to be
+            # dead too: N and Z for INC / DEC, and C as well for a
+            # shift or rotate.
+            if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
+                flags_dead = flags_dead_at(instrs, i + 1)
+            else:
+                flags_dead = all_flags_dead_at(instrs, i + 1)
+            if flags_dead:
+                continue
+            out.append(instr)
+            continue
         # kind == "mem_to_mem": keep the LDA half by morphing the
         # dst to Reg(A).
         out.append(asm_ast.Mov(
@@ -259,7 +272,15 @@ def _dse_candidate_kind(instr: asm_ast.Type_instruction) -> str | None:
 
     Volatile Movs are never candidates — every store to a volatile
     cell is an observable side effect (C99 §6.7.3.6) and must
-    survive even when the cell is never read again."""
+    survive even when the cell is never read again.
+
+      * "dead_rmw" — `INC` / `DEC` / `ASL` / `LSR` / `ROL` / `ROR` of
+        one of the compiler's own `__local_*` slots, which are never
+        volatile: drop on dead when the flags it sets are dead too.
+        The in-place lowering of `w << 1` shifts both bytes of a
+        copy, and `(uint8_t)(w << 1)` reads only the low one."""
+    if isinstance(instr, _RMW) and isinstance(instr.dst, asm_ast.Data)             and instr.dst.name.startswith("__local_"):
+        return "dead_rmw"
     if not isinstance(instr, asm_ast.Mov):
         return None
     if instr.is_volatile:
@@ -272,6 +293,13 @@ def _dse_candidate_kind(instr: asm_ast.Type_instruction) -> str | None:
     # We can drop the STA half by morphing dst to Reg(A), preserving
     # the load and its flag effects.
     return "mem_to_mem"
+
+
+_RMW = (
+    asm_ast.Inc, asm_ast.Dec,
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight,
+)
 
 
 def _build_label_map(

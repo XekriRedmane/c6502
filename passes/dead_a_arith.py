@@ -53,6 +53,9 @@ Handled instruction kinds:
     `dst = Reg(A)` — ADC/SBC/AND/ORA. Reads A, writes A + flags.
   * `Xor` with `src1, src2 ∈ {Imm, Data, ZP, Reg(A)}` and
     `dst = Reg(A)` — EOR. Reads operands, writes A + N/Z.
+  * `ArithmeticShiftLeft` / `LogicalShiftRight` / `RotateLeft` /
+    `RotateRight` of `Reg(A)` — ASL / LSR / ROL / ROR A. Writes A +
+    N/Z/C, so like ADC / SBC it needs every flag dead.
 
 # Redundant-flag drop for TXA / TYA
 
@@ -133,7 +136,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             # writing A-arithmetic (Mov/And/Or/Xor — LDA/TXA/TYA/
             # AND/ORA/EOR), the C/V flags carry through unchanged,
             # so only N/Z liveness matters.
-            if isinstance(instr, (asm_ast.Add, asm_ast.Sub)):
+            if isinstance(instr, _C_WRITERS):
                 if not all_flags_dead_at(instrs, after):
                     continue
             else:
@@ -189,7 +192,20 @@ def _writes_only_a_and_flags(instr: asm_ast.Type_instruction) -> bool:
             if not _is_pure_source(s):
                 return False
         return True
+    if isinstance(instr, _SHIFTS):
+        return is_reg_a(instr.dst)
     return False
+
+
+# ASL / LSR / ROL / ROR A. Each writes A, N, Z, and C.
+_SHIFTS = (
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
+    asm_ast.RotateLeft, asm_ast.RotateRight,
+)
+
+# The droppable kinds that write C as well as N and Z, so dropping one
+# needs every flag dead, since a later ADC, SBC, or rotate may read C.
+_C_WRITERS = (asm_ast.Add, asm_ast.Sub) + _SHIFTS
 
 
 def _is_pure_source(op: asm_ast.Type_operand) -> bool:

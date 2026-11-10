@@ -220,28 +220,54 @@ aggregates) would let `carry_branch_fold` turn the test into a `BCS`
 right after the `JSR`, and would drop the pointer setup for every
 member access. That would help every struct local, not only these.
 
+## Name the register a parameter arrives in
+
+A `register` parameter's register follows from its position: the
+first register byte goes in A and the second in X. There's no way to
+ask for Y, or to put the first byte in X, so a ROM or DOS routine
+whose arguments don't arrive in that order can't be declared. RWTS
+($2900) takes its parameter block's address with the high byte in A
+and the low byte in Y, and `examples/zork_print_string_literal.c`
+calls it through a three-instruction assembly routine because of
+that.
+
+One spelling is an attribute on the parameter, such as `void
+RWTS(register uint8_t hi __attribute__((reg(a))), register uint8_t lo
+__attribute__((reg(y))))`. Things to decide:
+
+- Whether it's allowed only on routines with `address`, or on
+  compiled functions too. A compiled function would need an entry
+  stub that stores Y, and the register allocator would have to keep
+  Y free for it, as it does for a `register` local.
+- Whether a 2-byte parameter can name a pair (`reg(ay)`), for
+  routines that take an address in A and Y, or in X and Y.
+- The errors: a register named twice, a pointer parameter (see
+  calling_conventions.md), a parameter without `register`, and more
+  than three register bytes.
+- Whether the caller loads Y last. Loading an argument from the soft
+  stack uses Y as the index, so Y has to be set after every other
+  argument.
+
 ## Optimizations found by the Zork string printer
 
-`examples/zork_print_string_literal.c` compiles to 1984 bytes of
+`examples/zork_print_string_literal.c` first compiled to 1984 bytes of
 code, about twice the 980 bytes of Zork's own code for the same
-routines. The worst are print_zstring (604 bytes against 216),
-get_next_zchar (201 against 76), and do_rwts_on_sector (177 against
-51). The listing shows four causes,
-roughly in order of size.
+routines. Inline lowering of 16-bit shifts by 7 and 15, and direct
+access to struct members at constant offsets
+(`passes/optimization/direct_member_access.py`), brought that to
+1510. What's left, roughly in order of size:
 
-- **Struct members at a constant offset go through a pointer.**
-  `iob.command = c` on a global struct builds `&iob` in a zero-page
-  pair and stores with `STA (ptr),Y`, where `STA iob+12` does the
-  same thing in one instruction, and `iob.track++` could be `INC
-  iob+4`. A local struct gets the same treatment. Struct locals whose
-  address doesn't escape should be kept as per-member scalars (see
-  the entry above on branching on a carry-struct flag), and a member
-  of a struct with a fixed address should be a `Data(name, offset)`
-  operand.
-- **16-bit shifts by 7 and 15.** `(uint8_t)(w >> 7)` calls `lsr16`,
-  and `(uint8_t)(w >> 15)` is seven `LSR`s of the high byte. The
-  first is `LDA lo; ASL; LDA hi; ROL`, and the second is `LDA hi;
-  ASL; LDA #0; ROL`.
+- **A recursive function saves its zero-page bytes on every call.**
+  print_zstring is on the soft stack because it calls itself, and its
+  prologue and epilogue save and restore the seven callee-saved
+  zero-page bytes it uses, about 100 bytes of code (458 bytes against
+  Zork's 216). Zork saves its decoder state with `PHA` / `PLA` only
+  around the recursive call, on the abbreviation path. Saving the
+  bytes around the calls that can recurse, instead of at entry and
+  exit, would do the same.
+- **A shift by one stages through a slot.** `(uint8_t)(w << 1)` is
+  `LDA w; STA t; ASL t; LDA t`, where `LDA w; ASL A` does the same
+  when `t` is dead after.
 - **Operands staged through a temporary.** `sector >=
   SECTORS_PER_TRACK` copies `SECTORS_PER_TRACK` into a slot and
   subtracts the slot, where `SBC SECTORS_PER_TRACK` reads it in
@@ -250,6 +276,18 @@ roughly in order of size.
   three bytes of `2 * SCRATCH2` with one `ASL` / `ROL` / `ROL` chain
   in the original. In C those are three expressions, and each one
   recomputes the shift.
+
+## Volatile structs
+
+A `volatile struct s g;` object crashes `c99_to_tac` with a Python
+traceback when a member is accessed (`_member_offset` reads `.tag`
+from the `Volatile` wrapper), and a volatile-qualified member
+(`struct s { volatile unsigned char b; };`) is rejected by the type
+checker as "static-storage object can't have non-object type
+Volatile". Both should compile, with every access to a volatile
+member kept and in order, which `direct_member_access` already
+preserves through the `is_volatile` bit. Until then, the crash should
+at least be a one-line error.
 
 ## Zero-page globals across translation units, and automatic placement
 

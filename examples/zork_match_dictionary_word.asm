@@ -8,23 +8,21 @@ __local_main__2	EQU	$82
 __local_main__3	EQU	$83
 __local_main__4	EQU	$84
 __local_main__i	EQU	$85
-__local_main__5	EQU	$86
-__local_main__6	EQU	$87
-__local_match_dictionary_word__0	EQU	$88
-__local_match_dictionary_word__entry_index_0	EQU	$8A
-__local_match_dictionary_word__entry_index_1	EQU	$8B
-__local_match_dictionary_word__2	EQU	$8C
-__local_match_dictionary_word__3	EQU	$8D
-__local_match_dictionary_word__entry_0	EQU	$8E
-__local_match_dictionary_word__entry_1	EQU	$8F
-__local_get_dictionary_addr__0	EQU	$90
-__local_get_dictionary_addr__1	EQU	$91
+__local_match_dictionary_word__0	EQU	$86
+__local_match_dictionary_word__entry_index_0	EQU	$88
+__local_match_dictionary_word__entry_index_1	EQU	$89
+__local_match_dictionary_word__2	EQU	$8A
+__local_match_dictionary_word__3	EQU	$8B
+__local_match_dictionary_word__entry_0	EQU	$8C
+__local_match_dictionary_word__entry_1	EQU	$8D
+__local_get_dictionary_addr__0	EQU	$8E
+__local_get_dictionary_addr__1	EQU	$8F
 z_header_addr	EQU	$BA
 zchar_scratch2	EQU	$DA
 
 ; @zp-link-meta-begin
 ; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
-; def main params= locals=__local_main__0,__local_main__1,__local_main__2,__local_main__3,__local_main__4,__local_main__i,__local_main__5,__local_main__6 indirect=false in_cycle=false
+; def main params= locals=__local_main__0,__local_main__1,__local_main__2,__local_main__3,__local_main__4,__local_main__i indirect=false in_cycle=false
 ; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__1,__local_match_dictionary_word__entry_index_0,__local_match_dictionary_word__entry_index_1,__local_match_dictionary_word__2,__local_match_dictionary_word__3,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
 ; call main -> match_dictionary_word
 ; call match_dictionary_word -> get_dictionary_addr
@@ -184,77 +182,39 @@ main:
    SUBROUTINE
 
    LDA   #<story
-   CLC
-   ADC   #$40
-   STA   __local_main__5
-   LDA   #>story
-   ADC   #$00
-   STA   __local_main__6
-   LDA   #<story
    STA   z_header_addr
    LDA   #>story
    STA   z_header_addr+1
-   LDA   #<story
-   STA   __local_main__0
-   LDA   #>story
-   STA   __local_main__1
    LDA   #$00
-   LDY   #$08
-   STA   (__local_main__0),Y
-   LDA   #<story
-   STA   __local_main__0
-   LDA   #>story
-   STA   __local_main__1
+   STA   story+8
    LDA   #$40
-   INY
-   STA   (__local_main__0),Y
+   STA   story+9
    LDA   #$03
-   LDY   #$00
-   STA   (__local_main__5),Y
+   STA   story+64
    LDA   #$2E
-   INY
-   STA   (__local_main__5),Y
+   STA   story+65
    LDA   #$2C
-   INY
-   STA   (__local_main__5),Y
+   STA   story+66
    LDA   #$22
-   INY
-   STA   (__local_main__5),Y
+   STA   story+67
    LDA   #$07
-   INY
-   STA   (__local_main__5),Y
+   STA   story+68
    LDA   #$00
-   INY
-   STA   (__local_main__5),Y
-   LDA   __local_main__5
-   STA   DPTR
-   LDA   __local_main__6
-   STA   DPTR+1
+   STA   story+69
    LDA   #$14
-   INY
-   STA   (__local_main__5),Y
+   STA   story+70
    LDA   #$00
    STA   __local_main__i
 .loop@2_start:
    LDA   __local_main__i
    CMP   #$14
-   BCC   .lb_skip@0
-   JMP   .loop@2_break
-.lb_skip@0:
+   BCS   .loop@2_break
    CLC
    ADC   #$01
    STA   __local_main__3
-   LDA   #$00
-   ADC   #$00
-   STA   __local_main__2
-   LDA   __local_main__3
    STA   __local_main__0
    ASL   __local_main__0
-   LDA   __local_main__2
-   STA   __local_main__1
-   ROL   __local_main__1
    ASL   __local_main__0
-   ROL   __local_main__1
    LDA   __local_main__0
    CLC
    ADC   __local_main__3
@@ -272,23 +232,21 @@ main:
    LDA   __local_main__2
    SEC
    SBC   __local_main__i
-   STA   __local_main__0
    BCS   .carry_inc@8
    DEC   __local_main__3
 .carry_inc@8:
-   LDA   __local_main__5
    CLC
-   ADC   __local_main__0
+   ADC   #<story
    STA   __local_main__0
-   LDA   __local_main__6
-   ADC   __local_main__3
+   LDA   __local_main__3
+   ADC   #>story
    STA   __local_main__1
    LDA   __local_main__0
    STA   DPTR
    LDA   __local_main__1
    STA   DPTR+1
    LDA   __local_main__4
-   LDY   #$0A
+   LDY   #$4A
    STA   (__local_main__0),Y
    INC   __local_main__i
    JMP   .loop@2_start

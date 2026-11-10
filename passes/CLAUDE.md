@@ -214,8 +214,10 @@ this directory:
 - `self_store_drop.py` — `apply_self_store_drop`.
 - `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
   the rule for when a constant shift is lowered inline (at most 8
-  one-bit shift instructions after the byte moves) instead of by an
-  `asl*` / `lsr*` / `asr*` call. `tac_to_asm` and the two-term
+  one-bit shift instructions after the byte moves, or any count of
+  the form `8q + 7`, which `tac_to_asm` lowers as a shift by `8(q +
+  1)` and one bit back) instead of by an `asl*` / `lsr*` / `asr*`
+  call. `tac_to_asm` and the two-term
   multiply rule in `optimization/strength_reduction.py` both use it.
 - `string_lifting.py` — pass 3 (see below).
 - `sub1_test_zero_peephole.py` — `apply_sub1_test_zero_peephole`.
@@ -932,10 +934,15 @@ them):
   function's private `__local_<fn>__*` slot whose address is never
   taken isn't read by an indirect access (only the pointer's own
   bytes are), the same reasoning that makes a `Call` transparent for
-  such a slot. `mem_dead_after` exposes the walk for other passes.
+  such a slot. A read-modify-write (`INC`, `DEC`, or a shift or
+  rotate) of one of the compiler's `__local_*` slots goes too, when
+  nothing reads the slot after it and the flags it sets are dead, as
+  in the unused high byte of `(uint8_t)(w << 1)`. `mem_dead_after`
+  exposes the walk for other passes.
 - `apply_dead_a_arith_elimination` — drops instructions whose only
   observable effect is a write to `Reg(A)` and the N/Z/C/V flags, when
-  both A and the flags are dead afterward.
+  both A and the flags are dead afterward. That includes `ASL` / `LSR`
+  / `ROL` / `ROR A`, which need every flag dead since they write C.
 - `apply_branch_invert` — `Branch(cond, L); Jump(target); L:` →
   `Branch(inverted_cond, target)` when L is the immediate next
   instruction.

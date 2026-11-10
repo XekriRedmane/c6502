@@ -37,7 +37,7 @@ _EXAMPLE = Path(__file__).parent.parent / "examples" / "zork_print_string_litera
 # The test's harness: the two routines the example leaves outside, and
 # a main that prints one string literal.
 _DRIVER = """
-__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
+__attribute__((zp_abi, return_bool_in_carry, address(0xBE00)))
 bool rwts_hook(void);
 __attribute__((return_bool_in_carry)) bool call_rwts(void) {
     return rwts_hook();
@@ -57,7 +57,11 @@ _ABBREVS = 0x7200
 _PAGES = 5
 _SPT = 16                # SECTORS_PER_TRACK
 
-_COUT1, _COUT, _RDKEY, _CLREOL, _RWTS = 0xFDF0, 0xFDED, 0xFD0C, 0xFC9C, 0x2900
+_COUT1, _COUT, _RDKEY, _CLREOL = 0xFDF0, 0xFDED, 0xFD0C, 0xFC9C
+# RWTS is at $2900 in Zork. The unoptimized C program is long enough
+# to reach $2900, so its stand-in for RWTS is at $BE00, which nothing
+# else uses here.
+_RWTS_ZORK, _RWTS_C = 0x2900, 0xBE00
 
 # Alphabet 2, from z-character 8 on, in the order of Zork's a2_table.
 _A2 = "0123456789.,!?_#'\"/\\-:()"
@@ -146,7 +150,7 @@ class _Machine:
     """One MPU with the story, tables, and window set up, and the
     hooks for the ROM routines and RWTS."""
 
-    def __init__(self, mpu: MPU, iob_addr) -> None:
+    def __init__(self, mpu: MPU, iob_addr, rwts: int) -> None:
         self.mpu = mpu
         self.iob_addr = iob_addr       # function of the MPU, at the call
         self.screen: list[int] = []
@@ -187,7 +191,7 @@ class _Machine:
             _COUT: lambda: self.printer.append(self.mpu.a),
             _RDKEY: self._rdkey,
             _CLREOL: self._clreol,
-            _RWTS: self._rwts,
+            rwts: self._rwts,
         }
 
     def _rdkey(self) -> None:
@@ -251,8 +255,9 @@ class _Machine:
 def _run_c(optimize: bool) -> _Machine:
     src = _EXAMPLE.read_text() + _DRIVER
     sim = build_sim(src, optimize=optimize)
+    assert sim.code_end <= _IMAGE, "the program overlaps the story"
     iob = sim.symbols["iob"]
-    machine = _Machine(sim.mpu, lambda _mpu: iob)
+    machine = _Machine(sim.mpu, lambda _mpu: iob, _RWTS_C)
     machine.run(sim.runtime.hooks)
     assert sim.mpu.memory[sim.symbols["restart_called"]] == 0
     return machine
@@ -266,7 +271,7 @@ def _run_original(path: str) -> _Machine:
     mpu.memory[0x0300:0x0304] = bytes([0x20, 0x5B, 0x0C, 0x00])
     mpu.pc = 0x0300
     mpu.sp = 0xFF
-    machine = _Machine(mpu, lambda m: (m.a << 8) | m.y)
+    machine = _Machine(mpu, lambda m: (m.a << 8) | m.y, _RWTS_ZORK)
     machine.run()
     return machine
 

@@ -369,8 +369,8 @@ the same bytes.
 ### Arguments in registers
 
 A parameter declared `register` arrives in a register instead. The
-first `register` byte goes in A and the second in X, so there are at
-most two of them, and a pointer can't be one.
+first `register` byte goes in A and the second in X, so a function
+has at most two of them.
 
 ```c
 unsigned char add(register unsigned char a, register unsigned char b) {
@@ -397,6 +397,28 @@ twice:
 first thing `add` does is store `b` in its zero-page byte. `twice`
 loads both arguments and jumps to `add`, since nothing is left to do
 after the call.
+
+A pointer can't be a `register` parameter. The 6502 reaches memory
+through a pointer only with `(zp),Y` addressing, which reads the
+pointer's two bytes from consecutive zero-page addresses, so a
+pointer is only usable once it's in zero page. One that arrived in A
+and X would have to be stored to zero page before its first use. A
+pointer parameter's own zero-page bytes already serve as that base,
+with no extra step.
+
+```c
+unsigned char first(const unsigned char *p) { return *p; }
+```
+
+```
+first:
+   LDY   #$00
+   LDA   (__zpabi_first__p_0),Y
+   RTS
+```
+
+The caller stores the pointer's two bytes in `__zpabi_first__p_0` and
+`__zpabi_first__p_1`, and `first` reads through them directly.
 
 ### Locals
 

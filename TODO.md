@@ -239,14 +239,33 @@ the call. The Call atom would carry the set, as `reg_args` does
 today, and each pass that treats a Call as writing X or Y would
 read it.
 
-## Pass `register` arguments in A and X without `--optimize`
+## Reads of a named `volatile` object
 
-The unoptimized pipeline doesn't run zp_abi selection, so a call to
-a `zp_abi` function passes every argument on the soft stack. For a
-function with `__attribute__((address(...)))`, such as a ROM routine
-that takes its argument in A, the call is wrong. Either the
-unoptimized pipeline lowers `register` arguments for those calls, or
-it rejects the call.
+A read of a `volatile` object that has a name, such as
+`extern volatile uint8_t KBD __attribute__((address(0xC000)))` or a
+plain `volatile` global, isn't treated as a side effect.
+
+- A statement that only reads it, `KBD;` or `(void)KBD;`, is dropped
+  in both pipelines, because `c99_to_tac` translates an expression
+  statement and discards a `Var` result without emitting anything.
+- At TAC level the read is a plain `Copy` from the `Var`, so the TAC
+  optimizer treats the object as unchanging. With `--optimize`,
+  `while (!(KBD & 0x80)) ;` becomes a single read and no loop.
+  `tac_to_asm` marks the asm `Mov` volatile from the symbol's type,
+  which is too late. `c99_to_tac._is_volatile_var` documents the
+  intended route, a `GetAddress` plus a volatile `Load` / `Store`,
+  but nothing calls it.
+
+Reads through a pointer (`*(volatile uint8_t *)0xC000`) aren't
+affected. Either route each named volatile read through a volatile
+`Load`, or give `Copy` a volatile bit that every TAC pass respects,
+and make an expression statement that reads a volatile object emit
+the read. The fix has to keep `KBD` an absolute `LDA KBD` rather
+than a `DPTR` access.
+
+A related case is in `asm_emit._emit_mov`, which drops a self-Mov
+(`v = v;`) even when it's volatile, losing both the read and the
+write.
 
 ## Aliasing rule for two `(zp),Y` bases
 

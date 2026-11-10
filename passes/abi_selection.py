@@ -62,6 +62,29 @@ any missing name.
 `select_abi` is the entry point. The intermediate helper
 `_address_taken` walks the program once to compute the
 address-taken set — used by the per-function validation step.
+
+# Functions with a fixed address
+
+A function declared with `__attribute__((address(addr)))` is code
+that's already at that address, typically a ROM routine, so its
+calling convention is whatever that code expects. That convention
+comes from the declaration alone, and it's the same in both
+pipelines:
+
+  * With `zp_abi`, the arguments go in A and X (`register`
+    parameters) and the result comes back in A and X.
+  * Without it, the arguments go on the soft stack, for a routine
+    written to c6502's own convention. The default zp_abi promotion
+    under `--optimize` skips these functions.
+
+`fixed_address_layouts` computes the layouts for the first kind, and
+`select_abi` and the unoptimized pipeline both use it. A `zp_abi`
+function with an address can't take a parameter byte in a ZP slot,
+since the slot's address is picked per program and the routine can't
+know it, and it can't return a pointer or anything wider than 2
+bytes, since those come back in HARGS. Its address can't be taken
+either, because a call through a pointer uses the soft stack. Each
+of these is an `AbiSelectionError`.
 """
 from __future__ import annotations
 
@@ -592,6 +615,111 @@ def _validate_zp_abi_extern(
 
 
 # ---------------------------------------------------------------------------
+# Functions with a fixed address.
+# ---------------------------------------------------------------------------
+
+
+def _addressed_functions(c99_prog: c99_ast.Program) -> set[str]:
+    """Names of the functions some declaration gives
+    `__attribute__((address(...)))`."""
+    return {
+        d.function_decl.name for d in c99_prog.declaration
+        if isinstance(d, c99_ast.FunctionDecl)
+        and d.function_decl.address is not None
+    }
+
+
+def _names_used_as_values(prog: tac_ast.Program, names: set[str]) -> set[str]:
+    """The members of `names` that appear as a `Var` operand anywhere
+    in `prog`, i.e. whose address is taken. A direct call names its
+    callee in `FunctionCall.name`, which isn't an operand."""
+    used: set[str] = set()
+    for tl in prog.top_level:
+        if not isinstance(tl, tac_ast.Function):
+            continue
+        for instr in tl.instructions:
+            for v in vals_in(instr):
+                if isinstance(v, tac_ast.Var) and v.name in names:
+                    used.add(v.name)
+    return used
+
+
+def _fits_return_registers(ret) -> bool:
+    """True iff a return of type `ret` comes back in A (and X), or
+    there's no return value. This mirrors
+    `tac_to_asm._return_reg_bytes`: a 1-byte integer comes back in A
+    and an `int` / `unsigned int` in A and X. A pointer and anything
+    wider come back in HARGS."""
+    t = _strip_quals(ret)
+    return isinstance(t, (
+        c99_ast.Void, c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+        c99_ast.Int, c99_ast.UInt,
+    ))
+
+
+def fixed_address_layouts(
+    prog: tac_ast.Program,
+    c99_prog: c99_ast.Program,
+    types=None,
+    *,
+    pool: Pool | None = None,
+) -> dict[str, ZpLayout]:
+    """The `ZpLayout` of every `zp_abi` function with
+    `__attribute__((address(...)))` (see "Functions with a fixed
+    address" above). A function with an address and no `zp_abi` gets
+    no entry, so calls to it use the soft stack. Raises
+    `AbiSelectionError` for a `register` parameter without `zp_abi`,
+    a parameter byte that isn't in a register, a return that doesn't
+    fit A and X, or a taken address."""
+    if pool is None:
+        pool = Pool()
+    addressed = _addressed_functions(c99_prog)
+    if not addressed:
+        return {}
+    annotations = _annotation_map(c99_prog)
+    decls = _function_decls_by_name(c99_prog)
+    taken = _names_used_as_values(prog, addressed)
+    out: dict[str, ZpLayout] = {}
+    for name in sorted(addressed):
+        fn_decl = decls[name]
+        if annotations.get(name) != "zp_abi":
+            if any(fn_decl.param_registers):
+                raise AbiSelectionError(
+                    f"function `{name}` has a fixed address and a "
+                    f"`register` parameter but no "
+                    f"`__attribute__((zp_abi))`; without zp_abi its "
+                    f"arguments go on the soft stack, so declare it "
+                    f"`__attribute__((zp_abi, address(...)))`"
+                )
+            continue
+        if name in taken:
+            raise AbiSelectionError(
+                f"the address of `{name}` is taken, but it's a zp_abi "
+                f"function with a fixed address; a call through a "
+                f"pointer passes its arguments on the soft stack, which "
+                f"the code at that address doesn't read"
+            )
+        fun_type = fn_decl.data_type
+        if not _fits_return_registers(fun_type.ret):
+            raise AbiSelectionError(
+                f"zp_abi function `{name}` has a fixed address but "
+                f"returns a value that doesn't fit in A and X; a "
+                f"pointer and anything wider than 2 bytes come back in "
+                f"HARGS (declare a pointer result as `uint16_t`)"
+            )
+        layout = _validate_zp_abi_extern(name, fn_decl, set(), pool, types)
+        if any(r is None for r in layout.param_registers):
+            raise AbiSelectionError(
+                f"zp_abi function `{name}` has a fixed address, so "
+                f"every parameter has to be passed in a register (A, "
+                f"then X); declare each parameter `register`, at most "
+                f"2 bytes in all"
+            )
+        out[name] = layout
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point.
 # ---------------------------------------------------------------------------
 
@@ -697,9 +825,13 @@ def select_abi(
     # stack. Annotated externs raise on ineligibility (matching
     # the strict contract); unannotated externs attempt zp_abi
     # and silently fall back, mirroring the definition-site
-    # default-zp_abi policy.
+    # default-zp_abi policy. Functions with a fixed address take
+    # their convention from the declaration alone.
+    fixed = fixed_address_layouts(prog, c99_prog, types, pool=pool)
+    addressed = _addressed_functions(c99_prog)
+    out.update(fixed)
     for name, ann in annotations.items():
-        if name in defined:
+        if name in defined or name in addressed:
             continue
         fn_decl = decls.get(name)
         if fn_decl is None:
@@ -709,7 +841,7 @@ def select_abi(
                 name, fn_decl, address_taken, pool, types,
             )
     for name, fn_decl in decls.items():
-        if name in defined or name in out:
+        if name in defined or name in out or name in addressed:
             continue
         if annotations.get(name) is not None:
             continue

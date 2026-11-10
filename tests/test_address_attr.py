@@ -215,6 +215,61 @@ class TestCodegen(unittest.TestCase):
                 self.assertNotRegex(asm, r"(?m)^(COUT|scratch):")
                 self.assertIn("COUT\tEQU\t$FDED", asm)
                 self.assertIn("scratch\tEQU\t$0779", asm)
+                # The argument is in A, so COUT's parameter slot is
+                # never written and gets no EQU.
+                self.assertNotIn("__zpabi_COUT", asm.split("@zp-link")[0])
+
+    def test_without_zp_abi_uses_soft_stack(self) -> None:
+        # The default zp_abi promotion under --optimize doesn't
+        # apply to a function with a fixed address.
+        src = (
+            "__attribute__((address(0x1000))) void f(unsigned char c);\n"
+            "void g(unsigned char c) { f(c); }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                asm = _codegen(src, optimize=optimize)
+                call = asm.index("JSR   f")
+                self.assertIn("STA   (SSP),Y", asm[:call])
+                self.assertNotIn("__zpabi_f_", asm)
+
+
+class TestConventionErrors(unittest.TestCase):
+
+    def test_rejected_declarations(self) -> None:
+        from passes.abi_selection import AbiSelectionError
+        bad = {
+            "register without zp_abi": (
+                "__attribute__((address(0x1000)))\n"
+                "void f(register unsigned char c);\n"
+                "void g(void) { f(1); }\n"
+            ),
+            "parameter not in a register": (
+                "__attribute__((zp_abi, address(0x1000)))\n"
+                "void f(register unsigned char a, unsigned char b);\n"
+                "void g(void) { f(1, 2); }\n"
+            ),
+            "pointer result": (
+                "__attribute__((zp_abi, address(0x1000)))\n"
+                "unsigned char *f(void);\n"
+                "void g(void) { f(); }\n"
+            ),
+            "4-byte result": (
+                "__attribute__((zp_abi, address(0x1000)))\n"
+                "unsigned long f(void);\n"
+                "void g(void) { f(); }\n"
+            ),
+            "address taken": (
+                "__attribute__((zp_abi, address(0x1000)))\n"
+                "void f(register unsigned char c);\n"
+                "void g(void) { void (*p)(unsigned char) = f; p(1); }\n"
+            ),
+        }
+        for label, src in bad.items():
+            for optimize in (False, True):
+                with self.subTest(label, optimize=optimize):
+                    with self.assertRaises(AbiSelectionError):
+                        _codegen(src, optimize=optimize)
 
 
 class TestSim(unittest.TestCase):
@@ -223,10 +278,12 @@ class TestSim(unittest.TestCase):
     #   CLC ; ADC #1 ; RTS
     _INC_ROUTINE = bytes([0x18, 0x69, 0x01, 0x60])
 
+    # Swaps the bytes of the 2-byte argument in A (low) and X (high)
+    # and returns the result the same way. $D0F0 is scratch.
+    #   STA $D0F0 ; TXA ; LDX $D0F0 ; RTS
+    _SWAP_ROUTINE = bytes([0x8D, 0xF0, 0xD0, 0x8A, 0xAE, 0xF0, 0xD0, 0x60])
+
     def test_call_fixed_routine(self) -> None:
-        # Only the optimized pipeline passes a `register` argument
-        # in A; the unoptimized one passes every argument on the
-        # soft stack.
         src = (
             "__attribute__((zp_abi, address(0xD000)))\n"
             "extern unsigned char inc(register unsigned char c);\n"
@@ -236,9 +293,43 @@ class TestSim(unittest.TestCase):
             "  return t;\n"
             "}\n"
         )
-        sim = build_sim(src, optimize=True)
-        sim.mpu.memory[0xD000:0xD004] = self._INC_ROUTINE
-        self.assertEqual(sim.run().return_int(), 1 + 2 + 3)
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                sim.mpu.memory[0xD000:0xD004] = self._INC_ROUTINE
+                self.assertEqual(sim.run().return_int(), 1 + 2 + 3)
+
+    def test_carry_flag_result(self) -> None:
+        # A routine that reports its result in the carry flag:
+        #   CMP #5 ; RTS        C set iff A >= 5
+        src = (
+            "__attribute__((zp_abi, return_bool_in_carry, address(0xD000)))\n"
+            "extern unsigned char at_least_5(register unsigned char a);\n"
+            "int main(void) {\n"
+            "  int n = 0;\n"
+            "  for (unsigned char i = 0; i < 9; i++)\n"
+            "    if (at_least_5(i)) n += 10; else n += 1;\n"
+            "  return n;\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                sim.mpu.memory[0xD000:0xD003] = bytes([0xC9, 0x05, 0x60])
+                self.assertEqual(sim.run().return_int(), 4 * 10 + 5)
+
+    def test_two_byte_argument_and_result(self) -> None:
+        src = (
+            "__attribute__((zp_abi, address(0xD000)))\n"
+            "extern unsigned int swap(register unsigned int v);\n"
+            "unsigned int k = 0x1234;\n"
+            "int main(void) { return swap(k) + 1; }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                sim.mpu.memory[0xD000:0xD008] = self._SWAP_ROUTINE
+                self.assertEqual(sim.run().return_int(), 0x3412 + 1)
 
     def test_fixed_objects(self) -> None:
         src = (
@@ -264,6 +355,55 @@ class TestSim(unittest.TestCase):
                 self.assertEqual(result.return_int(), 0x1234 + 10)
                 self.assertEqual(result.memory[0xC800], 5)
                 self.assertEqual(result.memory[0xC820], 6)
+
+    def test_poll_key(self) -> None:
+        # The example in docs/attributes.md. Clearing the strobe on
+        # one path used to leave A = 0 at the return under
+        # --optimize, because two passes lost track of the `LDA #0`
+        # inside a volatile `STA`.
+        src = (
+            "extern volatile unsigned char KBD "
+            "__attribute__((address(0xC000)));\n"
+            "extern volatile unsigned char KBDSTRB "
+            "__attribute__((address(0xC010)));\n"
+            "unsigned char poll_key(void) {\n"
+            "  unsigned char k = KBD;\n"
+            "  if (k & 0x80) KBDSTRB = 0;\n"
+            "  return k;\n"
+            "}\n"
+            "int main(void) { return poll_key(); }\n"
+        )
+        for optimize in (False, True):
+            for key in (0xC1, 0x41):
+                with self.subTest(optimize=optimize, key=key):
+                    sim = build_sim(src, optimize=optimize)
+                    sim.mpu.memory[0xC000] = key
+                    sim.mpu.memory[0xC010] = 0x55
+                    result = sim.run()
+                    self.assertEqual(result.return_int(), key)
+                    self.assertEqual(
+                        result.memory[0xC010],
+                        0 if key & 0x80 else 0x55,
+                    )
+
+    def test_wait_through_pointer(self) -> None:
+        # With no key in KBD the loop has to keep waiting, so the run
+        # reaches the cycle cap. It used to test a stale A and exit.
+        src = (
+            "int main(void) {\n"
+            "  while (!(*(volatile unsigned char *)0xC000 & 0x80)) ;\n"
+            "  return 7;\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            for key, waits in ((0x00, True), (0xC1, False)):
+                with self.subTest(optimize=optimize, key=key):
+                    sim = build_sim(src, optimize=optimize)
+                    sim.mpu.memory[0xC000] = key
+                    result = sim.run(max_cycles=20_000)
+                    self.assertEqual(result.timed_out, waits)
+                    if not waits:
+                        self.assertEqual(result.return_int(), 7)
 
     def test_address_of_fixed_object(self) -> None:
         src = (

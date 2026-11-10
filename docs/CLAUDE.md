@@ -6,6 +6,10 @@ parsed by any tool.
 
 ## Long-form docs
 
+- `attributes.md` — user guide to c6502's `__attribute__`s
+  (`zp_abi`, `return_bool_in_carry`, `zeropage`, `address`) and to
+  declaring and calling ROM routines, with Apple II Monitor examples,
+  the errors the compiler reports, and current limits.
 - `optimization.md` — from-scratch tour of how `--optimize` turns
   "correct but slow" TAC into "correct and faster" TAC. Written for
   someone who has read the root CLAUDE.md but never touched the

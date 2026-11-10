@@ -43,7 +43,7 @@ from passes.replace_pseudoregisters import (
     replace_program_bare_exit as replace_pseudoregs_bare_exit,
 )
 from c99_to_tac import translate_program as translate_to_tac
-from passes.abi_selection import select_abi
+from passes.abi_selection import fixed_address_layouts, select_abi
 from passes.function_local_sizing import compute_local_bytes
 from passes.zp_local_allocation import (
     allocate_function_locals, build_local_slot_symbols,
@@ -209,7 +209,13 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp):
     # without `--optimize`, including the full peephole fixedpoint,
     # so the sim executes the code the CLI emits.
     from compile import _peephole_fixedpoint
-    asm0 = translate_to_asm(tac, syms, types)
+    # Calls to a zp_abi routine with a fixed address pass their
+    # arguments in registers here too, since the routine's
+    # convention can't depend on the pipeline.
+    asm0 = translate_to_asm(
+        tac, syms, types,
+        abi=fixed_address_layouts(tac, ast5, types),
+    )
     asm = expand_long_branches(_peephole_fixedpoint(
         replace_pseudoregs(
             asm0, extra_statics=statics, symbols=syms, types=types,

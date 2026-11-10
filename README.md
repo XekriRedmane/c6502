@@ -1407,11 +1407,18 @@ overlap. Declarations may add the attribute one at a time, but two
 different addresses for one name are an error. `--link` binds each
 name once and rejects two units that give it different addresses.
 
-A routine called this way has to follow c6502's calling convention
-for its declaration. For a ROM routine that takes its argument in A,
-that means `zp_abi` with a `register` parameter. Only `--optimize`
-passes a `register` argument in A, so without it the call puts the
-argument on the soft stack.
+A function with an address gets its calling convention from its
+declaration alone, the same with and without `--optimize`. With
+`zp_abi`, its `register` arguments go in A and X, which is what a ROM
+routine expects. Without `zp_abi`, its arguments go on the soft
+stack, and the default zp_abi promotion under `--optimize` doesn't
+apply to it. A `zp_abi` routine with an address must take every
+parameter in a register and return at most 2 bytes in A and X, and
+its address can't be taken, since external code can't follow the
+rest of the convention. Each of these is a compile error.
+
+[docs/attributes.md](docs/attributes.md) explains every attribute and
+walks through declaring and calling Apple II Monitor routines.
 
 ### Returning a bool in the carry flag
 

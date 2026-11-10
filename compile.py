@@ -104,7 +104,7 @@ from passes.asm_remat import apply_remat
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
-from passes.abi_selection import select_abi
+from passes.abi_selection import fixed_address_layouts, select_abi
 from passes.function_local_sizing import (
     compute_local_bytes, compute_address_taken_bytes,
 )
@@ -524,6 +524,13 @@ def _codegen(prog, symbols, types, optimize: bool, zp) -> str:
         emit_slot_symbols = prune_unused_locals(
             asm4, all_slot_symbols,
         )
+        # A routine with a fixed address takes every argument in a
+        # register and has no body anywhere, so nothing reads its
+        # parameter slots.
+        for name in zp.fixed:
+            layout = abi.get(name)
+            for sym in getattr(layout, "slot_symbols", ()):
+                emit_slot_symbols.pop(sym, None)
         asm5 = lower_to_asm2(asm4)
         link_meta = build_metadata(
             tac, abi, local_pools,
@@ -533,7 +540,13 @@ def _codegen(prog, symbols, types, optimize: bool, zp) -> str:
             asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},
             link_metadata_lines=format_metadata(link_meta),
         )
-    asm0 = translate_to_asm(tac, symbols, types)
+    # Calls to a zp_abi routine with a fixed address pass their
+    # arguments in registers here too, since the routine's
+    # convention can't depend on the pipeline.
+    asm0 = translate_to_asm(
+        tac, symbols, types,
+        abi=fixed_address_layouts(tac, prog, types),
+    )
     asm1 = replace_pseudoregs(
         asm0, extra_statics=statics, symbols=symbols, types=types,
     )

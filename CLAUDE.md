@@ -90,7 +90,10 @@ Two key runtime conventions:
   `__attribute__((address(addr)))` binds a function (a ROM routine)
   or an `extern` object (an I/O register) to a fixed address. The
   name only gets an `EQU`, and it can't be defined. Below `$100` the
-  object is an `extern` zero-page object.
+  object is an `extern` zero-page object. Such a function's calling
+  convention comes from its declaration alone in both pipelines
+  (`abi_selection.fixed_address_layouts`). User guide:
+  [docs/attributes.md](docs/attributes.md).
 - **zp_abi + call-graph-disjoint private pools** put params AND
   body locals in ZP for eligible leaf / non-recursive /
   non-indirect-calling functions; ineligible functions fall back

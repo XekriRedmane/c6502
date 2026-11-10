@@ -168,6 +168,10 @@ def coalesce_moves(
     its rep — the caller uses this to expand the post-coloring
     assignments back over every original SSA name."""
     pairs = list(_move_related_pairs(fn))
+    # Every graph name's width, taken before any merge removes names
+    # from the graph. The byte-level check has to see every member of
+    # a coalesced class, including those merged by the move pairs.
+    widths = {n: node.width for n, node in graph.nodes.items()}
     rep_map: dict[str, str] = {}
     offsets: dict[str, int] = {}
 
@@ -208,7 +212,7 @@ def coalesce_moves(
         # Merge b_rep into a_rep.
         _merge(graph, dst=a_rep, src=b_rep)
         rep_map[b_rep] = a_rep
-    merger = _ByteMerger(fn, graph, find, offset, rep_map, offsets)
+    merger = _ByteMerger(fn, graph, find, offset, rep_map, offsets, widths)
     for src, dst in _byte_copy_pairs(fn):
         merger.coalesce(src, dst)
     for src, dst in _carry_byte_pairs(fn):
@@ -232,7 +236,7 @@ class _ByteMerger:
     its own name, liveness is recomputed, and the merge goes ahead
     when no two names that would share a byte are live at once."""
 
-    def __init__(self, fn, graph, find, offset, rep_map, offsets):
+    def __init__(self, fn, graph, find, offset, rep_map, offsets, widths):
         self.fn = fn
         self.graph = graph
         self.find = find
@@ -240,9 +244,9 @@ class _ByteMerger:
         self.rep_map = rep_map
         self.offsets = offsets
         self._edges: set[frozenset[str]] | None = None
-        self._widths = {
-            n: node.width for n, node in graph.nodes.items()
-        }
+        # Widths of every name that was in the graph before the move
+        # pairs merged any. A class's members are found among these.
+        self._widths = dict(widths)
 
     def coalesce(self, src: asm_ast.Pseudo, dst: asm_ast.Pseudo) -> None:
         """Puts the bytes `src` and `dst` in one byte of storage when

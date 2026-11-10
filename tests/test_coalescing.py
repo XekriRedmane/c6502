@@ -340,5 +340,36 @@ class TestCoalescingEndToEnd(unittest.TestCase):
         self.assertEqual(result.return_int() & 0xFFFF, 10)
 
 
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestByteMergeSeesWholeClass(unittest.TestCase):
+    """fuzz.stmts seed 1921: in `p *= 5` (`(p << 2) + p`) the shift
+    temp was put in p's slot, though p is read after the shift. The
+    byte-level check looked only at names still in the graph, which
+    left out p's byte that the move pairs had already merged."""
+
+    def test_shift_temp_not_merged_with_live_operand(self):
+        src = (
+            "int g2 = 0;\n"
+            "signed char g4;\n"
+            "void f(unsigned int p) {\n"
+            "    unsigned char w;\n"
+            "    if (g2 == 0) {\n"
+            "        w = 0;\n"
+            "        do {\n"
+            "            if ((w | (p *= 5))) { }\n"
+            "        } while (++w < 2);\n"
+            "    }\n"
+            "    g4 = (2 ^ (p -= 255));\n"
+            "}\n"
+            "int main(void) { f(6); return g4; }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(src, optimize=optimize).run()
+                self.assertEqual(got.return_int_signed(), -107)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -61,7 +61,7 @@ static uint8_t * const page_h_table = (uint8_t * const)0x2280;
 
 /* Zero page at the original's NUM_PAGE_TABLE_ENTRIES and LAST_Z_PAGE. */
 uint8_t num_page_table_entries __attribute__((zeropage(0xBD)));
-uint8_t last_z_page __attribute__((zeropage(0xBE)));
+uint8_t last_z_page __attribute__((zeropage(0xBF)));
 
 uint16_t find_index_of_page_table(uint16_t page) {
     uint8_t lo = (uint8_t)page;

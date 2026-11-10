@@ -425,7 +425,10 @@ def _reads_reg_a(instr: asm_ast.Type_instruction) -> bool:
         case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d):
             if is_a(s) or is_a(d):
                 return True
-        case asm_ast.And(src1=a, src2=b, dst=d) | asm_ast.Or(src1=a, src2=b, dst=d) | asm_ast.Xor(src1=a, src2=b, dst=d):
+        case asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d):
+            if is_a(s) or is_a(d):
+                return True
+        case asm_ast.Xor(src1=a, src2=b, dst=d):
             if is_a(a) or is_a(b) or is_a(d):
                 return True
         case asm_ast.Compare(left=l, right=r):

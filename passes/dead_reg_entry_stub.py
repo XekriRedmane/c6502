@@ -152,14 +152,9 @@ def _operand_roles_with_dst_flag(instr: asm_ast.Type_instruction):
         case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d):
             yield s, False
             yield d, False  # ALU dst is RMW (read + write)
-        case asm_ast.And(src1=a, src2=b, dst=d):
-            yield a, False
-            yield b, False
-            yield d, False
-        case asm_ast.Or(src1=a, src2=b, dst=d):
-            yield a, False
-            yield b, False
-            yield d, False
+        case asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d):
+            yield s, False
+            yield d, False  # ALU dst is RMW (read + write)
         case asm_ast.Xor(src1=a, src2=b, dst=d):
             yield a, False
             yield b, False
@@ -180,8 +175,8 @@ def _operand_roles_with_dst_flag(instr: asm_ast.Type_instruction):
         case asm_ast.LoadAddress(src=s, dst=d):
             yield s, False
             yield d, True
-        case asm_ast.BitTest(operand=op):
-            yield op, False
+        case asm_ast.BitTest(src=s):
+            yield s, False
         case _:
             # Branches / Jumps / Labels / SetCarry / ClearCarry /
             # FunctionPrologue / Ret / Return / Call / Phi /

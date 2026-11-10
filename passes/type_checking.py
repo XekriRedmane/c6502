@@ -897,12 +897,13 @@ def _check_unowned_object(
 
 
 def _check_preserves(
-    name: str, ftype: Type, address: int | None, preserves,
+    name: str, ftype: Type, address: int | None, preserves, types=None,
 ) -> None:
     """Rejects `preserves_x` / `preserves_y` on a function without an
     address, since the compiler can't check that code it compiles
     keeps the promise, and `preserves_x` on a function whose result
-    comes back with its high byte in X (an `int` or `unsigned int`)."""
+    comes back with its high byte in X (an `int` or `unsigned int`,
+    or a `return_bool_in_carry` struct whose value is one)."""
     if not preserves:
         return
     if address is None:
@@ -920,18 +921,63 @@ def _check_preserves(
             f"{'int' if isinstance(ret, Int) else 'unsigned int'}, "
             f"whose high byte comes back in X"
         )
+    if "X" in preserves and carry_struct_value_bytes(ret, types) == 2:
+        raise TypeCheckError(
+            f"function {name!r} has `preserves_x` but returns "
+            f"`{_c_type(ret)}`, whose value member is 2 bytes, and the "
+            f"high byte of that comes back in X"
+        )
 
 
-def _check_carry_return_type(name: str, ret: Type) -> None:
+def carry_struct_value_bytes(ret: Type, types) -> int | None:
+    """The size of the value member, 1 or 2, when `ret` is a struct a
+    `return_bool_in_carry` function may return: exactly two members,
+    an integer value of 1 or 2 bytes (not a pointer) and then a `bool`
+    flag (`char` or `unsigned char`). The value comes back in A (and
+    X) and the flag in the carry. None for any other type."""
+    ret = _strip_quals(ret)
+    if not isinstance(ret, Structure) or types is None:
+        return None
+    layout = types.get(ret.tag)
+    if layout is None or not layout.complete or len(layout.members) != 2:
+        return None
+    value, flag = layout.members
+    vt, ft = _strip_quals(value.type), _strip_quals(flag.type)
+    if isinstance(vt, (Char, SChar, UChar)):
+        n = 1
+    elif isinstance(vt, (Int, UInt)):
+        n = 2
+    else:
+        return None
+    if not isinstance(ft, (Char, UChar)) or flag.byte_offset != n:
+        return None
+    return n
+
+
+def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
     """Rejects `__attribute__((return_bool_in_carry))` on a function
     whose return type isn't a `bool` (in c6502, `bool` is `unsigned
-    char`, and plain `char` is unsigned too)."""
-    if not isinstance(_strip_quals(ret), (Char, UChar)):
+    char`, and plain `char` is unsigned too) or a struct of a value
+    and a `bool` (`carry_struct_value_bytes`)."""
+    if isinstance(_strip_quals(ret), (Char, UChar)):
+        return
+    if isinstance(_strip_quals(ret), (Structure, Union)):
+        if carry_struct_value_bytes(ret, types) is not None:
+            return
         raise TypeCheckError(
             f"`__attribute__((return_bool_in_carry))` on {name!r} "
-            f"needs a `bool` (`unsigned char`) return type, not "
-            f"`{_c_type(ret)}`"
+            f"returns `{_c_type(ret)}`, but a struct it returns has to "
+            f"have exactly two members: first an integer value of 1 or "
+            f"2 bytes (`char`, `unsigned char`, `int`, or `unsigned "
+            f"int`, not a pointer), which comes back in A (and X), then "
+            f"a `bool` (`unsigned char`) flag, which comes back in the "
+            f"carry flag"
         )
+    raise TypeCheckError(
+        f"`__attribute__((return_bool_in_carry))` on {name!r} "
+        f"needs a `bool` (`unsigned char`) return type, or a struct of "
+        f"a value and a `bool`, not `{_c_type(ret)}`"
+    )
 
 
 def _strip_quals(t: Type) -> Type:
@@ -2039,7 +2085,7 @@ class TypeChecker:
                 linkage = Linkage.EXTERNAL
         is_global = _linkage_to_is_global(linkage)
         if fd.carry_return:
-            _check_carry_return_type(fd.name, ftype.ret)
+            _check_carry_return_type(fd.name, ftype.ret, self.types)
         self._add_or_merge_function(
             name=fd.name,
             ftype=ftype,
@@ -2249,7 +2295,7 @@ class TypeChecker:
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
-            _check_preserves(name, ftype, address, preserves)
+            _check_preserves(name, ftype, address, preserves, self.types)
             self.symbols[name] = Symbol(
                 type=ftype,
                 attrs=FunAttr(
@@ -2307,7 +2353,7 @@ class TypeChecker:
             )
         # `preserves_*` accumulates across declarations, like `address`.
         preserves = existing.attrs.preserves | preserves
-        _check_preserves(name, ftype, address, preserves)
+        _check_preserves(name, ftype, address, preserves, self.types)
         self.symbols[name] = Symbol(
             type=ftype,
             attrs=FunAttr(
@@ -2793,7 +2839,7 @@ class TypeChecker:
                     if not _is_void(expected):
                         raise TypeCheckError(
                             f"`return;` without a value in a function "
-                            f"returning {expected!r}; bare `return;` "
+                            f"returning `{_c_type(expected)}`; bare `return;` "
                             f"is only legal in a void-returning "
                             f"function (C99 §6.8.6.4.1)"
                         )
@@ -2808,7 +2854,11 @@ class TypeChecker:
                         f"void functions must use bare `return;` (C99 "
                         f"§6.8.6.4.1)"
                     )
-                if self._carry_return and not _is_truth_valued(exp):
+                if (self._carry_return
+                        and not isinstance(
+                            _strip_quals(expected), (Structure, Union),
+                        )
+                        and not _is_truth_valued(exp)):
                     # The carry flag holds one bit, so the function
                     # returns `e != 0`, the way a C99 `_Bool` would
                     # convert `e`. Wrapping before the check lets

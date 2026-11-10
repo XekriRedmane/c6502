@@ -1,5 +1,73 @@
 # TODO
 
+## Major: `typedef`
+
+C99 §6.7.7. The lexer reads `typedef` as a keyword, but no grammar
+rule uses it, so any `typedef` is a parse error. Code has to spell
+`struct zchar` everywhere, and `<stdint.h>` defines `uint8_t` and the
+rest as macros (see the note in it).
+
+Supporting it takes three things. The parser has to accept `typedef`
+as a storage class and a typedef name as a type specifier. Since
+`T * x;` is a declaration when `T` names a type and a multiplication
+otherwise, the parser has to know which identifiers are typedef names
+while it parses (the "lexer hack"), with block scoping, since an
+inner declaration can hide a typedef name. Identifier resolution and
+the type checker then resolve a typedef name to its type, including
+`typedef struct { ... } T;` with an anonymous struct. `<stdint.h>`
+would then switch to real typedefs.
+
+## Rewrite the README and add an architecture document
+
+README.md has grown into a wall of low-level detail. It should
+describe the project in a few paragraphs and then cover how to
+download and install it, how to run it, and how to compile the code
+and run the tests. It should also include one small C example with
+the output from each of the main flags (`--tac`, `--codegen`, and
+`--codegen --optimize`), and link to
+[docs/calling_conventions.md](docs/calling_conventions.md) and
+[docs/attributes.md](docs/attributes.md).
+
+The low-level material moves to a new `docs/architecture.md`, which
+describes the pipeline, the four IRs, and the runtime conventions.
+That document should be organized around diagrams, tables, and short
+sections with headings, so that a reader can find one stage without
+reading the whole thing.
+
+## One document per optimization, in docs/optimizations
+
+Each optimization gets its own Markdown file in `docs/optimizations/`.
+Each file states what the optimization does, shows the code before
+and after on a small example, and gives the conditions under which it
+applies and the cases it leaves alone. Today the descriptions are
+split between `docs/optimization.md`, the CLAUDE.md files under
+`passes/`, and the module docstrings.
+
+`docs/optimizations/README.md` indexes them in two lists. The first
+list is alphabetical. The second list gives the order in which
+`compile.py --optimize` (and the unoptimized pipeline, for the
+peepholes that run there too) applies them, grouped by stage, with
+each group that repeats to a fixed point marked as such. The
+peephole fixed point, for example, runs three times, at different
+points in the pipeline. The second list has to be checked against
+`compile.optimized_asm` and `compile._peephole_fixedpoint` whenever
+a pass is added or moved.
+
+## Major: compound literals
+
+C99 §6.5.2.5, `(type){ initializer-list }`. Today `(` *type* `)` must
+be followed by an expression (a cast), and `{` there is a parse
+error, so `return (struct zchar){ z, false };` has to be written with
+a named local.
+
+A compound literal is an unnamed object. In block scope it has
+automatic storage that lasts until the end of the enclosing block,
+and at file scope it has static storage. It's an lvalue, so its
+address can be taken, and `(uint8_t[]){ 1, 2, 3 }` makes an array.
+After the parenthesized type name, `{` tells it apart from a cast.
+Lowering creates a temporary initialized the way a local with an
+initializer list is.
+
 ## Thread unconditional JMP-to-JMP chains in the optimized pipeline
 
 `--optimize` can leave a `JMP` whose target is another `JMP`. The
@@ -141,36 +209,47 @@ callers do with the result, so it has to be decided before
 `tac_to_asm` lowers any call to it, and the multi-TU linker would need
 the choice in its metadata.
 
-## Two return values, one of them a bool in the carry flag
+## Branch on a carry-struct flag without storing it
 
-`return_bool_in_carry` covers a function whose only result is a
-bool. The Zork routine returns two things: the slot index in A and
-"not found" in the carry. C99 has no multiple return values, so this
-needs a C spelling that c6502 can map onto A (and X) plus C.
-Candidates:
+A `return_bool_in_carry` function can return a struct of a value and
+a `bool`. The caller stores both members into the struct local, and
+`if (c.end)` then reads the flag back through a pointer, since a
+struct local is address-taken. Keeping a struct local whose address
+doesn't escape in per-member scalars (scalar replacement of
+aggregates) would let `carry_branch_fold` turn the test into a `BCS`
+right after the `JSR`, and would drop the pointer setup for every
+member access. That would help every struct local, not only these.
 
-- **A small struct return.** `typedef struct { uint8_t index; bool
-  found; } lookup_t; lookup_t f(uint16_t page);` and a rule that a
-  struct of one scalar of at most 2 bytes plus one `bool` returns the
-  scalar in A (and X) and the bool in C. It's plain C99 and compiles
-  unchanged with any other compiler. Today a struct return goes
-  through a hidden sret pointer and disqualifies zp_abi, so this
-  would be a new return path, and the caller would need to see
-  `r.found` lower to a branch on C rather than to a memory read.
-- **A flagged out-parameter.** `uint8_t f(uint16_t page, bool
-  *found)` with something like `__attribute__((carry_out(found)))`.
-  The callee's `*found = ...` stores become `CLC` / `SEC`, and the
-  caller's `&local` argument receives C after the `JSR`. This needs
-  restrictions to be sound: the callee only stores to `*found` (no
-  reads, no passing the pointer on), and every caller passes the
-  address of a local `bool`.
+## Optimizations found by the Zork string printer
 
-The struct form reads more naturally and keeps the source portable;
-the out-parameter form matches how the assembly is usually
-documented ("returns index in A, carry set if not found"). Either
-way, the `Ret` / `Return` atoms would carry both `save_a` and
-`save_c`, which the `return_bool_in_carry` epilogue already handles
-separately.
+`examples/zork_print_string_literal.c` compiles to 1984 bytes of
+code, about twice the 980 bytes of Zork's own code for the same
+routines. The worst are print_zstring (604 bytes against 216),
+get_next_zchar (201 against 76), and do_rwts_on_sector (177 against
+51). The listing shows four causes,
+roughly in order of size.
+
+- **Struct members at a constant offset go through a pointer.**
+  `iob.command = c` on a global struct builds `&iob` in a zero-page
+  pair and stores with `STA (ptr),Y`, where `STA iob+12` does the
+  same thing in one instruction, and `iob.track++` could be `INC
+  iob+4`. A local struct gets the same treatment. Struct locals whose
+  address doesn't escape should be kept as per-member scalars (see
+  the entry above on branching on a carry-struct flag), and a member
+  of a struct with a fixed address should be a `Data(name, offset)`
+  operand.
+- **16-bit shifts by 7 and 15.** `(uint8_t)(w >> 7)` calls `lsr16`,
+  and `(uint8_t)(w >> 15)` is seven `LSR`s of the high byte. The
+  first is `LDA lo; ASL; LDA hi; ROL`, and the second is `LDA hi;
+  ASL; LDA #0; ROL`.
+- **Operands staged through a temporary.** `sector >=
+  SECTORS_PER_TRACK` copies `SECTORS_PER_TRACK` into a slot and
+  subtracts the slot, where `SBC SECTORS_PER_TRACK` reads it in
+  place.
+- **Carry chains across statements.** load_packed_address computes
+  three bytes of `2 * SCRATCH2` with one `ASL` / `ROL` / `ROL` chain
+  in the original. In C those are three expressions, and each one
+  recomputes the shift.
 
 ## Zero-page globals across translation units, and automatic placement
 

@@ -1,0 +1,1331 @@
+HARGS	EQU	$00
+SSP	EQU	$05
+FP	EQU	$07
+DPTR	EQU	$09
+__monitor_zp_1f	EQU	$1F
+WNDLFT	EQU	$20
+WNDWDTH	EQU	$21
+WNDTOP	EQU	$22
+WNDBTM	EQU	$23
+CH	EQU	$24
+CV	EQU	$25
+GBAS	EQU	$26
+BAS	EQU	$28
+__monitor_bas2	EQU	$2A
+__monitor_zp_2c	EQU	$2C
+COLOR	EQU	$30
+INVFLG	EQU	$32
+PROMPT	EQU	$33
+__monitor_ysav1	EQU	$35
+CSW	EQU	$36
+KSW	EQU	$38
+__monitor_acc	EQU	$45
+__monitor_status	EQU	$48
+__monitor_rnd	EQU	$4E
+SECTORS_PER_TRACK	EQU	$7F
+__local_get_alphabet__shift	EQU	$80
+__local_load_packed_address__0	EQU	$80
+__zpabi_A_mod_3__a	EQU	$80
+__zpabi_buffer_char__c	EQU	$80
+__zpabi_do_rwts_on_sector__command	EQU	$80
+__zpabi_set_page_first__slot	EQU	$80
+__local_get_next_zchar__0	EQU	$81
+__local_load_packed_address__1	EQU	$81
+__zpabi_cout_string__count	EQU	$81
+__local_get_next_zchar__1	EQU	$82
+__local_buffer_char__c	EQU	$83
+__local_get_next_zchar__state	EQU	$83
+__local_buffer_char__0	EQU	$84
+__local_get_next_zchar__r	EQU	$84
+__local_dump_buffer_with_more__0	EQU	$85
+__local_dump_buffer_with_more__end	EQU	$86
+__local_get_next_code_word__1	EQU	$87
+__local_read_from_sector__0	EQU	$88
+__local_set_page_first__0	EQU	$88
+__local_set_page_first__prev_first	EQU	$89
+Z_PC	EQU	$8A
+ZCODE_PAGE_ADDR	EQU	$8D
+ZCODE_PAGE_VALID	EQU	$8F
+PAGE_TABLE_INDEX	EQU	$90
+Z_PC2_H	EQU	$91
+Z_PC2_HH	EQU	$92
+Z_PC2_L	EQU	$93
+ZCODE_PAGE_ADDR2	EQU	$94
+ZCODE_PAGE_VALID2	EQU	$96
+PAGE_TABLE_INDEX2	EQU	$97
+__local_get_next_code_byte2__0	EQU	$98
+__local_dump_buffer_to_printer__x	EQU	$99
+__local_get_next_code_byte2__page	EQU	$99
+__local_cout_string__y	EQU	$9A
+__local_dump_buffer_to_printer__1	EQU	$9A
+__local_get_next_code_byte2__found	EQU	$9A
+__local_cout_string__s	EQU	$9B
+__local_dump_buffer_to_printer__2	EQU	$9B
+__local_cout_string__1	EQU	$9C
+__local_do_rwts_on_sector__0	EQU	$9C
+__local_find_index_of_page_table__0	EQU	$9C
+__local_do_rwts_on_sector__1	EQU	$9D
+__local_find_index_of_page_table__n	EQU	$9D
+__local_do_rwts_on_sector__2	EQU	$9E
+__local_find_index_of_page_table__1	EQU	$9E
+__local_do_rwts_on_sector__sector_1	EQU	$9F
+__local_find_index_of_page_table__2	EQU	$9F
+__local_do_rwts_on_sector__sector_0	EQU	$A0
+__local_find_index_of_page_table__r	EQU	$A0
+HIGH_MEM_ADDR	EQU	$B8
+Z_HEADER_ADDR	EQU	$BA
+NUM_IMAGE_PAGES	EQU	$BC
+NUM_PAGE_TABLE_ENTRIES	EQU	$BD
+FIRST_Z_PAGE	EQU	$BE
+LAST_Z_PAGE	EQU	$BF
+PAGE_L_TABLE	EQU	$C0
+PAGE_H_TABLE	EQU	$C2
+NEXT_PAGE_TABLE	EQU	$C4
+PREV_PAGE_TABLE	EQU	$C6
+SHIFT_ALPHABET	EQU	$CE
+LOCKED_ALPHABET	EQU	$CF
+ZDECOMPRESS_STATE	EQU	$D0
+ZCHARS	EQU	$D1
+Z_ABBREV_TABLE	EQU	$E2
+SCRATCH1	EQU	$E4
+SCRATCH2	EQU	$E6
+BUFF_END	EQU	$EB
+BUFF_LINE_LEN	EQU	$EC
+CURR_LINE	EQU	$ED
+PRINTER_CSW	EQU	$EE
+BUFF_AREA	EQU	$0200
+SLOT1_SCRATCH	EQU	$0779
+HOME	EQU	$FC58
+CLREOL	EQU	$FC9C
+WAIT	EQU	$FCA8
+RDKEY	EQU	$FD0C
+COUT	EQU	$FDED
+COUT1	EQU	$FDF0
+
+; @zp-link-meta-begin
+; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
+; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__c,__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
+; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__count,__local_cout_string__y,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=A
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__1,__local_do_rwts_on_sector__2,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
+; def dump_buffer_line params= locals=__local_dump_buffer_line__0 indirect=false in_cycle=false
+; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
+; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0,__local_dump_buffer_to_screen__x indirect=false in_cycle=false
+; def dump_buffer_with_more params= locals=__local_dump_buffer_with_more__0,__local_dump_buffer_with_more__end,__local_dump_buffer_with_more__1,__local_dump_buffer_with_more__2 indirect=false in_cycle=false
+; def find_index_of_page_table params= locals=__local_find_index_of_page_table__0,__local_find_index_of_page_table__n,__local_find_index_of_page_table__1,__local_find_index_of_page_table__2,__local_find_index_of_page_table__r,__local_find_index_of_page_table__4 indirect=false in_cycle=false
+; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
+; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__0,__local_get_next_code_byte2__page,__local_get_next_code_byte2__found,__local_get_next_code_byte2__2 indirect=false in_cycle=false
+; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
+; def get_next_zchar params= locals=__local_get_next_zchar__0,__local_get_next_zchar__1,__local_get_next_zchar__state,__local_get_next_zchar__r,__local_get_next_zchar__3 indirect=false in_cycle=false
+; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
+; def load_packed_address params= locals=__local_load_packed_address__0,__local_load_packed_address__1 indirect=false in_cycle=false
+; def print_string_literal params= locals= indirect=false in_cycle=false
+; def print_zstring params= locals= indirect=false in_cycle=true
+; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false
+; def set_page_first params=__zpabi_set_page_first__slot locals=__local_set_page_first__0,__local_set_page_first__prev_first indirect=false in_cycle=false param_regs=A
+; ext CLREOL params=
+; ext COUT params=__zpabi_COUT__c param_regs=A
+; ext COUT1 params=__zpabi_COUT1__c param_regs=A
+; ext HOME params=
+; ext RDKEY params=
+; ext WAIT params=__zpabi_WAIT__a param_regs=A
+; ext call_rwts params=
+; ext restart params=
+; call buffer_char -> dump_buffer_with_more
+; call cout_string -> COUT1
+; call do_rwts_on_sector -> call_rwts
+; call dump_buffer_line -> dump_buffer_to_printer
+; call dump_buffer_line -> dump_buffer_to_screen
+; call dump_buffer_to_printer -> COUT
+; call dump_buffer_to_screen -> COUT1
+; call dump_buffer_with_more -> CLREOL
+; call dump_buffer_with_more -> COUT
+; call dump_buffer_with_more -> COUT1
+; call dump_buffer_with_more -> RDKEY
+; call dump_buffer_with_more -> cout_string
+; call dump_buffer_with_more -> dump_buffer_line
+; call get_next_code_byte2 -> find_index_of_page_table
+; call get_next_code_byte2 -> read_from_sector
+; call get_next_code_byte2 -> restart
+; call get_next_code_byte2 -> set_page_first
+; call get_next_code_word -> get_next_code_byte2
+; call get_next_zchar -> get_next_code_word
+; call load_packed_address -> invalidate_zcode_page2
+; call print_string_literal -> print_zstring
+; call print_zstring -> A_mod_3
+; call print_zstring -> buffer_char
+; call print_zstring -> get_alphabet
+; call print_zstring -> get_next_zchar
+; call print_zstring -> load_packed_address
+; call print_zstring -> print_zstring
+; call read_from_sector -> do_rwts_on_sector
+; @zp-link-meta-end
+
+do_rwts_on_sector:
+   SUBROUTINE
+
+   STA   __zpabi_do_rwts_on_sector__command
+   LDA   #<iob
+   STA   __local_do_rwts_on_sector__0
+   LDA   #>iob
+   STA   __local_do_rwts_on_sector__1
+   LDA   __zpabi_do_rwts_on_sector__command
+   LDY   #$0C
+   STA   (__local_do_rwts_on_sector__0),Y
+   LDA   #<iob
+   CLC
+   ADC   #$08
+   STA   __local_do_rwts_on_sector__0
+   LDA   #>iob
+   ADC   #$00
+   STA   __local_do_rwts_on_sector__1
+   LDA   __local_do_rwts_on_sector__0
+   STA   DPTR
+   LDA   __local_do_rwts_on_sector__1
+   STA   DPTR+1
+   LDA   SCRATCH2
+   LDY   #$00
+   STA   (__local_do_rwts_on_sector__0),Y
+   LDA   SCRATCH2+1
+   INY
+   STA   (DPTR),Y
+   LDA   #<iob
+   STA   __local_do_rwts_on_sector__0
+   LDA   #>iob
+   STA   __local_do_rwts_on_sector__1
+   LDA   #$03
+   LDY   #$04
+   STA   (__local_do_rwts_on_sector__0),Y
+   LDA   SCRATCH1
+   STA   __local_do_rwts_on_sector__sector_0
+   LDA   SCRATCH1+1
+   STA   __local_do_rwts_on_sector__sector_1
+.loop@0_continue:
+   LDA   SECTORS_PER_TRACK
+   STA   __local_do_rwts_on_sector__0
+   LDA   __local_do_rwts_on_sector__sector_0
+   SEC
+   SBC   __local_do_rwts_on_sector__0
+   LDA   __local_do_rwts_on_sector__sector_1
+   SBC   #$00
+   BCC   .loop@0_break
+   LDA   SECTORS_PER_TRACK
+   STA   __local_do_rwts_on_sector__0
+   LDA   __local_do_rwts_on_sector__sector_0
+   SEC
+   SBC   __local_do_rwts_on_sector__0
+   STA   __local_do_rwts_on_sector__sector_0
+   BCS   .carry_inc@0
+   DEC   __local_do_rwts_on_sector__sector_1
+.carry_inc@0:
+   LDA   #<iob
+   CLC
+   ADC   #$04
+   STA   __local_do_rwts_on_sector__1
+   LDA   #>iob
+   ADC   #$00
+   STA   __local_do_rwts_on_sector__2
+   LDY   #$00
+   LDA   (__local_do_rwts_on_sector__1),Y
+   STA   __local_do_rwts_on_sector__0
+   INC   __local_do_rwts_on_sector__0
+   LDA   __local_do_rwts_on_sector__0
+   STA   (__local_do_rwts_on_sector__1),Y
+   JMP   .loop@0_continue
+.loop@0_break:
+   LDA   #<iob
+   STA   __local_do_rwts_on_sector__0
+   LDA   #>iob
+   STA   __local_do_rwts_on_sector__1
+   LDA   #<iob
+   STA   DPTR
+   LDA   #>iob
+   STA   DPTR+1
+   LDA   __local_do_rwts_on_sector__sector_0
+   LDY   #$05
+   STA   (__local_do_rwts_on_sector__0),Y
+   JSR   call_rwts
+   LDA   #$00
+   ROL   A
+   STA   __local_do_rwts_on_sector__0
+   LDA   #$00
+   CMP   #$00
+   BNE   .cmp_differ@2
+   LDA   __local_do_rwts_on_sector__0
+   CMP   #$00
+.cmp_differ@2:
+   BNE   .cmp_true@0
+   CLC
+   RTS
+.cmp_true@0:
+   SEC
+   RTS
+
+read_from_sector:
+   SUBROUTINE
+
+   LDA   #$01
+   JSR   do_rwts_on_sector
+   LDA   #$00
+   ROL   A
+   STA   __local_read_from_sector__0
+   LDA   #$00
+   CMP   #$00
+   BNE   .cmp_differ@5
+   LDA   __local_read_from_sector__0
+   CMP   #$00
+.cmp_differ@5:
+   BNE   .cmp_true@3
+   CLC
+   RTS
+.cmp_true@3:
+   SEC
+   RTS
+
+find_index_of_page_table:
+   SUBROUTINE
+
+   LDA   SCRATCH2
+   STA   __local_find_index_of_page_table__2
+   LDA   SCRATCH2+1
+   STA   __local_find_index_of_page_table__1
+   LDA   NUM_PAGE_TABLE_ENTRIES
+   STA   __local_find_index_of_page_table__n
+   LDY   #$00
+.loop@1_start:
+   LDA   (PAGE_L_TABLE),Y
+   CMP   __local_find_index_of_page_table__2
+   BNE   .if_end@2
+   LDA   (PAGE_H_TABLE),Y
+   CMP   __local_find_index_of_page_table__1
+   BNE   .if_end@2
+   LDA   #<__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__0
+   LDA   #>__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__n
+   TYA
+   LDY   #$00
+   STA   (__local_find_index_of_page_table__0),Y
+   LDA   #<__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__0
+   LDA   #>__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__n
+   LDA   #$00
+   INY
+   STA   (__local_find_index_of_page_table__0),Y
+   LDA   __local_find_index_of_page_table__r+1
+   CMP   #$01
+   LDA   __local_find_index_of_page_table__r
+   RTS
+.if_end@2:
+   INY
+   DEC   __local_find_index_of_page_table__n
+   BNE   .loop@1_start
+   LDA   #<__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__0
+   LDA   #>__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__n
+   LDA   LAST_Z_PAGE
+   LDY   #$00
+   STA   (__local_find_index_of_page_table__0),Y
+   LDA   #<__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__0
+   LDA   #>__local_find_index_of_page_table__r
+   STA   __local_find_index_of_page_table__n
+   LDA   #$01
+   INY
+   STA   (__local_find_index_of_page_table__0),Y
+   LDA   __local_find_index_of_page_table__r+1
+   CMP   #$01
+   LDA   __local_find_index_of_page_table__r
+   RTS
+
+set_page_first:
+   SUBROUTINE
+
+   STA   __zpabi_set_page_first__slot
+   CMP   FIRST_Z_PAGE
+   BNE   .if_end@3
+   RTS
+.if_end@3:
+   LDA   FIRST_Z_PAGE
+   STA   __local_set_page_first__prev_first
+   LDA   __zpabi_set_page_first__slot
+   STA   FIRST_Z_PAGE
+   LDY   __zpabi_set_page_first__slot
+   LDA   (NEXT_PAGE_TABLE),Y
+   TAX
+   LDA   __local_set_page_first__prev_first
+   STA   (NEXT_PAGE_TABLE),Y
+   LDY   __zpabi_set_page_first__slot
+   LDA   (PREV_PAGE_TABLE),Y
+   STA   __local_set_page_first__0
+   LDA   #$FF
+   STA   (PREV_PAGE_TABLE),Y
+   TXA
+   LDY   __local_set_page_first__0
+   STA   (NEXT_PAGE_TABLE),Y
+   LDA   FIRST_Z_PAGE
+   LDY   __local_set_page_first__prev_first
+   STA   (PREV_PAGE_TABLE),Y
+   CPX   #$FF
+   BNE   .if_else@5
+   LDA   __local_set_page_first__0
+   STA   LAST_Z_PAGE
+   JMP   .if_end@4
+.if_else@5:
+   LDA   __local_set_page_first__0
+   PHA
+   TXA
+   TAY
+   PLA
+   STA   (PREV_PAGE_TABLE),Y
+.if_end@4:
+   RTS
+
+invalidate_zcode_page2:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   RTS
+
+get_next_code_byte2:
+   SUBROUTINE
+
+.loop@2_start:
+   LDA   ZCODE_PAGE_VALID2
+   BEQ   .if_end@6
+   LDY   Z_PC2_L
+   LDA   (ZCODE_PAGE_ADDR2),Y
+   STA   __local_get_next_code_byte2__page
+   TYA
+   CLC
+   ADC   #$01
+   STA   Z_PC2_L
+   BNE   .if_end@7
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   INC   Z_PC2_H
+   BNE   .if_end@8
+   INC   Z_PC2_HH
+.if_end@8:
+.if_end@7:
+   LDA   __local_get_next_code_byte2__page
+   RTS
+.if_end@6:
+   LDA   Z_PC2_HH
+   BNE   .if_else@12
+   LDA   Z_PC2_H
+   CMP   NUM_IMAGE_PAGES
+   BCS   .if_else@12
+   STA   __local_get_next_code_byte2__page
+   JMP   .if_end@11
+.if_else@12:
+   LDA   Z_PC2_H
+   STA   __local_get_next_code_byte2__page
+   LDA   Z_PC2_HH
+   STA   __local_get_next_code_byte2__0
+   LDA   __local_get_next_code_byte2__page
+   STA   SCRATCH2
+   LDA   __local_get_next_code_byte2__0
+   STA   SCRATCH2+1
+   JSR   find_index_of_page_table
+   STA   __local_get_next_code_byte2__found
+   LDA   #$00
+   ROL   A
+   STA   __local_get_next_code_byte2__found+1
+   LDA   #<__local_get_next_code_byte2__found
+   STA   __local_get_next_code_byte2__0
+   LDA   #>__local_get_next_code_byte2__found
+   STA   __local_get_next_code_byte2__page
+   LDY   #$00
+   LDA   (__local_get_next_code_byte2__0),Y
+   STA   PAGE_TABLE_INDEX2
+   LDA   #<__local_get_next_code_byte2__found
+   STA   __local_get_next_code_byte2__0
+   LDA   #>__local_get_next_code_byte2__found
+   STA   __local_get_next_code_byte2__page
+   LDA   #<__local_get_next_code_byte2__found
+   STA   DPTR
+   LDA   #>__local_get_next_code_byte2__found
+   STA   DPTR+1
+   INY
+   LDA   (__local_get_next_code_byte2__0),Y
+   BEQ   .if_end@13
+   LDA   #<__local_get_next_code_byte2__found
+   STA   __local_get_next_code_byte2__0
+   LDA   #>__local_get_next_code_byte2__found
+   STA   __local_get_next_code_byte2__page
+   LDA   #<__local_get_next_code_byte2__found
+   STA   DPTR
+   LDA   #>__local_get_next_code_byte2__found
+   STA   DPTR+1
+   DEY
+   LDA   (__local_get_next_code_byte2__0),Y
+   CMP   PAGE_TABLE_INDEX
+   BNE   .if_end@14
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID
+.if_end@14:
+   LDA   PAGE_TABLE_INDEX2
+   STA   __local_get_next_code_byte2__0
+   LDA   HIGH_MEM_ADDR
+   CLC
+   ADC   #$00
+   STA   SCRATCH2
+   LDA   HIGH_MEM_ADDR+1
+   ADC   __local_get_next_code_byte2__0
+   STA   SCRATCH2+1
+   LDA   Z_PC2_H
+   STA   __local_get_next_code_byte2__page
+   LDA   Z_PC2_HH
+   STA   __local_get_next_code_byte2__0
+   LDA   __local_get_next_code_byte2__page
+   STA   SCRATCH1
+   LDA   __local_get_next_code_byte2__0
+   STA   SCRATCH1+1
+   JSR   read_from_sector
+   BCC   .if_end@15
+   JSR   restart
+.if_end@15:
+   LDA   Z_PC2_H
+   LDY   PAGE_TABLE_INDEX2
+   STA   (PAGE_L_TABLE),Y
+   LDA   PAGE_H_TABLE
+   STA   DPTR
+   LDA   PAGE_H_TABLE+1
+   STA   DPTR+1
+   LDA   Z_PC2_HH
+   LDY   PAGE_TABLE_INDEX2
+   STA   (PAGE_H_TABLE),Y
+.if_end@13:
+   LDA   PAGE_TABLE_INDEX2
+   JSR   set_page_first
+   LDA   PAGE_TABLE_INDEX2
+   CLC
+   ADC   NUM_IMAGE_PAGES
+   STA   __local_get_next_code_byte2__page
+.if_end@11:
+   LDA   Z_HEADER_ADDR+1
+   STA   __local_get_next_code_byte2__0
+   LDA   __local_get_next_code_byte2__page
+   CLC
+   ADC   __local_get_next_code_byte2__0
+   STA   ZCODE_PAGE_ADDR2+1
+   LDA   #$00
+   STA   ZCODE_PAGE_ADDR2
+   LDA   #$FF
+   STA   ZCODE_PAGE_VALID2
+   JMP   .loop@2_start
+
+get_next_code_word:
+   SUBROUTINE
+
+   JSR   get_next_code_byte2
+   STA   __local_get_next_code_word__1
+   JSR   get_next_code_byte2
+   STA   SCRATCH2
+   LDA   __local_get_next_code_word__1
+   STA   SCRATCH2+1
+   RTS
+
+load_packed_address:
+   SUBROUTINE
+
+   LDA   SCRATCH2
+   STA   __local_load_packed_address__0
+   ASL   __local_load_packed_address__0
+   LDA   SCRATCH2+1
+   STA   __local_load_packed_address__1
+   ROL   __local_load_packed_address__1
+   LDA   __local_load_packed_address__0
+   STA   Z_PC2_L
+   LDA   SCRATCH2
+   STA   HARGS
+   LDA   SCRATCH2+1
+   STA   HARGS+1
+   LDA   #$07
+   STA   HARGS+2
+   JSR   lsr16
+   LDA   HARGS+3
+   STA   Z_PC2_H
+   LDA   SCRATCH2+1
+   STA   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LSR   __local_load_packed_address__0
+   LDA   __local_load_packed_address__0
+   STA   Z_PC2_HH
+   JMP   invalidate_zcode_page2
+
+dump_buffer_to_screen:
+   SUBROUTINE
+
+   LDX   #$00
+.loop@3_start:
+   CPX   BUFF_END
+   BEQ   .loop@3_break
+   LDA   BUFF_AREA,X
+   JSR   COUT1
+   INX
+   JMP   .loop@3_start
+.loop@3_break:
+   LDA   #$00
+   STA   BUFF_END
+   RTS
+
+dump_buffer_to_printer:
+   SUBROUTINE
+
+   LDA   CSW
+   STA   __local_dump_buffer_to_printer__2
+   LDA   CSW+1
+   STA   __local_dump_buffer_to_printer__1
+   LDA   PRINTER_CSW
+   STA   CSW
+   LDA   PRINTER_CSW+1
+   STA   CSW+1
+   LDA   printer_card_initialized_flag
+   BNE   .if_end@16
+   LDA   #$01
+   STA   printer_card_initialized_flag
+   LDA   #$09
+   JSR   COUT
+   LDA   #$91
+   STA   SLOT1_SCRATCH
+   LDA   #$B8
+   JSR   COUT
+   LDA   #$B0
+   JSR   COUT
+   LDA   #$CE
+   JSR   COUT
+.if_end@16:
+   LDX   #$00
+.loop@4_start:
+   CPX   BUFF_END
+   BEQ   .loop@4_break
+   LDA   BUFF_AREA,X
+   STX   __local_dump_buffer_to_printer__x
+   JSR   COUT
+   LDX   __local_dump_buffer_to_printer__x
+   INX
+   JMP   .loop@4_start
+.loop@4_break:
+   LDA   CSW
+   STA   PRINTER_CSW
+   LDA   CSW+1
+   STA   PRINTER_CSW+1
+   LDA   __local_dump_buffer_to_printer__2
+   STA   CSW
+   LDA   __local_dump_buffer_to_printer__1
+   STA   CSW+1
+   RTS
+
+dump_buffer_line:
+   SUBROUTINE
+
+   LDA   Z_HEADER_ADDR
+   STA   DPTR
+   LDA   Z_HEADER_ADDR+1
+   STA   DPTR+1
+   LDY   #$11
+   LDA   (Z_HEADER_ADDR),Y
+   AND   #$01
+   BEQ   .if_end@17
+   JSR   dump_buffer_to_printer
+.if_end@17:
+   JMP   dump_buffer_to_screen
+
+cout_string:
+   SUBROUTINE
+
+   STA   __zpabi_cout_string__count
+   LDA   SCRATCH2
+   STA   __local_cout_string__s
+   LDA   SCRATCH2+1
+   STA   __local_cout_string__1
+   LDA   #$00
+   STA   __local_cout_string__y
+   LDX   __zpabi_cout_string__count
+.loop@5_start:
+   LDA   __local_cout_string__s
+   STA   DPTR
+   LDA   __local_cout_string__1
+   STA   DPTR+1
+   LDY   __local_cout_string__y
+   LDA   (__local_cout_string__s),Y
+   ORA   #$80
+   JSR   COUT1
+   INC   __local_cout_string__y
+   DEX
+   BNE   .loop@5_start
+   RTS
+
+dump_buffer_with_more:
+   SUBROUTINE
+
+   LDA   CURR_LINE
+   CLC
+   ADC   #$01
+   STA   __local_dump_buffer_with_more__end
+   STA   CURR_LINE
+   LDA   WNDBTM
+   STA   __local_dump_buffer_with_more__0
+   LDA   __local_dump_buffer_with_more__end
+   CMP   __local_dump_buffer_with_more__0
+   BCC   .if_end@18
+   LDA   #<string_more
+   STA   SCRATCH2
+   LDA   #>string_more
+   STA   SCRATCH2+1
+   LDA   #$3F
+   STA   INVFLG
+   LDA   #$06
+   JSR   cout_string
+   LDA   #$FF
+   STA   INVFLG
+   JSR   RDKEY
+   LDA   CH
+   SEC
+   SBC   #$06
+   STA   CH
+   JSR   CLREOL
+   LDA   WNDTOP
+   CLC
+   ADC   #$01
+   STA   CURR_LINE
+.if_end@18:
+   LDA   BUFF_END
+   STA   __local_dump_buffer_with_more__end
+   JSR   dump_buffer_line
+   LDA   WNDWDTH
+   STA   __local_dump_buffer_with_more__0
+   LDA   __local_dump_buffer_with_more__end
+   CMP   __local_dump_buffer_with_more__0
+   BEQ   .if_end@19
+   LDA   #$8D
+   JSR   COUT1
+.if_end@19:
+   LDA   Z_HEADER_ADDR
+   STA   DPTR
+   LDA   Z_HEADER_ADDR+1
+   STA   DPTR+1
+   LDY   #$11
+   LDA   (Z_HEADER_ADDR),Y
+   AND   #$01
+   BEQ   .if_end@20
+   LDA   CSW
+   STA   __local_dump_buffer_with_more__end
+   LDA   CSW+1
+   STA   __local_dump_buffer_with_more__0
+   LDA   PRINTER_CSW
+   STA   CSW
+   LDA   PRINTER_CSW+1
+   STA   CSW+1
+   LDA   #$8D
+   JSR   COUT
+   LDA   CSW
+   STA   PRINTER_CSW
+   LDA   CSW+1
+   STA   PRINTER_CSW+1
+   LDA   __local_dump_buffer_with_more__end
+   STA   CSW
+   LDA   __local_dump_buffer_with_more__0
+   STA   CSW+1
+.if_end@20:
+   LDA   #$00
+   STA   BUFF_END
+   RTS
+
+buffer_char:
+   SUBROUTINE
+
+   STA   __zpabi_buffer_char__c
+   LDX   BUFF_END
+   CMP   #$0D
+   BNE   .if_end@21
+   JMP   dump_buffer_with_more
+.if_end@21:
+   CMP   #$20
+   BCS   .if_end@22
+   RTS
+.if_end@22:
+   CMP   #$60
+   BCC   .and_false@23
+   CMP   #$80
+   BCS   .and_false@23
+   LDA   #$01
+   STA   __local_buffer_char__0
+   JMP   .and_end@24
+.and_false@23:
+   LDA   #$00
+   STA   __local_buffer_char__0
+.and_end@24:
+   LDA   __local_buffer_char__0
+   BEQ   .buffer_char@asm_ssa_split@0
+   LDA   __zpabi_buffer_char__c
+   SEC
+   SBC   #$20
+.if_end@25:
+   ORA   #$80
+   STA   BUFF_AREA,X
+   LDA   WNDWDTH
+   STA   __local_buffer_char__c
+   CPX   __local_buffer_char__c
+   BCS   .if_end@26
+   INX
+   STX   BUFF_END
+   RTS
+.if_end@26:
+.loop@6_start:
+   LDA   BUFF_AREA,X
+   CMP   #$A0
+   BNE   .if_end@27
+   JMP   .loop@6_break
+.if_end@27:
+   DEX
+   BNE   .loop@6_start
+   LDX   WNDWDTH
+.loop@6_break:
+   STX   BUFF_LINE_LEN
+   STX   BUFF_END
+   JSR   dump_buffer_with_more
+.loop@7_start:
+   LDA   BUFF_LINE_LEN
+   CLC
+   ADC   #$01
+   STA   __local_buffer_char__0
+   STA   BUFF_LINE_LEN
+   LDA   WNDWDTH
+   CMP   __local_buffer_char__0
+   BCS   .if_end@29
+   RTS
+.if_end@29:
+   LDX   __local_buffer_char__0
+   LDA   BUFF_AREA,X
+   LDX   BUFF_END
+   INC   BUFF_END
+   STA   BUFF_AREA,X
+   JMP   .loop@7_start
+.buffer_char@asm_ssa_split@0:
+   LDA   __zpabi_buffer_char__c
+   JMP   .if_end@25
+
+get_next_zchar:
+   SUBROUTINE
+
+   LDA   ZDECOMPRESS_STATE
+   STA   __local_get_next_zchar__state
+   BPL   .if_end@30
+   LDA   #<__local_get_next_zchar__r
+   STA   __local_get_next_zchar__0
+   LDA   #>__local_get_next_zchar__r
+   STA   __local_get_next_zchar__1
+   LDA   __local_get_next_zchar__state
+   LDY   #$00
+   STA   (__local_get_next_zchar__0),Y
+   LDA   #<__local_get_next_zchar__r
+   STA   __local_get_next_zchar__0
+   LDA   #>__local_get_next_zchar__r
+   STA   __local_get_next_zchar__1
+   LDA   #$01
+   INY
+   STA   (__local_get_next_zchar__0),Y
+   LDA   __local_get_next_zchar__r+1
+   CMP   #$01
+   LDA   __local_get_next_zchar__r
+   RTS
+.if_end@30:
+   BNE   .if_else@32
+   LDA   #$01
+   STA   ZDECOMPRESS_STATE
+   JSR   get_next_code_word
+   LDA   SCRATCH2
+   STA   ZCHARS
+   LDA   SCRATCH2+1
+   STA   ZCHARS+1
+   STA   __local_get_next_zchar__0
+   LSR   __local_get_next_zchar__0
+   LSR   __local_get_next_zchar__0
+   LDA   __local_get_next_zchar__0
+   AND   #$1F
+   STA   __local_get_next_zchar__state
+   LDA   #<__local_get_next_zchar__r
+   STA   __local_get_next_zchar__0
+   LDA   #>__local_get_next_zchar__r
+   STA   __local_get_next_zchar__1
+   LDA   __local_get_next_zchar__state
+   LDY   #$00
+   STA   (__local_get_next_zchar__0),Y
+   JMP   .if_end@31
+.if_else@32:
+   CMP   #$01
+   BNE   .if_else@34
+   LDA   #$02
+   STA   ZDECOMPRESS_STATE
+   LDA   ZCHARS
+   STA   HARGS
+   LDA   ZCHARS+1
+   STA   HARGS+1
+   LDA   #$05
+   STA   HARGS+2
+   JSR   lsr16
+   LDA   HARGS+3
+   AND   #$1F
+   STA   __local_get_next_zchar__state
+   LDA   #<__local_get_next_zchar__r
+   STA   __local_get_next_zchar__0
+   LDA   #>__local_get_next_zchar__r
+   STA   __local_get_next_zchar__1
+   LDA   __local_get_next_zchar__state
+   LDY   #$00
+   STA   (__local_get_next_zchar__0),Y
+   JMP   .if_end@33
+.if_else@34:
+   LDA   ZCHARS
+   AND   #$00
+   STA   __local_get_next_zchar__1
+   LDA   ZCHARS+1
+   AND   #$80
+   STA   __local_get_next_zchar__0
+   LDA   __local_get_next_zchar__1
+   ORA   __local_get_next_zchar__0
+   BEQ   .cond_else@35
+   LDA   #$FF
+   JMP   .cond_end@36
+.cond_else@35:
+   LDA   #$00
+.cond_end@36:
+   STA   ZDECOMPRESS_STATE
+   LDA   ZCHARS
+   AND   #$1F
+   STA   __local_get_next_zchar__state
+   LDA   #<__local_get_next_zchar__r
+   STA   __local_get_next_zchar__0
+   LDA   #>__local_get_next_zchar__r
+   STA   __local_get_next_zchar__1
+   LDA   __local_get_next_zchar__state
+   LDY   #$00
+   STA   (__local_get_next_zchar__0),Y
+.if_end@33:
+.if_end@31:
+   LDA   #<__local_get_next_zchar__r
+   STA   __local_get_next_zchar__0
+   LDA   #>__local_get_next_zchar__r
+   STA   __local_get_next_zchar__1
+   LDA   #$00
+   LDY   #$01
+   STA   (__local_get_next_zchar__0),Y
+   LDA   __local_get_next_zchar__r+1
+   CMP   #$01
+   LDA   __local_get_next_zchar__r
+   RTS
+
+A_mod_3:
+   SUBROUTINE
+
+.loop@8_continue:
+   CMP   #$03
+   BCC   .loop@8_break
+   SEC
+   SBC   #$03
+   JMP   .loop@8_continue
+.loop@8_break:
+   RTS
+
+get_alphabet:
+   SUBROUTINE
+
+   LDA   SHIFT_ALPHABET
+   STA   __local_get_alphabet__shift
+   BPL   .if_end@37
+   LDA   LOCKED_ALPHABET
+   RTS
+.if_end@37:
+   LDA   #$FF
+   STA   SHIFT_ALPHABET
+   LDA   __local_get_alphabet__shift
+   RTS
+
+print_zstring:
+   SUBROUTINE
+
+   ; prologue: 0 arg bytes, 15 local bytes, 7 callee-saved bytes
+   SEC
+   LDA   SSP
+   SBC   #$11
+   STA   SSP
+   LDA   SSP+1
+   SBC   #$00
+   STA   SSP+1
+   LDA   FP
+   LDY   #$10
+   STA   (SSP),Y
+   LDA   FP+1
+   INY
+   STA   (SSP),Y
+   LDA   SSP
+   STA   FP
+   LDA   SSP+1
+   STA   FP+1
+   LDA   $C8
+   LDY   #$01
+   STA   (FP),Y
+   LDA   $C9
+   INY
+   STA   (FP),Y
+   LDA   $CA
+   INY
+   STA   (FP),Y
+   LDA   $CB
+   INY
+   STA   (FP),Y
+   LDA   $CC
+   INY
+   STA   (FP),Y
+   LDA   $CD
+   INY
+   STA   (FP),Y
+   LDA   $D3
+   INY
+   STA   (FP),Y
+
+   LDA   #$00
+   STA   LOCKED_ALPHABET
+   LDA   #$00
+   STA   ZDECOMPRESS_STATE
+   LDA   #$FF
+   STA   SHIFT_ALPHABET
+.loop@9_start:
+   JSR   get_next_zchar
+   LDY   #$08
+   STA   (FP),Y
+   LDA   #$00
+   ROL   A
+   INY
+   STA   (FP),Y
+   CLC
+   LDA   FP
+   ADC   #$08
+   STA   $81
+   LDA   FP+1
+   ADC   #$00
+   STA   $82
+   LDY   #$01
+   LDA   (__zpabi_cout_string__count),Y
+   BEQ   .if_end@38
+
+   ; epilogue
+   LDA   (FP),Y
+   STA   $C8
+   INY
+   LDA   (FP),Y
+   STA   $C9
+   INY
+   LDA   (FP),Y
+   STA   $CA
+   INY
+   LDA   (FP),Y
+   STA   $CB
+   INY
+   LDA   (FP),Y
+   STA   $CC
+   INY
+   LDA   (FP),Y
+   STA   $CD
+   INY
+   LDA   (FP),Y
+   STA   $D3
+   CLC
+   LDA   FP
+   ADC   #$11
+   STA   SSP
+   LDA   FP+1
+   ADC   #$00
+   STA   SSP+1
+   LDY   #$10
+   LDA   (FP),Y
+   TAX
+   INY
+   LDA   (FP),Y
+   STA   FP+1
+   TXA
+   STA   FP
+   RTS
+.if_end@38:
+   CLC
+   LDA   FP
+   ADC   #$08
+   STA   $81
+   LDA   FP+1
+   ADC   #$00
+   STA   $82
+   LDA   $81
+   STA   DPTR
+   LDA   $82
+   STA   DPTR+1
+   LDY   #$00
+   LDA   (__zpabi_cout_string__count),Y
+   STA   $C8
+   BNE   .if_else@40
+   LDA   #$20
+   STA   $81
+   JMP   .if_end@39
+.if_else@40:
+   CMP   #$01
+   BEQ   .lb_skip@0
+   JMP   .if_else@42
+.lb_skip@0:
+   JSR   get_next_zchar
+   LDY   #$0A
+   STA   (FP),Y
+   LDA   #$00
+   ROL   A
+   INY
+   STA   (FP),Y
+   CLC
+   LDA   FP
+   ADC   #$0A
+   STA   $81
+   LDA   FP+1
+   ADC   #$00
+   STA   $82
+   LDY   #$00
+   LDA   (__zpabi_cout_string__count),Y
+   ASL   A
+   STA   $81
+   LDY   $81
+   LDA   (Z_ABBREV_TABLE),Y
+   STA   $83
+   LDA   Z_ABBREV_TABLE
+   CLC
+   ADC   $81
+   STA   $81
+   LDA   Z_ABBREV_TABLE+1
+   ADC   #$00
+   STA   $82
+   LDA   $81
+   STA   DPTR
+   LDA   $82
+   STA   DPTR+1
+   LDY   #$01
+   LDA   (__zpabi_cout_string__count),Y
+   STA   $81
+   STA   SCRATCH2
+   LDA   $83
+   STA   SCRATCH2+1
+   LDA   LOCKED_ALPHABET
+   STA   $D3
+   LDA   ZDECOMPRESS_STATE
+   STA   $CD
+   LDA   ZCHARS
+   STA   $CC
+   LDA   ZCHARS+1
+   STA   $CB
+   LDA   Z_PC2_L
+   STA   $CA
+   LDA   Z_PC2_H
+   STA   $C9
+   LDA   Z_PC2_HH
+   STA   $C8
+   JSR   load_packed_address
+   JSR   print_zstring
+   LDA   $C8
+   STA   Z_PC2_HH
+   LDA   $C9
+   STA   Z_PC2_H
+   LDA   $CA
+   STA   Z_PC2_L
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   LDA   $CC
+   STA   ZCHARS
+   LDA   $CB
+   STA   ZCHARS+1
+   LDA   $CD
+   STA   ZDECOMPRESS_STATE
+   LDA   $D3
+   STA   LOCKED_ALPHABET
+   LDA   #$FF
+   STA   SHIFT_ALPHABET
+   JMP   .loop@9_continue
+.if_else@42:
+   CMP   #$04
+   BCS   .if_else@44
+   JSR   get_alphabet
+   STA   $81
+   LDA   $C8
+   CLC
+   ADC   $81
+   STA   $81
+   LDA   #$00
+   ADC   #$00
+   STA   $82
+   LDA   $81
+   CLC
+   ADC   #$02
+   STA   $81
+   JSR   A_mod_3
+   STA   SHIFT_ALPHABET
+   JMP   .loop@9_continue
+.if_else@44:
+   CMP   #$06
+   BCS   .if_else@46
+   JSR   get_alphabet
+   CLC
+   ADC   $C8
+   STA   $81
+   JSR   A_mod_3
+   STA   LOCKED_ALPHABET
+   JMP   .loop@9_continue
+.if_else@46:
+   JSR   get_alphabet
+   STA   $81
+   LDA   $81
+   BNE   .if_else@48
+   LDA   #$5B
+   CLC
+   ADC   $C8
+   STA   $81
+   JMP   .if_end@47
+.if_else@48:
+   CMP   #$01
+   BNE   .if_else@50
+   LDA   #$3B
+   CLC
+   ADC   $C8
+   STA   $81
+   JMP   .if_end@49
+.if_else@50:
+   LDA   $C8
+   CMP   #$06
+   BNE   .if_else@52
+   JSR   get_next_zchar
+   LDY   #$0C
+   STA   (FP),Y
+   LDA   #$00
+   ROL   A
+   INY
+   STA   (FP),Y
+   CLC
+   LDA   FP
+   ADC   #$0C
+   STA   $81
+   LDA   FP+1
+   ADC   #$00
+   STA   $82
+   LDA   $81
+   STA   DPTR
+   LDA   $82
+   STA   DPTR+1
+   LDY   #$00
+   LDA   (__zpabi_cout_string__count),Y
+   STA   $81
+   ASL   A
+   ASL   A
+   ASL   A
+   ASL   A
+   ASL   A
+   STA   $C8
+   JSR   get_next_zchar
+   LDY   #$0E
+   STA   (FP),Y
+   LDA   #$00
+   ROL   A
+   INY
+   STA   (FP),Y
+   CLC
+   LDA   FP
+   ADC   #$0E
+   STA   $81
+   LDA   FP+1
+   ADC   #$00
+   STA   $82
+   LDA   $81
+   STA   DPTR
+   LDA   $82
+   STA   DPTR+1
+   LDY   #$00
+   LDA   (__zpabi_cout_string__count),Y
+   STA   $81
+   LDA   $C8
+   ORA   $81
+   STA   $81
+   JMP   .if_end@51
+.if_else@52:
+   CMP   #$07
+   BNE   .if_else@54
+   LDA   #$0D
+   JSR   buffer_char
+   LDA   #$0A
+   STA   $81
+   JMP   .if_end@53
+.if_else@54:
+   SEC
+   SBC   #$08
+   TAX
+   LDA   a2_table,X
+   STA   $81
+.if_end@53:
+.if_end@51:
+.if_end@49:
+.if_end@47:
+.if_end@39:
+   JSR   buffer_char
+.loop@9_continue:
+   JMP   .loop@9_start
+
+print_string_literal:
+   SUBROUTINE
+
+   LDA   Z_PC
+   STA   Z_PC2_L
+   LDA   Z_PC+1
+   STA   Z_PC2_H
+   LDA   Z_PC+2
+   STA   Z_PC2_HH
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   JSR   print_zstring
+   LDA   Z_PC2_L
+   STA   Z_PC
+   LDA   Z_PC2_H
+   STA   Z_PC+1
+   LDA   Z_PC2_HH
+   STA   Z_PC+2
+   LDA   ZCODE_PAGE_VALID2
+   STA   ZCODE_PAGE_VALID
+   LDA   ZCODE_PAGE_ADDR2
+   STA   ZCODE_PAGE_ADDR
+   LDA   ZCODE_PAGE_ADDR2+1
+   STA   ZCODE_PAGE_ADDR+1
+   RTS
+
+dct:
+   DS.B  1
+   DC.B  $01
+   DC.W  $D8EF
+
+iob:
+   DC.B  $01
+   DC.B  $60
+   DC.B  $01
+   DS.B  3
+   DC.W  dct
+   DS.B  7
+   DC.B  $60
+   DC.B  $01
+
+printer_card_initialized_flag:
+   DS.B  1
+
+string_more:
+   DC.B  $5B, $4D, $4F, $52, $45, $5D
+
+a2_table:
+   DC.B  $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $2E, $2C, $21, $3F, $5F, $23
+   DC.B  $27, $22, $2F, $5C, $2D, $3A, $28, $29

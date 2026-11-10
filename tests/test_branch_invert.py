@@ -6,13 +6,20 @@ import asm_ast
 from passes.branch_invert import apply_branch_invert
 
 
+# `.T`, the jump target in these tests, is a label at the end of the
+# function. The pass leaves a Jump to any other name alone.
+_T = asm_ast.Label(name=".T")
+
+
 def _instrs(prog: asm_ast.Program) -> list[asm_ast.Type_instruction]:
-    return prog.top_level[0].instructions
+    out = prog.top_level[0].instructions
+    assert out[-1] == _T
+    return out[:-1]
 
 
 def _wrap(instrs):
     return asm_ast.Program(top_level=[asm_ast.Function(
-        name="f", is_global=False, params=[], instructions=instrs,
+        name="f", is_global=False, params=[], instructions=instrs + [_T],
     )])
 
 
@@ -59,7 +66,7 @@ class TestBranchInvert(unittest.TestCase):
             asm_ast.Jump(target=".T"),
             asm_ast.Label(name=".L"),
         ])
-        self.assertEqual(_instrs(apply_branch_invert(prog)), prog.top_level[0].instructions)
+        self.assertEqual(_instrs(apply_branch_invert(prog)), _instrs(prog))
 
     def test_label_preserved_for_other_jump_targets(self):
         # The label is preserved because some other instruction might
@@ -88,7 +95,18 @@ class TestBranchInvert(unittest.TestCase):
             asm_ast.Jump(target=".T"),
             asm_ast.Label(name=".L"),
         ])
-        self.assertEqual(_instrs(apply_branch_invert(prog)), prog.top_level[0].instructions)
+        self.assertEqual(_instrs(apply_branch_invert(prog)), _instrs(prog))
+
+    def test_tail_call_stays_a_jump(self):
+        # `if (c == 13) { other(); return; }` ends in a tail call,
+        # `JMP other`. A branch to another function's label can't be
+        # range-checked, so the JMP stays.
+        prog = _wrap([
+            asm_ast.Branch(cond=asm_ast.NE(), target=".L"),
+            asm_ast.Jump(target="other"),
+            asm_ast.Label(name=".L"),
+        ])
+        self.assertEqual(_instrs(apply_branch_invert(prog)), _instrs(prog))
 
     def test_idempotent(self):
         prog = _wrap([

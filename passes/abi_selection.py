@@ -468,9 +468,9 @@ def _validate_zp_abi(
     # outright — the unannotated default-zp_abi path falls back to
     # soft-stack, which already handles sret correctly.
     fun_type = fn_decl.data_type
-    if isinstance(fun_type, c99_ast.FunType) and isinstance(
+    if (isinstance(fun_type, c99_ast.FunType) and isinstance(
         fun_type.ret, (c99_ast.Structure, c99_ast.Union),
-    ):
+    ) and not fn_decl.carry_return):
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
             f"`__attribute__((zp_abi))` but returns a struct / "
@@ -572,9 +572,9 @@ def _validate_zp_abi_extern(
     body to inspect, and for cross-TU functions we trust the
     programmer's annotation."""
     fun_type = fn_decl.data_type
-    if isinstance(fun_type, c99_ast.FunType) and isinstance(
+    if (isinstance(fun_type, c99_ast.FunType) and isinstance(
         fun_type.ret, (c99_ast.Structure, c99_ast.Union),
-    ):
+    ) and not fn_decl.carry_return):
         raise AbiSelectionError(
             f"function `{name}` declared "
             f"`__attribute__((zp_abi))` but returns a struct / "
@@ -649,8 +649,12 @@ def _fits_return_registers(ret) -> bool:
     there's no return value. This mirrors
     `tac_to_asm._return_reg_bytes`: a 1-byte integer comes back in A
     and an `int` / `unsigned int` in A and X. A pointer and anything
-    wider come back in HARGS."""
+    wider come back in HARGS. A struct reaching here belongs to a
+    `return_bool_in_carry` function, which the type checker already
+    limited to a value in A (and X) and a flag in C."""
     t = _strip_quals(ret)
+    if isinstance(t, c99_ast.Structure):
+        return True
     return isinstance(t, (
         c99_ast.Void, c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
         c99_ast.Int, c99_ast.UInt,

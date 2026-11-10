@@ -55,6 +55,20 @@ A candidate inside a loop body is eligible for hoisting when:
     Verified by checking that the header Label is the only
     branch target inside `[header_idx, back_edge_idx]` referenced
     from outside.
+  * Every read of the dst inside the loop comes after the store on
+    every path from the header, so no read in the first iteration
+    sees the dst's value from before the loop. A pointer staged in
+    DPTR and read by `STA (DPTR),Y` later in the same iteration
+    passes. The header reading a loop variable that the body resets
+    at its end (`for (p = &x; p != 0; ) { ...; p = 0; }`) fails.
+  * At every exit from the loop that can be reached before the
+    store has run, the dst is dead. Otherwise a loop that exits
+    before reaching the store, a `for` loop that runs zero times
+    for instance, would leave the hoisted value behind where the
+    old value used to be.
+  * A, N, and Z are dead at the header, where the hoisted `LDA`
+    now runs, and dead just after the candidate, which no longer
+    sets them. A load or store leaves C and V alone.
   * For shape (3) and any Mov pair: neither half of the pair
     can carry `is_volatile=True`. A volatile Mov must remain at
     its source-order position so the access is observable on
@@ -83,6 +97,8 @@ fixed-point round in `compile.py`.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_dead_store import _reads, mem_dead_after
+from passes.asm_liveness import a_dead_at, flags_dead_at
 
 
 def apply_licm(prog: asm_ast.Program) -> asm_ast.Program:
@@ -101,7 +117,7 @@ def apply_licm(prog: asm_ast.Program) -> asm_ast.Program:
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = list(fn.instructions)
     while True:
-        new_instrs = _one_pass(instrs)
+        new_instrs = _one_pass(instrs, fn.name)
         if new_instrs is instrs:
             break
         instrs = new_instrs
@@ -113,6 +129,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 def _one_pass(
     instrs: list[asm_ast.Type_instruction],
+    fn_name: str = "",
 ) -> list[asm_ast.Type_instruction]:
     """Find one hoistable Mov in the deepest available loop and
     perform the hoist. Returns a new instruction list, or `instrs`
@@ -139,6 +156,7 @@ def _one_pass(
     for header_idx, back_edge_idx, header_name in back_edges:
         hoisted = _try_hoist_one(
             instrs, header_idx, back_edge_idx, header_name, label_idx,
+            fn_name,
         )
         if hoisted is not None:
             return hoisted
@@ -151,6 +169,7 @@ def _try_hoist_one(
     back_edge_idx: int,
     header_name: str,
     label_idx: dict[str, int],
+    fn_name: str = "",
 ) -> list[asm_ast.Type_instruction] | None:
     """Try to find one hoistable Mov in `[header_idx, back_edge_idx]`.
     Returns a new instruction list with the hoist applied, or None
@@ -186,6 +205,11 @@ def _try_hoist_one(
         # the loaded value isn't loop-invariant.
         if src_key is not None and write_count.get(src_key, 0) != 0:
             continue
+        if not _hoist_preserves_values(
+            instrs, header_idx, back_edge_idx, k, span_len, label_idx,
+            fn_name,
+        ):
+            continue
         # Hoist. The candidate occupies [k, k + span_len) — splice
         # those instructions out of the body and into the position
         # immediately before `header_idx`.
@@ -198,6 +222,84 @@ def _try_hoist_one(
         )
         return new_instrs
     return None
+
+
+def _hoist_preserves_values(
+    instrs: list[asm_ast.Type_instruction],
+    header_idx: int,
+    back_edge_idx: int,
+    k: int,
+    span_len: int,
+    label_idx: dict[str, int],
+    fn_name: str,
+) -> bool:
+    """True iff moving the store `instrs[k : k + span_len]` to just
+    before the header changes no value that anything reads: not the
+    dst inside the loop or after it, and not A or the flags around
+    either position."""
+    last = k + span_len - 1
+    dst = instrs[last].dst
+    if not (a_dead_at(instrs, header_idx)
+            and flags_dead_at(instrs, header_idx)
+            and a_dead_at(instrs, last + 1)
+            and flags_dead_at(instrs, last + 1)):
+        return False
+    body = range(header_idx, back_edge_idx + 1)
+    # done[p]: on every path from the header to instrs[p] within one
+    # iteration, the store has run. The header's own entry is False,
+    # since the first iteration comes from the preheader.
+    done = {p: True for p in body}
+    done[header_idx] = False
+    changed = True
+    while changed:
+        changed = False
+        for p in body:
+            out = True if p == last else done[p]
+            for q in _successors_of(instrs, p, label_idx):
+                if q in body and q != header_idx and done[q] and not out:
+                    done[q] = False
+                    changed = True
+    for p in body:
+        if k <= p <= last:
+            continue
+        out = True if p == last else done[p]
+        if not done[p] and _reads(instrs[p], dst):
+            return False
+        if isinstance(instrs[p], (asm_ast.Ret, asm_ast.Return)):
+            if not done[p]:
+                return False
+            continue
+        if out:
+            continue
+        for q in _successors_of(instrs, p, label_idx):
+            if q in body:
+                continue
+            # `mem_dead_after(q)` starts after `instrs[q]`, which skips
+            # nothing only when `instrs[q]` is a Label.
+            if not isinstance(instrs[q], asm_ast.Label):
+                return False
+            if not mem_dead_after(instrs, q, dst, fn_name=fn_name):
+                return False
+    return True
+
+
+def _successors_of(
+    instrs: list[asm_ast.Type_instruction], p: int,
+    label_idx: dict[str, int],
+) -> list[int]:
+    """Indices that can run right after `instrs[p]`."""
+    inst = instrs[p]
+    if isinstance(inst, (asm_ast.Ret, asm_ast.Return)):
+        return []
+    if isinstance(inst, asm_ast.Jump):
+        t = label_idx.get(inst.target)
+        return [t] if t is not None else []
+    out = [p + 1] if p + 1 < len(instrs) else []
+    if isinstance(inst, asm_ast.Branch):
+        t = label_idx.get(inst.target)
+        if t is not None:
+            out.append(t)
+    return out
 
 
 def _is_single_entry(

@@ -209,6 +209,41 @@ class TestDualIndexPromotionEligibility(unittest.TestCase):
         out = _instrs(apply_dual_index_promotion(prog))
         self.assertEqual(out, instrs)
 
+    def _promotable_around(self, middle):
+        """The promotable shape with `middle` between the two uses."""
+        return [
+            asm_ast.Label(name=".entry"),
+            _ldx(_data("__zpabi_f_p1")),
+            _lda(_ixX("rescue")),
+            _ldx(_data("__local_f__1")),
+            _lda(_ixX("entity")),
+        ] + middle + [
+            _ldx(_data("__local_f__1")),
+            _sta(_ixX("entity")),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_promotable_shape_promotes(self):
+        # The control for the two cases below.
+        instrs = self._promotable_around([])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertNotEqual(out, instrs)
+
+    def test_written_symbol_blocks(self):
+        # A loop temporary stored and reloaded into X: Y, loaded once
+        # at entry, would hold the value from before the store.
+        instrs = self._promotable_around([_sta(_data("__local_f__1"))])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_call_blocks(self):
+        # A callee may change Y before the second use.
+        instrs = self._promotable_around(
+            [asm_ast.Call(name="g", reg_args=[], preserves=[])],
+        )
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
 
 class TestDualIndexPromotionRewriteRange(unittest.TestCase):
     """Verify the rewrite respects X-clobber and block boundaries."""

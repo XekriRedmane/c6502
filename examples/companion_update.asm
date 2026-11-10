@@ -56,6 +56,8 @@ __zpabi_draw_sprite__tile_src_0	EQU	$91
 __zpabi_draw_sprite__tile_src_1	EQU	$92
 __zpabi_draw_sprite__page_flag	EQU	$93
 __local_companion_update__0	EQU	$94
+__local_companion_update__1	EQU	$95
+__local_companion_update__2	EQU	$96
 __local_companion_update__3	EQU	$97
 __local_companion_update__4	EQU	$98
 __local_companion_update__slot	EQU	$99
@@ -352,16 +354,17 @@ player_catch:
 active_pos_step:
    SUBROUTINE
 
-   LDY   __zpabi_active_pos_step__slot
    JSR   prng
    CMP   #$05
    BCS   .if_end@25
+   LDX   __zpabi_active_pos_step__slot
    LDA   #$FF
-   STA   companion_dir,Y
+   STA   companion_dir,X
 .if_end@25:
-   LDA   companion_pos_hi,Y
+   LDX   __zpabi_active_pos_step__slot
+   LDA   companion_pos_hi,X
    STA   __local_active_pos_step__1
-   LDA   companion_pos_lo,Y
+   LDA   companion_pos_lo,X
    CLC
    ADC   #$03
    STA   __local_active_pos_step__0
@@ -386,7 +389,8 @@ active_pos_step:
    LDA   floor_thresh,X
    CLC
    ADC   #$0B
-   STA   companion_row,Y
+   LDX   __zpabi_active_pos_step__slot
+   STA   companion_row,X
    LDA   #$00
    RTS
 .if_end@28:
@@ -396,16 +400,17 @@ active_pos_step:
 active_neg_step:
    SUBROUTINE
 
-   LDY   __zpabi_active_neg_step__slot
    JSR   prng
    CMP   #$05
    BCS   .if_end@29
+   LDX   __zpabi_active_neg_step__slot
    LDA   #$01
-   STA   companion_dir,Y
+   STA   companion_dir,X
 .if_end@29:
-   LDA   companion_pos_hi,Y
+   LDX   __zpabi_active_neg_step__slot
+   LDA   companion_pos_hi,X
    STA   __local_active_neg_step__1
-   LDA   companion_pos_lo,Y
+   LDA   companion_pos_lo,X
    SEC
    SBC   #$03
    STA   __local_active_neg_step__0
@@ -426,7 +431,8 @@ active_neg_step:
    LDA   floor_thresh,X
    CLC
    ADC   #$0B
-   STA   companion_row,Y
+   LDX   __zpabi_active_neg_step__slot
+   STA   companion_row,X
    LDA   #$00
    RTS
 .if_end@32:
@@ -490,7 +496,6 @@ drift_step:
 companion_update:
    SUBROUTINE
 
-   LDY   __local_companion_update__slot
    LDA   __zpabi_companion_update__gate
    BPL   .if_end@41
    RTS
@@ -498,7 +503,8 @@ companion_update:
    LDA   #$01
    STA   __local_companion_update__slot
 .loop@1_start:
-   LDA   companion_state,Y
+   LDX   __local_companion_update__slot
+   LDA   companion_state,X
    BPL   .if_end@42
    STX   __zpabi_drift_step__slot
    LDA   #<__local_companion_update__sprite_y
@@ -515,14 +521,19 @@ companion_update:
    JSR   compute_screen_x
    STA   __local_companion_update__3
    LDX   __local_companion_update__3
-   LDA   companion_state,Y
+   LDA   proj_screen_col,X
+   STA   __local_companion_update__2
+   LDA   proj_frame_idx,X
+   STA   __local_companion_update__1
+   LDX   __local_companion_update__slot
+   LDA   companion_state,X
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
-   LDA   proj_screen_col,X
+   LDA   __local_companion_update__2
    STA   __zpabi_smc_body_draw__sprite_x
    LDA   __local_companion_update__sprite_y
    STA   __zpabi_smc_body_draw__sprite_y
-   LDA   proj_frame_idx,X
+   LDA   __local_companion_update__1
    STA   __zpabi_smc_body_draw__frame_idx
    LDA   __local_companion_update__0
    STA   __zpabi_smc_body_draw__state
@@ -559,7 +570,9 @@ companion_update:
    STA   __local_companion_update__0
 .cond_end@46:
    LDA   __local_companion_update__0
-   BEQ   .loop@1_continue
+   BNE   .lb_skip@1
+   JMP   .loop@1_continue
+.lb_skip@1:
 .if_end@43:
    LDA   __local_companion_update__slot
    STA   __zpabi_compute_screen_x__slot
@@ -581,15 +594,23 @@ companion_update:
    LDA   __zpabi_companion_update__hit_max
    STA   __zpabi_entity_proximity__hit_max
    JSR   entity_proximity
+   LDX   __local_companion_update__slot
+   LDA   companion_row,X
+   STA   __local_companion_update__3
    LDX   __local_companion_update__4
-   LDA   companion_state,Y
+   LDA   proj_screen_col,X
+   STA   __local_companion_update__2
+   LDA   proj_frame_idx,X
+   STA   __local_companion_update__1
+   LDX   __local_companion_update__slot
+   LDA   companion_state,X
    STA   __local_companion_update__0
    STX   __zpabi_smc_body_draw__slot
-   LDA   proj_screen_col,X
+   LDA   __local_companion_update__2
    STA   __zpabi_smc_body_draw__sprite_x
-   LDA   companion_row,Y
+   LDA   __local_companion_update__3
    STA   __zpabi_smc_body_draw__sprite_y
-   LDA   proj_frame_idx,X
+   LDA   __local_companion_update__1
    STA   __zpabi_smc_body_draw__frame_idx
    LDA   __local_companion_update__0
    STA   __zpabi_smc_body_draw__state

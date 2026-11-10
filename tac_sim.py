@@ -354,6 +354,12 @@ class Simulator:
         if ret.value is None:
             return None
         ret_type = self.symbols[name].type.ret
+        if _is_aggregate(ret_type):
+            # A `return_bool_in_carry` struct: the flag, its last byte,
+            # comes back in the carry, so the caller sees 0 or 1.
+            top = 8 * (ret.width - 1)
+            flag = (ret.value >> top) & 0xFF
+            return (ret.value & ((1 << top) - 1)) | (int(flag != 0) << top)
         signed, _, is_fp = _type_info(ret_type)
         if is_fp:
             # Return value is the raw IEEE 754 bit pattern.
@@ -536,6 +542,14 @@ class Simulator:
             case tac_ast.Ret(val=None):
                 return _Return(None, 0)
 
+            case tac_ast.Ret(val=v) if self._is_aggregate_var(v):
+                # A `return_bool_in_carry` struct, the only struct a
+                # Ret carries (others go through the sret pointer). Its
+                # bytes travel as one little-endian integer.
+                size = _sizeof(self.symbols[v.name].type, self.types)
+                addr = self._address_of(frame, v)
+                return _Return(self.memory.load(addr, size), size)
+
             case tac_ast.Ret(val=v):
                 vu, (_, w, _) = self._read(frame, v)
                 return _Return(vu, w)
@@ -584,7 +598,10 @@ class Simulator:
         Mirrors the soft-stack convention's return-value capture
         — a no-op for void-returning callees or expression-stmt
         calls that drop the result."""
-        if dst is not None and rv is not None:
+        if dst is not None and rv is not None and self._is_aggregate_var(dst):
+            size = _sizeof(self.symbols[dst.name].type, self.types)
+            self.memory.store(self._address_of(frame, dst), rv, size)
+        elif dst is not None and rv is not None:
             self._write(frame, dst, rv & _mask(self._dst_width(dst)))
 
     @staticmethod

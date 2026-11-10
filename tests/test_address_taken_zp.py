@@ -130,27 +130,27 @@ class TestAddressTakenZp(unittest.TestCase):
         asm, _, _, slot_syms = self._compile(src)
         sym = "__local_caller__row"
         self.assertIn(sym, slot_syms)
-        # Scan the caller function for `LoadAddress(src=Data(sym), ...)`.
         # If the assignment worked, the address-taken local resolves
-        # to a Data operand (which asm_emit lowers as `LDA #<sym;
-        # LDA #>sym` immediate pair). If it didn't, we'd see a
-        # `LoadAddress(src=Frame(...))` instead which lowers to the
+        # to a Data operand, and `lower_data_load_address` turns
+        # `LoadAddress(src=Data(sym))` into the immediate pair `LDA
+        # #<sym; ...; LDA #>sym`. If it didn't, we'd see a
+        # `LoadAddress(src=Frame(...))` instead, which lowers to the
         # 6-instruction CLC; LDA FP; ADC #imm; ... runtime compute.
         caller_fn = next(
             tl for tl in asm.top_level
             if isinstance(tl, asm_ast.Function) and tl.name == "caller"
         )
-        has_loadaddress_data = any(
-            isinstance(instr, asm_ast.LoadAddress)
-            and isinstance(instr.src, asm_ast.Data)
+        has_immediate_address = any(
+            isinstance(instr, asm_ast.Mov)
+            and isinstance(instr.src, asm_ast.ImmLabelLow)
             and instr.src.name == sym
             for instr in caller_fn.instructions
         )
         self.assertTrue(
-            has_loadaddress_data,
-            "expected LoadAddress(src=Data(__local_caller__row)) in "
-            "caller body — address-taken local didn't get routed to "
-            "the immediate-address path",
+            has_immediate_address,
+            "expected `LDA #<__local_caller__row` in the caller body; "
+            "the address-taken local didn't get routed to the "
+            "immediate-address path",
         )
 
 

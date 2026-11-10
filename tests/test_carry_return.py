@@ -348,5 +348,221 @@ class TestCarryLiveAtReturn(unittest.TestCase):
         self.assertEqual(out, instrs)
 
 
+
+# A struct of a value and a `bool`, which a `return_bool_in_carry`
+# function returns with the value in A (and X) and the flag in C.
+_ZC = "struct zc { unsigned char v; unsigned char end; };\n"
+_WV = "struct wv { int v; unsigned char end; };\n"
+
+
+def _tac_main(src):
+    """main()'s result on unoptimized TAC. `tac_sim` doesn't run the
+    instructions the TAC optimizer introduces, such as
+    `IndirectIndexedStore`."""
+    import sim.harness as H
+    from compile import _resolved
+    from tac_sim import Simulator
+    ast, syms, types = H.type_check_program(
+        _resolved(H.preprocess(src)),
+    )
+    tac = H.translate_to_tac(ast, syms, types)
+    return Simulator(tac, syms, types).call("main", [])
+
+
+class TestStructFrontEnd(unittest.TestCase):
+
+    def _tac(self, src):
+        from compile import _run_stage
+        return _run_stage("tac", src)
+
+    def test_accepts_value_and_flag(self):
+        for value in ("unsigned char", "signed char", "char", "int",
+                      "unsigned int"):
+            with self.subTest(value):
+                self._tac(
+                    f"struct s {{ {value} v; unsigned char end; }};\n"
+                    + _CARRY + "struct s f(void) { struct s r; r.v = 1; "
+                    "r.end = 0; return r; }"
+                )
+
+    def test_rejects_other_shapes(self):
+        shapes = {
+            "three members": "unsigned char v; unsigned char end; "
+                             "unsigned char x;",
+            "one member": "unsigned char v;",
+            "pointer value": "unsigned char *v; unsigned char end;",
+            "long value": "long v; unsigned char end;",
+            "int flag": "unsigned char v; int end;",
+            "flag first": "unsigned char end; int v;",
+        }
+        for label, members in shapes.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(
+                        TypeCheckError, "exactly two members"):
+                    self._tac(
+                        f"struct s {{ {members} }};\n"
+                        + _CARRY + "struct s f(void);"
+                    )
+
+    def test_rejects_union(self):
+        with self.assertRaisesRegex(TypeCheckError, "exactly two members"):
+            self._tac("union u { unsigned char v; unsigned char end; };\n"
+                      + _CARRY + "union u f(void);")
+
+    def test_no_hidden_pointer(self):
+        tac = self._tac(_ZC + _CARRY + (
+            "struct zc f(void) { struct zc r; r.v = 3; r.end = 1; "
+            "return r; }\n"
+            "int main(void) { struct zc c = f(); return c.v; }\n"
+        ))
+        self.assertNotIn(".sret", tac)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestStructSim(unittest.TestCase):
+    """Each program runs on both TACs and through both pipelines."""
+
+    def _check(self, src, expected):
+        self.assertEqual(_tac_main(src), expected)
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(src, optimize=optimize).run()
+                self.assertEqual(got.return_int(), expected)
+
+    def test_byte_value(self):
+        # The shape of Zork's get_next_zchar: a value, and a flag that
+        # marks the end of the data.
+        src = _ZC + (
+            "unsigned char data[6] = {5, 7, 9, 0xFF, 3, 4};\n"
+            "unsigned char pos;\n"
+            + _CARRY + "struct zc next(void) {\n"
+            "    struct zc r;\n"
+            "    r.v = data[pos++];\n"
+            "    r.end = r.v == 0xFF;\n"
+            "    return r;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    int sum = 0;\n"
+            "    for (;;) {\n"
+            "        struct zc c = next();\n"
+            "        if (c.end) break;\n"
+            "        sum += c.v;\n"
+            "    }\n"
+            "    return sum * 10 + pos;\n"
+            "}\n"
+        )
+        self._check(src, 21 * 10 + 4)
+
+    def test_int_value(self):
+        src = _WV + _CARRY + (
+            "struct wv triple(int x) {\n"
+            "    struct wv r;\n"
+            "    r.v = x * 3;\n"
+            "    r.end = x < 0;\n"
+            "    return r;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    struct wv a = triple(300);\n"
+            "    struct wv b = triple(-7);\n"
+            "    return a.v + a.end * 10000 + b.v * 2 + b.end * 20000;\n"
+            "}\n"
+        )
+        self._check(src, 900 + 20000 - 42)
+
+    def test_flag_is_zero_or_one(self):
+        # The caller rebuilds the flag from C, so any nonzero flag in
+        # the callee arrives as 1.
+        src = _ZC + _CARRY + (
+            "struct zc f(unsigned char x) {\n"
+            "    struct zc r;\n"
+            "    r.v = x;\n"
+            "    r.end = x & 6;\n"
+            "    return r;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    struct zc a = f(4);\n"
+            "    struct zc b = f(9);\n"
+            "    return a.end * 100 + b.end * 10 + a.v + b.v;\n"
+            "}\n"
+        )
+        self._check(src, 100 + 13)
+
+    def test_recursive_soft_stack(self):
+        # Recursion keeps `count` on the soft stack, so A, X, and C all
+        # cross its frame teardown.
+        src = _WV + _CARRY + (
+            "struct wv count(unsigned char n) {\n"
+            "    struct wv r;\n"
+            "    if (n == 0) { r.v = 1000; r.end = 1; return r; }\n"
+            "    r = count(n - 1);\n"
+            "    r.v = r.v + n;\n"
+            "    r.end = !r.end;\n"
+            "    return r;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    struct wv a = count(4);\n"
+            "    struct wv b = count(5);\n"
+            "    return a.v + a.end * 10000 + b.end * 20000;\n"
+            "}\n"
+        )
+        self._check(src, 1010 + 10000)
+
+    def test_returned_call(self):
+        # `return f();` passes the callee's A and C straight through.
+        src = _ZC + _CARRY + (
+            "struct zc inner(unsigned char x) {\n"
+            "    struct zc r; r.v = x + 1; r.end = x > 5; return r;\n"
+            "}\n"
+            + _CARRY + "struct zc outer(unsigned char x) "
+            "{ return inner(x * 2); }\n"
+            "int main(void) {\n"
+            "    struct zc a = outer(2);\n"
+            "    struct zc b = outer(3);\n"
+            "    return a.v * 100 + a.end * 10 + b.end + b.v * 1000;\n"
+            "}\n"
+        )
+        self._check(src, 500 + 0 + 1 + 7000)
+
+    def test_fixed_address_routine(self):
+        # A routine at $D000 that returns 42 in A with C set.
+        src = _ZC + (
+            "__attribute__((zp_abi, return_bool_in_carry, "
+            "address(0xD000)))\n"
+            "struct zc rom(void);\n"
+            "int main(void) { struct zc c = rom(); "
+            "return c.v * 2 + c.end; }\n"
+        )
+        lda_sec_rts = bytes([0xA9, 42, 0x38, 0x60])
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(src, optimize=optimize)
+                sim.mpu.memory[0xD000:0xD004] = lda_sec_rts
+                self.assertEqual(sim.run().return_int(), 85)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestStructCodeShape(unittest.TestCase):
+
+    def test_callee_sets_c_then_loads_value(self):
+        asm = _codegen(_WV + "struct wv g;\n" + _CARRY + (
+            "struct wv f(void) { return g; }\n"
+            "int main(void) { struct wv r = f(); return r.v; }\n"
+        ))
+        self.assertEqual(_function_text(asm, "f").split(), [
+            "LDA", "g+2", "CMP", "#$01", "LDX", "g+1", "LDA", "g", "RTS",
+        ])
+
+    def test_zp_abi_eligible(self):
+        # No hidden pointer, so `f` gets zp_abi under --optimize and
+        # the call passes nothing on the soft stack.
+        asm = _codegen(_ZC + _CARRY + (
+            "struct zc f(unsigned char x) { struct zc r; r.v = x; "
+            "r.end = x == 3; return r; }\n"
+            "int main(void) { struct zc c = f(3); return c.v + c.end; }\n"
+        ))
+        self.assertIn("__zpabi_f__x", asm)
+        self.assertNotIn("SSP", _function_text(asm, "main"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -43,27 +43,45 @@ import asm_ast
 
 def lower_data_load_address(
     prog: asm_ast.Type_program,
+    *,
+    slot_symbols: dict[str, int] | None = None,
+    byte_names: dict[str, dict[int, str]] | None = None,
 ) -> asm_ast.Type_program:
     """Walk every Function top-level and split each Data-source
     LoadAddress into two ImmLabel Movs. Non-Function top-levels
-    pass through unchanged."""
+    pass through unchanged.
+
+    `slot_symbols` maps each zero-page slot symbol to its address,
+    and `byte_names[fn]` maps each byte of `fn`'s private pool to
+    the slot symbol its reads use. A 2-byte destination such as
+    `__local_f__0` has its high byte named `__local_f__1` there, so
+    the high-byte write goes to `Data(__local_f__1, 0)` rather than
+    `Data(__local_f__0, 1)`. Name-keyed passes such as the dead-store
+    eliminations would otherwise see a write that nothing reads and
+    drop it."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_lower_in_function(tl))
+            new_top.append(_lower_in_function(
+                tl, slot_symbols or {}, (byte_names or {}).get(tl.name, {}),
+            ))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
 
-def _lower_in_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _lower_in_function(
+    fn: asm_ast.Function,
+    slot_symbols: dict[str, int],
+    byte_names: dict[int, str],
+) -> asm_ast.Function:
     new_instrs: list[asm_ast.Type_instruction] = []
     changed = False
     for instr in fn.instructions:
         if (isinstance(instr, asm_ast.LoadAddress)
                 and isinstance(instr.src, asm_ast.Data)
                 and _is_memory_operand(instr.dst)):
-            new_instrs.extend(_split(instr))
+            new_instrs.extend(_split(instr, slot_symbols, byte_names))
             changed = True
         else:
             new_instrs.append(instr)
@@ -79,6 +97,8 @@ def _lower_in_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 def _split(
     instr: asm_ast.LoadAddress,
+    slot_symbols: dict[str, int],
+    byte_names: dict[int, str],
 ) -> list[asm_ast.Type_instruction]:
     """Two-Mov expansion of `LoadAddress(src=Data, dst=mem-op)`.
     Mirrors the byte order used by `asm_emit._emit_load_address`
@@ -88,7 +108,7 @@ def _split(
     assert isinstance(src, asm_ast.Data)
     label_name, label_off = src.name, src.offset
     dst_lo = instr.dst
-    dst_hi = _shift_offset(instr.dst, 1)
+    dst_hi = _high_byte(instr.dst, slot_symbols, byte_names)
     return [
         asm_ast.Mov(
             src=asm_ast.ImmLabelLow(
@@ -103,6 +123,24 @@ def _split(
             dst=dst_hi,
         ),
     ]
+
+
+def _high_byte(
+    dst: asm_ast.Type_operand,
+    slot_symbols: dict[str, int],
+    byte_names: dict[int, str],
+) -> asm_ast.Type_operand:
+    """The operand for the byte after `dst`. When that byte is a pool
+    byte whose own slot symbol starts there, the operand uses that
+    symbol. A byte inside a wider object, such as the second byte of
+    an address-taken struct, has no symbol of its own and stays an
+    offset from `dst`."""
+    if isinstance(dst, asm_ast.Data) and dst.name in slot_symbols:
+        addr = slot_symbols[dst.name] + dst.offset + 1
+        name = byte_names.get(addr)
+        if name is not None and slot_symbols.get(name) == addr:
+            return asm_ast.Data(name=name, offset=0)
+    return _shift_offset(dst, 1)
 
 
 def _shift_offset(

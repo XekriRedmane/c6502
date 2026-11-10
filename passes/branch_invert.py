@@ -75,6 +75,13 @@ def apply_branch_invert(prog: asm_ast.Program) -> asm_ast.Program:
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
+    # A Jump to a name that isn't a label here is a tail call to
+    # another function. A branch can't reach it: its distance isn't
+    # known until link time, and `expand_long_branches` only measures
+    # branches within one function.
+    local_labels = {
+        ins.name for ins in instrs if isinstance(ins, asm_ast.Label)
+    }
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i + 2 < len(instrs):
@@ -83,6 +90,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 and isinstance(b, asm_ast.Jump)
                 and isinstance(c, asm_ast.Label)
                 and a.target == c.name
+                and b.target in local_labels
                 and type(a.cond) in _INVERT):
             inverted = _INVERT[type(a.cond)]()
             out.append(asm_ast.Branch(cond=inverted, target=b.target))

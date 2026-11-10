@@ -128,6 +128,7 @@ from passes.dec_branch_indirect_y_fold import apply_dec_branch_indirect_y_fold
 from passes.dec_register_peephole import apply_dec_register_peephole
 from passes.promote_loop_carried_to_a import apply_promote_loop_carried_to_a
 from passes.volatile_void_read_cmp import apply_volatile_void_read_cmp
+from dataclasses import dataclass
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
 from passes.replace_pseudoregisters import (
     replace_program as replace_pseudoregs,
@@ -312,6 +313,217 @@ def _run_stage(
     raise AssertionError(f"unknown stage: {stage!r}")
 
 
+@dataclass
+class OptimizedAsm:
+    """What `optimized_asm` returns. `asm` is the finished asm IR, with
+    long branches expanded and the zero-page globals placed, ready
+    for `lower_to_asm2`. `slot_symbols` maps every zero-page slot
+    symbol (the zp_abi parameter slots and the body-local slots) to
+    its address."""
+    asm: object
+    tac: object
+    abi: dict
+    local_pools: dict
+    slot_names_by_fn: dict
+    slot_symbols: dict[str, int]
+
+
+def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
+    """Runs the `--optimize` pipeline from the unoptimized TAC `tac` to
+    the finished asm IR. `compile.py --codegen --optimize` and the
+    simulator harness (`sim.harness.compile_to_asm`) both call this,
+    so the simulator runs the code the CLI emits. `statics` names
+    every static-storage object, and `zp` is the translation unit's
+    zero-page plan (passes/zp_globals.py), which must be in effect."""
+    tac = optimize_tac(tac, symbols)
+    # Inline-switch dispatch for small const-pointer arrays.
+    # Recognizes `arr[i][j]` where arr is a `static const T
+    # * const[N]` and rewrites the indirect chain to a
+    # CMP/BEQ dispatch on `i`. Runs post-from_ssa (inside
+    # optimize_tac), so the dispatched cases can each
+    # write to the same dst without Phi insertion.
+    tac = dispatch_const_pointer_arrays(tac, symbols)
+    abi = select_abi(tac, prog, types)
+    abi, zp_slot_symbols = allocate_zp_slots(
+        tac, abi, reserved=zp.reserved,
+    )
+    asm0 = translate_to_asm(
+        tac, symbols, types, bare_exit=True, abi=abi,
+    )
+    # Preliminary optimizer pass with the default
+    # caller/callee partition. Used only to size each
+    # function's local-byte demand; the IR it produces is
+    # discarded.
+    asm_prelim, _ = asm_opt.optimize_program(
+        asm0, extra_statics=statics, param_layouts=abi,
+        symbols=symbols, reserved_zp=zp.reserved,
+    )
+    local_bytes = compute_local_bytes(asm_prelim)
+    # Address-taken locals would otherwise spill to the
+    # soft-stack frame (forcing a prologue/epilogue + an
+    # LDY/(FP),Y indirect-read at every access). For
+    # functions with a private local pool, we can reserve
+    # extra ZP bytes in the pool and route each address-
+    # taken local to a stable ZP byte — `&local` then
+    # becomes a 2-byte immediate constant instead of a
+    # 6-byte FP-relative compute. Add the byte demand here
+    # so `allocate_function_locals` sizes the pool
+    # appropriately.
+    addr_taken_bytes = compute_address_taken_bytes(
+        asm_prelim, symbols, types,
+    )
+    combined_local_bytes = {
+        fn: local_bytes.get(fn, 0) + addr_taken_bytes.get(fn, 0)
+        for fn in set(local_bytes) | set(addr_taken_bytes)
+    }
+    # Call-graph-disjoint private pools per function. The
+    # asm regalloc draws from these for eligible functions;
+    # ineligible functions (recursive, indirect-calling,
+    # or with non-zp_abi extern callees) fall back to the
+    # conservative pool.
+    local_pools = allocate_function_locals(
+        tac, abi, combined_local_bytes, reserved=zp.reserved,
+    )
+    # Final optimizer pass with private pools threaded
+    # through to the regalloc.
+    asm0, asm_colorings = asm_opt.optimize_program(
+        asm0, extra_statics=statics, param_layouts=abi,
+        symbols=symbols, local_pools=local_pools,
+        reserved_zp=zp.reserved,
+    )
+    # Compute per-function address-taken Pseudo → ZP-byte
+    # assignments from the pool addresses the regalloc
+    # didn't claim. Names that don't fit (no contiguous
+    # run of the required width is free) get omitted and
+    # fall back to the Frame path inside
+    # `replace_pseudoregisters`.
+    addr_taken_assignments = compute_address_taken_assignments(
+        asm0, local_pools, asm_colorings, symbols, types,
+    )
+    addr_taken_symbols = {
+        fn: _addr_taken_slot_symbols(
+            fn, assignments, symbols, types,
+        )
+        for fn, assignments in addr_taken_assignments.items()
+    }
+    asm1, dims_by_fn = replace_pseudoregs_bare_exit(
+        asm0, extra_statics=statics, symbols=symbols,
+        types=types, colorings=asm_colorings,
+        param_layouts=abi, local_pools=local_pools,
+        address_taken_assignments=addr_taken_assignments,
+        address_taken_symbols=addr_taken_symbols,
+    )
+    # Build the full EQU table: zp_abi param slots plus the
+    # per-function body-local slot symbols emitted by
+    # apply_coloring. The asm IR references body locals as
+    # `Data(__local_<fn>__<source>[_<byte>], 0)`, so the
+    # emit needs an `EQU` binding for every symbol the IR
+    # uses. We compute the per-pool-byte ordered name list
+    # once and thread it into both the EQU builder and the
+    # link-metadata builder so both share the same view.
+    from passes.zp_slot_naming import compute_local_slot_names
+    slot_names_by_fn = compute_local_slot_names(
+        local_pools, asm_colorings,
+        address_taken_assignments=addr_taken_assignments,
+        address_taken_symbols=addr_taken_symbols,
+    )
+    local_slot_symbols = build_local_slot_symbols(
+        local_pools, slot_names_by_fn=slot_names_by_fn,
+    )
+    all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
+    # Split `LoadAddress(src=Data, dst=mem)` into two
+    # `Mov(ImmLabel*, mem)` atoms so the peephole loop's
+    # memory_value_propagation can fold the dst round trip. The
+    # high byte is written under the name the pool gives that byte,
+    # which is the name its reads use.
+    from passes.lower_data_load_address import (
+        lower_data_load_address,
+    )
+    asm1 = lower_data_load_address(
+        asm1, slot_symbols=all_slot_symbols,
+        byte_names={
+            fn: dict(zip(local_pools[fn], names))
+            for fn, names in slot_names_by_fn.items()
+        },
+    )
+    asm2 = synthesize_prologue(asm1, dims_by_fn)
+    # LICM-lite: hoist loop-invariant constant stores out
+    # of natural loops (only fires when the loop body has
+    # no Call — conservative to sidestep zp_abi clobber
+    # questions).
+    asm2 = apply_licm(asm2)
+    asm3 = _peephole_fixedpoint(
+        asm2, zp_slot_symbols=all_slot_symbols,
+        zp_global_symbols=zp.addrs,
+    )
+    # Promote a reg('A')-param's body-local spill to live in
+    # A across the loop body (parks it in Y during the
+    # preamble's A-clobbering staging). Runs alongside the
+    # X-pivot promotion below — both target a memory cell
+    # whose lifetime is a single loop. See the pass docstring
+    # for the exact eligibility shape.
+    asm3 = apply_promote_loop_carried_to_a(asm3)
+    asm3 = apply_loop_counter_to_x(asm3)
+    # A count-down counter used only by its DEC goes in X (or
+    # Y) when the loop leaves that register alone.
+    asm3 = apply_counter_to_index_reg(asm3)
+    # Catch cases the X-pivot promotion couldn't reach: a
+    # Pseudo that got X-colored upstream but kept an
+    # `LDA M`-style read of its spill home M for arg
+    # passing, which reads stale M after DEX. Rewrite those
+    # LDA M to TXA. Runs before the post-promotion peephole
+    # fixedpoint so the now-dead STX M / LDX M wraps get
+    # cleaned up downstream.
+    asm3 = apply_x_save_slot_load(asm3)
+    # Second pass of peephole catches what the promotion
+    # exposed (e.g., redundant LDX/STX pairs after the
+    # Y-pivot embedded in loop_counter_to_x freed up X).
+    asm3 = _peephole_fixedpoint(
+        asm3, zp_slot_symbols=all_slot_symbols,
+        zp_global_symbols=zp.addrs,
+    )
+    # Y-promote a Data symbol that's loaded into X multiple
+    # times when Y is otherwise unused — saves the
+    # per-occurrence `LDX abs` reload by loading once into
+    # Y at function entry. Re-run the peephole fixedpoint
+    # so dead LDA/STA pairs around the dropped LDX get
+    # collected.
+    asm3 = apply_dual_index_promotion(asm3)
+    asm3 = _peephole_fixedpoint(
+        asm3, zp_slot_symbols=all_slot_symbols,
+        zp_global_symbols=zp.addrs,
+    )
+    # Drop dead reg-attributed-param entry stubs. The
+    # peephole loop above has by now collapsed any
+    # `LDA __zpabi_<fn>__<param>; TAX` initialization
+    # sequence into a direct `LDX` (via direct_index_load)
+    # and then dropped that LDX entirely when the param's
+    # value is already in X from the calling convention
+    # (via redundant_load_elimination). At THIS point the
+    # slot is genuinely unread in the body, so the entry
+    # stub `STX __zpabi_<fn>__<param>` is dead. The general
+    # asm_dead_store pass can't drop it when the body
+    # contains a volatile Indirect (which conservatively
+    # aliases every byte); the targeted pass below knows
+    # the function's own `__zpabi_*` slots can't be
+    # aliased by an Indirect and drops the stub directly.
+    asm3 = apply_dead_reg_entry_stub_drop(asm3, abi)
+    # Keep a loop-invariant compare key in A across its loop
+    # (see passes/loop_invariant_a.py). Runs after the
+    # peepholes have settled the layout it inspects.
+    asm3 = apply_loop_invariant_a(
+        asm3, zp_slot_symbols=all_slot_symbols,
+    )
+    asm4 = expand_long_branches(asm3)
+    # Zero-page globals: drop their storage and add `__zp_init`
+    # (passes/zp_globals.py).
+    asm4 = place_zp_globals(asm4, zp)
+    return OptimizedAsm(
+        asm=asm4, tac=tac, abi=abi, local_pools=local_pools,
+        slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
+    )
+
+
 def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
     """The `--codegen` stage after translation to TAC (`tac`). `zp` is
     the translation unit's zero-page globals and runtime layout
@@ -338,181 +550,9 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         # ZP-ABI params resolve to ZP operands) →
         # synthesize_prologue (collapses prologue/epilogue when
         # nothing needs spilling).
-        tac = optimize_tac(tac, symbols)
-        # Inline-switch dispatch for small const-pointer arrays.
-        # Recognizes `arr[i][j]` where arr is a `static const T
-        # * const[N]` and rewrites the indirect chain to a
-        # CMP/BEQ dispatch on `i`. Runs post-from_ssa (inside
-        # optimize_tac), so the dispatched cases can each
-        # write to the same dst without Phi insertion.
-        tac = dispatch_const_pointer_arrays(tac, symbols)
-        abi = select_abi(tac, prog, types)
-        abi, zp_slot_symbols = allocate_zp_slots(
-            tac, abi, reserved=zp.reserved,
-        )
-        asm0 = translate_to_asm(
-            tac, symbols, types, bare_exit=True, abi=abi,
-        )
-        # Preliminary optimizer pass with the default
-        # caller/callee partition. Used only to size each
-        # function's local-byte demand; the IR it produces is
-        # discarded.
-        asm_prelim, _ = asm_opt.optimize_program(
-            asm0, extra_statics=statics, param_layouts=abi,
-            symbols=symbols, reserved_zp=zp.reserved,
-        )
-        local_bytes = compute_local_bytes(asm_prelim)
-        # Address-taken locals would otherwise spill to the
-        # soft-stack frame (forcing a prologue/epilogue + an
-        # LDY/(FP),Y indirect-read at every access). For
-        # functions with a private local pool, we can reserve
-        # extra ZP bytes in the pool and route each address-
-        # taken local to a stable ZP byte — `&local` then
-        # becomes a 2-byte immediate constant instead of a
-        # 6-byte FP-relative compute. Add the byte demand here
-        # so `allocate_function_locals` sizes the pool
-        # appropriately.
-        addr_taken_bytes = compute_address_taken_bytes(
-            asm_prelim, symbols, types,
-        )
-        combined_local_bytes = {
-            fn: local_bytes.get(fn, 0) + addr_taken_bytes.get(fn, 0)
-            for fn in set(local_bytes) | set(addr_taken_bytes)
-        }
-        # Call-graph-disjoint private pools per function. The
-        # asm regalloc draws from these for eligible functions;
-        # ineligible functions (recursive, indirect-calling,
-        # or with non-zp_abi extern callees) fall back to the
-        # conservative pool.
-        local_pools = allocate_function_locals(
-            tac, abi, combined_local_bytes, reserved=zp.reserved,
-        )
-        # Final optimizer pass with private pools threaded
-        # through to the regalloc.
-        asm0, asm_colorings = asm_opt.optimize_program(
-            asm0, extra_statics=statics, param_layouts=abi,
-            symbols=symbols, local_pools=local_pools,
-            reserved_zp=zp.reserved,
-        )
-        # Compute per-function address-taken Pseudo → ZP-byte
-        # assignments from the pool addresses the regalloc
-        # didn't claim. Names that don't fit (no contiguous
-        # run of the required width is free) get omitted and
-        # fall back to the Frame path inside
-        # `replace_pseudoregisters`.
-        addr_taken_assignments = compute_address_taken_assignments(
-            asm0, local_pools, asm_colorings, symbols, types,
-        )
-        addr_taken_symbols = {
-            fn: _addr_taken_slot_symbols(
-                fn, assignments, symbols, types,
-            )
-            for fn, assignments in addr_taken_assignments.items()
-        }
-        asm1, dims_by_fn = replace_pseudoregs_bare_exit(
-            asm0, extra_statics=statics, symbols=symbols,
-            types=types, colorings=asm_colorings,
-            param_layouts=abi, local_pools=local_pools,
-            address_taken_assignments=addr_taken_assignments,
-            address_taken_symbols=addr_taken_symbols,
-        )
-        # Split `LoadAddress(src=Data, dst=mem)` into two
-        # `Mov(ImmLabel*, mem)` atoms so the peephole loop's
-        # memory_value_propagation can fold the dst round trip.
-        from passes.lower_data_load_address import (
-            lower_data_load_address,
-        )
-        asm1 = lower_data_load_address(asm1)
-        asm2 = synthesize_prologue(asm1, dims_by_fn)
-        # LICM-lite: hoist loop-invariant constant stores out
-        # of natural loops (only fires when the loop body has
-        # no Call — conservative to sidestep zp_abi clobber
-        # questions).
-        asm2 = apply_licm(asm2)
-        # Build the full EQU table: zp_abi param slots plus the
-        # per-function body-local slot symbols emitted by
-        # apply_coloring. The asm IR references body locals as
-        # `Data(__local_<fn>__<source>[_<byte>], 0)`, so the
-        # emit needs an `EQU` binding for every symbol the IR
-        # uses. We compute the per-pool-byte ordered name list
-        # once and thread it into both the EQU builder and the
-        # link-metadata builder so both share the same view.
-        from passes.zp_slot_naming import compute_local_slot_names
-        slot_names_by_fn = compute_local_slot_names(
-            local_pools, asm_colorings,
-            address_taken_assignments=addr_taken_assignments,
-            address_taken_symbols=addr_taken_symbols,
-        )
-        local_slot_symbols = build_local_slot_symbols(
-            local_pools, slot_names_by_fn=slot_names_by_fn,
-        )
-        all_slot_symbols = {**zp_slot_symbols, **local_slot_symbols}
-        asm3 = _peephole_fixedpoint(
-            asm2, zp_slot_symbols=all_slot_symbols,
-            zp_global_symbols=zp.addrs,
-        )
-        # Promote a reg('A')-param's body-local spill to live in
-        # A across the loop body (parks it in Y during the
-        # preamble's A-clobbering staging). Runs alongside the
-        # X-pivot promotion below — both target a memory cell
-        # whose lifetime is a single loop. See the pass docstring
-        # for the exact eligibility shape.
-        asm3 = apply_promote_loop_carried_to_a(asm3)
-        asm3 = apply_loop_counter_to_x(asm3)
-        # A count-down counter used only by its DEC goes in X (or
-        # Y) when the loop leaves that register alone.
-        asm3 = apply_counter_to_index_reg(asm3)
-        # Catch cases the X-pivot promotion couldn't reach: a
-        # Pseudo that got X-colored upstream but kept an
-        # `LDA M`-style read of its spill home M for arg
-        # passing, which reads stale M after DEX. Rewrite those
-        # LDA M to TXA. Runs before the post-promotion peephole
-        # fixedpoint so the now-dead STX M / LDX M wraps get
-        # cleaned up downstream.
-        asm3 = apply_x_save_slot_load(asm3)
-        # Second pass of peephole catches what the promotion
-        # exposed (e.g., redundant LDX/STX pairs after the
-        # Y-pivot embedded in loop_counter_to_x freed up X).
-        asm3 = _peephole_fixedpoint(
-            asm3, zp_slot_symbols=all_slot_symbols,
-            zp_global_symbols=zp.addrs,
-        )
-        # Y-promote a Data symbol that's loaded into X multiple
-        # times when Y is otherwise unused — saves the
-        # per-occurrence `LDX abs` reload by loading once into
-        # Y at function entry. Re-run the peephole fixedpoint
-        # so dead LDA/STA pairs around the dropped LDX get
-        # collected.
-        asm3 = apply_dual_index_promotion(asm3)
-        asm3 = _peephole_fixedpoint(
-            asm3, zp_slot_symbols=all_slot_symbols,
-            zp_global_symbols=zp.addrs,
-        )
-        # Drop dead reg-attributed-param entry stubs. The
-        # peephole loop above has by now collapsed any
-        # `LDA __zpabi_<fn>__<param>; TAX` initialization
-        # sequence into a direct `LDX` (via direct_index_load)
-        # and then dropped that LDX entirely when the param's
-        # value is already in X from the calling convention
-        # (via redundant_load_elimination). At THIS point the
-        # slot is genuinely unread in the body, so the entry
-        # stub `STX __zpabi_<fn>__<param>` is dead. The general
-        # asm_dead_store pass can't drop it when the body
-        # contains a volatile Indirect (which conservatively
-        # aliases every byte); the targeted pass below knows
-        # the function's own `__zpabi_*` slots can't be
-        # aliased by an Indirect and drops the stub directly.
-        asm3 = apply_dead_reg_entry_stub_drop(asm3, abi)
-        # Keep a loop-invariant compare key in A across its loop
-        # (see passes/loop_invariant_a.py). Runs after the
-        # peepholes have settled the layout it inspects.
-        asm3 = apply_loop_invariant_a(
-            asm3, zp_slot_symbols=all_slot_symbols,
-        )
-        asm4 = expand_long_branches(asm3)
-        # Zero-page globals: drop their storage and add `__zp_init`
-        # (passes/zp_globals.py).
-        asm4 = place_zp_globals(asm4, zp)
+        opt = optimized_asm(prog, symbols, types, zp, tac, statics)
+        asm4, abi, local_pools = opt.asm, opt.abi, opt.local_pools
+        all_slot_symbols = opt.slot_symbols
         # Drop EQU entries for `__local_*` symbols that the
         # peephole catalog rendered unreferenced. Walks asm_ast
         # operands directly, so run BEFORE asm_to_asm2 (which
@@ -531,8 +571,8 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
                 emit_slot_symbols.pop(sym, None)
         asm5 = lower_to_asm2(asm4)
         link_meta = build_metadata(
-            tac, abi, local_pools,
-            slot_names_by_fn=slot_names_by_fn,
+            opt.tac, abi, local_pools,
+            slot_names_by_fn=opt.slot_names_by_fn,
         )
         return emit_program(
             asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},

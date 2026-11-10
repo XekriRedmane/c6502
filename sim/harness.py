@@ -30,28 +30,26 @@ from py65.devices.mpu6502 import MPU
 
 import asm_ast
 from preprocessor import preprocess
-from parser import parse
-from passes.identifier_resolution import resolve_program as resolve_identifiers
-from passes.string_lifting import lift_program as lift_strings
-from passes.label_resolution import resolve_program as resolve_labels
-from passes.loop_labeling import label_program as label_loops
 from passes.long_branches import expand_program as expand_long_branches
 from passes.type_checking import check_program as type_check_program, StaticAttr
-from passes.prologue_synthesis import synthesize_program as synthesize_prologue
-from passes.replace_pseudoregisters import (
-    replace_program as replace_pseudoregs,
-    replace_program_bare_exit as replace_pseudoregs_bare_exit,
-)
+from passes.replace_pseudoregisters import replace_program as replace_pseudoregs
 from c99_to_tac import translate_program as translate_to_tac
-from passes.abi_selection import fixed_address_layouts, select_abi
-from passes.function_local_sizing import compute_local_bytes
-from passes.zp_local_allocation import (
-    allocate_function_locals, build_local_slot_symbols,
-)
-from passes.zp_slot_allocation import allocate_zp_slots
-from passes.optimization import optimize_program as optimize_tac
-from passes.optimization_asm import optimizer as asm_opt
+from passes.abi_selection import fixed_address_layouts
 from tac_to_asm import translate_program as translate_to_asm
+# The front-end passes and the TAC optimizer, which fuzz/reduce.py
+# reaches through this module.
+from parser import parse  # noqa: F401
+from passes.identifier_resolution import (  # noqa: F401
+    resolve_program as resolve_identifiers,
+)
+from passes.string_lifting import lift_program as lift_strings  # noqa: F401
+from passes.label_resolution import (  # noqa: F401
+    resolve_program as resolve_labels,
+)
+from passes.loop_labeling import label_program as label_loops  # noqa: F401
+from passes.optimization import (  # noqa: F401
+    optimize_program as optimize_tac,
+)
 
 from sim import assembler
 from sim import runtime as rt_mod
@@ -76,22 +74,13 @@ def compile_to_asm(
     bindings produced by `passes.zp_slot_allocation` (empty when
     optimization is off or no zp_abi function is present).
 
-    `optimize=True` runs the optimizer pipeline: TAC-level fixed-
-    point opts (constant folding, strength reduction, comparison-
-    against-zero / jump fold, UCE, copy prop, DSE), then the asm-
-    level SSA round-trip with byte-granular forward + backward
-    copy-prop, byte-DCE, and byte-granular regalloc, then late
-    prologue / epilogue synthesis (collapses prologue/epilogue
-    when nothing needs spilling). Also enables the
-    `__attribute__((zp_abi))` calling-convention optimization
-    (frame elimination on annotated leaves)."""
-    pp = preprocess(source)
-    ast0 = parse(pp)
-    ast1 = resolve_identifiers(ast0)
-    ast2 = lift_strings(ast1)
-    ast3 = resolve_labels(ast2)
-    ast4 = label_loops(ast3)
-    ast5, syms, types = type_check_program(ast4)
+    Both pipelines run the passes `compile.py --codegen` runs, so the
+    simulator executes the code the CLI emits. `optimize=True` runs
+    `compile.optimized_asm`, the `--optimize` pipeline."""
+    from compile import _resolved
+    ast5, syms, types = type_check_program(
+        _resolved(preprocess(source), optimize=optimize),
+    )
     from passes.zp_globals import plan_zero_page, zero_page_in_effect
     tac = translate_to_tac(ast5, syms, types)
     zp = plan_zero_page(tac, syms, types)
@@ -110,98 +99,10 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp, tac):
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
     if optimize:
-        # Optimized path: TAC opts → tac_to_asm bare-exit → asm-
-        # level SSA round-trip + byte-granular regalloc →
-        # replace_pseudoregisters_bare_exit → prologue synthesis.
-        # ABI selection is threaded through both call-site
-        # lowering and callee-side param resolution. See
-        # compile.py for the full pipeline shape.
-        tac = optimize_tac(tac, syms)
-        abi = select_abi(tac, ast5, types)
-        abi, zp_slot_symbols = allocate_zp_slots(
-            tac, abi, reserved=zp.reserved,
-        )
-        asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
-        # Preliminary optimizer pass: conservative pool, used
-        # only to size local-byte demand. IR discarded.
-        asm_prelim, _ = asm_opt.optimize_program(
-            asm0, extra_statics=statics, param_layouts=abi,
-            symbols=syms, reserved_zp=zp.reserved,
-        )
-        local_bytes = compute_local_bytes(asm_prelim)
-        from passes.function_local_sizing import (
-            compute_address_taken_bytes,
-        )
-        from passes.address_taken_zp import (
-            compute_address_taken_assignments,
-            slot_symbols as _addr_taken_slot_symbols,
-        )
-        addr_taken_bytes = compute_address_taken_bytes(
-            asm_prelim, syms, types,
-        )
-        combined_local_bytes = {
-            fn: local_bytes.get(fn, 0) + addr_taken_bytes.get(fn, 0)
-            for fn in set(local_bytes) | set(addr_taken_bytes)
-        }
-        local_pools = allocate_function_locals(
-            tac, abi, combined_local_bytes, reserved=zp.reserved,
-        )
-        # Final optimizer pass with per-function private pools.
-        asm0, asm_colorings = asm_opt.optimize_program(
-            asm0, extra_statics=statics, param_layouts=abi,
-            symbols=syms, local_pools=local_pools,
-            reserved_zp=zp.reserved,
-        )
-        addr_taken_assignments = compute_address_taken_assignments(
-            asm0, local_pools, asm_colorings, syms, types,
-        )
-        addr_taken_symbols = {
-            fn: _addr_taken_slot_symbols(fn, assignments, syms, types)
-            for fn, assignments in addr_taken_assignments.items()
-        }
-        # Merge zp_abi slot symbols with body-local slot symbols
-        # so the assembler resolves both via `extra_symbols`.
-        from passes.zp_slot_naming import compute_local_slot_names
-        slot_names_by_fn = compute_local_slot_names(
-            local_pools, asm_colorings,
-            address_taken_assignments=addr_taken_assignments,
-            address_taken_symbols=addr_taken_symbols,
-        )
-        zp_slot_symbols = {
-            **zp_slot_symbols,
-            **build_local_slot_symbols(
-                local_pools, slot_names_by_fn=slot_names_by_fn,
-            ),
-        }
-        asm1, dims_by_fn = replace_pseudoregs_bare_exit(
-            asm0, extra_statics=statics, symbols=syms,
-            types=types, colorings=asm_colorings,
-            param_layouts=abi, local_pools=local_pools,
-            address_taken_assignments=addr_taken_assignments,
-            address_taken_symbols=addr_taken_symbols,
-        )
-        from compile import _peephole_fixedpoint
-        from passes.loop_counter_to_x import apply_loop_counter_to_x
-        from passes.x_save_slot_load import apply_x_save_slot_load
-        asm2_synth = synthesize_prologue(asm1, dims_by_fn)
-        asm3 = _peephole_fixedpoint(
-            asm2_synth, zp_slot_symbols=zp_slot_symbols,
-            zp_global_symbols=zp.addrs,
-        )
-        asm3 = apply_loop_counter_to_x(asm3)
-        from passes.counter_to_index_reg import apply_counter_to_index_reg
-        asm3 = apply_counter_to_index_reg(asm3)
-        asm3 = apply_x_save_slot_load(asm3)
-        asm3 = _peephole_fixedpoint(
-            asm3, zp_slot_symbols=zp_slot_symbols,
-            zp_global_symbols=zp.addrs,
-        )
-        from passes.loop_invariant_a import apply_loop_invariant_a
-        asm3 = apply_loop_invariant_a(
-            asm3, zp_slot_symbols=zp_slot_symbols,
-        )
-        asm = place_zp_globals(expand_long_branches(asm3), zp)
-        return asm, syms, types, {**zp_slot_symbols, **zp.equs()}
+        # The same pipeline `compile.py --codegen --optimize` runs.
+        from compile import optimized_asm
+        opt = optimized_asm(ast5, syms, types, zp, tac, statics)
+        return opt.asm, syms, types, {**opt.slot_symbols, **zp.equs()}
     # Unoptimized path: the same passes `compile.py --codegen` runs
     # without `--optimize`, including the full peephole fixedpoint,
     # so the sim executes the code the CLI emits.

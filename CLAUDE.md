@@ -124,7 +124,13 @@ Two key runtime conventions:
   The `save_c` flag on `Ret` / `Return` marks C live at the return.
   It's the only way a flag value crosses a call. Every declaration
   must carry it, and its address can't be taken. See
-  `passes/carry_return.py`.
+  `passes/carry_return.py`. The function may instead return a
+  struct of exactly two members, a 1- or 2-byte integer value and
+  then a `bool` (`type_checking.carry_struct_value_bytes`). The value
+  comes back in A (and X) and the flag in C, with no sret pointer,
+  so the function stays zp_abi-eligible. The callee does `LDA flag;
+  CMP #1; [LDX hi;] LDA lo`, and the caller stores A (and X) and then
+  `LDA #0; ROL A` into the flag byte.
 - **The `register` keyword** requests 6502-register placement,
   refining the zp_abi calling convention. Placement is POSITIONAL:
   the first register arg-byte goes in **A**, the second in **X**

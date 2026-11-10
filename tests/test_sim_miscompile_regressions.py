@@ -146,6 +146,14 @@ _CASES: list[tuple[str, str, int]] = [
             return apply(add, 3, 4) - apply(h, 1, 2) + g(1, 2) + (h == mul);
         }
     """, 9),
+    # dead_reg_entry_stub matched `And` / `Or` with `src1` / `src2`
+    # fields they don't have, so a slot read only by ORA looked
+    # unread and the `STA` that saves the A-passed byte was dropped.
+    ("register_param_read_by_ora", """
+        unsigned int g1 = 3;
+        signed char f3(register int p0) { return (-g1) | p0; }
+        int main(void) { return f3(246) + 1000; }
+    """, 999),
     # The parser gave a function returning a function pointer the
     # returned type's parameter list, and prototypes with several
     # unnamed parameters were rejected as duplicates.

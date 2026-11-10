@@ -32,7 +32,12 @@ are named `zork_<routine>`. Each one quotes the original 6502 code in
 its header comment. `zork_dump_buffer.c` calls the Monitor's `COUT`
 and `COUT1` through `<apple2/monitor_io.h>`, and
 `tests/test_zork_dump_buffer_sim.py` runs it against stand-ins at the
-ROM's addresses.
+ROM's addresses. `zork_print_string_literal.c` is print_string_literal
+and the 18 routines it reaches. It's too long to quote them, so its
+header gives their line ranges in Zork's `main.asm` instead.
+`tests/test_zork_print_string_literal_sim.py` runs it on a small story
+file and, when the environment variable `ZORK_MAIN_BIN` names Zork's
+`main.bin`, compares its output and final state with Zork's own code.
 
 ## Adding a new example
 

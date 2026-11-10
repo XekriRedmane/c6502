@@ -38,7 +38,7 @@ error that names the declaration.
 | Attribute | Goes on | What it does |
 |---|---|---|
 | `zp_abi` | a function | Passes arguments in zero page and in A and X instead of on the soft stack. |
-| `return_bool_in_carry` | a function returning `bool` | Returns the result in the carry flag. |
+| `return_bool_in_carry` | a function returning `bool`, or a struct of a value and a `bool` | Returns the `bool` in the carry flag. |
 | `zeropage` | an object with static storage | Places the object in zero page at an address the compiler picks. |
 | `zeropage(addr)` | an object with static storage | Places the object in zero page at `addr`. |
 | `address(addr)` | a function, or an `extern` object | Names code or memory that's already at `addr`. |
@@ -88,6 +88,53 @@ __attribute__((return_bool_in_carry)) bool is_digit(uint8_t c) {
 Every declaration of the function has to carry the attribute, since a
 caller compiled without it would read A. You can't take the
 function's address, because a call through a pointer reads A.
+
+#### A value and a flag
+
+Many assembly routines return a value in A and a flag in the carry,
+such as a character and "end of string", or a table index and "not
+found". C has one return value, so such a function returns a struct
+with exactly two members. The first is the value, a `char`, `unsigned
+char`, `signed char`, `int`, or `unsigned int`. The second is the
+flag, a `bool`. The value comes back in A (an `int` in A and X) and
+the flag in the carry. No memory is involved, so the function can
+still use `zp_abi`.
+
+```c
+struct zchar { uint8_t code; bool end; };
+
+__attribute__((return_bool_in_carry)) struct zchar next_zchar(void) {
+    struct zchar r;
+    r.code = buffer[pos++];
+    r.end = r.code == 0xFF;
+    return r;
+}
+
+void print_all(void) {
+    for (;;) {
+        struct zchar c = next_zchar();
+        if (c.end)
+            break;
+        print_code(c.code);
+    }
+}
+```
+
+The function sets the carry from the flag and then loads the value,
+because loading A (and X) leaves the carry alone:
+
+```
+   LDA   r+1      ; the flag
+   CMP   #1       ; carry set if the flag is nonzero
+   LDA   r        ; the value
+   RTS
+```
+
+A nonzero flag arrives in the caller as 1, as it would for a C99
+`_Bool`. The value member can't be a pointer. A pointer result comes
+back in `HARGS`, in zero page, because a pointer is only usable from
+zero page, as "Arguments in registers" in
+[calling_conventions.md](calling_conventions.md) explains.
 
 ### `zeropage` and `zeropage(addr)`
 
@@ -296,7 +343,9 @@ of a bare `RTS`.
 
 Some ROM and DOS routines report success or failure in the carry
 flag. For such a routine, add `return_bool_in_carry` and declare the
-result `bool`.
+result `bool`. A routine that also returns a value in A, such as a
+byte read from disk, returns a struct of the value and the `bool`
+(see "A value and a flag" above).
 
 ```c
 // A routine at $6000 that sets the carry flag when it fails.
@@ -450,6 +499,8 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | `preserves_x` or `preserves_y` on a function without `address`, or on a function definition | The compiler can't check that code it compiles keeps the promise. |
 | `preserves_x` on a routine that returns an `int` or `unsigned int` | The high byte of the result comes back in X. |
 | `return_bool_in_carry` on some declarations of a function but not all | A caller compiled without it would read A instead of the carry flag. |
+| `return_bool_in_carry` on a function returning a struct that isn't one value of 1 or 2 bytes followed by one `bool` | Only that shape fits in A, X, and the carry flag. |
+| `preserves_x` on a routine that returns a struct whose value is an `int` or `unsigned int` | The high byte of the value comes back in X. |
 
 ## Limits
 

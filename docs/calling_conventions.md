@@ -37,6 +37,7 @@ Results come back the same way under both conventions.
 | 2 bytes (`int`, `unsigned int`) | low byte in A, high byte in X |
 | a pointer, or anything wider than 2 bytes | the zero-page block `HARGS` |
 | `bool` from a `return_bool_in_carry` function | the carry flag |
+| a struct of a value and a `bool` from a `return_bool_in_carry` function | the value in A (and X), the `bool` in the carry flag |
 | nothing (`void`) | nothing |
 
 A result in `HARGS` has to be picked up right after the call, before

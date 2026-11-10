@@ -9,7 +9,7 @@ __local_main__1	EQU	$83
 __local_main__2	EQU	$84
 __local_main__3	EQU	$85
 num_page_table_entries	EQU	$BD
-last_z_page	EQU	$BE
+last_z_page	EQU	$BF
 
 ; @zp-link-meta-begin
 ; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals=__local_find_index_of_page_table__0,__local_find_index_of_page_table__count indirect=false in_cycle=false

@@ -279,7 +279,10 @@ def _reads_reg_a(instr: asm_ast.Type_instruction) -> bool:
         case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d):
             if is_a(s) or is_a(d):
                 return True
-        case asm_ast.And(src1=a, src2=b) | asm_ast.Or(src1=a, src2=b) | asm_ast.Xor(src1=a, src2=b):
+        case asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d):
+            if is_a(s) or is_a(d):
+                return True
+        case asm_ast.Xor(src1=a, src2=b):
             if is_a(a) or is_a(b):
                 return True
         case asm_ast.Compare(left=l, right=r):
@@ -353,14 +356,9 @@ def _operand_roles(instr: asm_ast.Type_instruction):
         case asm_ast.Add(src=s, dst=d) | asm_ast.Sub(src=s, dst=d):
             yield s, False
             yield d, False  # RMW
-        case asm_ast.And(src1=a, src2=b, dst=d):
-            yield a, False
-            yield b, False
-            yield d, False
-        case asm_ast.Or(src1=a, src2=b, dst=d):
-            yield a, False
-            yield b, False
-            yield d, False
+        case asm_ast.And(src=s, dst=d) | asm_ast.Or(src=s, dst=d):
+            yield s, False
+            yield d, False  # RMW
         case asm_ast.Xor(src1=a, src2=b, dst=d):
             yield a, False
             yield b, False
@@ -381,8 +379,8 @@ def _operand_roles(instr: asm_ast.Type_instruction):
         case asm_ast.LoadAddress(src=s, dst=d):
             yield s, False
             yield d, True
-        case asm_ast.BitTest(operand=op):
-            yield op, False
+        case asm_ast.BitTest(src=s):
+            yield s, False
 
 
 def _build_label_index(

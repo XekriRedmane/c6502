@@ -217,6 +217,43 @@ class TestAsmLicm(unittest.TestCase):
         out = _instrs(apply_licm(_wrap(instrs)))
         self.assertEqual(out, instrs)
 
+    def test_read_before_store_blocks(self):
+        # `for (p = &x; p != 0; ) { ...; p = 0; }`: the header reads
+        # `p` before the body's store, so the first iteration has to
+        # see the value from before the loop.
+        p = asm_ast.Data(name="p", offset=0)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=p),
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(src=p, dst=_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".loop_break"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=p),
+            asm_ast.Jump(target=".loop_start", reg_args=[]),
+            asm_ast.Label(name=".loop_break"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_licm(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_exit_before_store_with_live_dst_blocks(self):
+        # The loop can exit before the store runs, and `g` is read
+        # after the loop, so hoisting would change what that read
+        # sees when the loop runs zero times.
+        g = asm_ast.Data(name="g", offset=0)
+        instrs = [
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(src=asm_ast.Data(name="n", offset=0), dst=_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".loop_break"),
+            asm_ast.Mov(src=asm_ast.Imm(value=5), dst=g),
+            asm_ast.Dec(dst=asm_ast.Data(name="n", offset=0)),
+            asm_ast.Jump(target=".loop_start", reg_args=[]),
+            asm_ast.Label(name=".loop_break"),
+            asm_ast.Mov(src=g, dst=_A),
+            asm_ast.Return(save_a=True),
+        ]
+        out = _instrs(apply_licm(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
 
 if __name__ == "__main__":
     unittest.main()

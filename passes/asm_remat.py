@@ -289,6 +289,11 @@ def _drop_dead_stage_dsts(
     elsewhere; we resolve names through `zp_slot_symbols` and
     check by address."""
     referenced_addrs = _collect_referenced_addrs(instrs, zp_slot_symbols)
+    # A slot whose address is built anywhere in the function (`LDA
+    # #<slot` / `LDA #>slot`, or a `LoadAddress`) can be read through
+    # that pointer, which names no byte of it. A struct local read
+    # with `c.v` is the usual case. Every byte of such a slot stays.
+    escaped = _collect_escaped_names(instrs)
     reg_a = asm_ast.Reg(reg=asm_ast.A())
     out: list[asm_ast.Type_instruction] = []
     for instr in instrs:
@@ -300,6 +305,7 @@ def _drop_dead_stage_dsts(
             and instr.dst.offset == 0
             and instr.dst.name in zp_slot_symbols
             and zp_slot_symbols[instr.dst.name] not in referenced_addrs
+            and instr.dst.name not in escaped
         ):
             # If src is already Reg(A) the staging def collapsed
             # from `STA local` was the second half of a two-atom
@@ -328,6 +334,23 @@ def _drop_dead_stage_dsts(
             ))
             continue
         out.append(instr)
+    return out
+
+
+def _collect_escaped_names(
+    instrs: list[asm_ast.Type_instruction],
+) -> set[str]:
+    """Names whose address some instruction in `instrs` builds, as an
+    `ImmLabelLow` / `ImmLabelHigh` operand or a `LoadAddress` source."""
+    out: set[str] = set()
+    for instr in instrs:
+        if isinstance(instr, asm_ast.LoadAddress) and isinstance(
+            instr.src, asm_ast.Data,
+        ):
+            out.add(instr.src.name)
+        for op in _read_operands(instr):
+            if isinstance(op, (asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh)):
+                out.add(op.name)
     return out
 
 

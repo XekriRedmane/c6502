@@ -1139,6 +1139,19 @@ class Translator:
         )
         return name
 
+    def _returns_carry_struct(self, fn_name: str) -> bool:
+        """True iff `fn_name` is a `return_bool_in_carry` function that
+        returns a struct, whose value member comes back in A (and X)
+        and whose flag comes back in the carry, with no hidden
+        pointer."""
+        sym = self._symbols.get(fn_name)
+        if sym is None or not getattr(sym.attrs, "carry_return", False):
+            return False
+        t = sym.type
+        return isinstance(t, c99_ast.FunType) and isinstance(
+            _strip_quals_c99(t.ret), (c99_ast.Structure, c99_ast.Union),
+        )
+
     def _is_volatile_var(self, name: str) -> bool:
         """True iff `name` resolves to a variable whose c99 type is
         volatile-qualified (the qualifier may sit underneath a Const).
@@ -1336,7 +1349,8 @@ class Translator:
         # `FunctionCall` arm matches by prepending the slot's
         # address as the first arg.
         sret_param: str | None = None
-        if isinstance(ret_type, (c99_ast.Structure, c99_ast.Union)):
+        if (isinstance(ret_type, (c99_ast.Structure, c99_ast.Union))
+                and not self._returns_carry_struct(fd.name)):
             sret_param = f".sret.{fd.name}"
             self._symbols[sret_param] = Symbol(
                 type=c99_ast.Pointer(referenced_type=ret_type),
@@ -2254,6 +2268,19 @@ class Translator:
                 # consumers (Assignment Copy, Dot, Arrow, …) treat
                 # like any other addressable struct lvalue.
                 ret_t = exp.data_type
+                if self._returns_carry_struct(name):
+                    # A `return_bool_in_carry` struct comes back in A
+                    # (and X) and the carry flag, with no hidden
+                    # pointer, so the call writes the slot itself.
+                    # Its address can't be taken, so the call is
+                    # always direct.
+                    slot = tac_ast.Var(
+                        name=self.make_temporary_variable_name(ret_t),
+                    )
+                    instrs.append(tac_ast.FunctionCall(
+                        name=name, args=arg_vals, dst=slot,
+                    ))
+                    return slot
                 if isinstance(ret_t, (c99_ast.Structure, c99_ast.Union)):
                     slot_name = self.make_temporary_variable_name(ret_t)
                     slot = tac_ast.Var(name=slot_name)

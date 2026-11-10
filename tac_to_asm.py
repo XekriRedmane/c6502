@@ -1566,6 +1566,22 @@ class Translator:
             return [self._exit(save_a=False, save_x=False)]
         src_op = translate_val(val)
         size = self._size_of(val)
+        if self._returns_carry_struct(self._current_fn_name):
+            # A struct of a value and a `bool`: the flag is the last
+            # byte, and the value the `size - 1` bytes before it. Set
+            # C from the flag first, since loading the value with
+            # LDA (and TAX) leaves C alone.
+            n = size - 1
+            seq = [
+                asm_ast.Mov(src=_byte_at(src_op, n), dst=_REG_A),
+                asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=1)),
+            ]
+            if n == 2:
+                seq.append(asm_ast.Mov(src=_byte_at(src_op, 1), dst=_REG_A))
+                seq.append(asm_ast.Mov(src=_REG_A, dst=_REG_X))
+            seq.append(asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A))
+            seq.append(self._exit(save_a=True, save_x=n == 2, save_c=True))
+            return seq
         if self._returns_carry(self._current_fn_name):
             # The type checker made the value `e != 0`, so it's 0 or
             # 1, and `CMP #1` sets C exactly when it's 1. A carries
@@ -2056,7 +2072,17 @@ class Translator:
         ))
         # `dst is None` means a void-returning callee: nothing to
         # capture, the return-value slot stays whatever it was.
-        if dst is not None and self._returns_carry(name):
+        if dst is not None and self._returns_carry_struct(name):
+            # A struct of a value and a `bool`: store the value from A
+            # (and X), which leaves C alone, then capture C into the
+            # flag, the struct's last byte.
+            dst_op = translate_val(dst)
+            n = self._size_of(dst) - 1
+            emitted.extend(self._capture_reg_return(dst_op, n))
+            emitted.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+            emitted.append(asm_ast.RotateLeft(dst=_REG_A))
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, n)))
+        elif dst is not None and self._returns_carry(name):
             # The result is the carry flag. `LDA #0; ROL A` turns it
             # into 0 / 1, and `carry_branch_fold` turns the capture
             # plus a `BEQ` / `BNE` on it into a `BCC` / `BCS`.
@@ -2308,6 +2334,17 @@ class Translator:
             if sym is not None and not isinstance(sym.attrs, StaticAttr):
                 return asm_ast.Pseudo(name=name, offset=k)
         return asm_ast.Data(name=name, offset=k)
+
+    def _returns_carry_struct(self, fn_name: str | None) -> bool:
+        """True iff `fn_name` is a `return_bool_in_carry` function that
+        returns a struct of a value and a `bool`, whose value comes
+        back in A (and X) and whose flag comes back in C."""
+        if not self._returns_carry(fn_name):
+            return False
+        ret = self._fn_return_type(fn_name)
+        while isinstance(ret, (c99_ast.Const, c99_ast.Volatile)):
+            ret = ret.referenced_type
+        return isinstance(ret, c99_ast.Structure)
 
     def _preserved_registers(self, fn_name: str) -> list[str]:
         """The registers ("X", "Y") the function `fn_name` leaves

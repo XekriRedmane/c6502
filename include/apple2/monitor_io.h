@@ -63,6 +63,11 @@
  * the firmware's function code. */
 __attribute__((zp_abi, preserves_x, address(0xFC58))) void HOME(void);
 
+/* Clears the text window from the cursor to the end of the line.
+ * Neither it nor the 80-column firmware it reaches writes X. Y ends
+ * as WNDWDTH. */
+__attribute__((zp_abi, preserves_x, address(0xFC9C))) void CLREOL(void);
+
 /* Waits for a key and returns it, with the high bit set. RDKEY loads
  * Y from CH; KEYIN saves and restores X ($C294, $C2BC). */
 __attribute__((zp_abi, preserves_x, address(0xFD0C))) uint8_t RDKEY(void);

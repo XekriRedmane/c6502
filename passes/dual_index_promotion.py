@@ -60,6 +60,13 @@ A Data symbol `D` qualifies for Y-promotion in a function iff:
      `ASL abs,Y` / `LSR abs,Y` / `ROL abs,Y` / `ROR abs,Y`. If
      any access lives at one of those positions, the rewrite
      would produce un-encodable asm; bail.
+  5. Nothing in the function writes `D`, and the function makes
+     no call. Y is loaded from `D` once at entry, so `D` has to
+     hold its entry value at every LDX the rewrite drops, and Y
+     has to survive until the last use. A callee may change Y,
+     and may also write `D` if `D` is a global or a byte of the
+     shared caller-saved zero-page range. A loop temporary that is
+     stored and then reloaded into X fails this gate.
 
 # Rewrite
 
@@ -172,6 +179,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     # stay in X without conflict, and Y-promotion just shifts the
     # work.
     if not _x_has_other_uses(instrs, promoted_name):
+        return fn
+    # Gate 5: D keeps its entry value and Y survives to every use.
+    if any(isinstance(i, asm_ast.Call) for i in instrs):
+        return fn
+    if any(_writes_name(i, promoted_name) for i in instrs):
         return fn
     # Gate 4: every IndexedData,X access in the rewrite range
     # must be in a position where IndexedData,Y assembles.
@@ -441,6 +453,16 @@ def _fix_op(op: asm_ast.Type_operand) -> asm_ast.Type_operand:
             name=op.name, offset=op.offset, index=asm_ast.Y(),
         )
     return op
+
+
+def _writes_name(instr: asm_ast.Type_instruction, name: str) -> bool:
+    """True iff `instr` writes a byte of the object `name`, directly
+    or through an index."""
+    dst = getattr(instr, "dst", None)
+    if isinstance(instr, (asm_ast.Push, asm_ast.Compare, asm_ast.BitTest)):
+        return False
+    return (isinstance(dst, (asm_ast.Data, asm_ast.IndexedData))
+            and dst.name == name)
 
 
 def _operands_in(instr: asm_ast.Type_instruction):

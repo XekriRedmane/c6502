@@ -115,7 +115,6 @@ class TestPlacement(unittest.TestCase):
         bad = {
             "overlap": "unsigned int a __attribute__((zeropage(0x40)));\n"
                        "unsigned char b __attribute__((zeropage(0x41)));\n",
-            "runtime bytes": "unsigned char a __attribute__((zeropage(0x24)));\n",
             "past $FF": "unsigned int a __attribute__((zeropage(0xFF)));\n",
             "extern without address":
                 "extern unsigned char a __attribute__((zeropage));\n",

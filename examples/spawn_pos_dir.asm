@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_spawn_pos_dir__slot	EQU	$80
 
 ; @zp-link-meta-begin

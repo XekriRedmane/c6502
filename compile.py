@@ -53,8 +53,9 @@ from passes.direct_index_load import apply_direct_index_load
 from passes.dead_pha_pla import apply_dead_pha_pla
 from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
-from passes.asm_aliasing import set_user_zp_globals
-from passes.zp_globals import allocate_zp_globals, place_zp_globals
+from passes.zp_globals import (
+    place_zp_globals, plan_zero_page, zero_page_in_effect,
+)
 from passes.carry_inc import apply_carry_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
 from passes.branch_invert import apply_branch_invert
@@ -304,21 +305,19 @@ def _run_stage(
         prog, symbols, types = type_check_program(
             _resolved(source, optimize=optimize),
         )
-        zp = allocate_zp_globals(symbols, types)
-        set_user_zp_globals(zp.addrs, zp.reserved)
-        try:
-            return _codegen(prog, symbols, types, optimize, zp)
-        finally:
-            set_user_zp_globals({})
+        tac = translate_to_tac(prog, symbols, types)
+        zp = plan_zero_page(tac, symbols, types)
+        with zero_page_in_effect(zp):
+            return _codegen(prog, symbols, types, optimize, zp, tac)
     raise AssertionError(f"unknown stage: {stage!r}")
 
 
-def _codegen(prog, symbols, types, optimize: bool, zp) -> str:
-    """The `--codegen` stage after type checking. `zp` is the
-    translation unit's zero-page globals (passes/zp_globals.py):
-    their bytes are kept out of every zero-page allocator, their
-    addresses go to the peepholes and the EQU block, and their
-    storage becomes `__zp_init`."""
+def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
+    """The `--codegen` stage after translation to TAC (`tac`). `zp` is
+    the translation unit's zero-page globals and runtime layout
+    (passes/zp_globals.py): their bytes are kept out of every
+    zero-page allocator, their addresses go to the peepholes and the
+    EQU block, and their storage becomes `__zp_init`."""
     # `replace_pseudoregisters` needs to recognize every static-
     # storage object — including extern references that don't
     # produce a StaticVariable definition here — to avoid
@@ -330,7 +329,6 @@ def _codegen(prog, symbols, types, optimize: bool, zp) -> str:
         name for name, sym in symbols.items()
         if isinstance(sym.attrs, StaticAttr)
     )
-    tac = translate_to_tac(prog, symbols, types)
     if optimize:
         # Optimized pipeline: TAC opts (no regalloc) → tac_to_asm
         # in bare-exit mode (Pseudos preserved) → asm-level SSA

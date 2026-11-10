@@ -54,7 +54,11 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 
-# Zero-page reservations.
+# Zero-page reservations in the classic runtime layout
+# (`passes/runtime_layout.py`). A program whose layout differs gets a
+# Runtime built for its own addresses (`build_runtime(layout)`), and
+# the Python hooks read `HARGS` while `_with_hargs` points it at that
+# program's block.
 SSP = 0x00       # SSP+1 = $01
 FP = 0x02        # FP+1 = $03
 HARGS = 0x04     # spans $04..$23 (32 bytes — sized for the largest
@@ -89,6 +93,7 @@ class Runtime:
     helper_origin: int = 0
     boot_addr: int = BOOT_ADDR
     ssp_init: int = SSP_INIT
+    ssp: int = SSP
 
 
 # -------- HARGS read/write helpers --------
@@ -469,8 +474,24 @@ _HELPERS: list[tuple[str, Hook]] = [
 ]
 
 
-def build_runtime() -> Runtime:
-    """Build a Runtime with helper bindings.
+def _with_hargs(fn: Hook, base: int) -> Hook:
+    """`fn`, run with the module's `HARGS` set to `base`. The hooks
+    read `HARGS` when they run, so this gives each one the HARGS
+    block of the program it serves."""
+    def hook(mem: bytearray) -> None:
+        global HARGS
+        saved, HARGS = HARGS, base
+        try:
+            fn(mem)
+        finally:
+            HARGS = saved
+    return hook
+
+
+def build_runtime(layout=None) -> Runtime:
+    """Build a Runtime with helper bindings, for the runtime zero-page
+    `layout` (`passes.runtime_layout.RuntimeLayout`, the classic one
+    when None).
 
     Helpers split into two pools:
       - Real-asm helpers (`runtime_helpers.ASM_IMPLEMENTED`):
@@ -489,9 +510,12 @@ def build_runtime() -> Runtime:
     it from Python to real asm without any changes elsewhere."""
     from sim.runtime_helpers import ASM_IMPLEMENTED, all_helper_functions
     from sim.assembler import assemble
+    from passes.runtime_layout import CLASSIC
     import asm_ast
 
-    rt = Runtime(helper_origin=TRAP_BASE)
+    if layout is None:
+        layout = CLASSIC
+    rt = Runtime(helper_origin=TRAP_BASE, ssp=layout.ssp)
 
     # Assemble the real-asm helpers into a contiguous chunk at
     # TRAP_BASE. The resulting symbol table maps each helper's name
@@ -499,7 +523,9 @@ def build_runtime() -> Runtime:
     asm_set = set(ASM_IMPLEMENTED)
     if asm_set:
         prog = asm_ast.Program(top_level=list(all_helper_functions()))
-        assembled = assemble(prog, origin=TRAP_BASE)
+        assembled = assemble(
+            prog, origin=TRAP_BASE, extra_symbols=layout.addrs(),
+        )
         for name in asm_set:
             if name not in assembled.symbols:
                 raise RuntimeError(
@@ -525,7 +551,7 @@ def build_runtime() -> Runtime:
     # directly after the assembled helpers.
     rt.symbols["icall"] = trap_cursor
     rt.helper_image = bytes(rt.helper_image or b"") + bytes(
-        [0x6C, DPTR, 0x00],  # JMP (DPTR)
+        [0x6C, layout.dptr, 0x00],  # JMP (DPTR)
     )
     trap_cursor += 3
 
@@ -536,7 +562,9 @@ def build_runtime() -> Runtime:
         if name in asm_set:
             continue
         rt.symbols[name] = trap_cursor
-        rt.hooks[trap_cursor] = fn
+        rt.hooks[trap_cursor] = (
+            fn if layout.hargs == HARGS else _with_hargs(fn, layout.hargs)
+        )
         trap_cursor += TRAP_STRIDE
     return rt
 
@@ -544,7 +572,9 @@ def build_runtime() -> Runtime:
 # -------- boot stub --------
 
 
-def build_boot_stub(main_addr: int, init_addr: int | None = None) -> bytes:
+def build_boot_stub(
+    main_addr: int, init_addr: int | None = None, ssp: int = SSP,
+) -> bytes:
     """Assemble the boot stub at `BOOT_ADDR`:
 
         LDA  #<SSP_INIT     ; A9 FF
@@ -566,9 +596,9 @@ def build_boot_stub(main_addr: int, init_addr: int | None = None) -> bytes:
             raise ValueError(f"call address {addr} out of range")
     out = [
         0xA9, SSP_INIT & 0xFF,         # LDA #<SSP_INIT
-        0x85, SSP,                      # STA SSP
+        0x85, ssp,                      # STA SSP
         0xA9, (SSP_INIT >> 8) & 0xFF,   # LDA #>SSP_INIT
-        0x85, SSP + 1,                  # STA SSP+1
+        0x85, ssp + 1,                  # STA SSP+1
     ]
     for addr in calls:
         out += [0x20, addr & 0xFF, (addr >> 8) & 0xFF]   # JSR addr
@@ -585,7 +615,7 @@ def install_runtime(
     don't get any bytes — the harness intercepts PC at those
     addresses before any opcode is fetched there. `init_addr` is the
     address of `__zp_init`, when the program has one."""
-    boot = build_boot_stub(main_addr, init_addr)
+    boot = build_boot_stub(main_addr, init_addr, ssp=runtime.ssp)
     image[runtime.boot_addr:runtime.boot_addr + len(boot)] = boot
     # Reset vector at $FFFC/$FFFD points at the boot stub. The 6502
     # fetches PC from this on power-on / RESET.

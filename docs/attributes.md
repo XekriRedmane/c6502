@@ -144,7 +144,8 @@ has to be told three things about it.
    parameters, and `return_bool_in_carry` for a carry result.
 3. **What else it changes.** The compiler assumes a call changes A, X,
    Y, and every flag, so nothing needs to be declared about those.
-   Zero page is the part to watch, as "Limits" below explains.
+   The zero-page bytes the ROM uses do need declaring, as "Sharing
+   zero page with the Monitor" below explains.
 
 ### Example: `COUT`
 
@@ -176,12 +177,11 @@ __attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
 
 ### A small program
 
-```c
-#include <stdint.h>
+`<apple2/monitor.h>` declares `COUT` the same way, along with `HOME`,
+`RDKEY`, and `COUT1`, and the Monitor's zero page.
 
-__attribute__((zp_abi, address(0xFC58))) void HOME(void);
-__attribute__((zp_abi, address(0xFD0C))) uint8_t RDKEY(void);
-__attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
+```c
+#include <apple2/monitor.h>
 
 void print(const char *s) {
     while (*s)
@@ -198,13 +198,9 @@ int main(void) {
 ```
 
 With `--optimize`, the output starts with an `EQU` line for each
-routine, and `main` compiles to the following.
+name the header declares, and `main` compiles to the following.
 
 ```
-HOME	EQU	$FC58
-RDKEY	EQU	$FD0C
-COUT	EQU	$FDED
-
 main:
    SUBROUTINE
 
@@ -293,30 +289,63 @@ Without `volatile`, the compiler could read `KBD` once and reuse the
 value, and the loop would keep testing that one value after a key
 arrives.
 
-### Putting the declarations in a header
+### Sharing zero page with the Monitor
 
-A header that declares the routines and locations of one ROM lets
-every source file include them the same way, and the compiler checks
-that all declarations of a name agree.
+c6502's runtime keeps four things of its own in zero page. `SSP` and
+`FP` are the soft stack and frame pointers, `HARGS` is where the
+runtime's helpers for multiplication, division, shifts, and floating
+point take their arguments, and `DPTR` is a pointer the compiler
+uses to reach memory through a pointer variable. Normally they sit
+at `$00` to `$25`.
 
-```c
-// apple2_monitor.h
-#include <stdint.h>
+The Monitor uses some of those same bytes. It keeps its text window
+in `$20` to `$23` and the cursor position, `CH` and `CV`, in `$24`
+and `$25`. Every time compiled code wrote `DPTR`, the cursor would
+move. In the `print` function above, each pass through the loop
+stores the string pointer into `DPTR`, so the next character would
+appear somewhere else.
 
-__attribute__((zp_abi, address(0xFC58))) void HOME(void);
-__attribute__((zp_abi, address(0xFD0C))) uint8_t RDKEY(void);
-__attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
-__attribute__((zp_abi, address(0xFDF0))) void COUT1(register uint8_t c);
+To prevent that, the program declares the bytes the Monitor owns,
+and the compiler moves its own block out of their way.
+`<apple2/monitor.h>` declares every zero-page byte the Monitor ROM
+uses, `$00`-`$01`, `$1F`, and `$20`-`$49`, as `extern` objects with
+`address`. Including it is how a source file says it runs alongside
+the Monitor. For the program above, the runtime's block moves to
+`$02`-`$08`, clear of the cursor.
 
-extern volatile uint8_t KBD     __attribute__((address(0xC000)));
-extern volatile uint8_t KBDSTRB __attribute__((address(0xC010)));
-extern uint16_t CSW             __attribute__((address(0x36)));
+```
+HARGS	EQU	$02
+SSP	EQU	$03
+FP	EQU	$05
+DPTR	EQU	$07
+CH	EQU	$24
+CV	EQU	$25
 ```
 
+`HARGS` is one byte here because the program calls no helper. When
+the block moves, the compiler sizes `HARGS` to what the program
+uses, so a program with a 32-bit division gets 22 bytes. Zero-page
+globals without an address go in the bytes left over.
+
+The header names the Monitor variables a program is likely to use:
+the window (`WNDLFT`, `WNDWDTH`, `WNDTOP`, `WNDBTM`), the cursor
+(`CH`, `CV`), `BAS`, `GBAS`, `COLOR`, `INVFLG`, `PROMPT`, and the
+I/O hooks `CSW` and `KSW`. For instance, `CH = 0;` moves the cursor
+to the left edge of the window. The other bytes are covered by
+arrays named `__monitor_*`.
+
+The same approach works for other system software. A header for DOS
+or Applesoft would declare the zero-page bytes that software uses,
+and a program that includes it keeps them free. The bytes are free
+for the whole program or for none of it, because the Monitor writes
+`CH` no matter which source file called `COUT`. So every source file
+in a program that calls the Monitor should include the header.
+
+A header also lets every source file declare the routines the same
+way, and the compiler checks that all declarations of a name agree.
 When several source files are compiled separately and joined with
-`compile.py --link`, each name is bound once, and the link fails if
-two files give the same name different addresses. (Zero-page objects
-such as `CSW` above can't yet be used with `--link`.)
+`compile.py --link`, each routine's name is bound once, and the link
+fails if two files give a name different addresses.
 
 ## What the compiler rejects
 
@@ -329,7 +358,7 @@ declaration and the reason.
 | An object with `address` that isn't `extern`, or has an initial value | The program doesn't own that memory, so it can't define it. |
 | Two different addresses for the same name | The compiler can't tell which one is right. |
 | Two `address` objects that overlap | The optimizer assumes different names are different memory. |
-| An object with `address` below `$26` | Those bytes belong to c6502's runtime. |
+| Reserved zero-page bytes that leave no room below `$80` for the runtime's block | The runtime needs `HARGS` and three 2-byte pointers in zero page, and the compiler's own pools use `$80`-`$FF`. |
 | A `register` parameter on a function with `address` but no `zp_abi` | Without `zp_abi`, arguments go on the soft stack, which the ROM routine doesn't read. |
 | A `zp_abi` routine with `address` and a parameter that isn't `register` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
 | A `zp_abi` routine with `address` that returns a pointer, or more than 2 bytes | Those come back in `HARGS`, where the routine doesn't put them. Declare a pointer result as `uint16_t`. |
@@ -338,17 +367,13 @@ declaration and the reason.
 
 ## Limits
 
-**The Monitor's zero page.** c6502's runtime keeps its own variables
-in `$00` to `$25`. `HARGS` runs from `$04` to `$23`, and `DPTR`, a
-pointer the compiler uses for many pointer accesses, is at `$24` and
-`$25`. On the Apple II, the Monitor keeps its text window in `$20` to
-`$23` and the cursor position (`CH`, `CV`) in `$24` and `$25`. A
-program that prints with `COUT` therefore has its cursor moved every
-time the compiled code writes `DPTR`. In the `print` function above,
-each pass through the loop stores the string pointer into `DPTR`, so
-the cursor isn't where the Monitor left it. This also means `CH` and
-`CV` can't be declared with `address`. Moving the runtime's block out
-of the Monitor's way is planned (see `TODO.md`).
+**The 80-column firmware.** On an Apple IIe, `HOME`, `CLREOL`,
+scrolling, and keyboard input continue into the 80-column firmware
+at `$C100`. `<apple2/monitor.h>` covers the bytes the Monitor ROM
+listing shows, and any zero page that firmware uses isn't covered.
+
+**Linking.** A source file with zero-page objects, including one that
+includes `<apple2/monitor.h>`, can't be linked with `--link` yet.
 
 **Registers.** The compiler assumes every call changes A, X, Y, and
 the flags. `COUT1` preserves Y, but there's no way to declare that

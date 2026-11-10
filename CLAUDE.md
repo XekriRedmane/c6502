@@ -79,13 +79,19 @@ Two key runtime conventions:
 
 - **Soft data stack** at `SSP`/`FP` (zero-page pointers, both grow
   downward); the 6502 hardware stack at `$0100-$01FF` is reserved for
-  JSR return addresses and short-lived PHA/PLA. Reserved ZP: `$00-$01`
-  SSP, `$02-$03` FP, `$04-$23` HARGS (runtime-helper exchange block),
-  `$24-$25` DPTR (caller-saved indirect-pointer scratch). Full layout
-  in "Function stack frame" below. `$26-$7F` is for user globals
-  marked `__attribute__((zeropage))`; `zeropage(addr)` may also pin
-  one in `$80-$FF`, which removes those bytes from the compiler's
-  pools. Their initial values are stored by a generated `__zp_init`,
+  JSR return addresses and short-lived PHA/PLA. Reserved ZP in the
+  classic layout: `$00-$01` SSP, `$02-$03` FP, `$04-$23` HARGS
+  (runtime-helper exchange block), `$24-$25` DPTR (caller-saved
+  indirect-pointer scratch). The output binds all four with `EQU`
+  lines. A fixed zero-page object in `$00-$25` (`address(addr)` or
+  `zeropage(addr)`, e.g. from `#include <apple2/monitor.h>`) moves
+  the block below `$80`, with HARGS sized to the program
+  (`passes/runtime_layout.py`, whose `current()` the asm passes read
+  for runtime addresses). Full layout in "Function stack frame"
+  below; user guide in [docs/soft_stack.md](docs/soft_stack.md).
+  The bytes left below `$80` are for user globals marked
+  `__attribute__((zeropage))`; `zeropage(addr)` may also pin one in
+  `$80-$FF`, which removes those bytes from the compiler's pools. Their initial values are stored by a generated `__zp_init`,
   which the boot code calls before `main` (see `passes/zp_globals.py`).
   `__attribute__((address(addr)))` binds a function (a ROM routine)
   or an `extern` object (an I/O register) to a fixed address. The

@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_apply_bobble__slot	EQU	$80
 __zpabi_apply_bobble__bobble_idx	EQU	$81
 __local_apply_bobble__1	EQU	$83

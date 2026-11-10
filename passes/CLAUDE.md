@@ -275,9 +275,23 @@ this directory:
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at
   the top of `--codegen --optimize` output for the multi-TU linker.
+- `runtime_layout.py` — `RuntimeLayout`, `choose_layout`,
+  `current` / `set_current`, `hargs_need`. Where SSP, FP, HARGS, and
+  DPTR go: the classic `$00`-`$25` unless a fixed zero-page object is
+  there, else HARGS (sized to the program's offsets and the
+  footprints of the helpers it calls, measured from
+  `sim/runtime_helpers.py`), SSP, FP, and DPTR in the lowest free
+  runs below `$80`. `asm_aliasing.runtime_zp_addrs`,
+  `memory_value_propagation`, `redundant_store`, `asm_remat`, and
+  `asm_emit` read `current()`. `check_hargs` verifies the final code
+  fits the size.
 - `zp_globals.py` — `allocate_zp_globals` / `place_zp_globals`. Gives
   each `__attribute__((zeropage))` object an address (its own, or the
-  lowest free run in `$26`-`$7F`), and after codegen turns their
+  lowest free run below `$80` after the runtime's block, which
+  `choose_layout` places once the fixed objects are known;
+  `plan_zero_page` sizes HARGS from a trial `tac_to_asm` of the
+  unoptimized TAC, and `zero_page_in_effect` sets the layout and
+  the objects for a compile), and after codegen turns their
   `StaticVariable`s into `__zp_init`, which stores their initial
   bytes. Their bytes (`ZpGlobals.reserved`) are passed to the zp_abi
   slot allocator, the private-pool allocator, and the asm regalloc

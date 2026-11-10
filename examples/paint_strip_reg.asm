@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_paint_strip_reg__x_pixel	EQU	$80
 __zpabi_paint_strip_reg__color	EQU	$81
 __local_main__0	EQU	$82

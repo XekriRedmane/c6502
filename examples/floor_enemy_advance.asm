@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_floor_enemy_advance__move_dir	EQU	$80
 __zpabi_floor_enemy_advance__player_col	EQU	$81
 __zpabi_snd_delay_down__pitch	EQU	$82

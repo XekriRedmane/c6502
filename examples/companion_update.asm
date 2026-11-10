@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_companion_update__gate	EQU	$80
 __zpabi_companion_update__player_y	EQU	$81
 __zpabi_companion_update__sprite_xref	EQU	$82

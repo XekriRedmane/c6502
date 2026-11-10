@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_snd_delay_up__pitch	EQU	$80
 __zpabi_snd_delay_up__clicks	EQU	$81
 

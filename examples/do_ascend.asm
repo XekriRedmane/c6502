@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_do_ascend__asc_floor	EQU	$80
 __zpabi_do_ascend__hit_max	EQU	$81
 __zpabi_sfx_tone__pitch	EQU	$82

@@ -229,17 +229,9 @@ class State:
 _StateOrTop = Optional[State]
 
 
-# ---- Runtime symbol addresses (mirrors apply_indirect_base_prop) ----
-
-_DPTR_LO = 0x24
-_DPTR_HI = 0x25
-
-_RUNTIME_ZP_ADDRS = {
-    "SSP": 0x00,
-    "FP": 0x02,
-    "HARGS": 0x04,
-    "DPTR": _DPTR_LO,
-}
+# ---- Runtime symbol addresses ----
+# They come from the runtime layout of the compile in progress
+# (`passes/runtime_layout.py`).
 
 
 def apply_memory_value_propagation(
@@ -250,7 +242,8 @@ def apply_memory_value_propagation(
     """Top-level entry. `zp_symbol_addrs` extends the runtime-symbol
     table with caller-supplied `Data(name)` → byte-address bindings
     (typically the `__zpabi_*` and `__local_*` slot symbols)."""
-    addrs = dict(_RUNTIME_ZP_ADDRS)
+    from passes.asm_aliasing import runtime_zp_addrs
+    addrs = dict(runtime_zp_addrs())
     if zp_symbol_addrs:
         addrs.update(zp_symbol_addrs)
     new_top: list[asm_ast.Type_top_level] = []
@@ -949,8 +942,10 @@ def _dptr_base(state: State) -> Optional[int]:
     the pair `(N, N+1)`, if the state proves it. Both `cells[DPTR]`
     and `cells[DPTR+1]` must be `ZPRef(N)` and `ZPRef(N+1)` (i.e.,
     the source pair is contiguous)."""
-    lo = state.cells.get(_DPTR_LO)
-    hi = state.cells.get(_DPTR_HI)
+    from passes.runtime_layout import current
+    dptr = current().dptr
+    lo = state.cells.get(dptr)
+    hi = state.cells.get(dptr + 1)
     if not (isinstance(lo, ZPRef) and isinstance(hi, ZPRef)):
         return None
     if hi.addr != lo.addr + 1:

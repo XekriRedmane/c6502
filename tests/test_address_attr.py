@@ -183,8 +183,6 @@ class TestPlacement(unittest.TestCase):
                 "extern unsigned char b __attribute__((address(0xC001)));\n",
             "past $FFFF":
                 "extern unsigned int a __attribute__((address(0xFFFF)));\n",
-            "runtime bytes":
-                "extern unsigned char a __attribute__((address(0x24)));\n",
         }
         for label, src in bad.items():
             with self.subTest(label):
@@ -210,7 +208,8 @@ class TestCodegen(unittest.TestCase):
                 self.assertEqual(equ["scratch"], 0x0779)
                 self.assertIn("JSR   COUT", asm)
                 self.assertIn("STA   scratch", asm)
-                self.assertNotIn("DPTR", asm)
+                # No pointer is staged in DPTR for the store.
+                self.assertNotRegex(asm, r"STA\s+DPTR|\(DPTR\)")
                 # Nothing is defined for either name.
                 self.assertNotRegex(asm, r"(?m)^(COUT|scratch):")
                 self.assertIn("COUT\tEQU\t$FDED", asm)

@@ -49,6 +49,7 @@ from pathlib import Path
 
 import tac_ast
 from passes.abi_selection import ParamLayout, SoftStackLayout, ZpLayout
+from passes.runtime_layout import RUNTIME_NAMES
 from passes.zp_link_metadata import (
     ExternMeta,
     FunctionMeta,
@@ -122,6 +123,12 @@ def _split_asm(text: str) -> tuple[list[str], list[str], list[str]]:
             continue
         body.append(line)
     return equ, meta, body
+
+
+def _layout_text(layout: dict[str, int]) -> str:
+    return ", ".join(
+        f"{name}=${addr:02X}" for name, addr in sorted(layout.items())
+    ) or "(none)"
 
 
 def _parse_equ(line: str) -> tuple[str, int]:
@@ -320,6 +327,7 @@ def link_files(
     metas: list[LinkMetadata] = []
     bodies: list[list[str]] = []
     fixed: dict[str, int] = {}
+    layout: dict[str, int] | None = None
     for path in input_paths:
         text = Path(path).read_text()
         equ, _, body = _split_asm(text)
@@ -329,17 +337,30 @@ def link_files(
         # One in zero page is a zero-page global, which each unit
         # places without knowing about the others'.
         user = []
+        unit_layout: dict[str, int] = {}
         for line in equ:
             if line.startswith(("__zpabi_", "__local_")):
                 continue
             name, addr = _parse_equ(line)
-            if addr < 0x100:
+            if name in RUNTIME_NAMES:
+                unit_layout[name] = addr
+            elif addr < 0x100:
                 user.append(name)
             elif fixed.setdefault(name, addr) != addr:
                 raise LinkError(
                     f"{path}: {name!r} is at ${addr:04X} here and at "
                     f"${fixed[name]:04X} in an earlier unit"
                 )
+        # Every unit and the runtime's helpers have to agree on where
+        # SSP, FP, HARGS, and DPTR are (passes/runtime_layout.py).
+        if layout is None:
+            layout = unit_layout
+        elif unit_layout != layout:
+            raise LinkError(
+                f"{path}: its runtime zero-page layout "
+                f"{_layout_text(unit_layout)} differs from an earlier "
+                f"unit's {_layout_text(layout)}"
+            )
         if user:
             raise LinkError(
                 f"{path}: zero-page globals ({', '.join(user)}) aren't "
@@ -361,7 +382,9 @@ def link_files(
     local_sym_to_addr = build_local_slot_symbols(
         local_pools, slot_names_by_fn=slot_names_by_fn,
     )
-    all_symbols = {**zp_sym_to_addr, **local_sym_to_addr, **fixed}
+    all_symbols = {
+        **(layout or {}), **zp_sym_to_addr, **local_sym_to_addr, **fixed,
+    }
     # Format the output.
     out_lines: list[str] = []
     out_lines.extend(_format_equ_block(all_symbols))

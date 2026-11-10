@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_interlace_fill_p1__value	EQU	$80
 __zpabi_interlace_fill_p1__col	EQU	$81
 

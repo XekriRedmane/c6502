@@ -10,17 +10,21 @@ access, where an ordinary pointer global is first copied to DPTR.
     uint8_t num_entries __attribute__((zeropage));            // $26
     __attribute__((zeropage(0xBA))) uint8_t *z_header_addr;   // $BA-$BB
 
-The bare form takes the lowest free bytes in `$26`-`$7F` (`AUTO_LO`
-.. `AUTO_HI`), the range between the runtime's reserved bytes
-(`$00`-`$25`: SSP, FP, HARGS, DPTR) and the compiler's own zero-page
-pool (`$80`-`$FF`). The address form puts the object's first (low)
-byte at that address, anywhere in `$26`-`$FF`, so code ported from
-hand-written assembly can
-keep its documented addresses. A fixed address in `$80`-`$FF` is taken
-out of the compiler's pool: `reserved` is passed to the zp_abi slot
-allocator, the private-pool allocator, and register allocation, so
-nothing else is placed on those bytes. Two zero-page objects may not
-overlap, and an object must fit below `$100`.
+The address form puts the object's first (low) byte at that
+address, anywhere in `$00`-`$FF`, so code ported from hand-written
+assembly can keep its documented addresses. A fixed address in
+`$80`-`$FF` is taken out of the compiler's pool: `reserved` is passed
+to the zp_abi slot allocator, the private-pool allocator, and
+register allocation, so nothing else is placed on those bytes. Two
+zero-page objects may not overlap, and an object must fit below
+`$100`.
+
+The runtime's own block (SSP, FP, HARGS, DPTR) is placed after the
+fixed objects, by `runtime_layout.choose_layout`: at `$00`-`$25` when
+no fixed object is there, and around them otherwise. The bare form
+then takes the lowest free bytes below `$80` (`AUTO_HI`), which is
+`$26` up in the classic layout. The compiler's own pool is
+`$80`-`$FF`.
 
 # Initial values
 
@@ -78,17 +82,16 @@ assembled the program.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import asm_ast
+from passes.runtime_layout import CLASSIC, RuntimeLayout, choose_layout
 from passes.type_checking import TypeCheckError
 
-# The range a bare `zeropage` object is placed in.
-AUTO_LO = 0x26
+# A bare `zeropage` object is placed below this address, in bytes
+# neither a fixed object nor the runtime's block uses.
 AUTO_HI = 0x80
-# The lowest address a fixed `zeropage(addr)` may use. Below it are
-# the runtime's SSP, FP, HARGS, and DPTR.
-FIXED_LO = 0x26
 
 INIT_FUNCTION = "__zp_init"
 
@@ -107,23 +110,30 @@ class ZpGlobals:
     `__zp_init` stores. `fixed` maps each function and object placed
     with `address(addr)` at $100 or above to its address. Those only
     need an `EQU` line, so they're kept out of `addrs`, which the
-    zero-page peepholes read."""
+    zero-page peepholes read. `layout` is where the runtime's
+    zero-page block goes (`passes/runtime_layout.py`)."""
     addrs: dict[str, int] = field(default_factory=dict)
     reserved: frozenset[int] = frozenset()
     owned: frozenset[str] = frozenset()
     fixed: dict[str, int] = field(default_factory=dict)
+    layout: RuntimeLayout = CLASSIC
 
     def equs(self) -> dict[str, int]:
-        """Every name this unit binds with an `EQU` line."""
-        return {**self.addrs, **self.fixed}
+        """Every name this unit binds with an `EQU` line, the runtime's
+        SSP, FP, HARGS, and DPTR included."""
+        return {**self.layout.addrs(), **self.addrs, **self.fixed}
 
 
-def allocate_zp_globals(symbols, types=None) -> ZpGlobals:
+def allocate_zp_globals(symbols, types=None, hargs_need=None) -> ZpGlobals:
     """Gives every `zeropage` object in `symbols` an address: the one
-    it was declared with, or the lowest free run in `$26`-`$7F`. Fixed
-    addresses are placed first, in declaration order, then the rest.
-    Raises `ZpGlobalError` for an address out of range, an overlap, an
-    `extern` with no address and no definition, or a full range.
+    it was declared with, or the lowest free run below `$80`. Fixed
+    addresses are placed first, in declaration order, then the
+    runtime's block (`runtime_layout.choose_layout`, which calls
+    `hargs_need` for the number of HARGS bytes the program needs if
+    the block has to move), then the rest. Raises `ZpGlobalError` for
+    an address out of range, an overlap, an `extern` with no address
+    and no definition, or a full range, and `RuntimeLayoutError` when
+    the runtime's block doesn't fit.
 
     Also collects the `address(addr)` functions and objects outside
     zero page into `fixed` (see "Fixed addresses outside zero page"
@@ -171,28 +181,31 @@ def allocate_zp_globals(symbols, types=None) -> ZpGlobals:
         addrs[name] = addr
 
     for name, addr, size in fixed:
-        if addr < FIXED_LO:
-            raise ZpGlobalError(
-                f"zero-page object {name!r} at ${addr:02X} is in the "
-                f"runtime's reserved bytes $00-${FIXED_LO - 1:02X}"
-            )
         if addr + size > 0x100:
             raise ZpGlobalError(
                 f"zero-page object {name!r} ({size} bytes at "
                 f"${addr:02X}) runs past $FF"
             )
         claim(name, addr, size)
+    layout = choose_layout(
+        frozenset(used), hargs_need or (lambda: CLASSIC.hargs_size),
+    )
+    reserved = frozenset(used)
+    taken = set(used) | layout.bytes()
     for name, size in auto:
-        addr = _first_free(used, size)
+        addr = _first_free(taken, size)
         if addr is None:
             raise ZpGlobalError(
                 f"no room for zero-page object {name!r} ({size} bytes) "
-                f"in ${AUTO_LO:02X}-${AUTO_HI - 1:02X}"
+                f"below ${AUTO_HI:02X}, after the runtime's block and "
+                f"the fixed zero-page objects"
             )
         claim(name, addr, size)
+        taken.update(range(addr, addr + size))
+        reserved = frozenset(used)
     return ZpGlobals(
-        addrs=addrs, reserved=frozenset(used), owned=frozenset(owned),
-        fixed=elsewhere,
+        addrs=addrs, reserved=reserved, owned=frozenset(owned),
+        fixed=elsewhere, layout=layout,
     )
 
 
@@ -227,9 +240,36 @@ def _fixed_elsewhere(symbols, types, sizeof) -> dict[str, int]:
     return out
 
 
-def _first_free(used: dict[int, str], size: int) -> int | None:
-    for addr in range(AUTO_LO, AUTO_HI - size + 1):
-        if all(b not in used for b in range(addr, addr + size)):
+def plan_zero_page(tac, symbols, types) -> ZpGlobals:
+    """`allocate_zp_globals` for a translation unit whose TAC is
+    `tac`. If the runtime's block has to move, HARGS is sized by
+    translating `tac` to asm and measuring it
+    (`runtime_layout.hargs_need`)."""
+    def need() -> int:
+        from passes.runtime_layout import hargs_need
+        from tac_to_asm import translate_program
+        return hargs_need(translate_program(tac, symbols, types))
+    return allocate_zp_globals(symbols, types, hargs_need=need)
+
+
+@contextmanager
+def zero_page_in_effect(zp: ZpGlobals):
+    """Makes `zp`'s zero-page objects and runtime layout the ones the
+    asm passes see, for the duration of a compile."""
+    from passes.asm_aliasing import set_user_zp_globals
+    from passes.runtime_layout import set_current
+    set_user_zp_globals(zp.addrs, zp.reserved)
+    set_current(zp.layout)
+    try:
+        yield
+    finally:
+        set_user_zp_globals({})
+        set_current(CLASSIC)
+
+
+def _first_free(taken, size: int) -> int | None:
+    for addr in range(0, AUTO_HI - size + 1):
+        if all(b not in taken for b in range(addr, addr + size)):
             return addr
     return None
 
@@ -241,7 +281,12 @@ def place_zp_globals(
     `__zp_init`, which stores their initial bytes. Stores of the same
     value share one `LDA`, zero first. A program with no zero-page
     object comes back unchanged. An object whose `StaticVariable` an
-    earlier pass dropped (nothing referenced it) isn't initialized."""
+    earlier pass dropped (nothing referenced it) isn't initialized.
+
+    Also checks that `prog` fits the HARGS size its runtime layout
+    was given (`runtime_layout.check_hargs`)."""
+    from passes.runtime_layout import check_hargs
+    check_hargs(prog, zp.layout)
     if not zp.addrs:
         return prog
     stores: dict[str, list[asm_ast.Type_operand]] = {}

@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_get_object_addr__obj	EQU	$80
 __local_main__0	EQU	$81
 __local_main__1	EQU	$82

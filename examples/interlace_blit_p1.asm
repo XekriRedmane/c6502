@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_interlace_blit_p1__zp_blit_src_0	EQU	$80
 __zpabi_interlace_blit_p1__zp_blit_src_1	EQU	$81
 __zpabi_interlace_blit_p1__zp_blit_x_start	EQU	$82

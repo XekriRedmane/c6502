@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_special_inactive_draw__special_row	EQU	$80
 __zpabi_special_inactive_draw__special_pos_hi	EQU	$81
 __zpabi_special_inactive_draw__page_flag	EQU	$82

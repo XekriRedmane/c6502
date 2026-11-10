@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __local_paint_hud_strip_p1__y	EQU	$81
 
 ; @zp-link-meta-begin

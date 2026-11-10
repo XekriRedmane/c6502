@@ -92,23 +92,20 @@ def compile_to_asm(
     ast3 = resolve_labels(ast2)
     ast4 = label_loops(ast3)
     ast5, syms, types = type_check_program(ast4)
-    from passes.asm_aliasing import set_user_zp_globals
-    from passes.zp_globals import allocate_zp_globals
-    zp = allocate_zp_globals(syms, types)
-    set_user_zp_globals(zp.addrs, zp.reserved)
-    try:
-        return _compile_tac(ast5, syms, types, optimize, zp)
-    finally:
-        set_user_zp_globals({})
-
-
-def _compile_tac(ast5, syms, types, optimize: bool, zp):
-    """The rest of `compile_to_asm`, after type checking, with the
-    translation unit's zero-page globals `zp`. Returns the same
-    tuple; the slot-symbol map includes the zero-page globals, so
-    the assembler binds them."""
-    from passes.zp_globals import place_zp_globals
+    from passes.zp_globals import plan_zero_page, zero_page_in_effect
     tac = translate_to_tac(ast5, syms, types)
+    zp = plan_zero_page(tac, syms, types)
+    with zero_page_in_effect(zp):
+        return _compile_tac(ast5, syms, types, optimize, zp, tac)
+
+
+def _compile_tac(ast5, syms, types, optimize: bool, zp, tac):
+    """The rest of `compile_to_asm`, after translation to TAC (`tac`),
+    with the translation unit's zero-page globals and runtime layout
+    `zp`. Returns the same tuple; the slot-symbol map includes the
+    zero-page globals and the runtime's symbols, so the assembler
+    binds them."""
+    from passes.zp_globals import place_zp_globals
     statics = frozenset(
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
     )
@@ -457,7 +454,14 @@ def build_sim(
     asm_prog, _syms, _types, zp_slot_symbols = compile_to_asm(
         source, optimize=optimize,
     )
-    runtime = rt_mod.build_runtime()
+    from passes.runtime_layout import CLASSIC, RuntimeLayout
+    layout = RuntimeLayout(
+        ssp=zp_slot_symbols.get("SSP", CLASSIC.ssp),
+        fp=zp_slot_symbols.get("FP", CLASSIC.fp),
+        hargs=zp_slot_symbols.get("HARGS", CLASSIC.hargs),
+        dptr=zp_slot_symbols.get("DPTR", CLASSIC.dptr),
+    )
+    runtime = rt_mod.build_runtime(layout)
     extra_symbols = dict(runtime.symbols)
     extra_symbols.update(zp_slot_symbols)
     assembled = assembler.assemble(

@@ -1057,6 +1057,26 @@ when a function tears down its frame.
 | `$24`/`$25` | DPTR  | dereference / scratch indirect pointer (low / high byte) |
 | `$26`–`$7F` |       | user zero-page globals (see "Zero-page globals")         |
 
+That's the classic layout, and every program gets it unless it
+reserves some of those bytes. The output binds the four names with
+`EQU` lines, and the runtime's helpers have to be assembled with the
+same values.
+
+A program reserves zero-page bytes by declaring objects there with
+`__attribute__((address(addr)))` or `zeropage(addr)`, typically for
+system software it runs alongside. `#include <apple2/monitor.h>`
+declares every byte the Apple II Monitor uses. When a reserved byte
+falls in `$00`–`$25`, the compiler moves the block
+(`passes/runtime_layout.py`). It sizes `HARGS` to what the program
+needs: the highest `HARGS` offset its own code uses, and the
+footprint of each helper it calls, scratch bytes included, as
+measured from `sim/runtime_helpers.py`. Then it places `HARGS`,
+`SSP`, `FP`, and `DPTR` in the lowest free bytes below `$80`. A
+program with no helper calls gets a one-byte `HARGS`. Zero-page
+globals without an address go in the bytes left over. When the block
+doesn't fit, that's a compile error. Units linked with `--link` have
+to share one layout, and the link fails if they don't.
+
 `HARGS` is the I/O block that runtime helpers read inputs from and
 write outputs into; the user-function calling convention (soft-stack
 args, register returns) doesn't touch it. It is sized for the largest
@@ -1305,15 +1325,17 @@ uint8_t num_entries __attribute__((zeropage));        /* $26-$7F */
 __attribute__((zeropage(0xBA))) uint8_t *z_header_addr;  /* $BA-$BB */
 ```
 
-The bare form takes the lowest free bytes in `$26`-`$7F`, which
-neither the runtime (`$00`-`$25`) nor the compiler (`$80`-`$FF`) uses.
-The address form puts the object's first (low) byte at that
-address, anywhere in `$26`-`$FF`, so ported code can keep its
-documented addresses. An object takes as many bytes as its type,
-so the pointer above occupies `$BA` and `$BB`. A byte
-in `$80`-`$FF` is then taken out of the compiler's pool. Overlapping
-objects, an address below `$26`, an object that runs past `$FF`, and
-a full `$26`-`$7F` are compile errors. An `extern` declaration with an
+The bare form takes the lowest free bytes below `$80` that neither
+the runtime's block (`$00`-`$25` in the classic layout) nor a fixed
+object uses, so `$26` up unless the block moved. The compiler's pool
+is `$80`-`$FF`. The address form puts the object's first (low) byte
+at that address, anywhere in `$00`-`$FF`, so ported code can keep
+its documented addresses. An object takes as many bytes as its type,
+so the pointer above occupies `$BA` and `$BB`. A byte in `$80`-`$FF`
+is then taken out of the compiler's pool, and a byte in `$00`-`$25`
+moves the runtime's block (see "Reserved zero-page locations").
+Overlapping objects, an object that runs past `$FF`, and no room
+left below `$80` are compile errors. An `extern` declaration with an
 address and no definition names a byte something else owns: it's
 reserved and addressed but never initialized.
 
@@ -1344,8 +1366,9 @@ translation unit. An object with an address has to be declared
 program doesn't own its memory. An access is a plain absolute
 instruction (`STA KBD`), with no pointer staged in `DPTR`. An object
 below `$100` is treated as an `extern` `zeropage(addr)` object: its
-bytes are kept out of the compiler's zero-page pools, and the same
-`$26` lower bound applies. Two objects with addresses may not
+bytes are kept out of the compiler's zero-page pools, and one in
+`$00`-`$25` moves the runtime's block out of its way. Two objects
+with addresses may not
 overlap. Declarations may add the attribute one at a time, but two
 different addresses for one name are an error. `--link` binds each
 name once and rejects two units that give it different addresses.

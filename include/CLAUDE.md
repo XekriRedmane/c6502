@@ -20,6 +20,15 @@ automatically; no `-I` flag needed.
 - `stdbool.h` (C99 §7.16) — `bool` / `true` / `false` /
   `__bool_true_false_are_defined`. `bool` aliases `unsigned char`
   (c6502 doesn't model `_Bool` as a distinct type).
+- `apple2/monitor.h` — the Apple II Monitor ROM: `HOME`, `RDKEY`,
+  `COUT`, `COUT1` as `zp_abi` routines with `address`, and every
+  zero-page byte the unenhanced IIe F8 ROM listing shows the Monitor
+  using (`$00`-`$01`, `$1F`, `$20`-`$49`) as `extern` objects with
+  `address`, so a program that includes it keeps the runtime's
+  zero-page block off them (`passes/runtime_layout.py`). Zero-page
+  objects can't overlap, so the bytes are split into named objects
+  (`CH`, `CV`, `CSW`, ...) and `__monitor_*` arrays. User guide:
+  `docs/attributes.md`.
 
 `size_t`, `ptrdiff_t`, and friends aren't modeled yet — the chapter
 corpus doesn't need them, and c6502 has no `stddef.h` to host them.

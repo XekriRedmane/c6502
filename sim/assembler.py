@@ -119,13 +119,20 @@ _BRANCH = {
     asm_ast.VC: 0x50, asm_ast.VS: 0x70,
 }
 
-# Reserved zero-page symbols. Match the runtime header.
+# Reserved zero-page symbols, in the classic runtime layout
+# (`passes/runtime_layout.py`). A program whose layout differs passes
+# its own addresses in `extra_symbols`, which override these.
 DEFAULT_ZP_SYMBOLS = {
     "SSP": 0x00,    # SSP+1 = $01
     "FP": 0x02,     # FP+1  = $03
     "HARGS": 0x04,  # spans $04..$23 (32 bytes)
     "DPTR": 0x24,   # DPTR+1 = $25
 }
+
+# The runtime addresses of the program being assembled. `assemble`
+# sets them from its symbol table, and the expansions of soft-stack,
+# frame, and DPTR operands and of prologues / epilogues read them.
+_RUNTIME = dict(DEFAULT_ZP_SYMBOLS)
 
 
 # -------- assembler --------
@@ -163,11 +170,24 @@ def assemble(
 
     `extra_symbols` is merged on top of the default zero-page names
     before assembly. Use it to pre-bind helper trap addresses (e.g.
-    `mul16=$E000`) so `Call("mul16")` resolves to a `JSR $E000`."""
-
+    `mul16=$E000`) so `Call("mul16")` resolves to a `JSR $E000`, and
+    to give the runtime symbols the program's layout."""
+    global _RUNTIME
     symbols: dict[str, int] = dict(DEFAULT_ZP_SYMBOLS)
     if extra_symbols:
         symbols.update(extra_symbols)
+    saved = _RUNTIME
+    _RUNTIME = {name: symbols[name] for name in DEFAULT_ZP_SYMBOLS}
+    try:
+        return _assemble(prog, origin, symbols)
+    finally:
+        _RUNTIME = saved
+
+
+def _assemble(
+    prog: asm_ast.Program, origin: int, symbols: dict[str, int],
+) -> AssembledProgram:
+    """The body of `assemble`, with the symbol table built."""
 
     # Names whose resolved address falls in zero page. Used by Data-
     # operand size dispatch: a Data reference to a zp-resolved name
@@ -653,11 +673,11 @@ def _indirect_zp(op: asm_ast.Type_operand) -> int:
     """Zero-page byte for an indirect-Y operand. Stack uses SSP, Frame
     uses FP, Indirect uses DPTR."""
     if isinstance(op, asm_ast.Stack):
-        return DEFAULT_ZP_SYMBOLS["SSP"]
+        return _RUNTIME["SSP"]
     if isinstance(op, asm_ast.Frame):
-        return DEFAULT_ZP_SYMBOLS["FP"]
+        return _RUNTIME["FP"]
     if isinstance(op, asm_ast.Indirect):
-        return DEFAULT_ZP_SYMBOLS["DPTR"]
+        return _RUNTIME["DPTR"]
     raise TypeError(f"not an indirect operand: {op!r}")
 
 
@@ -683,7 +703,7 @@ def _emit_indy_no_y_setup(opcode: str) -> bytes:
     """<op> (DPTR),Y where Y is already preloaded. For IndirectY
     operands. Skips the LDY emission since the caller has staged Y
     externally."""
-    return bytes([_INDY[opcode], DEFAULT_ZP_SYMBOLS["DPTR"]])
+    return bytes([_INDY[opcode], _RUNTIME["DPTR"]])
 
 
 def _emit_indy_zp(opcode: str, zp_addr: int, off: int) -> bytes:
@@ -1294,7 +1314,7 @@ def _emit_ssp_sub(amt: int) -> bytes:
     if amt == 0:
         return b""
     lo, hi = amt & 0xFF, (amt >> 8) & 0xFF
-    ssp = DEFAULT_ZP_SYMBOLS["SSP"]
+    ssp = _RUNTIME["SSP"]
     return (
         bytes([_IMPLIED["SEC"]])
         + _emit_zp("LDA", ssp)
@@ -1338,8 +1358,8 @@ def _emit_prologue(
         return b""
     if not 0 <= local_bytes <= 253:
         raise AssemblerError(f"local_bytes {local_bytes} out of range 0..253")
-    ssp = DEFAULT_ZP_SYMBOLS["SSP"]
-    fp = DEFAULT_ZP_SYMBOLS["FP"]
+    ssp = _RUNTIME["SSP"]
+    fp = _RUNTIME["FP"]
     out = bytearray()
     out += _emit_ssp_sub(local_bytes + 2)
     # Save caller's FP into the slot at SSP+M+1 / SSP+M+2 via two
@@ -1417,8 +1437,8 @@ def _emit_ret(
         return bytes([_IMPLIED["RTS"]])
     if not 0 <= local_bytes <= 253:
         raise AssemblerError(f"local_bytes {local_bytes} out of range 0..253")
-    ssp = DEFAULT_ZP_SYMBOLS["SSP"]
-    fp = DEFAULT_ZP_SYMBOLS["FP"]
+    ssp = _RUNTIME["SSP"]
+    fp = _RUNTIME["FP"]
     rewind = arg_bytes + local_bytes + 2
 
     out = bytearray()
@@ -1519,7 +1539,7 @@ def _emit_load_address(
     _reject_pseudo(dst)
     if not _is_memory(dst):
         raise AssemblerError(f"LoadAddress dst must be memory; got {dst!r}")
-    fp = DEFAULT_ZP_SYMBOLS["FP"]
+    fp = _RUNTIME["FP"]
     if isinstance(src, asm_ast.Data):
         addr = _resolve_data_addr(src, syms)
         lo = addr & 0xFF

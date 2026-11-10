@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_refresh_hit_entities__hit_max	EQU	$80
 __zpabi_refresh_hit_entities__player_y	EQU	$81
 __zpabi_refresh_hit_entities__sprite_xref	EQU	$82

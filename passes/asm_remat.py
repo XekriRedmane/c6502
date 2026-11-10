@@ -73,7 +73,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_liveness import sets_up_y
-from passes.asm_aliasing import _RUNTIME_ZP_ADDRS
+from passes.asm_aliasing import runtime_zp_addrs
 
 
 def apply_remat(
@@ -386,9 +386,9 @@ def _add_indirect_ptr_reads(
         referenced.add(op.address)
         referenced.add(op.address + 1)
     elif isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY)):
-        # `(DPTR),Y` reads DPTR/DPTR+1. Record their fixed
-        # addresses (the runtime ZP pair sits at $24/$25).
-        dptr = _RUNTIME_ZP_ADDRS.get("DPTR")
+        # `(DPTR),Y` reads DPTR/DPTR+1. Record their addresses
+        # in the current runtime layout.
+        dptr = runtime_zp_addrs().get("DPTR")
         if dptr is not None:
             referenced.add(dptr)
             referenced.add(dptr + 1)

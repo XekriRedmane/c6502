@@ -276,17 +276,13 @@ def may_alias(
 # by a user pointer.
 _RUNTIME_ZP_NAMES = frozenset({"SSP", "FP", "HARGS", "DPTR"})
 
-# Fixed base addresses for the runtime ZP symbols. These are
-# pinned by the c6502 ABI (`sim/runtime.py:57-62`) and never
-# move, so `_zp_data_alias` can resolve them precisely without a
-# caller-supplied slot map. The address layout is documented in
-# the project root `CLAUDE.md` under "Function stack frame".
-_RUNTIME_ZP_ADDRS: dict[str, int] = {
-    "SSP": 0x00,
-    "FP": 0x02,
-    "HARGS": 0x04,
-    "DPTR": 0x24,
-}
+def runtime_zp_addrs() -> dict[str, int]:
+    """Base address of each runtime ZP symbol in the layout of the
+    compile in progress (`passes/runtime_layout.py`), so
+    `_zp_data_alias` can resolve them precisely without a
+    caller-supplied slot map."""
+    from passes.runtime_layout import current
+    return current().addrs()
 
 
 def _zp_data_alias(
@@ -316,7 +312,7 @@ def _zp_data_alias(
         return False
     # Runtime symbols are pinned at fixed addresses; no slot map
     # needed.
-    base = _RUNTIME_ZP_ADDRS.get(data.name)
+    base = runtime_zp_addrs().get(data.name)
     if base is None and zp_slot_symbols is not None:
         base = zp_slot_symbols.get(data.name)
     if base is not None:

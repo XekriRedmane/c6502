@@ -37,7 +37,7 @@ values:
   * `ZP(addr, off)` — fixed zero-page byte at `addr + off`.
   * `Data(name, off)` with `name` ∈ `{SSP, FP, HARGS, DPTR}` —
     runtime-symbol references, which resolve to known ZP byte
-    addresses (mapped per `_RUNTIME_ZP_ADDRS`).
+    addresses (mapped per `runtime_zp_addrs`).
   * `Data(name, off)` with `name` a user static — link-time
     absolute address, opaque at this stage. Tracked by
     `(name, off)` identity; assumed to not overlap any other
@@ -96,16 +96,10 @@ from passes.asm_liveness import a_dead_at as _a_dead_at
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 
 
-# Pre-installed runtime ZP symbol addresses (matches
-# `sim.assembler.DEFAULT_ZP_SYMBOLS`). Lets us resolve
-# `Data(name=runtime_symbol, offset=k)` operands to specific ZP byte
-# addresses for aliasing analysis.
-_RUNTIME_ZP_ADDRS = {
-    "SSP": 0x00,
-    "FP": 0x02,
-    "HARGS": 0x04,
-    "DPTR": 0x24,
-}
+# The runtime ZP symbols' addresses in the current layout. Lets us
+# resolve `Data(name=runtime_symbol, offset=k)` operands to specific
+# ZP byte addresses for aliasing analysis.
+from passes.asm_aliasing import runtime_zp_addrs
 
 
 def apply_redundant_store_elimination(
@@ -213,7 +207,7 @@ def _addr_id(op: asm_ast.Type_operand) -> tuple | None:
     if isinstance(op, asm_ast.ZP):
         return ('byte', op.address + op.offset)
     if isinstance(op, asm_ast.Data):
-        base = _RUNTIME_ZP_ADDRS.get(op.name)
+        base = runtime_zp_addrs().get(op.name)
         if base is not None:
             return ('byte', base + op.offset)
         return ('static', op.name, op.offset)
@@ -318,12 +312,12 @@ def _memory_writes(instr: asm_ast.Type_instruction):
 def _indexed_base(op: asm_ast.IndexedData) -> int | None:
     """The absolute numeric base of an IndexedData operand, if
     knowable. Empty-name encodes a raw 16-bit base in `offset`;
-    runtime-symbol names resolve via `_RUNTIME_ZP_ADDRS`; user-
+    runtime-symbol names resolve via `runtime_zp_addrs`; user-
     static names have link-time addresses opaque here (return
     None to signal 'unknown range')."""
     if op.name == "":
         return op.offset
-    base = _RUNTIME_ZP_ADDRS.get(op.name)
+    base = runtime_zp_addrs().get(op.name)
     if base is not None:
         return base + op.offset
     return None

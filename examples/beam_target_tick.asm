@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_beam_target_tick__beam_tick	EQU	$80
 __zpabi_beam_target_tick__beam_seed_floor	EQU	$81
 __zpabi_snd_delay_down__pitch	EQU	$82

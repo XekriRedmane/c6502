@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __zpabi_find_index_of_page_table__page_0	EQU	$80
 __zpabi_find_index_of_page_table__page_1	EQU	$81
 __local_main__0	EQU	$82

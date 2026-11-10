@@ -1,3 +1,7 @@
+SSP	EQU	$00
+FP	EQU	$02
+HARGS	EQU	$04
+DPTR	EQU	$24
 __local_main__0	EQU	$80
 __local_main__1	EQU	$81
 __local_main__2	EQU	$82

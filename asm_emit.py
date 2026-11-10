@@ -1294,15 +1294,13 @@ def emit_program(
     # all retained; the renderer picks per current function.
     # Pairs that resolve outside zero page are skipped — only
     # ZP-base indirect-Y rendering uses this map.
+    from passes.runtime_layout import RUNTIME_NAMES, current
     addr_to_syms: dict[int, list[str]] = {
-        0x00: ["SSP"],
-        0x02: ["FP"],
-        0x04: ["HARGS"],
-        0x24: ["DPTR"],
+        addr: [name] for name, addr in current().addrs().items()
     }
     if zp_slot_symbols:
         for name, addr in zp_slot_symbols.items():
-            if 0 <= addr <= 0xFF:
+            if 0 <= addr <= 0xFF and name not in RUNTIME_NAMES:
                 addr_to_syms.setdefault(addr, []).append(name)
     prev_addr_to_syms = _ADDR_TO_SYMBOLS
     _ADDR_TO_SYMBOLS = addr_to_syms

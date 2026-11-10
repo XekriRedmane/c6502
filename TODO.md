@@ -193,38 +193,24 @@ pieces are left.
   whatever of `$26`-`$7F` is left. Only safe within one translation
   unit, or with the linker deciding.
 
-## Move the runtime's zero-page block out of the way of ROM routines
+## More system-software headers, and their zero page when linking
 
-SSP, FP, HARGS, and DPTR sit at `$00`-`$25`. On an Apple II, the
-Monitor's text window (WNDLFT..WNDBTM, `$20`-`$23`) and cursor (CH
-and CV, `$24`-`$25`) are on the top of HARGS and on DPTR, so a
-program that calls COUT1 has its cursor overwritten by every pointer
-access, and its DPTR overwritten by every character printed.
+`include/apple2/monitor.h` reserves the Monitor's zero page, and the
+runtime's block moves around it (`passes/runtime_layout.py`). Three
+pieces are left.
 
-The compiled output names these blocks only symbolically, and the
-runtime header binds them. Their addresses are hard-coded in the
-IndirectZp naming table in `asm_emit.py`, in `asm_aliasing.py`,
-`redundant_store.py`, and `memory_value_propagation.py`, in
-`sim/assembler.py` and `sim/runtime.py`, and in the `$26` bound in
-`zp_globals.py`. The plan is in two steps.
-
-- Make those one layout value and emit the four `EQU` lines in the
-  output. No program's code changes.
-- Choose the layout from the bytes the program reserves (every
-  `address` and `zeropage(addr)` object, including `extern`
-  declarations that name ROM variables), and size HARGS to the
-  largest helper the program calls. SSP, FP, and DPTR have to stay
-  in zero page, because they're `(zp),Y` bases. The layout has to be
-  the same in every unit and in the runtime helpers, so it's chosen
-  once per program, by the single-unit compile or by `--link`.
-
-Which bytes are reserved also depends on which parts of the system
-software a unit relies on. Some units call Monitor routines and some
-don't, and a unit that uses DOS or Applesoft reserves their bytes as
-well. That calls for a way to say, per compilation unit, "this unit
-uses the Monitor (or DOS, or Applesoft), so don't use its zero-page
-bytes", for instance a header per ROM that declares its reserved
-range, so that units that don't include it can use those bytes.
+- **Headers for DOS 3.3, ProDOS, and Applesoft.** Each declares the
+  zero-page bytes that software uses, the way `monitor.h` does, from
+  its listing. A program that includes one keeps those bytes free.
+- **The IIe 80-column firmware.** `HOME`, `CLREOL`, scrolling, and
+  `KEYIN` continue into the firmware at `$C100`, which the F8 listing
+  doesn't cover, so `monitor.h` may miss bytes it uses.
+- **Linking.** `--link` rejects a unit with zero-page objects, so a
+  unit that includes `monitor.h` can't be linked yet (see "Zero-page
+  globals across translation units"). Once it can, the linker has to
+  choose one runtime layout from every unit's reserved bytes, and
+  the HARGS size from every unit's need. Today it only checks that
+  the units' layouts match.
 
 ## Declare which registers an external routine preserves
 

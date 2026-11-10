@@ -256,6 +256,18 @@ this directory:
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at
   the top of `--codegen --optimize` output for the multi-TU linker.
+- `zp_globals.py` — `allocate_zp_globals` / `place_zp_globals`. Gives
+  each `__attribute__((zeropage))` object an address (its own, or the
+  lowest free run in `$26`-`$7F`), and after codegen turns their
+  `StaticVariable`s into `__zp_init`, which stores their initial
+  bytes. Their bytes (`ZpGlobals.reserved`) are passed to the zp_abi
+  slot allocator, the private-pool allocator, and the asm regalloc
+  (`reserved_zp`) so nothing else lands on them. Their addresses go to
+  `memory_value_propagation` (so a zero-page pointer becomes the
+  `(zp),Y` base), to `asm_aliasing.set_user_zp_globals` for the
+  compile, and to the EQU block, but not into `zp_slot_symbols`: other
+  passes treat a slot symbol in `$80`-`$FF` as scratch that's dead at
+  return.
 - `zp_local_allocation.py` — `allocate_function_locals`. Hands each
   eligible function a private body-local ZP range disjoint from
   coexisting footprints.

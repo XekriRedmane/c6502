@@ -7,17 +7,14 @@ multiply as `8x + x` (three ASL / ROL pairs and an add). It's run with
 py65 on the same header and object numbers as the compiled function,
 and both are timed from entry to RTS.
 
-The compiled function is 48 instructions and 938 cycles over the six
+The compiled function is 44 instructions and 842 cycles over the six
 calls, against the original's 30 and 580, so the 5% comparisons are
 expected failures. The multiply is now `(x << 3) + x` inline, as in
 the original, and its high byte takes the carry with `BCC` / `INC`
-(`passes/carry_inc.py`). Most of what remains comes from three
-things.
+(`passes/carry_inc.py`). `z_header_addr` is placed in zero page at the
+original's $BA (`__attribute__((zeropage(0xBA)))`), so it's read as the
+`(zp),Y` base directly. Most of what remains comes from two things.
 
-- The original keeps the header pointer in zero page and reads
-  through it directly. `z_header_addr` is an ordinary global (c6502
-  can't place globals in zero page yet), so it's copied to DPTR
-  first, which takes 4 instructions.
 - The original relies on the header being page-aligned and adds only
   the pointer's high byte. The C adds the whole pointer.
 - The original adds `+ 53` and the table offset into SCRATCH2 in
@@ -124,8 +121,8 @@ class TestGetObjectAddr(unittest.TestCase):
 
     def test_no_regression(self) -> None:
         compiled = sum(self._run_compiled(o)[0] for o in _OBJECTS)
-        self.assertLessEqual(self.compiled_count, 48)
-        self.assertLessEqual(compiled, 938)
+        self.assertLessEqual(self.compiled_count, 44)
+        self.assertLessEqual(compiled, 842)
 
 
 if __name__ == "__main__":

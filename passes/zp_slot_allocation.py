@@ -104,6 +104,7 @@ def allocate_zp_slots(
     pool: Pool | None = None,
     spill_start: int = _DEFAULT_SPILL_START,
     spill_end: int = _DEFAULT_SPILL_END,
+    reserved: frozenset[int] = frozenset(),
 ) -> tuple[dict[str, ParamLayout], dict[str, int]]:
     """Assign concrete ZP (or spill-region) addresses to every
     `ZpLayout` slot symbol in `abi` such that no two functions
@@ -114,7 +115,10 @@ def allocate_zp_slots(
     replaced with the allocator's choices, with `slot_symbols`
     preserved. `sym_to_addr` maps every emitted slot symbol to
     its assigned numeric address — fed into `asm_emit` to print
-    the EQU directives at the top of the output."""
+    the EQU directives at the top of the output.
+
+    `reserved` is a set of bytes no slot may use, the zero-page
+    globals' bytes (passes/zp_globals.py)."""
     if pool is None:
         pool = Pool()
     zp_window = pool.caller_saved()  # default $80..$BF
@@ -137,7 +141,7 @@ def allocate_zp_slots(
         if n_bytes == 0:
             addrs_by_fn[fn_name] = []
             continue
-        forbidden: set[int] = set()
+        forbidden: set[int] = set(reserved)
         for anc in ancestors.get(fn_name, ()):
             forbidden.update(addrs_by_fn.get(anc, ()))
         addrs = _find_free_range(forbidden, n_bytes, zp_start, zp_end)

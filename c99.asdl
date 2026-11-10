@@ -42,11 +42,16 @@ module C99 {
     -- 6502 register (Y — the only register available to locals). Hard-
     -- error post-parse if the type isn't 1-byte (Char/SChar/UChar) or
     -- is a Pointer. Carried on `storage_class` as `Register()`.
-    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation)
+    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation, placement? placement)
     -- abi_annotation carries the value of any prefix bare-identifier
     -- attribute (currently only "zp_abi"; see docs/leaf_zp_abi.md).
     -- Used by the leaf-ZP-ABI optimization. None when no such
     -- annotation was given.
+    --
+    -- placement is set by `__attribute__((zeropage))` (address None:
+    -- the compiler picks a byte in $26-$7F) or
+    -- `__attribute__((zeropage(0xBA)))` (that address). Only valid on
+    -- an object with static storage; see passes/zp_globals.py.
     --
     -- param_registers is a parallel array to `params`. Each entry is
     -- 1 when the corresponding parameter carried the `register`
@@ -68,6 +73,7 @@ module C99 {
     struct_decl = (identifier tag, bool is_union, member_decl* members)
     member_decl = (identifier name, data_type)
     storage_class = Static | Extern | Register
+    placement = ZeroPage(int? address)
 
     -- Integer types: Int 1B, Long 2B, LongLong 4B, UInt 1B, ULong 2B,
     -- ULongLong 4B (signed variants are two's complement, unsigned

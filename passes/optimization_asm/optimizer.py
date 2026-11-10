@@ -65,6 +65,7 @@ def optimize_program(
     param_layouts=None,
     symbols=None,
     local_pools: dict[str, list[int]] | None = None,
+    reserved_zp: frozenset[int] = frozenset(),
 ) -> tuple[asm_ast.Type_program, dict[str, Coloring]]:
     """Walk every Function top-level and apply the asm-level SSA
     round-trip. Returns the rewritten program alongside a
@@ -105,7 +106,10 @@ def optimize_program(
     Functions NOT in the dict fall back to the default
     caller/callee-saved partition of `Pool(start=0x80)`. This
     enables the call-graph-disjoint allocation that eliminates
-    callee-save prologues for eligible functions."""
+    callee-save prologues for eligible functions.
+
+    `reserved_zp` is a set of zero-page bytes no function's regalloc
+    may color, the zero-page globals' bytes (passes/zp_globals.py)."""
     from passes.abi_selection import ZpLayout
     # Program-level prepass: replace references to const-qualified
     # internal-linkage scalar statics with Imm operands carrying
@@ -130,7 +134,9 @@ def optimize_program(
     colorings: dict[str, Coloring] = {}
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            blocked_addrs = _blocked_addrs_for(tl, param_layouts)
+            blocked_addrs = (
+                _blocked_addrs_for(tl, param_layouts) | set(reserved_zp)
+            )
             allowed_range = _allowed_range_for(tl, local_pools)
             pool_for_fn = (
                 local_pools.get(tl.name)

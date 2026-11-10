@@ -315,7 +315,19 @@ def link_files(
     bodies: list[list[str]] = []
     for path in input_paths:
         text = Path(path).read_text()
-        _, _, body = _split_asm(text)
+        equ, _, body = _split_asm(text)
+        # Zero-page globals (`__attribute__((zeropage))`) have EQUs of
+        # their own, which the linker doesn't re-emit, and each unit
+        # places its own without knowing about the others'.
+        user = [
+            line.split("\t", 1)[0] for line in equ
+            if not line.startswith(("__zpabi_", "__local_"))
+        ]
+        if user:
+            raise LinkError(
+                f"{path}: zero-page globals ({', '.join(user)}) aren't "
+                f"supported when linking several translation units yet"
+            )
         metas.append(parse_metadata(text))
         bodies.append(body)
     # Merge + validate.

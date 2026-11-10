@@ -467,6 +467,7 @@ class Resolver:
                         data_type=new_data_type,
                         storage_class=vd.storage_class,
                         abi_annotation=vd.abi_annotation,
+                        placement=vd.placement,
                     ),
                 )
             case c99_ast.FunctionDecl(function_decl=fd):
@@ -826,6 +827,7 @@ class Resolver:
                     data_type=new_data_type,
                     storage_class=vd.storage_class,
                     abi_annotation=vd.abi_annotation,
+                    placement=vd.placement,
                 )
         raise TypeError(f"unexpected var_decl: {vd!r}")
 

@@ -375,10 +375,16 @@ def _consume_specifiers(items, start):
 # `zp_abi` — bare-identifier; opts a function into the leaf-ZP-ABI
 #            calling convention. Valid only as a function-level prefix.
 #
+# `zeropage` — places a static-storage object in zero page, at a byte
+#            the compiler picks (bare) or at a given address
+#            (`zeropage(0xBA)`). Valid on objects, in the prefix or
+#            the declarator-postfix position. See passes/zp_globals.py.
+#
 # Register pinning of params / locals / return values is NOT an
 # attribute — it uses the C `register` storage-class keyword.
 _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
     "zp_abi": None,
+    "zeropage": None,
 }
 
 
@@ -426,6 +432,11 @@ def _extract_function_attributes(specs, where: str) -> str | None:
                 f"duplicate `__attribute__(({name}...))` on {where}"
             )
         seen.add(name)
+        if name == "zeropage":
+            raise ParserError(
+                f"`__attribute__((zeropage))` places an object, not a "
+                f"function; saw it on {where}"
+            )
         if name == "zp_abi":
             if arg is not None:
                 raise ParserError(
@@ -434,6 +445,60 @@ def _extract_function_attributes(specs, where: str) -> str | None:
                 )
             abi_annotation = "zp_abi"
     return abi_annotation
+
+
+def _extract_object_placement(
+    specs, name: str,
+) -> c99_ast.ZeroPage | None:
+    """Reduce the attribute specs on an object declaration to its
+    `placement`. `zeropage` gives `ZeroPage(None)`, and
+    `zeropage(addr)` gives `ZeroPage(addr)`. Rejects `zp_abi` (a
+    function attribute), unknown and duplicate names, and a string
+    or out-of-range address. Whether the object can go in zero page
+    at all (static storage, size, collisions) is decided later, in
+    the type checker and passes/zp_globals.py."""
+    placement = None
+    seen: set[str] = set()
+    for spec_name, arg in specs or []:
+        if spec_name not in _KNOWN_ATTRIBUTES:
+            raise ParserError(
+                f"unknown attribute name {spec_name!r} on object "
+                f"declaration `{name}`; expected one of "
+                f"{sorted(_KNOWN_ATTRIBUTES)}"
+            )
+        if spec_name in seen:
+            raise ParserError(
+                f"duplicate `__attribute__(({spec_name}...))` on "
+                f"object declaration `{name}`"
+            )
+        seen.add(spec_name)
+        if spec_name == "zp_abi":
+            raise ParserError(
+                f"`__attribute__((zp_abi))` is only valid on function "
+                f"declarations; saw it on object declaration `{name}`"
+            )
+        if isinstance(arg, str):
+            raise ParserError(
+                f"`__attribute__((zeropage(...)))` takes an integer "
+                f"address; got a string on `{name}`"
+            )
+        if arg is not None and not 0 <= arg <= 0xFF:
+            raise ParserError(
+                f"zero-page address ${arg:X} for `{name}` is outside "
+                f"$00-$FF"
+            )
+        placement = c99_ast.ZeroPage(address=arg)
+    return placement
+
+
+def _merge_placement(prefix, postfix, name: str):
+    """The placement from a declaration's prefix attribute clause and
+    its declarator's postfix clause. Giving it in both is an error."""
+    if prefix is not None and postfix is not None:
+        raise ParserError(
+            f"`__attribute__((zeropage))` given twice on `{name}`"
+        )
+    return prefix if prefix is not None else postfix
 
 
 def _consume_pragma_clause(items, start):
@@ -1580,6 +1645,16 @@ class _ASTBuilder(Transformer):
             )
         return (name, lit[1:-1])
 
+    def attr_name_int(self, items):
+        # `attribute_spec: IDENTIFIER LPAREN attribute_int RPAREN
+        # -> attr_name_int`. items[2] is the integer literal's token
+        # (passed through by `attribute_int`). Returns `(name, value)`.
+        value, _, _ = _parse_integer_token(items[2].value)
+        return (items[0].value, value)
+
+    def attribute_int(self, items):
+        return items[0]
+
     def attribute_clause(self, items):
         # `attribute_clause: ATTRIBUTE LPAREN LPAREN attribute_spec
         # (COMMA attribute_spec)* RPAREN RPAREN`. Drop the punctuation
@@ -1619,24 +1694,23 @@ class _ASTBuilder(Transformer):
     def init_declarator(self, items):
         # `init_declarator: declarator attribute_clause?
         #                    (ASSIGN initializer)?`. Returns a
-        # `(declarator_tree, init_or_None)` pair so var_decl can
-        # iterate the list emitted by `init_declarator (COMMA
-        # init_declarator)*`. No `__attribute__` is valid in the
-        # postfix object-declarator position — zp_abi is function-
-        # level, and register pinning of a local uses the `register`
+        # `(declarator_tree, init_or_None, postfix_specs_or_None)`
+        # triple so var_decl can iterate the list emitted by
+        # `init_declarator (COMMA init_declarator)*`. The only
+        # attribute valid in the postfix position is `zeropage`
+        # (`uint8_t n __attribute__((zeropage));`), which var_decl
+        # validates. Register pinning of a local uses the `register`
         # storage-class keyword (parsed with the leading specifiers).
         decl_tree = items[0]
         i = 1
+        postfix = None
         if i < len(items) and isinstance(items[i], _AttributeClause):
-            raise ParserError(
-                "`__attribute__` isn't valid on an object "
-                "declaration; pin a local to a register with the "
-                "`register` keyword"
-            )
+            postfix = items[i].specs
+            i += 1
         init = None
         if i < len(items) and _is_token(items[i], "ASSIGN"):
             init = items[i + 1]
-        return (decl_tree, init)
+        return (decl_tree, init, postfix)
 
     def var_decl(self, items):
         # `var_decl: attribute_clause? specifier+ init_declarator
@@ -1656,16 +1730,9 @@ class _ASTBuilder(Transformer):
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
-        # Reduce the prefix attribute clause to the function-decl
-        # abi_annotation. On object decls the prefix clause must be
-        # empty; we validate that below per init-declarator (after we
-        # know the composed type).
-        if prefix_specs is None:
-            prefix_abi = None
-        else:
-            prefix_abi = _extract_function_attributes(
-                prefix_specs, where="function declaration",
-            )
+        # The prefix attribute clause is reduced per init-declarator
+        # below, once the composed type says whether it names a
+        # function (zp_abi) or an object (zeropage).
         # Remaining items are init_declarator results (tuples) and
         # COMMA / SEMICOLON tokens. Pick out the tuples in order.
         init_decls = [
@@ -1673,7 +1740,7 @@ class _ASTBuilder(Transformer):
             if isinstance(it, tuple)
         ]
         tails: list = []
-        for decl_tree, init in init_decls:
+        for decl_tree, init, postfix_specs in init_decls:
             name, composed, outer_param_names, outer_param_regs = (
                 _apply_declarator(decl_tree, base_type)
             )
@@ -1682,6 +1749,18 @@ class _ASTBuilder(Transformer):
                     raise ParserError(
                         "function declaration cannot have an initializer"
                     )
+                if postfix_specs is not None:
+                    raise ParserError(
+                        f"`__attribute__` after the declarator isn't "
+                        f"supported on function declaration {name!r}; "
+                        f"put it before the declaration"
+                    )
+                prefix_abi = (
+                    None if prefix_specs is None
+                    else _extract_function_attributes(
+                        prefix_specs, where="function declaration",
+                    )
+                )
                 if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
                         f"storage class 'register' isn't permitted on "
@@ -1701,18 +1780,18 @@ class _ASTBuilder(Transformer):
                     )
                 ))
             else:
-                if prefix_abi is not None:
-                    raise ParserError(
-                        f"`__attribute__((...))` is only valid on "
-                        f"function declarations; saw it on object "
-                        f"declaration `{name}`"
-                    )
+                placement = _merge_placement(
+                    _extract_object_placement(prefix_specs, name),
+                    _extract_object_placement(postfix_specs, name),
+                    name,
+                )
                 tails.append(c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
                         name=name,
                         init=init,
                         data_type=composed,
                         storage_class=storage_class,
+                        placement=placement,
                     )
                 ))
         return struct_decls + tails

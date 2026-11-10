@@ -92,6 +92,22 @@ def compile_to_asm(
     ast3 = resolve_labels(ast2)
     ast4 = label_loops(ast3)
     ast5, syms, types = type_check_program(ast4)
+    from passes.asm_aliasing import set_user_zp_globals
+    from passes.zp_globals import allocate_zp_globals
+    zp = allocate_zp_globals(syms, types)
+    set_user_zp_globals(zp.addrs, zp.reserved)
+    try:
+        return _compile_tac(ast5, syms, types, optimize, zp)
+    finally:
+        set_user_zp_globals({})
+
+
+def _compile_tac(ast5, syms, types, optimize: bool, zp):
+    """The rest of `compile_to_asm`, after type checking, with the
+    translation unit's zero-page globals `zp`. Returns the same
+    tuple; the slot-symbol map includes the zero-page globals, so
+    the assembler binds them."""
+    from passes.zp_globals import place_zp_globals
     tac = translate_to_tac(ast5, syms, types)
     statics = frozenset(
         n for n, s in syms.items() if isinstance(s.attrs, StaticAttr)
@@ -105,13 +121,15 @@ def compile_to_asm(
         # compile.py for the full pipeline shape.
         tac = optimize_tac(tac, syms)
         abi = select_abi(tac, ast5, types)
-        abi, zp_slot_symbols = allocate_zp_slots(tac, abi)
+        abi, zp_slot_symbols = allocate_zp_slots(
+            tac, abi, reserved=zp.reserved,
+        )
         asm0 = translate_to_asm(tac, syms, types, bare_exit=True, abi=abi)
         # Preliminary optimizer pass: conservative pool, used
         # only to size local-byte demand. IR discarded.
         asm_prelim, _ = asm_opt.optimize_program(
             asm0, extra_statics=statics, param_layouts=abi,
-            symbols=syms,
+            symbols=syms, reserved_zp=zp.reserved,
         )
         local_bytes = compute_local_bytes(asm_prelim)
         from passes.function_local_sizing import (
@@ -129,12 +147,13 @@ def compile_to_asm(
             for fn in set(local_bytes) | set(addr_taken_bytes)
         }
         local_pools = allocate_function_locals(
-            tac, abi, combined_local_bytes,
+            tac, abi, combined_local_bytes, reserved=zp.reserved,
         )
         # Final optimizer pass with per-function private pools.
         asm0, asm_colorings = asm_opt.optimize_program(
             asm0, extra_statics=statics, param_layouts=abi,
             symbols=syms, local_pools=local_pools,
+            reserved_zp=zp.reserved,
         )
         addr_taken_assignments = compute_address_taken_assignments(
             asm0, local_pools, asm_colorings, syms, types,
@@ -170,6 +189,7 @@ def compile_to_asm(
         asm2_synth = synthesize_prologue(asm1, dims_by_fn)
         asm3 = _peephole_fixedpoint(
             asm2_synth, zp_slot_symbols=zp_slot_symbols,
+            zp_global_symbols=zp.addrs,
         )
         asm3 = apply_loop_counter_to_x(asm3)
         from passes.counter_to_index_reg import apply_counter_to_index_reg
@@ -177,13 +197,14 @@ def compile_to_asm(
         asm3 = apply_x_save_slot_load(asm3)
         asm3 = _peephole_fixedpoint(
             asm3, zp_slot_symbols=zp_slot_symbols,
+            zp_global_symbols=zp.addrs,
         )
         from passes.loop_invariant_a import apply_loop_invariant_a
         asm3 = apply_loop_invariant_a(
             asm3, zp_slot_symbols=zp_slot_symbols,
         )
-        asm = expand_long_branches(asm3)
-        return asm, syms, types, zp_slot_symbols
+        asm = place_zp_globals(expand_long_branches(asm3), zp)
+        return asm, syms, types, {**zp_slot_symbols, **zp.addrs}
     # Unoptimized path: the same passes `compile.py --codegen` runs
     # without `--optimize`, including the full peephole fixedpoint,
     # so the sim executes the code the CLI emits.
@@ -193,8 +214,9 @@ def compile_to_asm(
         replace_pseudoregs(
             asm0, extra_statics=statics, symbols=syms, types=types,
         ),
+        zp_global_symbols=zp.addrs,
     ))
-    return asm, syms, types, {}
+    return place_zp_globals(asm, zp), syms, types, dict(zp.addrs)
 
 
 # -------- Simulation state --------
@@ -439,6 +461,7 @@ def build_sim(
         raise ValueError("program has no `main` function")
     rt_mod.install_runtime(
         assembled.image, runtime, assembled.symbols["main"],
+        init_addr=assembled.symbols.get("__zp_init"),
     )
     mpu = MPU()
     mpu.memory = assembled.image

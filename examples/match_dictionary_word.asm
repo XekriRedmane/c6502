@@ -15,6 +15,8 @@ __local_match_dictionary_word__entry_0	EQU	$8E
 __local_match_dictionary_word__entry_1	EQU	$8F
 __local_get_dictionary_addr__0	EQU	$90
 __local_get_dictionary_addr__1	EQU	$91
+z_header_addr	EQU	$BA
+zchar_scratch2	EQU	$DA
 
 ; @zp-link-meta-begin
 ; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
@@ -27,15 +29,11 @@ __local_get_dictionary_addr__1	EQU	$91
 get_dictionary_addr:
    SUBROUTINE
 
-   LDA   z_header_addr
-   STA   DPTR
-   LDA   z_header_addr+1
-   STA   DPTR+1
    LDY   #$08
-   LDA   (DPTR),Y
+   LDA   (z_header_addr),Y
    STA   __local_get_dictionary_addr__0
    INY
-   LDA   (DPTR),Y
+   LDA   (z_header_addr),Y
    STA   __local_get_dictionary_addr__1
    LDA   z_header_addr
    CLC
@@ -301,11 +299,19 @@ main:
    JSR   match_dictionary_word
    RTS
 
-z_header_addr:
-   DS.B  2
-
-zchar_scratch2:
-   DS.B  6
-
 story:
    DS.B  512
+
+__zp_init:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   z_header_addr
+   STA   z_header_addr+1
+   STA   zchar_scratch2
+   STA   zchar_scratch2+1
+   STA   zchar_scratch2+2
+   STA   zchar_scratch2+3
+   STA   zchar_scratch2+4
+   STA   zchar_scratch2+5
+   RTS

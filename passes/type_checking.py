@@ -309,9 +309,15 @@ class StaticAttr(IdAttr):
     iff the symbol has external linkage; the codegen will use it to
     decide between a TU-local label and a global symbol.
     `initial_value` carries the resolved init expression if known,
-    or one of the deferred markers (Tentative, NoInitializer)."""
+    or one of the deferred markers (Tentative, NoInitializer).
+
+    `zeropage` is True when some declaration carried
+    `__attribute__((zeropage))`, and `zp_address` is the address it
+    gave, or None to let passes/zp_globals.py pick one."""
     initial_value: InitialValue
     is_global: bool
+    zeropage: bool = False
+    zp_address: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1863,6 +1869,7 @@ class TypeChecker:
             type_=vd.data_type,
             initial=initial,
             is_global=is_global,
+            placement=vd.placement,
         )
 
     def _check_function_decl(
@@ -2014,12 +2021,18 @@ class TypeChecker:
         type_: Type,
         initial: InitialValue,
         is_global: bool,
+        placement: c99_ast.Type_placement | None = None,
     ) -> None:
         existing = self.symbols.get(name)
+        zeropage = isinstance(placement, c99_ast.ZeroPage)
+        zp_address = placement.address if zeropage else None
         if existing is None:
             self.symbols[name] = Symbol(
                 type=type_,
-                attrs=StaticAttr(initial_value=initial, is_global=is_global),
+                attrs=StaticAttr(
+                    initial_value=initial, is_global=is_global,
+                    zeropage=zeropage, zp_address=zp_address,
+                ),
             )
             return
         if not isinstance(existing.attrs, StaticAttr):
@@ -2041,9 +2054,24 @@ class TypeChecker:
         merged = _merge_initial_value(
             name, existing.attrs.initial_value, initial,
         )
+        # `zeropage` accumulates across declarations, the way GCC
+        # attributes do. Two different fixed addresses conflict.
+        prior_addr = existing.attrs.zp_address
+        if (zp_address is not None and prior_addr is not None
+                and zp_address != prior_addr):
+            raise TypeCheckError(
+                f"{name!r} is placed at zero-page ${prior_addr:02X} "
+                f"and at ${zp_address:02X}"
+            )
         self.symbols[name] = Symbol(
             type=type_,
-            attrs=StaticAttr(initial_value=merged, is_global=is_global),
+            attrs=StaticAttr(
+                initial_value=merged, is_global=is_global,
+                zeropage=existing.attrs.zeropage or zeropage,
+                zp_address=(
+                    zp_address if zp_address is not None else prior_addr
+                ),
+            ),
         )
 
     def _add_or_merge_function(
@@ -2172,8 +2200,17 @@ class TypeChecker:
                 type_=vd.data_type,
                 initial=NoInitializer(),
                 is_global=is_global,
+                placement=vd.placement,
             )
             return
+        if vd.placement is not None and not isinstance(
+            vd.storage_class, c99_ast.Static,
+        ):
+            raise TypeCheckError(
+                f"`__attribute__((zeropage))` needs an object with "
+                f"static storage; {vd.name!r} is automatic (declare "
+                f"it `static` or at file scope)"
+            )
         if isinstance(vd.storage_class, c99_ast.Static):
             if vd.init is None:
                 # `static int x;` / `static int a[N];` — zero-
@@ -2243,7 +2280,14 @@ class TypeChecker:
                 )
             self.symbols[vd.name] = Symbol(
                 type=vd.data_type,
-                attrs=StaticAttr(initial_value=initial, is_global=False),
+                attrs=StaticAttr(
+                    initial_value=initial, is_global=False,
+                    zeropage=vd.placement is not None,
+                    zp_address=(
+                        vd.placement.address
+                        if vd.placement is not None else None
+                    ),
+                ),
             )
             return
         # Plain `int x;` / `long x;` — automatic storage. The
@@ -2745,6 +2789,12 @@ class TypeChecker:
                 # class specifiers on every declarator, so each is
                 # plain `T <name> = <exp>;` and lands as a LocalAttr.
                 for vd in vds:
+                    if vd.placement is not None:
+                        raise TypeCheckError(
+                            f"`__attribute__((zeropage))` needs an "
+                            f"object with static storage; for-init "
+                            f"{vd.name!r} is automatic"
+                        )
                     if not _is_complete_object_type(vd.data_type):
                         raise TypeCheckError(
                             f"for-init {vd.name!r} declared with non-"

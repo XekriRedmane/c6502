@@ -1053,21 +1053,23 @@ when a function tears down its frame.
 | ----------- | ----- | -------------------------------------------------------- |
 | `$00`/`$01` | SSP   | soft stack pointer (low / high byte)                     |
 | `$02`/`$03` | FP    | frame pointer (low / high byte)                          |
-| `$04`–`$1B` | HARGS | runtime-helper argument/result exchange block (24 bytes) |
-| `$1C`/`$1D` | DPTR  | dereference / scratch indirect pointer (low / high byte) |
+| `$04`–`$23` | HARGS | runtime-helper argument/result exchange block (32 bytes) |
+| `$24`/`$25` | DPTR  | dereference / scratch indirect pointer (low / high byte) |
+| `$26`–`$7F` |       | user zero-page globals (see "Zero-page globals")         |
 
 `HARGS` is the I/O block that runtime helpers read inputs from and
 write outputs into; the user-function calling convention (soft-stack
 args, register returns) doesn't touch it. It is sized for the largest
-helper in the FP emulation library: a double-precision binary op
+helpers, the 64-bit `udivmod64` / `sdivmod64`, which take 16 input
+bytes and write 16 output bytes. A double-precision binary op
 (`dadd` / `dsub` / `dmul` / `ddiv`) takes two 8-byte operands at
 `HARGS+0..7` and `HARGS+8..15` and writes its 8-byte result at
-`HARGS+16..23`, exactly filling the 24-byte block. Smaller helpers
+`HARGS+16..23`. Smaller helpers
 (integer `mul8` / `divmod8` / `mul16` / `divmod16` / shifts, FP↔int
 conversions, `f2d` / `d2f`, single-precision arithmetic) use only
 the low end of the block; the unused high bytes stay free for the
 caller. The block is **caller-saved**: any helper call may clobber
-all 24 bytes, so a function that needs a value to survive a helper
+all 32 bytes, so a function that needs a value to survive a helper
 call has to spill it to a frame slot first. See the per-helper byte
 layouts in `tac_to_asm.py` for the input / output offsets each
 helper uses within `HARGS`.
@@ -1347,6 +1349,36 @@ asm output under a mangled label like `@0.x:` — collision-proof
 across functions but still the same fixed memory address each time
 the function runs.
 
+### Zero-page globals
+
+`__attribute__((zeropage))` puts an object with static storage (a
+file-scope object, or a block-scope `static`) in zero page, where every
+access is a 2-byte zero-page instruction instead of a 3-byte absolute
+one, and a pointer can be the base of `(zp),Y` directly instead of
+being copied to `DPTR` first.
+
+```c
+uint8_t num_entries __attribute__((zeropage));        /* $26-$7F */
+__attribute__((zeropage(0xBA))) uint8_t *z_header_addr;  /* at $BA */
+```
+
+The bare form takes the lowest free bytes in `$26`-`$7F`, which
+neither the runtime (`$00`-`$25`) nor the compiler (`$80`-`$FF`) uses.
+The address form puts the object at that address anywhere in
+`$26`-`$FF`, so ported code can keep its documented addresses; a byte
+in `$80`-`$FF` is then taken out of the compiler's pool. Overlapping
+objects, an address below `$26`, an object that runs past `$FF`, and
+a full `$26`-`$7F` are compile errors. An `extern` declaration with an
+address and no definition names a byte something else owns: it's
+reserved and addressed but never initialized.
+
+Zero page isn't part of the program image, so the compiler emits a
+routine `__zp_init` that stores each zero-page object's initial value
+(its initializer, or zero). **The boot code must call `__zp_init`
+before `main`.** The simulator's boot stub does. Each object becomes
+an `EQU` in the output. Linking several translation units with
+`--link` isn't supported yet for a unit that has zero-page globals.
+
 ## Status
 
 End-to-end through `compile.py --codegen` to runnable 6502 asm:
@@ -1383,7 +1415,8 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   File-scope objects (incl. block-scope `static`) emit as
   `StaticVariable` top-levels; `extern` references use absolute
   addressing without a definition. See "Storage classes and
-  linkage".
+  linkage". `__attribute__((zeropage))` / `zeropage(addr)` puts one
+  in zero page (see "Zero-page globals").
 - Integer / character / string / floating constants per their
   C99 §6.4.4 / §6.4.5 rules (string-literal concatenation,
   string lifting to file-scope `static char[N+1]`).

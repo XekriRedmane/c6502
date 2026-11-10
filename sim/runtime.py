@@ -26,6 +26,7 @@ Boot stub at $0600:
     STA SSP
     LDA #$7F         ; SSP high
     STA SSP+1
+    JSR __zp_init    ; only when the program has zero-page globals
     JSR main
     BRK              ; halts the simulator (the harness stops on BRK)
 
@@ -543,41 +544,48 @@ def build_runtime() -> Runtime:
 # -------- boot stub --------
 
 
-def build_boot_stub(main_addr: int) -> bytes:
+def build_boot_stub(main_addr: int, init_addr: int | None = None) -> bytes:
     """Assemble the boot stub at `BOOT_ADDR`:
 
         LDA  #<SSP_INIT     ; A9 FF
         STA  SSP            ; 85 00
         LDA  #>SSP_INIT     ; A9 7F
         STA  SSP+1          ; 85 01
+        JSR  __zp_init      ; 20 <lo> <hi>, when `init_addr` is given
         JSR  main           ; 20 <lo> <hi>
         BRK                 ; 00
 
-    Total 12 bytes. The harness stops the simulator when PC points at
-    a BRK opcode (so the BRK byte itself is what halts execution after
-    `main` returns)."""
-    if not 0 <= main_addr <= 0xFFFF:
-        raise ValueError(f"main_addr {main_addr} out of range")
-    lo = main_addr & 0xFF
-    hi = (main_addr >> 8) & 0xFF
-    return bytes([
+    12 bytes, or 15 with the `__zp_init` call, which stores the
+    initial values of the program's zero-page globals
+    (passes/zp_globals.py). The harness stops the simulator when PC
+    points at a BRK opcode (so the BRK byte itself is what halts
+    execution after `main` returns)."""
+    calls = ([] if init_addr is None else [init_addr]) + [main_addr]
+    for addr in calls:
+        if not 0 <= addr <= 0xFFFF:
+            raise ValueError(f"call address {addr} out of range")
+    out = [
         0xA9, SSP_INIT & 0xFF,         # LDA #<SSP_INIT
         0x85, SSP,                      # STA SSP
         0xA9, (SSP_INIT >> 8) & 0xFF,   # LDA #>SSP_INIT
         0x85, SSP + 1,                  # STA SSP+1
-        0x20, lo, hi,                   # JSR main
-        0x00,                           # BRK
-    ])
+    ]
+    for addr in calls:
+        out += [0x20, addr & 0xFF, (addr >> 8) & 0xFF]   # JSR addr
+    out.append(0x00)                    # BRK
+    return bytes(out)
 
 
 def install_runtime(
     image: bytearray, runtime: Runtime, main_addr: int,
+    init_addr: int | None = None,
 ) -> None:
     """Lay down the boot stub, the reset vector, and the assembled
     helper image (if any). Trap addresses for Python-hook helpers
     don't get any bytes — the harness intercepts PC at those
-    addresses before any opcode is fetched there."""
-    boot = build_boot_stub(main_addr)
+    addresses before any opcode is fetched there. `init_addr` is the
+    address of `__zp_init`, when the program has one."""
+    boot = build_boot_stub(main_addr, init_addr)
     image[runtime.boot_addr:runtime.boot_addr + len(boot)] = boot
     # Reset vector at $FFFC/$FFFD points at the boot stub. The 6502
     # fetches PC from this on power-on / RESET.

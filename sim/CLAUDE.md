@@ -41,3 +41,6 @@ MPU until the boot stub's BRK fires.
 - `build_runtime` lays down `icall` (`JMP (DPTR)`, 3 raw bytes) after
   the assembled helpers, so indirect calls through function pointers
   run in the sim.
+- The boot stub calls `__zp_init` before `main` when the program has
+  one, which stores the initial values of its zero-page globals
+  (`passes/zp_globals.py`).

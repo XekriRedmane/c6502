@@ -196,43 +196,39 @@ documented ("returns index in A, carry set if not found"). Either
 way, `Ret` would need to carry "C is live" the same way the previous
 item describes.
 
-## Globals in zero page
+## Zero-page globals across translation units, and automatic placement
 
-c6502 puts every global in the data segment, so each access is a
-3-byte absolute instruction (`LDA abs`, 4 cycles) instead of a
-2-byte zero-page one (`LDA zp`, 3 cycles), and a global can't serve
-as the base of an `(zp),Y` access. Hand-written 6502 code keeps its
-hottest variables in zero page. Zork I keeps the page-table count
-and the last page index at `$BD` / `$BE`, and in
-`examples/find_index_of_page_table.c` the loop bound costs one cycle
-per iteration more than the original's because it's a plain global.
+`__attribute__((zeropage))` and `zeropage(addr)` place a global in
+zero page within one translation unit (`passes/zp_globals.py`). Two
+pieces are left.
 
-Options:
+- **Linking.** `compile.py --link` rejects a unit with zero-page
+  globals. Each unit places its bare `zeropage` objects in `$26`-`$7F`
+  without knowing about the others, so two units would collide, and
+  the linker rebuilds the EQU block from slot symbols only, so the
+  globals' EQUs would be lost. Each unit's `__zp_init` would also
+  clash by name. The link metadata block would need to list each
+  unit's zero-page objects (size, fixed address or not), so the
+  linker can place the bare ones globally, reserve every unit's
+  bytes when it re-allocates slots, and merge the init routines into
+  one.
+- **Automatic promotion under `--optimize`.** Rank globals by static
+  access count (weighting loop bodies) and move the top ones into
+  whatever of `$26`-`$7F` is left. Only safe within one translation
+  unit, or with the linker deciding.
 
-- **An attribute on the declaration**, such as
-  `__attribute__((zeropage)) uint8_t num_entries;`. The allocator
-  would have to give such globals addresses outside the ranges it
-  hands to zp_abi slots, private pools, and the default
-  caller-/callee-saved partition, so the zero-page budget for those
-  shrinks by the globals' size. A fixed-address form
-  (`__attribute__((zeropage(0xBD)))`) would let ported code keep
-  its documented addresses.
-- **A reserved user range.** `$26`–`$7F` is outside both the
-  runtime's reserved bytes and the regalloc pool today. Globals
-  marked for zero page could go there first-come, with an error
-  when the range fills. The linker (`compile.py --link`) would need
-  to allocate them across translation units, the way it does slot
-  symbols.
-- **Automatic promotion under `--optimize`.** Rank globals by
-  static access count (weighting loop bodies) and move the top ones
-  into whatever zero page is left after slots and pools. Only safe
-  within one translation unit, or with the linker deciding.
+## Aliasing rule for two `(zp),Y` bases
 
-What works today, if a little awkwardly, is a fixed-address
-dereference, `#define NUM_ENTRIES (*(uint8_t *)0x40)`, using an
-address in `$26`–`$7F`. Any of the options above would replace that
-with a declaration the compiler knows about, so it can also check
-for collisions.
+`asm_aliasing.may_alias` says two `IndirectZp` / `IndirectZpY`
+accesses through different zero-page pointers never alias. Two
+pointer variables can hold the same address, so the rule isn't sound
+in general. No pass seems to be able to act on it today: every store
+through a pointer goes through A, so a register tracker still sees
+the right value when the pointers are equal, and the dead-store and
+store-tracking passes only look at `Data` / `ZP` targets. Programs
+with two zero-page pointers to one buffer compiled correctly in a
+spot check. It should become "may alias" unless the two pointers are
+known to differ, before a pass that would act on it appears.
 
 ## Rotate top-tested loops
 

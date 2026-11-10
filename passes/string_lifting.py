@@ -113,6 +113,7 @@ class StringLifter:
             name=vd.name, init=new_init,
             data_type=vd.data_type, storage_class=vd.storage_class,
             abi_annotation=vd.abi_annotation,
+            placement=vd.placement,
         )
 
     def _lift_init(self, init, declared_type):

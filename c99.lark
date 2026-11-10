@@ -226,13 +226,17 @@ declaration: function_decl | var_decl
 // combinations.
 specifier: type_specifier | type_qualifier | STATIC | EXTERN | REGISTER
 // Optional GCC-style attribute prefix on a declaration (function or
-// var). Recognized annotation name: `zp_abi` (function-level, bare
-// identifier). The transformer rejects any other name. A single
-// clause may carry multiple comma-separated specs. Register pinning
-// uses the `register` keyword instead (see the `specifier` rule).
+// var). Recognized annotation names: `zp_abi` (function-level, bare
+// identifier) and `zeropage` (on a static-storage object, bare or
+// with an integer address, `zeropage(0xBA)`). The transformer rejects
+// any other name. A single clause may carry multiple comma-separated
+// specs. Register pinning uses the `register` keyword instead (see
+// the `specifier` rule).
 attribute_clause: ATTRIBUTE LPAREN LPAREN attribute_spec (COMMA attribute_spec)* RPAREN RPAREN
 attribute_spec: IDENTIFIER                                  -> attr_name_only
               | IDENTIFIER LPAREN STRING_LITERAL RPAREN     -> attr_name_arg
+              | IDENTIFIER LPAREN attribute_int RPAREN      -> attr_name_int
+attribute_int: INTEGER_CONSTANT | UINT_INTEGER | LONG_INTEGER | ULONG_INTEGER
 
 // Pragma clause prefixed to a `for` statement. The preprocessor maps
 // every `#pragma c6502 loop unroll(enable)` line to the

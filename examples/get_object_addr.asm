@@ -6,6 +6,7 @@ __local_get_object_addr__1	EQU	$84
 __local_get_object_addr__2	EQU	$85
 __local_get_object_addr__3	EQU	$86
 __local_get_object_addr__4	EQU	$87
+z_header_addr	EQU	$BA
 
 ; @zp-link-meta-begin
 ; def get_object_addr params=__zpabi_get_object_addr__obj locals=__local_get_object_addr__0,__local_get_object_addr__1,__local_get_object_addr__2,__local_get_object_addr__3,__local_get_object_addr__4 indirect=false in_cycle=false
@@ -16,15 +17,11 @@ __local_get_object_addr__4	EQU	$87
 get_object_addr:
    SUBROUTINE
 
-   LDA   z_header_addr
-   STA   DPTR
-   LDA   z_header_addr+1
-   STA   DPTR+1
    LDY   #$0A
-   LDA   (DPTR),Y
+   LDA   (z_header_addr),Y
    STA   __local_get_object_addr__0
    INY
-   LDA   (DPTR),Y
+   LDA   (z_header_addr),Y
    STA   __local_get_object_addr__1
    LDA   z_header_addr
    CLC
@@ -104,8 +101,13 @@ main:
    LDA   __local_main__0
    RTS
 
-z_header_addr:
-   DS.B  2
-
 story:
    DS.B  512
+
+__zp_init:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   z_header_addr
+   STA   z_header_addr+1
+   RTS

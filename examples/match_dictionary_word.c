@@ -164,9 +164,9 @@
 
     It returns the z-address in SCRATCH1. Here it's the return value,
     which comes back in A (low) and X (high). The original keeps the
-    header pointer and the word in zero page. c6502 can't place a
-    global there yet (see TODO.md), so `z_header_addr` and
-    `zchar_scratch2` are ordinary globals.
+    header pointer and the word in zero page, at $BA and $DA, and
+    `z_header_addr` and `zchar_scratch2` are placed at the same
+    addresses.
 
     Like the original, the linear scan compares an entry before it
     counts down, so a dictionary with no entries isn't handled.
@@ -174,8 +174,8 @@
 
 #define HEADER_DICT_ADDR 0x08
 
-uint8_t *z_header_addr;
-uint8_t zchar_scratch2[6];
+uint8_t *z_header_addr __attribute__((zeropage(0xBA)));
+uint8_t zchar_scratch2[6] __attribute__((zeropage(0xDA)));
 
 uint8_t *get_dictionary_addr(void) {
     uint16_t offset = ((uint16_t)z_header_addr[HEADER_DICT_ADDR] << 8)

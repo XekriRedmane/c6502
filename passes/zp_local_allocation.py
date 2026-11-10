@@ -184,13 +184,15 @@ def allocate_function_locals(
     pool: Pool | None = None,
     spill_start: int = _DEFAULT_SPILL_START,
     spill_end: int = _DEFAULT_SPILL_END,
+    reserved: frozenset[int] = frozenset(),
 ) -> dict[str, list[int]]:
     """Allocate per-function body-local ZP pools. Returns
     `dict[fn_name, list[int]]` for every eligible function; the
     list is `local_bytes[fn]` addresses long. Ineligible
     functions don't appear in the dict (their body regalloc
     should fall back to the conservative caller/callee
-    partition)."""
+    partition). `reserved` is a set of bytes no pool may use, the
+    zero-page globals' bytes (passes/zp_globals.py)."""
     if pool is None:
         pool = Pool()
     zp_window = pool.caller_saved()
@@ -224,7 +226,7 @@ def allocate_function_locals(
         if size == 0:
             local_pools[fn] = []
             continue
-        forbidden: set[int] = set()
+        forbidden: set[int] = set(reserved)
         # Ancestor local pools (already allocated in this walk).
         for anc in ancestors.get(fn, ()):
             forbidden.update(local_pools.get(anc, ()))

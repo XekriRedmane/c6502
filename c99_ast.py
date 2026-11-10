@@ -184,6 +184,7 @@ class Type_var_decl:
     data_type: Type_data_type
     storage_class: Type_storage_class | None = None
     abi_annotation: str | None = None
+    placement: Type_placement | None = None
 
 
 @dataclass(kw_only=True)
@@ -228,6 +229,16 @@ class Extern(Type_storage_class):
 @dataclass
 class Register(Type_storage_class):
     pass
+
+
+@dataclass
+class Type_placement:
+    pass
+
+
+@dataclass
+class ZeroPage(Type_placement):
+    address: int | None = None
 
 
 @dataclass

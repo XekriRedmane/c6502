@@ -81,7 +81,11 @@ Two key runtime conventions:
   JSR return addresses and short-lived PHA/PLA. Reserved ZP: `$00-$01`
   SSP, `$02-$03` FP, `$04-$23` HARGS (runtime-helper exchange block),
   `$24-$25` DPTR (caller-saved indirect-pointer scratch). Full layout
-  in "Function stack frame" below.
+  in "Function stack frame" below. `$26-$7F` is for user globals
+  marked `__attribute__((zeropage))`; `zeropage(addr)` may also pin
+  one in `$80-$FF`, which removes those bytes from the compiler's
+  pools. Their initial values are stored by a generated `__zp_init`,
+  which the boot code calls before `main` (see `passes/zp_globals.py`).
 - **zp_abi + call-graph-disjoint private pools** put params AND
   body locals in ZP for eligible leaf / non-recursive /
   non-indirect-calling functions; ineligible functions fall back

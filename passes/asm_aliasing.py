@@ -92,6 +92,33 @@ import asm_ast
 DEFAULT_POOL_LO = 0x80
 DEFAULT_POOL_HI = 0x100
 
+# User globals placed in zero page (`__attribute__((zeropage))`, see
+# passes/zp_globals.py) for the compile in progress: name -> address,
+# and every byte they occupy. Such a global is a `Data(name)` operand
+# whose bytes may also appear as numeric `ZP(addr)` operands (the
+# pointer bytes of an `IndirectZp` base), and its address may be
+# taken, so the rules below that call a ZP byte compiler-private
+# don't apply to its bytes. The driver sets this at the start of each
+# compile (`set_user_zp_globals`) and clears it at the end, the way
+# `asm_emit` keeps its per-emit symbol table.
+_USER_ZP_GLOBALS: dict[str, int] = {}
+_USER_ZP_BYTES: frozenset[int] = frozenset()
+
+
+def set_user_zp_globals(
+    addrs: dict[str, int], reserved: frozenset[int] = frozenset(),
+) -> None:
+    """Records the zero-page globals of the compile in progress.
+    Pass `{}` to clear."""
+    global _USER_ZP_GLOBALS, _USER_ZP_BYTES
+    _USER_ZP_GLOBALS = dict(addrs)
+    _USER_ZP_BYTES = frozenset(reserved)
+
+
+def is_user_zp_byte(addr: int) -> bool:
+    """True iff byte `addr` belongs to a user zero-page global."""
+    return addr in _USER_ZP_BYTES
+
 
 def may_alias(
     a: asm_ast.Type_operand,
@@ -147,11 +174,12 @@ def may_alias(
         return _zp_data_alias(b, a, zp_slot_symbols)
     # ZP vs IndexedData: distinct namespaces (IndexedData operands
     # name link-time statics — own namespace — or raw absolute
-    # addresses ≥ $0100 whose offset exceeds the ZP range).
+    # addresses ≥ $0100 whose offset exceeds the ZP range). An
+    # indexed access to a user zero-page array does reach zero page.
     if isinstance(a, asm_ast.ZP) and isinstance(b, asm_ast.IndexedData):
-        return False
+        return b.name in _USER_ZP_GLOBALS
     if isinstance(b, asm_ast.ZP) and isinstance(a, asm_ast.IndexedData):
-        return False
+        return a.name in _USER_ZP_GLOBALS
     # ZP-symbol Data (`__local_*`, `__zpabi_*`) vs IndexedData:
     # these symbols resolve to ZP byte addresses via EQU
     # bindings at link time. IndexedData operands either target
@@ -186,11 +214,13 @@ def may_alias(
         asm_ast.Indirect, asm_ast.IndirectY,
         asm_ast.IndirectZp, asm_ast.IndirectZpY,
     )
-    if isinstance(a, _indy_indirect_kinds) and isinstance(b, asm_ast.ZP):
+    if (isinstance(a, _indy_indirect_kinds) and isinstance(b, asm_ast.ZP)
+            and not is_user_zp_byte(b.address + b.offset)):
         addr = b.address + b.offset
         if pool_lo <= addr < pool_hi:
             return False
-    if isinstance(b, _indy_indirect_kinds) and isinstance(a, asm_ast.ZP):
+    if (isinstance(b, _indy_indirect_kinds) and isinstance(a, asm_ast.ZP)
+            and not is_user_zp_byte(a.address + a.offset)):
         addr = a.address + a.offset
         if pool_lo <= addr < pool_hi:
             return False
@@ -275,7 +305,13 @@ def _zp_data_alias(
     3. `data.name` IS a ZP symbol but the slot map isn't supplied
        (or doesn't contain this name) — fall back to conservative
        MAY-alias. Sound; callers with the map should always pass
-       it to get the precise answer."""
+       it to get the precise answer.
+
+    A user zero-page global (`_USER_ZP_GLOBALS`) is compared by its
+    address."""
+    user = _USER_ZP_GLOBALS.get(data.name)
+    if user is not None:
+        return (zp.address + zp.offset) == (user + data.offset)
     if not _is_zp_symbol(data.name):
         return False
     # Runtime symbols are pinned at fixed addresses; no slot map

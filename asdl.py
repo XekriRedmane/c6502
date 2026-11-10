@@ -393,7 +393,9 @@ def main(argv: list[str]) -> int:
         print(f"{argv[1]}: {e}", file=sys.stderr)
         return 1
     if len(argv) == 3:
-        with open(argv[2], "w", encoding="utf-8") as f:
+        # LF on every platform, so regenerating on Windows doesn't
+        # turn every line of the module into a change.
+        with open(argv[2], "w", encoding="utf-8", newline="\n") as f:
             f.write(code)
     else:
         sys.stdout.write(code)

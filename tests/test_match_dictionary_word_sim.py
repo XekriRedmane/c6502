@@ -10,7 +10,9 @@ words that aren't there: below the first entry, between two entries,
 and past the last.
 
 The compiled function is 112 instructions against the original's 107,
-and takes 4.0% more cycles over these lookups. Most of what's left:
+and takes 0.2% fewer cycles over these lookups. `z_header_addr` and
+`zchar_scratch2` are placed in zero page at the original's $BA and
+$DA. Most of the instructions left over:
 
 - `get_dictionary_addr` returns the pointer in HARGS, and the caller
   copies it to a zero-page pair before using it as a `(zp),Y` base.
@@ -20,10 +22,7 @@ and takes 4.0% more cycles over these lookups. Most of what's left:
   `LDY #3`.
 - The high byte of the entry count goes through a temp.
 - The result comes back in A and X, so the found path subtracts into
-  a temp and loads it back. The original leaves it in SCRATCH1.
-
-The original also keeps the header pointer and the word in zero page,
-which c6502 can't do with a global yet (see TODO.md)."""
+  a temp and loads it back. The original leaves it in SCRATCH1."""
 
 from __future__ import annotations
 

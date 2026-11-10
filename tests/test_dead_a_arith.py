@@ -329,6 +329,24 @@ class TestDeadAArithRedundantFlag(unittest.TestCase):
         out = _rewritten(instrs)
         self.assertEqual(len(out), 7)
 
+    def test_txa_after_frame_store_keeps(self) -> None:
+        # `LDX M; LDY #3; STA (FP),Y; TXA; BEQ .L` — the store's
+        # `LDY #3` sets Z from the offset, so without the TXA the
+        # BEQ would test 3 and never be taken. Keep.
+        m = asm_ast.Data(name="m", offset=0)
+        instrs = [
+            asm_ast.Mov(src=m, dst=_REG_X),                 # LDX M
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Frame(offset=3)),
+            asm_ast.Mov(src=_REG_X, dst=_REG_A),            # TXA — keep
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".L"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="d", offset=0)),
+            asm_ast.Label(name=".L"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(out, instrs)
+
     def test_txa_with_intervening_alu_keeps(self) -> None:
         # `LDX M; ADC #0; TXA; BMI .L` — ADC clobbers N/Z. After
         # ADC the flags reflect A (the ADC result), not X. Dropping

@@ -566,11 +566,15 @@ def _overwrites_all_flags(instr: asm_ast.Type_instruction) -> bool:
 def sets_flags(instr: asm_ast.Type_instruction) -> bool:
     """True iff `instr`'s 6502 lowering fully overwrites the N/Z
     flags."""
+    if sets_up_y(instr):
+        # The `LDY #off` setup of a soft-stack or indirect operand
+        # sets N/Z from the offset, even ahead of a plain `STA`.
+        return True
     if isinstance(instr, asm_ast.Mov):
         # Mov(_, Reg(A|X|Y)) → LD* sets flags.
         if isinstance(instr.dst, asm_ast.Reg):
             return True
-        # Mov(Reg(A), memory) → STA only — no flag change.
+        # Mov(Reg(A), Data | ZP) → STA only, so no flag change.
         if is_reg_a(instr.src):
             return False
         # Mov(non-A, memory) emits LDA src; STA dst — LDA sets flags.

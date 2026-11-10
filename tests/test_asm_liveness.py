@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 import asm_ast
-from passes.asm_liveness import all_flags_dead_at, flags_dead_at
+from passes.asm_liveness import all_flags_dead_at, flags_dead_at, sets_flags
 
 
 _A = asm_ast.Reg(reg=asm_ast.A())
@@ -56,6 +56,25 @@ class TestFlagsDeadAt(unittest.TestCase):
         instrs = [asm_ast.Label(name=".l"), asm_ast.Return(save_a=True)]
         self.assertTrue(flags_dead_at(instrs, 0))
         self.assertTrue(all_flags_dead_at(instrs, 0))
+
+
+class TestSetsFlags(unittest.TestCase):
+
+    _A = asm_ast.Reg(reg=asm_ast.A())
+
+    def test_store_to_data_leaves_flags(self):
+        mov = asm_ast.Mov(src=self._A, dst=asm_ast.Data(name="g", offset=0))
+        self.assertFalse(sets_flags(mov))
+
+    def test_store_with_y_setup_sets_flags(self):
+        # Each of these emits `LDY #off` ahead of the `STA`, and LDY
+        # sets N/Z from the offset.
+        for dst in (asm_ast.Frame(offset=3), asm_ast.Stack(offset=1),
+                    asm_ast.Indirect(offset=0),
+                    asm_ast.IndirectZp(address=0x80, offset=2)):
+            with self.subTest(dst=type(dst).__name__):
+                self.assertTrue(sets_flags(
+                    asm_ast.Mov(src=self._A, dst=dst)))
 
 
 if __name__ == "__main__":

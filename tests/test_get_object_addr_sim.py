@@ -1,4 +1,4 @@
-"""Compares `examples/get_object_addr.c` under --optimize with the
+"""Compares `examples/zork_get_object_addr.c` under --optimize with the
 hand-written routine it translates, from the Zork I (r15) Z-machine
 interpreter (https://github.com/XekriRedmane/zorki-r15-reveng).
 
@@ -40,7 +40,7 @@ from tests.asm_compare import (
     REPO, assemble, call, count_function_instructions,
 )
 
-_EXAMPLE = REPO / "examples" / "get_object_addr.c"
+_EXAMPLE = REPO / "examples" / "zork_get_object_addr.c"
 _HEADER_PAGE = 0x40          # the header at $4000
 _TABLE_OFFSET = 0x02A6       # big-endian at header+$0A
 _OBJECTS = [1, 2, 9, 100, 200, 255]

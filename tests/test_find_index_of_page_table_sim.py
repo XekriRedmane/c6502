@@ -1,6 +1,7 @@
-"""Compares `examples/find_index_of_page_table.c` under --optimize with
-the hand-written routine it translates, from the Zork I (r15) Z-machine
-interpreter (https://github.com/XekriRedmane/zorki-r15-reveng).
+"""Compares `examples/zork_find_index_of_page_table.c` under --optimize
+with the hand-written routine it translates, from the Zork I (r15)
+Z-machine interpreter
+(https://github.com/XekriRedmane/zorki-r15-reveng).
 
 The original is assembled with py65's line assembler and run on the
 same table contents and searches as the compiled function. Both are
@@ -29,7 +30,10 @@ from py65.devices.mpu6502 import MPU
 
 import sim.harness as H
 
-_EXAMPLE = Path(__file__).parent.parent / "examples" / "find_index_of_page_table.c"
+_EXAMPLE = (
+    Path(__file__).parent.parent / "examples"
+    / "zork_find_index_of_page_table.c"
+)
 _N = 0x4C            # NUM_PAGE_TABLE_ENTRIES in Zork I
 _LAST = 0x4B         # LAST_Z_PAGE
 _PAGES = [0x0100 + 7 * k for k in range(_N)]

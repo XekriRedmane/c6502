@@ -26,6 +26,14 @@ HUD strip painting, sprite blitting, audio tone generation, enemy AI
 advancement, hit-entity refresh. Many use `__attribute__((zp_abi))`
 on the leaf helpers to exercise the call-graph-disjoint ZP allocator.
 
+Examples translated from the Zork I (r15) interpreter, as
+reverse-engineered in https://github.com/XekriRedmane/zorki-r15-reveng,
+are named `zork_<routine>`. Each one quotes the original 6502 code in
+its header comment. `zork_dump_buffer.c` calls the Monitor's `COUT`
+and `COUT1` through `<apple2/monitor_io.h>`, and
+`tests/test_zork_dump_buffer_sim.py` runs it against stand-ins at the
+ROM's addresses.
+
 ## Adding a new example
 
 The `compile-example` skill (project-local) wraps the canonical

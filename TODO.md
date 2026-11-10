@@ -243,12 +243,12 @@ known to differ, before a pass that would act on it appears.
 `for` and `while` loops test at the top and end with a `JMP` back to
 the test, which costs 3 cycles per iteration. Rotating them to a
 guard plus a test at the bottom removes that `JMP`. A first version
-(Nov 2026, while adding `examples/find_index_of_page_table.c`) copied
-the test in front of the loop as a guard, moved it to the bottom as
-`JumpIfTrue`, and let constant folding drop the guard when the first
-test is constant. On the natural `for` version of the Zork page-table
-search it cut a non-matching entry from 21 cycles to 19, and with
-`loop_invariant_a` to 16.
+(Nov 2026, while adding `examples/zork_find_index_of_page_table.c`)
+copied the test in front of the loop as a guard, moved it to the
+bottom as `JumpIfTrue`, and let constant folding drop the guard when
+the first test is constant. On the natural `for` version of the Zork
+page-table search it cut a non-matching entry from 21 cycles to 19,
+and with `loop_invariant_a` to 16.
 
 It was taken out because it made other examples worse:
 `draw_sprite_opaque` went from 47 instructions to 89 and gained a

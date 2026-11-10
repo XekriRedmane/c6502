@@ -1,6 +1,7 @@
-"""Compares `examples/match_dictionary_word.c` under --optimize with the
-hand-written routine it translates, from the Zork I (r15) Z-machine
-interpreter (https://github.com/XekriRedmane/zorki-r15-reveng).
+"""Compares `examples/zork_match_dictionary_word.c` under --optimize with
+the hand-written routine it translates, from the Zork I (r15)
+Z-machine interpreter
+(https://github.com/XekriRedmane/zorki-r15-reveng).
 
 Both look words up in the same 40-entry dictionary with py65, and
 each is timed from entry to RTS, including the call to
@@ -36,7 +37,7 @@ from tests.asm_compare import (
     REPO, assemble, call, count_function_instructions,
 )
 
-_EXAMPLE = REPO / "examples" / "match_dictionary_word.c"
+_EXAMPLE = REPO / "examples" / "zork_match_dictionary_word.c"
 _HEADER_PAGE = 0x40          # the header at $4000
 _DICT_OFFSET = 0x0100        # big-endian at header+$08
 _N_ENTRIES = 40

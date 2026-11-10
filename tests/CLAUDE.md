@@ -60,3 +60,10 @@ Where to look for more:
   live list of optimizer bugs.
 - `test_sim_asm_optimized.py` — chapter_1..12 corpus run through
   `--optimize` with end-to-end return-value assertions.
+- `test_op_matrix_sim.py` — every assignment operator (`++` / `--`
+  both ways, the compound assignments) over every integer type, seven
+  storage classes (local, block `static`, global, zero-page global,
+  `*p`, `a[i]`, struct member), and four uses of the result, with
+  expected values computed in Python, in both pipelines. It covers a
+  grid the chapter corpus and the fuzzers sample sparsely; it's what
+  found `return ++c;` on a static `unsigned char` losing A.

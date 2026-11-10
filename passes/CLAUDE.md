@@ -31,6 +31,10 @@ this directory:
 - `asm_dead_store.py` — `apply_asm_dead_store` CFG-wide DSE.
 - `asm_licm.py` — `apply_licm` for loop-invariant constant stores.
 - `asm_liveness.py` — per-block liveness used by several peepholes.
+  `flags_dead_at` covers N/Z, `c_dead_at` and `v_dead_at` one flag
+  each, and `all_flags_dead_at` every flag, counting any branch as a
+  read. A return ends flag liveness, except that a carry-flag return
+  (`save_c`, from `return_bool_in_carry`) reads C.
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
 - `dead_pha_pla.py` — `apply_dead_pha_pla`. Drops `Push(Reg(A)) /
   body / Pop(Reg(A))` triples when the body preserves A and the
@@ -135,6 +139,16 @@ this directory:
   when A and every flag are dead after. Move coalescing's carry-byte
   pairs (`optimization_asm/coalescing.py`) put both ends of such a
   byte in one slot.
+- `carry_return.py` — peepholes for `return_bool_in_carry`, whose
+  callee returns `e != 0` in C. `apply_carry_return_tails` copies a
+  `CMP #c; RTS` return tail into each `LDA #k; JMP tail` and in front
+  of the tail's label after a fall-through `LDA #k`, and
+  `apply_carry_const_fold` turns `LDA #k; CMP #c` into `SEC` / `CLC`
+  when only C is read after. Together they make `return true;` in a
+  loop `SEC; RTS`. `apply_carry_branch_fold` turns the caller's
+  capture `LDA #0; ROL A; BEQ / BNE` into `BCC` / `BCS` when A and
+  every flag are dead on both sides, and drops `LDA #0; ROL A; CMP
+  #1` (one carry function returning another's result).
 - `identifier_resolution.py` — pass 2 (see below).
 - `inc_peephole.py` — multi-byte INC peephole (see below).
 - `memory_value_propagation.py` —
@@ -251,7 +265,12 @@ this directory:
   the next instruction clobbers N/Z. CMP performs the same
   memory read (preserving volatile semantics) but doesn't
   clobber A — enables `reg('A')` body-pinning to survive across
-  `(void)*sfx_click_ptr`-style discarded volatile reads.
+  `(void)*sfx_click_ptr`-style discarded volatile reads. CMP writes
+  C and LDA doesn't, so C must be dead too (`c_dead_at`).
+- `unreachable_drop.py` — `apply_unreachable_drop`. Drops the
+  instructions between a `Jump` / `Return` / `Ret` and the next
+  label, which nothing reaches. Copying a return tail ahead of its
+  label leaves such code once the label goes.
 - `y_peephole.py` — `apply_y_peephole` (LDY collapse, outside
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at
@@ -931,6 +950,12 @@ them):
   compares when the only way to it is a branch right after the first.
 - `apply_tail_merge` — branches to one shared copy of a repeated
   return tail instead of branching over each copy.
+- `apply_carry_return_tails`, `apply_carry_const_fold`,
+  `apply_carry_branch_fold` (`carry_return.py`) — the
+  `return_bool_in_carry` peepholes, run right after
+  `apply_const_arith_fold`.
+- `apply_unreachable_drop` — drops code after a terminator with no
+  label in front of it. Runs right after `apply_dead_label_drop`.
 - `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; ...; SBC` pattern
   where the SBC's effect duplicates the Compare's flag set.
 - `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A);

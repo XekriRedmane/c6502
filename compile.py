@@ -59,6 +59,10 @@ from passes.carry_inc import apply_carry_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
 from passes.branch_invert import apply_branch_invert
 from passes.branch_to_next_drop import apply_branch_to_next_drop
+from passes.carry_return import (
+    apply_carry_branch_fold, apply_carry_const_fold,
+    apply_carry_return_tails,
+)
 from passes.dead_label_drop import apply_dead_label_drop
 from passes.const_arith_fold import apply_const_arith_fold
 from passes.mem_const_prop import apply_mem_const_prop
@@ -68,6 +72,7 @@ from passes.self_store_drop import apply_self_store_drop
 from passes.cmp_through_tmp_fold import apply_cmp_through_tmp_fold
 from passes.redundant_compare import apply_redundant_compare
 from passes.tail_merge import apply_tail_merge
+from passes.unreachable_drop import apply_unreachable_drop
 from passes.adc_commute import apply_adc_commute
 from passes.dual_index_promotion import apply_dual_index_promotion
 from passes.prune_unused_slots import prune_unused_locals
@@ -222,6 +227,7 @@ def _peephole_fixedpoint(
         )
         new_prog = apply_dead_a_arith_elimination(new_prog)
         new_prog = apply_dead_label_drop(new_prog)
+        new_prog = apply_unreachable_drop(new_prog)
         new_prog = apply_branch_invert(new_prog)
         new_prog = apply_branch_to_next_drop(new_prog)
         new_prog = apply_branch_through_jump(new_prog)
@@ -232,6 +238,9 @@ def _peephole_fixedpoint(
         new_prog = apply_dec_branch_indirect_y_fold(new_prog)
         new_prog = apply_mem_const_prop(new_prog)
         new_prog = apply_const_arith_fold(new_prog)
+        new_prog = apply_carry_return_tails(new_prog)
+        new_prog = apply_carry_const_fold(new_prog)
+        new_prog = apply_carry_branch_fold(new_prog)
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)

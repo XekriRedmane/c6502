@@ -454,6 +454,16 @@ def kills_y(instr: asm_ast.Type_instruction) -> bool:
     return False
 
 
+def returns_carry(instr: asm_ast.Type_instruction) -> bool:
+    """True iff `instr` is a return from a `return_bool_in_carry`
+    function, which hands its result back in the carry flag. C is
+    live there. N, Z, and V aren't, and A isn't unless `save_a`."""
+    return (
+        isinstance(instr, (asm_ast.Ret, asm_ast.Return))
+        and instr.save_c
+    )
+
+
 def flags_dead_at(
     instrs: list[asm_ast.Type_instruction], idx: int,
 ) -> bool:
@@ -466,9 +476,9 @@ def flags_dead_at(
     depends on this: its `EOR #$80` sits just before `.cmp_novf`,
     and the `BMI` / `BPL` after the label reads the EOR's N flag. A
     `Jump` to an in-function label continues at the target. A `Ret`
-    / `Return` ends the path with the flags dead (no flag rides
-    across a return). A `Branch` reads the flags, so it makes them
-    live.
+    / `Return` ends the path with N/Z dead (only a carry-flag
+    return carries a flag, and it carries C). A `Branch` reads the
+    flags, so it makes them live.
 
     Only tracks N/Z. Callers that need to know whether C is also
     dead (e.g. dropping an Add/Sub whose C output threads into a
@@ -521,6 +531,9 @@ def _flags_dead_walk(
                 # Reads C before (possibly) overwriting it.
                 return False
             if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+                if reads_c and instr.save_c:
+                    # A carry-flag return reads C.
+                    return False
                 break
             if isinstance(instr, asm_ast.Jump):
                 tgt = label_to_index.get(instr.target)
@@ -537,6 +550,85 @@ def _flags_dead_walk(
                 break
             i += 1
     return True
+
+
+# Instructions that read C before writing it, and those that write it
+# without reading it. A `Call` defines every flag.
+_C_READERS = (
+    asm_ast.Add, asm_ast.Sub, asm_ast.RotateLeft, asm_ast.RotateRight,
+)
+_C_BRANCHES = (asm_ast.CC, asm_ast.CS)
+_C_WRITERS = (
+    asm_ast.ClearCarry, asm_ast.SetCarry, asm_ast.Compare,
+    asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight, asm_ast.Call,
+)
+# ADC and SBC write V without reading it, and so does BIT.
+_V_BRANCHES = (asm_ast.VC, asm_ast.VS)
+_V_WRITERS = (asm_ast.Add, asm_ast.Sub, asm_ast.BitTest, asm_ast.Call)
+# Compound atoms that expand to arithmetic `asm_to_asm2` writes out
+# later. They're treated as reading every flag.
+_OPAQUE = (asm_ast.LoadAddress, asm_ast.AllocateStack,
+           asm_ast.FunctionPrologue)
+
+
+def _one_flag_dead(instrs, idx, readers, branches, writers) -> bool:
+    """True iff the flag that `readers` read (along with a `Branch`
+    on one of `branches`) is dead at `instrs[idx]`, on every path
+    forward until one of `writers` sets it. A `Return` or `Ret` ends
+    a path with the flag dead, except that a carry-flag return reads
+    C (`branches` holding `CC` marks the walk as one for C)."""
+    labels = {
+        x.name: i for i, x in enumerate(instrs)
+        if isinstance(x, asm_ast.Label)
+    }
+    visited: set[int] = set()
+    stack = [idx]
+    while stack:
+        i = stack.pop()
+        while i < len(instrs) and i not in visited:
+            visited.add(i)
+            x = instrs[i]
+            if isinstance(x, readers) or isinstance(x, _OPAQUE):
+                return False
+            if isinstance(x, asm_ast.Branch):
+                if isinstance(x.cond, branches):
+                    return False
+                if x.target in labels:
+                    stack.append(labels[x.target])
+                else:
+                    return False
+            if isinstance(x, (asm_ast.Return, asm_ast.Ret)):
+                if x.save_c and asm_ast.CC in branches:
+                    return False
+                break
+            if isinstance(x, asm_ast.Jump):
+                if x.target in labels:
+                    stack.append(labels[x.target])
+                    break
+                return False
+            if isinstance(x, writers):
+                break
+            i += 1
+    return True
+
+
+def c_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff the carry flag's value at `instrs[idx]` is dead: on
+    every path forward, something writes C before anything reads it.
+    Readers are ADC / SBC / ROL / ROR, BCC / BCS, and a carry-flag
+    return. Unlike `all_flags_dead_at`, a branch on N, Z, or V
+    doesn't count as a read of C."""
+    return _one_flag_dead(instrs, idx, _C_READERS, _C_BRANCHES, _C_WRITERS)
+
+
+def v_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """True iff the overflow flag's value at `instrs[idx]` is dead.
+    Only BVC / BVS read it."""
+    return _one_flag_dead(instrs, idx, (), _V_BRANCHES, _V_WRITERS)
 
 
 def _overwrites_all_flags(instr: asm_ast.Type_instruction) -> bool:

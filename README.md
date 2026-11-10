@@ -1381,6 +1381,39 @@ before `main`.** The simulator's boot stub does. Each object becomes
 an `EQU` in the output. Linking several translation units with
 `--link` isn't supported yet for a unit that has zero-page globals.
 
+### Returning a bool in the carry flag
+
+Hand-written 6502 code often returns a yes/no answer in the carry
+flag, and the caller branches on it right after the `JSR`.
+`__attribute__((return_bool_in_carry))` gives a C function that
+convention.
+
+```c
+__attribute__((return_bool_in_carry)) bool contains(uint8_t k) {
+    for (uint8_t i = 0; i < 5; i++)
+        if (tab[i] == k) return true;    /* SEC; RTS */
+    return false;                        /* CLC; RTS */
+}
+
+if (contains(k)) n += k;                 /* JSR contains; BCC skip */
+```
+
+The return type must be `bool` (`unsigned char`). The function
+returns `e != 0` for `return e;`, the way a C99 `_Bool` converts a
+value, so a caller that uses the result as a number gets 0 or 1. A
+comparison, `!`, `&&`, `||`, or a constant 0 or 1 is returned as it
+is. Every declaration of the function must carry the attribute,
+since callers compiled without it would read A. The address of such
+a function can't be taken, because a call through a pointer can't
+know where the result is.
+
+The callee ends in `CMP #1` on the value, which sets C exactly when
+it's 1, or in `SEC` / `CLC` when the value is a constant. A function
+with a frame keeps C across its teardown with `PHP` / `PLP`. The
+caller turns C into 0 or 1 with `LDA #0; ROL A`, or branches on it
+with `BCC` / `BCS` when the result is only tested. Nothing else in
+c6502 reads a flag across a call.
+
 ## Status
 
 End-to-end through `compile.py --codegen` to runnable 6502 asm:

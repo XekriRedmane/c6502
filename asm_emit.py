@@ -52,6 +52,7 @@ Atomic arithmetic / flag instructions:
     register-A inc/dec goes through `CLC; ADC #1` etc.).
   - `Push(src)` -> `PHA` (src must be `Reg(A)`).
   - `Pop(dst)`  -> `PLA` (dst must be `Reg(A)`).
+  - `PushStatus` -> `PHP`; `PullStatus` -> `PLP`.
   - `Xor(src1, src2, dst)` -> `EOR <src>`. dst must be `Reg(A)`; one
     of src1/src2 must be `Reg(A)`, the other an `Imm`/`Stack`/`Frame`.
     The non-A operand picks the addressing mode; Stack/Frame go through
@@ -1015,6 +1016,10 @@ def emit_instruction(instr: asm_ast.Type_instruction) -> list[str]:
             return _emit_push(src)
         case asm_ast.Pop(dst=dst):
             return _emit_pop(dst)
+        case asm_ast.PushStatus():
+            return [_instr_line("PHP")]
+        case asm_ast.PullStatus():
+            return [_instr_line("PLP")]
         case asm_ast.Xor(src1=s1, src2=s2, dst=dst):
             return _emit_xor(s1, s2, dst)
         case asm_ast.And(src=src, dst=dst):

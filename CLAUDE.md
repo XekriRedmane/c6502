@@ -99,6 +99,15 @@ Two key runtime conventions:
   taken, etc.) instead of silently falling back. Details in
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
+- **`__attribute__((return_bool_in_carry))`** on a function
+  returning `bool` (`unsigned char`) makes it return `e != 0` in the
+  carry flag. The callee ends in `CMP #1` (`SEC` / `CLC` for a
+  constant, `PHP` / `PLP` around a frame teardown), and the caller
+  branches with `BCC` / `BCS` or captures C with `LDA #0; ROL A`.
+  The `save_c` flag on `Ret` / `Return` marks C live at the return.
+  It's the only way a flag value crosses a call. Every declaration
+  must carry it, and its address can't be taken. See
+  `passes/carry_return.py`.
 - **The `register` keyword** requests 6502-register placement,
   refining the zp_abi calling convention. Placement is POSITIONAL:
   the first register arg-byte goes in **A**, the second in **X**

@@ -53,6 +53,10 @@ module ASM2 {
         | Dec(operand dst)
         | Push(operand src)
         | Pop(operand dst)
+        -- PHP / PLP. Only the `Ret` lowering emits them, to keep a
+        -- carry-flag return value across the frame teardown.
+        | PushStatus
+        | PullStatus
         | Xor(operand src1, operand src2, operand dst)
         | And(operand src, operand dst)
         | Or(operand src, operand dst)

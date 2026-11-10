@@ -40,6 +40,7 @@ _IMPLIED = {
     "INX": 0xE8, "INY": 0xC8,
     "DEX": 0xCA, "DEY": 0x88,
     "PHA": 0x48, "PLA": 0x68,
+    "PHP": 0x08, "PLP": 0x28,
     "TXA": 0x8A, "TYA": 0x98,
     "TAX": 0xAA, "TAY": 0xA8,
     "ASL_A": 0x0A, "LSR_A": 0x4A,
@@ -328,9 +329,9 @@ def _instr_size(instr: asm_ast.Type_instruction) -> int:
             return _prologue_size(ab, lb, csa)
         case asm_ast.Ret(
             arg_bytes=ab, local_bytes=lb, save_a=sa, save_x=sx,
-            callee_saved_addrs=csa,
+            callee_saved_addrs=csa, save_c=sc,
         ):
-            return _ret_size(ab, lb, sa, sx, csa)
+            return _ret_size(ab, lb, sa, sx, csa, save_c=sc)
         case asm_ast.Return():
             return 1   # RTS
         case asm_ast.LoadAddress(src=src, dst=dst):
@@ -484,9 +485,9 @@ def _emit_instr(
             return _emit_prologue(ab, lb, csa)
         case asm_ast.Ret(
             arg_bytes=ab, local_bytes=lb, save_a=sa, save_x=sx,
-            callee_saved_addrs=csa,
+            callee_saved_addrs=csa, save_c=sc,
         ):
-            return _emit_ret(ab, lb, sa, sx, csa)
+            return _emit_ret(ab, lb, sa, sx, csa, save_c=sc)
         case asm_ast.Return():
             return bytes([_IMPLIED["RTS"]])
         case asm_ast.LoadAddress(src=src, dst=dst):
@@ -1353,7 +1354,7 @@ def _emit_prologue(
 
 def _ret_size(
     arg_bytes: int, local_bytes: int, save_a: bool, save_x: bool,
-    callee_saved_addrs: list[int] = (),
+    callee_saved_addrs: list[int] = (), save_c: bool = False,
 ) -> int:
     if arg_bytes + local_bytes == 0:
         return 1   # RTS
@@ -1384,13 +1385,15 @@ def _ret_size(
         size += 3 + 3
     elif save_a:
         size += 1 + 1
+    if save_c:
+        size += 1 + 1   # PHP ... PLP around the teardown
     size += 1   # RTS
     return size
 
 
 def _emit_ret(
     arg_bytes: int, local_bytes: int, save_a: bool, save_x: bool,
-    callee_saved_addrs: list[int] = (),
+    callee_saved_addrs: list[int] = (), save_c: bool = False,
 ) -> bytes:
     if arg_bytes + local_bytes == 0:
         return bytes([_IMPLIED["RTS"]])
@@ -1412,6 +1415,10 @@ def _emit_ret(
         out += bytes([_IMPLIED["PHA"]])
     elif save_a:
         out += bytes([_IMPLIED["PHA"]])
+    # A carry-flag return survives the teardown's `CLC; ADC` on the
+    # hardware stack.
+    if save_c:
+        out += bytes([_IMPLIED["PHP"]])
     # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown so
     # FP is still valid for the indirect-Y reads.
     for i, addr in enumerate(callee_saved_addrs):
@@ -1450,6 +1457,8 @@ def _emit_ret(
     out += _emit_zp("STA", fp + 1)
     out += bytes([_IMPLIED["TXA"]])
     out += _emit_zp("STA", fp)
+    if save_c:
+        out += bytes([_IMPLIED["PLP"]])
     # Pull the parked return bytes back: high → X, then low → A.
     if save_x:
         out += bytes([_IMPLIED["PLA"]])

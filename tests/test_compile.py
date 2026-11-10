@@ -59,15 +59,16 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("RTS", out)
 
     def test_codegen_if_else(self):
-        # `if (a) return 1; else return 2;` should produce a BEQ to
-        # an `.if_else@*` local label and a JMP to an `.if_end@*`
-        # local label (leading dot is dasm's local-label marker; `@`
-        # marks it as translator-minted, never collidable with a
-        # user-written name).
+        # `if (a) b = 1; else b = 2;` should produce a BEQ to an
+        # `.if_else@*` local label and a JMP to an `.if_end@*` local
+        # label (leading dot is dasm's local-label marker; `@` marks
+        # it as translator-minted, never collidable with a
+        # user-written name). Arms that each `return` would leave the
+        # JMP after a return, where `unreachable_drop` removes it.
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
-            stdin="int main(void) { int a = 0; "
-                  "if (a) return 1; else return 2; }",
+            stdin="int main(void) { int a = 0; int b; "
+                  "if (a) b = 1; else b = 2; return b; }",
         )
         self.assertEqual(rc, 0)
         self.assertIn("BEQ   .if_else@", out)
@@ -90,15 +91,16 @@ class TestCompileDriver(unittest.TestCase):
         self.assertIn("LDA   #$02", out)
 
     def test_codegen_goto_and_label(self):
-        # A `goto` over a statement should emit a JMP to the
-        # function-prefixed label and the matching label definition.
-        # (A `goto` to the very next statement is dropped as a jump
-        # to the next instruction.)
+        # A backward `goto` should emit a JMP to the function-prefixed
+        # label and the matching label definition. (A forward `goto`
+        # over a statement makes the statement unreachable, and once
+        # it's gone the JMP is a jump to the next instruction, which
+        # is dropped too.)
         rc, out, _ = self._run(
             ["compile.py", "-", "--codegen"],
             stdin=(
-                "int main(void) { int a = 0; goto foo; a = 1; "
-                "foo: return a; }"
+                "int main(void) { int a = 0; foo: a = a + 1; "
+                "if (a < 5) { a = a + 2; goto foo; } return a; }"
             ),
         )
         self.assertEqual(rc, 0)

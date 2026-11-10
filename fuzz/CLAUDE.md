@@ -67,7 +67,12 @@ function called through a pointer in some seeds (both stay on the
 soft stack), `register` parameters and locals on the functions that
 will get zp_abi, pointer parameters to callers' locals, calls inside
 loops, and globals updated across calls. Locals stay live across the
-calls on purpose.
+calls on purpose. About 30% of the functions carry
+`__attribute__((return_bool_in_carry))`, and half the calls to them
+are `if` conditions, so the carry-flag return is checked both as a
+value and as a branch. Those choices come from a second random
+stream (`crng`), so adding them left the rest of each older seed's
+program as it was.
 
 The generator predicts which functions end up on the soft stack (any
 function that reaches `rec` or the pointer call) and only puts

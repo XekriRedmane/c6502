@@ -325,9 +325,13 @@ class FunAttr(IdAttr):
     """A function name. `defined` flips True the first time a
     definition is seen for this name (a FunctionDecl whose body is
     non-None); a second definition raises. `is_global` is True iff
-    the function has external linkage."""
+    the function has external linkage. `carry_return` is True when
+    the function carries `__attribute__((return_bool_in_carry))`,
+    so it returns its truth value in the carry flag instead of in A.
+    Every declaration of the function has to agree on it."""
     defined: bool
     is_global: bool
+    carry_return: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -799,6 +803,40 @@ def _is_void_pointer(t: Type) -> bool:
     return isinstance(t, Pointer) and isinstance(
         _strip_quals(t.referenced_type), Void,
     )
+
+
+_TRUTH_OPS = (
+    c99_ast.Equal, c99_ast.NotEqual, c99_ast.LessThan,
+    c99_ast.GreaterThan, c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
+    c99_ast.LogicalAnd, c99_ast.LogicalOr,
+)
+
+
+def _is_truth_valued(exp: c99_ast.Type_exp) -> bool:
+    """True iff `exp` (not yet type-checked) always evaluates to 0
+    or 1: a comparison, `&&`, `||`, `!`, or the constant 0 or 1. A
+    `return_bool_in_carry` function returns such a value as is
+    instead of testing it against 0 again."""
+    if isinstance(exp, c99_ast.Binary):
+        return isinstance(exp.op, _TRUTH_OPS)
+    if isinstance(exp, c99_ast.Unary):
+        return isinstance(exp.op, c99_ast.LogicalNot)
+    if isinstance(exp, c99_ast.Constant):
+        return (isinstance(exp.const, c99_ast.ConstInt)
+                and exp.const.value in (0, 1))
+    return False
+
+
+def _check_carry_return_type(name: str, ret: Type) -> None:
+    """Rejects `__attribute__((return_bool_in_carry))` on a function
+    whose return type isn't a `bool` (in c6502, `bool` is `unsigned
+    char`, and plain `char` is unsigned too)."""
+    if not isinstance(_strip_quals(ret), (Char, UChar)):
+        raise TypeCheckError(
+            f"`__attribute__((return_bool_in_carry))` on {name!r} "
+            f"needs a `bool` (`unsigned char`) return type; got "
+            f"{ret!r}"
+        )
 
 
 def _strip_quals(t: Type) -> Type:
@@ -1443,6 +1481,9 @@ class TypeChecker:
         # `_check_function_decl` while walking a body, restored on
         # exit. Used by `_check_statement` to type-check `return`s.
         self._return_type: Type | None = None
+        # True while walking the body of a `return_bool_in_carry`
+        # function, whose `return e;` returns `e != 0`.
+        self._carry_return = False
         # Tag visibility stack — outermost (file scope) at index 0.
         self._tag_scopes: list[set[str]] = [set()]
 
@@ -1902,11 +1943,14 @@ class TypeChecker:
             else:
                 linkage = Linkage.EXTERNAL
         is_global = _linkage_to_is_global(linkage)
+        if fd.carry_return:
+            _check_carry_return_type(fd.name, ftype.ret)
         self._add_or_merge_function(
             name=fd.name,
             ftype=ftype,
             defined=defined,
             is_global=is_global,
+            carry_return=fd.carry_return,
         )
         # Per C99 §6.7.5.3.4, a parameter shall not have void type
         # (the `f(void)` form for empty params is handled by the
@@ -1991,7 +2035,9 @@ class TypeChecker:
                     attrs=LocalAttr(register=bool(p_reg)),
                 )
             saved = self._return_type
+            saved_carry = self._carry_return
             self._return_type = ftype.ret
+            self._carry_return = fd.carry_return
             assert fd.body is not None
             # Push a tag scope for the function body. (The
             # function-prototype scope is its own thing per
@@ -2005,6 +2051,7 @@ class TypeChecker:
             finally:
                 self._pop_tag_scope()
             self._return_type = saved
+            self._carry_return = saved_carry
         # `file_scope` flag is currently unused — it'll matter once
         # the language grows constraints that differ between the
         # two scopes. Kept for call-site clarity.
@@ -2081,12 +2128,16 @@ class TypeChecker:
         ftype: FunType,
         defined: bool,
         is_global: bool,
+        carry_return: bool = False,
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
             self.symbols[name] = Symbol(
                 type=ftype,
-                attrs=FunAttr(defined=defined, is_global=is_global),
+                attrs=FunAttr(
+                    defined=defined, is_global=is_global,
+                    carry_return=carry_return,
+                ),
             )
             return
         if not isinstance(existing.attrs, FunAttr):
@@ -2109,10 +2160,21 @@ class TypeChecker:
             raise TypeCheckError(
                 f"redefinition of function {name!r}"
             )
+        # The attribute changes the calling convention, so a
+        # declaration without it would compile callers that read A.
+        # Unlike `zeropage`, it doesn't accumulate across declarations.
+        if existing.attrs.carry_return != carry_return:
+            raise TypeCheckError(
+                f"every declaration of {name!r} must agree on "
+                f"`__attribute__((return_bool_in_carry))`"
+            )
         new_defined = existing.attrs.defined or defined
         self.symbols[name] = Symbol(
             type=ftype,
-            attrs=FunAttr(defined=new_defined, is_global=is_global),
+            attrs=FunAttr(
+                defined=new_defined, is_global=is_global,
+                carry_return=carry_return,
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -2600,6 +2662,17 @@ class TypeChecker:
                         f"void functions must use bare `return;` (C99 "
                         f"§6.8.6.4.1)"
                     )
+                if self._carry_return and not _is_truth_valued(exp):
+                    # The carry flag holds one bit, so the function
+                    # returns `e != 0`, the way a C99 `_Bool` would
+                    # convert `e`. Wrapping before the check lets
+                    # `p != 0` on a pointer and array decay work.
+                    exp = c99_ast.Binary(
+                        op=c99_ast.NotEqual(), left=exp,
+                        right=c99_ast.Constant(
+                            const=c99_ast.ConstInt(value=0),
+                        ),
+                    )
                 self._check_exp(exp)
                 # Return-value conversion (C99 §6.8.6.4.3): if the
                 # value's type doesn't match the declared return
@@ -3057,6 +3130,15 @@ class TypeChecker:
                 if sym is None:
                     raise TypeCheckError(
                         f"undeclared identifier {name!r}"
+                    )
+                if (isinstance(sym.attrs, FunAttr)
+                        and sym.attrs.carry_return):
+                    # The only use of a function name that isn't a
+                    # direct call is taking its address, and an
+                    # indirect call can't know the result is in C.
+                    raise TypeCheckError(
+                        f"can't take the address of {name!r}, which "
+                        f"returns its result in the carry flag"
                     )
                 # A function name is a function designator. Its
                 # FunType stays on the node, and `_decay_if_array`

@@ -375,6 +375,10 @@ def _consume_specifiers(items, start):
 # `zp_abi` — bare-identifier; opts a function into the leaf-ZP-ABI
 #            calling convention. Valid only as a function-level prefix.
 #
+# `return_bool_in_carry` — bare-identifier; the function returns its
+#            truth value in the carry flag (set for true) instead of in
+#            A. Valid only on a function returning `bool`.
+#
 # `zeropage` — places a static-storage object in zero page, at a byte
 #            the compiler picks (bare) or at a given address
 #            (`zeropage(0xBA)`). Valid on objects, in the prefix or
@@ -384,6 +388,7 @@ def _consume_specifiers(items, start):
 # attribute — it uses the C `register` storage-class keyword.
 _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
     "zp_abi": None,
+    "return_bool_in_carry": None,
     "zeropage": None,
 }
 
@@ -410,18 +415,23 @@ def _consume_attribute_clause(items, start):
     return None, start
 
 
-def _extract_function_attributes(specs, where: str) -> str | None:
+def _extract_function_attributes(
+    specs, where: str,
+) -> tuple[str | None, bool]:
     """Reduce a list of `(name, arg_or_None)` specs to the
-    `abi_annotation` carried on a function_decl. `where` is a short
+    `(abi_annotation, carry_return)` pair carried on a function_decl.
+    `specs` may be None (no attribute clause). `where` is a short
     label ("function declaration" / "extern function declaration")
     used in error messages.
 
-    Rejects any spec name that isn't `zp_abi`, any duplicate spec, and
-    any `zp_abi` carrying an argument. Returns the abi_annotation
-    (None if not present in the clause)."""
+    Rejects any spec name that isn't a function attribute, any
+    duplicate spec, and an argument on either attribute.
+    `abi_annotation` is "zp_abi" or None, and `carry_return` is True
+    when `return_bool_in_carry` is present."""
     abi_annotation = None
+    carry_return = False
     seen: set[str] = set()
-    for name, arg in specs:
+    for name, arg in specs or []:
         if name not in _KNOWN_ATTRIBUTES:
             raise ParserError(
                 f"unknown attribute name {name!r} on {where}; expected "
@@ -444,7 +454,14 @@ def _extract_function_attributes(specs, where: str) -> str | None:
                     "argument"
                 )
             abi_annotation = "zp_abi"
-    return abi_annotation
+        if name == "return_bool_in_carry":
+            if arg is not None:
+                raise ParserError(
+                    "`__attribute__((return_bool_in_carry))` doesn't "
+                    "take an argument"
+                )
+            carry_return = True
+    return abi_annotation, carry_return
 
 
 def _extract_object_placement(
@@ -472,10 +489,11 @@ def _extract_object_placement(
                 f"object declaration `{name}`"
             )
         seen.add(spec_name)
-        if spec_name == "zp_abi":
+        if spec_name in ("zp_abi", "return_bool_in_carry"):
             raise ParserError(
-                f"`__attribute__((zp_abi))` is only valid on function "
-                f"declarations; saw it on object declaration `{name}`"
+                f"`__attribute__(({spec_name}))` is only valid on "
+                f"function declarations; saw it on object declaration "
+                f"`{name}`"
             )
         if isinstance(arg, str):
             raise ParserError(
@@ -1755,11 +1773,8 @@ class _ASTBuilder(Transformer):
                         f"supported on function declaration {name!r}; "
                         f"put it before the declaration"
                     )
-                prefix_abi = (
-                    None if prefix_specs is None
-                    else _extract_function_attributes(
-                        prefix_specs, where="function declaration",
-                    )
+                prefix_abi, carry_return = _extract_function_attributes(
+                    prefix_specs, where="function declaration",
                 )
                 if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
@@ -1777,6 +1792,7 @@ class _ASTBuilder(Transformer):
                         storage_class=storage_class,
                         abi_annotation=prefix_abi,
                         param_registers=[1 if r else 0 for r in param_regs],
+                        carry_return=carry_return,
                     )
                 ))
             else:
@@ -1878,12 +1894,9 @@ class _ASTBuilder(Transformer):
         # FunctionDecl, plus any inline struct definitions that
         # appeared in the return-type specifier).
         prefix_specs, i = _consume_attribute_clause(items, 0)
-        if prefix_specs is None:
-            prefix_abi = None
-        else:
-            prefix_abi = _extract_function_attributes(
-                prefix_specs, where="function definition",
-            )
+        prefix_abi, carry_return = _extract_function_attributes(
+            prefix_specs, where="function definition",
+        )
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
@@ -1912,6 +1925,7 @@ class _ASTBuilder(Transformer):
             storage_class=storage_class,
             abi_annotation=prefix_abi,
             param_registers=[1 if r else 0 for r in param_regs],
+            carry_return=carry_return,
         ))
         return struct_decls + [tail]
 

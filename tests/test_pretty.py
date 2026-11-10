@@ -65,6 +65,7 @@ class TestPretty(unittest.TestCase):
                     storage_class=None,
                     abi_annotation=None,
                     param_registers=[],
+                    carry_return=False,
                   ),
                 ),
               ],

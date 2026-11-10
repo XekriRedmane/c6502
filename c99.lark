@@ -226,9 +226,10 @@ declaration: function_decl | var_decl
 // combinations.
 specifier: type_specifier | type_qualifier | STATIC | EXTERN | REGISTER
 // Optional GCC-style attribute prefix on a declaration (function or
-// var). Recognized annotation names: `zp_abi` (function-level, bare
-// identifier) and `zeropage` (on a static-storage object, bare or
-// with an integer address, `zeropage(0xBA)`). The transformer rejects
+// var). Recognized annotation names: `zp_abi` and
+// `return_bool_in_carry` (function-level, bare identifiers) and
+// `zeropage` (on a static-storage object, bare or with an integer
+// address, `zeropage(0xBA)`). The transformer rejects
 // any other name. A single clause may carry multiple comma-separated
 // specs. Register pinning uses the `register` keyword instead (see
 // the `specifier` rule).

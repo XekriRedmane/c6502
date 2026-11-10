@@ -168,6 +168,7 @@ def _synthesize_function(
                 save_a=instr.save_a,
                 save_x=instr.save_x,
                 callee_saved_addrs=list(dims.callee_saved_addrs),
+                save_c=instr.save_c,
             ))
             continue
         new_instrs.append(instr)

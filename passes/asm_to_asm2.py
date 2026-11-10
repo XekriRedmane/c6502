@@ -342,7 +342,7 @@ def _function_prologue(
 
 def _ret(
     arg_bytes: int, local_bytes: int, save_a: bool, save_x: bool,
-    callee_saved_addrs: list[int],
+    callee_saved_addrs: list[int], save_c: bool = False,
 ) -> list[asm2_ast.Type_instruction]:
     if arg_bytes + local_bytes == 0:
         # No frame to tear down — `Return` (RTS) by itself. RTS
@@ -369,12 +369,19 @@ def _ret(
         out.append(asm2_ast.Push(src=A))
     elif save_a:
         out.append(asm2_ast.Push(src=A))
+    # A carry-flag return (`return_bool_in_carry`) has its value in
+    # C, which the teardown's `CLC; ADC` overwrites. Park the whole
+    # status register around it.
+    if save_c:
+        out.append(asm2_ast.PushStatus())
     # Restore callee-saved ZP bytes BEFORE the SSP/FP teardown so
     # FP is still valid for the indirect-Y reads.
     for i, addr in enumerate(callee_saved_addrs):
         out += _restore_zp_byte_from_frame(addr, i + 1)
     out += _set_ssp_to_fp_plus(rewind)
     out += _restore_fp_from_slot(local_bytes)
+    if save_c:
+        out.append(asm2_ast.PullStatus())
     if save_x:
         # Pull high → X, then low → A, restoring the (A=low, X=high)
         # return convention just before RTS.
@@ -475,9 +482,9 @@ def _xlate_instruction(
             return _function_prologue(ab, lb, list(csa))
         case asm_ast.Ret(
             arg_bytes=ab, local_bytes=lb, save_a=sa, save_x=sx,
-            callee_saved_addrs=csa,
+            callee_saved_addrs=csa, save_c=sc,
         ):
-            return _ret(ab, lb, sa, sx, list(csa))
+            return _ret(ab, lb, sa, sx, list(csa), save_c=sc)
         case asm_ast.Return():
             # Bare exit — just RTS, no SSP/FP teardown. Emitted on
             # the `--optimize-asm` path between phase 9 and the

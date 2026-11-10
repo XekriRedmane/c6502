@@ -105,12 +105,14 @@ class Ret(Type_instruction):
     save_a: bool = False
     save_x: bool = False
     callee_saved_addrs: list[int] = field(default_factory=list)
+    save_c: bool = False
 
 
 @dataclass
 class Return(Type_instruction):
     save_a: bool = False
     save_x: bool = False
+    save_c: bool = False
 
 
 @dataclass

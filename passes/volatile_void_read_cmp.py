@@ -42,6 +42,7 @@ upstream simplifications.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import c_dead_at
 
 
 _INDIRECT_TYPES = (
@@ -72,6 +73,12 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             out.append(instr)
             continue
         if not _next_clobbers_flags_and_a_dead(instrs, i + 1):
+            out.append(instr)
+            continue
+        # CMP also writes C, which LDA leaves alone, so C has to be
+        # dead too: a carry chain (`ADC; LDA vol; LDA x; ADC`) or a
+        # carry-flag return can read the C from before the load.
+        if not c_dead_at(instrs, i + 1):
             out.append(instr)
             continue
         # Rewrite Mov to Compare.

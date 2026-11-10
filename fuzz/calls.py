@@ -10,7 +10,10 @@ only calls fj with j > i), plus extras chosen per seed:
   * `register` parameters (A / X) and a `register unsigned char`
     local (Y), on functions that will get zp_abi,
   * pointer parameters that receive the address of a caller's local,
-  * calls inside loops, and globals updated across calls.
+  * calls inside loops, and globals updated across calls,
+  * functions marked `__attribute__((return_bool_in_carry))`, which
+    return `e != 0` in the carry flag, called for their value or as
+    an `if` condition.
 Function bodies compute random integer expressions over parameters,
 locals, and call results, and keep earlier locals live across the
 calls. Every bug this fuzzer found involved a value live across a
@@ -74,6 +77,9 @@ def make_program(seed: int) -> tuple[str, None]:
     """The program for `seed`. The expected return is None, meaning
     the TAC result is the reference."""
     rng = random.Random(seed)
+    # The carry-flag choices come from a stream of their own, so the
+    # rest of each seed's program is what it was before they existed.
+    crng = random.Random(seed * 7919 + 1)
     n = rng.randint(3, 6)
     out = []
     globals_ = []
@@ -98,6 +104,14 @@ def make_program(seed: int) -> tuple[str, None]:
         rng.shuffle(callees)
         calls[i] = callees[:rng.randint(0, 2)]
     calls_rec = {i: use_rec and rng.random() < 0.5 for i in range(n)}
+    # A carry-flag function returns `bool` (unsigned char), and its
+    # address can't be taken, so the pointer-called one is left out.
+    carry = {
+        i for i in range(n)
+        if crng.random() < 0.3 and not (use_ptr_fn and i == n - 1)
+    }
+    for i in carry:
+        sigs[i] = ("unsigned char", sigs[i][1])
 
     # Which functions end up on the soft stack under --optimize: the
     # pointer-called one, each caller through the pointer, each
@@ -152,7 +166,10 @@ def make_program(seed: int) -> tuple[str, None]:
                 body.append(f"    {ptype} = f{j};")
                 call = f"fp({', '.join(args)})"
             dst = rng.choice([v for v in vars_ if v.startswith("l")])
-            if rng.random() < 0.3:
+            if j in carry and crng.random() < 0.5:
+                # Branch on the carry flag instead of reading a value.
+                body.append(f"    if ({call}) {dst} += 3; else {dst} ^= 5;")
+            elif rng.random() < 0.3:
                 body.append(f"    for (int it = 0; it < 3; it++) "
                             f"{dst} += ({call}) + it;")
             else:
@@ -165,7 +182,10 @@ def make_program(seed: int) -> tuple[str, None]:
             dst = rng.choice([v for v in vars_ if v.startswith("l")])
             body.append(f"    {dst} += rec(3, (int)({_expr(rng, vars_, 1)}));")
         body.append(f"    return {_expr(rng, vars_)};")
-        lines.append(f"{ret} f{i}({', '.join(decl) or 'void'}) {{")
+        attr = ("__attribute__((return_bool_in_carry)) "
+                if i in carry else "")
+        ret = sigs[i][0]
+        lines.append(f"{attr}{ret} f{i}({', '.join(decl) or 'void'}) {{")
         lines.extend(body)
         lines.append("}")
 

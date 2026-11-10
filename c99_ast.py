@@ -196,6 +196,7 @@ class Type_function_decl:
     storage_class: Type_storage_class | None = None
     abi_annotation: str | None = None
     param_registers: list[int] = field(default_factory=list)
+    carry_return: bool = False
 
 
 @dataclass

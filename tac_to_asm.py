@@ -1457,6 +1457,14 @@ class Translator:
         ft = sym.type
         return ft.ret if isinstance(ft, c99_ast.FunType) else None
 
+    def _returns_carry(self, fn_name: str | None) -> bool:
+        """True iff `fn_name` carries `__attribute__((return_bool_in_
+        carry))`, so its result is the carry flag (set for true)."""
+        if fn_name is None or self._symbols is None:
+            return False
+        sym = self._symbols.get(fn_name)
+        return bool(getattr(sym.attrs, "carry_return", False)) if sym else False
+
     def _type_of_val(self, val):
         """The c99 type of a TAC val from the symbol table, or None
         (constants / unknown synthetic vars). Used to key the return
@@ -1555,6 +1563,16 @@ class Translator:
             return [self._exit(save_a=False, save_x=False)]
         src_op = translate_val(val)
         size = self._size_of(val)
+        if self._returns_carry(self._current_fn_name):
+            # The type checker made the value `e != 0`, so it's 0 or
+            # 1, and `CMP #1` sets C exactly when it's 1. A carries
+            # nothing out. `carry_const_fold` turns `LDA #k; CMP #1`
+            # into `SEC` / `CLC`.
+            return [
+                asm_ast.Mov(src=_byte_at(src_op, 0), dst=_REG_A),
+                asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=1)),
+                self._exit(save_a=False, save_x=False, save_c=True),
+            ]
         # The register convention is keyed off the function's DECLARED
         # return type — not the value's type — so a constant null
         # (`return 0;` from a pointer function) and the caller's
@@ -1590,7 +1608,7 @@ class Translator:
         return seq
 
     def _exit(
-        self, *, save_a: bool, save_x: bool,
+        self, *, save_a: bool, save_x: bool, save_c: bool = False,
     ) -> asm_ast.Type_instruction:
         """Emit either the legacy compound `Ret(...)` (with placeholder
         arg_bytes / local_bytes that `replace_pseudoregisters` later
@@ -1598,11 +1616,14 @@ class Translator:
         `Return(save_a, save_x)` atom that the synthesis pass picks up
         after regalloc. `save_a` / `save_x` flag which return bytes
         ride in A / X so the epilogue can preserve them across the
-        frame teardown."""
+        frame teardown. `save_c` flags a carry-flag return."""
         if self._bare_exit:
-            return asm_ast.Return(save_a=save_a, save_x=save_x)
+            return asm_ast.Return(
+                save_a=save_a, save_x=save_x, save_c=save_c,
+            )
         return asm_ast.Ret(
             arg_bytes=0, local_bytes=0, save_a=save_a, save_x=save_x,
+            save_c=save_c,
         )
 
     def _translate_copy(
@@ -2029,7 +2050,19 @@ class Translator:
         emitted.append(asm_ast.Call(name=name, reg_args=reg_args))
         # `dst is None` means a void-returning callee: nothing to
         # capture, the return-value slot stays whatever it was.
-        if dst is not None:
+        if dst is not None and self._returns_carry(name):
+            # The result is the carry flag. `LDA #0; ROL A` turns it
+            # into 0 / 1, and `carry_branch_fold` turns the capture
+            # plus a `BEQ` / `BNE` on it into a `BCC` / `BCS`.
+            dst_op = translate_val(dst)
+            emitted.append(asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A))
+            emitted.append(asm_ast.RotateLeft(dst=_REG_A))
+            emitted.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, 0)))
+            for k in range(1, self._size_of(dst)):
+                emitted.append(asm_ast.Mov(
+                    src=asm_ast.Imm(value=0), dst=_byte_at(dst_op, k),
+                ))
+        elif dst is not None:
             dst_op = translate_val(dst)
             dst_size = self._size_of(dst)
             # The return convention is keyed off the CALLEE's declared

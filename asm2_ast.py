@@ -150,6 +150,16 @@ class Pop(Type_instruction):
 
 
 @dataclass
+class PushStatus(Type_instruction):
+    pass
+
+
+@dataclass
+class PullStatus(Type_instruction):
+    pass
+
+
+@dataclass
 class Xor(Type_instruction):
     src1: Type_operand
     src2: Type_operand

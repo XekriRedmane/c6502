@@ -64,7 +64,10 @@ module C99 {
     -- a `register` param must be a non-pointer type, at most 2 bytes,
     -- and the whole arg list must fit the 2-byte (A,X) budget; the
     -- function must be zp_abi-eligible.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers)
+    -- carry_return is True when the declaration carries
+    -- `__attribute__((return_bool_in_carry))`: the function returns
+    -- its truth value in the carry flag instead of in A.
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers, bool carry_return)
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct

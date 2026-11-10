@@ -164,7 +164,7 @@ def _n_c_dead_at(instrs, idx, label_at) -> bool:
     two flags (Z stays the same), so this is what the swap needs.
     Readers: BMI / BPL read N, BCC / BCS and ADC / SBC / ROL / ROR read
     C. A return or call ends the path, since no flag carries a value
-    across one. Any
+    across one, except that a carry-flag return reads C. Any
     instruction that sets N/Z overwrites N; CMP / CPX / CPY, SEC / CLC,
     and ASL / LSR overwrite C."""
     seen: set[tuple[int, bool, bool]] = set()
@@ -193,8 +193,11 @@ def _n_c_dead_at(instrs, idx, label_at) -> bool:
                     return False
                 i = t
                 continue
+            if c_live and isinstance(ins, (asm_ast.Return, asm_ast.Ret))                     and ins.save_c:
+                # A carry-flag return reads C.
+                return False
             if isinstance(ins, (asm_ast.Return, asm_ast.Ret, asm_ast.Call)):
-                # No flag is part of the return convention, and a
+                # Only a carry-flag return carries a flag, and a
                 # callee doesn't read its caller's flags.
                 break
             if c_live and isinstance(ins, _C_READERS):

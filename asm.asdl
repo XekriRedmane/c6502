@@ -82,7 +82,7 @@ module ASM {
         -- frame-pointer setup / etc.) — those access compiler-
         -- managed memory that has no observer outside the function.
         Mov(operand src, operand dst, bool is_volatile)
-        | Ret(int arg_bytes, int local_bytes, bool save_a, bool save_x, int* callee_saved_addrs)
+        | Ret(int arg_bytes, int local_bytes, bool save_a, bool save_x, int* callee_saved_addrs, bool save_c)
         -- Bare `Return` atom: equivalent to `RTS` with no SSP/FP
         -- teardown. Used by the `--optimize-asm` path between
         -- `tac_to_asm` and the post-regalloc synthesis pass: phase 9
@@ -107,7 +107,12 @@ module ASM {
         -- Carried on the atom (rather than recomputed at synthesis
         -- time) because it's intrinsic to the return-value staging the
         -- body just emitted.
-        | Return(bool save_a, bool save_x)
+        --
+        -- `save_c` is True in a `return_bool_in_carry` function, whose
+        -- result is the carry flag. The flag is live at the return
+        -- (and A isn't), and a frame teardown has to preserve it
+        -- across its `CLC; ADC` (`PHP` ... `PLP`).
+        | Return(bool save_a, bool save_x, bool save_c)
         | FunctionPrologue(int arg_bytes, int local_bytes, int* callee_saved_addrs)
         | AllocateStack(int bytes)
         | Add(operand src, operand dst)

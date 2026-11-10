@@ -602,6 +602,7 @@ class Resolver:
             storage_class=fd.storage_class,
             abi_annotation=fd.abi_annotation,
             param_registers=list(fd.param_registers),
+            carry_return=fd.carry_return,
         )
 
     def _resolve_params(

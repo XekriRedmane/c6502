@@ -528,7 +528,7 @@ class Replacer:
                     left=self.replace(left),
                     right=self.replace(right),
                 )
-            case asm_ast.Ret(save_a=save_a, save_x=save_x):
+            case asm_ast.Ret(save_a=save_a, save_x=save_x, save_c=save_c):
                 # Patch arg_bytes / local_bytes from the function's
                 # totals; carry save_a / save_x through unchanged —
                 # tac_to_asm set them based on which return bytes ride
@@ -540,6 +540,7 @@ class Replacer:
                     arg_bytes=arg_bytes, local_bytes=local_bytes,
                     save_a=save_a, save_x=save_x,
                     callee_saved_addrs=list(self.callee_saved_addrs),
+                    save_c=save_c,
                 )
             case asm_ast.LoadAddress(src=src, dst=dst):
                 # Resolve the Pseudo operands; asm_emit expands the

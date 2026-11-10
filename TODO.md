@@ -124,55 +124,30 @@ with values live across calls) is the way to check it, because
 every bug found in this area showed up only with a value live
 across a call into a different calling convention.
 
-## Return a boolean in the carry flag
+## Return a boolean in the carry flag without an annotation
 
-6502 code often returns a yes/no answer in the carry flag, with the
-caller branching on it right after the `JSR`. Zork I's
-`find_index_of_page_table` returns the slot index in A and "not
-found" as carry set, and its callers do `JSR find_index_of_page_table;
-STA index; BCS not_found`. c6502 has no way to say this, so
-`examples/find_index_of_page_table.c` returns a 16-bit value with the
-flag in the high byte (X), which costs an `LDX #` in the callee and a
-compare in the caller.
+`__attribute__((return_bool_in_carry))` (README, "Returning a bool in
+the carry flag") gives a function the convention explicitly. The
+other way to opt in was **under zp_abi, for a `bool` return**: every
+caller of a zp_abi function is known and compiled with it, so the
+convention could change without an annotation.
 
-Two ways to opt in:
-
-- **Under zp_abi, for a `bool` return.** Every caller of a zp_abi
-  function is known and compiled with it, so the convention can
-  change without an annotation. The callee ends in `CLC` / `SEC`
-  instead of loading A.
-- **With an attribute**, such as
-  `__attribute__((return_bool_in_carry))`, so it's visible in a
-  header and works for externs. A variant could name an out-flag
-  alongside a byte return in A, for the index-plus-found shape above.
-
-What the caller does with the result:
-
-- `if (f())` / `while (!f())` lower to `JSR f; BCC` / `BCS` directly.
-- A use as a value materializes it with `LDA #0; ROL A` (or
-  `ADC #0` after a known-zero A).
-
-Things that would need to change:
-
-- `Ret` / `Return` would need a flag (like `save_a` / `save_x`)
-  saying C is live at the return. `flags_dead_at` and
-  `all_flags_dead_at` currently treat a return as the end of flag
-  liveness, so passes like `dead_a_arith` would otherwise delete the
-  `CLC` / `SEC`.
-- The soft-stack epilogue rebuilds SSP with `CLC; ADC`, which
-  clobbers C, so either limit this to bare-`RTS` zp_abi functions or
-  wrap the epilogue in `PHP` / `PLP`.
-- On the caller side, a `Call` currently counts as overwriting every
-  flag. A call to such a function defines C instead, and the branch
-  that reads it must not be separated from the `JSR` by anything
-  that touches C.
+That needs a way to tell a `bool` return from an `unsigned char` one,
+because `<stdbool.h>` makes `bool` a macro for `unsigned char`. Either
+c6502 grows a real `_Bool` type, or the compiler proves that every
+`return` in the function yields 0 or 1 (a comparison, `!`, `&&`,
+`||`, or a constant 0 or 1). It also changes what the function's
+callers do with the result, so it has to be decided before
+`tac_to_asm` lowers any call to it, and the multi-TU linker would need
+the choice in its metadata.
 
 ## Two return values, one of them a bool in the carry flag
 
-The previous item covers a function whose only result is a bool. The
-Zork routine returns two things: the slot index in A and "not found"
-in the carry. C99 has no multiple return values, so this needs a C
-spelling that c6502 can map onto A (and X) plus C. Candidates:
+`return_bool_in_carry` covers a function whose only result is a
+bool. The Zork routine returns two things: the slot index in A and
+"not found" in the carry. C99 has no multiple return values, so this
+needs a C spelling that c6502 can map onto A (and X) plus C.
+Candidates:
 
 - **A small struct return.** `typedef struct { uint8_t index; bool
   found; } lookup_t; lookup_t f(uint16_t page);` and a rule that a
@@ -193,8 +168,9 @@ spelling that c6502 can map onto A (and X) plus C. Candidates:
 The struct form reads more naturally and keeps the source portable;
 the out-parameter form matches how the assembly is usually
 documented ("returns index in A, carry set if not found"). Either
-way, `Ret` would need to carry "C is live" the same way the previous
-item describes.
+way, the `Ret` / `Return` atoms would carry both `save_a` and
+`save_c`, which the `return_bool_in_carry` epilogue already handles
+separately.
 
 ## Zero-page globals across translation units, and automatic placement
 

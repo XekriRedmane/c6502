@@ -136,8 +136,13 @@ Two key runtime conventions:
   the first register arg-byte goes in **A**, the second in **X**
   (so `foo(register uint8_t a, register uint8_t b)` puts `a` in A
   and `b` in X; `foo(register uint16_t a)` spreads `a`'s low byte
-  to A and high byte to X — at most two register arg-bytes). A
-  `register` local uses **Y** only — exactly one byte. **Pointers
+  to A and high byte to X). `__attribute__((in_a))` / `in_x` / `in_y`
+  after a `register` parameter names its register instead, and a pair
+  (`in_xy`, low byte first) covers a 2-byte one, so Y is available to
+  parameters that ask for it; the positional rule skips registers the
+  named ones take. `param_registers` on the c99 function_decl holds
+  "" / "auto" / the letters. A `register` local uses **Y** only —
+  exactly one byte. **Pointers
   may never be placed in registers.** Return values are type-driven
   (no keyword): any non-pointer return of ≤2 bytes comes back low
   byte in A, high byte in X; pointer / wider returns ride HARGS.

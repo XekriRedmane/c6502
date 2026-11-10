@@ -120,9 +120,10 @@ def _try_fuse(
         return None
     if not _is_reg_a(first.dst):
         return None
-    if not isinstance(
-        first.src, (asm_ast.Data, asm_ast.ZP, asm_ast.Imm),
-    ):
+    if not isinstance(first.src, (
+        asm_ast.Data, asm_ast.ZP, asm_ast.Imm,
+        asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
+    )):
         return None
     if not isinstance(second, asm_ast.Mov):
         return None

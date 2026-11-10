@@ -43,6 +43,7 @@ error that names the declaration.
 | `zeropage(addr)` | an object with static storage | Places the object in zero page at `addr`. |
 | `address(addr)` | a function, or an `extern` object | Names code or memory that's already at `addr`. |
 | `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
+| `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a `register` parameter | Names the register (or two, low byte first) the parameter arrives in. |
 
 ### `zp_abi`
 
@@ -55,8 +56,42 @@ A `zp_abi` function takes its arguments in zero page instead, and its
 `register` parameters in the A and X registers. The first `register`
 byte goes in A and the second in X, so `register uint8_t a, register
 uint8_t b` puts `a` in A and `b` in X, and `register uint16_t v` puts
-the low byte in A and the high byte in X. There can be at most two
-`register` bytes, and a pointer can't be a `register` parameter.
+the low byte in A and the high byte in X. A parameter can name its
+register instead, with `in_a`, `in_x`, or `in_y` (see below), and a
+pointer can't be a `register` parameter.
+
+### `in_a`, `in_x`, and `in_y`
+
+These go on a `register` parameter, after its name, and say which
+register it arrives in. A 2-byte parameter names two, low byte first:
+`in_xy` puts the low byte in X and the high byte in Y. The pairs are
+`in_ax`, `in_ay`, `in_xa`, `in_xy`, `in_ya`, and `in_yx`.
+
+```c
+// DOS's RWTS takes its parameter block's address with the high byte
+// in A and the low byte in Y.
+__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
+bool RWTS(register uint8_t iob_hi __attribute__((in_a)),
+          register uint8_t iob_lo __attribute__((in_y)));
+
+bool read_sector(void) {
+    return RWTS((uint8_t)((uint16_t)&iob >> 8), (uint8_t)(uint16_t)&iob);
+}
+```
+
+```
+read_sector:
+   LDA   #>iob
+   LDY   #<iob
+   JMP   RWTS
+```
+
+Y is the one register that only a parameter naming it gets. A
+`register` parameter without the attribute still goes in A, then X,
+skipping a register another parameter names, so `register uint8_t k`
+next to an `in_xy` parameter arrives in A. A function the compiler
+compiles can take parameters this way too. It stores each one into
+its zero-page byte as it starts, with `STY` for Y.
 
 The return value doesn't depend on the attribute. A `char`-sized
 result comes back in A, and an `int`-sized one comes back with its low
@@ -494,6 +529,9 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | Reserved zero-page bytes that leave no room below `$80` for the runtime's block | The runtime needs `HARGS` and three 2-byte pointers in zero page, and the compiler's own pools use `$80`-`$FF`. |
 | A `register` parameter on a function with `address` but no `zp_abi` | Without `zp_abi`, arguments go on the soft stack, which the ROM routine doesn't read. |
 | A `zp_abi` routine with `address` and a parameter that isn't `register` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
+| `in_a`, `in_x`, or `in_y` on a parameter that isn't `register` | The attribute only says which register a `register` parameter uses. |
+| Two parameters that name the same register | A register holds one value. |
+| A pair on a 1-byte parameter, or one register on a 2-byte one | Each byte needs its own register. |
 | A `zp_abi` routine with `address` that returns a pointer, or more than 2 bytes | Those come back in `HARGS`, where the routine doesn't put them. Declare a pointer result as `uint16_t`. |
 | Taking the address of a `zp_abi` routine with `address` | A call through a pointer passes its arguments on the soft stack. |
 | `preserves_x` or `preserves_y` on a function without `address`, or on a function definition | The compiler can't check that code it compiles keeps the promise. |
@@ -517,7 +555,7 @@ in X or Y across a call declared `preserves_x` or `preserves_y`.
 Other optimizations still treat the call as changing the register,
 which is correct but leaves some reloads in (see `TODO.md`).
 
-**Arguments.** A ROM routine can take at most 2 bytes of arguments,
-in A and X. A routine that takes an argument in Y, or in a zero-page
-location, needs a small wrapper written in assembly, or the argument
-stored into an `address` object before the call.
+**Arguments.** A ROM routine can take at most 3 bytes of arguments,
+in A, X, and Y. A routine that takes an argument in a zero-page
+location needs the argument stored into an `address` object before
+the call.

@@ -71,8 +71,9 @@ _REG_A = asm_ast.Reg(reg=asm_ast.A())
 
 def _split_entry_stubs(instrs, fn_name):
     """Pull the register-parameter entry stubs out of the start of
-    `instrs`: the leading `Mov(Reg(A|X), Data(__zpabi_<fn>__...))`
-    stores, skipping labels. Returns `(stubs, rest)` with the labels
+    `instrs`: the leading `Mov(Reg(A|X|Y), Data(__zpabi_<fn>__...))`
+    stores, skipping labels. The prologue writes Y, so a parameter
+    that arrives in Y has to be stored before it. Returns `(stubs, rest)` with the labels
     left in `rest`."""
     prefix = f"__zpabi_{fn_name}__"
     stubs: list = []
@@ -87,7 +88,7 @@ def _split_entry_stubs(instrs, fn_name):
         if (
             isinstance(ins, asm_ast.Mov) and not ins.is_volatile
             and isinstance(ins.src, asm_ast.Reg)
-            and isinstance(ins.src.reg, (asm_ast.A, asm_ast.X))
+            and isinstance(ins.src.reg, (asm_ast.A, asm_ast.X, asm_ast.Y))
             and isinstance(ins.dst, asm_ast.Data)
             and ins.dst.name.startswith(prefix)
         ):

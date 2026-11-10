@@ -29,19 +29,18 @@ __zpabi_A_mod_3__a	EQU	$80
 __zpabi_buffer_char__c	EQU	$80
 __zpabi_do_rwts_on_sector__command	EQU	$80
 __zpabi_set_page_first__slot	EQU	$80
-__local_get_next_zchar__r_1	EQU	$81
+__local_set_page_first__0	EQU	$81
 __zpabi_cout_string__count	EQU	$81
-__local_get_next_zchar__state	EQU	$82
+__local_set_page_first__prev_first	EQU	$82
 __local_buffer_char__c	EQU	$83
+__local_get_next_zchar__r_1	EQU	$83
 __local_buffer_char__0	EQU	$84
-__local_get_next_code_word__1	EQU	$84
+__local_get_next_zchar__state	EQU	$84
 __local_dump_buffer_with_more__0	EQU	$85
-__local_get_next_code_byte2__found_1	EQU	$85
 __local_dump_buffer_with_more__end	EQU	$86
-__local_get_next_code_byte2__page	EQU	$86
-__local_read_from_sector__0	EQU	$87
-__local_set_page_first__0	EQU	$87
-__local_set_page_first__prev_first	EQU	$88
+__local_get_next_code_word__1	EQU	$86
+__local_get_next_code_byte2__found_1	EQU	$87
+__local_get_next_code_byte2__page	EQU	$88
 Z_PC	EQU	$8A
 ZCODE_PAGE_ADDR	EQU	$8D
 ZCODE_PAGE_VALID	EQU	$8F
@@ -53,6 +52,7 @@ ZCODE_PAGE_ADDR2	EQU	$94
 ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
 __local_do_rwts_on_sector__0	EQU	$98
+__local_cout_string__count	EQU	$99
 __local_do_rwts_on_sector__sector_1	EQU	$99
 __local_dump_buffer_to_printer__x	EQU	$99
 __local_cout_string__y	EQU	$9A
@@ -86,6 +86,7 @@ CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
+RWTS	EQU	$2900
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
@@ -96,7 +97,7 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
 ; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__c,__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
-; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__count,__local_cout_string__y,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=A
+; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__count,__local_cout_string__y,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=X
 ; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
 ; def dump_buffer_line params= locals=__local_dump_buffer_line__0 indirect=false in_cycle=false
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
@@ -118,12 +119,12 @@ COUT1	EQU	$FDF0
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
 ; ext HOME params=
 ; ext RDKEY params=
+; ext RWTS params=__zpabi_RWTS__iob_hi,__zpabi_RWTS__iob_lo param_regs=A,Y
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext call_rwts params=
 ; ext restart params=
 ; call buffer_char -> dump_buffer_with_more
 ; call cout_string -> COUT1
-; call do_rwts_on_sector -> call_rwts
+; call do_rwts_on_sector -> RWTS
 ; call dump_buffer_line -> dump_buffer_to_printer
 ; call dump_buffer_line -> dump_buffer_to_screen
 ; call dump_buffer_to_printer -> COUT
@@ -188,43 +189,15 @@ do_rwts_on_sector:
 .loop@0_break:
    LDA   __local_do_rwts_on_sector__sector_0
    STA   iob+5
-   JSR   call_rwts
-   LDA   #$00
-   ROL   A
-   STA   __local_do_rwts_on_sector__0
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_differ@2
-   LDA   __local_do_rwts_on_sector__0
-   CMP   #$00
-.cmp_differ@2:
-   BNE   .cmp_true@0
-   CLC
-   RTS
-.cmp_true@0:
-   SEC
-   RTS
+   LDA   #>iob
+   LDY   #<iob
+   JMP   RWTS
 
 read_from_sector:
    SUBROUTINE
 
    LDA   #$01
-   JSR   do_rwts_on_sector
-   LDA   #$00
-   ROL   A
-   STA   __local_read_from_sector__0
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_differ@5
-   LDA   __local_read_from_sector__0
-   CMP   #$00
-.cmp_differ@5:
-   BNE   .cmp_true@3
-   CLC
-   RTS
-.cmp_true@3:
-   SEC
-   RTS
+   JMP   do_rwts_on_sector
 
 find_index_of_page_table:
    SUBROUTINE
@@ -523,14 +496,13 @@ dump_buffer_line:
 cout_string:
    SUBROUTINE
 
-   STA   __zpabi_cout_string__count
    LDA   SCRATCH2
    STA   __local_cout_string__s
    LDA   SCRATCH2+1
    STA   __local_cout_string__1
    LDA   #$00
    STA   __local_cout_string__y
-   LDX   __zpabi_cout_string__count
+   STX   __local_cout_string__count
 .loop@5_start:
    LDA   __local_cout_string__s
    STA   DPTR
@@ -541,7 +513,7 @@ cout_string:
    ORA   #$80
    JSR   COUT1
    INC   __local_cout_string__y
-   DEX
+   DEC   __local_cout_string__count
    BNE   .loop@5_start
    RTS
 
@@ -564,7 +536,7 @@ dump_buffer_with_more:
    STA   SCRATCH2+1
    LDA   #$3F
    STA   INVFLG
-   LDA   #$06
+   LDX   #$06
    JSR   cout_string
    LDA   #$FF
    STA   INVFLG

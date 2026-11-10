@@ -34,14 +34,9 @@ from sim.harness import build_sim
 
 _EXAMPLE = Path(__file__).parent.parent / "examples" / "zork_print_string_literal.c"
 
-# The test's harness: the two routines the example leaves outside, and
-# a main that prints one string literal.
+# The test's harness: the routine the example leaves outside, and a
+# main that prints one string literal.
 _DRIVER = """
-__attribute__((zp_abi, return_bool_in_carry, address(0xBE00)))
-bool rwts_hook(void);
-__attribute__((return_bool_in_carry)) bool call_rwts(void) {
-    return rwts_hook();
-}
 uint8_t restart_called;
 void restart(void) { restart_called = 1; }
 int main(void) {
@@ -50,18 +45,21 @@ int main(void) {
 }
 """
 
-_IMAGE = 0x4000          # story pages 0 and 1, then the cache slots
-_DISK = 0x6000           # story page p at _DISK + 256 * p
-_TABLES = 0x7100         # PAGE_L / PAGE_H / NEXT / PREV, 16 bytes each
-_ABBREVS = 0x7200
+# Both programs call RWTS at $2900, where Zork's DOS has it. Zork's
+# code is at $0800-$21FF. The unoptimized C program is long enough to
+# reach $2900 from the sim's usual $0800, so it's loaded at $2A00, and
+# the story and tables go above the soft stack, which grows down from
+# $7FFF.
+_RWTS = 0x2900
+_C_ORIGIN = 0x2A00
+_IMAGE = 0x8000          # story pages 0 and 1, then the cache slots
+_DISK = 0x9000           # story page p at _DISK + 256 * p
+_TABLES = 0xA100         # PAGE_L / PAGE_H / NEXT / PREV, 16 bytes each
+_ABBREVS = 0xA200
 _PAGES = 5
 _SPT = 16                # SECTORS_PER_TRACK
 
 _COUT1, _COUT, _RDKEY, _CLREOL = 0xFDF0, 0xFDED, 0xFD0C, 0xFC9C
-# RWTS is at $2900 in Zork. The unoptimized C program is long enough
-# to reach $2900, so its stand-in for RWTS is at $BE00, which nothing
-# else uses here.
-_RWTS_ZORK, _RWTS_C = 0x2900, 0xBE00
 
 # Alphabet 2, from z-character 8 on, in the order of Zork's a2_table.
 _A2 = "0123456789.,!?_#'\"/\\-:()"
@@ -150,9 +148,8 @@ class _Machine:
     """One MPU with the story, tables, and window set up, and the
     hooks for the ROM routines and RWTS."""
 
-    def __init__(self, mpu: MPU, iob_addr, rwts: int) -> None:
+    def __init__(self, mpu: MPU) -> None:
         self.mpu = mpu
-        self.iob_addr = iob_addr       # function of the MPU, at the call
         self.screen: list[int] = []
         self.printer: list[int] = []
         self.clreol = 0
@@ -191,7 +188,7 @@ class _Machine:
             _COUT: lambda: self.printer.append(self.mpu.a),
             _RDKEY: self._rdkey,
             _CLREOL: self._clreol,
-            rwts: self._rwts,
+            _RWTS: self._rwts,
         }
 
     def _rdkey(self) -> None:
@@ -204,7 +201,8 @@ class _Machine:
 
     def _rwts(self) -> None:
         m = self.mpu.memory
-        iob = self.iob_addr(self.mpu)
+        # The parameter block's address: high byte in A, low in Y.
+        iob = (self.mpu.a << 8) | self.mpu.y
         track, sector = m[iob + 4], m[iob + 5]
         buf = m[iob + 8] | (m[iob + 9] << 8)
         assert m[iob + 12] == 1, "only reads are expected"
@@ -254,10 +252,9 @@ class _Machine:
 
 def _run_c(optimize: bool) -> _Machine:
     src = _EXAMPLE.read_text() + _DRIVER
-    sim = build_sim(src, optimize=optimize)
-    assert sim.code_end <= _IMAGE, "the program overlaps the story"
-    iob = sim.symbols["iob"]
-    machine = _Machine(sim.mpu, lambda _mpu: iob, _RWTS_C)
+    sim = build_sim(src, optimize=optimize, origin=_C_ORIGIN)
+    assert sim.code_end <= 0x7000, "the program reaches the soft stack"
+    machine = _Machine(sim.mpu)
     machine.run(sim.runtime.hooks)
     assert sim.mpu.memory[sim.symbols["restart_called"]] == 0
     return machine
@@ -271,7 +268,7 @@ def _run_original(path: str) -> _Machine:
     mpu.memory[0x0300:0x0304] = bytes([0x20, 0x5B, 0x0C, 0x00])
     mpu.pc = 0x0300
     mpu.sp = 0xFF
-    machine = _Machine(mpu, lambda m: (m.a << 8) | m.y, _RWTS_ZORK)
+    machine = _Machine(mpu)
     machine.run()
     return machine
 

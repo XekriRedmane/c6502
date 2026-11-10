@@ -370,8 +370,11 @@ the same bytes.
 ### Arguments in registers
 
 A parameter declared `register` arrives in a register instead. The
-first `register` byte goes in A and the second in X, so a function
-has at most two of them.
+first `register` byte goes in A and the second in X. A parameter can
+name its register with `__attribute__((in_a))`, `in_x`, or `in_y`, or
+a pair such as `in_xy` for 2 bytes, low byte first, so a function
+can take up to three bytes in registers (see
+[attributes.md](attributes.md)).
 
 ```c
 unsigned char add(register unsigned char a, register unsigned char b) {
@@ -398,6 +401,17 @@ twice:
 first thing `add` does is store `b` in its zero-page byte. `twice`
 loads both arguments and jumps to `add`, since nothing is left to do
 after the call.
+
+The caller loads X first, then Y, then A, because loading X or Y goes
+through A (`LDA v; TAX`, until a peephole makes it `LDX v`). Without
+`--optimize`, an argument that's on the soft stack is loaded with
+`LDY #off; LDA (FP),Y`, which would destroy an argument already in Y.
+So when a call passes an argument in Y, the A argument is loaded first
+and kept on the hardware stack with `PHA` until X and Y are loaded,
+and `PLA` puts it back in A. When the X and Y arguments are constants
+or bytes at a fixed address, they're loaded with `LDX` / `LDY`
+directly, nothing in between touches A, and a peephole drops the
+`PHA` / `PLA`.
 
 A pointer can't be a `register` parameter. The 6502 reaches memory
 through a pointer only with `(zp),Y` addressing, which reads the

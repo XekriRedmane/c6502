@@ -534,13 +534,14 @@ def _emit_mov(src: asm_ast.Type_operand, dst: asm_ast.Type_operand) -> list[str]
         case asm_ast.Reg(reg=asm_ast.Y()), asm_ast.Reg(reg=asm_ast.X()):
             # No direct TYX — go through A.
             return [_instr_line("TYA"), _instr_line("TAX")]
-    # ImmLabel paths. Same shape as Imm — load to A as immediate,
-    # then optionally store. Restricted to A-as-destination since
-    # only `LDA #<name` / `LDA #>name` are used by LoadAddress
-    # today; X/Y immediate variants would compose the same way but
-    # aren't needed.
-    if _is_imm_label(src) and _is_reg_a(dst):
-        return [_instr_line("LDA", _imm_label_text(src))]
+    # ImmLabel paths. Same shape as Imm: load a register as an
+    # immediate, or load A and store it. `direct_index_load` turns
+    # `LDA #<name; TAY` into `LDY #<name`, as for an argument passed
+    # in Y.
+    if _is_imm_label(src) and isinstance(dst, asm_ast.Reg):
+        return [_instr_line(
+            f"LD{_reg_letter(dst.reg)}", _imm_label_text(src),
+        )]
     if _is_imm_label(src) and _is_memory_operand(dst):
         return (
             [_instr_line("LDA", _imm_label_text(src))]

@@ -58,16 +58,15 @@ module C99 {
     -- `extern` declaration may carry it.
     --
     -- param_registers is a parallel array to `params`. Each entry is
-    -- 1 when the corresponding parameter carried the `register`
-    -- storage class (so it should be passed in a 6502 register at the
-    -- calling-convention level) and 0 otherwise. The list length
-    -- always matches `params`. The concrete register a `register`
-    -- param lands in is assigned POSITIONALLY downstream (the first
-    -- register arg-byte goes in A, the second in X); ASDL has no bool
-    -- primitive, so the marker is encoded as int 0/1. v1 restriction:
-    -- a `register` param must be a non-pointer type, at most 2 bytes,
-    -- and the whole arg list must fit the 2-byte (A,X) budget; the
-    -- function must be zp_abi-eligible.
+    -- "" for a parameter without the `register` storage class,
+    -- "auto" for a `register` parameter whose register is assigned
+    -- POSITIONALLY downstream (the first such byte goes in A, the
+    -- second in X), and the register letters, low byte first, for one
+    -- whose `__attribute__((in_y))` / `in_ay` / ... names them ("Y",
+    -- "AY"). The list length always matches `params`. A `register`
+    -- param must be a non-pointer type of at most 2 bytes, no two
+    -- params may share a register, and the function must be
+    -- zp_abi-eligible.
     -- carry_return is True when the declaration carries
     -- `__attribute__((return_bool_in_carry))`: the function returns
     -- its truth value in the carry flag instead of in A.
@@ -77,7 +76,7 @@ module C99 {
     -- preserves lists the registers ("X", "Y") that
     -- `__attribute__((preserves_x))` / `preserves_y` say the function
     -- leaves unchanged. Only a function with an address may carry them.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers, bool carry_return, int? address, string* preserves)
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves)
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct

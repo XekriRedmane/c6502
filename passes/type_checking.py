@@ -2162,7 +2162,7 @@ class TypeChecker:
             # `params` array.
             # Per-param `register` markers ride parallel to `params`
             # (1 = the param carried the `register` keyword, 0 = not).
-            param_regs = list(fd.param_registers) + [0] * (
+            param_regs = list(fd.param_registers) + [""] * (
                 len(fd.params) - len(fd.param_registers)
             )
             for p_name, p_type, p_reg in zip(
@@ -2171,7 +2171,8 @@ class TypeChecker:
                 if p_reg:
                     _check_register_object(
                         p_type, max_bytes=2,
-                        where=f"register parameter {p_name!r}",
+                        where=f"register parameter "
+                              f"{_display_name(p_name)!r}",
                     )
                 self.symbols[p_name] = Symbol(
                     type=p_type,
@@ -2280,6 +2281,19 @@ class TypeChecker:
                 ),
                 address=address,
             ),
+        )
+
+    def _is_carry_call(self, exp) -> bool:
+        """True iff `exp` calls a `return_bool_in_carry` function that
+        returns a `bool`, whose result is already 0 or 1, so returning
+        it from another such function passes the carry on as is."""
+        if not isinstance(exp, c99_ast.FunctionCall):
+            return False
+        sym = self.symbols.get(exp.name)
+        if sym is None or not getattr(sym.attrs, "carry_return", False):
+            return False
+        return isinstance(sym.type, FunType) and isinstance(
+            _strip_quals(sym.type.ret), (Char, UChar),
         )
 
     def _add_or_merge_function(
@@ -2858,7 +2872,8 @@ class TypeChecker:
                         and not isinstance(
                             _strip_quals(expected), (Structure, Union),
                         )
-                        and not _is_truth_valued(exp)):
+                        and not _is_truth_valued(exp)
+                        and not self._is_carry_call(exp)):
                     # The carry flag holds one bit, so the function
                     # returns `e != 0`, the way a C99 `_Bool` would
                     # convert `e`. Wrapping before the check lets

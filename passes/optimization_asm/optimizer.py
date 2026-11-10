@@ -274,7 +274,10 @@ def _param_register_hints(fn, layout, symbols) -> dict[str, str]:
         )
         if is_reg and n == 1 and off < len(layout.param_registers):
             reg = layout.param_registers[off]
-            if reg is not None:
+            # No hint for Y. A `register` local is the one value the
+            # regalloc keeps in Y, and the soft-stack prologue writes
+            # Y, so a Y parameter is read from its slot.
+            if reg is not None and reg != "Y":
                 hints[pname] = reg
         off += n
     return hints

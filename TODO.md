@@ -220,34 +220,6 @@ aggregates) would let `carry_branch_fold` turn the test into a `BCS`
 right after the `JSR`, and would drop the pointer setup for every
 member access. That would help every struct local, not only these.
 
-## Name the register a parameter arrives in
-
-A `register` parameter's register follows from its position: the
-first register byte goes in A and the second in X. There's no way to
-ask for Y, or to put the first byte in X, so a ROM or DOS routine
-whose arguments don't arrive in that order can't be declared. RWTS
-($2900) takes its parameter block's address with the high byte in A
-and the low byte in Y, and `examples/zork_print_string_literal.c`
-calls it through a three-instruction assembly routine because of
-that.
-
-One spelling is an attribute on the parameter, such as `void
-RWTS(register uint8_t hi __attribute__((reg(a))), register uint8_t lo
-__attribute__((reg(y))))`. Things to decide:
-
-- Whether it's allowed only on routines with `address`, or on
-  compiled functions too. A compiled function would need an entry
-  stub that stores Y, and the register allocator would have to keep
-  Y free for it, as it does for a `register` local.
-- Whether a 2-byte parameter can name a pair (`reg(ay)`), for
-  routines that take an address in A and Y, or in X and Y.
-- The errors: a register named twice, a pointer parameter (see
-  calling_conventions.md), a parameter without `register`, and more
-  than three register bytes.
-- Whether the caller loads Y last. Loading an argument from the soft
-  stack uses Y as the index, so Y has to be set after every other
-  argument.
-
 ## Optimizations found by the Zork string printer
 
 `examples/zork_print_string_literal.c` first compiled to 1984 bytes of
@@ -265,6 +237,10 @@ access to struct members at constant offsets
   around the recursive call, on the abbreviation path. Saving the
   bytes around the calls that can recurse, instead of at entry and
   exit, would do the same.
+- **A loop count passed in X stays in memory.** cout_string takes its
+  count with `in_x`, as Zork's does, then stores X to a slot and
+  counts the slot down with `DEC`. COUT1 preserves X, so the count
+  could stay in X with `DEX`, as in the original.
 - **A shift by one stages through a slot.** `(uint8_t)(w << 1)` is
   `LDA w; STA t; ASL t; LDA t`, where `LDA w; ASL A` does the same
   when `t` is dead after.

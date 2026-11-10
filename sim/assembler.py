@@ -932,9 +932,12 @@ def _emit_mov(
             return bytes([_IMM["LDX"], v])
         if isinstance(dst.reg, asm_ast.Y):
             return bytes([_IMM["LDY"], v])
-    # ImmLabel -> Reg(A) — only A is needed by LoadAddress.
-    if _is_imm_label(src) and _is_reg_a(dst):
-        return bytes([_IMM["LDA"], _resolve_imm_label(src, syms)])
+    # ImmLabel -> Reg: LDA / LDX / LDY of a label's address byte.
+    if _is_imm_label(src) and isinstance(dst, asm_ast.Reg):
+        op = {asm_ast.A: "LDA", asm_ast.X: "LDX", asm_ast.Y: "LDY"}[
+            type(dst.reg)
+        ]
+        return bytes([_IMM[op], _resolve_imm_label(src, syms)])
     # Imm -> memory.
     if isinstance(src, asm_ast.Imm) and _is_memory(dst):
         return _emit_lda_imm(src.value) + _emit_store_a_to_mem(dst, syms)

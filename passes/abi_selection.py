@@ -244,9 +244,12 @@ def _per_param_byte_sizes(
     return [sizeof(p, types) for p in fun_type.params]
 
 
-# The arg-passing registers, in positional order: the first register
-# arg-byte goes in A, the second in X. (Y is reserved for `register`
-# locals; the return value reuses A/X, computed separately.)
+# The arg-passing registers a `register` parameter without an `in_*`
+# attribute takes, in positional order: the first such byte goes in A,
+# the second in X, skipping any an `in_*` parameter names. Y is only
+# used when a parameter asks for it with `in_y` or a pair, since a
+# `register` local also uses Y. The return value reuses A / X,
+# computed separately.
 _ARG_REGISTERS = ("A", "X")
 
 
@@ -262,23 +265,40 @@ def _assign_param_registers(
     where: str,
 ) -> list[str | None]:
     """Assign 6502 registers to the bytes of `register`-marked
-    parameters, positionally: the first register arg-byte goes in A,
-    the second in X. So a 1-byte `register` param gets one entry, and
-    a 2-byte `register` param spreads its low byte to A and high byte
-    to X.
+    parameters. A parameter with an `in_*` attribute gets the
+    registers it names, low byte first (`in_y`, `in_ay`). The others
+    are positional: the first such byte goes in A and the second in X,
+    skipping a register an `in_*` parameter already has. So a 1-byte
+    `register` param gets one entry, and a 2-byte `register` param
+    spreads its low byte to A and high byte to X.
 
     Returns a per-byte list parallel to the function's flattened param
     bytes (the `slot_symbols` order — low byte of param 0 first), each
     entry "A" / "X" or None.
 
     Raises `AbiSelectionError` if a `register` param is a pointer, is
-    wider than 2 bytes, or the marked params together need more than
-    the two available arg registers (A, X). `where` is a short label
-    for error messages (e.g. the function name)."""
+    wider than 2 bytes, names a register for each of a different
+    number of bytes than it has, or names a register another
+    parameter has, or if the positional params need more than the
+    free arg registers. `where` is a short label for error messages
+    (e.g. the function name)."""
     fun_type = fn_decl.data_type
     markers = list(fn_decl.param_registers)
     while len(markers) < len(per_param_bytes):
-        markers.append(0)
+        markers.append("")
+    taken: dict[str, str] = {}
+    for i, marker in enumerate(markers):
+        if not marker or marker == "auto":
+            continue
+        pname = fn_decl.params[i] if i < len(fn_decl.params) else f"#{i}"
+        for r in marker:
+            if r in taken:
+                raise AbiSelectionError(
+                    f"function `{where}`: parameters `{taken[r]}` and "
+                    f"`{pname}` both arrive in {r}"
+                )
+            taken[r] = pname
+    positional = [r for r in _ARG_REGISTERS if r not in taken]
     per_byte: list[str | None] = []
     next_reg = 0
     for i, (n_bytes, marker) in enumerate(zip(per_param_bytes, markers)):
@@ -301,15 +321,46 @@ def _assign_param_registers(
                 f"bytes — a `register` parameter must fit in at most 2 "
                 f"bytes (A, X)"
             )
+        if marker != "auto":
+            if len(marker) != n_bytes:
+                attr = "in_" + marker.lower()
+                raise AbiSelectionError(
+                    f"function `{where}` parameter `{pname}` is "
+                    f"{n_bytes} byte{'s' if n_bytes > 1 else ''}, but "
+                    f"`{attr}` names {len(marker)} register"
+                    f"{'s' if len(marker) > 1 else ''}; name one "
+                    f"register for each byte, low byte first"
+                )
+            per_byte.extend(marker)
+            continue
         for _k in range(n_bytes):
-            if next_reg >= len(_ARG_REGISTERS):
+            if next_reg >= len(positional):
+                free = ", ".join(positional) or "none"
                 raise AbiSelectionError(
                     f"function `{where}`: too many `register` argument "
-                    f"bytes — at most two are available (A, X)"
+                    f"bytes — a `register` parameter without `in_a`, "
+                    f"`in_x`, or `in_y` goes in A, then X, and the free "
+                    f"ones here are: {free}"
                 )
-            per_byte.append(_ARG_REGISTERS[next_reg])
+            per_byte.append(positional[next_reg])
             next_reg += 1
     return per_byte
+
+
+def _describe_markers(fn, markers: list[str]) -> str:
+    """`markers` as the declarations spell them, e.g. "`register a`,
+    `b`, `register c in_y`"."""
+    out = []
+    for i, m in enumerate(markers):
+        pname = fn.params[i] if i < len(fn.params) else f"#{i}"
+        pname = pname.split(".", 1)[-1]
+        if not m:
+            out.append(f"`{pname}`")
+        elif m == "auto":
+            out.append(f"`register {pname}`")
+        else:
+            out.append(f"`register {pname} in_{m.lower()}`")
+    return ", ".join(out)
 
 
 def _check_forward_def_match(c99_prog: c99_ast.Program) -> None:
@@ -332,17 +383,19 @@ def _check_forward_def_match(c99_prog: c99_ast.Program) -> None:
         # the longer list's length so an empty `param_registers=[]`
         # (older AST construction sites) compares cleanly with a
         # parser-built decl.
-        a = [bool(r) for r in prior.param_registers]
-        b = [bool(r) for r in fn.param_registers]
+        a = [r or "" for r in prior.param_registers]
+        b = [r or "" for r in fn.param_registers]
         if len(a) < len(b):
-            a = a + [False] * (len(b) - len(a))
+            a = a + [""] * (len(b) - len(a))
         if len(b) < len(a):
-            b = b + [False] * (len(a) - len(b))
+            b = b + [""] * (len(a) - len(b))
         if a != b:
             raise AbiSelectionError(
-                f"function `{fn.name}`: `register` parameter markers "
-                f"differ between declarations — {a!r} vs {b!r}; the "
-                f"calling convention must match"
+                f"function `{fn.name}`: the declarations disagree on "
+                f"which parameters are `register` or which registers "
+                f"they arrive in ({_describe_markers(fn, a)} against "
+                f"{_describe_markers(fn, b)}); every declaration has to "
+                f"give the same calling convention"
             )
         # Adopt whichever had a body (or just keep prior).
         if fn.body is not None:
@@ -715,9 +768,10 @@ def fixed_address_layouts(
         if any(r is None for r in layout.param_registers):
             raise AbiSelectionError(
                 f"zp_abi function `{name}` has a fixed address, so "
-                f"every parameter has to be passed in a register (A, "
-                f"then X); declare each parameter `register`, at most "
-                f"2 bytes in all"
+                f"every parameter has to be passed in a register; "
+                f"declare each parameter `register` (A, then X), or "
+                f"name its register with `in_a`, `in_x`, or `in_y`, "
+                f"at most 3 bytes in all"
             )
         out[name] = layout
     return out

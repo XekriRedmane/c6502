@@ -411,6 +411,48 @@ _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
 _PRESERVES = {"preserves_x": "X", "preserves_y": "Y"}
 
 
+# The registers an `in_*` parameter attribute may name, one letter per
+# byte of the parameter, low byte first.
+_PARAM_REGISTERS = frozenset("AXY")
+
+
+def _register_marker(specs, is_register: bool) -> str:
+    """The `param_registers` entry for one parameter: "" without
+    `register`, "auto" for `register` alone (A, then X, by position),
+    or the register letters an `in_*` attribute names, such as "Y" for
+    `__attribute__((in_y))` or "AY" for `in_ay` (low byte in A, high
+    byte in Y). Raises ParserError for any other attribute, for an
+    `in_*` attribute without `register`, and for a register named
+    twice."""
+    if not specs:
+        return "auto" if is_register else ""
+    if len(specs) != 1:
+        raise ParserError(
+            "a parameter takes one attribute, `in_a`, `in_x`, `in_y`, "
+            "or a pair such as `in_ay`, naming the register it arrives in"
+        )
+    name, arg = specs[0]
+    regs = name[3:].upper() if name.startswith("in_") else ""
+    if (arg is not None or not 1 <= len(regs) <= 2
+            or not set(regs) <= _PARAM_REGISTERS):
+        raise ParserError(
+            f"unknown parameter attribute `{name}`; a parameter takes "
+            f"`in_a`, `in_x`, or `in_y`, or for a 2-byte parameter a "
+            f"pair such as `in_ay` (low byte in A, high byte in Y)"
+        )
+    if len(set(regs)) != len(regs):
+        raise ParserError(
+            f"`{name}` names {regs[0]} twice; each byte of a parameter "
+            f"needs its own register"
+        )
+    if not is_register:
+        raise ParserError(
+            f"`__attribute__(({name}))` needs the parameter declared "
+            f"`register`"
+        )
+    return regs
+
+
 @dataclass
 class _AttributeClause:
     """Sentinel wrapper around a parsed `__attribute__((...))` clause.
@@ -1564,13 +1606,14 @@ class _ASTBuilder(Transformer):
     def parameter_declaration(self, items):
         # `parameter_declaration: specifier+ declarator attribute_clause?
         #                       | specifier+ abstract_declarator?`
-        # Returns `(name_or_None, data_type, is_register)`. An unnamed
-        # parameter — `int foo(int *)` — gives `name=None` and
-        # `is_register=False`. C99 §6.7.5.3.2 permits only one storage
-        # class on a parameter — `register` — which routes the arg
-        # through a 6502 register (positional A/X assignment happens
-        # downstream). No `__attribute__` is valid on a parameter
-        # (zp_abi is function-level; register pinning uses the keyword).
+        # Returns `(name_or_None, data_type, register_marker)`, where
+        # the marker is "" for a parameter without `register`, "auto"
+        # for a `register` parameter whose register follows from its
+        # position (A, then X), and the register letters, low byte
+        # first, for one with `__attribute__((in_y))` and the like. An
+        # unnamed parameter — `int foo(int *)` — gives `name=None`.
+        # C99 §6.7.5.3.2 permits only one storage class on a parameter
+        # — `register` — which routes the arg through a 6502 register.
         specs = []
         rest = []
         attr_clause: _AttributeClause | None = None
@@ -1593,11 +1636,6 @@ class _ASTBuilder(Transformer):
                     "struct/union definition isn't permitted in a "
                     "parameter declaration"
                 )
-        if attr_clause is not None:
-            raise ParserError(
-                "`__attribute__` isn't permitted on a function "
-                "parameter"
-            )
         base, storage = _split_specifiers(specs)
         # C99 §6.7.5.3.2: the only storage class allowed on a parameter
         # is `register`. `static` / `extern` are constraint violations.
@@ -1609,17 +1647,21 @@ class _ASTBuilder(Transformer):
                 f"on a function parameter (C99 §6.7.5.3.2 — only "
                 f"register)"
             )
+        marker = _register_marker(
+            attr_clause.specs if attr_clause is not None else None,
+            is_register,
+        )
         if not rest:
-            return (None, base, is_register)
+            return (None, base, marker)
         decl_tree = rest[0]
         if decl_tree.data == "declarator":
             name, composed, _outer, _outer_regs = _apply_declarator(
                 decl_tree, base,
             )
-            return (name, _adjust_param_type(composed), is_register)
+            return (name, _adjust_param_type(composed), marker)
         if decl_tree.data == "abstract_declarator":
             t = _apply_abstract_declarator(decl_tree, base)
-            return (None, _adjust_param_type(t), is_register)
+            return (None, _adjust_param_type(t), marker)
         raise AssertionError(
             f"unexpected parameter_declaration child: {decl_tree.data}"
         )
@@ -1846,7 +1888,7 @@ class _ASTBuilder(Transformer):
                         f"function declaration {name!r}"
                     )
                 param_names = outer_param_names or []
-                param_regs = outer_param_regs or [False] * len(param_names)
+                param_regs = outer_param_regs or [""] * len(param_names)
                 tails.append(c99_ast.FunctionDecl(
                     function_decl=c99_ast.Type_function_decl(
                         name=name,
@@ -1855,7 +1897,7 @@ class _ASTBuilder(Transformer):
                         data_type=composed,
                         storage_class=storage_class,
                         abi_annotation=prefix_abi,
-                        param_registers=[1 if r else 0 for r in param_regs],
+                        param_registers=list(param_regs),
                         carry_return=carry_return,
                         address=address,
                         preserves=preserves,
@@ -1998,7 +2040,7 @@ class _ASTBuilder(Transformer):
                 f"compiler doesn't compile and so can't check"
             )
         param_names = outer_param_names or []
-        param_regs = outer_param_regs or [False] * len(param_names)
+        param_regs = outer_param_regs or [""] * len(param_names)
         tail = c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
             name=name,
             params=param_names,
@@ -2006,7 +2048,7 @@ class _ASTBuilder(Transformer):
             data_type=composed,
             storage_class=storage_class,
             abi_annotation=prefix_abi,
-            param_registers=[1 if r else 0 for r in param_regs],
+            param_registers=list(param_regs),
             carry_return=carry_return,
         ))
         return struct_decls + [tail]

@@ -134,10 +134,11 @@ def _classify(line: str) -> object:
         return _DIRECTIVE
     if opcode == "LDY":
         operand = tokens[1] if len(tokens) > 1 else ""
-        if operand.startswith("#"):
+        if operand.startswith("#") and not operand.startswith(("#<", "#>")):
             return _LDY_IMM
-        # LDY <addr> reads memory into Y; we don't statically know
-        # the loaded value. Treat as Y-clobber.
+        # LDY <addr> reads memory into Y, and `LDY #<name` loads a
+        # byte of an address known only at link time. Either way the
+        # value isn't known here. Treat as Y-clobber.
         return _Y_CLOBBER
     if opcode == "INY":
         return _INY

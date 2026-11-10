@@ -2305,6 +2305,18 @@ class Translator:
         x_writes = [(r, s) for (r, s) in reg_writes if r == "X"]
         y_writes = [(r, s) for (r, s) in reg_writes if r == "Y"]
         a_writes = [(r, s) for (r, s) in reg_writes if r == "A"]
+        # Loading A's argument last can still destroy Y's: if its
+        # source ends up on the soft stack, the load is `LDY #off; LDA
+        # (FP),Y`. So with a Y argument, A's argument is loaded first
+        # and kept on the hardware stack until the others are in
+        # place. An immediate can't be on the soft stack.
+        park_a = bool(y_writes) and any(
+            not isinstance(s, asm_ast.Imm) for (_r, s) in a_writes
+        )
+        if park_a:
+            emitted.append(asm_ast.Mov(src=a_writes[0][1], dst=_REG_A))
+            emitted.append(asm_ast.Push(src=_REG_A))
+            a_writes = []
         for r, src in x_writes + y_writes + a_writes:
             target = _REG_BY_NAME[r]
             if r == "A":
@@ -2317,6 +2329,8 @@ class Translator:
                 # need to specialize that case here.
                 emitted.append(asm_ast.Mov(src=src, dst=_REG_A))
                 emitted.append(asm_ast.Mov(src=_REG_A, dst=target))
+        if park_a:
+            emitted.append(asm_ast.Pop(dst=_REG_A))
         return emitted
 
     def _translate_indirect_call(

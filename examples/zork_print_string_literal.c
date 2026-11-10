@@ -40,17 +40,6 @@
       and "not found" in the carry. Each returns a struct of the value
       and a bool, declared return_bool_in_carry, which uses the same
       registers.
-    - RWTS, DOS's disk routine at $2900, takes the address of its
-      parameter block in A (high byte) and Y (low byte). c6502 can't
-      pass an argument in Y, so do_rwts_on_sector calls call_rwts, a
-      three-instruction routine written in assembly that isn't part of
-      this file:
-
-          call_rwts:
-              LDA  #>iob
-              LDY  #<iob
-              JMP  RWTS
-
     - When a page can't be read, the original jumps to `main`, which
       restarts the interpreter. Here that's a call to restart(), which
       doesn't return.
@@ -59,7 +48,6 @@
       set_page_first and print_zstring. Everything that reads SCRATCH1
       or SCRATCH2 after a call still finds the value the original
       leaves there.
-    - cout_string takes its count in A. The original takes it in X.
     - buffer_char_set_buffer_end, a label inside buffer_char that
       dump_buffer_with_more jumps to with X = 0, is the assignment
       BUFF_END = 0.
@@ -117,9 +105,12 @@ extern volatile uint8_t SLOT1_SCRATCH __attribute__((address(0x0779)));
 /* Restarts the interpreter. It doesn't return. */
 void restart(void);
 
-/* Calls RWTS with the parameter block `iob`, and returns true (the
- * carry set) if the disk operation failed. */
-__attribute__((return_bool_in_carry)) bool call_rwts(void);
+/* DOS's disk routine. It takes the address of its parameter block
+ * with the high byte in A and the low byte in Y, and sets the carry
+ * when the operation failed. */
+__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
+bool RWTS(register uint8_t iob_hi __attribute__((in_a)),
+          register uint8_t iob_lo __attribute__((in_y)));
 
 /* ---- Disk ------------------------------------------------------------ */
 
@@ -170,7 +161,7 @@ bool do_rwts_on_sector(register uint8_t command) {
         iob.track++;
     }
     iob.sector = (uint8_t)sector;
-    return call_rwts();
+    return RWTS((uint8_t)((uint16_t)&iob >> 8), (uint8_t)(uint16_t)&iob);
 }
 
 __attribute__((return_bool_in_carry)) bool read_from_sector(void) {
@@ -324,7 +315,7 @@ void dump_buffer_line(void) {
 
 /* Prints `count` characters from SCRATCH2 with COUT1, in normal text
  * unless INVFLG says otherwise. */
-void cout_string(register uint8_t count) {
+void cout_string(register uint8_t count __attribute__((in_x))) {
     uint8_t *s = (uint8_t *)SCRATCH2;
     uint8_t y = 0;
     do {

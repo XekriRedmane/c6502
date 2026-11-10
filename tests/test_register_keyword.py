@@ -9,7 +9,8 @@ optimizer realize it.
 
 Coverage:
   - A `register` parameter sets that parameter's marker in
-    `function_decl.param_registers` (parallel to `params`, 1 = marked).
+    `function_decl.param_registers` (parallel to `params`: "auto" for
+    `register`, "" otherwise).
   - A `register` local carries `storage_class == Register()` on its
     `Type_var_decl`.
   - `register` is rejected on a function declarator and (later) at file
@@ -47,11 +48,11 @@ class TestRegisterKeywordParsing(unittest.TestCase):
             "char f(register char a, char b, register char c);"
         )
         self.assertEqual(decls[0].params, ["a", "b", "c"])
-        self.assertEqual(decls[0].param_registers, [1, 0, 1])
+        self.assertEqual(decls[0].param_registers, ["auto", "", "auto"])
 
     def test_no_register_params(self) -> None:
         decls = _function_decls("char f(char a, char b);")
-        self.assertEqual(decls[0].param_registers, [0, 0])
+        self.assertEqual(decls[0].param_registers, ["", ""])
 
     def test_register_local_storage_class(self) -> None:
         # `register` on a block-scope local rides on storage_class.
@@ -74,7 +75,7 @@ class TestRegisterKeywordParsing(unittest.TestCase):
             "char f(register char a, register char b) "
             "{ return (char)(a + b); }"
         )
-        self.assertEqual(decls[0].param_registers, [1, 1])
+        self.assertEqual(decls[0].param_registers, ["auto", "auto"])
         self.assertIsNotNone(decls[0].body)
 
     def test_zp_abi_still_parses(self) -> None:
@@ -82,7 +83,7 @@ class TestRegisterKeywordParsing(unittest.TestCase):
             "__attribute__((zp_abi)) char f(register char a);"
         )
         self.assertEqual(decls[0].abi_annotation, "zp_abi")
-        self.assertEqual(decls[0].param_registers, [1])
+        self.assertEqual(decls[0].param_registers, ["auto"])
 
     def test_register_on_function_rejected(self) -> None:
         with self.assertRaises(ParserError) as cm:

@@ -60,6 +60,19 @@ the low byte in A and the high byte in X. A parameter can name its
 register instead, with `in_a`, `in_x`, or `in_y` (see below), and a
 pointer can't be a `register` parameter.
 
+The return value doesn't depend on the attribute. A `char`-sized
+result comes back in A, and an `int`-sized one comes back with its low
+byte in A and its high byte in X. A pointer, and anything wider, comes
+back in the zero-page block called `HARGS`.
+
+With `--optimize`, every function that can use `zp_abi` gets it, so
+you rarely need to write it on a function you define. Writing it
+anyway makes the compiler report an error when the function can't
+use it, for instance because it's recursive. On a ROM routine, though,
+the attribute is required, as explained below.
+[calling_conventions.md](calling_conventions.md) describes both
+conventions in detail.
+
 ### `in_a`, `in_x`, and `in_y`
 
 These go on a `register` parameter, after its name, and say which
@@ -92,19 +105,6 @@ skipping a register another parameter names, so `register uint8_t k`
 next to an `in_xy` parameter arrives in A. A function the compiler
 compiles can take parameters this way too. It stores each one into
 its zero-page byte as it starts, with `STY` for Y.
-
-The return value doesn't depend on the attribute. A `char`-sized
-result comes back in A, and an `int`-sized one comes back with its low
-byte in A and its high byte in X. A pointer, and anything wider, comes
-back in the zero-page block called `HARGS`.
-
-With `--optimize`, every function that can use `zp_abi` gets it, so
-you rarely need to write it on a function you define. Writing it
-anyway makes the compiler report an error when the function can't
-use it, for instance because it's recursive. On a ROM routine, though,
-the attribute is required, as explained below.
-[calling_conventions.md](calling_conventions.md) describes both
-conventions in detail.
 
 ### `return_bool_in_carry`
 
@@ -267,8 +267,8 @@ Zork's hand-written one.
 
 Only a routine with `address` can carry these attributes, because the
 compiler can't check that a function it compiles keeps the promise.
-The compiler trusts the declaration. A routine declared
-`preserves_x` that changes X anyway breaks the caller, so declare
+The compiler trusts the declaration. Calling a routine declared
+`preserves_x` that changes X anyway is undefined behavior, so declare
 only what the routine's code shows. `<apple2/monitor_io.h>` declares
 what the ROM listings show for each Monitor routine. A routine that
 returns an `int` can't be `preserves_x`, because the high byte of

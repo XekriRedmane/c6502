@@ -67,6 +67,8 @@ you rarely need to write it on a function you define. Writing it
 anyway makes the compiler report an error when the function can't
 use it, for instance because it's recursive. On a ROM routine, though,
 the attribute is required, as explained below.
+[calling_conventions.md](calling_conventions.md) describes both
+conventions in detail.
 
 ### `return_bool_in_carry`
 

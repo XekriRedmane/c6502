@@ -10,10 +10,13 @@ parsed by any tool.
   (`zp_abi`, `return_bool_in_carry`, `zeropage`, `address`) and to
   declaring and calling ROM routines, with Apple II Monitor examples,
   the errors the compiler reports, and current limits.
-- `soft_stack.md` — user guide to the soft stack: SSP and FP, a call
-  traced through the caller's argument push, the prologue, the frame
-  layout, and the epilogue, return values, when `--optimize` still
-  uses it, costs, and limits.
+- `calling_conventions.md` — user guide to c6502's two calling
+  conventions. The soft stack: SSP and FP, a call traced through the
+  caller's argument push, the prologue, the frame layout, and the
+  epilogue. zp_abi: per-function zero-page parameter and local bytes,
+  why call-graph siblings may share them, `register` parameters,
+  which functions qualify, mixing the two, and `--link`. Also return
+  values, costs, and limits.
 - `optimization.md` — from-scratch tour of how `--optimize` turns
   "correct but slow" TAC into "correct and faster" TAC. Written for
   someone who has read the root CLAUDE.md but never touched the

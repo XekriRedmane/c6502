@@ -1224,12 +1224,13 @@ The hardware stack, meanwhile, just holds the return address pushed by
 
 ### Walkthrough
 
-[docs/soft_stack.md](docs/soft_stack.md) traces a whole call through
-the soft stack, with the compiler's current output for the caller's
-argument push, the prologue, the frame, and the epilogue, and covers
-when `--optimize` still uses the soft stack, what it costs, and its
-limits. A function with neither locals nor args (`M = N = 0`) gets no
-prologue, and its epilogue is a single `RTS`.
+[docs/calling_conventions.md](docs/calling_conventions.md) traces a
+whole call through the soft stack, with the compiler's current output
+for the caller's argument push, the prologue, the frame, and the
+epilogue. It also describes the zp_abi convention `--optimize` uses
+for functions that qualify, when the soft stack is still used, and
+what each costs. A function with neither locals nor args
+(`M = N = 0`) gets no prologue, and its epilogue is a single `RTS`.
 
 ## Stripping comments with pcpp
 

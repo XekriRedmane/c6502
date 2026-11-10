@@ -88,7 +88,8 @@ Two key runtime conventions:
   the block below `$80`, with HARGS sized to the program
   (`passes/runtime_layout.py`, whose `current()` the asm passes read
   for runtime addresses). Full layout in "Function stack frame"
-  below; user guide in [docs/soft_stack.md](docs/soft_stack.md).
+  below; user guide in
+  [docs/calling_conventions.md](docs/calling_conventions.md).
   The bytes left below `$80` are for user globals marked
   `__attribute__((zeropage))`; `zeropage(addr)` may also pin one in
   `$80-$FF`, which removes those bytes from the compiler's pools. Their initial values are stored by a generated `__zp_init`,

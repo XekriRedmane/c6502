@@ -37,7 +37,9 @@ the same flags.
   `DEC` can still be reached reads or writes the register (including
   through an indexed operand, or the `LDY` setup of a soft-stack or
   indirect operand when the register is Y), and there's no `Call`
-  there, since a callee may clobber it. An exit path (one that
+  there, since a callee may clobber it, unless the callee is
+  declared to preserve the register (`preserves_x` / `preserves_y`)
+  and doesn't take it as an argument. An exit path (one that
   returns or leaves the loop for good) may use the register, since
   the counter is dead there.
 - Nothing outside that range jumps into it, so every path to the
@@ -56,7 +58,7 @@ which folds the `LDA n; TAX` the rewrite leaves.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import x_dead_at, y_dead_at
+from passes.asm_liveness import call_preserves, x_dead_at, y_dead_at
 
 _SETUP_USES_Y = (
     asm_ast.Frame, asm_ast.Stack, asm_ast.Indirect, asm_ast.IndirectZp,
@@ -113,9 +115,15 @@ def _key(op):
 
 def _touches_reg(instr, reg_cls) -> bool:
     """True iff `instr` reads or writes the register, directly, as an
-    index, or (for Y) through an operand's `LDY` setup."""
+    index, or (for Y) through an operand's `LDY` setup. A call touches
+    it unless the callee is declared to preserve it
+    (`asm_liveness.call_preserves`) and doesn't take it as an
+    argument."""
+    if isinstance(instr, asm_ast.Call):
+        reg = "X" if reg_cls is asm_ast.X else "Y"
+        return not call_preserves(instr, reg) or reg in instr.reg_args
     if isinstance(instr, (
-        asm_ast.Call, asm_ast.FunctionPrologue, asm_ast.AllocateStack,
+        asm_ast.FunctionPrologue, asm_ast.AllocateStack,
         asm_ast.Ret, asm_ast.Return, asm_ast.LoadAddress,
     )):
         return True

@@ -198,6 +198,7 @@ class Type_function_decl:
     param_registers: list[int] = field(default_factory=list)
     carry_return: bool = False
     address: int | None = None
+    preserves: list[str] = field(default_factory=list)
 
 
 @dataclass

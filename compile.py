@@ -554,6 +554,35 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
     return emit_program(asm4, zp_slot_symbols=zp.equs() or None)
 
 
+def _source_errors() -> tuple[type[Exception], ...]:
+    """The exception types that report a problem with the program being
+    compiled, such as a misused attribute or a frame that's too large.
+    `main` prints these as one-line errors. Anything else is a bug in
+    the compiler and keeps its traceback."""
+    from lark.exceptions import LarkError
+    from lexer import LexError
+    from parser import ParserError
+    from preprocessor import PreprocessorError
+    from passes.abi_selection import AbiSelectionError
+    from passes.asm_to_asm2 import FrameSizeError
+    from passes.constant_expression import ConstantExpressionError
+    from passes.identifier_resolution import IdentifierResolutionError
+    from passes.label_resolution import LabelResolutionError
+    from passes.loop_labeling import LoopLabelingError
+    from passes.optimization_asm.regalloc import RegallocError
+    from passes.optimization_ast.unroll import UnrollError
+    from passes.type_checking import TypeCheckError
+    from passes.zp_local_allocation import ZpLocalAllocationError
+    from passes.zp_slot_allocation import ZpSlotAllocationError
+    return (
+        LexError, ParserError, PreprocessorError, LarkError,
+        IdentifierResolutionError, LabelResolutionError,
+        LoopLabelingError, UnrollError, ConstantExpressionError,
+        TypeCheckError, AbiSelectionError, RegallocError,
+        ZpSlotAllocationError, ZpLocalAllocationError, FrameSizeError,
+    )
+
+
 def main(argv: list[str]) -> int:
     # `--link` is the multi-TU linker mode: positional args are
     # one-or-more .asm files (each from a per-TU
@@ -612,10 +641,15 @@ def main(argv: list[str]) -> int:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
 
-    text = _run_stage(
-        args.stage, preprocess(source, pcpp_args),
-        optimize=args.optimize,
-    )
+    try:
+        text = _run_stage(
+            args.stage, preprocess(source, pcpp_args),
+            optimize=args.optimize,
+        )
+    except _source_errors() as e:
+        where = "<stdin>" if args.input == "-" else args.input
+        print(f"{where}: error: {e}", file=sys.stderr)
+        return 1
 
     if args.output is not None:
         # LF on every platform, so `-o` regenerates the checked-in

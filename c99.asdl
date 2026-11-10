@@ -74,7 +74,10 @@ module C99 {
     -- address is set by `__attribute__((address(0xFDED)))`: the
     -- function is code at that address (a ROM routine, say), so it
     -- has no definition in the program.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers, bool carry_return, int? address)
+    -- preserves lists the registers ("X", "Y") that
+    -- `__attribute__((preserves_x))` / `preserves_y` say the function
+    -- leaves unchanged. Only a function with an address may carry them.
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers, bool carry_return, int? address, string* preserves)
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct

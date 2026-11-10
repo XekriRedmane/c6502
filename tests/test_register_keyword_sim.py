@@ -127,9 +127,14 @@ class TestRegisterKeywordSim(unittest.TestCase):
     # --- constraint / eligibility failures ---
 
     def _assert_compile_error(self, src: str, needle: str) -> None:
-        with self.assertRaises(Exception) as cm:
-            self._codegen(src)
-        self.assertIn(needle, str(cm.exception))
+        # `main()` reports the problem on stderr and returns 1.
+        with patch("sys.stdin", io.StringIO(src)),              patch("sys.stdout", new_callable=io.StringIO),              patch("sys.stderr", new_callable=io.StringIO) as err:
+            rc = compile_main([
+                "compile.py", "-", "--codegen", "--optimize",
+            ])
+        self.assertEqual(rc, 1)
+        self.assertTrue(err.getvalue().startswith("<stdin>: error: "))
+        self.assertIn(needle, err.getvalue())
 
     def test_pointer_register_param_rejected(self) -> None:
         src = (

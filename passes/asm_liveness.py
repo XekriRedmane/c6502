@@ -361,8 +361,17 @@ def reads_x(instr: asm_ast.Type_instruction) -> bool:
     return False
 
 
+def call_preserves(instr: asm_ast.Type_instruction, reg: str) -> bool:
+    """True iff `instr` is a call to a routine declared to leave `reg`
+    ("X" or "Y") unchanged (`__attribute__((preserves_x))` /
+    `preserves_y`). Every pass that keeps a value in X or Y across a
+    call has to agree on this, so they all ask here."""
+    return isinstance(instr, asm_ast.Call) and reg in instr.preserves
+
+
 def kills_x(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` writes `Reg(X)` without reading it first."""
+    """True iff `instr` writes `Reg(X)` without reading it first. A
+    call does, unless the callee preserves X."""
     if isinstance(instr, asm_ast.Mov):
         if isinstance(instr.dst, asm_ast.Reg) and isinstance(
             instr.dst.reg, asm_ast.X,
@@ -370,7 +379,7 @@ def kills_x(instr: asm_ast.Type_instruction) -> bool:
             return not is_reg_x(instr.src)
         return False
     if isinstance(instr, asm_ast.Call):
-        return True
+        return not call_preserves(instr, "X")
     return False
 
 
@@ -443,7 +452,7 @@ def kills_y(instr: asm_ast.Type_instruction) -> bool:
             return True
         return False
     if isinstance(instr, asm_ast.Call):
-        return True
+        return not call_preserves(instr, "Y")
     if isinstance(instr, asm_ast.LoadAddress):
         # The dst-write step may insert `LDY #1` for the high-byte
         # store if the dst is indirect-Y. Conservative: treat as a

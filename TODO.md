@@ -197,14 +197,11 @@ pieces are left.
 
 `include/apple2/monitor_io.h` and `interactive_monitor.h` reserve the
 Monitor's zero page, and the runtime's block moves around it
-(`passes/runtime_layout.py`). Three pieces are left.
+(`passes/runtime_layout.py`). Two pieces are left.
 
 - **Headers for DOS 3.3, ProDOS, and Applesoft.** Each declares the
   zero-page bytes that software uses, the way `monitor_io.h` does, from
   its listing. A program that includes one keeps those bytes free.
-- **The IIe 80-column firmware.** `HOME`, `CLREOL`, scrolling, and
-  `KEYIN` continue into the firmware at `$C100`, which the F8 listing
-  doesn't cover, so `monitor_io.h` may miss bytes it uses.
 - **Linking.** `--link` rejects a unit with zero-page objects, so a
   unit that includes `monitor_io.h` can't be linked yet (see "Zero-page
   globals across translation units"). Once it can, the linker has to
@@ -212,18 +209,18 @@ Monitor's zero page, and the runtime's block moves around it
   the HARGS size from every unit's need. Today it only checks that
   the units' layouts match.
 
-## Declare which registers an external routine preserves
+## Keep values in X or Y across preserving calls in more passes
 
-A call is taken to clobber A, X, and Y. COUT1 preserves Y, and the
-F8 ROM code it runs never writes X. Its scroll path jumps into the
-80-column firmware at `$C100`, which isn't in the listing, so X
-there is unverified. Zork's loop keeps its index in X across `JSR
-COUT1`. Something like
-`__attribute__((preserves(x, y)))` on the declaration would let
-`loop_counter_to_x` and the regalloc keep a value in X or Y across
-the call. The Call atom would carry the set, as `reg_args` does
-today, and each pass that treats a Call as writing X or Y would
-read it.
+`__attribute__((preserves_x))` / `preserves_y` reach the asm passes
+on each `Call` (`asm_liveness.call_preserves`). Liveness,
+`loop_counter_to_x`, and `counter_to_index_reg` use them. Every other
+pass still treats a call as writing X and Y, which is correct but
+gives up some wins. `redundant_load` forgets what X and Y hold at
+every call, so an `LDX #k` repeated after `JSR COUT1` stays, and the
+register allocator doesn't keep a `register` local in Y across a
+preserving call. Either could keep an immediate it tracks in X or Y
+across such a call. A memory equivalence (X equal to some slot)
+can't survive, since the callee may write the slot.
 
 ## Aliasing rule for two `(zp),Y` bases
 

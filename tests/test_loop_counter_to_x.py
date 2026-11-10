@@ -26,6 +26,47 @@ def _M(name="b"):
 
 class TestLoopCounterToX(unittest.TestCase):
 
+    def test_shifted_slot_not_promoted(self):
+        # `x * 9` builds its high byte with `STA hi; ROL hi; ...;
+        # INC hi; LDX hi`. The ROL is a use the promotion doesn't
+        # rewrite, so moving `hi` to X would lose it.
+        hi = _M("hi")
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Mov(src=_A, dst=hi),
+            asm_ast.RotateLeft(dst=hi),
+            asm_ast.Inc(dst=hi),
+            asm_ast.Mov(src=hi, dst=_X),
+            asm_ast.Return(save_a=True, save_x=True),
+        ]
+        self.assertEqual(_instrs(apply_loop_counter_to_x(_wrap(instrs))),
+                         instrs)
+
+    def test_count_up_loop(self):
+        # LDA #0; STA i; top: LDA i; CMP n; BEQ done; LDX i;
+        # LDA arr,X; INC i; JMP top -> LDX #0 ... CPX n ... INX.
+        i = _M("i")
+        prog = _wrap([
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Mov(src=_A, dst=i),
+            asm_ast.Label(name=".top"),
+            asm_ast.Mov(src=i, dst=_A),
+            asm_ast.Compare(left=_A, right=_M("n")),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".done"),
+            asm_ast.Mov(src=i, dst=_X),
+            asm_ast.Mov(src=asm_ast.IndexedData(
+                name="arr", offset=0, index=asm_ast.X()), dst=_A),
+            asm_ast.Inc(dst=i),
+            asm_ast.Jump(target=".top", reg_args=[]),
+            asm_ast.Label(name=".done"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_loop_counter_to_x(prog))
+        self.assertIn(asm_ast.Compare(left=_X, right=_M("n")), out)
+        self.assertIn(asm_ast.Inc(dst=_X), out)
+        self.assertNotIn(asm_ast.Mov(src=i, dst=_X), out)
+        self.assertNotIn(asm_ast.Inc(dst=i), out)
+
     def test_canonical_pattern_fires(self):
         # LDA p; STA b; loop_start: LDX b; ...; DEC b; BPL loop_start.
         prog = _wrap([

@@ -9,8 +9,11 @@
  * off them, and doesn't initialize them.
  *
  * The bytes come from the unenhanced Apple IIe F8 ROM listing at
- * https://6502disassembly.com/a2-rom/Unenh_IIe_F8ROM.html, grouped by
- * the routines that read or write them:
+ * https://6502disassembly.com/a2-rom/Unenh_IIe_F8ROM.html and the
+ * 80-column firmware listing at
+ * https://6502disassembly.com/a2-rom/Unenh_IIe_80col.html, which
+ * HOME, CLREOL, scrolling, and KEYIN reach through GOTOCX ($FBB4).
+ * They're grouped by the routines that read or write them:
  *
  *   $1F        CLREOL ("video's YSAV1")
  *   $20-$25    text window and cursor (SETWND, VTAB, BS, UP, ADVANCE,
@@ -27,6 +30,8 @@
  *   $36-$39    CSW and KSW, the output and input hooks
  *   $45        ACC, written by the IRQ entry at $FA40 on every interrupt
  *   $48        STATUS, written by INIT
+ *   $4E-$4F    RNDL/RNDH, KEYIN's random seed in the 80-column
+ *              firmware (KEYDLY, $C2D5 and $C2D9)
  *
  * The rest of the Monitor's zero page belongs to its interactive part
  * (the command loop and memory tools, the disassembler, register
@@ -34,9 +39,9 @@
  * which a program calling these routines never reaches. A program
  * that uses that part too includes <apple2/interactive_monitor.h> as well.
  *
- * On a IIe, CLREOL, HOME, SCROLL, and KEYIN continue into the
- * 80-column firmware at $C100, which isn't in that listing, so any
- * zero page it uses isn't covered here.
+ * The firmware also keeps state in screen holes ($0478, $047B,
+ * $04FB, $057B, $05FB, $077B, $07FB) and briefly writes $0400. The
+ * compiler never places anything there.
  *
  * Two zero-page objects may not overlap, so the bytes a program is
  * unlikely to use directly are covered by `__monitor_*` objects.
@@ -48,20 +53,35 @@
 
 /* ---- Routines -------------------------------------------------------
  * Each one takes its argument in A and returns its result in A, which
- * is c6502's zp_abi convention with a `register` parameter. */
+ * is c6502's zp_abi convention with a `register` parameter.
+ * `preserves_x` / `preserves_y` mark the registers every path through
+ * the routine leaves unchanged, per the two listings, so the compiler
+ * can keep a value in that register across the call. */
 
-/* Clears the text window and puts the cursor at its top left. */
-__attribute__((zp_abi, address(0xFC58))) void HOME(void);
+/* Clears the text window and puts the cursor at its top left.
+ * Neither it nor the firmware it reaches writes X. It loads Y with
+ * the firmware's function code. */
+__attribute__((zp_abi, preserves_x, address(0xFC58))) void HOME(void);
 
-/* Waits for a key and returns it, with the high bit set. */
-__attribute__((zp_abi, address(0xFD0C))) uint8_t RDKEY(void);
+/* Waits for a key and returns it, with the high bit set. RDKEY loads
+ * Y from CH; KEYIN saves and restores X ($C294, $C2BC). */
+__attribute__((zp_abi, preserves_x, address(0xFD0C))) uint8_t RDKEY(void);
 
-/* Prints `c` through the output hook CSW (normally COUT1). */
+/* Prints `c` through the output hook CSW (normally COUT1). What it
+ * preserves depends on where CSW points, so it promises nothing. */
 __attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
 
 /* Prints `c` on the screen, ignoring CSW. Characters $A0 and up are
- * ANDed with INVFLG first. */
-__attribute__((zp_abi, address(0xFDF0))) void COUT1(register uint8_t c);
+ * ANDed with INVFLG first. No code it runs writes X; scrolling at
+ * the bottom of the window goes through the firmware, which saves and
+ * restores X ($CCA4, $CD1B). It saves Y in YSAV1 ($FDF6) and reloads
+ * it before returning ($FDFD), on every path. */
+__attribute__((zp_abi, preserves_x, preserves_y, address(0xFDF0)))
+void COUT1(register uint8_t c);
+
+/* Waits for a time that grows with `a`. It writes neither X nor Y. */
+__attribute__((zp_abi, preserves_x, preserves_y, address(0xFCA8)))
+void WAIT(register uint8_t a);
 
 /* ---- Zero page ------------------------------------------------------ */
 
@@ -88,5 +108,6 @@ extern volatile uint16_t CSW              __attribute__((address(0x36)));
 extern volatile uint16_t KSW              __attribute__((address(0x38)));
 extern volatile uint8_t __monitor_acc     __attribute__((address(0x45)));
 extern volatile uint8_t __monitor_status  __attribute__((address(0x48)));
+extern volatile uint16_t __monitor_rnd    __attribute__((address(0x4E)));
 
 #endif

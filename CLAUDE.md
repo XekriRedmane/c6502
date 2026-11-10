@@ -99,7 +99,10 @@ Two key runtime conventions:
   name only gets an `EQU`, and it can't be defined. Below `$100` the
   object is an `extern` zero-page object. Such a function's calling
   convention comes from its declaration alone in both pipelines
-  (`abi_selection.fixed_address_layouts`). User guide:
+  (`abi_selection.fixed_address_layouts`). `preserves_x` /
+  `preserves_y` on such a routine put a `preserves` list on each asm
+  `Call`, and `asm_liveness.call_preserves` lets the passes keep a
+  value in X or Y across it. User guide:
   [docs/attributes.md](docs/attributes.md).
 - **zp_abi + call-graph-disjoint private pools** put params AND
   body locals in ZP for eligible leaf / non-recursive /

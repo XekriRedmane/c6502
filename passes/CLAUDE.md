@@ -34,7 +34,11 @@ this directory:
   `flags_dead_at` covers N/Z, `c_dead_at` and `v_dead_at` one flag
   each, and `all_flags_dead_at` every flag, counting any branch as a
   read. A return ends flag liveness, except that a carry-flag return
-  (`save_c`, from `return_bool_in_carry`) reads C.
+  (`save_c`, from `return_bool_in_carry`) reads C. `call_preserves`
+  says whether a `Call` leaves X or Y alone (its `preserves` list,
+  from `preserves_x` / `preserves_y` on a routine with an address);
+  `kills_x` / `kills_y` use it, and so does every pass that keeps a
+  value in X or Y across a call.
 - `asm_to_asm2.py` — `asm_ast` → `asm2_ast` lowering (see below).
 - `dead_pha_pla.py` — `apply_dead_pha_pla`. Drops `Push(Reg(A)) /
   body / Pop(Reg(A))` triples when the body preserves A and the
@@ -170,9 +174,10 @@ this directory:
   edge, no other reads) from memory into X, or Y when the loop uses
   X: `STA M` becomes `TAX` (folded to `LDX n` later) and `DEC M`
   becomes `DEX`. The register may be touched only where the DEC
-  can't be reached again (an exit path). Runs after
-  `loop_counter_to_x`, which handles counters that are also an
-  index.
+  can't be reached again (an exit path). A call to a routine that
+  preserves the register, and doesn't take it as an argument,
+  doesn't count as touching it. Runs after `loop_counter_to_x`,
+  which handles counters that are also an index.
 - `loop_invariant_a.py` — `apply_loop_invariant_a`. In a loop whose
   header starts `LDA x; CMP k; BEQ/BNE` with `k` loop-invariant,
   swaps the compare to `CMP x` with `k` in A, loads `k` once before
@@ -1185,11 +1190,14 @@ a single entry through the header.
 
 `loop_counter_to_x.loop_counter_to_x`: asm-level. Promotes a loop
 counter pseudo to `Reg(X)` when the live range fits the X pivot
-pattern: the counter is initialized once outside the loop, used as an
-`LDX` source inside, decremented at loop bottom, and not live across
-any JSR (saved/restored around them with `STX`/`LDX`). Also accepts
+pattern: the counter is initialized once, used as an `LDX` source,
+and stepped once, by a `DEC` at the loop bottom or by an `INC` in a
+loop that counts up and tests the counter at the top. Any other use
+of the slot, including a shift or rotate of it, disqualifies it.
+A call is wrapped with `STX` / `LDX` when the counter is read after
+it, unless the callee is declared `preserves_x`. Also accepts
 `LDA M` body uses (rewritten to `TXA` since X = M is the promotion
-invariant). Y-pivot ranges within the loop reject ranges containing
+invariant, or, before a `CMP` with A dead after it, to `CPX`). Y-pivot ranges within the loop reject ranges containing
 Indirect / IndirectY / IndirectZp / IndirectZpY operands — these read
 Y for addressing and the pivot's LDX→LDY rewrite would clobber that
 Y. The classic refresh_hit_entities winner — ~5× speedup on the hot

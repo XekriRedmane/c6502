@@ -42,12 +42,21 @@ _BUFF_AREA, _SLOT1_SCRATCH = 0x0200, 0x0779
 _TEXT = b"HELLO"
 
 
+_Y_SAVE = 0x3102
+
+
 def _recorder(log: int, count: int) -> bytes:
-    """LDY count ; STA log,Y ; INC count ; RTS"""
+    """STY save ; LDY count ; STA log,Y ; INC count ; LDY save ; RTS
+
+    It leaves X and Y as it found them, as COUT1 does, since
+    <apple2/monitor_io.h> declares COUT1 `preserves_x` and
+    `preserves_y` and the compiled loop keeps its index in X."""
     return bytes([
+        0x8C, _Y_SAVE & 0xFF, _Y_SAVE >> 8,
         0xAC, count & 0xFF, count >> 8,
         0x99, log & 0xFF, log >> 8,
         0xEE, count & 0xFF, count >> 8,
+        0xAC, _Y_SAVE & 0xFF, _Y_SAVE >> 8,
         0x60,
     ])
 

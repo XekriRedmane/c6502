@@ -108,6 +108,7 @@ class LabelResolver:
             param_registers=list(fd.param_registers),
             carry_return=fd.carry_return,
             address=fd.address,
+            preserves=list(fd.preserves),
         )
 
     def resolve_function(

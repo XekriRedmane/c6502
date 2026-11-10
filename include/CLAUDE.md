@@ -21,11 +21,13 @@ automatically; no `-I` flag needed.
   `__bool_true_false_are_defined`. `bool` aliases `unsigned char`
   (c6502 doesn't model `_Bool` as a distinct type).
 - `apple2/monitor_io.h` — the Apple II Monitor ROM routines a program
-  calls: `HOME`, `RDKEY`, `COUT`, `COUT1` as `zp_abi` routines with
-  `address`, and the zero-page bytes the unenhanced IIe F8 ROM
-  listing shows its text, keyboard, line-input, lo-res graphics, and
-  delay routines, the IRQ entry, and INIT using (`$1F`-`$2E`, `$30`,
-  `$32`-`$33`, `$35`-`$39`, `$45`, `$48`) as `extern` objects with
+  calls: `HOME`, `RDKEY`, `COUT`, `COUT1`, `WAIT` as `zp_abi` routines
+  with `address`, each with the `preserves_x` / `preserves_y` the ROM
+  and 80-column firmware listings support, and the zero-page bytes
+  those listings show its text, keyboard, line-input, lo-res
+  graphics, and delay routines, the IRQ entry, INIT, and the
+  firmware's KEYIN using (`$1F`-`$2E`, `$30`, `$32`-`$33`,
+  `$35`-`$39`, `$45`, `$48`, `$4E`-`$4F`) as `extern` objects with
   `address`, so a program that includes it keeps the runtime's
   zero-page block off them (`passes/runtime_layout.py`). Zero-page
   objects can't overlap, so the bytes are split into named objects

@@ -50,11 +50,20 @@ def translate_program(prog: asm_ast.Program) -> asm2_ast.Program:
     )
 
 
+class FrameSizeError(ValueError):
+    """A function's soft-stack frame is too large for `LDY #offset`
+    to reach. It's a limit of the program being compiled, so the
+    driver reports it as a compile error."""
+
+
 def _xlate_top_level(tl: asm_ast.Type_top_level) -> asm2_ast.Type_top_level:
     if isinstance(tl, asm_ast.Function):
         instructions: list[asm2_ast.Type_instruction] = []
-        for instr in tl.instructions:
-            instructions.extend(_xlate_instruction(instr))
+        try:
+            for instr in tl.instructions:
+                instructions.extend(_xlate_instruction(instr))
+        except FrameSizeError as e:
+            raise FrameSizeError(f"function {tl.name!r}: {e}") from None
         return asm2_ast.Function(
             name=tl.name,
             is_global=tl.is_global,
@@ -398,9 +407,11 @@ def _check_local_bytes(m: int) -> None:
     # Largest workable LDY immediate for `Stack(m+2)` / `Frame(m+2)`
     # access (M+2 must fit in a byte).
     if not 0 <= m <= 253:
-        raise ValueError(
-            f"local_bytes {m} out of range 0..253 "
-            "(limited by LDY immediate for FP-slot addressing)"
+        raise FrameSizeError(
+            f"its locals need {m} bytes on the soft stack, but a frame "
+            f"holds at most 253 (local_bytes {m} out of range 0..253, "
+            f"limited by the `LDY #offset` of each frame access); a "
+            f"large array fits better as a `static` or a global"
         )
 
 

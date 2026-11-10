@@ -19,7 +19,11 @@
     stores that byte isn't known.
 
     COUT, COUT1, and CSW come from <apple2/monitor_io.h>, which also
-    keeps the runtime's zero page off the Monitor's.
+    keeps the runtime's zero page off the Monitor's. It declares COUT1
+    `preserves_x`, so dump_buffer_to_screen keeps its index in X across
+    the call and compiles to the same loop as the original. COUT goes
+    wherever CSW points and promises nothing, so dump_buffer_to_printer
+    saves X before each call and reloads it after.
 
     The originals:
 

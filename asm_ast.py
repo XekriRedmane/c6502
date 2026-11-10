@@ -143,6 +143,7 @@ class Sub(Type_instruction):
 class Call(Type_instruction):
     name: str = ''
     reg_args: list[str] = field(default_factory=list)
+    preserves: list[str] = field(default_factory=list)
 
 
 @dataclass

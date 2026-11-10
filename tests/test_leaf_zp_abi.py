@@ -145,12 +145,14 @@ class TestLeafZpAbi(unittest.TestCase):
             "} "
             "int main(void) { return rec(3); }"
         )
-        with self.assertRaises(Exception) as cm:
-            self._codegen(src)
-        # AbiSelectionError doesn't subclass ParserError; it
-        # propagates as-is. Verify the error message names the
-        # offending function.
-        self.assertIn("rec", str(cm.exception))
+        # `main()` reports the AbiSelectionError on stderr and
+        # returns 1. Verify the message names the offending function.
+        with patch("sys.stdin", io.StringIO(src)),              patch("sys.stdout", new_callable=io.StringIO),              patch("sys.stderr", new_callable=io.StringIO) as err:
+            rc = compile_main([
+                "compile.py", "-", "--codegen", "--optimize",
+            ])
+        self.assertEqual(rc, 1)
+        self.assertIn("rec", err.getvalue())
 
     def test_extern_zp_abi_call_site_uses_zp(self) -> None:
         # Extern declaration with `__attribute__((zp_abi))`: call

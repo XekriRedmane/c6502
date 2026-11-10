@@ -391,6 +391,11 @@ def _consume_specifiers(items, start):
 #            nothing is defined. Valid in the prefix position, and in
 #            the postfix position on an object.
 #
+# `preserves_x` / `preserves_y` — bare-identifier; the function leaves
+#            X (Y) as it found it. Valid only on a function with
+#            `address`, since the compiler can't check code it doesn't
+#            compile.
+#
 # Register pinning of params / locals / return values is NOT an
 # attribute — it uses the C `register` storage-class keyword.
 _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
@@ -398,7 +403,12 @@ _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
     "return_bool_in_carry": None,
     "zeropage": None,
     "address": None,
+    "preserves_x": None,
+    "preserves_y": None,
 }
+
+# The register each `preserves_*` attribute names.
+_PRESERVES = {"preserves_x": "X", "preserves_y": "Y"}
 
 
 @dataclass
@@ -442,10 +452,10 @@ def _fixed_address(arg, where: str) -> int:
 
 def _extract_function_attributes(
     specs, where: str,
-) -> tuple[str | None, bool, int | None]:
+) -> tuple[str | None, bool, int | None, list[str]]:
     """Reduce a list of `(name, arg_or_None)` specs to the
-    `(abi_annotation, carry_return, address)` triple carried on a
-    function_decl. `specs` may be None (no attribute clause). `where`
+    `(abi_annotation, carry_return, address, preserves)` values carried
+    on a function_decl. `specs` may be None (no attribute clause). `where`
     is a short label ("function declaration" / "extern function
     declaration") used in error messages.
 
@@ -453,11 +463,13 @@ def _extract_function_attributes(
     duplicate spec, an argument on `zp_abi` or
     `return_bool_in_carry`, and an `address` without an integer
     address. `abi_annotation` is "zp_abi" or None, `carry_return` is
-    True when `return_bool_in_carry` is present, and `address` is the
-    address `address(...)` gave, or None."""
+    True when `return_bool_in_carry` is present, `address` is the
+    address `address(...)` gave, or None, and `preserves` lists the
+    registers ("X", "Y") that `preserves_x` / `preserves_y` name."""
     abi_annotation = None
     carry_return = False
     address = None
+    preserves: list[str] = []
     seen: set[str] = set()
     for name, arg in specs or []:
         if name not in _KNOWN_ATTRIBUTES:
@@ -467,7 +479,7 @@ def _extract_function_attributes(
             )
         if name in seen:
             raise ParserError(
-                f"duplicate `__attribute__(({name}...))` on {where}"
+                f"`{name}` is given twice on {where}"
             )
         seen.add(name)
         if name == "zeropage":
@@ -491,7 +503,13 @@ def _extract_function_attributes(
             carry_return = True
         if name == "address":
             address = _fixed_address(arg, where)
-    return abi_annotation, carry_return, address
+        if name in _PRESERVES:
+            if arg is not None:
+                raise ParserError(
+                    f"`__attribute__(({name}))` doesn't take an argument"
+                )
+            preserves.append(_PRESERVES[name])
+    return abi_annotation, carry_return, address, sorted(preserves)
 
 
 def _extract_object_placement(
@@ -516,11 +534,13 @@ def _extract_object_placement(
             )
         if spec_name in seen:
             raise ParserError(
-                f"duplicate `__attribute__(({spec_name}...))` on "
-                f"object declaration `{name}`"
+                f"`{spec_name}` is given twice on object declaration "
+                f"`{name}`"
             )
         seen.add(spec_name)
-        if spec_name in ("zp_abi", "return_bool_in_carry"):
+        if spec_name in (
+            "zp_abi", "return_bool_in_carry", "preserves_x", "preserves_y",
+        ):
             raise ParserError(
                 f"`__attribute__(({spec_name}))` is only valid on "
                 f"function declarations; saw it on object declaration "
@@ -1815,7 +1835,7 @@ class _ASTBuilder(Transformer):
                         f"supported on function declaration {name!r}; "
                         f"put it before the declaration"
                     )
-                prefix_abi, carry_return, address = (
+                prefix_abi, carry_return, address, preserves = (
                     _extract_function_attributes(
                         prefix_specs, where=f"function declaration {name!r}",
                     )
@@ -1838,6 +1858,7 @@ class _ASTBuilder(Transformer):
                         param_registers=[1 if r else 0 for r in param_regs],
                         carry_return=carry_return,
                         address=address,
+                        preserves=preserves,
                     )
                 ))
             else:
@@ -1939,8 +1960,10 @@ class _ASTBuilder(Transformer):
         # FunctionDecl, plus any inline struct definitions that
         # appeared in the return-type specifier).
         prefix_specs, i = _consume_attribute_clause(items, 0)
-        prefix_abi, carry_return, address = _extract_function_attributes(
-            prefix_specs, where="function definition",
+        prefix_abi, carry_return, address, preserves = (
+            _extract_function_attributes(
+                prefix_specs, where="function definition",
+            )
         )
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
@@ -1965,6 +1988,14 @@ class _ASTBuilder(Transformer):
                 f"function {name!r} has `__attribute__((address(...)))`, "
                 f"which names code that's already at that address, so it "
                 f"can't have a body"
+            )
+        if preserves:
+            raise ParserError(
+                f"function {name!r} is defined here, so it can't have "
+                f"`preserves_x` or `preserves_y`. Those describe a "
+                f"routine at a fixed address "
+                f"(`__attribute__((address(...)))`), whose code the "
+                f"compiler doesn't compile and so can't check"
             )
         param_names = outer_param_names or []
         param_regs = outer_param_regs or [False] * len(param_names)

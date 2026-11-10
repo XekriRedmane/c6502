@@ -2050,7 +2050,10 @@ class Translator:
                     reg_args.append(r)
         else:
             emitted.extend(self._emit_softstack_arg_writes(args))
-        emitted.append(asm_ast.Call(name=name, reg_args=reg_args))
+        emitted.append(asm_ast.Call(
+            name=name, reg_args=reg_args,
+            preserves=self._preserved_registers(name),
+        ))
         # `dst is None` means a void-returning callee: nothing to
         # capture, the return-value slot stays whatever it was.
         if dst is not None and self._returns_carry(name):
@@ -2305,6 +2308,15 @@ class Translator:
             if sym is not None and not isinstance(sym.attrs, StaticAttr):
                 return asm_ast.Pseudo(name=name, offset=k)
         return asm_ast.Data(name=name, offset=k)
+
+    def _preserved_registers(self, fn_name: str) -> list[str]:
+        """The registers ("X", "Y") the function `fn_name` leaves
+        unchanged, from `__attribute__((preserves_x))` /
+        `preserves_y`."""
+        if self._symbols is None:
+            return []
+        sym = self._symbols.get(fn_name)
+        return sorted(getattr(sym.attrs, "preserves", ())) if sym else []
 
     def _is_static_storage(self, name: str) -> bool:
         """True iff `name` resolves through the symbol table to an

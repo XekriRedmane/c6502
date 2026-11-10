@@ -339,11 +339,17 @@ class FunAttr(IdAttr):
 
     `address` is the address from `__attribute__((address(...)))`,
     or None. Such a function is code already at that address, so the
-    program can't define it."""
+    program can't define it.
+
+    `preserves` holds the registers ("X", "Y") that
+    `__attribute__((preserves_x))` / `preserves_y` say the function
+    leaves unchanged. Declarations add to it, and only a function with
+    an address may have any."""
     defined: bool
     is_global: bool
     carry_return: bool = False
     address: int | None = None
+    preserves: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -839,6 +845,41 @@ def _is_truth_valued(exp: c99_ast.Type_exp) -> bool:
     return False
 
 
+def _display_name(name: str) -> str:
+    """`name` as the program spelled it. identifier_resolution renames
+    a block-scope object `x` to `@N.x`."""
+    if name.startswith("@") and "." in name:
+        return name.split(".", 1)[1]
+    return name
+
+
+_C_TYPE_NAMES = {
+    Char: "char", SChar: "signed char", UChar: "unsigned char",
+    Int: "int", UInt: "unsigned int", Long: "long",
+    ULong: "unsigned long", LongLong: "long long",
+    ULongLong: "unsigned long long", Float: "float", Double: "double",
+    Void: "void",
+}
+
+
+def _c_type(t) -> str:
+    """`t` spelled the way C writes it, for error messages."""
+    if isinstance(t, Const):
+        return f"const {_c_type(t.referenced_type)}"
+    if isinstance(t, c99_ast.Volatile):
+        return f"volatile {_c_type(t.referenced_type)}"
+    if isinstance(t, Pointer):
+        return f"{_c_type(t.referenced_type)} *"
+    if isinstance(t, Array):
+        return f"{_c_type(t.element_type)}[{t.size}]"
+    if isinstance(t, (Structure, Union)):
+        kw = "union" if isinstance(t, Union) else "struct"
+        return f"{kw} {_display_name(t.tag)}"
+    if isinstance(t, FunType):
+        return "a function type"
+    return _C_TYPE_NAMES.get(type(t), type(t).__name__)
+
+
 def _check_unowned_object(
     name: str, initial: InitialValue, address: int | None,
 ) -> None:
@@ -855,6 +896,32 @@ def _check_unowned_object(
         )
 
 
+def _check_preserves(
+    name: str, ftype: Type, address: int | None, preserves,
+) -> None:
+    """Rejects `preserves_x` / `preserves_y` on a function without an
+    address, since the compiler can't check that code it compiles
+    keeps the promise, and `preserves_x` on a function whose result
+    comes back with its high byte in X (an `int` or `unsigned int`)."""
+    if not preserves:
+        return
+    if address is None:
+        regs = " / ".join(f"preserves_{r.lower()}" for r in sorted(preserves))
+        raise TypeCheckError(
+            f"function {name!r} has `{regs}` but no "
+            f"`__attribute__((address(...)))`; only a routine at a fixed "
+            f"address, whose code the compiler doesn't compile, can "
+            f"declare which registers it preserves"
+        )
+    ret = _strip_quals(ftype.ret) if isinstance(ftype, FunType) else None
+    if "X" in preserves and isinstance(ret, (Int, UInt)):
+        raise TypeCheckError(
+            f"function {name!r} has `preserves_x` but returns an "
+            f"{'int' if isinstance(ret, Int) else 'unsigned int'}, "
+            f"whose high byte comes back in X"
+        )
+
+
 def _check_carry_return_type(name: str, ret: Type) -> None:
     """Rejects `__attribute__((return_bool_in_carry))` on a function
     whose return type isn't a `bool` (in c6502, `bool` is `unsigned
@@ -862,8 +929,8 @@ def _check_carry_return_type(name: str, ret: Type) -> None:
     if not isinstance(_strip_quals(ret), (Char, UChar)):
         raise TypeCheckError(
             f"`__attribute__((return_bool_in_carry))` on {name!r} "
-            f"needs a `bool` (`unsigned char`) return type; got "
-            f"{ret!r}"
+            f"needs a `bool` (`unsigned char`) return type, not "
+            f"`{_c_type(ret)}`"
         )
 
 
@@ -1980,6 +2047,7 @@ class TypeChecker:
             is_global=is_global,
             carry_return=fd.carry_return,
             address=fd.address,
+            preserves=frozenset(fd.preserves),
         )
         # Per C99 §6.7.5.3.4, a parameter shall not have void type
         # (the `f(void)` form for empty params is handled by the
@@ -2150,8 +2218,8 @@ class TypeChecker:
         if (address is not None and prior_fixed is not None
                 and address != prior_fixed):
             raise TypeCheckError(
-                f"{name!r} is placed at ${prior_fixed:04X} and at "
-                f"${address:04X}"
+                f"two declarations of {name!r} give it different "
+                f"addresses, ${prior_fixed:04X} and ${address:04X}"
             )
         if address is None:
             address = prior_fixed
@@ -2177,14 +2245,17 @@ class TypeChecker:
         is_global: bool,
         carry_return: bool = False,
         address: int | None = None,
+        preserves: frozenset[str] = frozenset(),
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
+            _check_preserves(name, ftype, address, preserves)
             self.symbols[name] = Symbol(
                 type=ftype,
                 attrs=FunAttr(
                     defined=defined, is_global=is_global,
                     carry_return=carry_return, address=address,
+                    preserves=preserves,
                 ),
             )
             return
@@ -2221,8 +2292,9 @@ class TypeChecker:
         if (address is not None and prior_addr is not None
                 and address != prior_addr):
             raise TypeCheckError(
-                f"function {name!r} is placed at ${prior_addr:04X} and "
-                f"at ${address:04X}"
+                f"two declarations of function {name!r} give it "
+                f"different addresses, ${prior_addr:04X} and "
+                f"${address:04X}"
             )
         if address is None:
             address = prior_addr
@@ -2233,11 +2305,15 @@ class TypeChecker:
                 f"which names code that's already at ${address:04X}, so "
                 f"it can't also be defined"
             )
+        # `preserves_*` accumulates across declarations, like `address`.
+        preserves = existing.attrs.preserves | preserves
+        _check_preserves(name, ftype, address, preserves)
         self.symbols[name] = Symbol(
             type=ftype,
             attrs=FunAttr(
                 defined=new_defined, is_global=is_global,
                 carry_return=carry_return, address=address,
+                preserves=preserves,
             ),
         )
 
@@ -2332,16 +2408,16 @@ class TypeChecker:
         if isinstance(vd.placement, c99_ast.Absolute):
             raise TypeCheckError(
                 f"`__attribute__((address(...)))` needs an `extern` "
-                f"declaration, since {vd.name!r} names memory the "
-                f"program doesn't own"
+                f"declaration, since {_display_name(vd.name)!r} names "
+                f"memory the program doesn't own"
             )
         if vd.placement is not None and not isinstance(
             vd.storage_class, c99_ast.Static,
         ):
             raise TypeCheckError(
                 f"`__attribute__((zeropage))` needs an object with "
-                f"static storage; {vd.name!r} is automatic (declare "
-                f"it `static` or at file scope)"
+                f"static storage; {_display_name(vd.name)!r} is "
+                f"automatic (declare it `static` or at file scope)"
             )
         if isinstance(vd.storage_class, c99_ast.Static):
             if vd.init is None:

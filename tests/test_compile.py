@@ -406,14 +406,20 @@ class TestVoid(unittest.TestCase):
         return out
 
     def _expect_failure(self, src: str) -> str:
-        # `main()` lets pipeline exceptions (ParserError,
-        # TypeCheckError, ...) propagate; the chapter harnesses use
-        # the same idiom. Catch broadly so the test can assert on the
-        # message text regardless of which pass raised.
+        # `main()` reports a problem with the program (ParserError,
+        # TypeCheckError, ...) as `<stdin>: error: ...` on stderr and
+        # returns 1. Anything else still propagates, so catch that too
+        # and assert on the message text regardless of which pass
+        # rejected the program.
         try:
-            self._run(["compile.py", "-", "--codegen"], stdin=src)
+            rc, _, err = self._run(
+                ["compile.py", "-", "--codegen"], stdin=src,
+            )
         except Exception as e:  # noqa: BLE001
             return str(e)
+        if rc != 0:
+            self.assertTrue(err.startswith("<stdin>: error: "), err)
+            return err
         self.fail(f"expected compilation to fail for: {src!r}")
 
     def test_codegen_void_function_empty_body(self):
@@ -586,9 +592,14 @@ class TestSizeof(unittest.TestCase):
 
     def _expect_failure(self, src: str) -> str:
         try:
-            self._run(["compile.py", "-", "--codegen"], stdin=src)
+            rc, _, err = self._run(
+                ["compile.py", "-", "--codegen"], stdin=src,
+            )
         except Exception as e:  # noqa: BLE001
             return str(e)
+        if rc != 0:
+            self.assertTrue(err.startswith("<stdin>: error: "), err)
+            return err
         self.fail(f"expected compilation to fail for: {src!r}")
 
     def test_sizeof_scalar_types(self):

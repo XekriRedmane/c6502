@@ -42,6 +42,7 @@ error that names the declaration.
 | `zeropage` | an object with static storage | Places the object in zero page at an address the compiler picks. |
 | `zeropage(addr)` | an object with static storage | Places the object in zero page at `addr`. |
 | `address(addr)` | a function, or an `extern` object | Names code or memory that's already at `addr`. |
+| `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
 
 ### `zp_abi`
 
@@ -133,6 +134,64 @@ pool. Declare memory that the hardware changes, such as `KBD`, as
 `volatile`, so that every read in the source becomes a read in the
 output.
 
+### `preserves_x` and `preserves_y`
+
+The compiler assumes a call changes X and Y, so a value it keeps in
+X across a call has to be saved before the call and reloaded after
+it. Many ROM routines leave X or Y alone, though. `preserves_x` and
+`preserves_y` say so, and the compiler then keeps the value in the
+register across the call.
+
+```c
+__attribute__((zp_abi, preserves_x, preserves_y, address(0xFDF0)))
+void COUT1(register uint8_t c);
+```
+
+Here is Zork's loop that prints its output buffer, from
+`examples/zork_dump_buffer.c`. It keeps the index in X.
+
+```c
+for (uint8_t x = 0; x != BUFF_END; x++)
+    COUT1(BUFF_AREA[x]);
+```
+
+Without `preserves_x`, the loop saves X before each call and reloads
+it after.
+
+```
+.loop@0_start:
+   CPX   BUFF_END
+   BEQ   .loop@0_break
+   LDA   BUFF_AREA,X
+   STX   __local_dump_buffer_to_screen__x
+   JSR   COUT1
+   LDX   __local_dump_buffer_to_screen__x
+   INX
+   JMP   .loop@0_start
+```
+
+With it, the save and reload are gone, and the loop is the same as
+Zork's hand-written one.
+
+```
+.loop@0_start:
+   CPX   BUFF_END
+   BEQ   .loop@0_break
+   LDA   BUFF_AREA,X
+   JSR   COUT1
+   INX
+   JMP   .loop@0_start
+```
+
+Only a routine with `address` can carry these attributes, because the
+compiler can't check that a function it compiles keeps the promise.
+The compiler trusts the declaration. A routine declared
+`preserves_x` that changes X anyway breaks the caller, so declare
+only what the routine's code shows. `<apple2/monitor_io.h>` declares
+what the ROM listings show for each Monitor routine. A routine that
+returns an `int` can't be `preserves_x`, because the high byte of
+its result comes back in X.
+
 ## Calling a ROM routine
 
 A ROM routine was written long before your program, so the compiler
@@ -145,9 +204,11 @@ has to be told three things about it.
    their result in the carry flag. That's `zp_abi` with `register`
    parameters, and `return_bool_in_carry` for a carry result.
 3. **What else it changes.** The compiler assumes a call changes A, X,
-   Y, and every flag, so nothing needs to be declared about those.
-   The zero-page bytes the ROM uses do need declaring, as "Sharing
-   zero page with the Monitor" below explains.
+   Y, and every flag, so nothing needs to be declared about those,
+   though declaring `preserves_x` or `preserves_y` lets the compiler
+   keep a value in that register across the call. The zero-page
+   bytes the ROM uses do need declaring, as "Sharing zero page with
+   the Monitor" below explains.
 
 ### Example: `COUT`
 
@@ -180,7 +241,7 @@ __attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
 ### A small program
 
 `<apple2/monitor_io.h>` declares `COUT` the same way, along with `HOME`,
-`RDKEY`, and `COUT1`, and the Monitor's zero page.
+`RDKEY`, `COUT1`, and `WAIT`, and the Monitor's zero page.
 
 ```c
 #include <apple2/monitor_io.h>
@@ -367,7 +428,13 @@ fails if two files give a name different addresses.
 ## What the compiler rejects
 
 Each of these stops the compile with a message that names the
-declaration and the reason.
+declaration and the reason. `compile.py` prints it on one line, as
+`<file>: error: <message>`, and exits with status 1.
+
+```
+$ compile.py rom.c --codegen
+rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte comes back in X
+```
 
 | Mistake | Why it's an error |
 |---|---|
@@ -380,6 +447,8 @@ declaration and the reason.
 | A `zp_abi` routine with `address` and a parameter that isn't `register` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
 | A `zp_abi` routine with `address` that returns a pointer, or more than 2 bytes | Those come back in `HARGS`, where the routine doesn't put them. Declare a pointer result as `uint16_t`. |
 | Taking the address of a `zp_abi` routine with `address` | A call through a pointer passes its arguments on the soft stack. |
+| `preserves_x` or `preserves_y` on a function without `address`, or on a function definition | The compiler can't check that code it compiles keeps the promise. |
+| `preserves_x` on a routine that returns an `int` or `unsigned int` | The high byte of the result comes back in X. |
 | `return_bool_in_carry` on some declarations of a function but not all | A caller compiled without it would read A instead of the carry flag. |
 
 ## Limits
@@ -392,9 +461,10 @@ listing shows, and any zero page that firmware uses isn't covered.
 **Linking.** A source file with zero-page objects, including one that
 includes `<apple2/monitor_io.h>`, can't be linked with `--link` yet.
 
-**Registers.** The compiler assumes every call changes A, X, Y, and
-the flags. `COUT1` preserves Y, but there's no way to declare that
-yet, so the compiler doesn't keep a value in X or Y across the call.
+**Registers.** Today only the loop-counter optimizations keep a value
+in X or Y across a call declared `preserves_x` or `preserves_y`.
+Other optimizations still treat the call as changing the register,
+which is correct but leaves some reloads in (see `TODO.md`).
 
 **Arguments.** A ROM routine can take at most 2 bytes of arguments,
 in A and X. A routine that takes an argument in Y, or in a zero-page

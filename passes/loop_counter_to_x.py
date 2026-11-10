@@ -90,6 +90,35 @@ consumer). Specifically:
     either (a) the next iter starts at loop-top with X carrying,
     or (b) before the next Call, an STX will sync M.
 
+# Count-up counters and preserving calls
+
+The step can also be an `Inc(M)`, for a loop that counts up and
+tests the counter at the top, the way Zork's buffer dump does:
+
+    LDA  #0             ; init               LDX  #0
+    STA  M                                  .top:
+.top:                                         CPX  BUFF_END
+    LDA  M              ; test        =>      BEQ  .done
+    CMP  BUFF_END                             LDA  BUFF_AREA,X
+    BEQ  .done                                JSR  COUT1
+    LDX  M              ; reload              INX
+    LDA  BUFF_AREA,X                          JMP  .top
+    JSR  COUT1
+    INC  M              ; step
+    JMP  .top
+
+The `Inc(M)` becomes `INX`. An `LDA M` directly followed by
+`CMP op`, where `op` is something CPX can address (an immediate or
+a direct memory operand) and A isn't read afterwards, becomes
+`CPX op`, which sets the same flags. Every other `LDA M` becomes
+`TXA` as before.
+
+A call to a routine declared `preserves_x` doesn't write X
+(`asm_liveness.call_preserves`), so it isn't wrapped. Any other call
+is wrapped only when the counter is read after it before the init
+runs again (`_counter_live_after`). A call before the loop, whose
+X is overwritten by the init, needs no `STX M` / `LDX M`.
+
 # Where to run
 
 After `replace_pseudoregisters` (operands are concrete) and after
@@ -99,12 +128,18 @@ Before `expand_long_branches`."""
 
 from __future__ import annotations
 
+import dataclasses
+
 import asm_ast
+from passes.asm_liveness import a_dead_at, call_preserves
 
 
 _FLAG_NZ_BRANCHES: tuple[type, ...] = (
     asm_ast.EQ, asm_ast.NE, asm_ast.MI, asm_ast.PL,
 )
+
+# The operands CPX can compare with: immediate, zero page, absolute.
+_CPX_OPERANDS = (asm_ast.Imm, asm_ast.Data, asm_ast.ZP)
 
 
 def apply_loop_counter_to_x(prog: asm_ast.Program) -> asm_ast.Program:
@@ -209,7 +244,10 @@ def _plan_promotion(instrs):
                 # returned a live value in X — refuse the promotion.
                 if _call_returns_live_x(instrs, i):
                     return None
-                call_indices.append(i)
+                if _counter_live_after(
+                    instrs, i, m_key, cand['init_idx'],
+                ):
+                    call_indices.append(i)
                 i += 1
                 continue
             if _is_ldx_to_x(instr):
@@ -240,6 +278,7 @@ def _plan_promotion(instrs):
         'pivot_ranges': pivot_ranges,
         'call_indices': call_indices,
         'lda_m_indices': cand['lda_m_indices'],
+        'step_is_inc': cand['step_is_inc'],
     }
 
 
@@ -347,9 +386,48 @@ def _is_x_write_other_than(instr, m_key) -> bool:
     if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
         return _is_reg_x(instr.dst)
     if isinstance(instr, asm_ast.Call):
-        return True
+        return not call_preserves(instr, "X")
     if isinstance(instr, asm_ast.Pop):
         return _is_reg_x(instr.dst)
+    return False
+
+
+def _counter_live_after(instrs, call_idx: int, m_key, init_idx: int) -> bool:
+    """True iff the counter M is read on some path after the call at
+    `call_idx` before the init at `init_idx` writes it again. Only
+    then does the call need `STX M` / `LDX M` around it, so that X
+    still holds M afterwards. Follows both arms of a branch and jump
+    targets."""
+    label_idx = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    seen: set[int] = set()
+    stack = [call_idx + 1]
+    while stack:
+        j = stack.pop()
+        while 0 <= j < len(instrs) and j not in seen:
+            seen.add(j)
+            if j == init_idx:
+                break
+            ins = instrs[j]
+            if any(
+                role != 'init' and _operand_key(op) == m_key
+                for role, op in _operand_roles(ins)
+            ):
+                return True
+            if isinstance(ins, (asm_ast.Return, asm_ast.Ret)):
+                break
+            if isinstance(ins, asm_ast.Jump):
+                tgt = label_idx.get(ins.target)
+                if tgt is not None:
+                    stack.append(tgt)
+                break
+            if isinstance(ins, asm_ast.Branch):
+                tgt = label_idx.get(ins.target)
+                if tgt is not None:
+                    stack.append(tgt)
+            j += 1
     return False
 
 
@@ -422,12 +500,18 @@ def _try_collect_pivot_range(instrs, start: int):
 
 def _find_counter_candidate(instrs):
     """Identify a memory slot M with the loop-counter use pattern.
-    Returns a dict with 'm_key', 'init_idx', 'dec_idx',
-    'loop_top_lda_idx', 'lda_m_indices', or None."""
+    Returns a dict with 'm_key', 'init_idx', 'dec_idx' (the index of
+    the step, a `Dec(M)` or an `Inc(M)`), 'step_is_inc',
+    'loop_top_lda_idx', 'lda_m_indices', or None. A count-down
+    counter needs its `DEC` to branch back to a loop-top `LDX M`; a
+    count-up counter has no loop-top reload to find, since its loop
+    tests the counter with `LDA M; CMP` instead."""
     init_idx: dict[tuple, int] = {}
     init_count: dict[tuple, int] = {}
     dec_idx: dict[tuple, int] = {}
     dec_count: dict[tuple, int] = {}
+    inc_idx: dict[tuple, int] = {}
+    inc_count: dict[tuple, int] = {}
     ldx_idx: dict[tuple, list[int]] = {}
     lda_idx: dict[tuple, list[int]] = {}
     disqualified: set[tuple] = set()
@@ -447,6 +531,9 @@ def _find_counter_candidate(instrs):
             elif role == 'dec':
                 dec_count[key] = dec_count.get(key, 0) + 1
                 dec_idx[key] = i
+            elif role == 'inc':
+                inc_count[key] = inc_count.get(key, 0) + 1
+                inc_idx[key] = i
             else:
                 disqualified.add(key)
 
@@ -455,19 +542,25 @@ def _find_counter_candidate(instrs):
             continue
         if init_count.get(key, 0) != 1:
             continue
-        if dec_count.get(key, 0) != 1:
-            continue
         if not ldx_idx.get(key):
             continue
-        loop_top = _find_loop_top_lda(
-            instrs, dec_idx[key], ldx_idx[key],
-        )
-        if loop_top is None:
+        n_dec, n_inc = dec_count.get(key, 0), inc_count.get(key, 0)
+        if n_dec == 1 and n_inc == 0:
+            loop_top = _find_loop_top_lda(
+                instrs, dec_idx[key], ldx_idx[key],
+            )
+            if loop_top is None:
+                continue
+            step, step_is_inc = dec_idx[key], False
+        elif n_inc == 1 and n_dec == 0:
+            loop_top, step, step_is_inc = None, inc_idx[key], True
+        else:
             continue
         return {
             'm_key': key,
             'init_idx': init_idx[key],
-            'dec_idx': dec_idx[key],
+            'dec_idx': step,
+            'step_is_inc': step_is_inc,
             'loop_top_lda_idx': loop_top,
             'lda_m_indices': lda_idx.get(key, []),
         }
@@ -509,7 +602,7 @@ def _operand_roles(instr):
         return
     if isinstance(instr, asm_ast.Inc):
         if not isinstance(instr.dst, asm_ast.Reg):
-            yield ('other', instr.dst)
+            yield ('inc', instr.dst)
         return
     if isinstance(instr, (asm_ast.Add, asm_ast.Sub,
                           asm_ast.And, asm_ast.Or)):
@@ -524,6 +617,15 @@ def _operand_roles(instr):
         if not isinstance(instr.right, asm_ast.Reg):
             yield ('other', instr.right)
         return
+    # Any other instruction that names a memory operand (a shift or
+    # rotate of it, `EOR`, `BIT`, `PHA`, ...) is a use the promotion
+    # doesn't rewrite, so it disqualifies the slot. Missing one would
+    # leave X stale: `STA M; ROL M; INC M; LDX M` once promoted M to
+    # X with the `ROL` still updating memory.
+    for f in dataclasses.fields(instr):
+        op = getattr(instr, f.name)
+        if isinstance(op, (asm_ast.Data, asm_ast.ZP)):
+            yield ('other', op)
 
 
 def _find_loop_top_lda(instrs, dec_idx, ldx_indices):
@@ -580,6 +682,7 @@ def _apply_plan(fn, plan):
     the plan. Output is a fresh instruction list."""
     instrs = fn.instructions
     m_op = plan['m_op']
+    step_is_inc = plan['step_is_inc']
     init_idx = plan['init_idx']
     dec_idx = plan['dec_idx']
     loop_top_lda_idx = plan['loop_top_lda_idx']
@@ -622,14 +725,25 @@ def _apply_plan(fn, plan):
             i += 1
             continue
         if i in lda_m_set:
+            nxt = instrs[i + 1] if i + 1 < len(instrs) else None
+            if (isinstance(nxt, asm_ast.Compare) and _is_reg_a(nxt.left)
+                    and isinstance(nxt.right, _CPX_OPERANDS)
+                    and a_dead_at(instrs, i + 2)):
+                # `LDA M; CMP op` becomes `CPX op`, which sets the
+                # same flags and leaves A alone, and A isn't read
+                # afterwards.
+                out.append(asm_ast.Compare(left=reg_x, right=nxt.right))
+                i += 2
+                continue
             # `LDA M` rewritten to `TXA` — X = M is the promotion
             # invariant, so this is value-equivalent.
             out.append(asm_ast.Mov(src=reg_x, dst=reg_a))
             i += 1
             continue
         if i == dec_idx:
-            # Replace Dec(M) with Dec(Reg(X)) (DEX).
-            out.append(asm_ast.Dec(dst=reg_x))
+            # Replace the step with DEX or INX.
+            step = asm_ast.Inc if step_is_inc else asm_ast.Dec
+            out.append(step(dst=reg_x))
             i += 1
             continue
         if i == init_idx:

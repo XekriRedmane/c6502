@@ -21,8 +21,8 @@ CSW	EQU	$36
 KSW	EQU	$38
 __monitor_acc	EQU	$45
 __monitor_status	EQU	$48
+__monitor_rnd	EQU	$4E
 __local_dump_buffer_to_printer__x	EQU	$82
-__local_dump_buffer_to_screen__x	EQU	$82
 __local_dump_buffer_to_printer__1	EQU	$83
 __local_dump_buffer_to_printer__2	EQU	$84
 BUFF_END	EQU	$EB
@@ -30,6 +30,7 @@ PRINTER_CSW	EQU	$EE
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 HOME	EQU	$FC58
+WAIT	EQU	$FCA8
 RDKEY	EQU	$FD0C
 COUT	EQU	$FDED
 COUT1	EQU	$FDF0
@@ -41,6 +42,7 @@ COUT1	EQU	$FDF0
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
 ; ext HOME params=
 ; ext RDKEY params=
+; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; call dump_buffer_to_printer -> COUT
 ; call dump_buffer_to_screen -> COUT1
 ; @zp-link-meta-end
@@ -48,16 +50,13 @@ COUT1	EQU	$FDF0
 dump_buffer_to_screen:
    SUBROUTINE
 
-   LDA   #$00
-   STA   __local_dump_buffer_to_screen__x
+   LDX   #$00
 .loop@0_start:
-   LDA   __local_dump_buffer_to_screen__x
-   CMP   BUFF_END
+   CPX   BUFF_END
    BEQ   .loop@0_break
-   LDX   __local_dump_buffer_to_screen__x
    LDA   BUFF_AREA,X
    JSR   COUT1
-   INC   __local_dump_buffer_to_screen__x
+   INX
    JMP   .loop@0_start
 .loop@0_break:
    LDA   #$00
@@ -90,16 +89,15 @@ dump_buffer_to_printer:
    LDA   #$CE
    JSR   COUT
 .if_end@0:
-   LDA   #$00
-   STA   __local_dump_buffer_to_printer__x
+   LDX   #$00
 .loop@1_start:
-   LDA   __local_dump_buffer_to_printer__x
-   CMP   BUFF_END
+   CPX   BUFF_END
    BEQ   .loop@1_break
-   LDX   __local_dump_buffer_to_printer__x
    LDA   BUFF_AREA,X
+   STX   __local_dump_buffer_to_printer__x
    JSR   COUT
-   INC   __local_dump_buffer_to_printer__x
+   LDX   __local_dump_buffer_to_printer__x
+   INX
    JMP   .loop@1_start
 .loop@1_break:
    LDA   CSW

@@ -11,6 +11,7 @@ Run everything from the repo root, as modules:
 ```sh
 uv run python -m fuzz.exprs --start 0 --count 300   # expression semantics
 uv run python -m fuzz.calls --start 0 --count 300   # calling conventions
+uv run python -m fuzz.stmts --start 0 --count 300   # control flow, storage
 uv run python -m fuzz.runner prog.c dir/             # check given programs
 uv run python -m fuzz.reduce fuzz_out/calls/calls534.c
 ```
@@ -35,9 +36,11 @@ correct result (`exprs` does, and a hand-written file can with a
 `// expect: N` line), every path is checked against it. Otherwise the
 TAC result is the reference and only `unopt` and `opt` are checked.
 
-The fuzz drivers count a program that only an asm path rejects (an
-unoptimized frame over the 253-byte limit, about 1 in 100 `exprs`
-programs) as "rejected" rather than wrong, and don't save it. A
+The fuzz drivers count a program that only an asm path rejects with
+a known backend limit (an unoptimized frame over the 253-byte limit,
+about 1 in 100 `exprs` programs; `runner.is_backend_limit`) as
+"rejected" rather than wrong, and don't save it. Any other asm-path
+error is a failure. A
 front-end rejection is saved as a failure, because the generators
 only produce valid C.
 
@@ -72,6 +75,41 @@ function that reaches `rec` or the pointer call) and only puts
 compiler rejects it otherwise. If the ABI eligibility rules in
 `passes/abi_selection.py` change, update `soft` in `make_program` to
 match, or the fuzzer reports rejections as failures.
+
+## `stmts.py`
+
+Random statement bodies for a few helper functions and `main`:
+`if` / `else`, `for` / `while` / `do` loops nested up to three deep,
+`switch` with fall-through and `default`, `break`, `continue`, early
+`return`, and the assignment operators (`++` / `--` both ways and the
+compound assignments) as statements and with their value used. The
+objects are locals (some passed to a helper by pointer), block
+statics, globals, zero-page globals, `*gp` through a global pointer,
+array elements, and struct members, across all eight integer types.
+`mix()` folds values into a checksum that main returns.
+
+The generator builds a tree, renders it, and runs the same tree in a
+Python interpreter under C's rules, so the program carries `// expect:
+N` and every path, the TAC interpreter included, is checked against
+it. Undefined behavior is ruled out by construction (one modification
+per expression, on an object nothing else in the statement names;
+loop counters the body never writes) or, for signed overflow and bad
+shifts, by the interpreter raising `_UB`, in which case the seed
+draws another program. A function is capped at `_STMT_BUDGET`
+statements so the unoptimized frame stays under 253 bytes.
+
+With the INC / DEC fix of `361c2e7` undone, it finds that bug in 3
+of the first 150 seeds. In its first 3,000 seeds it found three
+more:
+
+- the INC peephole minting `.inc_done@0` twice in one function on
+  separate fixed-point rounds (seed 987, rejected by the assembler);
+- move coalescing putting the shift temp of `p *= 5` in `p`'s slot
+  while `p` was still to be read (seed 1921, a wrong value with
+  --optimize);
+- `redundant_load` taking an empty `z_reflects` to mean "Z reflects
+  A", after a soft-stack store's `LDY #off` had set Z (seed 2391, a
+  wrong value without --optimize).
 
 ## `reduce.py`
 

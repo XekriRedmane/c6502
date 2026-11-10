@@ -69,6 +69,16 @@ def is_error(v: int | str) -> bool:
     return isinstance(v, str)
 
 
+# Assembler errors that mark a backend limit rather than a miscompile:
+# the soft-stack frame is addressed through `(FP),Y`, so a frame over
+# 253 bytes (or an offset past 255) can't be built.
+_BACKEND_LIMITS = ("local_bytes", "frame offset")
+
+
+def is_backend_limit(v: int | str) -> bool:
+    return isinstance(v, str) and any(s in v for s in _BACKEND_LIMITS)
+
+
 def disagreements(
     res: dict[str, int | str], expected: int | None,
 ) -> tuple[str, ...]:
@@ -96,9 +106,12 @@ def fuzz_main(make_program, prog: str, argv: list[str] | None) -> int:
     A program where some path gives a wrong value is a failure and is
     written to the output directory as `<prog><seed>.c`. So is one
     the front end rejects, because the generators only produce valid
-    C. A program that only an asm path rejects (a backend limit, such
-    as an unoptimized frame over 253 bytes) while the TAC result is
-    right is counted separately and not saved."""
+    C. A program that only an asm path rejects with a known backend
+    limit (`is_backend_limit`, an unoptimized frame over 253 bytes)
+    while the TAC result is right is counted separately and not
+    saved. Any other asm-path error is a failure: `fuzz.stmts` seed
+    987 found a duplicate label that way, which had been counted as a
+    rejection."""
     ap = argparse.ArgumentParser(prog=f"python -m fuzz.{prog}")
     ap.add_argument("--start", type=int, default=0, help="first seed")
     ap.add_argument("--count", type=int, default=100, help="number of seeds")
@@ -115,7 +128,7 @@ def fuzz_main(make_program, prog: str, argv: list[str] | None) -> int:
         bad = disagreements(res, expected)
         if (
             bad and "tac" not in bad
-            and all(is_error(res[m]) for m in bad)
+            and all(is_backend_limit(res[m]) for m in bad)
         ):
             rejected += 1
             print(f"seed {seed}: rejected {format_result(res)}", flush=True)

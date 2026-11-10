@@ -39,7 +39,8 @@ file holds the project overview and notes about root-level files
 - [include/CLAUDE.md](include/CLAUDE.md) — c6502 flavors of
   `<stdint.h>` and `<limits.h>`.
 - [fuzz/CLAUDE.md](fuzz/CLAUDE.md) — random-program fuzzers
-  (expression semantics, calling conventions), a runner that checks
+  (expression semantics, calling conventions, statements and storage
+  classes), a runner that checks
   every execution path, and a reducer for failing programs.
 
 ## Pipeline at a glance

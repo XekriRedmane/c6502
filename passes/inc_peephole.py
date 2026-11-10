@@ -80,8 +80,21 @@ from passes.asm_liveness import a_dead_at
 def apply_inc_peephole(prog: asm_ast.Program) -> asm_ast.Program:
     """Walk every Function top-level and rewrite multi-byte add-1
     chains into INC chains where eligible. `StaticVariable`s and
-    other top-levels pass through unchanged."""
-    counter = 0
+    other top-levels pass through unchanged.
+
+    Labels are numbered past every `.inc_done@N` already in the
+    program. The peephole fixed point runs this pass many times, and
+    a count restarted at 0 each time gave a function two
+    `.inc_done@0` labels, which dasm rejects."""
+    counter = 1 + max(
+        (int(ins.name[len(".inc_done@"):])
+         for tl in prog.top_level if isinstance(tl, asm_ast.Function)
+         for ins in tl.instructions
+         if isinstance(ins, asm_ast.Label)
+         and ins.name.startswith(".inc_done@")
+         and ins.name[len(".inc_done@"):].isdigit()),
+        default=-1,
+    )
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):

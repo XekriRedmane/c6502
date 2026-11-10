@@ -110,5 +110,32 @@ class TestTailMergeSim(unittest.TestCase):
                 self.assertEqual(got, 100)
 
 
+
+class TestTailMergeLabels(unittest.TestCase):
+
+    def test_new_label_unique_across_functions(self):
+        # `.tail@0` already exists in another function; the sim's
+        # assembler keeps one label table for the program.
+        other = asm_ast.Function(
+            name="g", is_global=False, params=[],
+            instructions=[asm_ast.Label(name=".tail@0")] + _ret0(),
+        )
+        f = asm_ast.Function(
+            name="f", is_global=False, params=[],
+            instructions=(
+                [asm_ast.Branch(cond=asm_ast.EQ(), target="L")] + _ret0()
+                + [asm_ast.Label(name="L"),
+                   asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A,
+                               is_volatile=False)]
+                + _ret0()
+            ),
+        )
+        out = apply_tail_merge(asm_ast.Program(top_level=[other, f]))
+        labels = [i.name for tl in out.top_level for i in tl.instructions
+                  if isinstance(i, asm_ast.Label)]
+        self.assertEqual(len(labels), len(set(labels)))
+        self.assertIn(".tail@1", labels)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,11 +57,19 @@ _CONTROL = (
 def apply_tail_merge(prog: asm_ast.Program) -> asm_ast.Program:
     """Merges repeated return tails in every Function. Other
     top-levels pass through unchanged."""
+    # Every label in the program, so a new `.tail@N` is unique even
+    # across functions (the sim's assembler keeps one label table) and
+    # across the fixed point's repeated runs of this pass.
+    labels = {
+        ins.name for tl in prog.top_level
+        if isinstance(tl, asm_ast.Function)
+        for ins in tl.instructions if isinstance(ins, asm_ast.Label)
+    }
     counter = 0
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            tl, counter = _rewrite_function(tl, counter)
+            tl, counter = _rewrite_function(tl, counter, labels)
         new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
@@ -101,10 +109,11 @@ def _in_reach(instrs, b: int, keep: int) -> bool:
 
 
 def _rewrite_function(
-    fn: asm_ast.Function, counter: int,
+    fn: asm_ast.Function, counter: int, labels: set[str],
 ) -> tuple[asm_ast.Function, int]:
+    """Rewrites the sites in one function. `labels` holds every label
+    in the program and gains the ones minted here."""
     instrs = list(fn.instructions)
-    labels = {x.name for x in instrs if isinstance(x, asm_ast.Label)}
     # Sites: `Branch(c, L); <tail>; Label(L)` at index b.
     sites: list[tuple[int, tuple]] = []
     for b, ins in enumerate(instrs):

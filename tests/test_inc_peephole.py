@@ -494,5 +494,36 @@ class TestIncDecLeavesA(unittest.TestCase):
         )
 
 
+
+class TestIncLabelNumbering(unittest.TestCase):
+    """The peephole fixed point runs this pass many times. A label
+    count restarted at 0 each run gave one function two
+    `.inc_done@0` labels (fuzz.stmts seed 987)."""
+
+    def test_new_label_skips_existing(self):
+        m = asm_ast.ZP(address=0x80, offset=0)
+        m1 = asm_ast.ZP(address=0x81, offset=0)
+        a = asm_ast.Reg(reg=asm_ast.A())
+        chain = [
+            asm_ast.Mov(src=m, dst=a, is_volatile=False),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=a),
+            asm_ast.Mov(src=a, dst=m, is_volatile=False),
+            asm_ast.Mov(src=m1, dst=a, is_volatile=False),
+            asm_ast.Add(src=asm_ast.Imm(value=0), dst=a),
+            asm_ast.Mov(src=a, dst=m1, is_volatile=False),
+        ]
+        fn = asm_ast.Function(
+            name="f", is_global=True, params=[],
+            instructions=[asm_ast.Label(name=".inc_done@0")] + chain + [
+                asm_ast.Return(save_a=False, save_x=False),
+            ],
+        )
+        out = apply_inc_peephole(asm_ast.Program(top_level=[fn]))
+        labels = [i.name for i in out.top_level[0].instructions
+                  if isinstance(i, asm_ast.Label)]
+        self.assertEqual(labels, [".inc_done@0", ".inc_done@1"])
+
+
 if __name__ == "__main__":
     unittest.main()

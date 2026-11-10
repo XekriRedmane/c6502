@@ -87,6 +87,10 @@ Two key runtime conventions:
   one in `$80-$FF`, which removes those bytes from the compiler's
   pools. Their initial values are stored by a generated `__zp_init`,
   which the boot code calls before `main` (see `passes/zp_globals.py`).
+  `__attribute__((address(addr)))` binds a function (a ROM routine)
+  or an `extern` object (an I/O register) to a fixed address. The
+  name only gets an `EQU`, and it can't be defined. Below `$100` the
+  object is an `extern` zero-page object.
 - **zp_abi + call-graph-disjoint private pools** put params AND
   body locals in ZP for eligible leaf / non-recursive /
   non-indirect-calling functions; ineligible functions fall back

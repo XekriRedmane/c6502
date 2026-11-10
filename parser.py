@@ -384,12 +384,20 @@ def _consume_specifiers(items, start):
 #            (`zeropage(0xBA)`). Valid on objects, in the prefix or
 #            the declarator-postfix position. See passes/zp_globals.py.
 #
+# `address` — binds a name to a fixed address (`address(0xFDED)`): a
+#            function that's code at that address, such as a ROM
+#            routine, or an `extern` object that's memory something
+#            outside the program owns. The name gets an `EQU`, and
+#            nothing is defined. Valid in the prefix position, and in
+#            the postfix position on an object.
+#
 # Register pinning of params / locals / return values is NOT an
 # attribute — it uses the C `register` storage-class keyword.
 _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
     "zp_abi": None,
     "return_bool_in_carry": None,
     "zeropage": None,
+    "address": None,
 }
 
 
@@ -415,21 +423,41 @@ def _consume_attribute_clause(items, start):
     return None, start
 
 
+def _fixed_address(arg, where: str) -> int:
+    """The address given to `__attribute__((address(...)))` on
+    `where`, checked to be an integer in the 6502's 16-bit address
+    space."""
+    if arg is None or isinstance(arg, str):
+        raise ParserError(
+            f"`__attribute__((address(...)))` takes an integer "
+            f"address; saw {'none' if arg is None else 'a string'} on "
+            f"{where}"
+        )
+    if not 0 <= arg <= 0xFFFF:
+        raise ParserError(
+            f"address ${arg:X} on {where} is outside $0000-$FFFF"
+        )
+    return arg
+
+
 def _extract_function_attributes(
     specs, where: str,
-) -> tuple[str | None, bool]:
+) -> tuple[str | None, bool, int | None]:
     """Reduce a list of `(name, arg_or_None)` specs to the
-    `(abi_annotation, carry_return)` pair carried on a function_decl.
-    `specs` may be None (no attribute clause). `where` is a short
-    label ("function declaration" / "extern function declaration")
-    used in error messages.
+    `(abi_annotation, carry_return, address)` triple carried on a
+    function_decl. `specs` may be None (no attribute clause). `where`
+    is a short label ("function declaration" / "extern function
+    declaration") used in error messages.
 
     Rejects any spec name that isn't a function attribute, any
-    duplicate spec, and an argument on either attribute.
-    `abi_annotation` is "zp_abi" or None, and `carry_return` is True
-    when `return_bool_in_carry` is present."""
+    duplicate spec, an argument on `zp_abi` or
+    `return_bool_in_carry`, and an `address` without an integer
+    address. `abi_annotation` is "zp_abi" or None, `carry_return` is
+    True when `return_bool_in_carry` is present, and `address` is the
+    address `address(...)` gave, or None."""
     abi_annotation = None
     carry_return = False
+    address = None
     seen: set[str] = set()
     for name, arg in specs or []:
         if name not in _KNOWN_ATTRIBUTES:
@@ -461,19 +489,22 @@ def _extract_function_attributes(
                     "take an argument"
                 )
             carry_return = True
-    return abi_annotation, carry_return
+        if name == "address":
+            address = _fixed_address(arg, where)
+    return abi_annotation, carry_return, address
 
 
 def _extract_object_placement(
     specs, name: str,
-) -> c99_ast.ZeroPage | None:
+) -> c99_ast.Type_placement | None:
     """Reduce the attribute specs on an object declaration to its
-    `placement`. `zeropage` gives `ZeroPage(None)`, and
-    `zeropage(addr)` gives `ZeroPage(addr)`. Rejects `zp_abi` (a
-    function attribute), unknown and duplicate names, and a string
-    or out-of-range address. Whether the object can go in zero page
-    at all (static storage, size, collisions) is decided later, in
-    the type checker and passes/zp_globals.py."""
+    `placement`. `zeropage` gives `ZeroPage(None)`, `zeropage(addr)`
+    gives `ZeroPage(addr)`, and `address(addr)` gives
+    `Absolute(addr)`. Rejects `zp_abi` (a function attribute),
+    unknown and duplicate names, both placements at once, and a
+    string or out-of-range address. Whether the object can be placed
+    there at all (storage class, size, collisions) is decided later,
+    in the type checker and passes/zp_globals.py."""
     placement = None
     seen: set[str] = set()
     for spec_name, arg in specs or []:
@@ -495,6 +526,16 @@ def _extract_object_placement(
                 f"function declarations; saw it on object declaration "
                 f"`{name}`"
             )
+        if placement is not None:
+            raise ParserError(
+                f"`__attribute__((zeropage))` and "
+                f"`__attribute__((address(...)))` both given on `{name}`"
+            )
+        if spec_name == "address":
+            placement = c99_ast.Absolute(
+                address=_fixed_address(arg, f"object `{name}`"),
+            )
+            continue
         if isinstance(arg, str):
             raise ParserError(
                 f"`__attribute__((zeropage(...)))` takes an integer "
@@ -514,7 +555,8 @@ def _merge_placement(prefix, postfix, name: str):
     its declarator's postfix clause. Giving it in both is an error."""
     if prefix is not None and postfix is not None:
         raise ParserError(
-            f"`__attribute__((zeropage))` given twice on `{name}`"
+            f"a placement attribute (`zeropage` or `address`) is "
+            f"given twice on `{name}`"
         )
     return prefix if prefix is not None else postfix
 
@@ -1773,8 +1815,10 @@ class _ASTBuilder(Transformer):
                         f"supported on function declaration {name!r}; "
                         f"put it before the declaration"
                     )
-                prefix_abi, carry_return = _extract_function_attributes(
-                    prefix_specs, where="function declaration",
+                prefix_abi, carry_return, address = (
+                    _extract_function_attributes(
+                        prefix_specs, where=f"function declaration {name!r}",
+                    )
                 )
                 if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
@@ -1793,6 +1837,7 @@ class _ASTBuilder(Transformer):
                         abi_annotation=prefix_abi,
                         param_registers=[1 if r else 0 for r in param_regs],
                         carry_return=carry_return,
+                        address=address,
                     )
                 ))
             else:
@@ -1894,7 +1939,7 @@ class _ASTBuilder(Transformer):
         # FunctionDecl, plus any inline struct definitions that
         # appeared in the return-type specifier).
         prefix_specs, i = _consume_attribute_clause(items, 0)
-        prefix_abi, carry_return = _extract_function_attributes(
+        prefix_abi, carry_return, address = _extract_function_attributes(
             prefix_specs, where="function definition",
         )
         specs, i = _consume_specifiers(items, i)
@@ -1914,6 +1959,12 @@ class _ASTBuilder(Transformer):
             raise ParserError(
                 f"storage class 'register' isn't permitted on "
                 f"function definition {name!r}"
+            )
+        if address is not None:
+            raise ParserError(
+                f"function {name!r} has `__attribute__((address(...)))`, "
+                f"which names code that's already at that address, so it "
+                f"can't have a body"
             )
         param_names = outer_param_names or []
         param_regs = outer_param_regs or [False] * len(param_names)

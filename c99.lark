@@ -229,7 +229,9 @@ specifier: type_specifier | type_qualifier | STATIC | EXTERN | REGISTER
 // var). Recognized annotation names: `zp_abi` and
 // `return_bool_in_carry` (function-level, bare identifiers) and
 // `zeropage` (on a static-storage object, bare or with an integer
-// address, `zeropage(0xBA)`). The transformer rejects
+// address, `zeropage(0xBA)`), and `address` (a fixed address for a
+// function or an `extern` object, `address(0xFDED)`). The
+// transformer rejects
 // any other name. A single clause may carry multiple comma-separated
 // specs. Register pinning uses the `register` keyword instead (see
 // the `specifier` rule).

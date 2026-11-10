@@ -204,7 +204,7 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp):
             asm3, zp_slot_symbols=zp_slot_symbols,
         )
         asm = place_zp_globals(expand_long_branches(asm3), zp)
-        return asm, syms, types, {**zp_slot_symbols, **zp.addrs}
+        return asm, syms, types, {**zp_slot_symbols, **zp.equs()}
     # Unoptimized path: the same passes `compile.py --codegen` runs
     # without `--optimize`, including the full peephole fixedpoint,
     # so the sim executes the code the CLI emits.
@@ -216,7 +216,7 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp):
         ),
         zp_global_symbols=zp.addrs,
     ))
-    return place_zp_globals(asm, zp), syms, types, dict(zp.addrs)
+    return place_zp_globals(asm, zp), syms, types, zp.equs()
 
 
 # -------- Simulation state --------

@@ -530,7 +530,7 @@ def _codegen(prog, symbols, types, optimize: bool, zp) -> str:
             slot_names_by_fn=slot_names_by_fn,
         )
         return emit_program(
-            asm5, zp_slot_symbols={**emit_slot_symbols, **zp.addrs},
+            asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},
             link_metadata_lines=format_metadata(link_meta),
         )
     asm0 = translate_to_asm(tac, symbols, types)
@@ -540,7 +540,7 @@ def _codegen(prog, symbols, types, optimize: bool, zp) -> str:
     asm2 = _peephole_fixedpoint(asm1, zp_global_symbols=zp.addrs)
     asm3 = place_zp_globals(expand_long_branches(asm2), zp)
     asm4 = lower_to_asm2(asm3)
-    return emit_program(asm4, zp_slot_symbols=zp.addrs or None)
+    return emit_program(asm4, zp_slot_symbols=zp.equs() or None)
 
 
 def main(argv: list[str]) -> int:

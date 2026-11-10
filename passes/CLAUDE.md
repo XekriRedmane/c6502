@@ -286,7 +286,11 @@ this directory:
   `(zp),Y` base), to `asm_aliasing.set_user_zp_globals` for the
   compile, and to the EQU block, but not into `zp_slot_symbols`: other
   passes treat a slot symbol in `$80`-`$FF` as scratch that's dead at
-  return.
+  return. It also collects every function and object with
+  `__attribute__((address(addr)))` at `$100` or above into
+  `ZpGlobals.fixed`, which only adds `EQU` lines (`ZpGlobals.equs()`
+  is both maps). An `address` object below `$100` is an ordinary
+  `extern` zero-page object.
 - `zp_local_allocation.py` — `allocate_function_locals`. Hands each
   eligible function a private body-local ZP range disjoint from
   coexisting footprints.

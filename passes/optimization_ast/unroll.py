@@ -244,6 +244,7 @@ def _unroll_function(
         abi_annotation=fd.abi_annotation,
         param_registers=list(fd.param_registers),
         carry_return=fd.carry_return,
+        address=fd.address,
     )
 
 

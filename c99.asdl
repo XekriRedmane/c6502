@@ -52,6 +52,10 @@ module C99 {
     -- the compiler picks a byte in $26-$7F) or
     -- `__attribute__((zeropage(0xBA)))` (that address). Only valid on
     -- an object with static storage; see passes/zp_globals.py.
+    -- `__attribute__((address(0xC000)))` gives `Absolute(0xC000)`: the
+    -- object is memory that something outside the program owns (an
+    -- I/O register, a ROM table, a Monitor variable), so only an
+    -- `extern` declaration may carry it.
     --
     -- param_registers is a parallel array to `params`. Each entry is
     -- 1 when the corresponding parameter carried the `register`
@@ -67,7 +71,10 @@ module C99 {
     -- carry_return is True when the declaration carries
     -- `__attribute__((return_bool_in_carry))`: the function returns
     -- its truth value in the carry flag instead of in A.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers, bool carry_return)
+    -- address is set by `__attribute__((address(0xFDED)))`: the
+    -- function is code at that address (a ROM routine, say), so it
+    -- has no definition in the program.
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, int* param_registers, bool carry_return, int? address)
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct
@@ -76,7 +83,7 @@ module C99 {
     struct_decl = (identifier tag, bool is_union, member_decl* members)
     member_decl = (identifier name, data_type)
     storage_class = Static | Extern | Register
-    placement = ZeroPage(int? address)
+    placement = ZeroPage(int? address) | Absolute(int address)
 
     -- Integer types: Int 1B, Long 2B, LongLong 4B, UInt 1B, ULong 2B,
     -- ULongLong 4B (signed variants are two's complement, unsigned

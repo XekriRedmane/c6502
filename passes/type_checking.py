@@ -313,11 +313,18 @@ class StaticAttr(IdAttr):
 
     `zeropage` is True when some declaration carried
     `__attribute__((zeropage))`, and `zp_address` is the address it
-    gave, or None to let passes/zp_globals.py pick one."""
+    gave, or None to let passes/zp_globals.py pick one.
+
+    `address` is the address from `__attribute__((address(...)))`,
+    or None. Such an object is memory the program doesn't own, so
+    it's never defined. An address below $100 also sets `zeropage`
+    and `zp_address`, which reserves the bytes the way an `extern`
+    `zeropage(addr)` declaration does."""
     initial_value: InitialValue
     is_global: bool
     zeropage: bool = False
     zp_address: int | None = None
+    address: int | None = None
 
 
 @dataclass(frozen=True)
@@ -328,10 +335,15 @@ class FunAttr(IdAttr):
     the function has external linkage. `carry_return` is True when
     the function carries `__attribute__((return_bool_in_carry))`,
     so it returns its truth value in the carry flag instead of in A.
-    Every declaration of the function has to agree on it."""
+    Every declaration of the function has to agree on it.
+
+    `address` is the address from `__attribute__((address(...)))`,
+    or None. Such a function is code already at that address, so the
+    program can't define it."""
     defined: bool
     is_global: bool
     carry_return: bool = False
+    address: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -825,6 +837,22 @@ def _is_truth_valued(exp: c99_ast.Type_exp) -> bool:
         return (isinstance(exp.const, c99_ast.ConstInt)
                 and exp.const.value in (0, 1))
     return False
+
+
+def _check_unowned_object(
+    name: str, initial: InitialValue, address: int | None,
+) -> None:
+    """Rejects a definition of an object placed with
+    `__attribute__((address(...)))`. Such an object is memory that
+    something outside the program owns, such as an I/O register or a
+    ROM table, so every declaration of it has to be `extern` without
+    an initializer."""
+    if address is not None and not isinstance(initial, NoInitializer):
+        raise TypeCheckError(
+            f"{name!r} has `__attribute__((address(...)))`, which names "
+            f"memory the program doesn't own, so it can't be defined; "
+            f"declare it `extern` without an initializer"
+        )
 
 
 def _check_carry_return_type(name: str, ret: Type) -> None:
@@ -1951,6 +1979,7 @@ class TypeChecker:
             defined=defined,
             is_global=is_global,
             carry_return=fd.carry_return,
+            address=fd.address,
         )
         # Per C99 §6.7.5.3.4, a parameter shall not have void type
         # (the `f(void)` form for empty params is handled by the
@@ -2073,12 +2102,19 @@ class TypeChecker:
         existing = self.symbols.get(name)
         zeropage = isinstance(placement, c99_ast.ZeroPage)
         zp_address = placement.address if zeropage else None
+        address = None
+        if isinstance(placement, c99_ast.Absolute):
+            address = placement.address
+            if address < 0x100:
+                zeropage, zp_address = True, address
         if existing is None:
+            _check_unowned_object(name, initial, address)
             self.symbols[name] = Symbol(
                 type=type_,
                 attrs=StaticAttr(
                     initial_value=initial, is_global=is_global,
                     zeropage=zeropage, zp_address=zp_address,
+                    address=address,
                 ),
             )
             return
@@ -2110,6 +2146,16 @@ class TypeChecker:
                 f"{name!r} is placed at zero-page ${prior_addr:02X} "
                 f"and at ${zp_address:02X}"
             )
+        prior_fixed = existing.attrs.address
+        if (address is not None and prior_fixed is not None
+                and address != prior_fixed):
+            raise TypeCheckError(
+                f"{name!r} is placed at ${prior_fixed:04X} and at "
+                f"${address:04X}"
+            )
+        if address is None:
+            address = prior_fixed
+        _check_unowned_object(name, merged, address)
         self.symbols[name] = Symbol(
             type=type_,
             attrs=StaticAttr(
@@ -2118,6 +2164,7 @@ class TypeChecker:
                 zp_address=(
                     zp_address if zp_address is not None else prior_addr
                 ),
+                address=address,
             ),
         )
 
@@ -2129,6 +2176,7 @@ class TypeChecker:
         defined: bool,
         is_global: bool,
         carry_return: bool = False,
+        address: int | None = None,
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
@@ -2136,7 +2184,7 @@ class TypeChecker:
                 type=ftype,
                 attrs=FunAttr(
                     defined=defined, is_global=is_global,
-                    carry_return=carry_return,
+                    carry_return=carry_return, address=address,
                 ),
             )
             return
@@ -2168,12 +2216,28 @@ class TypeChecker:
                 f"every declaration of {name!r} must agree on "
                 f"`__attribute__((return_bool_in_carry))`"
             )
+        # `address` accumulates across declarations, like `zeropage`.
+        prior_addr = existing.attrs.address
+        if (address is not None and prior_addr is not None
+                and address != prior_addr):
+            raise TypeCheckError(
+                f"function {name!r} is placed at ${prior_addr:04X} and "
+                f"at ${address:04X}"
+            )
+        if address is None:
+            address = prior_addr
         new_defined = existing.attrs.defined or defined
+        if address is not None and new_defined:
+            raise TypeCheckError(
+                f"function {name!r} has `__attribute__((address(...)))`, "
+                f"which names code that's already at ${address:04X}, so "
+                f"it can't also be defined"
+            )
         self.symbols[name] = Symbol(
             type=ftype,
             attrs=FunAttr(
                 defined=new_defined, is_global=is_global,
-                carry_return=carry_return,
+                carry_return=carry_return, address=address,
             ),
         )
 
@@ -2265,6 +2329,12 @@ class TypeChecker:
                 placement=vd.placement,
             )
             return
+        if isinstance(vd.placement, c99_ast.Absolute):
+            raise TypeCheckError(
+                f"`__attribute__((address(...)))` needs an `extern` "
+                f"declaration, since {vd.name!r} names memory the "
+                f"program doesn't own"
+            )
         if vd.placement is not None and not isinstance(
             vd.storage_class, c99_ast.Static,
         ):

@@ -197,6 +197,7 @@ class Type_function_decl:
     abi_annotation: str | None = None
     param_registers: list[int] = field(default_factory=list)
     carry_return: bool = False
+    address: int | None = None
 
 
 @dataclass
@@ -240,6 +241,11 @@ class Type_placement:
 @dataclass
 class ZeroPage(Type_placement):
     address: int | None = None
+
+
+@dataclass
+class Absolute(Type_placement):
+    address: int = 0
 
 
 @dataclass

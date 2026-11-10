@@ -55,6 +55,25 @@ returns, and a global's value isn't.
 Linking several translation units (`compile.py --link`) isn't
 supported yet for programs with zero-page globals; the linker
 rejects them (see TODO.md).
+
+# Fixed addresses outside zero page
+
+`__attribute__((address(addr)))` binds a function or an `extern`
+object to an address something outside the program owns:
+
+    __attribute__((zp_abi, address(0xFDED)))
+    extern void COUT(register uint8_t c);              // ROM routine
+    extern volatile uint8_t KBD __attribute__((address(0xC000)));
+
+An object at an address below $100 is a zero-page object like any
+other, reserved and not initialized. Every other name goes in
+`ZpGlobals.fixed`, which only adds an `EQU` line: a call stays `JSR
+COUT`, and an access stays `Data(name, k)`, which dasm assembles with
+absolute addressing. Two fixed objects may not overlap, because the
+aliasing passes take two different `Data` names to be different
+bytes. A fixed object isn't checked against the program's own code
+and data, since their addresses are only known once dasm has
+assembled the program.
 """
 
 from __future__ import annotations
@@ -85,10 +104,18 @@ class ZpGlobals:
     `addrs` maps each object's name to the address of its first byte.
     `reserved` is every byte they occupy, for the allocators to avoid.
     `owned` names the objects this unit defines, whose initial values
-    `__zp_init` stores."""
+    `__zp_init` stores. `fixed` maps each function and object placed
+    with `address(addr)` at $100 or above to its address. Those only
+    need an `EQU` line, so they're kept out of `addrs`, which the
+    zero-page peepholes read."""
     addrs: dict[str, int] = field(default_factory=dict)
     reserved: frozenset[int] = frozenset()
     owned: frozenset[str] = frozenset()
+    fixed: dict[str, int] = field(default_factory=dict)
+
+    def equs(self) -> dict[str, int]:
+        """Every name this unit binds with an `EQU` line."""
+        return {**self.addrs, **self.fixed}
 
 
 def allocate_zp_globals(symbols, types=None) -> ZpGlobals:
@@ -96,15 +123,22 @@ def allocate_zp_globals(symbols, types=None) -> ZpGlobals:
     it was declared with, or the lowest free run in `$26`-`$7F`. Fixed
     addresses are placed first, in declaration order, then the rest.
     Raises `ZpGlobalError` for an address out of range, an overlap, an
-    `extern` with no address and no definition, or a full range."""
+    `extern` with no address and no definition, or a full range.
+
+    Also collects the `address(addr)` functions and objects outside
+    zero page into `fixed` (see "Fixed addresses outside zero page"
+    above)."""
     from passes.replace_pseudoregisters import sizeof
-    from passes.type_checking import NoInitializer, StaticAttr
+    from passes.type_checking import FunAttr, NoInitializer, StaticAttr
 
     fixed: list[tuple[str, int, int]] = []
     auto: list[tuple[str, int]] = []
     owned: set[str] = set()
+    elsewhere = _fixed_elsewhere(symbols, types, sizeof)
     for name, sym in symbols.items():
         attrs = sym.attrs
+        if isinstance(attrs, FunAttr) and attrs.address is not None:
+            elsewhere[name] = attrs.address
         if not (isinstance(attrs, StaticAttr) and attrs.zeropage):
             continue
         size = sizeof(sym.type, types)
@@ -158,7 +192,39 @@ def allocate_zp_globals(symbols, types=None) -> ZpGlobals:
         claim(name, addr, size)
     return ZpGlobals(
         addrs=addrs, reserved=frozenset(used), owned=frozenset(owned),
+        fixed=elsewhere,
     )
+
+
+def _fixed_elsewhere(symbols, types, sizeof) -> dict[str, int]:
+    """The objects placed with `address(addr)` at $100 or above,
+    mapped to their addresses. Raises `ZpGlobalError` when one runs
+    past $FFFF or two overlap."""
+    from passes.type_checking import StaticAttr
+
+    used: dict[int, str] = {}
+    out: dict[str, int] = {}
+    for name, sym in symbols.items():
+        attrs = sym.attrs
+        if not (isinstance(attrs, StaticAttr) and attrs.address is not None
+                and attrs.address >= 0x100):
+            continue
+        addr = attrs.address
+        size = sizeof(sym.type, types)
+        if addr + size > 0x10000:
+            raise ZpGlobalError(
+                f"object {name!r} ({size} bytes at ${addr:04X}) runs "
+                f"past $FFFF"
+            )
+        for b in range(addr, addr + size):
+            if b in used:
+                raise ZpGlobalError(
+                    f"object {name!r} at ${addr:04X} overlaps "
+                    f"{used[b]!r} at byte ${b:04X}"
+                )
+            used[b] = name
+        out[name] = addr
+    return out
 
 
 def _first_free(used: dict[int, str], size: int) -> int | None:

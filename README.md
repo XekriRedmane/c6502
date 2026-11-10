@@ -1381,6 +1381,38 @@ before `main`.** The simulator's boot stub does. Each object becomes
 an `EQU` in the output. Linking several translation units with
 `--link` isn't supported yet for a unit that has zero-page globals.
 
+### Fixed addresses
+
+`__attribute__((address(addr)))` binds a function or an `extern`
+object to a fixed address that something outside the program owns,
+such as a ROM routine, an I/O register, or a Monitor variable. The
+name becomes an `EQU` in the output, and nothing is defined for it.
+
+```c
+__attribute__((zp_abi, address(0xFDED)))
+extern void COUT(register uint8_t c);                  /* JSR COUT */
+extern volatile uint8_t KBD __attribute__((address(0xC000)));
+extern uint16_t CSW __attribute__((address(0x36)));    /* zero page */
+```
+
+A function with an address can't have a body anywhere in the
+translation unit. An object with an address has to be declared
+`extern` without an initializer in every declaration, since the
+program doesn't own its memory. An access is a plain absolute
+instruction (`STA KBD`), with no pointer staged in `DPTR`. An object
+below `$100` is treated as an `extern` `zeropage(addr)` object: its
+bytes are kept out of the compiler's zero-page pools, and the same
+`$26` lower bound applies. Two objects with addresses may not
+overlap. Declarations may add the attribute one at a time, but two
+different addresses for one name are an error. `--link` binds each
+name once and rejects two units that give it different addresses.
+
+A routine called this way has to follow c6502's calling convention
+for its declaration. For a ROM routine that takes its argument in A,
+that means `zp_abi` with a `register` parameter. Only `--optimize`
+passes a `register` argument in A, so without it the call puts the
+argument on the soft stack.
+
 ### Returning a bool in the carry flag
 
 Hand-written 6502 code often returns a yes/no answer in the carry

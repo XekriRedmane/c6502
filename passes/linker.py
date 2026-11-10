@@ -124,6 +124,12 @@ def _split_asm(text: str) -> tuple[list[str], list[str], list[str]]:
     return equ, meta, body
 
 
+def _parse_equ(line: str) -> tuple[str, int]:
+    """The name and address of a `<sym>\\tEQU\\t$<hex>` line."""
+    name, _, value = line.split("\t")
+    return name, int(value.strip().lstrip("$"), 16)
+
+
 # ---------------------------------------------------------------------------
 # Metadata merge + validation.
 # ---------------------------------------------------------------------------
@@ -313,16 +319,27 @@ def link_files(
     # Read + split.
     metas: list[LinkMetadata] = []
     bodies: list[list[str]] = []
+    fixed: dict[str, int] = {}
     for path in input_paths:
         text = Path(path).read_text()
         equ, _, body = _split_asm(text)
-        # Zero-page globals (`__attribute__((zeropage))`) have EQUs of
-        # their own, which the linker doesn't re-emit, and each unit
-        # places its own without knowing about the others'.
-        user = [
-            line.split("\t", 1)[0] for line in equ
-            if not line.startswith(("__zpabi_", "__local_"))
-        ]
+        # The other EQUs bind user names. One at $100 or above is a
+        # function or object with `__attribute__((address(...)))`,
+        # which every unit binds to the same address, so it's kept.
+        # One in zero page is a zero-page global, which each unit
+        # places without knowing about the others'.
+        user = []
+        for line in equ:
+            if line.startswith(("__zpabi_", "__local_")):
+                continue
+            name, addr = _parse_equ(line)
+            if addr < 0x100:
+                user.append(name)
+            elif fixed.setdefault(name, addr) != addr:
+                raise LinkError(
+                    f"{path}: {name!r} is at ${addr:04X} here and at "
+                    f"${fixed[name]:04X} in an earlier unit"
+                )
         if user:
             raise LinkError(
                 f"{path}: zero-page globals ({', '.join(user)}) aren't "
@@ -344,7 +361,7 @@ def link_files(
     local_sym_to_addr = build_local_slot_symbols(
         local_pools, slot_names_by_fn=slot_names_by_fn,
     )
-    all_symbols = {**zp_sym_to_addr, **local_sym_to_addr}
+    all_symbols = {**zp_sym_to_addr, **local_sym_to_addr, **fixed}
     # Format the output.
     out_lines: list[str] = []
     out_lines.extend(_format_equ_block(all_symbols))

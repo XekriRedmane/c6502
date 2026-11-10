@@ -17,6 +17,7 @@ from passes.runtime_layout import (
     CLASSIC, RuntimeLayout, RuntimeLayoutError, choose_layout,
     helper_footprints, hargs_need,
 )
+from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
 
 
@@ -216,43 +217,74 @@ class TestSim(unittest.TestCase):
         self.assertNotEqual(changed, [])
 
 
-class TestMonitorHeader(unittest.TestCase):
-    """`<apple2/monitor.h>` reserves $00-$01, $1F, and $20-$49."""
+class TestMonitorHeaders(unittest.TestCase):
+    """`<apple2/monitor_io.h>` reserves the zero page of the Monitor
+    routines a program calls, and `<apple2/interactive_monitor.h>` adds the
+    bytes only the Monitor's interactive part uses."""
 
-    _MONITOR_BYTES = [0x00, 0x01] + list(range(0x1F, 0x4A))
+    # The bytes of the routines a program calls: text, keyboard, line
+    # input, lo-res graphics, the IRQ entry, and INIT.
+    _ROUTINE_BYTES = (
+        list(range(0x1F, 0x2F)) + [0x30, 0x32, 0x33]
+        + list(range(0x35, 0x3A)) + [0x45, 0x48]
+    )
+    # Every byte the Monitor uses.
+    _ALL_BYTES = [0x00, 0x01] + list(range(0x1F, 0x4A))
 
-    def test_layout_clear_of_the_monitor(self) -> None:
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _codegen(
-                    "#include <apple2/monitor.h>\n" + TestSim._SRC,
-                    optimize,
-                )
-                equ = _equ(asm)
-                self.assertEqual((equ["CH"], equ["CSW"]), (0x24, 0x36))
-                for name in ("SSP", "FP", "DPTR"):
-                    self.assertFalse(
-                        {equ[name], equ[name] + 1}
-                        & set(self._MONITOR_BYTES),
+    _HEADERS = {
+        "monitor_io.h": ("#include <apple2/monitor_io.h>\n", _ROUTINE_BYTES),
+        "interactive_monitor.h":
+            ("#include <apple2/interactive_monitor.h>\n", _ALL_BYTES),
+    }
+
+    def test_layout_clear_of_the_reserved_bytes(self) -> None:
+        for header, (include, reserved) in self._HEADERS.items():
+            for optimize in (False, True):
+                with self.subTest(header, optimize=optimize):
+                    asm = _codegen(include + TestSim._SRC, optimize)
+                    equ = _equ(asm)
+                    self.assertEqual(
+                        (equ["CH"], equ["CSW"]), (0x24, 0x36),
+                    )
+                    for name in ("SSP", "FP", "DPTR"):
+                        self.assertFalse(
+                            {equ[name], equ[name] + 1} & set(reserved),
+                        )
+
+    def test_reserved_bytes_untouched(self) -> None:
+        for header, (include, reserved) in self._HEADERS.items():
+            for optimize in (False, True):
+                with self.subTest(header, optimize=optimize):
+                    sim = build_sim(
+                        include + TestSim._SRC, optimize=optimize,
+                    )
+                    pattern = {a: (0x5A ^ a) & 0xFF for a in reserved}
+                    for a, v in pattern.items():
+                        sim.mpu.memory[a] = v
+                    result = sim.run()
+                    self.assertEqual(result.return_int(), TestSim._WANT)
+                    self.assertEqual(
+                        [a for a, v in pattern.items()
+                         if result.memory[a] != v],
+                        [],
                     )
 
-    def test_monitor_bytes_untouched(self) -> None:
-        src = "#include <apple2/monitor.h>\n" + TestSim._SRC
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                sim = build_sim(src, optimize=optimize)
-                pattern = {
-                    a: (0x5A ^ a) & 0xFF for a in self._MONITOR_BYTES
-                }
-                for a, v in pattern.items():
-                    sim.mpu.memory[a] = v
-                result = sim.run()
-                self.assertEqual(result.return_int(), TestSim._WANT)
-                self.assertEqual(
-                    [a for a, v in pattern.items()
-                     if result.memory[a] != v],
-                    [],
-                )
+    def test_routine_header_leaves_tool_bytes_free(self) -> None:
+        # With only monitor_io.h, a zero-page global can go in a byte only
+        # the interactive Monitor uses, such as $00 or $2F.
+        asm = _codegen(
+            "#include <apple2/monitor_io.h>\n"
+            "unsigned char g __attribute__((zeropage(0x2F)));\n"
+            "unsigned char h __attribute__((zeropage(0x00)));\n"
+            "int main(void) { return g + h; }\n",
+        )
+        self.assertEqual((_equ(asm)["g"], _equ(asm)["h"]), (0x2F, 0x00))
+        with self.assertRaises(TypeCheckError):
+            _codegen(
+                "#include <apple2/interactive_monitor.h>\n"
+                "unsigned char g __attribute__((zeropage(0x2F)));\n"
+                "int main(void) { return g; }\n",
+            )
 
 
 class TestLink(unittest.TestCase):

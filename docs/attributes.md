@@ -179,11 +179,11 @@ __attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
 
 ### A small program
 
-`<apple2/monitor.h>` declares `COUT` the same way, along with `HOME`,
+`<apple2/monitor_io.h>` declares `COUT` the same way, along with `HOME`,
 `RDKEY`, and `COUT1`, and the Monitor's zero page.
 
 ```c
-#include <apple2/monitor.h>
+#include <apple2/monitor_io.h>
 
 void print(const char *s) {
     while (*s)
@@ -309,17 +309,18 @@ appear somewhere else.
 
 To prevent that, the program declares the bytes the Monitor owns,
 and the compiler moves its own block out of their way.
-`<apple2/monitor.h>` declares every zero-page byte the Monitor ROM
-uses, `$00`-`$01`, `$1F`, and `$20`-`$49`, as `extern` objects with
-`address`. Including it is how a source file says it runs alongside
-the Monitor. For the program above, the runtime's block moves to
-`$02`-`$08`, clear of the cursor.
+`<apple2/monitor_io.h>` declares, as `extern` objects with `address`,
+every zero-page byte that the Monitor routines a program calls use.
+Those are the text, keyboard, line-input, lo-res graphics, and delay
+routines, and the interrupt entry. A source file that calls the
+Monitor includes it. For the program above, the runtime's
+block moves to `$00`-`$06`, clear of the cursor.
 
 ```
-HARGS	EQU	$02
-SSP	EQU	$03
-FP	EQU	$05
-DPTR	EQU	$07
+HARGS	EQU	$00
+SSP	EQU	$01
+FP	EQU	$03
+DPTR	EQU	$05
 CH	EQU	$24
 CV	EQU	$25
 ```
@@ -335,6 +336,20 @@ the window (`WNDLFT`, `WNDWDTH`, `WNDTOP`, `WNDBTM`), the cursor
 I/O hooks `CSW` and `KSW`. For instance, `CH = 0;` moves the cursor
 to the left edge of the window. The other bytes are covered by
 arrays named `__monitor_*`.
+
+The Monitor's interactive part, which is its command loop and
+memory tools, the disassembler, register display and `BRK`
+handling, cassette I/O, and the power-up slot scan, uses more zero
+page: `$00`-`$01`, `$2F`, `$31`, `$34`, `$3A`-`$44`, `$46`-`$47`, and
+`$49`. A program that calls those routines, or stops at a `BRK` and
+then continues, also includes `<apple2/interactive_monitor.h>`, which
+reserves those bytes as well. A program that only calls the routines
+in `<apple2/monitor_io.h>` never reaches that code, so those bytes are
+free for its own use.
+
+The disassembler has no zero-page bytes to itself. It shares `$2C`
+to `$2E` with the lo-res graphics routines and `$2F` with the
+cassette routines.
 
 The same approach works for other system software. A header for DOS
 or Applesoft would declare the zero-page bytes that software uses,
@@ -371,11 +386,11 @@ declaration and the reason.
 
 **The 80-column firmware.** On an Apple IIe, `HOME`, `CLREOL`,
 scrolling, and keyboard input continue into the 80-column firmware
-at `$C100`. `<apple2/monitor.h>` covers the bytes the Monitor ROM
+at `$C100`. The Monitor headers cover the bytes the Monitor ROM
 listing shows, and any zero page that firmware uses isn't covered.
 
 **Linking.** A source file with zero-page objects, including one that
-includes `<apple2/monitor.h>`, can't be linked with `--link` yet.
+includes `<apple2/monitor_io.h>`, can't be linked with `--link` yet.
 
 **Registers.** The compiler assumes every call changes A, X, Y, and
 the flags. `COUT1` preserves Y, but there's no way to declare that

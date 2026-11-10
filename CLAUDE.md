@@ -84,7 +84,7 @@ Two key runtime conventions:
   (runtime-helper exchange block), `$24-$25` DPTR (caller-saved
   indirect-pointer scratch). The output binds all four with `EQU`
   lines. A fixed zero-page object in `$00-$25` (`address(addr)` or
-  `zeropage(addr)`, e.g. from `#include <apple2/monitor.h>`) moves
+  `zeropage(addr)`, e.g. from `#include <apple2/monitor_io.h>`) moves
   the block below `$80`, with HARGS sized to the program
   (`passes/runtime_layout.py`, whose `current()` the asm passes read
   for runtime addresses). Full layout in "Function stack frame"

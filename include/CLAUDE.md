@@ -20,15 +20,22 @@ automatically; no `-I` flag needed.
 - `stdbool.h` (C99 §7.16) — `bool` / `true` / `false` /
   `__bool_true_false_are_defined`. `bool` aliases `unsigned char`
   (c6502 doesn't model `_Bool` as a distinct type).
-- `apple2/monitor.h` — the Apple II Monitor ROM: `HOME`, `RDKEY`,
-  `COUT`, `COUT1` as `zp_abi` routines with `address`, and every
-  zero-page byte the unenhanced IIe F8 ROM listing shows the Monitor
-  using (`$00`-`$01`, `$1F`, `$20`-`$49`) as `extern` objects with
+- `apple2/monitor_io.h` — the Apple II Monitor ROM routines a program
+  calls: `HOME`, `RDKEY`, `COUT`, `COUT1` as `zp_abi` routines with
+  `address`, and the zero-page bytes the unenhanced IIe F8 ROM
+  listing shows its text, keyboard, line-input, lo-res graphics, and
+  delay routines, the IRQ entry, and INIT using (`$1F`-`$2E`, `$30`,
+  `$32`-`$33`, `$35`-`$39`, `$45`, `$48`) as `extern` objects with
   `address`, so a program that includes it keeps the runtime's
   zero-page block off them (`passes/runtime_layout.py`). Zero-page
   objects can't overlap, so the bytes are split into named objects
-  (`CH`, `CV`, `CSW`, ...) and `__monitor_*` arrays. User guide:
+  (`CH`, `CV`, `CSW`, ...) and `__monitor_*` objects. User guide:
   `docs/attributes.md`.
+- `apple2/interactive_monitor.h` — includes `monitor_io.h` and adds
+  the bytes only the Monitor's interactive part uses (command loop
+  and memory tools, disassembler, register display and BRK,
+  cassette, power-up slot scan): `$00`-`$01`, `$2F`, `$31`, `$34`,
+  `$3A`-`$44`, `$46`-`$47`, `$49`.
 
 `size_t`, `ptrdiff_t`, and friends aren't modeled yet — the chapter
 corpus doesn't need them, and c6502 has no `stddef.h` to host them.

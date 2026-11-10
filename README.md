@@ -1064,10 +1064,12 @@ same values.
 
 A program reserves zero-page bytes by declaring objects there with
 `__attribute__((address(addr)))` or `zeropage(addr)`, typically for
-system software it runs alongside. `#include <apple2/monitor.h>`
-declares every byte the Apple II Monitor uses. When a reserved byte
-falls in `$00`–`$25`, the compiler moves the block
-(`passes/runtime_layout.py`). It sizes `HARGS` to what the program
+system software it runs alongside. `#include <apple2/monitor_io.h>`
+declares every byte the Apple II Monitor's text, keyboard, graphics,
+and delay routines use, and `<apple2/interactive_monitor.h>` adds
+the bytes of its command loop, disassembler, and cassette routines.
+When a reserved byte falls in `$00`–`$25`, the compiler moves the
+block (`passes/runtime_layout.py`). It sizes `HARGS` to what the program
 needs: the highest `HARGS` offset its own code uses, and the
 footprint of each helper it calls, scratch bytes included, as
 measured from `sim/runtime_helpers.py`. Then it places `HARGS`,

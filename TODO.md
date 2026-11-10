@@ -195,18 +195,18 @@ pieces are left.
 
 ## More system-software headers, and their zero page when linking
 
-`include/apple2/monitor.h` reserves the Monitor's zero page, and the
-runtime's block moves around it (`passes/runtime_layout.py`). Three
-pieces are left.
+`include/apple2/monitor_io.h` and `interactive_monitor.h` reserve the
+Monitor's zero page, and the runtime's block moves around it
+(`passes/runtime_layout.py`). Three pieces are left.
 
 - **Headers for DOS 3.3, ProDOS, and Applesoft.** Each declares the
-  zero-page bytes that software uses, the way `monitor.h` does, from
+  zero-page bytes that software uses, the way `monitor_io.h` does, from
   its listing. A program that includes one keeps those bytes free.
 - **The IIe 80-column firmware.** `HOME`, `CLREOL`, scrolling, and
   `KEYIN` continue into the firmware at `$C100`, which the F8 listing
-  doesn't cover, so `monitor.h` may miss bytes it uses.
+  doesn't cover, so `monitor_io.h` may miss bytes it uses.
 - **Linking.** `--link` rejects a unit with zero-page objects, so a
-  unit that includes `monitor.h` can't be linked yet (see "Zero-page
+  unit that includes `monitor_io.h` can't be linked yet (see "Zero-page
   globals across translation units"). Once it can, the linker has to
   choose one runtime layout from every unit's reserved bytes, and
   the HARGS size from every unit's need. Today it only checks that

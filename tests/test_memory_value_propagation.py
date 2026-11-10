@@ -165,6 +165,19 @@ class TestInvalidation(unittest.TestCase):
     """Writes that invalidate the equivalence must prevent the
     rewrite."""
 
+    def test_volatile_source_not_read_again(self):
+        # `k = KBD` with KBD volatile. A later read of k must stay a
+        # read of k, since a second read of KBD can return a
+        # different value.
+        kbd = asm_ast.Data(name="KBD", offset=0)
+        instrs = [
+            asm_ast.Mov(src=kbd, dst=_zp(_P0), is_volatile=True),
+            asm_ast.Mov(src=_zp(_P0), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        out = _instrs(_wrap(instrs))
+        self.assertEqual(out[1].src, _zp(_P0))
+
     def test_write_to_dptr_kills_equivalence(self):
         # Stage, then overwrite DPTR low byte, then use — should NOT
         # rewrite (DPTR no longer matches the staged pair).

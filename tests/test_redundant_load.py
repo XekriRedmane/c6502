@@ -463,6 +463,37 @@ class TestRedundantLoadRegisterClobbers(unittest.TestCase):
         out = _rewritten(instrs)
         self.assertEqual(len(out), 5)
 
+    def test_volatile_mem_to_mem_overwrites_a(self) -> None:
+        # `Mov(#0, STR, volatile)` emits as `LDA #0; STA STR`, so on
+        # that path A no longer holds KBD, and the load at the join
+        # stays.
+        kbd = asm_ast.Data(name="KBD", offset=0)
+        k = asm_ast.Data(name="k", offset=0)
+        strobe = asm_ast.Data(name="STR", offset=0)
+        instrs = [
+            asm_ast.Mov(src=kbd, dst=k, is_volatile=True),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".end"),
+            asm_ast.Mov(
+                src=asm_ast.Imm(value=0), dst=strobe, is_volatile=True,
+            ),
+            asm_ast.Label(name=".end"),
+            asm_ast.Mov(src=kbd, dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ]
+        out = _rewritten(instrs)
+        self.assertIn(asm_ast.Mov(src=kbd, dst=_REG_A), out)
+
+    def test_volatile_mem_to_mem_leaves_a_equal_to_both(self) -> None:
+        kbd = asm_ast.Data(name="KBD", offset=0)
+        k = asm_ast.Data(name="k", offset=0)
+        instrs = [
+            asm_ast.Mov(src=kbd, dst=k, is_volatile=True),
+            asm_ast.Mov(src=k, dst=_REG_A),  # A already holds k
+            asm_ast.Return(save_a=True),
+        ]
+        out = _rewritten(instrs)
+        self.assertEqual(len(out), 2)
+
     def test_tax_propagates_a_tracking_to_x(self) -> None:
         zp80 = asm_ast.ZP(address=0x80, offset=0)
         instrs = [

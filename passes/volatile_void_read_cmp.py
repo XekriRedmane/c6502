@@ -29,8 +29,15 @@ Soundness:
     safe).
   * Flags: LDA sets N/Z based on the loaded byte. CMP sets
     N/Z/C based on `A - byte`. DIFFERENT values when A != byte.
-    The gate "next instruction clobbers N/Z" makes this difference
-    unobservable.
+    The gate "N/Z and C are dead after the load" makes this
+    difference unobservable.
+
+The gates come from `asm_liveness`: A, N/Z, and C all have to be
+dead after the load. An earlier hand-written gate accepted any
+following instruction that writes A and the flags, including `AND`,
+`ORA`, `ADC`, and `CMP`, which also read A. That turned
+`while (!(*p & 0x80)) ;` into a loop that tested the stale A instead
+of the byte it read.
 
 Where to run: in the asm-peephole fixed-point loop, after
 `replace_pseudoregisters` (Pseudos resolved). The rewrite is
@@ -42,7 +49,7 @@ upstream simplifications.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import c_dead_at
+from passes.asm_liveness import a_dead_at, c_dead_at, flags_dead_at
 
 
 _INDIRECT_TYPES = (
@@ -72,13 +79,12 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         if not _is_candidate(instr):
             out.append(instr)
             continue
-        if not _next_clobbers_flags_and_a_dead(instrs, i + 1):
-            out.append(instr)
-            continue
-        # CMP also writes C, which LDA leaves alone, so C has to be
-        # dead too: a carry chain (`ADC; LDA vol; LDA x; ADC`) or a
+        # The loaded value and the flags it sets must go unread. CMP
+        # also writes C, which LDA leaves alone, so C has to be dead
+        # too: a carry chain (`ADC; LDA vol; LDA x; ADC`) or a
         # carry-flag return can read the C from before the load.
-        if not c_dead_at(instrs, i + 1):
+        if not (a_dead_at(instrs, i + 1) and flags_dead_at(instrs, i + 1)
+                and c_dead_at(instrs, i + 1)):
             out.append(instr)
             continue
         # Rewrite Mov to Compare.
@@ -107,95 +113,3 @@ def _is_candidate(instr: asm_ast.Type_instruction) -> bool:
         return False
     return True
 
-
-def _next_clobbers_flags_and_a_dead(
-    instrs: list[asm_ast.Type_instruction], start: int,
-) -> bool:
-    """True iff the next observable instruction at `start` both
-    overwrites N/Z and clobbers A before any read of A. The two
-    conditions tend to co-occur (most A-writing ops also write
-    N/Z), so the simplest check is "the next non-Label, non-self-
-    Mov instruction is one of the flag-and-A-clobbering shapes".
-
-    Conservative: a Branch / Jump / Label / function exit at the
-    immediate next position means the flags are read or the
-    boundary is uncertain — bail."""
-    i = start
-    while i < len(instrs):
-        nxt = instrs[i]
-        if isinstance(nxt, asm_ast.Label):
-            # A label is a join point; conservatively decline so
-            # we don't promise about successors we haven't proven.
-            return False
-        if isinstance(nxt, asm_ast.Mov) and nxt.src == nxt.dst:
-            i += 1
-            continue
-        return _instr_clobbers_flags_and_a(nxt)
-    # End of function — flags die at exit, and A is going to be
-    # the function's return slot. If A had been clobbered by the
-    # original LDA, the function returns a garbage value; if we
-    # preserve A via CMP, we return whatever A was before. Either
-    # is wrong if the function was supposed to return the loaded
-    # value, but the precondition "A dead after" rules out a
-    # caller-observable return of the loaded value. So either
-    # outcome is unobserved; the rewrite is safe.
-    return True
-
-
-def _instr_clobbers_flags_and_a(
-    instr: asm_ast.Type_instruction,
-) -> bool:
-    """True iff `instr` writes both N/Z and Reg(A) before reading
-    them — making the previous A value AND previous flags dead."""
-    # Instructions that write A (so A's prior value is dead) AND
-    # write N/Z (so prior flags are dead).
-    if isinstance(instr, asm_ast.Mov):
-        # Mov(_, Reg(A)) loads A and sets N/Z based on the loaded
-        # value — clobbers both. (The 6502's LDA / TXA / TYA / PLA
-        # all set N/Z.)
-        if (
-            isinstance(instr.dst, asm_ast.Reg)
-            and isinstance(instr.dst.reg, asm_ast.A)
-        ):
-            return True
-        # Mov to memory doesn't touch A. But it also doesn't
-        # touch N/Z (STA / STX / STY don't affect flags). So
-        # flags from the prior load are still live.
-        return False
-    if isinstance(instr, (asm_ast.Add, asm_ast.Sub)):
-        # ADC / SBC: writes A AND flags.
-        return True
-    if isinstance(instr, (asm_ast.And, asm_ast.Or, asm_ast.Xor)):
-        return True
-    if isinstance(instr, asm_ast.Compare):
-        # CMP sets flags from A - operand; A unchanged. Flags
-        # clobbered (good); A's prior value preserved (also
-        # acceptable — we just need A to not depend on the
-        # earlier LDA's value).
-        return True
-    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-        # INC / DEC / INX / INY / DEX / DEY: write N/Z based on
-        # result. Don't touch A. So flags clobbered but A is
-        # preserved. With our gate "A is dead", preserving A is
-        # equivalent to clobbering it (we don't observe either).
-        return True
-    if isinstance(instr, (
-        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.RotateLeft, asm_ast.RotateRight,
-    )):
-        # ASL / LSR / ROL / ROR set N/Z/C; when dst is A they
-        # also clobber A.
-        return True
-    if isinstance(instr, asm_ast.Pop):
-        # PLA clobbers A and sets N/Z.
-        if (
-            isinstance(instr.dst, asm_ast.Reg)
-            and isinstance(instr.dst.reg, asm_ast.A)
-        ):
-            return True
-        # PLX / PLY also write N/Z but not A — depending on
-        # whether A is dead this might still be OK.
-        return True
-    # Push, SetCarry, ClearCarry, BitTest, LoadAddress, ...
-    # don't reliably clobber both A and N/Z. Be conservative.
-    return False

@@ -261,8 +261,8 @@ this directory:
   collapser can simplify.
 - `volatile_void_read_cmp.py` — `apply_volatile_void_read_cmp`.
   Rewrites `Mov(<indirect>, Reg(A), is_volatile=True)` to
-  `Compare(Reg(A), <indirect>)` when the loaded A is dead and
-  the next instruction clobbers N/Z. CMP performs the same
+  `Compare(Reg(A), <indirect>)` when A and N/Z are dead after the
+  load (`a_dead_at`, `flags_dead_at`). CMP performs the same
   memory read (preserving volatile semantics) but doesn't
   clobber A — enables `reg('A')` body-pinning to survive across
   `(void)*sfx_click_ptr`-style discarded volatile reads. CMP writes

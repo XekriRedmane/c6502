@@ -477,7 +477,10 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
         )
         asm = self._compile_optimized(src)
         # The `LDA (DPTR),Y` is the actual volatile memory access.
-        self.assertIn("LDA   (DPTR),Y", asm)
+        # `volatile_void_read_cmp` turns it into `CMP (DPTR),Y` when
+        # nothing reads A or the flags after it, which reads the
+        # same byte.
+        self.assertRegex(asm, r"(LDA|CMP)   \(DPTR\),Y")
 
     def test_nonvolatile_void_deref_is_dropped(self):
         # Sanity: same shape without `volatile` collapses entirely

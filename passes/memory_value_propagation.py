@@ -581,6 +581,13 @@ def _transfer_mov(
     # tracked" (or it's a Reg, handled separately).
     src_expr = _src_expr(src, state, ctx)
     dst_zp = _zp_addr(dst, ctx.zp_addrs)
+    if instr.is_volatile:
+        # A volatile cell can change between two reads, so the
+        # value moved here can't be recomputed by reading src
+        # again. The bit doesn't say which side is volatile, so
+        # neither A nor dst gets a fact.
+        src_expr = None
+        dst_zp = None
 
     # Compute the new A value and whether A is clobbered.
     new_a: Optional[Expr] = state.a_value

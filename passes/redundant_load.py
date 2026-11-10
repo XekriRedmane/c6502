@@ -838,21 +838,25 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
             _invalidate_z_aliasing(state, mov.dst)
             return
         # Volatile memory-to-memory Mov: emit lowers to
-        # `LDA src; STA dst`. The is_volatile bit often comes from
-        # dst being volatile-typed even when src itself is a stable
-        # non-volatile cell (e.g. `Copy(temp, volatile_y)` in the
-        # sfx_tone case); in that case A === src is still a valid
-        # equivalence post-Mov, so we add src to state.a when src
-        # is a stable-address operand.
+        # `LDA src; STA dst` (and drops a self-Mov, as below). The
+        # LDA overwrites A, so A holds src's value and none of the
+        # values it held before. The is_volatile bit often comes
+        # from dst being volatile-typed even when src itself is a
+        # stable non-volatile cell (e.g. `Copy(temp, volatile_y)`
+        # in the sfx_tone case), so A === src is kept for a later
+        # `LDA src`. A volatile `LDA src` doesn't elide anyway. The
+        # same holds for dst: a non-volatile `LDA dst` exists only
+        # when dst isn't the volatile side.
+        if _operands_equal(mov.src, mov.dst):
+            return
         _invalidate_aliasing(state, mov.dst)
         _invalidate_z_aliasing(state, mov.dst)
-        if isinstance(mov.src, _STABLE_MEM_TYPES):
-            if not any(_operands_equal(c, mov.src) for c in state.a):
-                state.a.append(mov.src)
-            if not any(
-                _operands_equal(z, mov.src) for z in state.z_reflects
-            ):
-                state.z_reflects.append(mov.src)
+        known = [
+            op for op in (mov.src, mov.dst)
+            if isinstance(op, (*_STABLE_MEM_TYPES, asm_ast.Imm))
+        ]
+        state.a = list(known)
+        state.z_reflects = list(known)
         return
     src_is_reg = isinstance(mov.src, asm_ast.Reg)
     dst_is_reg = isinstance(mov.dst, asm_ast.Reg)

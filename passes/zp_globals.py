@@ -7,14 +7,15 @@ global takes a 3-byte absolute one (`LDA abs`, 4 cycles). A pointer
 in zero page can also serve directly as the base of an `(zp),Y`
 access, where an ordinary pointer global is first copied to DPTR.
 
-    uint8_t num_entries __attribute__((zeropage));
-    __attribute__((zeropage(0xBA))) uint8_t *z_header_addr;
+    uint8_t num_entries __attribute__((zeropage));            // $26
+    __attribute__((zeropage(0xBA))) uint8_t *z_header_addr;   // $BA-$BB
 
 The bare form takes the lowest free bytes in `$26`-`$7F` (`AUTO_LO`
 .. `AUTO_HI`), the range between the runtime's reserved bytes
 (`$00`-`$25`: SSP, FP, HARGS, DPTR) and the compiler's own zero-page
-pool (`$80`-`$FF`). The address form puts the object at that address,
-anywhere in `$26`-`$FF`, so code ported from hand-written assembly can
+pool (`$80`-`$FF`). The address form puts the object's first (low)
+byte at that address, anywhere in `$26`-`$FF`, so code ported from
+hand-written assembly can
 keep its documented addresses. A fixed address in `$80`-`$FF` is taken
 out of the compiler's pool: `reserved` is passed to the zp_abi slot
 allocator, the private-pool allocator, and register allocation, so

@@ -1359,13 +1359,15 @@ being copied to `DPTR` first.
 
 ```c
 uint8_t num_entries __attribute__((zeropage));        /* $26-$7F */
-__attribute__((zeropage(0xBA))) uint8_t *z_header_addr;  /* at $BA */
+__attribute__((zeropage(0xBA))) uint8_t *z_header_addr;  /* $BA-$BB */
 ```
 
 The bare form takes the lowest free bytes in `$26`-`$7F`, which
 neither the runtime (`$00`-`$25`) nor the compiler (`$80`-`$FF`) uses.
-The address form puts the object at that address anywhere in
-`$26`-`$FF`, so ported code can keep its documented addresses; a byte
+The address form puts the object's first (low) byte at that
+address, anywhere in `$26`-`$FF`, so ported code can keep its
+documented addresses. An object takes as many bytes as its type,
+so the pointer above occupies `$BA` and `$BB`. A byte
 in `$80`-`$FF` is then taken out of the compiler's pool. Overlapping
 objects, an address below `$26`, an object that runs past `$FF`, and
 a full `$26`-`$7F` are compile errors. An `extern` declaration with an

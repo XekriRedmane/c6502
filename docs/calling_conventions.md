@@ -370,11 +370,7 @@ the same bytes.
 ### Arguments in registers
 
 A parameter declared `register` arrives in a register instead. The
-first `register` byte goes in A and the second in X. A parameter can
-name its register with `__attribute__((in_a))`, `in_x`, or `in_y`, or
-a pair such as `in_xy` for 2 bytes, low byte first, so a function
-can take up to three bytes in registers (see
-[attributes.md](attributes.md)).
+first `register` byte goes in A and the second in X.
 
 ```c
 unsigned char add(register unsigned char a, register unsigned char b) {
@@ -401,6 +397,44 @@ twice:
 first thing `add` does is store `b` in its zero-page byte. `twice`
 loads both arguments and jumps to `add`, since nothing is left to do
 after the call.
+
+A `register` parameter can also name the register it arrives in, with
+`__attribute__((in_a))`, `in_x`, or `in_y` after its name, or for a
+2-byte parameter a pair such as `in_xy`, low byte first. That's the
+only way to pass an argument in Y, so it's how to declare a ROM or DOS
+routine that takes one there. A `register` parameter without the
+attribute still goes in A, then X, skipping a register another
+parameter names, so a function can take up to three bytes in
+registers.
+"[`in_a`, `in_x`, and `in_y`](attributes.md#in_a-in_x-and-in_y)" in
+attributes.md lists the pairs and shows a call to DOS's RWTS, and
+"[What the compiler rejects](attributes.md#what-the-compiler-rejects)"
+lists the mistakes it reports.
+
+```c
+unsigned char out[2];
+unsigned char g;
+
+void put(register unsigned char hi __attribute__((in_a)),
+         register unsigned char lo __attribute__((in_y))) {
+    out[0] = hi;
+    out[1] = lo;
+}
+
+void show(void) { put(0xC1, g); }
+```
+
+```
+put:
+   STA   out
+   STY   out+1
+   RTS
+
+show:
+   LDY   g
+   LDA   #$C1
+   JMP   put
+```
 
 The caller loads X first, then Y, then A, because loading X or Y goes
 through A (`LDA v; TAX`, until a peephole makes it `LDX v`). Without

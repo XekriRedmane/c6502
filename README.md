@@ -1144,7 +1144,9 @@ local storage:
 4. … function body runs (may push/pop on the soft stack freely; only
    `SSP` moves, `FP` stays put) …
 5. **Callee epilogue** (only when `N+M > 0`):
-   1. `PHA` the return value (the SSP/FP arithmetic clobbers `A`).
+   1. `PHA` the return value's low byte, and for a 2-byte return
+      `TXA; PHA` its high byte (the SSP/FP arithmetic clobbers `A`
+      and `X`). A carry-flag return is saved with `PHP` instead.
    2. `SSP = FP + (M + N + 2)` — a single 16-bit add restores `SSP`
       to the value it had before the caller pushed args, simultaneously
       tearing down locals + the saved-FP slot + the caller's args.
@@ -1153,9 +1155,10 @@ local storage:
       own frame at this point, so `(FP),Y` resolves correctly. Stash
       the low byte in `X` across the high read — writing to `FP`
       between the two reads would corrupt the indirect base.
-   4. `STA FP+1` (high byte) and `STX FP` (low byte). `FP` now holds
-      the caller's value.
-   5. `PLA` to restore the return value.
+   4. `STA FP+1` (high byte), then `TXA; STA FP` (low byte). `FP`
+      now holds the caller's value.
+   5. `PLA` to restore the return value, with `PLA; TAX` first for a
+      2-byte one.
 6. **Callee** issues `RTS`.
 
 When `N+M == 0` (no locals, no args) the prelude and epilogue collapse
@@ -1199,74 +1202,14 @@ caller-pushed args, it's why arg `j` is at offset `M + 3 + j`, not
 The hardware stack, meanwhile, just holds the return address pushed by
 `JSR`, plus anything the function `PHA`s during execution.
 
-### Sample emitted prologue / epilogue
+### Walkthrough
 
-For a function with `M = 2` locals and `N = 0` args (e.g. what
-`int main(void) { return ~~5; }` produces — two unary ops, two
-TAC temporaries), the emitter produces:
-
-The emitter marks each boilerplate region with a block-level comment
-(`; prologue: N arg bytes, M local bytes` and `; epilogue`) plus a
-blank-line separator, so the body stands out between them.
-
-**Prologue** (`FunctionPrologue(arg_bytes=0, local_bytes=2)`):
-
-```
-   ; prologue: 0 arg bytes, 2 local bytes
-   SEC                          ; SSP -= (M + 2) = 4 — alloc saved-FP slot + 2 locals
-   LDA   SSP
-   SBC   #$04
-   STA   SSP
-   LDA   SSP+1
-   SBC   #$00
-   STA   SSP+1
-   LDY   #$03                   ; write caller FP into the slot at SSP+3 (low) / SSP+4 (high)
-   LDA   FP
-   STA   (SSP),Y
-   INY
-   LDA   FP+1
-   STA   (SSP),Y
-   LDA   SSP                    ; FP = SSP — the local slots are now FP+1 and FP+2
-   STA   FP
-   LDA   SSP+1
-   STA   FP+1
-```
-
-(The blank line immediately after the prologue separates it from the
-body that follows.)
-
-**Epilogue** (`Ret(arg_bytes=0, local_bytes=2)`):
-
-```
-   ; epilogue
-   PHA                          ; preserve return value (in A)
-   CLC                          ; SSP = FP + (M + N + 2) = FP + 4 — undoes the prelude's
-   LDA   FP                     ; SSP -= 4 in one shot, restoring the caller's pre-arg-push SSP
-   ADC   #$04
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   LDY   #$03                   ; restore caller FP from FP+3 (low) / FP+4 (high).
-   LDA   (FP),Y                 ; FP still points at our frame here, so (FP),Y reads the
-   TAX                          ; right bytes. Stash the low byte in X across the high
-   INY                          ; read; writing FP between the two LDAs would corrupt
-   LDA   (FP),Y                 ; the indirect base. X is free to clobber — no return
-   STA   FP+1                   ; convention puts data there (1B → A, 2B/4B/8B → HARGS).
-   STX   FP
-   PLA                          ; restore return value (in A)
-   RTS
-```
-
-Costs (M=2, N=0): 17 instructions of prologue, 17 of epilogue. The
-prologue's SSP-subtract scales 16-bit-arithmetic-flat with M (two
-3-cycle ADC pairs regardless of M's value), the FP write is a fixed
-6 instructions, and the FP=SSP copy is a fixed 4 — so the prologue
-is 17 instructions for any `M ≤ 253`. Same shape on the epilogue.
-
-For functions with neither locals nor args (`M = N = 0`) the prologue
-emits nothing and the epilogue collapses to a single `RTS` — see e.g.
-`int main(void) { return 42; }`.
+[docs/soft_stack.md](docs/soft_stack.md) traces a whole call through
+the soft stack, with the compiler's current output for the caller's
+argument push, the prologue, the frame, and the epilogue, and covers
+when `--optimize` still uses the soft stack, what it costs, and its
+limits. A function with neither locals nor args (`M = N = 0`) gets no
+prologue, and its epilogue is a single `RTS`.
 
 ## Stripping comments with pcpp
 

@@ -144,14 +144,14 @@ def _synthesize_function(
         local_bytes=dims.local_bytes,
         callee_saved_addrs=list(dims.callee_saved_addrs),
     )
-    # The prologue's SSP / FP arithmetic runs through A (and Y), so it
-    # would overwrite a `register` parameter that arrives in A. The
-    # entry stubs that store register parameters into their zp_abi
-    # slots move in front of it; they only write those slots. If the
-    # body still reads A on entry after that (a parameter kept in A
-    # with its stub dropped), the prologue is wrapped in PHA / PLA.
-    # X is never touched by the prologue, and no parameter arrives
-    # in Y.
+    # The prologue's SSP / FP arithmetic runs through A and Y, so it
+    # would overwrite a `register` parameter that arrives in A or Y.
+    # The entry stubs that store register parameters into their
+    # zp_abi slots move in front of it; they only write those slots.
+    # If the body still reads A on entry after that (a parameter kept
+    # in A with its stub dropped), the prologue is wrapped in PHA /
+    # PLA. A parameter that arrives in Y is always read from its slot,
+    # and X is never touched by the prologue.
     body = list(fn.instructions)
     stubs, body = _split_entry_stubs(body, fn.name)
     new_instrs: list[asm_ast.Type_instruction] = list(stubs)

@@ -36,12 +36,9 @@ The fusion fires when:
   * The Store's `dst_ptr` is a single-use Pseudo `%addr` defined
     by an `Add` of a Constant and another Pseudo `%ext`.
   * `%ext` is itself a single-use Pseudo defined by a
-    `ZeroExtend(uchar_var, %ext)` (or `SignExtend` from a
-    nonnegative-domain 1-byte source — but only ZeroExtend is
-    handled here; signed 1-byte indices are rare in the
-    addressing-mode role, and SignExtend would put a non-zero
-    high byte for negative values which breaks the absolute,X
-    invariant).
+    `ZeroExtend(uchar_var, %ext)`. A `SignExtend` doesn't
+    qualify, because X is unsigned and `STA C,X` with a negative
+    index writes `C + 256 - |i|` where C means `C - |i|`.
   * `uchar_var`'s c99 type is a 1-byte type (Char / SChar /
     UChar). The high byte of the index is zero, so `STA C,X`
     accesses `C + (X & 0xFF) = C + X`.
@@ -83,7 +80,7 @@ from passes.optimization.extend_add_chain import (
 def recognize_indexed_store(
     fn: tac_ast.Function, *, symbols=None,
 ) -> tac_ast.Function:
-    """Fold each `ZeroExtend|SignExtend; Binary(Add, Const); Store` triple
+    """Fold each `ZeroExtend; Binary(Add, Const); Store` triple
     (1-byte index, 1-byte value, base in 0..0xFF00) into an `IndexedStore`
     (absolute,X), dropping the two intermediate defs. No-op without
     `symbols` (widths come from the symbol table)."""
@@ -95,7 +92,7 @@ def recognize_indexed_store(
 class RecognizeIndexedStore(DefUsePass):
     """DefUsePass: matches Store(src, dst_ptr=Var). For each match,
     walks back twice through the SSA def-chain to find the
-    ZeroExtend/SignExtend → Binary(Add, Const, %ext) → Store
+    ZeroExtend → Binary(Add, Const, %ext) → Store
     pattern. Uses the full def-idx so the Store and its producers
     need not be index-adjacent."""
     name = "recognize_indexed_store"

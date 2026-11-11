@@ -353,7 +353,7 @@ def reads_x(instr: asm_ast.Type_instruction) -> bool:
     )):
         return _operand_indexes_with(instr.dst, asm_ast.X)
     if isinstance(instr, asm_ast.BitTest):
-        return _operand_indexes_with(instr.operand, asm_ast.X)
+        return _operand_indexes_with(instr.src, asm_ast.X)
     if isinstance(instr, asm_ast.Phi):
         return any(is_reg_x(a.source) for a in instr.args)
     if isinstance(instr, (asm_ast.Call, asm_ast.Jump)):
@@ -426,7 +426,7 @@ def reads_y(instr: asm_ast.Type_instruction) -> bool:
     )):
         return _operand_indexes_with(instr.dst, asm_ast.Y)
     if isinstance(instr, asm_ast.BitTest):
-        return _operand_indexes_with(instr.operand, asm_ast.Y)
+        return _operand_indexes_with(instr.src, asm_ast.Y)
     if isinstance(instr, asm_ast.Phi):
         return any(is_reg_y(a.source) for a in instr.args)
     if isinstance(instr, (asm_ast.Call, asm_ast.Jump)):

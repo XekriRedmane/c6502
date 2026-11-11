@@ -82,7 +82,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 and _is_lda_to_a(instrs[i])
                 and _is_and_imm80(instrs[i + 1])
                 and _is_eq_ne_branch(instrs[i + 2])
-                and a_dead_at(instrs, i + 3)):
+                and _a_dead_both_ways(instrs, i + 2)):
             br = instrs[i + 2]
             new_cond = asm_ast.PL() if isinstance(br.cond, asm_ast.EQ) else asm_ast.MI()
             out.append(instrs[i])
@@ -101,7 +101,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 and _is_a_store_to_mem(instrs[i + 1])
                 and _is_and_imm80(instrs[i + 2])
                 and _is_eq_ne_branch(instrs[i + 3])
-                and a_dead_at(instrs, i + 4)):
+                and _a_dead_both_ways(instrs, i + 3)):
             br = instrs[i + 3]
             new_cond = asm_ast.PL() if isinstance(br.cond, asm_ast.EQ) else asm_ast.MI()
             out.append(instrs[i])
@@ -115,6 +115,20 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _a_dead_both_ways(instrs, branch_idx: int) -> bool:
+    """True iff A is dead after the branch at `branch_idx`, both on
+    the fall-through and at the branch target. The rewrite drops the
+    AND, so on either path A holds the unmasked byte. A target that
+    isn't a label in this function counts as live."""
+    if not a_dead_at(instrs, branch_idx + 1):
+        return False
+    target = instrs[branch_idx].target
+    for k, ins in enumerate(instrs):
+        if isinstance(ins, asm_ast.Label) and ins.name == target:
+            return a_dead_at(instrs, k)
+    return False
 
 
 def _is_a_store_to_mem(instr) -> bool:
@@ -146,9 +160,10 @@ def _is_lda_to_a(instr) -> bool:
     if isinstance(instr.src, asm_ast.Reg):
         # Mov(X/Y, A) (TXA/TYA) DOES set N/Z. Allow when dst is A.
         return isinstance(instr.src.reg, (asm_ast.X, asm_ast.Y)) and _is_reg_a(instr.dst)
-    # Non-Reg src: dst is either Reg(A) or memory. Both shapes emit
-    # via LDA src; ... and leave A with src's flag effects.
-    return True
+    # Non-Reg src into A, or into memory, which emits via `LDA src;
+    # STA dst`. Both leave A with src's flag effects. A load into X
+    # or Y (`LDX M`) doesn't, and the AND tests A.
+    return not isinstance(instr.dst, asm_ast.Reg) or _is_reg_a(instr.dst)
 
 
 def _is_and_imm80(instr) -> bool:

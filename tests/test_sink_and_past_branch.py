@@ -391,5 +391,80 @@ class TestSinkAndPastBranchNoSymbols(unittest.TestCase):
         self.assertEqual(out, fn)
 
 
+class TestSinkAndPastBranchKeepsSharedDefs(unittest.TestCase):
+    """A ZeroExtend whose result another instruction reads. The pass
+    dropped it with the rest of the trio, so `g16 = w` read a name
+    that nothing wrote."""
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "uint8_t bob[8] = {0x85, 3, 0, 0, 0, 0, 0, 0};\n"
+        "uint8_t y = 10;\n"
+        "int g16;\n"
+        "void step(uint8_t i) {\n"
+        "    uint8_t b = bob[i];\n"
+        "    int w = b;\n"
+        "    uint8_t mag = b & 0x7F;\n"
+        "    if (b & 0x80) y -= mag; else y += mag;\n"
+        "    g16 = w;\n"
+        "}\n"
+        "int main(void) { step(0); step(1); return g16 + y * 256; }\n"
+    )
+
+    def test_shared_zero_extend_sim(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp CLI not available")
+        from sim.harness import build_sim
+        # y = 10 - 5 + 3 = 8, and g16 = 3 from the second call.
+        for optimize in (False, True):
+            r = build_sim(self._SRC, optimize=optimize).run(
+                max_cycles=200_000,
+            )
+            self.assertEqual(
+                r.return_int(), 8 * 256 + 3, f"optimize={optimize}",
+            )
+
+    def test_shared_zero_extend_stays(self):
+        symbols = _make_symbols({
+            "b": c99_ast.UChar(),
+            "%e": c99_ast.UInt(),
+            "%a": c99_ast.UInt(),
+            "%t": c99_ast.UChar(),
+            "w": c99_ast.Int(),
+            "%u": c99_ast.UChar(),
+        })
+        ze = tac_ast.ZeroExtend(
+            src=tac_ast.Var(name="b"), dst=tac_ast.Var(name="%e"),
+        )
+        instrs = [
+            ze,
+            tac_ast.Binary(
+                op=tac_ast.BitwiseAnd(),
+                src1=tac_ast.Var(name="%e"),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=0x7F)),
+                dst=tac_ast.Var(name="%a"),
+            ),
+            tac_ast.Truncate(
+                src=tac_ast.Var(name="%a"), dst=tac_ast.Var(name="%t"),
+            ),
+            tac_ast.JumpIfMasked(
+                val=tac_ast.Var(name="b"), mask=0x80,
+                jump_when_nonzero=False, target=".else",
+            ),
+            tac_ast.Copy(src=tac_ast.Var(name="%t"), dst=tac_ast.Var(name="%u")),
+            tac_ast.Jump(target=".end"),
+            tac_ast.Label(name=".else"),
+            tac_ast.Copy(src=tac_ast.Var(name="%t"), dst=tac_ast.Var(name="%u")),
+            tac_ast.Label(name=".end"),
+            tac_ast.Copy(src=tac_ast.Var(name="%e"), dst=tac_ast.Var(name="w")),
+            tac_ast.Ret(val=None),
+        ]
+        out = sink_and_past_branch(_wrap(instrs), symbols=symbols)
+        self.assertNotEqual(out.instructions, instrs)
+        self.assertIs(out.instructions[0], ze)
+        self.assertIsInstance(out.instructions[1], tac_ast.JumpIfMasked)
+
+
 if __name__ == "__main__":
     unittest.main()

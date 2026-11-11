@@ -169,12 +169,11 @@ these are true.
 - Its body has no call through a function pointer.
 - It isn't on a cycle of direct calls among the functions defined in
   the translation unit.
-- No other function's code uses its name as a value. The check
-  covers function bodies only, and skips the function's own body.
-  So a function whose address is taken only in a static initializer
-  (`int (*fp)(int) = f;`), or only inside itself, still gets zp_abi,
-  and a call through that pointer passes the arguments on the soft
-  stack, where the function doesn't read them. That's a miscompile.
+- Its address isn't taken. That's any use of its name as a value in
+  a function body, its own included, and any static initializer that
+  names it (`int (*fp)(int) = f;`). A call through a pointer passes
+  the arguments on the soft stack, so a function that can be called
+  that way keeps the soft stack.
 - It doesn't return a struct or union, unless it's
   `return_bool_in_carry`, whose struct comes back in A, X, and C.
 - Its parameters take at most 64 bytes, the size of `$80`-`$BF`.
@@ -186,11 +185,8 @@ these are true.
 
 A function declared but not defined in the translation unit gets
 zp_abi under the parameter-size and return-type rules, since there's
-no body to check. The address-taken check doesn't cover it, because
-`_address_taken` looks only for the names of functions defined in
-the translation unit, so `fp = f;` on an `extern` `f` leaves the
-direct calls to `f` on zp_abi while the call through `fp` uses the
-soft stack. That's a miscompile too. A routine with
+no body to check, unless its address is taken, which the same scan
+finds for declared functions too. A routine with
 `__attribute__((address(addr)))` takes its convention from its
 declaration alone.
 

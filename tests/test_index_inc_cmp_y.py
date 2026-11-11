@@ -167,5 +167,81 @@ class TestSkips(unittest.TestCase):
         self.assertEqual(len(out), 6)
 
 
+class TestTmpLiveness(unittest.TestCase):
+    """The temporary keeps its old value after the rewrite, so it must
+    be compiler-owned scratch that no path reads afterward."""
+
+    def _pattern(self, tmp):
+        return [
+            asm_ast.Mov(src=_indexed_x("tbl"), dst=A, is_volatile=False),
+            asm_ast.Mov(src=A, dst=tmp, is_volatile=False),
+            asm_ast.Inc(dst=tmp),
+            asm_ast.Mov(src=tmp, dst=A, is_volatile=False),
+            asm_ast.Compare(left=A, right=asm_ast.Imm(value=9)),
+        ]
+
+    def test_skips_user_global(self):
+        # `top = tbl[i]; top++; if (top == 9) ...` with a global `top`
+        # must keep the store, since the caller can read `top`.
+        tmp = asm_ast.Data(name="top", offset=0)
+        instrs = self._pattern(tmp) + [asm_ast.Return(save_a=False)]
+        out = _run(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_skips_read_reached_by_back_edge(self):
+        # The read of `tmp` at the loop top comes before the pattern
+        # in program order, and only the back edge reaches it.
+        tmp = asm_ast.Data(name="__local_f__0", offset=0)
+        instrs = [
+            asm_ast.Label(name=".top"),
+            asm_ast.Mov(src=tmp, dst=asm_ast.Data(name="out", offset=0),
+                        is_volatile=False),
+            *self._pattern(tmp),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".top"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _run(instrs)
+        self.assertEqual(out, instrs)
+
+    def test_bit_test_after_match(self):
+        # `BitTest`'s operand field is `src`. Reading it under the
+        # wrong name raised AttributeError. The `LDY #0` ends the Y
+        # liveness walk before it reaches the `BIT`, because
+        # `asm_liveness.reads_y` has the same wrong field name.
+        tmp = asm_ast.Data(name="__local_f__0", offset=0)
+        instrs = self._pattern(tmp) + [
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=Y, is_volatile=False),
+            asm_ast.BitTest(src=asm_ast.Data(name="flags", offset=0)),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _run(instrs)
+        self.assertEqual(out[0].dst, Y)
+
+    def test_simulated_loop_and_global(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp not installed")
+        from sim.harness import build_sim
+        src = """
+unsigned char ceiling[8] = {1,2,3,4,5,6,7,8};
+unsigned char out[8];
+unsigned char beam_y, hit, top;
+void check(unsigned char i) { top = ceiling[i]; top++; if (top == beam_y) hit = 1; }
+void scan(void) {
+    unsigned char prev = 0;
+    for (unsigned char i = 0; i < 8; i++) {
+        out[i] = prev;
+        prev = ceiling[i];
+        prev++;
+        if (prev == beam_y) hit = 1;
+    }
+}
+int main(void) { beam_y = 99; check(2); scan(); return top * 100 + out[3]; }
+"""
+        self.assertEqual(
+            build_sim(src, optimize=True).run().return_int(), 404,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

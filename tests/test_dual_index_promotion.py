@@ -1,9 +1,11 @@
 """Tests for the X→Y dual-index promotion pass."""
 
+import shutil
 import unittest
 
 import asm_ast
 from passes.dual_index_promotion import apply_dual_index_promotion
+from sim.harness import build_sim
 
 
 _A = asm_ast.Reg(reg=asm_ast.A())
@@ -289,6 +291,176 @@ class TestDualIndexPromotionRewriteRange(unittest.TestCase):
         self.assertEqual(len(entity_accesses), 2)
         for op in entity_accesses:
             self.assertIsInstance(op.index, asm_ast.Y)
+
+    def _branch_shape(self, after_label):
+        """`o = t[k]; a = u[d]; if (a) v[d] = a; o = t[k];` followed
+        by `after_label` at the join, with d the promoted symbol."""
+        return [
+            _ldx(_data("k")),
+            _lda(_ixX("t")),
+            _sta(_data("o")),
+            _ldx(_data("d")),
+            _lda(_ixX("u")),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".end"),
+            _sta(_ixX("v")),
+            asm_ast.Label(name=".end"),
+            *after_label,
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_read_after_branch_follows_x(self):
+        # `STA v,X` comes after the `BEQ`, and X still holds d there.
+        # The rewrite used to stop at the branch and leave `v,X`
+        # reading X, which no longer held d once the `LDX d` was
+        # dropped.
+        instrs = self._branch_shape([
+            _ldx(_data("k")),
+            _lda(_ixX("t")),
+            _sta(_data("o")),
+            _ldx(_data("d")),
+            _lda(_ixX("w")),
+            _sta(_data("o2")),
+        ])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertIn(_sta(_ixY("v")), out)
+        self.assertIn(_lda(_ixY("u")), out)
+        self.assertIn(_lda(_ixY("w")), out)
+        self.assertEqual(
+            [i for i in out if isinstance(i, asm_ast.Mov)
+             and isinstance(i.src, asm_ast.IndexedData)
+             and i.src.name == "t"],
+            [_lda(_ixX("t")), _lda(_ixX("t"))],
+        )
+
+    def test_read_where_x_may_or_may_not_hold_d_blocks(self):
+        # At `.end`, X holds d on the taken path and k on the
+        # fall-through path, so `LDA w,X` has no single register to
+        # read.
+        instrs = [
+            _ldx(_data("d")),
+            _lda(_ixX("u")),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".end"),
+            _ldx(_data("k")),
+            _lda(_ixX("t")),
+            asm_ast.Label(name=".end"),
+            _lda(_ixX("w")),
+            _ldx(_data("d")),
+            _sta(_ixX("v")),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_x_value_read_blocks(self):
+        # `TXA` reads d's value from X, and X won't hold it.
+        instrs = self._branch_shape([
+            _ldx(_data("d")),
+            asm_ast.Mov(src=_X, dst=_A, is_volatile=False),
+            _sta(_data("o2")),
+        ])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_live_flags_after_ldx_block(self):
+        # The `BEQ` reads the Z flag of `LDX d`, which is dropped.
+        instrs = [
+            _ldx(_data("k")),
+            _lda(_ixX("t")),
+            _ldx(_data("d")),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".end"),
+            _lda(_ixX("u")),
+            asm_ast.Label(name=".end"),
+            _ldx(_data("d")),
+            _sta(_ixX("v")),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+
+class TestDualIndexPromotionYUses(unittest.TestCase):
+    """Operands whose lowering writes or reads Y."""
+
+    def _with(self, middle):
+        return [
+            _ldx(_data("k")),
+            _lda(_ixX("t")),
+            _ldx(_data("d")),
+            _lda(_ixX("u")),
+            _ldx(_data("k")),
+            _lda(_ixX("t")),
+            *middle,
+            _ldx(_data("d")),
+            _sta(_ixX("w")),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_control_promotes(self):
+        instrs = self._with([])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertNotEqual(out, instrs)
+
+    def test_indirect_zp_blocks(self):
+        # `LDA (p),Y` on a zero-page pointer is emitted as `LDY #$00;
+        # LDA (p),Y`, which overwrites d in Y. It wasn't counted as a
+        # use of Y.
+        instrs = self._with([_lda(asm_ast.IndirectZp(address=0x80, offset=0))])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_indirect_zp_y_blocks(self):
+        instrs = self._with([_lda(asm_ast.IndirectZpY(address=0x80))])
+        out = _instrs(apply_dual_index_promotion(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")
+class TestDualIndexPromotionSim(unittest.TestCase):
+
+    def _check(self, src, expected):
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                r = build_sim(src, optimize=optimize).run()
+                self.assertFalse(r.timed_out)
+                self.assertEqual(r.return_int(), expected)
+
+    def test_store_after_branch(self):
+        # `v[d] = a` sits after `if (a != 0)`. The optimized build
+        # used to store to `v[k]`.
+        self._check(r'''
+        #include <stdint.h>
+        uint8_t t[8], u[8] = {0,0,0,0,0,7,0,0}, v[8], w[8];
+        uint8_t o, o2;
+        void f(uint8_t k, uint8_t d)
+        {
+            o = t[k];
+            uint8_t a = u[d];
+            if (a != 0)
+                v[d] = a;
+            o = t[k];
+            o2 = w[d];
+        }
+        int main(void) { f(2, 5); return v[5] * 10 + v[2]; }
+        ''', 70)
+
+    def test_pointer_read_between_uses(self):
+        # `*p` through a zero-page pointer loads Y with 0, so the
+        # optimized build used to read `w[0]` where it should read
+        # `w[d]`.
+        self._check(r'''
+        #include <stdint.h>
+        uint8_t t[8], u[8], w[8] = {0,0,0,0,0,9,0,0};
+        uint8_t o, o2, o3, cell;
+        void f(uint8_t k, uint8_t d, uint8_t *p)
+        {
+            o = t[k];
+            o2 = u[d];
+            o = t[k];
+            o3 = *p;
+            o2 = w[d];
+        }
+        int main(void) { f(2, 5, &cell); return o2; }
+        ''', 9)
 
 
 if __name__ == "__main__":

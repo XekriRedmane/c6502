@@ -77,5 +77,25 @@ class TestSetsFlags(unittest.TestCase):
                     asm_ast.Mov(src=self._A, dst=dst)))
 
 
+class TestBitTestIndexRegisters(unittest.TestCase):
+    """`reads_x` / `reads_y` read `BitTest.operand`, which doesn't
+    exist (the field is `src`), so any X or Y liveness walk that
+    reached a `BIT` raised AttributeError."""
+
+    def test_bit_reads_its_index_register(self):
+        from passes.asm_liveness import reads_x, reads_y, x_dead_at, y_dead_at
+        bit_x = asm_ast.BitTest(src=asm_ast.IndexedData(
+            name="t", offset=0, index=asm_ast.X()))
+        bit_y = asm_ast.BitTest(src=asm_ast.IndexedData(
+            name="t", offset=0, index=asm_ast.Y()))
+        plain = asm_ast.BitTest(src=asm_ast.Data(name="t", offset=0))
+        self.assertTrue(reads_x(bit_x))
+        self.assertTrue(reads_y(bit_y))
+        self.assertFalse(reads_x(plain))
+        ret = asm_ast.Return(save_a=False, save_x=False, save_c=False)
+        self.assertFalse(x_dead_at([bit_x, ret], 0))
+        self.assertTrue(y_dead_at([plain, ret], 0))
+
+
 if __name__ == "__main__":
     unittest.main()

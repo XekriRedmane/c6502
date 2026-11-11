@@ -310,7 +310,7 @@ from passes.shift_cost import inline_shift_ok
 import asm_ast
 import c99_ast
 import tac_ast
-from passes.type_checking import StaticAttr, SymbolTable
+from passes.type_checking import FunAttr, StaticAttr, SymbolTable
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
@@ -2472,15 +2472,18 @@ class Translator:
     def _is_static_storage(self, name: str) -> bool:
         """True iff `name` resolves through the symbol table to an
         object with `StaticAttr` (file-scope object or block-scope
-        `static`). Address-of of a static is a compile-time constant
-        label — we lower it to `ImmLabelLow/High` immediate stores
-        rather than the compound `LoadAddress` atom."""
+        `static`) or to a function. Address-of of either is a
+        compile-time constant label — we lower it to `ImmLabelLow/High`
+        immediate stores rather than the compound `LoadAddress` atom.
+        A function declared here but defined elsewhere has no other
+        record in the asm program, so without the function case
+        `fp = f;` stored the address of a soft-stack slot."""
         if self._symbols is None:
             return False
         sym = self._symbols.get(name)
         if sym is None:
             return False
-        return isinstance(sym.attrs, StaticAttr)
+        return isinstance(sym.attrs, (StaticAttr, FunAttr))
 
     def _translate_load(
         self, src_ptr: tac_ast.Type_val, dst: tac_ast.Type_val,

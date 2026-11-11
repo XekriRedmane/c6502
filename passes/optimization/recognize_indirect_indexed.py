@@ -136,7 +136,7 @@ def _resolves_to_constant(
 class _RecognizeIndirectIndexedDefUse(DefUsePass):
     """DefUsePass: matches Load(src_ptr=Var) or Store(dst_ptr=Var) at
     the use site. For each match, walks back twice through the SSA
-    def-chain to find the ZeroExtend/SignExtend → Binary(Add, ptr,
+    def-chain to find the ZeroExtend → Binary(Add, ptr,
     %ext) → Load/Store pattern. Uses the full def-idx so the use and
     its producers need not be index-adjacent.
 
@@ -243,7 +243,7 @@ _IMPL = _RecognizeIndirectIndexedDefUse()
 class RecognizeIndirectIndexed(PostFixedpointPass):
     """PostFixedpointPass wrapper. Delegates to _IMPL which uses
     Rewrite.drop_defs to atomically drop the two dead intermediate
-    defs (Binary(Add) and ZeroExtend/SignExtend) in the same rebuild
+    defs (Binary(Add) and ZeroExtend) in the same rebuild
     pass. This is sound even in PostFixedpointPass context — there
     is no need for a subsequent DSE pass."""
     name = "recognize_indirect_indexed"

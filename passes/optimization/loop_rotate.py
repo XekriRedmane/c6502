@@ -84,6 +84,13 @@ language:
     first iteration would have entered the original test-at-top
     loop, which is the precondition for safely deferring the
     test past one body execution.
+  * That def, and every def in its Copy / Cast chain, comes after
+    the last label before `Label(<L>_start)`. Control enters the
+    straight-line run between that label and the loop only at its
+    top, so the def reaches the loop on every path. A def before
+    the label, such as `i = 5` in `if (c) i = 5;`, may be skipped.
+  * `x_var`'s address is never taken, since a store through a
+    pointer or a call could write it between the init and the loop.
 
 # Why pre-SSA
 
@@ -455,7 +462,8 @@ def _init_value_is_nonnegative(
 ) -> bool:
     """True if the last def of `x_name` strictly before `instrs[
     start_idx]` resolves to an integer constant in `[0, _MAX_
-    POSITIVE[x_type_cls]]`.
+    POSITIVE[x_type_cls]]`, that def comes after the last label
+    before the loop, and `x_name`'s address is never taken.
 
     Walks linearly backward, following Copy / Cast chains through
     temp Vars. Refuses on the first non-resolvable step (multi-def
@@ -465,12 +473,48 @@ def _init_value_is_nonnegative(
     max_pos = _MAX_POSITIVE.get(x_type_cls)
     if max_pos is None:
         return False
-    # Locate x_name's last def position before start_idx.
+    # A Store through a pointer or a call can write an address-taken
+    # x_var, and neither shows up as a def of x_name.
+    if _address_taken(instrs, x_name):
+        return False
+    # The init write must sit in the straight-line run that ends at
+    # Label(L_start). A label is the only place where control enters
+    # the middle of a TAC instruction list, so every path into the
+    # loop's first test runs that whole run, and the last write in it
+    # is the value the test sees. A write before an earlier label may
+    # be on a conditional path that another path skips, as with
+    # `if (c) i = 5;` just before the loop.
+    floor = _straight_line_start(instrs, start_idx)
     def_idx = _last_def_pos(instrs, start_idx, x_name)
-    if def_idx is None:
+    if def_idx is None or def_idx < floor:
         return False
     return _resolves_to_int_in_range(
-        instrs, def_idx, x_name, low=0, high=max_pos,
+        instrs, def_idx, x_name, low=0, high=max_pos, floor=floor,
+    )
+
+
+def _straight_line_start(
+    instrs: list[tac_ast.Type_instruction], start_idx: int,
+) -> int:
+    """Returns the index of the first instruction after the last
+    `Label` before `instrs[start_idx]`, or 0 when there is no such
+    label. Control reaches `instrs[start_idx]` only by running every
+    instruction from that index on."""
+    for k in range(start_idx - 1, -1, -1):
+        if isinstance(instrs[k], tac_ast.Label):
+            return k + 1
+    return 0
+
+
+def _address_taken(
+    instrs: list[tac_ast.Type_instruction], name: str,
+) -> bool:
+    """Returns True if any instruction takes the address of `name`."""
+    return any(
+        isinstance(ins, tac_ast.GetAddress)
+        and isinstance(ins.operand, tac_ast.Var)
+        and ins.operand.name == name
+        for ins in instrs
     )
 
 
@@ -488,11 +532,14 @@ def _last_def_pos(
 
 def _resolves_to_int_in_range(
     instrs: list[tac_ast.Type_instruction], def_idx: int,
-    name: str, *, low: int, high: int, depth: int = 0,
+    name: str, *, low: int, high: int, floor: int, depth: int = 0,
 ) -> bool:
-    """The def at `instrs[def_idx]` (which writes `name`) reduces,
-    via Copy / Cast chains over single-defined temps, to an
-    integer constant in `[low, high]`."""
+    """Returns True if the def at `instrs[def_idx]` (which writes
+    `name`) reduces, via Copy / Cast chains over single-defined
+    temps, to an integer constant in `[low, high]`. Every def in the
+    chain must sit at index `floor` or later, in the same
+    straight-line run as the loop's init write, since a temp such as
+    the result of `?:` is written on more than one path."""
     if depth > 4:
         return False
     ins = instrs[def_idx]
@@ -510,10 +557,11 @@ def _resolves_to_int_in_range(
         return False
     inner_name = src.name
     inner_def = _last_def_pos(instrs, def_idx, inner_name)
-    if inner_def is None:
+    if inner_def is None or inner_def < floor:
         return False
     return _resolves_to_int_in_range(
-        instrs, inner_def, inner_name, low=low, high=high, depth=depth + 1,
+        instrs, inner_def, inner_name, low=low, high=high, floor=floor,
+        depth=depth + 1,
     )
 
 

@@ -31,6 +31,8 @@ class TestCmpSbcFusion(unittest.TestCase):
             asm_ast.SetCarry(),
             asm_ast.Sub(src=N, dst=_A),
             asm_ast.Return(save_a=False),
+            asm_ast.Label(name=".skip"),
+            asm_ast.Return(save_a=False),
         ])
         out = _instrs(apply_cmp_sbc_fusion(prog))
         self.assertEqual(out, [
@@ -39,6 +41,8 @@ class TestCmpSbcFusion(unittest.TestCase):
             asm_ast.Sub(src=N, dst=_A),
             asm_ast.Branch(cond=asm_ast.CC(), target=".skip"),
             asm_ast.Label(name=".cont"),
+            asm_ast.Return(save_a=False),
+            asm_ast.Label(name=".skip"),
             asm_ast.Return(save_a=False),
         ])
 
@@ -89,6 +93,47 @@ class TestCmpSbcFusion(unittest.TestCase):
         out = _instrs(apply_cmp_sbc_fusion(prog))
         self.assertEqual(len(out), 6)
         self.assertIsInstance(out[1], asm_ast.Compare)
+
+    def _shape(self, target_tail):
+        N = asm_ast.Data(name="N", offset=0)
+        return [
+            asm_ast.Mov(src=asm_ast.Data(name="M", offset=0), dst=_A),
+            asm_ast.Compare(left=_A, right=N),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".skip"),
+            asm_ast.Label(name=".cont"),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=N, dst=_A),
+            asm_ast.Return(save_a=True),
+            asm_ast.Label(name=".skip"),
+            *target_tail,
+        ]
+
+    def test_a_live_at_target_blocks_fusion(self):
+        # The taken path returns M in A. After fusion it would return
+        # M - N.
+        instrs = self._shape([asm_ast.Return(save_a=True)])
+        out = _instrs(apply_cmp_sbc_fusion(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+    def test_v_live_at_target_blocks_fusion(self):
+        # A `BVS` at the target reads the V that CMP leaves alone and
+        # SBC sets.
+        instrs = self._shape([
+            asm_ast.Branch(cond=asm_ast.VS(), target=".v"),
+            asm_ast.Return(save_a=False),
+            asm_ast.Label(name=".v"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_cmp_sbc_fusion(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
+    def test_a_reloaded_at_target_fuses(self):
+        instrs = self._shape([
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A),
+            asm_ast.Return(save_a=True),
+        ])
+        out = _instrs(apply_cmp_sbc_fusion(_wrap(list(instrs))))
+        self.assertIsInstance(out[1], asm_ast.SetCarry)
 
 
 if __name__ == "__main__":

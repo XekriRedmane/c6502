@@ -223,7 +223,7 @@ def _read_operands(instr) -> list:
                           asm_ast.RotateRight)):
         return [instr.dst]
     if isinstance(instr, asm_ast.BitTest):
-        return [instr.operand]
+        return [instr.src]
     return []
 
 

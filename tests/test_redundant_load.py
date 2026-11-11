@@ -1080,5 +1080,61 @@ class TestZTracksA(unittest.TestCase):
         self.assertNotIn(self._mov(g, self._A), out)
 
 
+class TestIndexRegisterOfIndexedData(unittest.TestCase):
+    """`tab,X` and `tab,Y` are different bytes unless X equals Y."""
+
+    def _tab(self, reg):
+        return asm_ast.IndexedData(name="tab", offset=0, index=reg)
+
+    def test_x_and_y_indexed_loads_both_kept(self):
+        # LDA arr,X; LDY #3; LDA arr,Y keeps the second load.
+        instrs = [
+            asm_ast.Mov(src=self._tab(asm_ast.X()), dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=3), dst=_REG_Y),
+            asm_ast.Mov(src=self._tab(asm_ast.Y()), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="g", offset=0)),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(instrs)
+        self.assertIn(
+            asm_ast.Mov(src=self._tab(asm_ast.Y()), dst=_REG_A), out,
+        )
+
+    def test_table_chase_across_branch(self):
+        # `j = tab[i]; if (j == 0) return 0; g = tab[j]; return j;`
+        # The `LDA tab,Y` at the join was dropped, since A mirrored
+        # `tab,X` through `TYA`.
+        tab_y = asm_ast.Mov(src=self._tab(asm_ast.Y()), dst=_REG_A)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Data(name="i", offset=0), dst=_REG_X),
+            asm_ast.Mov(src=self._tab(asm_ast.X()), dst=_REG_Y),
+            asm_ast.Mov(src=_REG_Y, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".if_end@0"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+            asm_ast.Return(save_a=True),
+            asm_ast.Label(name=".if_end@0"),
+            tab_y,
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="g", offset=0)),
+            asm_ast.Mov(src=_REG_Y, dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertIn(tab_y, _rewritten(instrs))
+
+    def test_simulated_table_chase(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp not installed")
+        from sim.harness import build_sim
+        src = """
+unsigned char tab[8] = {3, 0, 0, 7, 0, 0, 0, 0};
+unsigned char g;
+unsigned char f(unsigned char i) { unsigned char j = tab[i]; if (j == 0) return 0; g = tab[j]; return j; }
+int main(void) { unsigned char r = f(0); return g * 100 + r; }
+"""
+        self.assertEqual(
+            build_sim(src, optimize=True).run().return_int(), 703,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

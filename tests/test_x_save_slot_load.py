@@ -207,6 +207,39 @@ class TestXWritesBreakTheSlot(unittest.TestCase):
         out = _instrs(apply_x_save_slot_load(_wrap(instrs)))
         self.assertEqual(out[4], asm_ast.Mov(src=_X(), dst=_A(), is_volatile=False))
 
+    def test_read_before_x_is_given_the_slot_stays(self):
+        # `LDA p; STA out; LDX p; DEX; STX p`: at the `LDA p`, X still
+        # holds whatever the caller left in it. The read used to
+        # become `TXA` because `STX p` appears later in the function.
+        instrs = [
+            asm_ast.Mov(src=_M("p"), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_M("out"), is_volatile=False),
+            asm_ast.Mov(src=_M("p"), dst=_X(), is_volatile=False),
+            asm_ast.Dec(dst=_X()),
+            asm_ast.Mov(src=_X(), dst=_M("p"), is_volatile=False),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_instrs(apply_x_save_slot_load(_wrap(instrs))), instrs)
+
+    def test_read_at_join_with_unsynced_path_stays(self):
+        # `.join` is reached from the entry with X unset and from the
+        # `LDX M` path, so the `LDA M` there has to keep reading
+        # memory. The read after the `LDX M` is rewritten.
+        instrs = [
+            asm_ast.Mov(src=_M("c"), dst=_A(), is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".join"),
+            asm_ast.Mov(src=_M(), dst=_X(), is_volatile=False),
+            asm_ast.Dec(dst=_X()),
+            asm_ast.Mov(src=_M(), dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_X(), dst=_M(), is_volatile=False),
+            asm_ast.Label(name=".join"),
+            asm_ast.Mov(src=_M(), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        out = _instrs(apply_x_save_slot_load(_wrap(instrs)))
+        self.assertEqual(out[4], asm_ast.Mov(src=_X(), dst=_A(), is_volatile=False))
+        self.assertEqual(out[7], instrs[7])
+
 
 if __name__ == "__main__":
     unittest.main()

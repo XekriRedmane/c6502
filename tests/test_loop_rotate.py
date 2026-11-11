@@ -476,6 +476,67 @@ class TestLoopRotateE2E(unittest.TestCase):
         )
         self._sim(src, 120)
 
+    def _both(self, src: str, expected: int) -> None:
+        """Runs `src` through both pipelines and checks that each
+        returns `expected`."""
+        from sim.harness import build_sim
+        for optimize in (False, True):
+            result = build_sim(src, optimize=optimize).run(
+                max_cycles=200_000,
+            )
+            self.assertFalse(result.timed_out, f"optimize={optimize}")
+            self.assertEqual(
+                result.return_int(), expected, f"optimize={optimize}",
+            )
+
+    def test_init_on_conditional_path_not_rotated(self) -> None:
+        # The last write to i before the loop is inside the `if`, so
+        # the -1 parameter reaches the test when c is 0, and the
+        # first test fails. The rotated loop ran the body once and
+        # returned 1.
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t count(int8_t i, uint8_t c) {\n"
+            "    uint8_t k = 0;\n"
+            "    if (c) i = 5;\n"
+            "    for (; i >= 0; i--) k++;\n"
+            "    return k;\n"
+            "}\n"
+            "int main(void) { return count(-1, 0) + count(-1, 1) * 2; }\n"
+        )
+        self._both(src, 12)
+
+    def test_init_through_conditional_temp_not_rotated(self) -> None:
+        # `c ? -1 : 5` writes its result temp on two paths, and the
+        # write in instruction order is the in-range 5.
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t count(uint8_t c) {\n"
+            "    uint8_t k = 0;\n"
+            "    for (int8_t i = c ? -1 : 5; i >= 0; i--) k++;\n"
+            "    return k;\n"
+            "}\n"
+            "int main(void) { return count(1) + count(0) * 2; }\n"
+        )
+        self._both(src, 12)
+
+    def test_address_taken_counter_not_rotated(self) -> None:
+        # The store through p writes i after its constant init, and
+        # it isn't a def of i in the TAC.
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t count(int8_t i) {\n"
+            "    uint8_t k = 0;\n"
+            "    int8_t *p = &i;\n"
+            "    i = 3;\n"
+            "    *p = -1;\n"
+            "    for (; i >= 0; i--) k++;\n"
+            "    return k;\n"
+            "}\n"
+            "int main(void) { return count(0); }\n"
+        )
+        self._both(src, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

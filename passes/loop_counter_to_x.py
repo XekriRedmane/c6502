@@ -65,9 +65,14 @@ The slot M is eligible iff:
   * One or more `Mov(M, Reg(X))` (LDX M reloads).
   * No other uses of M anywhere.
   * Every other X-write in the function is one of:
-    - An `LDX <other>` whose surrounding basic-block range
-      contains only IndexedData(index=X) consumers AND no Y-use.
-      (Pivotable.)
+    - An `LDX <other>` where the counter is dead, that is, where no
+      path reads M before the init writes it again. It stays an
+      LDX.
+    - An `LDX <other>` that starts a pivot range (see
+      `_try_collect_pivot_range`). The range touches no Y, its only
+      X reads are `abs,X` operands with an `abs,Y` form, and it ends
+      before any use of M. Neither X's loaded value nor Y's earlier
+      value is read after the range.
     - A `Call` instruction (save/restore handled).
   * Other X-writers (INX, DEX, TAX) disqualify.
 
@@ -77,7 +82,8 @@ After the transformation, X holds M's current value at every
 program point that originally read M via `LDX M` (or any other X
 consumer). Specifically:
 
-  * Init: `LDA <src>; STA M; TAX` — X = M = initial.
+  * Init: `LDA <src>; STA M; TAX` — X = M = initial. An init
+    `STX M` gets no TAX, and an init `STY M` gets `LDX M`.
   * Loop-top: X carries from the previous iter's DEX (back-edge)
     or the init's TAX. The dropped LDX M is unobservable.
   * Mid-body: Y-pivoted ranges leave X untouched; the M-canonical
@@ -131,7 +137,7 @@ from __future__ import annotations
 import dataclasses
 
 import asm_ast
-from passes.asm_liveness import a_dead_at, call_preserves
+from passes.asm_liveness import a_dead_at, call_preserves, sets_up_y
 
 
 _FLAG_NZ_BRANCHES: tuple[type, ...] = (
@@ -251,9 +257,28 @@ def _plan_promotion(instrs):
                 i += 1
                 continue
             if _is_ldx_to_x(instr):
+                # Where the counter is dead (no read of M before the
+                # init writes it again, as for the `LDX hi` of a
+                # 2-byte return after the loop), the load can stay
+                # an LDX. X isn't expected to hold the counter there.
+                if not _counter_live_after(
+                    instrs, i, m_key, cand['init_idx'],
+                ):
+                    i += 1
+                    continue
                 # Try to collect a pivot range.
-                end = _try_collect_pivot_range(instrs, i)
+                end = _try_collect_pivot_range(instrs, i, m_key)
                 if end is None:
+                    return None
+                # The pivot leaves the counter in X and the loaded
+                # value in Y from the LDY onward. An X read after the
+                # range that the LDX reaches would get the counter
+                # where it read the loaded value, and a Y read after
+                # it would get the loaded value where it read
+                # whatever Y held before.
+                if _reg_live_from(instrs, end, "X"):
+                    return None
+                if _reg_live_from(instrs, end, "Y"):
                     return None
                 pivot_ranges.append((i, end))
                 i = end
@@ -316,61 +341,102 @@ def _reads_x(instr) -> bool:
     return False
 
 
-def _call_returns_live_x(instrs, call_idx: int) -> bool:
-    """True iff Reg(X) is read on some path after the Call at
-    `call_idx` before it is redefined — i.e. the callee returned a
-    live value in X (the high byte of a 2-byte register return,
-    captured by `STX`/`TXA` right after the JSR). The normal
-    loop-counter case instead reloads the counter with `LDX M` (a pure
-    write) before any X use — often at the loop top reached across the
-    back-edge — so X is redefined first on every path and this returns
-    False. Follows control flow (both arms of a Branch, Jump targets),
-    pruning a path at the first X-redefine or another Call (which
-    clobbers X)."""
+def _reads_y(instr) -> bool:
+    """Returns True iff `instr` reads Reg(Y) as a value, as an `abs,Y`
+    index, or as the offset of an `(ind),Y` operand that has no
+    `LDY #off` setup of its own (`IndirectY`, `IndirectZpY`)."""
+    for name, op in vars(instr).items():
+        if _is_reg_y(op):
+            # A pure write to Y (`LDY`, `TAY`, `PLY`) isn't a read.
+            if name == "dst" and isinstance(
+                instr, (asm_ast.Mov, asm_ast.Pop, asm_ast.LoadAddress),
+            ):
+                continue
+            return True
+        if isinstance(op, asm_ast.IndexedData) and isinstance(
+            op.index, asm_ast.Y,
+        ):
+            return True
+        if isinstance(op, (asm_ast.IndirectY, asm_ast.IndirectZpY)):
+            return True
+    return False
+
+
+def _touches_y(instr) -> bool:
+    """Returns True iff `instr` reads or writes Reg(Y) in any way,
+    including the `LDY #off` that `asm_emit` puts in front of an
+    `Indirect`, `IndirectZp`, `Frame`, or `Stack` access."""
+    if _reads_y(instr) or sets_up_y(instr):
+        return True
+    return any(_is_reg_y(op) for op in vars(instr).values())
+
+
+def _reg_reads(instr, reg: str) -> bool:
+    """Returns True iff `instr` reads `reg` ("X" or "Y"), counting a
+    call or tail-call jump that takes the register as an argument and
+    a return whose epilogue carries X out (`save_x`)."""
+    if isinstance(instr, (asm_ast.Call, asm_ast.Jump)):
+        return reg in instr.reg_args
+    if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+        return reg == "X" and instr.save_x
+    return _reads_x(instr) if reg == "X" else _reads_y(instr)
+
+
+def _reg_kills(instr, reg: str) -> bool:
+    """Returns True iff `instr` overwrites `reg` ("X" or "Y") without
+    reading it. Checked after `_reg_reads`, so an instruction that
+    does both counts as a read."""
+    if isinstance(instr, asm_ast.Call):
+        return not call_preserves(instr, reg)
+    if isinstance(instr, (asm_ast.Mov, asm_ast.Pop)):
+        if _is_reg(instr.dst, asm_ast.X if reg == "X" else asm_ast.Y):
+            return True
+    return reg == "Y" and sets_up_y(instr)
+
+
+def _reg_live_from(instrs, start: int, reg: str) -> bool:
+    """Returns True iff `reg` ("X" or "Y") is read on some path from
+    `instrs[start]` before it is overwritten, that is, iff the value
+    the register holds at `start` is still used. Follows both arms of
+    a branch and the targets of jumps. A return ends a path, reading
+    X when it has `save_x`."""
     label_idx = {
         ins.name: k for k, ins in enumerate(instrs)
         if isinstance(ins, asm_ast.Label)
     }
     seen: set[int] = set()
-    stack: list[int] = [call_idx + 1]
+    stack: list[int] = [start]
     while stack:
         j = stack.pop()
-        while 0 <= j < len(instrs):
-            if j in seen:
-                break
+        while 0 <= j < len(instrs) and j not in seen:
             seen.add(j)
             instr = instrs[j]
-            # A read of X means the Call's return-in-X is live.
-            if _reads_x(instr):
+            if _reg_reads(instr, reg):
                 return True
-            # A pure write to X (LDX / TAX / Pop X) redefines it — the
-            # Call's X output is dead from here; prune this path.
-            if (isinstance(instr, asm_ast.Mov)
-                    and _is_reg_x(instr.dst)):
-                break
-            if isinstance(instr, asm_ast.Pop) and _is_reg_x(instr.dst):
+            if _reg_kills(instr, reg):
                 break
             if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
-                if instr.save_x:
-                    return True   # the epilogue reads X (return high).
                 break
-            if isinstance(instr, asm_ast.Jump):
+            if isinstance(instr, (asm_ast.Jump, asm_ast.Branch)):
                 t = label_idx.get(instr.target)
                 if t is not None:
                     stack.append(t)
-                break
-            if isinstance(instr, asm_ast.Branch):
-                t = label_idx.get(instr.target)
-                if t is not None:
-                    stack.append(t)
-                j += 1
-                continue
-            if isinstance(instr, asm_ast.Call):
-                # Another Call clobbers X — the original Call's X
-                # output can't survive past it; prune this path.
-                break
+                if isinstance(instr, asm_ast.Jump):
+                    break
             j += 1
     return False
+
+
+def _call_returns_live_x(instrs, call_idx: int) -> bool:
+    """Returns True iff Reg(X) is read on some path after the Call at
+    `call_idx` before it is redefined, which means the callee returned
+    a live value in X (the high byte of a 2-byte register return,
+    captured by `STX`/`TXA` right after the JSR). The normal
+    loop-counter case instead reloads the counter with `LDX M` (a pure
+    write) before any X use, often at the loop top reached across the
+    back-edge, so X is redefined first on every path and this returns
+    False."""
+    return _reg_live_from(instrs, call_idx + 1, "X")
 
 
 def _is_x_write_other_than(instr, m_key) -> bool:
@@ -437,17 +503,34 @@ def _is_ldx_to_x(instr) -> bool:
             and not isinstance(instr.src, asm_ast.Reg))
 
 
-def _try_collect_pivot_range(instrs, start: int):
-    """Verify a Y-pivot range starting at instrs[start] is valid.
-    Returns the exclusive end index, or None if no valid range
-    exists from here.
+# The sources an `LDX` at the start of a pivot range may have. Each
+# one has an `LDY` form that reads neither X nor Y.
+_PIVOT_START_SOURCES = (
+    asm_ast.Imm, asm_ast.Data, asm_ast.ZP,
+    asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
+)
+
+
+def _try_collect_pivot_range(instrs, start: int, m_key):
+    """Verifies a Y-pivot range starting at the `LDX` at
+    instrs[start]. Returns the exclusive end index, or None if no
+    valid range exists from here.
 
     Validity:
-      * No Y use or Y write in the range (we're about to put a
-        value in Y).
-      * Every X use in the range is via IndexedData(index=X).
-      * Range ends at: another X-write, a control-flow boundary,
-        or end-of-function."""
+      * The LDX's source is one LDY can load (`_PIVOT_START_SOURCES`).
+      * No instruction in the range reads or writes Y, including the
+        `LDY #off` setup of a `Frame`, `Stack`, `Indirect`, or
+        `IndirectZp` operand, since Y holds the loaded value.
+      * Every X read in the range is an `abs,X` operand that
+        `_pivot_rewrite` turns into `abs,Y`.
+      * The range ends before another X write, a label, a branch, a
+        jump, a call, a return, or any use of the counter M. The
+        apply step rewrites a use of M (its step to `DEX` or `INX`,
+        an `LDA M` to `TXA`), and it gives the pivot rewrite
+        precedence, so a use of M inside the range would keep
+        reading or stepping the memory copy."""
+    if not isinstance(instrs[start].src, _PIVOT_START_SOURCES):
+        return None
     j = start + 1
     while j < len(instrs):
         instr = instrs[j]
@@ -457,43 +540,22 @@ def _try_collect_pivot_range(instrs, start: int):
                               asm_ast.Branch, asm_ast.Call,
                               asm_ast.Ret, asm_ast.Return)):
             return j
+        if any(_operand_key(op) == m_key for _, op in _operand_roles(instr)):
+            return j
         # Another X-write ends the range BEFORE this instruction.
-        if isinstance(instr, asm_ast.Mov):
-            if _is_reg_x(instr.dst):
-                return j
-            if _is_reg_y(instr.dst):
-                # Y-write — would conflict.
-                return None
-            if _is_reg_y(instr.src):
-                # TYA or read-Y — conflicts.
-                return None
-            if _is_reg_x(instr.src):
-                # TXA or STX — uses X as a value, not as index.
-                return None
-            # Check IndexedData operands for Y use.
-            for op in (instr.src, instr.dst):
-                if isinstance(op, asm_ast.IndexedData):
-                    if isinstance(op.index, asm_ast.Y):
-                        return None
-                # Indirect operands (Indirect / IndirectY /
-                # IndirectZp / IndirectZpY) all read Y as their
-                # addressing-mode index. A pivot that overwrites Y
-                # would corrupt these reads.
-                if isinstance(op, (asm_ast.Indirect, asm_ast.IndirectY,
-                                   asm_ast.IndirectZp,
-                                   asm_ast.IndirectZpY)):
-                    return None
-        elif isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-            if _is_reg_x(instr.dst):
-                return j
-            if _is_reg_y(instr.dst):
-                return None
-        elif isinstance(instr, asm_ast.Compare):
-            if _is_reg_x(instr.left) or _is_reg_y(instr.left):
-                return None
-        elif isinstance(instr, asm_ast.Push):
-            if _is_reg_x(instr.src) or _is_reg_y(instr.src):
-                return None
+        if (isinstance(instr, (asm_ast.Mov, asm_ast.Pop))
+                and _is_reg_x(instr.dst)):
+            return j
+        if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)) and _is_reg_x(
+            instr.dst,
+        ):
+            return j
+        if _touches_y(instr):
+            return None
+        if _reads_x(_pivot_rewrite(instr)):
+            # An X read with no `abs,Y` form here: `TXA`, `STX`,
+            # `CPX`, `INC abs,X`, a shift of `abs,X`, ...
+            return None
         j += 1
     return j
 
@@ -747,9 +809,18 @@ def _apply_plan(fn, plan):
             i += 1
             continue
         if i == init_idx:
-            # Append TAX after init so X holds M's value.
+            # Make X hold M's initial value after the init. A store
+            # from A, and a memory or immediate source (which
+            # `asm_emit` copies through A), leave the value in A, so
+            # a TAX does it. An `STX M` leaves it in X already, and
+            # after an `STY M` the value is in M and Y but not in A,
+            # so X is loaded from M.
             out.append(instrs[i])
-            out.append(asm_ast.Mov(src=reg_a, dst=reg_x))
+            src = instrs[i].src
+            if _is_reg_y(src):
+                out.append(asm_ast.Mov(src=m_op, dst=reg_x))
+            elif not _is_reg_x(src):
+                out.append(asm_ast.Mov(src=reg_a, dst=reg_x))
             i += 1
             continue
         out.append(instrs[i])
@@ -772,7 +843,8 @@ def _pivot_rewrite(instr):
             new_dst = asm_ast.Reg(reg=asm_ast.Y())
         if new_src is instr.src and new_dst is instr.dst:
             return instr
-        return asm_ast.Mov(src=new_src, dst=new_dst)
+        # `replace` keeps the Mov's `is_volatile` bit.
+        return dataclasses.replace(instr, src=new_src, dst=new_dst)
     if isinstance(instr, (asm_ast.Add, asm_ast.Sub,
                           asm_ast.And, asm_ast.Or)):
         new_src = _rewrite_op_for_pivot(instr.src)
@@ -780,6 +852,12 @@ def _pivot_rewrite(instr):
         if new_src is instr.src and new_dst is instr.dst:
             return instr
         return type(instr)(src=new_src, dst=new_dst)
+    if isinstance(instr, asm_ast.Compare) and _is_reg_a(instr.left):
+        # `CMP abs,X` has the `CMP abs,Y` form.
+        new_right = _rewrite_op_for_pivot(instr.right)
+        if new_right is instr.right:
+            return instr
+        return asm_ast.Compare(left=instr.left, right=new_right)
     return instr
 
 

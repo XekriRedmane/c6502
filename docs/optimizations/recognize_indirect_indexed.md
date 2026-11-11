@@ -64,7 +64,7 @@ SSA-renamed `%addr` that only the access reads, defined by an `Add`.
 It accepts one of two shapes for the `Add`.
 
 - A variable `p` plus `%ext`, where `%ext` is an SSA-renamed
-  `ZeroExtend` or `SignExtend` of a one-byte variable `i`, possibly
+  `ZeroExtend` of a one-byte variable `i`, possibly
   reached through up to four `Copy` instructions. The index is `i`.
 - A non-constant `p` plus an integer constant from 0 to 255. The
   index is that constant as an `unsigned char`.
@@ -82,15 +82,14 @@ that doesn't match the shape. The pass drops the `Add`, and drops the
 extend too unless something else reads it. The volatile bit of the
 access carries over.
 
-A `SignExtend` is accepted too, for the reason given in
-`extend_add_chain.py` that a negative index addresses outside the
-array. Y is unsigned, so `p[i]` with an `int8_t i` of -1 reads
-`p + 255`. For a pointer into the middle of an array, C defines
-`p[-1]` as the byte before `p`, so the result differs from what C
-specifies.
-
 ## What it leaves alone
 
+- A `signed char` index, which C99 promotes with a `SignExtend`. Y
+  is unsigned, so `(p),Y` would read `p + 255` for `p[i]` with an
+  `int8_t i` of -1, and for a pointer into the middle of an array C
+  defines `p[-1]` as the byte before `p`. The access keeps its
+  sign extension and 16-bit add, and reads through the sum with
+  `LDY #$00`.
 - A value wider than a byte. For a `const uint16_t *p`, `p[i]`
   shifts `i` left before the add, and the load stays a pointer load.
 - A constant offset above 255, such as `p[300]`.

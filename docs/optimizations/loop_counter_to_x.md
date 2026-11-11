@@ -18,11 +18,14 @@ keep it there.
 1. It turns each other `LDX v` into `LDY v`, and each `abs,X` access
    that reads that value into `abs,Y`. This is the "Y pivot". It
    applies from the `LDX` to the next label, branch, jump, call,
-   return, or X write.
+   return, X write, or use of `M`. An `LDX` that comes where the
+   counter is dead, such as the `LDX` of a 2-byte return value after
+   the loop, stays as it is.
 2. It puts `STX M` before each call that may change X and `LDX M`
    after it, when the counter is read again after the call.
 3. It drops every `LDX M`, adds `TAX` after the store that
-   initializes `M`, and turns the step into `DEX` or `INX`.
+   initializes `M`, and turns the step into `DEX` or `INX`. An init
+   `STX M` needs nothing added, and an init `STY M` gets an `LDX M`.
 
 The result matches the hand-written idiom, where the counter sits in
 X and a second index uses Y. Each dropped `LDX zp` saves 2 bytes and
@@ -150,11 +153,20 @@ these.
   writing X. A call that returns a value in X, which is read after
   the call before X is written again, disqualifies the whole
   function, because the `LDX M` after it would overwrite that value.
-- An `LDX` from memory that starts a valid pivot range. Inside the
-  range, no `Mov` may read or write Y, use an `abs,Y` operand, use an
-  indirect operand (which reads Y as its index), or read X as a value
-  (`TXA` or `STX`). An `INY` or `DEY`, a `CPX` or `CPY`, and a push
-  of X or Y also disqualify the range.
+- An `LDX` at a point where the counter is dead, which means no
+  path from it reads `M` before the init stores to `M` again. It's
+  left alone.
+- An `LDX` of an immediate or a direct memory operand that starts a
+  valid pivot range. No instruction in the range may read or write
+  Y. That rules out an `abs,Y` operand, an `(zp),Y` operand, and a
+  soft-stack or `Indirect` operand, whose `LDY #off` setup writes Y.
+  Every X read in the range has to be an `LDA`, `STA`, `ADC`, `SBC`,
+  `AND`, `ORA`, or `CMP` of an `abs,X` operand, since those are the
+  ones with an `abs,Y` form. A `TXA`, an `STX`, a `CPX`, or an `INC
+  abs,X` disqualifies the range. After the range, neither the value
+  the `LDX` loaded nor the value Y held before it may be read again
+  before X or Y is written. The pivot leaves the counter in X and the
+  loaded value in Y, so such a read would get the wrong one.
 
 `TAX`, `INX`, `DEX`, or a pull into X anywhere else disqualifies the
 function.
@@ -174,6 +186,9 @@ function.
   Y would change the address.
 - A loop around a call whose X result is read after the call, such as
   the high byte of a 2-byte return value.
+- An `LDX` whose value is read past the end of its range, as in `LDX
+  k; LDA t,X; .mid: LDA u,X`, where the label ends the range and the
+  `LDA u,X` after it still reads `k`.
 
 ## Related
 

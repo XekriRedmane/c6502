@@ -89,8 +89,11 @@ M; JSR f; LDX M; DEX; TXA`.
   other load of X, a call without that reload, and a soft-stack
   allocation disqualify the function.
 
-The rewrite applies to every `LDA M` and every copy from `M` to a
-`Data` or `ZP` byte in the function.
+The rewrite applies to each `LDA M` and each copy from `M` to a
+`Data` or `ZP` byte that every path from the function's entry reaches
+through an `STX M`, an `LDX M`, or the initialization `TAX`. Until
+one of those runs, X holds whatever the caller left in it and `M` is
+the only copy of the value.
 
 ## What it leaves alone
 
@@ -99,6 +102,9 @@ The rewrite applies to every `LDA M` and every copy from `M` to a
   and the `LDX x_pixel` disqualifies the function.
 - A call that returns a value in X. After `STX p; JSR f`, X holds f's
   result, and a later `LDA p` must keep reading `p`.
+- A read of `M` that comes before X is given its value on some path.
+  In `LDA p; STA out; LDX p; DEX; STX p`, with `p` a global, the
+  `LDA p` keeps reading memory.
 - A copy from `M` to a soft-stack byte, an indirect operand, or an
   indexed byte, since `STX` has no `(zp),Y` or `abs,X` mode.
 - A load of `M` into X, which is already the right register.

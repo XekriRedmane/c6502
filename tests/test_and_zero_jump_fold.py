@@ -268,6 +268,21 @@ class TestSimIntegration(unittest.TestCase):
         """
         self.assertEqual(self._run(src), 7)
 
+    def test_store_between_extend_and_and(self) -> None:
+        # The ZeroExtend reads g before the store of 0. The fold read
+        # g at the jump instead, after the store, and the test never
+        # passed.
+        src = """
+        #include <stdint.h>
+        uint8_t g;
+        uint8_t hits;
+        void check(void) { int t = g; g = 0; if (t & 1) hits = 1; }
+        int main(void) { g = 1; check(); return hits; }
+        """
+        sim = build_sim(src, optimize=False)
+        self.assertEqual(sim.run(max_cycles=200_000).return_int(), 1)
+        self.assertEqual(self._run(src), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

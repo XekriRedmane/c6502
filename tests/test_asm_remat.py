@@ -164,5 +164,94 @@ class TestRematYSetup(unittest.TestCase):
         self.assertEqual(_instrs(prog)[-1].src, self._indexed_y())
 
 
+class TestRematPointerStore(unittest.TestCase):
+    """A store through a pointer between the load and the read may
+    write the static, unless the static is internal and its address
+    is never formed. `uint8_t t = g; *p = 7; return t;` called with
+    `p == &g` returned 7 instead of the old value of `g`."""
+
+    def _body(self, ptr_dst):
+        g = asm_ast.Data(name="g", offset=0)
+        return [
+            asm_ast.Mov(src=g, dst=_A(), is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A(),
+                        is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=ptr_dst, is_volatile=False),
+            asm_ast.Mov(src=_data(), dst=_A(), is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+
+    def _prog(self, instrs, *, g_global, g_address_taken=False):
+        fns = [asm_ast.Function(
+            name="f", is_global=True, params=[], instructions=instrs,
+        )]
+        if g_address_taken:
+            fns.append(asm_ast.Function(
+                name="main", is_global=True, params=[], instructions=[
+                    asm_ast.Mov(src=asm_ast.ImmLabelLow(name="g", offset=0),
+                                dst=_A(), is_volatile=False),
+                    asm_ast.Return(save_a=True),
+                ],
+            ))
+        g = asm_ast.StaticVariable(
+            name="g", is_global=g_global,
+            init=[asm_ast.ZeroInit(bytes=1)],
+        )
+        return apply_remat(
+            asm_ast.Program(top_level=[*fns, g]),
+            zp_slot_symbols={"__local_f__0": 0x80},
+        )
+
+    def test_blocked_by_indirect_zp_store_to_global(self):
+        for dst in (
+            asm_ast.IndirectZp(address=0x90, offset=0),
+            asm_ast.IndirectZpY(address=0x90),
+            asm_ast.Indirect(offset=0),
+            asm_ast.IndirectY(),
+            asm_ast.IndexedData(name="", offset=0x2000, index=asm_ast.X()),
+        ):
+            with self.subTest(dst=dst):
+                out = self._prog(self._body(dst), g_global=True)
+                self.assertEqual(
+                    out.top_level[0].instructions[-2].src, _data(),
+                )
+
+    def test_blocked_for_internal_static_whose_address_is_taken(self):
+        out = self._prog(
+            self._body(asm_ast.IndirectZp(address=0x90, offset=0)),
+            g_global=False, g_address_taken=True,
+        )
+        self.assertEqual(out.top_level[0].instructions[-2].src, _data())
+
+    def test_private_static_survives_pointer_store(self):
+        # No pointer can point into an internal static whose address
+        # nothing forms, as with `static const uint8_t glyph[8]`.
+        out = self._prog(
+            self._body(asm_ast.IndirectZp(address=0x90, offset=0)),
+            g_global=False,
+        )
+        self.assertEqual(
+            out.top_level[0].instructions[-2].src,
+            asm_ast.Data(name="g", offset=0),
+        )
+
+    def test_simulated_pointer_store_to_global(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp not installed")
+        from sim.harness import build_sim
+        src = (
+            "unsigned char g;\n"
+            "unsigned char f(unsigned char *p) {\n"
+            "    unsigned char t = g;\n"
+            "    *p = 7;\n"
+            "    return t;\n"
+            "}\n"
+            "int main(void) { g = 3; return f(&g); }\n"
+        )
+        self.assertEqual(build_sim(src, optimize=True).run().return_int(), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -36,6 +36,14 @@ an enclosing unrolled loop:
 
 Iteration count is capped at MAX_ITERATIONS.
 
+The trip count is computed the way C runs the loop. The induction
+variable holds a value of its own type, so the init and each step
+wrap at its width and signedness, and the condition compares it with
+the bound after the integer promotions and the usual arithmetic
+conversions. A loop whose variable comes back to a value it already
+held never ends, as with `for (uint8_t i = 0; i <= 255; i++)`, and is
+rejected with an UnrollError rather than unrolled.
+
 Why AST level rather than TAC: identifier_resolution and
 loop_labeling run AFTER this pass, so each cloned body's locals
 get fresh `@N.<name>` names per iteration without us having to
@@ -49,6 +57,9 @@ from __future__ import annotations
 import copy
 
 import c99_ast
+from passes.type_checking import (
+    _coerce_int_to_type, _common_type, _promote_integer,
+)
 
 
 class UnrollError(Exception):
@@ -87,6 +98,12 @@ _IV_TYPE_TO_CONST: dict[type, type] = {
 _CURRENT_CONST_ARRAYS: dict[str, "_ValueTree"] = {}
 
 
+# The integer leaf type of each array in `_CURRENT_CONST_ARRAYS`,
+# such as `UChar()` for `static const uint8_t T[4][2]`. A subscript
+# bound has this type, and its value wraps to it.
+_CURRENT_CONST_ARRAY_LEAVES: dict[str, c99_ast.Type_data_type] = {}
+
+
 # A const-array value tree: either an int (scalar leaf) or a tuple
 # of value trees (one level of array nesting). Padded to declared
 # size at every level.
@@ -97,9 +114,16 @@ def unroll_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:
     """Walk every function definition; unroll every annotated for-
     loop in their bodies. Top-level declarations and forward
     function declarations pass through unchanged."""
-    global _CURRENT_CONST_ARRAYS
+    global _CURRENT_CONST_ARRAYS, _CURRENT_CONST_ARRAY_LEAVES
     saved = _CURRENT_CONST_ARRAYS
+    saved_leaves = _CURRENT_CONST_ARRAY_LEAVES
     _CURRENT_CONST_ARRAYS = _build_const_array_map(prog)
+    _CURRENT_CONST_ARRAY_LEAVES = {
+        d.var_decl.name: _array_leaf_type(d.var_decl.data_type)
+        for d in prog.declaration
+        if isinstance(d, c99_ast.VarDecl)
+        and d.var_decl.name in _CURRENT_CONST_ARRAYS
+    }
     try:
         new_decls: list[c99_ast.Type_declaration] = []
         for d in prog.declaration:
@@ -115,6 +139,15 @@ def unroll_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:
         return c99_ast.Program(declaration=new_decls)
     finally:
         _CURRENT_CONST_ARRAYS = saved
+        _CURRENT_CONST_ARRAY_LEAVES = saved_leaves
+
+
+def _array_leaf_type(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
+    """Returns the element type under every Array level and
+    qualifier of `t`."""
+    while isinstance(t, (c99_ast.Array, c99_ast.Const, c99_ast.Volatile)):
+        t = t.element_type if isinstance(t, c99_ast.Array) else t.referenced_type
+    return t
 
 
 def _build_const_array_map(prog: c99_ast.Type_program) -> dict[str, _ValueTree]:
@@ -319,10 +352,12 @@ def _unroll_statement(stmt: c99_ast.Type_statement) -> c99_ast.Type_statement:
 
 def _unroll_for(fs: c99_ast.ForStmt) -> c99_ast.Type_statement:
     iv_name, iv_type, iv_init = _validate_init(fs.init)
-    op, bound = _validate_condition(fs.condition, iv_name)
+    op, bound, bound_type = _validate_condition(fs.condition, iv_name)
     step = _validate_post(fs.post_clause, iv_name)
     _validate_body(fs.body, iv_name)
-    values = _compute_iterations(iv_init, op, bound, step)
+    values = _compute_iterations(
+        iv_init, op, bound, step, iv_type, bound_type, iv_name,
+    )
 
     const_cls = _IV_TYPE_TO_CONST[type(iv_type)]
     iter_stmts: list[c99_ast.Type_statement] = []
@@ -371,18 +406,20 @@ def _validate_init(
             "not supported (use int / unsigned int / long / unsigned long / "
             "long long / unsigned long long)",
         )
-    init_val = _const_int_value(vd.init)
-    if init_val is None:
+    typed = _typed_const_int(vd.init)
+    if typed is None:
         raise UnrollError(
             "unroll: induction variable must be initialized to an "
             "integer constant",
         )
+    # `T i = <const>` converts the constant to T.
+    init_val = _coerce_int_to_type(typed[0], vd.data_type)
     return vd.name, vd.data_type, init_val
 
 
 def _validate_condition(
     cond: c99_ast.Type_exp | None, iv_name: str,
-) -> tuple[c99_ast.Type_binary_operator, int]:
+) -> tuple[c99_ast.Type_binary_operator, int, c99_ast.Type_data_type]:
     if cond is None:
         raise UnrollError("unroll: for-loop condition is required")
     if not isinstance(cond, c99_ast.Binary):
@@ -403,12 +440,13 @@ def _validate_condition(
             "unroll: condition's left operand must be the induction "
             f"variable `{iv_name}`",
         )
-    bound = _const_int_value(cond.right)
-    if bound is None:
+    typed = _typed_const_int(cond.right)
+    if typed is None:
         raise UnrollError(
             "unroll: condition's right operand must be an integer constant",
         )
-    return cond.op, bound
+    bound, bound_type = typed
+    return cond.op, bound, bound_type
 
 
 def _validate_post(post: c99_ast.Type_exp | None, iv_name: str) -> int:
@@ -429,7 +467,8 @@ def _validate_post(post: c99_ast.Type_exp | None, iv_name: str) -> int:
             return -1
         case c99_ast.CompoundAssignment(op=op, lval=lval, rval=rval) \
              if _is_var(lval, iv_name):
-            k = _const_int_value(rval)
+            typed = _typed_const_int(rval)
+            k = None if typed is None else typed[0]
             if k is None or k <= 0:
                 raise UnrollError(
                     "unroll: post-clause step must be a positive integer "
@@ -519,26 +558,45 @@ def _compute_iterations(
     op: c99_ast.Type_binary_operator,
     bound: int,
     step: int,
+    iv_type: c99_ast.Type_data_type,
+    bound_type: c99_ast.Type_data_type,
+    iv_name: str,
 ) -> list[int]:
-    """Simulate the loop, returning the induction-variable values
-    one per iteration. The simulator is the only termination
-    guard: any loop that hasn't finished after MAX_ITERATIONS
-    steps is rejected with a cap-exceeded error. We don't attempt
-    to detect non-terminating loops up front (the halting problem
-    is undecidable in general), so a `for (int i = 0; i < 4;
-    i--)` is rejected via the cap rather than via a pre-flight
-    direction check."""
+    """Simulates the loop and returns the induction-variable values,
+    one per iteration.
+
+    `init_val` is already a value of `iv_type`. Each step wraps
+    `i + step` to `iv_type`, as the conversion back to the
+    variable's type does in C. The condition compares `i` and
+    `bound` in the common type of their promoted types (C99
+    §6.3.1.8), so `int i < 40000u` compares as unsigned.
+
+    The loop's whole state is `i`, so a value seen a second time
+    means the loop never ends. A `uint8_t i <= 255` wraps from 255
+    to 0 and is rejected that way. A loop that would end, but only
+    after more than MAX_ITERATIONS passes, is rejected by the cap."""
     cond_holds = _make_cond_predicate(op)
+    cmp_type = _common_type(
+        _promote_integer(iv_type), _promote_integer(bound_type),
+    )
+    bound_cmp = _coerce_int_to_type(bound, cmp_type)
     values: list[int] = []
+    seen: set[int] = set()
     i = init_val
-    while cond_holds(i, bound):
+    while cond_holds(_coerce_int_to_type(i, cmp_type), bound_cmp):
+        if i in seen:
+            raise UnrollError(
+                f"unroll: loop never terminates (`{iv_name}` wraps at "
+                f"the width of `{_C_TYPE_NAME[type(iv_type)]}` and the "
+                "condition stays true)",
+            )
         if len(values) >= MAX_ITERATIONS:
             raise UnrollError(
-                f"unroll: iteration count exceeds cap of {MAX_ITERATIONS} "
-                "(loop may not terminate, or simply runs too long to unroll)",
+                f"unroll: iteration count exceeds cap of {MAX_ITERATIONS}",
             )
         values.append(i)
-        i += step
+        seen.add(i)
+        i = _coerce_int_to_type(i + step, iv_type)
     return values
 
 
@@ -608,6 +666,73 @@ def _const_int_value(exp) -> int | None:
         return exp.const.value
     if isinstance(exp, c99_ast.Subscript):
         return _fold_subscript(exp)
+    return None
+
+
+# How an error message spells each induction-variable type.
+_C_TYPE_NAME: dict[type, str] = {
+    c99_ast.Int: "int",
+    c99_ast.UInt: "unsigned int",
+    c99_ast.Long: "long",
+    c99_ast.ULong: "unsigned long",
+    c99_ast.LongLong: "long long",
+    c99_ast.ULongLong: "unsigned long long",
+    c99_ast.Char: "char",
+    c99_ast.SChar: "signed char",
+    c99_ast.UChar: "unsigned char",
+}
+
+
+# The C type of each integer constant variant.
+_CONST_TYPE: dict[type, type] = {
+    c99_ast.ConstInt: c99_ast.Int,
+    c99_ast.ConstUInt: c99_ast.UInt,
+    c99_ast.ConstLong: c99_ast.Long,
+    c99_ast.ConstULong: c99_ast.ULong,
+    c99_ast.ConstLongLong: c99_ast.LongLong,
+    c99_ast.ConstULongLong: c99_ast.ULongLong,
+    c99_ast.ConstChar: c99_ast.SChar,
+    c99_ast.ConstUChar: c99_ast.UChar,
+}
+
+
+def _typed_const_int(
+    exp,
+) -> tuple[int, c99_ast.Type_data_type] | None:
+    """Returns `(value, type)` for an integer-bound expression, with
+    the value converted to the type: a Constant has its variant's
+    type, a Cast to an integer type converts its operand's value, and
+    a foldable Subscript has its array's leaf type. Returns None for
+    anything `_const_int_value` doesn't fold, and for a Cast to a
+    non-integer type."""
+    if exp is None:
+        return None
+    if isinstance(exp, c99_ast.Cast):
+        inner = _typed_const_int(exp.exp)
+        if inner is None:
+            return None
+        t = exp.target_type
+        while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
+            t = t.referenced_type
+        if type(t) not in _IV_TYPE_TO_CONST:
+            return None
+        return _coerce_int_to_type(inner[0], t), t
+    if isinstance(exp, c99_ast.Constant) and type(exp.const) in _CONST_TYPE:
+        t = _CONST_TYPE[type(exp.const)]()
+        return _coerce_int_to_type(exp.const.value, t), t
+    if isinstance(exp, c99_ast.Subscript):
+        v = _fold_subscript(exp)
+        if v is None:
+            return None
+        base = exp
+        while isinstance(base, c99_ast.Subscript):
+            base = base.array
+        while isinstance(base, c99_ast.Cast):
+            base = base.exp
+        t = _CURRENT_CONST_ARRAY_LEAVES.get(getattr(base, "name", None))
+        if t is None:
+            return None
+        return _coerce_int_to_type(v, t), t
     return None
 
 

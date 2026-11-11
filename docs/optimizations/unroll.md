@@ -91,12 +91,22 @@ The pass unrolls a marked loop that has this shape, and reports an
   statement, never assigns, increments, decrements, or takes the
   address of the induction variable, and declares nothing with the
   same name.
-- The loop runs at most 256 iterations.
+- The loop ends, and runs at most 256 iterations.
 
-The initial value, `B`, and `K` may each be an integer literal, with
-any casts around it ignored, or an element of a file-scope `static`
-array whose elements are `const` integers and whose initializer is
-all integer literals, at indices that are themselves such constants.
+The initial value, `B`, and `K` may each be an integer literal, an
+integer cast of one, or an element of a file-scope `static` array
+whose elements are `const` integers and whose initializer is all
+integer literals, at indices that are themselves such constants. A
+cast converts its operand's value, so `(unsigned char)260` is 4.
+
+The pass steps the induction variable the way C does. The initial
+value is converted to the variable's type, and each step wraps at the
+variable's width and signedness. The condition compares the variable
+with `B` after the integer promotions and the usual arithmetic
+conversions, so an `int` compared with an `unsigned int` bound
+compares as unsigned. For `for (unsigned char i = 250; i > 3; i +=
+4)`, the values are 250 and 254, and 258 wraps to 2, which ends the
+loop after two copies.
 That lets an inner loop's bound come from a table indexed by an outer
 unrolled loop's variable, as in `for (uint8_t i = 0; i < COUNTS[b];
 i++)` inside a loop over `b`. Marked loops nested inside a marked
@@ -115,10 +125,14 @@ A marked loop that doesn't match the shape above is a compile
 error, because the pragma states that the loop is to be unrolled. A bound held in a variable, as in `i < n`,
 fails with "condition's right operand must be an integer constant".
 
-The iteration count is computed with unbounded integers, ignoring the
-induction variable's width. `for (uint8_t i = 0; i <= 255; i++)`
-never ends in C, because `i` wraps from 255 to 0, but the pass
-unrolls it into 256 copies.
+A marked loop that never ends is a compile error too. The loop's
+state is the induction variable alone, so when the variable takes a
+value a second time the pass reports "loop never terminates". In
+`for (uint8_t i = 0; i <= 255; i++)`, `i` wraps from 255 to 0, and
+`compile.py` prints one line ending in "unroll: loop never
+terminates (`i` wraps at the width of `unsigned char` and the
+condition stays true)". A loop that ends after more than 256
+iterations fails with "iteration count exceeds cap of 256".
 
 ## Related
 

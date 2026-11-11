@@ -34,7 +34,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   a module-level `PhaseDriver` (`_DRIVER`) and calls `_DRIVER.apply`
   per function. `PhaseDriver` is defined in `framework/driver.py`.
 - `loop_rotate.py` — `rotate_signed_countdown_loops`
-  (`RotateSignedCountdownLoops`, PreSsaPass). Pre-SSA one-shot.
+  (`RotateSignedCountdownLoops`, PreSsaPass). Pre-SSA one-shot. The
+  constant init must be written after the last label before the
+  loop, so it reaches the loop on every path, and the counter's
+  address must never be taken.
 - `static_const_fold.py` — `fold_static_const_reads`
   (`FoldStaticConstReads`, PreFixedpointPass wrapping an internal
   `OperandRewritePass`). One-shot post-SSA.
@@ -72,6 +75,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
     ZeroExtend; ordering ops emit `JumpIfCmp(op, src1, src2)` for the
     per-byte compare-chain lowering. Operand narrowing through
     ZeroExtend folds `(uint8_t)i < 105` to 3-instr `LDA / CMP / BCS`.
+    Every narrowing reads the extend's source at the compare, so
+    `extend_source_unchanged` requires an SSA-renamed source, or else
+    no label, jump, store, call, or write to the source between the
+    extend and the compare. `AND_ZERO_RULE` uses the same check.
   - `fold_narrow_and_jump` (`AND_ZERO_RULE`): folds `(ZeroExtend(uchar);
     BitwiseAnd(_, 0x80); JumpIf*)` to `JumpIfMasked` when the operand
     narrows to 1 byte — direct `LDA / BPL/BMI` at asm lowering instead
@@ -130,9 +137,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   DefUsePass). See "Add-with-Constant reassociation" below.
 - `extend_add_chain.py` — shared recognizer core. `recognize_extend_add_
   chain(addr_var, env, ctx)` walks back `%addr → Binary(Add, base, %ext)
-  → %ext := ZeroExtend|SignExtend(idx)` applying the gates all three
+  → %ext := ZeroExtend(idx)` applying the gates all three
   addressing-mode recognizers share (symbols present; `%addr` / `%ext`
-  SSA-renamed, `%addr` single-use; 1-byte `idx`). The walk looks
+  SSA-renamed, `%addr` single-use; 1-byte `idx`). A SignExtend index
+  doesn't fold, since X and Y are unsigned and `p[-1]` would address
+  `p + 255`. The walk looks
   through a few `Copy`s to the extend (an `int` to `unsigned` cast is
   a Copy copy propagation keeps). A multi-use `%ext`, as CSE leaves
   when subscripts share an index, still folds, and the chain's
@@ -167,11 +176,13 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 - `sink_increment.py` — `sink_increments` (`SinkIncrements`, SinkPass).
   Moves `Y = X + c` past the last in-line use of `X` when `Y`'s only
   consumer follows, exposing `recognize_indexed_*` patterns the original
-  ordering hid.
+  ordering hid. `X` must be SSA-renamed (a static could be written in
+  between), and the scan stops at any write to `X`.
 - `sink_and_past_branch.py` — `SinkAndPastBranch` (raw FixedpointPass —
   duplicates a trio into multiple successors with SSA renaming; different
   shape from SinkPass). See "sink_and_past_branch" in the peephole
-  catalog.
+  catalog. The original ZeroExtend or AND stays when another
+  instruction reads its result.
 - `narrow_widened_arith.py` — `narrow_widened_arith` (`NarrowWidenedArith`,
   DefUsePass). Folds `Truncate(Binary(safe_op, Extend(a), Extend(b) |
   Constant), u_n)` → `Binary(safe_op, a, b | narrowed_Constant, u_n)`
@@ -214,7 +225,8 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   after `optimize_tac` (post-from_ssa). Recognizes the
   `Binary(LeftShift|Multiply, i, 1|2) + IndexedLoad(arr, _, %ptr) +
   IndirectIndexedLoad(%ptr, j, %v)` chain when `arr` is a file-scope
-  `static const T * const[N]` with N ≤ 8 and all-AddressInit elements;
+  `static T * const[N]` (const elements, checked in the symbol table)
+  with N ≤ 8 and all-AddressInit elements;
   rewrites to a CMP/BEQ dispatch on `i` with per-case direct
   `IndexedLoad(target_k, j, %v)`. Eliminates DPTR staging and (zp),Y
   indirection at the cost of a small dispatch chain; frees X and Y from

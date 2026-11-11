@@ -61,17 +61,20 @@ A second form allows one store between the load and the `AND`, since
 
 ## When it applies
 
-- The first instruction is a `Mov` from any non-register operand, or
-  a `TXA` or `TYA`. Both set N from the loaded byte.
+- The first instruction is a `Mov` from any non-register operand
+  into A or into memory (which emits as `LDA src; STA dst`), or a
+  `TXA` or `TYA`. All of these set N from the byte they load into A.
+  A load into X or Y (`LDX M`) doesn't count, since the `AND` tests
+  A.
 - In the second form, the next instruction is a non-volatile store of
   A to memory.
 - Then comes an `AND` of A with an immediate whose low byte is
   `$80`, and then a `BEQ` or `BNE`.
-- A is dead from the instruction after the branch, by `a_dead_at`.
+- A is dead after the branch on both paths, by `a_dead_at`: from
+  the instruction after the branch, and from the branch's target
+  label. A target that isn't a label in the function counts as live.
 
-The liveness check starts at the instruction after the branch, so it
-only follows the fall-through path. The branch target isn't checked,
-and code there that reads A gets the unmasked byte. The C function
+Without the `AND`, A holds the unmasked byte on both paths. In
 
 ```c
 unsigned char flags, hits;
@@ -82,12 +85,8 @@ unsigned char top_bit(void) {
 }
 ```
 
-compiles to `LDA flags; BPL .if_end@0; ... .if_end@0: RTS`, and with
-`flags = 0x05` it returns 5 in the simulator where it should return
-0. The first instruction is also not required to load A. A
-`Mov(M, Reg(X))`, which emits as `LDX M`, passes the same check, and
-the rewritten branch then tests bit 7 of M instead of bit 7 of A.
-Both are bugs in the current code.
+the branch's target returns `t` in A, so the code stays `LDA flags;
+AND #$80; BEQ .if_end@0`.
 
 ## What it leaves alone
 

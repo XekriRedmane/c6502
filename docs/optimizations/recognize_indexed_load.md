@@ -54,18 +54,23 @@ The conditions are the indexed-store recognizer's, applied to a
 - The load's address is an SSA-renamed `%addr` that only the load
   reads, defined by an `Add` of a constant `C` and an extended
   index, in either order.
-- The index is a `ZeroExtend` or `SignExtend` of a variable whose C
-  type is one byte, possibly reached through up to four `Copy`
-  instructions.
+- The index is a `ZeroExtend` of a variable whose C type is one
+  byte, possibly reached through up to four `Copy` instructions.
 - `C` is between 0 and 0xFF00.
 
 The add is dropped with the load, and so is the extend unless
 something else reads it. The volatile bit of the load carries over.
-As with the store, a `signed char` index of -1 reads `C + 255`,
-since X is unsigned.
 
 ## What it leaves alone
 
+- A `signed char` index, which C99 promotes with a `SignExtend`.
+  X is unsigned, so the indexed mode reaches `C + 255` for an index
+  of -1 where C means `C - 1`, and a negative offset from a pointer
+  into the middle of an object is defined. The access keeps its
+  16-bit add. The [loop rotation](loop_rotate.md) pass rewrites the
+  `SignExtend` of a count-down counter it proves non-negative into a
+  `ZeroExtend`, so `buf[i]` in `for (int8_t i = 15; i >= 0; i--)`
+  still folds.
 - A value wider than a byte. Reading `words[i]` through a
   `uint16_t *` constant keeps the pointer load, and its index is
   shifted left before the add, which the pattern doesn't match.

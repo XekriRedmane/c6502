@@ -357,11 +357,40 @@ def _is_preserving(
 
 
 def _writes_a(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` writes `Reg(A)`. Within the
-    `_INTERVENING_OK` set, only `Mov(_, Reg(A))` does."""
-    if isinstance(instr, asm_ast.Mov) and _is_reg_a(instr.dst):
+    """True iff `instr` may write `Reg(A)` as it's emitted. That's a
+    `Mov` into A, and also a `Mov` into memory from anything other
+    than a register, which emits as `LDA src; STA dst`, and an X / Y
+    transfer, which goes through A (`TXA; TAY`). An operand on the
+    soft stack or behind a pointer counts too, since its expansion
+    can route through A and loads Y. Without the memory-destination
+    case, `other = 7;` between the spill and the add made the add use
+    7 instead of the spilled value."""
+    for op in _all_operands(instr):
+        if isinstance(op, _EXPANDING_KINDS):
+            return True
+    if not isinstance(instr, asm_ast.Mov):
+        return False
+    if _is_reg_a(instr.dst):
         return True
-    return False
+    if not isinstance(instr.src, asm_ast.Reg):
+        return not isinstance(instr.dst, asm_ast.Reg)
+    return isinstance(instr.dst, asm_ast.Reg)
+
+
+# Operand kinds whose emission can use A or load Y.
+_EXPANDING_KINDS: tuple[type, ...] = (
+    asm_ast.Frame, asm_ast.Stack, asm_ast.Indirect, asm_ast.IndirectY,
+    asm_ast.IndirectZp, asm_ast.IndirectZpY,
+)
+
+
+def _all_operands(instr: asm_ast.Type_instruction) -> list:
+    """Every operand field of `instr`."""
+    return [
+        getattr(instr, f) for f in ("src", "dst", "left", "right",
+                                    "src1", "src2")
+        if hasattr(instr, f)
+    ]
 
 
 # Memory-shaped operands. `may_alias` is only defined for these

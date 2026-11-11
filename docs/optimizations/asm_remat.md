@@ -88,8 +88,9 @@ an `AND`, a shift of A, or a `PLA`. The source must be one of these.
 - An `Imm`, `ImmLabelLow`, or `ImmLabelHigh` operand, which no
   instruction can change.
 - A `Data` operand whose name is not the destination of any
-  instruction in the function.
-- An `IndexedData` operand under the same condition on its name, when
+  instruction in the function, when nothing between the load and the
+  read stores through a pointer that can reach it.
+- An `IndexedData` operand under the same conditions on its name, when
   nothing between the load and the read writes the index register.
   An operand lowered with an `LDY #off` setup (`Frame`, `Stack`,
   `Indirect`, `IndirectZp`) counts as a write to Y.
@@ -100,15 +101,20 @@ stops at a label, a jump or branch, a call, a return, a
 `FunctionPrologue`, an `AllocateStack`, a `LoadAddress`, or any
 instruction that writes the slot.
 
-The check on a `Data` or `IndexedData` name looks only at
-instructions that name the static as their destination. A store
-through a pointer between the load and the read isn't seen, so the
-rewrite is wrong when the pointer can point into the static. With a
-global `g`, the function `uint8_t f(uint8_t *p) { uint8_t t = g; *p =
-7; return t; }` called as `f(&g)` after `g = 3` returns 7 in the
-simulator with `--optimize` and 3 without it. The example above is
-correct only because `glyph` is `const`, so a store through `p` can't
-legally reach it.
+A store through a pointer (`(DPTR),Y` or `(zp),Y`) or an indexed
+store to a raw address, between the load and the read, counts as a
+possible write to the static. The exception is a static with internal
+linkage whose address the program never forms, by an `ImmLabelLow` or
+`ImmLabelHigh` operand, a `LoadAddress`, or an `AddressInit` in some
+static's initializer. No pointer can point into such a static. The
+example above is rewritten because `glyph` is `static` and only ever
+read as `glyph,X`. With a global `g`, the function `uint8_t f(uint8_t
+*p) { uint8_t t = g; *p = 7; return t; }` keeps its slot, since `g`
+can be reached from another translation unit, and `f(&g)` after `g =
+3` returns 3. A store to another static indexed by X or Y doesn't
+count, because in a valid program it stays inside that static. The
+pass has no access to `const` qualifiers, so a global `const` table
+loses the rewrite across a pointer store as well.
 
 The second step drops or shortens a non-volatile `Mov` into a
 `__local_*` slot at offset 0 when no instruction in the function reads
@@ -126,6 +132,9 @@ anywhere in the function, by an `ImmLabelLow`, an `ImmLabelHigh`, or a
 - A read with a call between it and the store, such as `bits =
   glyph[i]; tick(); return bits;`. The callee can write the static,
   and it clobbers X and Y.
+- A read with a store through a pointer between it and the store,
+  when the static is global or its address is taken anywhere in the
+  program, as with `t = g; *p = 7; return t;`.
 - A read in a different block from the store, since the scan is
   block-local. Memory value propagation covers some of these.
 - A value loaded from the soft stack or through a pointer (`Frame`,

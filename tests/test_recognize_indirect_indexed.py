@@ -227,12 +227,12 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         # ptr.
         self.assertEqual(out.instructions, instrs)
 
-    def test_sign_extend_def_folds(self) -> None:
-        # SignExtend from a 1-byte source is now accepted. The
-        # (zp),Y addressing mode observes only the index's low
-        # byte; negative array indices are C99 §6.5.6 undefined
-        # behavior. The fold yields the same IndirectIndexedLoad
-        # as ZeroExtend would.
+    def test_sign_extend_def_does_not_fold(self) -> None:
+        # Y is unsigned, so `LDA (p),Y` with y = -1 reads p + 255,
+        # where `p[y]` reads p - 1. The fold used to accept a
+        # SignExtend on the grounds that a negative index is
+        # undefined, which it isn't for a pointer into the middle of
+        # an object.
         instrs = [
             tac_ast.SignExtend(src=_var("y"), dst=_var("%ext")),
             tac_ast.Binary(
@@ -246,14 +246,7 @@ class TestRecognizeIndirectIndexedLoadUnit(unittest.TestCase):
         out = recognize_indirect_indexed(
             _fn(instrs), symbols=_canonical_symbols(),
         )
-        # Recognizer drops both the SignExtend and the Add, leaving
-        # just the IndirectIndexedLoad.
-        self.assertEqual(len(out.instructions), 1)
-        self.assertIsInstance(
-            out.instructions[0], tac_ast.IndirectIndexedLoad,
-        )
-        self.assertEqual(out.instructions[0].ptr, _var("p"))
-        self.assertEqual(out.instructions[0].index, _var("y"))
+        self.assertEqual(out.instructions, instrs)
 
     def test_non_uchar_index_does_not_fold(self) -> None:
         # `y` is `int`, not uchar. The ZeroExtend's high-byte-
@@ -656,6 +649,27 @@ class TestIndirectIndexedCorrectness(unittest.TestCase):
                 self.assertFalse(out.timed_out)
                 result_addr = sim.symbols["result"]
                 self.assertEqual(out.memory[result_addr], 5)
+
+    def test_negative_signed_char_index(self) -> None:
+        # `p[i]` with `int8_t i = -1` addresses p - 1. The fold
+        # accepted the SignExtend of i, and `(p),Y` read p + 255.
+        src = (
+            "#include <stdint.h>\n"
+            "uint8_t data[8] = {10, 11, 12, 13, 14, 15, 16, 17};\n"
+            "uint8_t ld(const uint8_t *p, int8_t i) { return p[i]; }\n"
+            "void st(uint8_t *p, int8_t i, uint8_t v) { p[i] = v; }\n"
+            "int main(void) {\n"
+            "    uint8_t r = ld(data + 4, -1);\n"
+            "    st(data + 4, -2, 99);\n"
+            "    return r + (data[2] == 99) * 100;\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(src, optimize=optimize).run(
+                    max_cycles=5_000_000,
+                )
+                self.assertEqual(out.return_int(), 113)
 
 
 if __name__ == "__main__":

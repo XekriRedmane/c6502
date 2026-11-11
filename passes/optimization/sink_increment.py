@@ -85,7 +85,11 @@ where X is a `Var` (not Constant) and c is a `Constant`:
   * SSA invariant: every Var has exactly one def. So X isn't
     re-defined between the original Binary and any forward
     instruction; reading X at the new "last use" position gives
-    the same value as before.
+    the same value as before. The pass requires X to be in
+    `ctx.ssa_dsts`, since a static or an address-taken local can
+    be written by name or through a pointer in between. The scan
+    also stops at any write to X by name, and, when no SSA
+    information is present, at every store.
   * Y's def moves later. No instruction between observed Y in
     the original (Y wasn't defined yet OR was just-defined and
     not yet read — the verify-no-uses check rejects the latter
@@ -149,6 +153,17 @@ _BLOCK_TERMINATORS: tuple[type, ...] = (
 )
 
 
+# Instructions that write memory without naming the cell in their
+# defs. Without SSA information, X could be a static or an
+# address-taken local that one of these writes.
+_STORES: tuple[type, ...] = (
+    tac_ast.Store,
+    tac_ast.IndexedStore,
+    tac_ast.IndexedSymbolStore,
+    tac_ast.IndirectIndexedStore,
+)
+
+
 def _sink_candidate(
     instr: tac_ast.Type_instruction,
 ) -> tuple[str, str] | None:
@@ -178,6 +193,7 @@ def _find_sink_offset(
     start: int,
     x_name: str,
     y_name: str,
+    stop_at_stores: bool = False,
 ) -> int | None:
     """Return the offset (in instructions) past which the Binary
     at `instrs[start]` can be sunk, or None if no legal move.
@@ -191,6 +207,9 @@ def _find_sink_offset(
         reads or writes `y_name`.
       * No instruction in `instrs[start + 1 .. start + offset]`
         is a block terminator.
+      * No instruction in `instrs[start + 1 .. start + offset]`
+        writes `x_name`, and, when `stop_at_stores` is set, none
+        writes memory through a store.
 
     A 0 result means the immediately-following instruction reads
     X (sink past it). A None result means no sink is possible —
@@ -213,6 +232,14 @@ def _find_sink_offset(
         }
         instr_defs = {d.name for d in defs_in(instr)}
         if y_name in instr_uses or y_name in instr_defs:
+            break
+        # The moved Binary reads X at its new position, so X must
+        # hold the same value there. An SSA-renamed X has one def and
+        # never reaches this test, but a write to X by name ends the
+        # scan in any case.
+        if x_name in instr_defs:
+            break
+        if stop_at_stores and isinstance(instr, _STORES):
             break
         # Anti-oscillation: if `instr` is itself a sinkable Binary
         # that ALSO uses x_name, STOP scanning. Otherwise two
@@ -247,7 +274,17 @@ class SinkIncrements(SinkPass):
         y = m.bindings['y']
         if x.name == y.name:
             return None
-        offset = _find_sink_offset(instrs, src_idx, x.name, y.name)
+        # A static or an address-taken local can be written by name
+        # or through a pointer between the Binary and X's last use, and
+        # the moved Binary would then read the new value. Only an
+        # SSA-renamed X keeps one value. Without SSA information (the
+        # standalone entry point), the scan stops at every store.
+        if ctx.ssa_dsts is not None and x.name not in ctx.ssa_dsts:
+            return None
+        offset = _find_sink_offset(
+            instrs, src_idx, x.name, y.name,
+            stop_at_stores=ctx.ssa_dsts is None,
+        )
         if offset is None:
             return None
         # offset >= 1 always (j starts at src_idx+1 in _find_sink_offset).

@@ -1,9 +1,11 @@
 """Tests for the loop-counter-to-X promotion pass."""
 
+import shutil
 import unittest
 
 import asm_ast
 from passes.loop_counter_to_x import apply_loop_counter_to_x
+from sim.harness import build_sim
 
 
 _A = asm_ast.Reg(reg=asm_ast.A())
@@ -223,6 +225,186 @@ class TestLoopCounterToX(unittest.TestCase):
         out = _instrs(apply_loop_counter_to_x(prog))
         # Unchanged.
         self.assertEqual(len(out), 9)
+
+
+def _loop(body, after=None):
+    """Builds `LDA p; STA b; .top: LDX b; LDA arr,X; <body>; DEC b;
+    BPL .top; <after>`, with an `RTS` when `after` is None."""
+    if after is None:
+        after = [asm_ast.Return(save_a=False)]
+    return [
+        asm_ast.Mov(src=_M("p"), dst=_A),
+        asm_ast.Mov(src=_A, dst=_M("b")),
+        asm_ast.Label(name=".top"),
+        asm_ast.Mov(src=_M("b"), dst=_X),
+        asm_ast.Mov(src=_IX("arr"), dst=_A),
+        *body,
+        asm_ast.Dec(dst=_M("b")),
+        asm_ast.Branch(cond=asm_ast.PL(), target=".top"),
+        *after,
+    ]
+
+
+def _IX(name):
+    return asm_ast.IndexedData(name=name, offset=0, index=asm_ast.X())
+
+
+def _IY(name):
+    return asm_ast.IndexedData(name=name, offset=0, index=asm_ast.Y())
+
+
+_Y = asm_ast.Reg(reg=asm_ast.Y())
+
+
+class TestPivotRangeBounds(unittest.TestCase):
+    """Each of these shapes was miscompiled by the Y-pivot or the init
+    rewrite before the range checks were tightened."""
+
+    def test_pivot_range_stops_before_counter_step(self):
+        # `LDX k; LDA t,X; STA s2` runs straight into `DEC b`. The
+        # range used to swallow the DEC, which then stayed a DEC of
+        # memory while the loop-top `LDX b` was dropped, so X never
+        # changed and the loop never ended.
+        instrs = _loop([
+            asm_ast.Mov(src=_M("k"), dst=_X),
+            asm_ast.Mov(src=_IX("t"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("s2")),
+        ])
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertIn(asm_ast.Dec(dst=_X), out)
+        self.assertNotIn(asm_ast.Dec(dst=_M("b")), out)
+        self.assertIn(asm_ast.Mov(src=_IY("t"), dst=_A), out)
+
+    def test_ldx_after_loop_is_not_pivoted(self):
+        # `return s;` for a 2-byte `s` ends in `LDA s; LDX s+1; RTS`
+        # with the high byte in X. The counter is dead there, so the
+        # LDX stays. It used to become `LDY s+1`.
+        instrs = _loop([asm_ast.Mov(src=_A, dst=_M("s"))], after=[
+            asm_ast.Mov(src=_M("s"), dst=_A),
+            asm_ast.Mov(src=asm_ast.Data(name="s", offset=1), dst=_X),
+            asm_ast.Return(save_a=True, save_x=True),
+        ])
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertIn(asm_ast.Dec(dst=_X), out)
+        self.assertEqual(
+            out[-2], asm_ast.Mov(src=asm_ast.Data(name="s", offset=1), dst=_X),
+        )
+
+    def test_cmp_abs_x_in_pivot_range_is_rewritten(self):
+        # `CMP u,X` reads the pivoted value, so it has to become
+        # `CMP u,Y` along with the LDA. It used to keep reading X,
+        # which by then held the counter.
+        instrs = _loop([
+            asm_ast.Mov(src=_M("k"), dst=_X),
+            asm_ast.Mov(src=_IX("t"), dst=_A),
+            asm_ast.Compare(left=_A, right=_IX("u")),
+            asm_ast.Mov(src=_A, dst=_M("s")),
+        ])
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertIn(asm_ast.Compare(left=_A, right=_IY("u")), out)
+        self.assertNotIn(asm_ast.Compare(left=_A, right=_IX("u")), out)
+
+    def test_y_read_in_pivot_range_blocks(self):
+        # `ADC u,Y` reads the Y the code had before the range. The
+        # pivot's `LDY k` would replace it.
+        instrs = _loop([
+            asm_ast.Mov(src=_M("k"), dst=_X),
+            asm_ast.Mov(src=_IX("t"), dst=_A),
+            asm_ast.Add(src=_IY("u"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("s")),
+        ])
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_frame_access_in_pivot_range_blocks(self):
+        # A soft-stack access is lowered as `LDY #off; LDA (FP),Y`,
+        # which overwrites the pivoted value in Y.
+        instrs = _loop([
+            asm_ast.Mov(src=_M("k"), dst=_X),
+            asm_ast.Mov(src=asm_ast.Frame(offset=3), dst=_A),
+            asm_ast.Mov(src=_IX("t"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("s")),
+        ])
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_x_read_after_label_blocks(self):
+        # The range ends at `.mid`, but `LDA u,X` after it still reads
+        # the value of `LDX k`. Pivoting would hand it the counter.
+        instrs = _loop([
+            asm_ast.Mov(src=_M("k"), dst=_X),
+            asm_ast.Mov(src=_IX("t"), dst=_A),
+            asm_ast.Label(name=".mid"),
+            asm_ast.Mov(src=_IX("u"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("s")),
+        ])
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertEqual(out, instrs)
+
+    def test_stx_init_gets_no_tax(self):
+        # The init `STX b` leaves the initial value in X already. A
+        # TAX after it used to load X with whatever A held.
+        instrs = [
+            asm_ast.Mov(src=_X, dst=_M("b")),
+            asm_ast.Label(name=".top"),
+            asm_ast.Mov(src=_M("b"), dst=_X),
+            asm_ast.Mov(src=_IX("arr"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("s")),
+            asm_ast.Dec(dst=_M("b")),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".top"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertIn(asm_ast.Dec(dst=_X), out)
+        self.assertNotIn(asm_ast.Mov(src=_A, dst=_X), out)
+
+    def test_sty_init_reloads_x_from_slot(self):
+        # After `STY b` the value is in Y and b, not in A.
+        instrs = [
+            asm_ast.Mov(src=_Y, dst=_M("b")),
+            asm_ast.Label(name=".top"),
+            asm_ast.Mov(src=_M("b"), dst=_X),
+            asm_ast.Mov(src=_IX("arr"), dst=_A),
+            asm_ast.Mov(src=_A, dst=_M("s")),
+            asm_ast.Dec(dst=_M("b")),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".top"),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _instrs(apply_loop_counter_to_x(_wrap(instrs)))
+        self.assertEqual(out[1], asm_ast.Mov(src=_M("b"), dst=_X))
+        self.assertNotIn(asm_ast.Mov(src=_A, dst=_X), out)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")
+class TestLoopCounterToXSim(unittest.TestCase):
+
+    def test_pivot_after_call_keeps_loop_finite(self):
+        # After `JSR g`, `out2 = spr_w[k]` loads `LDX k` and runs on
+        # into `DEC i`. The optimized build used to loop forever.
+        src = r'''
+        #include <stdint.h>
+        uint8_t ent_y[8];
+        uint8_t spr_w[8];
+        volatile uint8_t out1, out2;
+        uint8_t calls;
+        void g(void) { calls++; }
+        void f(uint8_t n, uint8_t k)
+        {
+            uint8_t i = n;
+            do {
+                out1 = ent_y[i];
+                g();
+                out2 = spr_w[k];
+                i--;
+            } while ((i & 0x80) == 0);
+        }
+        int main(void) { f(3, 1); return calls; }
+        '''
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                r = build_sim(src, optimize=optimize).run()
+                self.assertFalse(r.timed_out)
+                self.assertEqual(r.return_int(), 4)
 
 
 if __name__ == "__main__":

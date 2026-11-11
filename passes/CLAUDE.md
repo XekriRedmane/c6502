@@ -235,7 +235,9 @@ this directory:
   Reg(Y)); Inc/Dec(Reg(Y)); Compare(Reg(Y), <Imm|Data|ZP>)`
   (LDY m,X; INY/DEY; CPY n). Saves 4 bytes / 6 cycles per
   occurrence. Gated on Y dead at entry, A dead post-CMP, and
-  the staging tmp unused in the rest of the function.
+  the staging tmp being compiler-owned scratch (a `__local_<fn>__*`
+  slot or a regalloc-pool ZP byte) that no path reads after the
+  CMP, back edges included.
   Headline source: the chase-branch target computation in
   `beam_target_tick` — `floor_ceil[idx]+1` compared to
   `beam_y` lowers to the 5-atom shape because the regalloc
@@ -892,8 +894,8 @@ document says whether it fires there.
   `LDA m,X; STA tmp; INC tmp; LDA tmp; CMP n` shape to the
   3-atom `LDY m,X; INY; CPY n` (and DEC/DEY mirror) when Y is
   dead at entry, A is dead post-CMP, and the staging tmp is
-  unused in the rest of the function. Saves 4 bytes / 6 cycles
-  per occurrence.
+  compiler-owned scratch that no path reads after the CMP. Saves
+  4 bytes / 6 cycles per occurrence.
 - `apply_transfer_past_branch` — sinks `TXA`/`TYA` past an
   adjacent conditional Branch when A is dead on the taken arm
   but live on the fall-through, and the prior instruction
@@ -914,9 +916,12 @@ document says whether it fires there.
 - `apply_redundant_load_after_rmw` — drops `LDA M` after `INC M` /
   `DEC M` / shift-on-M when only the N/Z flag effect was needed (the
   RMW already set N/Z off M's new value).
-- `apply_redundant_load_elimination` — per-block A/X/Y tracker: if
+- `apply_redundant_load_elimination` — A/X/Y tracker, run as a
+  must-availability dataflow over the function's CFG: if
   `LDA M` (or LDX/LDY M) is about to read M and the target register
-  already mirrors M, drop the load. Also drops reg-to-reg Movs
+  already mirrors M, drop the load. Two `IndexedData` operands match
+  only when their index registers match too (`tab,X` isn't
+  `tab,Y`). Also drops reg-to-reg Movs
   (TXA / TYA / TAX / TAY) when src's and dst's equivalence classes
   share at least one mirrored operand AND flags are dead (or the
   Z flag already reflects src's value). Also REWRITES `LDA M` to
@@ -1209,11 +1214,16 @@ of the slot, including a shift or rotate of it, disqualifies it.
 A call is wrapped with `STX` / `LDX` when the counter is read after
 it, unless the callee is declared `preserves_x`. Also accepts
 `LDA M` body uses (rewritten to `TXA` since X = M is the promotion
-invariant, or, before a `CMP` with A dead after it, to `CPX`). Y-pivot ranges within the loop reject ranges containing
-Indirect / IndirectY / IndirectZp / IndirectZpY operands — these read
-Y for addressing and the pivot's LDX→LDY rewrite would clobber that
-Y. The classic refresh_hit_entities winner — ~5× speedup on the hot
-loop. Composes with the Y-pivot path inside the promotion shape.
+invariant, or, before a `CMP` with A dead after it, to `CPX`). A
+Y-pivot range (another `LDX v` turned into `LDY v`, with its `abs,X`
+reads turned into `abs,Y`) must not read or write Y, counting the
+`LDY #off` setup of a soft-stack or indirect operand, and it ends
+before any use of the counter's slot, so the step still becomes
+`DEX`. Neither X's loaded value nor Y's earlier value may be read
+after the range. An `LDX` where the counter is dead, such as a 2-byte
+return's high byte after the loop, isn't pivoted. The classic
+refresh_hit_entities winner — ~5× speedup on the hot loop. Composes
+with the Y-pivot path inside the promotion shape.
 
 ## Call-graph-disjoint ZP allocation
 

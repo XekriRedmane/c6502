@@ -52,6 +52,14 @@ to match X's value at the same point. Specifically:
   semantics — the new X is "slot-1" or "slot+1", which is the
   correct next value of the slot).
 
+The invariant starts only where X is first given M's value. Before
+that, X holds whatever the caller left in it, and M is the only
+copy, as in `LDA p; STA out; LDX p; DEX; STX p` with `p` a global.
+So the rewrite applies only to a read of M that every path from the
+function's entry reaches through an `STX M`, an `LDX M`, or the init
+`TAX` (`_x_holds_slot`). Once X holds M's value it keeps holding it,
+because every other X write is one of the accepted kinds below.
+
 If a non-STX write to M exists somewhere in the function, that
 write could break the M == X invariant. The pass conservatively
 skips any function where a non-STX write to an X-save slot exists.
@@ -176,6 +184,55 @@ def _x_write_keeps_slot(instrs, i: int, key) -> bool:
     return False
 
 
+def _x_holds_slot(instrs, key) -> list[bool]:
+    """Returns, for each instruction, whether X holds the slot `key`'s
+    value on every path from the function's entry to it. An `STX M`,
+    an `LDX M`, or the init `TAX` (`_x_write_keeps_slot`) makes X hold
+    it. The caller has already checked that every other X write keeps
+    it, so nothing else changes the fact. X doesn't hold it at entry.
+    An unreachable instruction gets True, which is harmless since it
+    never runs."""
+    label_idx = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    n = len(instrs)
+    state: list[bool | None] = [None] * n
+    if n == 0:
+        return []
+    state[0] = False
+    work = [0]
+    while work:
+        k = work.pop()
+        instr = instrs[k]
+        out = state[k]
+        if isinstance(instr, asm_ast.Mov) and (
+            (_is_reg_x(instr.src) and _op_key(instr.dst) == key)
+            or (_is_reg_x(instr.dst) and _op_key(instr.src) == key)
+            or (_is_reg_a(instr.src) and _is_reg_x(instr.dst)
+                and _x_write_keeps_slot(instrs, k, key))
+        ):
+            out = True
+        if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+            succs = []
+        elif isinstance(instr, asm_ast.Jump):
+            t = label_idx.get(instr.target)
+            succs = [] if t is None else [t]
+        else:
+            succs = [k + 1] if k + 1 < n else []
+            if isinstance(instr, asm_ast.Branch):
+                t = label_idx.get(instr.target)
+                if t is not None:
+                    succs.append(t)
+        for succ in succs:
+            old = state[succ]
+            new = out if old is None else (old and out)
+            if new != old:
+                state[succ] = new
+                work.append(succ)
+    return [True if v is None else v for v in state]
+
+
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
     # Pass 1: collect candidates — every memory operand that appears
@@ -278,11 +335,14 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     # Stack / Indirect / IndexedData) is left alone — STX has no
     # indirect-Y or abs,X form, so we can't fold these directly.
     # `Mov(M, Reg(X))` is already a TAX/LDX shape that copy-prop
-    # / direct_index_load handle; leave it.
+    # / direct_index_load handle; leave it. A read that some path
+    # from the entry reaches before X is given M's value keeps
+    # reading memory.
+    holds = _x_holds_slot(instrs, key)
     reg_x = asm_ast.Reg(reg=asm_ast.X())
     new_instrs: list[asm_ast.Type_instruction] = []
-    for instr in instrs:
-        if isinstance(instr, asm_ast.Mov):
+    for k, instr in enumerate(instrs):
+        if isinstance(instr, asm_ast.Mov) and holds[k]:
             src_key = _op_key(instr.src)
             if src_key in final:
                 if _is_reg_a(instr.dst):

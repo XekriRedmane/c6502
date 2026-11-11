@@ -41,25 +41,28 @@ A Data symbol `D` qualifies for Y-promotion in a function iff:
      register.)
   2. Reg(Y) is unused elsewhere in the function. Any of the
      following disqualifies:
-       - any `Mov` whose src or dst is `Reg(Y)`,
-       - any `Inc` / `Dec` of `Reg(Y)`,
-       - any `Pop` into `Reg(Y)`,
-       - any `Compare` with `Reg(Y)` as `left`,
+       - any operand that is `Reg(Y)`, such as a `Mov` to or from
+         Y, an `INY` / `DEY`, a `CPY`, or a pull into Y,
        - any `IndexedData(_, _, Y())` operand,
-       - any `Indirect` / `IndirectY` / `IndirectZpY` operand
-         (these consume Y by addressing mode),
-       - any `Frame` / `Stack` operand (use indirect-Y at emit).
+       - any `IndirectY` / `IndirectZpY` operand (these consume Y
+         by addressing mode),
+       - any `Indirect` / `IndirectZp` / `Frame` / `Stack` operand,
+         which `asm_emit` lowers with an `LDY #off` in front,
+       - a call or tail-call jump that passes an argument in Y.
   3. At least one OTHER source loads X — i.e., X is already
      "taken" by some non-D value. Without competition for X,
      just keeping D in X has the same cost.
-  4. Every IndexedData,X access in the LDX(D)-to-next-X-clobber
-     range is in an instruction slot that supports the
-     corresponding IndexedData,Y form. The 6502 doesn't have
-     `LDX abs,X` (irrelevant — we're going the other way),
-     `LDY abs,Y` (ditto), or `INC abs,Y` / `DEC abs,Y` /
-     `ASL abs,Y` / `LSR abs,Y` / `ROL abs,Y` / `ROR abs,Y`. If
-     any access lives at one of those positions, the rewrite
-     would produce un-encodable asm; bail.
+  4. Every read of X that an `LDX D` reaches reads D on every
+     path to it (`_plan_x_reads`). A forward dataflow over the
+     control-flow graph tracks whether X may hold D, so a read
+     after a label or a branch is handled the same as one in the
+     LDX's own block. An `abs,X` read where X holds D on some paths
+     and another value on others disqualifies, and so does a read
+     of X as a value (`TXA`, `STX`, `CPX`, `INX`, a return with
+     `save_x`) where X may hold D. Each `abs,X` read of D must also
+     be in an instruction with an `abs,Y` form. The 6502 has no
+     `INC abs,Y` / `DEC abs,Y` / `ASL abs,Y` / `LSR abs,Y` /
+     `ROL abs,Y` / `ROR abs,Y`.
   5. Nothing in the function writes `D`, and the function makes
      no call. Y is loaded from `D` once at entry, so `D` has to
      hold its entry value at every LDX the rewrite drops, and Y
@@ -67,6 +70,8 @@ A Data symbol `D` qualifies for Y-promotion in a function iff:
      and may also write `D` if `D` is a global or a byte of the
      shared caller-saved zero-page range. A loop temporary that is
      stored and then reloaded into X fails this gate.
+  6. N and Z are dead after every dropped `LDX D` and at the point
+     where the `LDY D` goes, since both loads set them.
 
 # Rewrite
 
@@ -74,21 +79,11 @@ A Data symbol `D` qualifies for Y-promotion in a function iff:
      function body — after any leading `Label` and
      `FunctionPrologue` / `AllocateStack`, before the first
      true body instruction.
-  2. Walk the rest of the body forward:
-       - At each `Mov(Data(D, 0), Reg(X))`: drop the LDX. Flip
-         a `promote_active` flag to True so subsequent
-         IndexedData,X operands get rewritten to ,Y.
-       - At any instruction that re-writes X (LDX of a
-         different source, INX, DEX, PLX): set `promote_active`
-         False so subsequent IndexedData,X operands stay ,X
-         (they read THAT new value, not D's).
-       - At a control-flow boundary (Label, Jump, Branch, Call,
-         Ret, Return): set `promote_active` False. X's value
-         across blocks isn't tracked here; subsequent IndexedData
-         accesses see whatever X holds at the new entry.
-       - For instructions in the active range: rewrite each
-         `IndexedData(name, offset, X())` operand to
-         `IndexedData(name, offset, Y())`.
+  2. Drop every `Mov(Data(D, 0), Reg(X))`.
+  3. In each instruction where gate 4 found that X holds D, rewrite
+     each `IndexedData(name, offset, X())` operand to
+     `IndexedData(name, offset, Y())`. An `abs,X` read where X
+     holds another value stays as it is.
 
 # Soundness
 
@@ -96,10 +91,12 @@ A Data symbol `D` qualifies for Y-promotion in a function iff:
 Y at function entry doesn't disturb anything because no
 instruction observed Y before. After the rewrite, every
 IndexedData,Y in the function body reads the byte at `name +
-offset + (D's stored value)`, which equals `name + offset +
-(X's stored value)` would have been at that point in the original
-— because we only rewrite in ranges where X was loaded with the
-same D.
+offset + (D's stored value)`, which equals what `name + offset +
+(X's stored value)` would have been at that point in the original,
+because we only rewrite reads where X holds D on every path. The
+reads left as `abs,X` see the same X as before, because every path
+to them that passes a dropped `LDX D` also passes a later write of
+X.
 
 For the soft-stack ABI: Y is not part of the calling convention
 between functions. Callers don't expect a specific Y value on
@@ -126,6 +123,7 @@ long-branch displacement check is invalidated.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import flags_dead_at
 
 
 # Instruction kinds whose dst operand position doesn't support
@@ -185,11 +183,22 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         return fn
     if any(_writes_name(i, promoted_name) for i in instrs):
         return fn
-    # Gate 4: every IndexedData,X access in the rewrite range
-    # must be in a position where IndexedData,Y assembles.
-    if _rewrite_would_be_unencodable(instrs, promoted_name):
+    # Gate 4: every X read that an LDX of D reaches reads D on every
+    # path, and has an abs,Y form.
+    rewrite = _plan_x_reads(instrs, promoted_name)
+    if rewrite is None:
         return fn
-    return _do_promote(fn, instrs, promoted_name)
+    # The dropped LDXs and the added LDY set N and Z.
+    insert_at = _entry_insertion_point(instrs)
+    if not flags_dead_at(instrs, insert_at):
+        return fn
+    if any(
+        _ldx_data_source_name(instr) == promoted_name
+        and not flags_dead_at(instrs, k + 1)
+        for k, instr in enumerate(instrs)
+    ):
+        return fn
+    return _do_promote(fn, instrs, promoted_name, rewrite)
 
 
 # ---------------------------------------------------------------------------
@@ -208,17 +217,27 @@ def _y_is_used(instrs: list[asm_ast.Type_instruction]) -> bool:
 
 
 def _references_y(instr: asm_ast.Type_instruction) -> bool:
-    for op in _operands_in(instr):
+    """Returns True iff `instr` reads or writes Reg(Y). That includes
+    an `abs,Y` operand, the `(ind),Y` operands, and the `LDY #off`
+    that `asm_emit` puts in front of an `Indirect`, `IndirectZp`,
+    `Frame`, or `Stack` access. A call or tail-call jump that passes
+    an argument in Y counts too."""
+    if isinstance(instr, (asm_ast.Call, asm_ast.Jump)) and (
+        "Y" in instr.reg_args
+    ):
+        return True
+    for op in vars(instr).values():
         if isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.Y):
             return True
         if isinstance(op, asm_ast.IndexedData) and isinstance(
             op.index, asm_ast.Y,
         ):
             return True
-        # Indirect-Y addressing modes consume Y implicitly.
+        # Indirect-Y addressing modes consume Y implicitly, and the
+        # ones with an offset load it first.
         if isinstance(op, (
             asm_ast.Indirect, asm_ast.IndirectY,
-            asm_ast.IndirectZpY,
+            asm_ast.IndirectZp, asm_ast.IndirectZpY,
             asm_ast.Frame, asm_ast.Stack,
         )):
             return True
@@ -286,28 +305,105 @@ def _x_has_other_uses(
     return False
 
 
-def _rewrite_would_be_unencodable(
+# What X holds, as tracked by `_plan_x_reads`: the value of D,
+# loaded by an LDX the rewrite drops, or anything else.
+_X_IS_D = "D"
+_X_IS_OTHER = "other"
+
+
+def _plan_x_reads(
     instrs: list[asm_ast.Type_instruction], promoted_name: str,
-) -> bool:
-    """Simulate the forward walk; flag any IndexedData,X in the
-    rewrite range that sits in an instruction slot where
-    IndexedData,Y wouldn't assemble (Inc/Dec/shifts have no abs,Y
-    form on the NMOS 6502)."""
-    promote_active = False
-    for instr in instrs:
+) -> set[int] | None:
+    """Returns the indices of the instructions whose `abs,X` operands
+    read D's value, which the rewrite turns into `abs,Y`, or None if
+    the rewrite can't be done.
+
+    A forward dataflow over the control-flow graph tracks, at each
+    instruction, whether X may hold D (from an `LDX D`) or something
+    else. X holds something else at function entry. An `abs,X` read
+    where X holds D on every path is rewritten. One where X holds D on
+    some paths and something else on others can't be, since the
+    rewritten code has to pick one register, so this returns None. So
+    does a read of X as a value (`TXA`, `STX`, `CPX`, `INX`, a return
+    with `save_x`, ...) where X may hold D, and an `abs,X` read of D
+    in a position with no `abs,Y` form (`INC`, `DEC`, the shifts)."""
+    label_idx = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    n = len(instrs)
+    if n == 0:
+        return set()
+    state_in: list[frozenset[str] | None] = [None] * n
+    state_in[0] = frozenset({_X_IS_OTHER})
+    work = [0]
+    while work:
+        k = work.pop()
+        instr = instrs[k]
         if _ldx_data_source_name(instr) == promoted_name:
-            promote_active = True
+            out = frozenset({_X_IS_D})
+        elif _writes_x(instr):
+            out = frozenset({_X_IS_OTHER})
+        else:
+            out = state_in[k]
+        for succ in _successors(instrs, k, label_idx):
+            old = state_in[succ]
+            new = out if old is None else old | out
+            if new != old:
+                state_in[succ] = new
+                work.append(succ)
+    rewrite: set[int] = set()
+    for k, instr in enumerate(instrs):
+        state = state_in[k]
+        if state is None or _X_IS_D not in state:
+            continue  # Unreachable, or X can't hold D here.
+        if _reads_x_value(instr):
+            return None
+        if not any(_is_indexed_data_x(op) for op in vars(instr).values()):
             continue
-        if _writes_x(instr) or _is_block_boundary(instr):
-            promote_active = False
-            continue
-        if not promote_active:
-            continue
-        # Check `dst` slot of unsupported kinds for IndexedData,X.
+        if state != {_X_IS_D}:
+            return None
         if isinstance(instr, _DST_X_ONLY_KINDS):
-            dst = getattr(instr, "dst", None)
-            if _is_indexed_data_x(dst):
-                return True
+            return None
+        if _rewrite_x_to_y(instr) is instr:
+            return None  # An instruction kind the rewrite doesn't know.
+        rewrite.add(k)
+    return rewrite
+
+
+def _successors(instrs, k: int, label_idx: dict[str, int]) -> list[int]:
+    """Returns the indices control can reach directly after
+    `instrs[k]`. A jump or branch to a name that isn't a label in the
+    function (a tail call) has no successor there."""
+    instr = instrs[k]
+    if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+        return []
+    if isinstance(instr, asm_ast.Jump):
+        t = label_idx.get(instr.target)
+        return [] if t is None else [t]
+    out = [k + 1] if k + 1 < len(instrs) else []
+    if isinstance(instr, asm_ast.Branch):
+        t = label_idx.get(instr.target)
+        if t is not None:
+            out.append(t)
+    return out
+
+
+def _reads_x_value(instr: asm_ast.Type_instruction) -> bool:
+    """Returns True iff `instr` reads Reg(X) other than as the index
+    of an `abs,X` operand. A pure write to X (`LDX`, `TAX`, `PLX`)
+    isn't a read."""
+    if isinstance(instr, (asm_ast.Call, asm_ast.Jump)):
+        return "X" in instr.reg_args
+    if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+        return instr.save_x
+    for name, op in vars(instr).items():
+        if isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.X):
+            if name == "dst" and isinstance(
+                instr, (asm_ast.Mov, asm_ast.Pop, asm_ast.LoadAddress),
+            ):
+                continue
+            return True
     return False
 
 
@@ -327,10 +423,12 @@ def _do_promote(
     fn: asm_ast.Function,
     instrs: list[asm_ast.Type_instruction],
     promoted_name: str,
+    rewrite: set[int],
 ) -> asm_ast.Function:
-    """Insert `LDY <promoted_name>` at the function-entry insertion
-    point; drop every `LDX(promoted_name)`; rewrite IndexedData,X
-    to ,Y in the active range."""
+    """Inserts `LDY <promoted_name>` at the function-entry insertion
+    point, drops every `LDX(promoted_name)`, and rewrites
+    IndexedData,X to ,Y in the instructions at the `rewrite`
+    indices from `_plan_x_reads`."""
     insert_at = _entry_insertion_point(instrs)
     ldy = asm_ast.Mov(
         src=asm_ast.Data(name=promoted_name, offset=0),
@@ -340,14 +438,11 @@ def _do_promote(
     new_instrs: list[asm_ast.Type_instruction] = []
     new_instrs.extend(instrs[:insert_at])
     new_instrs.append(ldy)
-    promote_active = False
-    for instr in instrs[insert_at:]:
+    for k in range(insert_at, len(instrs)):
+        instr = instrs[k]
         if _ldx_data_source_name(instr) == promoted_name:
-            promote_active = True
             continue
-        if _writes_x(instr) or _is_block_boundary(instr):
-            promote_active = False
-        if promote_active:
+        if k in rewrite:
             instr = _rewrite_x_to_y(instr)
         new_instrs.append(instr)
     return asm_ast.Function(
@@ -391,18 +486,6 @@ def _writes_x(instr: asm_ast.Type_instruction) -> bool:
         ):
             return True
     return False
-
-
-def _is_block_boundary(instr: asm_ast.Type_instruction) -> bool:
-    """True iff `instr` ends or starts a basic block — control
-    flow can enter or leave here, so X's value across the
-    boundary isn't trackable by a linear walk."""
-    return isinstance(instr, (
-        asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
-        asm_ast.Call, asm_ast.Ret, asm_ast.Return,
-        asm_ast.FunctionPrologue, asm_ast.AllocateStack,
-        asm_ast.LoadAddress,
-    ))
 
 
 def _rewrite_x_to_y(
@@ -463,49 +546,3 @@ def _writes_name(instr: asm_ast.Type_instruction, name: str) -> bool:
         return False
     return (isinstance(dst, (asm_ast.Data, asm_ast.IndexedData))
             and dst.name == name)
-
-
-def _operands_in(instr: asm_ast.Type_instruction):
-    """Yield every operand of `instr`. Used by Y-detection only."""
-    if isinstance(instr, asm_ast.Mov):
-        yield instr.src
-        yield instr.dst
-        return
-    if isinstance(instr, (
-        asm_ast.Add, asm_ast.Sub,
-        asm_ast.And, asm_ast.Or,
-    )):
-        yield instr.src
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.Xor):
-        yield instr.src1
-        yield instr.src2
-        yield instr.dst
-        return
-    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-        yield instr.dst
-        return
-    if isinstance(instr, (
-        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.RotateLeft, asm_ast.RotateRight,
-    )):
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.Push):
-        yield instr.src
-        return
-    if isinstance(instr, asm_ast.Pop):
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.Compare):
-        yield instr.left
-        yield instr.right
-        return
-    if isinstance(instr, asm_ast.BitTest):
-        yield instr.src
-        return
-    if isinstance(instr, asm_ast.LoadAddress):
-        yield instr.src
-        yield instr.dst
-        return

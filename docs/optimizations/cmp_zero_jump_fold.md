@@ -89,6 +89,15 @@ Within a fold, the operands narrow in three ways.
   char` variable and the other is a constant zero. Both comparisons
   test only the sign bit, which `SignExtend` keeps.
 
+Each narrowing reads the extend's source variable at the compare in
+place of the extend's result, so the source must hold the same value
+at both points. That is so when the source is an SSA-renamed name,
+which has one write. For any other source, such as a static or an
+address-taken local, the extend must sit earlier in the same
+straight-line run as the compare, with no label, jump, store, or call
+between them and no instruction between them that writes the source.
+The extend's own result must be SSA-renamed too.
+
 ## What it leaves alone
 
 - A comparison whose result has another use. In
@@ -107,13 +116,10 @@ Within a fold, the operands narrow in three ways.
 - A floating-point comparison against `0.0`. The zero test accepts
   only integer constants, so the comparison becomes a `JumpIfCmp`
   instead.
-
-The narrowing reads the extend's source variable at the jump instead
-of at the extend. That is a problem when the source is a name outside
-SSA, such as a static, and the program writes it between the two
-points. For a static `uint8_t g`, `int t = g; g = 5; int c = t < 3;
-if (c) hits = 1;` compiles to `LDA #$05; STA g; CMP #$03; BCS`, which
-compares the new value of `g`. The `== 0` trace has the same defect.
+- Narrowing through an extend of a static that is written before the
+  compare. For a static `uint8_t g`, `int t = g; g = 5; int c = t <
+  3; if (c) hits = 1;` keeps the 2-byte compare of `t`, which holds
+  the old value of `g`. The `== 0` trace stops at the same extend.
 
 ## Related
 

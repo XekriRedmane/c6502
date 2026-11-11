@@ -1045,7 +1045,13 @@ def _operands_equal(
     if isinstance(a, asm_ast.Data):
         return a.name == b.name and a.offset == b.offset
     if isinstance(a, asm_ast.IndexedData):
-        return a.name == b.name and a.offset == b.offset
+        # `tab,X` and `tab,Y` name different bytes unless X == Y,
+        # which the tracker doesn't know. Treating them as equal
+        # dropped the `LDA tab,Y` in `j = tab[i]; ...; g = tab[j];`.
+        return (
+            a.name == b.name and a.offset == b.offset
+            and type(a.index) is type(b.index)
+        )
     if isinstance(a, asm_ast.Frame):
         return a.offset == b.offset
     if isinstance(a, asm_ast.Stack):

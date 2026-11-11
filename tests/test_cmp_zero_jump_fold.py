@@ -802,5 +802,36 @@ class TestSignedZeroOrderingAsmShape(unittest.TestCase):
         self.assertIn("BPL", asm)
 
 
+class TestStaleExtendSource(unittest.TestCase):
+    """A ZeroExtend or SignExtend of a static that's stored to before
+    the compare. The narrowing read the static at the jump, after the
+    store, and compiled `int t = g; g = 5; if (t < 3)` to `LDA #$05;
+    STA g; CMP #$03; BCS`."""
+
+    _SRC = (
+        "#include <stdint.h>\n"
+        "uint8_t g;\n"
+        "int8_t sg;\n"
+        "uint8_t hits;\n"
+        "void lt(void) { int t = g; g = 5; if (t < 3) hits |= 1; }\n"
+        "void eq0(void) { int t = g; g = 5; if (t == 0) hits |= 2; }\n"
+        "void lt_c(void) { int t = g; g = 5; int c = t < 3;"
+        " if (c) hits |= 4; }\n"
+        "void eq0_c(void) { int t = g; g = 5; int c = t == 0;"
+        " if (c) hits |= 8; }\n"
+        "void ge0(void) { int t = sg; sg = -5; if (t >= 0) hits |= 16; }\n"
+        "int main(void) {\n"
+        "    g = 1; lt(); g = 0; eq0(); g = 1; lt_c(); g = 0; eq0_c();\n"
+        "    sg = 1; ge0();\n"
+        "    return hits;\n"
+        "}\n"
+    )
+
+    def test_store_between_extend_and_compare(self):
+        for optimize in (False, True):
+            r = build_sim(self._SRC, optimize=optimize).run()
+            self.assertEqual(r.return_int(), 31, f"optimize={optimize}")
+
+
 if __name__ == "__main__":
     unittest.main()

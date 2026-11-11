@@ -38,7 +38,9 @@ position where the outer loop can hoist it further.
 A candidate inside a loop body is eligible for hoisting when:
 
   * The dst (`Data` or `ZP`) is not written elsewhere in the
-    loop body — only the to-be-hoisted Mov writes it.
+    loop body — only the to-be-hoisted Mov writes it. A store
+    through a pointer, or with an index register, that `may_alias`
+    can't separate from the dst counts as a write too.
   * For shape (3) — the read-then-write pair — additionally:
     the src (`Data` or `ZP`) must not be written anywhere in
     the loop body. Otherwise the loaded value could change
@@ -97,6 +99,7 @@ fixed-point round in `compile.py`.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import may_alias
 from passes.asm_dead_store import _reads, mem_dead_after
 from passes.asm_liveness import a_dead_at, flags_dead_at
 
@@ -204,6 +207,19 @@ def _try_hoist_one(
         # src cell must not be written anywhere in the body. Otherwise
         # the loaded value isn't loop-invariant.
         if src_key is not None and write_count.get(src_key, 0) != 0:
+            continue
+        # A store through a pointer or with an index register can
+        # write the same cell under another name. `g = 5; out = g;
+        # *p = 7;` in a loop with `p == &g` must keep `g = 5` inside.
+        span = range(k, k + span_len)
+        cells = [instrs[k + span_len - 1].dst]
+        if src_key is not None:
+            cells.append(instrs[k].src)
+        if any(
+            _may_write(instrs[j], cell)
+            for j in body_range if j not in span
+            for cell in cells
+        ):
             continue
         if not _hoist_preserves_values(
             instrs, header_idx, back_edge_idx, k, span_len, label_idx,
@@ -358,6 +374,26 @@ def _written_data_key(inst: asm_ast.Type_instruction) -> tuple | None:
     if dst is None:
         return None
     return _operand_key(dst)
+
+
+def _may_write(
+    inst: asm_ast.Type_instruction, cell: asm_ast.Type_operand,
+) -> bool:
+    """True iff `inst` stores through a pointer or with an index
+    register to a location that may be `cell`. Direct `Data` / `ZP`
+    writes are counted exactly by `_written_data_key`."""
+    dst = None
+    if isinstance(inst, (asm_ast.Mov, asm_ast.Add, asm_ast.Sub,
+                         asm_ast.And, asm_ast.Or, asm_ast.Xor,
+                         asm_ast.Inc, asm_ast.Dec,
+                         asm_ast.ArithmeticShiftLeft,
+                         asm_ast.LogicalShiftRight,
+                         asm_ast.RotateLeft, asm_ast.RotateRight,
+                         asm_ast.LoadAddress, asm_ast.Pop)):
+        dst = inst.dst
+    if dst is None or isinstance(dst, (asm_ast.Reg, asm_ast.Data, asm_ast.ZP)):
+        return False
+    return may_alias(dst, cell)
 
 
 def _operand_key(op: asm_ast.Type_operand) -> tuple | None:

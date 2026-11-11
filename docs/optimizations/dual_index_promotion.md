@@ -12,9 +12,8 @@ When a function indexes with two different bytes, both compete for X,
 and each switch back to a byte costs another `LDX`. If the function
 doesn't use Y, one of the two can live in Y for the whole function.
 The pass picks the byte loaded into X most often, inserts `LDY D` at
-the top of the function, drops every `LDX D`, and rewrites the
-`abs,X` operands that follow each dropped load until the next X write
-or block boundary. An `abs,Y` operand is the same size and speed as
+the top of the function, drops every `LDX D`, and rewrites each
+`abs,X` operand that reads X while X holds `D`. An `abs,Y` operand is the same size and speed as
 `abs,X`, so the saving is the dropped loads, 2 bytes and 3 cycles
 each for a zero-page `D` (3 bytes and 4 cycles for an absolute one),
 less one `LDY` at entry. When the loads sit on different branches, as
@@ -102,9 +101,11 @@ apply_bobble:
   instructions. When more than one byte qualifies, the one with the
   most loads is chosen, with ties broken by name.
 - Nothing in the function reads or writes Y, uses an `abs,Y` operand,
-  or uses an operand whose emitted form reads Y. Those are the
-  soft-stack operands and the `(DPTR),Y` and preloaded-Y `(zp),Y`
-  forms.
+  or uses an operand whose emitted form reads or loads Y. Those are
+  the soft-stack operands, the `(DPTR),Y` forms, and both `(zp),Y`
+  forms, the one that uses Y as it is and the one emitted with an
+  `LDY #off` in front. A call that passes an argument in Y counts
+  too.
 - Some other instruction loads X from a source other than `D`.
   Otherwise `D` could stay in X with no reloads.
 - The function makes no call, since a callee may change Y or write
@@ -113,17 +114,25 @@ apply_bobble:
 - None of the `abs,X` operands to be rewritten is the target of an
   `INC`, `DEC`, `ASL`, `LSR`, `ROL`, or `ROR`, since the 6502 has no
   `abs,Y` form of those.
-
-The rewrite after each dropped `LDX D` stops at the next instruction
-that writes X, and at any label, jump, branch, call, return, or
-address load.
+- Every read of X that a dropped `LDX D` reaches reads `D` on every
+  path to it. The pass follows the control flow across labels,
+  branches, and jumps to find out what X holds at each `abs,X`
+  operand. An operand where X holds `D` on some paths and another
+  byte on others disqualifies the function, and so does a read of X
+  as a value, such as a `TXA`, an `STX`, or a 2-byte return's high
+  byte, where X may hold `D`. An operand where X holds another byte
+  on every path stays `abs,X`.
+- Nothing reads the N or Z flag that a dropped `LDX D` or the added
+  `LDY D` sets.
 
 ## What it leaves alone
 
 - A function with a call in it. Adding a call to `tick()` in the
   `else` branch of the example leaves both `LDX` loads in place.
 - A function that uses Y anywhere, including through a soft-stack
-  access.
+  access or a pointer dereference.
+- An `abs,X` operand after a join where X holds `D` on one incoming
+  path and another byte on the other.
 - A byte loaded into X only once, and a function whose only X loads
   are of `D`.
 - A function that writes `D`, such as a temporary stored and then

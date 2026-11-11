@@ -80,7 +80,10 @@ unrolled iteration.
   register's list holds an operand equal to the source. Operands
   compare equal when they're the same immediate, the same `ZP` or
   `Data` byte, the same `Frame` or `Stack` offset, the same
-  `Indirect` offset, or the same `IndexedData` name and offset.
+  `Indirect` offset, or the same `IndexedData` name, offset, and
+  index register. `tab,X` and `tab,Y` are different operands, so in
+  `j = tab[i]; if (j == 0) return 0; g = tab[j];` the `LDA tab,Y`
+  stays after `LDY tab,X; TYA`.
 - The load's effect on N and Z can be skipped. Either no branch
   reads N or Z before another instruction sets them
   (`asm_liveness.flags_dead_at`), or Z already reflects whether the

@@ -9,14 +9,32 @@ from passes.dec_inc_branch_fold import apply_dec_inc_branch_fold
 _A = asm_ast.Reg(reg=asm_ast.A())
 
 
+# The length of the tail the last `_wrap` added.
+_TAIL = [0]
+
+
 def _instrs(prog):
-    return prog.top_level[0].instructions
+    """The function's instructions without the tail `_wrap` adds."""
+    out = prog.top_level[0].instructions
+    return out[:len(out) - _TAIL[0]]
 
 
 def _wrap(instrs):
-    return asm_ast.Program(top_level=[asm_ast.Function(
-        name="f", is_global=False, params=[], instructions=instrs,
-    )])
+    """`instrs` as a function, followed by a label and a return for
+    each branch target that isn't already a label in it. The passes
+    check A at a branch's target, and a target that isn't in the
+    function counts as live."""
+    labels = {i.name for i in instrs if isinstance(i, asm_ast.Label)}
+    tail = []
+    for i in instrs:
+        if isinstance(i, asm_ast.Branch) and i.target not in labels:
+            labels.add(i.target)
+            tail += [asm_ast.Label(name=i.target), asm_ast.Return(save_a=False)]
+    fn = asm_ast.Function(
+        name="f", is_global=False, params=[], instructions=instrs + tail,
+    )
+    _TAIL[0] = len(tail)
+    return asm_ast.Program(top_level=[fn])
 
 
 class TestDecIncBranchFold(unittest.TestCase):
@@ -103,6 +121,25 @@ class TestDecIncBranchFold(unittest.TestCase):
         ])
         out = _instrs(apply_dec_inc_branch_fold(prog))
         self.assertEqual(len(out), 5)
+
+
+class TestBranchTarget(unittest.TestCase):
+
+    def test_a_read_at_target_blocks(self):
+        # `t = --timer; if (t == 0) {...} return t;` reads t in A at
+        # the branch target, so the LDA stays.
+        m = asm_ast.Data(name="timer", offset=0)
+        instrs = [
+            asm_ast.Dec(dst=m),
+            asm_ast.Mov(src=m, dst=_A),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".t"),
+            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_A),
+            asm_ast.Return(save_a=True),
+            asm_ast.Label(name=".t"),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_instrs(apply_dec_inc_branch_fold(_wrap(instrs))),
+                         instrs)
 
 
 if __name__ == "__main__":

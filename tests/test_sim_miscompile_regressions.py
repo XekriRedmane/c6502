@@ -263,6 +263,69 @@ _CASES: list[tuple[str, str, int]] = [
         int main(void) { int a[2 + 1]; a[2] = 5;
                          return a[2] + (int)sizeof(a) + (int)sizeof(g); }
     """, 27),
+    # adc_commute kept the spilled `v` in A across `other = 7;`,
+    # which emits as `LDA #7; STA other`, so the add used 7.
+    ("adc_commute_across_constant_store", """
+        unsigned char total = 10, other, s = 2;
+        unsigned char sample(void) { return s; }
+        void accumulate(void) {
+            unsigned char v = sample();
+            other = 7;
+            total += v;
+        }
+        int main(void) { accumulate(); return total * 100 + other; }
+    """, 1207),
+    # and_sign_bit_branch dropped the AND when A was dead on the
+    # fall-through, though the branch target returned A.
+    ("and_sign_bit_branch_target_reads_a", """
+        unsigned char flags = 5, hits;
+        unsigned char top_bit(void) {
+            unsigned char t = flags & 0x80;
+            if (t) { hits = 1; return 7; }
+            return t;
+        }
+        int main(void) { return top_bit(); }
+    """, 0),
+    # dec_inc_branch_fold dropped the `LDA timer` after `DEC timer`
+    # for the same reason.
+    ("dec_inc_branch_fold_target_reads_a", """
+        unsigned char timer = 5, hits;
+        unsigned char tick(void) {
+            unsigned char t = --timer;
+            if (t == 0) { hits = 1; return 7; }
+            return t;
+        }
+        int main(void) { return tick(); }
+    """, 4),
+    # asm_licm moved `g = 5` out of the loop although `*p = 7` writes
+    # g through a pointer on every iteration.
+    ("licm_store_through_pointer", """
+        unsigned char g, out;
+        void f(unsigned char *p, unsigned char n) {
+            unsigned char i = 0;
+            do { g = 5; out = g; *p = 7; i++; } while (i < n);
+        }
+        int main(void) { f(&g, 2); return out; }
+    """, 5),
+    # A function whose address is taken only in a static initializer,
+    # or only in its own body, got zp_abi, and the call through the
+    # pointer passed its arguments on the soft stack.
+    ("zp_abi_address_in_static_initializer", """
+        unsigned char add3(unsigned char a, unsigned char b,
+                           unsigned char c) { return a + b + c; }
+        unsigned char (*fp)(unsigned char, unsigned char, unsigned char)
+            = add3;
+        int main(void) { return fp(1, 2, 3); }
+    """, 6),
+    ("zp_abi_address_taken_in_own_body", """
+        unsigned char (*fp)(unsigned char, unsigned char, unsigned char);
+        unsigned char add3(unsigned char a, unsigned char b,
+                           unsigned char c) {
+            fp = add3;
+            return a + b + c;
+        }
+        int main(void) { add3(0, 0, 0); return fp(1, 2, 3); }
+    """, 6),
 ]
 
 
@@ -286,6 +349,38 @@ class TestMiscompileRegressions(unittest.TestCase):
                     result = build_sim(src, optimize=optimize).run()
                     self.assertFalse(result.timed_out)
                     self.assertEqual(result.return_int_signed(), expected)
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestExternFunctionAddress(unittest.TestCase):
+    """`fp = f;` for an `extern` f stored the address of a soft-stack
+    slot, because GetAddress lowered every non-static name as a
+    local, and f kept zp_abi although a call through `fp` passes its
+    arguments on the soft stack. Nothing defines f here, so this
+    checks the assembly."""
+
+    _SRC = (
+        "unsigned char add3(unsigned char a, unsigned char b,\n"
+        "                   unsigned char c);\n"
+        "unsigned char (*fp)(unsigned char, unsigned char,\n"
+        "                    unsigned char);\n"
+        "unsigned char main(void) {\n"
+        "    fp = add3;\n"
+        "    return add3(1, 2, 3) + fp(1, 2, 3);\n"
+        "}\n"
+    )
+
+    def test_address_is_the_label(self) -> None:
+        from compile import _run_stage
+        from preprocessor import preprocess
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                asm = _run_stage(
+                    "codegen", preprocess(self._SRC), optimize=optimize,
+                )
+                self.assertIn("LDA   #<add3", asm)
+                self.assertIn("LDA   #>add3", asm)
+                self.assertNotIn("__zpabi_add3", asm)
 
 
 if __name__ == "__main__":

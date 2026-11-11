@@ -4,7 +4,7 @@ The three addressing-mode recognizers — `recognize_indexed_load`,
 `recognize_indexed_store`, and `recognize_indirect_indexed` — all match
 the same upstream shape from a Load/Store's address operand `%addr`:
 
-    %ext  := ZeroExtend|SignExtend(idx_var)     # idx_var is a 1-byte type
+    %ext  := ZeroExtend(idx_var)                # idx_var is a 1-byte type
     %addr := Binary(Add, base, %ext)            # base = Constant or pointer Var
     Load(%addr, …)  /  Store(…, %addr)
 
@@ -19,8 +19,8 @@ and rewrite it to an addressing-mode-specific node. They differ only in:
 
 `recognize_extend_add_chain` captures the identical walk-back and the
 gates every recognizer applies — symbol table present; `%addr` and `%ext`
-both SSA-renamed, and `%addr` single-use; the Add recognized; `idx_var` a 1-byte
-Var. Each caller post-checks `base`'s kind and supplies its own emit /
+both SSA-renamed, and `%addr` single-use; the Add recognized; the extend a
+ZeroExtend; `idx_var` a 1-byte Var. Each caller post-checks `base`'s kind and supplies its own emit /
 drop. `is_1_byte_var` / `is_1_byte_val` are the shared width predicates
 (formerly copy-pasted into all three passes)."""
 from __future__ import annotations
@@ -63,7 +63,7 @@ def recognize_extend_add_chain(
     addr_var: tac_ast.Var, env: DefUseEnv, ctx: PassContext,
 ) -> ExtendAddChain | None:
     """Walk back from `addr_var` (a Load/Store address operand) through
-    `Binary(Add, base, %ext)` and `%ext := ZeroExtend|SignExtend(idx)`,
+    `Binary(Add, base, %ext)` and `%ext := ZeroExtend(idx)`,
     applying the gates common to all three recognizers. Returns the
     `ExtendAddChain`, or None if any gate fails. Callers post-check
     `base`'s kind and emit their own node."""
@@ -86,15 +86,18 @@ def recognize_extend_add_chain(
     if ext_var.name not in ctx.ssa_dsts:
         return None
 
-    # Accept both ZeroExtend (uchar promotion) and SignExtend (signed
-    # 1-byte promotion). The 6502's indexed addressing reads only the
-    # index's low byte, so the extend's high bytes don't affect the
-    # byte address; SignExtend is sound because a negative index would
-    # address outside the array, which C99 §6.5.6 leaves undefined.
+    # Accept only a ZeroExtend. X and Y are unsigned, so `base,X` and
+    # `(base),Y` address `base + idx` with `idx` in 0..255, which is
+    # what `base + ZeroExtend(idx)` computes. A SignExtend of a
+    # negative byte gives `base - 1` for -1 where the addressing mode
+    # gives `base + 255`, and C allows the negative offset when the
+    # pointer points into the middle of an object (`p[-1]`). The loop
+    # rotation pass rewrites the SignExtend of a counter it proves
+    # non-negative into a ZeroExtend, so such a counter still folds.
     # The dead high-byte extension residue is cleaned up by SSA-DCE /
     # byte-DCE once this rewrite removes the chain's only consumer.
     ext = _extend_def(ext_var, env)
-    if ext is None:
+    if not isinstance(ext, tac_ast.ZeroExtend):
         return None
     if not isinstance(ext.src, tac_ast.Var):
         return None

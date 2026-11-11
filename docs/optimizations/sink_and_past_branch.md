@@ -89,7 +89,12 @@ The pass looks at the last four instructions of each basic block.
 - Every reader of `%t` is in the block the jump falls through to or
   in the block that starts with the jump's target label. A reader
   after the two paths merge would require a `Phi`, which the pass
-  doesn't insert.
+  doesn't insert. No `Phi` in either successor reads `%t` either.
+- The jump's target isn't the block it falls through to.
+- `x` is an SSA-renamed name, or each successor has the block with
+  the jump as its only predecessor. The copies read `x` at the top
+  of each successor, and a static or an address-taken `x` could be
+  written on another path into one of them.
 
 The pass inserts a renamed copy of the three instructions at the
 start of each successor, after its label if it has one, with names
@@ -97,10 +102,8 @@ ending in `.snk_then@N` and `.snk_else@N`. It rewrites each reader of
 `%t` to the copy in its own block. The copy always uses an `int`
 constant for the mask.
 
-The pass doesn't count the readers of `%e` and `%a`, although the
-module docstring lists single use of both as a condition. It drops
-the original definitions in any case. When the same extend also feeds
-another reader, as in
+The original `Truncate` always goes. The original `ZeroExtend` and
+AND go too, unless another instruction reads `%e` or `%a`. In
 
 ```c
 uint8_t b = bob[i];
@@ -110,9 +113,10 @@ if (b & 0x80) y -= mag; else y += mag;
 g16 = w;
 ```
 
-the store to `g16` after the merge reads `%3.1`, which no longer has
-a definition, and the final assembly stores two zero-page bytes that
-nothing writes.
+CSE leaves one `ZeroExtend` for both `w` and the AND, so the store to
+`g16` after the merge reads `%e`. That `ZeroExtend` stays in front of
+the jump, and the copies of the trio in the successors compute the
+mask from `x` again.
 
 ## What it leaves alone
 

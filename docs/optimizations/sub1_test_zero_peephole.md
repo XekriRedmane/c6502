@@ -92,6 +92,15 @@ so that the pre-SSA run can fire. `dst` can be anything except M,
 and a store to `dst` doesn't change C. The match is replaced by its
 first four atoms and the branch with its condition inverted.
 
+The rewrite changes what the code after the branch finds in A and
+the flags. Before it, A holds 0, N and Z come from the `CMP`, and C
+is set when M is zero. After it, A holds `M - 1`, N and Z come from
+the `SBC`, and C is set when M isn't zero. So A, N, Z, and C must be
+dead on the fall-through path and at the branch target
+(`asm_liveness.a_dead_at`, `flags_dead_at`, and `c_dead_at`). The
+code that `tac_to_asm` emits after a conditional jump loads each
+value it uses, so the loop test in the example passes these checks.
+
 ## Two positions
 
 The pre-SSA run is the one that fires in practice. It was added after
@@ -119,15 +128,9 @@ never appears, as described below.
   as a `Frame` operand the pass doesn't accept, and `i-- > 0` is
   compared at `int` width with a signed compare sequence, because the
   narrowing of the comparison is done by the TAC optimizer.
-
-The pass doesn't check whether A, N, or Z are read after the branch.
-Before the rewrite A holds 0 there and N and Z come from the `CMP`.
-After it, A holds `M - 1` and N and Z come from the `SBC`. The code
-that `tac_to_asm` emits after a conditional jump loads each value it
-uses, so the shape as lowered doesn't read them. An earlier rewrite
-that relied on A being 0 after the branch, such as a load of `#0`
-dropped by [redundant load elimination](redundant_load.md), would
-leave a read of A that this pass then changes.
+- A match where A, N, Z, or C is read after the branch, such as a
+  store of A that relies on the `LDA #0`, after [redundant load
+  elimination](redundant_load.md) has dropped a later load of `#0`.
 
 ## Related
 

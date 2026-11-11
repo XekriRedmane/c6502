@@ -184,31 +184,41 @@ def _zp_param_window(pool: Pool) -> range:
 # ---------------------------------------------------------------------------
 
 
-def _address_taken(prog: tac_ast.Program) -> set[str]:
-    """Set of function names that appear as a `Var(name=fn)` in
-    any instruction's operand position. Direct calls
-    (`FunctionCall.name`) and indirect-call pointers
-    (`IndirectCall.ptr` — itself a Var holding a previously-
-    GetAddress'd value) don't count: the address-taken site is
-    the GetAddress that produced the pointer, caught here via the
-    `vals_in` walk."""
+def _address_taken(
+    prog: tac_ast.Program, declared: set[str] | frozenset[str] = frozenset(),
+) -> set[str]:
+    """Set of function names whose address the program takes: those
+    that appear as a `Var(name=fn)` in any instruction's operand
+    position, including inside the function itself (`fp = f;` in
+    `f`), and those named by an `AddressInit` in a static
+    initializer (`int (*fp)(int) = f;`). `declared` adds the names of
+    functions declared here but defined elsewhere, so an extern whose
+    address is taken counts too. Direct calls (`FunctionCall.name`)
+    and indirect-call pointers (`IndirectCall.ptr` — itself a Var
+    holding a previously-GetAddress'd value) don't count: the
+    address-taken site is the GetAddress that produced the pointer,
+    caught here via the `vals_in` walk. A function whose address is
+    taken can be called through a pointer, which passes its
+    arguments on the soft stack, so it can't use zp_abi."""
     function_names: set[str] = {
         tl.name for tl in prog.top_level
         if isinstance(tl, tac_ast.Function)
-    }
+    } | set(declared)
     if not function_names:
         return set()
     taken: set[str] = set()
     for tl in prog.top_level:
+        if isinstance(tl, tac_ast.StaticVariable):
+            for item in tl.init:
+                if (isinstance(item, tac_ast.AddressInit)
+                        and item.name in function_names):
+                    taken.add(item.name)
+            continue
         if not isinstance(tl, tac_ast.Function):
             continue
         for instr in tl.instructions:
             for v in vals_in(instr):
-                if (
-                    isinstance(v, tac_ast.Var)
-                    and v.name in function_names
-                    and v.name != tl.name
-                ):
+                if isinstance(v, tac_ast.Var) and v.name in function_names:
                     taken.add(v.name)
     return taken
 
@@ -813,7 +823,7 @@ def select_abi(
     _check_forward_def_match(c99_prog)
     annotations = _annotation_map(c99_prog)
     decls = _function_decls_by_name(c99_prog)
-    address_taken = _address_taken(prog)
+    address_taken = _address_taken(prog, set(decls))
     callgraph = _build_callgraph(prog)
     out: dict[str, ParamLayout] = {}
     defined: set[str] = set()

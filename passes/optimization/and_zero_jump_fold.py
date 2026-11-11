@@ -88,7 +88,9 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
-from passes.optimization.cmp_zero_jump_fold import _NARROW_UNSIGNED_TYPES
+from passes.optimization.cmp_zero_jump_fold import (
+    _NARROW_UNSIGNED_TYPES, extend_source_unchanged,
+)
 from passes.optimization.framework import (
     RuleSet, Rule, producer_then_jump, single_use, have_symbols,
     PassContext, MatchResult, RuleEnv,
@@ -107,13 +109,22 @@ def _build_narrow_and_jump(
     use_count, var_def_idx, instrs = env.use_count, env.def_idx, env.instructions
     binop = m.bindings['binop']
     jmp = m.bindings['jmp']
+    # The AND's own position, where the narrowed source is read in
+    # place of the extend's dst.
+    use_idx = var_def_idx[m.bindings['and_dst'].name]
+    if instrs[use_idx] is not binop:
+        # A non-SSA AND dst written again later. With -1, only an
+        # SSA-renamed extend source qualifies.
+        use_idx = -1
 
     narrow_arg = _try_narrow_pair(
         binop.src1, binop.src2, instrs, var_def_idx, use_count, ctx.symbols,
+        use_idx, ctx.ssa_dsts,
     )
     if narrow_arg is None:
         narrow_arg = _try_narrow_pair(
             binop.src2, binop.src1, instrs, var_def_idx, use_count, ctx.symbols,
+            use_idx, ctx.ssa_dsts,
         )
     if narrow_arg is None:
         return None
@@ -160,10 +171,14 @@ def _try_narrow_pair(
     var_def_idx: dict[str, int],
     use_count: dict[str, int],
     symbols,
+    use_idx: int,
+    ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, int] | None:
     """Check whether `(maybe_narrow, maybe_const)` matches
-    `(narrow_traced_through_zero_extend, ConstInt(C) with C ≤ 0xFF)`.
-    Returns `(narrow_source_val, mask_int)` on success, else None."""
+    `(narrow_traced_through_zero_extend, ConstInt(C) with C ≤ 0xFF)`,
+    with the extend's source holding the same value at
+    `instrs[use_idx]` as at the extend. Returns
+    `(narrow_source_val, mask_int)` on success, else None."""
     if not isinstance(maybe_const, tac_ast.Constant):
         return None
     c = maybe_const.const
@@ -195,5 +210,9 @@ def _try_narrow_pair(
     if sym is None:
         return None
     if not isinstance(sym.type, _NARROW_UNSIGNED_TYPES):
+        return None
+    if not extend_source_unchanged(
+        defining, def_idx, use_idx, instrs, ssa_dsts,
+    ):
         return None
     return src, c.value

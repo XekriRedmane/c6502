@@ -51,6 +51,10 @@ Drop the CMP, move the SBC up.
     on A's new value — any `Mov` to A or any of the A-arithmetic
     ops qualify (analogous to the "A-writer" predicate in
     `const_arith_fold`).
+  * A and V must be dead at the branch target L1, which must be a
+    label in the function. The rewrite runs the SBC on the taken
+    path too, so A there holds M - N instead of M, and V holds the
+    SBC's overflow instead of its earlier value.
 
 # Where to run
 
@@ -78,6 +82,7 @@ unreachable SEC overlap with the SBC's effect)."""
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import a_dead_at, v_dead_at
 
 
 _ALLOWED_BRANCHES: tuple[type, ...] = (
@@ -99,6 +104,10 @@ def apply_cmp_sbc_fusion(prog: asm_ast.Program) -> asm_ast.Program:
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     instrs = fn.instructions
     branch_targets = _collect_branch_targets(instrs)
+    labels = {
+        instr.name: k for k, instr in enumerate(instrs)
+        if isinstance(instr, asm_ast.Label)
+    }
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):
@@ -110,7 +119,8 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 and instrs[i + 3].name not in branch_targets
                 and isinstance(instrs[i + 4], asm_ast.SetCarry)
                 and _is_sub_against(instrs[i + 5])
-                and _operands_equal(instrs[i + 1].right, instrs[i + 5].src)):
+                and _operands_equal(instrs[i + 1].right, instrs[i + 5].src)
+                and _taken_path_safe(instrs, labels, instrs[i + 2].target)):
             # Emit: LDA, SEC, SBC, Branch, Label.
             out.append(instrs[i])
             out.append(instrs[i + 4])     # SEC
@@ -125,6 +135,23 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
     )
+
+
+def _taken_path_safe(
+    instrs: list[asm_ast.Type_instruction],
+    labels: dict[str, int],
+    target: str,
+) -> bool:
+    """Returns True iff A and V are dead at the branch target. On the
+    taken path the original leaves A holding M and V untouched, while
+    the rewrite has already run the `SBC`, so A holds M - N and V is
+    the subtraction's overflow. The fall-through path runs the `SBC`
+    either way. A target that isn't a label in this function is
+    treated as live."""
+    idx = labels.get(target)
+    if idx is None:
+        return False
+    return a_dead_at(instrs, idx) and v_dead_at(instrs, idx)
 
 
 def _collect_branch_targets(instrs) -> set[str]:

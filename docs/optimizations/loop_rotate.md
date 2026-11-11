@@ -107,6 +107,13 @@ It rotates the loop when all of these are true.
   an extend or truncation that resolves, through at most four more
   such steps, to an integer constant between 0 and the largest
   positive value of `x`'s type.
+- That write, and each write in the chain of steps behind it, comes
+  after the last label before `_start`. Control enters the run of
+  instructions between that label and the loop only at its top, so
+  the constant reaches the first test on every path.
+- No instruction in the function takes the address of `x`, since a
+  store through a pointer or a call could then change `x` between
+  the init and the loop.
 
 The body may contain anything, including calls, nested loops,
 `break`, and `continue`. The `SignExtend` to `ZeroExtend` rewrite is
@@ -125,14 +132,14 @@ made only when no instruction in the body writes `x`.
   label and has no `_start` label, so the matcher never starts. A
   `do`/`while` loop already has its test at the bottom.
 - A post expression other than a decrement by 1, such as `i -= 2`.
-
-## Known problem
-
-The init check looks at the last write to `x` that comes before the
-loop in the instruction list. When that write sits on a conditional
-path, a different value can reach the loop. In this function the
-last write before the loop is `i = 5` inside the `if`, so the loop
-is rotated.
+- A loop whose constant init is on a conditional path. In the
+  function below, the last write to `i` before the loop is `i = 5`
+  inside the `if`, and the parameter's value reaches the loop when
+  `c` is 0. The `.if_end` label sits between that write and the
+  loop, so the loop keeps its test at the top, and `count(-1, 0)`
+  returns 0 in both builds. The same applies to an init such as
+  `int8_t i = c ? -1 : 5`, whose result temporary is written on two
+  paths.
 
 ```c
 uint8_t count(int8_t i, uint8_t c) {
@@ -143,7 +150,3 @@ uint8_t count(int8_t i, uint8_t c) {
     return k;
 }
 ```
-
-`count(-1, 0)` returns 0 in the unoptimized build and 1 in the
-optimized one, because the rotated loop runs its body once before
-the first test.

@@ -49,8 +49,10 @@ Eligibility:
     symbol table. (1-byte is what lets us narrow the const safely
     AND what makes the BPL/BMI on the original load sound.)
   - `0 <= C <= 0xFF` so the masked-AND value fits one byte.
-  - `%x_ext` is used exactly once (by the Binary at [i+1]).
-  - `%x_and` is used exactly once (by the Truncate at [i+2]).
+  - `%x` is SSA-renamed, or else each successor block has the
+    source block as its only predecessor, so that `%x` holds at the
+    top of each successor the value it had at the jump.
+  - No Phi in either successor reads `%t`.
   - The Binary's two src slots are `(%x_ext, ConstInt)` or
     `(ConstInt, %x_ext)` — AND is commutative.
   - `%t` is used only in the immediate-fall-through block of [i+3]
@@ -70,7 +72,9 @@ For each matching trio:
      fall-through block AND at the start of the target block
      (right after the leading `Label` if present).
   3. Drop the original trio from positions [i..i+2] (the
-     JumpIfMasked at [i+3] stays).
+     JumpIfMasked at [i+3] stays). A ZeroExtend or AND whose
+     result has a use outside the trio stays where it is, and so
+     does the ZeroExtend an AND that stays reads.
   4. Rewrite uses of `%t` in the fall-through block to
      `%t.snk_then@N`, and uses in the target block to
      `%t.snk_else@N`.
@@ -95,9 +99,11 @@ before the use of the trio's result (the SSA invariant again).
 So duplicating the trio into each successor computes the same
 value that the original trio computed before the branch.
 
-The single-use invariants on `%x_ext` and `%x_and` mean those
-intermediate values aren't observed anywhere else; renaming and
-duplicating them is safe.
+The copies get fresh names, so any other reader of `%x_ext` or
+`%x_and` still reads the original def, which stays in place when
+such a reader exists. Without SSA renaming of `%x`, the gate on
+single-predecessor successors means nothing runs between the jump
+and the copy, so the copy reads the same `%x`.
 
 # Where to run
 
@@ -111,21 +117,24 @@ import tac_ast
 from passes.optimization.cfg import (
     ENTRY_ID, EXIT_ID, build_cfg, cfg_to_function,
 )
-from passes.optimization.var_visit import uses_in
+from passes.optimization.var_visit import count_uses, uses_in
 
 
 def sink_and_past_branch(
-    fn: tac_ast.Function, *, symbols=None,
+    fn: tac_ast.Function, *, symbols=None, ssa_dsts=None,
 ) -> tac_ast.Function:
-    """Walk `fn`'s blocks; for each block whose terminator is a
-    JumpIfMasked preceded by a sinkable trio, duplicate the trio
-    into both successor blocks and rename per branch.
+    """Walks `fn`'s blocks, and for each block whose terminator is a
+    JumpIfMasked preceded by a sinkable trio, duplicates the trio
+    into both successor blocks and renames it per branch.
 
     `symbols` is required: we read `%x`'s type to gate eligibility
     and register the fresh `.snk_*` names with the same type as
-    their originals."""
+    their originals. `ssa_dsts` is the set of SSA-renamed names, or
+    None when unknown, in which case `%x` is treated as a name that
+    other instructions may write."""
     if symbols is None:
         return fn
+    use_count = count_uses(fn.instructions)
     cfg = build_cfg(fn)
     # First, build a per-name use index across all blocks.
     use_blocks = _index_use_blocks(cfg)
@@ -165,6 +174,28 @@ def sink_and_past_branch(
         users_of_t = use_blocks.get(t_name, set())
         if not users_of_t.issubset({target_bid, fallthru_bid}):
             continue
+        # A JumpIfMasked whose target is the next block has one
+        # successor, and the trio has nowhere to go.
+        if fallthru_bid == target_bid:
+            continue
+        # A Phi reads its argument at the end of the predecessor,
+        # before the copy of the trio at the top of the successor
+        # runs, so a Phi that reads %t would read a name that nothing
+        # has written yet.
+        if _phi_reads(cfg.blocks[fallthru_bid], t_name) or _phi_reads(
+            cfg.blocks[target_bid], t_name,
+        ):
+            continue
+        # The copies read %x at the top of each successor. An
+        # SSA-renamed %x has one value everywhere. A static or an
+        # address-taken %x has the value it had at the jump only when
+        # control reaches the successor from this block alone.
+        if ssa_dsts is None or x_name not in ssa_dsts:
+            if not all(
+                set(cfg.blocks[s].predecessors) == {bid}
+                for s in (fallthru_bid, target_bid)
+            ):
+                continue
         # All eligibility checks passed — do the rewrite. Mint
         # fresh names per branch.
         n = counter[0]
@@ -187,14 +218,21 @@ def sink_and_past_branch(
         _register_fresh(symbols, x_ext_name, else_names[0])
         _register_fresh(symbols, x_and_name, else_names[1])
         _register_fresh(symbols, t_name, else_names[2])
-        # Drop the original trio from this block; keep terminator.
-        block.instructions = list(instrs[:-4]) + [instrs[-1]]
-        # Prepend renamed trio to fallthru and target blocks.
-        # `fallthru_bid` is the source-order next block — it might
-        # be the same as `target_bid` if the target falls through
-        # (would be a degenerate JumpIfMasked, skip).
-        if fallthru_bid == target_bid:
-            continue
+        # Drop the original trio from this block and keep the
+        # terminator. A ZeroExtend or AND whose result another
+        # instruction also reads stays, as in `int w = b;` next to
+        # `b & 0x7F`, where CSE leaves one ZeroExtend for both. The
+        # AND reads the ZeroExtend, so keeping the AND keeps both.
+        # Every use of %t is in a successor and is renamed below, so
+        # the Truncate always goes.
+        ze, band, _tr = instrs[-4:-1]
+        if use_count.get(x_and_name, 0) > 1:
+            kept = [ze, band]
+        elif use_count.get(x_ext_name, 0) > 1:
+            kept = [ze]
+        else:
+            kept = []
+        block.instructions = list(instrs[:-4]) + kept + [instrs[-1]]
         _prepend_trio(
             cfg.blocks[fallthru_bid], x_name, mask_const, then_names,
         )
@@ -223,6 +261,18 @@ def sink_and_past_branch(
     return cfg_to_function(fn, cfg)
 
 
+def _phi_reads(block, name: str) -> bool:
+    """Returns True if a Phi in `block` reads `Var(name)`."""
+    return any(
+        isinstance(ins, tac_ast.Phi)
+        and any(
+            isinstance(a.source, tac_ast.Var) and a.source.name == name
+            for a in ins.args
+        )
+        for ins in block.instructions
+    )
+
+
 def _match_trio(
     trio: list[tac_ast.Type_instruction],
     jump: tac_ast.JumpIfMasked,
@@ -230,8 +280,9 @@ def _match_trio(
 ) -> tuple[str, str, str, str, int] | None:
     """Match the four-instruction pattern. Returns
     `(x_name, x_ext_name, x_and_name, t_name, mask_const)` on
-    success, None otherwise. Also enforces single-use on the
-    intermediate temps via the instructions' shape itself."""
+    success, None otherwise. The shape doesn't imply that the
+    intermediate temps have one use each, so the caller keeps any
+    of them that another instruction reads."""
     if len(trio) != 3:
         return None
     ze, binop, tr = trio
@@ -585,4 +636,6 @@ class SinkAndPastBranch(FixedpointPass):
     name = "sink_and_past_branch"
 
     def run(self, fn, ctx):
-        return sink_and_past_branch(fn, symbols=ctx.symbols)
+        return sink_and_past_branch(
+            fn, symbols=ctx.symbols, ssa_dsts=ctx.ssa_dsts,
+        )

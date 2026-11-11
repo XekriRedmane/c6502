@@ -70,11 +70,11 @@ tick:
   non-volatile `LDA` of the same operand. Labels may sit between the
   two, as long as no branch or jump in the function targets them.
 - Right after the load comes a `BEQ`, `BNE`, `BMI`, or `BPL`.
-- A is dead from the instruction after the branch, by `a_dead_at`.
+- A is dead after the branch on both paths, by `a_dead_at`: from
+  the instruction after the branch, and from the branch's target
+  label. A target that isn't a label in the function counts as live.
 
-The liveness check starts at the instruction after the branch, so it
-only follows the fall-through path. The branch target isn't checked.
-The function
+In
 
 ```c
 unsigned char timer, hits;
@@ -85,10 +85,7 @@ unsigned char tick(void) {
 }
 ```
 
-compiles to `DEC timer; BNE .if_end@0; ... .if_end@0: RTS`, which
-returns whatever A held on entry instead of `timer`. With `timer = 5`
-the simulator returns 5 where the unoptimized build returns 4. This
-is a bug in the current code.
+the branch's target returns `t` in A, so the `LDA timer` stays.
 
 ## What it leaves alone
 

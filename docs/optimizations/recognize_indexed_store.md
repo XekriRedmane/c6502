@@ -59,9 +59,9 @@ walks back through its definitions. These must all be true.
 - `%addr` is an SSA-renamed name that only the store reads, and it's
   defined by an `Add` of a constant `C` and a variable `%ext`, in
   either order.
-- `%ext` is an SSA-renamed name defined by a `ZeroExtend` or a
-  `SignExtend` of a variable `i` whose C type is one byte (`char`,
-  `signed char`, or `unsigned char`). The walk looks through up to
+- `%ext` is an SSA-renamed name defined by a `ZeroExtend` of a
+  variable `i` whose C type is one byte (`char`, `signed char`, or
+  `unsigned char`). The walk looks through up to
   four `Copy` instructions between `%ext` and the extend. Copy
   propagation keeps a `Copy` that changes signedness at the same
   width, which is how an `int` to `unsigned` cast is lowered.
@@ -77,13 +77,16 @@ something else reads it. That happens when
 [CSE](cse.md) shares one extend among several subscripts with the
 same index. The volatile bit of the store carries over.
 
-A `SignExtend` is accepted too. The comment in `extend_add_chain.py`
-gives the reason that a negative index would address outside the
-array, which C leaves undefined. X is unsigned, so with a
-`signed char` index of -1 the store goes to `C + 255`.
-
 ## What it leaves alone
 
+- A `signed char` index, which C99 promotes with a `SignExtend`.
+  X is unsigned, so the indexed mode reaches `C + 255` for an index
+  of -1 where C means `C - 1`, and a negative offset from a pointer
+  into the middle of an object is defined. The access keeps its
+  16-bit add. The [loop rotation](loop_rotate.md) pass rewrites the
+  `SignExtend` of a count-down counter it proves non-negative into a
+  `ZeroExtend`, so `buf[i]` in `for (int8_t i = 15; i >= 0; i--)`
+  still folds.
 - A value wider than a byte. For a `uint16_t *` constant, the store
   of `v` stays a pointer store, since it would take two `STA C+k,X`
   writes. The index there is also shifted left before the add, which

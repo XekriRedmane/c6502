@@ -685,6 +685,80 @@ class TestUnrollRecognizerRejections(unittest.TestCase):
             "post-clause is required",
         )
 
+    def test_uchar_le_255_never_terminates(self) -> None:
+        # i wraps from 255 to 0, so `i <= 255` never fails. The trip
+        # count used unbounded ints and unrolled 256 copies, which
+        # made an infinite loop return.
+        self._expect_unroll_error(
+            """
+            #pragma c6502 loop unroll(enable)
+            for (unsigned char i = 0; i <= 255; i++) i;
+            """,
+            "never terminates",
+        )
+
+    def test_schar_lt_200_never_terminates(self) -> None:
+        # A signed char tops out at 127 and wraps to -128.
+        self._expect_unroll_error(
+            """
+            #pragma c6502 loop unroll(enable)
+            for (signed char i = 0; i < 200; i++) i;
+            """,
+            "never terminates",
+        )
+
+    def test_cli_reports_one_line_error(self) -> None:
+        import io
+        from unittest.mock import patch
+
+        from compile import main
+        src = (
+            "unsigned char row[256];\n"
+            "void fill(unsigned char v) {\n"
+            "#pragma c6502 loop unroll(enable)\n"
+            "    for (unsigned char i = 0; i <= 255; i++) row[i] = v;\n"
+            "}\n"
+        )
+        with patch("sys.stdin", io.StringIO(src)), \
+             patch("sys.stdout", new_callable=io.StringIO), \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            rc = main(["compile.py", "-", "--codegen", "--optimize"])
+        self.assertNotEqual(rc, 0)
+        lines = err.getvalue().strip().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("never terminates", lines[0])
+
+
+class TestUnrollTripCountWidth(unittest.TestCase):
+    """The trip count follows the induction variable's own width and
+    the comparison's converted type."""
+
+    def test_step_wraps_past_bound(self) -> None:
+        # 250, 254, then 258 wraps to 2, and `2 > 3` is false.
+        prog = _unrolled("""
+        #pragma c6502 loop unroll(enable)
+        for (unsigned char i = 250; i > 3; i += 4) i;
+        """)
+        self.assertEqual(_outer_iter_count(prog), 2)
+
+    def test_cast_bound_is_converted(self) -> None:
+        # `(unsigned char)260` is 4.
+        prog = _unrolled("""
+        #pragma c6502 loop unroll(enable)
+        for (int i = 0; i < (unsigned char)260; i++) i;
+        """)
+        self.assertEqual(_outer_iter_count(prog), 4)
+
+    def test_unsigned_bound_compares_unsigned(self) -> None:
+        # `(int)65533u` is -3. The compare with an unsigned int bound
+        # converts i to unsigned, so -3, -2, and -1 compare as 65533,
+        # 65534, and 65535, and 0 ends the loop.
+        prog = _unrolled("""
+        #pragma c6502 loop unroll(enable)
+        for (int i = (int)65533u; i > 65530u; i++) i;
+        """)
+        self.assertEqual(_outer_iter_count(prog), 3)
+
 
 class TestUnrollConstArraySubscriptBound(unittest.TestCase):
     """The unroll recognizer accepts a const-array subscript as

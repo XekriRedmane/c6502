@@ -48,7 +48,13 @@ that recompute between def and the first matching use:
 - `Data(name, off)`: safe if `name` doesn't appear as the
   destination of any write within this function AND there's no
   `Call` between def and use (calls may write through external
-  pointers we don't track here).
+  pointers we don't track here) AND no store between def and use
+  goes through a pointer or to a raw address, unless `name` is an
+  internal-linkage static whose address the program never forms
+  (`_collect_private_statics`). A pointer can't point into such a
+  static. Without the last check, `t = g; *p = 7; return t;`
+  called with `p == &g` returned 7, the value stored through `p`,
+  instead of the value `g` held when it was read.
 - `IndexedData(name, off, reg)`: same `name`-immutability check,
   PLUS the index register (`X` or `Y`) must not be written between
   def and use. Calls clobber X/Y per the zp_abi convention, so the
@@ -71,9 +77,11 @@ fixedpoint iteration by the existing DSE/DCE peepholes.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import asm_ast
 from passes.asm_liveness import sets_up_y
-from passes.asm_aliasing import runtime_zp_addrs
+from passes.asm_aliasing import may_alias, runtime_zp_addrs
 
 
 def apply_remat(
@@ -91,10 +99,13 @@ def apply_remat(
     `IndirectZp(addr, off)` pointer pair, for instance) — without
     address resolution we'd miss pointer-aliased reads and drop
     stores that were keeping a multi-byte pointer pair alive."""
+    private = _collect_private_statics(prog)
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl, zp_slot_symbols or {}))
+            new_top.append(
+                _rewrite_function(tl, zp_slot_symbols or {}, private),
+            )
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
@@ -103,9 +114,10 @@ def apply_remat(
 def _rewrite_function(
     fn: asm_ast.Function,
     zp_slot_symbols: dict[str, int],
+    private: frozenset[str],
 ) -> asm_ast.Function:
     writable = _collect_writable_names(fn.instructions)
-    out = _rewrite_uses(list(fn.instructions), writable)
+    out = _rewrite_uses(list(fn.instructions), writable, private)
     out = _drop_dead_stage_dsts(out, zp_slot_symbols)
     return asm_ast.Function(
         name=fn.name,
@@ -118,6 +130,7 @@ def _rewrite_function(
 def _rewrite_uses(
     instrs: list[asm_ast.Type_instruction],
     writable: set[str],
+    private: frozenset[str],
 ) -> list[asm_ast.Type_instruction]:
     out: list[asm_ast.Type_instruction] = list(instrs)
     for i, defn in enumerate(out):
@@ -141,7 +154,9 @@ def _rewrite_uses(
                 and _matches_local(cur.src, local_name)
             ):
                 continue
-            if not _can_remat(recomp, out, range_start, j, writable):
+            if not _can_remat(
+                recomp, out, range_start, j, writable, private,
+            ):
                 break
             out[j] = asm_ast.Mov(
                 src=recomp,
@@ -533,6 +548,7 @@ def _can_remat(
     def_idx: int,
     use_idx: int,
     writable: set[str],
+    private: frozenset[str],
 ) -> bool:
     """Recompute eligibility for `recomp` at `use_idx`, given that
     it was the def at `def_idx`. Returns True iff the recompute at
@@ -541,8 +557,10 @@ def _can_remat(
     Imm / ImmLabel: trivially yes.
     Data / IndexedData: name must be immutable in this function,
     and no `Call` may sit between (calls may write to the named
-    storage through callees we don't model). IndexedData additionally
-    requires the index register (X or Y) to be unwritten between."""
+    storage through callees we don't model). No store between may
+    reach the named storage through a pointer or a raw address
+    (`_store_may_reach`). IndexedData additionally requires the
+    index register (X or Y) to be unwritten between."""
     if isinstance(recomp, (
         asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
     )):
@@ -550,9 +568,13 @@ def _can_remat(
     if isinstance(recomp, asm_ast.Data):
         if recomp.name in writable:
             return False
+        if _any_store_may_reach(instrs, def_idx, use_idx, recomp, private):
+            return False
         return _no_call_between(instrs, def_idx, use_idx)
     if isinstance(recomp, asm_ast.IndexedData):
         if recomp.name in writable:
+            return False
+        if _any_store_may_reach(instrs, def_idx, use_idx, recomp, private):
             return False
         if not _no_call_between(instrs, def_idx, use_idx):
             return False
@@ -563,6 +585,103 @@ def _can_remat(
             return not _any_writes(_writes_y, instrs, def_idx, use_idx)
         return False
     return False
+
+
+_POINTER_KINDS = (
+    asm_ast.Indirect, asm_ast.IndirectY,
+    asm_ast.IndirectZp, asm_ast.IndirectZpY,
+)
+
+
+def _any_store_may_reach(
+    instrs: list[asm_ast.Type_instruction],
+    def_idx: int,
+    use_idx: int,
+    recomp: asm_ast.Type_operand,
+    private: frozenset[str],
+) -> bool:
+    """Returns True iff some instruction strictly between `def_idx`
+    and `use_idx` writes memory that may be a byte `recomp` reads,
+    by any route other than naming `recomp`'s static (those are in
+    the function-wide `writable` set)."""
+    for k in range(def_idx + 1, use_idx):
+        for dst in _dsts_of(instrs[k]):
+            if _store_may_reach(dst, recomp, private):
+                return True
+    return False
+
+
+def _store_may_reach(
+    dst: asm_ast.Type_operand,
+    recomp: asm_ast.Type_operand,
+    private: frozenset[str],
+) -> bool:
+    """Returns True iff a write to `dst` may change a byte that the
+    `Data` or `IndexedData` operand `recomp` reads.
+
+    A store through a pointer (`(DPTR),Y` or `(zp),Y`) and an indexed
+    store to a raw address (`IndexedData` with an empty name) can
+    reach any byte whose address the program can form. They can't
+    reach a static in `private`, since no instruction or initializer
+    in the program builds that static's address, and the static has
+    internal linkage, so no other translation unit builds it either.
+    A store to a named static indexed by X or Y stays inside that
+    static's bytes in a valid program, and `_collect_writable_names`
+    already counts it. Other memory destinations are compared with
+    `asm_aliasing.may_alias`, which matches a numeric `ZP` byte
+    against a zero-page global of the same address."""
+    if isinstance(dst, _POINTER_KINDS) or (
+        isinstance(dst, asm_ast.IndexedData) and dst.name == ""
+    ):
+        return recomp.name == "" or recomp.name not in private
+    if isinstance(dst, (asm_ast.Data, asm_ast.IndexedData)):
+        return False
+    if isinstance(dst, (asm_ast.Reg, asm_ast.Frame, asm_ast.Stack)):
+        return False
+    return may_alias(dst, recomp)
+
+
+def _collect_private_statics(prog: asm_ast.Program) -> frozenset[str]:
+    """Returns the names of the internal-linkage statics defined in
+    `prog` whose address nothing in `prog` forms. An address is
+    formed by an `ImmLabelLow` / `ImmLabelHigh` operand, by a
+    `LoadAddress` from the static, or by an `AddressInit` in some
+    static's initializer. No pointer can point into such a static,
+    so a store through a pointer leaves it unchanged."""
+    statics: set[str] = set()
+    taken: set[str] = set()
+    for tl in prog.top_level:
+        if isinstance(tl, asm_ast.StaticVariable):
+            if not tl.is_global:
+                statics.add(tl.name)
+            for init in tl.init:
+                if isinstance(init, asm_ast.AddressInit):
+                    taken.add(init.name)
+        elif isinstance(tl, asm_ast.Function):
+            for instr in tl.instructions:
+                if isinstance(instr, asm_ast.LoadAddress) and isinstance(
+                    instr.src, asm_ast.Data,
+                ):
+                    taken.add(instr.src.name)
+                for op in _all_operands(instr):
+                    if isinstance(op, (
+                        asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
+                    )):
+                        taken.add(op.name)
+    return frozenset(statics - taken)
+
+
+def _all_operands(instr) -> list:
+    """Returns every operand-valued field of `instr`, read or
+    written, including those inside list-valued fields."""
+    out: list = []
+    for f in dataclasses.fields(instr):
+        v = getattr(instr, f.name)
+        vals = v if isinstance(v, list) else [v]
+        for item in vals:
+            if isinstance(item, asm_ast.Type_operand):
+                out.append(item)
+    return out
 
 
 def _no_call_between(
@@ -636,7 +755,9 @@ def _collect_writable_names(
     function. A name absent from this set is, for the duration of
     this function's execution, immutable — provided we also see no
     `Call` between the def and use (which is checked separately;
-    calls can reach external writers)."""
+    calls can reach external writers) and no store through a pointer
+    that may reach the name (`_store_may_reach`, also checked
+    separately)."""
     out: set[str] = set()
     for instr in instrs:
         for dst in _dsts_of(instr):

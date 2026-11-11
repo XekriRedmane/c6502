@@ -49,6 +49,12 @@ A chain is recognized when:
     single-def / single-use.
   * `arr` resolves to a `StaticVariable` whose `init` is a list
     of `AddressInit(target_k, offset=0)` entries.
+  * `arr`'s elements are const-qualified in the symbol table, as in
+    `static T * const arr[N]` or `static const T * const arr[N]`.
+    The dispatch hard-codes the initial targets, so a table whose
+    elements another function can store into is left alone. The
+    pointees may be writable, since each case reads the target
+    array at run time. Without a symbol table no table qualifies.
   * The list length N is at most `_DISPATCH_THRESHOLD` (8 today).
 
 # Why post-from_ssa
@@ -66,6 +72,7 @@ eligibility check enforces single-use on both.
 
 from __future__ import annotations
 
+import c99_ast
 import tac_ast
 from passes.optimization.var_visit import count_uses
 
@@ -81,8 +88,9 @@ def dispatch_const_pointer_arrays(
     prog: tac_ast.Program, symbols=None,
 ) -> tac_ast.Program:
     """Top-level entry. Builds the pointer-array map from the
-    program's StaticVariables, then rewrites each Function."""
-    pointer_arrays = _collect_pointer_arrays(prog)
+    program's StaticVariables, then rewrites each Function. `symbols`
+    gives each table's c99 type, which must have const elements."""
+    pointer_arrays = _collect_pointer_arrays(prog, symbols)
     if not pointer_arrays:
         return prog
     label_counter = [0]
@@ -98,11 +106,12 @@ def dispatch_const_pointer_arrays(
 
 
 def _collect_pointer_arrays(
-    prog: tac_ast.Program,
+    prog: tac_ast.Program, symbols,
 ) -> dict[str, list[str]]:
     """Map each eligible `static const T * const[N]` name to the
     ordered list of `AddressInit` target names. Eligibility:
       * Internal linkage (`is_global == False`).
+      * The elements are const (`_elements_are_const`).
       * `init` is a non-empty list of `AddressInit(name, offset=0)`
         entries — pointers to other named statics, no offset.
       * `len(init) <= _DISPATCH_THRESHOLD`.
@@ -112,6 +121,8 @@ def _collect_pointer_arrays(
         if not isinstance(tl, tac_ast.StaticVariable):
             continue
         if tl.is_global:
+            continue
+        if not _elements_are_const(symbols, tl.name):
             continue
         init = tl.init
         if not init or len(init) > _DISPATCH_THRESHOLD:
@@ -130,6 +141,31 @@ def _collect_pointer_arrays(
             continue
         out[tl.name] = targets
     return out
+
+
+def _elements_are_const(symbols, name: str) -> bool:
+    """Returns True if `name` is an array whose element type is
+    const-qualified at its top level, so that no store can change
+    which address an element holds. A volatile element doesn't
+    qualify."""
+    if symbols is None:
+        return False
+    sym = symbols.get(name)
+    if sym is None:
+        return False
+    t = sym.type
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    if not isinstance(t, c99_ast.Array):
+        return False
+    elem = t.element_type
+    saw_const = False
+    while isinstance(elem, (c99_ast.Const, c99_ast.Volatile)):
+        if isinstance(elem, c99_ast.Volatile):
+            return False
+        saw_const = True
+        elem = elem.referenced_type
+    return saw_const
 
 
 def _rewrite_function(

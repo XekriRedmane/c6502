@@ -66,7 +66,11 @@ zero-page byte, and each one is computed with `CLC; ADC #$01`.
 
 The instruction must be a `Binary` `Add` or `Subtract` whose first
 operand is a variable `X`, whose second operand is a constant, and
-whose destination `Y` is a different variable.
+whose destination `Y` is a different variable. `X` must be an
+SSA-renamed name, such as a local or a parameter, because the moved
+instruction reads `X` at its new position. A static or an
+address-taken local can be written by name or through a pointer in
+between, so an add of one stays where it is.
 
 The pass scans forward from the add and records the last
 instruction that reads `X`. The scan stops at the first of these.
@@ -75,6 +79,10 @@ instruction that reads `X`. The scan stops at the first of these.
   `IndirectCall`. The add never moves into another block or past a
   call.
 - An instruction that reads or writes `Y`.
+- An instruction that writes `X` by name. An SSA-renamed `X` has no
+  such write.
+- A store of any kind, when the pass runs without SSA information,
+  as its standalone `sink_increments` entry point does.
 - Another sinkable add or subtract that also reads `X`. Without this
   stop, two such instructions would each move past the other on
   every sweep, and the fixed point would never settle.
@@ -83,13 +91,11 @@ If the scan found a read of `X`, the add moves to just after it.
 Each sweep moves an instruction once, and the fixed point finishes
 longer chains.
 
-The scan doesn't check for writes to `X`. That's safe when `X` is an
-SSA-renamed name, which has one definition, but the pass doesn't
-check that `X` is one. With a static `s`, in
-`unsigned t = s + 1; s = 5; g = s; h = t;` the add moves past the
-store of 5 to `s`, and `h` gets 6.
-
 ## What it leaves alone
+
+- An add of a static. With a static `s`, in `unsigned t = s + 1; s =
+  5; g = s; h = t;` the add stays ahead of the store of 5 to `s`, and
+  `h` gets the old value plus one.
 
 - An add of two variables. In `uint8_t z = y + d;` the add stays
   where it is, since moving it would also delay the read of `d`.

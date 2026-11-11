@@ -46,7 +46,11 @@ Differences to gate:
   3. tmp's value differs (rewrite leaves tmp unchanged; original
      sets tmp := mem[X] + 1). Sound iff tmp is dead at [i+5] —
      no reachable read of tmp before the next write that doesn't
-     also kill the read.
+     also kill the read. Reachable means along every branch and
+     jump, so a read at a loop top that the back edge reaches
+     counts. tmp must also be compiler-owned scratch that is dead
+     at return (`_tmp_dead_after`), because a user static keeps its
+     value after the function returns.
 
 The flag effect is preserved: both `CMP A, n` and `CPY Y, n` set
 N/Z/C from the subtraction `(A or Y) - n`, which produces the
@@ -82,6 +86,12 @@ occurrence), monotone-shrinking, fine in the fixedpoint.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import is_user_zp_byte
+from passes.asm_dead_store import (
+    _OPAQUE_TYPES, _build_label_map, _call_cannot_touch,
+    _collect_address_taken_names, _is_dead_at_tail_call, _reads,
+    _successors, _writes_same,
+)
 from passes.asm_liveness import a_dead_at, y_dead_at
 
 
@@ -104,7 +114,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     i = 0
     changed = False
     while i < len(instrs):
-        match = _match_pattern(instrs, i)
+        match = _match_pattern(instrs, i, fn.name)
         if match is not None:
             src, is_dec, other = match
             out.append(asm_ast.Mov(
@@ -134,7 +144,7 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
 
 
 def _match_pattern(
-    instrs: list[asm_ast.Type_instruction], i: int,
+    instrs: list[asm_ast.Type_instruction], i: int, fn_name: str,
 ):
     if i + 4 >= len(instrs):
         return None
@@ -194,76 +204,68 @@ def _match_pattern(
         return None
     if not y_dead_at(instrs, i):
         return None
-    if not _operand_unused_after(instrs, after, tmp):
+    if not _tmp_dead_after(instrs, i + 4, tmp, fn_name):
         return None
     return indexed_src, is_dec, e.right
 
 
-def _operand_unused_after(
+def _tmp_dead_after(
     instrs: list[asm_ast.Type_instruction],
-    start: int,
-    operand: asm_ast.Type_operand,
+    idx: int,
+    tmp: asm_ast.Type_operand,
+    fn_name: str,
 ) -> bool:
-    """True iff `operand` does not appear in any operand position
-    of any instruction in `instrs[start:]`. Conservative — a write
-    to `operand` would also count as "appears", but if the operand
-    isn't read before such a write, it's dead by definition. The
-    "appears at all" check catches both cases safely (skips
-    rewrite if the operand is touched at all later)."""
-    for instr in instrs[start:]:
-        for op in _all_operands(instr):
-            if op == operand:
+    """Returns True iff `tmp` is a compiler-owned scratch byte whose
+    value after `instrs[idx]` isn't read on any path forward.
+
+    Only two kinds of byte qualify. One is this function's body-local
+    slot `Data(__local_<fn>__*)`, and the other is a zero-page byte
+    of the regalloc pool that no user zero-page global occupies. Both
+    are dead when the function returns. A user static or zero-page
+    global stays observable after the return, so the rewrite, which
+    leaves the byte holding its old value, can't apply to it.
+
+    The walk follows every branch and jump, so a read that only a
+    loop's back edge reaches counts. It mirrors
+    `asm_dead_store._is_dead_cfg`. That walk treats a `__local_*`
+    slot as live at a return unless it gets the slot-symbol map,
+    which this pass isn't given, so the exit rule is applied here
+    instead."""
+    prefix = f"__local_{fn_name}__"
+    if isinstance(tmp, asm_ast.Data):
+        if not tmp.name.startswith(prefix):
+            return False
+    elif isinstance(tmp, asm_ast.ZP):
+        addr = tmp.address + tmp.offset
+        if not (0x80 <= addr < 0x100) or is_user_zp_byte(addr):
+            return False
+    else:
+        return False
+    labels = _build_label_map(instrs)
+    taken = _collect_address_taken_names(instrs)
+    private = _call_cannot_touch(tmp, prefix, taken)
+    visited: set[int] = set()
+    stack = list(_successors(instrs, idx, labels))
+    while stack:
+        j = stack.pop()
+        if j in visited:
+            continue
+        visited.add(j)
+        nxt = instrs[j]
+        if isinstance(nxt, asm_ast.Call) and nxt.name != "icall" and private:
+            stack.extend(_successors(instrs, j, labels))
+            continue
+        if isinstance(nxt, _OPAQUE_TYPES):
+            return False
+        if isinstance(nxt, asm_ast.Jump) and nxt.target not in labels:
+            if not _is_dead_at_tail_call(tmp):
                 return False
+            continue
+        if isinstance(nxt, (asm_ast.Ret, asm_ast.Return)):
+            continue
+        if _reads(nxt, tmp, private=private):
+            return False
+        if _writes_same(nxt, tmp):
+            continue
+        stack.extend(_successors(instrs, j, labels))
     return True
-
-
-def _all_operands(instr: asm_ast.Type_instruction):
-    """Yield every operand position of `instr` (read or write).
-    Covers the asm_ast atom set used downstream of
-    replace_pseudoregisters. Atoms not yielding operands (Label,
-    Branch, Jump, Ret, Return, FunctionPrologue, AllocateStack,
-    ClearCarry, SetCarry, Call, Phi) are skipped — their
-    contribution is structural, not operand-based."""
-    if isinstance(instr, asm_ast.Mov):
-        yield instr.src
-        yield instr.dst
-        return
-    if isinstance(instr, (asm_ast.Add, asm_ast.Sub)):
-        yield instr.src
-        yield instr.dst
-        return
-    if isinstance(instr, (asm_ast.And, asm_ast.Or)):
-        yield instr.src
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.Xor):
-        yield instr.src1
-        yield instr.src2
-        yield instr.dst
-        return
-    if isinstance(instr, (asm_ast.Inc, asm_ast.Dec)):
-        yield instr.dst
-        return
-    if isinstance(instr, (
-        asm_ast.ArithmeticShiftLeft, asm_ast.LogicalShiftRight,
-        asm_ast.RotateLeft, asm_ast.RotateRight,
-    )):
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.Compare):
-        yield instr.left
-        yield instr.right
-        return
-    if isinstance(instr, asm_ast.Push):
-        yield instr.src
-        return
-    if isinstance(instr, asm_ast.Pop):
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.LoadAddress):
-        yield instr.src
-        yield instr.dst
-        return
-    if isinstance(instr, asm_ast.BitTest):
-        yield instr.operand
-        return

@@ -168,12 +168,12 @@ class TestRecognizeIndexedStoreUnit(unittest.TestCase):
         ))
         self.assertEqual(out.instructions[-1], instrs[-1])
 
-    def test_sign_extend_def_folds(self) -> None:
-        # SignExtend from a 1-byte source is now accepted under the
-        # UB-permissive interpretation: the 6502's absolute,X uses
-        # only the index's low byte, and negative array indices are
-        # C99 §6.5.6 undefined behavior. The fold yields the same
-        # absolute,X store as ZeroExtend would.
+    def test_sign_extend_def_does_not_fold(self) -> None:
+        # X is unsigned, so `STA $4000,X` with col = -1 writes $40FF,
+        # where `0x4000 + SignExtend(col)` is $3FFF. The fold used to
+        # accept a SignExtend on the grounds that a negative index is
+        # undefined, which it isn't for a pointer into the middle of
+        # an object.
         instrs = [
             tac_ast.SignExtend(src=_var("col"), dst=_var("%ext")),
             tac_ast.Binary(
@@ -198,12 +198,7 @@ class TestRecognizeIndexedStoreUnit(unittest.TestCase):
             ),
         })
         out = recognize_indexed_store(_fn(instrs), symbols=symbols)
-        # Recognizer drops both the SignExtend and the Add, leaving
-        # just the IndexedStore.
-        self.assertEqual(len(out.instructions), 1)
-        self.assertIsInstance(out.instructions[0], tac_ast.IndexedStore)
-        self.assertEqual(out.instructions[0].address, 0x4000)
-        self.assertEqual(out.instructions[0].index, _var("col"))
+        self.assertEqual(out.instructions, instrs)
 
     def test_non_uchar_index_does_not_fold(self) -> None:
         # The Var underlying the ZeroExtend is `int`, not uchar.
@@ -431,6 +426,26 @@ class TestIndexedStoreCorrectness(unittest.TestCase):
                 result = sim.run(max_cycles=5_000_000)
                 self.assertFalse(result.timed_out)
                 self.assertEqual(result.memory[0x4200 + 9], 0x33)
+
+    def test_negative_signed_char_index(self) -> None:
+        # `buf[i]` with `int8_t i = -1` writes $41FF. The fold
+        # accepted the SignExtend of i, and `STA $4200,X` wrote
+        # $42FF.
+        src = (
+            "#include <stdint.h>\n"
+            "static uint8_t * const buf = (uint8_t * const)0x4200;\n"
+            "void put(uint8_t value, int8_t col) {\n"
+            "    buf[col] = value;\n"
+            "}\n"
+            "int main(void) { put(0x33, -1); return 0; }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                result = build_sim(src, optimize=optimize).run(
+                    max_cycles=5_000_000,
+                )
+                self.assertEqual(result.memory[0x41FF], 0x33)
+                self.assertEqual(result.memory[0x42FF], 0)
 
 
 if __name__ == "__main__":

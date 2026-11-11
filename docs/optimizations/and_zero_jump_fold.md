@@ -68,6 +68,14 @@ For `if (!(flags & 0x80))`, the logical-not fold first removes the
 - The other operand is the result of a `ZeroExtend` that has no other
   use, and the `ZeroExtend` reads a variable of type `char` or
   `unsigned char`.
+- The `ZeroExtend`'s source holds the same value at the AND as at
+  the extend, since the `JumpIfMasked` reads the source at the AND's
+  position. An SSA-renamed source has one write and always qualifies.
+  Any other source, such as a static, qualifies when the extend sits
+  earlier in the same straight-line run, with no label, jump, store,
+  call, or write to the source in between. The extend's result must
+  be SSA-renamed too. The check is `extend_source_unchanged` in
+  `cmp_zero_jump_fold.py`, which the comparison fold shares.
 - A symbol table is present, since the pass reads the source's type
   from it. The optimizer always passes one.
 
@@ -83,13 +91,9 @@ For `if (!(flags & 0x80))`, the logical-not fold first removes the
   `ZeroExtend` result has another use.
 - An AND that isn't adjacent to its jump, until copy propagation and
   dead-store elimination close the gap on a later round.
-
-The fold reads the extend's source variable at the jump instead of at
-the extend. When that source is a name outside SSA, such as a static,
-and the program writes it in between, the jump tests the new value.
-For a static `uint8_t g`, `int t = g; g = 0; if (t & 1) hits = 1;`
-compiles to `LDA #$00; STA g; AND #$01; BEQ`, so the branch never
-reaches `hits = 1`.
+- An AND through an extend of a static that is written in between.
+  For a static `uint8_t g`, `int t = g; g = 0; if (t & 1) hits = 1;`
+  keeps the 2-byte AND of `t`, which holds the old value of `g`.
 
 ## Related
 

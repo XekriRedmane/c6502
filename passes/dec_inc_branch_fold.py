@@ -148,7 +148,16 @@ def _try_match(
     if not (isinstance(br, asm_ast.Branch)
             and isinstance(br.cond, _FLAG_NZ_BRANCHES)):
         return None
-    # A must be dead afterward.
+    # A must be dead afterward, on the fall-through and at the branch
+    # target. Without the target check, `t = --timer; if (t == 0) {
+    # ... } return t;` returned A's old value on the taken path.
     if not a_dead_at(instrs, j + 1):
+        return None
+    target = next(
+        (k for k, ins in enumerate(instrs)
+         if isinstance(ins, asm_ast.Label) and ins.name == br.target),
+        None,
+    )
+    if target is None or not a_dead_at(instrs, target):
         return None
     return (lda_idx, j)

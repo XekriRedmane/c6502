@@ -55,7 +55,7 @@ from passes.optimization.extend_add_chain import (
 def recognize_indexed_load(
     fn: tac_ast.Function, *, symbols=None,
 ) -> tac_ast.Function:
-    """Fold each `ZeroExtend|SignExtend; Binary(Add, Const); Load` triple
+    """Fold each `ZeroExtend; Binary(Add, Const); Load` triple
     (1-byte index, 1-byte dst, base in 0..0xFF00) into an
     `IndexedConstLoad` (absolute,X), dropping the two intermediate defs.
     No-op without `symbols` (widths come from the symbol table)."""
@@ -67,7 +67,7 @@ def recognize_indexed_load(
 class RecognizeIndexedLoad(DefUsePass):
     """DefUsePass: matches Load(src_ptr=Var, dst=Var). For each match,
     walks back twice through the SSA def-chain to find the
-    ZeroExtend/SignExtend → Binary(Add, Const, %ext) → Load
+    ZeroExtend → Binary(Add, Const, %ext) → Load
     pattern. Uses the full def-idx so the Load and its producers
     need not be index-adjacent."""
     name = "recognize_indexed_load"

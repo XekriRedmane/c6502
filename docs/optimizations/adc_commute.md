@@ -60,20 +60,21 @@ The final output is `JSR sample; CLC; ADC total; STA total; RTS`.
 - The window opens with a non-volatile `STA temp`, where `temp` is a
   `Data` or `ZP` operand.
 - Any number of instructions may follow before the load, as long as
-  each is a `Mov`, `INC`, `DEC`, `CLC`, `SEC`, `CMP`, or `BIT`, isn't
-  a `Mov` into A, and has no operand that `may_alias` says could
-  address `temp`. This band admits the `LDX` or `LDY` that sets up an
-  indexed `mem`.
+  each is a `Mov`, `INC`, `DEC`, `CLC`, `SEC`, `CMP`, or `BIT`, leaves
+  A alone as it's emitted, and has no operand that `may_alias` says
+  could address `temp`. This band admits the `LDX` or `LDY` that sets
+  up an indexed `mem`.
 - Next is a non-volatile `LDA mem`, where `mem` is a `Data`, `ZP`, or
   `abs,X` / `abs,Y` operand, optionally followed by `CLC` or `SEC`.
 - Then comes an `ADC`, `AND`, or `ORA` of `temp` into A, and right
   after it a non-volatile `STA mem` to the same operand as the load.
 
-The band check rejects a `Mov` only when its destination is A. A
-`Mov` that stores an immediate or copies memory to memory has a
-memory destination but emits through A (`LDA #imm; STA dst`), so it
-passes the check and overwrites `v`. With the declarations above
-and an `unsigned char other`, this miscompiles
+The rewrite keeps `v` in A through the band, so an instruction
+counts as writing A when it's emitted through A. That's a `Mov` into
+A, a `Mov` into memory from an immediate or from memory (`LDA #imm;
+STA dst`), an X / Y transfer (`TXA; TAY`), and anything with a
+soft-stack or indirect operand, whose expansion can use A and loads
+Y. So in
 
 ```c
 void accumulate(void) {
@@ -83,10 +84,10 @@ void accumulate(void) {
 }
 ```
 
-into `JSR sample; LDA #$07; STA other; CLC; ADC total; STA total`,
-which adds 7 instead of `v`. With `sample` returning 2 and `total`
-starting at 10, the simulator ends with 17 where the unoptimized
-build gives 12. This is a bug in the current code.
+the `LDA #$07; STA other` between the spill and the load keeps the
+pattern from matching, and the code stays `STA
+__local_accumulate__0; LDA #$07; STA other; LDA total; CLC; ADC
+__local_accumulate__0; STA total`.
 
 ## What it leaves alone
 

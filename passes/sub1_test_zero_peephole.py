@@ -55,6 +55,10 @@ Constraints:
   * Branch cond is `CC` or `CS` only — the C flag has the inverse
     relationship between CMP-against-0 and SBC, but Z and N don't
     map cleanly.
+  * A, N, Z, and C are dead on both successors of the Branch. After
+    the original A holds 0, N and Z come from the CMP, and C is set
+    iff M == 0. After the rewrite A holds M - 1, N and Z come from
+    the SBC, and C is set iff M != 0.
 
 Replacement: drop i4 (`LDA #0`) and i5 (`CMP M`); flip the Branch
 condition. Net: 7 → 5 instructions.
@@ -69,6 +73,7 @@ After `replace_pseudoregisters` (so M is concrete) and `inc_peephole`
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import a_dead_at, c_dead_at, flags_dead_at
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
@@ -165,12 +170,48 @@ def _try_match(
     else:
         return None
     target = i6.target
+    # After the branch the original leaves A = 0, N and Z from the
+    # `CMP`, and C set iff M == 0. The rewrite leaves A = M - 1, N and
+    # Z from the `SBC` (or the `TAX` / `TAY` in i3), and C set iff
+    # M != 0. So all four must be dead on both successors.
+    taken = _label_index(instrs, target)
+    if taken is None:
+        return None
+    for succ in (start + 7, taken):
+        if not _outputs_dead_at(instrs, succ):
+            return None
     # Replacement: i0, i1, i2, i3, then Branch(flipped, target).
     replacement = [
         i0, i1, i2, i3,
         asm_ast.Branch(cond=flipped_cond, target=target),
     ]
     return (replacement, 7)
+
+
+def _label_index(
+    instrs: list[asm_ast.Type_instruction], name: str,
+) -> int | None:
+    """Returns the index of the `Label` named `name`, or None when
+    the function has no such label."""
+    for k, instr in enumerate(instrs):
+        if isinstance(instr, asm_ast.Label) and instr.name == name:
+            return k
+    return None
+
+
+def _outputs_dead_at(
+    instrs: list[asm_ast.Type_instruction], idx: int,
+) -> bool:
+    """Returns True iff A, N, Z, and C are all dead at `instrs[idx]`,
+    the values the rewrite changes. A path that leaves the end of the
+    instruction list reads nothing."""
+    if idx >= len(instrs):
+        return True
+    return (
+        a_dead_at(instrs, idx)
+        and flags_dead_at(instrs, idx)
+        and c_dead_at(instrs, idx)
+    )
 
 
 def _is_compareable_operand(op: asm_ast.Type_operand) -> bool:

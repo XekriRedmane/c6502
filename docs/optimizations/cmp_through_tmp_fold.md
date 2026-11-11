@@ -105,7 +105,7 @@ __zpabi_band__y; CMP __local_band__0` into `LDA __zpabi_band__y; LDY
   change. The same function also reads the temporary twice from one
   store, which the ownership rule rejects on its own.
 - A temporary that is read somewhere else in the function while it
-  still holds the staged value.
+  still holds the staged value, by any instruction, a `BIT` included.
 - A temporary on the soft stack, and any window with a volatile
   access.
 

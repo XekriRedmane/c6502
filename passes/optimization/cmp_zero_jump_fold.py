@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import c99_ast
 import tac_ast
+from passes.optimization.var_visit import defs_in
 from passes.optimization.framework import (
     RuleSet, Rule, producer_then_jump, single_use,
     PassContext, MatchResult, RuleEnv,
@@ -90,22 +91,35 @@ def _build_cmp_zero_jump(
     use_count, var_def_idx, instrs = env.use_count, env.def_idx, env.instructions
     binop = m.bindings['binop']
     jmp = m.bindings['jmp']
+    # The compare's own position. Each narrowing below replaces an
+    # extend's dst with the extend's source here, so the source must
+    # hold the same value here as at the extend.
+    use_idx = var_def_idx[m.bindings['cond_dst'].name]
+    if instrs[use_idx] is not binop:
+        # A non-SSA cond dst written again later. With -1, only an
+        # SSA-renamed extend source qualifies.
+        use_idx = -1
+    ssa_dsts = ctx.ssa_dsts
 
     if isinstance(binop.op, (tac_ast.Equal, tac_ast.NotEqual)):
         x = _zero_compare_other_operand(binop.src1, binop.src2)
         if x is not None:
-            x = _trace_through_zero_extend(x, instrs, var_def_idx, use_count)
+            x = _trace_through_zero_extend(
+                x, instrs, var_def_idx, use_count, use_idx, ssa_dsts,
+            )
             return [_build_replacement_jump(binop.op, jmp, x)]
 
     src1, src2 = binop.src1, binop.src2
     narrowed = _try_narrow_compare(
         src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
+        use_idx, ssa_dsts,
     )
     if narrowed is not None:
         src1, src2 = narrowed
     else:
         narrowed_signed = _try_narrow_signed_against_zero(
             binop.op, src1, src2, instrs, var_def_idx, use_count, ctx.symbols,
+            use_idx, ssa_dsts,
         )
         if narrowed_signed is not None:
             src1, src2 = narrowed_signed
@@ -191,10 +205,13 @@ def _try_narrow_through_zero_extend(
     var_def_idx: dict[str, int],
     use_count: dict[str, int],
     symbols,
+    use_idx: int,
+    ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, object] | None:
     """If `val` is a Var that's the single-use dst of a ZeroExtend
-    upstream and the source has a c99 type, return (source, type).
-    Otherwise None."""
+    upstream, the source has a c99 type, and the source holds the
+    same value at `instrs[use_idx]` as at the extend, return
+    (source, type). Otherwise None."""
     if not isinstance(val, tac_ast.Var):
         return None
     if use_count.get(val.name, 0) != 1:
@@ -207,6 +224,10 @@ def _try_narrow_through_zero_extend(
         return None
     src = defining.src
     if not isinstance(src, tac_ast.Var):
+        return None
+    if not extend_source_unchanged(
+        defining, def_idx, use_idx, instrs, ssa_dsts,
+    ):
         return None
     if symbols is None:
         return None
@@ -237,11 +258,14 @@ def _try_narrow_through_sign_extend(
     var_def_idx: dict[str, int],
     use_count: dict[str, int],
     symbols,
+    use_idx: int,
+    ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, object] | None:
     """If `val` is a Var that's the single-use dst of a SignExtend
-    upstream and the source has a c99 type, return (source, type).
-    Otherwise None. Mirror of `_try_narrow_through_zero_extend` for
-    the signed case."""
+    upstream, the source has a c99 type, and the source holds the
+    same value at `instrs[use_idx]` as at the extend, return
+    (source, type). Otherwise None. Mirror of
+    `_try_narrow_through_zero_extend` for the signed case."""
     if not isinstance(val, tac_ast.Var):
         return None
     if use_count.get(val.name, 0) != 1:
@@ -254,6 +278,10 @@ def _try_narrow_through_sign_extend(
         return None
     src = defining.src
     if not isinstance(src, tac_ast.Var):
+        return None
+    if not extend_source_unchanged(
+        defining, def_idx, use_idx, instrs, ssa_dsts,
+    ):
         return None
     if symbols is None:
         return None
@@ -271,6 +299,8 @@ def _try_narrow_signed_against_zero(
     var_def_idx: dict[str, int],
     use_count: dict[str, int],
     symbols,
+    use_idx: int,
+    ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, tac_ast.Type_val] | None:
     """Narrow `Binary(GreaterOrEqual | LessThan, ?, ?, _)` whose
     one operand is the single-use dst of `SignExtend(SChar_var)`
@@ -284,10 +314,10 @@ def _try_narrow_signed_against_zero(
     if symbols is None:
         return None
     info1 = _try_narrow_through_sign_extend(
-        src1, instrs, var_def_idx, use_count, symbols,
+        src1, instrs, var_def_idx, use_count, symbols, use_idx, ssa_dsts,
     )
     info2 = _try_narrow_through_sign_extend(
-        src2, instrs, var_def_idx, use_count, symbols,
+        src2, instrs, var_def_idx, use_count, symbols, use_idx, ssa_dsts,
     )
     n1_ok = info1 is not None and isinstance(
         info1[1], _NARROW_SIGNED_TYPES,
@@ -310,6 +340,8 @@ def _try_narrow_compare(
     var_def_idx: dict[str, int],
     use_count: dict[str, int],
     symbols,
+    use_idx: int,
+    ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, tac_ast.Type_val] | None:
     """Try to narrow both compare operands to 1-byte unsigned. The
     rule: at least one operand is a single-use ZeroExtend dst whose
@@ -319,10 +351,10 @@ def _try_narrow_compare(
     if symbols is None:
         return None
     info1 = _try_narrow_through_zero_extend(
-        src1, instrs, var_def_idx, use_count, symbols,
+        src1, instrs, var_def_idx, use_count, symbols, use_idx, ssa_dsts,
     )
     info2 = _try_narrow_through_zero_extend(
-        src2, instrs, var_def_idx, use_count, symbols,
+        src2, instrs, var_def_idx, use_count, symbols, use_idx, ssa_dsts,
     )
 
     n1_ok = info1 is not None and isinstance(
@@ -381,10 +413,14 @@ def _trace_through_zero_extend(
     instrs: list[tac_ast.Type_instruction],
     var_def_idx: dict[str, int],
     use_count: dict[str, int],
+    use_idx: int,
+    ssa_dsts: set[str] | None,
 ) -> tac_ast.Type_val:
     """If `x` is a Var that's the single-use dst of a ZeroExtend
-    upstream, return the ZeroExtend's source. Loops to handle chained
-    ZeroExtends."""
+    upstream, and the extend's source holds the same value at
+    `instrs[use_idx]` as at the extend, returns the ZeroExtend's
+    source. Loops to handle chained ZeroExtends, and otherwise
+    returns `x` unchanged."""
     while isinstance(x, tac_ast.Var):
         if use_count.get(x.name, 0) != 1:
             break
@@ -394,8 +430,67 @@ def _trace_through_zero_extend(
         defining = instrs[def_idx]
         if not isinstance(defining, tac_ast.ZeroExtend):
             break
+        if not extend_source_unchanged(
+            defining, def_idx, use_idx, instrs, ssa_dsts,
+        ):
+            break
         x = defining.src
     return x
+
+
+# Instructions whose only effect is writing the Vars that
+# `var_visit.defs_in` returns. A store or a call can write a static or
+# an address-taken local without naming it. A label or a jump means
+# that the list order between two instructions doesn't cover every
+# path between them. So `extend_source_unchanged` refuses on anything
+# outside this set.
+_PURE_DEF_INSTRS: tuple[type, ...] = (
+    tac_ast.SignExtend, tac_ast.ZeroExtend, tac_ast.Truncate,
+    tac_ast.IntToFloat, tac_ast.IntToDouble,
+    tac_ast.FloatToInt, tac_ast.DoubleToInt,
+    tac_ast.FloatToDouble, tac_ast.DoubleToFloat,
+    tac_ast.GetAddress, tac_ast.Load, tac_ast.IndexedLoad,
+    tac_ast.IndexedConstLoad, tac_ast.IndirectIndexedLoad,
+    tac_ast.Unary, tac_ast.Binary, tac_ast.Copy,
+)
+
+
+def extend_source_unchanged(
+    ext: tac_ast.Type_instruction,
+    ext_idx: int,
+    use_idx: int,
+    instrs: list[tac_ast.Type_instruction],
+    ssa_dsts: set[str] | None,
+) -> bool:
+    """Returns True if the source Var of the extend `ext` at
+    `instrs[ext_idx]` holds the same value at `instrs[use_idx]`, so
+    that a read of the extend's dst there can be replaced by a read
+    of the source.
+
+    An SSA-renamed source has one def, which dominates the extend,
+    so its value never changes. Any other source, such as a static
+    or an address-taken local, qualifies only when the extend sits
+    earlier in the same straight-line run as the use, and nothing
+    between them writes the source by name or might write memory.
+    When `ssa_dsts` is known, the extend's dst must be SSA-renamed
+    too, because `def_idx` records the last def of a name and a
+    non-SSA dst can have others."""
+    src = ext.src
+    if not isinstance(src, tac_ast.Var):
+        return False
+    if ssa_dsts is not None:
+        if not (isinstance(ext.dst, tac_ast.Var) and ext.dst.name in ssa_dsts):
+            return False
+        if src.name in ssa_dsts:
+            return True
+    if ext_idx >= use_idx:
+        return False
+    for ins in instrs[ext_idx + 1 : use_idx]:
+        if not isinstance(ins, _PURE_DEF_INSTRS):
+            return False
+        if any(d.name == src.name for d in defs_in(ins)):
+            return False
+    return True
 
 
 def _build_replacement_jump(

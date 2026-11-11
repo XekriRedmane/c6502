@@ -114,12 +114,11 @@ store is moved when all of these are true.
   zp_abi callee can use its parameter slots as scratch.
 - The store is the only instruction in the body that writes its
   destination as a `Data` or `ZP` operand. For `LDA src; STA M`, no
-  instruction in the body writes `src` that way either. Writes
-  through a pointer or with an index register aren't counted, so a
-  store through a pointer to the same cell doesn't stop the move.
-  For `g = 5; out = g; *p = 7;` in a loop with `p == &g`, the pass
-  moves `g = 5` out, and from the second iteration on `out` gets 7
-  where it should get 5. That's a miscompile.
+  instruction in the body writes `src` that way either. A store
+  through a pointer, or with an index register, that `may_alias`
+  can't separate from the destination (or from `src`) counts as a
+  write too. So `g = 5; out = g; *p = 7;` in a loop stays as it is,
+  since `p` may point at `g`.
 - No instruction in the body reads the destination before the store
   has run, on any path from the loop's first label.
 - At every exit from the loop that can be taken before the store

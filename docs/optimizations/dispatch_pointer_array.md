@@ -61,9 +61,13 @@ by `LDX __zpabi_frame__step; LDA walk,X` for case 0.
 ## When it applies
 
 The pass first collects the tables it can dispatch on. A table
-qualifies when it's a `StaticVariable` without external linkage, and
-its initializer is a list of at most 8 entries, each the address of
-another named static with no offset.
+qualifies when it's a `StaticVariable` without external linkage, its
+elements are `const` in the symbol table, and its initializer is a
+list of at most 8 entries, each the address of another named static
+with no offset. The dispatch builds the initial addresses into the
+code, and `const` elements mean no store can change them. The
+pointees may be writable, as in `static uint8_t * const frames[2]`,
+because each arm reads `target_k[j]` at run time.
 
 In each function it then looks for this chain.
 
@@ -81,16 +85,12 @@ repeats until no chain is left in the function. Each arm writes the
 same `%V`, which is why the pass runs after SSA destruction, where no
 `Phi` is needed at the join.
 
-The pass doesn't check that the table or its elements are `const`,
-although the module docstring says the table is a
-`static const T * const[N]`. A table that the program writes at run
-time is dispatched on its initial contents. With
-`static uint8_t *frames[2] = {walk, jump};` and a function that
-stores `other` into `frames[0]`, the final assembly of `frame` still
-reads `walk,X` for `anim == 0`.
-
 ## What it leaves alone
 
+- A table whose elements aren't `const`, such as
+  `static uint8_t *frames[2]` or `static const uint8_t *frames[2]`.
+  Another function may store a new pointer into it, as `frames[0] =
+  other;` does, so `frame` keeps the indirect load through the table.
 - A table with more than 8 entries, where the compare chain would
   cost more than the indirect load.
 - A table with external linkage, or one with a null entry, an entry

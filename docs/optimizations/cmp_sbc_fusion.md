@@ -37,6 +37,8 @@ f:
    SEC
    SBC   N
    RTS
+.skip:
+   RTS
 ```
 
 ### After
@@ -48,6 +50,8 @@ f:
    SBC   N
    BCC   .skip
 .cont:
+   RTS
+.skip:
    RTS
 ```
 
@@ -61,6 +65,10 @@ f:
 - The fourth is a label that no branch or jump in the function
   targets, so only the fall-through path reaches it.
 - The fifth and sixth are `SEC` and `SBC` of the compare's operand.
+- The branch target is a label in the function, and A and V are dead
+  there (`asm_liveness.a_dead_at` and `v_dead_at`). After the rewrite
+  the taken path has run the `SBC`, so A holds `M - N` where it held
+  `M`, and V holds the subtraction's overflow.
 
 The fourth condition keeps the pass from firing in practice.
 `dead_label_drop` runs earlier in every sweep and deletes each label
@@ -69,16 +77,15 @@ requires between the branch and the `SEC` is gone. With `if (a >= b) x
 = a - b;` the input to the pass is `LDA a; CMP b; BCC .if_end@0; SEC;
 SBC b; STA x`, which doesn't match.
 
-The pass also doesn't check what the code at the branch target reads.
-After the rewrite, A on the taken path holds `M - N` instead of `M`.
-When the unit test's input is given a `STA X` after the `SBC` and a
-`.skip:` label before an `RTS` that returns A, the pass makes the
-same rewrite, and the function then returns `M - N` on the path that
-should return `M`. That would be a bug if the pass could fire.
+The fall-through path runs the `SBC` either way, so nothing is
+checked there.
 
 ## What it leaves alone
 
 - A `BVC` or `BVS`, since `SBC` sets V and `CMP` doesn't.
+- A branch whose target reads A or V, such as a `.skip:` followed by
+  an `RTS` that returns A, which would return `M - N` on the path
+  that returns `M`.
 - A label that some other branch or jump targets, since a path
   arriving there would skip the moved subtraction.
 - A compare and subtract of different operands, or of an operand

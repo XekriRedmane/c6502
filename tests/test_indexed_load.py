@@ -137,5 +137,29 @@ class TestIndexedLoadCorrectness(unittest.TestCase):
         self.assertEqual(self._sim(src), 0)
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestIndexedConstLoadSignedIndex(unittest.TestCase):
+    def test_negative_signed_char_index(self) -> None:
+        # `buf[i]` through a constant base with `int8_t i = -1` reads
+        # $3000. `recognize_indexed_load` accepted the SignExtend of
+        # i, and `LDA $3001,X` read $3100.
+        src = (
+            "#include <stdint.h>\n"
+            "static uint8_t * const buf = (uint8_t * const)0x3001;\n"
+            "uint8_t get(int8_t i) { return buf[i]; }\n"
+            "int main(void) {\n"
+            "    *(uint8_t *)0x3000 = 42;\n"
+            "    *(uint8_t *)0x3100 = 7;\n"
+            "    return get(-1);\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(src, optimize=optimize).run(
+                    max_cycles=5_000_000,
+                )
+                self.assertEqual(out.return_int(), 42)
+
+
 if __name__ == "__main__":
     unittest.main()

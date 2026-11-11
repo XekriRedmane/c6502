@@ -243,6 +243,21 @@ class TestCmpThroughTmpFoldIndirect(unittest.TestCase):
         out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
         self.assertEqual(out, instrs)
 
+    def test_bit_test_reads_tmp(self):
+        # `BIT tmp` after the compare reads the staged byte, so the
+        # store stays. `BitTest`'s operand field is `src`, and reading
+        # it under another name raised AttributeError.
+        src = asm_ast.Data(name="S", offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        instrs = [
+            _lda(src), _sta(tmp), _lda(other), _cmp(tmp),
+            asm_ast.BitTest(src=tmp),
+            asm_ast.Return(save_a=False, save_x=False),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
 
 if __name__ == "__main__":
     unittest.main()

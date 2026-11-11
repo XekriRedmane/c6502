@@ -71,12 +71,16 @@ holds the value A held in the original.
   zero-page byte, or an absolute byte.
 - A is dead after the `CMP` (`asm_liveness.a_dead_at`).
 - Y is dead before the load (`y_dead_at`).
-- The temporary appears in no instruction after the `CMP`, in program
-  order.
+- The temporary is scratch the compiler owns, either a
+  `__local_<fn>__*` slot of this function or a zero-page byte of the
+  register allocator's pool that no zero-page global occupies.
+- No path from the `CMP` reads the temporary before overwriting it.
+  The walk follows branches and jumps, and the function's return
+  ends it, since the temporary is dead there.
 
-The last check has two holes, and both produce wrong code. It doesn't
-look at instructions before the pattern, so a read that a loop's back
-edge reaches isn't seen. In
+The rewrite leaves the temporary holding its old value, which is why
+the last two checks exist. A read that only a loop's back edge reaches
+counts, so in
 
 ```c
 uint8_t prev = 0;
@@ -88,12 +92,7 @@ for (uint8_t i = 0; i < 8; i++) {
 }
 ```
 
-the store to `prev` goes and `out[i]` is always 0. The check also
-takes any `Data` or `ZP` operand to be a scratch byte, so a global
-updated by `top = ceiling[i]; top++;` and then compared loses its
-store. The pass also raises `AttributeError` when a `BIT` instruction
-follows a match in the same function, because it reads `BitTest`'s
-operand under the wrong field name.
+the store to `prev` stays, and `out[i]` gets the previous sum.
 
 ## What it leaves alone
 
@@ -101,6 +100,9 @@ operand under the wrong field name.
 - A compare against an indexed, soft-stack, or pointer operand, which
   `CPY` has no mode for.
 - Code that later reads the value Y held before the load.
+- A global as the temporary, as in `top = ceiling[i]; top++; if (top
+  == beam_y) ...` with a global `top`. Its value can be read after the
+  function returns.
 - A sum that is used again after the compare, such as `top` in
   `if (top == beam_y) hit = top;`, where the store reads A and the
   temporary is still named later.

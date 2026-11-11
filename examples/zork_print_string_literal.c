@@ -177,22 +177,16 @@ struct page_slot { uint8_t slot; bool not_found; };
  * not_found set. */
 __attribute__((return_bool_in_carry))
 struct page_slot find_index_of_page_table(void) {
-    struct page_slot r;
     uint8_t lo = (uint8_t)SCRATCH2;
     uint8_t hi = (uint8_t)(SCRATCH2 >> 8);
     uint8_t i = 0;
     uint8_t n = NUM_PAGE_TABLE_ENTRIES;
     do {
-        if (PAGE_L_TABLE[i] == lo && PAGE_H_TABLE[i] == hi) {
-            r.slot = i;
-            r.not_found = false;
-            return r;
-        }
+        if (PAGE_L_TABLE[i] == lo && PAGE_H_TABLE[i] == hi)
+            return (struct page_slot){ i, false };
         i++;
     } while (--n != 0);
-    r.slot = LAST_Z_PAGE;
-    r.not_found = true;
-    return r;
+    return (struct page_slot){ LAST_Z_PAGE, true };
 }
 
 /* Moves cache slot `slot` to the front of the list ordered by use.
@@ -402,27 +396,23 @@ struct zchar { uint8_t code; bool end; };
 /* Returns the next z-character of the string at Z_PC2, or `end` once
  * the word with the end bit has been used up. */
 __attribute__((return_bool_in_carry)) struct zchar get_next_zchar(void) {
-    struct zchar r;
+    uint8_t code;
     uint8_t state = ZDECOMPRESS_STATE;
-    if (state & 0x80) {
-        r.code = state;
-        r.end = true;
-        return r;
-    }
+    if (state & 0x80)
+        return (struct zchar){ state, true };
     if (state == 0) {
         ZDECOMPRESS_STATE = 1;
         get_next_code_word();
         ZCHARS = SCRATCH2;
-        r.code = (uint8_t)(ZCHARS >> 10) & 0x1F;
+        code = (uint8_t)(ZCHARS >> 10) & 0x1F;
     } else if (state == 1) {
         ZDECOMPRESS_STATE = 2;
-        r.code = (uint8_t)(ZCHARS >> 5) & 0x1F;
+        code = (uint8_t)(ZCHARS >> 5) & 0x1F;
     } else {
         ZDECOMPRESS_STATE = (ZCHARS & 0x8000) ? 0xFF : 0x00;
-        r.code = (uint8_t)ZCHARS & 0x1F;
+        code = (uint8_t)ZCHARS & 0x1F;
     }
-    r.end = false;
-    return r;
+    return (struct zchar){ code, false };
 }
 
 uint8_t A_mod_3(register uint8_t a) {

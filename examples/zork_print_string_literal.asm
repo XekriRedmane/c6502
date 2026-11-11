@@ -33,9 +33,9 @@ __local_set_page_first__0	EQU	$81
 __zpabi_cout_string__count	EQU	$81
 __local_set_page_first__prev_first	EQU	$82
 __local_buffer_char__c	EQU	$83
-__local_get_next_zchar__r_1	EQU	$83
+__local_get_next_zchar__compound_literal_1	EQU	$83
 __local_buffer_char__0	EQU	$84
-__local_get_next_zchar__state	EQU	$84
+__local_get_next_zchar__code	EQU	$84
 __local_dump_buffer_with_more__0	EQU	$85
 __local_dump_buffer_with_more__end	EQU	$86
 __local_get_next_code_word__1	EQU	$86
@@ -103,11 +103,11 @@ COUT1	EQU	$FDF0
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
 ; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0,__local_dump_buffer_to_screen__x indirect=false in_cycle=false
 ; def dump_buffer_with_more params= locals=__local_dump_buffer_with_more__0,__local_dump_buffer_with_more__end,__local_dump_buffer_with_more__1,__local_dump_buffer_with_more__2 indirect=false in_cycle=false
-; def find_index_of_page_table params= locals=__local_find_index_of_page_table__r_1,__local_find_index_of_page_table__r_0,__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false
+; def find_index_of_page_table params= locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false
 ; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
 ; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
-; def get_next_zchar params= locals=__local_get_next_zchar__r_1,__local_get_next_zchar__state indirect=false in_cycle=false
+; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false
 ; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
 ; def load_packed_address params= locals=__local_load_packed_address__0,__local_load_packed_address__1 indirect=false in_cycle=false
 ; def print_string_literal params= locals= indirect=false in_cycle=false
@@ -683,10 +683,10 @@ get_next_zchar:
    STA   ZCHARS
    LDA   SCRATCH2+1
    STA   ZCHARS+1
-   STA   __local_get_next_zchar__r_1
-   LSR   __local_get_next_zchar__r_1
-   LSR   __local_get_next_zchar__r_1
-   LDA   __local_get_next_zchar__r_1
+   STA   __local_get_next_zchar__compound_literal_1
+   LSR   __local_get_next_zchar__compound_literal_1
+   LSR   __local_get_next_zchar__compound_literal_1
+   LDA   __local_get_next_zchar__compound_literal_1
    AND   #$1F
    JMP   .if_end@31
 .if_else@32:
@@ -707,12 +707,12 @@ get_next_zchar:
 .if_else@34:
    LDA   ZCHARS
    AND   #$00
-   STA   __local_get_next_zchar__state
+   STA   __local_get_next_zchar__code
    LDA   ZCHARS+1
    AND   #$80
-   STA   __local_get_next_zchar__r_1
-   LDA   __local_get_next_zchar__state
-   ORA   __local_get_next_zchar__r_1
+   STA   __local_get_next_zchar__compound_literal_1
+   LDA   __local_get_next_zchar__code
+   ORA   __local_get_next_zchar__compound_literal_1
    BEQ   .cond_else@35
    LDA   #$FF
    JMP   .cond_end@36

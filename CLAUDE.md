@@ -246,7 +246,11 @@ Linker mode:
 
 For the full optimizer walkthrough, see
 [passes/optimization/CLAUDE.md](passes/optimization/CLAUDE.md) and
-`docs/optimization.md` / `docs/leaf_zp_abi.md`.
+`docs/optimization.md` / `docs/leaf_zp_abi.md`. Each optimization has
+its own document in [docs/optimizations/](docs/optimizations/README.md),
+whose README lists them in pipeline order. A pass that's added or
+moved needs that list updated, and `tests/test_optimization_docs.py`
+fails until it is.
 
 ## Regenerating AST modules
 

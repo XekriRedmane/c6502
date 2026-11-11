@@ -4,6 +4,10 @@ This is a from-scratch tour of how `--optimize` turns "correct but
 slow" TAC into "correct and faster" TAC. Written for someone who has
 read CLAUDE.md but never touched the optimizer code.
 
+Each optimization also has a short document of its own, with an
+example, in [optimizations/](optimizations/README.md). Its README
+lists them in the order the pipeline runs them.
+
 ## Why optimize at all?
 
 Without `--optimize`, the c6502 compiler produces working 6502 code

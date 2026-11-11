@@ -34,25 +34,6 @@ That document should be organized around diagrams, tables, and short
 sections with headings, so that a reader can find one stage without
 reading the whole thing.
 
-## One document per optimization, in docs/optimizations
-
-Each optimization gets its own Markdown file in `docs/optimizations/`.
-Each file states what the optimization does, shows the code before
-and after on a small example, and gives the conditions under which it
-applies and the cases it leaves alone. Today the descriptions are
-split between `docs/optimization.md`, the CLAUDE.md files under
-`passes/`, and the module docstrings.
-
-`docs/optimizations/README.md` indexes them in two lists. The first
-list is alphabetical. The second list gives the order in which
-`compile.py --optimize` (and the unoptimized pipeline, for the
-peepholes that run there too) applies them, grouped by stage, with
-each group that repeats to a fixed point marked as such. The
-peephole fixed point, for example, runs three times, at different
-points in the pipeline. The second list has to be checked against
-`compile.optimized_asm` and `compile._peephole_fixedpoint` whenever
-a pass is added or moved.
-
 ## Major: compound literals
 
 C99 §6.5.2.5, `(type){ initializer-list }`. Today `(` *type* `)` must

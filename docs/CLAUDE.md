@@ -17,6 +17,14 @@ parsed by any tool.
   why call-graph siblings may share them, `register` parameters,
   which functions qualify, mixing the two, and `--link`. Also return
   values, costs, and limits.
+- `optimizations/` — one document per optimization, each with what
+  it does, a before-and-after example captured from a compile, when it
+  applies, and what it leaves alone. `optimizations/README.md` indexes
+  them alphabetically and in pipeline order, and
+  `tests/test_optimization_docs.py` fails when that order no longer
+  matches `compile.py` and the two optimizer drivers, or when a
+  document is missing from the index. A new pass needs a document and
+  both index entries.
 - `optimization.md` — from-scratch tour of how `--optimize` turns
   "correct but slow" TAC into "correct and faster" TAC. Written for
   someone who has read the root CLAUDE.md but never touched the

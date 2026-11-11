@@ -815,6 +815,9 @@ assembler) stay byte-aligned with what `asm_emit` produces.
 
 ## Peephole catalog
 
+Each peephole has its own document, with an example, in
+[docs/optimizations/](../docs/optimizations/README.md).
+
 `compile._peephole_fixedpoint` runs the following passes in order
 until a full sweep produces no change. Each pass is a separate module
 under `passes/`; see the module docstring for the full rationale and
@@ -870,8 +873,10 @@ Always-on (runs in both optimized AND unoptimized pipelines):
   one. Without that, `floor_enemy_draw` read `proj_screen_col,Y`
   after a `(zp),Y` access had loaded Y with 0.
 
-Only meaningful with `--optimize` (the unoptimized pipeline skips
-them):
+The unoptimized pipeline runs these too, since it calls the same
+`_peephole_fixedpoint`. Most of them find little or nothing to rewrite
+there, because every temporary is on the soft stack, and each one's
+document says whether it fires there.
 
 - `apply_split_mem_to_mem` — splits `Mov(mem, mem)` into the
   `Mov(mem, Reg(A)); Mov(Reg(A), mem)` pair it would emit as,

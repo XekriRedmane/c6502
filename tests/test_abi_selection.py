@@ -114,6 +114,40 @@ class TestSelectAbi(unittest.TestCase):
         # main is eligible and gets zp_abi.
         self.assertIsInstance(abi["main"], ZpLayout)
 
+    def test_caller_of_pooled_soft_stack_function_keeps_zp_abi(self) -> None:
+        # `g`'s address is taken, so it's on the soft stack, but it has
+        # a private pool, so calling it can't overwrite `f`'s slots.
+        for ann in ("", "__attribute__((zp_abi)) "):
+            with self.subTest(annotated=bool(ann)):
+                tac, c99, types = _compile_to_tac(
+                    "int g(int x) { return x + 1; } "
+                    + ann + "int f(int p) { int l = g(3); return p + l; } "
+                    "int main(void) { int (*q)(int) = g; "
+                    "return f(1) + q(2); }",
+                )
+                abi = select_abi(tac, c99, types)
+                self.assertIsInstance(abi["g"], SoftStackLayout)
+                self.assertIsInstance(abi["f"], ZpLayout)
+
+    def test_caller_of_recursive_function(self) -> None:
+        # Without the pragma, `rec` has no pool and `f` is demoted.
+        # With it, `rec` has a pool and `f` keeps zp_abi.
+        from preprocessor import preprocess
+        for pragma, want in (
+            ("", SoftStackLayout),
+            ("#pragma c6502 call save(hardware_stack)\n", ZpLayout),
+        ):
+            with self.subTest(pragma=bool(pragma)):
+                tac, c99, types = _compile_to_tac(preprocess(
+                    "int rec(int d) {\nif (d <= 0) return 0;\n" + pragma
+                    + "return rec(d - 1) + 1;\n}\n"
+                    "int f(int p) { int l = rec(3); return p + l; }\n"
+                    "int main(void) { return f(4); }\n"
+                ))
+                abi = select_abi(tac, c99, types)
+                self.assertIsInstance(abi["rec"], SoftStackLayout)
+                self.assertIsInstance(abi["f"], want)
+
     def test_zp_abi_direct_recursion_rejected(self) -> None:
         with self.assertRaises(AbiSelectionError) as cm:
             tac, c99, types = _compile_to_tac(

@@ -223,6 +223,15 @@ int main(void) { f(); return depth; }
             body,
         )
 
+    def test_caller_keeps_zp_abi(self) -> None:
+        # rec has a pool, so f0 can call it and read its own
+        # parameter slot afterwards.
+        src = _PROGRAMS["zp_abi caller"].replace("PRAGMA", _PRAGMA)
+        body = _function(_codegen(src), "f0")
+        self.assertNotIn("prologue", body)
+        self.assertIn("JSR   rec", body)
+        self.assertIn("__zpabi_f0__p0_0", body.split("JSR   rec")[1])
+
     def test_unmarked_call_on_the_cycle(self) -> None:
         src = """
 int pong(int n);
@@ -344,6 +353,16 @@ int main(void) {
     for (unsigned char i = 0; i < 40; i++) s = s * 2 + any_bit(i, 3);
     return s & 0x7FFF;
 }
+""",
+    "zp_abi caller": """
+int rec(int d) {
+    int k = d * 3;
+    if (d <= 0) return 0;
+PRAGMA    int r = rec(d - 1);
+    return r + 1 + (k & 1);
+}
+int f0(int p0) { int l = rec(3); return p0 + l; }
+int main(void) { return f0(4); }
 """,
     "unmarked call on the cycle": """
 int pong(int n);

@@ -30,12 +30,15 @@ rather than 2-byte zero-page.
 Algorithm
 ---------
 
-1. Build the call graph: a directed edge `caller → callee` for
-   every `tac_ast.FunctionCall` in a TAC function's body, where
-   `callee` is a zp_abi function visible in the abi dict.
-   Recursion / indirect-call / address-taken rejections are
-   already enforced upstream by `select_abi`, so the graph is
-   guaranteed to be a DAG of zp_abi functions.
+1. Build the call graph: a directed edge `caller → callee`
+   between two zp_abi functions when the caller can reach the
+   callee through `tac_ast.FunctionCall`s, directly or through
+   functions that aren't zp_abi. A zp_abi function may call a
+   soft-stack function that has a private pool, which may call
+   zp_abi functions in turn, and their slots must stay apart from
+   the caller's. Recursion / indirect-call / address-taken
+   rejections are already enforced upstream by `select_abi`, so the
+   graph is guaranteed to be a DAG of zp_abi functions.
 
 2. Topologically order the DAG (callers before their callees,
    Kahn's algorithm) and walk it in that order. For each
@@ -189,7 +192,9 @@ def _build_callgraph(
 ) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     """Returns `(callees_of, transitive_ancestors_of)` restricted
     to zp_abi functions. Edges come from `tac_ast.FunctionCall`
-    occurrences in each function's body. Externs (no
+    occurrences in each function's body: `callees_of[f]` holds the
+    zp_abi functions `f` calls directly, or through a chain of
+    calls whose functions in between aren't zp_abi. Externs (no
     `tac_ast.Function`) are leaf nodes — they appear as edge
     targets but never as edge sources. `transitive_ancestors_of`
     is the reflexive-transitive caller relation MINUS self
@@ -199,18 +204,26 @@ def _build_callgraph(
         n for n, layout in abi.items()
         if isinstance(layout, ZpLayout)
     }
-    callees_of: dict[str, set[str]] = {n: set() for n in zp_names}
+    direct: dict[str, set[str]] = {}
     for tl in prog.top_level:
-        if not isinstance(tl, tac_ast.Function):
-            continue
-        if tl.name not in zp_names:
-            continue
-        for instr in tl.instructions:
-            if (
-                isinstance(instr, tac_ast.FunctionCall)
-                and instr.name in zp_names
-            ):
-                callees_of[tl.name].add(instr.name)
+        if isinstance(tl, tac_ast.Function):
+            direct[tl.name] = {
+                instr.name for instr in tl.instructions
+                if isinstance(instr, tac_ast.FunctionCall)
+            }
+    callees_of: dict[str, set[str]] = {n: set() for n in zp_names}
+    for name in zp_names:
+        seen: set[str] = set()
+        stack = list(direct.get(name, ()))
+        while stack:
+            c = stack.pop()
+            if c in seen:
+                continue
+            seen.add(c)
+            if c in zp_names:
+                callees_of[name].add(c)
+            else:
+                stack.extend(direct.get(c, ()))
     callers_of: dict[str, set[str]] = {n: set() for n in zp_names}
     for caller, cs in callees_of.items():
         for callee in cs:

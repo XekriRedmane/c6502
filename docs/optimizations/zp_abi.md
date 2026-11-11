@@ -177,11 +177,17 @@ these are true.
 - It doesn't return a struct or union, unless it's
   `return_bool_in_carry`, whose struct comes back in A, X, and C.
 - Its parameters take at most 64 bytes, the size of `$80`-`$BF`.
-- Every function it calls directly uses zp_abi too. A soft-stack
-  callee uses `$80`-`$BF` as scratch, which is where the caller's own
-  parameters are. `_demote_soft_stack_callers` applies this last and
-  repeats until no function changes, since demoting one function can
-  disqualify its callers.
+- Every function it calls directly uses zp_abi too, or has a
+  [private local pool](zp_local_pools.md). A soft-stack callee
+  without a pool uses `$80`-`$BF` as scratch, which is where the
+  caller's own parameters are. One with a pool, such as a function
+  whose address is taken or a recursive one under `#pragma c6502
+  call save(hardware_stack)`, writes only its pool, which is kept
+  apart from the caller's bytes. `_demote_soft_stack_callers`
+  applies this last and repeats until no function changes, since
+  demoting one function can disqualify its callers. The parameter
+  slots of two zp_abi functions are kept apart when one can reach
+  the other, even through soft-stack functions in between.
 
 A function declared but not defined in the translation unit gets
 zp_abi under the parameter-size and return-type rules, since there's
@@ -213,8 +219,10 @@ still live.
 - A function that returns a struct or union. The hidden pointer to
   the result isn't one of the declared parameters, so the slot
   layout has no byte for it.
-- A caller of any soft-stack function, including a routine with a
-  fixed address that's declared without `zp_abi`. With
+- A caller of a soft-stack function without a private pool, such as
+  a recursive function without the pragma, a function that calls
+  through a pointer, or a routine with a fixed address that's
+  declared without `zp_abi`. With
   `__attribute__((address(0xFDED))) void cout(unsigned char c);`, a
   function that calls `cout` gets a soft-stack prologue.
 

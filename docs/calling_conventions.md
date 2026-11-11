@@ -524,16 +524,20 @@ A function uses zp_abi with `--optimize` unless one of these is true.
 - Its arguments don't fit the 64 bytes of zero page set aside for
   them (`$80`-`$BF`).
 - It returns a struct or union.
-- It calls a function that uses the soft stack. A soft-stack function
-  may use `$80`-`$BF` as scratch, and that's where the caller's own
-  parameters are, so they could be overwritten by the call.
+- It calls a function that uses the soft stack and has no zero-page
+  bytes of its own. Such a function may use `$80`-`$BF` as scratch,
+  and that's where the caller's own parameters are, so they could be
+  overwritten by the call. A soft-stack function that does have its
+  own bytes, such as one whose address is taken, or a recursive one
+  that saves on the hardware stack, is safe to call.
 
 ### Mixing the conventions
 
 A soft-stack function can call a zp_abi function. It stores the
 arguments in the callee's zero-page bytes like any other caller. The
 recursive `fact` above could call a zp_abi helper that way. The
-other direction is what the last condition above rules out.
+other direction works only when the soft-stack function has
+zero-page bytes of its own, as the last condition above says.
 
 ### Across source files
 

@@ -99,49 +99,59 @@ work is in front of it:
 A function containing such a call becomes ineligible for zp_abi,
 like any function with an `IndirectCall` today.
 
-## Let zp_abi functions call soft-stack functions
+## Let zp_abi functions call soft-stack functions without a pool
 
-A function only gets zp_abi when every function it calls directly has
-it too (`abi_selection._demote_soft_stack_callers`). The reason is
-that a soft-stack function uses $80–$BF as caller-saved scratch, and
-the zp_abi parameter slots and private local pools come from the
-same window. Before the rule, `int f(int p) { int l = rec(3);
-return p + l; }` with a recursive `rec` read a clobbered `p`.
+A function only gets zp_abi when every function it calls directly
+either has it too or has a private pool
+(`abi_selection._demote_soft_stack_callers`). A soft-stack function
+without a pool uses $80–$BF as caller-saved scratch, and the zp_abi
+parameter slots and private local pools come from the same window.
+Before the rule, `int f(int p) { int l = rec(3); return p + l; }`
+with a recursive `rec` read a clobbered `p`. A soft-stack function
+with a pool, such as one whose address is taken or a recursive one
+under `#pragma c6502 call save(hardware_stack)`, writes only its
+pool, so calling it doesn't demote anything.
 
-The rule costs a lot. One recursive function, one function whose
-address is taken, or one indirect call demotes every function that
-can reach it, and a demoted function loses zp_abi parameters and its
-private pool. A function marked `__attribute__((zp_abi))` or using
-`register` can't be demoted, so calling a soft-stack function makes
-it fail to compile instead.
-
-A recursive function whose recursive calls are all under `#pragma
-c6502 call save(hardware_stack)` needn't demote anything. It still
-takes its parameters on the soft stack, but its locals are in a
-private pool and it writes nothing outside the pools, so it's as safe
-to call as a zp_abi function. It demotes its callers today only
-because `select_abi` runs before `recursive_pool_functions` decides
-which recursive functions get pools.
+The callees that still demote are the ones whose writes are
+unbounded: recursion without the pragma, a function that calls
+through a pointer, and an `extern` that isn't zp_abi (such as a ROM
+routine declared without `zp_abi`). One of these demotes every
+function that can reach it, and a demoted function loses zp_abi
+parameters and its private pool. A function marked
+`__attribute__((zp_abi))` or using `register` can't be demoted, so
+calling one makes it fail to compile instead.
 
 Possible approaches, roughly in order of effort:
 
-- **Only demote when something is live across the call.** If no
-  parameter slot or pool byte is read after the soft-stack call
-  (the call is the last use, or its result is returned directly),
-  nothing can be clobbered. This needs the asm-level liveness the
-  regalloc already computes, or a TAC-level approximation.
 - **Save and restore around the call.** Treat the caller's live
-  slot and pool bytes like caller-saved registers: copy them to the
-  hardware stack or a frame slot before the JSR and back after. That
-  keeps zp_abi for the callers and moves the cost to the soft-stack
-  call sites, which are already the expensive ones.
-- **Keep soft-stack scratch out of the zp_abi window.** Give
-  soft-stack functions a caller-saved range disjoint from where
-  zp_abi slots and pools are allocated, or allocate the slots of
-  functions that call soft-stack code from the callee-saved
-  $C0–$FF range, which soft-stack prologues already save and
-  restore. This needs a look at ZP pressure, since both pools would
-  shrink.
+  slot and pool bytes like caller-saved registers, pushing them on
+  the hardware stack before the JSR and pulling them back after.
+  `passes/recursion_saves.py` already does this for calls that
+  recurse (`plan_saves` picks the values, `tac_to_asm` emits `PHA` /
+  `PLA`, and the asm optimizer checks nothing colorable is live
+  across). Three differences:
+  - The caller isn't on a cycle, so it appears at most once in any
+    chain of calls, and the hardware stack these saves use is
+    bounded by the call graph. The compiler can add it up and fall
+    back to demotion past a budget, with no pragma.
+  - The save set has to include the caller's zp_abi parameters,
+    which `plan_saves` leaves out because a recursive function keeps
+    them in its frame.
+  - The saving spreads upward. If `h` calls `f` and `f` calls an
+    unbounded `g`, `g` can overwrite `h`'s bytes too, so `h`'s call
+    to `f` needs saves as well. That replaces today's upward
+    demotion with upward saves, and with several call sites it can
+    cost more than demotion, so it needs a per-function estimate.
+  Demoting only when nothing is live across the call is the case of
+  this with nothing to push.
+- **Keep soft-stack scratch out of the zp_abi window.** Allocate
+  the slots and pools of functions that call unbounded code from the
+  callee-saved $C0–$FF range, which soft-stack prologues already
+  save and restore. A pool there breaks an unbounded function that
+  calls into it, since that function expects $C0–$FF to survive its
+  calls, so every function reachable from unbounded code has to stay
+  out of it. This needs a look at ZP pressure, since both pools
+  would shrink.
 
 Whatever approach is taken, the call-graph fuzzer from Nov 2026
 (random DAGs mixing zp_abi, recursive, and pointer-called functions

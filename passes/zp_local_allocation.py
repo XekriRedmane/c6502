@@ -276,6 +276,15 @@ def allocate_function_locals(
     return local_pools
 
 
+def pool_eligible(
+    prog: tac_ast.Program, abi: dict[str, ParamLayout],
+) -> set[str]:
+    """The functions `allocate_function_locals` gives pools to (see
+    "Eligibility"). It reads `abi` only for `extern` callees, so
+    `select_abi` can ask before it has decided the rest."""
+    return _determine_eligibility(prog, abi, _build_callgraph(prog))
+
+
 def recursive_pool_functions(
     prog: tac_ast.Program, abi: dict[str, ParamLayout],
 ) -> dict[str, frozenset[str]]:

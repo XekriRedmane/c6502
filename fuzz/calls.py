@@ -130,14 +130,17 @@ def make_program(seed: int) -> tuple[str, None]:
 
     # Which functions end up on the soft stack under --optimize: the
     # pointer-called one, each caller through the pointer, each
-    # caller of `rec`, and every caller of one of those (a zp_abi
-    # function can only call zp_abi functions). `register` is only
-    # legal on the rest, since it needs zp_abi.
+    # caller of `rec` when `rec` has no private pool, and every
+    # caller of one of those (a zp_abi function can only call zp_abi
+    # functions and soft-stack functions with a pool, and the `rec`
+    # under the pragma has one). `register` is only legal on the
+    # rest, since it needs zp_abi.
     soft = set()
     if use_ptr_fn:
         soft.add(n - 1)
         soft |= {i for i in range(n) if n - 1 in calls[i]}
-    soft |= {i for i in range(n) if calls_rec[i]}
+    if rec_src is _REC:
+        soft |= {i for i in range(n) if calls_rec[i]}
     for i in reversed(range(n)):
         if any(j in soft for j in calls[i]):
             soft.add(i)

@@ -33,7 +33,9 @@ caller saves each value live across a marked call itself:
 ```
 
 Nothing in the pool is live across the call, so nothing needs saving
-at entry or exit. Two refinements make the common case cheap.
+at entry or exit. And since the function writes only its pool, a
+zp_abi function can call it without being moved to the soft stack
+([default zp_abi](zp_abi.md)). Two refinements make the common case cheap.
 
 - A value whose last definition copies it from somewhere is pushed
   from there. `v = g; LDA v; PHA` becomes `LDA g; PHA`, and the copy

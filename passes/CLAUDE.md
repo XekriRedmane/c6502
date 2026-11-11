@@ -1253,13 +1253,19 @@ symbols. No `AllocateStack`, no Frame-resident param storage. Eligibility:
   would overwrite the outer activation's still-live params).
 - Address never taken (indirect call sites would assume the default
   soft-stack ABI).
-- Every direct callee is zp_abi too. A soft-stack callee uses
-  $80–$BF as caller-saved scratch, the window the param slots come
-  from, so it could overwrite parameters the caller reads after the
-  call. `abi_selection._demote_soft_stack_callers` applies this
-  after the other checks and repeats until nothing changes. A
-  function that is annotated or uses `register` gets an error
-  naming the soft-stack callee instead of the fallback.
+- Every direct callee is zp_abi too, or has a private pool
+  (`zp_local_allocation.pool_eligible`, which reads the ABI only for
+  externs, so it's computed before demotion). A soft-stack callee
+  without a pool uses $80–$BF as caller-saved scratch, the window
+  the param slots come from, so it could overwrite parameters the
+  caller reads after the call; one with a pool writes only its pool.
+  `abi_selection._demote_soft_stack_callers` applies this after the
+  other checks and repeats until nothing changes. A function that is
+  annotated or uses `register` gets an error naming the soft-stack
+  callee instead of the fallback. Since a zp_abi function can then
+  reach another through soft-stack functions, `zp_slot_allocation`
+  takes an edge between two zp_abi functions through any chain of
+  non-zp_abi ones.
 - Param byte count fits the ZP window (default 64 bytes, $80–$BF).
   When the chain saturates, slots spill into a non-ZP fallback region
   (default $0200–$FFFF); dasm picks absolute addressing automatically,

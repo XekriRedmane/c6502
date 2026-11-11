@@ -41,16 +41,21 @@ any check fails):
   4. **Params fit.** The total parameter byte count fits in
      the configured ZP window (`pool.zp_param_window()` —
      defaults to the caller-saved range $80–$BF).
-  5. **Every direct callee is zp_abi too.** A soft-stack function
-     uses $80–$BF as caller-saved scratch, the same window the
-     zp_abi parameter slots come from, so a call to one can
-     overwrite parameters the caller still needs afterwards
-     (`int f(int p) { int l = rec(3); return p + l; }` with a
-     recursive `rec`). `_demote_soft_stack_callers` applies this
-     after the per-function checks, repeating until no function
-     changes, since demoting one function can disqualify its
-     callers. The body-local private pools follow the same rule
-     (see `passes/zp_local_allocation.py`).
+  5. **Every direct callee is zp_abi too, or has a private pool.**
+     A soft-stack function without a pool uses $80–$BF as
+     caller-saved scratch, the same window the zp_abi parameter
+     slots come from, so a call to one can overwrite parameters the
+     caller still needs afterwards (`int f(int p) { int l = rec(3);
+     return p + l; }` with a recursive `rec`). A soft-stack function
+     that has a pool (`zp_local_allocation.pool_eligible`), such as
+     one whose address is taken, or a recursive one under `#pragma
+     c6502 call save(hardware_stack)`, writes only its pool, which is
+     kept apart from its callers' bytes, so calling it is safe.
+     `_demote_soft_stack_callers` applies this after the
+     per-function checks, repeating until no function changes, since
+     demoting one function can disqualify its callers. The body-local
+     private pools follow the same rule (see
+     `passes/zp_local_allocation.py`).
 
 The returned dict has an entry for every `Function` top-level in
 `prog`, plus one entry per zp_abi-annotated extern. Functions
@@ -958,10 +963,15 @@ def _demote_soft_stack_callers(
     decls: dict,
 ) -> None:
     """Rule 5 of the module docstring. Turns every zp_abi function
-    defined here that calls a soft-stack function (directly) into a
-    soft-stack function, until no function changes. A function that
-    is annotated `__attribute__((zp_abi))` or uses `register` can't
-    fall back, so it raises instead."""
+    defined here that calls (directly) a soft-stack function without
+    a private pool into a soft-stack function, until no function
+    changes. A function that is annotated `__attribute__((zp_abi))`
+    or uses `register` can't fall back, so it raises instead.
+
+    Pool eligibility reads `out` only for `extern` functions, which
+    demotion never changes, so it's computed once up front."""
+    from passes.zp_local_allocation import pool_eligible
+    pooled = pool_eligible(prog, out)
     callees = _direct_callees(prog)
     changed = True
     while changed:
@@ -971,7 +981,7 @@ def _demote_soft_stack_callers(
                 continue
             soft = sorted(
                 c for c in called
-                if not isinstance(out.get(c), ZpLayout)
+                if not isinstance(out.get(c), ZpLayout) and c not in pooled
             )
             if not soft:
                 continue
@@ -987,9 +997,9 @@ def _demote_soft_stack_callers(
                 )
                 raise AbiSelectionError(
                     f"function `{name}` {what} but calls "
-                    f"`{soft[0]}`, which uses the soft-stack ABI; "
-                    f"`{soft[0]}` may overwrite the $80-$BF ZP "
-                    f"window that holds `{name}`'s parameters"
+                    f"`{soft[0]}`, which uses the soft-stack ABI without "
+                    f"a private pool; `{soft[0]}` may overwrite the "
+                    f"$80-$BF ZP window that holds `{name}`'s parameters"
                 )
             out[name] = SoftStackLayout()
             changed = True

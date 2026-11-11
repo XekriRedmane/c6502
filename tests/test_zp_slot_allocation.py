@@ -47,6 +47,22 @@ def _zp(name: str, n_bytes: int) -> ZpLayout:
 
 
 class TestZpSlotAllocation(unittest.TestCase):
+    def test_chain_through_a_soft_stack_function(self) -> None:
+        # top (zp_abi) → mid (soft stack) → leaf (zp_abi). leaf runs
+        # while top is still running, so their slots can't overlap.
+        prog = tac_ast.Program(top_level=[
+            _fn("top", _call("mid")),
+            _fn("mid", _call("leaf")),
+            _fn("leaf"),
+        ])
+        abi = {
+            "top": _zp("top", 2), "mid": SoftStackLayout(),
+            "leaf": _zp("leaf", 2),
+        }
+        new_abi, _ = allocate_zp_slots(prog, abi)
+        self.assertEqual(new_abi["top"].addrs, [0x80, 0x81])
+        self.assertEqual(new_abi["leaf"].addrs, [0x82, 0x83])
+
     def test_caller_callee_chain_disjoint(self) -> None:
         # caller (4 bytes) → callee (2 bytes). Slots must not
         # overlap: caller at $80..$83, callee pushed to $84..$85.

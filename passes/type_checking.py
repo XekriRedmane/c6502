@@ -531,8 +531,9 @@ def _const_init_value(
         case c99_ast.AddressOf(exp=inner):
             # Only `&name` (a bare Var operand) is a constant
             # expression — `&*p` and other forms aren't (they
-            # depend on runtime values).
-            if not isinstance(inner, c99_ast.Var):
+            # depend on runtime values). A compound literal is an
+            # object with a name of its own, static at file scope.
+            if not isinstance(inner, (c99_ast.Var, c99_ast.CompoundLiteral)):
                 raise TypeCheckError(
                     f"initializer for static-storage object {name!r} "
                     f"takes the address of a non-Var expression "
@@ -548,9 +549,14 @@ def _const_init_value(
                         f"{target!r}"
                     )
                 if not isinstance(sym.attrs, (StaticAttr, FunAttr)):
+                    what = (
+                        "a compound literal inside a function"
+                        if isinstance(inner, c99_ast.CompoundLiteral)
+                        else repr(target)
+                    )
                     raise TypeCheckError(
                         f"initializer for static-storage object "
-                        f"{name!r} takes the address of {target!r}, "
+                        f"{name!r} takes the address of {what}, "
                         f"which doesn't have static storage duration"
                     )
             return AddressInit(name=target, offset=0)
@@ -2538,8 +2544,10 @@ class TypeChecker:
                 # check, apply the conversion rule (so a literal of
                 # the wrong variant gets wrapped in an implicit
                 # Cast), then drill through Casts to the underlying
-                # integer value.
+                # integer value. An array or function decays to a
+                # pointer first, as it does at file scope.
                 self._check_exp(vd.init)
+                vd.init = _decay_if_array(vd.init)
                 vd.init = _convert_to(vd.init, vd.data_type)
                 initial = Initial(
                     _const_init_value(
@@ -2637,6 +2645,40 @@ class TypeChecker:
             self._check_exp(vd.init)
             vd.init = _decay_if_array(vd.init)
             vd.init = _convert_to(vd.init, vd.data_type)
+
+    def _check_compound_literal(self, exp: c99_ast.CompoundLiteral) -> Type:
+        """`(T){...}` (C99 §6.5.2.5) declares an unnamed object named
+        `exp.name`, so it's checked as the declaration `T name =
+        {...};` would be. Inside a function the object is automatic
+        (§6.5.2.5.6), and a static initializer can't take its
+        address. At file scope it's static, so its initializer must
+        be constant (§6.5.2.5.3). An array of unknown size takes its
+        size from the initializer, as `int a[] = {1, 2};` would
+        (§6.7.8.22)."""
+        t = exp.target_type
+        if isinstance(t, Array) and t.size == 0:
+            if isinstance(exp.init, c99_ast.String):
+                size = len(exp.init.str) + 1
+            else:
+                assert isinstance(exp.init, c99_ast.InitList)
+                size = len(exp.init.items)
+            t = Array(element_type=t.element_type, size=size)
+            exp.target_type = t
+        at_file_scope = self._return_type is None
+        vd = c99_ast.Type_var_decl(
+            name=exp.name, init=exp.init, data_type=t,
+            storage_class=c99_ast.Static() if at_file_scope else None,
+        )
+        try:
+            self._check_block_var(vd)
+        except TypeCheckError as e:
+            # The object's name is one identifier_resolution made up.
+            raise TypeCheckError(str(e).replace(
+                repr(exp.name), "'(compound literal)'",
+            )) from e
+        exp.init = vd.init
+        exp.data_type = t
+        return t
 
     def _check_string_array_init(
         self,
@@ -3358,6 +3400,8 @@ class TypeChecker:
                 # operand rejects the FunType as a non-object type.
                 exp.data_type = sym.type
                 return sym.type
+            case c99_ast.CompoundLiteral():
+                return self._check_compound_literal(exp)
             case c99_ast.Unary(op=op, exp=inner):
                 self._check_exp(inner)
                 # Array-to-pointer decay (C99 §6.3.2.1.3): `!arr`,

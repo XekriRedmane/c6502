@@ -2141,6 +2141,51 @@ class _ASTBuilder(Transformer):
         ]
         return c99_ast.InitList(items=children)
 
+    def compound_literal(self, items):
+        # `LPAREN type_name RPAREN LBRACE initializer (COMMA
+        # initializer)* COMMA? RBRACE`. The braces hold what a
+        # declaration's `= {...}` would, and the initializer takes
+        # the shape a var_decl's does, so later passes treat it like
+        # one: an InitList for an array or struct, the String for a
+        # char array initialized by `{"abc"}` (C99 §6.7.8.14 allows
+        # the braces), and the single expression for a scalar
+        # (§6.7.8.11).
+        target = items[1]
+        inits = [
+            it for it in items[4:-1]
+            if not (hasattr(it, "type") and it.type == "COMMA")
+        ]
+        core = target
+        while isinstance(core, (c99_ast.Const, c99_ast.Volatile)):
+            core = core.referenced_type
+        if isinstance(core, (c99_ast.FunType, c99_ast.Void)):
+            raise ParserError(
+                "a compound literal's type must be an object type "
+                "(C99 §6.5.2.5.1)"
+            )
+        if isinstance(core, c99_ast.Array):
+            if (
+                len(inits) == 1
+                and isinstance(inits[0], c99_ast.String)
+                and isinstance(
+                    core.element_type,
+                    (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+                )
+            ):
+                init = inits[0]
+            else:
+                init = c99_ast.InitList(items=inits)
+        elif isinstance(core, (c99_ast.Structure, c99_ast.Union)):
+            init = c99_ast.InitList(items=inits)
+        else:
+            if len(inits) != 1 or isinstance(inits[0], c99_ast.InitList):
+                raise ParserError(
+                    "a scalar compound literal takes exactly one "
+                    "initializer, as in `(int){5}`"
+                )
+            init = inits[0]
+        return c99_ast.CompoundLiteral(target_type=target, init=init)
+
     def init_declarator(self, items):
         # `init_declarator: declarator attribute_clause?
         #                    (ASSIGN initializer)?`. Returns a

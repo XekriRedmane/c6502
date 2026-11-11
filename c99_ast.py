@@ -513,6 +513,14 @@ class Comma(Type_exp):
     data_type: Type_data_type | None = None
 
 
+@dataclass(kw_only=True)
+class CompoundLiteral(Type_exp):
+    name: str = ''
+    target_type: Type_data_type
+    init: Type_exp
+    data_type: Type_data_type | None = None
+
+
 @dataclass
 class Type_unary_operator:
     pass

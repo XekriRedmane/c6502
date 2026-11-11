@@ -17,21 +17,6 @@ That document should be organized around diagrams, tables, and short
 sections with headings, so that a reader can find one stage without
 reading the whole thing.
 
-## Major: compound literals
-
-C99 §6.5.2.5, `(type){ initializer-list }`. Today `(` *type* `)` must
-be followed by an expression (a cast), and `{` there is a parse
-error, so `return (struct zchar){ z, false };` has to be written with
-a named local.
-
-A compound literal is an unnamed object. In block scope it has
-automatic storage that lasts until the end of the enclosing block,
-and at file scope it has static storage. It's an lvalue, so its
-address can be taken, and `(uint8_t[]){ 1, 2, 3 }` makes an array.
-After the parenthesized type name, `{` tells it apart from a cast.
-Lowering creates a temporary initialized the way a local with an
-initializer list is.
-
 ## Consider supporting `_Bool`
 
 C99 §6.2.5.2. The lexer reads `_Bool` as a keyword, but no grammar

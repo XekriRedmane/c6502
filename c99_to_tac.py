@@ -244,6 +244,15 @@ Mapping:
                                  `GetAddress(arr) + ...` while
                                  `ptr[i]` evaluates to
                                  `Load(ptr) + ...`.
+  C99 CompoundLiteral(name,   -> inside a function, lower the
+      type, init)                declaration `type name = init;`
+                                 where evaluation reaches the
+                                 literal, then continue as Var(name),
+                                 so every lvalue path applies. At
+                                 file scope the object is static and
+                                 lowers to Var(name) alone. See
+                                 `_materialize_operands` for which
+                                 operands are evaluated early.
   C99 SwitchStmt(control,     -> evaluate control once into a typed
         body, label, cases,      temp `t`; for each (case_value,
         default_label)           case_label) in `cases` emit
@@ -354,6 +363,8 @@ Cross-cutting invariants downstream passes depend on:
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import c99_ast
 import fp_arith
@@ -1881,11 +1892,66 @@ class Translator:
                 return
         raise TypeError(f"unexpected for_init: {init!r}")
 
+    def _materialize_compound_literal(
+        self,
+        cl: c99_ast.CompoundLiteral,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> c99_ast.Var:
+        """Evaluate a compound literal (C99 §6.5.2.5) and return the
+        `Var` naming its object, which is then an lvalue like any
+        other. Inside a function the object is automatic, and each
+        evaluation initializes it the way a declaration with the
+        same initializer would. At file scope it's static, and the
+        symbol-table sweep lays down its bytes."""
+        sym = self._symbols.get(cl.name)
+        if not isinstance(sym.attrs, StaticAttr):
+            self.translate_declaration(
+                c99_ast.VarDecl(var_decl=c99_ast.Type_var_decl(
+                    name=cl.name, init=cl.init,
+                    data_type=cl.target_type,
+                )),
+                instrs,
+            )
+        return c99_ast.Var(name=cl.name, data_type=cl.data_type)
+
+    def _materialize_operands(
+        self,
+        exp: c99_ast.Type_exp,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> c99_ast.Type_exp:
+        """Replace each compound literal that is a direct operand of
+        `exp` by the `Var` it evaluates to, so the lvalue paths
+        below, which look for a `Var`, see one. An operator evaluates
+        all its operands, so doing it first is fine, except for the
+        operands of `&&`, `||`, `?:`, and `,`, which run only in
+        their turn, and of `sizeof`, which never runs. Those reach
+        `translate_exp` one at a time, and the `CompoundLiteral` case
+        there evaluates each."""
+        if isinstance(
+            exp,
+            (c99_ast.Conditional, c99_ast.Comma, c99_ast.SizeOfExp),
+        ) or (
+            isinstance(exp, c99_ast.Binary)
+            and isinstance(exp.op, (c99_ast.LogicalAnd, c99_ast.LogicalOr))
+        ):
+            return exp
+        changes = {
+            field.name: self._materialize_compound_literal(value, instrs)
+            for field in dataclasses.fields(exp)
+            if isinstance(
+                value := getattr(exp, field.name), c99_ast.CompoundLiteral,
+            )
+        }
+        return dataclasses.replace(exp, **changes) if changes else exp
+
     def translate_exp(
         self,
         exp: c99_ast.Type_exp,
         instrs: list[tac_ast.Type_instruction],
     ) -> tac_ast.Type_val | None:
+        if isinstance(exp, c99_ast.CompoundLiteral):
+            exp = self._materialize_compound_literal(exp, instrs)
+        exp = self._materialize_operands(exp, instrs)
         match exp:
             case c99_ast.Constant(const=c):
                 # The c99 and TAC const sums are 1-to-1; just rewrap
@@ -2841,6 +2907,8 @@ class Translator:
         per-Conditional dst slot for Conditional), which IS
         addressable.
         """
+        if isinstance(lval, c99_ast.CompoundLiteral):
+            lval = self._materialize_compound_literal(lval, instrs)
         if isinstance(lval, c99_ast.Var):
             base = tac_ast.Var(
                 name=self.make_temporary_variable_name(

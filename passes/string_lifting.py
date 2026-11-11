@@ -433,6 +433,15 @@ class StringLifter:
                 return c99_ast.SizeOfExp(
                     exp=self._lift_exp(inner), data_type=dt,
                 )
+            case c99_ast.CompoundLiteral(
+                name=name, target_type=t, init=init, data_type=dt,
+            ):
+                # The initializer lifts as a declaration's of type
+                # `t` would, so `(char[]){"abc"}` keeps its String.
+                return c99_ast.CompoundLiteral(
+                    name=name, target_type=t,
+                    init=self._lift_init(init, t), data_type=dt,
+                )
             case c99_ast.SizeOfType():
                 # `sizeof (T)` — no sub-expression, no lifting.
                 return exp

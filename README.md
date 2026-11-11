@@ -1497,6 +1497,9 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   struct-by-value returns use an sret convention with a
   hidden first param. Block-scope tag shadowing supported.
   A struct or union may omit its tag (`struct { int x; } p;`).
+- Compound literals, `(type){ initializer-list }`: an array,
+  struct, union, or scalar object, automatic inside a function
+  (initialized each time it's evaluated) and static at file scope.
 - `typedef` at file and block scope, including typedefs of
   pointers, arrays, functions, and anonymous structs. An inner
   declaration of the same name hides a typedef name (`int T;`,

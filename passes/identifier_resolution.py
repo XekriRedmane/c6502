@@ -162,7 +162,8 @@ def _is_lvalue(exp) -> bool:
     Subscript (`a[i]` ≡ `*(a+i)`), Arrow (`p->m` ≡ `(*p).m` —
     always an lvalue regardless of `p`'s lvalue-ness, since the
     pointer is dereferenced), Dot (`s.m` — lvalue iff `s` is),
-    String (the static-storage object the lifter mints).
+    String (the static-storage object the lifter mints), and
+    CompoundLiteral (an unnamed object, C99 §6.5.2.5.4).
 
     Returns False for FunctionCall, Conditional, Binary, etc. —
     these produce rvalues. `f().m` is NOT an lvalue because `f()`
@@ -180,6 +181,8 @@ def _is_lvalue(exp) -> bool:
     if isinstance(exp, c99_ast.Dot):
         return _is_lvalue(exp.operand)
     if isinstance(exp, c99_ast.String):
+        return True
+    if isinstance(exp, c99_ast.CompoundLiteral):
         return True
     return False
 
@@ -1123,6 +1126,16 @@ class Resolver:
                 return c99_ast.Subscript(
                     array=self.resolve_exp(arr, scope),
                     index=self.resolve_exp(idx, scope),
+                )
+            case c99_ast.CompoundLiteral(target_type=t, init=init):
+                # `(T){...}` — an unnamed object. Give it a unique
+                # name, the way a block-scope declaration gets one,
+                # and resolve its type's tags and its initializer
+                # here, where it appears.
+                return c99_ast.CompoundLiteral(
+                    name=self.make_unique("compound_literal"),
+                    target_type=self._resolve_type(t),
+                    init=self.resolve_exp(init, scope),
                 )
             case c99_ast.InitList(items=items):
                 # `{e1, e2, ...}` — recurse into each item. The type

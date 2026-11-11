@@ -223,6 +223,18 @@ module C99 {
         -- value (and type) is that of `right`. Left-associative — the
         -- parser nests as `Comma(Comma(a, b), c)` for `a, b, c`.
         | Comma(exp left, exp right, data_type?)
+        -- Compound literal `(type){ initializer-list }` (C99 §6.5.2.5):
+        -- an unnamed object, and an lvalue. `init` has the shape a
+        -- var_decl's would: an InitList for an array or struct, a
+        -- String for a char array, or the one expression in the
+        -- braces for a scalar. `name` is the object's name, "" from
+        -- the parser and unique after identifier_resolution. Inside
+        -- a function the object is automatic, and evaluation
+        -- initializes it each time it reaches the literal; outside
+        -- one it's static, with a constant initializer. An array of
+        -- unknown size (`(int[]){1, 2}`) takes its size from the
+        -- initializer in the type checker.
+        | CompoundLiteral(identifier name, data_type target_type, exp init, data_type?)
 
     unary_operator = Complement | Negate | LogicalNot
     incdec_op = Increment | Decrement

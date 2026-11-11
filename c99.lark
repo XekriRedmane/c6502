@@ -517,6 +517,7 @@ constant_exp: conditional_exp
             | postfix_exp LBRACKET exp RBRACKET -> subscript
             | postfix_exp DOT IDENTIFIER        -> member_dot
             | postfix_exp ARROW IDENTIFIER      -> member_arrow
+            | LPAREN type_name RPAREN LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> compound_literal
             | atom
 
 // Function call sits at atom level (one form of primary expression

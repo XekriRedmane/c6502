@@ -447,6 +447,16 @@ notes that aren't visible from the grammar alone:
   label_resolution fill it in later. `SwitchStmt` also has `cases`
   (list of `(value, label)` pairs), `default_label`, and a
   `promoted_type` filled by the type checker.
+- A compound literal `(T){...}` (C99 §6.5.2.5) is a
+  `CompoundLiteral(name, target_type, init)` node, parsed as a
+  postfix expression (`{` after `(T)` tells it from a cast). Its
+  `init` has a var_decl's shape (InitList, a String for a char
+  array, or a scalar's one expression), identifier_resolution names
+  its object `@N.compound_literal`, and the type checker checks it as
+  that declaration: automatic inside a function, static at file
+  scope, an unsized array sized from the initializer. c99_to_tac
+  initializes the object where evaluation reaches the literal and
+  then treats it as a `Var`.
 - Case-label expressions go through a `constant_exp` wrapper around
   `conditional_exp` — the wrapper is a hook for the §6.6 validator
   in `passes.constant_expression`.

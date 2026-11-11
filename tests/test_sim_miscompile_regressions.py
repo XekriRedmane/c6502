@@ -326,6 +326,17 @@ _CASES: list[tuple[str, str, int]] = [
         }
         int main(void) { add3(0, 0, 0); return fp(1, 2, 3); }
     """, 6),
+    # hwreg_eligibility put the high byte of `return e.n` in X,
+    # loaded straight from `e`. `e` has its address taken and main
+    # makes an indirect call, so `e` lives in main's soft-stack
+    # frame, and there's no LDX (FP),Y: the assembler rejected
+    # `Mov(Frame, Reg(X))`.
+    ("x_load_from_address_taken_frame_local", """
+        struct ev { int n; };
+        void inc(struct ev *e) { e->n++; }
+        int main(void) { struct ev e; void (*c)(struct ev *) = inc;
+                         e.n = 1; c(&e); return e.n; }
+    """, 2),
 ]
 
 

@@ -88,8 +88,10 @@ every use must be one of these.
 
 - A copy to or from an immediate, a register, a `Data` or `ZP` byte,
   or another value, which becomes `LDX`, `STX`, `TAX`, or `TXA`. A
-  copy to or from the soft stack or through a pointer also qualifies,
-  since `asm_emit` routes it through A.
+  copy to or from the soft stack or through a pointer doesn't
+  qualify, because `LDX` and `STX` have no `(zp),Y` mode. Neither
+  does a copy to or from a value whose address is taken, since such
+  a value gets no color and may end up on the soft stack.
 - An increment or decrement, which becomes `INX` or `DEX`.
 - A compare with the value on the left and an immediate or a `Data`
   or `ZP` byte on the right, which becomes `CPX`.

@@ -17,9 +17,11 @@ collapses to nothing — X already holds P's value.
 A Pseudo `P` is HwReg-eligible iff EVERY def and use of `P` in the
 function falls into the supported instruction set. Defs:
 
-  * `Mov(<Imm | Reg(A) | ZP | Data>, P)` — LDX / LDY (the 6502 has
-    LDX / LDY zp / abs / # but no indirect-Y, so Stack / Frame /
-    Indirect sources fall back to A as a conduit).
+  * `Mov(<Imm | Reg(A) | ZP | Data | Pseudo>, P)` — LDX / LDY (the
+    6502 has LDX / LDY zp / abs / # but no indirect-Y, so a Stack /
+    Frame / Indirect source disqualifies P, and so does an
+    address-taken Pseudo, which the regalloc never colors and which
+    can end up in a Frame slot).
   * `Inc(P)` — INX / INY.
   * `Dec(P)` — DEX / DEY.
   * `Phi(dst=P)` — SSA Phi node merging values from predecessors.
@@ -29,8 +31,9 @@ function falls into the supported instruction set. Defs:
 
 Uses:
 
-  * `Mov(P, <Reg(A) | ZP | Data>)` — TXA / TYA / STX / STY (zp/abs
-    only; Stack/Frame/Indirect dests need A).
+  * `Mov(P, <Reg(A) | ZP | Data | Pseudo>)` — TXA / TYA / STX / STY
+    (zp/abs only; a Stack / Frame / Indirect or address-taken Pseudo
+    dest would need A, so it disqualifies P).
   * `Mov(P, <other Pseudo>)` — kept for completeness; emit handles
     Reg(X|Y)→Reg(X|Y) cross-moves via A. (After coalescing, this
     case typically disappears.)
@@ -187,6 +190,15 @@ def scan_function(
     use_count: dict[str, int] = {}
 
     instrs = fn.instructions
+    # Address-taken names (`LoadAddress.src`) never get a regalloc
+    # color. `replace_pseudoregisters` gives each a Frame slot, or a
+    # zero-page byte from the function's private pool when one fits,
+    # so as a Mov peer each counts as a Frame operand.
+    address_taken = {
+        instr.src.name for instr in instrs
+        if isinstance(instr, asm_ast.LoadAddress)
+        and isinstance(instr.src, asm_ast.Pseudo)
+    }
     for i, instr in enumerate(instrs):
         for op_role, op in _operand_roles(instr):
             if not isinstance(op, asm_ast.Pseudo):
@@ -197,7 +209,7 @@ def scan_function(
                 disqualified_x.add(op.name)
                 disqualified_y.add(op.name)
                 continue
-            x_ok, y_ok = _role_ok(op_role, instr)
+            x_ok, y_ok = _role_ok(op_role, instr, address_taken)
             if not x_ok:
                 disqualified_x.add(op.name)
             if not y_ok:
@@ -359,7 +371,10 @@ def _operand_roles(instr: asm_ast.Type_instruction):
             yield ("other", dst)
 
 
-def _role_ok(role: str, instr: asm_ast.Type_instruction) -> tuple[bool, bool]:
+def _role_ok(
+    role: str, instr: asm_ast.Type_instruction,
+    address_taken: frozenset[str] | set[str] = frozenset(),
+) -> tuple[bool, bool]:
     """Is a Pseudo in `role` of `instr` representable when colored
     to X or Y? Returns `(x_ok, y_ok)` — independent per HwReg.
 
@@ -382,6 +397,8 @@ def _role_ok(role: str, instr: asm_ast.Type_instruction) -> tuple[bool, bool]:
         return (True, True)
     if isinstance(instr, asm_ast.Mov):
         peer = instr.dst if role == "mov_src" else instr.src
+        if isinstance(peer, asm_ast.Pseudo) and peer.name in address_taken:
+            peer = asm_ast.Frame(offset=0)
         return _peer_is_hwreg_friendly(peer, role)
     if role == "cmp_left":
         # Compare(Reg(X|Y), <Imm | ZP | Data>) → CPX/CPY
@@ -425,8 +442,12 @@ def _peer_is_hwreg_friendly(
         # apply_coloring resolves both sides before emit.
         return (True, True)
     if isinstance(peer, (asm_ast.Stack, asm_ast.Frame, asm_ast.Indirect)):
-        # Indirect-Y addressing — emit goes through A.
-        return (True, True)
+        # Indirect-Y addressing, which LDX / LDY / STX / STY lack.
+        # There's no Mov from one of these into X or Y at all, and
+        # the store emits as `TXA` / `TYA` and an `LDY #off; STA
+        # (zp),Y`, which overwrites A and Y where the IR doesn't
+        # say so, so later passes that track A would go wrong.
+        return (False, False)
     if isinstance(peer, asm_ast.IndexedData):
         if role == "mov_dst":
             # The Pseudo is the load target; peer is IndexedData

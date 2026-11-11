@@ -79,6 +79,56 @@ class TestHwRegEligibility(unittest.TestCase):
         elig = self._scan(instrs)
         self.assertNotIn("P", elig.eligible)
 
+    def test_load_from_indirect_memory_disqualified(self):
+        # LDX / LDY have no indirect-Y mode, so no Mov loads X or Y
+        # from a Stack / Frame / Indirect byte.
+        for src in (
+            asm_ast.Frame(offset=1),
+            asm_ast.Stack(offset=1),
+            asm_ast.Indirect(offset=0),
+        ):
+            with self.subTest(src=src):
+                elig = self._scan([
+                    _mov(src, asm_ast.Pseudo(name="P", offset=0)),
+                ])
+                self.assertNotIn("P", elig.eligible)
+
+    def test_store_to_indirect_memory_disqualified(self):
+        # STX / STY have no indirect-Y mode either; the store would
+        # need A, which the IR wouldn't show as overwritten.
+        elig = self._scan([
+            _mov(asm_ast.Imm(value=3), asm_ast.Pseudo(name="P", offset=0)),
+            _mov(asm_ast.Pseudo(name="P", offset=0), asm_ast.Frame(offset=1)),
+        ])
+        self.assertNotIn("P", elig.eligible)
+
+    def test_address_taken_peer_disqualified(self):
+        # An address-taken Pseudo is never colored and may end up in
+        # a Frame slot, so it counts as indirect memory.
+        elig = self._scan([
+            asm_ast.LoadAddress(
+                src=asm_ast.Pseudo(name="E", offset=0),
+                dst=asm_ast.Pseudo(name="PTR", offset=0),
+            ),
+            _mov(
+                asm_ast.Pseudo(name="E", offset=1),
+                asm_ast.Pseudo(name="P", offset=0),
+            ),
+            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
+            _mov(_reg("A"), _reg("X")),
+        ])
+        self.assertNotIn("P", elig.eligible)
+
+    def test_colorable_pseudo_peer_stays_eligible(self):
+        elig = self._scan([
+            _mov(
+                asm_ast.Pseudo(name="Q", offset=0),
+                asm_ast.Pseudo(name="P", offset=0),
+            ),
+            _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),
+        ])
+        self.assertIn("P", elig.eligible_x)
+
     def test_use_count_tracks_references(self):
         instrs = [
             _mov(asm_ast.Pseudo(name="P", offset=0), _reg("A")),

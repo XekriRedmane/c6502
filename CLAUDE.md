@@ -462,6 +462,43 @@ notes that aren't visible from the grammar alone:
   picks the labeled-statement branch; `(` followed by a type-
   specifier token picks the cast branch.
 
+### Typedef names
+
+`typedef` (C99 §6.7.7) never reaches the AST. The parser puts each
+typedef name's type in place of its uses, so every later pass sees
+ordinary types, and a typedef declaration leaves nothing behind but
+any struct body it defines (plus a forward `struct foo;` for a tag
+it introduces into its scope, so identifier resolution introduces
+the same tag there).
+
+Because `T * x;` is a declaration when T names a type and a
+multiplication otherwise, the parser tracks scopes while it parses
+(`_ParseContext` in `parser.py`):
+
+- The AST builder runs inside the LALR parse (`Lark(...,
+  transformer=_BUILDER)`), as each rule reduces, rather than on the
+  finished tree. `init_declarator` declares its name in the current
+  scope as soon as the declarator ends: a typedef name with its
+  type, or an ordinary name that hides one.
+- `_TypedefLexer` pushes a scope at each block `{` and each `for`,
+  pops it at the `}` (the `for` scope pops in `for_stmt`, which then
+  retypes the token after the loop, since the lexer runs one token
+  ahead of the reductions). It retypes an IDENTIFIER to TYPEDEF_NAME
+  when the name is a typedef in scope AND the parse table can shift
+  a TYPEDEF_NAME at that point. That second test is what makes `int
+  T;`, `p->T`, `struct T`, and a parameter named T ordinary
+  identifiers.
+- The grammar admits a typedef name only as the head of a specifier
+  list (`decl_specs`, `_specqual_list`), never after a type
+  specifier, so after `int` the parser can't shift one.
+
+`struct { ... }` with no tag gets a made-up tag
+(`__anonymous_struct_<N>`). A typedef whose struct tag an inner
+declaration hides at the point of use is rejected, since the
+substituted `struct foo` would name the inner one. `<stdint.h>`
+uses real typedefs; `<stdbool.h>` keeps `bool` a macro, as C99
+§7.16.2 specifies.
+
 ### Lexer & preprocessor
 
 The lexer (`lexer.py`) treats comments as lex errors — it assumes a

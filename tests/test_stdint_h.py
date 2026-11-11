@@ -24,8 +24,8 @@ _HEADER = "#include <stdint.h>\n"
 
 
 class TestStdintTypeAliases(unittest.TestCase):
-    """Each typedef-macro must expand to a c6502 type of the right
-    byte width. Test by returning `sizeof(alias)` and reading the
+    """Each typedef must name a c6502 type of the right byte
+    width. Test by returning `sizeof(alias)` and reading the
     accumulator."""
 
     def _sizeof(self, alias: str) -> int:

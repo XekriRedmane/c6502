@@ -148,6 +148,13 @@ PRAGMA_UNROLL: "__c6502_pragma_unroll__"
 // -- Identifier (placeholder alphabet, pending a grammar) --
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 
+// A typedef name (C99 §6.7.7). The lexer never matches it. The
+// parser's lexer (`_TypedefLexer` in parser.py) retypes an IDENTIFIER
+// to TYPEDEF_NAME when the name is a typedef in the current scope and
+// the parser can shift a TYPEDEF_NAME at that point, which is how
+// `T * x;` parses as a declaration when T names a type.
+%declare TYPEDEF_NAME
+
 // -- Symbols (C99 punctuators). One terminal per symbol so parser rules
 //    can refer to them by name (e.g. LPAREN, ARROW, PLUS_ASSIGN).
 //    Keep this list in sync with SYMBOLS in lexer.py.
@@ -210,7 +217,7 @@ WS: /[ \t\n\f]+/
 start: declaration*
 
 // declaration (§6.7) and function-definition (§6.9.1). Both start
-// with `specifier+ declarator`; the trailing form distinguishes:
+// with `decl_specs declarator`; the trailing form distinguishes:
 //   `(ASSIGN exp)? SEMICOLON`  → var_decl
 //      (a function-typed declarator with no body lands here too —
 //       e.g. `int foo(int);` is a forward declaration of a function;
@@ -220,11 +227,28 @@ start: declaration*
 // LALR(1) lookahead-1 distinguishes the two on `LBRACE` vs `ASSIGN`/
 // `SEMICOLON` once the declarator has been parsed.
 declaration: function_decl | var_decl
-// Top-level declaration specifier: a type, a storage class, or a
-// type qualifier. C99 §6.7 allows these in any order. The
-// `_split_specifiers` helper sorts them out and rejects illegal
-// combinations.
-specifier: type_specifier | type_qualifier | STATIC | EXTERN | REGISTER
+// Declaration specifiers (C99 §6.7): types, storage classes, and
+// type qualifiers, in any order. The `_split_specifiers` helper sorts
+// them out and rejects illegal combinations.
+//
+// A typedef name may only start the type: after a type specifier, an
+// identifier is the declarator even if it names a typedef, so `int T;`
+// declares an object T that hides typedef T. The grammar says so by
+// accepting a typedef name only as `_type_head`, never after one. The
+// typedef-aware lexer then retypes T as TYPEDEF_NAME only where the
+// parser can shift one. `decl_specs` is a rule of its own, not
+// inlined, so the parser sees the specifiers of a declaration before
+// its declarators and can record a typedef name as soon as its
+// declarator ends.
+decl_specs: _nontype_specs? _type_head _specs_after_type?
+          | _nontype_specs
+_nontype_specs: specifier | _nontype_specs specifier
+_specs_after_type: _spec_after_type | _specs_after_type _spec_after_type
+_spec_after_type: specifier | type_specifier
+_type_head: type_specifier | typedef_name
+// A specifier that isn't a type: a storage class or a type qualifier.
+specifier: type_qualifier | STATIC | EXTERN | REGISTER | TYPEDEF
+typedef_name: TYPEDEF_NAME
 // Optional GCC-style attribute prefix on a declaration (function or
 // var). Recognized annotation names: `zp_abi` and
 // `return_bool_in_carry` (function-level, bare identifiers) and
@@ -260,8 +284,8 @@ pragma_clause: PRAGMA_UNROLL                                         -> pragma_u
 // init-declarators sharing the same specifier run: `int a, b = 5,
 // c;`. Each init-declarator fans out into its own VarDecl (or
 // FunctionDecl forward-decl, if its composed type is FunType).
-var_decl: attribute_clause? specifier+ init_declarator (COMMA init_declarator)* SEMICOLON
-        | attribute_clause? specifier+ SEMICOLON                -> tag_only_decl
+var_decl: attribute_clause? decl_specs init_declarator (COMMA init_declarator)* SEMICOLON
+        | attribute_clause? decl_specs SEMICOLON                -> tag_only_decl
 
 // Postfix `attribute_clause?` attaches register / ABI annotations to
 // this specific declarator — used for `int x __attribute__((reg("X")))`
@@ -279,20 +303,23 @@ init_declarator: declarator attribute_clause? (ASSIGN initializer)?
 // grammar leaves room without a future grammar bump.
 initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
-function_decl: attribute_clause? specifier+ declarator block
+function_decl: attribute_clause? decl_specs declarator block
 
 type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | VOID
               | struct_or_union_specifier
 
 // Struct or union specifier (C99 §6.7.2.1). Two shapes:
-//   * defining: `struct tag { member_decl+ }`
+//   * defining: `struct tag { member_decl+ }`, or `struct {
+//                 member_decl+ }` with no tag, which the parser gives
+//                 a made-up tag of its own
 //   * referring: `struct tag` (used in object declarations and
 //                 forward `struct foo;` declarations alike)
-// c6502 requires a tag (anonymous structs not modeled). Member-decl
-// list is non-empty when present — empty bodies (`struct foo {}`)
-// would be illegal per §6.7.2.1.7.
-struct_or_union_specifier: STRUCT IDENTIFIER (LBRACE struct_declaration+ RBRACE)?  -> struct_specifier
-                         | UNION  IDENTIFIER (LBRACE struct_declaration+ RBRACE)?  -> union_specifier
+// Member-decl list is non-empty when present — empty bodies (`struct
+// foo {}`) would be illegal per §6.7.2.1.7.
+struct_or_union_specifier: STRUCT IDENTIFIER? LBRACE struct_declaration+ RBRACE  -> struct_specifier
+                         | STRUCT IDENTIFIER                                     -> struct_specifier
+                         | UNION  IDENTIFIER? LBRACE struct_declaration+ RBRACE  -> union_specifier
+                         | UNION  IDENTIFIER                                     -> union_specifier
 
 // Struct member declaration (C99 §6.7.2.1.2). Reuses `declarator`
 // from §6.7.5 so members can be pointers, arrays, struct-typed,
@@ -300,7 +327,14 @@ struct_or_union_specifier: STRUCT IDENTIFIER (LBRACE struct_declaration+ RBRACE)
 // definitions (the embedded `struct_or_union_specifier` may only
 // be a tag-reference shape; the type checker enforces this).
 struct_declaration: specifier_qualifier_list struct_declarator_list SEMICOLON
-specifier_qualifier_list: (type_specifier | type_qualifier)+
+specifier_qualifier_list: _specqual_list
+// A specifier-qualifier list (§6.7.2.1), with a typedef name allowed
+// only as the head of the type, as in `decl_specs`.
+_specqual_list: _qualifiers? _type_head _specquals_after_type?
+              | _qualifiers
+_qualifiers: type_qualifier | _qualifiers type_qualifier
+_specquals_after_type: _specqual_after_type | _specquals_after_type _specqual_after_type
+_specqual_after_type: type_qualifier | type_specifier
 struct_declarator_list: declarator (COMMA declarator)*
 
 block: LBRACE block_item* RBRACE
@@ -616,8 +650,8 @@ parameter_or_ellipsis: parameter_declaration | ELLIPSIS
 // pinning the argument to a specific 6502 register at the calling
 // convention level. Abstract-declarator parameters don't carry a
 // name and can't be reg-annotated.
-parameter_declaration: specifier+ declarator attribute_clause?
-                     | specifier+ abstract_declarator?
+parameter_declaration: decl_specs declarator attribute_clause?
+                     | decl_specs abstract_declarator?
 
 // Old-style K&R identifier list (§6.7.5). Accepted for grammar
 // completeness; the c6502 AST has no representation for K&R-style
@@ -661,7 +695,7 @@ direct_abstract_declarator: LPAREN abstract_declarator RPAREN
 // abstract declarators and rejects the array / function-pointer
 // shapes (no AST plumbing for them yet).
 
-type_name: (type_specifier | type_qualifier)+ abstract_declarator?
+type_name: _specqual_list abstract_declarator?
 
 // Lexer-only start rule. Lark's LALR mode drops terminals that aren't
 // reachable from a start rule, which would shrink the lexer as long as

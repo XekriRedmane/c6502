@@ -14,15 +14,24 @@ Adding a grammar rule:
 @v_args(inline=True) spreads the rule's items into named parameters so
 each method's signature mirrors the rule body. Unused items (the
 punctuator terminals) are conventionally prefixed with `_`.
+
+The builder runs inside the LALR parse, as each rule reduces, so that
+declarations take effect before the parser lexes the tokens after
+them. That is how typedef names work; see `_ParseContext`. A method
+that has a side effect on the parse context has to run in source
+order, which reductions do.
 """
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 
-from lark import Lark, Token, Transformer
-from lark.exceptions import VisitError
+from lark import Lark, Token, Transformer, Tree
+from lark.lexer import BasicLexer
+from lark.parsers.lalr_analysis import Shift
 from lark.visitors import v_args
 
 import c99_ast
@@ -30,19 +39,6 @@ import fp_arith
 
 
 _GRAMMAR_PATH = Path(__file__).parent / "c99.lark"
-_LARK = Lark.open(
-    str(_GRAMMAR_PATH),
-    parser="lalr",
-    lexer="basic",
-    # `start` is the real translation-unit entry point; `lex_only`
-    # keeps every terminal reachable so the lexer-only tests don't
-    # see "unused terminal" trimming. `declarator` and `type_name`
-    # are exposed so the §6.7.5 / §6.7.6 grammar can be unit-tested
-    # in isolation, since nothing reachable from `start` exercises
-    # the named-declarator side yet (var_decl / function_decl still
-    # take a bare IDENTIFIER, not a full declarator).
-    start=["start", "lex_only", "declarator", "type_name"],
-)
 
 
 class ParserError(Exception):
@@ -72,10 +68,18 @@ _COMPOUND_ASSIGN_OPS = {
 # Storage-class specifier token type → AST node class. Used by
 # `_split_specifiers` to map the parsed token to the AST node that
 # rides on `Type_var_decl.storage_class` / `Type_function_decl.storage_class`.
+class _TypedefStorage:
+    """The `typedef` storage-class specifier (C99 §6.7.1.5 calls it one
+    "for syntactic convenience only"). It never reaches the AST: a
+    typedef declaration declares a name for a type, which the parser
+    puts in place of each use of the name."""
+
+
 _STORAGE_CLASSES = {
     "STATIC": c99_ast.Static,
     "EXTERN": c99_ast.Extern,
     "REGISTER": c99_ast.Register,
+    "TYPEDEF": _TypedefStorage,
 }
 
 # Token types of every leaf the `specifier` rule can produce. After the
@@ -86,12 +90,12 @@ _STORAGE_CLASSES = {
 # both shapes).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "VOID",
-                           "STATIC", "EXTERN", "REGISTER",
-                           "STRUCT", "UNION",
+                           "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
+                           "STRUCT", "UNION", "TYPEDEF_NAME",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "VOID",
-                                "STRUCT", "UNION")
+                                "STRUCT", "UNION", "TYPEDEF_NAME")
 # `const` and `volatile` are honored at parse time and wrapped into
 # `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
 # but is silently dropped — c6502 has no aliasing-analysis pass that
@@ -115,6 +119,199 @@ class _TagSpecifier:
     tag: str
     is_union: bool
     body: list[tuple[str, "c99_ast.Type_data_type"]] | None  # None = reference, [] = empty body (illegal)
+
+
+# A typedef name used as a type specifier, produced by the
+# `typedef_name` transformer. `data_type` is a fresh copy of the type
+# the typedef declared, so each use gets its own AST nodes.
+@dataclass
+class _TypedefSpecifier:
+    type: str  # always "TYPEDEF_NAME" — same protocol as Token.type
+    name: str
+    data_type: "c99_ast.Type_data_type"
+
+
+# The specifiers of one declaration, produced by the `decl_specs`
+# transformer. The parser keeps a stack of these (`_ParseContext.
+# decl_specs`) so `init_declarator` can tell, as soon as a declarator
+# ends, whether it declared a typedef name and what type it names.
+@dataclass
+class _DeclSpecs:
+    specs: list
+
+    @property
+    def is_typedef(self) -> bool:
+        return any(getattr(s, "type", None) == "TYPEDEF" for s in self.specs)
+
+
+class _Binding:
+    """What an ordinary identifier (C99 §6.2.3) means in one scope, as
+    far as the parser needs to know: a typedef name, with the type it
+    names, or anything else (an object, a function, a parameter).
+    `tag_scopes` maps each struct/union tag in a typedef's type to the
+    scope whose declaration of the tag the type refers to."""
+
+    __slots__ = ("data_type", "tag_scopes")
+
+    def __init__(self, data_type=None, tag_scopes=None):
+        self.data_type = data_type
+        self.tag_scopes = tag_scopes or {}
+
+    @property
+    def is_typedef(self) -> bool:
+        return self.data_type is not None
+
+
+_ORDINARY = _Binding()
+
+
+class _Scope:
+    """One scope of the parser's view of the program: the ordinary
+    identifiers declared in it, and the struct/union tags."""
+
+    __slots__ = ("names", "tags")
+
+    def __init__(self):
+        self.names: dict[str, _Binding] = {}
+        self.tags: set[str] = set()
+
+
+class _ParseContext:
+    """Scope tracking while the parser runs, for typedef names.
+
+    C's grammar depends on which identifiers name types: `T * x;` is a
+    declaration when T is a typedef name and a multiplication when it
+    isn't. So the parser follows the scopes as it reads (the "lexer
+    hack"). `_TypedefLexer` pushes a scope at each `{` that starts a
+    block and at each `for`, pops the block's scope at its `}`, and
+    retypes a typedef name to TYPEDEF_NAME. The AST builder, which runs
+    as the parser reduces each rule, declares names: a typedef name,
+    or an object, function, or parameter that hides one. `for_stmt`
+    pops the scope of its `for`.
+
+    The parser also tracks struct/union tags, the way identifier
+    resolution does, for two reasons. A typedef that refers to a tag
+    no declaration has introduced yet introduces it, and that has to
+    survive into the AST, where the typedef declaration itself
+    doesn't appear. And a typedef whose struct tag an inner
+    declaration hides can't be expressed by putting its type in place
+    of its name, which the parser reports.
+
+    The lexer reads one token ahead of the reductions: a rule reduces
+    only when the parser sees the token after it. Declarations don't
+    mind, since a declarator ends at a `,`, `;`, or `=` that the
+    parser sees before the next name. But a `for` loop ends at that
+    next token, which was lexed while the loop's scope was still open,
+    so `for_stmt` retypes it (`retype_lookahead`)."""
+
+    def __init__(self):
+        self.scopes: list[_Scope] = [_Scope()]
+        # One entry per open `{`: the scope it pushed, or None for a
+        # struct/union body, which isn't a scope.
+        self.brace_scopes: list[_Scope | None] = []
+        self.for_scopes: list[_Scope] = []
+        self.decl_specs: list[_DeclSpecs] = []
+        # Types of the last two tokens lexed, most recent last.
+        self.recent: tuple[str | None, str | None] = (None, None)
+        # The scope pushed by a `{` that is the latest token lexed. A
+        # function definition's declarator reduces when the parser sees
+        # the `{` of its body, and the parameters go in this scope.
+        self.body_scope: _Scope | None = None
+        self.anonymous_tags = 0
+        # The latest token lexed, and the parser state it was lexed in.
+        self.token: Token | None = None
+        self.parser_state = None
+
+    def push_scope(self) -> _Scope:
+        scope = _Scope()
+        self.scopes.append(scope)
+        return scope
+
+    def remove_scope(self, scope: _Scope) -> None:
+        for i in range(len(self.scopes) - 1, 0, -1):
+            if self.scopes[i] is scope:
+                del self.scopes[i]
+                return
+
+    def lookup(self, name: str) -> _Binding | None:
+        for scope in reversed(self.scopes):
+            binding = scope.names.get(name)
+            if binding is not None:
+                return binding
+        return None
+
+    def tag_scope(self, tag: str) -> _Scope | None:
+        for scope in reversed(self.scopes):
+            if tag in scope.tags:
+                return scope
+        return None
+
+    def declare(self, name: str, binding: _Binding, scope=None) -> None:
+        """Declare `name` in `scope` (the current one by default).
+        C99 §6.7.3: an identifier declared twice in one scope must be
+        the same kind of thing both times. A typedef name may be
+        declared again with the same type, which C11 §6.7.3 allows
+        and headers rely on."""
+        scope = scope if scope is not None else self.scopes[-1]
+        old = scope.names.get(name)
+        if old is not None:
+            if old.is_typedef != binding.is_typedef:
+                raise ParserError(
+                    f"{name!r} is declared both as a typedef name and "
+                    f"as an object or function in the same scope"
+                )
+            if binding.is_typedef and old.data_type != binding.data_type:
+                raise ParserError(
+                    f"typedef {name!r} is declared again with a "
+                    f"different type"
+                )
+        scope.names[name] = binding
+
+    def retype_lookahead(self, rule_origin: str) -> None:
+        """Lex the latest token again as a rule that reduces on seeing
+        it, and makes `rule_origin`, ends a scope. The parser reads
+        `token.type` afresh after each reduction, so changing it in
+        place takes effect. Only an identifier that becomes a typedef
+        name can need it: a scope that ends can hide a typedef name but
+        can't declare one the token could be."""
+        token = self.token
+        if token is None or token.type != "IDENTIFIER":
+            return
+        binding = self.lookup(token.value)
+        if binding is None or not binding.is_typedef:
+            return
+        # The reduction in progress has popped its children's states
+        # but not yet pushed the state for `rule_origin`.
+        states = self.parser_state.parse_conf.states
+        stack = list(self.parser_state.state_stack)
+        stack.append(states[stack[-1]][rule_origin][1])
+        if _can_shift(states, stack, "TYPEDEF_NAME"):
+            token.type = "TYPEDEF_NAME"
+
+    def introduce_tag(self, tag: str) -> None:
+        """A struct/union specifier names `tag`. A tag that no
+        declaration has introduced yet comes into being in the current
+        scope (C99 §6.7.2.3.8)."""
+        if self.tag_scope(tag) is None:
+            self.scopes[-1].tags.add(tag)
+
+
+_CTX = _ParseContext()
+
+
+def _type_tags(t, out: list) -> list:
+    """Append `(tag, is_union)` for every struct/union type anywhere in
+    the type `t` to `out`, and return `out`."""
+    if isinstance(t, c99_ast.Structure):
+        out.append((t.tag, False))
+    elif isinstance(t, c99_ast.Union):
+        out.append((t.tag, True))
+    for field in dataclasses.fields(t):
+        value = getattr(t, field.name)
+        for v in value if isinstance(value, list) else [value]:
+            if dataclasses.is_dataclass(v):
+                _type_tags(v, out)
+    return out
 
 
 def _resolve_data_type(type_specs):
@@ -152,6 +349,17 @@ def _resolve_data_type(type_specs):
                                                       other type
                                                       specifier
     """
+    # A typedef name is a whole type on its own (C99 §6.7.2.2).
+    typedef_specs = [
+        t for t in type_specs if isinstance(t, _TypedefSpecifier)
+    ]
+    if typedef_specs:
+        if len(type_specs) != 1:
+            raise ParserError(
+                f"typedef name {typedef_specs[0].name!r} cannot combine "
+                f"with another type specifier"
+            )
+        return typedef_specs[0].data_type
     # Struct/union specifiers don't combine with any other type
     # specifier (C99 §6.7.2 is exhaustive — the type-specifier list
     # has to be exactly one of the listed combinations, and a
@@ -282,7 +490,8 @@ def _split_specifiers(specs):
 
     Returns `(data_type, storage_class)` where data_type is wrapped
     in `Const(...)` if any `const` qualifier appeared. storage_class
-    is a `c99_ast.Static() / .Extern() / None`.
+    is a `c99_ast.Static() / .Extern() / .Register()`, a
+    `_TypedefStorage()`, or None.
     """
     type_specs = []
     qualifier_specs = []
@@ -322,7 +531,19 @@ def _apply_qualifiers(data_type, qualifier_tokens):
     than once in the same specifier-qualifier-list ... the behavior
     is the same as if it appeared only once") — wrapping `Const(T)`
     in another `Const` (or `Volatile(T)` in another `Volatile`) is a
-    no-op."""
+    no-op.
+
+    Qualifying an array type qualifies its elements instead (C99
+    §6.7.3.8), which only happens when the array type comes from a
+    typedef: `const A x;` with `typedef int A[3];` gives x the type
+    `Array(Const(Int), 3)`, the same as `const int x[3];`."""
+    if isinstance(data_type, c99_ast.Array):
+        return c99_ast.Array(
+            element_type=_apply_qualifiers(
+                data_type.element_type, qualifier_tokens,
+            ),
+            size=data_type.size,
+        )
     has_const = any(t.type == "CONST" for t in qualifier_tokens)
     has_volatile = any(t.type == "VOLATILE" for t in qualifier_tokens)
     if has_volatile and not _has_outer_volatile(data_type):
@@ -351,20 +572,14 @@ def _has_outer_volatile(t):
 
 
 def _consume_specifiers(items, start):
-    """Pull the leading specifier tokens off `items`. Returns
-    `(specs, idx)` where `idx` is the position of the first non-
-    specifier item (the IDENTIFIER for both var_decl and function_decl,
-    by grammar)."""
-    specs = []
-    i = start
-    while (
-        i < len(items)
-        and hasattr(items[i], "type")
-        and items[i].type in _SPECIFIER_TOKEN_TYPES
-    ):
-        specs.append(items[i])
-        i += 1
-    return specs, i
+    """Take the `decl_specs` result at `items[start]` and pop it off
+    the parser's stack of declaration specifiers, now that its
+    declaration has been reduced. Returns `(specs, start + 1)`, where
+    `specs` is the list of specifier leaves."""
+    decl_specs = items[start]
+    popped = _CTX.decl_specs.pop()
+    assert popped is decl_specs, "declaration specifier stack out of step"
+    return decl_specs.specs, start + 1
 
 
 # Recognized `__attribute__` spec shapes. Each entry maps the spec
@@ -1008,6 +1223,69 @@ def _apply_declarator(decl_tree, base_type):
     return _apply_direct_declarator(direct_tree, base_type)
 
 
+def _declarator_name(decl_tree) -> str:
+    """The identifier a `declarator` parse tree declares."""
+    dd = decl_tree.children[-1]
+    while True:
+        first = dd.children[0]
+        if _is_token(first, "IDENTIFIER"):
+            return str(first)
+        if _is_token(first, "LPAREN"):
+            # `LPAREN declarator RPAREN`
+            dd = dd.children[1].children[-1]
+        else:
+            # An array or function suffix on an inner direct_declarator.
+            dd = first
+
+
+def _storage_name(storage) -> str:
+    """The keyword for a storage-class specifier, for messages."""
+    if isinstance(storage, _TypedefStorage):
+        return "typedef"
+    return type(storage).__name__.lower()
+
+
+def _typedef_declaration(prefix_specs, init_decls, struct_decls):
+    """The AST declarations a typedef declaration leaves behind. The
+    typedef names were declared as their declarators ended (see
+    `_ASTBuilder.init_declarator`), and the parser puts their types in
+    place of each use, so no declaration for the names themselves
+    remains. What does remain is a struct/union tag that the typedef
+    introduced into this scope, such as `foo` in `typedef struct foo
+    *P;` before any other declaration of `struct foo`: a forward
+    declaration `struct foo;` stands in for it, so identifier
+    resolution introduces the tag in the same scope. A forward
+    declaration of a tag already declared in the same scope changes
+    nothing, so the parser doesn't need to know which tags were new.
+    """
+    if prefix_specs is not None:
+        raise ParserError(
+            "`__attribute__((...))` isn't supported on a typedef"
+        )
+    declared = {sd.struct_decl.tag for sd in struct_decls}
+    out = []
+    for decl_tree, init, postfix_specs, forward_tags in init_decls:
+        name = _declarator_name(decl_tree)
+        if init is not None:
+            raise ParserError(
+                f"typedef {name!r} can't have an initializer"
+            )
+        if postfix_specs is not None:
+            raise ParserError(
+                f"`__attribute__((...))` isn't supported on typedef "
+                f"{name!r}"
+            )
+        for tag, is_union in forward_tags:
+            if tag not in declared:
+                declared.add(tag)
+                out.append(c99_ast.StructDecl(
+                    struct_decl=c99_ast.Type_struct_decl(
+                        tag=tag, is_union=is_union, members=[],
+                    )
+                ))
+    return out
+
+
 def _wrap_pointers(pointer_tree, base_type):
     """`pointer: STAR type_qualifier* pointer?`. Walks the nested
     `pointer` chain (innermost-first in the parse tree, outermost-
@@ -1173,13 +1451,13 @@ def _adjust_param_type(t):
     reference to the parameter all see the adjusted (pointer) type
     uniformly.
 
-    C99 also adjusts function parameters of function type to
-    "pointer to function" (§6.7.5.3.8), but the c6502 grammar only
-    accepts named parameters via the `declarator` form which can't
-    produce a bare FunType for a parameter (a function-typed
-    declarator always wraps the FunType in a Pointer or names a
-    function being declared, not a parameter), so that adjustment
-    isn't needed here."""
+    C99 also adjusts a parameter of function type to "pointer to
+    function" (§6.7.5.3.8). A declarator can't give a parameter a
+    function type, since `int f(int g(int))` makes g's declarator a
+    function declarator, which the walker composes into a FunType,
+    but a typedef can: `typedef int F(int); int f(F g);`."""
+    if isinstance(t, c99_ast.FunType):
+        return c99_ast.Pointer(referenced_type=t)
     if isinstance(t, c99_ast.Array):
         # C99 §6.7.5.2.1: even though a parameter array adjusts to a
         # pointer, the original array declarator must still satisfy
@@ -1409,12 +1687,52 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def specifier(self, token):
-        # `specifier: type_specifier | type_qualifier | STATIC |
-        # EXTERN | REGISTER`. Either branch contributes a single token
-        # (after `type_specifier` unwraps its tree), so this method
-        # just passes the token through for var_decl / function_decl
-        # to scan.
+        # `specifier: type_qualifier | STATIC | EXTERN | REGISTER |
+        # TYPEDEF`. Either branch contributes a single token (after
+        # `type_qualifier` unwraps its tree), so this method just
+        # passes the token through for `decl_specs` to collect.
         return token
+
+    def decl_specs(self, items):
+        # The specifiers of a declaration: tokens, `_TagSpecifier`s,
+        # and at most one `_TypedefSpecifier`, in source order. Push
+        # them so `init_declarator` sees them, and so the declaration
+        # that consumes them pops them (`_consume_specifiers`).
+        specs = list(items)
+        # `struct foo;` declares the tag foo in this scope, even if an
+        # outer scope declares one too (C99 §6.7.2.3.7). The parser
+        # reduces `decl_specs` when it sees the `;`.
+        if (
+            _CTX.recent[-1] == "SEMICOLON"
+            and len(specs) == 1
+            and isinstance(specs[0], _TagSpecifier)
+            and specs[0].body is None
+        ):
+            _CTX.scopes[-1].tags.add(specs[0].tag)
+        decl_specs = _DeclSpecs(specs)
+        _CTX.decl_specs.append(decl_specs)
+        return decl_specs
+
+    @v_args(inline=True)
+    def typedef_name(self, token):
+        # A use of a typedef name as a type specifier. The type goes
+        # in its place, copied, so no two declarations share nodes.
+        name = str(token)
+        binding = _CTX.lookup(name)
+        for tag, scope in binding.tag_scopes.items():
+            if _CTX.tag_scope(tag) is not scope:
+                raise ParserError(
+                    f"typedef {name!r} refers to the struct or union "
+                    f"{tag!r} declared in an outer scope, which a "
+                    f"declaration of {tag!r} in an inner scope hides "
+                    f"here; c6502 can't express that type here, so "
+                    f"give the inner struct or union another tag"
+                )
+        return _TypedefSpecifier(
+            type="TYPEDEF_NAME",
+            name=name,
+            data_type=copy.deepcopy(binding.data_type),
+        )
 
     @v_args(inline=True)
     def type_specifier(self, child):
@@ -1437,11 +1755,11 @@ class _ASTBuilder(Transformer):
         # handle the optional abstract_declarator separately.
         leaf_items = [
             it for it in items
-            if isinstance(it, (Token, _TagSpecifier))
+            if isinstance(it, (Token, _TagSpecifier, _TypedefSpecifier))
         ]
         type_specs = [
             it for it in leaf_items
-            if isinstance(it, _TagSpecifier)
+            if isinstance(it, (_TagSpecifier, _TypedefSpecifier))
             or (isinstance(it, Token)
                 and it.type in _TYPE_SPECIFIER_TOKEN_TYPES)
         ]
@@ -1486,19 +1804,33 @@ class _ASTBuilder(Transformer):
 
     @staticmethod
     def _make_tag_specifier(items, *, is_union):
-        # items: [STRUCT/UNION token, IDENTIFIER token, (LBRACE,
-        # member_list_items..., RBRACE)?]
+        # items: [STRUCT/UNION token, IDENTIFIER token?, (LBRACE,
+        # member_list_items..., RBRACE)?]. The IDENTIFIER is missing
+        # only with a body: `struct { ... }` gets a tag of its own
+        # that no source tag can spell, so it's a distinct type.
         kw_token = items[0]
-        tag = str(items[1])
+        if _is_token(items[1], "IDENTIFIER"):
+            tag = str(items[1])
+            body_items = items[2:]
+        else:
+            _CTX.anonymous_tags += 1
+            kind = "union" if is_union else "struct"
+            tag = f"__anonymous_{kind}_{_CTX.anonymous_tags}"
+            body_items = items[1:]
         body = None
-        if len(items) > 2:
-            # Body present. Children between LBRACE and RBRACE are
-            # the lists returned by `struct_declaration`. Each
+        if not body_items:
+            _CTX.introduce_tag(tag)
+        else:
+            # A body declares the tag in this scope, hiding any outer
+            # declaration of it.
+            _CTX.scopes[-1].tags.add(tag)
+            # Children between LBRACE and RBRACE are the lists
+            # returned by `struct_declaration`. Each
             # struct_declaration produces a list of (name, type)
             # pairs (one per declarator on that line).
             body = []
             seen = set()
-            for child in items[3:-1]:
+            for child in body_items[1:-1]:
                 # struct_declaration returns a list of pairs.
                 for (mname, mtype) in child:
                     if mname in seen:
@@ -1521,8 +1853,9 @@ class _ASTBuilder(Transformer):
         )
 
     def specifier_qualifier_list(self, items):
-        # `(type_specifier | type_qualifier)+`. Returns a list of
-        # type-specifier leaves and qualifier tokens, intermixed —
+        # `_specqual_list`. Returns a list of type-specifier leaves
+        # (tokens, `_TagSpecifier`s, `_TypedefSpecifier`s) and
+        # qualifier tokens, intermixed —
         # callers (`struct_declaration`) sort them via
         # `_split_specifier_qualifier_list`.
         return list(items)
@@ -1549,7 +1882,7 @@ class _ASTBuilder(Transformer):
         # transformer keeps them intermixed).
         type_specs = [
             it for it in leaf_items
-            if isinstance(it, _TagSpecifier)
+            if isinstance(it, (_TagSpecifier, _TypedefSpecifier))
             or (isinstance(it, Token)
                 and it.type in _TYPE_SPECIFIER_TOKEN_TYPES)
         ]
@@ -1614,17 +1947,12 @@ class _ASTBuilder(Transformer):
         # unnamed parameter — `int foo(int *)` — gives `name=None`.
         # C99 §6.7.5.3.2 permits only one storage class on a parameter
         # — `register` — which routes the arg through a 6502 register.
-        specs = []
+        specs, i = _consume_specifiers(items, 0)
         rest = []
         attr_clause: _AttributeClause | None = None
-        for it in items:
+        for it in items[i:]:
             if isinstance(it, _AttributeClause):
                 attr_clause = it
-            elif (
-                hasattr(it, "type")
-                and it.type in _SPECIFIER_TOKEN_TYPES
-            ):
-                specs.append(it)
             else:
                 rest.append(it)
         # Inline struct/union *definitions* in a parameter declaration
@@ -1643,7 +1971,7 @@ class _ASTBuilder(Transformer):
         if storage is not None and not is_register:
             raise ParserError(
                 f"storage class "
-                f"{type(storage).__name__.lower()!r} isn't permitted "
+                f"{_storage_name(storage)!r} isn't permitted "
                 f"on a function parameter (C99 §6.7.5.3.2 — only "
                 f"register)"
             )
@@ -1652,7 +1980,7 @@ class _ASTBuilder(Transformer):
             is_register,
         )
         if not rest:
-            return (None, base, marker)
+            return (None, _adjust_param_type(base), marker)
         decl_tree = rest[0]
         if decl_tree.data == "declarator":
             name, composed, _outer, _outer_regs = _apply_declarator(
@@ -1816,8 +2144,8 @@ class _ASTBuilder(Transformer):
     def init_declarator(self, items):
         # `init_declarator: declarator attribute_clause?
         #                    (ASSIGN initializer)?`. Returns a
-        # `(declarator_tree, init_or_None, postfix_specs_or_None)`
-        # triple so var_decl can iterate the list emitted by
+        # `(declarator_tree, init_or_None, postfix_specs_or_None,
+        # forward_tags)` tuple so var_decl can iterate the list emitted by
         # `init_declarator (COMMA init_declarator)*`. The only
         # attribute valid in the postfix position is `zeropage`
         # (`uint8_t n __attribute__((zeropage));`), which var_decl
@@ -1832,7 +2160,24 @@ class _ASTBuilder(Transformer):
         init = None
         if i < len(items) and _is_token(items[i], "ASSIGN"):
             init = items[i + 1]
-        return (decl_tree, init, postfix)
+        # Declare the name now, so the lexer knows it from the next
+        # token on: a typedef name, or a name that hides one. A
+        # typedef also lists the tags of its type that live in this
+        # scope; see `_typedef_declaration`.
+        decl_specs = _CTX.decl_specs[-1]
+        if not decl_specs.is_typedef:
+            _CTX.declare(_declarator_name(decl_tree), _ORDINARY)
+            return (decl_tree, init, postfix, [])
+        base, _storage = _split_specifiers(decl_specs.specs)
+        name, composed, _params, _regs = _apply_declarator(decl_tree, base)
+        tags = _type_tags(composed, [])
+        tag_scopes = {tag: _CTX.tag_scope(tag) for tag, _u in tags}
+        _CTX.declare(name, _Binding(composed, tag_scopes))
+        forward_tags = [
+            (tag, is_union) for tag, is_union in tags
+            if tag_scopes[tag] is _CTX.scopes[-1]
+        ]
+        return (decl_tree, init, postfix, forward_tags)
 
     def var_decl(self, items):
         # `var_decl: attribute_clause? specifier+ init_declarator
@@ -1861,8 +2206,12 @@ class _ASTBuilder(Transformer):
             it for it in items[i:]
             if isinstance(it, tuple)
         ]
+        if isinstance(storage_class, _TypedefStorage):
+            return struct_decls + _typedef_declaration(
+                prefix_specs, init_decls, struct_decls,
+            )
         tails: list = []
-        for decl_tree, init, postfix_specs in init_decls:
+        for decl_tree, init, postfix_specs, _tags in init_decls:
             name, composed, outer_param_names, outer_param_regs = (
                 _apply_declarator(decl_tree, base_type)
             )
@@ -1887,7 +2236,11 @@ class _ASTBuilder(Transformer):
                         f"storage class 'register' isn't permitted on "
                         f"function declaration {name!r}"
                     )
-                param_names = outer_param_names or []
+                # A function declared through a typedef of a function
+                # type (`F f;`) has no parameter names.
+                if outer_param_names is None:
+                    outer_param_names = [None] * len(composed.params)
+                param_names = outer_param_names
                 param_regs = outer_param_regs or [""] * len(param_names)
                 tails.append(c99_ast.FunctionDecl(
                     function_decl=c99_ast.Type_function_decl(
@@ -1945,6 +2298,8 @@ class _ASTBuilder(Transformer):
                 f"unexpected children in tag_only_decl: {items!r}"
             )
         struct_decls = _drain_inline_struct_bodies(specs)
+        if any(getattr(s, "type", None) == "TYPEDEF" for s in specs):
+            raise ParserError("typedef declaration declares no name")
         # Reject any storage-class specifier on a tag-only decl.
         if any(
             getattr(s, "type", None) in ("STATIC", "EXTERN")
@@ -2020,11 +2375,18 @@ class _ASTBuilder(Transformer):
                 f"function definition's declarator must compose to a "
                 f"function type; got {type(composed).__name__}"
             )
-        if isinstance(storage_class, c99_ast.Register):
+        if isinstance(storage_class, (c99_ast.Register, _TypedefStorage)):
             raise ParserError(
-                f"storage class 'register' isn't permitted on "
-                f"function definition {name!r}"
+                f"storage class {_storage_name(storage_class)!r} isn't "
+                f"permitted on function definition {name!r}"
             )
+        if outer_param_names is None:
+            raise ParserError(
+                f"function definition {name!r} has to list its "
+                f"parameters in its declarator; its type can't come "
+                f"from a typedef (C99 §6.9.1.2)"
+            )
+        _CTX.declare(name, _ORDINARY, _CTX.scopes[0])
         if address is not None:
             raise ParserError(
                 f"function {name!r} has `__attribute__((address(...)))`, "
@@ -2039,7 +2401,7 @@ class _ASTBuilder(Transformer):
                 f"(`__attribute__((address(...)))`), whose code the "
                 f"compiler doesn't compile and so can't check"
             )
-        param_names = outer_param_names or []
+        param_names = outer_param_names
         param_regs = outer_param_regs or [""] * len(param_names)
         tail = c99_ast.FunctionDecl(function_decl=c99_ast.Type_function_decl(
             name=name,
@@ -2052,6 +2414,24 @@ class _ASTBuilder(Transformer):
             carry_return=carry_return,
         ))
         return struct_decls + [tail]
+
+    def declarator(self, items):
+        # Declarators stay parse trees for the walkers above. A
+        # function definition's declarator reduces when the parser
+        # sees the `{` of its body, after the lexer pushed the body's
+        # scope; the parameters belong in that scope, where they hide
+        # any typedef names they share.
+        tree = Tree("declarator", items)
+        scope = _CTX.body_scope
+        if scope is not None:
+            _CTX.body_scope = None
+            _name, _type, params, _regs = _apply_declarator(
+                tree, c99_ast.Int(),
+            )
+            for param in params or []:
+                if param is not None:
+                    _CTX.declare(param, _ORDINARY, scope)
+        return tree
 
     # Alternatives of `statement` — each named in c99.lark.
     def return_stmt(self, items):
@@ -2149,8 +2529,9 @@ class _ASTBuilder(Transformer):
                         "for-loop initializer"
                     )
                 if not child:
-                    raise AssertionError(
-                        f"empty decl list in for_init: {child!r}"
+                    raise ParserError(
+                        "a for-loop initializer can't declare a "
+                        "typedef (C99 §6.8.5.3 — only auto / register)"
                     )
                 vds: list[c99_ast.Type_var_decl] = []
                 for inner in child:
@@ -2165,7 +2546,7 @@ class _ASTBuilder(Transformer):
                     ):
                         raise ParserError(
                             f"storage class "
-                            f"{type(vd.storage_class).__name__.lower()!r} "
+                            f"{_storage_name(vd.storage_class)!r} "
                             f"isn't permitted on a for-loop initializer "
                             f"(C99 §6.8.5.3 — only auto / register)"
                         )
@@ -2227,6 +2608,10 @@ class _ASTBuilder(Transformer):
     def for_stmt(self, items):
         # items: [pragma?, FOR, LPAREN, for_init, condition?, SEMICOLON,
         #         post_clause?, RPAREN, statement]
+        # The loop is over, so its scope (pushed by the lexer at `for`)
+        # ends, after the parser already lexed the token that follows.
+        _CTX.remove_scope(_CTX.for_scopes.pop())
+        _CTX.retype_lookahead("statement")
         unroll_annotation, idx = _consume_pragma_clause(items, 0)
         # idx now points at FOR. The rest of the parse is unchanged.
         init = items[idx + 2]
@@ -2576,18 +2961,94 @@ def _drain_inline_struct_bodies(specs):
     return out
 
 
+def _can_shift(states, stack, terminal: str) -> bool:
+    """True iff an LALR parser with parse table `states` and state
+    stack `stack` would shift `terminal` as its next token, after
+    whatever reductions it calls for. Walks the parse table on a copy
+    of the stack, so no reduction runs."""
+    stack = list(stack)
+    while True:
+        action = states[stack[-1]].get(terminal)
+        if action is None:
+            return False
+        kind, arg = action
+        if kind is Shift:
+            return True
+        size = len(arg.expansion)
+        if size:
+            del stack[-size:]
+        stack.append(states[stack[-1]][arg.origin.name][1])
+
+
+class _TypedefLexer(BasicLexer):
+    """Lark's basic lexer, plus the scope tracking `_ParseContext`
+    describes. An IDENTIFIER that names a typedef in the current scope
+    becomes a TYPEDEF_NAME, but only where the parser can shift one.
+    Elsewhere, as the declarator in `int T;`, after `.` or `->`, or
+    after `struct`, the name is an ordinary identifier."""
+
+    # Lark passes custom lexers of interface 2 the live parser state.
+    __future_interface__ = 2
+
+    def next_token(self, lex_state, parser_state=None):
+        token = super().next_token(lex_state, parser_state)
+        ctx = _CTX
+        ctx.body_scope = None
+        kind = token.type
+        if kind == "LBRACE":
+            before, last = ctx.recent
+            if last in ("STRUCT", "UNION") or (
+                last == "IDENTIFIER" and before in ("STRUCT", "UNION")
+            ):
+                ctx.brace_scopes.append(None)
+            else:
+                scope = ctx.push_scope()
+                ctx.brace_scopes.append(scope)
+                ctx.body_scope = scope
+        elif kind == "RBRACE":
+            if ctx.brace_scopes:
+                scope = ctx.brace_scopes.pop()
+                if scope is not None:
+                    ctx.remove_scope(scope)
+        elif kind == "FOR":
+            ctx.for_scopes.append(ctx.push_scope())
+        elif kind == "IDENTIFIER" and parser_state is not None:
+            binding = ctx.lookup(token.value)
+            if (
+                binding is not None
+                and binding.is_typedef
+                and _can_shift(
+                    parser_state.parse_conf.states,
+                    parser_state.state_stack,
+                    "TYPEDEF_NAME",
+                )
+            ):
+                token = Token.new_borrow_pos("TYPEDEF_NAME", token.value, token)
+        ctx.recent = (ctx.recent[1], token.type)
+        ctx.token = token
+        ctx.parser_state = parser_state
+        return token
+
+
 _BUILDER = _ASTBuilder()
+# The AST builder runs as the parser reduces each rule, rather than on
+# the finished tree, so declarations take effect while later tokens
+# are still to be lexed.
+_LARK = Lark.open(
+    str(_GRAMMAR_PATH),
+    parser="lalr",
+    lexer=_TypedefLexer,
+    transformer=_BUILDER,
+    # `start` is the real translation-unit entry point; `lex_only`
+    # keeps every terminal reachable so the lexer-only tests don't
+    # see "unused terminal" trimming. `declarator` and `type_name`
+    # are exposed so the §6.7.5 / §6.7.6 grammar can be unit-tested
+    # in isolation.
+    start=["start", "lex_only", "declarator", "type_name"],
+)
 
 
 def parse(source: str) -> c99_ast.Type_program:
-    tree = _LARK.parse(source, start="start")
-    try:
-        return _BUILDER.transform(tree)
-    except VisitError as e:
-        # Lark wraps any exception raised by a transformer method in
-        # `VisitError`. We raise our own ParserError from
-        # `_split_specifiers`, so unwrap to give the caller a clean
-        # ParserError instead of forcing it to dig through `.orig_exc`.
-        if isinstance(e.orig_exc, ParserError):
-            raise e.orig_exc
-        raise
+    global _CTX
+    _CTX = _ParseContext()
+    return _LARK.parse(source, start="start")

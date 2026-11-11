@@ -1948,6 +1948,24 @@ class TestFloatingTypesAndConstants(unittest.TestCase):
         self.assertIn("cast to an array type", str(ctx.exception))
 
 
+_GRAMMAR_ONLY_PARSER = None
+
+
+def _grammar_only_parser():
+    """A plain Lark parser for c99.lark, without the AST builder that
+    `parser._LARK` runs during the parse, for tests that check only
+    which forms the grammar accepts."""
+    global _GRAMMAR_ONLY_PARSER
+    if _GRAMMAR_ONLY_PARSER is None:
+        from lark import Lark
+        from parser import _GRAMMAR_PATH
+        _GRAMMAR_ONLY_PARSER = Lark.open(
+            str(_GRAMMAR_PATH), parser="lalr", lexer="basic",
+            start=["declarator", "type_name"],
+        )
+    return _GRAMMAR_ONLY_PARSER
+
+
 class TestDeclaratorGrammar(unittest.TestCase):
     """Grammar-only tests for §6.7.5 declarators. The new rules
     (`declarator` / `direct_declarator` / `pointer` / `parameter_*`
@@ -1959,8 +1977,7 @@ class TestDeclaratorGrammar(unittest.TestCase):
 
     @staticmethod
     def _parse_declarator(src: str):
-        from parser import _LARK
-        return _LARK.parse(src, start="declarator")
+        return _grammar_only_parser().parse(src, start="declarator")
 
     def test_plain_identifier(self):
         # A bare IDENTIFIER is the simplest declarator.
@@ -2059,8 +2076,7 @@ class TestAbstractDeclaratorGrammar(unittest.TestCase):
 
     @staticmethod
     def _parse_type_name(src: str):
-        from parser import _LARK
-        return _LARK.parse(src, start="type_name")
+        return _grammar_only_parser().parse(src, start="type_name")
 
     def test_plain_specifier_only(self):
         # `int` — no abstract_declarator. Existing behavior.

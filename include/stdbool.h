@@ -9,17 +9,10 @@
  * will get the low byte rather than the C99-required normalized
  * 0/1; if you need normalization, write `b = !!x;`.
  *
- * Implementation note. As with stdint.h, c6502 doesn't yet
- * implement `typedef`, so the type alias is provided as an object-
- * like macro. The same caveats apply:
- *
- *   1. `bool` lives in the macro namespace, not the typedef-name
- *      namespace, so it can be `#undef`'d and cannot be shadowed
- *      by a same-named identifier in an inner scope.
- *   2. Diagnostics quote the expanded form (`unsigned char`)
- *      rather than the alias (`bool`).
- *
- * Switch to real typedef once the parser supports it.
+ * C99 §7.16.2 makes `bool` a macro (one that expands to `_Bool`),
+ * so it stays a macro here rather than a typedef. It can be
+ * `#undef`'d, and diagnostics quote the expanded form (`unsigned
+ * char`) rather than `bool`.
  */
 #ifndef _STDBOOL_H
 #define _STDBOOL_H

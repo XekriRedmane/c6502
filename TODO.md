@@ -1,22 +1,5 @@
 # TODO
 
-## Major: `typedef`
-
-C99 §6.7.7. The lexer reads `typedef` as a keyword, but no grammar
-rule uses it, so any `typedef` is a parse error. Code has to spell
-`struct zchar` everywhere, and `<stdint.h>` defines `uint8_t` and the
-rest as macros (see the note in it).
-
-Supporting it takes three things. The parser has to accept `typedef`
-as a storage class and a typedef name as a type specifier. Since
-`T * x;` is a declaration when `T` names a type and a multiplication
-otherwise, the parser has to know which identifiers are typedef names
-while it parses (the "lexer hack"), with block scoping, since an
-inner declaration can hide a typedef name. Identifier resolution and
-the type checker then resolve a typedef name to its type, including
-`typedef struct { ... } T;` with an anonymous struct. `<stdint.h>`
-would then switch to real typedefs.
-
 ## Rewrite the README and add an architecture document
 
 README.md has grown into a wall of low-level detail. It should

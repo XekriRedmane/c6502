@@ -1496,6 +1496,12 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   Struct-by-value params use the soft-stack arg block;
   struct-by-value returns use an sret convention with a
   hidden first param. Block-scope tag shadowing supported.
+  A struct or union may omit its tag (`struct { int x; } p;`).
+- `typedef` at file and block scope, including typedefs of
+  pointers, arrays, functions, and anonymous structs. An inner
+  declaration of the same name hides a typedef name (`int T;`,
+  a parameter `T`, a `for` variable `T`). `<stdint.h>` defines
+  its types with `typedef`.
 
 **Not yet in the pipeline**: the runtime header
 (`SSP`/`FP`/`HARGS`/`DPTR` ZP addresses, reset vector, arithmetic

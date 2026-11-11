@@ -20,22 +20,6 @@
  *   intmax_t  = long long             (widest integer modeled)
  *   uintmax_t = unsigned long long
  *
- * Implementation note. c6502 doesn't yet implement `typedef`, so
- * the type aliases below are provided as object-like macros.
- * Preprocessing replaces `int8_t` with `signed char` before the
- * parser sees it, which is functionally equivalent to a typedef
- * for all practical uses (variable / parameter / return-type
- * declarations, casts, sizeof, struct members, array element
- * types). The differences vs. real typedef are:
- *
- *   1. The names live in the macro namespace, not the typedef-name
- *      namespace, so they can be `#undef`'d and they cannot be
- *      shadowed by a same-named identifier in an inner scope.
- *   2. Diagnostics quote the expanded form (`signed char`) rather
- *      than the alias (`int8_t`).
- *
- * Switch to real typedef once the parser supports it.
- *
  * `size_t`, `sig_atomic_t`, `wchar_t`, `wint_t` aren't modeled, so
  * `SIZE_MAX`, `SIG_ATOMIC_*`, `WCHAR_*`, `WINT_*` aren't defined
  * here.
@@ -44,42 +28,42 @@
 #define _STDINT_H
 
 /* exact-width integer types — §7.18.1.1 */
-#define int8_t              signed char
-#define uint8_t             unsigned char
-#define int16_t             int
-#define uint16_t            unsigned int
-#define int32_t             long
-#define uint32_t            unsigned long
-#define int64_t             long long
-#define uint64_t            unsigned long long
+typedef signed char int8_t;
+typedef unsigned char uint8_t;
+typedef int int16_t;
+typedef unsigned int uint16_t;
+typedef long int32_t;
+typedef unsigned long uint32_t;
+typedef long long int64_t;
+typedef unsigned long long uint64_t;
 
 /* minimum-width — §7.18.1.2 */
-#define int_least8_t        int8_t
-#define uint_least8_t       uint8_t
-#define int_least16_t       int16_t
-#define uint_least16_t      uint16_t
-#define int_least32_t       int32_t
-#define uint_least32_t      uint32_t
-#define int_least64_t       int64_t
-#define uint_least64_t      uint64_t
+typedef int8_t int_least8_t;
+typedef uint8_t uint_least8_t;
+typedef int16_t int_least16_t;
+typedef uint16_t uint_least16_t;
+typedef int32_t int_least32_t;
+typedef uint32_t uint_least32_t;
+typedef int64_t int_least64_t;
+typedef uint64_t uint_least64_t;
 
 /* fastest minimum-width — §7.18.1.3 */
-#define int_fast8_t         int8_t
-#define uint_fast8_t        uint8_t
-#define int_fast16_t        int16_t
-#define uint_fast16_t       uint16_t
-#define int_fast32_t        int32_t
-#define uint_fast32_t       uint32_t
-#define int_fast64_t        int64_t
-#define uint_fast64_t       uint64_t
+typedef int8_t int_fast8_t;
+typedef uint8_t uint_fast8_t;
+typedef int16_t int_fast16_t;
+typedef uint16_t uint_fast16_t;
+typedef int32_t int_fast32_t;
+typedef uint32_t uint_fast32_t;
+typedef int64_t int_fast64_t;
+typedef uint64_t uint_fast64_t;
 
 /* integer types capable of holding object pointers — §7.18.1.4 */
-#define intptr_t            int
-#define uintptr_t           unsigned int
+typedef int intptr_t;
+typedef unsigned int uintptr_t;
 
 /* greatest-width integer types — §7.18.1.5 */
-#define intmax_t            long long
-#define uintmax_t           unsigned long long
+typedef long long intmax_t;
+typedef unsigned long long uintmax_t;
 
 /* limits of exact-width integer types — §7.18.2.1 */
 #define INT8_MIN            (-128)

@@ -635,7 +635,10 @@ def _rewrite_instruction(
         case tac_ast.FunctionCall(name=n, args=args, dst=d):
             new_args = [rewrite_use(a) for a in args]
             new_d = rewrite_def(d) if d is not None else None
-            return tac_ast.FunctionCall(name=n, args=new_args, dst=new_d)
+            return tac_ast.FunctionCall(
+                name=n, args=new_args, dst=new_d,
+                hw_stack_save=instr.hw_stack_save,
+            )
         case tac_ast.IndirectCall(ptr=p, args=args, dst=d):
             new_p = rewrite_use(p)
             new_args = [rewrite_use(a) for a in args]

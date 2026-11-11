@@ -227,6 +227,7 @@ def _redirect_dst(
         ) if d is not None and is_target(d):
             return tac_ast.FunctionCall(
                 name=n, args=args, dst=new_dst,
+                hw_stack_save=producer.hw_stack_save,
             )
         case tac_ast.IndirectCall(
             ptr=p, args=args, dst=d,

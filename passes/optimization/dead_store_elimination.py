@@ -165,6 +165,7 @@ def _filter(
         if isinstance(instr, tac_ast.FunctionCall):
             return tac_ast.FunctionCall(
                 name=instr.name, args=list(instr.args), dst=None,
+                hw_stack_save=instr.hw_stack_save,
             ), True
         return tac_ast.IndirectCall(
             ptr=instr.ptr, args=list(instr.args), dst=None,

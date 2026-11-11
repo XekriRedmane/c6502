@@ -162,7 +162,12 @@ module TAC {
         -- B(PL|MI) target`.
         | JumpIfMasked(val val, int mask, bool jump_when_nonzero, identifier target)
         | Label(identifier name)
-        | FunctionCall(identifier name, val* args, val? dst)
+        -- `hw_stack_save` marks a call that can recurse, made from a
+        -- statement or declaration under `#pragma c6502 call save(
+        -- hardware_stack)`.
+        -- The caller saves the values live across it on the hardware
+        -- stack (passes/recursion_saves.py).
+        | FunctionCall(identifier name, val* args, val? dst, bool hw_stack_save)
         -- Indirect call via a function pointer. `ptr` is a Pointer-
         -- typed val whose 2-byte value is the target function's
         -- address. tac_to_asm stages those bytes into the DPTR

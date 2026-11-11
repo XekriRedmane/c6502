@@ -98,6 +98,7 @@ a user variable.
 - [Redundant store elimination](redundant_store.md). Drops a repeated `LDA S; STA D` copy when D still holds S.
 - [Rematerialization of staged values](asm_remat.md). Reloads a staged value from its source so the staging-slot store dies.
 - [Round-trip load drop](round_trip_load.md). Deletes `LDA M` after `STA M` when the flags already reflect A.
+- [Saves around a recursive call](recursion_saves.md). Pushes the values live across a marked recursive call so the function can have a private pool.
 - [Second index in Y](dual_index_promotion.md). Loads a byte reloaded into X several times into Y once at entry.
 - [Self-store drop](self_store_drop.md). Deletes the `STA M` of an adjacent `LDA M; STA M` pair.
 - [Sign-bit test without AND](and_sign_bit_branch.md). Turns `LDA M; AND #$80; BEQ/BNE` into `LDA M; BPL/BMI`.
@@ -171,7 +172,8 @@ them whenever a pass is added or moved.
    over the whole program.
 4. [Default zp_abi calling convention](zp_abi.md): ABI selection and
    parameter slot allocation.
-5. Translation to asm.
+5. Translation to asm, with [saves around a recursive
+   call](recursion_saves.md).
 6. Asm SSA optimizer, run once to measure each function's local
    bytes. Its output is discarded. The steps are the same as in step
    8.

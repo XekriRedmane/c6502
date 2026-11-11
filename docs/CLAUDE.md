@@ -10,6 +10,9 @@ parsed by any tool.
   (`zp_abi`, `return_bool_in_carry`, `zeropage`, `address`) and to
   declaring and calling ROM routines, with Apple II Monitor examples,
   the errors the compiler reports, and current limits.
+- `pragmas.md` — user guide to the `#pragma c6502` directives:
+  `loop unroll(enable)` and `call save(hardware_stack)`, with the
+  cautions about the hardware stack's depth that the second needs.
 - `calling_conventions.md` — user guide to c6502's two calling
   conventions. The soft stack: SSP and FP, a call traced through the
   caller's argument push, the prologue, the frame layout, and the

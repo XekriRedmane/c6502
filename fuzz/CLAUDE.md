@@ -74,6 +74,12 @@ value and as a branch. Those choices come from a second random
 stream (`crng`), so adding them left the rest of each older seed's
 program as it was.
 
+In half the seeds that have `rec`, it keeps a 1-byte and a 4-byte
+local live across its recursive call under `#pragma c6502 call
+save(hardware_stack)`, so it gets a private pool and saves them on
+the hardware stack (`passes/recursion_saves.py`). That choice has its
+own random stream too.
+
 The generator predicts which functions end up on the soft stack (any
 function that reaches `rec` or the pointer call) and only puts
 `register` on the others, because `register` needs zp_abi and the

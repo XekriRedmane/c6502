@@ -115,6 +115,7 @@ from passes.address_taken_zp import (
 from passes.zp_link_metadata import build_metadata, format_metadata
 from passes.zp_local_allocation import (
     allocate_function_locals, build_local_slot_symbols,
+    recursive_pool_functions,
 )
 from passes.zp_slot_allocation import allocate_zp_slots
 from passes.optimization import optimize_program as optimize_tac
@@ -347,8 +348,14 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     abi, zp_slot_symbols = allocate_zp_slots(
         tac, abi, reserved=zp.reserved,
     )
+    # Functions on a cycle whose recursive calls are all under
+    # `#pragma c6502 call save(hardware_stack)` get private pools too,
+    # and save their live values around those calls
+    # (passes/recursion_saves.py).
+    recursion = recursive_pool_functions(tac, abi)
     asm0 = translate_to_asm(
         tac, symbols, types, bare_exit=True, abi=abi,
+        recursion_saves=recursion,
     )
     # Preliminary optimizer pass with the default
     # caller/callee partition. Used only to size each
@@ -357,6 +364,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm_prelim, _ = asm_opt.optimize_program(
         asm0, extra_statics=statics, param_layouts=abi,
         symbols=symbols, reserved_zp=zp.reserved,
+        recursion_saves=recursion,
     )
     local_bytes = compute_local_bytes(asm_prelim)
     # Address-taken locals would otherwise spill to the
@@ -372,8 +380,12 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     addr_taken_bytes = compute_address_taken_bytes(
         asm_prelim, symbols, types,
     )
+    # A recursive function's address-taken locals stay in its frame,
+    # one copy per call.
     combined_local_bytes = {
-        fn: local_bytes.get(fn, 0) + addr_taken_bytes.get(fn, 0)
+        fn: local_bytes.get(fn, 0) + (
+            0 if fn in recursion else addr_taken_bytes.get(fn, 0)
+        )
         for fn in set(local_bytes) | set(addr_taken_bytes)
     }
     # Call-graph-disjoint private pools per function. The
@@ -389,7 +401,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm0, asm_colorings = asm_opt.optimize_program(
         asm0, extra_statics=statics, param_layouts=abi,
         symbols=symbols, local_pools=local_pools,
-        reserved_zp=zp.reserved,
+        reserved_zp=zp.reserved, recursion_saves=recursion,
     )
     # Compute per-function address-taken Pseudo → ZP-byte
     # assignments from the pool addresses the regalloc
@@ -398,7 +410,9 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # fall back to the Frame path inside
     # `replace_pseudoregisters`.
     addr_taken_assignments = compute_address_taken_assignments(
-        asm0, local_pools, asm_colorings, symbols, types,
+        asm0,
+        {fn: p for fn, p in local_pools.items() if fn not in recursion},
+        asm_colorings, symbols, types,
     )
     addr_taken_symbols = {
         fn: _addr_taken_slot_symbols(
@@ -611,6 +625,7 @@ def _source_errors() -> tuple[type[Exception], ...]:
     from passes.loop_labeling import LoopLabelingError
     from passes.optimization_asm.regalloc import RegallocError
     from passes.optimization_ast.unroll import UnrollError
+    from passes.recursion_saves import RecursionSaveError
     from passes.type_checking import TypeCheckError
     from passes.zp_local_allocation import ZpLocalAllocationError
     from passes.zp_slot_allocation import ZpSlotAllocationError
@@ -620,6 +635,7 @@ def _source_errors() -> tuple[type[Exception], ...]:
         LoopLabelingError, UnrollError, ConstantExpressionError,
         TypeCheckError, AbiSelectionError, RegallocError,
         ZpSlotAllocationError, ZpLocalAllocationError, FrameSizeError,
+        RecursionSaveError,
     )
 
 

@@ -458,6 +458,7 @@ class FunctionCall(Type_exp):
     name: str = ''
     args: list[Type_exp] = field(default_factory=list)
     data_type: Type_data_type | None = None
+    hw_stack_save: bool = False
 
 
 @dataclass

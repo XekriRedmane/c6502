@@ -309,6 +309,17 @@ class PreprocessorError(Exception):
     """A `#pragma c6502 ...` line whose body c6502 does not recognize."""
 
 
+# `#pragma c6502 call save(hardware_stack)` comes before a statement
+# whose calls can recurse, and lets the caller save the values live
+# across them on the hardware stack (passes/recursion_saves.py). The
+# parser takes this sentinel as the start of that statement.
+_PRAGMA_HW_STACK_SAVE_SENTINEL = "__c6502_pragma_hw_stack_save__"
+
+_C6502_HW_STACK_SAVE_RE = re.compile(
+    r"^[ 	]+call[ 	]+save[ 	]*\([ 	]*hardware_stack[ 	]*\)[ 	]*$",
+)
+
+
 # `#pragma c6502 loop unroll(enable)` — emitted for the immediately-
 # following for-loop and consumed by the parser as a `pragma_clause`.
 # The chosen sentinel uses the C-reserved identifier namespace
@@ -340,6 +351,8 @@ def _rewrite_pragmas(text: str) -> str:
 
     `#pragma c6502 loop unroll(enable)`  → `__c6502_pragma_unroll__`
     `#pragma c6502 loop unroll(disable)` → blank line (explicit no-op)
+    `#pragma c6502 call save(hardware_stack)`
+                                         → `__c6502_pragma_hw_stack_save__`
     other `#pragma c6502 ...`            → PreprocessorError
     any other `#pragma ...`              → blank line (C99 §6.10.6)
     """
@@ -356,6 +369,9 @@ def _rewrite_pragmas(text: str) -> str:
             continue
         # Strip the `c6502` token, then match the rest.
         rest = body.lstrip()[len("c6502"):]
+        if _C6502_HW_STACK_SAVE_RE.match(rest):
+            out_lines.append(_PRAGMA_HW_STACK_SAVE_SENTINEL)
+            continue
         m2 = _C6502_UNROLL_RE.match(rest)
         if m2 is None:
             raise PreprocessorError(

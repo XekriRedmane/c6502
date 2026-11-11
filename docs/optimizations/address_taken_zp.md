@@ -172,6 +172,9 @@ into those bytes are then dead.
 
 - An address-taken local in a function without a pool, such as a
   recursive one. It stays in the frame.
+- An address-taken local in a recursive function that has a pool
+  ([saves around a recursive call](recursion_saves.md)). Each call
+  needs its own copy, so it stays in the frame.
 - A parameter whose address is taken. It keeps its zp_abi slot or its
   frame slot.
 - A static, which has its own fixed address.

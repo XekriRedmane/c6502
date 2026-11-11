@@ -231,6 +231,7 @@ class FunctionCall(Type_instruction):
     name: str = ''
     args: list[Type_val] = field(default_factory=list)
     dst: Type_val | None = None
+    hw_stack_save: bool = False
 
 
 @dataclass

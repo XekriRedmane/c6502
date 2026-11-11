@@ -48,6 +48,14 @@ class TestCliErrors(unittest.TestCase):
         "carry on an int":
             ("__attribute__((return_bool_in_carry)) int f(void);",
              "a struct of a value and a `bool`, not `int`"),
+        "call save on a call that can't recurse":
+            ("int g(int x) { return x; }\nint f(int x) {\n"
+             "#pragma c6502 call save(hardware_stack)\nreturn g(x);\n}\n",
+             "'g' can't call 'f' again"),
+        "call save before an if":
+            ("int f(int x) {\n#pragma c6502 call save(hardware_stack)\n"
+             "if (x) return f(x - 1);\nreturn 0;\n}\n",
+             "must come before an expression statement"),
         "zeropage on a local":
             ("int main(void) { unsigned char a "
              "__attribute__((zeropage)); return a; }",

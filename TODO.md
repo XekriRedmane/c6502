@@ -115,6 +115,14 @@ private pool. A function marked `__attribute__((zp_abi))` or using
 `register` can't be demoted, so calling a soft-stack function makes
 it fail to compile instead.
 
+A recursive function whose recursive calls are all under `#pragma
+c6502 call save(hardware_stack)` needn't demote anything. It still
+takes its parameters on the soft stack, but its locals are in a
+private pool and it writes nothing outside the pools, so it's as safe
+to call as a zp_abi function. It demotes its callers today only
+because `select_abi` runs before `recursive_pool_functions` decides
+which recursive functions get pools.
+
 Possible approaches, roughly in order of effort:
 
 - **Only demote when something is live across the call.** If no
@@ -173,16 +181,11 @@ code, about twice the 980 bytes of Zork's own code for the same
 routines. Inline lowering of 16-bit shifts by 7 and 15, and direct
 access to struct members at constant offsets
 (`passes/optimization/direct_member_access.py`), brought that to
-1510. What's left, roughly in order of size:
-
-- **A recursive function saves its zero-page bytes on every call.**
-  print_zstring is on the soft stack because it calls itself, and its
-  prologue and epilogue save and restore the seven callee-saved
-  zero-page bytes it uses, about 100 bytes of code (458 bytes against
-  Zork's 216). Zork saves its decoder state with `PHA` / `PLA` only
-  around the recursive call, on the abbreviation path. Saving the
-  bytes around the calls that can recurse, instead of at entry and
-  exit, would do the same.
+1510. Saving the decoder's state on the hardware stack around the
+call that recurses (`#pragma c6502 call save(hardware_stack)`,
+`passes/recursion_saves.py`) took off another 180, leaving
+print_zstring at 277 bytes against Zork's 216. What's left, roughly
+in order of size:
 - **A loop count passed in X stays in memory.** cout_string takes its
   count with `in_x`, as Zork's does, then stores X to a slot and
   counts the slot down with `DEC`. COUT1 preserves X, so the count

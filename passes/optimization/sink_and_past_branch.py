@@ -602,6 +602,7 @@ def _rewrite_instr_uses(
             name=instr.name,
             args=[fix(a) for a in instr.args],
             dst=instr.dst,
+            hw_stack_save=instr.hw_stack_save,
         )
     if isinstance(instr, tac_ast.IndirectCall):
         return tac_ast.IndirectCall(

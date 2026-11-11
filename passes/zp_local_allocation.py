@@ -35,7 +35,12 @@ A function is eligible for the private-pool model iff:
      bound an indirect callee's clobber set.
   3. It is not part of any cycle in the static direct call
      graph — recursion would have a recursive call clobber the
-     outer activation's still-live locals.
+     outer activation's still-live locals. The exception is a
+     cycle whose every call from one member to another is under
+     `#pragma c6502 call save(hardware_stack)`
+     (`recursion_saves.hw_stack_cycles`): the caller saves what's
+     live across each of those calls on the hardware stack, so
+     nothing in its pool needs to survive them.
   4. Every direct callee defined in this TU is also eligible.
      (Transitive eligibility: an ineligible callee's body has
      unbounded writes, so the caller can't trust its private
@@ -59,7 +64,7 @@ prologue-elimination.
      function in `prog`.
   2. Determine eligibility per the rules above.
   3. Topologically order the eligible subgraph (callers before
-     callees).
+     callees), with each cycle's members together.
   4. Walk each eligible function in topological order. The
      function's forbidden address set is the union of:
        - every transitive caller's already-allocated local
@@ -76,6 +81,10 @@ prologue-elimination.
      saturation spill above `$FF` into the configured fallback
      region.
   5. Record the chosen range as `fn`'s local pool.
+
+The members of one cycle aren't each other's ancestors here, so
+their pools may overlap: every call between them saves the caller's
+live values first.
 
 Descendants are NOT in the forbidden set when allocating an
 ancestor's pool (descendants haven't been allocated yet). The
@@ -124,6 +133,7 @@ from collections import deque
 import tac_ast
 from passes.abi_selection import ParamLayout, ZpLayout
 from passes.optimization.pool import Pool
+from passes.recursion_saves import cycles, hw_stack_cycles
 
 
 class ZpLocalAllocationError(Exception):
@@ -205,8 +215,9 @@ def allocate_function_locals(
     # Restrict to eligible — both for the topological walk and
     # for ancestor/descendant transitive closure.
     eligible_cg = {n: callgraph[n] & eligible for n in eligible}
-    ancestors, descendants = _ancestors_and_descendants(eligible_cg)
-    order = _topological_order(eligible_cg)
+    cyc = cycles(eligible_cg)
+    ancestors = _ancestors(eligible_cg, cyc)
+    order = _topological_order(eligible_cg, cyc)
 
     # Pre-extract zp_abi param-slot addresses, keyed by function
     # name. We need these for both eligible and ineligible
@@ -265,6 +276,20 @@ def allocate_function_locals(
     return local_pools
 
 
+def recursive_pool_functions(
+    prog: tac_ast.Program, abi: dict[str, ParamLayout],
+) -> dict[str, frozenset[str]]:
+    """The functions on a cycle that `allocate_function_locals` gives
+    pools, each mapped to its cycle's members. Every call from one to
+    another must save the caller's live values
+    (`passes/recursion_saves.py`)."""
+    eligible = _determine_eligibility(prog, abi, _build_callgraph(prog))
+    return {
+        n: members for n, members in hw_stack_cycles(prog).items()
+        if n in eligible
+    }
+
+
 # ---------------------------------------------------------------------------
 # Call-graph construction.
 # ---------------------------------------------------------------------------
@@ -321,7 +346,7 @@ def _determine_eligibility(
                 callee_layout = abi.get(instr.name)
                 if not isinstance(callee_layout, ZpLayout):
                     has_non_zp_abi_extern_callee.add(tl.name)
-    in_cycle = _find_cycle_members(callgraph)
+    in_cycle = set(cycles(callgraph)) - set(hw_stack_cycles(prog))
     ineligible = has_indirect | has_non_zp_abi_extern_callee | in_cycle
     # Propagate ineligibility upward: a caller of an ineligible
     # function is ineligible (its private pool can't survive the
@@ -335,52 +360,6 @@ def _determine_eligibility(
                 ineligible.add(caller)
                 queue.append(caller)
     return fn_names - ineligible
-
-
-def _find_cycle_members(callgraph: dict[str, set[str]]) -> set[str]:
-    """Set of nodes that participate in a cycle (Tarjan's SCC,
-    inlined). Includes self-loops (size-1 SCC where the node has
-    an edge to itself). Non-trivial SCCs (size > 1) are always
-    cycles."""
-    index_counter = [0]
-    stack: list[str] = []
-    on_stack: set[str] = set()
-    index: dict[str, int] = {}
-    lowlink: dict[str, int] = {}
-    in_cycle: set[str] = set()
-
-    def strongconnect(v: str) -> None:
-        index[v] = index_counter[0]
-        lowlink[v] = index_counter[0]
-        index_counter[0] += 1
-        stack.append(v)
-        on_stack.add(v)
-        for w in callgraph.get(v, ()):
-            if w not in index:
-                strongconnect(w)
-                lowlink[v] = min(lowlink[v], lowlink[w])
-            elif w in on_stack:
-                lowlink[v] = min(lowlink[v], index[w])
-        if lowlink[v] == index[v]:
-            component: list[str] = []
-            while True:
-                w = stack.pop()
-                on_stack.discard(w)
-                component.append(w)
-                if w == v:
-                    break
-            if len(component) > 1:
-                in_cycle.update(component)
-            else:
-                # Singleton: cycle iff self-loop.
-                only = component[0]
-                if only in callgraph.get(only, set()):
-                    in_cycle.add(only)
-
-    for n in callgraph:
-        if n not in index:
-            strongconnect(n)
-    return in_cycle
 
 
 def _invert(
@@ -401,49 +380,57 @@ def _invert(
 
 def _topological_order(
     callgraph: dict[str, set[str]],
+    cyc: dict[str, frozenset[str]],
 ) -> list[str]:
-    """Kahn's algorithm — callers before callees. Assumes the
-    input is a DAG (eligibility filtering has already excluded
-    cycle members)."""
-    in_degree: dict[str, int] = {n: 0 for n in callgraph}
-    for cs in callgraph.values():
+    """Kahn's algorithm over the graph with each cycle in `cyc` taken
+    as one node: callers before callees, and a cycle's members
+    together."""
+    def comp(n: str) -> frozenset[str]:
+        return cyc.get(n, frozenset((n,)))
+
+    comps = {comp(n) for n in callgraph}
+    succs: dict[frozenset[str], set[frozenset[str]]] = {c: set() for c in comps}
+    for n, cs in callgraph.items():
         for c in cs:
-            if c in in_degree:
-                in_degree[c] += 1
-    queue: deque[str] = deque(
-        sorted(n for n, d in in_degree.items() if d == 0),
+            if c in callgraph and comp(c) != comp(n):
+                succs[comp(n)].add(comp(c))
+    in_degree: dict[frozenset[str], int] = {c: 0 for c in comps}
+    for ss in succs.values():
+        for s in ss:
+            in_degree[s] += 1
+    queue: deque[frozenset[str]] = deque(
+        sorted((c for c, d in in_degree.items() if d == 0), key=min),
     )
     out: list[str] = []
     while queue:
-        n = queue.popleft()
-        out.append(n)
-        for c in sorted(callgraph.get(n, ())):
-            if c not in in_degree:
-                continue
-            in_degree[c] -= 1
-            if in_degree[c] == 0:
-                queue.append(c)
+        c = queue.popleft()
+        out.extend(sorted(c))
+        for s in sorted(succs[c], key=min):
+            in_degree[s] -= 1
+            if in_degree[s] == 0:
+                queue.append(s)
     return out
 
 
-def _ancestors_and_descendants(
+def _ancestors(
     callgraph: dict[str, set[str]],
-) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-    """Transitive closures in both directions, restricted to the
-    DAG induced by `callgraph`'s nodes."""
+    cyc: dict[str, frozenset[str]],
+) -> dict[str, set[str]]:
+    """Each function's transitive callers in `callgraph`, leaving out
+    the members of its own cycle."""
     callers_of = _invert(callgraph)
-    order = _topological_order(callgraph)
-    ancestors: dict[str, set[str]] = {n: set() for n in callgraph}
-    for n in order:
-        for c in callers_of.get(n, ()):
-            ancestors[n].add(c)
-            ancestors[n].update(ancestors.get(c, ()))
-    descendants: dict[str, set[str]] = {n: set() for n in callgraph}
-    for n in reversed(order):
-        for d in callgraph.get(n, ()):
-            descendants[n].add(d)
-            descendants[n].update(descendants.get(d, ()))
-    return ancestors, descendants
+    out: dict[str, set[str]] = {}
+    for n in callgraph:
+        seen: set[str] = set()
+        stack = list(callers_of.get(n, ()))
+        while stack:
+            m = stack.pop()
+            if m in seen:
+                continue
+            seen.add(m)
+            stack.extend(callers_of.get(m, ()))
+        out[n] = seen - cyc.get(n, frozenset((n,)))
+    return out
 
 
 def _build_direct_extern_callees(

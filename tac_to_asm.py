@@ -1079,6 +1079,7 @@ class Translator:
         types=None,
         bare_exit: bool = False,
         abi=None,
+        recursion_saves: dict[str, frozenset[str]] | None = None,
     ) -> None:
         self._label_counter = 0
         # Optional — synthetic-AST tests can build a Translator
@@ -1121,6 +1122,34 @@ class Translator:
         # carries a `reg("...")` return attribute so the result
         # goes into the named register instead of A.
         self._current_fn_name: str | None = None
+        # Functions on a cycle that get private pools, each mapped to
+        # its cycle's members (`recursion_saves.hw_stack_cycles`). A
+        # call from one to another saves the caller's live values on
+        # the hardware stack (`recursion_saves.plan_saves`).
+        self._recursion_saves = recursion_saves or {}
+
+    def _push_saved(self, saves) -> list[asm_ast.Type_instruction]:
+        """`LDA; PHA` for each byte of each saved value, low byte
+        first. `saves` holds a name and the val to push it from."""
+        out: list[asm_ast.Type_instruction] = []
+        for n, src in saves:
+            op = translate_val(src)
+            for k in range(self._size_of(tac_ast.Var(name=n))):
+                out.append(asm_ast.Mov(src=_byte_at(op, k), dst=_REG_A))
+                out.append(asm_ast.Push(src=_REG_A))
+        return out
+
+    def _pop_saved(self, saves) -> list[asm_ast.Type_instruction]:
+        """`PLA; STA` for each byte of each saved value, the reverse of
+        `_push_saved` (`saves` is already in pull order, a name and
+        the val to store it in)."""
+        out: list[asm_ast.Type_instruction] = []
+        for n, dst in saves:
+            op = translate_val(dst)
+            for k in reversed(range(self._size_of(tac_ast.Var(name=n)))):
+                out.append(asm_ast.Pop(dst=_REG_A))
+                out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(op, k)))
+        return out
 
     def _is_pointer_val(self, val: tac_ast.Type_val) -> bool:
         """True iff `val` is a Var whose c99 symbol type is Pointer.
@@ -1360,8 +1389,20 @@ class Translator:
                             src=src,
                             dst=asm_ast.Data(name=sym, offset=0),
                         ))
-                for instr in instrs:
-                    out.extend(self.translate_instruction(instr))
+                plan = None
+                if name in self._recursion_saves:
+                    from passes.recursion_saves import plan_saves
+                    plan = plan_saves(
+                        fn, self._recursion_saves[name], self._symbols,
+                    )
+                for i, instr in enumerate(instrs):
+                    if plan is not None:
+                        out.extend(self._push_saved(plan.push_before.get(i, ())))
+                    if plan is None or i not in plan.skip:
+                        out.extend(self.translate_instruction(instr))
+                    if plan is not None:
+                        out.extend(self._pop_saved(plan.pop_after.get(i, ())))
+                        out.extend(self._push_saved(plan.push_after.get(i, ())))
                 self._current_fn_name = prior_fn
                 # Mark Movs whose src or dst Pseudo names a
                 # volatile-typed user variable. Mov atoms emitted by
@@ -3889,6 +3930,7 @@ def translate_program(
     types=None,
     bare_exit: bool = False,
     abi=None,
+    recursion_saves: dict[str, frozenset[str]] | None = None,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
     `c99_to_tac` produced — the Translator consults it via
@@ -3914,9 +3956,15 @@ def translate_program(
     callee's pinned ZP addresses instead of the soft-stack
     AllocateStack + Stack(off) sequence. Calls to soft-stack-ABI
     callees (the default for any callee not in the dict) keep
-    using the existing convention."""
+    using the existing convention.
+
+    `recursion_saves` maps each function on a cycle that gets a
+    private pool to its cycle (`recursion_saves.hw_stack_cycles`,
+    filtered to the eligible ones). Calls between them save the
+    caller's live values on the hardware stack."""
     return Translator(
         symbols, types, bare_exit=bare_exit, abi=abi,
+        recursion_saves=recursion_saves,
     ).translate_program(prog)
 
 

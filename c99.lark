@@ -145,6 +145,10 @@ ATTRIBUTE: "__attribute__"
 // keeps it disjoint from any user identifier.
 PRAGMA_UNROLL: "__c6502_pragma_unroll__"
 
+// Sentinel for `#pragma c6502 call save(hardware_stack)`, which comes
+// before a statement whose calls can recurse.
+PRAGMA_HW_STACK_SAVE: "__c6502_pragma_hw_stack_save__"
+
 // -- Identifier (placeholder alphabet, pending a grammar) --
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 
@@ -340,6 +344,7 @@ struct_declarator_list: declarator (COMMA declarator)*
 block: LBRACE block_item* RBRACE
 block_item: statement    -> stmt_item
           | declaration  -> decl_item
+          | PRAGMA_HW_STACK_SAVE declaration -> hw_stack_save_decl_item
 
 // for-init permits a variable declaration or an expression-or-empty,
 // per C99 §6.8.5: function declarations aren't legal here.
@@ -383,6 +388,7 @@ statement: RETURN exp? SEMICOLON                                    -> return_st
          | CASE constant_exp COLON statement                        -> case_stmt
          | DEFAULT COLON statement                                  -> default_stmt
          | SEMICOLON                                                -> null_stmt
+         | PRAGMA_HW_STACK_SAVE statement                           -> hw_stack_save_stmt
 
 // C99 §6.6: a constant-expression is syntactically just a
 // conditional-expression but is constrained semantically per §6.6
@@ -710,7 +716,7 @@ lex_only: (AUTO | BREAK | CASE | CHAR | CONST | CONTINUE
          | REGISTER | RESTRICT | RETURN | SHORT | SIGNED
          | SIZEOF | STATIC | STRUCT | SWITCH | TYPEDEF | UNION
          | UNSIGNED | VOID | VOLATILE | WHILE
-         | BOOL | COMPLEX | IMAGINARY | ATTRIBUTE | PRAGMA_UNROLL
+         | BOOL | COMPLEX | IMAGINARY | ATTRIBUTE | PRAGMA_UNROLL | PRAGMA_HW_STACK_SAVE
          | INTEGER_CONSTANT | LONG_INTEGER | UINT_INTEGER | ULONG_INTEGER
          | DOUBLE_CONSTANT | FLOAT_CONSTANT | LONG_DOUBLE_CONSTANT
          | CHAR_CONSTANT

@@ -202,7 +202,10 @@ def rewrite_uses_in(
             new_args = [mapper(a) for a in args]
             if all(na is a for na, a in zip(new_args, args)):
                 return instr
-            return tac_ast.FunctionCall(name=n, args=new_args, dst=d)
+            return tac_ast.FunctionCall(
+                name=n, args=new_args, dst=d,
+                hw_stack_save=instr.hw_stack_save,
+            )
         case tac_ast.IndirectCall(ptr=p, args=args, dst=d):
             np = mapper(p)
             new_args = [mapper(a) for a in args]

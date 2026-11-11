@@ -194,7 +194,9 @@ module C99 {
         | Postfix(incdec_op op, exp operand, data_type?)
         | Prefix(incdec_op op, exp operand, data_type?)
         | Conditional(exp condition, exp true_clause, exp false_clause, data_type?)
-        | FunctionCall(identifier name, exp* args, data_type?)
+        -- `hw_stack_save` marks a call in a statement or declaration
+        -- under `#pragma c6502 call save(hardware_stack)`.
+        | FunctionCall(identifier name, exp* args, data_type?, bool hw_stack_save)
         | Dereference(exp, data_type?)
         | AddressOf(exp, data_type?)
         | Subscript(exp array, exp index, data_type?)

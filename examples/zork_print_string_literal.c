@@ -463,6 +463,8 @@ void print_zstring(void) {
             uint8_t pc_h = Z_PC2_H;
             uint8_t pc_hh = Z_PC2_HH;
             load_packed_address();
+            /* Abbreviations don't nest, so this goes two deep. */
+#pragma c6502 call save(hardware_stack)
             print_zstring();
             Z_PC2_HH = pc_hh;
             Z_PC2_H = pc_h;

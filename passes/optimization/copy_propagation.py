@@ -297,6 +297,7 @@ def _rewrite(
         case tac_ast.FunctionCall(name=n, args=args, dst=d):
             return tac_ast.FunctionCall(
                 name=n, args=[sub(a) for a in args], dst=d,
+                hw_stack_save=instr.hw_stack_save,
             )
         case tac_ast.IndirectCall(ptr=p, args=args, dst=d):
             return tac_ast.IndirectCall(

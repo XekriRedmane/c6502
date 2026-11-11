@@ -131,6 +131,17 @@ Two key runtime conventions:
   so the function stays zp_abi-eligible. The callee does `LDA flag;
   CMP #1; [LDX hi;] LDA lo`, and the caller stores A (and X) and then
   `LDA #0; ROL A` into the flag byte.
+- **`#pragma c6502 call save(hardware_stack)`** before an expression
+  statement, a `return`, or a block-scope declaration marks the calls
+  in it (`hw_stack_save` on the c99 and TAC `FunctionCall`, set by the
+  parser's `_mark_hw_stack_save`). Each must be a direct call that can
+  recurse. Under `--optimize`, a call-graph cycle whose every
+  internal call is marked gets private pools, and each marked call
+  saves the caller's live values with `PHA` / `PLA` instead of the
+  function saving callee-saved bytes at entry and exit. The user
+  vouches for the hardware stack's depth. See
+  `passes/recursion_saves.py`; user guide, with the cautions, in
+  [docs/pragmas.md](docs/pragmas.md).
 - **The `register` keyword** requests 6502-register placement,
   refining the zp_abi calling convention. Placement is POSITIONAL:
   the first register arg-byte goes in **A**, the second in **X**

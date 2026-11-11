@@ -32,15 +32,13 @@ __zpabi_set_page_first__slot	EQU	$80
 __local_set_page_first__0	EQU	$81
 __zpabi_cout_string__count	EQU	$81
 __local_set_page_first__prev_first	EQU	$82
-__local_buffer_char__c	EQU	$83
-__local_get_next_zchar__compound_literal_1	EQU	$83
-__local_buffer_char__0	EQU	$84
-__local_get_next_zchar__code	EQU	$84
-__local_dump_buffer_with_more__0	EQU	$85
-__local_dump_buffer_with_more__end	EQU	$86
-__local_get_next_code_word__1	EQU	$86
-__local_get_next_code_byte2__found_1	EQU	$87
-__local_get_next_code_byte2__page	EQU	$88
+__local_print_zstring__ch	EQU	$83
+__local_print_zstring__c_0	EQU	$84
+__local_print_zstring__0	EQU	$85
+__local_buffer_char__c	EQU	$87
+__local_get_next_zchar__compound_literal_1	EQU	$87
+__local_buffer_char__0	EQU	$88
+__local_get_next_zchar__code	EQU	$88
 Z_PC	EQU	$8A
 ZCODE_PAGE_ADDR	EQU	$8D
 ZCODE_PAGE_VALID	EQU	$8F
@@ -51,18 +49,23 @@ Z_PC2_L	EQU	$93
 ZCODE_PAGE_ADDR2	EQU	$94
 ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
-__local_do_rwts_on_sector__0	EQU	$98
-__local_cout_string__count	EQU	$99
-__local_do_rwts_on_sector__sector_1	EQU	$99
-__local_dump_buffer_to_printer__x	EQU	$99
-__local_cout_string__y	EQU	$9A
-__local_do_rwts_on_sector__sector_0	EQU	$9A
-__local_dump_buffer_to_printer__1	EQU	$9A
-__local_find_index_of_page_table__0	EQU	$9A
-__local_cout_string__s	EQU	$9B
-__local_dump_buffer_to_printer__2	EQU	$9B
-__local_find_index_of_page_table__1	EQU	$9B
-__local_cout_string__1	EQU	$9C
+__local_dump_buffer_with_more__0	EQU	$98
+__local_dump_buffer_with_more__end	EQU	$99
+__local_get_next_code_word__1	EQU	$99
+__local_get_next_code_byte2__found_1	EQU	$9A
+__local_get_next_code_byte2__page	EQU	$9B
+__local_do_rwts_on_sector__0	EQU	$9C
+__local_cout_string__count	EQU	$9D
+__local_do_rwts_on_sector__sector_1	EQU	$9D
+__local_dump_buffer_to_printer__x	EQU	$9D
+__local_cout_string__y	EQU	$9E
+__local_do_rwts_on_sector__sector_0	EQU	$9E
+__local_dump_buffer_to_printer__1	EQU	$9E
+__local_find_index_of_page_table__0	EQU	$9E
+__local_cout_string__s	EQU	$9F
+__local_dump_buffer_to_printer__2	EQU	$9F
+__local_find_index_of_page_table__1	EQU	$9F
+__local_cout_string__1	EQU	$A0
 HIGH_MEM_ADDR	EQU	$B8
 Z_HEADER_ADDR	EQU	$BA
 NUM_IMAGE_PAGES	EQU	$BC
@@ -111,7 +114,7 @@ COUT1	EQU	$FDF0
 ; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
 ; def load_packed_address params= locals=__local_load_packed_address__0,__local_load_packed_address__1 indirect=false in_cycle=false
 ; def print_string_literal params= locals= indirect=false in_cycle=false
-; def print_zstring params= locals= indirect=false in_cycle=true
+; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0,__local_print_zstring__1 indirect=false in_cycle=true
 ; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false
 ; def set_page_first params=__zpabi_set_page_first__slot locals=__local_set_page_first__0,__local_set_page_first__prev_first indirect=false in_cycle=false param_regs=A
 ; ext CLREOL params=
@@ -756,46 +759,6 @@ get_alphabet:
 print_zstring:
    SUBROUTINE
 
-   ; prologue: 0 arg bytes, 7 local bytes, 7 callee-saved bytes
-   SEC
-   LDA   SSP
-   SBC   #$09
-   STA   SSP
-   LDA   SSP+1
-   SBC   #$00
-   STA   SSP+1
-   LDA   FP
-   LDY   #$08
-   STA   (SSP),Y
-   LDA   FP+1
-   INY
-   STA   (SSP),Y
-   LDA   SSP
-   STA   FP
-   LDA   SSP+1
-   STA   FP+1
-   LDA   $C8
-   LDY   #$01
-   STA   (FP),Y
-   LDA   $C9
-   INY
-   STA   (FP),Y
-   LDA   $CA
-   INY
-   STA   (FP),Y
-   LDA   $CB
-   INY
-   STA   (FP),Y
-   LDA   $CC
-   INY
-   STA   (FP),Y
-   LDA   $CD
-   INY
-   STA   (FP),Y
-   LDA   $D3
-   INY
-   STA   (FP),Y
-
    LDA   #$00
    STA   LOCKED_ALPHABET
    LDA   #$00
@@ -804,55 +767,13 @@ print_zstring:
    STA   SHIFT_ALPHABET
 .loop@9_start:
    JSR   get_next_zchar
-   STA   $C8
-   LDA   #$00
-   ROL   A
-   STA   $81
-   BEQ   .if_end@38
-
-   ; epilogue
-   LDY   #$01
-   LDA   (FP),Y
-   STA   $C8
-   INY
-   LDA   (FP),Y
-   STA   $C9
-   INY
-   LDA   (FP),Y
-   STA   $CA
-   INY
-   LDA   (FP),Y
-   STA   $CB
-   INY
-   LDA   (FP),Y
-   STA   $CC
-   INY
-   LDA   (FP),Y
-   STA   $CD
-   INY
-   LDA   (FP),Y
-   STA   $D3
-   CLC
-   LDA   FP
-   ADC   #$09
-   STA   SSP
-   LDA   FP+1
-   ADC   #$00
-   STA   SSP+1
-   INY
-   LDA   (FP),Y
-   TAX
-   INY
-   LDA   (FP),Y
-   STA   FP+1
-   TXA
-   STA   FP
+   STA   __local_print_zstring__c_0
+   BCC   .if_end@38
    RTS
 .if_end@38:
-   LDA   $C8
+   LDA   __local_print_zstring__c_0
    BNE   .if_else@40
    LDA   #$20
-   STA   $81
    JMP   .if_end@39
 .if_else@40:
    CMP   #$01
@@ -861,59 +782,58 @@ print_zstring:
 .lb_skip@0:
    JSR   get_next_zchar
    ASL   A
-   STA   $81
-   LDY   $81
+   STA   __local_print_zstring__ch
+   LDY   __local_print_zstring__ch
    LDA   (Z_ABBREV_TABLE),Y
-   STA   $83
+   STA   __local_print_zstring__0
    LDA   Z_ABBREV_TABLE
    CLC
-   ADC   $81
-   STA   $81
+   ADC   __local_print_zstring__ch
+   STA   __local_print_zstring__ch
    LDA   Z_ABBREV_TABLE+1
    ADC   #$00
-   STA   $82
-   LDA   $81
+   STA   __local_print_zstring__c_0
+   LDA   __local_print_zstring__ch
    STA   DPTR
-   LDA   $82
+   LDA   __local_print_zstring__c_0
    STA   DPTR+1
    LDY   #$01
-   LDA   (__zpabi_cout_string__count),Y
-   STA   $81
+   LDA   (__local_print_zstring__ch),Y
    STA   SCRATCH2
-   LDA   $83
+   LDA   __local_print_zstring__0
    STA   SCRATCH2+1
    LDA   LOCKED_ALPHABET
-   STA   $D3
+   PHA
    LDA   ZDECOMPRESS_STATE
-   STA   $CD
+   PHA
    LDA   ZCHARS
-   STA   $CC
+   PHA
    LDA   ZCHARS+1
-   STA   $CB
+   PHA
    LDA   Z_PC2_L
-   STA   $CA
+   PHA
    LDA   Z_PC2_H
-   STA   $C9
+   PHA
    LDA   Z_PC2_HH
-   STA   $C8
+   PHA
    JSR   load_packed_address
    JSR   print_zstring
-   LDA   $C8
+   PLA
    STA   Z_PC2_HH
-   LDA   $C9
+   PLA
    STA   Z_PC2_H
-   LDA   $CA
+   PLA
    STA   Z_PC2_L
+   PLA
+   STA   ZCHARS+1
+   PLA
+   STA   ZCHARS
+   PLA
+   STA   ZDECOMPRESS_STATE
+   PLA
+   STA   LOCKED_ALPHABET
    LDA   #$00
    STA   ZCODE_PAGE_VALID2
-   LDA   $CC
-   STA   ZCHARS
-   LDA   $CB
-   STA   ZCHARS+1
-   LDA   $CD
-   STA   ZDECOMPRESS_STATE
-   LDA   $D3
-   STA   LOCKED_ALPHABET
    LDA   #$FF
    STA   SHIFT_ALPHABET
    JMP   .loop@9_continue
@@ -921,18 +841,12 @@ print_zstring:
    CMP   #$04
    BCS   .if_else@44
    JSR   get_alphabet
-   STA   $81
-   LDA   $C8
+   STA   __local_print_zstring__ch
+   LDA   __local_print_zstring__c_0
    CLC
-   ADC   $81
-   STA   $81
-   LDA   #$00
-   ADC   #$00
-   STA   $82
-   LDA   $81
+   ADC   __local_print_zstring__ch
    CLC
    ADC   #$02
-   STA   $81
    JSR   A_mod_3
    STA   SHIFT_ALPHABET
    JMP   .loop@9_continue
@@ -941,46 +855,41 @@ print_zstring:
    BCS   .if_else@46
    JSR   get_alphabet
    CLC
-   ADC   $C8
-   STA   $81
+   ADC   __local_print_zstring__c_0
    JSR   A_mod_3
    STA   LOCKED_ALPHABET
    JMP   .loop@9_continue
 .if_else@46:
    JSR   get_alphabet
-   STA   $81
-   LDA   $81
+   STA   __local_print_zstring__ch
+   LDA   __local_print_zstring__ch
    BNE   .if_else@48
    LDA   #$5B
    CLC
-   ADC   $C8
-   STA   $81
+   ADC   __local_print_zstring__c_0
    JMP   .if_end@47
 .if_else@48:
    CMP   #$01
    BNE   .if_else@50
    LDA   #$3B
    CLC
-   ADC   $C8
-   STA   $81
+   ADC   __local_print_zstring__c_0
    JMP   .if_end@49
 .if_else@50:
-   LDA   $C8
+   LDA   __local_print_zstring__c_0
    CMP   #$06
    BNE   .if_else@52
    JSR   get_next_zchar
-   STA   $81
    ASL   A
    ASL   A
    ASL   A
    ASL   A
    ASL   A
-   STA   $C8
+   STA   __local_print_zstring__c_0
    JSR   get_next_zchar
-   STA   $81
-   LDA   $C8
-   ORA   $81
-   STA   $81
+   STA   __local_print_zstring__ch
+   LDA   __local_print_zstring__c_0
+   ORA   __local_print_zstring__ch
    JMP   .if_end@51
 .if_else@52:
    CMP   #$07
@@ -988,14 +897,12 @@ print_zstring:
    LDA   #$0D
    JSR   buffer_char
    LDA   #$0A
-   STA   $81
    JMP   .if_end@53
 .if_else@54:
    SEC
    SBC   #$08
    TAX
    LDA   a2_table,X
-   STA   $81
 .if_end@53:
 .if_end@51:
 .if_end@49:

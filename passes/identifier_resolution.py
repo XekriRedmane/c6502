@@ -1215,6 +1215,7 @@ class Resolver:
                 if name in scope:
                     return c99_ast.FunctionCall(
                         name=scope[name][0], args=new_args,
+                        hw_stack_save=exp.hw_stack_save,
                     )
                 raise IdentifierResolutionError(
                     f"undeclared identifier {name!r}"

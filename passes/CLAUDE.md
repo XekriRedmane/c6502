@@ -72,6 +72,12 @@ this directory:
   shape `tac_to_asm` emits for loop tails when the loop body's
   conditional exit straddles the Return.
 - `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
+- `recursion_saves.py` — `#pragma c6502 call save(hardware_stack)`.
+  `check_pragmas` rejects a marked call that can't recurse,
+  `hw_stack_cycles` finds the call-graph cycles whose every
+  recursive call is marked, and `plan_saves` tells `tac_to_asm`
+  where to push and pull each value live across such a call (see
+  "Recursion with hardware-stack saves" below).
 - `redundant_compare.py` — `apply_redundant_compare`. Drops a
   `Compare` at a label reached only by the `Branch` right after an
   identical `Compare`, since A, the operand, and the flags are all
@@ -1276,7 +1282,9 @@ every coexisting zp_abi function's param slots. Eligibility:
 - Defined in this TU (we need the body to size locals and enumerate
   callees).
 - No `IndirectCall`.
-- Not in any call-graph cycle (Tarjan SCC).
+- Not in any call-graph cycle (Tarjan SCC), unless every call
+  between the cycle's members is marked with `#pragma c6502 call
+  save(hardware_stack)` (see "Recursion with hardware-stack saves").
 - Every direct callee is also eligible, OR is a zp_abi extern (treated
   as a bounded leaf via its declared param slots). A non-zp_abi extern
   callee disqualifies the caller.
@@ -1284,6 +1292,40 @@ every coexisting zp_abi function's param slots. Eligibility:
 Ineligible functions fall back to the conservative caller/callee
 partition ($80..$BF caller-saved, $C0..$FF callee-saved with the usual
 save/restore discipline).
+
+### Recursion with hardware-stack saves
+
+`recursion_saves.hw_stack_cycles` finds the cycles whose every call
+between members is marked (`tac_ast.FunctionCall.hw_stack_save`, set
+from the c99 `FunctionCall` flag the parser sets for the calls in a
+statement or declaration under the pragma;
+`check_pragmas` rejects a marked call to a function off the caller's
+cycle). Those functions skip the cycle rule above, and
+`zp_local_allocation.recursive_pool_functions` maps the eligible ones
+to their cycles. Then:
+
+- `tac_to_asm` brackets each marked call with `LDA; PHA` before and
+  `PLA; STA` after, for every TAC value live across it that isn't a
+  static, a parameter, or address-taken / indexed by name
+  (`plan_saves`). A push goes right after the value's last
+  definition in the call's block, or else right before the call; a
+  value copied from somewhere is pushed from there; a value whose
+  first use after the call copies it to a global is pulled straight
+  into the global, and that copy is skipped. Pulls come after the
+  call's result is stored.
+- The members of one cycle aren't each other's ancestors in the pool
+  allocation, so their pools may overlap. `_topological_order` treats
+  each cycle as one node.
+- Address-taken locals of these functions stay in the frame
+  (`compile.optimized_asm` leaves them out of the pool's size and of
+  `compute_address_taken_assignments`).
+- `optimization_asm/optimizer.py` raises if a colorable name is live
+  across a marked call (`_check_nothing_live_across`), so a gap in
+  the plan fails loudly rather than miscompile.
+
+Parameters stay on the soft stack (these functions aren't zp_abi).
+The unoptimized pipeline ignores the pragma. The linker still
+rejects recursion.
 
 ### Allocation algorithm (shared between param and local passes)
 
@@ -1325,7 +1367,8 @@ stack.
 
 ```
 tac → select_abi → allocate_zp_slots
-    → tac_to_asm (bare_exit, abi)
+    → recursive_pool_functions
+    → tac_to_asm (bare_exit, abi, recursion_saves)
     → optimize_program (preliminary, default pool)  # size only
     → compute_local_bytes
     → allocate_function_locals

@@ -66,6 +66,7 @@ def optimize_program(
     symbols=None,
     local_pools: dict[str, list[int]] | None = None,
     reserved_zp: frozenset[int] = frozenset(),
+    recursion_saves: dict[str, frozenset[str]] | None = None,
 ) -> tuple[asm_ast.Type_program, dict[str, Coloring]]:
     """Walk every Function top-level and apply the asm-level SSA
     round-trip. Returns the rewritten program alongside a
@@ -109,7 +110,14 @@ def optimize_program(
     callee-save prologues for eligible functions.
 
     `reserved_zp` is a set of zero-page bytes no function's regalloc
-    may color, the zero-page globals' bytes (passes/zp_globals.py)."""
+    may color, the zero-page globals' bytes (passes/zp_globals.py).
+
+    `recursion_saves` maps each function on a cycle that saves around
+    its recursive calls to its cycle's members
+    (`passes/recursion_saves.py`). Nothing the regalloc can color may
+    be live across a call to one of them, since `tac_to_asm` saved
+    every such value on the hardware stack; a function that breaks
+    this raises an internal error rather than miscompile."""
     from passes.abi_selection import ZpLayout
     # Program-level prepass: replace references to const-qualified
     # internal-linkage scalar statics with Imm operands carrying
@@ -157,6 +165,7 @@ def optimize_program(
                 local_pool=pool_for_fn,
                 local_pins=local_pins or None,
                 param_hints=param_hints or None,
+                recursive_callees=(recursion_saves or {}).get(tl.name),
             )
             new_top.append(new_fn)
             colorings[new_fn.name] = coloring
@@ -291,6 +300,7 @@ def _optimize_function(
     *,
     local_pins: dict[str, str] | None = None,
     param_hints: dict[str, str] | None = None,
+    recursive_callees: frozenset[str] | None = None,
 ) -> tuple[asm_ast.Function, Coloring]:
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
     # B<cc>` into `LDA P; SEC; SBC #1; STA dst; B<flipped>`. Runs
@@ -334,6 +344,8 @@ def _optimize_function(
     # param bytes mid-computation.
     liveness = compute_liveness(fn)
     graph = build_interference(fn, liveness, statics=statics)
+    if recursive_callees:
+        _check_nothing_live_across(fn, liveness, graph, recursive_callees)
     # Step 7a: move coalescing. Merge non-interfering Pseudo pairs
     # connected by a Mov or Phi-arg into one node so they get the
     # same color. After Phi destruction the corresponding Movs
@@ -395,6 +407,29 @@ def _optimize_function(
     fn = apply_coloring(fn, coloring, local_pool=local_pool)
     fn = from_ssa(fn)
     return fn, coloring
+
+
+def _check_nothing_live_across(
+    fn: asm_ast.Function, liveness, graph, callees: frozenset[str],
+) -> None:
+    """Raises if a colorable name is live across a call to one of
+    `callees`, which reuses `fn`'s pool bytes."""
+    from passes.optimization_asm.liveness import _defs_in, _uses_in
+    for bid, blk in liveness.cfg.blocks.items():
+        live = {n for n in liveness.live_out[bid] if n in graph.nodes}
+        for instr in reversed(blk.instructions):
+            if isinstance(instr, asm_ast.Phi):
+                continue
+            for d in _defs_in(instr):
+                live.discard(d.name)
+            if isinstance(instr, asm_ast.Call) and instr.name in callees and live:
+                raise AssertionError(
+                    f"function '{fn.name}': {sorted(live)} live across "
+                    f"the call to '{instr.name}', which can recurse",
+                )
+            for u in _uses_in(instr):
+                if u.name in graph.nodes:
+                    live.add(u.name)
 
 
 def _all_pseudo_names(fn: asm_ast.Function) -> set[str]:

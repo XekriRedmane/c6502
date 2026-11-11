@@ -849,6 +849,37 @@ def _merge_placement(prefix, postfix, name: str):
     return prefix if prefix is not None else postfix
 
 
+_HW_STACK_SAVE = "`#pragma c6502 call save(hardware_stack)`"
+
+
+def _mark_hw_stack_save(node) -> None:
+    """Sets `hw_stack_save` on every call in `node`, a statement or a
+    list of declarations that `#pragma c6502 call save(hardware_stack)`
+    comes before. Raises `ParserError` if there's no call."""
+    count = 0
+
+    def walk(n) -> None:
+        nonlocal count
+        if isinstance(n, list):
+            for x in n:
+                walk(x)
+            return
+        if not dataclasses.is_dataclass(n):
+            return
+        if isinstance(n, c99_ast.FunctionCall):
+            n.hw_stack_save = True
+            count += 1
+        for f in dataclasses.fields(n):
+            walk(getattr(n, f.name))
+
+    walk(node)
+    if count == 0:
+        raise ParserError(
+            f"{_HW_STACK_SAVE} must come before a statement or "
+            f"declaration that calls a function"
+        )
+
+
 def _consume_pragma_clause(items, start):
     """If `items[start]` is a transformed pragma_clause result (a
     plain string — the canonical annotation name, e.g. "unroll"),
@@ -2533,6 +2564,26 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def null_stmt(self, _semi):
         return c99_ast.Null()
+
+    # `#pragma c6502 call save(hardware_stack)` before a statement or
+    # a declaration marks the calls in it. Only an expression
+    # statement, a `return`, or a declaration's initializers have calls
+    # of their own; any other statement would also cover the ones in
+    # the statements nested in it.
+    @v_args(inline=True)
+    def hw_stack_save_stmt(self, _pragma, stmt):
+        if not isinstance(stmt, (c99_ast.Expression, c99_ast.Return)):
+            raise ParserError(
+                f"{_HW_STACK_SAVE} must come before an expression "
+                f"statement, a `return`, or a declaration"
+            )
+        _mark_hw_stack_save(stmt)
+        return stmt
+
+    @v_args(inline=True)
+    def hw_stack_save_decl_item(self, _pragma, declaration_list):
+        _mark_hw_stack_save(declaration_list)
+        return self.decl_item(declaration_list)
 
     # Loop and jump statements. Loop labels are minted by the
     # loop_labeling pass that runs after identifier_resolution; the

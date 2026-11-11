@@ -367,6 +367,38 @@ That's also why a recursive function can't use zp_abi. Its own
 earlier calls are still running, and every one of them would read
 the same bytes.
 
+### Recursion that saves on the hardware stack
+
+A recursive function's locals get zero-page bytes of their own under
+`--optimize` when you mark the calls that recurse:
+
+```c
+void print_zstring(void) {
+    ...
+            load_packed_address();
+#pragma c6502 call save(hardware_stack)
+            print_zstring();
+    ...
+}
+```
+
+The pragma applies to the calls in the statement or declaration
+right after it, each of which has to be a direct call that can
+recurse. Before such
+a call, the caller pushes each local that's live across it with `LDA;
+PHA`, and after the call it pulls them back with `PLA; STA`. Because
+the caller saves what it needs, the function doesn't save anything
+at entry or exit, and it has no frame unless it has parameters or
+locals whose address is taken. Those stay on the soft stack, one
+copy per call.
+
+It applies only when every call from one function on the cycle to
+another is marked. The compiler can't tell how deep the recursion
+goes, so the pragma is your promise that the hardware stack has room.
+Read the cautions in [pragmas.md](pragmas.md) before using it, and see
+[saves around a recursive call](optimizations/recursion_saves.md) for
+the details.
+
 ### Arguments in registers
 
 A parameter declared `register` arrives in a register instead. The
@@ -555,7 +587,10 @@ many calls deep, can overwrite them.
 keeps a 2-byte return address on the 256-byte hardware stack, and a
 soft-stack epilogue briefly pushes up to 2 more bytes. That caps
 recursion at about 120 calls deep, and fewer when other code also
-uses the hardware stack, however much room the soft stack has.
+uses the hardware stack, however much room the soft stack has. A call
+under `#pragma c6502 call save(hardware_stack)` also keeps the bytes
+it saved there until it returns, so a call that saves 7 bytes uses 9
+per level.
 
 **Zero page runs out.** zp_abi parameters come from the 64 bytes at
 `$80`-`$BF`. When a long chain of calls uses more than that, the

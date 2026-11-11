@@ -403,7 +403,7 @@ class StringLifter:
             case c99_ast.FunctionCall(name=n, args=args, data_type=dt):
                 return c99_ast.FunctionCall(
                     name=n, args=[self._lift_exp(a) for a in args],
-                    data_type=dt,
+                    data_type=dt, hw_stack_save=exp.hw_stack_save,
                 )
             case c99_ast.Dereference(exp=inner, data_type=dt):
                 return c99_ast.Dereference(

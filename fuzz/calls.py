@@ -3,7 +3,10 @@
 Each program has three to six functions f0..fN arranged as a DAG (fi
 only calls fj with j > i), plus extras chosen per seed:
   * a recursive function `rec`, which can't get zp_abi and so stays
-    on the soft stack,
+    on the soft stack. Sometimes it keeps locals live across its
+    recursive call under `#pragma c6502 call save(hardware_stack)`,
+    which gives it a private pool and saves them on the hardware
+    stack,
   * the last function called through a function pointer, which also
     puts it (and every function making that indirect call) on the
     soft stack,
@@ -48,6 +51,16 @@ SIZE = {"signed char": 1, "unsigned char": 1, "int": 2,
 # call-graph cycle).
 _REC = ("int rec(int d, int x) { if (d <= 0) return x & 255; "
         "return rec(d - 1, (x * 3 + d) & 1023) + 1; }")
+# The same recursion with a 1-byte and a 4-byte local live across the
+# call, saved on the hardware stack.
+_REC_SAVED = """int rec(int d, int x) {
+    unsigned char a = (unsigned char)(x * 7);
+    long b = (long)x * 3;
+    if (d <= 0) return x & 255;
+#pragma c6502 call save(hardware_stack)
+    int r = rec(d - 1, (x * 3 + d) & 1023);
+    return (r + a + (int)(b & 15)) & 1023;
+}"""
 
 
 def _expr(rng: random.Random, vars_: list[str], depth: int = 2) -> str:
@@ -80,6 +93,8 @@ def make_program(seed: int) -> tuple[str, None]:
     # The carry-flag choices come from a stream of their own, so the
     # rest of each seed's program is what it was before they existed.
     crng = random.Random(seed * 7919 + 1)
+    # So does the choice of recursive function.
+    rec_src = _REC_SAVED if random.Random(seed * 104729 + 3).random() < 0.5         else _REC
     n = rng.randint(3, 6)
     out = []
     globals_ = []
@@ -128,7 +143,7 @@ def make_program(seed: int) -> tuple[str, None]:
             soft.add(i)
     reg_ok = set(range(n)) - soft
 
-    lines = [_REC] if use_rec else []
+    lines = [rec_src] if use_rec else []
     for i in reversed(range(n)):
         ret, params = sigs[i]
         decl = []

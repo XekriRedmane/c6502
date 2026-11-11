@@ -1394,7 +1394,10 @@ class Translator:
                         top_levels.append(fn)
                 top_levels.extend(self._emit_static_variables())
                 _erase_bool(decls, self._symbols, self._types)
-                return tac_ast.Program(top_level=top_levels)
+                program = tac_ast.Program(top_level=top_levels)
+                from passes.recursion_saves import check_pragmas
+                check_pragmas(program)
+                return program
         raise TypeError(f"unexpected program: {prog!r}")
 
     def _translate_top_level_declaration(
@@ -2416,6 +2419,16 @@ class Translator:
                 self.translate_exp(left, instrs)
                 return self.translate_exp(right, instrs)
             case c99_ast.FunctionCall(name=name, args=args):
+                hw = exp.hw_stack_save
+                sym = self._symbols.get(name)
+                if hw and sym is not None and isinstance(
+                    _strip_quals_c99(sym.type), c99_ast.Pointer,
+                ):
+                    from passes.recursion_saves import RecursionSaveError
+                    raise RecursionSaveError(
+                        "`#pragma c6502 call save(hardware_stack)` can't "
+                        "apply to a call through a function pointer"
+                    )
                 # `f(arg1, arg2, ...)` lowers to: evaluate each arg
                 # in source order (so its temporaries get the lower
                 # numbers), collect the resulting TAC vals, mint a
@@ -2455,6 +2468,7 @@ class Translator:
                     )
                     instrs.append(tac_ast.FunctionCall(
                         name=name, args=arg_vals, dst=slot,
+                        hw_stack_save=hw,
                     ))
                     return slot
                 if isinstance(ret_t, (c99_ast.Structure, c99_ast.Union)):
@@ -2478,6 +2492,7 @@ class Translator:
                     else:
                         instrs.append(tac_ast.FunctionCall(
                             name=name, args=arg_vals, dst=None,
+                            hw_stack_save=hw,
                         ))
                     return slot
                 dst = (
@@ -2499,6 +2514,7 @@ class Translator:
                 else:
                     instrs.append(tac_ast.FunctionCall(
                         name=name, args=arg_vals, dst=dst,
+                        hw_stack_save=hw,
                     ))
                 return dst
             case c99_ast.Postfix(op=op, operand=operand):

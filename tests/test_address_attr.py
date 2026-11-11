@@ -303,7 +303,7 @@ class TestSim(unittest.TestCase):
         #   CMP #5 ; RTS        C set iff A >= 5
         src = (
             "__attribute__((zp_abi, return_bool_in_carry, address(0xD000)))\n"
-            "extern unsigned char at_least_5(register unsigned char a);\n"
+            "extern _Bool at_least_5(register unsigned char a);\n"
             "int main(void) {\n"
             "  int n = 0;\n"
             "  for (unsigned char i = 0; i < 9; i++)\n"

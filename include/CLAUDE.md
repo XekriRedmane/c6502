@@ -18,8 +18,8 @@ automatically; no `-I` flag needed.
   typedefs mapping to c6502's integer model, plus the C99 limit and
   literal-suffix macros (`INT8_MAX`, `INT8_C`, etc.).
 - `stdbool.h` (C99 §7.16) — `bool` / `true` / `false` /
-  `__bool_true_false_are_defined`. `bool` aliases `unsigned char`
-  (c6502 doesn't model `_Bool` as a distinct type).
+  `__bool_true_false_are_defined`. `bool` is a macro for `_Bool`,
+  as C99 §7.16.2 specifies.
 - `apple2/monitor_io.h` — the Apple II Monitor ROM routines a program
   calls: `HOME`, `RDKEY`, `COUT`, `COUT1`, `WAIT` as `zp_abi` routines
   with `address`, each with the `preserves_x` / `preserves_y` the ROM

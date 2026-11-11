@@ -37,12 +37,12 @@ class TestCliErrors(unittest.TestCase):
             ("__attribute__((preserves_y)) void f(void) {}",
              "can't have `preserves_x` or `preserves_y`"),
         "preserves_x with an int carry struct":
-            ("struct s { int v; unsigned char end; };\n"
+            ("struct s { int v; _Bool end; };\n"
              "__attribute__((preserves_x, return_bool_in_carry, "
              "address(0x1000))) struct s f(void);",
              "whose value member is 2 bytes"),
         "carry struct of the wrong shape":
-            ("struct s { long v; unsigned char end; };\n"
+            ("struct s { long v; _Bool end; };\n"
              "__attribute__((return_bool_in_carry)) struct s f(void);",
              "exactly two members"),
         "carry on an int":

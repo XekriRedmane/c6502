@@ -91,6 +91,7 @@ _INT_WIDTH = {
     c99_ast.Char:      1,
     c99_ast.SChar:     1,
     c99_ast.UChar:     1,
+    c99_ast.Bool:      1,
     c99_ast.Int:       2,
     c99_ast.UInt:      2,
     c99_ast.Long:      4,
@@ -125,7 +126,8 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     here keeps the const-evaluator honest if a future caller skips
     the type check."""
     t = _strip_quals(t)
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+                      c99_ast.Bool)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
         return 2
@@ -144,8 +146,11 @@ def _coerce_to_integer_type(value: int, t: c99_ast.Type_data_type) -> int:
     """Reduce `value` mod 2**(8*width) and re-interpret with the
     target's signedness — matches the runtime byte-level cast
     sequences in tac_to_asm (Truncate / SignExtend / ZeroExtend all
-    boil down to this for compile-time-known integer values)."""
+    boil down to this for compile-time-known integer values). A
+    `_Bool` target gets 0 or 1 instead (C99 §6.3.1.2)."""
     t = _strip_quals(t)
+    if isinstance(t, c99_ast.Bool):
+        return int(value != 0)
     width_bits = 8 * _INT_WIDTH[type(t)]
     mask = (1 << width_bits) - 1
     raw = value & mask

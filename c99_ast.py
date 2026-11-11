@@ -310,6 +310,11 @@ class UChar(Type_data_type):
 
 
 @dataclass
+class Bool(Type_data_type):
+    pass
+
+
+@dataclass
 class Void(Type_data_type):
     pass
 

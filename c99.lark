@@ -305,7 +305,7 @@ initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
 function_decl: attribute_clause? decl_specs declarator block
 
-type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | VOID
+type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | VOID
               | struct_or_union_specifier
 
 // Struct or union specifier (C99 §6.7.2.1). Two shapes:
@@ -476,7 +476,7 @@ constant_exp: conditional_exp
 // Right-recursive so `(int)(long)x` parses as `(int)((long)x)`. The
 // LPAREN-vs-paren-expr ambiguity is resolved at LALR(1) by the next
 // token after `(`: any type-specifier token (INT/LONG/SIGNED/
-// UNSIGNED/FLOAT/DOUBLE) → cast; anything else → parenthesised exp.
+// UNSIGNED/FLOAT/DOUBLE/CHAR/BOOL/VOID) → cast; anything else → parenthesised exp.
 
 ?cast_exp: LPAREN type_name RPAREN cast_exp  -> cast
          | unary_exp

@@ -117,8 +117,8 @@ Two key runtime conventions:
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
 - **`__attribute__((return_bool_in_carry))`** on a function
-  returning `bool` (`unsigned char`) makes it return `e != 0` in the
-  carry flag. The callee ends in `CMP #1` (`SEC` / `CLC` for a
+  returning `bool` (`_Bool`, never `unsigned char` or `char`) makes
+  it return `e != 0` in the carry flag. The callee ends in `CMP #1` (`SEC` / `CLC` for a
   constant, `PHP` / `PLP` around a frame teardown), and the caller
   branches with `BCC` / `BCS` or captures C with `LDA #0; ROL A`.
   The `save_c` flag on `Ret` / `Return` marks C live at the return.
@@ -126,7 +126,7 @@ Two key runtime conventions:
   must carry it, and its address can't be taken. See
   `passes/carry_return.py`. The function may instead return a
   struct of exactly two members, a 1- or 2-byte integer value and
-  then a `bool` (`type_checking.carry_struct_value_bytes`). The value
+  then a `_Bool` (`type_checking.carry_struct_value_bytes`). The value
   comes back in A (and X) and the flag in C, with no sret pointer,
   so the function stays zp_abi-eligible. The callee does `LDA flag;
   CMP #1; [LDX hi;] LDA lo`, and the caller stores A (and X) and then
@@ -324,7 +324,7 @@ the function_decl's `params` array; their *types* live in parallel on
 
 ### Type vocabulary
 
-Nine integer types, two floating types, plus pointers and function
+Ten integer types, two floating types, plus pointers and function
 types. Widths follow C99's minimum ranges per §5.2.4.2.1 — Int is 16
 bits, Long is 32 bits, LongLong is 64 bits.
 
@@ -341,11 +341,23 @@ Integers:
   byte semantics as `unsigned char`).
 - `SChar()` is `signed char` (1-byte signed, -128..127).
 - `UChar()` is `unsigned char` (1-byte unsigned, 0..255).
+- `Bool()` is `_Bool` (1 byte holding 0 or 1); `<stdbool.h>`'s
+  `bool` is a macro for it.
 
-Char/SChar/UChar are distinct types from Int/UInt — C99 §6.3.1.1.2
-integer-promotes them all to `int` (because Int's 16-bit range covers
-both signed and unsigned char), so arithmetic always happens at Int
-width or wider.
+Char/SChar/UChar/Bool are distinct types from Int/UInt — C99
+§6.3.1.1.2 integer-promotes them all to `int` (because Int's 16-bit
+range covers both signed and unsigned char), so arithmetic always
+happens at Int width or wider.
+
+Converting a scalar to `_Bool` gives 0 if it compares equal to 0 and
+1 otherwise (C99 §6.3.1.2). The type checker applies that to static
+initializers. For everything else, c99_to_tac lowers each conversion
+to `x != 0`, skipping it for a value that is already 0 or 1 (a
+comparison, `!`, `&&`, `||`, a `_Bool`), and makes `++` store 1 and
+`--` store `x == 0`. Then it replaces `Bool` with `UChar` in the
+symbol table, the struct layouts, and the top-level declaration
+types, so no pass after it sees `Bool`. tac_to_asm lowers a `!= 0`
+with a 1-byte result as `LDA x; ORA ...; BEQ end; LDA #1`.
 
 Floating:
 
@@ -413,9 +425,10 @@ supports (`int` / `signed [int]` → Int; `unsigned [int]` → UInt;
 `long [int]` / `signed long [int]` → Long; `unsigned long [int]` →
 ULong; `long long [int]` / `signed long long [int]` → LongLong;
 `unsigned long long [int]` → ULongLong; `char` → Char; `signed char`
-→ SChar; `unsigned char` → UChar; `float` → Float; `double` →
-Double), rejecting multiple type specifiers, multiple storage
-classes, missing type, three or more `long`s, `char` combined with
+→ SChar; `unsigned char` → UChar; `_Bool` → Bool; `float` → Float;
+`double` → Double), rejecting multiple type specifiers, multiple
+storage classes, missing type, three or more `long`s, `_Bool` combined
+with any other type specifier, `char` combined with
 `int` / `long` / `short`, `long double`, `signed unsigned`, and any
 FP/integer specifier mix (`int float`, `unsigned double`, etc.).
 
@@ -506,8 +519,8 @@ multiplication otherwise, the parser tracks scopes while it parses
 (`__anonymous_struct_<N>`). A typedef whose struct tag an inner
 declaration hides at the point of use is rejected, since the
 substituted `struct foo` would name the inner one. `<stdint.h>`
-uses real typedefs; `<stdbool.h>` keeps `bool` a macro, as C99
-§7.16.2 specifies.
+uses real typedefs; `<stdbool.h>` keeps `bool` a macro for `_Bool`, as
+C99 §7.16.2 specifies.
 
 ### Lexer & preprocessor
 

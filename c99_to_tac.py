@@ -201,6 +201,11 @@ Mapping:
                                        FloatToInt / DoubleToInt
                                   * Float↔Double               →
                                        FloatToDouble / DoubleToFloat
+                                  * scalar→_Bool              →
+                                       Binary(NotEqual, src, 0,
+                                       dst) (a Constant folds),
+                                       or just the low byte when
+                                       `_is_zero_or_one(inner)`
                                  SignExtend / ZeroExtend / Truncate
                                  carry no width info — tac_to_asm
                                  reads the symbol-table widths of
@@ -485,6 +490,101 @@ def _strip_quals_c99(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
 
 
 
+_TRUTH_OPS = (
+    c99_ast.Equal, c99_ast.NotEqual, c99_ast.LessThan,
+    c99_ast.GreaterThan, c99_ast.LessOrEqual, c99_ast.GreaterOrEqual,
+    c99_ast.LogicalAnd, c99_ast.LogicalOr,
+)
+
+
+def _is_zero_or_one(exp: c99_ast.Type_exp) -> bool:
+    """True iff the type-checked `exp` can only be 0 or 1, so
+    converting it to `_Bool` needs no `!= 0`: a `_Bool`, a
+    comparison, `&&`, `||`, `!`, the constants 0 and 1, an integer
+    cast of such a value, `&` with such an operand, `|` and `^` of
+    two of them, and `?:` and `,` that yield one."""
+    t = exp.data_type
+    if t is not None and isinstance(_strip_quals_c99(t), c99_ast.Bool):
+        return True
+    match exp:
+        case c99_ast.Binary(op=op, left=left, right=right):
+            if isinstance(op, _TRUTH_OPS):
+                return True
+            if isinstance(op, c99_ast.BitwiseAnd):
+                return _is_zero_or_one(left) or _is_zero_or_one(right)
+            if isinstance(op, (c99_ast.BitwiseOr, c99_ast.BitwiseXor)):
+                return _is_zero_or_one(left) and _is_zero_or_one(right)
+            return False
+        case c99_ast.Unary(op=c99_ast.LogicalNot()):
+            return True
+        case c99_ast.Constant(const=c):
+            return (not isinstance(c, (c99_ast.ConstFloat,
+                                       c99_ast.ConstDouble))
+                    and c.value in (0, 1))
+        case c99_ast.Cast(target_type=target, exp=inner):
+            return (_is_integer_type_c99(target)
+                    and _is_zero_or_one(inner))
+        case c99_ast.Conditional(true_clause=t_, false_clause=f_):
+            return _is_zero_or_one(t_) and _is_zero_or_one(f_)
+        case c99_ast.Comma(right=right):
+            return _is_zero_or_one(right)
+    return False
+
+
+def _is_integer_type_c99(t: c99_ast.Type_data_type) -> bool:
+    return isinstance(_strip_quals_c99(t), (
+        c99_ast.Char, c99_ast.SChar, c99_ast.UChar, c99_ast.Bool,
+        c99_ast.Int, c99_ast.UInt, c99_ast.Long, c99_ast.ULong,
+        c99_ast.LongLong, c99_ast.ULongLong,
+    ))
+
+
+def _bool_to_uchar(t):
+    """`t` with every `_Bool` in it, at any depth, replaced by
+    `unsigned char`. Returns `t` itself when there's none."""
+    if isinstance(t, c99_ast.Bool):
+        return c99_ast.UChar()
+    if not dataclasses.is_dataclass(t):
+        return t
+    changes = {}
+    for f in dataclasses.fields(t):
+        v = getattr(t, f.name)
+        if isinstance(v, list):
+            nv = [_bool_to_uchar(x) for x in v]
+            if any(a is not b for a, b in zip(nv, v)):
+                changes[f.name] = nv
+        elif isinstance(v, c99_ast.Type_data_type):
+            nv = _bool_to_uchar(v)
+            if nv is not v:
+                changes[f.name] = nv
+    return dataclasses.replace(t, **changes) if changes else t
+
+
+def _erase_bool(decls, symbols, types) -> None:
+    """Replace `_Bool` with `unsigned char` everywhere the passes after
+    this one read c99 types: the symbol table, the struct and union
+    layouts, and the types of the top-level declarations (which
+    `abi_selection` reads). By now every conversion to `_Bool` has
+    become a `!= 0` in the TAC, and what's left of the type is a byte
+    holding 0 or 1, so the back end needs no `_Bool` of its own. The
+    expression nodes keep their `_Bool`, so translating the program
+    again still lowers its conversions."""
+    for _, sym in symbols.items():
+        sym.type = _bool_to_uchar(sym.type)
+    if types is not None:
+        for _, layout in types.items():
+            layout.members = [
+                dataclasses.replace(m, type=_bool_to_uchar(m.type))
+                for m in layout.members
+            ]
+    for d in decls:
+        decl = getattr(d, "function_decl", None) or getattr(
+            d, "var_decl", None,
+        )
+        if decl is not None:
+            decl.data_type = _bool_to_uchar(decl.data_type)
+
+
 def _byte_width_of(t: c99_ast.Type_data_type) -> int:
     """Byte width of an object type. Char / SChar / UChar = 1,
     Int / UInt = 2, Long / ULong = 4, LongLong / ULongLong = 8,
@@ -495,7 +595,8 @@ def _byte_width_of(t: c99_ast.Type_data_type) -> int:
     transparent."""
     if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         return _byte_width_of(t.referenced_type)
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+                      c99_ast.Bool)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt)):
         return 2
@@ -553,10 +654,10 @@ def _to_tac_data_type(t: c99_ast.Type_data_type) -> tac_ast.Type_data_type:
         # signedness-driven dispatch paths (`<` / `>=`, right shift,
         # int↔FP) — collapse onto signed `Int`.
         return tac_ast.Int()
-    if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool)):
         # Plain Char and UChar are 1-byte unsigned in c6502 (per
         # C99 §6.2.5.15's implementation-defined choice for plain
-        # char) — collapse onto unsigned `UInt`.
+        # char) — collapse onto unsigned `UInt`. So does `_Bool`.
         return tac_ast.UInt()
     if isinstance(t, c99_ast.Float):
         return tac_ast.Float()
@@ -627,8 +728,8 @@ def _is_unsigned_integer(t: c99_ast.Type_data_type) -> bool:
     while isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         t = t.referenced_type
     return isinstance(t, (
-        c99_ast.Char, c99_ast.UChar, c99_ast.UInt, c99_ast.ULong,
-        c99_ast.ULongLong, c99_ast.Pointer,
+        c99_ast.Char, c99_ast.UChar, c99_ast.Bool, c99_ast.UInt,
+        c99_ast.ULong, c99_ast.ULongLong, c99_ast.Pointer,
     ))
 
 
@@ -657,7 +758,7 @@ def _tac_const_for(t: c99_ast.Type_data_type, value: int | float) -> tac_ast.Typ
         t = t.referenced_type
     if isinstance(t, c99_ast.SChar):
         return tac_ast.ConstChar(value=int(value))
-    if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool)):
         return tac_ast.ConstUChar(value=int(value))
     if isinstance(t, c99_ast.Int):
         return tac_ast.ConstInt(value=int(value))
@@ -751,6 +852,7 @@ def _fold_fp_cast_constant(
 # c99_to_tac doesn't pull in type_checking just for this.
 _TRUNC_BITS = {
     c99_ast.Char:      8,  c99_ast.SChar:     8,  c99_ast.UChar: 8,
+    c99_ast.Bool:      8,
     c99_ast.Int:      16,  c99_ast.UInt:     16,
     c99_ast.Long:     32,  c99_ast.ULong:    32,
     c99_ast.LongLong: 64,  c99_ast.ULongLong: 64,
@@ -801,9 +903,10 @@ def _tac_static_init_for(
         return tac_ast.AddressInit(name=value.name, offset=value.offset)
     if isinstance(t, c99_ast.SChar):
         return tac_ast.CharInit(value=_truncate_int_for_static(t, value))
-    if isinstance(t, (c99_ast.Char, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool)):
         # Plain `char` is unsigned in c6502 — same byte semantics
-        # as `unsigned char`.
+        # as `unsigned char`. The type checker already gave a
+        # `_Bool` 0 or 1.
         return tac_ast.UCharInit(value=_truncate_int_for_static(t, value))
     if isinstance(t, c99_ast.Int):
         return tac_ast.IntInit(value=_truncate_int_for_static(t, value))
@@ -1055,7 +1158,8 @@ def _sizeof(t: c99_ast.Type_data_type, types=None) -> int:
     `sizeof(const volatile T) == sizeof(T)`."""
     if isinstance(t, (c99_ast.Const, c99_ast.Volatile)):
         return _sizeof(t.referenced_type, types)
-    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar)):
+    if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+                      c99_ast.Bool)):
         return 1
     if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
         return 2
@@ -1289,6 +1393,7 @@ class Translator:
                     if fn is not None:
                         top_levels.append(fn)
                 top_levels.extend(self._emit_static_variables())
+                _erase_bool(decls, self._symbols, self._types)
                 return tac_ast.Program(top_level=top_levels)
         raise TypeError(f"unexpected program: {prog!r}")
 
@@ -2008,6 +2113,11 @@ class Translator:
                 source = inner.data_type
                 if source is None or source == target:
                     return inner_val
+                if (isinstance(_strip_quals_c99(target), c99_ast.Bool)
+                        and _is_zero_or_one(inner)):
+                    return self._emit_zero_or_one_to_bool(
+                        inner_val, source, instrs,
+                    )
                 return self._emit_cast(inner_val, source, target, instrs)
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
@@ -3389,7 +3499,22 @@ class Translator:
         `sizeof(*ptr)` per C99 §6.5.6.8 — synthesising the same
         Cast(Long)-widened-1 the type checker would have produced
         for an explicit `ptr + 1`. For arithmetic operands emits a
-        plain `Binary(Add | Subtract, src, 1)`."""
+        plain `Binary(Add | Subtract, src, 1)`.
+
+        A `_Bool` operand converts `src ± 1` back to `_Bool` (C99
+        §6.5.2.4.2), so `++` always stores 1 and `--` stores `src ==
+        0`."""
+        if isinstance(_strip_quals_c99(op_type), c99_ast.Bool):
+            if isinstance(op, c99_ast.Increment):
+                return _tac_const_val(c99_ast.Bool(), 1)
+            new = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.Bool()),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Equal(), src1=src,
+                src2=_tac_const_val(c99_ast.Bool(), 0), dst=new,
+            ))
+            return new
         if isinstance(op_type, c99_ast.Pointer):
             c99_op: c99_ast.Type_binary_operator = (
                 c99_ast.Add() if isinstance(op, c99_ast.Increment)
@@ -3583,6 +3708,8 @@ class Translator:
         `SChar` and was zero-extended."""
         source = _strip_quals_c99(source)
         target = _strip_quals_c99(target)
+        if isinstance(target, c99_ast.Bool):
+            return self._emit_to_bool(inner_val, source, instrs)
         src_fp = isinstance(
             source, (c99_ast.Float, c99_ast.Double),
         )
@@ -3624,7 +3751,8 @@ class Translator:
             #                          then Truncate(UInt→UChar).
             char_src = isinstance(
                 source,
-                (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
+                (c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
+                 c99_ast.Bool),
             )
             char_tgt = isinstance(
                 target,
@@ -3634,7 +3762,7 @@ class Translator:
                 # Plain Char and UChar are unsigned in c6502;
                 # only SChar is signed.
                 src_unsigned = isinstance(
-                    source, (c99_ast.Char, c99_ast.UChar),
+                    source, (c99_ast.Char, c99_ast.UChar, c99_ast.Bool),
                 )
                 widened_t = (
                     c99_ast.UInt() if src_unsigned else c99_ast.Int()
@@ -3746,6 +3874,52 @@ class Translator:
             instrs.append(tac_ast.Truncate(
                 src=inner_val, dst=dst,
             ))
+        return dst
+
+    def _emit_to_bool(
+        self,
+        val: tac_ast.Type_val,
+        source: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Convert `val` (typed `source`, a scalar) to `_Bool`: 0 if
+        it compares equal to 0, else 1 (C99 §6.3.1.2). A constant
+        folds; anything else is `val != 0` into a 1-byte temp."""
+        if isinstance(val, tac_ast.Constant):
+            c = val.const
+            if isinstance(c, tac_ast.ConstFloat):
+                nonzero = c.bits & 0x7FFFFFFF != 0
+            elif isinstance(c, tac_ast.ConstDouble):
+                nonzero = c.bits & 0x7FFFFFFFFFFFFFFF != 0
+            else:
+                nonzero = c.value != 0
+            return _tac_const_val(c99_ast.Bool(), int(nonzero))
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.Bool()),
+        )
+        instrs.append(tac_ast.Binary(
+            op=tac_ast.NotEqual(), src1=val,
+            src2=_tac_const_val(source, 0), dst=dst,
+        ))
+        return dst
+
+    def _emit_zero_or_one_to_bool(
+        self,
+        val: tac_ast.Type_val,
+        source: c99_ast.Type_data_type,
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val:
+        """Convert `val` to `_Bool` when it's already 0 or 1 (see
+        `_is_zero_or_one`): just its low byte, with no comparison."""
+        source = _strip_quals_c99(source)
+        if isinstance(val, tac_ast.Constant):
+            return _tac_const_val(c99_ast.Bool(), val.const.value & 1)
+        if _byte_width_of(source) == 1:
+            return val
+        dst = tac_ast.Var(
+            name=self.make_temporary_variable_name(c99_ast.Bool()),
+        )
+        instrs.append(tac_ast.Truncate(src=val, dst=dst))
         return dst
 
     def _emit_widen_or_narrow(

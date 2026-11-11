@@ -89,13 +89,13 @@ _STORAGE_CLASSES = {
 # matching `.type` attribute so the same predicate logic works on
 # both shapes).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                           "FLOAT", "DOUBLE", "CHAR", "VOID",
+                           "FLOAT", "DOUBLE", "CHAR", "BOOL", "VOID",
                            "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
                            "STRUCT", "UNION", "TYPEDEF_NAME",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
-                                "FLOAT", "DOUBLE", "CHAR", "VOID",
-                                "STRUCT", "UNION", "TYPEDEF_NAME")
+                                "FLOAT", "DOUBLE", "CHAR", "BOOL",
+                                "VOID", "STRUCT", "UNION", "TYPEDEF_NAME")
 # `const` and `volatile` are honored at parse time and wrapped into
 # `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
 # but is silently dropped — c6502 has no aliasing-analysis pass that
@@ -317,7 +317,11 @@ def _type_tags(t, out: list) -> list:
 def _resolve_data_type(type_specs):
     """Map a list of type-specifier tokens to a c99_ast object type.
     Valid combinations follow C99 §6.7.2 (subset c6502 models —
-    no `short`, `_Bool`):
+    no `short`):
+      * `_Bool`                                    → Bool; cannot
+                                                     combine with any
+                                                     other type
+                                                     specifier
       * `char`                                     → Char (signed,
                                                      -128..127 in
                                                      c6502)
@@ -387,6 +391,13 @@ def _resolve_data_type(type_specs):
     double_count = sum(1 for t in type_specs if t.type == "DOUBLE")
     char_count = sum(1 for t in type_specs if t.type == "CHAR")
     void_count = sum(1 for t in type_specs if t.type == "VOID")
+    bool_count = sum(1 for t in type_specs if t.type == "BOOL")
+    if bool_count > 0:
+        if len(type_specs) != 1:
+            raise ParserError(
+                "'_Bool' cannot combine with another type specifier"
+            )
+        return c99_ast.Bool()
     is_fp = float_count > 0 or double_count > 0
     is_integer = (
         int_count > 0 or signed_count > 0 or unsigned_count > 0

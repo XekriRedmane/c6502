@@ -1406,9 +1406,10 @@ __attribute__((return_bool_in_carry)) bool contains(uint8_t k) {
 if (contains(k)) n += k;                 /* JSR contains; BCC skip */
 ```
 
-The return type must be `bool` (`unsigned char`). The function
-returns `e != 0` for `return e;`, the way a C99 `_Bool` converts a
-value, so a caller that uses the result as a number gets 0 or 1. A
+The return type must be `bool` (`_Bool`); `unsigned char` and `char`
+are rejected. The function returns `e != 0` for `return e;`, the way
+converting a value to `bool` does, so a caller that uses the result
+as a number gets 0 or 1. A
 comparison, `!`, `&&`, `||`, or a constant 0 or 1 is returned as it
 is. Every declaration of the function must carry the attribute,
 since callers compiled without it would read A. The address of such
@@ -1500,6 +1501,11 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
 - Compound literals, `(type){ initializer-list }`: an array,
   struct, union, or scalar object, automatic inside a function
   (initialized each time it's evaluated) and static at file scope.
+- `_Bool`, and `bool` from `<stdbool.h>`: one byte holding 0 or 1.
+  Converting any scalar to it gives 0 if the value compares equal to
+  0 and 1 otherwise (`bool b = 256;` stores 1), `++` stores 1, and
+  `--` toggles. A comparison, `!`, `&&`, or `||` converts with no
+  extra code; anything else costs a zero test (`LDA x; BEQ; LDA #1`).
 - `typedef` at file and block scope, including typedefs of
   pointers, arrays, functions, and anonymous structs. An inner
   declaration of the same name hides a typedef name (`int T;`,

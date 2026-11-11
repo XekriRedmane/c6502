@@ -104,14 +104,14 @@ def make_program(seed: int) -> tuple[str, None]:
         rng.shuffle(callees)
         calls[i] = callees[:rng.randint(0, 2)]
     calls_rec = {i: use_rec and rng.random() < 0.5 for i in range(n)}
-    # A carry-flag function returns `bool` (unsigned char), and its
-    # address can't be taken, so the pointer-called one is left out.
+    # A carry-flag function returns `bool` (`_Bool`), and its address
+    # can't be taken, so the pointer-called one is left out.
     carry = {
         i for i in range(n)
         if crng.random() < 0.3 and not (use_ptr_fn and i == n - 1)
     }
     for i in carry:
-        sigs[i] = ("unsigned char", sigs[i][1])
+        sigs[i] = ("_Bool", sigs[i][1])
 
     # Which functions end up on the soft stack under --optimize: the
     # pointer-called one, each caller through the pointer, each

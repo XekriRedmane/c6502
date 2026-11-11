@@ -209,7 +209,10 @@ the 6502's CMP / SBC + branch atoms cover these):
     true); LDA #0; Jump(end); Label(true); LDA #1; Label(end); Mov(
     A, dst)`. For multi-byte operands: walk bytes high→low, BNE
     short-circuits to a "differ" label on each except the lowest;
-    the final low-byte CMP's Z is the answer.
+    the final low-byte CMP's Z is the answer. A comparison with 0
+    whose dst is 1 byte (a conversion to `_Bool`) ORs the bytes
+    instead (`AND #$7F` on a floating value's high byte first) and,
+    for NotEqual, ends `BEQ end; LDA #1; end:`.
 
   LessThan / GreaterOrEqual: `Mov(src1, A); SetCarry; Sub(src2, A);
     Branch(VC, novf); Eor(0x80, A); Label(novf); Branch(MI|PL,
@@ -3088,10 +3091,12 @@ class Translator:
             case tac_ast.Equal():
                 return self._translate_equality(
                     src1_op, src2_op, dst_op, size, asm_ast.EQ(), dst_size,
+                    fp=fp,
                 )
             case tac_ast.NotEqual():
                 return self._translate_equality(
                     src1_op, src2_op, dst_op, size, asm_ast.NE(), dst_size,
+                    fp=fp,
                 )
             case tac_ast.LessThan():
                 # src1 < src2: compute src1 - src2, branch on MI
@@ -3219,6 +3224,8 @@ class Translator:
         size: int,
         cond: asm_ast.Type_condition,
         dst_size: int,
+        *,
+        fp: bool = False,
     ) -> list[asm_ast.Type_instruction]:
         """== / != via byte-wise Compare + Branch + 0/1 select. CMP
         sets Z=1 iff the two bytes are equal (no overflow concern),
@@ -3236,7 +3243,16 @@ class Translator:
         says they're equal. c6502 has no FP runtime helpers yet, so
         this is the best we can do inline; correct results for
         every non-NaN, non-zero FP value the test corpus exercises.
+
+        A comparison with 0 whose result is one byte (the conversion
+        of a scalar to `_Bool`, or a comparison the optimizer
+        narrowed) goes to `_translate_zero_test` instead.
         """
+        if (dst_size == 1 and isinstance(src2_op, asm_ast.Imm)
+                and src2_op.value == 0):
+            return self._translate_zero_test(
+                src1_op, dst_op, size, cond, fp=fp,
+            )
         true_label = self.make_label("cmp_true")
         end_label = self.make_label("cmp_end")
         out: list[asm_ast.Type_instruction] = []
@@ -3274,6 +3290,52 @@ class Translator:
             asm_ast.Label(name=end_label),
         ])
         self._store_compare_result(out, dst_op, dst_size)
+        return out
+
+    def _translate_zero_test(
+        self,
+        src_op: asm_ast.Type_operand,
+        dst_op: asm_ast.Type_operand,
+        size: int,
+        cond: asm_ast.Type_condition,
+        *,
+        fp: bool,
+    ) -> list[asm_ast.Type_instruction]:
+        """`src != 0` (`cond` NE) or `src == 0` (EQ) into the 1-byte
+        `dst`. OR the bytes together, which leaves Z set iff `src`
+        is 0. For `!=`, A is then already the 0 result, so only a
+        nonzero value needs `LDA #1`:
+
+            LDA src+N-1; ORA src+N-2; ...; ORA src
+            BEQ end; LDA #1; end: STA dst
+
+        A floating-point `src` drops its sign bit first (`AND #$7F`
+        on the high byte), so -0.0 equals 0 as IEEE 754 says."""
+        out: list[asm_ast.Type_instruction] = [
+            asm_ast.Mov(src=_byte_at(src_op, size - 1), dst=_REG_A),
+        ]
+        if fp:
+            out.append(asm_ast.And(src=asm_ast.Imm(value=0x7F), dst=_REG_A))
+        for k in range(size - 2, -1, -1):
+            out.append(asm_ast.Or(src=_byte_at(src_op, k), dst=_REG_A))
+        end_label = self.make_label("cmp_end")
+        if isinstance(cond, asm_ast.NE):
+            out.extend([
+                asm_ast.Branch(cond=asm_ast.EQ(), target=end_label),
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Label(name=end_label),
+            ])
+        else:
+            true_label = self.make_label("cmp_true")
+            out.extend([
+                asm_ast.Branch(cond=asm_ast.EQ(), target=true_label),
+                asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_A),
+                asm_ast.Jump(target=end_label),
+                asm_ast.Label(name=true_label),
+                asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A),
+                asm_ast.Label(name=end_label),
+            ])
+        self._store_compare_result(out, dst_op, 1)
         return out
 
     def _translate_signed_ordering(

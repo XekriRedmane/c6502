@@ -17,21 +17,6 @@ That document should be organized around diagrams, tables, and short
 sections with headings, so that a reader can find one stage without
 reading the whole thing.
 
-## Consider supporting `_Bool`
-
-C99 §6.2.5.2. The lexer reads `_Bool` as a keyword, but no grammar
-rule uses it, and `<stdbool.h>` defines `bool` as `unsigned char`. So
-`bool b = 256;` stores 0, where C99 §6.3.1.2 says converting any
-scalar to `_Bool` gives 0 if it compares equal to 0 and 1 otherwise.
-
-A real `_Bool` would be a 1-byte unsigned type of its own, with every
-conversion to it lowered as `x != 0`, and `<stdbool.h>` would define
-`bool` as `_Bool`. Things to settle first: what the conversion costs
-on the 6502 and where the optimizer can drop it (a comparison result
-is already 0 or 1), and whether `return_bool_in_carry` and the
-carry-struct flag member, which accept `char` and `unsigned char`
-today, should require `_Bool`.
-
 ## Thread unconditional JMP-to-JMP chains in the optimized pipeline
 
 `--optimize` can leave a `JMP` whose target is another `JMP`. The
@@ -164,11 +149,8 @@ other way to opt in was **under zp_abi, for a `bool` return**: every
 caller of a zp_abi function is known and compiled with it, so the
 convention could change without an annotation.
 
-That needs a way to tell a `bool` return from an `unsigned char` one,
-because `<stdbool.h>` makes `bool` a macro for `unsigned char`. Either
-c6502 grows a real `_Bool` type, or the compiler proves that every
-`return` in the function yields 0 or 1 (a comparison, `!`, `&&`,
-`||`, or a constant 0 or 1). It also changes what the function's
+A `_Bool` return type tells a `bool` return from an `unsigned char`
+one, and its value is always 0 or 1. It also changes what the function's
 callers do with the result, so it has to be decided before
 `tac_to_asm` lowers any call to it, and the multi-TU linker would need
 the choice in its metadata.

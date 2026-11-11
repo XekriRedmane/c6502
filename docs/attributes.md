@@ -8,7 +8,7 @@ use them together to call routines that are already in ROM, such as
 the Apple II Monitor's `COUT`.
 
 The examples use `uint8_t` and friends from `<stdint.h>`, and `bool`
-from `<stdbool.h>`, where it's `unsigned char`.
+from `<stdbool.h>`, where it's `_Bool`.
 
 ## Writing an attribute
 
@@ -110,7 +110,8 @@ its zero-page byte as it starts, with `STY` for Y.
 
 A function declared with this attribute returns its result in the
 carry flag, set for true and clear for false, instead of in A. The
-function has to return `bool` (or `char`). When a caller tests the
+function has to return `bool` (`_Bool`); an `unsigned char` or
+`char` return is an error. When a caller tests the
 result with `if`, the compiler branches on the flag with `BCC` or
 `BCS` instead of first turning it into a number.
 
@@ -160,13 +161,12 @@ because loading A (and X) leaves the carry alone:
 
 ```
    LDA   r+1      ; the flag
-   CMP   #1       ; carry set if the flag is nonzero
+   CMP   #1       ; carry set if the flag is 1
    LDA   r        ; the value
    RTS
 ```
 
-A nonzero flag arrives in the caller as 1, as it would for a C99
-`_Bool`. The value member can't be a pointer. A pointer result comes
+The value member can't be a pointer. A pointer result comes
 back in `HARGS`, in zero page, because a pointer is only usable from
 zero page, as "Arguments in registers" in
 [calling_conventions.md](calling_conventions.md) explains.

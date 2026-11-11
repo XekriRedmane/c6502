@@ -25,7 +25,7 @@ from sim.harness import build_sim
 
 _A = asm_ast.Reg(reg=asm_ast.A())
 _CARRY = "__attribute__((return_bool_in_carry)) "
-_BOOL = "#define bool unsigned char\n"
+_BOOL = "#include <stdbool.h>\n"
 
 
 def _prog(instrs):
@@ -68,31 +68,33 @@ class TestFrontEnd(unittest.TestCase):
         return _run_stage("tac", src)
 
     def test_parses(self):
-        prog = parse(_CARRY + "unsigned char f(void) { return 1; }")
+        prog = parse(_CARRY + "_Bool f(void) { return 1; }")
         self.assertTrue(prog.declaration[0].function_decl.carry_return)
 
     def test_rejects_argument(self):
         with self.assertRaises(ParserError):
             parse("__attribute__((return_bool_in_carry(1))) "
-                  "unsigned char f(void) { return 1; }")
+                  "_Bool f(void) { return 1; }")
 
     def test_rejects_object(self):
         with self.assertRaises(ParserError):
-            parse(_CARRY + "unsigned char g;")
+            parse(_CARRY + "_Bool g;")
 
     def test_rejects_non_bool_return(self):
-        with self.assertRaisesRegex(TypeCheckError, "return type"):
-            self._tac(_CARRY + "int f(void) { return 1; }")
+        for ret in ("int", "unsigned char", "char"):
+            with self.subTest(ret):
+                with self.assertRaisesRegex(TypeCheckError, "return type"):
+                    self._tac(_CARRY + f"{ret} f(void) {{ return 1; }}")
 
     def test_declarations_must_agree(self):
         with self.assertRaisesRegex(TypeCheckError, "must agree"):
-            self._tac("unsigned char f(void);\n"
-                      + _CARRY + "unsigned char f(void) { return 1; }")
+            self._tac("_Bool f(void);\n"
+                      + _CARRY + "_Bool f(void) { return 1; }")
 
     def test_rejects_address(self):
         with self.assertRaisesRegex(TypeCheckError, "address"):
-            self._tac(_CARRY + "unsigned char f(void) { return 1; }\n"
-                      "unsigned char (*p)(void) = f;")
+            self._tac(_CARRY + "_Bool f(void) { return 1; }\n"
+                      "_Bool (*p)(void) = f;")
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
@@ -351,8 +353,8 @@ class TestCarryLiveAtReturn(unittest.TestCase):
 
 # A struct of a value and a `bool`, which a `return_bool_in_carry`
 # function returns with the value in A (and X) and the flag in C.
-_ZC = "struct zc { unsigned char v; unsigned char end; };\n"
-_WV = "struct wv { int v; unsigned char end; };\n"
+_ZC = "struct zc { unsigned char v; _Bool end; };\n"
+_WV = "struct wv { int v; _Bool end; };\n"
 
 
 def _tac_main(src):
@@ -380,20 +382,22 @@ class TestStructFrontEnd(unittest.TestCase):
                       "unsigned int"):
             with self.subTest(value):
                 self._tac(
-                    f"struct s {{ {value} v; unsigned char end; }};\n"
+                    f"struct s {{ {value} v; _Bool end; }};\n"
                     + _CARRY + "struct s f(void) { struct s r; r.v = 1; "
                     "r.end = 0; return r; }"
                 )
 
     def test_rejects_other_shapes(self):
         shapes = {
-            "three members": "unsigned char v; unsigned char end; "
+            "three members": "unsigned char v; _Bool end; "
                              "unsigned char x;",
             "one member": "unsigned char v;",
-            "pointer value": "unsigned char *v; unsigned char end;",
-            "long value": "long v; unsigned char end;",
+            "pointer value": "unsigned char *v; _Bool end;",
+            "long value": "long v; _Bool end;",
             "int flag": "unsigned char v; int end;",
-            "flag first": "unsigned char end; int v;",
+            "unsigned char flag": "unsigned char v; unsigned char end;",
+            "char flag": "unsigned char v; char end;",
+            "flag first": "_Bool end; int v;",
         }
         for label, members in shapes.items():
             with self.subTest(label):
@@ -406,7 +410,7 @@ class TestStructFrontEnd(unittest.TestCase):
 
     def test_rejects_union(self):
         with self.assertRaisesRegex(TypeCheckError, "exactly two members"):
-            self._tac("union u { unsigned char v; unsigned char end; };\n"
+            self._tac("union u { unsigned char v; _Bool end; };\n"
                       + _CARRY + "union u f(void);")
 
     def test_no_hidden_pointer(self):

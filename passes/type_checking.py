@@ -142,6 +142,7 @@ ULongLong = c99_ast.ULongLong
 Char = c99_ast.Char
 SChar = c99_ast.SChar
 UChar = c99_ast.UChar
+Bool = c99_ast.Bool
 Float = c99_ast.Float
 Double = c99_ast.Double
 Void = c99_ast.Void
@@ -433,6 +434,15 @@ def _coerce_init_value(
     Python float."""
     if _types_equal(source_type, target_type):
         return value
+    if isinstance(_strip_quals(target_type), Bool):
+        # C99 §6.3.1.2: 0 if the value compares equal to 0, else 1.
+        if isinstance(source_type, Float):
+            return int(value & 0x7FFFFFFF != 0)
+        if isinstance(source_type, Double):
+            return int(value & 0x7FFFFFFFFFFFFFFF != 0)
+        if _is_integer_type(source_type):
+            value = _coerce_int_to_type(value, source_type)
+        return int(value != 0)
     src_is_fp = isinstance(source_type, (Float, Double))
     tgt_is_fp = isinstance(target_type, (Float, Double))
     if src_is_fp and tgt_is_fp:
@@ -559,6 +569,10 @@ def _const_init_value(
                         f"{name!r} takes the address of {what}, "
                         f"which doesn't have static storage duration"
                     )
+            if isinstance(_strip_quals(target_type), Bool):
+                # The address of an object or function isn't null,
+                # so it converts to 1 (C99 §6.3.1.2).
+                return 1
             return AddressInit(name=target, offset=0)
         case c99_ast.Unary(op=c99_ast.Negate(), exp=inner) if isinstance(
             _strip_quals(exp.data_type), (Float, Double),
@@ -775,7 +789,7 @@ def _is_object_type(t: Type) -> bool:
     t = _strip_quals(t)
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
-            Char, SChar, UChar,
+            Char, SChar, UChar, Bool,
             Float, Double, Pointer),
     )
 
@@ -800,7 +814,7 @@ def _is_integer_type(t: Type) -> bool:
     return isinstance(
         _strip_quals(t),
         (Int, Long, LongLong, UInt, ULong, ULongLong,
-         Char, SChar, UChar),
+         Char, SChar, UChar, Bool),
     )
 
 
@@ -861,6 +875,7 @@ def _display_name(name: str) -> str:
 
 _C_TYPE_NAMES = {
     Char: "char", SChar: "signed char", UChar: "unsigned char",
+    Bool: "_Bool",
     Int: "int", UInt: "unsigned int", Long: "long",
     ULong: "unsigned long", LongLong: "long long",
     ULongLong: "unsigned long long", Float: "float", Double: "double",
@@ -939,8 +954,8 @@ def carry_struct_value_bytes(ret: Type, types) -> int | None:
     """The size of the value member, 1 or 2, when `ret` is a struct a
     `return_bool_in_carry` function may return: exactly two members,
     an integer value of 1 or 2 bytes (not a pointer) and then a `bool`
-    flag (`char` or `unsigned char`). The value comes back in A (and
-    X) and the flag in the carry. None for any other type."""
+    flag (`_Bool`). The value comes back in A (and X) and the flag in
+    the carry. None for any other type."""
     ret = _strip_quals(ret)
     if not isinstance(ret, Structure) or types is None:
         return None
@@ -949,23 +964,22 @@ def carry_struct_value_bytes(ret: Type, types) -> int | None:
         return None
     value, flag = layout.members
     vt, ft = _strip_quals(value.type), _strip_quals(flag.type)
-    if isinstance(vt, (Char, SChar, UChar)):
+    if isinstance(vt, (Char, SChar, UChar, Bool)):
         n = 1
     elif isinstance(vt, (Int, UInt)):
         n = 2
     else:
         return None
-    if not isinstance(ft, (Char, UChar)) or flag.byte_offset != n:
+    if not isinstance(ft, Bool) or flag.byte_offset != n:
         return None
     return n
 
 
 def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
     """Rejects `__attribute__((return_bool_in_carry))` on a function
-    whose return type isn't a `bool` (in c6502, `bool` is `unsigned
-    char`, and plain `char` is unsigned too) or a struct of a value
+    whose return type isn't a `bool` (`_Bool`) or a struct of a value
     and a `bool` (`carry_struct_value_bytes`)."""
-    if isinstance(_strip_quals(ret), (Char, UChar)):
+    if isinstance(_strip_quals(ret), Bool):
         return
     if isinstance(_strip_quals(ret), (Structure, Union)):
         if carry_struct_value_bytes(ret, types) is not None:
@@ -974,15 +988,15 @@ def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
             f"`__attribute__((return_bool_in_carry))` on {name!r} "
             f"returns `{_c_type(ret)}`, but a struct it returns has to "
             f"have exactly two members: first an integer value of 1 or "
-            f"2 bytes (`char`, `unsigned char`, `int`, or `unsigned "
-            f"int`, not a pointer), which comes back in A (and X), then "
-            f"a `bool` (`unsigned char`) flag, which comes back in the "
+            f"2 bytes (`char`, `unsigned char`, `_Bool`, `int`, or "
+            f"`unsigned int`, not a pointer), which comes back in A (and "
+            f"X), then a `bool` (`_Bool`) flag, which comes back in the "
             f"carry flag"
         )
     raise TypeCheckError(
         f"`__attribute__((return_bool_in_carry))` on {name!r} "
-        f"needs a `bool` (`unsigned char`) return type, or a struct of "
-        f"a value and a `bool`, not `{_c_type(ret)}`"
+        f"needs a `bool` (`_Bool`) return type, or a struct of a value "
+        f"and a `bool`, not `{_c_type(ret)}`"
     )
 
 
@@ -1090,7 +1104,7 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     Used by the `sizeof` operator's type-checker. Constraint
     violations (Void, FunType) raise TypeCheckError."""
     t = _strip_quals(t)
-    if isinstance(t, (Char, SChar, UChar)):
+    if isinstance(t, (Char, SChar, UChar, Bool)):
         return 1
     if isinstance(t, (Int, UInt, Pointer)):
         return 2
@@ -1357,7 +1371,7 @@ def _is_arithmetic_type(t: Type) -> bool:
 # LongLong/ULongLong rank 3.
 def _int_width(t: Type) -> int:
     t = _strip_quals(t)
-    if isinstance(t, (Char, SChar, UChar)):
+    if isinstance(t, (Char, SChar, UChar, Bool)):
         return 1
     if isinstance(t, (Int, UInt)):
         return 2
@@ -1398,9 +1412,12 @@ def _promote_integer(t: Type) -> Type:
 
     Strips a top-level `Const` — qualifiers don't survive integer
     promotion (the promoted value is an rvalue; rvalues aren't
-    qualified per C99 §6.3.2.1.2)."""
+    qualified per C99 §6.3.2.1.2).
+
+    `_Bool` ranks below `char` (§6.3.1.1.1) and promotes to Int the
+    same way."""
     t = _strip_quals(t)
-    if isinstance(t, (Char, SChar, UChar)):
+    if isinstance(t, (Char, SChar, UChar, Bool)):
         return Int()
     return t
 
@@ -1411,7 +1428,10 @@ def _coerce_int_to_type(value: int, t: Type) -> int:
     tac_to_asm — Truncate / SignExtend / ZeroExtend all collapse to
     width-modular arithmetic for compile-time-known values. Used by
     the switch type-checker to canonicalize case values to the
-    promoted control type."""
+    promoted control type. A `_Bool` target gets 0 or 1 (C99
+    §6.3.1.2)."""
+    if isinstance(_strip_quals(t), Bool):
+        return int(value != 0)
     width_bits = 8 * _int_width(t)
     mask = (1 << width_bits) - 1
     raw = value & mask
@@ -1431,7 +1451,7 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     if isinstance(t, (Int, UInt)):
         bits = value & 0xFFFF
         return c99_ast.ConstInt(value=bits) if isinstance(t, Int) else c99_ast.ConstUInt(value=bits)
-    if isinstance(t, (Char, SChar, UChar)):
+    if isinstance(t, (Char, SChar, UChar, Bool)):
         # ConstChar / ConstUChar exist in the AST but the parser
         # routes char literals through ConstInt per the user's
         # choice. Reaching this branch means a char-typed switch
@@ -1594,11 +1614,12 @@ def _convert_to(exp: c99_ast.Type_exp, target: Type) -> c99_ast.Type_exp:
                 f"§6.5.16.1.1"
             )
     if (_is_arithmetic_type(target)
+            and not isinstance(_strip_quals(target), Bool)
             and exp.data_type is not None
             and isinstance(exp.data_type, Pointer)):
-        # Pointer → integer / FP needs an explicit cast (§6.5.16.1.1
-        # only allows assigning a pointer to a `_Bool` lval, which
-        # c6502 doesn't model).
+        # Pointer → integer / FP needs an explicit cast. §6.5.16.1.1
+        # allows assigning a pointer only to a `_Bool`, which gets
+        # `p != 0`.
         raise TypeCheckError(
             f"cannot implicitly convert pointer type {exp.data_type!r} "
             f"to arithmetic type {target!r}; use an explicit cast"
@@ -2299,7 +2320,7 @@ class TypeChecker:
         if sym is None or not getattr(sym.attrs, "carry_return", False):
             return False
         return isinstance(sym.type, FunType) and isinstance(
-            _strip_quals(sym.type.ret), (Char, UChar),
+            _strip_quals(sym.type.ret), Bool,
         )
 
     def _add_or_merge_function(

@@ -217,7 +217,7 @@ class TestShape(unittest.TestCase):
         asm = _codegen(
             "unsigned char iob[17];\n"
             "__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))\n"
-            "unsigned char RWTS(register unsigned char hi __attribute__((in_a)),\n"
+            "_Bool RWTS(register unsigned char hi __attribute__((in_a)),\n"
             "                   register unsigned char lo __attribute__((in_y)));\n"
             "int main(void) {\n"
             "    return RWTS((unsigned char)((unsigned int)iob >> 8),\n"

@@ -159,7 +159,7 @@ def _resolved(source: str, *, optimize: bool = False):
       3. identifier_resolution — user names get unique
          `@N.<orig>` rewrites; string literals pass through.
       4. string_lifting — every non-direct-array-init String
-         becomes a `Var(.str@N)` referring to a fresh file-scope
+         becomes a `Var(str@N)` referring to a fresh file-scope
          static (prepended to the program's declaration list).
          Runs AFTER identifier_resolution so the lifted names use
          a disjoint character (`.`) and don't get re-renamed.

@@ -2150,16 +2150,16 @@ class TestCharAndString(unittest.TestCase):
         # `static char *p = "abc";` — the lifter hoists the String
         # to a static, and `p` becomes a pointer to that static.
         _, symbols = _check_with_lifting('static char *p = "abc";')
-        # The lifted .str@0 lays the string bytes down.
+        # The lifted str@0 lays the string bytes down.
         self.assertEqual(
-            symbols[".str@0"].attrs.initial_value,
+            symbols["str@0"].attrs.initial_value,
             Initial(value=(ord('a'), ord('b'), ord('c'), 0)),
         )
-        # `p` carries an AddressInit pointing at .str@0.
+        # `p` carries an AddressInit pointing at str@0.
         from passes.type_checking import AddressInit
         self.assertEqual(
             symbols["p"].attrs.initial_value,
-            Initial(value=AddressInit(name=".str@0", offset=0)),
+            Initial(value=AddressInit(name="str@0", offset=0)),
         )
 
     def test_char_promotes_to_int_in_arithmetic(self):

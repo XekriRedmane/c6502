@@ -4,9 +4,10 @@ Walks a c99_ast Program after identifier_resolution and rewrites
 every `String` literal that ISN'T directly initializing a
 `Char` / `SChar` / `UChar` array variable. Each such string gets
 hoisted to a fresh file-scope `static char [N+1]` declaration with
-a unique generated name (`.str@N` — the leading `.` and `@` keep
-it disjoint from any user identifier and from translator-minted
-labels), and the original `String` node is replaced with a `Var`
+a unique generated name (`str@N` — the `@` keeps it disjoint from
+any user identifier, and with no leading `.` it isn't a dasm local
+label, which would be visible only inside the function emitted just
+before it), and the original `String` node is replaced with a `Var`
 referencing that new declaration.
 
 Why this exists
@@ -30,7 +31,7 @@ backend lays the bytes down as the array's storage.
 
 Naming
 ------
-`.str@N` — `N` is a per-program counter. Each occurrence of a
+`str@N` — `N` is a per-program counter. Each occurrence of a
 literal mints its own name (no deduplication today; trivial to add
 if it matters for code size). Identifier resolution has already
 run, so the new declarations don't go through it — we register
@@ -44,7 +45,7 @@ import c99_ast
 
 
 class StringLifter:
-    """Per-program lifter — owns the `.str@N` counter so each string
+    """Per-program lifter — owns the `str@N` counter so each string
     literal in the program gets a globally unique name. Walks the
     Program top-down once, accumulating new file-scope var_decls in
     `_lifted` and rewriting String nodes in-place where the
@@ -73,7 +74,7 @@ class StringLifter:
             out.append(self._lift_declaration(decl))
         # Lifted strings prepend the original declarations so any
         # static-init reference (`static char *p = "abc";` →
-        # `&Var(.str@0)`) finds its target already declared earlier
+        # `&Var(str@0)`) finds its target already declared earlier
         # in the file; the type checker's file-scope walk processes
         # declarations in order.
         return c99_ast.Program(declaration=self._lifted + out)
@@ -114,6 +115,7 @@ class StringLifter:
             data_type=vd.data_type, storage_class=vd.storage_class,
             abi_annotation=vd.abi_annotation,
             placement=vd.placement,
+            section=vd.section,
         )
 
     def _lift_init(self, init, declared_type):
@@ -221,6 +223,7 @@ class StringLifter:
             carry_return=fd.carry_return,
             address=fd.address,
             preserves=list(fd.preserves),
+            section=fd.section,
         )
 
     # ------------------------------------------------------------------
@@ -337,7 +340,7 @@ class StringLifter:
 
     def _lift_exp(self, exp):
         """Walk an expression tree, rewriting every String node to a
-        Var(.str@N) reference and recording the new file-scope
+        Var(str@N) reference and recording the new file-scope
         var_decl. Other expression nodes pass through, recursing into
         their child expressions to catch nested Strings."""
         if exp is None:
@@ -471,9 +474,9 @@ class StringLifter:
         node naming that declaration. The declaration is appended
         to `self._lifted` and prepended to the program at the end
         of the walk."""
-        name = f".str@{self._counter}"
+        name = f"str@{self._counter}"
         self._counter += 1
-        # The hoisted declaration: `static char .str@N[len(s)+1] = "s";`.
+        # The hoisted declaration: `static char str@N[len(s)+1] = "s";`.
         # `Char` (the conventional plain-char element type) — codegen
         # treats SChar / Char as identical 1-byte signed types, and the
         # element type doesn't otherwise matter since the only reads
@@ -505,7 +508,7 @@ class StringLifter:
 
 def lift_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:
     """Module-level entry point — fresh `StringLifter` per call so
-    `.str@N` numbering restarts at 0 for each program. The result
+    `str@N` numbering restarts at 0 for each program. The result
     has every non-direct-array-init String replaced with a Var, and
     the new file-scope statics prepended to the program's
     declaration list."""

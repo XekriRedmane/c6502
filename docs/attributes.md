@@ -402,9 +402,9 @@ main:
    SUBROUTINE
 
    JSR   HOME
-   LDA   #<.str@0
+   LDA   #<str@0
    STA   __zpabi_print__s_0
-   LDA   #>.str@0
+   LDA   #>str@0
    STA   __zpabi_print__s_1
    JSR   print
    JSR   RDKEY

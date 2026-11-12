@@ -2104,7 +2104,7 @@ class TypeChecker:
             self._check_exp(vd.init)
             # Array-to-pointer decay — `static char *p = arr;`
             # (where `arr` is char[]) and the same shape after
-            # string lifting (`static char *p = .str@0;`) both
+            # string lifting (`static char *p = str@0;`) both
             # need the rval to decay before the pointer-target
             # conversion.
             vd.init = _decay_if_array(vd.init)

@@ -405,6 +405,12 @@ class StringLifter:
                     name=n, args=[self._lift_exp(a) for a in args],
                     data_type=dt, hw_stack_save=exp.hw_stack_save,
                 )
+            case c99_ast.IndirectCall(callee=c, args=args, data_type=dt):
+                return c99_ast.IndirectCall(
+                    callee=self._lift_exp(c),
+                    args=[self._lift_exp(a) for a in args],
+                    data_type=dt, hw_stack_save=exp.hw_stack_save,
+                )
             case c99_ast.Dereference(exp=inner, data_type=dt):
                 return c99_ast.Dereference(
                     exp=self._lift_exp(inner), data_type=dt,

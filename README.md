@@ -1500,8 +1500,9 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   Rejected: array assignment, extern arrays.
 - Pointers, pointer arithmetic (with sizeof-pointee scaling),
   pointer ordering comparisons, function pointers and
-  indirect calls (through `icall`, pending the runtime
-  helper).
+  indirect calls through any expression that gives one, such as
+  `t[i](x)`, `p->g(x)`, and `pick()(x)` (through `icall`, pending
+  the runtime helper).
 - `void` return type and `void *` per §6.3.2.3.1.
 - `sizeof` (both shapes) folded at compile time; result type
   `unsigned long` (size_t).

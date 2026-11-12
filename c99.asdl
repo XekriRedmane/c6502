@@ -203,6 +203,14 @@ module C99 {
         -- `hw_stack_save` marks a call in a statement or declaration
         -- under `#pragma c6502 call save(hardware_stack)`.
         | FunctionCall(identifier name, exp* args, data_type?, bool hw_stack_save)
+        -- A call whose callee is an expression other than a name:
+        -- `pick()(3)`, `t[i](3)`, `s.g(3)`, `p->g(3)`, `(**fp)(3)`.
+        -- The type checker strips the `*` and `&` that don't change
+        -- which function it is, turns the call into a `FunctionCall`
+        -- when a name is left, and otherwise checks that `callee` is a
+        -- pointer to function. c99_to_tac evaluates `callee` and emits
+        -- a TAC `IndirectCall`.
+        | IndirectCall(exp callee, exp* args, data_type?, bool hw_stack_save)
         | Dereference(exp, data_type?)
         | AddressOf(exp, data_type?)
         | Subscript(exp array, exp index, data_type?)

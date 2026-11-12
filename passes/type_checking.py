@@ -1339,6 +1339,47 @@ def _decay_if_array(exp: c99_ast.Type_exp) -> c99_ast.Type_exp:
     return exp
 
 
+def _is_pointer_to_function(t) -> bool:
+    """True iff `t`, without qualifiers, is a pointer to a function."""
+    t = _strip_quals(t)
+    return isinstance(t, Pointer) and isinstance(t.referenced_type, FunType)
+
+
+def _callee_name(exp: c99_ast.Type_exp, symbols) -> str | None:
+    """The name of the function or function pointer that the callee
+    `exp` calls, when `exp` is a name under `*` and `&` that don't
+    change which function it is: `*f`, `**fp`, `&f`, `*&f`. None for
+    any other callee, including `&fp`, a pointer to the pointer.
+
+    Each `*` gives a function (of a function, by decaying it first,
+    or of a function pointer), and each `&` needs a function and
+    gives a pointer to it."""
+    ops = []
+    while isinstance(exp, (c99_ast.Dereference, c99_ast.AddressOf)):
+        ops.append(exp)
+        exp = exp.exp
+    if not isinstance(exp, c99_ast.Var):
+        return None
+    sym = symbols.get(exp.name)
+    if sym is None:
+        return None
+    t = _strip_quals(sym.type)
+    if isinstance(t, FunType):
+        is_function = True
+    elif _is_pointer_to_function(t):
+        is_function = False
+    else:
+        return None
+    for op in reversed(ops):
+        if isinstance(op, c99_ast.Dereference):
+            is_function = True
+        elif is_function:
+            is_function = False
+        else:
+            return None
+    return exp.name
+
+
 def _is_null_pointer_constant(exp: c99_ast.Type_exp) -> bool:
     """Detect a null pointer constant per C99 §6.3.2.3.3 — "an
     integer constant expression with the value 0, or such an
@@ -2325,13 +2366,122 @@ class TypeChecker:
             ),
         )
 
+    def _check_call_args(
+        self, exp, label: str, fn_type: FunType, args: list,
+    ) -> Type:
+        """Checks and converts the arguments of the call `exp` against
+        `fn_type` and stamps the call's type. `label` names the callee
+        in messages."""
+        if len(args) != len(fn_type.params):
+            plural = "s" if len(args) != 1 else ""
+            raise TypeCheckError(
+                f"function {label} called with {len(args)} "
+                f"argument{plural}, expected "
+                f"{len(fn_type.params)}"
+            )
+        # The function's return type must be complete (or
+        # void) at the call site (C99 §6.5.2.2.1: the called
+        # function must return "void or a complete object
+        # type"). A forward declaration with an incomplete
+        # struct/union return is allowed, but actually
+        # calling it requires the type to be completed first.
+        if isinstance(fn_type.ret, (Structure, Union)):
+            layout = self.types.get(fn_type.ret.tag)
+            if layout is None or not layout.complete:
+                kw = (
+                    "union" if isinstance(fn_type.ret, Union)
+                    else "struct"
+                )
+                raise TypeCheckError(
+                    f"call to {label}: incomplete return "
+                    f"type '{kw} {fn_type.ret.tag}' "
+                    f"(C99 §6.5.2.2.1)"
+                )
+        # Argument conversion (C99 §6.5.2.2.7): each argument
+        # is converted, as if by assignment, to the type of
+        # the corresponding parameter. Mutate `args` in place
+        # so the post-conversion arg list is what the back end
+        # sees — same shape as Assignment / Binary / Conditional
+        # promotion.
+        for i, (arg, expected) in enumerate(
+            zip(args, fn_type.params),
+        ):
+            self._check_exp(arg)
+            arg = _decay_if_array(arg)
+            # Struct / union args bypass `_convert_to` (which
+            # doesn't model struct conversion). The arg's
+            # type must match the parameter's struct/union
+            # type exactly, and the type must be complete at
+            # the call site (C99 §6.7.2.1.8 — the function
+            # may be forward-declared with an incomplete
+            # type, but its caller can't materialize the
+            # value to pass).
+            if isinstance(expected, (Structure, Union)):
+                kw = "union" if isinstance(expected, Union) else "struct"
+                layout = self.types.get(expected.tag)
+                if layout is None or not layout.complete:
+                    raise TypeCheckError(
+                        f"argument {i} of {label}: cannot pass "
+                        f"incomplete type '{kw} {expected.tag}'"
+                    )
+                if not _types_equal(arg.data_type, expected):
+                    raise TypeCheckError(
+                        f"argument {i} of {label}: type "
+                        f"{arg.data_type!r} doesn't match "
+                        f"parameter type {expected!r}"
+                    )
+                args[i] = arg
+            else:
+                args[i] = _convert_to(arg, expected)
+        exp.data_type = fn_type.ret
+        return fn_type.ret
+
+    def _check_callee(self, exp: c99_ast.IndirectCall) -> FunType:
+        """Type-checks the callee of `exp`, replacing it with the
+        expression that gives the function's address, and returns the
+        function's type. A `*` of a function or function pointer and a
+        `&` of a function name the same function (C99 §6.3.2.1.4,
+        §6.5.3.2.4), so `(*fp)(x)`, `(&f)(x)`, and `(*t[0])(x)` call
+        `fp`, `f`, and `t[0]`. When that leaves a name, the callee is
+        that `Var`, and c99_to_tac calls it as it would `fp(x)`."""
+        name = _callee_name(exp.callee, self.symbols)
+        if name is not None:
+            exp.callee = c99_ast.Var(name=name)
+            t = _strip_quals(self.symbols.get(name).type)
+            exp.callee.data_type = t
+            return t if isinstance(t, FunType) else t.referenced_type
+        self._check_exp(exp.callee)
+        callee = _decay_if_array(exp.callee)
+        while (
+            isinstance(callee, c99_ast.Dereference)
+            and isinstance(callee.data_type, FunType)
+            and callee.exp.data_type is not None
+            and _is_pointer_to_function(callee.exp.data_type)
+        ):
+            callee = callee.exp
+        t = _strip_quals(callee.data_type)
+        if isinstance(t, FunType):
+            callee = _decay_if_array(callee)
+            t = callee.data_type
+        if not _is_pointer_to_function(t):
+            raise TypeCheckError(
+                f"called object is not a function or function pointer "
+                f"(type {t!r})"
+            )
+        exp.callee = callee
+        return t.referenced_type
+
     def _is_carry_call(self, exp) -> bool:
         """True iff `exp` calls a `return_bool_in_carry` function that
         returns a `bool`, whose result is already 0 or 1, so returning
         it from another such function passes the carry on as is."""
-        if not isinstance(exp, c99_ast.FunctionCall):
+        if isinstance(exp, c99_ast.FunctionCall):
+            name = exp.name
+        elif isinstance(exp, c99_ast.IndirectCall):
+            name = _callee_name(exp.callee, self.symbols)
+        else:
             return False
-        sym = self.symbols.get(exp.name)
+        sym = self.symbols.get(name) if name is not None else None
         if sym is None or not getattr(sym.attrs, "carry_return", False):
             return False
         return isinstance(sym.type, FunType) and isinstance(
@@ -4181,69 +4331,14 @@ class TypeChecker:
                     raise TypeCheckError(
                         f"variable {name!r} called as a function"
                     )
-                if len(args) != len(fn_type.params):
-                    plural = "s" if len(args) != 1 else ""
-                    raise TypeCheckError(
-                        f"function {name!r} called with {len(args)} "
-                        f"argument{plural}, expected "
-                        f"{len(fn_type.params)}"
-                    )
-                # The function's return type must be complete (or
-                # void) at the call site (C99 §6.5.2.2.1: the called
-                # function must return "void or a complete object
-                # type"). A forward declaration with an incomplete
-                # struct/union return is allowed, but actually
-                # calling it requires the type to be completed first.
-                if isinstance(fn_type.ret, (Structure, Union)):
-                    layout = self.types.get(fn_type.ret.tag)
-                    if layout is None or not layout.complete:
-                        kw = (
-                            "union" if isinstance(fn_type.ret, Union)
-                            else "struct"
-                        )
-                        raise TypeCheckError(
-                            f"call to {name!r}: incomplete return "
-                            f"type '{kw} {fn_type.ret.tag}' "
-                            f"(C99 §6.5.2.2.1)"
-                        )
-                # Argument conversion (C99 §6.5.2.2.7): each argument
-                # is converted, as if by assignment, to the type of
-                # the corresponding parameter. Mutate `args` in place
-                # so the post-conversion arg list is what the back end
-                # sees — same shape as Assignment / Binary / Conditional
-                # promotion.
-                for i, (arg, expected) in enumerate(
-                    zip(args, fn_type.params),
-                ):
-                    self._check_exp(arg)
-                    arg = _decay_if_array(arg)
-                    # Struct / union args bypass `_convert_to` (which
-                    # doesn't model struct conversion). The arg's
-                    # type must match the parameter's struct/union
-                    # type exactly, and the type must be complete at
-                    # the call site (C99 §6.7.2.1.8 — the function
-                    # may be forward-declared with an incomplete
-                    # type, but its caller can't materialize the
-                    # value to pass).
-                    if isinstance(expected, (Structure, Union)):
-                        kw = "union" if isinstance(expected, Union) else "struct"
-                        layout = self.types.get(expected.tag)
-                        if layout is None or not layout.complete:
-                            raise TypeCheckError(
-                                f"argument {i} of {name!r}: cannot pass "
-                                f"incomplete type '{kw} {expected.tag}'"
-                            )
-                        if not _types_equal(arg.data_type, expected):
-                            raise TypeCheckError(
-                                f"argument {i} of {name!r}: type "
-                                f"{arg.data_type!r} doesn't match "
-                                f"parameter type {expected!r}"
-                            )
-                        args[i] = arg
-                    else:
-                        args[i] = _convert_to(arg, expected)
-                exp.data_type = fn_type.ret
-                return fn_type.ret
+                return self._check_call_args(exp, repr(name), fn_type, args)
+            case c99_ast.IndirectCall(args=args):
+                fn_type = self._check_callee(exp)
+                if isinstance(exp.callee, c99_ast.Var):
+                    label = repr(exp.callee.name)
+                else:
+                    label = "through a function pointer"
+                return self._check_call_args(exp, label, fn_type, args)
             case c99_ast.Dereference(exp=inner):
                 # `*e` — operand must have pointer type, result is
                 # the pointee (C99 §6.5.3.2.4). The lvalue-ness of

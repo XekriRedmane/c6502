@@ -2093,6 +2093,112 @@ class Translator:
         }
         return dataclasses.replace(exp, **changes) if changes else exp
 
+    def _translate_call(
+        self,
+        exp: c99_ast.Type_exp,
+        name: str | None,
+        ptr: tac_ast.Type_val | None,
+        args: list[c99_ast.Type_exp],
+        instrs: list[tac_ast.Type_instruction],
+    ) -> tac_ast.Type_val | None:
+        """Lowers the call `exp`, to the function or function pointer
+        `name`, or through the evaluated function pointer `ptr`."""
+        hw = exp.hw_stack_save
+        sym = self._symbols.get(name) if name is not None else None
+        if ptr is None and sym is not None and isinstance(
+            _strip_quals_c99(sym.type), c99_ast.Pointer,
+        ):
+            ptr = tac_ast.Var(name=name)
+        if hw and ptr is not None:
+            from passes.recursion_saves import RecursionSaveError
+            raise RecursionSaveError(
+                "`#pragma c6502 call save(hardware_stack)` can't "
+                "apply to a call through a function pointer"
+            )
+        # `f(arg1, arg2, ...)` lowers to: evaluate each arg
+        # in source order (so its temporaries get the lower
+        # numbers), collect the resulting TAC vals, mint a
+        # fresh dst temp for the return value, and emit
+        # either a direct `FunctionCall(name, args, dst)`
+        # (when `name` denotes a function — type checker
+        # has stamped sym.type as FunType) or an indirect
+        # `IndirectCall(ptr, args, dst)` (when `name` denotes
+        # a pointer-to-function, `ptr` is `Var(name)`; for any
+        # other callee it's the callee's value). The
+        # arg-evaluation and return-temp logic is identical
+        # either way.
+        arg_vals = [
+            self.translate_exp(a, instrs) for a in args
+        ]
+        # Void-returning callees produce no value — emit
+        # FunctionCall with dst=None. The TAC instruction's
+        # asm lowering skips the return-value capture step.
+        is_void = isinstance(exp.data_type, c99_ast.Void)
+        # Struct/union return: c6502's calling convention is
+        # sret — the caller allocates a return slot, passes
+        # its address as the (hidden) first arg, and the
+        # callee writes the bytes through that pointer. The
+        # FunctionCall expression's "result" is the slot
+        # itself (a struct-typed Var), which downstream
+        # consumers (Assignment Copy, Dot, Arrow, …) treat
+        # like any other addressable struct lvalue.
+        ret_t = exp.data_type
+        if ptr is None and self._returns_carry_struct(name):
+            # A `return_bool_in_carry` struct comes back in A
+            # (and X) and the carry flag, with no hidden
+            # pointer, so the call writes the slot itself.
+            # Its address can't be taken, so the call is
+            # always direct.
+            slot = tac_ast.Var(
+                name=self.make_temporary_variable_name(ret_t),
+            )
+            instrs.append(tac_ast.FunctionCall(
+                name=name, args=arg_vals, dst=slot,
+                hw_stack_save=hw,
+            ))
+            return slot
+        if isinstance(ret_t, (c99_ast.Structure, c99_ast.Union)):
+            slot_name = self.make_temporary_variable_name(ret_t)
+            slot = tac_ast.Var(name=slot_name)
+            addr = tac_ast.Var(
+                name=self.make_temporary_variable_name(
+                    c99_ast.Pointer(referenced_type=ret_t),
+                ),
+            )
+            instrs.append(tac_ast.GetAddress(
+                operand=slot, dst=addr,
+            ))
+            arg_vals = [addr] + arg_vals
+            if ptr is not None:
+                instrs.append(tac_ast.IndirectCall(
+                    ptr=ptr, args=arg_vals, dst=None,
+                ))
+            else:
+                instrs.append(tac_ast.FunctionCall(
+                    name=name, args=arg_vals, dst=None,
+                    hw_stack_save=hw,
+                ))
+            return slot
+        dst = (
+            None if is_void else tac_ast.Var(
+                name=self.make_temporary_variable_name(exp.data_type),
+            )
+        )
+        if ptr is not None:
+            # Indirect call through the function pointer `ptr` (a
+            # function-pointer Var, or the callee's value).
+            # tac_to_asm stages it into DPTR before JSR-ing the
+            # icall trampoline.
+            instrs.append(tac_ast.IndirectCall(
+                ptr=ptr, args=arg_vals, dst=dst,
+            ))
+        else:
+            instrs.append(tac_ast.FunctionCall(
+                name=name, args=arg_vals, dst=dst,
+                hw_stack_save=hw,
+            ))
+        return dst
+
     def translate_exp(
         self,
         exp: c99_ast.Type_exp,
@@ -2464,104 +2570,25 @@ class Translator:
                 self.translate_exp(left, instrs)
                 return self.translate_exp(right, instrs)
             case c99_ast.FunctionCall(name=name, args=args):
-                hw = exp.hw_stack_save
-                sym = self._symbols.get(name)
-                if hw and sym is not None and isinstance(
-                    _strip_quals_c99(sym.type), c99_ast.Pointer,
-                ):
+                return self._translate_call(exp, name, None, args, instrs)
+            case c99_ast.IndirectCall(callee=callee, args=args):
+                # The type checker left a `Var` when the callee comes
+                # down to a name (`(*fp)(x)`), which calls it as `fp(x)`
+                # does. Otherwise `callee` is a pointer to function,
+                # evaluated before the arguments (C99 §6.5.2.2.10 leaves
+                # the order unspecified).
+                if isinstance(callee, c99_ast.Var):
+                    return self._translate_call(
+                        exp, callee.name, None, args, instrs,
+                    )
+                if exp.hw_stack_save:
                     from passes.recursion_saves import RecursionSaveError
                     raise RecursionSaveError(
                         "`#pragma c6502 call save(hardware_stack)` can't "
                         "apply to a call through a function pointer"
                     )
-                # `f(arg1, arg2, ...)` lowers to: evaluate each arg
-                # in source order (so its temporaries get the lower
-                # numbers), collect the resulting TAC vals, mint a
-                # fresh dst temp for the return value, and emit
-                # either a direct `FunctionCall(name, args, dst)`
-                # (when `name` denotes a function — type checker
-                # has stamped sym.type as FunType) or an indirect
-                # `IndirectCall(ptr=Var(name), args, dst)` (when
-                # `name` denotes a pointer-to-function — the type
-                # checker accepts both shapes for the callee). The
-                # arg-evaluation and return-temp logic is identical
-                # either way.
-                arg_vals = [
-                    self.translate_exp(a, instrs) for a in args
-                ]
-                # Void-returning callees produce no value — emit
-                # FunctionCall with dst=None. The TAC instruction's
-                # asm lowering skips the return-value capture step.
-                is_void = isinstance(exp.data_type, c99_ast.Void)
-                # Struct/union return: c6502's calling convention is
-                # sret — the caller allocates a return slot, passes
-                # its address as the (hidden) first arg, and the
-                # callee writes the bytes through that pointer. The
-                # FunctionCall expression's "result" is the slot
-                # itself (a struct-typed Var), which downstream
-                # consumers (Assignment Copy, Dot, Arrow, …) treat
-                # like any other addressable struct lvalue.
-                ret_t = exp.data_type
-                if self._returns_carry_struct(name):
-                    # A `return_bool_in_carry` struct comes back in A
-                    # (and X) and the carry flag, with no hidden
-                    # pointer, so the call writes the slot itself.
-                    # Its address can't be taken, so the call is
-                    # always direct.
-                    slot = tac_ast.Var(
-                        name=self.make_temporary_variable_name(ret_t),
-                    )
-                    instrs.append(tac_ast.FunctionCall(
-                        name=name, args=arg_vals, dst=slot,
-                        hw_stack_save=hw,
-                    ))
-                    return slot
-                if isinstance(ret_t, (c99_ast.Structure, c99_ast.Union)):
-                    slot_name = self.make_temporary_variable_name(ret_t)
-                    slot = tac_ast.Var(name=slot_name)
-                    addr = tac_ast.Var(
-                        name=self.make_temporary_variable_name(
-                            c99_ast.Pointer(referenced_type=ret_t),
-                        ),
-                    )
-                    instrs.append(tac_ast.GetAddress(
-                        operand=slot, dst=addr,
-                    ))
-                    arg_vals = [addr] + arg_vals
-                    sym = self._symbols.get(name)
-                    if sym is not None and isinstance(_strip_quals_c99(sym.type), c99_ast.Pointer):
-                        instrs.append(tac_ast.IndirectCall(
-                            ptr=tac_ast.Var(name=name),
-                            args=arg_vals, dst=None,
-                        ))
-                    else:
-                        instrs.append(tac_ast.FunctionCall(
-                            name=name, args=arg_vals, dst=None,
-                            hw_stack_save=hw,
-                        ))
-                    return slot
-                dst = (
-                    None if is_void else tac_ast.Var(
-                        name=self.make_temporary_variable_name(exp.data_type),
-                    )
-                )
-                sym = self._symbols.get(name)
-                if sym is not None and isinstance(_strip_quals_c99(sym.type), c99_ast.Pointer):
-                    # Indirect call — the callee is a function-
-                    # pointer-typed Var. Pass the pointer val (which
-                    # carries the function's address at runtime) to
-                    # IndirectCall; tac_to_asm stages it into DPTR
-                    # before JSR-ing the icall trampoline.
-                    instrs.append(tac_ast.IndirectCall(
-                        ptr=tac_ast.Var(name=name),
-                        args=arg_vals, dst=dst,
-                    ))
-                else:
-                    instrs.append(tac_ast.FunctionCall(
-                        name=name, args=arg_vals, dst=dst,
-                        hw_stack_save=hw,
-                    ))
-                return dst
+                ptr = self.translate_exp(callee, instrs)
+                return self._translate_call(exp, None, ptr, args, instrs)
             case c99_ast.Postfix(op=op, operand=operand):
                 # `a++` / `a--` returns the *old* value of the operand
                 # while incrementing/decrementing it.

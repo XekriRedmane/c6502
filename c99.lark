@@ -538,36 +538,19 @@ constant_exp: conditional_exp
             | postfix_exp LBRACKET exp RBRACKET -> subscript
             | postfix_exp DOT IDENTIFIER        -> member_dot
             | postfix_exp ARROW IDENTIFIER      -> member_arrow
+            | postfix_exp LPAREN arg_list? RPAREN -> function_call
             | LPAREN type_name RPAREN LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> compound_literal
             | atom
 
-// Function call sits at atom level (one form of primary expression
-// per C99 §6.5.2). The IDENTIFIER LPAREN form is shift/reduce-
-// distinguishable from the bare-identifier form on LPAREN lookahead:
-// after IDENTIFIER, LALR(1) sees LPAREN and shifts (function_call);
-// any other lookahead reduces to identifier→atom. The AST node
-// FunctionCall(name, args) takes the callee as a string identifier
-// (not a general expression). The two grammar alternatives supply
-// the name from different shapes:
-//   `IDENTIFIER LPAREN args RPAREN`  → bare-name callee `foo(args)`.
-//   `LPAREN exp RPAREN LPAREN args RPAREN` → parenthesised-callee
-//     forms like `(*fp)(args)` or `(fp)(args)`. The transformer
-//     accepts only the shapes that boil down to a single named
-//     identifier (Var / Dereference-of-Var / AddressOf-of-Var)
-//     since the AST node only carries a string name; richer
-//     callee expressions would need a different AST shape.
-//
-// LALR(1) note: the `LPAREN exp RPAREN` form shares its prefix
-// with the plain `paren` atom, creating a shift-reduce on the
-// trailing-LPAREN lookahead. Lark's shift-preference picks the
-// indirect_function_call alternative when another LPAREN follows,
-// which is what we want — anything else reduces to paren.
+// A function call is a postfix operator on any expression (C99
+// §6.5.2.2), so `f(x)`, `(*fp)(x)`, `pick()(x)`, `t[i](x)`, and
+// `p->g(x)` all parse the same way. The transformer makes a
+// `FunctionCall` when the callee is a name and an `IndirectCall`
+// otherwise.
 
 ?atom: const                       -> constant
      | LPAREN exp RPAREN                      -> paren
      | STRING_LITERAL+                        -> str_literal
-     | LPAREN exp RPAREN LPAREN arg_list? RPAREN -> indirect_function_call
-     | IDENTIFIER LPAREN arg_list? RPAREN     -> function_call
      | IDENTIFIER                             -> identifier
 const: INTEGER_CONSTANT
      | LONG_INTEGER

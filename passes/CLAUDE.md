@@ -376,12 +376,11 @@ Top-level `Function(name, body)` definitions are pre-registered in the
 same dict before any body is walked, so a `FunctionCall` inside one
 function can resolve a target defined later in the file or be self-
 recursive. A `Var(name)` in any expression is rewritten to its mapped
-resolved name; referencing an undeclared variable raises (a function
-name on its own doesn't satisfy a `Var` lookup — c6502 has no
-function-pointer expressions yet). A `FunctionCall(name, args)`
-validates that `name` is in `_functions` (raises "call to undeclared
-function" if not), recursively resolves the args, and leaves `name`
-itself unchanged. The same lvalue check that gates `Assignment.lval`
+resolved name; referencing an undeclared variable raises. A
+`FunctionCall(name, args)` validates that `name` is in `_functions`
+(raises "call to undeclared function" if not), recursively resolves
+the args, and leaves `name` itself unchanged. An `IndirectCall(callee,
+args)` resolves its callee like any other expression. The same lvalue check that gates `Assignment.lval`
 also gates `Postfix.operand` and `Prefix.operand`, so `1++` and `++1`
 raise just like `1 = 2`. The accepted lvalue forms are `Var`,
 `Dereference`, and `Subscript` (the three syntactic lvalues c6502
@@ -596,8 +595,10 @@ helper runs at every place C99 specifies a conversion:
   intermediate type stamped on the node (common-of-promoted, or
   promoted-left for shifts); the lval-load and binop-result casts
   to/from the lval's type are emitted by c99_to_tac.
-- **FunctionCall** args (§6.5.2.2.7): each arg converted to the
-  corresponding parameter's type.
+- **FunctionCall** / **IndirectCall** args (§6.5.2.2.7): each arg
+  converted to the corresponding parameter's type. An `IndirectCall`'s
+  callee must give a function or a pointer to one
+  (`_check_callee`).
 - **Return** value (§6.8.6.4.3): converted to the enclosing function's
   declared return type (tracked on `self._return_type` while walking
   each body).

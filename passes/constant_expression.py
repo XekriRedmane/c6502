@@ -416,7 +416,7 @@ def validate_constant_expression(exp: c99_ast.Type_exp) -> None:
                 "postfix increment/decrement is not allowed in a "
                 "constant expression"
             )
-        case c99_ast.FunctionCall():
+        case c99_ast.FunctionCall() | c99_ast.IndirectCall():
             raise ConstantExpressionError(
                 "function call is not allowed in a constant expression"
             )

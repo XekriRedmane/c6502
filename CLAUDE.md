@@ -478,8 +478,14 @@ notes that aren't visible from the grammar alone:
   → `Postfix(incdec_op, exp)`. Separate nodes (not desugars) for
   the same address-once reason and because prefix returns the new
   value, postfix the old.
-- `FunctionCall(name, args)` carries the callee as a string, not an
-  expression — no function-pointer call form yet.
+- A call is a postfix operator on any expression. `FunctionCall(name,
+  args)` calls a name, a function or a function pointer (`f(x)`,
+  `fp(x)`). Any other callee (`t[i](x)`, `p->g(x)`, `pick()(x)`,
+  `(*fp)(x)`) is an `IndirectCall(callee, args)`. The type checker
+  strips the `*` and `&` that don't change which function it is,
+  leaving a `Var` when a name is left, which c99_to_tac calls as it
+  would by name; otherwise c99_to_tac evaluates the callee and emits
+  a TAC `IndirectCall` through it.
 - Loop / switch / case / default / labeled nodes carry an
   `identifier label` field the parser leaves empty; loop_labeling /
   label_resolution fill it in later. `SwitchStmt` also has `cases`
@@ -725,10 +731,6 @@ in `sim/` cover all of these so simulation-based tests still pass.
 - Hex floating literals (`0x1.0p3`) lex but the parser rejects them
   — `float()` doesn't parse C hex-float syntax and the conversion
   isn't wired up.
-- A call's callee must reduce to one name: `f(x)`, `fp(x)`,
-  `(*fp)(x)`. Calling through any other expression, such as
-  `pick()(x)`, `t[i](x)`, or `s.g(x)`, is rejected (see TODO.md).
-  Function names do decay to pointers, so `apply(add, 1, 2)` works.
 - Some C99 init-list shapes rejected: scalar init for an array,
   brace init for a scalar, too many initializers, the C99
   subaggregate flat form (`int a[2][3] = {1,2,3,4,5,6};`).

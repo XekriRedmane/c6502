@@ -1220,6 +1220,14 @@ class Resolver:
                 raise IdentifierResolutionError(
                     f"undeclared identifier {name!r}"
                 )
+            case c99_ast.IndirectCall(callee=callee, args=args):
+                # The callee is an ordinary expression; the type checker
+                # checks that it gives a function or function pointer.
+                return c99_ast.IndirectCall(
+                    callee=self.resolve_exp(callee, scope),
+                    args=[self.resolve_exp(a, scope) for a in args],
+                    hw_stack_save=exp.hw_stack_save,
+                )
         raise TypeError(f"unexpected exp: {exp!r}")
 
 

@@ -472,6 +472,14 @@ class FunctionCall(Type_exp):
 
 
 @dataclass
+class IndirectCall(Type_exp):
+    callee: Type_exp
+    args: list[Type_exp] = field(default_factory=list)
+    data_type: Type_data_type | None = None
+    hw_stack_save: bool = False
+
+
+@dataclass
 class Dereference(Type_exp):
     exp: Type_exp
     data_type: Type_data_type | None = None

@@ -17,42 +17,6 @@ That document should be organized around diagrams, tables, and short
 sections with headings, so that a reader can find one stage without
 reading the whole thing.
 
-## Call through an arbitrary function-pointer expression
-
-The callee of a call must reduce to a single name. `f(x)`, `fp(x)`,
-`(fp)(x)`, and `(*fp)(x)` compile, but these valid C99 calls don't.
-
-```c
-pick()(3);        /* calling a function's returned pointer */
-(pick())(3);
-t[0](3);          /* an element of a table of function pointers */
-s.g(3);           /* a struct member */
-p->g(3);
-```
-
-`t[i](x)` and `s->g(x)` are the usual shapes of dispatch tables and
-callback structs, so these matter more than the first two.
-
-The limit is in the IR. `c99_ast.FunctionCall` carries the callee as
-an identifier string, and the parser's `indirect_function_call`
-transformer accepts only callees that boil down to one name (a Var,
-`*Var`, or `&Var`). `tac_ast.IndirectCall` already takes a `val`
-pointer, so the backend can call through any computed pointer. The
-work is in front of it:
-
-- give `c99_ast` a call node whose callee is an expression (or add
-  an `IndirectCall(exp callee, ...)` variant beside `FunctionCall`);
-- let the grammar's postfix level parse `postfix_exp LPAREN
-  arg_list? RPAREN`, which also removes the `LPAREN exp RPAREN
-  LPAREN` special case and its shift-reduce note in `c99.lark`;
-- type-check the callee as a pointer to function (after decay) and
-  check the arguments against its `FunType`;
-- in `c99_to_tac`, evaluate the callee expression to a temp and emit
-  `IndirectCall` with it.
-
-A function containing such a call becomes ineligible for zp_abi,
-like any function with an `IndirectCall` today.
-
 ## Let zp_abi functions call soft-stack functions without a pool
 
 A function only gets zp_abi when every function it calls directly

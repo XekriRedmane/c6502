@@ -310,6 +310,16 @@ class UChar(Type_data_type):
 
 
 @dataclass
+class Short(Type_data_type):
+    pass
+
+
+@dataclass
+class UShort(Type_data_type):
+    pass
+
+
+@dataclass
 class Bool(Type_data_type):
     pass
 
@@ -544,6 +554,11 @@ class Negate(Type_unary_operator):
 
 @dataclass
 class LogicalNot(Type_unary_operator):
+    pass
+
+
+@dataclass
+class Plus(Type_unary_operator):
     pass
 
 

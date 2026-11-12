@@ -337,7 +337,7 @@ the function_decl's `params` array; their *types* live in parallel on
 
 ### Type vocabulary
 
-Ten integer types, two floating types, plus pointers and function
+Twelve integer types, two floating types, plus pointers and function
 types. Widths follow C99's minimum ranges per §5.2.4.2.1 — Int is 16
 bits, Long is 32 bits, LongLong is 64 bits.
 
@@ -347,6 +347,12 @@ Integers:
 - `Long()` is 4-byte signed (-2^31..2^31-1).
 - `LongLong()` is 8-byte signed (-2^63..2^63-1).
 - `UInt()` is 2-byte unsigned (0..65535).
+- `Short()` is `short` and `UShort()` is `unsigned short`, as wide
+  as `Int()` and `UInt()` (C99 allows that) but distinct types.
+  `short` promotes to `int` and `unsigned short` to `unsigned int`,
+  since `int` can't hold 65535. Nothing after the type checker sees
+  them: `c99_to_tac` starts by replacing them with `Int()` and
+  `UInt()` everywhere (`_erase_short`).
 - `ULong()` is 4-byte unsigned (0..2^32-1).
 - `ULongLong()` is 8-byte unsigned (0..2^64-1).
 - `Char()` is 1-byte unsigned (0..255; plain `char` is unsigned in
@@ -437,12 +443,13 @@ and splits it into the `(data_type, storage_class)` pair.
 supports (`int` / `signed [int]` → Int; `unsigned [int]` → UInt;
 `long [int]` / `signed long [int]` → Long; `unsigned long [int]` →
 ULong; `long long [int]` / `signed long long [int]` → LongLong;
-`unsigned long long [int]` → ULongLong; `char` → Char; `signed char`
-→ SChar; `unsigned char` → UChar; `_Bool` → Bool; `float` → Float;
+`unsigned long long [int]` → ULongLong; `short [int]` / `signed short
+[int]` → Short; `unsigned short [int]` → UShort; `char` → Char;
+`signed char` → SChar; `unsigned char` → UChar; `_Bool` → Bool; `float` → Float;
 `double` → Double), rejecting multiple type specifiers, multiple
-storage classes, missing type, three or more `long`s, `_Bool` combined
-with any other type specifier, `char` combined with
-`int` / `long` / `short`, `long double`, `signed unsigned`, and any
+storage classes, missing type, three or more `long`s, `short` twice or
+with `long`, `_Bool` combined with any other type specifier, `char`
+combined with `int` / `long` / `short`, `long double`, `signed unsigned`, and any
 FP/integer specifier mix (`int float`, `unsigned double`, etc.).
 
 ### Statement and expression grammar

@@ -85,6 +85,8 @@ _IV_TYPE_TO_CONST: dict[type, type] = {
     c99_ast.Char: c99_ast.ConstUChar,
     c99_ast.SChar: c99_ast.ConstChar,
     c99_ast.UChar: c99_ast.ConstUChar,
+    c99_ast.Short: c99_ast.ConstInt,
+    c99_ast.UShort: c99_ast.ConstUInt,
 }
 
 

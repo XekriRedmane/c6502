@@ -170,8 +170,7 @@ generator.
 
 `merge` turns a test's `init.h`, `func.c`, and `driver.c` into one
 program. `main` returns the checksum folded to 15 bits instead of
-printing it, `short` becomes `int` and unary `+` is dropped (c6502
-has neither yet; see TODO.md), and `size_t` is `unsigned int`. The
+printing it, and `size_t` is `unsigned int`. The
 TAC result is the reference. A program takes about 6 seconds, and
 most of them need more than 253 bytes of frame without --optimize,
 so the runner counts them as rejected and compares only the

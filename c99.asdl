@@ -104,6 +104,12 @@ module C99 {
         | Char
         | SChar
         | UChar
+        -- `short` and `unsigned short`: 2 bytes, like `int`, but ranked
+        -- below it (C99 §6.3.1.1.1). `short` promotes to `int`, and
+        -- `unsigned short` to `unsigned int`, since `int` can't hold
+        -- 65535. c99_to_tac replaces them with Int / UInt.
+        | Short
+        | UShort
         -- `_Bool` (C99 §6.2.5.2): one byte holding 0 or 1. Every
         -- conversion to it gives 0 for a value that compares equal to
         -- 0 and 1 otherwise (§6.3.1.2). c99_to_tac lowers those
@@ -244,7 +250,8 @@ module C99 {
         -- initializer in the type checker.
         | CompoundLiteral(identifier name, data_type target_type, exp init, data_type?)
 
-    unary_operator = Complement | Negate | LogicalNot
+    -- `Plus` is unary `+`, which only applies the integer promotions.
+    unary_operator = Complement | Negate | LogicalNot | Plus
     incdec_op = Increment | Decrement
     binary_operator =
         Add | Subtract | Multiply | Divide | Modulo

@@ -309,7 +309,7 @@ initializer: assignment_exp                                      -> init_exp
            | LBRACE initializer (COMMA initializer)* COMMA? RBRACE -> init_list
 function_decl: attribute_clause? decl_specs declarator block
 
-type_specifier: INT | LONG | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | VOID
+type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | VOID
               | struct_or_union_specifier
 
 // Struct or union specifier (C99 §6.7.2.1). Two shapes:
@@ -564,6 +564,7 @@ const: INTEGER_CONSTANT
      | CHAR_CONSTANT
 
 unop: MINUS                         -> negate
+    | PLUS                          -> unary_plus
     | TILDE                         -> complement
     | BANG                          -> logical_not
 

@@ -1,15 +1,5 @@
 # TODO
 
-## `short` and unary `+`
-
-c6502 doesn't parse `short` / `unsigned short` or unary `+`, both
-C99. YARPGen's programs use both, and `fuzz/yarpgen.py` rewrites them
-(`#define short int`, which is exact with a 16-bit `int`, and
-dropping the `+` in front of an operand YARPGen has already cast to
-its promoted type). `short` needs a type in `c99.asdl` the width of
-`int` (C99 allows that) with its own rank in the conversions, and unary
-`+` an operator that applies the integer promotions.
-
 ## Rewrite the README and add an architecture document
 
 README.md has grown into a wall of low-level detail. It should

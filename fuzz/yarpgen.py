@@ -12,12 +12,7 @@ into one c6502 program:
   * `main` returns the checksum, folded to 15 bits, instead of
     printing it, since c6502 has no `printf`. The TAC interpreter's
     result is the reference, as in `fuzz.calls`.
-  * `size_t` is `unsigned int`, and `short` is `int`, which c6502
-    doesn't have yet. With a 16-bit `int` the two are the same width
-    and promote the same way.
-  * Unary `+`, which c6502 doesn't have yet either, is dropped.
-    YARPGen writes every implicit conversion as a cast, so its
-    operand is already promoted and the `+` does nothing.
+  * `size_t` is `unsigned int`.
 
 Inputs are globals (`--inp-as-args=none`), since a `test()` taking them
 as parameters needs more than the 253 bytes a soft-stack frame can
@@ -59,9 +54,7 @@ def merge(init: str, func: str, driver: str) -> str:
         "return (int)((seed ^ (seed >> 16) ^ (seed >> 32) ^ (seed >> 48))"
         " & 0x7FFF);",
     )
-    func = func.replace("(+(", "((")
-    driver = driver.replace("(+(", "((")
-    prelude = "typedef unsigned int size_t;\n#define short int\n"
+    prelude = "typedef unsigned int size_t;\n"
     return prelude + init + func + driver
 
 

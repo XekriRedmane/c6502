@@ -143,6 +143,8 @@ Char = c99_ast.Char
 SChar = c99_ast.SChar
 UChar = c99_ast.UChar
 Bool = c99_ast.Bool
+Short = c99_ast.Short
+UShort = c99_ast.UShort
 Float = c99_ast.Float
 Double = c99_ast.Double
 Void = c99_ast.Void
@@ -574,6 +576,11 @@ def _const_init_value(
                 # so it converts to 1 (C99 §6.3.1.2).
                 return 1
             return AddressInit(name=target, offset=0)
+        case c99_ast.Unary(op=c99_ast.Plus(), exp=inner) if isinstance(
+            _strip_quals(exp.data_type), (Float, Double),
+        ):
+            # `+1.5` is `1.5`.
+            return _const_init_value(inner, target_type, name, symbols)
         case c99_ast.Unary(op=c99_ast.Negate(), exp=inner) if isinstance(
             _strip_quals(exp.data_type), (Float, Double),
         ):
@@ -789,7 +796,7 @@ def _is_object_type(t: Type) -> bool:
     t = _strip_quals(t)
     return isinstance(
         t, (Int, Long, LongLong, UInt, ULong, ULongLong,
-            Char, SChar, UChar, Bool,
+            Char, SChar, UChar, Bool, Short, UShort,
             Float, Double, Pointer),
     )
 
@@ -814,7 +821,7 @@ def _is_integer_type(t: Type) -> bool:
     return isinstance(
         _strip_quals(t),
         (Int, Long, LongLong, UInt, ULong, ULongLong,
-         Char, SChar, UChar, Bool),
+         Char, SChar, UChar, Bool, Short, UShort),
     )
 
 
@@ -875,7 +882,7 @@ def _display_name(name: str) -> str:
 
 _C_TYPE_NAMES = {
     Char: "char", SChar: "signed char", UChar: "unsigned char",
-    Bool: "_Bool",
+    Bool: "_Bool", Short: "short", UShort: "unsigned short",
     Int: "int", UInt: "unsigned int", Long: "long",
     ULong: "unsigned long", LongLong: "long long",
     ULongLong: "unsigned long long", Float: "float", Double: "double",
@@ -966,7 +973,7 @@ def carry_struct_value_bytes(ret: Type, types) -> int | None:
     vt, ft = _strip_quals(value.type), _strip_quals(flag.type)
     if isinstance(vt, (Char, SChar, UChar, Bool)):
         n = 1
-    elif isinstance(vt, (Int, UInt)):
+    elif isinstance(vt, (Int, UInt, Short, UShort)):
         n = 2
     else:
         return None
@@ -1106,7 +1113,7 @@ def _sizeof(t: Type, types: "TypeTable | None" = None) -> int:
     t = _strip_quals(t)
     if isinstance(t, (Char, SChar, UChar, Bool)):
         return 1
-    if isinstance(t, (Int, UInt, Pointer)):
+    if isinstance(t, (Int, UInt, Short, UShort, Pointer)):
         return 2
     if isinstance(t, (Long, ULong, Float)):
         return 4
@@ -1373,7 +1380,7 @@ def _int_width(t: Type) -> int:
     t = _strip_quals(t)
     if isinstance(t, (Char, SChar, UChar, Bool)):
         return 1
-    if isinstance(t, (Int, UInt)):
+    if isinstance(t, (Int, UInt, Short, UShort)):
         return 2
     if isinstance(t, (Long, ULong)):
         return 4
@@ -1385,7 +1392,7 @@ def _int_width(t: Type) -> int:
 def _is_signed(t: Type) -> bool:
     # Plain `char` is unsigned in c6502 (0..255), matching `unsigned
     # char`. Per C99 §6.2.5.15 the choice is implementation-defined.
-    return isinstance(_strip_quals(t), (Int, Long, LongLong, SChar))
+    return isinstance(_strip_quals(t), (Int, Long, LongLong, SChar, Short))
 
 
 def _promote_integer(t: Type) -> Type:
@@ -1415,10 +1422,13 @@ def _promote_integer(t: Type) -> Type:
     qualified per C99 §6.3.2.1.2).
 
     `_Bool` ranks below `char` (§6.3.1.1.1) and promotes to Int the
-    same way."""
+    same way. `short` is as wide as `int`, so it promotes to Int, but
+    `int` can't hold every `unsigned short`, which promotes to UInt."""
     t = _strip_quals(t)
-    if isinstance(t, (Char, SChar, UChar, Bool)):
+    if isinstance(t, (Char, SChar, UChar, Bool, Short)):
         return Int()
+    if isinstance(t, UShort):
+        return UInt()
     return t
 
 
@@ -1448,9 +1458,11 @@ def _const_for_value(value: int, t: Type) -> c99_ast.Type_const:
     and-mask consumers, so signed negatives wrap to their two's-
     complement bit pattern at the matching width."""
     t = _strip_quals(t)
-    if isinstance(t, (Int, UInt)):
+    if isinstance(t, (Int, UInt, Short, UShort)):
         bits = value & 0xFFFF
-        return c99_ast.ConstInt(value=bits) if isinstance(t, Int) else c99_ast.ConstUInt(value=bits)
+        if isinstance(t, (Int, Short)):
+            return c99_ast.ConstInt(value=bits)
+        return c99_ast.ConstUInt(value=bits)
     if isinstance(t, (Char, SChar, UChar, Bool)):
         # ConstChar / ConstUChar exist in the AST but the parser
         # routes char literals through ConstInt per the user's
@@ -3438,8 +3450,8 @@ class TypeChecker:
                         f"unary operator on non-object type {t!r}"
                     )
                 # Per-operator operand-type constraints:
-                #   `-` requires arithmetic (rejects Pointer per
-                #     C99 §6.5.3.3.1).
+                #   `-` and `+` require arithmetic (reject Pointer
+                #     per C99 §6.5.3.3.1).
                 #   `~` requires integer (rejects Pointer per the
                 #     same paragraph, and rejects Float / Double
                 #     per §6.5.3.3.4: "The operand of the unary ~
@@ -3449,10 +3461,14 @@ class TypeChecker:
                 #     `!p` is legal — it's defined as `p != 0`,
                 #     the pointer's null-ness check.
                 if (
-                    isinstance(op, (c99_ast.Negate, c99_ast.Complement))
+                    isinstance(op, (c99_ast.Negate, c99_ast.Complement,
+                                    c99_ast.Plus))
                     and _is_pointer_type(t)
                 ):
-                    op_name = "-" if isinstance(op, c99_ast.Negate) else "~"
+                    op_name = {
+                        c99_ast.Negate: "-", c99_ast.Complement: "~",
+                        c99_ast.Plus: "+",
+                    }[type(op)]
                     raise TypeCheckError(
                         f"unary '{op_name}' is not defined on pointer "
                         f"type {t!r}"
@@ -3469,7 +3485,8 @@ class TypeChecker:
                 # the operand of `-` / `~` / `+` is integer-promoted.
                 # `!` doesn't promote — its operand is just compared
                 # to zero, and the result is always int.
-                if isinstance(op, (c99_ast.Negate, c99_ast.Complement)):
+                if isinstance(op, (c99_ast.Negate, c99_ast.Complement,
+                                   c99_ast.Plus)):
                     promoted = _promote_integer(t)
                     if not _types_equal(promoted, t):
                         exp.exp = _convert_to(exp.exp, promoted)

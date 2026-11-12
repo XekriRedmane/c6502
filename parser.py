@@ -88,12 +88,12 @@ _STORAGE_CLASSES = {
 # OR a `_TagSpecifier` wrapper for struct/union forms (which expose a
 # matching `.type` attribute so the same predicate logic works on
 # both shapes).
-_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
+_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "BOOL", "VOID",
                            "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
                            "STRUCT", "UNION", "TYPEDEF_NAME",
                            "CONST", "VOLATILE", "RESTRICT")
-_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SIGNED", "UNSIGNED",
+_TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "BOOL",
                                 "VOID", "STRUCT", "UNION", "TYPEDEF_NAME")
 # `const` and `volatile` are honored at parse time and wrapped into
@@ -316,8 +316,7 @@ def _type_tags(t, out: list) -> list:
 
 def _resolve_data_type(type_specs):
     """Map a list of type-specifier tokens to a c99_ast object type.
-    Valid combinations follow C99 §6.7.2 (subset c6502 models —
-    no `short`):
+    Valid combinations follow C99 §6.7.2:
       * `_Bool`                                    → Bool; cannot
                                                      combine with any
                                                      other type
@@ -329,6 +328,9 @@ def _resolve_data_type(type_specs):
       * `unsigned char`                            → UChar
       * `int`, `signed`, `signed int`              → Int
       * `unsigned`, `unsigned int`                 → UInt
+      * `short`, `short int`, `signed short`,
+        `signed short int`                         → Short
+      * `unsigned short`, `unsigned short int`     → UShort
       * `long`, `long int`,
         `signed long`, `signed long int`           → Long
       * `unsigned long`, `unsigned long int`       → ULong
@@ -392,6 +394,7 @@ def _resolve_data_type(type_specs):
     char_count = sum(1 for t in type_specs if t.type == "CHAR")
     void_count = sum(1 for t in type_specs if t.type == "VOID")
     bool_count = sum(1 for t in type_specs if t.type == "BOOL")
+    short_count = sum(1 for t in type_specs if t.type == "SHORT")
     if bool_count > 0:
         if len(type_specs) != 1:
             raise ParserError(
@@ -401,7 +404,7 @@ def _resolve_data_type(type_specs):
     is_fp = float_count > 0 or double_count > 0
     is_integer = (
         int_count > 0 or signed_count > 0 or unsigned_count > 0
-        or char_count > 0
+        or char_count > 0 or short_count > 0
     )
     if void_count > 0:
         if void_count > 1:
@@ -444,13 +447,19 @@ def _resolve_data_type(type_specs):
         raise ParserError("'unsigned' specified more than once")
     if char_count > 1:
         raise ParserError("'char' specified more than once")
-    if char_count == 1 and (int_count > 0 or long_count > 0):
+    if char_count == 1 and (
+        int_count > 0 or long_count > 0 or short_count > 0
+    ):
         raise ParserError(
             "'char' cannot combine with 'int' / 'long' / 'short'"
         )
+    if short_count > 1:
+        raise ParserError("'short' specified more than once")
+    if short_count == 1 and long_count > 0:
+        raise ParserError("'short' cannot combine with 'long'")
     if not is_fp and (int_count == 0 and long_count == 0
             and signed_count == 0 and unsigned_count == 0
-            and char_count == 0):
+            and char_count == 0 and short_count == 0):
         raise ParserError("missing type specifier")
     if int_count > 1:
         raise ParserError(
@@ -474,6 +483,8 @@ def _resolve_data_type(type_specs):
         if is_signed:
             return c99_ast.SChar()
         return c99_ast.Char()
+    if short_count == 1:
+        return c99_ast.UShort() if is_unsigned else c99_ast.Short()
     if long_count == 2:
         return c99_ast.ULongLong() if is_unsigned else c99_ast.LongLong()
     if long_count == 1:
@@ -3035,6 +3046,10 @@ class _ASTBuilder(Transformer):
     @v_args(inline=True)
     def complement(self, _tilde):
         return c99_ast.Complement()
+
+    @v_args(inline=True)
+    def unary_plus(self, _plus):
+        return c99_ast.Plus()
 
     @v_args(inline=True)
     def logical_not(self, _bang):

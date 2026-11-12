@@ -94,6 +94,8 @@ _INT_WIDTH = {
     c99_ast.Bool:      1,
     c99_ast.Int:       2,
     c99_ast.UInt:      2,
+    c99_ast.Short:     2,
+    c99_ast.UShort:    2,
     c99_ast.Long:      4,
     c99_ast.ULong:     4,
     c99_ast.LongLong:  8,
@@ -101,7 +103,8 @@ _INT_WIDTH = {
 }
 # Plain `char` is unsigned in c6502 (C99 §6.2.5.15 leaves the choice
 # to the implementation), so only `signed char` joins the signed set.
-_SIGNED = (c99_ast.Int, c99_ast.Long, c99_ast.LongLong, c99_ast.SChar)
+_SIGNED = (c99_ast.Int, c99_ast.Long, c99_ast.LongLong, c99_ast.SChar,
+           c99_ast.Short)
 
 
 def _strip_quals(t: c99_ast.Type_data_type) -> c99_ast.Type_data_type:
@@ -129,7 +132,8 @@ def _sizeof(t: c99_ast.Type_data_type) -> int:
     if isinstance(t, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar,
                       c99_ast.Bool)):
         return 1
-    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Pointer)):
+    if isinstance(t, (c99_ast.Int, c99_ast.UInt, c99_ast.Short,
+                      c99_ast.UShort, c99_ast.Pointer)):
         return 2
     if isinstance(t, (c99_ast.Long, c99_ast.ULong, c99_ast.Float)):
         return 4
@@ -261,6 +265,8 @@ def evaluate_integer_constant_expression(
                 return int(v == 0), t
             if isinstance(op, c99_ast.Negate):
                 return _checked(-v, t), t
+            if isinstance(op, c99_ast.Plus):
+                return _coerce_to_integer_type(v, t), t
             return _coerce_to_integer_type(~v, t), t
         case c99_ast.Binary(op=op, left=lhs, right=rhs):
             return _evaluate_binary(exp, op, lhs, rhs)

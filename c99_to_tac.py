@@ -285,6 +285,7 @@ Mapping:
   C99 DefaultStmt(stmt, label) -> same as CaseStmt — Label + recurse.
   C99 Negate / Complement /   -> TAC Negate / Complement / LogicalNot
     LogicalNot
+  C99 Plus                    -> its operand, already promoted; no TAC
   C99 Add / Subtract /        -> TAC Add / Subtract / Multiply / Divide
     Multiply / Divide /          / Modulo / BitwiseAnd / BitwiseOr /
     Modulo / BitwiseAnd /        BitwiseXor / LeftShift / RightShift /
@@ -558,6 +559,45 @@ def _bool_to_uchar(t):
             if nv is not v:
                 changes[f.name] = nv
     return dataclasses.replace(t, **changes) if changes else t
+
+
+def _short_to_int(node):
+    """`node` with `short` and `unsigned short` replaced, at any depth,
+    by `int` and `unsigned int`, changing c99 AST nodes in place."""
+    if isinstance(node, c99_ast.Short):
+        return c99_ast.Int()
+    if isinstance(node, c99_ast.UShort):
+        return c99_ast.UInt()
+    if isinstance(node, list):
+        return [_short_to_int(x) for x in node]
+    if isinstance(node, tuple):
+        return tuple(_short_to_int(x) for x in node)
+    if dataclasses.is_dataclass(node) and not isinstance(node, type):
+        for f in dataclasses.fields(node):
+            value = getattr(node, f.name)
+            new = _short_to_int(value)
+            if new is not value:
+                setattr(node, f.name, new)
+    return node
+
+
+def _erase_short(prog, symbols, types) -> None:
+    """Replace `short` with `int` and `unsigned short` with `unsigned
+    int` in the program, the symbol table, and the struct and union
+    layouts, before translating. With a 16-bit `int` they're the same
+    width, and the type checker has already applied the promotions,
+    in which `short` goes to `int` and `unsigned short` to `unsigned
+    int`, so no pass after the type checker needs a `short` of its
+    own."""
+    _short_to_int(prog)
+    for _, sym in symbols.items():
+        sym.type = _short_to_int(sym.type)
+    if types is not None:
+        for _, layout in types.items():
+            layout.members = [
+                dataclasses.replace(m, type=_short_to_int(m.type))
+                for m in layout.members
+            ]
 
 
 def _erase_bool(decls, symbols, types) -> None:
@@ -1387,6 +1427,7 @@ class Translator:
         # one declaration site.
         match prog:
             case c99_ast.Program(declaration=decls):
+                _erase_short(prog, self._symbols, self._types)
                 top_levels: list[tac_ast.Type_top_level] = []
                 for d in decls:
                     fn = self._translate_top_level_declaration(d)
@@ -2122,6 +2163,10 @@ class Translator:
                         inner_val, source, instrs,
                     )
                 return self._emit_cast(inner_val, source, target, instrs)
+            case c99_ast.Unary(op=c99_ast.Plus(), exp=inner):
+                # The type checker has already promoted the operand,
+                # which is all `+` does.
+                return self.translate_exp(inner, instrs)
             case c99_ast.Unary(op=op, exp=inner):
                 src = self.translate_exp(inner, instrs)
                 # The temp's type is the Unary node's data_type

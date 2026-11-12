@@ -104,7 +104,9 @@ section below.
    types are `Char()` / `SChar()` / `UChar()` (1 byte each;
    `Char` is unsigned per c6502's implementation-defined choice
    per §6.2.5.15), `Int()` (2-byte signed, -32768..32767),
-   `UInt()` (2-byte unsigned, 0..65535), `Long()` (4-byte
+   `UInt()` (2-byte unsigned, 0..65535), `Short()` / `UShort()`
+   (`short` / `unsigned short`, the same widths as `Int()` /
+   `UInt()`), `Long()` (4-byte
    signed), `ULong()` (4-byte unsigned), `LongLong()` (8-byte
    signed), and `ULongLong()` (8-byte unsigned). Floating types
    are `Float()` (IEEE 754 single, 4 bytes) and `Double()` (IEEE
@@ -148,7 +150,7 @@ section below.
    preceding unmatched `if` — the C99 §6.8.4.1 rule. `<exp>` is
    built from integer constants, identifiers, function calls
    (`f(arg, ...)`), cast expressions (`(int)x` / `(long)x`), the
-   unary ops (`-`/`~`/`!`), binary
+   unary ops (`-`/`~`/`!`/`+`), binary
    `+`/`-`/`*`/`/`/`%`/bitwise/shift/comparison/`&&`/`||`,
    parentheses, right-associative `=` plus the ten compound
    assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`,
@@ -1448,9 +1450,9 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   statements, null statements. Block-scope automatics get unique
   `@<N>.<orig>` names before TAC; missing `return` appends an
   implicit `Ret(0)` typed for the function's return.
-- All nine integer types (`int` / `long` / `long long` /
-  `unsigned int` / `unsigned long` / `unsigned long long` /
-  `char` / `signed char` / `unsigned char`) and explicit casts
+- All the integer types (`int` / `short` / `long` / `long long`,
+  their `unsigned` forms, `char` / `signed char` /
+  `unsigned char`, `_Bool`) and explicit casts
   among them. Mixed-type arithmetic per C99 §6.3.1.8; the type
   checker inserts implicit `SignExtend` / `ZeroExtend` /
   `Truncate` casts so TAC sees uniform-width operands.

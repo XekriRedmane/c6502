@@ -118,6 +118,7 @@ a user variable.
 - [Unreachable code drop](unreachable_drop.md). Deletes unlabeled instructions after a jump or return that no path reaches.
 - [Unreachable code elimination](unreachable_code_elimination.md). Removes unreachable TAC blocks, then the stale Phi arguments, jumps, and labels.
 - [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md). Drops `LDY #$00` before `(DPTR),Y` after a `DEY; BNE` fall-through.
+- [Zero-page promotion](zp_promotion.md). Moves the busiest scalar globals into the zero-page bytes left below `$80`.
 
 ## Pipeline order
 
@@ -137,6 +138,7 @@ them whenever a pass is added or moved.
    1. [Loop unrolling](unroll.md)
    2. Identifier resolution, string lifting, label resolution, loop
       labeling, type checking, and translation to TAC.
+   3. [Zero-page promotion](zp_promotion.md)
 2. TAC optimizer, once per function:
    1. [Signed countdown loop rotation](loop_rotate.md)
    2. SSA construction.

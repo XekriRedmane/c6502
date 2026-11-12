@@ -150,6 +150,59 @@ COUT1	EQU	$FDF0
 ; call print_zstring -> load_packed_address
 ; call print_zstring -> print_zstring
 ; call read_from_sector -> do_rwts_on_sector
+; zp __monitor_zp_1f size=1 at=$1F def=false init=
+; zp WNDLFT size=1 at=$20 def=false init=
+; zp WNDWDTH size=1 at=$21 def=false init=
+; zp WNDTOP size=1 at=$22 def=false init=
+; zp WNDBTM size=1 at=$23 def=false init=
+; zp CH size=1 at=$24 def=false init=
+; zp CV size=1 at=$25 def=false init=
+; zp GBAS size=2 at=$26 def=false init=
+; zp BAS size=2 at=$28 def=false init=
+; zp __monitor_bas2 size=2 at=$2A def=false init=
+; zp __monitor_zp_2c size=3 at=$2C def=false init=
+; zp COLOR size=1 at=$30 def=false init=
+; zp INVFLG size=1 at=$32 def=false init=
+; zp PROMPT size=1 at=$33 def=false init=
+; zp __monitor_ysav1 size=1 at=$35 def=false init=
+; zp CSW size=2 at=$36 def=false init=
+; zp KSW size=2 at=$38 def=false init=
+; zp __monitor_acc size=1 at=$45 def=false init=
+; zp __monitor_status size=1 at=$48 def=false init=
+; zp __monitor_rnd size=2 at=$4E def=false init=
+; zp SECTORS_PER_TRACK size=1 at=$7F def=false init=
+; zp Z_PC size=3 at=$8A def=false init=
+; zp ZCODE_PAGE_ADDR size=2 at=$8D def=false init=
+; zp ZCODE_PAGE_VALID size=1 at=$8F def=false init=
+; zp PAGE_TABLE_INDEX size=1 at=$90 def=false init=
+; zp Z_PC2_H size=1 at=$91 def=false init=
+; zp Z_PC2_HH size=1 at=$92 def=false init=
+; zp Z_PC2_L size=1 at=$93 def=false init=
+; zp ZCODE_PAGE_ADDR2 size=2 at=$94 def=false init=
+; zp ZCODE_PAGE_VALID2 size=1 at=$96 def=false init=
+; zp PAGE_TABLE_INDEX2 size=1 at=$97 def=false init=
+; zp HIGH_MEM_ADDR size=2 at=$B8 def=false init=
+; zp Z_HEADER_ADDR size=2 at=$BA def=false init=
+; zp NUM_IMAGE_PAGES size=1 at=$BC def=false init=
+; zp NUM_PAGE_TABLE_ENTRIES size=1 at=$BD def=false init=
+; zp FIRST_Z_PAGE size=1 at=$BE def=false init=
+; zp LAST_Z_PAGE size=1 at=$BF def=false init=
+; zp PAGE_L_TABLE size=2 at=$C0 def=false init=
+; zp PAGE_H_TABLE size=2 at=$C2 def=false init=
+; zp NEXT_PAGE_TABLE size=2 at=$C4 def=false init=
+; zp PREV_PAGE_TABLE size=2 at=$C6 def=false init=
+; zp SHIFT_ALPHABET size=1 at=$CE def=false init=
+; zp LOCKED_ALPHABET size=1 at=$CF def=false init=
+; zp ZDECOMPRESS_STATE size=1 at=$D0 def=false init=
+; zp ZCHARS size=2 at=$D1 def=false init=
+; zp Z_ABBREV_TABLE size=2 at=$E2 def=false init=
+; zp SCRATCH1 size=2 at=$E4 def=false init=
+; zp SCRATCH2 size=2 at=$E6 def=false init=
+; zp BUFF_END size=1 at=$EB def=false init=
+; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
+; zp CURR_LINE size=1 at=$ED def=false init=
+; zp PRINTER_CSW size=2 at=$EE def=false init=
+; runtime hargs_size=5
 ; @zp-link-meta-end
 
 do_rwts_on_sector:

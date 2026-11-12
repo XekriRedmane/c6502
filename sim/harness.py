@@ -83,7 +83,7 @@ def compile_to_asm(
     )
     from passes.zp_globals import plan_zero_page, zero_page_in_effect
     tac = translate_to_tac(ast5, syms, types)
-    zp = plan_zero_page(tac, syms, types)
+    zp = plan_zero_page(tac, syms, types, promote=optimize)
     with zero_page_in_effect(zp):
         return _compile_tac(ast5, syms, types, optimize, zp, tac)
 

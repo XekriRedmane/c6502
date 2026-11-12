@@ -193,6 +193,31 @@ compiler writes a routine called `__zp_init` that stores each
 zero-page object's initial value. The program's startup code has to
 call `__zp_init` before `main`.
 
+With `--optimize`, the compiler also moves the busiest scalar globals
+into the zero-page bytes left below `$80`, without the attribute
+([zero-page promotion](optimizations/zp_promotion.md)). The attribute
+is still the way to be sure a variable gets one of them.
+
+A program in several source files declares a shared object in a
+header and defines it in one file, as with any global:
+
+```c
+// counters.h
+extern uint8_t hits __attribute__((zeropage));
+
+// counters.c
+#include "counters.h"
+uint8_t hits __attribute__((zeropage)) = 0;
+```
+
+A file that only declares `hits` doesn't give it an address. `--link`
+places every file's bare `zeropage` objects for the whole program,
+keeps each `zeropage(addr)` object where it was declared, and writes
+one `__zp_init` that stores them all. It's an error to define the
+object in two files, to declare it with different sizes or addresses,
+or to declare it `extern` with no address in a program that never
+defines it.
+
 ### `address(addr)`
 
 `address` says that a name refers to something that's already at a
@@ -575,8 +600,9 @@ scrolling, and keyboard input continue into the 80-column firmware
 at `$C100`. The Monitor headers cover the bytes the Monitor ROM
 listing shows, and any zero page that firmware uses isn't covered.
 
-**Linking.** A source file with zero-page objects, including one that
-includes `<apple2/monitor_io.h>`, can't be linked with `--link` yet.
+**Linking.** Files linked with `--link` have to agree on where the
+runtime's zero-page block is. `<apple2/monitor_io.h>` moves the block,
+so either every file includes it or none does.
 
 **Registers.** The loop-counter optimizations, the register
 allocator (so a `register` local can stay in Y across a call to

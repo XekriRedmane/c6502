@@ -7,6 +7,7 @@ __zpabi_interlace_fill_p1__col	EQU	$81
 
 ; @zp-link-meta-begin
 ; def interlace_fill_p1 params=__zpabi_interlace_fill_p1__value,__zpabi_interlace_fill_p1__col locals= indirect=false in_cycle=false
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 interlace_fill_p1:

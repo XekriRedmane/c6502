@@ -8,6 +8,7 @@ __local_apply_bobble__1	EQU	$83
 
 ; @zp-link-meta-begin
 ; def apply_bobble params=__zpabi_apply_bobble__slot,__zpabi_apply_bobble__bobble_idx locals=__local_apply_bobble__0,__local_apply_bobble__1 indirect=false in_cycle=false
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 apply_bobble:

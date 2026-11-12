@@ -17,6 +17,11 @@ MPU until the boot stub's BRK fires.
 - `harness.py` — top-level test harness: take C source, run the full
   compiler pipeline, assemble with a runtime stub, and execute on a
   py65 6502 simulator until BRK.
+- `linked.py` — `build_linked_sim`: runs a program `compile.py --link`
+  wrote, which only exists as text, by assembling it with dasm (the
+  runtime's helper addresses prepended as `EQU`s) and loading the
+  binary and symbols into the same simulator. `DASM` is None when
+  dasm isn't on the path; tests that need it skip.
 - `runtime.py` — runtime stub: zero-page reservations, boot stub,
   reset vector, and Python-implemented hooks for the 6502 helpers
   (`mul*` / `divmod*` / `asl*` / `asr*` / `lsr*`, plus FP slots). Each

@@ -19,6 +19,7 @@ from passes.zp_link_metadata import (
     ExternMeta,
     FunctionMeta,
     LinkMetadata,
+    ZpObjectMeta,
     build_metadata,
     format_metadata,
     parse_metadata,
@@ -147,6 +148,23 @@ class TestRoundTrip(unittest.TestCase):
         text = "\n".join(format_metadata(meta))
         parsed = parse_metadata(text)
         self.assertEqual(parsed, meta)
+
+    def test_zero_page_objects_and_runtime_round_trip(self) -> None:
+        meta = LinkMetadata(
+            zp_objects=[
+                ZpObjectMeta(name="ptr", size=2, at=None, defined=True,
+                             init=["<buf", ">(buf+2)"]),
+                ZpObjectMeta(name="io", size=1, at=0x90, defined=False),
+            ],
+            hargs_size=12,
+        )
+        lines = format_metadata(meta)
+        self.assertIn(
+            "; zp ptr size=2 at=auto def=true init=<buf,>(buf+2)", lines,
+        )
+        self.assertIn("; zp io size=1 at=$90 def=false init=", lines)
+        self.assertIn("; runtime hargs_size=12", lines)
+        self.assertEqual(parse_metadata("\n".join(lines)), meta)
 
     def test_empty_input(self) -> None:
         # No metadata block → empty LinkMetadata.

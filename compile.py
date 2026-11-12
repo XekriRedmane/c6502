@@ -54,7 +54,7 @@ from passes.dead_pha_pla import apply_dead_pha_pla
 from passes.asm_dead_store import apply_asm_dead_store
 from passes.inc_peephole import apply_inc_peephole
 from passes.zp_globals import (
-    place_zp_globals, plan_zero_page, zero_page_in_effect,
+    link_records, place_zp_globals, plan_zero_page, zero_page_in_effect,
 )
 from passes.carry_inc import apply_carry_inc_peephole
 from passes.dec_peephole import apply_dec_peephole
@@ -315,7 +315,7 @@ def _run_stage(
             _resolved(source, optimize=optimize),
         )
         tac = translate_to_tac(prog, symbols, types)
-        zp = plan_zero_page(tac, symbols, types)
+        zp = plan_zero_page(tac, symbols, types, promote=optimize)
         with zero_page_in_effect(zp):
             return _codegen(prog, symbols, types, optimize, zp, tac)
     raise AssertionError(f"unknown stage: {stage!r}")
@@ -327,13 +327,15 @@ class OptimizedAsm:
     long branches expanded and the zero-page globals placed, ready
     for `lower_to_asm2`. `slot_symbols` maps every zero-page slot
     symbol (the zp_abi parameter slots and the body-local slots) to
-    its address."""
+    its address. `zp_records` describes the zero-page objects for the
+    link metadata (`zp_globals.link_records`)."""
     asm: object
     tac: object
     abi: dict
     local_pools: dict
     slot_names_by_fn: dict
     slot_symbols: dict[str, int]
+    zp_records: list
 
 
 def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
@@ -540,11 +542,13 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm4 = expand_long_branches(asm3)
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
+    zp_records = link_records(asm4, zp)
     asm4 = place_zp_globals(asm4, zp)
     ir_check.check_asm(asm4, after="the --optimize pipeline")
     return OptimizedAsm(
         asm=asm4, tac=tac, abi=abi, local_pools=local_pools,
         slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
+        zp_records=zp_records,
     )
 
 
@@ -598,6 +602,8 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
             opt.tac, abi, local_pools,
             slot_names_by_fn=opt.slot_names_by_fn,
         )
+        link_meta.zp_objects = opt.zp_records
+        link_meta.hargs_size = zp.layout.hargs_size
         return emit_program(
             asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},
             link_metadata_lines=format_metadata(link_meta),

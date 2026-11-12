@@ -15,6 +15,9 @@ last_z_page	EQU	$BF
 ; def find_index_of_page_table params=__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 locals=__local_find_index_of_page_table__0,__local_find_index_of_page_table__count indirect=false in_cycle=false
 ; def main params= locals=__local_main__0,__local_main__1,__local_main__2,__local_main__3 indirect=false in_cycle=false
 ; call main -> find_index_of_page_table
+; zp num_page_table_entries size=1 at=$BD def=true init=$00
+; zp last_z_page size=1 at=$BF def=true init=$00
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 find_index_of_page_table:

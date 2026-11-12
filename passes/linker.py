@@ -41,6 +41,19 @@ restriction by extending the metadata block to record
 ineligible functions' numeric ZP usage and treating those
 addresses as immutably blocked.
 
+Zero-page objects (`passes/zp_globals.py`). Each TU lists its
+zero-page objects in the metadata, and refers to them only by name,
+so the linker re-places them for the whole program
+(`_place_zp_objects`): an object declared with an address keeps it,
+and the rest go in the lowest free bytes below `$80`, the declared
+ones first and then the ones `--optimize` promoted (`weight=` in the
+metadata), densest first. A promoted object that doesn't fit goes
+back in the data segment (`_data_lines`), unless some unit uses it
+as an `(zp),Y` pointer, which only works in zero page. Their bytes
+are kept out of the slot allocators, and each TU's `__zp_init` is
+replaced with one that stores every object's initial bytes
+(`_init_lines`).
+
 `link_files` is the top-level entry point.
 """
 from __future__ import annotations
@@ -50,10 +63,12 @@ from pathlib import Path
 import tac_ast
 from passes.abi_selection import ParamLayout, SoftStackLayout, ZpLayout
 from passes.runtime_layout import RUNTIME_NAMES
+from passes.zp_globals import AUTO_HI, INIT_FUNCTION
 from passes.zp_link_metadata import (
     ExternMeta,
     FunctionMeta,
     LinkMetadata,
+    ZpObjectMeta,
     format_metadata,
     parse_metadata,
 )
@@ -127,7 +142,8 @@ def _split_asm(text: str) -> tuple[list[str], list[str], list[str]]:
 
 def _layout_text(layout: dict[str, int]) -> str:
     return ", ".join(
-        f"{name}=${addr:02X}" for name, addr in sorted(layout.items())
+        f"{name}={addr}" if name == "HARGS size" else f"{name}=${addr:02X}"
+        for name, addr in sorted(layout.items())
     ) or "(none)"
 
 
@@ -337,21 +353,30 @@ def link_files(
     for path in input_paths:
         text = Path(path).read_text()
         equ, _, body = _split_asm(text)
+        meta = parse_metadata(text)
+        zp_names = {z.name for z in meta.zp_objects}
         # The other EQUs bind user names. One at $100 or above is a
         # function or object with `__attribute__((address(...)))`,
         # which every unit binds to the same address, so it's kept.
-        # One in zero page is a zero-page global, which each unit
-        # places without knowing about the others'.
-        user = []
+        # A zero-page object is listed in the metadata, and is placed
+        # again below.
         unit_layout: dict[str, int] = {}
+        if meta.hargs_size is not None:
+            unit_layout["HARGS size"] = meta.hargs_size
         for line in equ:
             if line.startswith(("__zpabi_", "__local_")):
                 continue
             name, addr = _parse_equ(line)
+            if name in zp_names:
+                continue
             if name in RUNTIME_NAMES:
                 unit_layout[name] = addr
             elif addr < 0x100:
-                user.append(name)
+                raise LinkError(
+                    f"{path}: {name!r} is bound to ${addr:02X} in zero "
+                    f"page but isn't in the unit's link metadata; "
+                    f"compile it again with this compiler"
+                )
             elif fixed.setdefault(name, addr) != addr:
                 raise LinkError(
                     f"{path}: {name!r} is at ${addr:04X} here and at "
@@ -367,21 +392,37 @@ def link_files(
                 f"{_layout_text(unit_layout)} differs from an earlier "
                 f"unit's {_layout_text(layout)}"
             )
-        if user:
-            raise LinkError(
-                f"{path}: zero-page globals ({', '.join(user)}) aren't "
-                f"supported when linking several translation units yet"
-            )
-        metas.append(parse_metadata(text))
-        bodies.append(body)
+        metas.append(meta)
+        bodies.append(_without_init(body))
     # Merge + validate.
     merged = _merge(metas)
     _validate_eligibility(merged)
+    # Place the zero-page objects before the slots, which keep off
+    # their bytes.
+    objects = _merge_zp_objects(metas)
+    zp_addrs, demoted = _place_zp_objects(
+        objects, layout or {}, bodies,
+    )
+    zp_bytes = frozenset(
+        b for name, addr in zp_addrs.items()
+        for b in range(addr, addr + objects[name][0].size)
+    )
+    merged.zp_objects = [
+        ZpObjectMeta(
+            name=name, size=objects[name][0].size, at=addr,
+            defined=any(r.defined for r in objects[name]),
+            init=next((r.init for r in objects[name] if r.defined), []),
+        )
+        for name, addr in sorted(zp_addrs.items(), key=lambda kv: kv[1])
+    ]
+    merged.hargs_size = (layout or {}).get("HARGS size")
     # Synthesize the program shape the allocators expect.
     prog, abi, local_bytes = _synthesize(merged)
     # Run the global allocators.
-    abi, zp_sym_to_addr = allocate_zp_slots(prog, abi)
-    local_pools = allocate_function_locals(prog, abi, local_bytes)
+    abi, zp_sym_to_addr = allocate_zp_slots(prog, abi, reserved=zp_bytes)
+    local_pools = allocate_function_locals(
+        prog, abi, local_bytes, reserved=zp_bytes,
+    )
     # Slot names round-trip through the per-TU metadata block;
     # reuse them verbatim so the body text doesn't need rewriting.
     slot_names_by_fn = {d.name: list(d.locals) for d in merged.defs}
@@ -389,7 +430,8 @@ def link_files(
         local_pools, slot_names_by_fn=slot_names_by_fn,
     )
     all_symbols = {
-        **(layout or {}), **zp_sym_to_addr, **local_sym_to_addr, **fixed,
+        **{k: v for k, v in (layout or {}).items() if k in RUNTIME_NAMES},
+        **zp_sym_to_addr, **local_sym_to_addr, **fixed, **zp_addrs,
     }
     _bind_extern_params(
         merged, [e for m in metas for e in m.externs], all_symbols,
@@ -404,7 +446,187 @@ def link_files(
         if i > 0:
             out_lines.append("")
         out_lines.extend(body)
+    init = _init_lines(merged.zp_objects)
+    if init:
+        out_lines.append("")
+        out_lines.extend(init)
+    for name in demoted:
+        record = next(r for r in objects[name] if r.defined)
+        out_lines.append("")
+        out_lines.extend(_data_lines(record))
     Path(output_path).write_text("\n".join(out_lines) + "\n")
+
+
+def _merge_zp_objects(
+    metas: list[LinkMetadata],
+) -> dict[str, list[ZpObjectMeta]]:
+    """Every unit's records of each zero-page object, by name, in the
+    order the units list them. Raises `LinkError` when the units
+    disagree on an object's size or address, two define it, or none
+    defines one that has no address (an `extern` without an address
+    names an object some unit has to define and place)."""
+    objects: dict[str, list[ZpObjectMeta]] = {}
+    for meta in metas:
+        for z in meta.zp_objects:
+            objects.setdefault(z.name, []).append(z)
+    for name, records in objects.items():
+        if len({r.size for r in records}) > 1:
+            raise LinkError(
+                f"zero-page object `{name}` has different sizes in "
+                f"different units"
+            )
+        if len({r.at for r in records if r.at is not None}) > 1:
+            raise LinkError(
+                f"zero-page object `{name}` is declared at different "
+                f"addresses in different units"
+            )
+        defs = sum(r.defined for r in records)
+        if defs > 1:
+            raise LinkError(
+                f"zero-page object `{name}` is defined in {defs} units"
+            )
+        if defs == 0 and all(r.at is None for r in records):
+            raise LinkError(
+                f"zero-page object `{name}` is declared `extern` but no "
+                f"unit defines it"
+            )
+    return objects
+
+
+def _place_zp_objects(
+    objects: dict[str, list[ZpObjectMeta]],
+    layout: dict[str, int],
+    bodies: list[list[str]],
+) -> tuple[dict[str, int], list[str]]:
+    """Addresses for the zero-page objects: a declared address where
+    any unit gives one, and otherwise the lowest free bytes below
+    `$80`, in the order the units list the objects, around the fixed
+    ones and the runtime's block (`layout`'s SSP, FP, HARGS, and
+    DPTR, and its "HARGS size"). The objects every unit that lists
+    them says `--optimize` promoted go last, densest first, and one
+    that doesn't fit is returned in the second list, to go back in the
+    data segment, unless a unit in `bodies` uses it as an `(name),Y`
+    pointer. Raises `LinkError` on an overlap or a full range."""
+    from passes.runtime_layout import CLASSIC, RuntimeLayout
+    runtime = RuntimeLayout(
+        ssp=layout.get("SSP", CLASSIC.ssp),
+        fp=layout.get("FP", CLASSIC.fp),
+        hargs=layout.get("HARGS", CLASSIC.hargs),
+        hargs_size=layout.get("HARGS size", CLASSIC.hargs_size),
+        dptr=layout.get("DPTR", CLASSIC.dptr),
+    ).bytes()
+    used: dict[int, str] = {}
+    addrs: dict[str, int] = {}
+
+    def claim(name: str, addr: int, size: int) -> None:
+        for b in range(addr, addr + size):
+            if b in used:
+                raise LinkError(
+                    f"zero-page object `{name}` at ${addr:02X} overlaps "
+                    f"`{used[b]}` at byte ${b:02X}"
+                )
+        for b in range(addr, addr + size):
+            used[b] = name
+        addrs[name] = addr
+
+    auto = []
+    promoted = []
+    for name, records in objects.items():
+        size = records[0].size
+        at = next((r.at for r in records if r.at is not None), None)
+        if at is None:
+            if all(r.weight is not None for r in records):
+                weight = max(r.weight for r in records)
+                promoted.append((-weight / size, name, size))
+            else:
+                auto.append((name, size))
+            continue
+        if any(b in runtime for b in range(at, at + size)):
+            raise LinkError(
+                f"zero-page object `{name}` at ${at:02X} overlaps the "
+                f"runtime's zero-page block"
+            )
+        claim(name, at, size)
+    def free(size: int) -> int | None:
+        return next(
+            (a for a in range(0, AUTO_HI - size + 1)
+             if all(b not in used and b not in runtime
+                    for b in range(a, a + size))),
+            None,
+        )
+
+    for name, size in auto:
+        addr = free(size)
+        if addr is None:
+            raise LinkError(
+                f"no room for zero-page object `{name}` ({size} bytes) "
+                f"below ${AUTO_HI:02X} in the linked program"
+            )
+        claim(name, addr, size)
+    demoted = []
+    for _, name, size in sorted(promoted):
+        addr = free(size)
+        if addr is not None:
+            claim(name, addr, size)
+            continue
+        if any(f"({name})," in line for body in bodies for line in body):
+            raise LinkError(
+                f"no room for `{name}` ({size} bytes) below "
+                f"${AUTO_HI:02X} in the linked program, and its unit "
+                f"uses it as an `(zp),Y` pointer, which has to be in zero "
+                f"page"
+            )
+        demoted.append(name)
+    return addrs, demoted
+
+
+def _data_lines(record: ZpObjectMeta) -> list[str]:
+    """A promoted object that didn't fit, back in the data segment
+    with its initial bytes."""
+    from asm_emit import _instr_line
+    return [f"{record.name}:", _instr_line("DC.B", ", ".join(record.init))]
+
+
+def _without_init(body: list[str]) -> list[str]:
+    """`body` without its `__zp_init` function, which `_init_lines`
+    replaces with one for the whole program. The function runs from
+    its label to the next top-level label (a line with no leading
+    space or dot that ends in `:`)."""
+    try:
+        start = body.index(f"{INIT_FUNCTION}:")
+    except ValueError:
+        return body
+    end = start + 1
+    while end < len(body) and not (
+        body[end].endswith(":") and body[end][:1] not in (" ", "\t", ".")
+    ):
+        end += 1
+    out = body[:start] + body[end:]
+    while out and out[-1] == "":
+        out.pop()
+    return out
+
+
+def _init_lines(objects: list[ZpObjectMeta]) -> list[str]:
+    """`__zp_init` for the linked program: stores of every defined
+    zero-page object's initial bytes, each value loaded once, zero
+    first, the way `zp_globals.place_zp_globals` writes it for one
+    unit. Empty when there's nothing to store."""
+    from asm_emit import _instr_line
+    stores: dict[str, list[str]] = {}
+    for z in objects:
+        for k, value in enumerate(z.init):
+            stores.setdefault(value, []).append(
+                z.name if k == 0 else f"{z.name}+{k}"
+            )
+    if not stores:
+        return []
+    lines = [f"{INIT_FUNCTION}:", _instr_line("SUBROUTINE"), ""]
+    for value in sorted(stores, key=lambda v: v != "$00"):
+        lines.append(_instr_line("LDA", f"#{value}"))
+        lines.extend(_instr_line("STA", d) for d in stores[value])
+    lines.append(_instr_line("RTS"))
+    return lines
 
 
 def _bind_extern_params(

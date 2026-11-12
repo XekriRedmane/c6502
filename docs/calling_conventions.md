@@ -560,7 +560,9 @@ same size.
 
 `--link` handles only programs whose functions all use zp_abi. It
 rejects a recursive function and one that calls through a pointer,
-with an error that names them.
+with an error that names them. It also places the program's
+zero-page globals, which keeps their bytes out of the parameter and
+local bytes it assigns ([attributes.md](attributes.md)).
 
 ## Costs
 

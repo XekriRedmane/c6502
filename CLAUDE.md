@@ -92,7 +92,8 @@ Two key runtime conventions:
   below; user guide in
   [docs/calling_conventions.md](docs/calling_conventions.md).
   The bytes left below `$80` are for user globals marked
-  `__attribute__((zeropage))`; `zeropage(addr)` may also pin one in
+  `__attribute__((zeropage))`, and under `--optimize` for busy scalar
+  globals the compiler promotes there itself; `zeropage(addr)` may also pin one in
   `$80-$FF`, which removes those bytes from the compiler's pools. Their initial values are stored by a generated `__zp_init`,
   which the boot code calls before `main` (see `passes/zp_globals.py`).
   `__attribute__((address(addr)))` binds a function (a ROM routine)

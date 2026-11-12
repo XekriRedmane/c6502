@@ -24,6 +24,11 @@ The block carries the program-level information `compile.py
     and whether the function appeared on a cycle in the TU's
     direct call graph (the linker re-detects cycles globally
     but a TU-level cycle is a sufficient disqualifier).
+  * The TU's **zero-page objects** (`passes/zp_globals.py`): each
+    one's size, its fixed address if it was declared with one,
+    whether this TU defines it, and its initial bytes, so the
+    linker can place them for the whole program and initialize
+    them.
 
 The block is written as a sequence of comment lines bracketed
 by `@zp-link-meta-begin` / `@zp-link-meta-end`. Dasm ignores
@@ -38,6 +43,8 @@ Format
 ; def <fn> param_bytes=<N> local_bytes=<M> indirect=<bool> in_cycle=<bool>
 ; ext <fn> param_bytes=<N>
 ; call <caller> -> <callee>
+; zp <name> size=<N> at=<$XX|auto> def=<bool> init=<byte,...> [weight=<N>]
+; runtime hargs_size=<N>
 ; @zp-link-meta-end
 ```
 
@@ -47,7 +54,13 @@ declared `__attribute__((zp_abi))` but without a body in this
 TU). `call` lines record every direct call edge from a defined
 function to any other named function — including calls to
 non-zp_abi externs (the linker uses these to detect when a TU's
-function calls something that can't be globally bounded).
+function calls something that can't be globally bounded). `zp`
+lines describe zero-page objects; each `init` byte is written as the
+operand of an `LDA #` (`$05`, `<buf`, `>(buf+2)`), and `weight`
+marks an object `--optimize` promoted, which the linker may put back
+in the data segment. The `runtime`
+line gives the size of the runtime's HARGS block, which the EQU
+lines don't show (`passes/runtime_layout.py`).
 """
 from __future__ import annotations
 
@@ -108,6 +121,22 @@ class ExternMeta:
 
 
 @dataclass
+class ZpObjectMeta:
+    """A zero-page object of the TU. `at` is its address when it was
+    declared with one (`zeropage(addr)`), else None, and the linker
+    places it. `defined` is whether this TU defines it, and `init` is
+    its initial bytes then, each written as an `LDA #` operand.
+    `weight` is set when `--optimize` promoted it into zero page
+    (`zp_globals.access_weights`), and None when the program asked."""
+    name: str
+    size: int
+    at: int | None = None
+    defined: bool = False
+    init: list[str] = field(default_factory=list)
+    weight: int | None = None
+
+
+@dataclass
 class LinkMetadata:
     """Aggregate per-TU metadata. The linker reads one of these
     per `.asm` input file and merges them into a program-level
@@ -115,6 +144,8 @@ class LinkMetadata:
     defs: list[FunctionMeta] = field(default_factory=list)
     externs: list[ExternMeta] = field(default_factory=list)
     calls: list[tuple[str, str]] = field(default_factory=list)
+    zp_objects: list[ZpObjectMeta] = field(default_factory=list)
+    hargs_size: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +331,16 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         lines.append(" ".join(parts))
     for caller, callee in meta.calls:
         lines.append(f"; call {caller} -> {callee}")
+    for z in meta.zp_objects:
+        at = "auto" if z.at is None else f"${z.at:02X}"
+        weight = "" if z.weight is None else f" weight={z.weight}"
+        lines.append(
+            f"; zp {z.name} size={z.size} at={at} "
+            f"def={'true' if z.defined else 'false'} "
+            f"init={','.join(z.init)}{weight}"
+        )
+    if meta.hargs_size is not None:
+        lines.append(f"; runtime hargs_size={meta.hargs_size}")
     lines.append(_END)
     return lines
 
@@ -373,6 +414,22 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             params=_split_csv(kvs["params"]),
             param_regs=_split_csv(kvs.get("param_regs", "")),
         ))
+    elif kind == "zp":
+        if len(parts) < 3:
+            raise ValueError(f"malformed zp record: {record!r}")
+        kvs = dict(_split_kv(p) for p in parts[2:])
+        at = kvs["at"]
+        out.zp_objects.append(ZpObjectMeta(
+            name=parts[1],
+            size=int(kvs["size"]),
+            at=None if at == "auto" else int(at.lstrip("$"), 16),
+            defined=kvs["def"] == "true",
+            init=_split_csv(kvs.get("init", "")),
+            weight=int(kvs["weight"]) if "weight" in kvs else None,
+        ))
+    elif kind == "runtime":
+        kvs = dict(_split_kv(p) for p in parts[1:])
+        out.hargs_size = int(kvs["hargs_size"])
     elif kind == "call":
         # Format: `call <caller> -> <callee>`
         if len(parts) != 4 or parts[2] != "->":

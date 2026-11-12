@@ -5,8 +5,11 @@ Covers parsing of both forms in both positions, the static-storage
 rule, placement (fixed and automatic, overlaps, ranges, `extern`),
 the generated code (EQU binding, no storage, `__zp_init`, `(zp),Y`
 on a zero-page pointer, pinned bytes kept out of the compiler's
-pools), and simulator runs of initialization and aliasing in both
-pipelines.
+pools), simulator runs of initialization and aliasing in both
+pipelines, promotion of busy globals under `--optimize`, and
+linking units that share zero-page objects (`compile.py --link`),
+including putting back a promoted object that doesn't fit, run
+through dasm when it's installed.
 """
 from __future__ import annotations
 
@@ -116,8 +119,6 @@ class TestPlacement(unittest.TestCase):
             "overlap": "unsigned int a __attribute__((zeropage(0x40)));\n"
                        "unsigned char b __attribute__((zeropage(0x41)));\n",
             "past $FF": "unsigned int a __attribute__((zeropage(0xFF)));\n",
-            "extern without address":
-                "extern unsigned char a __attribute__((zeropage));\n",
             "full": "unsigned char a[91] __attribute__((zeropage));\n",
             "two addresses":
                 "unsigned char a __attribute__((zeropage(0x40)));\n"
@@ -127,6 +128,17 @@ class TestPlacement(unittest.TestCase):
             with self.subTest(what=what):
                 with self.assertRaises(TypeCheckError):
                     _codegen(decls + "int main(void) { return a; }\n")
+
+    def test_extern_without_address_is_left_to_the_linker(self) -> None:
+        # Another unit defines it; this one neither places nor
+        # initializes it, and lists it for the linker.
+        asm = _codegen(
+            "extern unsigned char a __attribute__((zeropage));\n"
+            "int main(void) { return a; }\n"
+        )
+        self.assertNotIn("a", _equ(asm))
+        self.assertNotIn("__zp_init", asm)
+        self.assertIn("; zp a size=1 at=auto def=false init=", asm)
 
     def test_errors_are_zp_global_errors(self) -> None:
         with self.assertRaises(ZpGlobalError):
@@ -193,6 +205,65 @@ class TestCodegen(unittest.TestCase):
                 self.assertFalse(
                     0x80 <= addr < 0x90, msg=f"{name} at ${addr:02X}",
                 )
+
+
+# A pointer and a counter used in a loop, a constant, an array, and a
+# variable read once.
+_PROMOTE = (
+    "#include <stdint.h>\n"
+    "uint8_t buf[8] = {1, 2, 3, 4, 5, 6, 7, 8};\n"
+    "uint8_t *p = buf;\n"
+    "uint16_t total;\n"
+    "const uint8_t step = 1;\n"
+    "uint8_t once = 9;\n"
+    "int main(void) {\n"
+    "    for (uint8_t i = 0; i < 8; i += step) total += p[i] + buf[i];\n"
+    "    return total + once;\n"
+    "}\n"
+)
+
+
+@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+class TestPromotion(unittest.TestCase):
+    """`--optimize` moves busy scalar globals into zero page."""
+
+    def test_busy_scalars_promoted(self) -> None:
+        asm = _codegen(_PROMOTE)
+        equ = _equ(asm)
+        self.assertIn("total", equ)
+        self.assertIn("p", equ)
+        # The pointer is the `(zp),Y` base directly.
+        self.assertIn("(p),Y", asm)
+        self.assertNotIn("\np:", asm)
+        self.assertRegex(asm, r"; zp total size=2 at=auto def=true "
+                              r"init=\$00,\$00 weight=\d+")
+        init = asm[asm.index("__zp_init:"):]
+        self.assertIn("STA   total+1", init)
+        self.assertIn("LDA   #<buf", init)
+
+    def test_others_left_in_place(self) -> None:
+        equ = _equ(_codegen(_PROMOTE))
+        for name in ("step", "buf", "once"):
+            self.assertNotIn(name, equ)
+
+    def test_declared_objects_go_first(self) -> None:
+        src = ("#include <stdint.h>\n"
+               "uint8_t fill[89] __attribute__((zeropage));\n" + _PROMOTE)
+        equ = _equ(_codegen(src))
+        self.assertEqual(equ["fill"], 0x26)
+        # One byte is left, and both candidates are 2 bytes.
+        self.assertNotIn("total", equ)
+        self.assertNotIn("p", equ)
+
+    def test_not_without_optimize(self) -> None:
+        equ = _equ(_codegen(_PROMOTE, optimize=False))
+        self.assertNotIn("total", equ)
+
+    def test_runs(self) -> None:
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(_PROMOTE, optimize=optimize).run()
+                self.assertEqual(got.return_int(), 2 * 36 + 9)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
@@ -283,30 +354,186 @@ class TestSim(unittest.TestCase):
         self._both(src, 1)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
-class TestLinkRejects(unittest.TestCase):
+_HEADER = (
+    "#include <stdint.h>\n"
+    "extern uint8_t *src __attribute__((zeropage));\n"
+    "extern uint8_t total __attribute__((zeropage));\n"
+    "extern uint16_t big __attribute__((zeropage(0x90)));\n"
+    "uint8_t sum(uint8_t n);\n"
+)
+# Defines `src`, `total`, and `big`, and calls `sum`.
+_UNIT_A = _HEADER + (
+    "uint8_t *src __attribute__((zeropage));\n"
+    "uint8_t total __attribute__((zeropage)) = 5;\n"
+    "uint16_t big __attribute__((zeropage(0x90))) = 1000;\n"
+    "uint8_t buf[4] = {1, 2, 3, 4};\n"
+    "int main(void) { src = buf; return sum(4) + big; }\n"
+)
+# Defines `count`, which it places at $26 on its own, where unit A
+# puts `src`; and reads and writes A's objects.
+_UNIT_B = _HEADER + (
+    "uint8_t count __attribute__((zeropage)) = 2;\n"
+    "uint8_t sum(uint8_t n) {\n"
+    "    for (uint8_t i = 0; i < n; i++) total += src[i] * count;\n"
+    "    big += total;\n"
+    "    return total;\n"
+    "}\n"
+)
 
-    def test_link_with_zp_global_fails(self) -> None:
+
+@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+class TestLink(unittest.TestCase):
+    """`compile.py --link` places the zero-page objects of every unit
+    for the whole program and merges their `__zp_init`s."""
+
+    def _link(self, *sources: str) -> tuple[int, str, str]:
+        """Compiles each source with `--optimize` and links them.
+        Returns the exit code, the linked text, and stderr."""
         from compile import main as compile_main
-        src = (
-            "unsigned char g __attribute__((zeropage));\n"
-            "unsigned char f(void) { return g; }\n"
-        )
         with tempfile.TemporaryDirectory() as tmp:
-            a = Path(tmp) / "a.asm"
+            paths = []
+            for k, src in enumerate(sources):
+                path = Path(tmp) / f"u{k}.asm"
+                with patch("sys.stdin", io.StringIO(src)):
+                    self.assertEqual(compile_main([
+                        "compile.py", "-", "--codegen", "--optimize",
+                        "-o", str(path),
+                    ]), 0)
+                paths.append(str(path))
             out = Path(tmp) / "out.asm"
-            with patch("sys.stdin", io.StringIO(src)):
-                self.assertEqual(compile_main([
-                    "compile.py", "-", "--codegen", "--optimize",
-                    "-o", str(a),
-                ]), 0)
             err = io.StringIO()
             with patch("sys.stderr", err):
-                rc = compile_main([
-                    "compile.py", "--link", str(a), "-o", str(out),
-                ])
-            self.assertEqual(rc, 1)
-            self.assertIn("zero-page globals", err.getvalue())
+                rc = compile_main(["compile.py", "--link", *paths,
+                                   "-o", str(out)])
+            text = out.read_text() if rc == 0 else ""
+        return rc, text, err.getvalue()
+
+    def test_objects_placed_for_the_whole_program(self) -> None:
+        rc, text, err = self._link(_UNIT_A, _UNIT_B)
+        self.assertEqual(rc, 0, err)
+        equ = _equ(text)
+        self.assertEqual(
+            {n: equ[n] for n in ("src", "total", "count", "big")},
+            {"src": 0x26, "total": 0x28, "count": 0x29, "big": 0x90},
+        )
+        # The slots keep off `big`'s bytes.
+        slots = [a for n, a in equ.items() if n.startswith("__")]
+        self.assertFalse({0x90, 0x91} & set(slots))
+
+    def test_one_init_routine(self) -> None:
+        rc, text, err = self._link(_UNIT_A, _UNIT_B)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(text.count("__zp_init:"), 1)
+        init = text[text.index("__zp_init:"):]
+        for store in ("STA   src+1", "STA   total", "STA   count",
+                      "STA   big+1"):
+            self.assertIn(store, init)
+
+    @unittest.skipUnless(shutil.which("dasm"), "dasm not installed")
+    def test_linked_program_runs(self) -> None:
+        from sim.linked import build_linked_sim
+        rc, text, err = self._link(_UNIT_A, _UNIT_B)
+        self.assertEqual(rc, 0, err)
+        # total = 5 + (1+2+3+4) * 2 = 25, big = 1000 + 25.
+        self.assertEqual(build_linked_sim(text).run().return_int(),
+                         25 + 1025)
+
+    # Unit A leaves 4 bytes below $80; unit B promotes three busy
+    # 2-byte counters, so one goes back in the data segment.
+    _FULL = (
+        "#include <stdint.h>\n"
+        "uint8_t fill[86] __attribute__((zeropage));\n"
+        "uint16_t count(void);\n"
+        "int main(void) { fill[85] = 3; return count() + fill[85]; }\n"
+    )
+    _COUNTERS = (
+        "#include <stdint.h>\n"
+        "uint16_t a = 1, b = 2, c = 3;\n"
+        "uint16_t count(void) {\n"
+        "    for (uint8_t i = 0; i < 10; i++) { a += 1; b += a; c += b; }\n"
+        "    return a + b + c;\n"
+        "}\n"
+    )
+
+    def test_promoted_object_that_doesnt_fit_goes_back(self) -> None:
+        rc, text, err = self._link(self._FULL, self._COUNTERS)
+        self.assertEqual(rc, 0, err)
+        equ = _equ(text)
+        placed = [n for n in ("a", "b", "c") if n in equ]
+        self.assertEqual(len(placed), 2)
+        (back,) = {"a", "b", "c"} - set(placed)
+        self.assertIn(f"\n{back}:\n   DC.B", text)
+        self.assertNotIn(f"STA   {back}\n", text[text.index("__zp_init:"):])
+
+    @unittest.skipUnless(shutil.which("dasm"), "dasm not installed")
+    def test_promoted_object_that_doesnt_fit_runs(self) -> None:
+        from sim.linked import build_linked_sim
+        rc, text, err = self._link(self._FULL, self._COUNTERS)
+        self.assertEqual(rc, 0, err)
+        a, b, c = 1, 2, 3
+        for _ in range(10):
+            a += 1
+            b += a
+            c += b
+        self.assertEqual(build_linked_sim(text).run().return_int(),
+                         (a + b + c + 3) & 0xFFFF)
+
+    def test_promoted_pointer_has_to_fit(self) -> None:
+        # Both pointers are `(zp),Y` bases, and only one fits.
+        full = ("unsigned char fill[88] __attribute__((zeropage));\n"
+                "unsigned char sum(void);\n"
+                "int main(void) { return sum(); }\n")
+        pointers = (
+            "unsigned char buf[4] = {1, 2, 3, 4};\n"
+            "unsigned char *p = buf, *q = buf;\n"
+            "unsigned char sum(void) {\n"
+            "    unsigned char s = 0;\n"
+            "    for (unsigned char i = 0; i < 4; i++) s += p[i] + q[i];\n"
+            "    return s;\n"
+            "}\n"
+        )
+        rc, _, err = self._link(full, pointers)
+        self.assertEqual(rc, 1)
+        self.assertIn("(zp),Y", err)
+
+    def test_errors(self) -> None:
+        main = "int main(void) { return 0; }\n"
+        cases = {
+            "declared but not defined": (
+                "extern unsigned char g __attribute__((zeropage));\n"
+                "unsigned char f(void) { return g; }\n" + main,
+                "no unit defines it",
+            ),
+            "defined twice": (
+                "unsigned char g __attribute__((zeropage));\n" + main,
+                "defined in 2 units",
+                "unsigned char g __attribute__((zeropage));\n"
+                "unsigned char f(void) { return g; }\n",
+            ),
+            "sizes differ": (
+                "unsigned char g __attribute__((zeropage));\n" + main,
+                "different sizes",
+                "extern unsigned int g __attribute__((zeropage));\n"
+                "unsigned int f(void) { return g; }\n",
+            ),
+            "addresses differ": (
+                "unsigned char g __attribute__((zeropage(0x40)));\n" + main,
+                "different addresses",
+                "extern unsigned char g __attribute__((zeropage(0x41)));\n"
+                "unsigned char f(void) { return g; }\n",
+            ),
+            "fixed objects overlap": (
+                "unsigned int g __attribute__((zeropage(0x40)));\n" + main,
+                "overlaps",
+                "unsigned char h __attribute__((zeropage(0x41)));\n"
+                "unsigned char f(void) { return h; }\n",
+            ),
+        }
+        for what, (first, message, *rest) in cases.items():
+            with self.subTest(what=what):
+                rc, _, err = self._link(first, *rest)
+                self.assertEqual(rc, 1)
+                self.assertIn(message, err)
 
 
 if __name__ == "__main__":

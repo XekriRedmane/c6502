@@ -91,6 +91,7 @@ __local_smc_body_draw__2	EQU	$9F
 ; call companion_update -> smc_body_draw
 ; call entity_proximity -> find_active_entity
 ; call smc_body_draw -> draw_sprite
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 compute_screen_x:

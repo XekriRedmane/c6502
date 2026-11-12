@@ -38,8 +38,10 @@ simulator's boot stub does (`sim/runtime.py`). An `extern`
 declaration with a fixed address and no definition in the unit
 names a byte something else owns (another unit, or hand-written
 code), so it's reserved and addressed but not initialized. An
-`extern` declaration without an address has to be defined in the
-unit, since only the definition decides where it goes.
+`extern` declaration without an address and without a definition
+names an object another unit defines. This unit doesn't place it
+(`ZpGlobals.external`); its references stay `Data(name, k)`, and
+`compile.py --link` gives the name its address.
 
 # How references reach zero page
 
@@ -56,9 +58,36 @@ compiler's own slot-symbol map, because several passes treat a slot
 symbol in `$80`-`$FF` as scratch that's dead when the function
 returns, and a global's value isn't.
 
-Linking several translation units (`compile.py --link`) isn't
-supported yet for programs with zero-page globals; the linker
-rejects them (see TODO.md).
+# Linking
+
+Since every reference is by name, the code doesn't depend on where a
+bare `zeropage` object ends up. Under `--optimize` each unit lists its
+zero-page objects in the link metadata (`link_records`): the size, the
+fixed address if it has one, whether the unit defines it, and its
+initial bytes. `compile.py --link` keeps the fixed addresses, places
+the rest for the whole program, keeps every object's bytes out of the
+slot allocators, and replaces each unit's `__zp_init` with one that
+stores every object's initial bytes (`passes/linker.py`).
+
+# Promotion under `--optimize`
+
+With `--optimize`, globals nobody asked for are moved into zero page
+too, when they're used enough to pay for it (`_promotion_order`). A
+candidate is a scalar (an integer, a floating-point number, or a
+pointer) with static storage that the unit defines, that isn't
+`const`, and that isn't already placed. An array or a struct gains
+little, since `LDA arr,Y` has no zero-page form and taking an address
+costs the same anywhere. Each candidate's weight is its references in
+the unoptimized TAC, other than taking its address, with a reference
+inside a loop counting 8 times per loop around it, up to 3 deep
+(`access_weights`). A candidate is promoted when its weight is at
+least 3 per byte, since storing its initial value in `__zp_init`
+costs about 3 cycles a byte that loading the program image didn't;
+the densest go first, into whatever bytes below `$80` are left after
+the declared objects. A promoted object is then a zero-page object
+like a declared one (`ZpGlobals.promoted` keeps the weights), and the
+link metadata marks it so that the linker can put it back in the data
+segment if the linked program has no room for it.
 
 # Fixed addresses outside zero page
 
@@ -111,12 +140,22 @@ class ZpGlobals:
     with `address(addr)` at $100 or above to its address. Those only
     need an `EQU` line, so they're kept out of `addrs`, which the
     zero-page peepholes read. `layout` is where the runtime's
-    zero-page block goes (`passes/runtime_layout.py`)."""
+    zero-page block goes (`passes/runtime_layout.py`). `sizes` gives
+    each object's size, `pinned` names the objects declared with an
+    address, and `external` maps each `extern` object with neither an
+    address nor a definition here to its size; another unit defines
+    it and the linker places it. `promoted` maps each object
+    `--optimize` moved into zero page to its weight (see "Promotion
+    under `--optimize`")."""
     addrs: dict[str, int] = field(default_factory=dict)
     reserved: frozenset[int] = frozenset()
     owned: frozenset[str] = frozenset()
     fixed: dict[str, int] = field(default_factory=dict)
     layout: RuntimeLayout = CLASSIC
+    sizes: dict[str, int] = field(default_factory=dict)
+    pinned: frozenset[str] = frozenset()
+    external: dict[str, int] = field(default_factory=dict)
+    promoted: dict[str, int] = field(default_factory=dict)
 
     def equs(self) -> dict[str, int]:
         """Every name this unit binds with an `EQU` line, the runtime's
@@ -124,16 +163,22 @@ class ZpGlobals:
         return {**self.layout.addrs(), **self.addrs, **self.fixed}
 
 
-def allocate_zp_globals(symbols, types=None, hargs_need=None) -> ZpGlobals:
+def allocate_zp_globals(
+    symbols, types=None, hargs_need=None, weights=None,
+) -> ZpGlobals:
     """Gives every `zeropage` object in `symbols` an address: the one
     it was declared with, or the lowest free run below `$80`. Fixed
     addresses are placed first, in declaration order, then the
     runtime's block (`runtime_layout.choose_layout`, which calls
     `hargs_need` for the number of HARGS bytes the program needs if
-    the block has to move), then the rest. Raises `ZpGlobalError` for
-    an address out of range, an overlap, an `extern` with no address
-    and no definition, or a full range, and `RuntimeLayoutError` when
-    the runtime's block doesn't fit.
+    the block has to move), then the rest. An `extern` with no address
+    and no definition goes in `external` instead. With `weights` (the
+    `access_weights` of the unit), globals that pay for it are then
+    promoted into the bytes left (see "Promotion under `--optimize`").
+    Raises
+    `ZpGlobalError` for an address out of range, an overlap, or a full
+    range, and `RuntimeLayoutError` when the runtime's block doesn't
+    fit.
 
     Also collects the `address(addr)` functions and objects outside
     zero page into `fixed` (see "Fixed addresses outside zero page"
@@ -144,6 +189,8 @@ def allocate_zp_globals(symbols, types=None, hargs_need=None) -> ZpGlobals:
     fixed: list[tuple[str, int, int]] = []
     auto: list[tuple[str, int]] = []
     owned: set[str] = set()
+    sizes: dict[str, int] = {}
+    external: dict[str, int] = {}
     elsewhere = _fixed_elsewhere(symbols, types, sizeof)
     for name, sym in symbols.items():
         attrs = sym.attrs
@@ -157,14 +204,12 @@ def allocate_zp_globals(symbols, types=None, hargs_need=None) -> ZpGlobals:
             owned.add(name)
         if attrs.zp_address is None:
             if not defined:
-                raise ZpGlobalError(
-                    f"`extern` zero-page object {name!r} needs an "
-                    f"address (`zeropage(0x..)`) or a definition in "
-                    f"this translation unit"
-                )
+                external[name] = size
+                continue
             auto.append((name, size))
         else:
             fixed.append((name, attrs.zp_address, size))
+        sizes[name] = size
 
     used: dict[int, str] = {}
     addrs: dict[str, int] = {}
@@ -203,10 +248,108 @@ def allocate_zp_globals(symbols, types=None, hargs_need=None) -> ZpGlobals:
         claim(name, addr, size)
         taken.update(range(addr, addr + size))
         reserved = frozenset(used)
+    promoted: dict[str, int] = {}
+    for name, weight, size in _promotion_order(symbols, types, weights):
+        addr = _first_free(taken, size)
+        if addr is None:
+            continue
+        claim(name, addr, size)
+        taken.update(range(addr, addr + size))
+        owned.add(name)
+        sizes[name] = size
+        promoted[name] = weight
+    reserved = frozenset(used)
     return ZpGlobals(
         addrs=addrs, reserved=reserved, owned=frozenset(owned),
-        fixed=elsewhere, layout=layout,
+        fixed=elsewhere, layout=layout, sizes=sizes,
+        pinned=frozenset(name for name, _, _ in fixed), external=external,
+        promoted=promoted,
     )
+
+
+# A candidate needs this much weight per byte to be promoted.
+_MIN_WEIGHT_PER_BYTE = 3
+
+
+def _promotion_order(symbols, types, weights) -> list[tuple[str, int, int]]:
+    """`(name, weight, size)` of each global worth promoting, densest
+    first (weight per byte, then name). Empty without `weights`."""
+    from c99_ast import (
+        Array, Const, FunType, Structure, Union, Volatile,
+    )
+    from passes.replace_pseudoregisters import sizeof
+    from passes.type_checking import NoInitializer, StaticAttr
+
+    if not weights:
+        return []
+    out = []
+    for name, sym in symbols.items():
+        attrs = sym.attrs
+        if not isinstance(attrs, StaticAttr) or attrs.zeropage:
+            continue
+        if attrs.address is not None:
+            continue
+        if isinstance(attrs.initial_value, NoInitializer):
+            continue
+        t = sym.type
+        while isinstance(t, Volatile):
+            t = t.referenced_type
+        if isinstance(t, (Const, Array, Structure, Union, FunType)):
+            continue
+        size = sizeof(sym.type, types)
+        weight = weights.get(name, 0)
+        if size == 0 or weight < _MIN_WEIGHT_PER_BYTE * size:
+            continue
+        out.append((name, weight, size))
+    out.sort(key=lambda c: (-c[1] / c[2], c[0]))
+    return out
+
+
+def access_weights(tac) -> dict[str, int]:
+    """Each name's weighted reference count in the TAC program `tac`:
+    every mention in an instruction other than `GetAddress`, `Label`,
+    or a jump's target, times 8 per loop around it, up to 3 deep. A
+    loop is the span from a label to a jump back to it."""
+    import dataclasses
+    import tac_ast
+
+    out: dict[str, int] = {}
+
+    def names(node, found: list[str]) -> None:
+        if isinstance(node, str):
+            found.append(node)
+        elif isinstance(node, list):
+            for x in node:
+                names(x, found)
+        elif dataclasses.is_dataclass(node):
+            for f in dataclasses.fields(node):
+                if f.name != "target":
+                    names(getattr(node, f.name), found)
+
+    for fn in tac.top_level:
+        if not isinstance(fn, tac_ast.Function):
+            continue
+        instrs = fn.instructions
+        label_at = {
+            ins.name: k for k, ins in enumerate(instrs)
+            if isinstance(ins, tac_ast.Label)
+        }
+        depth = [0] * (len(instrs) + 1)
+        for k, ins in enumerate(instrs):
+            start = label_at.get(getattr(ins, "target", None))
+            if start is not None and start < k:
+                depth[start] += 1
+                depth[k + 1] -= 1
+        level = 0
+        for k, ins in enumerate(instrs):
+            level += depth[k]
+            if isinstance(ins, (tac_ast.Label, tac_ast.GetAddress)):
+                continue
+            found: list[str] = []
+            names(ins, found)
+            for name in found:
+                out[name] = out.get(name, 0) + 8 ** min(level, 3)
+    return out
 
 
 def _fixed_elsewhere(symbols, types, sizeof) -> dict[str, int]:
@@ -240,16 +383,20 @@ def _fixed_elsewhere(symbols, types, sizeof) -> dict[str, int]:
     return out
 
 
-def plan_zero_page(tac, symbols, types) -> ZpGlobals:
-    """`allocate_zp_globals` for a translation unit whose TAC is
-    `tac`. If the runtime's block has to move, HARGS is sized by
-    translating `tac` to asm and measuring it
-    (`runtime_layout.hargs_need`)."""
+def plan_zero_page(tac, symbols, types, promote: bool = False) -> ZpGlobals:
+    """`allocate_zp_globals` for a translation unit whose unoptimized
+    TAC is `tac`. If the runtime's block has to move, HARGS is sized
+    by translating `tac` to asm and measuring it
+    (`runtime_layout.hargs_need`). `promote` (under `--optimize`)
+    also promotes globals into zero page."""
     def need() -> int:
         from passes.runtime_layout import hargs_need
         from tac_to_asm import translate_program
         return hargs_need(translate_program(tac, symbols, types))
-    return allocate_zp_globals(symbols, types, hargs_need=need)
+    return allocate_zp_globals(
+        symbols, types, hargs_need=need,
+        weights=access_weights(tac) if promote else None,
+    )
 
 
 @contextmanager
@@ -321,6 +468,45 @@ def place_zp_globals(
         name=INIT_FUNCTION, is_global=True, params=[], instructions=body,
     ))
     return asm_ast.Program(top_level=top)
+
+
+def link_records(prog: asm_ast.Program, zp: ZpGlobals) -> list:
+    """The link metadata's `zp` records for the zero-page objects of
+    `prog` (before `place_zp_globals`), in address order then the
+    external ones by name. A defined object's initial bytes are
+    rendered as `asm_emit` writes them (`$05`, `<buf`, `>(buf+2)`), so
+    the linker can store them without knowing the init kinds. An
+    object whose `StaticVariable` an earlier pass dropped has none."""
+    from passes.zp_link_metadata import ZpObjectMeta
+
+    inits = {
+        tl.name: tl.init for tl in prog.top_level
+        if isinstance(tl, asm_ast.StaticVariable)
+    }
+
+    def text(op) -> str:
+        if isinstance(op, asm_ast.Imm):
+            return f"${op.value & 0xFF:02X}"
+        half = "<" if isinstance(op, asm_ast.ImmLabelLow) else ">"
+        if op.offset == 0:
+            return f"{half}{op.name}"
+        return f"{half}({op.name}+{op.offset})"
+
+    out = []
+    for name, addr in sorted(zp.addrs.items(), key=lambda kv: (kv[1], kv[0])):
+        defined = name in zp.owned
+        init = inits.get(name) if defined else None
+        out.append(ZpObjectMeta(
+            name=name, size=zp.sizes[name],
+            at=addr if name in zp.pinned else None, defined=defined,
+            init=[] if init is None else [text(o) for o in _init_operands(init)],
+            weight=zp.promoted.get(name),
+        ))
+    for name in sorted(zp.external):
+        out.append(ZpObjectMeta(
+            name=name, size=zp.external[name], at=None, defined=False,
+        ))
+    return out
 
 
 def _init_operands(init) -> list[asm_ast.Type_operand]:

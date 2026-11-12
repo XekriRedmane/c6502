@@ -2,6 +2,7 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
+jump_flag	EQU	$26
 __zpabi_floor_enemy_advance__move_dir	EQU	$80
 __zpabi_floor_enemy_advance__player_col	EQU	$81
 __zpabi_snd_delay_down__pitch	EQU	$82
@@ -13,6 +14,8 @@ __local_floor_enemy_advance__slot	EQU	$86
 ; def floor_enemy_advance params=__zpabi_floor_enemy_advance__move_dir,__zpabi_floor_enemy_advance__player_col locals=__local_floor_enemy_advance__0,__local_floor_enemy_advance__step,__local_floor_enemy_advance__slot indirect=false in_cycle=false
 ; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks
 ; call floor_enemy_advance -> snd_delay_down
+; zp jump_flag size=1 at=auto def=true init=$00 weight=17
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 floor_enemy_advance:
@@ -144,11 +147,15 @@ enemy_col:
 enemy_y:
    DS.B  4
 
-jump_flag:
-   DS.B  1
-
 floor_enemy_spawn_sched:
    DC.B  $25, $26, $26, $26, $26, $27, $27, $27, $28, $28, $28, $28, $29, $29, $29, $2A
    DC.B  $2A, $2A, $2A, $2B, $2B, $2B, $2C, $2C, $2C, $2C, $2D, $2D, $2D, $2E, $2E, $2E
    DC.B  $2E, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
    DC.B  $00, $00, $00, $00, $00, $00
+
+__zp_init:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   jump_flag
+   RTS

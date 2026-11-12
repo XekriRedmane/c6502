@@ -15,6 +15,7 @@ __zpabi_snd_delay_up__clicks	EQU	$83
 ; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks param_regs=A,X
 ; call beam_target_tick -> snd_delay_down
 ; call beam_target_tick -> snd_delay_up
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 beam_target_tick:

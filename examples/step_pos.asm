@@ -13,6 +13,7 @@ __local_step_pos__2	EQU	$86
 ; def step_pos params=__zpabi_step_pos__slot,__zpabi_step_pos__anim_in locals=__local_step_pos__0,__local_step_pos__1,__local_step_pos__2 indirect=false in_cycle=false
 ; ext apply_bobble params=__zpabi_apply_bobble__slot,__zpabi_apply_bobble__bobble_idx
 ; call step_pos -> apply_bobble
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 step_pos:

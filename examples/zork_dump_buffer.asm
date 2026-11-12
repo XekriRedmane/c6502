@@ -47,6 +47,29 @@ COUT1	EQU	$FDF0
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; call dump_buffer_to_printer -> COUT
 ; call dump_buffer_to_screen -> COUT1
+; zp __monitor_zp_1f size=1 at=$1F def=false init=
+; zp WNDLFT size=1 at=$20 def=false init=
+; zp WNDWDTH size=1 at=$21 def=false init=
+; zp WNDTOP size=1 at=$22 def=false init=
+; zp WNDBTM size=1 at=$23 def=false init=
+; zp CH size=1 at=$24 def=false init=
+; zp CV size=1 at=$25 def=false init=
+; zp GBAS size=2 at=$26 def=false init=
+; zp BAS size=2 at=$28 def=false init=
+; zp __monitor_bas2 size=2 at=$2A def=false init=
+; zp __monitor_zp_2c size=3 at=$2C def=false init=
+; zp COLOR size=1 at=$30 def=false init=
+; zp INVFLG size=1 at=$32 def=false init=
+; zp PROMPT size=1 at=$33 def=false init=
+; zp __monitor_ysav1 size=1 at=$35 def=false init=
+; zp CSW size=2 at=$36 def=false init=
+; zp KSW size=2 at=$38 def=false init=
+; zp __monitor_acc size=1 at=$45 def=false init=
+; zp __monitor_status size=1 at=$48 def=false init=
+; zp __monitor_rnd size=2 at=$4E def=false init=
+; zp BUFF_END size=1 at=$EB def=false init=
+; zp PRINTER_CSW size=2 at=$EE def=false init=
+; runtime hargs_size=1
 ; @zp-link-meta-end
 
 dump_buffer_to_screen:

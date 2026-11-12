@@ -6,6 +6,7 @@ __zpabi_spawn_pos_dir__slot	EQU	$80
 
 ; @zp-link-meta-begin
 ; def spawn_pos_dir params=__zpabi_spawn_pos_dir__slot locals=__local_spawn_pos_dir__0 indirect=false in_cycle=false
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 spawn_pos_dir:

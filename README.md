@@ -1359,7 +1359,11 @@ routine `__zp_init` that stores each zero-page object's initial value
 (its initializer, or zero). **The boot code must call `__zp_init`
 before `main`.** The simulator's boot stub does. Each object becomes
 an `EQU` in the output. Linking several translation units with
-`--link` isn't supported yet for a unit that has zero-page globals.
+`--link` places every unit's bare objects for the whole program and
+writes one `__zp_init`. An `extern` declaration without an address
+names an object another unit defines. With `--optimize`, busy scalar
+globals are moved into the bytes left below `$80` without the
+attribute (docs/optimizations/zp_promotion.md).
 
 ### Fixed addresses
 

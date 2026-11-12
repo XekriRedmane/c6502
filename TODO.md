@@ -138,27 +138,6 @@ member kept and in order, which `direct_member_access` already
 preserves through the `is_volatile` bit. Until then, the crash should
 at least be a one-line error.
 
-## Zero-page globals across translation units, and automatic placement
-
-`__attribute__((zeropage))` and `zeropage(addr)` place a global in
-zero page within one translation unit (`passes/zp_globals.py`). Two
-pieces are left.
-
-- **Linking.** `compile.py --link` rejects a unit with zero-page
-  globals. Each unit places its bare `zeropage` objects in `$26`-`$7F`
-  without knowing about the others, so two units would collide, and
-  the linker rebuilds the EQU block from slot symbols only, so the
-  globals' EQUs would be lost. Each unit's `__zp_init` would also
-  clash by name. The link metadata block would need to list each
-  unit's zero-page objects (size, fixed address or not), so the
-  linker can place the bare ones globally, reserve every unit's
-  bytes when it re-allocates slots, and merge the init routines into
-  one.
-- **Automatic promotion under `--optimize`.** Rank globals by static
-  access count (weighting loop bodies) and move the top ones into
-  whatever of `$26`-`$7F` is left. Only safe within one translation
-  unit, or with the linker deciding.
-
 ## More system-software headers, and their zero page when linking
 
 `include/apple2/monitor_io.h` and `interactive_monitor.h` reserve the
@@ -168,12 +147,12 @@ Monitor's zero page, and the runtime's block moves around it
 - **Headers for DOS 3.3, ProDOS, and Applesoft.** Each declares the
   zero-page bytes that software uses, the way `monitor_io.h` does, from
   its listing. A program that includes one keeps those bytes free.
-- **Linking.** `--link` rejects a unit with zero-page objects, so a
-  unit that includes `monitor_io.h` can't be linked yet (see "Zero-page
-  globals across translation units"). Once it can, the linker has to
-  choose one runtime layout from every unit's reserved bytes, and
-  the HARGS size from every unit's need. Today it only checks that
-  the units' layouts match.
+- **Linking.** `--link` places zero-page objects, but it only checks
+  that every unit chose the same runtime layout, so a unit that
+  includes `monitor_io.h` links only with others that do. The linker
+  should choose one layout from every unit's reserved bytes, and the
+  HARGS size from every unit's need (each unit's `runtime
+  hargs_size` metadata line has its size, not its need).
 
 ## Rotate top-tested loops
 

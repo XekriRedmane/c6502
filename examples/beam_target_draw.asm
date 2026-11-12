@@ -19,6 +19,7 @@ __local_beam_target_draw__0	EQU	$89
 ; ext score_add params=
 ; call beam_target_draw -> draw_sprite
 ; call beam_target_draw -> score_add
+; runtime hargs_size=32
 ; @zp-link-meta-end
 
 beam_target_draw:

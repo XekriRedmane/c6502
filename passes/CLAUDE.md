@@ -183,7 +183,12 @@ this directory:
   function's parameter slots come from its definition, and
   `_bind_extern_params` binds every unit's declaration symbols to them
   by position, since each unit spells them after its own parameter
-  names (or positions, for unnamed ones).
+  names (or positions, for unnamed ones). Zero-page objects are
+  placed for the whole program (`_merge_zp_objects`,
+  `_place_zp_objects`), their bytes are passed to the allocators as
+  `reserved`, and each unit's `__zp_init` is replaced with one
+  generated from the metadata (`_without_init`, `_init_lines`).
+  `sim/linked.py` runs a linked program by assembling it with dasm.
 - `long_branches.py` — `expand_program`. Rewrites conditional branches
   with out-of-range targets to `Branch(inverted_cond, .skip);
   Jump(target); .skip:`. Iterative.
@@ -307,7 +312,10 @@ this directory:
 - `y_peephole.py` — `apply_y_peephole` (LDY collapse, outside
   fixedpoint).
 - `zp_link_metadata.py` — emits the `; @zp-link-meta-begin` block at
-  the top of `--codegen --optimize` output for the multi-TU linker.
+  the top of `--codegen --optimize` output for the multi-TU linker:
+  functions, zp_abi externs, call edges, zero-page objects (`zp`
+  lines, from `zp_globals.link_records`), and the HARGS size
+  (`runtime`).
 - `runtime_layout.py` — `RuntimeLayout`, `choose_layout`,
   `current` / `set_current`, `hargs_need`. Where SSP, FP, HARGS, and
   DPTR go: the classic `$00`-`$25` unless a fixed zero-page object is
@@ -337,7 +345,14 @@ this directory:
   `__attribute__((address(addr)))` at `$100` or above into
   `ZpGlobals.fixed`, which only adds `EQU` lines (`ZpGlobals.equs()`
   is both maps). An `address` object below `$100` is an ordinary
-  `extern` zero-page object.
+  `extern` zero-page object. An `extern` object with neither an
+  address nor a definition goes in `ZpGlobals.external`: another
+  unit defines it, and `--link` places it. `link_records` lists the
+  unit's zero-page objects for the link metadata, with their initial
+  bytes. Under `--optimize`, `plan_zero_page(promote=True)` also
+  promotes busy scalar globals into the bytes left below `$80`
+  (`access_weights`, `_promotion_order`; `ZpGlobals.promoted`), and
+  the linker may put one back in the data segment.
 - `zp_local_allocation.py` — `allocate_function_locals`. Hands each
   eligible function a private body-local ZP range disjoint from
   coexisting footprints.

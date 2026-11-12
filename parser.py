@@ -85,17 +85,18 @@ _STORAGE_CLASSES = {
 # Token types of every leaf the `specifier` rule can produce. After the
 # `type_specifier` and `specifier` transformer methods unwrap their
 # child trees, every entry on a specifier list is one of these tokens
-# OR a `_TagSpecifier` wrapper for struct/union forms (which expose a
-# matching `.type` attribute so the same predicate logic works on
-# both shapes).
+# OR a `_TagSpecifier` wrapper for struct/union forms, a
+# `_TypedefSpecifier`, or an `_EnumSpecifier` (which expose a matching
+# `.type` attribute so the same predicate logic works on all of them).
 _SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                            "FLOAT", "DOUBLE", "CHAR", "BOOL", "VOID",
                            "STATIC", "EXTERN", "REGISTER", "TYPEDEF",
-                           "STRUCT", "UNION", "TYPEDEF_NAME",
+                           "STRUCT", "UNION", "TYPEDEF_NAME", "ENUM",
                            "CONST", "VOLATILE", "RESTRICT")
 _TYPE_SPECIFIER_TOKEN_TYPES = ("INT", "LONG", "SHORT", "SIGNED", "UNSIGNED",
                                 "FLOAT", "DOUBLE", "CHAR", "BOOL",
-                                "VOID", "STRUCT", "UNION", "TYPEDEF_NAME")
+                                "VOID", "STRUCT", "UNION", "TYPEDEF_NAME",
+                                "ENUM")
 # `const` and `volatile` are honored at parse time and wrapped into
 # `Const(...)` / `Volatile(...)` type-AST nodes. `restrict` parses
 # but is silently dropped — c6502 has no aliasing-analysis pass that
@@ -131,6 +132,18 @@ class _TypedefSpecifier:
     data_type: "c99_ast.Type_data_type"
 
 
+# An enum type specifier, produced by the `enum_specifier`
+# transformer. Like a typedef name, it's a whole type on its own:
+# `int`, which C99 §6.7.2.2.4 lets an enumerated type be compatible
+# with, or for a packed enum `unsigned char` or `signed char` when its
+# values fit (`_packed_enum_type`). `defines` is true when it has an
+# enumerator list, which makes `enum e { A };` a declaration that
+# declares something.
+@dataclass
+class _EnumSpecifier(_TypedefSpecifier):
+    defines: bool = False
+
+
 # The specifiers of one declaration, produced by the `decl_specs`
 # transformer. The parser keeps a stack of these (`_ParseContext.
 # decl_specs`) so `init_declarator` can tell, as soon as a declarator
@@ -147,19 +160,25 @@ class _DeclSpecs:
 class _Binding:
     """What an ordinary identifier (C99 §6.2.3) means in one scope, as
     far as the parser needs to know: a typedef name, with the type it
-    names, or anything else (an object, a function, a parameter).
-    `tag_scopes` maps each struct/union tag in a typedef's type to the
-    scope whose declaration of the tag the type refers to."""
+    names, an enumeration constant, with its value, or anything else
+    (an object, a function, a parameter). `tag_scopes` maps each
+    struct/union tag in a typedef's type to the scope whose
+    declaration of the tag the type refers to."""
 
-    __slots__ = ("data_type", "tag_scopes")
+    __slots__ = ("data_type", "tag_scopes", "enum_value")
 
-    def __init__(self, data_type=None, tag_scopes=None):
+    def __init__(self, data_type=None, tag_scopes=None, enum_value=None):
         self.data_type = data_type
         self.tag_scopes = tag_scopes or {}
+        self.enum_value = enum_value
 
     @property
     def is_typedef(self) -> bool:
         return self.data_type is not None
+
+    @property
+    def is_enumerator(self) -> bool:
+        return self.enum_value is not None
 
 
 _ORDINARY = _Binding()
@@ -167,13 +186,16 @@ _ORDINARY = _Binding()
 
 class _Scope:
     """One scope of the parser's view of the program: the ordinary
-    identifiers declared in it, and the struct/union tags."""
+    identifiers declared in it, the struct/union tags, and the enum
+    tags. The three kinds of tag share one name space (C99 §6.2.3)."""
 
-    __slots__ = ("names", "tags")
+    __slots__ = ("names", "tags", "enum_tags")
 
     def __init__(self):
         self.names: dict[str, _Binding] = {}
         self.tags: set[str] = set()
+        # Each enum tag's type: Int, or a packed enum's smaller type.
+        self.enum_tags: dict[str, c99_ast.Type_data_type] = {}
 
 
 class _ParseContext:
@@ -188,6 +210,11 @@ class _ParseContext:
     as the parser reduces each rule, declares names: a typedef name,
     or an object, function, or parameter that hides one. `for_stmt`
     pops the scope of its `for`.
+
+    Enumeration constants never reach the AST. The parser declares
+    each one in its scope with its value, and puts an `int` constant in
+    place of each use, so an array size or a case label can use one.
+    Enum tags stay in the parser too, since the type is `int`.
 
     The parser also tracks struct/union tags, the way identifier
     resolution does, for two reasons. A typedef that refers to a tag
@@ -218,6 +245,7 @@ class _ParseContext:
         # the `{` of its body, and the parameters go in this scope.
         self.body_scope: _Scope | None = None
         self.anonymous_tags = 0
+        self.enum_head = _EnumHead()
         # The latest token lexed, and the parser state it was lexed in.
         self.token: Token | None = None
         self.parser_state = None
@@ -246,6 +274,25 @@ class _ParseContext:
                 return scope
         return None
 
+    def tag_is_enum(self, tag: str) -> bool | None:
+        """Whether the innermost declaration of `tag` is an enum's
+        (True) or a struct's or union's (False); None if none is
+        visible."""
+        for scope in reversed(self.scopes):
+            if tag in scope.enum_tags:
+                return True
+            if tag in scope.tags:
+                return False
+        return None
+
+    def enum_tag_type(self, tag: str) -> c99_ast.Type_data_type:
+        """The type of the innermost enum `tag`, which must be
+        visible."""
+        for scope in reversed(self.scopes):
+            if tag in scope.enum_tags:
+                return scope.enum_tags[tag]
+        raise AssertionError(f"no enum {tag!r} in scope")
+
     def declare(self, name: str, binding: _Binding, scope=None) -> None:
         """Declare `name` in `scope` (the current one by default).
         C99 §6.7.3: an identifier declared twice in one scope must be
@@ -255,6 +302,12 @@ class _ParseContext:
         scope = scope if scope is not None else self.scopes[-1]
         old = scope.names.get(name)
         if old is not None:
+            if old.is_enumerator or binding.is_enumerator:
+                raise ParserError(
+                    f"{name!r} is declared again in the same scope, "
+                    f"and one of the declarations is an enumeration "
+                    f"constant"
+                )
             if old.is_typedef != binding.is_typedef:
                 raise ParserError(
                     f"{name!r} is declared both as a typedef name and "
@@ -294,6 +347,44 @@ class _ParseContext:
         scope (C99 §6.7.2.3.8)."""
         if self.tag_scope(tag) is None:
             self.scopes[-1].tags.add(tag)
+
+
+class _EnumHead:
+    """Follows the tokens from `enum` to the `{` of its list, if it
+    has one, so the lexer knows that `{` doesn't start a block. In
+    between there may be an attribute clause and a tag, as in `enum
+    __attribute__((packed)) e {`."""
+
+    def __init__(self):
+        self.active = False
+        self.depth = 0  # of the attribute clause's parentheses
+        self.in_attribute = False
+        self.tagged = False
+
+    def step(self, kind: str) -> bool:
+        """Take the next token; True if it's the `{` of an enum's
+        list."""
+        if kind == "ENUM":
+            self.active, self.in_attribute, self.tagged = True, False, False
+            return False
+        if not self.active:
+            return False
+        if self.in_attribute:
+            if kind == "LPAREN":
+                self.depth += 1
+            elif kind == "RPAREN":
+                self.depth -= 1
+                if self.depth == 0:
+                    self.in_attribute = False
+            return False
+        if kind == "ATTRIBUTE":
+            self.in_attribute, self.depth = True, 0
+            return False
+        if kind == "IDENTIFIER" and not self.tagged:
+            self.tagged = True
+            return False
+        self.active = False
+        return kind == "LBRACE"
 
 
 _CTX = _ParseContext()
@@ -355,17 +446,20 @@ def _resolve_data_type(type_specs):
                                                       other type
                                                       specifier
     """
-    # A typedef name is a whole type on its own (C99 §6.7.2.2).
+    # A typedef name or an enum specifier is a whole type on its own
+    # (C99 §6.7.2.2).
     typedef_specs = [
         t for t in type_specs if isinstance(t, _TypedefSpecifier)
     ]
     if typedef_specs:
+        spec = typedef_specs[0]
         if len(type_specs) != 1:
+            what = (spec.name if isinstance(spec, _EnumSpecifier)
+                    else f"typedef name {spec.name!r}")
             raise ParserError(
-                f"typedef name {typedef_specs[0].name!r} cannot combine "
-                f"with another type specifier"
+                f"{what} cannot combine with another type specifier"
             )
-        return typedef_specs[0].data_type
+        return copy.deepcopy(spec.data_type)
     # Struct/union specifiers don't combine with any other type
     # specifier (C99 §6.7.2 is exhaustive — the type-specifier list
     # has to be exactly one of the listed combinations, and a
@@ -1529,29 +1623,74 @@ def _adjust_param_type(t):
     return t
 
 
+def _enum_is_packed(clauses, defines: bool) -> bool:
+    """Whether an enum specifier's attribute clauses make it packed.
+    `packed`, with no argument, is the only attribute an enum takes,
+    and only where it's defined."""
+    packed = False
+    for clause in clauses:
+        for name, arg in clause.specs:
+            if name != "packed":
+                raise ParserError(
+                    f"unknown attribute name {name!r} on an enum; "
+                    f"expected 'packed'"
+                )
+            if arg is not None:
+                raise ParserError(
+                    "`__attribute__((packed))` doesn't take an argument"
+                )
+            if packed:
+                raise ParserError("`packed` is given twice on an enum")
+            packed = True
+    if packed and not defines:
+        raise ParserError(
+            "`__attribute__((packed))` goes on an enum's definition, "
+            "the one with the list of constants"
+        )
+    return packed
+
+
+def _packed_enum_type(lowest: int, highest: int) -> c99_ast.Type_data_type:
+    """The type of a packed enum whose values run from `lowest` to
+    `highest`: the smallest that holds them all, as GCC picks it."""
+    if 0 <= lowest and highest <= 0xFF:
+        return c99_ast.UChar()
+    if -0x80 <= lowest and highest <= 0x7F:
+        return c99_ast.SChar()
+    return c99_ast.Int()
+
+
 def _fold_array_size(size_exp) -> int:
     """Fold an array size written as an expression, such as
     `N * 2` after macro expansion or `sizeof(long) + 1`. C99
     §6.7.5.2.1 requires an integer constant expression for a non-VLA
-    array. The type checker stamps types and implicit conversions on
-    a copy of the expression, and the constant evaluator folds it.
-    Anything that isn't a constant expression (a variable, which
-    would make a VLA) is rejected."""
+    array. Anything that isn't a constant expression (a variable,
+    which would make a VLA) is rejected."""
+    try:
+        return _fold_integer_constant(size_exp)
+    except ParserError as e:
+        raise NotImplementedError(
+            f"array size must be an integer constant expression: {e}"
+        ) from e
+
+
+def _fold_integer_constant(exp) -> int:
+    """The value of the integer constant expression `exp`. The type
+    checker stamps types and implicit conversions on a copy of the
+    expression, and the constant evaluator folds it. Raises
+    ParserError if it isn't one."""
     # Imported here because passes.type_checking is far downstream
     # of the parser in the pipeline.
-    import copy
     from passes.constant_expression import (
         ConstantExpressionError, evaluate_integer_constant_expression,
     )
     from passes.type_checking import TypeChecker, TypeCheckError
-    exp = copy.deepcopy(size_exp)
+    exp = copy.deepcopy(exp)
     try:
         TypeChecker()._check_exp(exp)
         value, _ = evaluate_integer_constant_expression(exp)
     except (TypeCheckError, ConstantExpressionError) as e:
-        raise NotImplementedError(
-            f"array size must be an integer constant expression: {e}"
-        ) from e
+        raise ParserError(str(e)) from e
     return value
 
 
@@ -1871,6 +2010,16 @@ class _ASTBuilder(Transformer):
             tag = f"__anonymous_{kind}_{_CTX.anonymous_tags}"
             body_items = items[1:]
         body = None
+        kind = "union" if is_union else "struct"
+        if not body_items and _CTX.tag_is_enum(tag):
+            raise ParserError(
+                f"{tag!r} is an enum tag, not a {kind} tag"
+            )
+        if body_items and tag in _CTX.scopes[-1].enum_tags:
+            raise ParserError(
+                f"{tag!r} is an enum tag in this scope, so it can't be "
+                f"a {kind} tag too"
+            )
         if not body_items:
             _CTX.introduce_tag(tag)
         else:
@@ -1904,6 +2053,88 @@ class _ASTBuilder(Transformer):
             is_union=is_union,
             body=body,
         )
+
+    def enum_specifier(self, items):
+        # items: [ENUM, attribute_clause?, IDENTIFIER?, (LBRACE,
+        # enumerator_list, COMMA?, RBRACE, attribute_clause?)?].
+        # `enumerator_list` has already declared the constants and
+        # returns `(last, lowest, highest)`.
+        clauses = [it for it in items if isinstance(it, _AttributeClause)]
+        items = [it for it in items if not isinstance(it, _AttributeClause)]
+        tag = str(items[1]) if _is_token(items[1], "IDENTIFIER") else None
+        defines = _is_token(items[-1], "RBRACE")
+        packed = _enum_is_packed(clauses, defines)
+        data_type = c99_ast.Int()
+        if defines:
+            _last, lowest, highest = next(
+                it for it in items if isinstance(it, tuple)
+            )
+            if packed:
+                data_type = _packed_enum_type(lowest, highest)
+        if tag is not None:
+            scope = _CTX.scopes[-1]
+            if defines:
+                if tag in scope.enum_tags:
+                    raise ParserError(f"enum {tag!r} is defined twice")
+                if tag in scope.tags:
+                    raise ParserError(
+                        f"{tag!r} is a struct or union tag in this "
+                        f"scope, so it can't be an enum tag too"
+                    )
+                scope.enum_tags[tag] = data_type
+            else:
+                kind = _CTX.tag_is_enum(tag)
+                if kind is None:
+                    raise ParserError(
+                        f"enum {tag!r} isn't defined; C99 has no "
+                        f"forward declaration of an enum"
+                    )
+                if not kind:
+                    raise ParserError(
+                        f"{tag!r} is a struct or union tag, not an "
+                        f"enum tag"
+                    )
+                data_type = _CTX.enum_tag_type(tag)
+        name = f"enum {tag!r}" if tag is not None else "enum"
+        return _EnumSpecifier(
+            type="ENUM", name=name, data_type=data_type, defines=defines,
+        )
+
+    def enumerator_list(self, items):
+        # `enumerator_list: enumerator | enumerator_list COMMA
+        # enumerator`. Returns `(last, lowest, highest)` of the
+        # values so far. The constant is in scope from here on (C99
+        # §6.2.1.7), and its value is the expression's, or one more
+        # than the one before it, or 0 for the first (§6.7.2.2.3).
+        if len(items) == 1:
+            prev, (token, exp) = None, items[0]
+        else:
+            prev, (token, exp) = items[0], items[2]
+        name = str(token)
+        if exp is not None:
+            try:
+                value = _fold_integer_constant(exp)
+            except ParserError as e:
+                raise ParserError(
+                    f"the value of enumeration constant {name!r} must "
+                    f"be an integer constant expression: {e}"
+                ) from e
+        else:
+            value = 0 if prev is None else prev[0] + 1
+        # §6.7.2.2.2: it must be representable as an int.
+        if not -0x8000 <= value <= 0x7FFF:
+            raise ParserError(
+                f"enumeration constant {name!r} is {value}, which "
+                f"doesn't fit in an int (-32768..32767)"
+            )
+        _CTX.declare(name, _Binding(enum_value=value))
+        if prev is None:
+            return (value, value, value)
+        return (value, min(prev[1], value), max(prev[2], value))
+
+    def enumerator(self, items):
+        # `enumerator: IDENTIFIER (ASSIGN constant_exp)?`.
+        return (items[0], items[2] if len(items) == 3 else None)
 
     def specifier_qualifier_list(self, items):
         # `_specqual_list`. Returns a list of type-specifier leaves
@@ -2417,6 +2648,10 @@ class _ASTBuilder(Transformer):
         )]
         if not non_storage:
             raise ParserError("empty declaration")
+        if any(isinstance(s, _EnumSpecifier) and s.defines for s in specs):
+            # `enum e { A, B };` declares its constants, which the
+            # parser has already done, and nothing for the AST.
+            return struct_decls
         ts = _resolve_data_type(non_storage)
         if not isinstance(ts, (c99_ast.Structure, c99_ast.Union)):
             raise ParserError(
@@ -2774,6 +3009,11 @@ class _ASTBuilder(Transformer):
 
     @v_args(inline=True)
     def identifier(self, token):
+        binding = _CTX.lookup(str(token))
+        if binding is not None and binding.is_enumerator:
+            return c99_ast.Constant(
+                const=c99_ast.ConstInt(value=binding.enum_value & 0xFFFF),
+            )
         return c99_ast.Var(name=str(token))
 
     @v_args(inline=True)
@@ -2912,6 +3152,11 @@ class _ASTBuilder(Transformer):
     # arg_list, items is [IDENT, LPAREN, [arg, ...], RPAREN] (4).
     def function_call(self, items):
         name = str(items[0])
+        binding = _CTX.lookup(name)
+        if binding is not None and binding.is_enumerator:
+            raise ParserError(
+                f"{name!r} is an enumeration constant, not a function"
+            )
         args = items[2] if len(items) == 4 else []
         return c99_ast.FunctionCall(name=name, args=args)
 
@@ -3117,9 +3362,10 @@ class _TypedefLexer(BasicLexer):
         ctx = _CTX
         ctx.body_scope = None
         kind = token.type
+        enum_body = ctx.enum_head.step(kind)
         if kind == "LBRACE":
             before, last = ctx.recent
-            if last in ("STRUCT", "UNION") or (
+            if enum_body or last in ("STRUCT", "UNION") or (
                 last == "IDENTIFIER" and before in ("STRUCT", "UNION")
             ):
                 ctx.brace_scopes.append(None)

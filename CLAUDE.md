@@ -363,6 +363,11 @@ Integers:
 - `Bool()` is `_Bool` (1 byte holding 0 or 1); `<stdbool.h>`'s
   `bool` is a macro for it.
 
+An enumerated type is `Int()` (C99 §6.7.2.2.4 lets it be compatible
+with `int`), or with `__attribute__((packed))` `UChar()` / `SChar()`
+when its values fit, and an enumeration constant is an `int` constant. Neither
+reaches the AST; see "Enumerations" under Parser.
+
 Char/SChar/UChar/Bool are distinct types from Int/UInt — C99
 §6.3.1.1.2 integer-promotes them all to `int` (because Int's 16-bit
 range covers both signed and unsigned char), so arithmetic always
@@ -541,6 +546,30 @@ declaration hides at the point of use is rejected, since the
 substituted `struct foo` would name the inner one. `<stdint.h>`
 uses real typedefs; `<stdbool.h>` keeps `bool` a macro for `_Bool`, as
 C99 §7.16.2 specifies.
+
+### Enumerations
+
+`enum` (C99 §6.7.2.2), like `typedef`, never reaches the AST. The
+parser's `_ParseContext` declares each enumeration constant in the
+current scope, with its value, when its `enumerator_list` rule
+reduces, which is before the next enumerator's value is parsed, so
+`enum { A, B = A + 1 }` works. The `identifier` rule puts
+`Constant(ConstInt(value))` in place of each use, so an array size or
+a case label can use one, and an inner declaration of the same name
+hides it, since every ordinary declaration goes in the parser's
+scopes. A value is folded like an array size (`_fold_integer_constant`)
+and must fit in an `int`.
+
+The specifier (`_EnumSpecifier`) resolves to `Int()`, or for an enum
+defined with GCC's `__attribute__((packed))` (after `enum` or after
+the `}`) to the smallest of `UChar()`, `SChar()`, and `Int()` that
+holds its values (`_packed_enum_type`). `_EnumHead` follows the
+tokens from `enum` to the list's `{`, so the lexer doesn't open a
+scope there. Enum tags live in `_Scope.enum_tags`, with their types,
+beside the struct/union tags, and `enum tag`
+must name an enum defined in an enclosing scope (C99 has no forward
+declaration of one). A declaration that only defines an enum leaves
+nothing in the AST.
 
 ### Lexer & preprocessor
 

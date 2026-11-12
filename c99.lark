@@ -311,6 +311,21 @@ function_decl: attribute_clause? decl_specs declarator block
 
 type_specifier: INT | LONG | SHORT | SIGNED | UNSIGNED | FLOAT | DOUBLE | CHAR | BOOL | VOID
               | struct_or_union_specifier
+              | enum_specifier
+
+// Enumeration specifier (C99 §6.7.2.2): `enum tag { A, B = 5, C }`,
+// with or without the tag, or `enum tag` for one defined earlier.
+// The type is `int`, or with GCC's `__attribute__((packed))` after
+// `enum` or after the `}`, the smallest type that holds the values.
+// The parser declares each enumeration constant as its enumerator
+// reduces, which is before the next one's value is parsed, so
+// `enum { A, B = A + 1 }` works. `enumerator_list` is left-recursive
+// so each reduction sees the value before it.
+enum_specifier: ENUM attribute_clause? IDENTIFIER? LBRACE enumerator_list COMMA? RBRACE attribute_clause?
+              | ENUM attribute_clause? IDENTIFIER
+enumerator_list: enumerator
+               | enumerator_list COMMA enumerator
+enumerator: IDENTIFIER (ASSIGN constant_exp)?
 
 // Struct or union specifier (C99 §6.7.2.1). Two shapes:
 //   * defining: `struct tag { member_decl+ }`, or `struct {

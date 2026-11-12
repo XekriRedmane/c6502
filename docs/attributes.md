@@ -44,6 +44,7 @@ error that names the declaration.
 | `address(addr)` | a function, or an `extern` object | Names code or memory that's already at `addr`. |
 | `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
 | `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a `register` parameter | Names the register (or two, low byte first) the parameter arrives in. |
+| `packed` | an enum's definition | Makes the enum one byte when its values fit. |
 
 ### `zp_abi`
 
@@ -273,6 +274,32 @@ only what the routine's code shows. `<apple2/monitor_io.h>` declares
 what the ROM listings show for each Monitor routine. A routine that
 returns an `int` can't be `preserves_x`, because the high byte of
 its result comes back in X.
+
+### `packed`
+
+An enum's type is `int`, two bytes, which makes every variable,
+parameter, and struct member of that type cost two bytes and every
+operation on it two bytes' work. With `packed`, as GCC spells it, the
+type is the smallest that holds the enum's values:
+
+| Values | Type |
+|---|---|
+| all in 0..255 | `unsigned char` |
+| all in -128..127, some negative | `signed char` |
+| anything else | `int` |
+
+```c
+typedef enum __attribute__((packed)) { IDLE, RUN, STOP } state;
+enum dir { LEFT = -1, NONE, RIGHT } __attribute__((packed));
+
+struct actor { state s; enum dir d; uint8_t x; };   // 3 bytes
+```
+
+The attribute goes after `enum` or after the closing `}` of the
+definition, not on a later `enum dir` that refers to it. The
+enumeration constants are still `int` constants, as C99 says, so
+`RUN + 1` is an `int`; storing one in a packed variable takes a
+byte.
 
 ## Calling a ROM routine
 
@@ -539,6 +566,7 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | `return_bool_in_carry` on some declarations of a function but not all | A caller compiled without it would read A instead of the carry flag. |
 | `return_bool_in_carry` on a function returning a struct that isn't one value of 1 or 2 bytes followed by one `bool` | Only that shape fits in A, X, and the carry flag. |
 | `preserves_x` on a routine that returns a struct whose value is an `int` or `unsigned int` | The high byte of the value comes back in X. |
+| `packed` on `enum tag` without its list of constants | The definition decides the type, so a later use can't change it. |
 
 ## Limits
 

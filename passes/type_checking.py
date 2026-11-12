@@ -420,9 +420,12 @@ def _coerce_init_const_value(
     from its variant; the conversion goes through `fp_arith` whenever
     a Float / Double boundary is crossed."""
     src_type = _const_source_type(c)
-    raw = c.bits if isinstance(
-        c, (c99_ast.ConstFloat, c99_ast.ConstDouble),
-    ) else c.value
+    if isinstance(c, (c99_ast.ConstFloat, c99_ast.ConstDouble)):
+        raw = c.bits
+    else:
+        # An integer constant holds its bit pattern, so a signed one
+        # with the sign bit set is negative.
+        raw = _coerce_int_to_type(c.value, src_type)
     return _coerce_init_value(raw, src_type, target_type)
 
 

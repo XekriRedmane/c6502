@@ -108,8 +108,8 @@ this directory:
   `_emit_compare` dispatch IndexedData (added alongside this pass).
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
-  folding; validation hook for future enum / array-size / bitfield-
-  width consumers).
+  folding for case labels, static initializers, and, through the
+  parser, array sizes and enumeration constants).
 - `cpx_cpy_peephole.py` — `apply_cpx_cpy_peephole` peephole.
 - `dead_a_arith.py` — `apply_dead_a_arith_elimination` peephole.
   Iterates to a local fixed point in a single call: one walk drops
@@ -702,8 +702,8 @@ nested case / default nodes are type-checked normally.
 
 `passes.constant_expression` provides two entry points sharing the
 §6.6 vocabulary: `evaluate_integer_constant_expression` (returns
-`(value, type)` for §6.6.6 sites — case labels today; future enums /
-array sizes / bitfield widths) and `validate_constant_expression` (the
+`(value, type)` for §6.6.6 sites — case labels, and the array sizes
+and enumeration-constant values the parser folds) and `validate_constant_expression` (the
 §6.6.3 check without folding, for arbitrary constant-expression
 contexts — currently no consumers, kept for upcoming features).
 The integer evaluator folds integer and char literals, integer

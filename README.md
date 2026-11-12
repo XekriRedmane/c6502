@@ -1526,6 +1526,13 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   declaration of the same name hides a typedef name (`int T;`,
   a parameter `T`, a `for` variable `T`). `<stdint.h>` defines
   its types with `typedef`.
+- `enum`, with or without a tag, at file and block scope and in
+  struct members and typedefs. An enumerated type is `int`, and each
+  enumeration constant is an `int` constant usable anywhere one is,
+  including array sizes and `case` labels. An inner declaration of
+  the same name hides one. `__attribute__((packed))` on an enum's
+  definition makes its type the smallest that holds its values:
+  `unsigned char` for 0..255, `signed char` for -128..127, else `int`.
 
 **Not yet in the pipeline**: the runtime header
 (`SSP`/`FP`/`HARGS`/`DPTR` ZP addresses, reset vector, arithmetic

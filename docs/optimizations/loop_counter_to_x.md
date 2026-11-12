@@ -134,7 +134,14 @@ which `<apple2/monitor_io.h>` declares `preserves_x`, so it gets no
 The pass looks for one memory byte `M` in the function with this use
 pattern, and promotes only the first one it finds.
 
+- `M` is one of the compiler's own slots: a body-local (`__local_*`),
+  a parameter slot (`__zpabi_*`), or a zero-page byte the register
+  allocator chose. A user global or static has a value when the
+  function starts and keeps one after it returns, and once the counter
+  lives in X, `DEX` and `INX` leave its memory stale.
 - Exactly one instruction stores to `M`. That's the initialization.
+  It comes before every other use of `M` on every path from the
+  function's entry.
 - One or more `LDX M` instructions read it.
 - Exactly one `DEC M` or exactly one `INC M` steps it, but not both.
 - `LDA M` may read it. No other instruction may name it, so an `ADC

@@ -23,7 +23,9 @@ def _wrap(instrs):
 
 
 def _M(name="b"):
-    return asm_ast.Data(name=name, offset=0)
+    # A body-local slot. The pass promotes only those, parameter slots,
+    # and regalloc ZP bytes, never a user global.
+    return asm_ast.Data(name=f"__local_f__{name}", offset=0)
 
 
 class TestLoopCounterToX(unittest.TestCase):
@@ -95,6 +97,31 @@ class TestLoopCounterToX(unittest.TestCase):
         self.assertTrue(any(isinstance(i, asm_ast.Dec) and isinstance(i.dst, asm_ast.Reg)
                             and isinstance(i.dst.reg, asm_ast.X)
                             for i in out))
+
+    def _canonical(self, m, *, read_first=False):
+        # The canonical count-down shape on slot `m`, optionally with a
+        # read of `m` before its init.
+        pre = [asm_ast.Mov(src=m, dst=_X)] if read_first else []
+        return _wrap(pre + [
+            asm_ast.Mov(src=_M("p"), dst=_A),
+            asm_ast.Mov(src=_A, dst=m),
+            asm_ast.Label(name=".loop_start"),
+            asm_ast.Mov(src=m, dst=_X),
+            asm_ast.Mov(src=asm_ast.IndexedData(name="arr", offset=0, index=asm_ast.X()), dst=_A),
+            asm_ast.Dec(dst=m),
+            asm_ast.Branch(cond=asm_ast.PL(), target=".loop_start"),
+            asm_ast.Return(save_a=False),
+        ])
+
+    def test_user_global_is_not_promoted(self):
+        # A global has a value at entry and after the return, and DEX
+        # would leave its memory stale.
+        prog = self._canonical(asm_ast.Data(name="z", offset=0))
+        self.assertEqual(apply_loop_counter_to_x(prog), prog)
+
+    def test_read_before_init_is_not_promoted(self):
+        prog = self._canonical(_M("b"), read_first=True)
+        self.assertEqual(apply_loop_counter_to_x(prog), prog)
 
     def test_other_use_of_M_disqualifies(self):
         # Adding a `Compare(_, M)` use disqualifies — M now has a

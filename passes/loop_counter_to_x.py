@@ -75,6 +75,16 @@ The slot M is eligible iff:
       value is read after the range.
     - A `Call` instruction (save/restore handled).
   * Other X-writers (INX, DEX, TAX) disqualify.
+  * M is one of the compiler's own slots: a body-local
+    (`__local_*`), a parameter slot (`__zpabi_*`), or a `ZP` byte
+    the regalloc chose. A user global or static keeps its value after
+    the function returns and has one when it starts, but the
+    promoted counter lives in X and `DEX` / `INX` leave M stale.
+    Before this rule, `--z` in one loop and `z++` after it, on a
+    zero-page `unsigned long z`, became a counter in X that nothing
+    loaded (fuzz.stmts seed 1549).
+  * The init comes before every other access to M on every path from
+    the function's entry, so no read sees M's value at entry.
 
 # Soundness sketch
 
@@ -600,9 +610,16 @@ def _find_counter_candidate(instrs):
                 disqualified.add(key)
 
     for key in list(init_count) + list(dec_count) + list(ldx_idx):
-        if key in disqualified:
+        if key in disqualified or not _is_compiler_slot(key):
             continue
         if init_count.get(key, 0) != 1:
+            continue
+        uses = (
+            ldx_idx.get(key, []) + lda_idx.get(key, [])
+            + ([dec_idx[key]] if key in dec_idx else [])
+            + ([inc_idx[key]] if key in inc_idx else [])
+        )
+        if not _init_comes_first(instrs, init_idx[key], uses):
             continue
         if not ldx_idx.get(key):
             continue
@@ -627,6 +644,46 @@ def _find_counter_candidate(instrs):
             'lda_m_indices': lda_idx.get(key, []),
         }
     return None
+
+
+def _is_compiler_slot(key) -> bool:
+    """True for a slot the compiler owns, which nothing outside the
+    function reads: a regalloc `ZP` byte, a body-local, or a parameter
+    slot."""
+    if key[0] != "data":
+        return True
+    return key[1].startswith(("__local_", "__zpabi_"))
+
+
+def _init_comes_first(instrs, init_idx: int, uses: list[int]) -> bool:
+    """True iff every path from the function's entry passes
+    `instrs[init_idx]` before reaching any index in `uses`."""
+    label_idx = {
+        ins.name: k for k, ins in enumerate(instrs)
+        if isinstance(ins, asm_ast.Label)
+    }
+    targets = set(uses)
+    seen: set[int] = set()
+    stack: list[int] = [0]
+    while stack:
+        j = stack.pop()
+        while 0 <= j < len(instrs) and j not in seen:
+            seen.add(j)
+            if j == init_idx:
+                break
+            if j in targets:
+                return False
+            instr = instrs[j]
+            if isinstance(instr, (asm_ast.Ret, asm_ast.Return)):
+                break
+            if isinstance(instr, (asm_ast.Jump, asm_ast.Branch)):
+                t = label_idx.get(instr.target)
+                if t is not None:
+                    stack.append(t)
+                if isinstance(instr, asm_ast.Jump):
+                    break
+            j += 1
+    return True
 
 
 def _stable_mem_eq(a, b) -> bool:

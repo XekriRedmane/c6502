@@ -355,6 +355,33 @@ _CASES: list[tuple[str, str, int]] = [
         int check(int v3) { return (signed char)(((signed char)44) | v3); }
         int main(void) { return check(0); }
     """, 44),
+    # loop_counter_to_x took `z4`'s byte 1 for a loop counter: `--z4`
+    # in the loop stored it once (the "init") and `z4++` after the loop
+    # incremented it (the "step"). A global has a value at entry, so
+    # the counter in X held nothing anyone loaded. Found by fuzz.stmts
+    # seed 1549.
+    ("global_byte_as_loop_counter", """
+        unsigned long z4 __attribute__((zeropage)) = 2;
+        int f9(void) {
+            unsigned char l14 = 6;
+            unsigned char w16;
+            switch (((int)(l14 - z4)) & 7) {
+            case 4:
+                w16 = 0;
+                while (w16++ < 3) {
+                    (--z4);
+                }
+            case 6:
+                return (z4++);
+            }
+            return 0;
+        }
+        int main(void) {
+            int a = f9();
+            int b = f9();
+            return a * 100 + b * 10 + (int)z4;
+        }
+    """, -99),
     # The regalloc pinned `i_0` in Y across a body that reads and
     # writes `arr_6[i_0]` through `(DPTR),Y`, whose `LDY` overwrote
     # it, so the outer loop's second pass stored to the wrong byte. An

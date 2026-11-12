@@ -24,6 +24,10 @@ The block carries the program-level information `compile.py
     and whether the function appeared on a cycle in the TU's
     direct call graph (the linker re-detects cycles globally
     but a TU-level cycle is a sufficient disqualifier).
+  * Every function and object the TU defines, an **item**, with the
+    section it goes in (`passes/sections.py`), whether its name is
+    internal to the TU, and whether it's all zero bytes, for a link
+    with a script (`compile.py --link -T`).
   * The TU's **zero-page objects** (`passes/zp_globals.py`): each
     one's size, its fixed address if it was declared with one,
     whether this TU defines it, and its initial bytes, so the
@@ -43,7 +47,8 @@ Format
 ; def <fn> param_bytes=<N> local_bytes=<M> indirect=<bool> in_cycle=<bool>
 ; ext <fn> param_bytes=<N>
 ; call <caller> -> <callee>
-; zp <name> size=<N> at=<$XX|auto> def=<bool> init=<byte,...> [weight=<N>]
+; item <name> section=<name> local=<bool> zero=<bool>
+; zp <name> size=<N> at=<$XX|auto> def=<bool> init=<byte,...> [weight=<N>] [local=true]
 ; runtime hargs_size=<N>
 ; @zp-link-meta-end
 ```
@@ -121,19 +126,35 @@ class ExternMeta:
 
 
 @dataclass
+class ItemMeta:
+    """A function or object the TU defines. `section` is the section
+    it goes in, `local` is whether its name has internal linkage (a
+    `static`, or a string literal), so another TU's item may have the
+    same name, and `zero` is whether it's an object whose bytes are
+    all zero, laid down as `DS.B`."""
+    name: str
+    section: str
+    local: bool = False
+    zero: bool = False
+
+
+@dataclass
 class ZpObjectMeta:
     """A zero-page object of the TU. `at` is its address when it was
     declared with one (`zeropage(addr)`), else None, and the linker
     places it. `defined` is whether this TU defines it, and `init` is
     its initial bytes then, each written as an `LDA #` operand.
     `weight` is set when `--optimize` promoted it into zero page
-    (`zp_globals.access_weights`), and None when the program asked."""
+    (`zp_globals.access_weights`), and None when the program asked.
+    `local` is whether its name has internal linkage, so another TU
+    may define one of the same name."""
     name: str
     size: int
     at: int | None = None
     defined: bool = False
     init: list[str] = field(default_factory=list)
     weight: int | None = None
+    local: bool = False
 
 
 @dataclass
@@ -146,6 +167,7 @@ class LinkMetadata:
     calls: list[tuple[str, str]] = field(default_factory=list)
     zp_objects: list[ZpObjectMeta] = field(default_factory=list)
     hargs_size: int | None = None
+    items: list[ItemMeta] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -331,13 +353,20 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         lines.append(" ".join(parts))
     for caller, callee in meta.calls:
         lines.append(f"; call {caller} -> {callee}")
+    for it in meta.items:
+        lines.append(
+            f"; item {it.name} section={it.section} "
+            f"local={'true' if it.local else 'false'} "
+            f"zero={'true' if it.zero else 'false'}"
+        )
     for z in meta.zp_objects:
         at = "auto" if z.at is None else f"${z.at:02X}"
         weight = "" if z.weight is None else f" weight={z.weight}"
+        local = " local=true" if z.local else ""
         lines.append(
             f"; zp {z.name} size={z.size} at={at} "
             f"def={'true' if z.defined else 'false'} "
-            f"init={','.join(z.init)}{weight}"
+            f"init={','.join(z.init)}{weight}{local}"
         )
     if meta.hargs_size is not None:
         lines.append(f"; runtime hargs_size={meta.hargs_size}")
@@ -426,6 +455,16 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             defined=kvs["def"] == "true",
             init=_split_csv(kvs.get("init", "")),
             weight=int(kvs["weight"]) if "weight" in kvs else None,
+            local=kvs.get("local") == "true",
+        ))
+    elif kind == "item":
+        if len(parts) < 3:
+            raise ValueError(f"malformed item record: {record!r}")
+        kvs = dict(_split_kv(p) for p in parts[2:])
+        out.items.append(ItemMeta(
+            name=parts[1], section=kvs["section"],
+            local=kvs.get("local") == "true",
+            zero=kvs.get("zero") == "true",
         ))
     elif kind == "runtime":
         kvs = dict(_split_kv(p) for p in parts[1:])

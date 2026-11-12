@@ -15,6 +15,9 @@ __zpabi_snd_delay_up__clicks	EQU	$83
 ; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks param_regs=A,X
 ; call beam_target_tick -> snd_delay_down
 ; call beam_target_tick -> snd_delay_up
+; item beam_target_tick section=.text local=false zero=false
+; item floor_y_table section=.rodata local=true zero=false
+; item beam_jingle section=.rodata local=true zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

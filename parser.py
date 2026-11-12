@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -730,6 +731,7 @@ def _consume_specifiers(items, start):
 # Register pinning of params / locals / return values is NOT an
 # attribute — it uses the C `register` storage-class keyword.
 _KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
+    "section": None,
     "zp_abi": None,
     "return_bool_in_carry": None,
     "zeropage": None,
@@ -855,6 +857,8 @@ def _extract_function_attributes(
                 f"`{name}` is given twice on {where}"
             )
         seen.add(name)
+        if name == "section":
+            continue
         if name == "zeropage":
             raise ParserError(
                 f"`__attribute__((zeropage))` places an object, not a "
@@ -911,6 +915,8 @@ def _extract_object_placement(
                 f"`{name}`"
             )
         seen.add(spec_name)
+        if spec_name == "section":
+            continue
         if spec_name in (
             "zp_abi", "return_bool_in_carry", "preserves_x", "preserves_y",
         ):
@@ -941,6 +947,33 @@ def _extract_object_placement(
             )
         placement = c99_ast.ZeroPage(address=arg)
     return placement
+
+
+# A section name: letters, digits, `_`, and `.`, as GNU ld script
+# patterns can match, such as `.text.boot` or `vectors`.
+_SECTION_NAME = re.compile(r"[A-Za-z_.][A-Za-z0-9_.]*")
+
+
+def _extract_section(specs, where: str) -> str | None:
+    """The name `__attribute__((section("name")))` gives in `specs`, or
+    None. Raises ParserError when the argument isn't a string or isn't
+    a section name."""
+    for name, arg in specs or []:
+        if name != "section":
+            continue
+        if not isinstance(arg, str):
+            raise ParserError(
+                f"`__attribute__((section(...)))` takes the section's "
+                f"name as a string, such as `section(\".text.boot\")`; "
+                f"saw {arg!r} on {where}"
+            )
+        if not _SECTION_NAME.fullmatch(arg):
+            raise ParserError(
+                f"section name {arg!r} on {where} has to be letters, "
+                f"digits, `_`, and `.`, not starting with a digit"
+            )
+        return arg
+    return None
 
 
 def _merge_placement(prefix, postfix, name: str):
@@ -2583,6 +2616,9 @@ class _ASTBuilder(Transformer):
                         carry_return=carry_return,
                         address=address,
                         preserves=preserves,
+                        section=_extract_section(
+                            prefix_specs, f"function declaration {name!r}",
+                        ),
                     )
                 ))
             else:
@@ -2591,6 +2627,13 @@ class _ASTBuilder(Transformer):
                     _extract_object_placement(postfix_specs, name),
                     name,
                 )
+                prefix_section = _extract_section(prefix_specs, f"`{name}`")
+                postfix_section = _extract_section(postfix_specs, f"`{name}`")
+                if prefix_section is not None and postfix_section is not None:
+                    raise ParserError(
+                        f"`__attribute__((section(...)))` is given twice "
+                        f"on `{name}`"
+                    )
                 tails.append(c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
                         name=name,
@@ -2598,6 +2641,7 @@ class _ASTBuilder(Transformer):
                         data_type=composed,
                         storage_class=storage_class,
                         placement=placement,
+                        section=prefix_section or postfix_section,
                     )
                 ))
         return struct_decls + tails
@@ -2745,6 +2789,9 @@ class _ASTBuilder(Transformer):
             abi_annotation=prefix_abi,
             param_registers=list(param_regs),
             carry_return=carry_return,
+            section=_extract_section(
+                prefix_specs, f"function definition {name!r}",
+            ),
         ))
         return struct_decls + [tail]
 

@@ -185,6 +185,7 @@ class Type_var_decl:
     storage_class: Type_storage_class | None = None
     abi_annotation: str | None = None
     placement: Type_placement | None = None
+    section: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -199,6 +200,7 @@ class Type_function_decl:
     carry_return: bool = False
     address: int | None = None
     preserves: list[str] = field(default_factory=list)
+    section: str | None = None
 
 
 @dataclass

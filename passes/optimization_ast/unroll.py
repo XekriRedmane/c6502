@@ -281,6 +281,7 @@ def _unroll_function(
         carry_return=fd.carry_return,
         address=fd.address,
         preserves=list(fd.preserves),
+        section=fd.section,
     )
 
 

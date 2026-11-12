@@ -7,9 +7,13 @@ parsed by any tool.
 ## Long-form docs
 
 - `attributes.md` — user guide to c6502's `__attribute__`s
-  (`zp_abi`, `return_bool_in_carry`, `zeropage`, `address`) and to
-  declaring and calling ROM routines, with Apple II Monitor examples,
-  the errors the compiler reports, and current limits.
+  (`zp_abi`, `return_bool_in_carry`, `zeropage`, `address`, `section`)
+  and to declaring and calling ROM routines, with Apple II Monitor
+  examples, the errors the compiler reports, and current limits.
+- `linker_scripts.md` — user guide to `compile.py --link -T`: sections
+  (the defaults and `__attribute__((section("name")))`), the GNU ld
+  script subset, the section symbols, the startup copy and clear, and
+  how the layout becomes dasm segments.
 - `pragmas.md` — user guide to the `#pragma c6502` directives:
   `loop unroll(enable)` and `call save(hardware_stack)`, with the
   cautions about the hardware stack's depth that the second needs.

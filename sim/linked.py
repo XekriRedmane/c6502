@@ -3,9 +3,10 @@ simulator, by assembling it with dasm.
 
 The in-process assembler (`sim/assembler.py`) works on the asm IR, and
 a linked program only exists as text, so `build_linked_sim` writes the
-text out with an `ORG` and the runtime's helper addresses, runs dasm
-on it, and loads the binary and the symbol table into the same
-simulator `build_sim` builds. `DASM` is None when dasm isn't installed,
+text out with the runtime's helper addresses (and an `ORG`, unless a
+linker script already placed it), runs dasm on it, and loads each
+segment of the binary at its address, and the symbol table, into the
+same simulator `build_sim` builds. `DASM` is None when dasm isn't installed,
 and tests that need it are skipped.
 """
 from __future__ import annotations
@@ -46,8 +47,10 @@ def build_linked_sim(text: str, origin: int = DEFAULT_ORIGIN) -> Simulation:
         for name, addr in sorted(runtime.symbols.items())
         if name not in equs
     ]
+    placed = re.search(r"^\s+ORG\s", text, re.M) is not None
     source = "\n".join([
-        "\tPROCESSOR 6502", *helpers, f"\tORG ${origin:04X}", text,
+        "\tPROCESSOR 6502", *helpers,
+        *([] if placed else [f"\tORG ${origin:04X}"]), text,
     ])
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "linked.asm"
@@ -55,7 +58,7 @@ def build_linked_sim(text: str, origin: int = DEFAULT_ORIGIN) -> Simulation:
         sym = Path(tmp) / "linked.sym"
         src.write_text(source)
         done = subprocess.run(
-            [DASM, str(src), "-f3", f"-o{out}", f"-s{sym}"],
+            [DASM, str(src), "-f2", f"-o{out}", f"-s{sym}"],
             capture_output=True, text=True,
         )
         if done.returncode != 0:
@@ -63,7 +66,16 @@ def build_linked_sim(text: str, origin: int = DEFAULT_ORIGIN) -> Simulation:
         binary = out.read_bytes()
         symbols = _read_symbols(sym.read_text())
     image = bytearray(0x10000)
-    image[origin:origin + len(binary)] = binary
+    end = origin
+    pos = 0
+    # dasm's -f2 format: each segment is its address and its length,
+    # two little-endian bytes each, then its bytes.
+    while pos + 4 <= len(binary):
+        addr = binary[pos] | binary[pos + 1] << 8
+        size = binary[pos + 2] | binary[pos + 3] << 8
+        image[addr:addr + size] = binary[pos + 4:pos + 4 + size]
+        pos += 4 + size
+        end = max(end, addr + size)
     rt_mod.install_runtime(
         image, runtime, symbols["main"],
         init_addr=symbols.get("__zp_init"),
@@ -74,7 +86,7 @@ def build_linked_sim(text: str, origin: int = DEFAULT_ORIGIN) -> Simulation:
     mpu.processorCycles = 0
     return Simulation(
         mpu=mpu, symbols=symbols, runtime=runtime, origin=origin,
-        code_end=origin + len(binary),
+        code_end=end,
     )
 
 

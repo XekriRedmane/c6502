@@ -42,7 +42,7 @@ module C99 {
     -- 6502 register (Y — the only register available to locals). Hard-
     -- error post-parse if the type isn't 1-byte (Char/SChar/UChar) or
     -- is a Pointer. Carried on `storage_class` as `Register()`.
-    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation, placement? placement)
+    var_decl = (identifier name, exp? init, data_type, storage_class?, string? abi_annotation, placement? placement, string? section)
     -- abi_annotation carries the value of any prefix bare-identifier
     -- attribute (currently only "zp_abi"; see docs/leaf_zp_abi.md).
     -- Used by the leaf-ZP-ABI optimization. None when no such
@@ -76,7 +76,11 @@ module C99 {
     -- preserves lists the registers ("X", "Y") that
     -- `__attribute__((preserves_x))` / `preserves_y` say the function
     -- leaves unchanged. Only a function with an address may carry them.
-    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves)
+    function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves, string? section)
+    -- `section` (on both declarations) is the name from
+    -- `__attribute__((section("name")))`, or None. It only matters to
+    -- `compile.py --link -T`, which places each section where the
+    -- linker script says (passes/sections.py).
     -- Struct or union declaration. `is_union` distinguishes the two
     -- (layout differs: struct sums member sizes, union maxes them).
     -- An empty `members` list means a forward declaration (`struct

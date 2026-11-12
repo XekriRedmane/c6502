@@ -19,6 +19,9 @@ __local_beam_target_draw__0	EQU	$89
 ; ext score_add params=
 ; call beam_target_draw -> draw_sprite
 ; call beam_target_draw -> score_add
+; item beam_target_draw section=.text local=false zero=false
+; item floor_y_table section=.rodata local=true zero=false
+; item proj_screen_col section=.rodata local=true zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

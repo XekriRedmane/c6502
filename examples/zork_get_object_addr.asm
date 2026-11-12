@@ -15,6 +15,10 @@ z_header_addr	EQU	$BA
 ; def get_object_addr params=__zpabi_get_object_addr__obj locals=__local_get_object_addr__0,__local_get_object_addr__1,__local_get_object_addr__2,__local_get_object_addr__3,__local_get_object_addr__4 indirect=false in_cycle=false
 ; def main params= locals=__local_main__0,__local_main__1 indirect=false in_cycle=false
 ; call main -> get_object_addr
+; item get_object_addr section=.text local=false zero=false
+; item main section=.text local=false zero=false
+; item story section=.bss local=true zero=true
+; item __zp_init section=.text local=false zero=false
 ; zp z_header_addr size=2 at=$BA def=true init=$00,$00
 ; runtime hargs_size=32
 ; @zp-link-meta-end

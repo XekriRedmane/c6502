@@ -114,6 +114,7 @@ from passes.function_local_sizing import (
 from passes.address_taken_zp import (
     compute_address_taken_assignments, slot_symbols as _addr_taken_slot_symbols,
 )
+from passes.sections import items as section_items
 from passes.zp_link_metadata import build_metadata, format_metadata
 from passes.zp_local_allocation import (
     allocate_function_locals, build_local_slot_symbols,
@@ -604,6 +605,7 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         )
         link_meta.zp_objects = opt.zp_records
         link_meta.hargs_size = zp.layout.hargs_size
+        link_meta.items = section_items(asm4, symbols)
         return emit_program(
             asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},
             link_metadata_lines=format_metadata(link_meta),
@@ -754,6 +756,11 @@ def _main_link(argv: list[str]) -> int:
     ap.add_argument("-o", dest="output", required=True,
                     help="combined output .asm")
     ap.add_argument(
+        "-T", dest="script", default=None,
+        help="linker script (a GNU ld subset; passes/link_script.py) "
+             "that places each section at an address",
+    )
+    ap.add_argument(
         "--link", action="store_true",
         help=argparse.SUPPRESS,  # already detected by main
     )
@@ -767,7 +774,7 @@ def _main_link(argv: list[str]) -> int:
         return 2
     from passes.linker import LinkError, link_files
     try:
-        link_files(args.inputs, args.output)
+        link_files(args.inputs, args.output, args.script)
     except LinkError as e:
         print(f"compile.py: link error: {e}", file=sys.stderr)
         return 1

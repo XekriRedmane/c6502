@@ -15,6 +15,7 @@ __zpabi_snd_delay_up__clicks	EQU	$83
 ; ext snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks
 ; call do_ascend -> sfx_tone
 ; call do_ascend -> snd_delay_up
+; item do_ascend section=.text local=false zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

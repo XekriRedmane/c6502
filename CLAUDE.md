@@ -257,6 +257,12 @@ Linker mode:
   `passes.zp_link_metadata`) to recover the call-graph and param /
   local sizes needed for the global allocation. See
   `passes/linker.py`.
+  With `-T script.ld` (a GNU ld subset, `passes/link_script.py`) it
+  also lays the program out in memory: each function and object is
+  an item in a section (`passes/sections.py`, `__attribute__((section
+  ("name")))`), and the output sections become dasm `SEG` / `ORG` /
+  `RORG` blocks with overflow checks (`passes/link_layout.py`). User
+  guide: [docs/linker_scripts.md](docs/linker_scripts.md).
 
 For the full optimizer walkthrough, see
 [passes/optimization/CLAUDE.md](passes/optimization/CLAUDE.md) and

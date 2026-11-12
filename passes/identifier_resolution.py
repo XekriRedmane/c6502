@@ -471,6 +471,7 @@ class Resolver:
                         storage_class=vd.storage_class,
                         abi_annotation=vd.abi_annotation,
                         placement=vd.placement,
+                        section=vd.section,
                     ),
                 )
             case c99_ast.FunctionDecl(function_decl=fd):
@@ -608,6 +609,7 @@ class Resolver:
             carry_return=fd.carry_return,
             address=fd.address,
             preserves=list(fd.preserves),
+            section=fd.section,
         )
 
     def _resolve_params(
@@ -834,6 +836,7 @@ class Resolver:
                     storage_class=vd.storage_class,
                     abi_annotation=vd.abi_annotation,
                     placement=vd.placement,
+                    section=vd.section,
                 )
         raise TypeError(f"unexpected var_decl: {vd!r}")
 

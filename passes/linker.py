@@ -54,6 +54,20 @@ are kept out of the slot allocators, and each TU's `__zp_init` is
 replaced with one that stores every object's initial bytes
 (`_init_lines`).
 
+Names. An internal name (a `static`, or a string literal `str@N`)
+that another unit also defines, or that names something else in the
+program, is renamed `name.k` in unit `k`
+(`link_layout.rename_locals`); two units defining one external name
+is an error.
+
+Layout. With a linker script (`-T`, passes/link_script.py), the
+output is laid out by it: each function and object is an item in a
+section (passes/sections.py), and the output sections become dasm
+segments at the script's addresses (passes/link_layout.py). The
+startup code that copies `AT>` sections and clears `NOLOAD` ones goes
+in `__zp_init`. Without a script, the units' bodies follow each other
+as before, with no address.
+
 `link_files` is the top-level entry point.
 """
 from __future__ import annotations
@@ -335,6 +349,7 @@ def _synthesize(
 def link_files(
     input_paths: list[Path | str],
     output_path: Path | str,
+    script_path: Path | str | None = None,
 ) -> None:
     """Read each input `.asm`, merge metadata, re-allocate every
     slot symbol globally, and write a single `.asm` to
@@ -394,6 +409,35 @@ def link_files(
             )
         metas.append(meta)
         bodies.append(_without_init(body))
+    from passes.link_layout import LayoutError
+    script = None
+    if script_path is not None:
+        from passes.link_script import ScriptError, parse_script
+        try:
+            script = parse_script(Path(script_path).read_text())
+        except ScriptError as e:
+            raise LinkError(f"{script_path}: {e}") from e
+        for path, meta, body in zip(input_paths, metas, bodies):
+            if not meta.items and any(line.strip() for line in body):
+                raise LinkError(
+                    f"{path} has no section information in its link "
+                    f"metadata; compile it again with this compiler"
+                )
+    # Give colliding internal names their own spellings.
+    from passes.link_layout import rename_locals
+    try:
+        renamed = rename_locals(
+            [([it for it in m.items if it.name != INIT_FUNCTION],
+              m.zp_objects, body)
+             for m, body in zip(metas, bodies)],
+            set(fixed),
+        )
+    except LayoutError as e:
+        raise LinkError(str(e)) from e
+    bodies = [body for _, _, body in renamed]
+    unit_items = [items for items, _, _ in renamed]
+    for meta, (_, zp_objects, _) in zip(metas, renamed):
+        meta.zp_objects = zp_objects
     # Merge + validate.
     merged = _merge(metas)
     _validate_eligibility(merged)
@@ -442,19 +486,71 @@ def link_files(
     out_lines.append("")
     out_lines.extend(format_metadata(merged))
     out_lines.append("")
-    for i, body in enumerate(bodies):
-        if i > 0:
+    if script is None:
+        for i, body in enumerate(bodies):
+            if i > 0:
+                out_lines.append("")
+            out_lines.extend(body)
+        init = _init_lines(merged.zp_objects)
+        if init:
             out_lines.append("")
-        out_lines.extend(body)
-    init = _init_lines(merged.zp_objects)
-    if init:
-        out_lines.append("")
-        out_lines.extend(init)
-    for name in demoted:
-        record = next(r for r in objects[name] if r.defined)
-        out_lines.append("")
-        out_lines.extend(_data_lines(record))
+            out_lines.extend(init)
+        for name in demoted:
+            record = next(r for r in objects[name] if r.defined)
+            out_lines.append("")
+            out_lines.extend(_data_lines(record))
+    else:
+        out_lines.extend(_scripted_body(
+            script, input_paths, unit_items, bodies, merged, objects,
+            demoted, (layout or {}).get("HARGS size"),
+        ))
     Path(output_path).write_text("\n".join(out_lines) + "\n")
+
+
+def _scripted_body(
+    script, paths, unit_items, bodies, merged, objects, demoted,
+    hargs_size,
+) -> list[str]:
+    """The program's body laid out by `script`, with the linker's own
+    items (`__zp_init`, with the startup code, and the promoted
+    objects put back in the data segment) in a unit of their own."""
+    from asm_emit import _instr_line
+    from passes.link_layout import (
+        LayoutError, Unit, item_chunks, layout_lines, startup_lines,
+    )
+    from passes.zp_link_metadata import ItemMeta
+    startup = startup_lines(script, _instr_line)
+    if startup and hargs_size is not None and hargs_size < 4:
+        raise LinkError(
+            f"the startup code that copies and clears sections needs 4 "
+            f"bytes of HARGS, and the runtime's block has {hargs_size}"
+        )
+    units = []
+    try:
+        for path, items, body in zip(paths, unit_items, bodies):
+            units.append(Unit(
+                path=str(path), items=items, chunks=item_chunks(body, items),
+            ))
+        own_items: list[ItemMeta] = []
+        chunks: dict[str, list[str]] = {}
+        init = _init_lines(merged.zp_objects, startup)
+        if init:
+            own_items.append(ItemMeta(name=INIT_FUNCTION, section=".text"))
+            chunks[INIT_FUNCTION] = init
+        for name in demoted:
+            record = next(r for r in objects[name] if r.defined)
+            zero = all(v == "$00" for v in record.init)
+            own_items.append(ItemMeta(
+                name=name, section=".bss" if zero else ".data", zero=zero,
+            ))
+            chunks[name] = (
+                [f"{name}:", _instr_line("DS.B", str(record.size))]
+                if zero else _data_lines(record)
+            )
+        units.append(Unit(path="the linker", items=own_items, chunks=chunks))
+        return layout_lines(script, units, _instr_line)
+    except LayoutError as e:
+        raise LinkError(str(e)) from e
 
 
 def _merge_zp_objects(
@@ -607,11 +703,14 @@ def _without_init(body: list[str]) -> list[str]:
     return out
 
 
-def _init_lines(objects: list[ZpObjectMeta]) -> list[str]:
+def _init_lines(
+    objects: list[ZpObjectMeta], startup: list[str] = (),
+) -> list[str]:
     """`__zp_init` for the linked program: stores of every defined
     zero-page object's initial bytes, each value loaded once, zero
     first, the way `zp_globals.place_zp_globals` writes it for one
-    unit. Empty when there's nothing to store."""
+    unit, then `startup` (`link_layout.startup_lines`). Empty when
+    there's nothing to do."""
     from asm_emit import _instr_line
     stores: dict[str, list[str]] = {}
     for z in objects:
@@ -619,9 +718,10 @@ def _init_lines(objects: list[ZpObjectMeta]) -> list[str]:
             stores.setdefault(value, []).append(
                 z.name if k == 0 else f"{z.name}+{k}"
             )
-    if not stores:
+    if not stores and not startup:
         return []
     lines = [f"{INIT_FUNCTION}:", _instr_line("SUBROUTINE"), ""]
+    lines.extend(startup)
     for value in sorted(stores, key=lambda v: v != "$00"):
         lines.append(_instr_line("LDA", f"#{value}"))
         lines.extend(_instr_line("STA", d) for d in stores[value])

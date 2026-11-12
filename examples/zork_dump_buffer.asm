@@ -47,6 +47,9 @@ COUT1	EQU	$FDF0
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; call dump_buffer_to_printer -> COUT
 ; call dump_buffer_to_screen -> COUT1
+; item dump_buffer_to_screen section=.text local=false zero=false
+; item dump_buffer_to_printer section=.text local=false zero=false
+; item printer_card_initialized_flag section=.bss local=true zero=true
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=

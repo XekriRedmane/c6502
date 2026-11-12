@@ -188,7 +188,21 @@ this directory:
   `_place_zp_objects`), their bytes are passed to the allocators as
   `reserved`, and each unit's `__zp_init` is replaced with one
   generated from the metadata (`_without_init`, `_init_lines`).
-  `sim/linked.py` runs a linked program by assembling it with dasm.
+  Internal names two units share are renamed `name.k`
+  (`link_layout.rename_locals`). With `-T`, `_scripted_body` lays
+  the program out by the script. `sim/linked.py` runs a linked
+  program by assembling it with dasm.
+- `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
+  (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
+  `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
+  `LOADADDR` / `SIZEOF`).
+- `link_layout.py` — `item_chunks` (splits a unit's body into its
+  items), `rename_locals`, `layout_lines` (each output section as a
+  dasm `SEG` / `SEG.U` with `ORG`, `RORG` for a load address,
+  `__name_start` / `_end` / `_load` symbols, and `IF` / `ERR`
+  overflow checks; addresses are dasm expressions since sizes are
+  only known when assembling), and `startup_lines` (copying `AT>`
+  sections and clearing `NOLOAD` ones, in `__zp_init`).
 - `long_branches.py` — `expand_program`. Rewrites conditional branches
   with out-of-range targets to `Branch(inverted_cond, .skip);
   Jump(target); .skip:`. Iterative.
@@ -248,6 +262,10 @@ this directory:
   1)` and one bit back) instead of by an `asl*` / `lsr*` / `asr*`
   call. `tac_to_asm` and the two-term
   multiply rule in `optimization/strength_reduction.py` both use it.
+- `sections.py` — `items`: the section of each function and object in
+  the finished asm (`__attribute__((section("name")))`, else `.text`,
+  `.rodata` for `const` objects and string literals, `.bss` for
+  all-zero objects, `.data`), for the link metadata's `item` lines.
 - `string_lifting.py` — pass 3 (see below).
 - `sub1_test_zero_peephole.py` — `apply_sub1_test_zero_peephole`.
 - `type_checking.py` — pass 6 (see below).

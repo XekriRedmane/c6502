@@ -6,6 +6,7 @@ __local_paint_hud_strip_p1__y	EQU	$81
 
 ; @zp-link-meta-begin
 ; def paint_hud_strip_p1 params= locals=__local_paint_hud_strip_p1__0,__local_paint_hud_strip_p1__y indirect=false in_cycle=false
+; item paint_hud_strip_p1 section=.text local=false zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

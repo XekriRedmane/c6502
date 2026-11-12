@@ -21,6 +21,14 @@ __local_refresh_hit_entities__x	EQU	$8D
 ; def refresh_hit_entities params=__zpabi_refresh_hit_entities__hit_max,__zpabi_refresh_hit_entities__player_y,__zpabi_refresh_hit_entities__sprite_xref locals=__local_refresh_hit_entities__hi,__local_refresh_hit_entities__0,__local_refresh_hit_entities__lo,__local_refresh_hit_entities__1,__local_refresh_hit_entities__x indirect=false in_cycle=false
 ; ext draw_sprite_opaque params=__zpabi_draw_sprite_opaque__width,__zpabi_draw_sprite_opaque__height,__zpabi_draw_sprite_opaque__sprite_x,__zpabi_draw_sprite_opaque__sprite_y,__zpabi_draw_sprite_opaque__tile_src_0,__zpabi_draw_sprite_opaque__tile_src_1
 ; call refresh_hit_entities -> draw_sprite_opaque
+; item refresh_hit_entities section=.text local=false zero=false
+; item entity_hit_y section=.bss local=false zero=true
+; item entity_hit_row section=.bss local=false zero=true
+; item entity_hit_state section=.bss local=false zero=true
+; item hit_spr_pos_lo section=.rodata local=false zero=false
+; item hit_spr_pos_hi section=.rodata local=false zero=false
+; item hit_spr_neg_lo section=.rodata local=false zero=false
+; item hit_spr_neg_hi section=.rodata local=false zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

@@ -12,6 +12,8 @@ __local_clear_page1__x	EQU	$84
 ; def clear_page1 params=__zpabi_clear_page1__zp_clear_col,__zpabi_clear_page1__zp_clear_col_end locals=__local_clear_page1__x,__local_clear_page1__0 indirect=false in_cycle=false
 ; ext interlace_fill_p1 params=__zpabi_interlace_fill_p1__col,__zpabi_interlace_fill_p1__paint
 ; call clear_page1 -> interlace_fill_p1
+; item clear_page1 section=.text local=false zero=false
+; item TEXT_STRIP_SRC section=.rodata local=false zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

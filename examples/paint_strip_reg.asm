@@ -10,6 +10,9 @@ __local_main__0	EQU	$82
 ; def main params= locals=__local_main__0,__local_main__1 indirect=false in_cycle=false
 ; def paint_strip_reg params=__zpabi_paint_strip_reg__x_pixel,__zpabi_paint_strip_reg__color locals= indirect=false in_cycle=false param_regs=A,X
 ; call main -> paint_strip_reg
+; item paint_strip_reg section=.text local=false zero=false
+; item main section=.text local=false zero=false
+; item hud_buf section=.bss local=true zero=true
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

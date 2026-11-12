@@ -322,12 +322,15 @@ class StaticAttr(IdAttr):
     or None. Such an object is memory the program doesn't own, so
     it's never defined. An address below $100 also sets `zeropage`
     and `zp_address`, which reserves the bytes the way an `extern`
-    `zeropage(addr)` declaration does."""
+    `zeropage(addr)` declaration does. `section` is the name from
+    `__attribute__((section("name")))`, or None for the default
+    (passes/sections.py)."""
     initial_value: InitialValue
     is_global: bool
     zeropage: bool = False
     zp_address: int | None = None
     address: int | None = None
+    section: str | None = None
 
 
 @dataclass(frozen=True)
@@ -353,6 +356,7 @@ class FunAttr(IdAttr):
     carry_return: bool = False
     address: int | None = None
     preserves: frozenset[str] = frozenset()
+    section: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -983,6 +987,34 @@ def carry_struct_value_bytes(ret: Type, types) -> int | None:
     if not isinstance(ft, Bool) or flag.byte_offset != n:
         return None
     return n
+
+
+def _merge_section(name: str, prior: str | None, new: str | None):
+    """The section of `name` after another declaration: either one's,
+    which have to agree when both give one."""
+    if prior is not None and new is not None and prior != new:
+        raise TypeCheckError(
+            f"two declarations of {_display_name(name)!r} put it in "
+            f"different sections, {prior!r} and {new!r}"
+        )
+    return new if new is not None else prior
+
+
+def _check_section(name: str, section, address, placement) -> None:
+    """A section can't go with `address` or `zeropage`, which place
+    the name themselves."""
+    if section is None:
+        return
+    if address is not None:
+        raise TypeCheckError(
+            f"{_display_name(name)!r} has `address`, so it's already "
+            f"placed and can't also be in section {section!r}"
+        )
+    if isinstance(placement, c99_ast.ZeroPage):
+        raise TypeCheckError(
+            f"{_display_name(name)!r} is in zero page, so it can't also "
+            f"be in section {section!r}"
+        )
 
 
 def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
@@ -2135,6 +2167,7 @@ class TypeChecker:
             initial=initial,
             is_global=is_global,
             placement=vd.placement,
+            section=vd.section,
         )
 
     def _check_function_decl(
@@ -2177,6 +2210,7 @@ class TypeChecker:
             carry_return=fd.carry_return,
             address=fd.address,
             preserves=frozenset(fd.preserves),
+            section=fd.section,
         )
         # Per C99 §6.7.5.3.4, a parameter shall not have void type
         # (the `f(void)` form for empty params is handled by the
@@ -2296,6 +2330,7 @@ class TypeChecker:
         initial: InitialValue,
         is_global: bool,
         placement: c99_ast.Type_placement | None = None,
+        section: str | None = None,
     ) -> None:
         existing = self.symbols.get(name)
         zeropage = isinstance(placement, c99_ast.ZeroPage)
@@ -2307,12 +2342,13 @@ class TypeChecker:
                 zeropage, zp_address = True, address
         if existing is None:
             _check_unowned_object(name, initial, address)
+            _check_section(name, section, address, placement)
             self.symbols[name] = Symbol(
                 type=type_,
                 attrs=StaticAttr(
                     initial_value=initial, is_global=is_global,
                     zeropage=zeropage, zp_address=zp_address,
-                    address=address,
+                    address=address, section=section,
                 ),
             )
             return
@@ -2354,15 +2390,21 @@ class TypeChecker:
         if address is None:
             address = prior_fixed
         _check_unowned_object(name, merged, address)
+        section = _merge_section(name, existing.attrs.section, section)
+        zeropage = existing.attrs.zeropage or zeropage
+        _check_section(
+            name, section, address,
+            c99_ast.ZeroPage(address=None) if zeropage else None,
+        )
         self.symbols[name] = Symbol(
             type=type_,
             attrs=StaticAttr(
                 initial_value=merged, is_global=is_global,
-                zeropage=existing.attrs.zeropage or zeropage,
+                zeropage=zeropage,
                 zp_address=(
                     zp_address if zp_address is not None else prior_addr
                 ),
-                address=address,
+                address=address, section=section,
             ),
         )
 
@@ -2498,16 +2540,18 @@ class TypeChecker:
         carry_return: bool = False,
         address: int | None = None,
         preserves: frozenset[str] = frozenset(),
+        section: str | None = None,
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
             _check_preserves(name, ftype, address, preserves, self.types)
+            _check_section(name, section, address, None)
             self.symbols[name] = Symbol(
                 type=ftype,
                 attrs=FunAttr(
                     defined=defined, is_global=is_global,
                     carry_return=carry_return, address=address,
-                    preserves=preserves,
+                    preserves=preserves, section=section,
                 ),
             )
             return
@@ -2560,12 +2604,14 @@ class TypeChecker:
         # `preserves_*` accumulates across declarations, like `address`.
         preserves = existing.attrs.preserves | preserves
         _check_preserves(name, ftype, address, preserves, self.types)
+        section = _merge_section(name, existing.attrs.section, section)
+        _check_section(name, section, address, None)
         self.symbols[name] = Symbol(
             type=ftype,
             attrs=FunAttr(
                 defined=new_defined, is_global=is_global,
                 carry_return=carry_return, address=address,
-                preserves=preserves,
+                preserves=preserves, section=section,
             ),
         )
 
@@ -2655,6 +2701,7 @@ class TypeChecker:
                 initial=NoInitializer(),
                 is_global=is_global,
                 placement=vd.placement,
+                section=vd.section,
             )
             return
         if isinstance(vd.placement, c99_ast.Absolute):
@@ -2668,6 +2715,14 @@ class TypeChecker:
         ):
             raise TypeCheckError(
                 f"`__attribute__((zeropage))` needs an object with "
+                f"static storage; {_display_name(vd.name)!r} is "
+                f"automatic (declare it `static` or at file scope)"
+            )
+        if vd.section is not None and not isinstance(
+            vd.storage_class, c99_ast.Static,
+        ):
+            raise TypeCheckError(
+                f"`__attribute__((section(...)))` needs an object with "
                 f"static storage; {_display_name(vd.name)!r} is "
                 f"automatic (declare it `static` or at file scope)"
             )
@@ -2740,6 +2795,7 @@ class TypeChecker:
                         vd.init, vd.data_type, vd.name, self.symbols,
                     ),
                 )
+            _check_section(vd.name, vd.section, None, vd.placement)
             self.symbols[vd.name] = Symbol(
                 type=vd.data_type,
                 attrs=StaticAttr(
@@ -2749,6 +2805,7 @@ class TypeChecker:
                         vd.placement.address
                         if vd.placement is not None else None
                     ),
+                    section=vd.section,
                 ),
             )
             return
@@ -3301,11 +3358,11 @@ class TypeChecker:
                 # class specifiers on every declarator, so each is
                 # plain `T <name> = <exp>;` and lands as a LocalAttr.
                 for vd in vds:
-                    if vd.placement is not None:
+                    if vd.placement is not None or vd.section is not None:
                         raise TypeCheckError(
-                            f"`__attribute__((zeropage))` needs an "
-                            f"object with static storage; for-init "
-                            f"{vd.name!r} is automatic"
+                            f"`__attribute__((zeropage))` and "
+                            f"`section` need an object with static "
+                            f"storage; for-init {vd.name!r} is automatic"
                         )
                     if not _is_complete_object_type(vd.data_type):
                         raise TypeCheckError(

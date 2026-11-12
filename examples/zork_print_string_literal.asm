@@ -150,6 +150,30 @@ COUT1	EQU	$FDF0
 ; call print_zstring -> load_packed_address
 ; call print_zstring -> print_zstring
 ; call read_from_sector -> do_rwts_on_sector
+; item do_rwts_on_sector section=.text local=false zero=false
+; item read_from_sector section=.text local=false zero=false
+; item find_index_of_page_table section=.text local=false zero=false
+; item set_page_first section=.text local=false zero=false
+; item invalidate_zcode_page2 section=.text local=false zero=false
+; item get_next_code_byte2 section=.text local=false zero=false
+; item get_next_code_word section=.text local=false zero=false
+; item load_packed_address section=.text local=false zero=false
+; item dump_buffer_to_screen section=.text local=false zero=false
+; item dump_buffer_to_printer section=.text local=false zero=false
+; item dump_buffer_line section=.text local=false zero=false
+; item cout_string section=.text local=false zero=false
+; item dump_buffer_with_more section=.text local=false zero=false
+; item buffer_char section=.text local=false zero=false
+; item get_next_zchar section=.text local=false zero=false
+; item A_mod_3 section=.text local=false zero=false
+; item get_alphabet section=.text local=false zero=false
+; item print_zstring section=.text local=false zero=false
+; item print_string_literal section=.text local=false zero=false
+; item dct section=.data local=false zero=false
+; item iob section=.data local=false zero=false
+; item printer_card_initialized_flag section=.bss local=true zero=true
+; item string_more section=.data local=true zero=false
+; item a2_table section=.rodata local=true zero=false
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=

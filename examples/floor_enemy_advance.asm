@@ -14,6 +14,12 @@ __local_floor_enemy_advance__slot	EQU	$86
 ; def floor_enemy_advance params=__zpabi_floor_enemy_advance__move_dir,__zpabi_floor_enemy_advance__player_col locals=__local_floor_enemy_advance__0,__local_floor_enemy_advance__step,__local_floor_enemy_advance__slot indirect=false in_cycle=false
 ; ext snd_delay_down params=__zpabi_snd_delay_down__pitch,__zpabi_snd_delay_down__clicks
 ; call floor_enemy_advance -> snd_delay_down
+; item floor_enemy_advance section=.text local=false zero=false
+; item enemy_flag section=.bss local=false zero=true
+; item enemy_col section=.bss local=false zero=true
+; item enemy_y section=.bss local=false zero=true
+; item floor_enemy_spawn_sched section=.rodata local=true zero=false
+; item __zp_init section=.text local=false zero=false
 ; zp jump_flag size=1 at=auto def=true init=$00 weight=17
 ; runtime hargs_size=32
 ; @zp-link-meta-end

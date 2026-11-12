@@ -91,6 +91,35 @@ __local_smc_body_draw__2	EQU	$9F
 ; call companion_update -> smc_body_draw
 ; call entity_proximity -> find_active_entity
 ; call smc_body_draw -> draw_sprite
+; item compute_screen_x section=.text local=true zero=false
+; item find_active_entity section=.text local=true zero=false
+; item entity_proximity section=.text local=true zero=false
+; item smc_body_draw section=.text local=true zero=false
+; item player_catch section=.text local=true zero=false
+; item active_pos_step section=.text local=true zero=false
+; item active_neg_step section=.text local=true zero=false
+; item drift_step section=.text local=true zero=false
+; item companion_update section=.text local=false zero=false
+; item proj_screen_col section=.rodata local=true zero=false
+; item proj_frame_idx section=.rodata local=true zero=false
+; item companion_pos_pose1_lo section=.rodata local=true zero=false
+; item companion_pos_pose1_hi section=.rodata local=true zero=false
+; item companion_pos_pose2_lo section=.rodata local=true zero=false
+; item companion_pos_pose2_hi section=.rodata local=true zero=false
+; item companion_pos_pose3_lo section=.rodata local=true zero=false
+; item companion_pos_pose3_hi section=.rodata local=true zero=false
+; item companion_neg_pose1_lo section=.rodata local=true zero=false
+; item companion_neg_pose1_hi section=.rodata local=true zero=false
+; item companion_neg_pose2_lo section=.rodata local=true zero=false
+; item companion_neg_pose2_hi section=.rodata local=true zero=false
+; item companion_neg_pose3_lo section=.rodata local=true zero=false
+; item companion_neg_pose3_hi section=.rodata local=true zero=false
+; item companion_pos_lo_tbl section=.rodata local=true zero=false
+; item companion_pos_hi_tbl section=.rodata local=true zero=false
+; item companion_neg_lo_tbl section=.rodata local=true zero=false
+; item companion_neg_hi_tbl section=.rodata local=true zero=false
+; item pos_walk_next section=.bss local=true zero=true
+; item neg_walk_next section=.bss local=true zero=true
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

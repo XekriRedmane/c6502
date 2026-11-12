@@ -7,6 +7,7 @@ __zpabi_snd_delay_up__clicks	EQU	$81
 
 ; @zp-link-meta-begin
 ; def snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks locals=__local_snd_delay_up__0,__local_snd_delay_up__pitch indirect=false in_cycle=false param_regs=A,X
+; item snd_delay_up section=.text local=false zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

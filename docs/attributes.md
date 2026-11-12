@@ -45,6 +45,7 @@ error that names the declaration.
 | `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
 | `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a `register` parameter | Names the register (or two, low byte first) the parameter arrives in. |
 | `packed` | an enum's definition | Makes the enum one byte when its values fit. |
+| `section("name")` | a function, or an object with static storage | Puts it in a section of that name, for a linker script to place. |
 
 ### `zp_abi`
 
@@ -325,6 +326,23 @@ definition, not on a later `enum dir` that refers to it. The
 enumeration constants are still `int` constants, as C99 says, so
 `RUN + 1` is an `int`; storing one in a packed variable takes a
 byte.
+
+### `section("name")`
+
+`section` puts a function or an object with static storage in a
+named section instead of the one it would go in (`.text`, `.rodata`,
+`.data`, or `.bss`). A linker script given to `compile.py --link -T`
+then decides where the section goes in memory:
+
+```c
+__attribute__((section(".text.boot"))) void reset(void);
+uint8_t buffer[256] __attribute__((section(".page")));
+```
+
+Every declaration that names a section has to name the same one, and
+the attribute can't go with `zeropage` or `address`. Without `-T` it
+has no effect. [linker_scripts.md](linker_scripts.md) describes
+sections and scripts.
 
 ## Calling a ROM routine
 

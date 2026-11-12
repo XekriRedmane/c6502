@@ -1480,6 +1480,11 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   addressing without a definition. See "Storage classes and
   linkage". `__attribute__((zeropage))` / `zeropage(addr)` puts one
   in zero page (see "Zero-page globals").
+- Multi-file programs: `compile.py --link` joins `--optimize`
+  outputs, and `-T script.ld` lays the program out in memory with a
+  GNU ld-style linker script (`MEMORY`, `SECTIONS`, `AT>`, `NOLOAD`,
+  `ALIGN`), placing each section, including ones named with
+  `__attribute__((section("name")))`. See docs/linker_scripts.md.
 - Integer / character / string / floating constants per their
   C99 §6.4.4 / §6.4.5 rules (string-literal concatenation,
   string lifting to file-scope `static char[N+1]`).

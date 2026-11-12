@@ -483,6 +483,10 @@ def link_records(prog: asm_ast.Program, zp: ZpGlobals) -> list:
         tl.name: tl.init for tl in prog.top_level
         if isinstance(tl, asm_ast.StaticVariable)
     }
+    internal = {
+        tl.name for tl in prog.top_level
+        if isinstance(tl, asm_ast.StaticVariable) and not tl.is_global
+    }
 
     def text(op) -> str:
         if isinstance(op, asm_ast.Imm):
@@ -501,6 +505,7 @@ def link_records(prog: asm_ast.Program, zp: ZpGlobals) -> list:
             at=addr if name in zp.pinned else None, defined=defined,
             init=[] if init is None else [text(o) for o in _init_operands(init)],
             weight=zp.promoted.get(name),
+            local=name in internal,
         ))
     for name in sorted(zp.external):
         out.append(ZpObjectMeta(

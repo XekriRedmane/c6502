@@ -26,6 +26,11 @@ zchar_scratch2	EQU	$DA
 ; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__1,__local_match_dictionary_word__entry_index_0,__local_match_dictionary_word__entry_index_1,__local_match_dictionary_word__2,__local_match_dictionary_word__3,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
 ; call main -> match_dictionary_word
 ; call match_dictionary_word -> get_dictionary_addr
+; item get_dictionary_addr section=.text local=false zero=false
+; item match_dictionary_word section=.text local=false zero=false
+; item main section=.text local=false zero=false
+; item story section=.bss local=true zero=true
+; item __zp_init section=.text local=false zero=false
 ; zp z_header_addr size=2 at=$BA def=true init=$00,$00
 ; zp zchar_scratch2 size=6 at=$DA def=true init=$00,$00,$00,$00,$00,$00
 ; runtime hargs_size=32

@@ -19,6 +19,17 @@ __local_floor_enemy_draw__slot	EQU	$8C
 ; def floor_enemy_draw params=__zpabi_floor_enemy_draw__page_flag locals=__local_floor_enemy_draw__0,__local_floor_enemy_draw__1,__local_floor_enemy_draw__2,__local_floor_enemy_draw__3,__local_floor_enemy_draw__slot indirect=false in_cycle=false
 ; ext draw_sprite params=__zpabi_draw_sprite__width,__zpabi_draw_sprite__height,__zpabi_draw_sprite__sprite_x,__zpabi_draw_sprite__sprite_y,__zpabi_draw_sprite__tile_src_0,__zpabi_draw_sprite__tile_src_1,__zpabi_draw_sprite__page_flag
 ; call floor_enemy_draw -> draw_sprite
+; item floor_enemy_draw section=.text local=false zero=false
+; item proj_screen_col section=.rodata local=true zero=false
+; item proj_frame_idx section=.rodata local=true zero=false
+; item floor_enemy_spr_s0_lo section=.rodata local=true zero=false
+; item floor_enemy_spr_s0_hi section=.rodata local=true zero=false
+; item floor_enemy_spr_s1_lo section=.rodata local=true zero=false
+; item floor_enemy_spr_s1_hi section=.rodata local=true zero=false
+; item floor_enemy_spr_s2_lo section=.rodata local=true zero=false
+; item floor_enemy_spr_s2_hi section=.rodata local=true zero=false
+; item floor_enemy_spr_s3_lo section=.rodata local=true zero=false
+; item floor_enemy_spr_s3_hi section=.rodata local=true zero=false
 ; runtime hargs_size=32
 ; @zp-link-meta-end
 

@@ -268,19 +268,6 @@ Monitor's zero page, and the runtime's block moves around it
   the HARGS size from every unit's need. Today it only checks that
   the units' layouts match.
 
-## Aliasing rule for two `(zp),Y` bases
-
-`asm_aliasing.may_alias` says two `IndirectZp` / `IndirectZpY`
-accesses through different zero-page pointers never alias. Two
-pointer variables can hold the same address, so the rule isn't sound
-in general. No pass seems to be able to act on it today: every store
-through a pointer goes through A, so a register tracker still sees
-the right value when the pointers are equal, and the dead-store and
-store-tracking passes only look at `Data` / `ZP` targets. Programs
-with two zero-page pointers to one buffer compiled correctly in a
-spot check. It should become "may alias" unless the two pointers are
-known to differ, before a pass that would act on it appears.
-
 ## Rotate top-tested loops
 
 `for` and `while` loops test at the top and end with a `JMP` back to

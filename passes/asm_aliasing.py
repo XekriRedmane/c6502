@@ -9,7 +9,7 @@ the rules stay consistent across passes.
 
 # Operand kinds and their addressing
 
-c6502's asm operand vocabulary covers six memory-shaped kinds:
+c6502's asm operand vocabulary covers seven memory-shaped kinds:
 
   * `Imm(value)` — immediate constant baked into the instruction.
     Never refers to memory.
@@ -26,6 +26,14 @@ c6502's asm operand vocabulary covers six memory-shaped kinds:
     holds a runtime 16-bit pointer; the actual address is opaque
     at compile time. `Indirect(off)` adds a compile-time `off` to
     Y; `IndirectY()` uses whatever Y already holds.
+  * `IndirectZp(addr, off)` / `IndirectZpY(addr)` — the same through
+    the pointer held in the zero-page pair at `addr` (a pointer
+    variable kept in zero page) instead of DPTR. `may_alias` compares
+    the byte accessed, not the pointer bytes: a write to `addr`
+    doesn't alias `(addr),Y`, though it changes where the next one
+    reads. A pass that remembers a value read through the pointer
+    must drop it when the pointer changes, as `asm_dead_store` does
+    with `_ptr_source_reads`.
   * `Frame(off)` / `Stack(off)` — the byte at `(FP),Y` / `(SSP),Y`
     with a compile-time `off`. FP and SSP are stable runtime
     pointers into the soft-stack region.
@@ -69,6 +77,11 @@ naive "anything-indirect-may-alias-anything" model:
     if their ranges adjoin, distinct offsets within each map to
     distinct frames.
   * Indirect vs Indirect: alias iff same offset (both via DPTR).
+  * IndirectZp vs IndirectZp: alias iff same base and same offset.
+    Through different bases they may alias, since two pointer
+    variables can hold the same address (`p = q`, or both set to one
+    buffer). Nothing here knows the pointers' values, so it can't
+    prove them different.
   * Indirect vs IndirectY / vice versa: aliases (both access
     DPTR-indexed bytes; Y could match `off`).
   * Indirect / IndirectY vs Frame / Stack: aliases (user might
@@ -250,15 +263,12 @@ def may_alias(
     if isinstance(a, asm_ast.Indirect) and isinstance(b, asm_ast.Indirect):
         return a.offset == b.offset
     if isinstance(a, asm_ast.IndirectZp) and isinstance(b, asm_ast.IndirectZp):
-        # Different ZP bases ⇒ different runtime pointers ⇒ no
-        # alias. Same base + same offset ⇒ same byte.
+        # Same base: the same pointer, so the offsets decide. Different
+        # bases: two pointers can hold the same address, so different
+        # bases may alias.
         if a.address != b.address:
-            return False
+            return True
         return a.offset == b.offset
-    if isinstance(a, asm_ast.IndirectZpY) and isinstance(b, asm_ast.IndirectZpY):
-        if a.address != b.address:
-            return False
-        return True  # same base, both depend on the same external Y
     # Frame vs Stack: separate stack pointers; no alias.
     if (
         isinstance(a, asm_ast.Frame) and isinstance(b, asm_ast.Stack)

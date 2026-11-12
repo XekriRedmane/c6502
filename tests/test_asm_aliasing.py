@@ -9,6 +9,7 @@ from passes.asm_aliasing import (
     DEFAULT_POOL_HI,
     may_alias,
 )
+from sim.harness import build_sim
 
 
 def _zp(addr: int, off: int = 0) -> asm_ast.ZP:
@@ -39,6 +40,14 @@ def _indirect(off: int) -> asm_ast.Indirect:
 
 def _indy() -> asm_ast.IndirectY:
     return asm_ast.IndirectY()
+
+
+def _izp(addr: int, off: int) -> asm_ast.IndirectZp:
+    return asm_ast.IndirectZp(address=addr, offset=off)
+
+
+def _izpy(addr: int) -> asm_ast.IndirectZpY:
+    return asm_ast.IndirectZpY(address=addr)
 
 
 class TestImmediates(unittest.TestCase):
@@ -179,6 +188,59 @@ class TestSameKindIndirects(unittest.TestCase):
         # Separate ZP pointer pairs (FP vs SSP).
         self.assertFalse(may_alias(_frame(5), _stack(5)))
         self.assertFalse(may_alias(_stack(0), _frame(0)))
+
+
+class TestZeroPagePointers(unittest.TestCase):
+    """`(zp),Y` through a pointer kept in zero page. One base is one
+    pointer, so its offsets decide; two bases are two pointers that
+    may hold the same address."""
+
+    def test_same_base_same_offset_aliases(self) -> None:
+        self.assertTrue(may_alias(_izp(0x8A, 2), _izp(0x8A, 2)))
+
+    def test_same_base_different_offset_does_not_alias(self) -> None:
+        self.assertFalse(may_alias(_izp(0x8A, 0), _izp(0x8A, 1)))
+
+    def test_different_bases_may_alias(self) -> None:
+        # `p = q; *p = 1; return *q;` reads the byte it just wrote.
+        self.assertTrue(may_alias(_izp(0x8A, 0), _izp(0x8C, 0)))
+        self.assertTrue(may_alias(_izp(0x8A, 0), _izp(0x8C, 3)))
+        self.assertTrue(may_alias(_izpy(0x8A), _izpy(0x8C)))
+        self.assertTrue(may_alias(_izp(0x8A, 0), _izpy(0x8C)))
+
+    def test_same_base_indexed_aliases(self) -> None:
+        self.assertTrue(may_alias(_izpy(0x8A), _izpy(0x8A)))
+        self.assertTrue(may_alias(_izp(0x8A, 4), _izpy(0x8A)))
+
+    def test_dptr_pointer_may_alias(self) -> None:
+        self.assertTrue(may_alias(_izp(0x8A, 0), _indirect(0)))
+        self.assertTrue(may_alias(_indy(), _izpy(0x8A)))
+
+    _TWO_POINTERS = """
+        unsigned char buf[4];
+        unsigned char g(unsigned char *p, unsigned char *q) {
+            unsigned char s = 0;
+            for (unsigned char i = 0; i < 4; i++) {
+                p[i] = i + 1;
+                s += q[i];
+                q[i] = 9;
+                s += p[i];
+            }
+            return s;
+        }
+        int main(void) { return g(buf, buf); }
+    """
+
+    def test_two_pointers_to_one_buffer_run(self) -> None:
+        # Under --optimize `p[i]` and `q[i]` are `(zp),Y` through two
+        # bases; the read through `p` after the store through `q`
+        # must see the 9. (1 + 2 + 3 + 4) + 4 * 9 = 46.
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                result = build_sim(
+                    self._TWO_POINTERS, optimize=optimize,
+                ).run()
+                self.assertEqual(result.return_int(), 46)
 
 
 class TestIndexedData(unittest.TestCase):

@@ -38,7 +38,7 @@ COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
-; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0,__local_dump_buffer_to_screen__x indirect=false in_cycle=false
+; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A

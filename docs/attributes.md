@@ -578,10 +578,12 @@ listing shows, and any zero page that firmware uses isn't covered.
 **Linking.** A source file with zero-page objects, including one that
 includes `<apple2/monitor_io.h>`, can't be linked with `--link` yet.
 
-**Registers.** Today only the loop-counter optimizations keep a value
-in X or Y across a call declared `preserves_x` or `preserves_y`.
-Other optimizations still treat the call as changing the register,
-which is correct but leaves some reloads in (see `TODO.md`).
+**Registers.** The loop-counter optimizations, the register
+allocator (so a `register` local can stay in Y across a call to
+`COUT1`), and the redundant-load pass (an `LDX #k` repeated after the
+call) keep a value in X or Y across a call declared `preserves_x` or
+`preserves_y`. Other optimizations still treat the call as changing
+the register, which is correct but may leave a reload in.
 
 **Arguments.** A ROM routine can take at most 3 bytes of arguments,
 in A, X, and Y. A routine that takes an argument in a zero-page

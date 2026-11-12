@@ -31,7 +31,9 @@ IndexedData access).
 
 Hard constraints on a HwReg-colored node:
   * Width 1, offset 0 (single-byte SSA-renamed name).
-  * `lives_across_call == False` — helpers clobber A, X, Y.
+  * no call in the live range writes the register — helpers clobber
+    A, X, and Y, but a routine declared `preserves_x` / `preserves_y`
+    leaves that one alone.
   * No interference with another node already pinned to the same
     HwReg.
 
@@ -47,6 +49,7 @@ mapping name → "X" | "Y"); the existing ZP `assignments` and
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import call_preserves
 from passes.optimization.pool import Pool
 from passes.optimization.register_allocation import (
     Coloring,
@@ -117,8 +120,8 @@ def color_graph(
     The range may extend above `$FF`; addresses there assemble
     as 3-byte absolute mode instead of 2-byte zero-page, but
     semantics are identical. HwReg-pinning (X / Y) is still
-    gated by `lives_across_call` because X and Y are 6502
-    hardware registers always clobbered by JSR — orthogonal to
+    gated by the calls in the live range, since a callee writes X
+    and Y unless it's declared to preserve them — orthogonal to
     the ZP-byte question."""
     if pool is None:
         pool = Pool()
@@ -306,7 +309,11 @@ def _try_hwreg_assign(
             return False
         if node.width != 1:
             return False
-        if node.lives_across_call:
+        # With liveness, the clobber check below sees each call that
+        # writes `reg` (`_instr_writes_hwregs`), so a value can stay
+        # in X or Y across a call that preserves it. Without it, any
+        # call disqualifies.
+        if node.lives_across_call and liveness is None:
             return False
         if name in hwreg_assignments:
             return False
@@ -421,6 +428,8 @@ def _instr_writes_hwregs(
       * `Inc(Reg(X|Y))` / `Dec(Reg(X|Y))` — INX / INY / DEX / DEY.
       * `Pop(dst=Reg(X|Y))` — PLX / PLY (not currently emitted by
         tac_to_asm, but the IR allows it).
+      * `Call` — X and Y, except a register the callee is declared to
+        preserve (`asm_liveness.call_preserves`).
 
     Excluded:
       * `Mov(Reg(X|Y), _)` — reads X/Y, doesn't write.
@@ -458,6 +467,10 @@ def _instr_writes_hwregs(
             _add_if_xy(dst)
         case asm_ast.Inc(dst=dst) | asm_ast.Dec(dst=dst):
             _add_if_xy(dst)
+        case asm_ast.Call():
+            for letter in ("X", "Y"):
+                if not call_preserves(instr, letter) and letter not in out:
+                    out.append(letter)
     return tuple(out)
 
 

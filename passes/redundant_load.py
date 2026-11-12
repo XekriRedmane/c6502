@@ -102,7 +102,11 @@ State lattice (per register / per z_reflects):
 are treated as full register clobbers inside the transfer —
 they expand into multi-instruction sequences inside
 `asm_to_asm2`, and tracking the inner state would mean mirroring
-the expansion here.
+the expansion here. The one exception: a call to a routine
+declared `preserves_x` / `preserves_y` keeps an immediate that X
+(Y) holds, so `LDX #k; JSR f; LDX #k` loses its second load. A
+memory equivalence still goes, since the callee may write the
+memory.
 
 # Where it runs
 
@@ -120,6 +124,7 @@ from dataclasses import dataclass, field
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
+from passes.asm_liveness import call_preserves as _call_preserves
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 from passes.optimization_asm.cfg import (
     CFG, ENTRY_ID, EXIT_ID, BasicBlock, build_cfg,
@@ -709,6 +714,18 @@ def _operands_of(
     return []
 
 
+def _immediates(
+    ops: list[asm_ast.Type_operand],
+) -> list[asm_ast.Type_operand]:
+    """The operands in `ops` that are constants, whose value no store
+    can change."""
+    return [
+        op for op in ops
+        if isinstance(op, (asm_ast.Imm, asm_ast.ImmLabelLow,
+                           asm_ast.ImmLabelHigh))
+    ]
+
+
 def _update_state_core(
     instr: asm_ast.Type_instruction, state: _RegState,
     branch_targets: set[str] | None = None,
@@ -736,8 +753,13 @@ def _update_state_core(
         # neither registers nor flags).
         return
     if isinstance(instr, asm_ast.Call):
-        # JSR may clobber any register, memory, or flag.
+        # JSR may clobber any register, memory, or flag. An X or Y
+        # the callee preserves keeps its value, which still equals
+        # an immediate it mirrored, but memory may have changed.
+        x = _immediates(state.x) if _call_preserves(instr, "X") else []
+        y = _immediates(state.y) if _call_preserves(instr, "Y") else []
         state.reset()
+        state.x, state.y = x, y
         return
     if isinstance(instr, (asm_ast.FunctionPrologue,
                           asm_ast.AllocateStack,

@@ -110,9 +110,14 @@ depends on that register.
   array. The array's address isn't known before linking, so `STA
   row0,X` may overwrite any static. With `row0`, `col`, and `color`
   all file-scope statics, the example above keeps all six loads.
-- Anything after a `JSR`, which may change every register. A
-  `FunctionPrologue`, `AllocateStack`, or `LoadAddress` also clears
-  the lists, because each expands into several instructions later.
+- Anything after a `JSR`, which may change every register, except
+  an immediate in X or Y when the routine is declared `preserves_x`
+  or `preserves_y`. With `keep` declared `preserves_x` and taking its
+  argument in X, `keep(5); keep(5);` loads X once. A memory value
+  doesn't survive even then, since the routine may write the memory,
+  so `keep(g); keep(g);` loads `g` twice. A `FunctionPrologue`,
+  `AllocateStack`, or `LoadAddress` also clears the lists, because
+  each expands into several instructions later.
 - A load at a merge point where one incoming path changed the
   register or the memory.
 - A load whose N and Z feed a later branch when Z doesn't already

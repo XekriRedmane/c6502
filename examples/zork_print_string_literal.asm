@@ -54,17 +54,15 @@ __local_get_next_code_word__1	EQU	$99
 __local_get_next_code_byte2__found_1	EQU	$9A
 __local_get_next_code_byte2__page	EQU	$9B
 __local_do_rwts_on_sector__0	EQU	$9C
-__local_cout_string__count	EQU	$9D
+__local_cout_string__s	EQU	$9D
 __local_do_rwts_on_sector__sector_1	EQU	$9D
 __local_dump_buffer_to_printer__x	EQU	$9D
-__local_cout_string__y	EQU	$9E
+__local_cout_string__1	EQU	$9E
 __local_do_rwts_on_sector__sector_0	EQU	$9E
 __local_dump_buffer_to_printer__1	EQU	$9E
 __local_find_index_of_page_table__0	EQU	$9E
-__local_cout_string__s	EQU	$9F
 __local_dump_buffer_to_printer__2	EQU	$9F
 __local_find_index_of_page_table__1	EQU	$9F
-__local_cout_string__1	EQU	$A0
 HIGH_MEM_ADDR	EQU	$B8
 Z_HEADER_ADDR	EQU	$BA
 NUM_IMAGE_PAGES	EQU	$BC
@@ -99,11 +97,11 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
 ; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__c,__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
-; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__count,__local_cout_string__y,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=X
+; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=X
 ; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
 ; def dump_buffer_line params= locals=__local_dump_buffer_line__0 indirect=false in_cycle=false
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
-; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0,__local_dump_buffer_to_screen__x indirect=false in_cycle=false
+; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0 indirect=false in_cycle=false
 ; def dump_buffer_with_more params= locals=__local_dump_buffer_with_more__0,__local_dump_buffer_with_more__end,__local_dump_buffer_with_more__1,__local_dump_buffer_with_more__2 indirect=false in_cycle=false
 ; def find_index_of_page_table params= locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false
 ; def get_alphabet params= locals=__local_get_alphabet__shift indirect=false in_cycle=false
@@ -500,20 +498,17 @@ cout_string:
    STA   __local_cout_string__s
    LDA   SCRATCH2+1
    STA   __local_cout_string__1
-   LDA   #$00
-   STA   __local_cout_string__y
-   STX   __local_cout_string__count
+   LDY   #$00
 .loop@5_start:
    LDA   __local_cout_string__s
    STA   DPTR
    LDA   __local_cout_string__1
    STA   DPTR+1
-   LDY   __local_cout_string__y
    LDA   (__local_cout_string__s),Y
    ORA   #$80
    JSR   COUT1
-   INC   __local_cout_string__y
-   DEC   __local_cout_string__count
+   INY
+   DEX
    BNE   .loop@5_start
    RTS
 

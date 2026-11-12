@@ -253,12 +253,14 @@ graph, which excludes statics, parameters, and the sources of a
 - Statics, which stay at their link-time addresses, and address-taken
   locals, which [address-taken locals in zero
   page](address_taken_zp.md) places separately.
-- X or Y for a value live across a call, even a call to a routine
-  declared `preserves_x`, because the pin check reads only the
-  interference graph's live-across-call mark. A `register` local
-  live across a call is therefore a compile error.
-  [loop_counter_to_x](loop_counter_to_x.md) can move a counter into
-  X across such a call later.
+- X or Y for a value live across a call that writes the register.
+  The pin check counts a call as writing X and Y unless the routine
+  is declared `preserves_x` / `preserves_y`
+  (`_instr_writes_hwregs`), so a `register` local can live in Y
+  across a call to `COUT1`, but across any other call it's a compile
+  error. [loop_counter_to_x](loop_counter_to_x.md) can move a
+  counter into X across a call that changes X later, saving and
+  reloading it around the call.
 - A, which is never a color.
 - A copy cycle that the coloring creates. When two Phi copies on one
   edge swap the contents of two bytes, SSA destruction breaks the

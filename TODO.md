@@ -268,19 +268,6 @@ Monitor's zero page, and the runtime's block moves around it
   the HARGS size from every unit's need. Today it only checks that
   the units' layouts match.
 
-## Keep values in X or Y across preserving calls in more passes
-
-`__attribute__((preserves_x))` / `preserves_y` reach the asm passes
-on each `Call` (`asm_liveness.call_preserves`). Liveness,
-`loop_counter_to_x`, and `counter_to_index_reg` use them. Every other
-pass still treats a call as writing X and Y, which is correct but
-gives up some wins. `redundant_load` forgets what X and Y hold at
-every call, so an `LDX #k` repeated after `JSR COUT1` stays, and the
-register allocator doesn't keep a `register` local in Y across a
-preserving call. Either could keep an immediate it tracks in X or Y
-across such a call. A memory equivalence (X equal to some slot)
-can't survive, since the callee may write the slot.
-
 ## Aliasing rule for two `(zp),Y` bases
 
 `asm_aliasing.may_alias` says two `IndirectZp` / `IndirectZpY`

@@ -392,17 +392,17 @@ load_packed_address:
    SUBROUTINE
 
    LDA   SCRATCH2
-   ASL   A
+   ASL
    STA   Z_PC2_L
    LDA   SCRATCH2
-   ASL   A
+   ASL
    LDA   SCRATCH2+1
-   ROL   A
+   ROL
    STA   Z_PC2_H
    LDA   SCRATCH2+1
-   ASL   A
+   ASL
    LDA   #$00
-   ROL   A
+   ROL
    STA   Z_PC2_HH
    JMP   invalidate_zcode_page2
 
@@ -671,8 +671,8 @@ get_next_zchar:
    STA   ZCHARS
    LDA   SCRATCH2+1
    STA   ZCHARS+1
-   LSR   A
-   LSR   A
+   LSR
+   LSR
    AND   #$1F
    JMP   .if_end@31
 .if_else@32:
@@ -764,7 +764,7 @@ print_zstring:
    JMP   .if_else@42
 .lb_skip@0:
    JSR   get_next_zchar
-   ASL   A
+   ASL
    STA   __local_print_zstring__ch
    LDY   __local_print_zstring__ch
    LDA   (Z_ABBREV_TABLE),Y
@@ -863,11 +863,11 @@ print_zstring:
    CMP   #$06
    BNE   .if_else@52
    JSR   get_next_zchar
-   ASL   A
-   ASL   A
-   ASL   A
-   ASL   A
-   ASL   A
+   ASL
+   ASL
+   ASL
+   ASL
+   ASL
    STA   __local_print_zstring__c_0
    JSR   get_next_zchar
    STA   __local_print_zstring__ch

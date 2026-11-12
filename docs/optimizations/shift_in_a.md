@@ -54,8 +54,8 @@ result above the low one are dead. The "Before" listing is the same
 ```
    LDA   SCRATCH2+1
    STA   ZCHARS+1
-   LSR   A
-   LSR   A
+   LSR
+   LSR
    AND   #$1F
 ```
 

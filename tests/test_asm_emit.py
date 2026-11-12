@@ -1322,7 +1322,7 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
             with self.subTest(op=opcode):
                 self.assertEqual(
                     emit_instruction(cls(dst=_reg(_A))),
-                    [f"   {opcode}   A"],
+                    [f"   {opcode}"],
                 )
 
     def test_stack_synthesis(self):
@@ -1334,7 +1334,7 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
                     [
                         "   LDY   #$03",
                         "   LDA   (SSP),Y",
-                        f"   {opcode}   A",
+                        f"   {opcode}",
                         "   LDY   #$03",
                         "   STA   (SSP),Y",
                     ],
@@ -1349,7 +1349,7 @@ class TestEmitShiftRotateAcc(unittest.TestCase):
                     [
                         "   LDY   #$02",
                         "   LDA   (FP),Y",
-                        f"   {opcode}   A",
+                        f"   {opcode}",
                         "   LDY   #$02",
                         "   STA   (FP),Y",
                     ],

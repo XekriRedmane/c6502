@@ -703,12 +703,14 @@ def _emit_acc_shift(
 ) -> list[str]:
     """Common emit for ASL/LSR/ROL/ROR. The 6502 has accumulator
     and absolute / zero-page addressing modes (no indirect-Y), so:
-      - `Reg(A)` → `ASL A` / `LSR A` / `ROL A` / `ROR A` (1 byte)
+      - `Reg(A)` → `ASL` / `LSR` / `ROL` / `ROR` (1 byte). The
+        accumulator form has no operand: dasm reads `ASL A` as a
+        shift of the memory at a symbol named `A`.
       - `Data(name, off)` / `ZP(addr, off)` → `ASL name+off` /
         `ASL $XX` etc. (2-3 bytes). Used by the runtime helpers
         to shift HARGS slots in place and by colored ZP locals.
       - `Stack(off)` / `Frame(off)` — synthesize via the
-        accumulator: `LDY #off; LDA (PTR),Y; <op> A; LDY #off; STA
+        accumulator: `LDY #off; LDA (PTR),Y; <op>; LDY #off; STA
         (PTR),Y`. The 6502 has no indirect-Y shift mode, so we
         round-trip through A. (Two LDY's because one's the load
         and the other's the store; they're separate atoms in the
@@ -717,13 +719,13 @@ def _emit_acc_shift(
         synthesis still thread carry correctly between byte k's
         ASL and byte k+1's ROL."""
     if _is_reg_a(dst):
-        return [_instr_line(opcode, "A")]
+        return [_instr_line(opcode)]
     if _is_data_or_zp(dst):
         return [_instr_line(opcode, _abs_addr(dst))]
     if isinstance(dst, (asm_ast.Stack, asm_ast.Frame)):
         return (
             _emit_indirect_load(dst.offset, dst)
-            + [_instr_line(opcode, "A")]
+            + [_instr_line(opcode)]
             + _emit_indirect_store(dst.offset, dst)
         )
     raise ValueError(

@@ -344,7 +344,7 @@ main:
 
 inner:
    LDA   __zpabi_inner__x
-   ASL   A
+   ASL
    RTS
 ```
 

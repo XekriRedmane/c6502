@@ -260,7 +260,7 @@ smc_body_draw:
    LDA   __local_smc_body_draw__2
    BEQ   .if_else@19
    LDA   __local_smc_body_draw__hi
-   ASL   A
+   ASL
    TAX
    LDA   companion_neg_lo_tbl,X
    STA   __local_smc_body_draw__hi
@@ -282,7 +282,7 @@ smc_body_draw:
    JMP   .if_end@18
 .if_else@19:
    LDA   __local_smc_body_draw__hi
-   ASL   A
+   ASL
    TAX
    LDA   companion_pos_lo_tbl,X
    STA   __local_smc_body_draw__hi

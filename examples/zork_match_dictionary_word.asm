@@ -67,10 +67,10 @@ match_dictionary_word:
    LDY   #$01
    LDA   (__local_match_dictionary_word__entry_0),Y
    STA   __local_match_dictionary_word__3
-   ASL   A
-   ASL   A
-   ASL   A
-   ASL   A
+   ASL
+   ASL
+   ASL
+   ASL
    STA   __local_match_dictionary_word__2
    INY
    LDA   (__local_match_dictionary_word__entry_0),Y
@@ -211,13 +211,13 @@ main:
    CLC
    ADC   #$01
    STA   __local_main__4
-   ASL   A
-   ASL   A
+   ASL
+   ASL
    CLC
    ADC   __local_main__4
    STA   __local_main__3
    LDA   __local_main__i
-   ASL   A
+   ASL
    STA   __local_main__1
    LDA   #$00
    STA   __local_main__2

@@ -144,7 +144,7 @@ class TestInlineShiftDirectMemoryEmit(unittest.TestCase):
 
     def test_shift_into_another_byte_runs_in_a(self):
         # A parameter shifted into a local isn't in place, so each
-        # byte goes through A: `LDA x; ASL A; STA t`, not `LDA x; STA
+        # byte goes through A: `LDA x; ASL; STA t`, not `LDA x; STA
         # t; ASL t` (passes/shift_in_a.py).
         src = (
             "int f(int x) { x <<= 1; return x; }\n"
@@ -152,8 +152,8 @@ class TestInlineShiftDirectMemoryEmit(unittest.TestCase):
         )
         body = self._extract_function(self._compile_asm(src), "f")
         ops = [line.split() for line in body.splitlines() if line.strip()]
-        self.assertIn(["ASL", "A"], ops)
-        self.assertIn(["ROL", "A"], ops)
+        self.assertIn(["ASL"], ops)
+        self.assertIn(["ROL"], ops)
         self.assertNotIn("JSR", body)
 
     @staticmethod

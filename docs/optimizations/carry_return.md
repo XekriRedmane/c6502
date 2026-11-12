@@ -54,7 +54,7 @@ if (found.not_found) {
    JSR   find_index_of_page_table
    STA   __local_get_next_code_byte2__page
    LDA   #$00
-   ROL   A
+   ROL
    STA   __local_get_next_code_byte2__found_1
    LDA   __local_get_next_code_byte2__page
    STA   PAGE_TABLE_INDEX2
@@ -121,7 +121,7 @@ bump:
    STA   __zpabi_is_three__x
    JSR   is_three
    LDA   #$00
-   ROL   A
+   ROL
    BEQ   .if_end@0
    LDA   #$07
    STA   g

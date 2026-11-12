@@ -371,11 +371,11 @@ class TestNarrowWidenedArith(unittest.TestCase):
             _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
         )
         self.assertEqual(out.instructions[-3:], [
-            tac_ast.Truncate(src=_var("ea"), dst=_var("d.lo1")),
-            tac_ast.Truncate(src=_var("eb"), dst=_var("d.lo2")),
+            tac_ast.Truncate(src=_var("ea"), dst=_var("r.lo1")),
+            tac_ast.Truncate(src=_var("eb"), dst=_var("r.lo2")),
             tac_ast.Binary(
-                op=tac_ast.Add(), src1=_var("d.lo1"),
-                src2=_var("d.lo2"), dst=_var("d"),
+                op=tac_ast.Add(), src1=_var("r.lo1"),
+                src2=_var("r.lo2"), dst=_var("d"),
             ),
         ])
 
@@ -433,9 +433,9 @@ class TestNarrowWidenedArith(unittest.TestCase):
             _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
         )
         self.assertEqual(out.instructions[-2:], [
-            tac_ast.Truncate(src=_var("ea_global"), dst=_var("d.lo1")),
+            tac_ast.Truncate(src=_var("ea_global"), dst=_var("r.lo1")),
             tac_ast.Binary(
-                op=tac_ast.Subtract(), src1=_var("d.lo1"),
+                op=tac_ast.Subtract(), src1=_var("r.lo1"),
                 src2=_var("b"), dst=_var("d"),
             ),
         ])
@@ -468,12 +468,37 @@ class TestNarrowWidenedArith(unittest.TestCase):
             tac_ast.Copy(src=_const_uchar(3), dst=_var("x")),
         ])
         self.assertEqual(out[-2:], [
-            tac_ast.Truncate(src=_var("w"), dst=_var("d.lo1")),
+            tac_ast.Truncate(src=_var("w"), dst=_var("r.lo1")),
             tac_ast.Binary(
-                op=tac_ast.LeftShift(), src1=_var("d.lo1"),
+                op=tac_ast.LeftShift(), src1=_var("r.lo1"),
                 src2=_const_uchar(1), dst=_var("d"),
             ),
         ])
+
+    def test_two_truncates_into_one_global(self):
+        # Each operand Truncate is named after its wide result, an SSA
+        # name, not after the Truncate's dst, which here is a global that
+        # both Truncates write.
+        instrs = []
+        for r in ("r1", "r2"):
+            instrs += [
+                tac_ast.Binary(
+                    op=tac_ast.Add(), src1=_var("w"),
+                    src2=_const_int(1), dst=_var(r),
+                ),
+                tac_ast.Truncate(src=_var(r), dst=_var("g")),
+            ]
+        symbols = {
+            "w": _local(c99_ast.Int()),
+            "r1": _local(c99_ast.Int()),
+            "r2": _local(c99_ast.Int()),
+            "g": _static(c99_ast.UChar()),
+        }
+        out = narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts={"w", "r1", "r2"},
+        ).instructions
+        dsts = [i.dst.name for i in out if isinstance(i, tac_ast.Truncate)]
+        self.assertEqual(dsts, ["r1.lo1", "r2.lo1"])
 
     def test_wide_global_changed_before_the_truncate(self):
         # A call, a store, or a write to `w` between the shift and the

@@ -1,0 +1,2 @@
+# Applied with git apply to a YARPGen checkout; keep it byte-for-byte.
+fuzz/yarpgen.patch text eol=lf

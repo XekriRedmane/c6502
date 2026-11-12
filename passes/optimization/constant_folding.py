@@ -194,6 +194,8 @@ def _fold(
             res = _fold_unary(op, c)
             if res is None:
                 return instr
+            if isinstance(op, tac_ast.LogicalNot):
+                res = _truth_as_dst(res, dst, symbols)
             return tac_ast.Copy(src=tac_ast.Constant(const=res), dst=dst)
         case tac_ast.Binary(
             op=op,
@@ -204,6 +206,8 @@ def _fold(
             res = _fold_binary(op, c1, c2)
             if res is None:
                 return instr
+            if isinstance(op, _COMPARISONS):
+                res = _truth_as_dst(res, dst, symbols)
             return tac_ast.Copy(src=tac_ast.Constant(const=res), dst=dst)
         case tac_ast.Copy(
             src=tac_ast.Constant(const=c),
@@ -554,6 +558,27 @@ def _fold_widen(
     else:
         value = c.value & ((1 << src_bits) - 1)
     return _wrap_int(dst_variant, value)
+
+
+_COMPARISONS = (
+    tac_ast.Equal, tac_ast.NotEqual,
+    tac_ast.LessThan, tac_ast.GreaterThan,
+    tac_ast.LessOrEqual, tac_ast.GreaterOrEqual,
+)
+
+
+def _truth_as_dst(
+    c: tac_ast.Type_const, dst: tac_ast.Type_val, symbols,
+) -> tac_ast.Type_const:
+    """A folded comparison or `!`, a `ConstInt` 0 or 1, retyped to
+    `dst`'s integer type. Its dst is usually an `int`, but converting a
+    value to `_Bool` lowers to `x != 0` with a 1-byte dst, and a 2-byte
+    constant copied there would be stored as 2 bytes, overwriting the
+    byte after it (`arr[0] = (_Bool)k;` cleared `arr[1]`)."""
+    dst_variant = _dst_int_variant(dst, symbols)
+    if dst_variant is None or dst_variant is type(c):
+        return c
+    return _wrap_int(dst_variant, c.value)
 
 
 def _fold_copy(

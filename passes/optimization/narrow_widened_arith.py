@@ -190,17 +190,19 @@ class NarrowWidenedArith(DefUsePass):
             return None
         # Truncates of wide operands, placed just before the narrow
         # Binary. Their dsts are registered only once the rewrite is
-        # certain.
+        # certain. They're named after the wide result, which is an SSA
+        # name, so they're unique: the Truncate's dst may be a global
+        # that several Truncates write.
         pre: list[tac_ast.Truncate] = []
         narrow_s1 = _narrow_operand(
             bin_instr.src1, dst_width, dst_unsigned, env, bin_idx,
-            trunc_idx, f"{dst_var.name}.lo1", ctx, pre,
+            trunc_idx, f"{trunc_src.name}.lo1", ctx, pre,
         )
         if narrow_s1 is None:
             return None
         narrow_s2 = _narrow_operand(
             bin_instr.src2, dst_width, dst_unsigned, env, bin_idx,
-            trunc_idx, f"{dst_var.name}.lo2", ctx, pre,
+            trunc_idx, f"{trunc_src.name}.lo2", ctx, pre,
         )
         if narrow_s2 is None:
             return None
@@ -229,6 +231,7 @@ class NarrowWidenedArith(DefUsePass):
                 # narrow Binary would only repeat the wide one's work
                 # (`(uint8_t)(w + 3)` next to `(w + 3) >> 8`).
                 return None
+            _count_new_uses(use_counts, replacement)
             return Rewrite(replacement=replacement)
         drop_vars: list[tac_ast.Var] = [bin_instr.dst]
         for operand in (bin_instr.src1, bin_instr.src2):
@@ -247,7 +250,20 @@ class NarrowWidenedArith(DefUsePass):
             if use_counts.get(operand.name, 0) == 1:
                 drop_vars.append(operand)
 
+        _count_new_uses(use_counts, replacement)
         return Rewrite(replacement=replacement, drop_defs=tuple(drop_vars))
+
+
+def _count_new_uses(use_counts, replacement) -> None:
+    """Adds the reads of a rewrite's new instructions to the counts
+    later rewrites in the same run decide their drops by. The counts
+    are taken once per run, so without this a later rewrite could drop
+    the definition of an extend source an earlier one now reads (the
+    narrow Binary reads `p` where the wide one read `(int)p`)."""
+    from passes.optimization.var_visit import uses_in
+    for instr in replacement if isinstance(replacement, list) else [replacement]:
+        for u in uses_in(instr):
+            use_counts[u.name] += 1
 
 
 def narrow_widened_arith(

@@ -106,6 +106,7 @@ from passes.asm_remat import apply_remat
 from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
+from passes import ir_check
 from passes.abi_selection import fixed_address_layouts, select_abi
 from passes.function_local_sizing import (
     compute_local_bytes, compute_address_taken_bytes,
@@ -267,6 +268,8 @@ def _peephole_fixedpoint(
         # shape no downstream pass collapses (the LDA reads from X-
         # synced storage, not A-synced).
         new_prog = apply_transfer_pm1_store(new_prog)
+        # With `C6502_CHECK_IR=1` (passes/ir_check.py).
+        ir_check.check_asm(new_prog, after="a peephole sweep")
         if new_prog == prog:
             return new_prog
         prog = new_prog
@@ -359,6 +362,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         tac, symbols, types, bare_exit=True, abi=abi,
         recursion_saves=recursion,
     )
+    ir_check.check_asm(asm0, after="tac_to_asm", pseudos=True)
     # Preliminary optimizer pass with the default
     # caller/callee partition. Used only to size each
     # function's local-byte demand; the IR it produces is
@@ -422,6 +426,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         )
         for fn, assignments in addr_taken_assignments.items()
     }
+    ir_check.check_asm(asm0, after="the asm optimizer", pseudos=True)
     asm1, dims_by_fn = replace_pseudoregs_bare_exit(
         asm0, extra_statics=statics, symbols=symbols,
         types=types, colorings=asm_colorings,
@@ -534,6 +539,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # Zero-page globals: drop their storage and add `__zp_init`
     # (passes/zp_globals.py).
     asm4 = place_zp_globals(asm4, zp)
+    ir_check.check_asm(asm4, after="the --optimize pipeline")
     return OptimizedAsm(
         asm=asm4, tac=tac, abi=abi, local_pools=local_pools,
         slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
@@ -601,11 +607,13 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         tac, symbols, types,
         abi=fixed_address_layouts(tac, prog, types),
     )
+    ir_check.check_asm(asm0, after="tac_to_asm", pseudos=True)
     asm1 = replace_pseudoregs(
         asm0, extra_statics=statics, symbols=symbols, types=types,
     )
     asm2 = _peephole_fixedpoint(asm1, zp_global_symbols=zp.addrs)
     asm3 = place_zp_globals(expand_long_branches(asm2), zp)
+    ir_check.check_asm(asm3, after="the pipeline")
     asm4 = lower_to_asm2(asm3)
     return emit_program(asm4, zp_slot_symbols=zp.equs() or None)
 

@@ -25,8 +25,14 @@ import re
 import sys
 from pathlib import Path
 
+from passes import ir_check
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _tac_run
+
+# Check the IR after every pass (passes/ir_check.py), so a pass that
+# breaks it fails there even when the program's result comes out
+# right. A failed check is an `ERR` result like any other.
+ir_check.enable()
 
 MODES = ("tac", "unopt", "opt")
 MAX_CYCLES = 20_000_000

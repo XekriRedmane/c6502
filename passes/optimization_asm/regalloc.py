@@ -402,6 +402,12 @@ def _try_hwreg_assign(
         _try_pin_with_fallback(name, preferred="Y")
 
 
+# Operands the emitter reaches with `LDY #offset`.
+_LDY_OPERANDS = (
+    asm_ast.Indirect, asm_ast.IndirectZp, asm_ast.Frame, asm_ast.Stack,
+)
+
+
 def _instr_writes_hwregs(
     instr: asm_ast.Type_instruction,
 ) -> tuple[str, ...]:
@@ -424,13 +430,19 @@ def _instr_writes_hwregs(
       * Add / Sub / And / Or / Xor / ASL / LSR / ROL / ROR — these
         atoms only accept Reg(A) as dst per the asm IR contract.
       * Phi — its dst is still a Pseudo at this pipeline stage.
-      * Implicit clobbers from operands that emit LDY at lowering
-        time (`Frame` / `Stack` / `Indirect` / `IndirectY`) — not
-        included here because at this stage operands are still
-        Pseudos that haven't been resolved. A separate pass would
-        be needed to model those; this check covers the explicit
-        case that surfaces in current generated code."""
+
+    Included as a write of Y: an operand that's lowered with its own
+    `LDY #offset` (`Indirect`, `IndirectZp`, `Frame`, `Stack`). A load
+    or store through a pointer, such as `arr[i]` of an 8-byte element,
+    is already `Indirect` operands here, and pinning a loop counter in
+    Y across one let the `LDY` overwrite the counter (YARPGen seed
+    66)."""
+    from passes.optimization_asm.optimizer import _all_operands_in
     out: list[str] = []
+    if any(
+        isinstance(op, _LDY_OPERANDS) for op in _all_operands_in(instr)
+    ):
+        out.append("Y")
 
     def _add_if_xy(dst: asm_ast.Type_operand) -> None:
         if isinstance(dst, asm_ast.Reg):

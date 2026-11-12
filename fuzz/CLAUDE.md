@@ -12,6 +12,7 @@ Run everything from the repo root, as modules:
 uv run python -m fuzz.exprs --start 0 --count 300   # expression semantics
 uv run python -m fuzz.calls --start 0 --count 300   # calling conventions
 uv run python -m fuzz.stmts --start 0 --count 300   # control flow, storage
+uv run python -m fuzz.yarpgen --start 0 --count 100 # YARPGen's programs
 uv run python -m fuzz.runner prog.c dir/             # check given programs
 uv run python -m fuzz.reduce fuzz_out/calls/calls534.c
 ```
@@ -19,6 +20,16 @@ uv run python -m fuzz.reduce fuzz_out/calls/calls534.c
 Failing programs land in `fuzz_out/<tool>/` (ignored by git). A seed
 always generates the same program, so `--start 534 --count 1`
 reproduces seed 534.
+
+## IR checks
+
+`runner.py` turns on `passes/ir_check.py`, which checks the IR after
+every TAC optimizer pass, at the asm stage boundaries, and after each
+peephole sweep. A pass that leaves the IR inconsistent, such as one
+that drops the definition of a temporary something still reads, then
+fails right there with `IRCheckError: after <pass>, function '<f>':
+...`, even when the program's result would have come out right. The
+error is an `ERR` result like any other, so the program is saved.
 
 ## Execution paths (`runner.py`)
 
@@ -134,6 +145,36 @@ and zero-extended it, which `const signed char` also hit (seed 4984).
 `reduce.py` didn't help there, because it kept the stale `// expect`
 line while reducing away the computation, so the cause was found by
 removing `volatile` from one declaration at a time.
+
+## `yarpgen.py`
+
+Programs from YARPGen (https://github.com/intel/yarpgen), Intel's
+generator of UB-free random C, which is still maintained. Its tests
+are loop nests over arrays and scalars of every integer type, with
+the values of every expression checked against undefined behavior by
+YARPGen's own model of C. Build it once with `uv run python -m
+fuzz.build_yarpgen`, which clones the pinned commit into
+`fuzz_out/yarpgen-src`, applies `fuzz/yarpgen.patch`, and compiles it
+with Zig's clang and CMake from PyPI through `uvx`, so nothing has to
+be installed.
+
+The patch makes the model's `int` 16 bits (`-DYARPGEN_INT_BITS=16`),
+so a program YARPGen accepts is well-defined for c6502. Without it,
+shifts by 16 to 31 and `int` overflow it had ruled out at 32 bits
+would be undefined here. The patch also writes `min` / `max` as C99
+macros instead of GNU statement expressions, and adds
+`--max-loop-iters` and `--max-stmts`. YARPGen's own unit tests still
+assume a 32-bit `int`, so the build script builds only the
+generator.
+
+`merge` turns a test's `init.h`, `func.c`, and `driver.c` into one
+program. `main` returns the checksum folded to 15 bits instead of
+printing it, `short` becomes `int` and unary `+` is dropped (c6502
+has neither yet; see TODO.md), and `size_t` is `unsigned int`. The
+TAC result is the reference. A program takes about 6 seconds, and
+most of them need more than 253 bytes of frame without --optimize,
+so the runner counts them as rejected and compares only the
+optimized path against TAC.
 
 ## `reduce.py`
 

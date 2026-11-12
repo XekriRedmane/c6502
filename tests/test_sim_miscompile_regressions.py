@@ -355,6 +355,36 @@ _CASES: list[tuple[str, str, int]] = [
         int check(int v3) { return (signed char)(((signed char)44) | v3); }
         int main(void) { return check(0); }
     """, 44),
+    # The regalloc pinned `i_0` in Y across a body that reads and
+    # writes `arr_6[i_0]` through `(DPTR),Y`, whose `LDY` overwrote
+    # it, so the outer loop's second pass stored to the wrong byte. An
+    # operand lowered with `LDY #k` now counts as a write of Y. Found by
+    # YARPGen.
+    ("loop_counter_in_y_across_indirect_access", """
+        int arr_0[6];
+        signed char arr_4[6];
+        long long int arr_6[6];
+        int main(void) {
+            for (int i = 0; i < 6; i++) { arr_0[i] = 18911; arr_4[i] = -98; }
+            for (unsigned char i_0 = 0; i_0 < 6; i_0 += 4)
+                for (int i_1 = 3; i_1 < 5; i_1 += 3) {
+                    arr_4[i_0] = 5;
+                    arr_6[i_0] |= (long long int)(arr_0[i_1 - 1] != arr_0[i_1 + 1]);
+                }
+            return arr_4[0] * 10 + arr_4[4];
+        }
+    """, 55),
+    # Constant folding gave `k != 0`, a conversion to `_Bool`, an
+    # `int` result, which the 1-byte store then wrote as 2 bytes,
+    # clearing `a[1]`. Found by YARPGen.
+    ("bool_of_constant_into_array", """
+        _Bool a[3];
+        int main(void) {
+            a[1] = 1;
+            a[0] = (_Bool)(59071U * 65430U);
+            return a[0] * 4 + a[1] * 2 + a[2];
+        }
+    """, 6),
     # A second narrowing dropped the first one's operand Truncate along
     # with the narrow Binary it replaced.
     ("narrowed_twice", """

@@ -6,7 +6,12 @@
 uv run python -m unittest                                          # all
 uv run python -m unittest tests.test_asm_emit                      # one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid   # one class
+C6502_CHECK_IR=1 uv run python -m unittest                         # with IR checks
 ```
+
+`C6502_CHECK_IR=1` checks the IR after every optimizer pass and at the
+asm stage boundaries (`passes/ir_check.py`). It adds about 3% to the
+run. The fuzzers always run with it.
 
 Every harness class is `@unittest.skipUnless(shutil.which("pcpp"),
 …)`.

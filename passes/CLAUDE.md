@@ -72,6 +72,15 @@ this directory:
   shape `tac_to_asm` emits for loop tails when the loop body's
   conditional exit straddles the Return.
 - `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
+- `ir_check.py` — checks the IR between passes when
+  `C6502_CHECK_IR=1` is set or `enable()` is called (the fuzzers do).
+  `check_tac` runs after every TAC optimizer pass (from
+  `PhaseDriver.apply`): labels unique and jumped to, names in the
+  symbol table, and in SSA form one definition per SSA name that
+  dominates every read; outside SSA, every `%` temporary read is
+  defined. `check_asm` runs after `tac_to_asm`, the asm optimizer,
+  each peephole sweep, and at the end: labels unique and branched to,
+  no `Phi` outside SSA, no `Pseudo` once they're replaced.
 - `recursion_saves.py` — `#pragma c6502 call save(hardware_stack)`.
   `check_pragmas` rejects a marked call that can't recurse,
   `hw_stack_cycles` finds the call-graph cycles whose every

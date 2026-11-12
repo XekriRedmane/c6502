@@ -1,0 +1,376 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4f3e5ae..f875375 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -24,6 +24,10 @@ project(YARPGen
+ 
+ STRING(TIMESTAMP BUILD_DATE "%Y:%m:%d")
+ 
++# The number of bits in int and unsigned int of the generated tests. 16 is
++# for targets such as 8-bit microcontrollers, where int is 16 bits.
++set(YARPGEN_INT_BITS 32 CACHE STRING "Bits in int and unsigned int (16 or 32)")
++
+ if(NOT CMAKE_BUILD_TYPE)
+     set(CMAKE_BUILD_TYPE "Release")
+     message(STATUS "Build type not specified: Use Release by default.")
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 8775701..b4700c0 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -52,6 +52,7 @@ set(STD cxx_std_17)
+ set(FLAGS #  $<$<CXX_COMPILER_ID:MSVC>:/WX>
+   $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wall -Wpedantic -Werror>
+   -DBUILD_VERSION="${GIT_HASH}" -DBUILD_DATE="${BUILD_DATE}"
++  -DYARPGEN_INT_BITS=${YARPGEN_INT_BITS}
+   -DYARPGEN_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}" -DYARPGEN_VERSION_MINOR="${PROJECT_VERSION_MINOR}")
+ 
+ # Static library to avoid building sources multiple times
+diff --git a/src/enums.h b/src/enums.h
+index a5e4a81..b9032ab 100644
+--- a/src/enums.h
++++ b/src/enums.h
+@@ -164,6 +164,8 @@ enum class OptionKind {
+     MUTATION_SEED,
+     UB_IN_DC,
+     MAX_ARRAY_DIMS,
++    MAX_LOOP_ITERS,
++    MAX_STMTS,
+     SIMPLE_LOOPS,
+     VECTORIZER_TARGET,
+     OMP_SIMD_PRAGMA,
+diff --git a/src/expr.cpp b/src/expr.cpp
+index 8fbdd35..9d9940d 100644
+--- a/src/expr.cpp
++++ b/src/expr.cpp
+@@ -514,10 +514,16 @@ std::shared_ptr<Expr> ArithmeticExpr::integralProm(std::shared_ptr<Expr> arg) {
+     if (int_type->getIntTypeId() >=
+         IntTypeID::INT) // can't perform integral promotion
+         return arg;
+-    // TODO: we need to check if type fits in int or unsigned int
++    // C11 6.3.1.1: to int if int can represent every value of the type, and
++    // otherwise to unsigned int. With a 16-bit int, unsigned short goes to
++    // unsigned int.
++    IntTypeID prom_id = IntTypeID::INT;
++    if (!int_type->getIsSigned() &&
++        int_type->getBitSize() >= TypeSInt(false, CVQualifier::NONE).getBitSize())
++        prom_id = IntTypeID::UINT;
+     return std::make_shared<TypeCastExpr>(
+         arg,
+-        IntegralType::init(IntTypeID::INT, false, CVQualifier::NONE,
++        IntegralType::init(prom_id, false, CVQualifier::NONE,
+                            arg->getValue()->getType()->isUniform()),
+         true);
+ }
+@@ -3440,10 +3446,10 @@ void MinMaxCallBase::emitCDefinitionImpl(std::shared_ptr<EmitCtx> ctx,
+         func_name = "min";
+         func_sign = "<";
+     }
+-    stream << "#define " << func_name << "(a,b) \\\n";
+-    stream << "    ({ __typeof__ (a) _a = (a); \\\n";
+-    stream << "       __typeof__ (b) _b = (b); \\\n";
+-    stream << "       _a " << func_sign << " _b ? _a : _b; })\n";
++    // Both arguments have the same type and no side effects, so evaluating
++    // one twice is harmless, and this is plain C99.
++    stream << "#define " << func_name << "(a,b) ((a) " << func_sign
++           << " (b) ? (a) : (b))\n";
+ }
+ 
+ SelectCall::SelectCall(std::shared_ptr<Expr> _cond,
+diff --git a/src/gen_policy.cpp b/src/gen_policy.cpp
+index b78be64..e7b6b15 100644
+--- a/src/gen_policy.cpp
++++ b/src/gen_policy.cpp
+@@ -360,6 +360,8 @@ GenPolicy::GenPolicy() {
+     if (options.isISPC())
+         array_dims_num_limit = 4;
+ 
++    applyUserLimits();
++
+     // An explicit cap (e.g. for MSVC, which lacks a large-memory model) wins.
+     if (options.getMaxArrayDims() != 0)
+         array_dims_num_limit =
+@@ -427,6 +429,18 @@ GenPolicy::GenPolicy() {
+     shuffleProbProxy(vectorizable_loop_distr);
+ }
+ 
++// --max-loop-iters and --max-stmts cap what the policy picked.
++void GenPolicy::applyUserLimits() {
++    Options &options = Options::getInstance();
++    if (options.getMaxLoopIters() != 0) {
++        iter_end_limit_max =
++            std::min(iter_end_limit_max, options.getMaxLoopIters());
++        iters_end_limit_min = std::min(iters_end_limit_min, iter_end_limit_max);
++    }
++    if (options.getMaxStmts() != 0)
++        stmt_num_lim = std::min(stmt_num_lim, options.getMaxStmts());
++}
++
+ void GenPolicy::makeVectorizable(bool simple) {
+     Options &options = Options::getInstance();
+ 
+@@ -529,6 +543,7 @@ void GenPolicy::applyMsvcConstraints() {
+     // the range well clear of that edge.
+     iters_end_limit_min = 32;
+     iter_end_limit_max = 64;
++    applyUserLimits();
+ 
+     subs_kind_prob.clear();
+     subs_kind_prob.emplace_back(SubscriptKind::ITER, 100);
+@@ -639,6 +654,7 @@ void GenPolicy::applyGccClangConstraints() {
+ 
+     iters_end_limit_min = 32;
+     iter_end_limit_max = 64;
++    applyUserLimits();
+ 
+     subs_kind_prob.clear();
+     subs_kind_prob.emplace_back(SubscriptKind::ITER, 100);
+diff --git a/src/gen_policy.h b/src/gen_policy.h
+index e06958b..a575130 100644
+--- a/src/gen_policy.h
++++ b/src/gen_policy.h
+@@ -39,6 +39,7 @@ class GenPolicy {
+ 
+     // Hard limit for total statements number
+     size_t stmt_num_lim;
++    void applyUserLimits();
+ 
+     // Maximal number of loops in a single LoopSequence
+     size_t loop_seq_num_lim;
+diff --git a/src/ir_value.cpp b/src/ir_value.cpp
+index 8b964da..ec5f0fc 100644
+--- a/src/ir_value.cpp
++++ b/src/ir_value.cpp
+@@ -199,10 +199,10 @@ template <typename T> static bool checkMulIsOk(T a, T b, IRValue &res) {
+     unsigned_T a_abs = std::abs(a);
+     unsigned_T b_abs = std::abs(b);
+ 
+-    using unsigned_half_T =
+-        std::conditional_t<std::is_same<T, int32_t>::value, uint16_t, uint32_t>;
+-    unsigned_half_T half_all_one =
+-        (std::is_same<unsigned_half_T, uint32_t>::value) ? 0xFFFFFFFF : 0xFFFF;
++    using unsigned_half_T = std::conditional_t<
++        sizeof(T) == 2, uint8_t,
++        std::conditional_t<sizeof(T) == 4, uint16_t, uint32_t>>;
++    unsigned_half_T half_all_one = std::numeric_limits<unsigned_half_T>::max();
+     int32_t half_bit_size = sizeof(unsigned_half_T) * CHAR_BIT;
+     auto a_low = static_cast<unsigned_half_T>(a_abs & half_all_one);
+     auto b_low = static_cast<unsigned_half_T>(b_abs & half_all_one);
+@@ -243,8 +243,9 @@ mulOperator(IRValue &lhs, IRValue &rhs) {
+         return ret;
+     // GCC doesn't like bool * bool. This function should be never called with T
+     // = bool, so we need this kludge to suppress warning
+-    auto foo = std::multiplies<T>();
+-    ret.getValueRef<T>() = foo(lhs.getValueRef<T>(), rhs.getValueRef<T>());
++    auto foo = std::multiplies<std::common_type_t<T, unsigned int>>();
++    ret.getValueRef<T>() = static_cast<T>(
++        foo(lhs.getValueRef<T>(), rhs.getValueRef<T>()));
+     ret.setUBCode(UBKind::NoUB);
+     return ret;
+ }
+@@ -540,7 +541,10 @@ static IRValue leftShiftOperator(IRValue &lhs, IRValue &rhs) {
+ 
+     assert(ret.getUBCode() == UBKind::Uninit &&
+            "Ret can't has an UB. All of the cases should be handled earlier.");
+-    ret.getValueRef<T>() = lhs.getValueRef<T>() << rhs.getValueRef<U>();
++    using shift_T = std::conditional_t<std::is_unsigned<T>::value,
++                                       std::common_type_t<T, unsigned int>, T>;
++    ret.getValueRef<T>() = static_cast<T>(
++        static_cast<shift_T>(lhs.getValueRef<T>()) << rhs.getValueRef<U>());
+     ret.setUBCode(UBKind::NoUB);
+     return ret;
+ }
+@@ -599,8 +603,8 @@ std::ostream &yarpgen::operator<<(std::ostream &out, yarpgen::IRValue &val) {
+         OutOperatorCase(IntTypeID::UCHAR, uint8_t);
+         OutOperatorCase(IntTypeID::SHORT, int16_t);
+         OutOperatorCase(IntTypeID::USHORT, uint16_t);
+-        OutOperatorCase(IntTypeID::INT, int32_t);
+-        OutOperatorCase(IntTypeID::UINT, uint32_t);
++        OutOperatorCase(IntTypeID::INT, TypeSInt::value_type);
++        OutOperatorCase(IntTypeID::UINT, TypeUInt::value_type);
+         OutOperatorCase(IntTypeID::LLONG, int64_t);
+         OutOperatorCase(IntTypeID::ULLONG, uint64_t);
+         case IntTypeID::MAX_INT_TYPE_ID:
+@@ -633,11 +637,11 @@ IRValue::AbsValue IRValue::getAbsValue() {
+             ret.value = value.ushrt_val;
+             break;
+         case IntTypeID::INT:
+-            ret.isNegative = value.int_val < 0;
+-            ret.value = value.int_val;
++            ret.isNegative = getValueRef<TypeSInt::value_type>() < 0;
++            ret.value = getValueRef<TypeSInt::value_type>();
+             break;
+         case IntTypeID::UINT:
+-            ret.value = value.uint_val;
++            ret.value = getValueRef<TypeUInt::value_type>();
+             break;
+         case IntTypeID::LLONG:
+             ret.isNegative = value.llong_val < 0;
+@@ -675,12 +679,14 @@ void IRValue::setValue(IRValue::AbsValue val) {
+                 val.value * (val.isNegative ? -1 : 1));
+             break;
+         case IntTypeID::INT:
+-            value.int_val =
+-                static_cast<int>(val.value * (val.isNegative ? -1 : 1));
++            getValueRef<TypeSInt::value_type>() =
++                static_cast<TypeSInt::value_type>(
++                    val.value * (val.isNegative ? -1 : 1));
+             break;
+         case IntTypeID::UINT:
+-            value.uint_val = static_cast<unsigned int>(
+-                val.value * (val.isNegative ? -1 : 1));
++            getValueRef<TypeUInt::value_type>() =
++                static_cast<TypeUInt::value_type>(
++                    val.value * (val.isNegative ? -1 : 1));
+             break;
+         case IntTypeID::LLONG:
+             value.llong_val = static_cast<long long int>(
+@@ -719,8 +725,8 @@ size_t IRValue::getMSB() {
+         GetMSBCase(IntTypeID::UCHAR, uint8_t);
+         GetMSBCase(IntTypeID::SHORT, int16_t);
+         GetMSBCase(IntTypeID::USHORT, uint16_t);
+-        GetMSBCase(IntTypeID::INT, int32_t);
+-        GetMSBCase(IntTypeID::UINT, uint32_t);
++        GetMSBCase(IntTypeID::INT, TypeSInt::value_type);
++        GetMSBCase(IntTypeID::UINT, TypeUInt::value_type);
+         GetMSBCase(IntTypeID::LLONG, int64_t);
+         GetMSBCase(IntTypeID::ULLONG, uint64_t);
+         case IntTypeID::MAX_INT_TYPE_ID:
+diff --git a/src/options.cpp b/src/options.cpp
+index 90c28e3..8391af4 100644
+--- a/src/options.cpp
++++ b/src/options.cpp
+@@ -214,6 +214,25 @@ std::vector<OptionDescr> yarpgen::OptionParser::options_set{
+      OptionParser::parseMaxArrayDims,
+      "0",
+      {}},
++    {OptionKind::MAX_LOOP_ITERS,
++     "",
++     "--max-loop-iters",
++     true,
++     "Upper bound on a loop's trip count, which also sizes the arrays (0 = "
++     "generator default). Lower it for small targets and simulators",
++     "Can't parse max loop iters",
++     OptionParser::parseMaxLoopIters,
++     "0",
++     {}},
++    {OptionKind::MAX_STMTS,
++     "",
++     "--max-stmts",
++     true,
++     "Upper bound on the number of statements (0 = generator default)",
++     "Can't parse max stmts",
++     OptionParser::parseMaxStmts,
++     "0",
++     {}},
+     {OptionKind::SIMPLE_LOOPS,
+      "",
+      "--simple-loops",
+@@ -565,6 +584,24 @@ void OptionParser::parseMaxArrayDims(std::string max_array_dims_str) {
+     }
+ }
+ 
++void OptionParser::parseMaxLoopIters(std::string max_loop_iters_str) {
++    Options &options = Options::getInstance();
++    try {
++        options.setMaxLoopIters(std::stoul(max_loop_iters_str));
++    } catch (std::exception &) {
++        printHelpAndExit("Can't parse max loop iters");
++    }
++}
++
++void OptionParser::parseMaxStmts(std::string max_stmts_str) {
++    Options &options = Options::getInstance();
++    try {
++        options.setMaxStmts(std::stoul(max_stmts_str));
++    } catch (std::exception &) {
++        printHelpAndExit("Can't parse max stmts");
++    }
++}
++
+ void OptionParser::parseSimpleLoops(std::string simple_loops_str) {
+     Options &options = Options::getInstance();
+     if (simple_loops_str == "none")
+diff --git a/src/options.h b/src/options.h
+index f4c7f17..5348133 100644
+--- a/src/options.h
++++ b/src/options.h
+@@ -100,6 +100,8 @@ class OptionParser {
+     static void parseMutationSeed(std::string mutation_seed_str);
+     static void parseAllowUBInDC(std::string allow_ub_in_dc_str);
+     static void parseMaxArrayDims(std::string max_array_dims_str);
++    static void parseMaxLoopIters(std::string max_loop_iters_str);
++    static void parseMaxStmts(std::string max_stmts_str);
+     static void parseSimpleLoops(std::string simple_loops_str);
+     static void parseVectorizerTarget(std::string vectorizer_target_str);
+     static void parseOmpSimdPragma(std::string omp_simd_pragma_str);
+@@ -180,6 +182,15 @@ class Options {
+     void setMaxArrayDims(size_t _val) { max_array_dims = _val; }
+     size_t getMaxArrayDims() { return max_array_dims; }
+ 
++    // Upper bounds on a loop's trip count, which also sizes the arrays, and
++    // on the number of statements (0 = the generator's default). Lowering
++    // them makes tests that fit a small target and run quickly in a
++    // simulator.
++    void setMaxLoopIters(size_t _val) { max_loop_iters = _val; }
++    size_t getMaxLoopIters() { return max_loop_iters; }
++    void setMaxStmts(size_t _val) { max_stmts = _val; }
++    size_t getMaxStmts() { return max_stmts; }
++
+     // Some vectorizers (e.g. MSVC's) only recognize a narrow set of very
+     // simple loop shapes: single-statement bodies, no nested control flow,
+     // 1-D stride-1 array access. NONE keeps the existing behavior (loops are
+@@ -214,6 +225,7 @@ class Options {
+           use_param_shuffle(false), expl_loop_params(false),
+           mutation_kind(MutationKind::NONE), mutation_seed(0),
+           allow_ub_in_dc(OptionLevel::NONE), max_array_dims(0),
++          max_loop_iters(0), max_stmts(0),
+           simple_loops(OptionLevel::NONE),
+           vectorizer_target(VectorizerTarget::GCC_CLANG),
+           omp_simd_pragma(true) {}
+@@ -251,6 +263,10 @@ class Options {
+     // Upper bound on array dimensions (0 = no explicit limit).
+     size_t max_array_dims;
+ 
++    // Upper bounds on loop trip counts and statements (0 = no limit).
++    size_t max_loop_iters;
++    size_t max_stmts;
++
+     // Whether loops should be constrained to shapes that narrow vectorizers
+     // (e.g. MSVC's) can recognize.
+     OptionLevel simple_loops;
+diff --git a/src/type.h b/src/type.h
+index 34384d1..4aef419 100644
+--- a/src/type.h
++++ b/src/type.h
+@@ -242,7 +242,21 @@ class TypeUShort : public IntegralTypeHelper<uint16_t> {
+     void dbgDump() final;
+ };
+ 
+-class TypeSInt : public IntegralTypeHelper<int32_t> {
++// int and unsigned int are YARPGEN_INT_BITS wide (see CMakeLists.txt).
++#ifndef YARPGEN_INT_BITS
++#define YARPGEN_INT_BITS 32
++#endif
++#if YARPGEN_INT_BITS == 16
++using yarpgen_int_t = int16_t;
++using yarpgen_uint_t = uint16_t;
++#elif YARPGEN_INT_BITS == 32
++using yarpgen_int_t = int32_t;
++using yarpgen_uint_t = uint32_t;
++#else
++#error "YARPGEN_INT_BITS must be 16 or 32"
++#endif
++
++class TypeSInt : public IntegralTypeHelper<yarpgen_int_t> {
+   public:
+     TypeSInt(bool _is_static, CVQualifier _cv_qual)
+         : IntegralTypeHelper(getIntTypeId(), _is_static, _cv_qual) {}
+@@ -255,7 +269,7 @@ class TypeSInt : public IntegralTypeHelper<int32_t> {
+     void dbgDump() final;
+ };
+ 
+-class TypeUInt : public IntegralTypeHelper<uint32_t> {
++class TypeUInt : public IntegralTypeHelper<yarpgen_uint_t> {
+   public:
+     TypeUInt(bool _is_static, CVQualifier _cv_qual)
+         : IntegralTypeHelper(getIntTypeId(), _is_static, _cv_qual) {}

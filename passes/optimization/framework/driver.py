@@ -9,6 +9,7 @@ from passes.optimization.framework.phases import (
 )
 from passes.optimization.ssa_construction import to_ssa
 from passes.optimization.ssa_destruction import from_ssa
+from passes import ir_check
 
 
 @dataclass
@@ -50,32 +51,54 @@ class PhaseDriver:
                     )
 
     def apply(self, fn: tac_ast.Function, ctx: PassContext) -> tac_ast.Function:
+        # With `C6502_CHECK_IR=1`, the IR is checked after every pass
+        # (passes/ir_check.py).
+        checked = ir_check.enabled()
+
+        def run(p, fn, in_ssa=False):
+            fn = p.run(fn, ctx)
+            if checked:
+                ir_check.check_tac(
+                    fn, after=type(p).__name__, symbols=ctx.symbols,
+                    ssa_dsts=ctx.ssa_dsts if in_ssa else None,
+                )
+            return fn
+
+        if checked:
+            ir_check.check_tac(fn, after="c99_to_tac", symbols=ctx.symbols)
         # Pre-SSA passes — run regardless of whether SSA construction will happen.
         for p in self.pre_ssa:
-            fn = p.run(fn, ctx)
+            fn = run(p, fn)
         if ctx.symbols is not None:
             fn, ctx.ssa_dsts = to_ssa(fn, ctx.symbols)
+            if checked:
+                ir_check.check_tac(
+                    fn, after="to_ssa", symbols=ctx.symbols,
+                    ssa_dsts=ctx.ssa_dsts,
+                )
             for p in self.pre_fixedpoint:
-                fn = p.run(fn, ctx)
+                fn = run(p, fn, in_ssa=True)
         # Main fixedpoint.
         for _ in range(self.fixedpoint_cap):
             prev = fn
             for p in self.fixedpoint:
-                fn = p.run(fn, ctx)
+                fn = run(p, fn, in_ssa=ctx.symbols is not None)
             if fn == prev:
                 break
         if ctx.symbols is not None:
             for p in self.post_fixedpoint:
-                fn = p.run(fn, ctx)
+                fn = run(p, fn, in_ssa=True)
             fn = from_ssa(fn, symbols=ctx.symbols)
+            if checked:
+                ir_check.check_tac(fn, after="from_ssa", symbols=ctx.symbols)
         # Post-destruction one-shots.
         for p in self.post_destruction:
-            fn = p.run(fn, ctx)
+            fn = run(p, fn)
         # Post-destruction fixedpoint.
         for _ in range(self.fixedpoint_cap):
             prev = fn
             for p in self.post_destruction_fixedpoint:
-                fn = p.run(fn, ctx)
+                fn = run(p, fn)
             if fn == prev:
                 break
         return fn

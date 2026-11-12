@@ -40,8 +40,9 @@ file holds the project overview and notes about root-level files
   `<stdint.h>` and `<limits.h>`.
 - [fuzz/CLAUDE.md](fuzz/CLAUDE.md) — random-program fuzzers
   (expression semantics, calling conventions, statements and storage
-  classes), a runner that checks
-  every execution path, and a reducer for failing programs.
+  classes, and YARPGen's programs, built with a 16-bit `int` by
+  `fuzz/build_yarpgen.py`), a runner that checks every execution path
+  with the IR checks on, and a reducer for failing programs.
 
 ## Pipeline at a glance
 
@@ -177,6 +178,7 @@ Two key runtime conventions:
 ```sh
 uv sync                                         # create/update the project venv
 uv run python -m unittest                       # run all tests
+C6502_CHECK_IR=1 uv run python -m unittest      # with IR checks after every pass
 uv run python -m unittest tests.test_asm_emit   # run one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one test
 

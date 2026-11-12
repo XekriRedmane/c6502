@@ -63,8 +63,9 @@ this directory:
   `.cmp_novf:` and the `BMI` / `BPL` after the label reads it.
 - `branch_through_jump.py` — `apply_branch_through_jump` peephole.
   Rewrites `Branch(cond, L); X; L: Jump(T)` → `Branch(cond, T); X`
-  when L is an in-function label and the Jump goes to another
-  in-function label. Drops the orphaned Label+Jump trampoline
+  (and the same for an unconditional `Jump(L)`) when L is an
+  in-function label and the Jump goes to another in-function label,
+  following chains but leaving a cycle alone. Drops the orphaned Label+Jump trampoline
   when L's reference count drops to zero AND the preceding
   instruction is a control-flow terminator (Return / Ret / Jump)
   so fall-through can't reach it. Targets the

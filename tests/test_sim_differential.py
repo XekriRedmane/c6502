@@ -121,12 +121,7 @@ _OPT_DIVERGES: dict[str, str] = {
 # it can beat the optimizer when the optimizer leaves a shape the
 # peepholes don't recognize. Each entry names that shape, and each
 # has an item in TODO.md.
-_OPT_SLOWER: dict[str, str] = {
-    "chapter_6/valid/extra_credit/goto_backwards.c":
-        "`if (0)` folds to an unconditional `JMP .if_end` whose "
-        "target is another `JMP`; branch_through_jump threads only "
-        "conditional branches, so the JMP-to-JMP chain survives",
-}
+_OPT_SLOWER: dict[str, str] = {}
 
 
 def _return_int_bytes(result) -> bytes:

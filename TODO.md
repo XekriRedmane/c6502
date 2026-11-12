@@ -17,52 +17,6 @@ That document should be organized around diagrams, tables, and short
 sections with headings, so that a reader can find one stage without
 reading the whole thing.
 
-## Thread unconditional JMP-to-JMP chains in the optimized pipeline
-
-`--optimize` can leave a `JMP` whose target is another `JMP`. The
-unoptimized pipeline doesn't, so on small programs the unoptimized
-build can run in fewer cycles than the optimized one.
-
-The case that shows it is `tests/chapter_6/valid/extra_credit/goto_backwards.c`.
-
-```c
-int main(void) {
-    if (0)
-    label:
-        return 5;
-    goto label;
-    return 0;
-}
-```
-
-The TAC optimizer folds `if (0)` to an unconditional `Jump`, and the
-optimized output keeps the chain.
-
-```
-   JMP   .if_end@0
-.main@label:
-   LDX   #$00
-   LDA   #$05
-   RTS
-.if_end@0:
-   JMP   .main@label
-```
-
-That takes 32 cycles. The unoptimized build lowers `if (0)` to a
-compare and a conditional branch, which `branch_through_jump`
-retargets, and it comes out as a straight `LDX #0; LDA #5; RTS` in
-26 cycles.
-
-`branch_through_jump` only rewrites a conditional `Branch` whose
-target label is followed by a `Jump`. Extending it (or adding a
-sibling pass) to rewrite `Jump(L1)` when `L1:` is followed by
-`Jump(L2)` into `Jump(L2)`, and then dropping a `Jump` to the label
-immediately after it, should collapse this shape.
-
-When it's fixed, remove the `goto_backwards.c` entry from
-`_OPT_SLOWER` in `tests/test_sim_differential.py`, which currently
-exempts it from the "optimized is never slower" check.
-
 ## Call through an arbitrary function-pointer expression
 
 The callee of a call must reduce to a single name. `f(x)`, `fp(x)`,

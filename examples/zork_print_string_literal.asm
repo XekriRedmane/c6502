@@ -826,7 +826,7 @@ print_zstring:
    STA   ZCODE_PAGE_VALID2
    LDA   #$FF
    STA   SHIFT_ALPHABET
-   JMP   .loop@9_continue
+   JMP   .loop@9_start
 .if_else@42:
    CMP   #$04
    BCS   .if_else@44
@@ -839,7 +839,7 @@ print_zstring:
    ADC   #$02
    JSR   A_mod_3
    STA   SHIFT_ALPHABET
-   JMP   .loop@9_continue
+   JMP   .loop@9_start
 .if_else@44:
    CMP   #$06
    BCS   .if_else@46
@@ -848,7 +848,7 @@ print_zstring:
    ADC   __local_print_zstring__c_0
    JSR   A_mod_3
    STA   LOCKED_ALPHABET
-   JMP   .loop@9_continue
+   JMP   .loop@9_start
 .if_else@46:
    JSR   get_alphabet
    STA   __local_print_zstring__ch
@@ -899,7 +899,6 @@ print_zstring:
 .if_end@47:
 .if_end@39:
    JSR   buffer_char
-.loop@9_continue:
    JMP   .loop@9_start
 
 print_string_literal:

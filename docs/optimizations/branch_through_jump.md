@@ -2,8 +2,8 @@
 
 `apply_branch_through_jump` in
 [passes/branch_through_jump.py](../../passes/branch_through_jump.py)
-points a conditional branch whose target label holds only a `JMP`
-straight at the `JMP`'s target, and deletes the label and the `JMP`
+points a branch or a `JMP` whose target label holds only a `JMP`
+straight at that `JMP`'s target, and deletes the label and the `JMP`
 when nothing else reaches them. It runs in the peephole fixed point,
 in both the optimized and the unoptimized pipelines.
 
@@ -64,15 +64,44 @@ the inner `if` ends at `.if_end@2: JMP .if_end@0`, which `STA g` falls
 into. The pass turns `BEQ .if_end@2` into `BEQ .if_end@0` and leaves
 the `JMP` in place for the fall-through path.
 
+A `JMP` goes through a trampoline the same way. The TAC optimizer
+folds `if (0)` to a `JMP`, so in
+
+```c
+int main(void) {
+    if (0)
+    label:
+        return 5;
+    goto label;
+    return 0;
+}
+```
+
+the optimized build had a `JMP` to a `JMP`:
+
+```
+   JMP   .if_end@0
+.main@label:
+   LDX   #$00
+   LDA   #$05
+   RTS
+.if_end@0:
+   JMP   .main@label
+```
+
+The pass turns the first `JMP` into `JMP .main@label` and deletes the
+trampoline, and [branch to next label](branch_to_next_drop.md) then
+deletes the `JMP` to the label right after it, leaving `LDX #$00;
+LDA #$05; RTS`. That's 26 cycles instead of 32.
+
 ## When it applies
 
-- The branch targets a label `L` in the function. Past `L`, skipping
-  any further labels and any non-volatile `Mov` whose source and
-  destination are the same, the first instruction is a `Jump` to a
+- The branch or `JMP` targets a label `L` in the function. Past `L`,
+  skipping any further labels and any non-volatile `Mov` whose source
+  and destination are the same, the first instruction is a `Jump` to a
   label `T` in the same function.
-- The pass follows chains of such labels, up to 16 deep, so a branch
-  to a trampoline that jumps to another trampoline goes to the final
-  target.
+- The pass follows chains of such labels, so a branch to a trampoline
+  that jumps to another trampoline goes to the final target.
 - The label and the `JMP` are deleted when no other `Jump`, `Branch`,
   or `Phi` argument names `L` after the retargeting, and the
   instruction before `L` is a `Jump`, `Return`, or `Ret`, so nothing
@@ -83,8 +112,10 @@ the `JMP` in place for the fall-through path.
 
 - A `JMP` to another function, as a tail call leaves it. A branch
   can't leave its function, so `BEQ L` with `L: JMP tick` stays.
-- A `JMP` whose target label is a trampoline. Only conditional
-  branches are retargeted.
+- A chain of trampolines that leads back to one it passed, such as
+  `L1: JMP L2` with `L2: JMP L1`. That's an endless loop, and
+  retargeting inside it would change it on every sweep, so the peephole
+  loop would never settle.
 - A trampoline that something else still names or falls into, as in
   the nested `if` above.
 

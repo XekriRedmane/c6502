@@ -1,4 +1,5 @@
-"""Tail-jump merging: `Branch(cond, L); …; L: Jump(T)` → `Branch(cond, T); …`.
+"""Tail-jump merging: `Branch(cond, L); …; L: Jump(T)` → `Branch(cond, T); …`,
+and the same for an unconditional `Jump(L)`.
 
 Motivating shape (snd_delay_up's outer loop tail):
 
@@ -41,6 +42,26 @@ trampoline) but leave the Label+Jump in place for the fall-through
 path. The `apply_dead_label_drop` pass picks them up if they end
 up orphaned by a subsequent rewrite.
 
+An unconditional `Jump(L)` is retargeted the same way. The TAC
+optimizer folds `if (0)` to a `Jump`, so `goto_backwards.c` came out
+as
+
+    JMP .if_end@0
+    .main@label:
+    LDX #$00
+    LDA #$05
+    RTS
+    .if_end@0:
+    JMP .main@label
+
+and became `JMP .main@label` straight into `.main@label`, which
+`branch_to_next_drop` deletes, and the orphaned `.if_end@0: JMP`
+goes too.
+
+A chain that loops back on itself (`L1: JMP L2; L2: JMP L1`, an
+endless loop) is left alone, since retargeting inside the cycle
+would keep changing it and the peephole loop wouldn't settle.
+
 Where to run: in the asm-peephole fixed-point loop, after
 `apply_branch_invert`. Together they collapse the two trampoline
 shapes `tac_to_asm` emits for loop tails.
@@ -51,10 +72,10 @@ import asm_ast
 
 
 def apply_branch_through_jump(prog: asm_ast.Program) -> asm_ast.Program:
-    """Walk every Function and retarget any `Branch(cond, L)` whose
-    target Label is immediately followed by an unconditional
-    `Jump(T)`. When L has only one reference (this Branch), also
-    drop the orphaned Label+Jump pair."""
+    """Walk every Function and retarget any `Branch(cond, L)` or
+    `Jump(L)` whose target Label is immediately followed by an
+    unconditional `Jump(T)`. When L has only one reference (this
+    Branch or Jump), also drop the orphaned Label+Jump pair."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
@@ -106,16 +127,17 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     if not label_to_jump_target:
         return fn
     # Resolve chains: a label that jumps to another label that
-    # jumps to T should ultimately retarget to T.
-    def _resolve(target: str, depth: int = 0) -> str:
-        # Bound the chain walk in case of pathological inputs;
-        # 16 levels is well past anything tac_to_asm emits.
-        if depth > 16:
-            return target
-        nxt = label_to_jump_target.get(target)
-        if nxt is None or nxt == target:
-            return target
-        return _resolve(nxt, depth + 1)
+    # jumps to T should ultimately retarget to T. A chain that comes
+    # back to a label it passed is an endless loop; leave it.
+    def _resolve(target: str) -> str:
+        seen = {target}
+        cur = target
+        while (nxt := label_to_jump_target.get(cur)) is not None:
+            if nxt in seen:
+                return target
+            seen.add(nxt)
+            cur = nxt
+        return cur
     # Reference counts on labels so we can decide which Label+Jump
     # pairs are safe to drop after the retarget. Count Branch /
     # Jump / Phi targets; the Function name itself doesn't count
@@ -124,14 +146,14 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     for instr in instrs:
         for ref in _label_refs(instr):
             ref_count[ref] = ref_count.get(ref, 0) + 1
-    # Pass 1: retarget Branches whose target Label has a trivial
-    # Jump body. Track which labels lose a reference so we can
-    # decide whether to drop them.
+    # Pass 1: retarget Branches and Jumps whose target Label has a
+    # trivial Jump body. Track which labels lose a reference so we
+    # can decide whether to drop them.
     new_instrs: list[asm_ast.Type_instruction] = []
     drop_decremented: dict[str, int] = {}
     for instr in instrs:
         if (
-            isinstance(instr, asm_ast.Branch)
+            isinstance(instr, (asm_ast.Branch, asm_ast.Jump))
             and instr.target in label_to_jump_target
         ):
             new_target = _resolve(instr.target)
@@ -139,9 +161,14 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 drop_decremented[instr.target] = (
                     drop_decremented.get(instr.target, 0) + 1
                 )
-                new_instrs.append(asm_ast.Branch(
-                    cond=instr.cond, target=new_target,
-                ))
+                if isinstance(instr, asm_ast.Branch):
+                    new_instrs.append(asm_ast.Branch(
+                        cond=instr.cond, target=new_target,
+                    ))
+                else:
+                    new_instrs.append(asm_ast.Jump(
+                        target=new_target, reg_args=list(instr.reg_args),
+                    ))
                 continue
         new_instrs.append(instr)
     # Pass 2: drop Label+(noop-Mov)*+Jump trampolines whose Label

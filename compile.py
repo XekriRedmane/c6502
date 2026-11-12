@@ -69,6 +69,7 @@ from passes.const_arith_fold import apply_const_arith_fold
 from passes.mem_const_prop import apply_mem_const_prop
 from passes.round_trip_load import apply_round_trip_load_drop
 from passes.and_sign_bit_branch import apply_and_sign_bit_branch
+from passes.shift_in_a import apply_shift_in_a
 from passes.self_store_drop import apply_self_store_drop
 from passes.cmp_through_tmp_fold import apply_cmp_through_tmp_fold
 from passes.redundant_compare import apply_redundant_compare
@@ -221,6 +222,7 @@ def _peephole_fixedpoint(
         new_prog = apply_memory_value_propagation(
             new_prog, zp_symbol_addrs=zp_cells or None,
         )
+        new_prog = apply_shift_in_a(new_prog)
         new_prog = apply_redundant_load_after_rmw(new_prog)
         new_prog = apply_redundant_load_elimination(new_prog)
         new_prog = apply_redundant_store_elimination(new_prog)

@@ -189,7 +189,15 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   at the narrow width. Wraparound-safe ops are Add / Subtract / Multiply
   / BitwiseAnd / BitwiseOr / BitwiseXor, plus LeftShift by a constant
   below the narrow width (Divide / Modulo / RightShift excluded
-  because high bytes contribute to low bytes of the result). Eliminates the dead
+  because high bytes contribute to low bytes of the result). An
+  operand may also be any wider integer Var (a 16-bit global, say),
+  whose low bytes come from a new `Truncate` before the narrow
+  Binary, when the Truncate is the wide Binary's only reader (or the
+  narrow Binary would repeat its work). The narrow Binary reads its operands at the Truncate, so a
+  non-SSA one must be unchanged since the wide Binary or Extend read
+  it (same block, no call, store, or write to it in between; not
+  volatile), or `int t = g + 1; h(); (uint8_t)t` would read `g` after
+  `h` changed it. Eliminates the dead
   high-byte arithmetic that C99's `uint8_t op uint8_t`
   integer-promotion-then-truncate idiom otherwise leaves in the IR. MUST
   run AFTER `sink_and_past_branch` inside the fixed-point loop — sink's

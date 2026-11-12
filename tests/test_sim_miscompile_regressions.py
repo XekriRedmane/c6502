@@ -337,6 +337,32 @@ _CASES: list[tuple[str, str, int]] = [
         int main(void) { struct ev e; void (*c)(struct ev *) = inc;
                          e.n = 1; c(&e); return e.n; }
     """, 2),
+    # narrow_widened_arith read a global at the Truncate instead of
+    # at the extend, after a call had changed it.
+    ("narrowed_read_of_global_after_call", """
+        unsigned char g = 10;
+        unsigned char h(void) { g = 77; return 1; }
+        int main(void) {
+            int t = g + 1;
+            unsigned char k = h();
+            unsigned char x = (unsigned char)t;
+            return x + k;
+        }
+    """, 12),
+    # narrow_widened_arith truncated a sign-extended constant as a
+    # wide operand and still dropped the extend.
+    ("narrowed_extended_constant", """
+        int check(int v3) { return (signed char)(((signed char)44) | v3); }
+        int main(void) { return check(0); }
+    """, 44),
+    # A second narrowing dropped the first one's operand Truncate along
+    # with the narrow Binary it replaced.
+    ("narrowed_twice", """
+        int check(unsigned int v2, unsigned long v4) {
+            return (unsigned char)((unsigned int)(v4 * v2));
+        }
+        int main(void) { return check(65535u, 15UL); }
+    """, 241),
 ]
 
 

@@ -24,7 +24,6 @@ __monitor_status	EQU	$48
 __monitor_rnd	EQU	$4E
 SECTORS_PER_TRACK	EQU	$7F
 __local_get_alphabet__shift	EQU	$80
-__local_load_packed_address__0	EQU	$80
 __zpabi_A_mod_3__a	EQU	$80
 __zpabi_buffer_char__c	EQU	$80
 __zpabi_do_rwts_on_sector__command	EQU	$80
@@ -112,7 +111,7 @@ COUT1	EQU	$FDF0
 ; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
 ; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1,__local_get_next_zchar__code indirect=false in_cycle=false
 ; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
-; def load_packed_address params= locals=__local_load_packed_address__0,__local_load_packed_address__1 indirect=false in_cycle=false
+; def load_packed_address params= locals=__local_load_packed_address__0 indirect=false in_cycle=false
 ; def print_string_literal params= locals= indirect=false in_cycle=false
 ; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0,__local_print_zstring__1 indirect=false in_cycle=true
 ; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false
@@ -402,9 +401,7 @@ load_packed_address:
    SUBROUTINE
 
    LDA   SCRATCH2
-   STA   __local_load_packed_address__0
-   ASL   __local_load_packed_address__0
-   LDA   __local_load_packed_address__0
+   ASL   A
    STA   Z_PC2_L
    LDA   SCRATCH2
    ASL   A
@@ -686,10 +683,8 @@ get_next_zchar:
    STA   ZCHARS
    LDA   SCRATCH2+1
    STA   ZCHARS+1
-   STA   __local_get_next_zchar__compound_literal_1
-   LSR   __local_get_next_zchar__compound_literal_1
-   LSR   __local_get_next_zchar__compound_literal_1
-   LDA   __local_get_next_zchar__compound_literal_1
+   LSR   A
+   LSR   A
    AND   #$1F
    JMP   .if_end@31
 .if_else@32:

@@ -344,10 +344,11 @@ class TestNarrowWidenedArith(unittest.TestCase):
         )
         self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
 
-    def test_extend_source_width_mismatch_left_alone(self):
+    def test_extend_source_width_mismatch_truncates_the_extend(self):
         # `a` is a 2-byte int extended to a 4-byte long, then
-        # truncated back to a 1-byte uchar. We don't synthesize a
-        # narrower truncate of the original source — leave alone.
+        # truncated back to a 1-byte uchar. The extends aren't as
+        # narrow as the Truncate, so their low bytes come from new
+        # Truncates of them.
         instrs = [
             tac_ast.SignExtend(src=_var("a"), dst=_var("ea")),
             tac_ast.SignExtend(src=_var("b"), dst=_var("eb")),
@@ -369,7 +370,14 @@ class TestNarrowWidenedArith(unittest.TestCase):
         out = narrow_widened_arith(
             _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
         )
-        self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
+        self.assertEqual(out.instructions[-3:], [
+            tac_ast.Truncate(src=_var("ea"), dst=_var("d.lo1")),
+            tac_ast.Truncate(src=_var("eb"), dst=_var("d.lo2")),
+            tac_ast.Binary(
+                op=tac_ast.Add(), src1=_var("d.lo1"),
+                src2=_var("d.lo2"), dst=_var("d"),
+            ),
+        ])
 
     def test_binary_dst_is_global_not_narrowed(self):
         # The Binary's dst is a static global, NOT SSA-renamed.
@@ -399,9 +407,10 @@ class TestNarrowWidenedArith(unittest.TestCase):
         )
         self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
 
-    def test_extend_source_global_not_narrowed(self):
-        # One Binary operand is a Var defined by an Extend whose
-        # OWN dst is a non-SSA global. Same soundness issue.
+    def test_extend_dst_global_narrowed_when_unchanged(self):
+        # One Binary operand is a non-SSA global that an Extend
+        # wrote. Nothing between the Binary and the Truncate can write
+        # it, so the narrow Binary reads its low byte there.
         instrs = [
             tac_ast.ZeroExtend(src=_var("a"), dst=_var("ea_global")),
             tac_ast.ZeroExtend(src=_var("b"), dst=_var("eb")),
@@ -422,6 +431,88 @@ class TestNarrowWidenedArith(unittest.TestCase):
         ssa_dsts = {"eb", "r", "d"}  # ea_global NOT renamed
         out = narrow_widened_arith(
             _fn(instrs), symbols=symbols, ssa_dsts=ssa_dsts,
+        )
+        self.assertEqual(out.instructions[-2:], [
+            tac_ast.Truncate(src=_var("ea_global"), dst=_var("d.lo1")),
+            tac_ast.Binary(
+                op=tac_ast.Subtract(), src1=_var("d.lo1"),
+                src2=_var("b"), dst=_var("d"),
+            ),
+        ])
+
+    def _wide_global_shift(self, between, volatile=False):
+        # `(uint8_t)(w << 1)` with `w` a 16-bit global, and `between`
+        # placed between the shift and the Truncate.
+        instrs = [
+            tac_ast.Binary(
+                op=tac_ast.LeftShift(), src1=_var("w"),
+                src2=_const_int(1), dst=_var("r"),
+            ),
+            *between,
+            tac_ast.Truncate(src=_var("r"), dst=_var("d")),
+        ]
+        wt = c99_ast.Volatile(referenced_type=c99_ast.Int()) \
+            if volatile else c99_ast.Int()
+        symbols = {
+            "w": _static(wt),
+            "r": _local(c99_ast.Int()),
+            "d": _local(c99_ast.UChar()),
+            "x": _local(c99_ast.UChar()),
+        }
+        return narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts={"r", "d", "x"},
+        ).instructions
+
+    def test_wide_global_operand_narrowed(self):
+        out = self._wide_global_shift([
+            tac_ast.Copy(src=_const_uchar(3), dst=_var("x")),
+        ])
+        self.assertEqual(out[-2:], [
+            tac_ast.Truncate(src=_var("w"), dst=_var("d.lo1")),
+            tac_ast.Binary(
+                op=tac_ast.LeftShift(), src1=_var("d.lo1"),
+                src2=_const_uchar(1), dst=_var("d"),
+            ),
+        ])
+
+    def test_wide_global_changed_before_the_truncate(self):
+        # A call, a store, or a write to `w` between the shift and the
+        # Truncate may change `w`, so the shift stays wide.
+        for between in (
+            [tac_ast.FunctionCall(name="h", args=[], dst=None)],
+            [tac_ast.Store(src=_var("x"), dst_ptr=_var("x"),
+                           is_volatile=False)],
+            [tac_ast.Copy(src=_const_int(5), dst=_var("w"))],
+            [tac_ast.Label(name="L")],
+        ):
+            with self.subTest(type(between[0]).__name__):
+                out = self._wide_global_shift(between)
+                self.assertIsInstance(out[-1], tac_ast.Truncate)
+
+    def test_volatile_wide_global_not_narrowed(self):
+        out = self._wide_global_shift([], volatile=True)
+        self.assertIsInstance(out[-1], tac_ast.Truncate)
+
+    def test_extend_of_global_changed_before_the_truncate(self):
+        # `int t = g + 1; h(); (uint8_t)t` read `g` after `h` changed
+        # it.
+        instrs = [
+            tac_ast.ZeroExtend(src=_var("g"), dst=_var("eg")),
+            tac_ast.Binary(
+                op=tac_ast.Add(), src1=_var("eg"),
+                src2=_const_int(1), dst=_var("r"),
+            ),
+            tac_ast.FunctionCall(name="h", args=[], dst=None),
+            tac_ast.Truncate(src=_var("r"), dst=_var("d")),
+        ]
+        symbols = {
+            "g": _static(c99_ast.UChar()),
+            "eg": _local(c99_ast.Int()),
+            "r": _local(c99_ast.Int()),
+            "d": _local(c99_ast.UChar()),
+        }
+        out = narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts={"eg", "r", "d"},
         )
         self.assertIsInstance(out.instructions[-1], tac_ast.Truncate)
 

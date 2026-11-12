@@ -194,15 +194,22 @@ access to struct members at constant offsets
 1510. Saving the decoder's state on the hardware stack around the
 call that recurses (`#pragma c6502 call save(hardware_stack)`,
 `passes/recursion_saves.py`) took off another 180, leaving
-print_zstring at 277 bytes against Zork's 216. What's left, roughly
-in order of size:
+print_zstring at 277 bytes against Zork's 216. Shifting single bytes
+in A instead of in a slot (`narrow_widened_arith` on a wide operand,
+and `passes/shift_in_a.py`) took off 11 more. What's left, roughly in
+order of size:
 - **A loop count passed in X stays in memory.** cout_string takes its
   count with `in_x`, as Zork's does, then stores X to a slot and
   counts the slot down with `DEC`. COUT1 preserves X, so the count
   could stay in X with `DEX`, as in the original.
-- **A shift by one stages through a slot.** `(uint8_t)(w << 1)` is
-  `LDA w; STA t; ASL t; LDA t`, where `LDA w; ASL A` does the same
-  when `t` is dead after.
+- **A widened byte shifted through memory.** `(int)c << 3` is `LDA c;
+  STA lo; ASL lo; LDA #0; STA hi; ROL hi; ASL lo; ROL hi; ...; LDA
+  lo`, where `LDA #0; STA hi; LDA c; ASL A; ROL hi; ASL A; ROL hi;
+  ...` keeps the low byte in A, about 7 bytes and 9 cycles less.
+  `shift_in_a` only moves the first `ASL` to A, because the `LDA #0;
+  STA hi` that comes between it and the rest has to move first.
+  Doing it in `tac_to_asm` instead would make an in-place `w <<= 1`
+  longer.
 - **Operands staged through a temporary.** `sector >=
   SECTORS_PER_TRACK` copies `SECTORS_PER_TRACK` into a slot and
   subtracts the slot, where `SBC SECTORS_PER_TRACK` reads it in

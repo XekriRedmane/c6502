@@ -34,8 +34,8 @@ get_object_addr:
    ADC   __local_get_object_addr__0
    STA   __local_get_object_addr__4
    LDA   __zpabi_get_object_addr__obj
+   ASL   A
    STA   __local_get_object_addr__2
-   ASL   __local_get_object_addr__2
    LDA   #$00
    STA   __local_get_object_addr__3
    ROL   __local_get_object_addr__3

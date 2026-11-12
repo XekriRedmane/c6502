@@ -218,6 +218,10 @@ this directory:
   is_volatile bit doesn't tell which operand is volatile). Self-Movs
   `Mov(M, M)` are dropped entirely. See "Mem-to-mem splitting" below.
 - `self_store_drop.py` — `apply_self_store_drop`.
+- `shift_in_a.py` — `apply_shift_in_a`. Rewrites `STA M; <ASL / LSR /
+  ROL / ROR M>+; LDA M` as the shifts on A followed by `STA M`, and
+  does the same without the `LDA` when A is dead after the shifts.
+  `asm_dead_store` then drops the `STA` if M isn't read again.
 - `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
   the rule for when a constant shift is lowered inline (at most 8
   one-bit shift instructions after the byte moves, or any count of

@@ -67,11 +67,26 @@ A constant shift narrows the same way. For `return len << 4;` with a
   bytes. `<<` qualifies only with a constant count less than the
   number of bits in the truncated width.
 - The `Binary`'s result is wider than the truncate's destination.
-- Each operand is either a constant, or an SSA-renamed variable
-  defined by a `ZeroExtend` or `SignExtend` of a variable exactly as
-  wide as the truncate's destination. A constant is reduced modulo
-  the narrow width, and takes a type of that width with the
-  destination's signedness.
+- Each operand is one of these:
+  - a constant, which is reduced modulo the narrow width and takes a
+    type of that width with the destination's signedness;
+  - an SSA-renamed variable defined by a `ZeroExtend` or `SignExtend`
+    of a variable exactly as wide as the truncate's destination,
+    which the new `Binary` reads instead;
+  - any other integer variable wider than the destination, such as a
+    16-bit global. A new `Truncate` just before the new `Binary`
+    takes its low bytes, so `(uint8_t)(SCRATCH2 << 1)` on a 16-bit
+    `SCRATCH2` becomes `LDA SCRATCH2; ASL A`. This needs the truncate
+    to be the wide `Binary`'s only reader. Otherwise the wide
+    `Binary` stays, and a narrow one would do its low byte again, as
+    for `(uint8_t)(w + 3)` next to `(w + 3) >> 8`.
+- The new `Binary` reads its operands where the truncate was, so each
+  variable it reads must still hold the value the wide `Binary` (or
+  the extend) read. An SSA-renamed variable always does. Any other
+  one, such as a global, must not be volatile, and the extend or
+  `Binary` must be in the truncate's block with nothing between them
+  that may write it: an assignment to it, a call, or a store through
+  a pointer or an index.
 
 The new `Binary` writes the truncate's destination. When the
 truncate was the only reader of the wide result, the pass drops the
@@ -92,9 +107,9 @@ held in memory across it.
   low bytes of the result. `(uint8_t)(a >> 1)` keeps its 16-bit
   shift in TAC.
 - A `<<` by a variable count, such as `a << n`.
-- An operand that isn't an extend of a narrow variable. In
-  `uint8_t wide(uint16_t a, uint8_t b) { return a + b; }` the add
-  stays 16 bits wide, although only its low byte is used.
+- A global or other non-SSA operand that may change between the
+  wide `Binary` and the truncate, as in `int t = g + 1; h();
+  (uint8_t)t` when `h` can write `g`, and a volatile one.
 - Floating-point constants.
 - A truncate of a plain extend with no operation between, which
   [truncate-of-extend folding](truncate_extend_fold.md) handles.

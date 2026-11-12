@@ -65,11 +65,27 @@ to `Binary(Subtract, uc, Constant(0x34:uchar))`.
   - Each Binary operand is either:
       (a) an SSA-renamed Var whose def is `SignExtend` or
           `ZeroExtend` of a Var whose declared width equals the
-          Truncate's dst width, or
-      (b) a Constant we can narrow to the dst width.
+          Truncate's dst width,
+      (b) a Constant we can narrow to the dst width, or
+      (c) any other integer Var wider than the dst width, such as
+          a 16-bit global. Its low bytes come from a new
+          `Truncate` just before the narrow Binary, so
+          `(uint8_t)(w << 1)` on an `int w` becomes a 1-byte shift
+          of `w`'s low byte. Only when the Truncate is the wide
+          Binary's one reader, so the wide Binary goes away;
+          otherwise the narrow one would repeat its work, as for
+          `(uint8_t)(w + 3)` next to `(w + 3) >> 8`.
   - The Binary's dst width is strictly wider than the Truncate's
     dst width. (Otherwise `constant_fold` / `fold_truncate_extend`
     would already have caught the trivial case.)
+  - The narrow Binary reads its operands where the Truncate was, so
+    each Var it reads must still hold the value the wide Binary (or
+    the Extend) read. An SSA-renamed Var always does. Any other Var
+    has to be non-volatile, with the Extend or Binary in the same
+    block as the Truncate and nothing in between that may write it
+    (a definition of it, a call, or a store through a pointer or an
+    index). Without this, `int t = g + 1; h(); (uint8_t)t` read `g`
+    after `h` had changed it.
 
 # Output
 
@@ -94,7 +110,7 @@ from passes.optimization.framework import (
     DefUsePass, DefUseEnv, PassContext, MatchResult, Rewrite,
     m_Cast, m_Var,
 )
-from passes.optimization.var_visit import count_uses
+from passes.optimization.var_visit import count_uses, defs_in
 
 
 # Wraparound-safe ops: the low n bytes of op(W(a), W(b)) depend only
@@ -168,18 +184,28 @@ class NarrowWidenedArith(DefUsePass):
                     and 0 <= count.const.value < 8 * dst_width):
                 return None
 
+        trunc_idx = env.def_idx.get(dst_var.name)
+        bin_idx = env.def_idx.get(trunc_src.name)
+        if trunc_idx is None or bin_idx is None:
+            return None
+        # Truncates of wide operands, placed just before the narrow
+        # Binary. Their dsts are registered only once the rewrite is
+        # certain.
+        pre: list[tac_ast.Truncate] = []
         narrow_s1 = _narrow_operand(
-            bin_instr.src1, dst_width, dst_unsigned,
-            env.instructions, env.def_idx, ctx.symbols, ctx.ssa_dsts,
+            bin_instr.src1, dst_width, dst_unsigned, env, bin_idx,
+            trunc_idx, f"{dst_var.name}.lo1", ctx, pre,
         )
         if narrow_s1 is None:
             return None
         narrow_s2 = _narrow_operand(
-            bin_instr.src2, dst_width, dst_unsigned,
-            env.instructions, env.def_idx, ctx.symbols, ctx.ssa_dsts,
+            bin_instr.src2, dst_width, dst_unsigned, env, bin_idx,
+            trunc_idx, f"{dst_var.name}.lo2", ctx, pre,
         )
         if narrow_s2 is None:
             return None
+        for t in pre:
+            _register_temp(ctx, like=dst_var.name, name=t.dst.name)
 
         narrow_binary = tac_ast.Binary(
             op=bin_instr.op, src1=narrow_s1, src2=narrow_s2,
@@ -192,12 +218,18 @@ class NarrowWidenedArith(DefUsePass):
         # only the Binary reads it, so after the Binary is gone it's dead.
         # (The Truncate is the current USE site; it's replaced, not dropped.)
         use_counts = env.extra
+        replacement = [*pre, narrow_binary] if pre else narrow_binary
         # The wide Binary stays when anything besides this Truncate
         # reads its result (`l0 ^= f(); l0 += (int)l0;` reads the
         # wide XOR in the Add as well as through the Truncate). Its
         # Extend operands then stay alive too.
         if use_counts.get(bin_instr.dst.name, 0) != 1:
-            return Rewrite(replacement=narrow_binary)
+            if pre:
+                # A wide operand isn't an extend that goes away, so the
+                # narrow Binary would only repeat the wide one's work
+                # (`(uint8_t)(w + 3)` next to `(w + 3) >> 8`).
+                return None
+            return Rewrite(replacement=replacement)
         drop_vars: list[tac_ast.Var] = [bin_instr.dst]
         for operand in (bin_instr.src1, bin_instr.src2):
             if not isinstance(operand, tac_ast.Var):
@@ -207,11 +239,15 @@ class NarrowWidenedArith(DefUsePass):
             ext = env.def_of(operand)
             if not isinstance(ext, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
                 continue
+            # A new Truncate still reads the Extend's dst when the
+            # operand was narrowed as a wide Var.
+            if any(t.src == operand for t in pre):
+                continue
             # Only drop the Extend if the Binary was its sole consumer.
             if use_counts.get(operand.name, 0) == 1:
                 drop_vars.append(operand)
 
-        return Rewrite(replacement=narrow_binary, drop_defs=tuple(drop_vars))
+        return Rewrite(replacement=replacement, drop_defs=tuple(drop_vars))
 
 
 def narrow_widened_arith(
@@ -234,38 +270,106 @@ def _narrow_operand(
     operand: tac_ast.Type_val,
     target_width: int,
     target_unsigned: bool,
-    all_instrs: list[tac_ast.Type_instruction],
-    def_idx: dict[str, int],
-    symbols,
-    ssa_dsts: set[str],
+    env: DefUseEnv,
+    bin_idx: int,
+    trunc_idx: int,
+    tmp_name: str,
+    ctx: PassContext,
+    pre: list[tac_ast.Truncate],
 ) -> tac_ast.Type_val | None:
     """Return a `Type_val` narrowed to `target_width` bytes (signed
     iff target_unsigned is False), or None if narrowing isn't safe.
+    The narrow Binary sits where the Truncate is (`trunc_idx`), after
+    the wide Binary (`bin_idx`).
 
-    For a Var: requires the Var to be SSA-renamed AND defined by a
-    SignExtend / ZeroExtend of a Var whose declared width equals
-    `target_width`. Returns the cast's source Var.
+    For a Var defined by a SignExtend / ZeroExtend of a Var whose
+    declared width equals `target_width`: returns the cast's source
+    Var, when it still holds the value the cast read.
+
+    For any other integer Var wider than `target_width`: appends
+    `Truncate(operand, tmp_name)` to `pre` and returns the temporary,
+    when `operand` still holds the value the Binary read.
 
     For a Constant: returns a fresh Constant of the matching narrow
     variant, value masked to `target_width` bytes."""
+    symbols, ssa_dsts = ctx.symbols, ctx.ssa_dsts
     if isinstance(operand, tac_ast.Constant):
         return _narrow_constant(operand, target_width, target_unsigned)
     if not isinstance(operand, tac_ast.Var):
         return None
-    if operand.name not in ssa_dsts:
+    if operand.name in ssa_dsts:
+        cast_idx = env.def_idx.get(operand.name)
+        cast = env.instructions[cast_idx] if cast_idx is not None else None
+        if (
+            isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend))
+            and isinstance(cast.src, tac_ast.Var)
+            and _byte_width(cast.src, symbols) == target_width
+        ):
+            if not _unchanged(cast.src, cast_idx, trunc_idx, env, ctx):
+                return None
+            return cast.src
+    width = _byte_width(operand, symbols)
+    if (
+        width is None or width <= target_width
+        or _is_unsigned(operand, symbols) is None
+        or not _unchanged(operand, bin_idx, trunc_idx, env, ctx)
+    ):
         return None
-    cast_idx = def_idx.get(operand.name)
-    if cast_idx is None:
-        return None
-    cast = all_instrs[cast_idx]
-    if not isinstance(cast, (tac_ast.SignExtend, tac_ast.ZeroExtend)):
-        return None
-    if not isinstance(cast.src, tac_ast.Var):
-        return None
-    src_width = _byte_width(cast.src, symbols)
-    if src_width != target_width:
-        return None
-    return cast.src
+    tmp = tac_ast.Var(name=tmp_name)
+    pre.append(tac_ast.Truncate(src=operand, dst=tmp))
+    return tmp
+
+
+# Instructions that may write a variable they don't name.
+_MAY_WRITE_MEMORY = (
+    tac_ast.FunctionCall, tac_ast.IndirectCall, tac_ast.Store,
+    tac_ast.IndexedStore, tac_ast.IndexedSymbolStore,
+    tac_ast.IndirectIndexedStore,
+)
+
+_ENDS_BLOCK = (
+    tac_ast.Label, tac_ast.Ret, tac_ast.Jump, tac_ast.JumpIfTrue,
+    tac_ast.JumpIfFalse, tac_ast.JumpIfCmp, tac_ast.JumpIfMasked,
+)
+
+
+def _unchanged(
+    var: tac_ast.Var, start: int, end: int, env: DefUseEnv,
+    ctx: PassContext,
+) -> bool:
+    """True when `var` holds at `end` the value it held at `start`.
+    An SSA-renamed Var has one definition, so it always does. Any
+    other Var must be non-volatile, with `start` and `end` in one
+    block and nothing between them that may write it."""
+    if var.name in ctx.ssa_dsts:
+        return True
+    sym = ctx.symbols.get(var.name)
+    if sym is None or _is_volatile(sym.type) or start >= end:
+        return False
+    for k in range(start + 1, end):
+        instr = env.instructions[k]
+        if isinstance(instr, _ENDS_BLOCK + _MAY_WRITE_MEMORY):
+            return False
+        if any(d.name == var.name for d in defs_in(instr)):
+            return False
+    return True
+
+
+def _is_volatile(t) -> bool:
+    while isinstance(t, c99_ast.Const):
+        t = t.referenced_type
+    return isinstance(t, c99_ast.Volatile)
+
+
+def _register_temp(ctx: PassContext, like: str, name: str) -> None:
+    """Registers `name` as a local with `like`'s type, and as an SSA
+    name."""
+    from passes.type_checking import LocalAttr, Symbol
+    if name not in ctx.symbols:
+        ctx.symbols[name] = Symbol(
+            type=ctx.symbols.get(like).type, attrs=LocalAttr(),
+        )
+    ctx.ssa_dsts.add(name)
 
 
 def _narrow_constant(

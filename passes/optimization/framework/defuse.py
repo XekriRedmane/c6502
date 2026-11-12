@@ -47,7 +47,7 @@ class Rewrite:
     Caller's responsibility: ensure each named Var is unused after
     the rewrite (single-use gate). If two Rewrites in the same run()
     would drop the same index, the second one is skipped (conflict)."""
-    replacement: object  # tac_ast.Type_instruction
+    replacement: object  # tac_ast.Type_instruction, or a list of them
     drop_defs: tuple = ()  # tuple of tac_ast.Var
 
     def __post_init__(self):
@@ -87,9 +87,10 @@ class DefUsePass(FixedpointPass):
     Required hook:
       - rewrite(m, env, ctx) -> Type_instruction | None
         Called for every match. Return a replacement instruction, or
-        None to leave the use untouched. Replaces a single instruction
-        only — extra dead instructions left over are cleaned up by
-        DSE on the next fixedpoint iteration.
+        None to leave the use untouched. A `Rewrite` may replace the
+        instruction with a list of them, the last standing in for it
+        in later `env.def_of` lookups. Extra dead instructions left
+        over are cleaned up by DSE on the next fixedpoint iteration.
 
     Optional hook:
       - prepare_extra(fn, ctx) -> object — stored at env.extra.
@@ -142,7 +143,11 @@ class DefUsePass(FixedpointPass):
                     # double-drop conflicts.
                     continue
                 rewrites[i] = result.replacement
-                instructions_view[i] = result.replacement
+                instructions_view[i] = (
+                    result.replacement[-1]
+                    if isinstance(result.replacement, list)
+                    else result.replacement
+                )
                 drop_indices.update(new_drops)
                 changed = True
             elif result is not instr:
@@ -153,9 +158,18 @@ class DefUsePass(FixedpointPass):
             return fn
         out = []
         for i, instr in enumerate(fn.instructions):
+            new = rewrites.get(i, instr)
             if i in drop_indices:
+                # A list replacement defines the dropped Var in its
+                # last instruction. The ones before it may still be
+                # read, and DSE drops them if they aren't.
+                if isinstance(new, list):
+                    out.extend(new[:-1])
                 continue
-            out.append(rewrites.get(i, instr))
+            if isinstance(new, list):
+                out.extend(new)
+            else:
+                out.append(new)
         return tac_ast.Function(
             name=fn.name, is_global=fn.is_global,
             params=list(fn.params), instructions=out,

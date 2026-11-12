@@ -30,6 +30,9 @@ PhaseDriver, WindowPass, m_Binary, …`.
 - `defuse.py` — `DefUsePass`, `DefUseEnv`, `Rewrite`: SSA def-use
   chain peephole base. Walks every instruction as a potential USE site,
   lets the subclass walk back to the SSA def via `env.def_of(var)`.
+  A `Rewrite` may replace the use with a list of instructions; the
+  last one defines what the use defined, so a later `drop_defs` of
+  that Var removes only the last one and keeps the rest.
 - `operand_rewrite.py` — `OperandRewritePass`: USE-position operand
   rewrite base. Visits every operand-position `Type_val`; returns a
   replacement or None.

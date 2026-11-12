@@ -121,11 +121,12 @@ class TestInlineShiftDirectMemoryEmit(unittest.TestCase):
         return _run_stage("codegen", preprocess(src), optimize=True)
 
     def test_direct_asl_appears(self):
-        # `int x; x <<= 1;` should emit a direct `ASL $XX` somewhere
-        # in the body (not an `ASL A` round-trip).
+        # `g <<= 1` on a global shifts it in place, with a direct
+        # `ASL g` (not an `ASL A` round-trip).
         src = (
-            "int f(int x) { x <<= 1; return x; }\n"
-            "int main(void) { return f(50); }\n"
+            "int g;\n"
+            "void f(void) { g <<= 1; }\n"
+            "int main(void) { g = 50; f(); return g; }\n"
         )
         asm = self._compile_asm(src)
         # Scan f's body for direct-mode ASL.
@@ -140,6 +141,20 @@ class TestInlineShiftDirectMemoryEmit(unittest.TestCase):
             direct_asl_lines,
             f"expected direct-memory ASL in f's body, got:\n{body}",
         )
+
+    def test_shift_into_another_byte_runs_in_a(self):
+        # A parameter shifted into a local isn't in place, so each
+        # byte goes through A: `LDA x; ASL A; STA t`, not `LDA x; STA
+        # t; ASL t` (passes/shift_in_a.py).
+        src = (
+            "int f(int x) { x <<= 1; return x; }\n"
+            "int main(void) { return f(50); }\n"
+        )
+        body = self._extract_function(self._compile_asm(src), "f")
+        ops = [line.split() for line in body.splitlines() if line.strip()]
+        self.assertIn(["ASL", "A"], ops)
+        self.assertIn(["ROL", "A"], ops)
+        self.assertNotIn("JSR", body)
 
     @staticmethod
     def _extract_function(asm: str, name: str) -> str:

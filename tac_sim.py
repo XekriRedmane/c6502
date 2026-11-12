@@ -22,6 +22,16 @@ initialization (including AddressInit, StringInit, ZeroInit,
 FloatInit, DoubleInit), struct / union pass-by-value and sret
 returns (when a TypeTable is provided to the constructor).
 
+The instructions only the TAC optimizer produces run too, so
+optimized TAC simulates, and so does the SSA form between optimizer
+passes: `JumpIfCmp` (unsigned when either operand is, as `tac_to_asm`
+lowers it), `JumpIfMasked`, `IndexedStore` / `IndexedConstLoad` (a
+numeric base address), `IndirectIndexedLoad` / `IndirectIndexedStore`
+(a pointer plus a 1-byte index), and `Phi`. A run of Phis at a
+block's start takes, all at once, the argument for the block control
+came from, which is the block of the last label executed (SSA gives
+every predecessor of a Phi block a label).
+
 Intended use: exercise C semantics without depending on the
 (still-landing) 6502 runtime helpers, and pin TAC behavior as a
 fixed point against future TAC optimization passes — same input
@@ -193,6 +203,10 @@ class _Frame:
     env: dict[str, int] = field(default_factory=dict)
     local_addr: dict[str, int] = field(default_factory=dict)
     pc: int = 0
+    # The labels of the block being run and of the one before it, for
+    # choosing a Phi's argument.
+    block_label: str | None = None
+    prev_label: str | None = None
 
 
 @dataclass
@@ -401,8 +415,26 @@ class Simulator:
 
     def _step(self, frame: _Frame, ins) -> _Return | None:
         match ins:
-            case tac_ast.Label():
+            case tac_ast.Label(name=name):
+                frame.prev_label, frame.block_label = frame.block_label, name
                 return None
+
+            case tac_ast.Phi():
+                self._run_phis(frame, ins)
+
+            case tac_ast.JumpIfCmp(op=op, src1=a, src2=b, target=t):
+                va, (sa, w, fa) = self._read(frame, a)
+                vb, (sb, _, fb) = self._read(frame, b)
+                ta = (sa and sb, w, fa or fb)
+                if self._eval_binary(op, va, vb & _mask(w), ta):
+                    frame.pc = self._labels[frame.function.name][t]
+
+            case tac_ast.JumpIfMasked(
+                val=v, mask=m, jump_when_nonzero=nz, target=t,
+            ):
+                vu, _ = self._read(frame, v)
+                if ((vu & m) != 0) == nz:
+                    frame.pc = self._labels[frame.function.name][t]
 
             case tac_ast.Jump(target=t):
                 frame.pc = self._labels[frame.function.name][t]
@@ -545,6 +577,30 @@ class Simulator:
                 v, (_, w, _) = self._read(frame, s)
                 self.memory.store(base + (idx_val & 0xFF), v, w)
 
+            case tac_ast.IndexedStore(address=addr, index=i, src=s):
+                idx, _ = self._read(frame, i)
+                v, (_, w, _) = self._read(frame, s)
+                self.memory.store((addr + (idx & 0xFF)) & 0xFFFF, v, w)
+
+            case tac_ast.IndexedConstLoad(address=addr, index=i, dst=d):
+                idx, _ = self._read(frame, i)
+                self._write(frame, d, self.memory.load(
+                    (addr + (idx & 0xFF)) & 0xFFFF, self._dst_width(d),
+                ))
+
+            case tac_ast.IndirectIndexedLoad(ptr=p, index=i, dst=d):
+                ptr, _ = self._read(frame, p)
+                idx, _ = self._read(frame, i)
+                self._write(frame, d, self.memory.load(
+                    (ptr + (idx & 0xFF)) & 0xFFFF, self._dst_width(d),
+                ))
+
+            case tac_ast.IndirectIndexedStore(ptr=p, index=i, src=s):
+                ptr, _ = self._read(frame, p)
+                idx, _ = self._read(frame, i)
+                v, (_, w, _) = self._read(frame, s)
+                self.memory.store((ptr + (idx & 0xFF)) & 0xFFFF, v, w)
+
             case tac_ast.Ret(val=None):
                 return _Return(None, 0)
 
@@ -582,6 +638,33 @@ class Simulator:
                 )
 
         return None
+
+    def _run_phis(self, frame: _Frame, first: tac_ast.Phi) -> None:
+        """Runs the Phis that start at `first`, which `_run` has just
+        stepped past: each reads its argument from the predecessor
+        before any writes its destination."""
+        ins_list = frame.function.instructions
+        phis = [first]
+        while (
+            frame.pc < len(ins_list)
+            and isinstance(ins_list[frame.pc], tac_ast.Phi)
+        ):
+            phis.append(ins_list[frame.pc])
+            frame.pc += 1
+        values = []
+        for phi in phis:
+            arg = next(
+                (a for a in phi.args if a.pred_label == frame.prev_label),
+                None,
+            )
+            if arg is None:
+                raise TacSimError(
+                    f"Phi for {phi.dst.name} has no argument from "
+                    f"{frame.prev_label!r}"
+                )
+            values.append(self._read(frame, arg.source)[0])
+        for phi, value in zip(phis, values):
+            self._write(frame, phi.dst, value)
 
     def _is_aggregate_var(self, val) -> bool:
         return (

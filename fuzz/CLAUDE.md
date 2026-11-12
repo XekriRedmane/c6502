@@ -15,6 +15,7 @@ uv run python -m fuzz.stmts --start 0 --count 300   # control flow, storage
 uv run python -m fuzz.yarpgen --start 0 --count 100 # YARPGen's programs
 uv run python -m fuzz.runner prog.c dir/             # check given programs
 uv run python -m fuzz.reduce fuzz_out/calls/calls534.c
+uv run python -m fuzz.tac_passes fuzz_out/stmts/stmts1549.c  # guilty TAC pass
 ```
 
 Failing programs land in `fuzz_out/<tool>/` (ignored by git). A seed
@@ -186,9 +187,16 @@ unoptimized TAC" instead, which is faster and isolates TAC-optimizer
 bugs. Reduced programs often have functions with no `return`, which
 c6502 defines as returning 0.
 
-After reducing, finding the guilty pass usually takes one of two
-steps. For an asm-level bug, simulate the program after each pass of
-`compile._peephole_fixedpoint` (the session that wrote these tools
-wrapped every `apply_*` in `compile` to snapshot its output). For a
-TAC-level bug, rerun with each pass removed from
-`passes.optimization.optimizer._DRIVER.fixedpoint` in turn.
+## `tac_passes.py`
+
+Simulates the whole program with the TAC interpreter after every TAC
+optimizer pass (through `PhaseDriver.observer`) and prints the first
+pass, and the function, after which `main` returns something other
+than it did on unoptimized TAC. `tac_sim.py` runs the optimizer's own
+instructions and the SSA form between passes, so this works on any
+program, without reducing it first. If no TAC pass changes the
+result but the `--optimize` path is still wrong, the bug is in
+`tac_to_asm` or an asm pass. Then turn off the asm passes in
+`compile` one at a time (replace `compile.apply_<name>` with an
+identity) until the result comes out right, which is how
+`loop_counter_to_x` was found for `fuzz.stmts` seed 1549.

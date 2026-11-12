@@ -19,6 +19,10 @@ PhaseDriver, WindowPass, m_Binary, …`.
   `ProgramPass` (whole-program variant).
 - `driver.py` — `PhaseDriver` dataclass. Accepts a list of passes per
   phase, owns SSA construction/destruction, runs the fixedpoint loop.
+  Its class attribute `observer`, when set, is called with the
+  function after every pass (and after SSA construction and
+  destruction); `fuzz/tac_passes.py` uses it. With `C6502_CHECK_IR=1`
+  it also runs `passes/ir_check.py` after every pass.
 - `patterns.py` — LLVM-PatternMatch-style combinator DSL: `m_Any`,
   `m_Constant`, `m_Var`, `m_Specific`, `m_Binary`, `m_Unary`,
   `m_Cast`, `m_Copy`, `m_Load`, `m_Store`, `m_JumpIfTrue`,

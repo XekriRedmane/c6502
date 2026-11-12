@@ -10,14 +10,6 @@ its promoted type). `short` needs a type in `c99.asdl` the width of
 `int` (C99 allows that) with its own rank in the conversions, and unary
 `+` an operator that applies the integer promotions.
 
-## Simulate optimized TAC
-
-`tac_sim.py` can't run some of the TAC optimizer's own instructions,
-such as `JumpIfCmp`, so `fuzz.reduce --tac-opt` can't narrow a bug in
-a program that has them. With them, the TAC interpreter could also run
-after each TAC pass and show which pass changed a program's result,
-without reducing the program first.
-
 ## Rewrite the README and add an architecture document
 
 README.md has grown into a wall of low-level detail. It should

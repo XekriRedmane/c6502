@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Callable, ClassVar, Sequence
 import tac_ast
 from passes.optimization.framework.base import Pass, PassContext
 from passes.optimization.framework.phases import (
@@ -32,6 +32,12 @@ class PhaseDriver:
 
     fixedpoint_cap: int = 256  # safety net; current driver has none
 
+    # Called as `observer(fn, after)` with the function after every
+    # pass, and after SSA construction and destruction, when set.
+    # `fuzz/tac_passes.py` simulates the program at each step to find
+    # the pass that changes its result.
+    observer: ClassVar[Callable[[tac_ast.Function, str], None] | None] = None
+
     def __post_init__(self):
         # Enforce phase membership at construction (the type system
         # only enforces it on the caller's static types; the runtime
@@ -62,6 +68,8 @@ class PhaseDriver:
                     fn, after=type(p).__name__, symbols=ctx.symbols,
                     ssa_dsts=ctx.ssa_dsts if in_ssa else None,
                 )
+            if PhaseDriver.observer is not None:
+                PhaseDriver.observer(fn, type(p).__name__)
             return fn
 
         if checked:
@@ -71,6 +79,8 @@ class PhaseDriver:
             fn = run(p, fn)
         if ctx.symbols is not None:
             fn, ctx.ssa_dsts = to_ssa(fn, ctx.symbols)
+            if PhaseDriver.observer is not None:
+                PhaseDriver.observer(fn, "to_ssa")
             if checked:
                 ir_check.check_tac(
                     fn, after="to_ssa", symbols=ctx.symbols,
@@ -89,6 +99,8 @@ class PhaseDriver:
             for p in self.post_fixedpoint:
                 fn = run(p, fn, in_ssa=True)
             fn = from_ssa(fn, symbols=ctx.symbols)
+            if PhaseDriver.observer is not None:
+                PhaseDriver.observer(fn, "from_ssa")
             if checked:
                 ir_check.check_tac(fn, after="from_ssa", symbols=ctx.symbols)
         # Post-destruction one-shots.

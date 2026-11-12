@@ -292,7 +292,13 @@ def _synthesize(
             )
         else:
             abi[d.name] = SoftStackLayout()
+    defined = {d.name for d in merged.defs}
     for e in merged.externs:
+        # A function defined in some unit takes its layout from the
+        # definition; `_bind_extern_params` points each declaration's
+        # slot symbols at the definition's.
+        if e.name in defined:
+            continue
         regs = [r if r else None for r in e.param_regs]
         while len(regs) < len(e.params):
             regs.append(None)
@@ -385,6 +391,9 @@ def link_files(
     all_symbols = {
         **(layout or {}), **zp_sym_to_addr, **local_sym_to_addr, **fixed,
     }
+    _bind_extern_params(
+        merged, [e for m in metas for e in m.externs], all_symbols,
+    )
     # Format the output.
     out_lines: list[str] = []
     out_lines.extend(_format_equ_block(all_symbols))
@@ -396,6 +405,57 @@ def link_files(
             out_lines.append("")
         out_lines.extend(body)
     Path(output_path).write_text("\n".join(out_lines) + "\n")
+
+
+def _bind_extern_params(
+    merged: LinkMetadata,
+    externs: list[ExternMeta],
+    symbols: dict[str, int],
+) -> None:
+    """Binds the parameter slot symbols of every unit's declaration
+    of a zp_abi function to the addresses of the definition's, by
+    position, adding them to `symbols`.
+
+    Each unit names a parameter's slot after the name its own
+    declaration gives the parameter (`__zpabi_put__x`), or after the
+    parameter's position when the declaration leaves it unnamed
+    (`__zpabi_put__0`), so a unit that calls `put` and the unit that
+    defines it can spell the same byte differently. A function that
+    no unit defines takes the first declaration's symbols."""
+    canonical: dict[str, tuple[list[str], list[str]]] = {
+        d.name: (list(d.params), _regs(d.param_regs, len(d.params)))
+        for d in merged.defs
+    }
+    for e in merged.externs:
+        canonical.setdefault(
+            e.name, (list(e.params), _regs(e.param_regs, len(e.params))),
+        )
+    for e in externs:
+        params, regs = canonical[e.name]
+        if len(params) != len(e.params):
+            raise LinkError(
+                f"`{e.name}` is declared with {len(e.params)} zp_abi "
+                f"parameter byte(s) in one unit and has {len(params)} "
+                f"where it's defined"
+            )
+        if _regs(e.param_regs, len(e.params)) != regs:
+            raise LinkError(
+                f"`{e.name}` is declared with its parameters in "
+                f"different registers in two units"
+            )
+        for sym, canon in zip(e.params, params):
+            addr = symbols[canon]
+            if symbols.setdefault(sym, addr) != addr:
+                raise LinkError(
+                    f"`{sym}` names two different parameter bytes of "
+                    f"`{e.name}`; give the parameters the same names in "
+                    f"its declarations and its definition"
+                )
+
+
+def _regs(param_regs: list[str], count: int) -> list[str]:
+    """`param_regs` padded with "" (no register) to `count` entries."""
+    return list(param_regs) + [""] * (count - len(param_regs))
 
 
 def _format_equ_block(

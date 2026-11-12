@@ -317,7 +317,9 @@ int main(void) { return outer(3, 4); }
 
 Each parameter gets a zero-page byte, named
 `__zpabi_<function>__<parameter>`, and the output binds each name
-with an `EQU` line.
+with an `EQU` line. A declaration that leaves a parameter unnamed, as
+`void put(unsigned char);` does, names its byte by the parameter's
+position instead, `__zpabi_put__0`.
 
 ```
 __zpabi_outer__a	EQU	$80
@@ -547,7 +549,14 @@ source files compiled with `--optimize` are joined with
 `compile.py --link`, which assigns the bytes for the whole program at
 once. A function declared `extern` and defined in another file gets
 zp_abi on both sides by the same rules, and the linker checks that
-the files agree on the size of its parameters.
+the files agree on the size of its parameters and the registers they
+arrive in. Each file names the parameter bytes after its own
+declaration, so a declaration may name a parameter differently from
+the definition, or leave it unnamed. The linker gives each of its
+bytes the address of the definition's byte in the same position. The
+one thing it rejects is a name that means different bytes in two
+files, as when a declaration swaps the names of two parameters of the
+same size.
 
 `--link` handles only programs whose functions all use zp_abi. It
 rejects a recursive function and one that calls through a pointer,

@@ -102,7 +102,7 @@ def parse_pseudo_name(name: str) -> tuple[str | None, int]:
 
 def param_slot_symbols(
     fn_name: str,
-    param_names: list[str],
+    param_names: list[str | None],
     param_sizes: list[int],
 ) -> list[str]:
     """Per-byte zp_abi slot symbols for a function's parameters.
@@ -112,11 +112,16 @@ def param_slot_symbols(
     convention. Single-byte parameters get `__zpabi_<fn>__<param>`;
     multi-byte parameters get `__zpabi_<fn>__<param>_<k>` per byte.
     Parameter names are passed through `source_spelling` so resolved
-    `@<N>.<orig>` forms surface as the original C identifier."""
+    `@<N>.<orig>` forms surface as the original C identifier. A
+    declaration may leave a parameter unnamed (`void put(unsigned
+    char);`); that one is spelled by its position, `__zpabi_put__0`,
+    which no C identifier can spell. The linker binds a declaration's
+    symbols to the definition's by position, so the spellings don't
+    have to match across translation units."""
     assert len(param_names) == len(param_sizes)
     out: list[str] = []
-    for pname, psize in zip(param_names, param_sizes):
-        spelling = source_spelling(pname)
+    for index, (pname, psize) in enumerate(zip(param_names, param_sizes)):
+        spelling = str(index) if pname is None else source_spelling(pname)
         if psize == 1:
             out.append(f"__zpabi_{fn_name}__{spelling}")
         else:

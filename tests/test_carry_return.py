@@ -527,6 +527,30 @@ class TestStructSim(unittest.TestCase):
         )
         self._check(src, 500 + 0 + 1 + 7000)
 
+    def test_value_used_before_the_flag(self):
+        # Zork's `PAGE_TABLE_INDEX2 = found.slot; if (found.not_found)`.
+        src = _ZC + (
+            "unsigned char data[6] = {5, 7, 9, 0xFF, 3, 4};\n"
+            "unsigned char pos, last;\n"
+            + _CARRY + "struct zc next(void) {\n"
+            "    struct zc r;\n"
+            "    r.v = data[pos++];\n"
+            "    r.end = r.v == 0xFF;\n"
+            "    return r;\n"
+            "}\n"
+            "int main(void) {\n"
+            "    int sum = 0;\n"
+            "    for (;;) {\n"
+            "        struct zc c = next();\n"
+            "        last = c.v;\n"
+            "        if (c.end) break;\n"
+            "        sum += c.v;\n"
+            "    }\n"
+            "    return sum * 10 + pos + last;\n"
+            "}\n"
+        )
+        self._check(src, 21 * 10 + 4 + 0xFF)
+
     def test_fixed_address_routine(self):
         # A routine at $D000 that returns 42 in A with C set.
         src = _ZC + (
@@ -545,6 +569,66 @@ class TestStructSim(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+def _mov(src, dst):
+    return asm_ast.Mov(src=src, dst=dst, is_volatile=False)
+
+
+class TestStoredCapture(unittest.TestCase):
+    """`apply_carry_branch_fold` on a capture that's stored, with
+    other work before the test that loads it back."""
+
+    _V = asm_ast.Data(name="__local_f__v", offset=0)
+    _FLAG = asm_ast.Data(name="__local_f__flag", offset=0)
+    _OUT = asm_ast.Data(name="out", offset=0)
+    _SLOTS = {"__local_f__v": 0x80, "__local_f__flag": 0x81}
+
+    def _shape(self, between=(), after_branch=()):
+        return [
+            asm_ast.Call(name="g", reg_args=[], preserves=[]),
+            _mov(_A, self._V),
+            _lda(0), asm_ast.RotateLeft(dst=_A), _mov(_A, self._FLAG),
+            _mov(self._V, _A), _mov(_A, self._OUT),
+            *between,
+            _mov(self._FLAG, _A),
+            asm_ast.Branch(cond=asm_ast.NE(), target="T"),
+            *after_branch,
+            _lda(1), asm_ast.Return(save_a=True, save_x=False, save_c=False),
+            asm_ast.Label(name="T"),
+            _lda(2), asm_ast.Return(save_a=True, save_x=False, save_c=False),
+        ]
+
+    def _fold(self, instrs):
+        return _body(apply_carry_branch_fold(
+            _prog(instrs), zp_slot_symbols=self._SLOTS,
+        ))
+
+    def test_branches_on_c_after_other_work(self):
+        out = self._fold(self._shape())
+        self.assertEqual(out[:6], [
+            asm_ast.Call(name="g", reg_args=[], preserves=[]),
+            _mov(_A, self._V), _mov(self._V, _A), _mov(_A, self._OUT),
+            asm_ast.Branch(cond=asm_ast.CS(), target="T"), _lda(1),
+        ])
+
+    def test_kept_when_c_changes_in_between(self):
+        instrs = self._shape(between=[asm_ast.ClearCarry()])
+        self.assertEqual(self._fold(instrs), instrs)
+
+    def test_kept_when_flag_written_in_between(self):
+        instrs = self._shape(between=[_mov(_A, self._FLAG)])
+        self.assertEqual(self._fold(instrs), instrs)
+
+    def test_kept_when_flag_read_again(self):
+        instrs = self._shape(after_branch=[_mov(self._FLAG, _A)])
+        self.assertEqual(self._fold(instrs), instrs)
+
+    def test_kept_across_a_call(self):
+        instrs = self._shape(
+            between=[asm_ast.Call(name="h", reg_args=[], preserves=[])],
+        )
+        self.assertEqual(self._fold(instrs), instrs)
+
+
 class TestStructCodeShape(unittest.TestCase):
 
     def test_callee_sets_c_then_loads_value(self):
@@ -555,6 +639,22 @@ class TestStructCodeShape(unittest.TestCase):
         self.assertEqual(_function_text(asm, "f").split(), [
             "LDA", "g+2", "CMP", "#$01", "LDX", "g+1", "LDA", "g", "RTS",
         ])
+
+    def test_value_used_before_the_flag(self):
+        # `out = c.v;` before `if (c.end)` used to store the captured
+        # flag and load it back; now the caller branches on C.
+        asm = _codegen(_ZC + "unsigned char out;\n" + _CARRY + (
+            "struct zc f(void);\n"
+            "int main(void) {\n"
+            "    struct zc c = f();\n"
+            "    out = c.v;\n"
+            "    if (c.end) return 1;\n"
+            "    return 2;\n"
+            "}\n"
+        ))
+        main = _function_text(asm, "main")
+        self.assertNotIn("ROL", main)
+        self.assertRegex(main, r"JSR\s+f\s+STA\s+out\s+BC[CS]")
 
     def test_zp_abi_eligible(self):
         # No hidden pointer, so `f` gets zp_abi under --optimize and

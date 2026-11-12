@@ -38,8 +38,8 @@ The instruction is droppable when:
   * `Reg(A)` is dead after the instruction (CFG-wide forward
     walk via `asm_liveness.a_dead_at`).
   * The flags are dead after the instruction (within-block walk
-    via `asm_liveness.flags_dead_at` — bails at any Branch, ends
-    safely at any flag-overwriting instruction or block exit). For
+    via `asm_liveness.flags_dead_at` — bails at a Branch on N or Z,
+    ends safely at any flag-overwriting instruction or block exit). For
     the register-transfer subset (`TXA` / `TYA`) we additionally
     accept the case where the current N/Z flags already reflect
     the src register's value via `_flags_reflect_src_reg` — see
@@ -59,9 +59,9 @@ Handled instruction kinds:
 
 # Redundant-flag drop for TXA / TYA
 
-A TXA whose only flag consumer is a downstream Branch (and whose
-A-side is dead) is usually NOT droppable by the flags-dead check
-— `flags_dead_at` bails at the Branch. But when the most-recent
+A TXA whose only flag consumer is a downstream Branch on N or Z
+(and whose A-side is dead) is usually NOT droppable by the
+flags-dead check — `flags_dead_at` bails at the Branch. But when the most-recent
 flag-setter before the TXA was itself a write to the same source
 register (e.g. `LDX M; TXA; BMI L` — LDX set N/Z based on the
 loaded value, which IS X's current value), the TXA's own flag

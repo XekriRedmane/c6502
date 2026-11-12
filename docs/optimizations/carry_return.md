@@ -29,7 +29,53 @@ leaves 0 or 1 in A. The three passes clean up after that.
 - `apply_carry_branch_fold` turns the caller's `LDA #0; ROL A; BEQ L`
   into `BCC L`, and `BNE L` into `BCS L`, saving 3 bytes and 4
   cycles. It also deletes `LDA #0; ROL A; CMP #1`, which turns C into
-  a number and straight back into C.
+  a number and straight back into C. When the caller does other work
+  between the call and the test, as with a value-and-flag struct whose
+  value it uses first, the capture is stored and loaded back for the
+  test. The pass then deletes the capture and its store and branches
+  on C at the test, which saves 7 bytes and 10 cycles.
+
+## Branching on a struct's flag
+
+Zork's `get_next_code_byte2` stores the value from a value-and-flag
+struct before it tests the flag:
+
+```c
+struct page_slot found = find_index_of_page_table();
+PAGE_TABLE_INDEX2 = found.slot;
+if (found.not_found) {
+    if (found.slot == PAGE_TABLE_INDEX)
+        ZCODE_PAGE_VALID = 0;
+```
+
+### Before
+
+```
+   JSR   find_index_of_page_table
+   STA   __local_get_next_code_byte2__page
+   LDA   #$00
+   ROL   A
+   STA   __local_get_next_code_byte2__found_1
+   LDA   __local_get_next_code_byte2__page
+   STA   PAGE_TABLE_INDEX2
+   LDA   __local_get_next_code_byte2__found_1
+   BEQ   .if_end@13
+   LDA   __local_get_next_code_byte2__page
+   CMP   PAGE_TABLE_INDEX
+```
+
+### After
+
+```
+   JSR   find_index_of_page_table
+   STA   PAGE_TABLE_INDEX2
+   BCC   .if_end@13
+   CMP   PAGE_TABLE_INDEX
+```
+
+With the capture gone, A still holds the slot at both loads of
+`page`, so [redundant load elimination](redundant_load.md) deletes
+them, and [dead store elimination](asm_dead_store.md) the store.
 
 ## Example
 
@@ -140,9 +186,9 @@ then turns into `JMP is_three`.
 
 - `LDA #k` immediately followed by `CMP #c`, with A dead after them
   (`asm_liveness.a_dead_at`) and N and Z dead (`flags_dead_at`). The
-  pass doesn't check that the function returns in C. The N and Z
-  check fails at any branch, so a following `BCC` or `BCS` blocks the
-  fold.
+  pass doesn't check that the function returns in C. A `BCC`, `BCS`,
+  `BVC`, or `BVS` doesn't read N or Z, so the check follows both of
+  its paths.
 
 ### Caller captures
 
@@ -154,6 +200,13 @@ then turns into `JMP is_three`.
   all of them have to be dead on both paths.
 - `LDA #0; ROL A; CMP #1`, with A and N and Z dead after it. The
   `CMP #1` on the 0 or 1 in A sets C to the value `ROL` read.
+- `LDA #0; ROL A; STA flag`, then instructions that don't read or
+  write C (loads, stores, transfers, `INC`, `DEC`, `AND`, `ORA`,
+  `EOR`, `BIT`) and don't touch `flag`, then `LDA flag` and `BEQ` or
+  `BNE`. A and N and Z have to be dead after the store, since they
+  held the capture; A, N, Z, and C dead on both sides of the branch,
+  as above; and `flag` dead after the load
+  (`asm_dead_store.mem_dead_after`), since its store goes.
 
 ## What it leaves alone
 
@@ -169,6 +222,9 @@ then turns into `JMP is_three`.
 - A capture whose C a later instruction reads. After `ROL A` the
   original has C clear, and an `ADC` on the fall-through path would
   add that 0, where after the rewrite it would add the callee's C.
+- A stored capture with a call, a branch, a label, or anything that
+  changes C between it and the test, such as `put(c.v); if (c.end)`.
+  The flag has to wait in memory there.
 
 ## Related
 

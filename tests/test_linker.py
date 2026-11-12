@@ -13,6 +13,9 @@ Coverage:
   - Linker rejects a non-zp_abi extern callee.
   - Linker rejects cross-TU recursion (mutual).
   - Output asm has one global EQU block, no per-TU blocks.
+  - A declaration that names a parameter differently from the
+    definition, or leaves it unnamed, links: its slot symbols are
+    bound to the definition's by position.
 """
 from __future__ import annotations
 
@@ -228,6 +231,121 @@ class TestLinkerErrors(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 _link_capture_stderr([], out)
             self.assertNotEqual(cm.exception.code, 0)
+
+
+def _equs(text: str) -> dict[str, int]:
+    """The `name EQU $addr` bindings in a linked file."""
+    out = {}
+    for line in text.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[1] == "EQU":
+            out[parts[0]] = int(parts[2].lstrip("$"), 16)
+    return out
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestParameterNames(unittest.TestCase):
+    """A zp_abi parameter's slot is named after the parameter, so a
+    declaration whose names differ from the definition's spells the
+    same byte differently, and an unnamed one spells it by position."""
+
+    _DEF = "unsigned char put(unsigned char c, int n) { return c + n; }"
+
+    def _link_with(self, decl: str) -> tuple[int, str, str]:
+        caller = decl + " int main(void) { return put(4, 300); }"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a, b, out = tmp / "a.asm", tmp / "b.asm", tmp / "linked.asm"
+            self.assertEqual(_compile_to_asm(self._DEF, a), 0)
+            self.assertEqual(_compile_to_asm(caller, b), 0)
+            rc, err = _link_capture_stderr([a, b], out)
+            return rc, err, out.read_text() if rc == 0 else ""
+
+    def _assert_bound_like_definition(self, text: str, names) -> None:
+        equs = _equs(text)
+        for decl_sym, def_sym in names:
+            self.assertEqual(equs[decl_sym], equs[def_sym], decl_sym)
+
+    def test_renamed_parameters_link(self) -> None:
+        rc, err, text = self._link_with(
+            "unsigned char put(unsigned char x, int count);",
+        )
+        self.assertEqual(rc, 0, err)
+        self._assert_bound_like_definition(text, [
+            ("__zpabi_put__x", "__zpabi_put__c"),
+            ("__zpabi_put__count_0", "__zpabi_put__n_0"),
+            ("__zpabi_put__count_1", "__zpabi_put__n_1"),
+        ])
+
+    def test_unnamed_parameters_link(self) -> None:
+        rc, err, text = self._link_with("unsigned char put(unsigned char, int);")
+        self.assertEqual(rc, 0, err)
+        self._assert_bound_like_definition(text, [
+            ("__zpabi_put__0", "__zpabi_put__c"),
+            ("__zpabi_put__1_0", "__zpabi_put__n_0"),
+            ("__zpabi_put__1_1", "__zpabi_put__n_1"),
+        ])
+
+    def test_swapped_names_rejected(self) -> None:
+        # `__zpabi_put__a` would be the first byte in one unit and the
+        # second in the other.
+        definition = (
+            "unsigned char put(unsigned char a, unsigned char b) "
+            "{ return a - b; }"
+        )
+        caller = (
+            "unsigned char put(unsigned char b, unsigned char a);"
+            " int main(void) { return put(4, 3); }"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a, b, out = tmp / "a.asm", tmp / "b.asm", tmp / "linked.asm"
+            self.assertEqual(_compile_to_asm(definition, a), 0)
+            self.assertEqual(_compile_to_asm(caller, b), 0)
+            rc, err = _link_capture_stderr([a, b], out)
+        self.assertEqual(rc, 1)
+        self.assertIn("same names", err)
+
+    def test_different_sizes_dont_collide(self) -> None:
+        # `n` and `c` swap, but one is 1 byte and the other 2, so their
+        # symbols (`__zpabi_put__n` and `__zpabi_put__n_0`) differ.
+        rc, err, text = self._link_with(
+            "unsigned char put(unsigned char n, int c);",
+        )
+        self.assertEqual(rc, 0, err)
+        self._assert_bound_like_definition(text, [
+            ("__zpabi_put__n", "__zpabi_put__c"),
+            ("__zpabi_put__c_0", "__zpabi_put__n_0"),
+        ])
+
+    def test_byte_count_mismatch_rejected(self) -> None:
+        rc, err, _ = self._link_with("unsigned char put(unsigned char c, long n);")
+        self.assertEqual(rc, 1)
+        self.assertIn("parameter byte", err)
+
+    def test_unnamed_parameter_in_one_unit(self) -> None:
+        # Calling a function declared with an unnamed parameter used
+        # to crash `--optimize`, with or without the annotation.
+        from compile import _run_stage
+        from preprocessor import preprocess
+        for attr in ("", "__attribute__((zp_abi)) "):
+            src = (attr + "unsigned char put(unsigned char);\n"
+                   "int main(void) { return put(4); }\n")
+            with self.subTest(attr=attr):
+                self.assertIn("__zpabi_put__0", _run_stage(
+                    "codegen", preprocess(src), optimize=True,
+                ))
+
+    def test_unnamed_prototype_then_definition_runs(self) -> None:
+        from sim.harness import build_sim
+        src = ("unsigned char put(unsigned char, int);\n"
+               "int main(void) { return put(4, 300); }\n" + self._DEF)
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(
+                    build_sim(src, optimize=optimize).run().return_int(),
+                    (4 + 300) & 0xFF,
+                )
 
 
 if __name__ == "__main__":

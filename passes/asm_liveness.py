@@ -486,8 +486,9 @@ def flags_dead_at(
     and the `BMI` / `BPL` after the label reads the EOR's N flag. A
     `Jump` to an in-function label continues at the target. A `Ret`
     / `Return` ends the path with N/Z dead (only a carry-flag
-    return carries a flag, and it carries C). A `Branch` reads the
-    flags, so it makes them live.
+    return carries a flag, and it carries C). A `Branch` on N or Z
+    reads them, so it makes them live; `BCC` / `BCS` / `BVC` / `BVS`
+    don't, and the walk follows both of their successors.
 
     Only tracks N/Z. Callers that need to know whether C is also
     dead (e.g. dropping an Add/Sub whose C output threads into a
@@ -532,7 +533,16 @@ def _flags_dead_walk(
             visited.add(i)
             instr = instrs[i]
             if isinstance(instr, asm_ast.Branch):
-                return False
+                if reads_c or not isinstance(
+                    instr.cond, _C_BRANCHES + _V_BRANCHES,
+                ):
+                    return False
+                tgt = label_to_index.get(instr.target)
+                if tgt is None:
+                    return False
+                stack.append(tgt)
+                i += 1
+                continue
             if reads_c and isinstance(instr, (
                 asm_ast.Add, asm_ast.Sub,
                 asm_ast.RotateLeft, asm_ast.RotateRight,

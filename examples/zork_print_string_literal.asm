@@ -319,15 +319,8 @@ get_next_code_byte2:
    LDA   __local_get_next_code_byte2__found_1
    STA   SCRATCH2+1
    JSR   find_index_of_page_table
-   STA   __local_get_next_code_byte2__page
-   LDA   #$00
-   ROL   A
-   STA   __local_get_next_code_byte2__found_1
-   LDA   __local_get_next_code_byte2__page
    STA   PAGE_TABLE_INDEX2
-   LDA   __local_get_next_code_byte2__found_1
-   BEQ   .if_end@13
-   LDA   __local_get_next_code_byte2__page
+   BCC   .if_end@13
    CMP   PAGE_TABLE_INDEX
    BNE   .if_end@14
    LDA   #$00

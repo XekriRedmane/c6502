@@ -246,7 +246,9 @@ def _peephole_fixedpoint(
         new_prog = apply_const_arith_fold(new_prog)
         new_prog = apply_carry_return_tails(new_prog)
         new_prog = apply_carry_const_fold(new_prog)
-        new_prog = apply_carry_branch_fold(new_prog)
+        new_prog = apply_carry_branch_fold(
+            new_prog, zp_slot_symbols=zp_slot_symbols,
+        )
         new_prog = apply_round_trip_load_drop(new_prog)
         new_prog = apply_and_sign_bit_branch(new_prog)
         new_prog = apply_self_store_drop(new_prog)

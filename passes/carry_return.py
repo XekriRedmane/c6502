@@ -37,11 +37,28 @@ dead. It also drops
 when A and N/Z are dead after it, since `CMP #1` on the 0 / 1 in A
 sets C back to the value `ROL` read. That's `return g();` in one
 carry-flag function calling another.
+
+A caller that uses the value of a returned struct before testing its
+flag stores the capture and loads it back for the test:
+
+    JSR f ; STA v ; LDA #0 ; ROL A ; STA flag
+    LDA v ; STA out                    nothing here touches C
+    LDA flag ; BNE L
+
+`ROL A` clears C, so the load can't simply become `BCS`. Instead the
+capture and its store go, which leaves C holding the callee's flag up
+to the test, and `LDA flag ; BNE L` becomes `BCS L` (`BEQ` becomes
+`BCC`). That needs the instructions in between not to touch C or
+`flag`, A and N/Z dead after the store (they held the capture), A,
+N/Z, and C dead on both sides of the branch, and `flag` dead after
+the load. Zork's `if (found.not_found)` right after
+`PAGE_TABLE_INDEX2 = found.slot;` has this shape.
 """
 
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_aliasing import may_alias
 from passes.asm_liveness import (
     a_dead_at, c_dead_at, flags_dead_at,
 )
@@ -167,10 +184,28 @@ def _fold_const_compares(instrs):
 # Caller-side capture
 # ---------------------------------------------------------------------
 
-def apply_carry_branch_fold(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_carry_branch_fold(
+    prog: asm_ast.Program,
+    zp_slot_symbols: dict[str, int] | None = None,
+) -> asm_ast.Program:
     """Branches on a captured carry flag directly, and drops a
-    capture that's turned straight back into C."""
-    return _map_functions(prog, _fold_captures)
+    capture that's turned straight back into C. `zp_slot_symbols`
+    (slot name to address) lets it tell that a stored capture's slot
+    is a local that's dead at return."""
+    prog = _map_functions(prog, _fold_captures)
+    top: list[asm_ast.Type_top_level] = []
+    for tl in prog.top_level:
+        if isinstance(tl, asm_ast.Function):
+            instrs = _fold_stored_captures(
+                tl.instructions, tl.name, zp_slot_symbols,
+            )
+            if instrs is not None:
+                tl = asm_ast.Function(
+                    name=tl.name, is_global=tl.is_global,
+                    params=list(tl.params), instructions=instrs,
+                )
+        top.append(tl)
+    return asm_ast.Program(top_level=top)
 
 
 def _is_capture(instrs, i) -> bool:
@@ -182,6 +217,93 @@ def _is_capture(instrs, i) -> bool:
         _is_imm_to_a(a) and a.src.value & 0xFF == 0
         and isinstance(b, asm_ast.RotateLeft) and b.dst == _A
     )
+
+
+# Instructions that can sit between a stored capture and its test:
+# none of them reads or writes C. `Mov` covers loads, stores, and
+# transfers, and a memory-to-memory `Mov` goes through A, which is
+# dead there.
+_LEAVES_C = (
+    asm_ast.Mov, asm_ast.Inc, asm_ast.Dec, asm_ast.And, asm_ast.Or,
+    asm_ast.Xor, asm_ast.BitTest,
+)
+
+_MEMORY = (asm_ast.Data, asm_ast.ZP)
+
+
+def _operands(instr) -> list:
+    return [
+        getattr(instr, f) for f in ("src", "dst", "src1", "src2")
+        if hasattr(instr, f)
+    ]
+
+
+def _fold_stored_captures(instrs, fn_name, zp_slot_symbols=None):
+    """`LDA #0; ROL A; STA flag; ...; LDA flag; Bxx L` with nothing in
+    between touching C or `flag` becomes `...; BCx L`."""
+    from passes.asm_dead_store import mem_dead_after
+    out = list(instrs)
+    changed = False
+    labels = None
+    i = 0
+    while i + 2 < len(out):
+        if not _is_capture(out, i):
+            i += 1
+            continue
+        store = out[i + 2]
+        if not (isinstance(store, asm_ast.Mov) and store.src == _A
+                and isinstance(store.dst, _MEMORY)
+                and not store.is_volatile):
+            i += 1
+            continue
+        flag = store.dst
+        k = i + 3
+        while k < len(out) and isinstance(out[k], _LEAVES_C) and not (
+            out[k] == asm_ast.Mov(src=flag, dst=_A, is_volatile=False)
+        ):
+            if any(
+                isinstance(op, _MEMORY + (asm_ast.IndexedData,
+                                          asm_ast.Indirect,
+                                          asm_ast.IndirectY,
+                                          asm_ast.IndirectZp,
+                                          asm_ast.IndirectZpY))
+                and may_alias(op, flag)
+                for op in _operands(out[k])
+            ):
+                break
+            k += 1
+        if not (
+            k + 1 < len(out)
+            and out[k] == asm_ast.Mov(src=flag, dst=_A, is_volatile=False)
+            and isinstance(out[k + 1], asm_ast.Branch)
+            and isinstance(out[k + 1].cond, (asm_ast.EQ, asm_ast.NE))
+        ):
+            i += 1
+            continue
+        br = out[k + 1]
+        if labels is None:
+            labels = {
+                x.name: n for n, x in enumerate(out)
+                if isinstance(x, asm_ast.Label)
+            }
+        tgt = labels.get(br.target)
+        if not (
+            tgt is not None
+            and a_dead_at(out, i + 3) and flags_dead_at(out, i + 3)
+            and _dead_after_branch(out, k + 2)
+            and _dead_after_branch(out, tgt)
+            and mem_dead_after(out, k, flag, fn_name=fn_name,
+                               zp_slot_symbols=zp_slot_symbols)
+        ):
+            i += 1
+            continue
+        cond = (asm_ast.CC() if isinstance(br.cond, asm_ast.EQ)
+                else asm_ast.CS())
+        out[k:k + 2] = [asm_ast.Branch(cond=cond, target=br.target)]
+        del out[i:i + 3]
+        changed = True
+        labels = None
+    return out if changed else None
 
 
 def _dead_after_branch(instrs, idx) -> bool:

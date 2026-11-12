@@ -91,17 +91,6 @@ callers do with the result, so it has to be decided before
 `tac_to_asm` lowers any call to it, and the multi-TU linker would need
 the choice in its metadata.
 
-## Branch on a carry-struct flag without storing it
-
-A `return_bool_in_carry` function can return a struct of a value and
-a `bool`. The caller stores both members into the struct local, and
-`if (c.end)` then reads the flag back through a pointer, since a
-struct local is address-taken. Keeping a struct local whose address
-doesn't escape in per-member scalars (scalar replacement of
-aggregates) would let `carry_branch_fold` turn the test into a `BCS`
-right after the `JSR`, and would drop the pointer setup for every
-member access. That would help every struct local, not only these.
-
 ## Optimizations found by the Zork string printer
 
 `examples/zork_print_string_literal.c` first compiled to 1984 bytes of

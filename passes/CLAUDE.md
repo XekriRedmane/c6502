@@ -179,7 +179,11 @@ this directory:
   overlaps with `apply_remat` for Imm / Data / ImmLabel sources.
 - `label_resolution.py` — pass 4 (see below).
 - `linker.py` — `compile.py --link` driver; multi-TU re-allocates
-  `__zpabi_*` and `__local_*` symbols across per-TU outputs.
+  `__zpabi_*` and `__local_*` symbols across per-TU outputs. A
+  function's parameter slots come from its definition, and
+  `_bind_extern_params` binds every unit's declaration symbols to them
+  by position, since each unit spells them after its own parameter
+  names (or positions, for unnamed ones).
 - `long_branches.py` — `expand_program`. Rewrites conditional branches
   with out-of-range targets to `Branch(inverted_cond, .skip);
   Jump(target); .skip:`. Iterative.

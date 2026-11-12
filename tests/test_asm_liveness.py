@@ -52,6 +52,30 @@ class TestFlagsDeadAt(unittest.TestCase):
         ]
         self.assertTrue(flags_dead_at(instrs, 0))
 
+    def test_carry_branch_doesnt_read_n_z(self):
+        # `BCS` reads only C, so N/Z are dead when both of its
+        # successors set them before reading them.
+        instrs = [
+            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
+            asm_ast.Label(name=".l"),
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_A, is_volatile=False),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertTrue(flags_dead_at(instrs, 0))
+        self.assertFalse(all_flags_dead_at(instrs, 0))
+
+    def test_carry_branch_target_reads_n_z(self):
+        instrs = [
+            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_A, is_volatile=False),
+            asm_ast.Return(save_a=True),
+            asm_ast.Label(name=".l"),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
+        ]
+        self.assertFalse(flags_dead_at(instrs, 0))
+
     def test_return_ends_liveness(self):
         instrs = [asm_ast.Label(name=".l"), asm_ast.Return(save_a=True)]
         self.assertTrue(flags_dead_at(instrs, 0))

@@ -189,8 +189,13 @@ this directory:
   `reserved`, and each unit's `__zp_init` is replaced with one
   generated from the metadata (`_without_init`, `_init_lines`).
   Internal names two units share are renamed `name.k`
-  (`link_layout.rename_locals`). With `-T`, `_scripted_body` lays
-  the program out by the script. `sim/linked.py` runs a linked
+  (`link_layout.rename_locals`). `_choose_layout` picks the runtime's
+  block for the program (`choose_layout` over every unit's fixed
+  zero-page bytes and the largest `hargs_need`), and the slots come
+  from the whole pool, `$80`-`$FF` (the allocators' `window`), since
+  every linked function has a private pool. With `-T`, `_scripted_body`
+  lays the program out by the script, and a slot that spills goes in
+  a `__spill` block in `.bss` instead of at `$0200`. `sim/linked.py` runs a linked
   program by assembling it with dasm.
 - `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,

@@ -19,7 +19,7 @@ __zpabi_draw_sprite__page_flag	EQU	$89
 ; call special_inactive_draw -> draw_sprite
 ; item special_inactive_draw section=.text local=false zero=false
 ; item proj_screen_col section=.rodata local=true zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 special_inactive_draw:

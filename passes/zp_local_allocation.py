@@ -195,6 +195,7 @@ def allocate_function_locals(
     spill_start: int = _DEFAULT_SPILL_START,
     spill_end: int = _DEFAULT_SPILL_END,
     reserved: frozenset[int] = frozenset(),
+    window: range | None = None,
 ) -> dict[str, list[int]]:
     """Allocate per-function body-local ZP pools. Returns
     `dict[fn_name, list[int]]` for every eligible function; the
@@ -202,10 +203,11 @@ def allocate_function_locals(
     functions don't appear in the dict (their body regalloc
     should fall back to the conservative caller/callee
     partition). `reserved` is a set of bytes no pool may use, the
-    zero-page globals' bytes (passes/zp_globals.py)."""
+    zero-page globals' bytes (passes/zp_globals.py). `window` is the
+    zero-page range the pools come from, as for `allocate_zp_slots`."""
     if pool is None:
         pool = Pool()
-    zp_window = pool.caller_saved()
+    zp_window = window if window is not None else pool.caller_saved()
     zp_start, zp_end = zp_window.start, zp_window.stop
 
     callgraph = _build_callgraph(prog)

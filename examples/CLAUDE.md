@@ -39,6 +39,15 @@ header gives their line ranges in Zork's `main.asm` instead.
 file and, when the environment variable `ZORK_MAIN_BIN` names Zork's
 `main.bin`, compares its output and final state with Zork's own code.
 
+`zork/instr_save/` is a multi-unit example: Zork's `save` instruction
+and the routines it reaches, in three C files and a shared header,
+linked by a linker script into the addresses the original occupies.
+Its README describes it and compares it with Zork's code, and
+`tests/test_zork_instr_save.py` checks its outputs (each unit's and the
+linked program's, which `tests/test_example_outputs.py` doesn't cover)
+and runs it, and Zork's own code when `ZORK_MAIN_BIN` is set, against
+stand-ins for DOS, the Monitor, and the rest of Zork.
+
 ## Adding a new example
 
 The `compile-example` skill (project-local) wraps the canonical

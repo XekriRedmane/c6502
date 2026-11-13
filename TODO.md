@@ -138,21 +138,24 @@ member kept and in order, which `direct_member_access` already
 preserves through the `is_volatile` bit. Until then, the crash should
 at least be a one-line error.
 
-## More system-software headers, and their zero page when linking
+## Arrays sized by their initializer
+
+`int t[] = {1, 2, 3};` and `char s[] = "abc";` are rejected ("incomplete
+array type (`[]`) is allowed only at the outermost type of an `extern`
+declaration"). C99 §6.7.8.22 completes the type from the initializer:
+the largest index it gives, plus one, or the string's length plus the
+null. The type checker would size the array from the initializer
+before checking it, at file scope and block scope.
+
+## More system-software headers
 
 `include/apple2/monitor_io.h` and `interactive_monitor.h` reserve the
 Monitor's zero page, and the runtime's block moves around it
-(`passes/runtime_layout.py`). Two pieces are left.
-
-- **Headers for DOS 3.3, ProDOS, and Applesoft.** Each declares the
-  zero-page bytes that software uses, the way `monitor_io.h` does, from
-  its listing. A program that includes one keeps those bytes free.
-- **Linking.** `--link` places zero-page objects, but it only checks
-  that every unit chose the same runtime layout, so a unit that
-  includes `monitor_io.h` links only with others that do. The linker
-  should choose one layout from every unit's reserved bytes, and the
-  HARGS size from every unit's need (each unit's `runtime
-  hargs_size` metadata line has its size, not its need).
+(`passes/runtime_layout.py`). Headers for DOS 3.3, ProDOS, and
+Applesoft would do the same: each declares the zero-page bytes that
+software uses, from its listing, so a program that includes one keeps
+those bytes free. `examples/zork/instr_save/zork.h` declares the bytes
+in `$26`-`$4F` that RWTS uses by hand.
 
 ## Rotate top-tested loops
 

@@ -369,6 +369,11 @@ def _is_dead_at_exit(
     if isinstance(target, asm_ast.Data):
         if target.name == "DPTR":
             return True
+        # A body-local slot belongs to the function whose code names
+        # it, and dies when that function returns, whether the slot
+        # is in zero page or spilled to memory above it.
+        if target.name.startswith("__local_"):
+            return True
         if zp_slot_symbols is not None and target.name in zp_slot_symbols:
             addr = zp_slot_symbols[target.name] + target.offset
             return _POOL_LO <= addr < _POOL_HI
@@ -473,15 +478,21 @@ def _is_dead_cfg(
         ):
             stack.extend(_successors(instrs, j, label_to_index))
             continue
+        # DPTR is caller-saved scratch: no callee reads its incoming
+        # value, and no pass assumes it survives a call, so a direct
+        # call ends a stored DPTR byte's life. The exception is the
+        # `icall` trampoline, the JSR target of an indirect call,
+        # whose `JMP (DPTR)` reads both bytes. A pointer staged in
+        # DPTR before a call, as in a loop that prints through
+        # `(ptr),Y` and calls a routine per character, is dead.
+        if (
+            isinstance(nxt, asm_ast.Call)
+            and nxt.name != "icall"
+            and isinstance(target, asm_ast.Data)
+            and target.name == "DPTR"
+        ):
+            continue
         # Opaque instructions: assume they may read `target`.
-        # `Call` is here because, even though DPTR is documented
-        # caller-saved scratch (no user callee should rely on its
-        # incoming value), the `icall` trampoline IS the JSR target
-        # for indirect calls and `icall: JMP (DPTR)` reads both
-        # bytes of DPTR — so blanket "Call kills DPTR" is unsound.
-        # A more refined version would identify the call's target
-        # name and treat non-`icall` named callees as kills of
-        # DPTR; deferred until the gain motivates the complexity.
         if isinstance(nxt, _OPAQUE_TYPES):
             return False
         # Tail-call: a Jump to a non-local label leaves this

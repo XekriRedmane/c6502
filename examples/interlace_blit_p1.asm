@@ -10,7 +10,7 @@ __zpabi_interlace_blit_p1__zp_blit_x_end	EQU	$83
 ; @zp-link-meta-begin
 ; def interlace_blit_p1 params=__zpabi_interlace_blit_p1__zp_blit_src_0,__zpabi_interlace_blit_p1__zp_blit_src_1,__zpabi_interlace_blit_p1__zp_blit_x_start,__zpabi_interlace_blit_p1__zp_blit_x_end locals=__local_interlace_blit_p1__0 indirect=false in_cycle=false
 ; item interlace_blit_p1 section=.text local=false zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 interlace_blit_p1:

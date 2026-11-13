@@ -144,6 +144,17 @@ section .text runs past the end of region rom by 12 bytes
 dasm's `-f2` format keeps each segment at its own address, which a
 program with code in ROM and data in RAM needs.
 
+## Zero page
+
+The linker lays out zero page for the whole program too. It puts the
+runtime's block (`SSP`, `FP`, `HARGS`, `DPTR`) around every file's
+fixed zero-page objects, with `HARGS` as large as the largest any file
+needs, then the zero-page globals, then the functions' parameter and
+local bytes, which may use any free byte from `$80` up. A parameter or
+local that doesn't fit goes in `__spill`, a block in `.bss`, which the
+script places with the rest of the data. Without a script it goes at
+`$0200` up instead.
+
 ## Names
 
 An internal name, a `static` function or object or a string literal,

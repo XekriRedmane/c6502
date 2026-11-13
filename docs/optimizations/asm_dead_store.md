@@ -101,19 +101,24 @@ byte, using the aliasing rules of `passes/asm_aliasing.py`. An
 operand addressed through a pointer also reads the two bytes of the
 pointer, so a store into `DPTR` is live while a `(DPTR),Y` access
 follows. A `Call`, a `FunctionPrologue`, or an `AllocateStack` makes
-the store live, with one exception. A direct call (any callee other
-than the `icall` trampoline) doesn't read or write a byte of this
-function's own `__local_<fn>__*` slots, as long as the function never
-builds the slot's address with `ImmLabelLow`, `ImmLabelHigh`, or a
-`LoadAddress`. The call-graph-disjoint allocator gives each function
+the store live, with two exceptions for a direct call (any callee
+other than the `icall` trampoline). It doesn't read or write a byte of
+this function's own `__local_<fn>__*` slots, as long as the function
+never builds the slot's address with `ImmLabelLow`, `ImmLabelHigh`, or
+a `LoadAddress`. The call-graph-disjoint allocator gives each function
 slots that no callee uses, and such a slot can't be reached through a
 pointer either, so an indirect access reads only the pointer's bytes
-as far as that slot goes.
+as far as that slot goes. And it ends the life of a store to `DPTR`:
+DPTR is caller-saved scratch, which no callee reads on entry and no
+pass expects to survive a call. Only `icall`'s `JMP (DPTR)` reads it.
+So a loop that stages a pointer in `DPTR`, reads through `(ptr),Y`
+directly, and calls a routine for each byte loses the staging.
 
 A path that reaches a return makes the store live unless the byte is
 dead at return. The bytes that are dead at return are zero-page
-addresses `$80` to `$FF`, `DPTR`, and slot symbols whose address in
-the slot-symbol map lies in `$80` to `$FF`. A path that jumps to a
+addresses `$80` to `$FF`, `DPTR`, every `__local_*` slot (the
+function's own locals, in zero page or spilled above it), and slot
+symbols whose address in the slot-symbol map lies in `$80` to `$FF`. A path that jumps to a
 label outside the function, which is a tail call, makes the store
 live unless the byte is a `__local_*` slot.
 

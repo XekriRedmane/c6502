@@ -16,7 +16,7 @@ __zpabi_snd_delay_up__clicks	EQU	$83
 ; call do_ascend -> sfx_tone
 ; call do_ascend -> snd_delay_up
 ; item do_ascend section=.text local=false zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 do_ascend:

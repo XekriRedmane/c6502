@@ -33,7 +33,7 @@ zchar_scratch2	EQU	$DA
 ; item __zp_init section=.text local=false zero=false
 ; zp z_header_addr size=2 at=$BA def=true init=$00,$00
 ; zp zchar_scratch2 size=6 at=$DA def=true init=$00,$00,$00,$00,$00,$00
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=2
 ; @zp-link-meta-end
 
 get_dictionary_addr:
@@ -246,10 +246,6 @@ main:
    LDA   __local_main__2
    ADC   #>story
    STA   __local_main__i
-   LDA   __local_main__0
-   STA   DPTR
-   LDA   __local_main__i
-   STA   DPTR+1
    LDA   __local_main__3
    LDY   #$4A
    STA   (__local_main__0),Y

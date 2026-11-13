@@ -318,18 +318,54 @@ class TestLink(unittest.TestCase):
             self.assertEqual(text.count("DPTR\tEQU\t$24"), 1)
             self.assertEqual(text.count("SSP\tEQU\t$00"), 1)
 
-    def test_different_layouts_rejected(self) -> None:
+    def test_old_units_have_to_agree(self) -> None:
+        # Units that don't say how much of HARGS they use, as before the
+        # linker chose the layout, have to come with the same one.
         with tempfile.TemporaryDirectory() as tmp:
             a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
             self._compile("int main(void) { return 0; }\n", a)
             self._compile("int g(int x) { return x + 1; }\n", b)
-            # Stand in for a unit compiled with another layout.
+            for path in (a, b):
+                path.write_text(re.sub(
+                    r" hargs_need=\d+", "", path.read_text(),
+                ))
             b.write_text(b.read_text().replace(
                 "DPTR\tEQU\t$24", "DPTR\tEQU\t$30",
             ))
             rc, err = self._link([a, b], out)
             self.assertEqual(rc, 1)
             self.assertIn("runtime zero-page layout", err)
+
+    def test_layout_chosen_for_the_program(self) -> None:
+        # One unit uses the Monitor's zero page, which moves the block;
+        # the other doesn't, and needs more of HARGS (a 16-bit
+        # multiply). The linker chooses one layout for both.
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
+            self._compile(
+                "#include <apple2/monitor_io.h>\n"
+                "int mul(int x, int y);\n"
+                "int main(void) { CH = 3; return mul(6, 7); }\n", a,
+            )
+            self._compile("int mul(int x, int y) { return x * y; }\n", b)
+            rc, err = self._link([a, b], out)
+            self.assertEqual(rc, 0, err)
+            equ = {
+                m.group(1): int(m.group(2), 16)
+                for m in re.finditer(
+                    r"^(\S+)\tEQU\t\$([0-9A-F]+)$", out.read_text(), re.M,
+                )
+            }
+            runtime = [equ[n] for n in ("SSP", "FP", "HARGS", "DPTR")]
+            self.assertNotIn(0x24, runtime)
+            need = int(re.search(
+                r"hargs_need=(\d+)", b.read_text(),
+            ).group(1))
+            self.assertGreater(need, 1)
+            size = int(re.search(
+                r"; runtime hargs_size=(\d+)", out.read_text(),
+            ).group(1))
+            self.assertGreaterEqual(size, need)
 
 
 if __name__ == "__main__":

@@ -658,10 +658,10 @@ def _zero_aggregate(t: "Type", types: "TypeTable | None" = None):
 
 def _is_char_element(t: "Type") -> bool:
     """True iff `t` is one of the three char element types (Char /
-    SChar / UChar). Used to decide whether a string-literal
-    initializer is admissible for an array's element type per
-    C99 §6.7.8.14."""
-    return isinstance(t, (Char, SChar, UChar))
+    SChar / UChar), qualified or not. Used to decide whether a
+    string-literal initializer is admissible for an array's element
+    type per C99 §6.7.8.14."""
+    return isinstance(_strip_quals(t), (Char, SChar, UChar))
 
 
 def _string_to_value_tuple(s: str, n: int) -> tuple:
@@ -2513,6 +2513,15 @@ class TypeChecker:
         exp.callee = callee
         return t.referenced_type
 
+    def _is_bool_var(self, exp) -> bool:
+        """True iff `exp` names a `_Bool` object, whose value is already
+        0 or 1, so a carry-flag function returns it without testing it
+        against 0 again."""
+        if not isinstance(exp, c99_ast.Var):
+            return False
+        sym = self.symbols.get(exp.name)
+        return sym is not None and isinstance(_strip_quals(sym.type), Bool)
+
     def _is_carry_call(self, exp) -> bool:
         """True iff `exp` calls a `return_bool_in_carry` function that
         returns a `bool`, whose result is already 0 or 1, so returning
@@ -3158,7 +3167,8 @@ class TypeChecker:
                             _strip_quals(expected), (Structure, Union),
                         )
                         and not _is_truth_valued(exp)
-                        and not self._is_carry_call(exp)):
+                        and not self._is_carry_call(exp)
+                        and not self._is_bool_var(exp)):
                     # The carry flag holds one bit, so the function
                     # returns `e != 0`, the way a C99 `_Bool` would
                     # convert `e`. Wrapping before the check lets

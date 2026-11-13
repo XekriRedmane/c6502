@@ -179,8 +179,8 @@ class CompilePreprocessor(Preprocessor):
         if os.path.isdir(_BUNDLED_INCLUDE_DIR):
             self.add_path(_BUNDLED_INCLUDE_DIR)
 
-    def run(self, source: str) -> str:
-        self.parse(source)
+    def run(self, source: str, filename: str | None = None) -> str:
+        self.parse(source, filename)
         out = io.StringIO()
         if self.args.write_bom:
             out.write("\ufeff")
@@ -385,9 +385,17 @@ def _rewrite_pragmas(text: str) -> str:
     return "\n".join(out_lines)
 
 
-def preprocess(source: str, argv: list[str] | None = None) -> str:
+def preprocess(
+    source: str, argv: list[str] | None = None,
+    filename: str | None = None,
+) -> str:
     """Preprocess `source`. `argv` accepts pcpp/pcmd.py-style flags minus -o.
+    `filename` is the file `source` came from, if any: a quoted
+    `#include "x.h"` looks in its directory first (C99 §6.10.2.3), and
+    messages name it.
 
     With no argv (or `[]`): strip comments and suppress `#line` markers.
     """
-    return _rewrite_pragmas(CompilePreprocessor(parse_args(argv)).run(source))
+    return _rewrite_pragmas(
+        CompilePreprocessor(parse_args(argv)).run(source, filename),
+    )

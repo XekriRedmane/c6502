@@ -14,7 +14,7 @@ __local_step_pos__2	EQU	$86
 ; ext apply_bobble params=__zpabi_apply_bobble__slot,__zpabi_apply_bobble__bobble_idx
 ; call step_pos -> apply_bobble
 ; item step_pos section=.text local=true zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 step_pos:

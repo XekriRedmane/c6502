@@ -14,7 +14,7 @@ __local_clear_page1__x	EQU	$84
 ; call clear_page1 -> interlace_fill_p1
 ; item clear_page1 section=.text local=false zero=false
 ; item TEXT_STRIP_SRC section=.rodata local=false zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 clear_page1:

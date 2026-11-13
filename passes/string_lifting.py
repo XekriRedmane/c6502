@@ -499,11 +499,13 @@ class StringLifter:
 
     @staticmethod
     def _is_char_array(t) -> bool:
+        """An array of (possibly `const` or `volatile`) char."""
         if not isinstance(t, c99_ast.Array):
             return False
-        return isinstance(
-            t.element_type, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar),
-        )
+        elem = t.element_type
+        while isinstance(elem, (c99_ast.Const, c99_ast.Volatile)):
+            elem = elem.referenced_type
+        return isinstance(elem, (c99_ast.Char, c99_ast.SChar, c99_ast.UChar))
 
 
 def lift_program(prog: c99_ast.Type_program) -> c99_ast.Type_program:

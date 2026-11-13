@@ -72,7 +72,7 @@ COUT1	EQU	$FDF0
 ; zp __monitor_rnd size=2 at=$4E def=false init=
 ; zp BUFF_END size=1 at=$EB def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
-; runtime hargs_size=1
+; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
 dump_buffer_to_screen:

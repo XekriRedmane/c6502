@@ -25,7 +25,7 @@ __local_draw_sprite_opaque__4	EQU	$8F
 ; item screen_row_addr_hi section=.rodata local=true zero=false
 ; item screen_row_addr_lo section=.rodata local=true zero=false
 ; item screen_row_addr_hi2 section=.rodata local=true zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 draw_sprite_opaque:

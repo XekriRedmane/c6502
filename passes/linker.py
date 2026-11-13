@@ -41,6 +41,14 @@ restriction by extending the metadata block to record
 ineligible functions' numeric ZP usage and treating those
 addresses as immutably blocked.
 
+The runtime's block. Every TU names SSP, FP, HARGS, and DPTR only by
+name, and lists how many HARGS bytes it uses, so the linker chooses
+the program's layout (`_choose_layout`) the way the compiler does for
+one TU, from every TU's fixed zero-page objects and the largest
+need. A TU that includes `<apple2/monitor_io.h>`, which moves the
+block, links with one that doesn't. TUs from before the need was
+recorded have to agree on the layout instead.
+
 Zero-page objects (`passes/zp_globals.py`). Each TU lists its
 zero-page objects in the metadata, and refers to them only by name,
 so the linker re-places them for the whole program
@@ -65,8 +73,11 @@ output is laid out by it: each function and object is an item in a
 section (passes/sections.py), and the output sections become dasm
 segments at the script's addresses (passes/link_layout.py). The
 startup code that copies `AT>` sections and clears `NOLOAD` ones goes
-in `__zp_init`. Without a script, the units' bodies follow each other
-as before, with no address.
+in `__zp_init`. A slot that doesn't fit in zero page goes in
+`__spill`, an item in `.bss` that the script places, instead of at
+the allocators' fixed spill address ($0200 up), which the program may
+use for something else. Without a script, the units' bodies follow
+each other as before, with no address.
 
 `link_files` is the top-level entry point.
 """
@@ -76,6 +87,7 @@ from pathlib import Path
 
 import tac_ast
 from passes.abi_selection import ParamLayout, SoftStackLayout, ZpLayout
+from passes.optimization.pool import Pool
 from passes.runtime_layout import RUNTIME_NAMES
 from passes.zp_globals import AUTO_HI, INIT_FUNCTION
 from passes.zp_link_metadata import (
@@ -364,7 +376,7 @@ def link_files(
     metas: list[LinkMetadata] = []
     bodies: list[list[str]] = []
     fixed: dict[str, int] = {}
-    layout: dict[str, int] | None = None
+    unit_layouts: list[dict[str, int]] = []
     for path in input_paths:
         text = Path(path).read_text()
         equ, _, body = _split_asm(text)
@@ -397,16 +409,7 @@ def link_files(
                     f"{path}: {name!r} is at ${addr:04X} here and at "
                     f"${fixed[name]:04X} in an earlier unit"
                 )
-        # Every unit and the runtime's helpers have to agree on where
-        # SSP, FP, HARGS, and DPTR are (passes/runtime_layout.py).
-        if layout is None:
-            layout = unit_layout
-        elif unit_layout != layout:
-            raise LinkError(
-                f"{path}: its runtime zero-page layout "
-                f"{_layout_text(unit_layout)} differs from an earlier "
-                f"unit's {_layout_text(layout)}"
-            )
+        unit_layouts.append(unit_layout)
         metas.append(meta)
         bodies.append(_without_init(body))
     from passes.link_layout import LayoutError
@@ -441,9 +444,18 @@ def link_files(
     # Merge + validate.
     merged = _merge(metas)
     _validate_eligibility(merged)
-    # Place the zero-page objects before the slots, which keep off
-    # their bytes.
+    # Place the runtime's block, then the zero-page objects, then the
+    # slots, each keeping off the bytes before it.
     objects = _merge_zp_objects(metas)
+    startup_need = 0
+    if script is not None:
+        from asm_emit import _instr_line
+        from passes.link_layout import startup_lines
+        if startup_lines(script, _instr_line):
+            startup_need = 4
+    layout = _choose_layout(
+        input_paths, metas, unit_layouts, objects, startup_need,
+    )
     zp_addrs, demoted = _place_zp_objects(
         objects, layout or {}, bodies,
     )
@@ -459,13 +471,32 @@ def link_files(
         )
         for name, addr in sorted(zp_addrs.items(), key=lambda kv: kv[1])
     ]
-    merged.hargs_size = (layout or {}).get("HARGS size")
+    merged.hargs_size = layout.get("HARGS size")
+    merged.hargs_need = (
+        max(m.hargs_need for m in metas)
+        if metas and all(m.hargs_need is not None for m in metas)
+        else None
+    )
     # Synthesize the program shape the allocators expect.
     prog, abi, local_bytes = _synthesize(merged)
     # Run the global allocators.
-    abi, zp_sym_to_addr = allocate_zp_slots(prog, abi, reserved=zp_bytes)
+    # Every linked function has a private pool (`_validate_eligibility`),
+    # so no function keeps a value in the pool's callee-saved half across
+    # a call, and the slots can come from the whole pool.
+    pool = Pool()
+    window = range(pool.start, 0x100)
+    # With a script, a slot that doesn't fit in zero page goes in
+    # `__spill`, laid out with the program's data: it gets a stand-in
+    # address here, rebased below.
+    spill = (
+        {"spill_start": _SPILL_BASE, "spill_end": 0x10000}
+        if script is not None else {}
+    )
+    abi, zp_sym_to_addr = allocate_zp_slots(
+        prog, abi, reserved=zp_bytes, window=window, **spill,
+    )
     local_pools = allocate_function_locals(
-        prog, abi, local_bytes, reserved=zp_bytes,
+        prog, abi, local_bytes, reserved=zp_bytes, window=window, **spill,
     )
     # Slot names round-trip through the per-TU metadata block;
     # reuse them verbatim so the body text doesn't need rewriting.
@@ -480,9 +511,18 @@ def link_files(
     _bind_extern_params(
         merged, [e for m in metas for e in m.externs], all_symbols,
     )
+    spilled = {
+        name: addr - _SPILL_BASE for name, addr in all_symbols.items()
+        if script is not None and addr >= _SPILL_BASE
+        and name not in fixed
+    }
+    for name in spilled:
+        del all_symbols[name]
     # Format the output.
     out_lines: list[str] = []
     out_lines.extend(_format_equ_block(all_symbols))
+    for name, offset in sorted(spilled.items(), key=lambda kv: kv[1]):
+        out_lines.append(f"{name}\tEQU\t{_SPILL}+{offset}")
     out_lines.append("")
     out_lines.extend(format_metadata(merged))
     out_lines.append("")
@@ -500,16 +540,24 @@ def link_files(
             out_lines.append("")
             out_lines.extend(_data_lines(record))
     else:
+        spill_size = max(spilled.values(), default=-1) + 1
         out_lines.extend(_scripted_body(
             script, input_paths, unit_items, bodies, merged, objects,
-            demoted, (layout or {}).get("HARGS size"),
+            demoted, (layout or {}).get("HARGS size"), spill_size,
         ))
     Path(output_path).write_text("\n".join(out_lines) + "\n")
 
 
+# Spilled slots get addresses from here up while allocating, which
+# `link_files` then rebases onto `__spill` when a script lays the
+# program out.
+_SPILL_BASE = 0xF000
+_SPILL = "__spill"
+
+
 def _scripted_body(
     script, paths, unit_items, bodies, merged, objects, demoted,
-    hargs_size,
+    hargs_size, spill_size: int = 0,
 ) -> list[str]:
     """The program's body laid out by `script`, with the linker's own
     items (`__zp_init`, with the startup code, and the promoted
@@ -533,6 +581,9 @@ def _scripted_body(
             ))
         own_items: list[ItemMeta] = []
         chunks: dict[str, list[str]] = {}
+        if spill_size:
+            own_items.append(ItemMeta(name=_SPILL, section=".bss", zero=True))
+            chunks[_SPILL] = [f"{_SPILL}:", _instr_line("DS.B", str(spill_size))]
         init = _init_lines(merged.zp_objects, startup)
         if init:
             own_items.append(ItemMeta(name=INIT_FUNCTION, section=".text"))
@@ -551,6 +602,46 @@ def _scripted_body(
         return layout_lines(script, units, _instr_line)
     except LayoutError as e:
         raise LinkError(str(e)) from e
+
+
+def _choose_layout(
+    paths, metas, unit_layouts, objects, startup_need: int,
+) -> dict[str, int]:
+    """The program's runtime layout, as SSP, FP, HARGS, DPTR, and
+    "HARGS size". When every unit lists its HARGS need, it's
+    `runtime_layout.choose_layout` for the program's fixed zero-page
+    bytes and the largest need (at least `startup_need`). Otherwise the
+    units have to agree on one, which is then the program's. Raises
+    `LinkError` when they don't, or when the block doesn't fit."""
+    from passes.runtime_layout import RuntimeLayoutError, choose_layout
+    needs = [m.hargs_need for m in metas]
+    if not unit_layouts or any(n is None for n in needs):
+        layout = unit_layouts[0] if unit_layouts else {}
+        for path, unit_layout in zip(paths, unit_layouts):
+            if unit_layout != layout:
+                raise LinkError(
+                    f"{path}: its runtime zero-page layout "
+                    f"{_layout_text(unit_layout)} differs from an earlier "
+                    f"unit's {_layout_text(layout)}; compile every unit "
+                    f"again with this compiler so the linker can choose "
+                    f"one"
+                )
+        return layout
+    reserved = frozenset(
+        b for records in objects.values() for r in records
+        if r.at is not None for b in range(r.at, r.at + r.size)
+    )
+    need = max(needs + [startup_need])
+    try:
+        chosen = choose_layout(reserved, lambda: need)
+    except RuntimeLayoutError as e:
+        raise LinkError(str(e)) from e
+    if chosen.hargs_size < need:
+        raise LinkError(
+            f"the program needs {need} HARGS bytes, and the runtime's "
+            f"block has {chosen.hargs_size}"
+        )
+    return {**chosen.addrs(), "HARGS size": chosen.hargs_size}
 
 
 def _merge_zp_objects(

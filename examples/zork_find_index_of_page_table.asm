@@ -20,7 +20,7 @@ last_z_page	EQU	$BF
 ; item __zp_init section=.text local=false zero=false
 ; zp num_page_table_entries size=1 at=$BD def=true init=$00
 ; zp last_z_page size=1 at=$BF def=true init=$00
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 find_index_of_page_table:

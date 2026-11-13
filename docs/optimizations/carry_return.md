@@ -203,7 +203,9 @@ then turns into `JMP is_three`.
 - `LDA #0; ROL A; STA flag`, then instructions that don't read or
   write C (loads, stores, transfers, `INC`, `DEC`, `AND`, `ORA`,
   `EOR`, `BIT`) and don't touch `flag`, then `LDA flag` and `BEQ` or
-  `BNE`. A and N and Z have to be dead after the store, since they
+  `BNE`, or `LDA flag` and `CMP #1`, which turns the flag back into C
+  as `return failed;` does when `failed` holds a carry-flag call's
+  result. Then the reload and the compare go too. A and N and Z have to be dead after the store, since they
   held the capture; A, N, Z, and C dead on both sides of the branch,
   as above; and `flag` dead after the load
   (`asm_dead_store.mem_dead_after`), since its store goes.

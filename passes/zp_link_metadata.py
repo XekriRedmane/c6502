@@ -49,7 +49,7 @@ Format
 ; call <caller> -> <callee>
 ; item <name> section=<name> local=<bool> zero=<bool>
 ; zp <name> size=<N> at=<$XX|auto> def=<bool> init=<byte,...> [weight=<N>] [local=true]
-; runtime hargs_size=<N>
+; runtime hargs_size=<N> [hargs_need=<N>]
 ; @zp-link-meta-end
 ```
 
@@ -65,7 +65,9 @@ operand of an `LDA #` (`$05`, `<buf`, `>(buf+2)`), and `weight`
 marks an object `--optimize` promoted, which the linker may put back
 in the data segment. The `runtime`
 line gives the size of the runtime's HARGS block, which the EQU
-lines don't show (`passes/runtime_layout.py`).
+lines don't show, and how many of its bytes the TU's code uses
+(`passes/runtime_layout.py`), so the linker can choose a layout for
+the program.
 """
 from __future__ import annotations
 
@@ -167,6 +169,7 @@ class LinkMetadata:
     calls: list[tuple[str, str]] = field(default_factory=list)
     zp_objects: list[ZpObjectMeta] = field(default_factory=list)
     hargs_size: int | None = None
+    hargs_need: int | None = None
     items: list[ItemMeta] = field(default_factory=list)
 
 
@@ -369,7 +372,9 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
             f"init={','.join(z.init)}{weight}{local}"
         )
     if meta.hargs_size is not None:
-        lines.append(f"; runtime hargs_size={meta.hargs_size}")
+        need = ("" if meta.hargs_need is None
+                else f" hargs_need={meta.hargs_need}")
+        lines.append(f"; runtime hargs_size={meta.hargs_size}{need}")
     lines.append(_END)
     return lines
 
@@ -469,6 +474,8 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
     elif kind == "runtime":
         kvs = dict(_split_kv(p) for p in parts[1:])
         out.hargs_size = int(kvs["hargs_size"])
+        if "hargs_need" in kvs:
+            out.hargs_need = int(kvs["hargs_need"])
     elif kind == "call":
         # Format: `call <caller> -> <callee>`
         if len(parts) != 4 or parts[2] != "->":

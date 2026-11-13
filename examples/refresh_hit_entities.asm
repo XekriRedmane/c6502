@@ -29,7 +29,7 @@ __local_refresh_hit_entities__x	EQU	$8D
 ; item hit_spr_pos_hi section=.rodata local=false zero=false
 ; item hit_spr_neg_lo section=.rodata local=false zero=false
 ; item hit_spr_neg_hi section=.rodata local=false zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 refresh_hit_entities:

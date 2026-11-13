@@ -20,7 +20,7 @@ z_header_addr	EQU	$BA
 ; item story section=.bss local=true zero=true
 ; item __zp_init section=.text local=false zero=false
 ; zp z_header_addr size=2 at=$BA def=true init=$00,$00
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=2
 ; @zp-link-meta-end
 
 get_object_addr:

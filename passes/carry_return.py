@@ -275,7 +275,24 @@ def _fold_stored_captures(instrs, fn_name, zp_slot_symbols=None):
         if not (
             k + 1 < len(out)
             and out[k] == asm_ast.Mov(src=flag, dst=_A, is_volatile=False)
-            and isinstance(out[k + 1], asm_ast.Branch)
+        ):
+            i += 1
+            continue
+        # `LDA flag; CMP #1` turns the flag straight back into C, as
+        # in `bool failed = f(); ...; return failed;`: C still holds
+        # it, so the reload and the compare go too.
+        if (_is_cmp_a_imm(out[k + 1]) and out[k + 1].right.value & 0xFF == 1
+                and a_dead_at(out, i + 3) and flags_dead_at(out, i + 3)
+                and a_dead_at(out, k + 2) and flags_dead_at(out, k + 2)
+                and mem_dead_after(out, k, flag, fn_name=fn_name,
+                                   zp_slot_symbols=zp_slot_symbols)):
+            del out[k:k + 2]
+            del out[i:i + 3]
+            changed = True
+            labels = None
+            continue
+        if not (
+            isinstance(out[k + 1], asm_ast.Branch)
             and isinstance(out[k + 1].cond, (asm_ast.EQ, asm_ast.NE))
         ):
             i += 1

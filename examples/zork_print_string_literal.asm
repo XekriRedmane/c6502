@@ -226,7 +226,7 @@ COUT1	EQU	$FDF0
 ; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
 ; zp CURR_LINE size=1 at=$ED def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
-; runtime hargs_size=5
+; runtime hargs_size=5 hargs_need=5
 ; @zp-link-meta-end
 
 do_rwts_on_sector:
@@ -427,10 +427,6 @@ get_next_code_byte2:
    LDA   Z_PC2_H
    LDY   PAGE_TABLE_INDEX2
    STA   (PAGE_L_TABLE),Y
-   LDA   PAGE_H_TABLE
-   STA   DPTR
-   LDA   PAGE_H_TABLE+1
-   STA   DPTR+1
    LDA   Z_PC2_HH
    LDY   PAGE_TABLE_INDEX2
    STA   (PAGE_H_TABLE),Y
@@ -549,10 +545,6 @@ dump_buffer_to_printer:
 dump_buffer_line:
    SUBROUTINE
 
-   LDA   Z_HEADER_ADDR
-   STA   DPTR
-   LDA   Z_HEADER_ADDR+1
-   STA   DPTR+1
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
    AND   #$01
@@ -570,10 +562,6 @@ cout_string:
    STA   __local_cout_string__1
    LDY   #$00
 .loop@5_start:
-   LDA   __local_cout_string__s
-   STA   DPTR
-   LDA   __local_cout_string__1
-   STA   DPTR+1
    LDA   (__local_cout_string__s),Y
    ORA   #$80
    JSR   COUT1
@@ -627,10 +615,6 @@ dump_buffer_with_more:
    LDA   #$8D
    JSR   COUT1
 .if_end@19:
-   LDA   Z_HEADER_ADDR
-   STA   DPTR
-   LDA   Z_HEADER_ADDR+1
-   STA   DPTR+1
    LDY   #$11
    LDA   (Z_HEADER_ADDR),Y
    AND   #$01
@@ -837,9 +821,7 @@ print_zstring:
    JMP   .if_end@39
 .if_else@40:
    CMP   #$01
-   BEQ   .lb_skip@0
-   JMP   .if_else@42
-.lb_skip@0:
+   BNE   .if_else@42
    JSR   get_next_zchar
    ASL
    STA   __local_print_zstring__ch
@@ -853,10 +835,6 @@ print_zstring:
    LDA   Z_ABBREV_TABLE+1
    ADC   #$00
    STA   __local_print_zstring__c_0
-   LDA   __local_print_zstring__ch
-   STA   DPTR
-   LDA   __local_print_zstring__c_0
-   STA   DPTR+1
    LDY   #$01
    LDA   (__local_print_zstring__ch),Y
    STA   SCRATCH2

@@ -22,7 +22,7 @@ __local_beam_target_draw__0	EQU	$89
 ; item beam_target_draw section=.text local=false zero=false
 ; item floor_y_table section=.rodata local=true zero=false
 ; item proj_screen_col section=.rodata local=true zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 beam_target_draw:

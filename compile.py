@@ -114,6 +114,7 @@ from passes.function_local_sizing import (
 from passes.address_taken_zp import (
     compute_address_taken_assignments, slot_symbols as _addr_taken_slot_symbols,
 )
+from passes.runtime_layout import hargs_need
 from passes.sections import items as section_items
 from passes.zp_link_metadata import build_metadata, format_metadata
 from passes.zp_local_allocation import (
@@ -605,6 +606,7 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         )
         link_meta.zp_objects = opt.zp_records
         link_meta.hargs_size = zp.layout.hargs_size
+        link_meta.hargs_need = hargs_need(asm4)
         link_meta.items = section_items(asm4, symbols)
         return emit_program(
             asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},
@@ -713,13 +715,15 @@ def main(argv: list[str]) -> int:
 
     if args.input == "-":
         source = sys.stdin.read()
+        filename = None
     else:
         with open(args.input, "r", encoding="utf-8") as f:
             source = f.read()
+        filename = args.input
 
     try:
         text = _run_stage(
-            args.stage, preprocess(source, pcpp_args),
+            args.stage, preprocess(source, pcpp_args, filename),
             optimize=args.optimize,
         )
     except _source_errors() as e:

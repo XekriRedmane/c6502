@@ -618,9 +618,11 @@ scrolling, and keyboard input continue into the 80-column firmware
 at `$C100`. The Monitor headers cover the bytes the Monitor ROM
 listing shows, and any zero page that firmware uses isn't covered.
 
-**Linking.** Files linked with `--link` have to agree on where the
-runtime's zero-page block is. `<apple2/monitor_io.h>` moves the block,
-so either every file includes it or none does.
+**Linking.** `--link` chooses where the runtime's zero-page block
+goes for the whole program, around every file's zero-page objects, so
+a file that includes `<apple2/monitor_io.h>` links with one that
+doesn't. Files compiled before the linker recorded how much of `HARGS`
+each one uses have to agree on the block instead.
 
 **Registers.** The loop-counter optimizations, the register
 allocator (so a `register` local can stay in Y across a call to

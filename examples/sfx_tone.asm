@@ -10,7 +10,7 @@ __local_sfx_tone__y	EQU	$83
 ; @zp-link-meta-begin
 ; def sfx_tone params=__zpabi_sfx_tone__pitch,__zpabi_sfx_tone__duration locals=__local_sfx_tone__0,__local_sfx_tone__y,__local_sfx_tone__duration indirect=false in_cycle=false
 ; item sfx_tone section=.text local=false zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 sfx_tone:

@@ -120,7 +120,7 @@ __local_smc_body_draw__2	EQU	$9F
 ; item companion_neg_hi_tbl section=.rodata local=true zero=false
 ; item pos_walk_next section=.bss local=true zero=true
 ; item neg_walk_next section=.bss local=true zero=true
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=11
 ; @zp-link-meta-end
 
 compute_screen_x:
@@ -265,10 +265,6 @@ smc_body_draw:
    LDA   #>pos_walk_next
    STA   __local_smc_body_draw__1
 .cond_end@17:
-   LDA   __local_smc_body_draw__0
-   STA   DPTR
-   LDA   __local_smc_body_draw__1
-   STA   DPTR+1
    LDY   #$00
    LDA   (__local_smc_body_draw__0),Y
    STA   __local_smc_body_draw__hi
@@ -303,10 +299,6 @@ smc_body_draw:
    STA   __local_smc_body_draw__0
    LDA   companion_neg_hi_tbl+1,X
    STA   __local_smc_body_draw__1
-   LDA   companion_neg_hi_tbl,X
-   STA   DPTR
-   LDA   companion_neg_hi_tbl+1,X
-   STA   DPTR+1
    LDA   (__local_smc_body_draw__0),Y
    STA   __local_smc_body_draw__hi
    JMP   .if_end@18
@@ -325,10 +317,6 @@ smc_body_draw:
    STA   __local_smc_body_draw__0
    LDA   companion_pos_hi_tbl+1,X
    STA   __local_smc_body_draw__1
-   LDA   companion_pos_hi_tbl,X
-   STA   DPTR
-   LDA   companion_pos_hi_tbl+1,X
-   STA   DPTR+1
    LDA   (__local_smc_body_draw__0),Y
    STA   __local_smc_body_draw__hi
 .if_end@18:

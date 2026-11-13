@@ -30,7 +30,7 @@ __local_floor_enemy_draw__slot	EQU	$8C
 ; item floor_enemy_spr_s2_hi section=.rodata local=true zero=false
 ; item floor_enemy_spr_s3_lo section=.rodata local=true zero=false
 ; item floor_enemy_spr_s3_hi section=.rodata local=true zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 floor_enemy_draw:

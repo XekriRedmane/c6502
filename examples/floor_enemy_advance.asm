@@ -21,7 +21,7 @@ __local_floor_enemy_advance__slot	EQU	$86
 ; item floor_enemy_spawn_sched section=.rodata local=true zero=false
 ; item __zp_init section=.text local=false zero=false
 ; zp jump_flag size=1 at=auto def=true init=$00 weight=17
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 floor_enemy_advance:

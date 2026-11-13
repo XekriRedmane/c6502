@@ -18,7 +18,7 @@ __zpabi_snd_delay_up__clicks	EQU	$83
 ; item beam_target_tick section=.text local=false zero=false
 ; item floor_y_table section=.rodata local=true zero=false
 ; item beam_jingle section=.rodata local=true zero=false
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 beam_target_tick:

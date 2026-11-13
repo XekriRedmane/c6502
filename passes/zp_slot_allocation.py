@@ -108,6 +108,7 @@ def allocate_zp_slots(
     spill_start: int = _DEFAULT_SPILL_START,
     spill_end: int = _DEFAULT_SPILL_END,
     reserved: frozenset[int] = frozenset(),
+    window: range | None = None,
 ) -> tuple[dict[str, ParamLayout], dict[str, int]]:
     """Assign concrete ZP (or spill-region) addresses to every
     `ZpLayout` slot symbol in `abi` such that no two functions
@@ -121,10 +122,14 @@ def allocate_zp_slots(
     the EQU directives at the top of the output.
 
     `reserved` is a set of bytes no slot may use, the zero-page
-    globals' bytes (passes/zp_globals.py)."""
+    globals' bytes (passes/zp_globals.py). `window` is the zero-page
+    range the slots come from, the pool's caller-saved half unless
+    given (the linker gives the whole pool, since a linked program
+    has no soft-stack function that keeps values in the other
+    half)."""
     if pool is None:
         pool = Pool()
-    zp_window = pool.caller_saved()  # default $80..$BF
+    zp_window = window if window is not None else pool.caller_saved()
     zp_start, zp_end = zp_window.start, zp_window.stop
 
     callgraph, ancestors = _build_callgraph(prog, abi)

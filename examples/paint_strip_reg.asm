@@ -13,7 +13,7 @@ __local_main__0	EQU	$82
 ; item paint_strip_reg section=.text local=false zero=false
 ; item main section=.text local=false zero=false
 ; item hud_buf section=.bss local=true zero=true
-; runtime hargs_size=32
+; runtime hargs_size=32 hargs_need=0
 ; @zp-link-meta-end
 
 paint_strip_reg:

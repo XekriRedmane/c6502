@@ -1506,7 +1506,11 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   constant-initializer lists with zero-padding for missing
   entries, array-to-pointer decay, multi-dim subscript,
   array parameters with the §6.7.5.3.7 pointer adjustment.
-  Rejected: array assignment, extern arrays.
+  An array of unknown size takes its size from its initializer
+  (`int t[] = {1, 2, 3};`, `char s[] = "abc";`, §6.7.8.22), and
+  `extern int t[];` names one defined elsewhere or later. A string
+  literal in braces initializes a char array (`char s[] = {"abc"};`).
+  Rejected: array assignment.
 - Pointers, pointer arithmetic (with sizeof-pointee scaling),
   pointer ordering comparisons, function pointers and
   indirect calls through any expression that gives one, such as

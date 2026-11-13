@@ -744,7 +744,10 @@ in `sim/` cover all of these so simulation-based tests still pass.
 - Variable-length arrays aren't supported. An array size must be
   an integer constant expression, which the parser folds through
   the type checker and `passes.constant_expression` (the same folder
-  case labels and static initializers use).
+  case labels and static initializers use), or come from the
+  initializer (`int t[] = {1, 2};`, C99 §6.7.8.22; the type checker's
+  `_size_from_initializer`). A declaration with a size completes an
+  earlier `extern int t[];` (`_composite_array`).
 
 ### Codegen imprecisions
 

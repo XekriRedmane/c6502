@@ -138,15 +138,6 @@ member kept and in order, which `direct_member_access` already
 preserves through the `is_volatile` bit. Until then, the crash should
 at least be a one-line error.
 
-## Arrays sized by their initializer
-
-`int t[] = {1, 2, 3};` and `char s[] = "abc";` are rejected ("incomplete
-array type (`[]`) is allowed only at the outermost type of an `extern`
-declaration"). C99 §6.7.8.22 completes the type from the initializer:
-the largest index it gives, plus one, or the string's length plus the
-null. The type checker would size the array from the initializer
-before checking it, at file scope and block scope.
-
 ## More system-software headers
 
 `include/apple2/monitor_io.h` and `interactive_monitor.h` reserve the

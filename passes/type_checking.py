@@ -664,6 +664,39 @@ def _is_char_element(t: "Type") -> bool:
     return isinstance(_strip_quals(t), (Char, SChar, UChar))
 
 
+def _size_from_initializer(t: "Type", init) -> "Type":
+    """`t` completed by its initializer `init` when `t` is an array of
+    unknown size (C99 §6.7.8.22): a string literal for an array of
+    char gives its length plus the null, and a brace-enclosed list
+    gives its number of items. Anything else, including no initializer
+    and an empty list, leaves `t` as it is, and the checks after
+    reject the incomplete type."""
+    if not (isinstance(t, Array) and t.size == 0) or init is None:
+        return t
+    if isinstance(init, c99_ast.String) and _is_char_element(t.element_type):
+        size = len(init.str) + 1
+    elif isinstance(init, c99_ast.InitList) and init.items:
+        size = len(init.items)
+    else:
+        return t
+    return Array(element_type=t.element_type, size=size)
+
+
+def _composite_array(a: "Type", b: "Type") -> "Type | None":
+    """The composite of two array types that differ only in that one
+    has an unknown size (C99 §6.7.5.2.6, §6.2.7.3): the one with the
+    size. None when they aren't such a pair."""
+    if not (isinstance(a, Array) and isinstance(b, Array)):
+        return None
+    if not _types_equal(a.element_type, b.element_type):
+        return None
+    if a.size == 0:
+        return b
+    if b.size == 0:
+        return a
+    return None
+
+
 def _string_to_value_tuple(s: str, n: int) -> tuple:
     """Convert a string-literal body (one Python code point per
     byte, 0..255) into the value tuple of length `n` that the
@@ -2053,6 +2086,7 @@ class TypeChecker:
                 f"`register` (C99 §6.7.1 — only block-scope objects "
                 f"and function parameters)"
             )
+        vd.data_type = _size_from_initializer(vd.data_type, vd.init)
         if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"file-scope object {vd.name!r} declared with non-"
@@ -2359,10 +2393,15 @@ class TypeChecker:
                 f"a static-storage object"
             )
         if not _types_equal(existing.type, type_):
-            raise TypeCheckError(
-                f"incompatible redeclaration of {name!r}: "
-                f"previous {existing.type!r}, new {type_!r}"
-            )
+            # `extern int t[];` and `int t[3];` declare the same object,
+            # of the composite type `int[3]`.
+            composite = _composite_array(existing.type, type_)
+            if composite is None:
+                raise TypeCheckError(
+                    f"incompatible redeclaration of {name!r}: "
+                    f"previous {existing.type!r}, new {type_!r}"
+                )
+            type_ = composite
         if existing.attrs.is_global != is_global:
             raise TypeCheckError(
                 f"linkage of {name!r} disagrees with prior "
@@ -2666,6 +2705,7 @@ class TypeChecker:
     def _check_block_var(
         self, vd: c99_ast.Type_var_decl,
     ) -> None:
+        vd.data_type = _size_from_initializer(vd.data_type, vd.init)
         if not _is_complete_object_type(vd.data_type):
             raise TypeCheckError(
                 f"object {vd.name!r} declared with non-object type "
@@ -2907,15 +2947,8 @@ class TypeChecker:
         be constant (§6.5.2.5.3). An array of unknown size takes its
         size from the initializer, as `int a[] = {1, 2};` would
         (§6.7.8.22)."""
-        t = exp.target_type
-        if isinstance(t, Array) and t.size == 0:
-            if isinstance(exp.init, c99_ast.String):
-                size = len(exp.init.str) + 1
-            else:
-                assert isinstance(exp.init, c99_ast.InitList)
-                size = len(exp.init.items)
-            t = Array(element_type=t.element_type, size=size)
-            exp.target_type = t
+        t = _size_from_initializer(exp.target_type, exp.init)
+        exp.target_type = t
         at_file_scope = self._return_type is None
         vd = c99_ast.Type_var_decl(
             name=exp.name, init=exp.init, data_type=t,

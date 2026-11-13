@@ -144,6 +144,14 @@ class StringLifter:
             or self._is_char_array(declared_type)
         ):
             return init
+        # `char s[] = {"abc"};` is `char s[] = "abc";` (C99 §6.7.8.14).
+        if (
+            isinstance(init, c99_ast.InitList)
+            and self._is_char_array(declared_type)
+            and len(init.items) == 1
+            and isinstance(init.items[0], c99_ast.String)
+        ):
+            return init.items[0]
         if (
             isinstance(init, c99_ast.InitList)
             and isinstance(declared_type, c99_ast.Array)

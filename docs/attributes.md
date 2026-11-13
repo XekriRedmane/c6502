@@ -44,6 +44,7 @@ error that names the declaration.
 | `address(addr)` | a function, or an `extern` object | Names code or memory that's already at `addr`. |
 | `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
 | `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a `register` parameter | Names the register (or two, low byte first) the parameter arrives in. |
+| `zeropage(addr)` | a parameter that isn't `register` | Passes the argument in zero page at `addr`. |
 | `packed` | an enum's definition | Makes the enum one byte when its values fit. |
 | `section("name")` | a function, or an object with static storage | Puts it in a section of that name, for a linker script to place. |
 
@@ -105,8 +106,96 @@ Y is the one register that only a parameter naming it gets. A
 `register` parameter without the attribute still goes in A, then X,
 skipping a register another parameter names, so `register uint8_t k`
 next to an `in_xy` parameter arrives in A. A function the compiler
-compiles can take parameters this way too. It stores each one into
-its zero-page byte as it starts, with `STY` for Y.
+compiles can take parameters this way too. It copies each one into a
+local as it starts, which stays in the register when the body allows
+and is in its zero-page pool otherwise, so a register parameter takes
+no zero-page byte of its own.
+
+### `zeropage(addr)` on a parameter
+
+Some routines take an argument in a zero-page location rather than in
+a register. Zork's `cout_string`, for instance, prints the string
+whose address is in `SCRATCH2`, at `$E6`. On a parameter,
+`zeropage(addr)` says the argument is passed there:
+
+```c
+__attribute__((zp_abi, address(0x1D34)))
+void cout_string(const char *s __attribute__((zeropage(0xE6))),
+                 register uint8_t count __attribute__((in_x)));
+
+void show(void) { cout_string("DEFAULT = ", 10); }
+```
+
+```
+show:
+   LDA   #<str@0
+   STA   __zpabi_cout_string__s_0
+   LDA   #>str@0
+   STA   __zpabi_cout_string__s_1
+   LDX   #$0A
+   JMP   cout_string
+```
+
+where `__zpabi_cout_string__s_0` and `__zpabi_cout_string__s_1` are
+bound to `$E6` and `$E7`. A call stores the argument there and jumps,
+so the program needs no global for it. The compiler keeps its own
+zero-page bytes, and the runtime's block, off the bytes such
+parameters use. Two functions may take parameters at the same bytes,
+and a zero-page object may cover them too. The attribute goes on a
+parameter that isn't `register`. On a routine with `address` the
+routine has to be `zp_abi`, as with `register` parameters.
+
+A function you define can take a parameter this way too, and then
+assembly code that calls it knows where to put the argument. Written
+in C, Zork's `cout_string` keeps its convention, and with `COUT1`
+declared `preserves_x, preserves_y` it compiles to Zork's own code:
+
+```c
+void cout_string(const char *s __attribute__((zeropage(0xE6))),
+                 register uint8_t count __attribute__((in_x))) {
+    uint8_t i = 0;
+    do { COUT1(s[i] | 0x80); i++; } while (--count != 0);
+}
+```
+
+```
+cout_string:
+   LDY   #$00
+.loop@0_start:
+   LDA   (__zpabi_cout_string__s_0),Y
+   ORA   #$80
+   JSR   COUT1
+   INY
+   DEX
+   BNE   .loop@0_start
+   RTS
+```
+
+The function reads the parameter where it arrives, as it would one in
+bytes the compiler picked. If something the function calls might
+store an argument at the same bytes (a function with a `zeropage(addr)`
+parameter there, or a function defined in another source file, which
+might call one), the function first copies the parameter into a local
+of its own. Like a `register` parameter, a `zeropage(addr)` parameter
+needs the function to use `zp_abi` (with `--optimize`), so a function
+that can't, such as a recursive one, is an error. Without `--optimize`,
+calls between functions the compiler compiles pass every argument on
+the soft stack, as they do for `register` parameters. Each declaration
+of the function has to give the parameter the same address.
+
+The compiler doesn't see a zero-page object that covers the bytes as
+the same memory as the parameter, so the function shouldn't read or
+write such an object while it still needs the parameter.
+
+To share bytes between C functions, you don't need the attribute. Give
+two functions that never run at the same time a pointer parameter
+each, and the compiler gives both the same bytes: callers write the
+pointer where the callee reads it, as Zork's code does with
+`SCRATCH2`. A function that passes its own parameter on to another
+shares that one's bytes, and a caller that passes a local and still
+needs it afterwards can keep it in the callee's bytes when the callee
+leaves them alone. See
+[optimizations/slot_sharing.md](optimizations/slot_sharing.md).
 
 ### `return_bool_in_carry`
 
@@ -598,7 +687,10 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | Two `address` objects that overlap | The optimizer assumes different names are different memory. |
 | Reserved zero-page bytes that leave no room below `$80` for the runtime's block | The runtime needs `HARGS` and three 2-byte pointers in zero page, and the compiler's own pools use `$80`-`$FF`. |
 | A `register` parameter on a function with `address` but no `zp_abi` | Without `zp_abi`, arguments go on the soft stack, which the ROM routine doesn't read. |
-| A `zp_abi` routine with `address` and a parameter that isn't `register` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
+| A `zp_abi` routine with `address` and a parameter that's neither `register` nor `zeropage(addr)` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
+| A `zeropage(addr)` parameter on a function that can't use `zp_abi` with `--optimize`, such as a recursive one | Only `zp_abi` passes arguments in zero page. |
+| Declarations of a function that give a parameter different addresses, or `zeropage(addr)` on only some of them | A caller would store the argument where the function doesn't read it. `--link` checks this across source files too. |
+| `zeropage(addr)` on a `register` parameter, without an address, or past `$FF` | The parameter arrives either in a register or in zero page, at one address. |
 | `in_a`, `in_x`, or `in_y` on a parameter that isn't `register` | The attribute only says which register a `register` parameter uses. |
 | Two parameters that name the same register | A register holds one value. |
 | A pair on a 1-byte parameter, or one register on a 2-byte one | Each byte needs its own register. |

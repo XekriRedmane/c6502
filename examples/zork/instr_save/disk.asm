@@ -40,23 +40,24 @@ __zork_zp_bc	EQU	$BC
 STACK_STATE	EQU	$C8
 __zork_zp_ce	EQU	$CE
 SCRATCH1	EQU	$E4
-SCRATCH2	EQU	$E6
+__zork_zp_e6	EQU	$E6
 __zork_zp_e8	EQU	$E8
+__zpabi_do_rwts_on_sector__buffer_0	EQU	$F3
+__zpabi_inc_sector_and_write__buffer_0	EQU	$F3
+__zpabi_do_rwts_on_sector__buffer_1	EQU	$F4
+__zpabi_inc_sector_and_write__buffer_1	EQU	$F4
+__local_inc_sector_and_write__1	EQU	$F7
+__local_inc_sector_and_write__2	EQU	$F8
+__local_do_rwts_on_sector__command	EQU	$F9
+__local_do_rwts_on_sector__sector_1	EQU	$FA
+__local_do_rwts_on_sector__sector_0	EQU	$FB
 BUFF_AREA	EQU	$0200
-__zpabi_do_rwts_on_sector__command	EQU	$0200
-__zpabi_print_ascii_string__count	EQU	$0200
-__local_inc_sector_and_write__1	EQU	$0205
-__local_inc_sector_and_write__2	EQU	$0206
-__local_do_rwts_on_sector__0	EQU	$0207
-__local_do_rwts_on_sector__sector_1	EQU	$0208
-__local_do_rwts_on_sector__sector_0	EQU	$0209
 branch	EQU	$0BAA
 negated_branch	EQU	$0BB3
 buffer_char	EQU	$1B90
 dump_buffer_line	EQU	$1BE2
 dump_buffer_with_more	EQU	$1C5B
 home	EQU	$1CC9
-cout_string	EQU	$1D34
 RWTS	EQU	$2900
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
@@ -66,8 +67,8 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
-; def inc_sector_and_write params= locals=__local_inc_sector_and_write__0,__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A,,
+; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__0,__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false
 ; def write_next_sector params= locals=__local_write_next_sector__0 indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -78,7 +79,6 @@ COUT1	EQU	$FDF0
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
-; ext cout_string params=__zpabi_cout_string__count param_regs=X
 ; ext dump_buffer_line params=
 ; ext dump_buffer_with_more params=
 ; ext home params=
@@ -86,11 +86,11 @@ COUT1	EQU	$FDF0
 ; ext negated_branch params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
-; ext print_ascii_string params=__zpabi_print_ascii_string__count param_regs=X
 ; call do_rwts_on_sector -> RWTS
 ; call inc_sector_and_write -> do_rwts_on_sector
 ; call write_next_sector -> inc_sector_and_write
-; item do_rwts_on_sector section=.text local=false zero=false
+; share member=do_rwts_on_sector:__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 member=inc_sector_and_write:__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 forward=inc_sector_and_write>do_rwts_on_sector
+; item do_rwts_on_sector section=.text local=true zero=false
 ; item inc_sector_and_write section=.text local=false zero=false
 ; item write_next_sector section=.text local=false zero=false
 ; item dct section=.data local=false zero=false
@@ -133,7 +133,7 @@ COUT1	EQU	$FDF0
 ; zp STACK_STATE size=6 at=$C8 def=false init=
 ; zp __zork_zp_ce size=22 at=$CE def=false init=
 ; zp SCRATCH1 size=2 at=$E4 def=false init=
-; zp SCRATCH2 size=2 at=$E6 def=false init=
+; zp __zork_zp_e6 size=2 at=$E6 def=false init=
 ; zp __zork_zp_e8 size=11 at=$E8 def=false init=
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
@@ -142,9 +142,9 @@ do_rwts_on_sector:
    SUBROUTINE
 
    STA   iob+12
-   LDA   SCRATCH2
+   LDA   __zpabi_do_rwts_on_sector__buffer_0
    STA   iob+8
-   LDA   SCRATCH2+1
+   LDA   __zpabi_do_rwts_on_sector__buffer_1
    STA   iob+9
    LDA   #$03
    STA   iob+4
@@ -154,18 +154,18 @@ do_rwts_on_sector:
    STA   __local_do_rwts_on_sector__sector_1
 .loop@0_continue:
    LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__0
+   STA   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
-   SBC   __local_do_rwts_on_sector__0
+   SBC   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_1
    SBC   #$00
    BCC   .loop@0_break
    LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__0
+   STA   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
-   SBC   __local_do_rwts_on_sector__0
+   SBC   __local_do_rwts_on_sector__command
    STA   __local_do_rwts_on_sector__sector_0
    BCS   .carry_inc@0
    DEC   __local_do_rwts_on_sector__sector_1
@@ -206,9 +206,9 @@ write_next_sector:
    SUBROUTINE
 
    LDA   #<BUFF_AREA
-   STA   SCRATCH2
+   STA   __zpabi_inc_sector_and_write__buffer_0
    LDA   #>BUFF_AREA
-   STA   SCRATCH2+1
+   STA   __zpabi_inc_sector_and_write__buffer_1
    JMP   inc_sector_and_write
 
 dct:

@@ -110,17 +110,18 @@ def _compile_tac(ast5, syms, types, optimize: bool, zp, tac):
     # Calls to a zp_abi routine with a fixed address pass their
     # arguments in registers here too, since the routine's
     # convention can't depend on the pipeline.
-    asm0 = translate_to_asm(
-        tac, syms, types,
-        abi=fixed_address_layouts(tac, ast5, types),
-    )
+    fixed_abi = fixed_address_layouts(tac, ast5, types)
+    asm0 = translate_to_asm(tac, syms, types, abi=fixed_abi)
     asm = expand_long_branches(_peephole_fixedpoint(
         replace_pseudoregs(
             asm0, extra_statics=statics, symbols=syms, types=types,
         ),
         zp_global_symbols=zp.addrs,
     ))
-    return place_zp_globals(asm, zp), syms, types, zp.equs()
+    from passes.abi_selection import pinned_slot_symbols
+    return place_zp_globals(asm, zp), syms, types, {
+        **pinned_slot_symbols(fixed_abi), **zp.equs(),
+    }
 
 
 # -------- Simulation state --------

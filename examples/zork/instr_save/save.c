@@ -68,20 +68,25 @@
 
     Departures from the original:
 
+    - The bytes to copy or write are a parameter, where the original
+      passes them in SCRATCH2. The compiler keeps the page pointer of
+      the loop in inc_sector_and_write's parameter, which that routine
+      leaves alone, as the original keeps it in SCRATCH2.
     - copy_data_to_buff returns the next index into BUFF_AREA in A,
       where the original leaves it in X.
     - The page count is a local where the original uses SCRATCH3.
 */
 #include "zork.h"
 
-/* Copies the `count` bytes at SCRATCH2 into BUFF_AREA from index `x`
- * on, last byte first, and returns the index after them. A count of 0
+/* Copies the `count` bytes at `src` into BUFF_AREA from index `x` on,
+ * last byte first, and returns the index after them. A count of 0
  * copies 256. */
-uint8_t copy_data_to_buff(register uint8_t x __attribute__((in_x)),
-                          register uint8_t count __attribute__((in_y))) {
+static uint8_t copy_data_to_buff(
+    const uint8_t *const src, register uint8_t x __attribute__((in_x)),
+    register uint8_t count __attribute__((in_y))) {
     do {
         count--;
-        BUFF_AREA[x] = SCRATCH2[count];
+        BUFF_AREA[x] = src[count];
         x++;
     } while (count != 0);
     return x;
@@ -92,30 +97,25 @@ void instr_save(void) {
     uint8_t x = 0;
     BUFF_AREA[x] = Z_HEADER_ADDR[HEADER_VERSION];
     x++;
-    SCRATCH2 = Z_PC;
-    x = copy_data_to_buff(x, 3);
-    SCRATCH2 = LOCAL_ZVARS;
-    x = copy_data_to_buff(x, 30);
-    SCRATCH2 = STACK_STATE;
-    copy_data_to_buff(x, 6);
+    x = copy_data_to_buff(Z_PC, x, 3);
+    x = copy_data_to_buff(LOCAL_ZVARS, x, 30);
+    copy_data_to_buff(STACK_STATE, x, 6);
     if (write_next_sector())
         goto fail;
-    SCRATCH2 = Z_STACK;
-    copy_data_to_buff(0, 0);
+    copy_data_to_buff(Z_STACK, 0, 0);
     if (write_next_sector())
         goto fail;
-    SCRATCH2 = Z_STACK + 0x100;
-    copy_data_to_buff(0, 0x68);
+    copy_data_to_buff(Z_STACK + 0x100, 0, 0x68);
     if (write_next_sector())
         goto fail;
-    SCRATCH2 = Z_HEADER_ADDR;
+    uint8_t *page = Z_HEADER_ADDR;
     uint8_t pages = Z_HEADER_ADDR[HEADER_STATIC_MEM_BASE] + 1;
     do {
-        if (inc_sector_and_write())
+        if (inc_sector_and_write(page))
             goto fail;
-        SCRATCH2 += 0x100;
+        page += 0x100;
     } while (--pages != 0);
-    if (inc_sector_and_write())
+    if (inc_sector_and_write(page))
         goto fail;
     please_reinsert_game_diskette();
     branch();

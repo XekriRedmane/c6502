@@ -6,11 +6,12 @@ program against the checked-in `.asm` files.
 
 The rest runs the linked program in the simulator (assembled with
 dasm, so it skips without dasm). Zork's other routines, the Monitor's
-RDKEY and CLREOL, and DOS's RWTS are Python hooks at the addresses they
-have in Zork, which record what they're asked to do: the characters
-added to the line buffer, the prompts printed in inverse, the keys
-read, and each sector written, with its slot, drive, track, sector,
-and 256 bytes. Two scenarios run: a save to slot 6, drive 1 (the game's
+RDKEY, CLREOL, and COUT1, and DOS's RWTS are Python hooks at the
+addresses they have in Zork, which record what they're asked to do:
+the characters added to the line buffer, the characters printed
+straight to the screen, with the cursor column and inverse mask, the
+keys read, and each sector written, with its slot, drive, track,
+sector, and 256 bytes. Two scenarios run: a save to slot 6, drive 1 (the game's
 own drive) at position 3, with a wrong key and a default answer along
 the way, which then asks for the game diskette back; and a save to
 slot 5, drive 2 whose fifth write fails.
@@ -40,8 +41,8 @@ _HAVE_DASM = shutil.which("dasm") is not None
 
 # Zork's routines and the ROM's, at their addresses.
 _HOME, _MORE, _LINE, _BUFFER_CHAR = 0x1CC9, 0x1C5B, 0x1BE2, 0x1B90
-_COUT_STRING, _BRANCH, _NEGATED_BRANCH = 0x1D34, 0x0BAA, 0x0BB3
-_RDKEY, _CLREOL, _RWTS = 0xFD0C, 0xFC9C, 0x2900
+_BRANCH, _NEGATED_BRANCH = 0x0BAA, 0x0BB3
+_RDKEY, _CLREOL, _COUT1, _RWTS = 0xFD0C, 0xFC9C, 0xFDF0, 0x2900
 _INSTR_SAVE = 0x2064         # in main.bin
 
 _STORY = 0x6000              # Z_HEADER_ADDR
@@ -128,21 +129,15 @@ class _Machine:
             _MORE: lambda: self.events.append(("more",)),
             _LINE: lambda: self.events.append(("line",)),
             _BUFFER_CHAR: lambda: self.events.append(("char", mpu.a)),
-            _COUT_STRING: self._cout_string,
+            _COUT1: lambda: self.events.append(
+                ("cout", mpu.a, m[0x24], m[0x32]),
+            ),
             _BRANCH: lambda: self.events.append(("branch",)),
             _NEGATED_BRANCH: lambda: self.events.append(("negated",)),
             _RDKEY: self._rdkey,
             _CLREOL: lambda: self.events.append(("clreol",)),
             _RWTS: self._rwts,
         }
-
-    def _cout_string(self) -> None:
-        m = self.mpu.memory
-        ptr = m[0xE6] | m[0xE7] << 8
-        count = self.mpu.x or 256
-        self.events.append(
-            ("cout", bytes(m[ptr:ptr + count]), m[0x24], m[0x32]),
-        )
 
     def _rdkey(self) -> None:
         key = self.keys.pop(0)
@@ -291,8 +286,14 @@ class TestRuns(unittest.TestCase):
     def test_prompts_and_answers(self) -> None:
         machine, state = self.same
         couts = [e for e in machine.events if e[0] == "cout"]
-        # The default for each prompt, in inverse at column 25.
-        self.assertEqual(couts[0], ("cout", b"DEFAULT = ", 25, 0x3F))
+        # The default for each prompt, in inverse at column 25, with
+        # the high bits set.
+        self.assertEqual(
+            bytes(c & 0x7F for _, c, _, _ in couts[:10]), b"DEFAULT = ",
+        )
+        self.assertTrue(all(c & 0x80 for _, c, _, _ in couts))
+        self.assertEqual({(ch, inv) for _, _, ch, inv in couts[:10]},
+                         {(25, 0x3F)})
         # Slot, drive, and position, in the order they're kept.
         self.assertEqual(state["answers"], b"613")
         self.assertEqual((state["slot"], state["drive"]), (0x60, 1))

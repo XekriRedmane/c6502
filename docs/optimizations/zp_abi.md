@@ -34,7 +34,30 @@ Two functions where neither can call the other may get the same
 bytes, since they never run at the same time. When `$80`-`$BF` has
 no run that's long enough, the slots go at `$0200` or above, and the
 same `LDA` and `STA` instructions assemble in their 3-byte absolute
-form.
+form. When every function in the unit has a [private local
+pool](zp_local_pools.md), no function keeps a value in `$C0`-`$FF`
+across a call, so the slots and pools come from all of `$80`-`$FF`,
+as they do when `--link` allocates them for a whole program.
+
+Not every parameter gets a slot:
+
+- A `register` parameter arrives in A, X, or Y, and the callee's
+  first instructions copy it into a local of its own
+  (`tac_to_asm._register_param_locals`), which the register allocator
+  keeps in the register when it can and in the function's pool
+  otherwise. The copies from A come first, and the local is never put
+  in a register another parameter arrives in, so no copy overwrites a
+  register another copy still reads (`optimizer._entry_register_limits`).
+- A parameter declared `__attribute__((zeropage(addr)))` is at that
+  address. Its bytes are kept off everything else of the compiler's.
+  A function defined here copies such a parameter into a local as it
+  starts when something it calls might store an argument there: a
+  function with a `zeropage(addr)` parameter on the same bytes, or one
+  defined in another unit that isn't a routine with a fixed address
+  (`slot_sharing.pinned_param_copies`,
+  `tac_to_asm._pinned_param_locals`).
+- Parameters that [hold one value for several
+  functions](slot_sharing.md) share one address.
 
 ## Example
 

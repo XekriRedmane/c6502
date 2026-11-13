@@ -40,26 +40,29 @@ __zork_zp_bc	EQU	$BC
 STACK_STATE	EQU	$C8
 __zork_zp_ce	EQU	$CE
 SCRATCH1	EQU	$E4
-SCRATCH2	EQU	$E6
+__zork_zp_e6	EQU	$E6
 __zork_zp_e8	EQU	$E8
+__zpabi_cout_string__s_0	EQU	$F3
+__zpabi_inc_sector_and_write__buffer_0	EQU	$F3
+__zpabi_print_ascii_string__s_0	EQU	$F3
+__zpabi_cout_string__s_1	EQU	$F4
+__zpabi_inc_sector_and_write__buffer_1	EQU	$F4
+__zpabi_print_ascii_string__s_1	EQU	$F4
+__local_please_insert_save_diskette__n	EQU	$F5
+__local_please_insert_save_diskette__0	EQU	$F6
+__local_get_prompted_number_from_user__key	EQU	$F7
+__local_get_prompted_number_from_user__0	EQU	$F8
+__local_get_prompted_number_from_user__which	EQU	$F9
+__local_get_prompted_number_from_user__1	EQU	$FA
+__local_print_ascii_string__count	EQU	$FC
+__local_print_ascii_string__i	EQU	$FD
 BUFF_AREA	EQU	$0200
-__zpabi_get_prompted_number_from_user__which	EQU	$0200
-__zpabi_print_ascii_string__count	EQU	$0201
-__local_please_insert_save_diskette__n	EQU	$0203
-__local_please_insert_save_diskette__0	EQU	$0204
-__local_get_prompted_number_from_user__key	EQU	$0205
-__local_get_prompted_number_from_user__0	EQU	$0206
-__local_get_prompted_number_from_user__1	EQU	$0207
-__local_get_prompted_number_from_user__2	EQU	$0208
-__local_print_ascii_string__count	EQU	$020A
-__local_print_ascii_string__i	EQU	$020B
 branch	EQU	$0BAA
 negated_branch	EQU	$0BB3
 buffer_char	EQU	$1B90
 dump_buffer_line	EQU	$1BE2
 dump_buffer_with_more	EQU	$1C5B
 home	EQU	$1CC9
-cout_string	EQU	$1D34
 RWTS	EQU	$2900
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
@@ -69,10 +72,11 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__0,__local_get_prompted_number_from_user__1,__local_get_prompted_number_from_user__2 indirect=false in_cycle=false param_regs=A
+; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals=__local_cout_string__0 indirect=false in_cycle=false param_regs=,,X
+; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__0,__local_get_prompted_number_from_user__which,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
 ; def please_insert_save_diskette params= locals=__local_please_insert_save_diskette__n,__local_please_insert_save_diskette__0 indirect=false in_cycle=false
 ; def please_reinsert_game_diskette params= locals=__local_please_reinsert_game_diskette__0 indirect=false in_cycle=false
-; def print_ascii_string params=__zpabi_print_ascii_string__count locals=__local_print_ascii_string__0,__local_print_ascii_string__count,__local_print_ascii_string__i indirect=false in_cycle=false param_regs=X
+; def print_ascii_string params=__zpabi_print_ascii_string__s_0,__zpabi_print_ascii_string__s_1,__zpabi_print_ascii_string__count locals=__local_print_ascii_string__0,__local_print_ascii_string__count,__local_print_ascii_string__i indirect=false in_cycle=false param_regs=,,X
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
@@ -82,14 +86,14 @@ COUT1	EQU	$FDF0
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
-; ext cout_string params=__zpabi_cout_string__count param_regs=X
 ; ext dump_buffer_line params=
 ; ext dump_buffer_with_more params=
 ; ext home params=
-; ext inc_sector_and_write params=
+; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1
 ; ext instr_save params=
 ; ext negated_branch params=
 ; ext write_next_sector params=
+; call cout_string -> COUT1
 ; call get_prompted_number_from_user -> CLREOL
 ; call get_prompted_number_from_user -> RDKEY
 ; call get_prompted_number_from_user -> cout_string
@@ -108,7 +112,8 @@ COUT1	EQU	$FDF0
 ; call please_reinsert_game_diskette -> dump_buffer_with_more
 ; call please_reinsert_game_diskette -> print_ascii_string
 ; call print_ascii_string -> buffer_char
-; item print_ascii_string section=.text local=false zero=false
+; item print_ascii_string section=.text local=true zero=false
+; item cout_string section=.text local=true zero=false
 ; item get_prompted_number_from_user section=.text local=false zero=false
 ; item please_insert_save_diskette section=.text local=false zero=false
 ; item please_reinsert_game_diskette section=.text local=false zero=false
@@ -156,7 +161,7 @@ COUT1	EQU	$FDF0
 ; zp STACK_STATE size=6 at=$C8 def=false init=
 ; zp __zork_zp_ce size=22 at=$CE def=false init=
 ; zp SCRATCH1 size=2 at=$E4 def=false init=
-; zp SCRATCH2 size=2 at=$E6 def=false init=
+; zp __zork_zp_e6 size=2 at=$E6 def=false init=
 ; zp __zork_zp_e8 size=11 at=$E8 def=false init=
 ; runtime hargs_size=10 hargs_need=0
 ; @zp-link-meta-end
@@ -164,42 +169,57 @@ COUT1	EQU	$FDF0
 print_ascii_string:
    SUBROUTINE
 
+   STX   __local_print_ascii_string__count
    LDA   #$00
    STA   __local_print_ascii_string__i
-   STX   __local_print_ascii_string__count
 .loop@0_start:
    LDY   __local_print_ascii_string__i
-   LDA   (SCRATCH2),Y
+   LDA   (__zpabi_print_ascii_string__s_0),Y
    JSR   buffer_char
    INC   __local_print_ascii_string__i
    DEC   __local_print_ascii_string__count
    BNE   .loop@0_start
    RTS
 
+cout_string:
+   SUBROUTINE
+
+   LDY   #$00
+.loop@1_start:
+   LDA   (__zpabi_cout_string__s_0),Y
+   ORA   #$80
+   JSR   COUT1
+   INY
+   DEX
+   BNE   .loop@1_start
+   RTS
+
 get_prompted_number_from_user:
    SUBROUTINE
 
-   STA   __zpabi_get_prompted_number_from_user__which
+   STA   __local_get_prompted_number_from_user__which
    JSR   dump_buffer_with_more
-   LDA   __zpabi_get_prompted_number_from_user__which
-   ASL
-   STA   __local_get_prompted_number_from_user__1
+   ASL   __local_get_prompted_number_from_user__which
    LDA   #$00
-   STA   __local_get_prompted_number_from_user__2
-   ROL   __local_get_prompted_number_from_user__2
-   ASL   __local_get_prompted_number_from_user__1
-   ROL   __local_get_prompted_number_from_user__2
-   ASL   __local_get_prompted_number_from_user__1
-   ROL   __local_get_prompted_number_from_user__2
-   ASL   __local_get_prompted_number_from_user__1
-   ROL   __local_get_prompted_number_from_user__2
+   STA   __local_get_prompted_number_from_user__1
+   ROL   __local_get_prompted_number_from_user__1
+   ASL   __local_get_prompted_number_from_user__which
+   ROL   __local_get_prompted_number_from_user__1
+   ASL   __local_get_prompted_number_from_user__which
+   ROL   __local_get_prompted_number_from_user__1
+   ASL   __local_get_prompted_number_from_user__which
+   ROL   __local_get_prompted_number_from_user__1
    LDA   #<prompts
    CLC
-   ADC   __local_get_prompted_number_from_user__1
-   STA   SCRATCH2
+   ADC   __local_get_prompted_number_from_user__which
+   STA   __local_get_prompted_number_from_user__0
    LDA   #>prompts
-   ADC   __local_get_prompted_number_from_user__2
-   STA   SCRATCH2+1
+   ADC   __local_get_prompted_number_from_user__1
+   STA   __local_get_prompted_number_from_user__key
+   LDA   __local_get_prompted_number_from_user__0
+   STA   __zpabi_print_ascii_string__s_0
+   LDA   __local_get_prompted_number_from_user__key
+   STA   __zpabi_print_ascii_string__s_1
    LDX   #$0F
    JSR   print_ascii_string
    JSR   dump_buffer_line
@@ -208,25 +228,27 @@ get_prompted_number_from_user:
    LDA   #$3F
    STA   INVFLG
    LDA   #<sDefault
-   STA   SCRATCH2
+   STA   __zpabi_cout_string__s_0
    LDA   #>sDefault
-   STA   SCRATCH2+1
+   STA   __zpabi_cout_string__s_1
    LDX   #$0A
    JSR   cout_string
    LDA   #<prompts
    CLC
+   ADC   __local_get_prompted_number_from_user__which
+   STA   __local_get_prompted_number_from_user__key
+   LDA   #>prompts
    ADC   __local_get_prompted_number_from_user__1
    STA   __local_get_prompted_number_from_user__0
-   LDA   #>prompts
-   ADC   __local_get_prompted_number_from_user__2
-   STA   __local_get_prompted_number_from_user__key
-   LDA   __local_get_prompted_number_from_user__0
+   LDA   __local_get_prompted_number_from_user__key
    CLC
    ADC   #$0F
-   STA   SCRATCH2
-   LDA   __local_get_prompted_number_from_user__key
-   ADC   #$00
-   STA   SCRATCH2+1
+   BCC   .carry_inc@0
+   INC   __local_get_prompted_number_from_user__0
+.carry_inc@0:
+   STA   __zpabi_cout_string__s_0
+   LDA   __local_get_prompted_number_from_user__0
+   STA   __zpabi_cout_string__s_1
    LDX   #$01
    JSR   cout_string
    LDA   #$FF
@@ -241,17 +263,13 @@ get_prompted_number_from_user:
    BNE   .if_end@0
    LDA   #<prompts
    CLC
-   ADC   __local_get_prompted_number_from_user__1
+   ADC   __local_get_prompted_number_from_user__which
    STA   __local_get_prompted_number_from_user__key
    LDA   #>prompts
-   ADC   __local_get_prompted_number_from_user__2
+   ADC   __local_get_prompted_number_from_user__1
    STA   __local_get_prompted_number_from_user__0
-   LDA   __local_get_prompted_number_from_user__key
-   STA   DPTR
-   LDA   __local_get_prompted_number_from_user__0
-   STA   DPTR+1
    LDY   #$0F
-   LDA   (DPTR),Y
+   LDA   (__local_get_prompted_number_from_user__key),Y
 .if_end@0:
    AND   #$7F
    RTS
@@ -263,29 +281,29 @@ please_insert_save_diskette:
    JSR   dump_buffer_with_more
    JSR   dump_buffer_with_more
    LDA   #<sPleaseInsert
-   STA   SCRATCH2
+   STA   __zpabi_print_ascii_string__s_0
    LDA   #>sPleaseInsert
-   STA   SCRATCH2+1
+   STA   __zpabi_print_ascii_string__s_1
    LDX   #$1C
    JSR   print_ascii_string
    JSR   dump_buffer_with_more
-.loop@1_start:
+.loop@2_start:
    LDA   #$02
    JSR   get_prompted_number_from_user
    CMP   #$30
-   BCC   .loop@1_start
+   BCC   .loop@2_start
    CMP   #$38
-   BCS   .loop@1_start
+   BCS   .loop@2_start
    STA   prompts+47
    JSR   buffer_char
-.loop@2_start:
+.loop@3_start:
    LDA   #$00
    JSR   get_prompted_number_from_user
    STA   __local_please_insert_save_diskette__0
    CMP   #$31
-   BCC   .loop@2_start
+   BCC   .loop@3_start
    CMP   #$38
-   BCS   .loop@2_start
+   BCS   .loop@3_start
    AND   #$07
    ASL
    ASL
@@ -295,31 +313,31 @@ please_insert_save_diskette:
    LDA   __local_please_insert_save_diskette__0
    STA   prompts+15
    JSR   buffer_char
-.loop@3_start:
+.loop@4_start:
    LDA   #$01
    JSR   get_prompted_number_from_user
    STA   __local_please_insert_save_diskette__n
    CMP   #$31
-   BCC   .loop@3_start
+   BCC   .loop@4_start
    CMP   #$33
-   BCS   .loop@3_start
+   BCS   .loop@4_start
    AND   #$03
    STA   iob+2
    LDA   __local_please_insert_save_diskette__n
    STA   prompts+31
    JSR   buffer_char
-.loop@4_start:
+.loop@5_start:
    JSR   dump_buffer_with_more
    LDA   #<sReturnToBegin
-   STA   SCRATCH2
+   STA   __zpabi_print_ascii_string__s_0
    LDA   #>sReturnToBegin
-   STA   SCRATCH2+1
+   STA   __zpabi_print_ascii_string__s_1
    LDX   #$23
    JSR   print_ascii_string
    JSR   dump_buffer_line
    JSR   RDKEY
    CMP   #$8D
-   BNE   .loop@4_start
+   BNE   .loop@5_start
    LDA   #$FF
    STA   SCRATCH1
    LDA   #$FF
@@ -327,19 +345,19 @@ please_insert_save_diskette:
    LDA   prompts+47
    AND   #$07
    STA   __local_please_insert_save_diskette__n
-.loop@5_start:
+.loop@6_start:
    LDA   __local_please_insert_save_diskette__n
-   BEQ   .loop@5_break
+   BEQ   .loop@6_break
    LDA   SCRATCH1
    CLC
    ADC   #$40
    STA   SCRATCH1
-   BCC   .carry_inc@0
+   BCC   .carry_inc@1
    INC   SCRATCH1+1
-.carry_inc@0:
+.carry_inc@1:
    DEC   __local_please_insert_save_diskette__n
-   JMP   .loop@5_start
-.loop@5_break:
+   JMP   .loop@6_start
+.loop@6_break:
    JMP   dump_buffer_with_more
 
 please_reinsert_game_diskette:
@@ -353,23 +371,23 @@ please_reinsert_game_diskette:
    BNE   .if_end@9
    JSR   dump_buffer_with_more
    LDA   #<sReinsertGameDiskette
-   STA   SCRATCH2
+   STA   __zpabi_print_ascii_string__s_0
    LDA   #>sReinsertGameDiskette
-   STA   SCRATCH2+1
+   STA   __zpabi_print_ascii_string__s_1
    LDX   #$1F
    JSR   print_ascii_string
-.loop@6_start:
+.loop@7_start:
    JSR   dump_buffer_with_more
    LDA   #<sPressReturnToContinue
-   STA   SCRATCH2
+   STA   __zpabi_print_ascii_string__s_0
    LDA   #>sPressReturnToContinue
-   STA   SCRATCH2+1
+   STA   __zpabi_print_ascii_string__s_1
    LDX   #$26
    JSR   print_ascii_string
    JSR   dump_buffer_line
    JSR   RDKEY
    CMP   #$8D
-   BNE   .loop@6_start
+   BNE   .loop@7_start
    JSR   dump_buffer_with_more
 .if_end@9:
    LDA   #$60

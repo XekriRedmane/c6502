@@ -67,7 +67,17 @@ in the data segment. The `runtime`
 line gives the size of the runtime's HARGS block, which the EQU
 lines don't show, and how many of its bytes the TU's code uses
 (`passes/runtime_layout.py`), so the linker can choose a layout for
-the program.
+the program. A `share` line lists slots that hold one value for
+several functions, and the functions that keep a local there
+(`passes/slot_sharing.py`), as `member=<fn>:<slot>,<slot>` and
+`holder=<fn>` tokens, then what the linker checks the share by:
+`live=<fn>:<callee>,<callee>` for the calls a function's value there
+is live across, `forward=<caller>><owner>` for a caller whose every
+call to the owner passes its own value there, and `writer=<fn>` for a
+holder that assigns its value. A `def` or `ext` line's `pinned` list
+gives the address of each byte of a `zeropage(addr)` parameter, with
+an empty entry for the others, and a `def` line's `changes` list the
+slots of the parameters the function assigns.
 """
 from __future__ import annotations
 
@@ -101,6 +111,8 @@ class FunctionMeta:
     indirect: bool
     in_cycle: bool
     param_regs: list[str] = field(default_factory=list)
+    pinned: list[int | None] = field(default_factory=list)
+    changes: list[str] = field(default_factory=list)
 
     @property
     def param_bytes(self) -> int:
@@ -121,6 +133,7 @@ class ExternMeta:
     name: str
     params: list[str]
     param_regs: list[str] = field(default_factory=list)
+    pinned: list[int | None] = field(default_factory=list)
 
     @property
     def param_bytes(self) -> int:
@@ -171,6 +184,7 @@ class LinkMetadata:
     hargs_size: int | None = None
     hargs_need: int | None = None
     items: list[ItemMeta] = field(default_factory=list)
+    shares: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +198,7 @@ def build_metadata(
     local_pools: dict[str, list[int]],
     *,
     slot_names_by_fn: dict[str, list[str]] | None = None,
+    changes: dict[str, list[str]] | None = None,
 ) -> LinkMetadata:
     """Collect link metadata from the TAC program + per-function
     allocator outputs. Run after `select_abi`,
@@ -242,6 +257,8 @@ def build_metadata(
             indirect=indirect_per_fn.get(name, False),
             in_cycle=name in in_cycle,
             param_regs=param_regs_for.get(name, []),
+            pinned=list(getattr(abi.get(name), "pinned", [])),
+            changes=list((changes or {}).get(name, [])),
         ))
     # zp_abi extern declarations: ZpLayout entries in `abi` whose
     # name isn't defined in this TU.
@@ -254,6 +271,7 @@ def build_metadata(
                 name=name,
                 params=list(layout.slot_symbols),
                 param_regs=param_regs_for.get(name, []),
+                pinned=list(layout.pinned),
             ))
     # Call edges. Sorted for deterministic output.
     seen_calls: set[tuple[str, str]] = set()
@@ -345,6 +363,10 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         ]
         if d.param_regs and any(d.param_regs):
             parts.append(f"param_regs={','.join(d.param_regs)}")
+        if any(a is not None for a in d.pinned):
+            parts.append(f"pinned={_format_pinned(d.pinned)}")
+        if d.changes:
+            parts.append(f"changes={','.join(d.changes)}")
         lines.append(" ".join(parts))
     for e in meta.externs:
         parts = [
@@ -353,9 +375,18 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         ]
         if e.param_regs and any(e.param_regs):
             parts.append(f"param_regs={','.join(e.param_regs)}")
+        if any(a is not None for a in e.pinned):
+            parts.append(f"pinned={_format_pinned(e.pinned)}")
         lines.append(" ".join(parts))
     for caller, callee in meta.calls:
         lines.append(f"; call {caller} -> {callee}")
+    for share in meta.shares:
+        tokens = [f"member={f}:{','.join(syms)}" for f, syms in share.members]
+        tokens += [f"holder={h}" for h in share.holders]
+        tokens += [f"live={f}:{','.join(cs)}" for f, cs in share.live]
+        tokens += [f"forward={a}>{b}" for a, b in share.forwards]
+        tokens += [f"writer={w}" for w in share.writers]
+        lines.append(f"; share {' '.join(tokens)}")
     for it in meta.items:
         lines.append(
             f"; item {it.name} section={it.section} "
@@ -437,6 +468,8 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             indirect=kvs["indirect"] == "true",
             in_cycle=kvs["in_cycle"] == "true",
             param_regs=_split_csv(kvs.get("param_regs", "")),
+            pinned=_parse_pinned(kvs.get("pinned", "")),
+            changes=_split_csv(kvs.get("changes", "")),
         ))
     elif kind == "ext":
         if len(parts) < 3:
@@ -447,6 +480,34 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
             name=name,
             params=_split_csv(kvs["params"]),
             param_regs=_split_csv(kvs.get("param_regs", "")),
+            pinned=_parse_pinned(kvs.get("pinned", "")),
+        ))
+    elif kind == "share":
+        from passes.slot_sharing import SlotShare
+        members, holders, live, forwards, writers = [], [], [], [], []
+        for token in parts[1:]:
+            key, value = _split_kv(token)
+            if key == "member":
+                fn, _, syms = value.partition(":")
+                members.append((fn, tuple(_split_csv(syms))))
+            elif key == "holder":
+                holders.append(value)
+            elif key == "live":
+                fn, _, callees = value.partition(":")
+                live.append((fn, tuple(_split_csv(callees))))
+            elif key == "forward":
+                caller, _, owner = value.partition(">")
+                forwards.append((caller, owner))
+            elif key == "writer":
+                writers.append(value)
+            else:
+                raise ValueError(f"malformed share record: {record!r}")
+        if not members:
+            raise ValueError(f"malformed share record: {record!r}")
+        out.shares.append(SlotShare(
+            members=tuple(members), holders=tuple(holders),
+            live=tuple(live), forwards=tuple(forwards),
+            writers=tuple(writers),
         ))
     elif kind == "zp":
         if len(parts) < 3:
@@ -483,6 +544,18 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
         out.calls.append((parts[1], parts[3]))
     else:
         raise ValueError(f"unknown record kind {kind!r}: {record!r}")
+
+
+def _format_pinned(pinned: list[int | None]) -> str:
+    return ",".join("" if a is None else f"${a:02X}" for a in pinned)
+
+
+def _parse_pinned(value: str) -> list[int | None]:
+    if not value:
+        return []
+    return [
+        int(v.lstrip("$"), 16) if v else None for v in value.split(",")
+    ]
 
 
 def _split_kv(token: str) -> tuple[str, str]:

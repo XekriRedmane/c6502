@@ -120,16 +120,6 @@ this directory:
   droppable atom behind in one call, because downstream passes
   (e.g. `volatile_void_read_cmp`) can extend A's liveness across
   a rewrite and lock in a still-droppable atom.
-- `dead_reg_entry_stub.py` — `apply_dead_reg_entry_stub_drop`.
-  Targeted DSE for `Mov(Reg(R), Data(__zpabi_<fn>__<param>))`
-  entry stubs emitted by tac_to_asm for reg-attributed params.
-  Drops them when the param's body Pseudos pinned to R and the
-  slot is never read in the body. The general asm_dead_store can't
-  drop these under a body that contains a volatile Indirect
-  (conservative aliasing assumes Indirect may alias any address);
-  the targeted pass exploits the structural fact that user code
-  can't construct the slot's address (no syntax for `&__zpabi_*`;
-  `&param` on a reg-attributed param is rejected by type-check).
 - `dec_branch_indirect_y_fold.py` —
   `apply_dec_branch_indirect_y_fold`. After `Dec(Reg(Y));
   Branch(NE, _)` fall-through, Y is provably 0. Rewrites a
@@ -196,7 +186,14 @@ this directory:
   every linked function has a private pool. With `-T`, `_scripted_body`
   lays the program out by the script, and a slot that spills goes in
   a `__spill` block in `.bss` instead of at `$0200`. `sim/linked.py` runs a linked
-  program by assembling it with dasm.
+  program by assembling it with dasm. `_link_shares` joins every
+  unit's `share` records (`slot_sharing.merge_shares`, with each
+  declaration's slot spelling replaced by the definition's) and
+  checks them for the whole program (`check_linked_shares`).
+  `_drop_unused_locals` leaves out of each pool the slots no unit's
+  code names, unless the function takes a local's address. The bytes
+  of `zeropage(addr)` parameters (`def` / `ext` `pinned=`) are
+  reserved like zero-page objects'.
 - `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
   `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
@@ -267,6 +264,19 @@ this directory:
   1)` and one bit back) instead of by an `asl*` / `lsr*` / `asr*`
   call. `tac_to_asm` and the two-term
   multiply rule in `optimization/strength_reduction.py` both use it.
+- `slot_sharing.py` — `find_shares`: values kept in a callee's
+  parameter bytes across calls. A parameter passed on unchanged
+  aliases the callee's slot (a share *member*), and a local a caller
+  still needs after the call lives in the callee's slot (a *holder*),
+  along with the locals copies link to it. Returns the `SlotShare`s
+  (for the allocators and the link metadata) and per-function
+  `bindings` (variable → slot symbols), which `tac_to_asm` turns into
+  `Data` operands. A callee in another unit qualifies when its
+  declaration makes the parameter `const`; the linker re-checks
+  (`merge_shares`, `check_linked_shares`). `check_shares` raises if
+  the finished asm writes a shared slot of its own function, and
+  `preferred_symbols` tells `asm_emit` which symbol names a `(zp),Y`
+  base in a holder. User guide: docs/optimizations/slot_sharing.md.
 - `sections.py` — `items`: the section of each function and object in
   the finished asm (`__attribute__((section("name")))`, else `.text`,
   `.rodata` for `const` objects and string literals, `.bss` for
@@ -378,9 +388,13 @@ this directory:
   the linker may put one back in the data segment.
 - `zp_local_allocation.py` — `allocate_function_locals`. Hands each
   eligible function a private body-local ZP range disjoint from
-  coexisting footprints.
+  coexisting footprints, and from the `shares` of functions that can
+  be on the call stack with it.
 - `zp_slot_allocation.py` — `allocate_zp_slots`. Binds zp_abi slot
-  symbols to ZP addresses via call-graph topological order.
+  symbols to ZP addresses via call-graph topological order. Register
+  bytes get no address, `zeropage(addr)` bytes (`ZpLayout.pinned`)
+  their own, and each `SlotShare` one run at the turn of its last
+  member.
 
 ## Pass 2: `identifier_resolution.resolve_program`
 
@@ -1390,6 +1404,32 @@ Parameters stay on the soft stack (these functions aren't zp_abi).
 The unoptimized pipeline ignores the pragma. The linker still
 rejects recursion.
 
+### Register parameters, pinned parameters, and shared slots
+
+- A `register` parameter has no slot. `tac_to_asm` copies each one
+  into a local named `<param>.reg` (`zp_slot_naming.register_param_
+  local`) at entry, copies from A first, and the regalloc keeps that
+  local out of a register another parameter arrives in
+  (`optimizer._entry_register_limits`). `prologue_synthesis` moves
+  those copies in front of a soft-stack prologue, and saves A and Y
+  around the prologue when they're still live.
+- A parameter may be `zeropage(addr)` (marker `"@addr"` in
+  `param_registers`, `FunAttr.param_zeropage`, `ZpLayout.pinned`). Its
+  bytes are reserved for the whole unit (`ZpGlobals.param_bytes`), and
+  the runtime's block moves off them. Like a `register` parameter, it
+  makes ineligibility for zp_abi an error, and the unoptimized pipeline
+  ignores it on a function it compiles. A function defined here reads
+  the parameter in place unless something it calls might store an
+  argument at those bytes (`slot_sharing.pinned_param_copies`); then
+  `tac_to_asm._pinned_param_locals` copies it into `<param>.reg` at
+  entry, after the register parameters' copies. `--link` rejects units
+  whose `def` / `ext` records disagree on where parameters arrive
+  (`linker._arrivals`).
+- `slot_sharing.find_shares` runs between `select_abi` and
+  `allocate_zp_slots`; see its roster entry.
+- When every function defined in the unit is pool-eligible, both
+  allocators use the whole pool, `$80`-`$FF`, as the linker does.
+
 ### Allocation algorithm (shared between param and local passes)
 
 Topological order over the call graph, parents first. For each
@@ -1429,7 +1469,7 @@ stack.
 ### Pipeline shape
 
 ```
-tac → select_abi → allocate_zp_slots
+tac → select_abi → find_shares → allocate_zp_slots
     → recursive_pool_functions
     → tac_to_asm (bare_exit, abi, recursion_saves)
     → optimize_program (preliminary, default pool)  # size only

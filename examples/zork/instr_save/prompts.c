@@ -4,10 +4,30 @@
 
     Zork I (r15), output/main.asm lines 3452-3632: print_ascii_string,
     please_insert_save_diskette, get_prompted_number_from_user, and
-    please_reinsert_game_diskette, with their strings. The README in
-    this directory quotes them.
+    please_reinsert_game_diskette, with their strings; and cout_string,
+    lines 3282-3292:
+
+    cout_string:
+        LDY      #$00
+    .loop:
+        LDA      (SCRATCH2),Y
+        ORA      #$80
+        JSR      COUT1
+        INY
+        DEX
+        BNE      .loop
+        RTS
+
+    The README in this directory quotes the rest.
 
     Departures from the original:
+
+    - print_ascii_string and cout_string take the string as a
+      parameter, where the original passes it in SCRATCH2. Neither
+      calls the other, so the compiler gives both parameters the same
+      two bytes, and every caller writes the string's address there.
+      cout_string is a copy of Zork's, which stays where it is for the
+      rest of Zork.
 
     - The three prompts and their defaults are one 16-byte record each,
       as in the original, but get_prompted_number_from_user takes the
@@ -38,12 +58,24 @@ struct prompt prompts[3] = {
     { "POSITION (0-7):", '0' },
 };
 
-/* Adds the `count` characters at SCRATCH2 to the line buffer. A count
- * of 0 adds 256. */
-void print_ascii_string(register uint8_t count __attribute__((in_x))) {
+/* Adds the `count` characters at `s` to the line buffer. A count of 0
+ * adds 256. */
+static void print_ascii_string(
+    const char *const s, register uint8_t count __attribute__((in_x))) {
     uint8_t i = 0;
     do {
-        buffer_char(SCRATCH2[i]);
+        buffer_char(s[i]);
+        i++;
+    } while (--count != 0);
+}
+
+/* Prints the `count` characters at `s` straight to the screen, with
+ * their high bits set. A count of 0 prints 256. */
+static void cout_string(
+    const char *const s, register uint8_t count __attribute__((in_x))) {
+    uint8_t i = 0;
+    do {
+        COUT1(s[i] | 0x80);
         i++;
     } while (--count != 0);
 }
@@ -52,15 +84,12 @@ void print_ascii_string(register uint8_t count __attribute__((in_x))) {
  * returns it without its high bit, or the default for RETURN. */
 uint8_t get_prompted_number_from_user(register uint8_t which) {
     dump_buffer_with_more();
-    SCRATCH2 = (uint8_t *)prompts[which].text;
-    print_ascii_string(15);
+    print_ascii_string(prompts[which].text, 15);
     dump_buffer_line();
     CH = 25;
     INVFLG = 0x3F;
-    SCRATCH2 = (uint8_t *)sDefault;
-    cout_string(10);
-    SCRATCH2 = (uint8_t *)&prompts[which].answer;
-    cout_string(1);
+    cout_string(sDefault, 10);
+    cout_string(&prompts[which].answer, 1);
     INVFLG = 0xFF;
     uint8_t key = RDKEY();
     CH = 25;
@@ -77,8 +106,7 @@ void please_insert_save_diskette(void) {
     home();
     dump_buffer_with_more();
     dump_buffer_with_more();
-    SCRATCH2 = (uint8_t *)sPleaseInsert;
-    print_ascii_string(28);
+    print_ascii_string(sPleaseInsert, 28);
     dump_buffer_with_more();
     uint8_t c;
     do {
@@ -100,8 +128,7 @@ void please_insert_save_diskette(void) {
     buffer_char(c);
     do {
         dump_buffer_with_more();
-        SCRATCH2 = (uint8_t *)sReturnToBegin;
-        print_ascii_string(35);
+        print_ascii_string(sReturnToBegin, 35);
         dump_buffer_line();
     } while (RDKEY() != 0x8D);
     SCRATCH1 = 0xFFFF;
@@ -116,12 +143,10 @@ void please_insert_save_diskette(void) {
 void please_reinsert_game_diskette(void) {
     if (iob.slot_times_16 == 0x60 && iob.drive_number == 0x01) {
         dump_buffer_with_more();
-        SCRATCH2 = (uint8_t *)sReinsertGameDiskette;
-        print_ascii_string(31);
+        print_ascii_string(sReinsertGameDiskette, 31);
         do {
             dump_buffer_with_more();
-            SCRATCH2 = (uint8_t *)sPressReturnToContinue;
-            print_ascii_string(38);
+            print_ascii_string(sPressReturnToContinue, 38);
             dump_buffer_line();
         } while (RDKEY() != 0x8D);
         dump_buffer_with_more();

@@ -1080,8 +1080,17 @@ class Translator:
         bare_exit: bool = False,
         abi=None,
         recursion_saves: dict[str, frozenset[str]] | None = None,
+        bindings: dict[str, dict[str, tuple[str, ...]]] | None = None,
+        pinned_copies: dict[str, set[str]] | None = None,
     ) -> None:
         self._label_counter = 0
+        # Per function, the `zeropage(addr)` parameters it copies into
+        # a local as it starts (`slot_sharing.pinned_param_copies`).
+        self._pinned_copies = pinned_copies or {}
+        # Per function, the variables kept in a callee's parameter
+        # slots (`passes/slot_sharing.py`): each one's operands become
+        # those slots' `Data` operands.
+        self._bindings = bindings or {}
         # Optional — synthetic-AST tests can build a Translator
         # without a symbol table. In that case `_size_of` falls back
         # to `1` (Byte) for any Var whose name isn't found, which
@@ -1365,30 +1374,27 @@ class Translator:
                 self._current_fn_name = name
                 # Reg-attribute entry stub: when a parameter is
                 # register-passed (caller leaves the value in A/X/Y
-                # before the JSR), copy it into the slot symbol so
-                # the rest of the function reads the param like any
-                # other zp_abi byte. The slot still has a ZP byte
-                # allocated to it — the caller just doesn't write
-                # to it. Ordered to mirror the caller's load order
-                # (X, Y, A) so A's still-fresh value isn't clobbered
-                # by stores that would touch a register holding A
-                # transiently (the 6502 has no such interactions,
-                # but the symmetry keeps the lowering uniform).
+                # before the JSR), copy it into a local of its own
+                # (`register_param_local`), which the body reads in
+                # place of the parameter. The regalloc keeps it in the
+                # register when it can, and in the function's pool
+                # otherwise, so the parameter needs no slot.
                 out: list[asm_ast.Type_instruction] = []
                 from passes.abi_selection import ZpLayout
                 own_layout = self._abi.get(name)
+                renames: dict[str, list[asm_ast.Type_operand] | str] = {}
                 if isinstance(own_layout, ZpLayout):
-                    for k, target_reg in enumerate(
-                        own_layout.param_registers
-                    ):
-                        if target_reg is None:
-                            continue
-                        sym = own_layout.slot_symbols[k]
-                        src = _REG_BY_NAME[target_reg]
-                        out.append(asm_ast.Mov(
-                            src=src,
-                            dst=asm_ast.Data(name=sym, offset=0),
-                        ))
+                    renames.update(self._register_param_locals(
+                        params, own_layout, out,
+                    ))
+                    renames.update(self._pinned_param_locals(
+                        params, own_layout, out,
+                        self._pinned_copies.get(name, ()),
+                    ))
+                for var, slots in self._bindings.get(name, {}).items():
+                    renames[var] = [
+                        asm_ast.Data(name=s, offset=0) for s in slots
+                    ]
                 plan = None
                 if name in self._recursion_saves:
                     from passes.recursion_saves import plan_saves
@@ -1404,6 +1410,8 @@ class Translator:
                         out.extend(self._pop_saved(plan.pop_after.get(i, ())))
                         out.extend(self._push_saved(plan.push_after.get(i, ())))
                 self._current_fn_name = prior_fn
+                if renames:
+                    out = _rename_pseudos(out, renames)
                 # Mark Movs whose src or dst Pseudo names a
                 # volatile-typed user variable. Mov atoms emitted by
                 # Load / Store / IndexedLoad / etc. for volatile
@@ -1425,6 +1433,83 @@ class Translator:
                     instructions=out,
                 )
         raise TypeError(f"unexpected function node: {fn!r}")
+
+    def _register_param_locals(
+        self, params: list[str], layout, out: list,
+    ) -> dict[str, str]:
+        """For each parameter of the function being translated that
+        arrives in registers (`layout.param_registers`), appends to
+        `out` the entry stub that copies the registers into the
+        parameter's local, registers that local in the symbol table,
+        and returns `{parameter: local}`.
+
+        The copies from A come first: a copy from X or Y into a
+        register other than its own goes through A (`TXA; TAY`). The
+        regalloc keeps each local out of the other parameters'
+        registers (`optimizer._entry_register_limits`), so no copy
+        overwrites a register another copy still reads."""
+        from passes.type_checking import LocalAttr, Symbol
+        from passes.zp_slot_naming import register_param_local
+        renames: dict[str, str] = {}
+        copies: list[tuple[str, asm_ast.Mov]] = []
+        flat = 0
+        for p in params:
+            n = self._size_of(tac_ast.Var(name=p))
+            regs = layout.param_registers[flat:flat + n]
+            flat += n
+            if not any(regs):
+                continue
+            local = register_param_local(p)
+            renames[p] = local
+            if self._symbols is not None:
+                sym = self._symbols.get(p)
+                if sym is not None:
+                    self._symbols[local] = Symbol(
+                        type=sym.type, attrs=LocalAttr(register=False),
+                    )
+            for k, r in enumerate(regs):
+                if r is not None:
+                    copies.append((r, asm_ast.Mov(
+                        src=_REG_BY_NAME[r],
+                        dst=asm_ast.Pseudo(name=local, offset=k),
+                    )))
+        order = {"A": 0, "X": 1, "Y": 2}
+        out.extend(m for _, m in sorted(copies, key=lambda c: order[c[0]]))
+        return renames
+
+    def _pinned_param_locals(
+        self, params: list[str], layout, out: list, copied,
+    ) -> dict[str, str]:
+        """For each `zeropage(addr)` parameter in `copied`, appends to
+        `out` the copy of its bytes into a local of its own, which the
+        body reads in place of the parameter, and returns `{parameter:
+        local}`. Something the function calls stores its own argument
+        at those bytes. These copies go after the register parameters'
+        (`_register_param_locals`), since they go through A."""
+        from passes.type_checking import LocalAttr, Symbol
+        from passes.zp_slot_naming import register_param_local
+        renames: dict[str, str] = {}
+        flat = 0
+        for p in params:
+            n = self._size_of(tac_ast.Var(name=p))
+            syms = layout.slot_symbols[flat:flat + n]
+            flat += n
+            if p not in copied:
+                continue
+            local = register_param_local(p)
+            renames[p] = local
+            if self._symbols is not None:
+                sym = self._symbols.get(p)
+                if sym is not None:
+                    self._symbols[local] = Symbol(
+                        type=sym.type, attrs=LocalAttr(register=False),
+                    )
+            for k, s in enumerate(syms):
+                out.append(asm_ast.Mov(
+                    src=asm_ast.Data(name=s, offset=0),
+                    dst=asm_ast.Pseudo(name=local, offset=k),
+                ))
+        return renames
 
     def _mark_volatile_var_access(
         self, instr: asm_ast.Type_instruction,
@@ -3888,6 +3973,54 @@ def _translate_helper_call(
     return out
 
 
+def _rename_pseudos(
+    instrs: list[asm_ast.Type_instruction],
+    renames: dict[str, "str | list[asm_ast.Type_operand]"],
+) -> list[asm_ast.Type_instruction]:
+    """`instrs` with each `Pseudo(name, k)` whose name is in `renames`
+    replaced: by `Pseudo(new_name, k)` for a string, or by byte `k` of
+    an operand list (a variable kept in a callee's parameter slots).
+    Drops a `Mov` that the replacement turns into a copy of a byte to
+    itself, the argument write of a call that passes the value where
+    it already is."""
+    import dataclasses
+
+    def operand(op):
+        if isinstance(op, asm_ast.Pseudo) and op.name in renames:
+            new = renames[op.name]
+            if isinstance(new, str):
+                return asm_ast.Pseudo(name=new, offset=op.offset)
+            if op.offset < len(new):
+                return new[op.offset]
+            return dataclasses.replace(new[0], offset=op.offset)
+        return op
+
+    def walk(node):
+        if isinstance(node, list):
+            return [walk(x) for x in node]
+        if isinstance(node, asm_ast.Type_operand):
+            return operand(node)
+        if dataclasses.is_dataclass(node) and not isinstance(node, type):
+            changes = {}
+            for f in dataclasses.fields(node):
+                old = getattr(node, f.name)
+                new = walk(old)
+                if new is not old:
+                    changes[f.name] = new
+            return dataclasses.replace(node, **changes) if changes else node
+        return node
+
+    out = []
+    for instr in instrs:
+        new = walk(instr)
+        if (isinstance(new, asm_ast.Mov) and new.src == new.dst
+                and isinstance(new.dst, asm_ast.Data)
+                and not new.is_volatile):
+            continue
+        out.append(new)
+    return out
+
+
 def translate_val(val: tac_ast.Type_val) -> asm_ast.Type_operand:
     """Translate a TAC val to its asm operand form. Constants
     become `Imm(value)`, where `value` is the bit-pattern integer
@@ -3931,6 +4064,8 @@ def translate_program(
     bare_exit: bool = False,
     abi=None,
     recursion_saves: dict[str, frozenset[str]] | None = None,
+    bindings: dict[str, dict[str, tuple[str, ...]]] | None = None,
+    pinned_copies: dict[str, set[str]] | None = None,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
     `c99_to_tac` produced — the Translator consults it via
@@ -3961,10 +4096,18 @@ def translate_program(
     `recursion_saves` maps each function on a cycle that gets a
     private pool to its cycle (`recursion_saves.hw_stack_cycles`,
     filtered to the eligible ones). Calls between them save the
-    caller's live values on the hardware stack."""
+    caller's live values on the hardware stack.
+
+    `bindings` maps each function to the variables it keeps in a
+    callee's parameter slots (`passes.slot_sharing.find_shares`), and
+    each of those to the slots' symbols, low byte first.
+    `pinned_copies` names the `zeropage(addr)` parameters each function
+    copies into a local as it starts
+    (`passes.slot_sharing.pinned_param_copies`)."""
     return Translator(
         symbols, types, bare_exit=bare_exit, abi=abi,
-        recursion_saves=recursion_saves,
+        recursion_saves=recursion_saves, bindings=bindings,
+        pinned_copies=pinned_copies,
     ).translate_program(prog)
 
 

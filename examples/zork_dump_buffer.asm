@@ -22,9 +22,9 @@ KSW	EQU	$38
 __monitor_acc	EQU	$45
 __monitor_status	EQU	$48
 __monitor_rnd	EQU	$4E
-__local_dump_buffer_to_printer__x	EQU	$82
-__local_dump_buffer_to_printer__1	EQU	$83
-__local_dump_buffer_to_printer__2	EQU	$84
+__local_dump_buffer_to_printer__x	EQU	$81
+__local_dump_buffer_to_printer__1	EQU	$82
+__local_dump_buffer_to_printer__2	EQU	$83
 BUFF_END	EQU	$EB
 PRINTER_CSW	EQU	$EE
 BUFF_AREA	EQU	$0200

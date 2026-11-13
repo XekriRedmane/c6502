@@ -96,9 +96,7 @@ snd_delay_up:
 The `CMP (DPTR),Y` is the volatile read `(void)*sfx_click_ptr`.
 After the rewrite it compares against the pitch in A instead of the
 pointer's high byte, which changes nothing because `DEX` overwrites N
-and Z before the `BNE` reads them. The two entry stores to
-`__zpabi_*` slots are removed later by the
-[entry stub drop](dead_reg_entry_stub.md).
+and Z before the `BNE` reads them.
 
 ## When it applies
 

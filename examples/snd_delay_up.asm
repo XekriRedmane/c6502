@@ -2,8 +2,6 @@ SSP	EQU	$00
 FP	EQU	$02
 HARGS	EQU	$04
 DPTR	EQU	$24
-__zpabi_snd_delay_up__pitch	EQU	$80
-__zpabi_snd_delay_up__clicks	EQU	$81
 
 ; @zp-link-meta-begin
 ; def snd_delay_up params=__zpabi_snd_delay_up__pitch,__zpabi_snd_delay_up__clicks locals=__local_snd_delay_up__0,__local_snd_delay_up__pitch indirect=false in_cycle=false param_regs=A,X

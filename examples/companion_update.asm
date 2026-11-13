@@ -15,63 +15,62 @@ __zpabi_compute_screen_x__slot	EQU	$87
 __zpabi_drift_step__slot	EQU	$87
 __zpabi_entity_proximity__slot	EQU	$87
 __zpabi_player_catch__slot	EQU	$87
-__zpabi_smc_body_draw__slot	EQU	$87
 __zpabi_active_neg_step__player_floor	EQU	$88
 __zpabi_active_pos_step__player_floor	EQU	$88
 __zpabi_compute_screen_x__player_y	EQU	$88
 __zpabi_drift_step__out_sprite_y_0	EQU	$88
-__zpabi_entity_proximity__screen_x	EQU	$88
+__zpabi_find_active_entity__out_row_0	EQU	$88
 __zpabi_player_catch__screen_x	EQU	$88
-__zpabi_smc_body_draw__sprite_x	EQU	$88
-__local_active_neg_step__0	EQU	$89
-__local_active_pos_step__0	EQU	$89
 __zpabi_compute_screen_x__sprite_xref	EQU	$89
 __zpabi_drift_step__out_sprite_y_1	EQU	$89
-__zpabi_entity_proximity__hit_max	EQU	$89
+__zpabi_find_active_entity__out_row_1	EQU	$89
 __zpabi_player_catch__player_col	EQU	$89
-__zpabi_smc_body_draw__sprite_y	EQU	$89
-__local_active_neg_step__1	EQU	$8A
-__local_active_pos_step__1	EQU	$8A
-__local_compute_screen_x__0	EQU	$8A
-__local_drift_step__pos_0	EQU	$8A
-__local_player_catch__0	EQU	$8A
-__zpabi_find_active_entity__hit_max	EQU	$8A
-__zpabi_smc_body_draw__frame_idx	EQU	$8A
-__local_drift_step__pos_1	EQU	$8B
-__local_player_catch__1	EQU	$8B
-__zpabi_find_active_entity__out_row_0	EQU	$8B
-__zpabi_smc_body_draw__state	EQU	$8B
-__local_compute_screen_x__2	EQU	$8C
-__local_drift_step__0	EQU	$8C
-__zpabi_find_active_entity__out_row_1	EQU	$8C
-__zpabi_smc_body_draw__page_flag	EQU	$8C
-__local_compute_screen_x__3	EQU	$8D
-__local_entity_proximity__0	EQU	$8D
-__zpabi_draw_sprite__width	EQU	$8D
-__zpabi_draw_sprite__height	EQU	$8E
-__local_entity_proximity__entity_row	EQU	$8F
-__zpabi_draw_sprite__sprite_x	EQU	$8F
-__zpabi_draw_sprite__sprite_y	EQU	$90
-__zpabi_draw_sprite__tile_src_0	EQU	$91
-__zpabi_draw_sprite__tile_src_1	EQU	$92
-__zpabi_draw_sprite__page_flag	EQU	$93
-__local_companion_update__0	EQU	$94
-__local_companion_update__1	EQU	$95
-__local_companion_update__2	EQU	$96
-__local_companion_update__3	EQU	$97
-__local_companion_update__4	EQU	$98
-__local_companion_update__slot	EQU	$99
-__local_companion_update__sprite_y	EQU	$9A
-__local_smc_body_draw__hi	EQU	$9B
-__local_smc_body_draw__lo	EQU	$9C
-__local_smc_body_draw__0	EQU	$9D
-__local_smc_body_draw__1	EQU	$9E
-__local_smc_body_draw__2	EQU	$9F
+__zpabi_entity_proximity__screen_x	EQU	$8A
+__local_active_neg_step__0	EQU	$8B
+__local_active_pos_step__0	EQU	$8B
+__local_compute_screen_x__0	EQU	$8B
+__local_drift_step__pos_0	EQU	$8B
+__local_player_catch__0	EQU	$8B
+__zpabi_entity_proximity__hit_max	EQU	$8B
+__zpabi_find_active_entity__hit_max	EQU	$8B
+__zpabi_smc_body_draw__slot	EQU	$8B
+__local_active_neg_step__1	EQU	$8C
+__local_active_pos_step__1	EQU	$8C
+__local_drift_step__pos_1	EQU	$8C
+__local_entity_proximity__0	EQU	$8C
+__local_player_catch__1	EQU	$8C
+__zpabi_smc_body_draw__sprite_x	EQU	$8C
+__local_compute_screen_x__2	EQU	$8D
+__local_drift_step__0	EQU	$8D
+__zpabi_smc_body_draw__sprite_y	EQU	$8D
+__local_compute_screen_x__3	EQU	$8E
+__local_entity_proximity__entity_row	EQU	$8E
+__zpabi_smc_body_draw__frame_idx	EQU	$8E
+__zpabi_smc_body_draw__state	EQU	$8F
+__zpabi_smc_body_draw__page_flag	EQU	$90
+__zpabi_draw_sprite__width	EQU	$91
+__zpabi_draw_sprite__height	EQU	$92
+__zpabi_draw_sprite__sprite_x	EQU	$93
+__zpabi_draw_sprite__sprite_y	EQU	$94
+__zpabi_draw_sprite__tile_src_0	EQU	$95
+__zpabi_draw_sprite__tile_src_1	EQU	$96
+__zpabi_draw_sprite__page_flag	EQU	$97
+__local_companion_update__0	EQU	$98
+__local_companion_update__1	EQU	$99
+__local_companion_update__2	EQU	$9A
+__local_companion_update__3	EQU	$9B
+__local_companion_update__slot	EQU	$9C
+__local_companion_update__sprite_y	EQU	$9D
+__local_smc_body_draw__hi	EQU	$9F
+__local_smc_body_draw__lo	EQU	$A0
+__local_smc_body_draw__0	EQU	$A1
+__local_smc_body_draw__1	EQU	$A2
+__local_smc_body_draw__2	EQU	$A3
 
 ; @zp-link-meta-begin
 ; def active_neg_step params=__zpabi_active_neg_step__slot,__zpabi_active_neg_step__player_floor locals=__local_active_neg_step__0,__local_active_neg_step__1 indirect=false in_cycle=false
 ; def active_pos_step params=__zpabi_active_pos_step__slot,__zpabi_active_pos_step__player_floor locals=__local_active_pos_step__0,__local_active_pos_step__1 indirect=false in_cycle=false
-; def companion_update params=__zpabi_companion_update__gate,__zpabi_companion_update__player_y,__zpabi_companion_update__sprite_xref,__zpabi_companion_update__player_col,__zpabi_companion_update__player_floor,__zpabi_companion_update__hit_max,__zpabi_companion_update__page_flag locals=__local_companion_update__0,__local_companion_update__1,__local_companion_update__2,__local_companion_update__3,__local_companion_update__4,__local_companion_update__slot,__local_companion_update__sprite_y indirect=false in_cycle=false
+; def companion_update params=__zpabi_companion_update__gate,__zpabi_companion_update__player_y,__zpabi_companion_update__sprite_xref,__zpabi_companion_update__player_col,__zpabi_companion_update__player_floor,__zpabi_companion_update__hit_max,__zpabi_companion_update__page_flag locals=__local_companion_update__0,__local_companion_update__1,__local_companion_update__2,__local_companion_update__3,__local_companion_update__slot,__local_companion_update__sprite_y,__local_companion_update__5 indirect=false in_cycle=false
 ; def compute_screen_x params=__zpabi_compute_screen_x__slot,__zpabi_compute_screen_x__player_y,__zpabi_compute_screen_x__sprite_xref locals=__local_compute_screen_x__0,__local_compute_screen_x__1,__local_compute_screen_x__2,__local_compute_screen_x__3 indirect=false in_cycle=false
 ; def drift_step params=__zpabi_drift_step__slot,__zpabi_drift_step__out_sprite_y_0,__zpabi_drift_step__out_sprite_y_1 locals=__local_drift_step__pos_0,__local_drift_step__pos_1,__local_drift_step__0 indirect=false in_cycle=false
 ; def entity_proximity params=__zpabi_entity_proximity__slot,__zpabi_entity_proximity__screen_x,__zpabi_entity_proximity__hit_max locals=__local_entity_proximity__0,__local_entity_proximity__1,__local_entity_proximity__entity_row indirect=false in_cycle=false
@@ -91,6 +90,8 @@ __local_smc_body_draw__2	EQU	$9F
 ; call companion_update -> smc_body_draw
 ; call entity_proximity -> find_active_entity
 ; call smc_body_draw -> draw_sprite
+; share member=entity_proximity:__zpabi_entity_proximity__screen_x holder=companion_update live=companion_update:entity_proximity,smc_body_draw forward=companion_update>entity_proximity writer=companion_update
+; share member=entity_proximity:__zpabi_entity_proximity__hit_max member=find_active_entity:__zpabi_find_active_entity__hit_max forward=entity_proximity>find_active_entity
 ; item compute_screen_x section=.text local=true zero=false
 ; item find_active_entity section=.text local=true zero=false
 ; item entity_proximity section=.text local=true zero=false
@@ -173,8 +174,6 @@ find_active_entity:
 entity_proximity:
    SUBROUTINE
 
-   LDA   __zpabi_entity_proximity__hit_max
-   STA   __zpabi_find_active_entity__hit_max
    LDA   #<__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_0
    LDA   #>__local_entity_proximity__entity_row
@@ -599,23 +598,22 @@ companion_update:
    LDA   __zpabi_companion_update__sprite_xref
    STA   __zpabi_compute_screen_x__sprite_xref
    JSR   compute_screen_x
-   STA   __local_companion_update__4
+   STA   __local_companion_update__1
    TXA
    BNE   .loop@1_continue
-   LDA   __local_companion_update__4
+   LDA   __local_companion_update__1
+   STA   __zpabi_entity_proximity__screen_x
    CMP   #$9A
    BCS   .loop@1_continue
    LDA   __local_companion_update__slot
    STA   __zpabi_entity_proximity__slot
-   LDA   __local_companion_update__4
-   STA   __zpabi_entity_proximity__screen_x
    LDA   __zpabi_companion_update__hit_max
    STA   __zpabi_entity_proximity__hit_max
    JSR   entity_proximity
    LDX   __local_companion_update__slot
    LDA   companion_row,X
    STA   __local_companion_update__3
-   LDX   __local_companion_update__4
+   LDX   __zpabi_entity_proximity__screen_x
    LDA   proj_screen_col,X
    STA   __local_companion_update__2
    LDA   proj_frame_idx,X
@@ -637,7 +635,7 @@ companion_update:
    JSR   smc_body_draw
    LDA   __local_companion_update__slot
    STA   __zpabi_player_catch__slot
-   LDA   __local_companion_update__4
+   LDA   __zpabi_entity_proximity__screen_x
    STA   __zpabi_player_catch__screen_x
    LDA   __zpabi_companion_update__player_col
    STA   __zpabi_player_catch__player_col

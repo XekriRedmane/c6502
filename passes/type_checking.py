@@ -350,13 +350,19 @@ class FunAttr(IdAttr):
     `preserves` holds the registers ("X", "Y") that
     `__attribute__((preserves_x))` / `preserves_y` say the function
     leaves unchanged. Declarations add to it, and only a function with
-    an address may have any."""
+    an address may have any.
+
+    `param_zeropage` has one entry per parameter: the zero-page
+    address `__attribute__((zeropage(addr)))` gives it, which only a
+    function with an address may have, or None. Empty when no
+    parameter has one."""
     defined: bool
     is_global: bool
     carry_return: bool = False
     address: int | None = None
     preserves: frozenset[str] = frozenset()
     section: str | None = None
+    param_zeropage: tuple[int | None, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +668,14 @@ def _is_char_element(t: "Type") -> bool:
     string-literal initializer is admissible for an array's element
     type per C99 §6.7.8.14."""
     return isinstance(_strip_quals(t), (Char, SChar, UChar))
+
+
+def _param_zeropage(markers) -> tuple[int | None, ...]:
+    """`FunAttr.param_zeropage` from a function_decl's
+    `param_registers`, where a `zeropage(addr)` parameter is "@addr"."""
+    if not any(m.startswith("@") for m in markers):
+        return ()
+    return tuple(int(m[1:]) if m.startswith("@") else None for m in markers)
 
 
 def _size_from_initializer(t: "Type", init) -> "Type":
@@ -2245,6 +2259,7 @@ class TypeChecker:
             address=fd.address,
             preserves=frozenset(fd.preserves),
             section=fd.section,
+            param_zeropage=_param_zeropage(fd.param_registers),
         )
         # Per C99 §6.7.5.3.4, a parameter shall not have void type
         # (the `f(void)` form for empty params is handled by the
@@ -2319,6 +2334,9 @@ class TypeChecker:
             for p_name, p_type, p_reg in zip(
                 fd.params, ftype.params, param_regs,
             ):
+                # "@addr" is a `zeropage(addr)` parameter, which isn't
+                # `register`.
+                p_reg = "" if p_reg.startswith("@") else p_reg
                 if p_reg:
                     _check_register_object(
                         p_type, max_bytes=2,
@@ -2589,6 +2607,7 @@ class TypeChecker:
         address: int | None = None,
         preserves: frozenset[str] = frozenset(),
         section: str | None = None,
+        param_zeropage: tuple[int | None, ...] = (),
     ) -> None:
         existing = self.symbols.get(name)
         if existing is None:
@@ -2600,6 +2619,7 @@ class TypeChecker:
                     defined=defined, is_global=is_global,
                     carry_return=carry_return, address=address,
                     preserves=preserves, section=section,
+                    param_zeropage=param_zeropage,
                 ),
             )
             return
@@ -2660,6 +2680,9 @@ class TypeChecker:
                 defined=new_defined, is_global=is_global,
                 carry_return=carry_return, address=address,
                 preserves=preserves, section=section,
+                param_zeropage=(
+                    param_zeropage or existing.attrs.param_zeropage
+                ),
             ),
         )
 

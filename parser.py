@@ -754,24 +754,47 @@ def _register_marker(specs, is_register: bool) -> str:
     `register`, "auto" for `register` alone (A, then X, by position),
     or the register letters an `in_*` attribute names, such as "Y" for
     `__attribute__((in_y))` or "AY" for `in_ay` (low byte in A, high
-    byte in Y). Raises ParserError for any other attribute, for an
-    `in_*` attribute without `register`, and for a register named
+    byte in Y). A parameter that isn't `register` and has
+    `__attribute__((zeropage(addr)))` gets "@" and the address in
+    decimal ("@230" for `zeropage(0xE6)`): it arrives in zero page at
+    that address. Raises ParserError for any other attribute, for an
+    `in_*` attribute without `register`, for `zeropage` with
+    `register` or without an address, and for a register named
     twice."""
     if not specs:
         return "auto" if is_register else ""
     if len(specs) != 1:
         raise ParserError(
-            "a parameter takes one attribute, `in_a`, `in_x`, `in_y`, "
-            "or a pair such as `in_ay`, naming the register it arrives in"
+            "a parameter takes one attribute: `in_a`, `in_x`, `in_y`, "
+            "or a pair such as `in_ay`, naming the register it arrives "
+            "in, or `zeropage(addr)`, naming its zero-page address"
         )
     name, arg = specs[0]
+    if name == "zeropage":
+        if is_register:
+            raise ParserError(
+                "a `register` parameter arrives in a register, so it "
+                "can't also have `__attribute__((zeropage(...)))`"
+            )
+        if arg is None or isinstance(arg, str):
+            raise ParserError(
+                "`__attribute__((zeropage(...)))` on a parameter takes "
+                "the integer zero-page address it arrives at"
+            )
+        if not 0 <= arg <= 0xFF:
+            raise ParserError(
+                f"zero-page address ${arg:X} for a parameter is outside "
+                f"$00-$FF"
+            )
+        return f"@{arg}"
     regs = name[3:].upper() if name.startswith("in_") else ""
     if (arg is not None or not 1 <= len(regs) <= 2
             or not set(regs) <= _PARAM_REGISTERS):
         raise ParserError(
             f"unknown parameter attribute `{name}`; a parameter takes "
             f"`in_a`, `in_x`, or `in_y`, or for a 2-byte parameter a "
-            f"pair such as `in_ay` (low byte in A, high byte in Y)"
+            f"pair such as `in_ay` (low byte in A, high byte in Y), or "
+            f"`zeropage(addr)`"
         )
     if len(set(regs)) != len(regs):
         raise ParserError(

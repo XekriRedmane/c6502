@@ -40,20 +40,20 @@ __zork_zp_bc	EQU	$BC
 STACK_STATE	EQU	$C8
 __zork_zp_ce	EQU	$CE
 SCRATCH1	EQU	$E4
-SCRATCH2	EQU	$E6
+__zork_zp_e6	EQU	$E6
 __zork_zp_e8	EQU	$E8
+__zpabi_copy_data_to_buff__src_0	EQU	$F3
+__zpabi_copy_data_to_buff__src_1	EQU	$F4
+__zpabi_inc_sector_and_write__buffer_0	EQU	$F5
+__zpabi_inc_sector_and_write__buffer_1	EQU	$F6
+__local_instr_save__pages	EQU	$F8
 BUFF_AREA	EQU	$0200
-__zpabi_copy_data_to_buff__x	EQU	$0200
-__zpabi_print_ascii_string__count	EQU	$0200
-__zpabi_copy_data_to_buff__count	EQU	$0201
-__local_instr_save__pages	EQU	$0203
 branch	EQU	$0BAA
 negated_branch	EQU	$0BB3
 buffer_char	EQU	$1B90
 dump_buffer_line	EQU	$1BE2
 dump_buffer_with_more	EQU	$1C5B
 home	EQU	$1CC9
-cout_string	EQU	$1D34
 RWTS	EQU	$2900
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
@@ -63,7 +63,7 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def copy_data_to_buff params=__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals=__local_copy_data_to_buff__0 indirect=false in_cycle=false param_regs=X,Y
+; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals=__local_copy_data_to_buff__0 indirect=false in_cycle=false param_regs=,,X,Y
 ; def instr_save params= locals=__local_instr_save__0,__local_instr_save__pages indirect=false in_cycle=false
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -74,15 +74,13 @@ COUT1	EQU	$FDF0
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
-; ext cout_string params=__zpabi_cout_string__count param_regs=X
 ; ext dump_buffer_line params=
 ; ext dump_buffer_with_more params=
 ; ext home params=
-; ext inc_sector_and_write params=
+; ext inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1
 ; ext negated_branch params=
 ; ext please_insert_save_diskette params=
 ; ext please_reinsert_game_diskette params=
-; ext print_ascii_string params=__zpabi_print_ascii_string__count param_regs=X
 ; ext write_next_sector params=
 ; call instr_save -> branch
 ; call instr_save -> copy_data_to_buff
@@ -91,7 +89,8 @@ COUT1	EQU	$FDF0
 ; call instr_save -> please_insert_save_diskette
 ; call instr_save -> please_reinsert_game_diskette
 ; call instr_save -> write_next_sector
-; item copy_data_to_buff section=.text local=false zero=false
+; share member=inc_sector_and_write:__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 holder=instr_save live=instr_save:inc_sector_and_write forward=instr_save>inc_sector_and_write writer=instr_save
+; item copy_data_to_buff section=.text local=true zero=false
 ; item instr_save section=.text local=false zero=false
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
@@ -131,7 +130,7 @@ COUT1	EQU	$FDF0
 ; zp STACK_STATE size=6 at=$C8 def=false init=
 ; zp __zork_zp_ce size=22 at=$CE def=false init=
 ; zp SCRATCH1 size=2 at=$E4 def=false init=
-; zp SCRATCH2 size=2 at=$E6 def=false init=
+; zp __zork_zp_e6 size=2 at=$E6 def=false init=
 ; zp __zork_zp_e8 size=11 at=$E8 def=false init=
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
@@ -141,7 +140,7 @@ copy_data_to_buff:
 
 .loop@0_start:
    DEY
-   LDA   (SCRATCH2),Y
+   LDA   (__zpabi_copy_data_to_buff__src_0),Y
    STA   BUFF_AREA,X
    INX
    TYA
@@ -157,50 +156,50 @@ instr_save:
    LDA   (Z_HEADER_ADDR),Y
    STA   BUFF_AREA
    LDA   #<Z_PC
-   STA   SCRATCH2
+   STA   __zpabi_copy_data_to_buff__src_0
    LDA   #>Z_PC
-   STA   SCRATCH2+1
+   STA   __zpabi_copy_data_to_buff__src_1
    LDX   #$01
    LDY   #$03
    JSR   copy_data_to_buff
    TAX
    LDA   #<LOCAL_ZVARS
-   STA   SCRATCH2
+   STA   __zpabi_copy_data_to_buff__src_0
    LDA   #>LOCAL_ZVARS
-   STA   SCRATCH2+1
+   STA   __zpabi_copy_data_to_buff__src_1
    LDY   #$1E
    JSR   copy_data_to_buff
    TAX
    LDA   #<STACK_STATE
-   STA   SCRATCH2
+   STA   __zpabi_copy_data_to_buff__src_0
    LDA   #>STACK_STATE
-   STA   SCRATCH2+1
+   STA   __zpabi_copy_data_to_buff__src_1
    LDY   #$06
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   #$80
-   STA   SCRATCH2
+   STA   __zpabi_copy_data_to_buff__src_0
    LDA   #$02
-   STA   SCRATCH2+1
+   STA   __zpabi_copy_data_to_buff__src_1
    LDX   #$00
    LDY   #$00
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   #$80
-   STA   SCRATCH2
+   STA   __zpabi_copy_data_to_buff__src_0
    LDA   #$03
-   STA   SCRATCH2+1
+   STA   __zpabi_copy_data_to_buff__src_1
    LDX   #$00
    LDY   #$68
    JSR   copy_data_to_buff
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   Z_HEADER_ADDR
-   STA   SCRATCH2
+   STA   __zpabi_inc_sector_and_write__buffer_0
    LDA   Z_HEADER_ADDR+1
-   STA   SCRATCH2+1
+   STA   __zpabi_inc_sector_and_write__buffer_1
    LDY   #$0E
    LDA   (Z_HEADER_ADDR),Y
    CLC
@@ -209,13 +208,13 @@ instr_save:
 .loop@1_start:
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
-   LDA   SCRATCH2
+   LDA   __zpabi_inc_sector_and_write__buffer_0
    CLC
    ADC   #$00
-   STA   SCRATCH2
-   LDA   SCRATCH2+1
+   STA   __zpabi_inc_sector_and_write__buffer_0
+   LDA   __zpabi_inc_sector_and_write__buffer_1
    ADC   #$01
-   STA   SCRATCH2+1
+   STA   __zpabi_inc_sector_and_write__buffer_1
    DEC   __local_instr_save__pages
    BNE   .loop@1_start
    JSR   inc_sector_and_write

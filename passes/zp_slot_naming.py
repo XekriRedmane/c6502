@@ -35,6 +35,19 @@ from __future__ import annotations
 from passes.optimization.register_allocation import Coloring
 
 
+# The suffix of the local a `register` parameter is copied into at
+# entry (`register_param_local`).
+_REGISTER_PARAM_SUFFIX = ".reg"
+
+
+def register_param_local(param: str) -> str:
+    """The name of the local that a parameter passed in registers is
+    copied into at the function's entry, which the body reads in place
+    of the parameter (`tac_to_asm`). A parameter's name has no `.reg`
+    suffix of its own, so this can't collide with another variable."""
+    return param + _REGISTER_PARAM_SUFFIX
+
+
 def source_spelling(resolved_name: str) -> str:
     """Strip `identifier_resolution`'s `@<N>.` prefix from a resolved
     name to recover the source-level spelling. Returns the name
@@ -92,6 +105,9 @@ def parse_pseudo_name(name: str) -> tuple[str | None, int]:
         head, _, tail = base.rpartition(".")
         if tail.isdigit():
             base = head
+    # A register parameter's local has the parameter's spelling.
+    if base.endswith(_REGISTER_PARAM_SUFFIX):
+        base = base[: -len(_REGISTER_PARAM_SUFFIX)]
     # Source-derived names carry identifier_resolution's `@<N>.<orig>`.
     if base.startswith("@"):
         _, _, source = base.partition(".")

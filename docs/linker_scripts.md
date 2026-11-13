@@ -153,7 +153,12 @@ needs, then the zero-page globals, then the functions' parameter and
 local bytes, which may use any free byte from `$80` up. A parameter or
 local that doesn't fit goes in `__spill`, a block in `.bss`, which the
 script places with the rest of the data. Without a script it goes at
-`$0200` up instead.
+`$0200` up instead. A local byte that no file's code names any more
+(the peepholes emptied it after the file sized its pool) gets no
+address. Parameter bytes that hold one value for several functions,
+possibly in different files, get one address, after the linker checks
+that nothing in the program writes them while a value is kept there
+([optimizations/slot_sharing.md](optimizations/slot_sharing.md)).
 
 ## Names
 

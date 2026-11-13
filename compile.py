@@ -107,7 +107,9 @@ from passes.label_resolution import resolve_program as resolve_labels
 from passes.long_branches import expand_program as expand_long_branches
 from passes.loop_labeling import label_program as label_loops
 from passes import ir_check
-from passes.abi_selection import fixed_address_layouts, select_abi
+from passes.abi_selection import (
+    fixed_address_layouts, pinned_slot_symbols, select_abi,
+)
 from passes.function_local_sizing import (
     compute_local_bytes, compute_address_taken_bytes,
 )
@@ -118,22 +120,27 @@ from passes.runtime_layout import hargs_need
 from passes.sections import items as section_items
 from passes.zp_link_metadata import build_metadata, format_metadata
 from passes.zp_local_allocation import (
-    allocate_function_locals, build_local_slot_symbols,
+    allocate_function_locals, build_local_slot_symbols, pool_eligible,
     recursive_pool_functions,
 )
 from passes.zp_slot_allocation import allocate_zp_slots
+from passes.optimization.pool import Pool
+import tac_ast
+from passes.slot_sharing import (
+    changed_param_slots, check_shares, find_shares, pinned_param_copies,
+    preferred_symbols,
+)
 from passes.optimization import optimize_program as optimize_tac
 from passes.optimization.dispatch_pointer_array import (
     dispatch_const_pointer_arrays,
 )
 from passes.optimization_asm import optimizer as asm_opt
 from passes.branch_through_jump import apply_branch_through_jump
-from passes.dead_reg_entry_stub import apply_dead_reg_entry_stub_drop
 from passes.dec_branch_indirect_y_fold import apply_dec_branch_indirect_y_fold
 from passes.dec_register_peephole import apply_dec_register_peephole
 from passes.promote_loop_carried_to_a import apply_promote_loop_carried_to_a
 from passes.volatile_void_read_cmp import apply_volatile_void_read_cmp
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from passes.prologue_synthesis import synthesize_program as synthesize_prologue
 from passes.replace_pseudoregisters import (
     replace_program as replace_pseudoregs,
@@ -338,6 +345,8 @@ class OptimizedAsm:
     slot_names_by_fn: dict
     slot_symbols: dict[str, int]
     zp_records: list
+    shares: list = field(default_factory=list)
+    bindings: dict = field(default_factory=dict)
 
 
 def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
@@ -356,17 +365,39 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # write to the same dst without Phi insertion.
     tac = dispatch_const_pointer_arrays(tac, symbols)
     abi = select_abi(tac, prog, types)
-    abi, zp_slot_symbols = allocate_zp_slots(
-        tac, abi, reserved=zp.reserved,
-    )
     # Functions on a cycle whose recursive calls are all under
     # `#pragma c6502 call save(hardware_stack)` get private pools too,
     # and save their live values around those calls
     # (passes/recursion_saves.py).
     recursion = recursive_pool_functions(tac, abi)
+    pooled = pool_eligible(tac, abi)
+    # Values kept in a callee's parameter bytes across calls
+    # (passes/slot_sharing.py).
+    shares, bindings = find_shares(
+        tac, abi, symbols, types, eligible=pooled,
+        fixed=set(zp.fixed), recursion=set(recursion),
+    )
+    # When every function here has a private pool, none keeps a value
+    # in the pool's callee-saved half across a call, so the slots and
+    # pools can come from the whole pool, as they do when linking.
+    window = (
+        range(Pool().start, 0x100)
+        if all(tl.name in pooled for tl in tac.top_level
+               if isinstance(tl, tac_ast.Function))
+        else None
+    )
+    abi, zp_slot_symbols = allocate_zp_slots(
+        tac, abi, reserved=zp.reserved, shares=shares, window=window,
+    )
+    # A `zeropage(addr)` parameter that something the function calls
+    # might overwrite is copied into a local at entry.
+    pinned_copies = pinned_param_copies(
+        tac, abi, symbols, types, set(zp.fixed),
+    )
     asm0 = translate_to_asm(
         tac, symbols, types, bare_exit=True, abi=abi,
-        recursion_saves=recursion,
+        recursion_saves=recursion, bindings=bindings,
+        pinned_copies=pinned_copies,
     )
     ir_check.check_asm(asm0, after="tac_to_asm", pseudos=True)
     # Preliminary optimizer pass with the default
@@ -407,6 +438,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # conservative pool.
     local_pools = allocate_function_locals(
         tac, abi, combined_local_bytes, reserved=zp.reserved,
+        shares=shares, window=window,
     )
     # Final optimizer pass with private pools threaded
     # through to the regalloc.
@@ -478,7 +510,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     # of natural loops (only fires when the loop body has
     # no Call — conservative to sidestep zp_abi clobber
     # questions).
-    asm2 = apply_licm(asm2)
+    asm2 = apply_licm(asm2, {**all_slot_symbols, **zp.addrs})
     asm3 = _peephole_fixedpoint(
         asm2, zp_slot_symbols=all_slot_symbols,
         zp_global_symbols=zp.addrs,
@@ -520,21 +552,6 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         asm3, zp_slot_symbols=all_slot_symbols,
         zp_global_symbols=zp.addrs,
     )
-    # Drop dead reg-attributed-param entry stubs. The
-    # peephole loop above has by now collapsed any
-    # `LDA __zpabi_<fn>__<param>; TAX` initialization
-    # sequence into a direct `LDX` (via direct_index_load)
-    # and then dropped that LDX entirely when the param's
-    # value is already in X from the calling convention
-    # (via redundant_load_elimination). At THIS point the
-    # slot is genuinely unread in the body, so the entry
-    # stub `STX __zpabi_<fn>__<param>` is dead. The general
-    # asm_dead_store pass can't drop it when the body
-    # contains a volatile Indirect (which conservatively
-    # aliases every byte); the targeted pass below knows
-    # the function's own `__zpabi_*` slots can't be
-    # aliased by an Indirect and drops the stub directly.
-    asm3 = apply_dead_reg_entry_stub_drop(asm3, abi)
     # Keep a loop-invariant compare key in A across its loop
     # (see passes/loop_invariant_a.py). Runs after the
     # peepholes have settled the layout it inspects.
@@ -547,10 +564,11 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     zp_records = link_records(asm4, zp)
     asm4 = place_zp_globals(asm4, zp)
     ir_check.check_asm(asm4, after="the --optimize pipeline")
+    check_shares(asm4, shares, bindings)
     return OptimizedAsm(
         asm=asm4, tac=tac, abi=abi, local_pools=local_pools,
         slot_names_by_fn=slot_names_by_fn, slot_symbols=all_slot_symbols,
-        zp_records=zp_records,
+        zp_records=zp_records, shares=shares, bindings=bindings,
     )
 
 
@@ -592,18 +610,13 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         emit_slot_symbols = prune_unused_locals(
             asm4, all_slot_symbols,
         )
-        # A routine with a fixed address takes every argument in a
-        # register and has no body anywhere, so nothing reads its
-        # parameter slots.
-        for name in zp.fixed:
-            layout = abi.get(name)
-            for sym in getattr(layout, "slot_symbols", ()):
-                emit_slot_symbols.pop(sym, None)
         asm5 = lower_to_asm2(asm4)
         link_meta = build_metadata(
             opt.tac, abi, local_pools,
             slot_names_by_fn=opt.slot_names_by_fn,
+            changes=changed_param_slots(opt.tac, abi, symbols, types),
         )
+        link_meta.shares = opt.shares
         link_meta.zp_objects = opt.zp_records
         link_meta.hargs_size = zp.layout.hargs_size
         link_meta.hargs_need = hargs_need(asm4)
@@ -611,14 +624,13 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
         return emit_program(
             asm5, zp_slot_symbols={**emit_slot_symbols, **zp.equs()},
             link_metadata_lines=format_metadata(link_meta),
+            preferred_symbols=preferred_symbols(opt.bindings),
         )
     # Calls to a zp_abi routine with a fixed address pass their
     # arguments in registers here too, since the routine's
     # convention can't depend on the pipeline.
-    asm0 = translate_to_asm(
-        tac, symbols, types,
-        abi=fixed_address_layouts(tac, prog, types),
-    )
+    fixed_abi = fixed_address_layouts(tac, prog, types)
+    asm0 = translate_to_asm(tac, symbols, types, abi=fixed_abi)
     ir_check.check_asm(asm0, after="tac_to_asm", pseudos=True)
     asm1 = replace_pseudoregs(
         asm0, extra_statics=statics, symbols=symbols, types=types,
@@ -627,7 +639,8 @@ def _codegen(prog, symbols, types, optimize: bool, zp, tac) -> str:
     asm3 = place_zp_globals(expand_long_branches(asm2), zp)
     ir_check.check_asm(asm3, after="the pipeline")
     asm4 = lower_to_asm2(asm3)
-    return emit_program(asm4, zp_slot_symbols=zp.equs() or None)
+    equs = {**pinned_slot_symbols(fixed_abi), **zp.equs()}
+    return emit_program(asm4, zp_slot_symbols=equs or None)
 
 
 def _source_errors() -> tuple[type[Exception], ...]:

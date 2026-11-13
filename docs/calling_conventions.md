@@ -369,6 +369,16 @@ That's also why a recursive function can't use zp_abi. Its own
 earlier calls are still running, and every one of them would read
 the same bytes.
 
+A value can also stay in a callee's bytes across calls. A function
+that passes its own parameter on unchanged to another function gets
+that function's bytes for the parameter, so its callers write the
+value where the callee reads it. And a caller that passes a local and
+needs it again afterwards keeps it in the callee's bytes, when nothing
+the call reaches changes them, so it doesn't copy the local there
+before each call. That's how Zork's code uses its global `SCRATCH2`,
+found from the call graph instead of written by hand; see
+[optimizations/slot_sharing.md](optimizations/slot_sharing.md).
+
 ### Recursion that saves on the hardware stack
 
 A recursive function's locals get zero-page bytes of their own under
@@ -416,9 +426,9 @@ unsigned char twice(unsigned char v) { return add(v, v); }
 
 ```
 add:
-   STX   __zpabi_add__b
+   STX   __local_add__b
    CLC
-   ADC   __zpabi_add__b
+   ADC   __local_add__b
    RTS
 
 twice:
@@ -428,7 +438,10 @@ twice:
 ```
 
 `add` uses `a` straight from A. The 6502 can't add X to A, so the
-first thing `add` does is store `b` in its zero-page byte. `twice`
+first thing `add` does is store `b` in one of its local bytes. A
+register parameter has no zero-page byte of its own: the function
+copies it into a local as it starts, which stays in its register when
+the body allows. `twice`
 loads both arguments and jumps to `add`, since nothing is left to do
 after the call.
 
@@ -503,6 +516,15 @@ first:
 The caller stores the pointer's two bytes in `__zpabi_first__p_0` and
 `__zpabi_first__p_1`, and `first` reads through them directly.
 
+A parameter can also name its zero-page address, with
+`__attribute__((zeropage(addr)))` after its name, so that assembly code
+calling the function knows where to put the argument. The parameter's
+slot is then at that address. When something the function calls might
+store its own argument there, the function copies the parameter into a
+local as it starts. See
+"[`zeropage(addr)` on a parameter](attributes.md#zeropageaddr-on-a-parameter)"
+in attributes.md.
+
 ### Locals
 
 A zp_abi function's locals get zero-page bytes by the same call-graph
@@ -557,6 +579,13 @@ bytes the address of the definition's byte in the same position. The
 one thing it rejects is a name that means different bytes in two
 files, as when a declaration swaps the names of two parameters of the
 same size.
+
+A function can keep a value in the parameter bytes of a function
+defined in another file when its declaration makes the parameter
+`const`, as in `bool write_page(uint8_t *const buffer);`. The linker
+checks, for the whole program, that nothing such a call reaches
+writes those bytes, and stops with an error naming the function that
+does ([optimizations/slot_sharing.md](optimizations/slot_sharing.md)).
 
 `--link` handles only programs whose functions all use zp_abi. It
 rejects a recursive function and one that calls through a pointer,

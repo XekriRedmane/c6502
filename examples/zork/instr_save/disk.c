@@ -41,7 +41,14 @@
         PULW     dct.motor_count
         RTS
 
-    write_next_sector falls into inc_sector_and_write; here it calls it.
+    Departures from the original:
+
+    - The buffer is a parameter, where the original reads it from
+      SCRATCH2. inc_sector_and_write passes its own on to
+      do_rwts_on_sector, and the compiler gives the two parameters the
+      same bytes, so it copies nothing.
+    - write_next_sector falls into inc_sector_and_write; here it calls
+      it.
 */
 #include "zork.h"
 
@@ -53,12 +60,13 @@ struct iob iob = {
 };
 
 /* Reads or writes (`command`) the 256-byte sector numbered SCRATCH1,
- * counting from the start of track 3, to or from the buffer at
- * SCRATCH2. Returns true if the operation failed. */
+ * counting from the start of track 3, to or from `buffer`. Returns
+ * true if the operation failed. */
 __attribute__((return_bool_in_carry))
-bool do_rwts_on_sector(register uint8_t command) {
+static bool do_rwts_on_sector(register uint8_t command,
+                              uint8_t *const buffer) {
     iob.command = command;
-    iob.buffer_addr = SCRATCH2;
+    iob.buffer_addr = buffer;
     iob.track = 3;
     uint16_t sector = SCRATCH1;
     while (sector >= SECTORS_PER_TRACK) {
@@ -69,14 +77,14 @@ bool do_rwts_on_sector(register uint8_t command) {
     return RWTS((uint8_t)((uint16_t)&iob >> 8), (uint8_t)(uint16_t)&iob);
 }
 
-/* Writes the sector after SCRATCH1 from SCRATCH2, with the motor's
+/* Writes the sector after SCRATCH1 from `buffer`, with the motor's
  * spin-up time set for a write. Returns true if the write failed. */
 __attribute__((return_bool_in_carry))
-bool inc_sector_and_write(void) {
+bool inc_sector_and_write(uint8_t *const buffer) {
     SCRATCH1++;
     uint16_t motor = dct.motor_on_time_count;
     dct.motor_on_time_count = 0xD8EF;
-    bool failed = do_rwts_on_sector(2);
+    bool failed = do_rwts_on_sector(2, buffer);
     dct.motor_on_time_count = motor;
     return failed;
 }
@@ -84,6 +92,5 @@ bool inc_sector_and_write(void) {
 /* Writes the sector after SCRATCH1 from the line buffer. */
 __attribute__((return_bool_in_carry))
 bool write_next_sector(void) {
-    SCRATCH2 = BUFF_AREA;
-    return inc_sector_and_write();
+    return inc_sector_and_write(BUFF_AREA);
 }

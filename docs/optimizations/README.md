@@ -60,7 +60,6 @@ a user variable.
 - [Dead A arithmetic](dead_a_arith.md). Deletes instructions that write only A and flags when neither is read later.
 - [Dead label drop](dead_label_drop.md). Deletes labels that no jump, branch, or Phi argument names.
 - [Dead loop elimination](dead_loop_elimination.md). Deletes a side-effect-free loop whose values nothing reads afterward.
-- [Dead register-parameter entry stub](dead_reg_entry_stub.md). Drops a register parameter's entry store when its slot is never read.
 - [Dead static elimination](dead_static.md). Drops internal-linkage static objects that no instruction or initializer references.
 - [Dead-store elimination](dead_store_elimination.md). Drops TAC instructions with unread SSA results, keeping calls but dropping their results.
 - [DEC](dec_peephole.md). Rewrites an in-place 1-byte subtract of 1 as DEC, DEX, or DEY.
@@ -117,6 +116,7 @@ a user variable.
 - [TXA past a branch](transfer_past_branch.md). Moves TXA or TYA after a branch when only the fall-through reads A.
 - [Unreachable code drop](unreachable_drop.md). Deletes unlabeled instructions after a jump or return that no path reaches.
 - [Unreachable code elimination](unreachable_code_elimination.md). Removes unreachable TAC blocks, then the stale Phi arguments, jumps, and labels.
+- [Values kept in a callee's parameter bytes](slot_sharing.md). Gives a forwarded parameter its callee's slot, and keeps a local there across calls.
 - [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md). Drops `LDY #$00` before `(DPTR),Y` after a `DEY; BNE` fall-through.
 - [Zero-page promotion](zp_promotion.md). Moves the busiest scalar globals into the zero-page bytes left below `$80`.
 
@@ -173,8 +173,9 @@ them whenever a pass is added or moved.
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    over the whole program.
-4. [Default zp_abi calling convention](zp_abi.md): ABI selection and
-   parameter slot allocation.
+4. [Default zp_abi calling convention](zp_abi.md): ABI selection,
+   then [values kept in a callee's parameter
+   bytes](slot_sharing.md), then parameter slot allocation.
 5. Translation to asm, with [saves around a recursive
    call](recursion_saves.md).
 6. Asm SSA optimizer, run once to measure each function's local
@@ -214,11 +215,10 @@ them whenever a pass is added or moved.
 18. Peephole fixed point, second run.
 19. [Second index in Y](dual_index_promotion.md)
 20. Peephole fixed point, third run.
-21. [Dead register-parameter entry stub](dead_reg_entry_stub.md)
-22. [Loop-invariant compare key in A](loop_invariant_a.md)
-23. Long-branch expansion, zero-page global placement, and lowering
+21. [Loop-invariant compare key in A](loop_invariant_a.md)
+22. Long-branch expansion, zero-page global placement, and lowering
     to `asm2_ast`.
-24. Emit, followed by [redundant LDY setup](y_peephole.md) on the
+23. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
 The peephole fixed point (`compile._peephole_fixedpoint`) runs these,

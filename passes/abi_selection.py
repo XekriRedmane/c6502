@@ -161,10 +161,22 @@ class ZpLayout:
     The return value's register placement is NOT recorded here — it's
     type-driven and computed identically on both sides in tac_to_asm
     (a non-pointer return of <=2 bytes returns low byte in A, high
-    byte in X)."""
+    byte in X).
+
+    `pinned` is parallel to `slot_symbols` too, or empty: the fixed
+    zero-page address of each byte of a parameter declared
+    `__attribute__((zeropage(addr)))`, and None for the other bytes.
+    The allocator binds those slots to their addresses instead of
+    choosing.
+
+    An entry of `addrs` is None for a slot the allocator left out
+    because no instruction uses it (`allocate_zp_slots`'s `unused`):
+    a register parameter's slot once the body keeps the value
+    somewhere else."""
     slot_symbols: list[str] = field(default_factory=list)
-    addrs: list[int] = field(default_factory=list)
+    addrs: list[int | None] = field(default_factory=list)
     param_registers: list[str | None] = field(default_factory=list)
+    pinned: list[int | None] = field(default_factory=list)
 
 
 ParamLayout = SoftStackLayout | ZpLayout
@@ -301,6 +313,8 @@ def _assign_param_registers(
     markers = list(fn_decl.param_registers)
     while len(markers) < len(per_param_bytes):
         markers.append("")
+    # A `zeropage(addr)` parameter ("@addr") arrives in zero page.
+    markers = ["" if m.startswith("@") else m for m in markers]
     taken: dict[str, str] = {}
     for i, marker in enumerate(markers):
         if not marker or marker == "auto":
@@ -371,6 +385,8 @@ def _describe_markers(fn, markers: list[str]) -> str:
         pname = pname.split(".", 1)[-1]
         if not m:
             out.append(f"`{pname}`")
+        elif m.startswith("@"):
+            out.append(f"`{pname} zeropage(${int(m[1:]):02X})`")
         elif m == "auto":
             out.append(f"`register {pname}`")
         else:
@@ -407,8 +423,9 @@ def _check_forward_def_match(c99_prog: c99_ast.Program) -> None:
         if a != b:
             raise AbiSelectionError(
                 f"function `{fn.name}`: the declarations disagree on "
-                f"which parameters are `register` or which registers "
-                f"they arrive in ({_describe_markers(fn, a)} against "
+                f"which parameters arrive in registers or at a "
+                f"zero-page address, or which ones "
+                f"({_describe_markers(fn, a)} against "
                 f"{_describe_markers(fn, b)}); every declaration has to "
                 f"give the same calling convention"
             )
@@ -594,6 +611,7 @@ def _validate_zp_abi(
     return ZpLayout(
         slot_symbols=symbols, addrs=addrs,
         param_registers=per_byte_regs,
+        pinned=_pinned_addrs(fn.name, fn_decl, per_param_bytes),
     )
 
 
@@ -618,13 +636,47 @@ def _has_register_local(node) -> bool:
 
 def _has_register_request(fn_decl: c99_ast.Type_function_decl) -> bool:
     """True iff `fn_decl` requests a 6502 register for any parameter
-    or body local (the `register` keyword). Used in the default-zp_abi
-    path to upgrade ineligibility from a silent fallback to a hard
-    error — a function with a `register` object can't be served by
-    SoftStackLayout (params in A/X, a local pinned to Y)."""
+    or body local (the `register` keyword), or a zero-page address for
+    a parameter (`zeropage(addr)`). Used in the default-zp_abi path to
+    upgrade ineligibility from a silent fallback to a hard error: the
+    soft stack can't pass an argument in a register or at an
+    address."""
     if any(fn_decl.param_registers):
         return True
     return _has_register_local(fn_decl.body)
+
+
+def _request_words(fn_decl: c99_ast.Type_function_decl) -> str:
+    """What `_has_register_request` found, for error messages."""
+    if any(m.startswith("@") for m in fn_decl.param_registers):
+        return "a `zeropage(addr)` parameter"
+    return "a `register` parameter or local"
+
+
+def _is_register_marker(marker: str) -> bool:
+    """True iff a `param_registers` entry marks a `register` parameter
+    (it isn't "" or a `zeropage(addr)` parameter's "@addr")."""
+    return bool(marker) and not marker.startswith("@")
+
+
+def pinned_param_addrs(
+    fn_decl: c99_ast.Type_function_decl, per_param_bytes: list[int],
+) -> list[int | None]:
+    """Per byte of the function's parameters (the `slot_symbols`
+    order), the zero-page address a `zeropage(addr)` parameter's byte
+    arrives at, or None for the other bytes. Empty when no parameter
+    has one."""
+    markers = list(fn_decl.param_registers)
+    if not any(m.startswith("@") for m in markers):
+        return []
+    out: list[int | None] = []
+    for i, n_bytes in enumerate(per_param_bytes):
+        m = markers[i] if i < len(markers) else ""
+        if m.startswith("@"):
+            out.extend(int(m[1:]) + k for k in range(n_bytes))
+        else:
+            out.extend([None] * n_bytes)
+    return out
 
 
 def _validate_zp_abi_extern(
@@ -679,7 +731,22 @@ def _validate_zp_abi_extern(
     return ZpLayout(
         slot_symbols=symbols, addrs=addrs,
         param_registers=per_byte_regs,
+        pinned=_pinned_addrs(name, fn_decl, per_param_bytes),
     )
+
+
+def _pinned_addrs(
+    name: str, fn_decl: c99_ast.Type_function_decl,
+    per_param_bytes: list[int],
+) -> list[int | None]:
+    """`pinned_param_addrs`, raising if a parameter runs past $FF."""
+    pinned = pinned_param_addrs(fn_decl, per_param_bytes)
+    if any(a is not None and a > 0xFF for a in pinned):
+        raise AbiSelectionError(
+            f"function `{name}`: a `zeropage(addr)` parameter runs past "
+            f"$FF"
+        )
+    return pinned
 
 
 # ---------------------------------------------------------------------------
@@ -729,6 +796,18 @@ def _fits_return_registers(ret) -> bool:
     ))
 
 
+def pinned_slot_symbols(abi: dict) -> dict[str, int]:
+    """The slot symbol of every byte of a `zeropage(addr)` parameter
+    in `abi`, mapped to its address, for the EQU block."""
+    out: dict[str, int] = {}
+    for layout in abi.values():
+        if isinstance(layout, ZpLayout):
+            for sym, addr in zip(layout.slot_symbols, layout.pinned):
+                if addr is not None:
+                    out[sym] = addr
+    return out
+
+
 def fixed_address_layouts(
     prog: tac_ast.Program,
     c99_prog: c99_ast.Program,
@@ -758,7 +837,7 @@ def fixed_address_layouts(
             if any(fn_decl.param_registers):
                 raise AbiSelectionError(
                     f"function `{name}` has a fixed address and a "
-                    f"`register` parameter but no "
+                    f"`register` or `zeropage(addr)` parameter but no "
                     f"`__attribute__((zp_abi))`; without zp_abi its "
                     f"arguments go on the soft stack, so declare it "
                     f"`__attribute__((zp_abi, address(...)))`"
@@ -780,13 +859,17 @@ def fixed_address_layouts(
                 f"HARGS (declare a pointer result as `uint16_t`)"
             )
         layout = _validate_zp_abi_extern(name, fn_decl, set(), pool, types)
-        if any(r is None for r in layout.param_registers):
+        pinned = layout.pinned or [None] * len(layout.param_registers)
+        if any(r is None and a is None
+               for r, a in zip(layout.param_registers, pinned)):
             raise AbiSelectionError(
                 f"zp_abi function `{name}` has a fixed address, so "
-                f"every parameter has to be passed in a register; "
-                f"declare each parameter `register` (A, then X), or "
-                f"name its register with `in_a`, `in_x`, or `in_y`, "
-                f"at most 3 bytes in all"
+                f"every parameter has to be passed in a register or at "
+                f"a zero-page address its code reads; declare each "
+                f"parameter `register` (A, then X), or name its "
+                f"register with `in_a`, `in_x`, or `in_y`, at most 3 "
+                f"bytes in all, or give it "
+                f"`__attribute__((zeropage(addr)))`"
             )
         out[name] = layout
     return out
@@ -879,9 +962,9 @@ def select_abi(
                     if reg_specific:
                         raise
                     raise AbiSelectionError(
-                        f"function `{tl.name}` declares a `register` "
-                        f"parameter or local but isn't eligible for "
-                        f"the ZP-passing ABI: {exc}"
+                        f"function `{tl.name}` declares "
+                        f"{_request_words(fn_decl)} but isn't eligible "
+                        f"for the ZP-passing ABI: {exc}"
                     ) from exc
                 out[tl.name] = SoftStackLayout()
         else:
@@ -933,9 +1016,9 @@ def select_abi(
             # register-passing on a SoftStackLayout callee. Re-raise.
             if _has_register_request(fn_decl):
                 raise AbiSelectionError(
-                    f"extern function `{name}` declares a `register` "
-                    f"parameter but isn't eligible for the ZP-passing "
-                    f"ABI; `register` requires zp_abi eligibility"
+                    f"extern function `{name}` declares "
+                    f"{_request_words(fn_decl)} but isn't eligible for "
+                    f"the ZP-passing ABI, which that requires"
                 )
     _demote_soft_stack_callers(prog, c99_prog, out, annotations, decls)
     return out
@@ -993,7 +1076,7 @@ def _demote_soft_stack_callers(
                 what = (
                     "declared `__attribute__((zp_abi))`"
                     if annotations.get(name) == "zp_abi"
-                    else "declares a `register` parameter or local"
+                    else f"declares {_request_words(fn_decl)}"
                 )
                 raise AbiSelectionError(
                     f"function `{name}` {what} but calls "

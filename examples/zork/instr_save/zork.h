@@ -56,10 +56,12 @@ extern uint8_t __zork_zp_bc[12] __attribute__((zeropage(0xBC)));
 extern uint8_t STACK_STATE[6] __attribute__((zeropage(0xC8)));
 /* The z-string decoder's and the tokenizer's state. */
 extern uint8_t __zork_zp_ce[22] __attribute__((zeropage(0xCE)));
-/* Zork's scratch words. SCRATCH1 is a sector number while saving, and
- * SCRATCH2 the address of the bytes to copy, write, or print. */
+/* Zork's scratch words. SCRATCH1 is a sector number while saving.
+ * SCRATCH2 is where Zork's routines pass the address of the bytes to
+ * copy, write, or print; this example passes it as an argument, but
+ * Zork's other routines still use the bytes. */
 extern uint16_t SCRATCH1 __attribute__((zeropage(0xE4)));
-extern uint8_t *SCRATCH2 __attribute__((zeropage(0xE6)));
+extern uint8_t __zork_zp_e6[2] __attribute__((zeropage(0xE6)));
 /* SCRATCH3 and SCRATCH3+1, SIGN_BIT, the line buffer's state,
  * PRINTER_CSW, and TMP_Z_PC. */
 extern uint8_t __zork_zp_e8[11] __attribute__((zeropage(0xE8)));
@@ -135,9 +137,6 @@ __attribute__((zp_abi, address(0x1BE2))) void dump_buffer_line(void);
 /* Adds a character to the line buffer. */
 __attribute__((zp_abi, address(0x1B90)))
 void buffer_char(register uint8_t c);
-/* Prints `count` characters from SCRATCH2 straight to the screen. */
-__attribute__((zp_abi, address(0x1D34)))
-void cout_string(register uint8_t count __attribute__((in_x)));
 /* The ends of an instruction that branches: branch takes the branch
  * when its condition holds, and negated_branch when it doesn't. */
 __attribute__((zp_abi, address(0x0BAA))) void branch(void);
@@ -145,12 +144,14 @@ __attribute__((zp_abi, address(0x0BB3))) void negated_branch(void);
 
 /* ---- This example's routines ------------------------------------------ */
 
-/* disk.c */
+/* disk.c. inc_sector_and_write's parameter is `const`: it leaves the
+ * pointer where it is, so instr_save can keep its page pointer there
+ * across the call. */
 __attribute__((return_bool_in_carry)) bool write_next_sector(void);
-__attribute__((return_bool_in_carry)) bool inc_sector_and_write(void);
+__attribute__((return_bool_in_carry))
+bool inc_sector_and_write(uint8_t *const buffer);
 
 /* prompts.c */
-void print_ascii_string(register uint8_t count __attribute__((in_x)));
 void please_insert_save_diskette(void);
 void please_reinsert_game_diskette(void);
 

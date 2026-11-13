@@ -65,6 +65,26 @@ Algorithm
    ordering naturally allows this — siblings each pick the
    lowest available range relative to their own ancestor set.
 
+Slots that get no range
+-----------------------
+
+A byte passed in a register has no slot: the caller loads the
+register, and `tac_to_asm` copies it into a local of the callee. A
+byte of a `zeropage(addr)` parameter is bound to that address, which `reserved` already
+keeps every other slot off.
+
+Shared slots
+------------
+
+`shares` (`passes/slot_sharing.py`) lists sets of slots that hold one
+value for several functions, so they get one address. A share's bytes
+are allocated at the turn of the last of its members' functions in
+the order, as one contiguous run, and avoid every byte already given
+to a function that can be on the call stack with any function in the
+share (its members' owners and its holders). The functions allocated
+after it avoid it in turn, the same way. Its members' other slots are
+allocated as usual.
+
 Externs
 -------
 
@@ -109,6 +129,7 @@ def allocate_zp_slots(
     spill_end: int = _DEFAULT_SPILL_END,
     reserved: frozenset[int] = frozenset(),
     window: range | None = None,
+    shares=(),
 ) -> tuple[dict[str, ParamLayout], dict[str, int]]:
     """Assign concrete ZP (or spill-region) addresses to every
     `ZpLayout` slot symbol in `abi` such that no two functions
@@ -126,13 +147,18 @@ def allocate_zp_slots(
     range the slots come from, the pool's caller-saved half unless
     given (the linker gives the whole pool, since a linked program
     has no soft-stack function that keeps values in the other
-    half)."""
+    half). `shares` are the `SlotShare`s whose slots get one address
+    (see "Shared slots"). A register byte gets no address (None in
+    `addrs`, and no entry in `sym_to_addr`), and a pinned one its
+    own."""
     if pool is None:
         pool = Pool()
     zp_window = window if window is not None else pool.caller_saved()
     zp_start, zp_end = zp_window.start, zp_window.stop
 
     callgraph, ancestors = _build_callgraph(prog, abi)
+    from passes.slot_sharing import coexist, reach_sets
+    reach = reach_sets(prog)
 
     # Process in topological order (roots first). For each
     # function, the set of forbidden addresses is the union of
@@ -140,50 +166,112 @@ def allocate_zp_slots(
     # share addresses; descendants pick disjoint from us.
     order = _topological_order(callgraph)
 
-    addrs_by_fn: dict[str, list[int]] = {}
-    for fn_name in order:
-        layout = abi.get(fn_name)
-        if not isinstance(layout, ZpLayout):
-            continue
-        n_bytes = len(layout.slot_symbols)
-        if n_bytes == 0:
-            addrs_by_fn[fn_name] = []
-            continue
-        forbidden: set[int] = set(reserved)
-        for anc in ancestors.get(fn_name, ()):
-            forbidden.update(addrs_by_fn.get(anc, ()))
-        addrs = _find_free_range(forbidden, n_bytes, zp_start, zp_end)
+    shares = list(shares)
+    shared = {s for share in shares for s in share.slots()}
+    # Each share is allocated at the turn of the last of its members'
+    # functions.
+    position = {n: k for k, n in enumerate(order)}
+    turn: dict[str, list] = {}
+    for share in shares:
+        last = max(
+            (f for f, _ in share.members),
+            key=lambda f: position.get(f, -1),
+        )
+        turn.setdefault(last, []).append(share)
+    share_addrs: dict[int, list[int]] = {}
+
+    def range_for(what: str, forbidden: set[int], n: int) -> list[int]:
+        addrs = _find_free_range(forbidden, n, zp_start, zp_end)
         if addrs is None:
-            addrs = _find_free_range(
-                forbidden, n_bytes, spill_start, spill_end,
-            )
+            addrs = _find_free_range(forbidden, n, spill_start, spill_end)
         if addrs is None:
             raise ZpSlotAllocationError(
-                f"can't allocate {n_bytes}-byte slot range for "
-                f"function `{fn_name}`: no contiguous gap in "
-                f"either the ZP window "
+                f"can't allocate {n}-byte slot range for {what}: no "
+                f"contiguous gap in either the ZP window "
                 f"(${zp_start:02X}-${zp_end - 1:02X}) or the "
                 f"spill region "
                 f"(${spill_start:04X}-${spill_end - 1:04X}) "
                 f"avoids every already-allocated caller's range",
             )
-        addrs_by_fn[fn_name] = addrs
+        return addrs
 
+    def share_bytes(fn_name: str) -> set[int]:
+        # The allocated shares with a function that can be on the call
+        # stack with `fn_name`.
+        out: set[int] = set()
+        for share in shares:
+            if id(share) in share_addrs and any(
+                coexist(fn_name, f, reach) for f in share.functions()
+            ):
+                out.update(share_addrs[id(share)])
+        return out
+
+    # Each function's own bytes: its slots outside any share.
+    own_addrs: dict[str, list[int]] = {}
     sym_to_addr: dict[str, int] = {}
+    addrs_by_fn: dict[str, list[int]] = {}
+    for fn_name in order:
+        layout = abi.get(fn_name)
+        if not isinstance(layout, ZpLayout):
+            continue
+        n = len(layout.slot_symbols)
+        pinned = layout.pinned or [None] * n
+        regs = layout.param_registers or [None] * n
+        mine = [
+            k for k, sym in enumerate(layout.slot_symbols)
+            if sym not in shared and pinned[k] is None and regs[k] is None
+        ]
+        for k, sym in enumerate(layout.slot_symbols):
+            if pinned[k] is not None:
+                sym_to_addr[sym] = pinned[k]
+        forbidden: set[int] = set(reserved)
+        for anc in ancestors.get(fn_name, ()):
+            forbidden.update(addrs_by_fn.get(anc, ()))
+        forbidden |= share_bytes(fn_name)
+        addrs = (
+            range_for(f"function `{fn_name}`", forbidden, len(mine))
+            if mine else []
+        )
+        for k, addr in zip(mine, addrs):
+            sym_to_addr[layout.slot_symbols[k]] = addr
+        own_addrs[fn_name] = addrs + [a for a in pinned if a is not None]
+        addrs_by_fn.setdefault(fn_name, []).extend(own_addrs[fn_name])
+        for share in turn.get(fn_name, ()):
+            fns = share.functions()
+            forbidden = set(reserved)
+            for other, taken in own_addrs.items():
+                if any(coexist(other, f, reach) for f in fns):
+                    forbidden.update(taken)
+            for f in fns:
+                forbidden |= share_bytes(f)
+            addrs = range_for(
+                f"the shared parameter bytes `{share.members[0][1][0]}`",
+                forbidden, share.width,
+            )
+            share_addrs[id(share)] = addrs
+            for f, syms in share.members:
+                for sym, addr in zip(syms, addrs):
+                    sym_to_addr[sym] = addr
+                addrs_by_fn.setdefault(f, []).extend(addrs)
+
     updated_abi: dict[str, ParamLayout] = {}
     for fn_name, layout in abi.items():
         if not isinstance(layout, ZpLayout):
             updated_abi[fn_name] = layout
             continue
-        new_addrs = addrs_by_fn.get(fn_name, list(layout.addrs))
-        new_layout = ZpLayout(
+        if fn_name in own_addrs:
+            new_addrs = [sym_to_addr.get(s) for s in layout.slot_symbols]
+        else:
+            new_addrs = list(layout.addrs)
+            for sym, addr in zip(layout.slot_symbols, new_addrs):
+                if addr is not None:
+                    sym_to_addr[sym] = addr
+        updated_abi[fn_name] = ZpLayout(
             slot_symbols=list(layout.slot_symbols),
             addrs=new_addrs,
             param_registers=list(layout.param_registers),
+            pinned=list(layout.pinned),
         )
-        updated_abi[fn_name] = new_layout
-        for sym, addr in zip(new_layout.slot_symbols, new_addrs):
-            sym_to_addr[sym] = addr
     return updated_abi, sym_to_addr
 
 

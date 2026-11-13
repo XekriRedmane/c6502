@@ -33,7 +33,7 @@ fits entirely in ZP shrink their epilogue to a bare RTS.
 from __future__ import annotations
 
 import asm_ast
-from passes.asm_liveness import a_dead_at
+from passes.asm_liveness import a_dead_at, y_dead_at
 from passes.replace_pseudoregisters import FrameDims
 
 
@@ -67,15 +67,18 @@ def synthesize_program(
 
 
 _REG_A = asm_ast.Reg(reg=asm_ast.A())
+_REG_Y = asm_ast.Reg(reg=asm_ast.Y())
 
 
 def _split_entry_stubs(instrs, fn_name):
     """Pull the register-parameter entry stubs out of the start of
-    `instrs`: the leading `Mov(Reg(A|X|Y), Data(__zpabi_<fn>__...))`
-    stores, skipping labels. The prologue writes Y, so a parameter
-    that arrives in Y has to be stored before it. Returns `(stubs, rest)` with the labels
-    left in `rest`."""
-    prefix = f"__zpabi_{fn_name}__"
+    `instrs`, skipping labels: the leading moves from A, X, or Y into
+    memory (`Data`, the local each parameter is copied into), into X,
+    or into A. At the entry those registers hold only parameters, and
+    the prologue writes A and Y, so a parameter that arrives in A or Y
+    has to be moved before it. X the prologue leaves alone, and A it
+    saves around itself when the body reads it. Returns `(stubs,
+    rest)` with the labels left in `rest`."""
     stubs: list = []
     rest: list = []
     i = 0
@@ -89,8 +92,11 @@ def _split_entry_stubs(instrs, fn_name):
             isinstance(ins, asm_ast.Mov) and not ins.is_volatile
             and isinstance(ins.src, asm_ast.Reg)
             and isinstance(ins.src.reg, (asm_ast.A, asm_ast.X, asm_ast.Y))
-            and isinstance(ins.dst, asm_ast.Data)
-            and ins.dst.name.startswith(prefix)
+            and (
+                isinstance(ins.dst, asm_ast.Data)
+                or (isinstance(ins.dst, asm_ast.Reg)
+                    and isinstance(ins.dst.reg, (asm_ast.A, asm_ast.X)))
+            )
         ):
             stubs.append(ins)
             i += 1
@@ -146,19 +152,26 @@ def _synthesize_function(
     )
     # The prologue's SSP / FP arithmetic runs through A and Y, so it
     # would overwrite a `register` parameter that arrives in A or Y.
-    # The entry stubs that store register parameters into their
-    # zp_abi slots move in front of it; they only write those slots.
-    # If the body still reads A on entry after that (a parameter kept
-    # in A with its stub dropped), the prologue is wrapped in PHA /
-    # PLA. A parameter that arrives in Y is always read from its slot,
-    # and X is never touched by the prologue.
+    # The entry copies of register parameters into their locals move
+    # in front of it. If the body still reads A or Y on entry after
+    # that (a parameter kept in its register), the prologue is
+    # wrapped in pushes and pulls of them: PHA / PLA for A, and
+    # TYA; PHA / PLA; TAY for Y, inside A's. X is never touched by
+    # the prologue.
     body = list(fn.instructions)
     stubs, body = _split_entry_stubs(body, fn.name)
     new_instrs: list[asm_ast.Type_instruction] = list(stubs)
     a_live = not a_dead_at(body, 0)
+    y_live = not y_dead_at(body, 0)
     if a_live:
         new_instrs.append(asm_ast.Push(src=_REG_A))
+    if y_live:
+        new_instrs.append(asm_ast.Mov(src=_REG_Y, dst=_REG_A))
+        new_instrs.append(asm_ast.Push(src=_REG_A))
     new_instrs.append(prologue)
+    if y_live:
+        new_instrs.append(asm_ast.Pop(dst=_REG_A))
+        new_instrs.append(asm_ast.Mov(src=_REG_A, dst=_REG_Y))
     if a_live:
         new_instrs.append(asm_ast.Pop(dst=_REG_A))
     for instr in body:

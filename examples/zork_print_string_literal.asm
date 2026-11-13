@@ -23,21 +23,20 @@ __monitor_acc	EQU	$45
 __monitor_status	EQU	$48
 __monitor_rnd	EQU	$4E
 SECTORS_PER_TRACK	EQU	$7F
-__local_get_alphabet__shift	EQU	$80
-__zpabi_A_mod_3__a	EQU	$80
-__zpabi_buffer_char__c	EQU	$80
-__zpabi_do_rwts_on_sector__command	EQU	$80
-__zpabi_set_page_first__slot	EQU	$80
-__local_set_page_first__0	EQU	$81
-__zpabi_cout_string__count	EQU	$81
-__local_set_page_first__prev_first	EQU	$82
-__local_print_zstring__ch	EQU	$83
-__local_print_zstring__c_0	EQU	$84
-__local_print_zstring__0	EQU	$85
-__local_buffer_char__c	EQU	$87
-__local_get_next_zchar__compound_literal_1	EQU	$87
-__local_buffer_char__0	EQU	$88
-__local_get_next_zchar__code	EQU	$88
+__local_print_zstring__ch	EQU	$80
+__local_print_zstring__c_0	EQU	$81
+__local_print_zstring__0	EQU	$82
+__local_buffer_char__c	EQU	$84
+__local_get_alphabet__shift	EQU	$84
+__local_get_next_zchar__compound_literal_1	EQU	$84
+__local_buffer_char__0	EQU	$85
+__local_get_next_zchar__code	EQU	$85
+__local_buffer_char__1	EQU	$86
+__local_get_next_code_word__1	EQU	$87
+__local_cout_string__s	EQU	$88
+__local_get_next_code_byte2__found_1	EQU	$88
+__local_cout_string__1	EQU	$89
+__local_get_next_code_byte2__page	EQU	$89
 Z_PC	EQU	$8A
 ZCODE_PAGE_ADDR	EQU	$8D
 ZCODE_PAGE_VALID	EQU	$8F
@@ -49,20 +48,17 @@ ZCODE_PAGE_ADDR2	EQU	$94
 ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
 __local_dump_buffer_with_more__0	EQU	$98
+__local_set_page_first__0	EQU	$98
+__local_do_rwts_on_sector__command	EQU	$99
 __local_dump_buffer_with_more__end	EQU	$99
-__local_get_next_code_word__1	EQU	$99
-__local_get_next_code_byte2__found_1	EQU	$9A
-__local_get_next_code_byte2__page	EQU	$9B
-__local_do_rwts_on_sector__0	EQU	$9C
-__local_cout_string__s	EQU	$9D
-__local_do_rwts_on_sector__sector_1	EQU	$9D
+__local_set_page_first__prev_first	EQU	$99
+__local_do_rwts_on_sector__sector_1	EQU	$9A
+__local_find_index_of_page_table__0	EQU	$9A
+__local_do_rwts_on_sector__sector_0	EQU	$9B
+__local_find_index_of_page_table__1	EQU	$9B
 __local_dump_buffer_to_printer__x	EQU	$9D
-__local_cout_string__1	EQU	$9E
-__local_do_rwts_on_sector__sector_0	EQU	$9E
 __local_dump_buffer_to_printer__1	EQU	$9E
-__local_find_index_of_page_table__0	EQU	$9E
 __local_dump_buffer_to_printer__2	EQU	$9F
-__local_find_index_of_page_table__1	EQU	$9F
 HIGH_MEM_ADDR	EQU	$B8
 Z_HEADER_ADDR	EQU	$BA
 NUM_IMAGE_PAGES	EQU	$BC
@@ -96,9 +92,9 @@ COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
-; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__c,__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
+; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__c,__local_buffer_char__0,__local_buffer_char__1 indirect=false in_cycle=false param_regs=A
 ; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=X
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
 ; def dump_buffer_line params= locals=__local_dump_buffer_line__0 indirect=false in_cycle=false
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
 ; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0 indirect=false in_cycle=false
@@ -245,18 +241,18 @@ do_rwts_on_sector:
    STA   __local_do_rwts_on_sector__sector_1
 .loop@0_continue:
    LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__0
+   STA   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
-   SBC   __local_do_rwts_on_sector__0
+   SBC   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_1
    SBC   #$00
    BCC   .loop@0_break
    LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__0
+   STA   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
-   SBC   __local_do_rwts_on_sector__0
+   SBC   __local_do_rwts_on_sector__command
    STA   __local_do_rwts_on_sector__sector_0
    BCS   .carry_inc@0
    DEC   __local_do_rwts_on_sector__sector_1
@@ -308,21 +304,18 @@ find_index_of_page_table:
 set_page_first:
    SUBROUTINE
 
-   STA   __zpabi_set_page_first__slot
-   CMP   FIRST_Z_PAGE
+   TAY
+   CPY   FIRST_Z_PAGE
    BNE   .if_end@3
    RTS
 .if_end@3:
    LDA   FIRST_Z_PAGE
    STA   __local_set_page_first__prev_first
-   LDA   __zpabi_set_page_first__slot
-   STA   FIRST_Z_PAGE
-   LDY   __zpabi_set_page_first__slot
+   STY   FIRST_Z_PAGE
    LDA   (NEXT_PAGE_TABLE),Y
    TAX
    LDA   __local_set_page_first__prev_first
    STA   (NEXT_PAGE_TABLE),Y
-   LDY   __zpabi_set_page_first__slot
    LDA   (PREV_PAGE_TABLE),Y
    STA   __local_set_page_first__0
    LDA   #$FF
@@ -645,7 +638,7 @@ dump_buffer_with_more:
 buffer_char:
    SUBROUTINE
 
-   STA   __zpabi_buffer_char__c
+   STA   __local_buffer_char__c
    LDX   BUFF_END
    CMP   #$0D
    BNE   .if_end@21
@@ -660,18 +653,20 @@ buffer_char:
    CMP   #$80
    BCS   .and_false@23
    LDA   #$01
-   STA   __local_buffer_char__0
+   STA   __local_buffer_char__1
    JMP   .and_end@24
 .and_false@23:
    LDA   #$00
-   STA   __local_buffer_char__0
+   STA   __local_buffer_char__1
 .and_end@24:
-   LDA   __local_buffer_char__0
-   BEQ   .buffer_char@asm_ssa_split@0
-   LDA   __zpabi_buffer_char__c
+   LDA   __local_buffer_char__1
+   BEQ   .if_end@25
+   LDA   __local_buffer_char__c
    SEC
    SBC   #$20
+   STA   __local_buffer_char__c
 .if_end@25:
+   LDA   __local_buffer_char__c
    ORA   #$80
    STA   BUFF_AREA,X
    LDA   WNDWDTH
@@ -712,9 +707,6 @@ buffer_char:
    INC   BUFF_END
    STA   BUFF_AREA,X
    JMP   .loop@7_start
-.buffer_char@asm_ssa_split@0:
-   LDA   __zpabi_buffer_char__c
-   JMP   .if_end@25
 
 get_next_zchar:
    SUBROUTINE

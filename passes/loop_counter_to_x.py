@@ -234,6 +234,11 @@ def _plan_promotion(instrs):
         return None
     m_key = cand['m_key']
     m_op = _mem_op_from_key(m_key)
+    # The counter is in X from its init on, so X can't hold anything
+    # else there, such as a parameter that arrives in X and is read
+    # after the init.
+    if _reg_live_from(instrs, cand['init_idx'] + 1, "X"):
+        return None
 
     # Step 2: scan all X-writes. Classify each.
     pivot_ranges: list[tuple[int, int]] = []

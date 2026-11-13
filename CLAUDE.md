@@ -163,11 +163,18 @@ Two key runtime conventions:
   not taken, params fit) — a `register` param/local on an ineligible
   function is a hard error. `&x` on a `register` object is a hard
   error per C99 §6.5.3.2.1. Locals are HARD pins (failure to honor →
-  compilation error); parameters are SOFT (failure falls back to
-  slot-based passing, with the entry stub still in place). See
-  `passes/abi_selection.py` (positional assignment, type-driven
+  compilation error); parameters are SOFT: the callee copies each
+  one into a local at entry (`tac_to_asm._register_param_locals`),
+  which the regalloc keeps in the register when it can and in the
+  function's pool otherwise, so a register parameter has no slot.
+  A parameter with `__attribute__((zeropage(addr)))` instead has its
+  slot at that address, on any zp_abi function. A function defined
+  here reads it there, or copies it into a local at entry when
+  something it calls might store an argument at those bytes
+  (`slot_sharing.pinned_param_copies`).
+  See `passes/abi_selection.py` (positional assignment, type-driven
   return) + `passes/optimization_asm/{hwreg_eligibility,regalloc}.py`
-  (Y-only local pins) + `passes/dead_reg_entry_stub.py` for the
+  (Y-only local pins, `optimizer._entry_register_limits`) for the
   implementation. A 2-byte register return from a *soft-stack*
   function is preserved across the teardown (the `save_x` flag on the
   asm `Ret`/`Return` atoms); `loop_counter_to_x` refuses to promote a

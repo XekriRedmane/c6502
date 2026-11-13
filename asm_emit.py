@@ -236,6 +236,10 @@ _ADDR_TO_SYMBOLS: dict[int, list[str]] = {}
 # block, etc.).
 _CURRENT_FUNCTION: str | None = None
 
+# Per-emit_program context: each function's `preferred_symbols` (see
+# `emit_program`).
+_PREFERRED_SYMBOLS: dict[str, set[str]] = {}
+
 
 def _zpy_operand(address: int) -> str:
     """Render the `(addr),Y` indirect-Y addressing operand. Uses a
@@ -268,6 +272,10 @@ def _pick_symbol(address: int) -> str | None:
         local_prefix = f"__local_{current}__"
         for sym in candidates:
             if sym.startswith(zpabi_prefix) or sym.startswith(local_prefix):
+                return sym
+        preferred = _PREFERRED_SYMBOLS.get(current, ())
+        for sym in candidates:
+            if sym in preferred:
                 return sym
     return candidates[0]
 
@@ -1269,8 +1277,14 @@ def emit_program(
     *,
     zp_slot_symbols: dict[str, int] | None = None,
     link_metadata_lines: list[str] | None = None,
+    preferred_symbols: dict[str, set[str]] | None = None,
 ) -> str:
     """Emit dasm-flavored 6502 assembly for `prog`.
+
+    `preferred_symbols` maps a function to the slot symbols of other
+    functions that hold its values (`passes.slot_sharing`). A `(zp),Y`
+    pointer at one of their addresses is named by that symbol in its
+    body, after the function's own symbols.
 
     `zp_slot_symbols` is an optional `dict[symbol_name, address]`
     produced by `passes.zp_slot_allocation` and
@@ -1305,8 +1319,11 @@ def emit_program(
         for name, addr in zp_slot_symbols.items():
             if 0 <= addr <= 0xFF and name not in RUNTIME_NAMES:
                 addr_to_syms.setdefault(addr, []).append(name)
+    global _PREFERRED_SYMBOLS
     prev_addr_to_syms = _ADDR_TO_SYMBOLS
+    prev_preferred = _PREFERRED_SYMBOLS
     _ADDR_TO_SYMBOLS = addr_to_syms
+    _PREFERRED_SYMBOLS = preferred_symbols or {}
     try:
         return _emit_program_body(
             prog,
@@ -1315,6 +1332,7 @@ def emit_program(
         )
     finally:
         _ADDR_TO_SYMBOLS = prev_addr_to_syms
+        _PREFERRED_SYMBOLS = prev_preferred
 
 
 def _emit_program_body(

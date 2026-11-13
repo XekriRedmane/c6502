@@ -105,10 +105,6 @@ print_zstring at 277 bytes against Zork's 216. Shifting single bytes
 in A instead of in a slot (`narrow_widened_arith` on a wide operand,
 and `passes/shift_in_a.py`) took off 11 more. What's left, roughly in
 order of size:
-- **A loop count passed in X stays in memory.** cout_string takes its
-  count with `in_x`, as Zork's does, then stores X to a slot and
-  counts the slot down with `DEC`. COUT1 preserves X, so the count
-  could stay in X with `DEX`, as in the original.
 - **A widened byte shifted through memory.** `(int)c << 3` is `LDA c;
   STA lo; ASL lo; LDA #0; STA hi; ROL hi; ASL lo; ROL hi; ...; LDA
   lo`, where `LDA #0; STA hi; LDA c; ASL A; ROL hi; ASL A; ROL hi;
@@ -125,6 +121,11 @@ order of size:
   three bytes of `2 * SCRATCH2` with one `ASL` / `ROL` / `ROL` chain
   in the original. In C those are three expressions, and each one
   recomputes the shift.
+- **Adding `0x100`.** `p += 0x100` on a 2-byte value in memory is
+  `LDA p; CLC; ADC #0; STA p; LDA p+1; ADC #1; STA p+1`, where `INC
+  p+1` does the same. instr_save's page loop in
+  `examples/zork/instr_save/save.c` has one, against Zork's `INC
+  SCRATCH2+1`.
 
 ## Volatile structs
 
@@ -137,6 +138,41 @@ Volatile". Both should compile, with every access to a volatile
 member kept and in order, which `direct_member_access` already
 preserves through the `is_volatile` bit. Until then, the crash should
 at least be a one-line error.
+
+## Looser rules for `in_*` parameters
+
+Two changes to the parameter attributes `in_a`, `in_x`, `in_y`, and
+the pairs such as `in_ay` (`parser._register_marker`,
+`abi_selection._assign_param_registers`, docs/attributes.md):
+
+- **`register` is optional.** An `in_*` attribute already says the
+  parameter arrives in a register, so a parameter with one is taken to
+  be `register` whether it says so or not. Today the attribute without
+  `register` is an error. A plain `register` parameter, without an
+  attribute, keeps the positional rule (A, then X).
+- **Any type of the right size.** A parameter with an `in_*` attribute
+  is accepted whenever its size matches the number of registers named:
+  1 byte for one, 2 for a pair. That includes pointers, which today
+  can't be `register` parameters at all, so DOS's RWTS can be declared
+  as it's called:
+
+  ```c
+  __attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
+  bool RWTS(struct iob *iob __attribute__((in_ya)));
+
+  bool read_sector(void) { return RWTS(&iob); }
+  ```
+
+  instead of taking the address's high and low bytes as two `uint8_t`
+  parameters and splitting `(uint16_t)&iob` at every call. The rule
+  against pointers is there because a function the compiler compiles
+  can only use a pointer from a zero-page pair, so it would store the
+  registers there first, which is what passing it in its slot already
+  does. A routine with a fixed address has no body the compiler
+  compiles, so the rule doesn't apply. A compiled function with a
+  pointer `in_*` parameter copies it into a zero-page pair of its pool
+  on entry. The `RWTS` declaration in `examples/zork/instr_save/zork.h`
+  and its call in `disk.c` change to match.
 
 ## More system-software headers
 

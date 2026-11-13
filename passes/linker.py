@@ -206,6 +206,16 @@ def _merge(metadatas: list[LinkMetadata]) -> LinkMetadata:
                 externs_by_name[e.name] = e
             elif existing.param_bytes != e.param_bytes:
                 extern_param_conflicts.append(e.name)
+            for other in (existing, defs_by_name.get(e.name)):
+                if (other is not None
+                        and other.param_bytes == e.param_bytes
+                        and _arrivals(other) != _arrivals(e)):
+                    raise LinkError(
+                        f"the units declare `{e.name}` with different "
+                        f"parameters in registers or at zero-page "
+                        f"addresses; every declaration has to give the "
+                        f"same calling convention"
+                    )
     seen_edges: set[tuple[str, str]] = set()
     for m in metadatas:
         seen_edges.update(m.calls)
@@ -213,6 +223,7 @@ def _merge(metadatas: list[LinkMetadata]) -> LinkMetadata:
         defs=sorted(defs_by_name.values(), key=lambda d: d.name),
         externs=sorted(externs_by_name.values(), key=lambda e: e.name),
         calls=sorted(seen_edges),
+        shares=[s for m in metadatas for s in m.shares],
     )
     if duplicate_defs:
         raise LinkError(
@@ -226,6 +237,15 @@ def _merge(metadatas: list[LinkMetadata]) -> LinkMetadata:
             f"{sorted(set(extern_param_conflicts))}",
         )
     return merged
+
+
+def _arrivals(meta) -> tuple:
+    """Where each parameter byte of a `def` or `ext` record arrives:
+    its register, its zero-page address, or neither."""
+    n = meta.param_bytes
+    regs = list(meta.param_regs) + [""] * (n - len(meta.param_regs))
+    pinned = list(meta.pinned) + [None] * (n - len(meta.pinned))
+    return tuple(zip((r or "" for r in regs), pinned))
 
 
 def _validate_eligibility(merged: LinkMetadata) -> None:
@@ -331,6 +351,7 @@ def _synthesize(
                 slot_symbols=list(d.params),
                 addrs=[],
                 param_registers=regs,
+                pinned=list(d.pinned),
             )
         else:
             abi[d.name] = SoftStackLayout()
@@ -348,6 +369,7 @@ def _synthesize(
             slot_symbols=list(e.params),
             addrs=[],
             param_registers=regs,
+            pinned=list(e.pinned),
         )
     local_bytes = {d.name: d.local_bytes for d in merged.defs}
     return prog, abi, local_bytes
@@ -444,6 +466,7 @@ def link_files(
     # Merge + validate.
     merged = _merge(metas)
     _validate_eligibility(merged)
+    _drop_unused_locals(merged, bodies)
     # Place the runtime's block, then the zero-page objects, then the
     # slots, each keeping off the bytes before it.
     objects = _merge_zp_objects(metas)
@@ -453,16 +476,24 @@ def link_files(
         from passes.link_layout import startup_lines
         if startup_lines(script, _instr_line):
             startup_need = 4
+    # The bytes where routines with a fixed address read a
+    # `zeropage(addr)` parameter: nothing else of the program's may go
+    # there.
+    param_bytes = frozenset(
+        a for m in metas for r in [*m.defs, *m.externs]
+        for a in r.pinned if a is not None
+    )
     layout = _choose_layout(
         input_paths, metas, unit_layouts, objects, startup_need,
+        param_bytes,
     )
     zp_addrs, demoted = _place_zp_objects(
-        objects, layout or {}, bodies,
+        objects, layout or {}, bodies, param_bytes,
     )
     zp_bytes = frozenset(
         b for name, addr in zp_addrs.items()
         for b in range(addr, addr + objects[name][0].size)
-    )
+    ) | param_bytes
     merged.zp_objects = [
         ZpObjectMeta(
             name=name, size=objects[name][0].size, at=addr,
@@ -477,6 +508,9 @@ def link_files(
         if metas and all(m.hargs_need is not None for m in metas)
         else None
     )
+    # The values kept in parameter bytes across calls, as one program's
+    # (passes/slot_sharing.py).
+    merged.shares = _link_shares(merged, metas)
     # Synthesize the program shape the allocators expect.
     prog, abi, local_bytes = _synthesize(merged)
     # Run the global allocators.
@@ -493,10 +527,12 @@ def link_files(
         if script is not None else {}
     )
     abi, zp_sym_to_addr = allocate_zp_slots(
-        prog, abi, reserved=zp_bytes, window=window, **spill,
+        prog, abi, reserved=zp_bytes, window=window,
+        shares=merged.shares, **spill,
     )
     local_pools = allocate_function_locals(
-        prog, abi, local_bytes, reserved=zp_bytes, window=window, **spill,
+        prog, abi, local_bytes, reserved=zp_bytes, window=window,
+        shares=merged.shares, **spill,
     )
     # Slot names round-trip through the per-TU metadata block;
     # reuse them verbatim so the body text doesn't need rewriting.
@@ -606,6 +642,7 @@ def _scripted_body(
 
 def _choose_layout(
     paths, metas, unit_layouts, objects, startup_need: int,
+    param_bytes: frozenset[int] = frozenset(),
 ) -> dict[str, int]:
     """The program's runtime layout, as SSP, FP, HARGS, DPTR, and
     "HARGS size". When every unit lists its HARGS need, it's
@@ -630,7 +667,7 @@ def _choose_layout(
     reserved = frozenset(
         b for records in objects.values() for r in records
         if r.at is not None for b in range(r.at, r.at + r.size)
-    )
+    ) | param_bytes
     need = max(needs + [startup_need])
     try:
         chosen = choose_layout(reserved, lambda: need)
@@ -684,6 +721,7 @@ def _place_zp_objects(
     objects: dict[str, list[ZpObjectMeta]],
     layout: dict[str, int],
     bodies: list[list[str]],
+    param_bytes: frozenset[int] = frozenset(),
 ) -> tuple[dict[str, int], list[str]]:
     """Addresses for the zero-page objects: a declared address where
     any unit gives one, and otherwise the lowest free bytes below
@@ -693,7 +731,9 @@ def _place_zp_objects(
     them says `--optimize` promoted go last, densest first, and one
     that doesn't fit is returned in the second list, to go back in the
     data segment, unless a unit in `bodies` uses it as an `(name),Y`
-    pointer. Raises `LinkError` on an overlap or a full range."""
+    pointer. The objects without an address also keep off
+    `param_bytes`, where functions take `zeropage(addr)` parameters.
+    Raises `LinkError` on an overlap or a full range."""
     from passes.runtime_layout import CLASSIC, RuntimeLayout
     runtime = RuntimeLayout(
         ssp=layout.get("SSP", CLASSIC.ssp),
@@ -738,6 +778,7 @@ def _place_zp_objects(
         return next(
             (a for a in range(0, AUTO_HI - size + 1)
              if all(b not in used and b not in runtime
+                    and b not in param_bytes
                     for b in range(a, a + size))),
             None,
         )
@@ -820,6 +861,49 @@ def _init_lines(
     return lines
 
 
+def _drop_unused_locals(merged: LinkMetadata, bodies: list[list[str]]) -> None:
+    """Leaves out of each function's local pool the slots no unit's
+    code names, which the peepholes emptied after the pool was sized,
+    so they don't take zero-page bytes. A function that takes a local's
+    address (`#<` or `#>` of one of its slots) keeps its whole pool,
+    since a pointer can reach the bytes after the one it names."""
+    import re
+    text = "\n".join(line for body in bodies for line in body)
+    named = set(re.findall(r"__local_\w+", text))
+    addressed = set(re.findall(r"#[<>]\(?(__local_\w+)", text))
+    for d in merged.defs:
+        if not any(n in addressed for n in d.locals):
+            d.locals = [n for n in d.locals if n in named]
+
+
+def _link_shares(merged: LinkMetadata, metas: list[LinkMetadata]) -> list:
+    """Every unit's shares joined into the program's, with each
+    declaration's spelling of a slot replaced by the definition's, and
+    checked against the program's call graph. Raises `LinkError` when a
+    value a unit keeps in a callee's parameter bytes, on the strength of
+    a `const` declaration, isn't safe there."""
+    from passes.slot_sharing import check_linked_shares, merge_shares
+    shares = [s for m in metas for s in m.shares]
+    if not shares:
+        return []
+    defs = {d.name: d for d in merged.defs}
+    canonical: dict[str, str] = {}
+    for m in metas:
+        for e in m.externs:
+            d = defs.get(e.name)
+            if d is not None:
+                canonical.update(zip(e.params, d.params))
+    try:
+        out = merge_shares(shares, canonical)
+        check_linked_shares(
+            out, merged.calls, set(defs),
+            {d.name: set(d.changes) for d in merged.defs},
+        )
+    except ValueError as e:
+        raise LinkError(str(e)) from e
+    return out
+
+
 def _bind_extern_params(
     merged: LinkMetadata,
     externs: list[ExternMeta],
@@ -856,7 +940,10 @@ def _bind_extern_params(
                 f"`{e.name}` is declared with its parameters in "
                 f"different registers in two units"
             )
-        for sym, canon in zip(e.params, params):
+        for sym, canon, reg in zip(e.params, params, regs):
+            if reg:
+                # Passed in a register: no slot.
+                continue
             addr = symbols[canon]
             if symbols.setdefault(sym, addr) != addr:
                 raise LinkError(

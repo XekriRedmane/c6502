@@ -165,6 +165,7 @@ def optimize_program(
                 local_pool=pool_for_fn,
                 local_pins=local_pins or None,
                 param_hints=param_hints or None,
+                entry_limits=_entry_register_limits(tl, layout, symbols),
                 recursive_callees=(recursion_saves or {}).get(tl.name),
             )
             new_top.append(new_fn)
@@ -207,13 +208,15 @@ def _blocked_addrs_for(
         return out
     own_layout = param_layouts.get(fn.name)
     if isinstance(own_layout, ZpLayout):
-        out.update(own_layout.addrs)
+        out.update(a for a in own_layout.addrs if a is not None)
     # Any direct call to a ZP-ABI callee in this function's body.
     for instr in fn.instructions:
         if isinstance(instr, asm_ast.Call):
             callee_layout = param_layouts.get(instr.name)
             if isinstance(callee_layout, ZpLayout):
-                out.update(callee_layout.addrs)
+                out.update(
+                    a for a in callee_layout.addrs if a is not None
+                )
     return out
 
 
@@ -266,6 +269,7 @@ def _param_register_hints(fn, layout, symbols) -> dict[str, str]:
     from passes.abi_selection import ZpLayout
     from passes.replace_pseudoregisters import sizeof
     from passes.type_checking import LocalAttr
+    from passes.zp_slot_naming import register_param_local
     if not isinstance(layout, ZpLayout) or symbols is None:
         return {}
     table = getattr(symbols, "_table", None)
@@ -287,9 +291,41 @@ def _param_register_hints(fn, layout, symbols) -> dict[str, str]:
             # regalloc keeps in Y, and the soft-stack prologue writes
             # Y, so a Y parameter is read from its slot.
             if reg is not None and reg != "Y":
+                # The parameter's versions, and the local its entry
+                # value is copied into (`tac_to_asm`).
                 hints[pname] = reg
+                hints[register_param_local(pname)] = reg
         off += n
     return hints
+
+
+def _entry_register_limits(fn, layout, symbols) -> dict[str, set[str]]:
+    """The registers the local a `register` parameter is copied into
+    at entry (`tac_to_asm._register_param_locals`) mustn't be colored:
+    X or Y when another parameter (or the parameter's other byte)
+    arrives in it, since the copy would overwrite it before its own
+    copy reads it. Keyed by the local's name. (A soft-stack prologue
+    writes Y too, but it saves Y around itself when Y is live,
+    `prologue_synthesis`.)"""
+    from passes.abi_selection import ZpLayout
+    from passes.replace_pseudoregisters import sizeof
+    from passes.zp_slot_naming import register_param_local
+    if not isinstance(layout, ZpLayout) or symbols is None:
+        return {}
+    incoming = {r for r in layout.param_registers if r is not None}
+    out: dict[str, set[str]] = {}
+    off = 0
+    for pname in fn.params:
+        sym = symbols.get(pname)
+        n = sizeof(sym.type, None) if sym is not None else 1
+        regs = [r for r in layout.param_registers[off:off + n] if r]
+        off += n
+        if not regs:
+            continue
+        others = incoming - (set(regs) if n == 1 else set())
+        if others & {"X", "Y"}:
+            out[register_param_local(pname)] = others & {"X", "Y"}
+    return out
 
 
 def _optimize_function(
@@ -300,6 +336,7 @@ def _optimize_function(
     *,
     local_pins: dict[str, str] | None = None,
     param_hints: dict[str, str] | None = None,
+    entry_limits: dict[str, set[str]] | None = None,
     recursive_callees: frozenset[str] | None = None,
 ) -> tuple[asm_ast.Function, Coloring]:
     # Pre-pass: fuse `LDA P; SEC; SBC #1; STA dst; LDA #0; CMP P;
@@ -371,6 +408,17 @@ def _optimize_function(
     raw_eligibility = scan_hwreg_eligibility(
         fn, register_pins=local_pins, register_hints=param_hints,
     )
+    if entry_limits:
+        from passes.optimization_asm.hwreg_eligibility import _ssa_base
+        for sets, reg in (
+            ((raw_eligibility.eligible_x, raw_eligibility.hints_x), "X"),
+            ((raw_eligibility.eligible_y, raw_eligibility.hints_y), "Y"),
+        ):
+            for s in sets:
+                s -= {
+                    n for n in s
+                    if reg in entry_limits.get(_ssa_base(n), ())
+                }
     rep_eligibility = _project_eligibility(
         raw_eligibility, coalesce_result, all_names=_all_pseudo_names(fn),
     )

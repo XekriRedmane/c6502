@@ -42,8 +42,7 @@ of the byte it read.
 Where to run: in the asm-peephole fixed-point loop, after
 `replace_pseudoregisters` (Pseudos resolved). The rewrite is
 monotone (1 atom → 1 atom of equal byte size at emit), but it
-enables `apply_dead_reg_entry_stub_drop` and the param-pinning
-path to keep A live across the read, which then cascades to more
+enables the param-pinning path to keep A live across the read, which then cascades to more
 upstream simplifications.
 """
 from __future__ import annotations

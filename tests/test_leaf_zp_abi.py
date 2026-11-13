@@ -193,8 +193,8 @@ class TestLeafZpAbi(unittest.TestCase):
         )
         asm = self._codegen(src)
         # wrap's body bounded by the next top-level label.
-        wrap_idx = asm.index("wrap:")
-        main_idx = asm.index("main:")
+        wrap_idx = asm.index("\nwrap:")
+        main_idx = asm.index("\nmain:")
         wrap_body = asm[wrap_idx:main_idx]
         # No soft-stack prologue artifacts.
         self.assertNotIn("STA   SSP", wrap_body)

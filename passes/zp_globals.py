@@ -146,7 +146,9 @@ class ZpGlobals:
     address nor a definition here to its size; another unit defines
     it and the linker places it. `promoted` maps each object
     `--optimize` moved into zero page to its weight (see "Promotion
-    under `--optimize`")."""
+    under `--optimize`"). `param_bytes` are the bytes where functions
+    take a `zeropage(addr)` parameter, which are in `reserved` too:
+    their callers, which may be outside the program, write them."""
     addrs: dict[str, int] = field(default_factory=dict)
     reserved: frozenset[int] = frozenset()
     owned: frozenset[str] = frozenset()
@@ -156,6 +158,7 @@ class ZpGlobals:
     pinned: frozenset[str] = frozenset()
     external: dict[str, int] = field(default_factory=dict)
     promoted: dict[str, int] = field(default_factory=dict)
+    param_bytes: frozenset[int] = frozenset()
 
     def equs(self) -> dict[str, int]:
         """Every name this unit binds with an `EQU` line, the runtime's
@@ -192,10 +195,19 @@ def allocate_zp_globals(
     sizes: dict[str, int] = {}
     external: dict[str, int] = {}
     elsewhere = _fixed_elsewhere(symbols, types, sizeof)
+    # A function's `zeropage(addr)` parameters aren't objects: two
+    # functions may take theirs at the same bytes, and a zero-page
+    # object may cover them (Zork's SCRATCH2 is both). They keep the
+    # runtime's block and the compiler's own bytes off them.
+    param_bytes: set[int] = set()
     for name, sym in symbols.items():
         attrs = sym.attrs
         if isinstance(attrs, FunAttr) and attrs.address is not None:
             elsewhere[name] = attrs.address
+        if isinstance(attrs, FunAttr) and attrs.param_zeropage:
+            for addr, t in zip(attrs.param_zeropage, sym.type.params):
+                if addr is not None:
+                    param_bytes.update(range(addr, addr + sizeof(t, types)))
         if not (isinstance(attrs, StaticAttr) and attrs.zeropage):
             continue
         size = sizeof(sym.type, types)
@@ -233,10 +245,10 @@ def allocate_zp_globals(
             )
         claim(name, addr, size)
     layout = choose_layout(
-        frozenset(used), hargs_need or (lambda: CLASSIC.hargs_size),
+        frozenset(used) | param_bytes,
+        hargs_need or (lambda: CLASSIC.hargs_size),
     )
-    reserved = frozenset(used)
-    taken = set(used) | layout.bytes()
+    taken = set(used) | layout.bytes() | param_bytes
     for name, size in auto:
         addr = _first_free(taken, size)
         if addr is None:
@@ -247,7 +259,6 @@ def allocate_zp_globals(
             )
         claim(name, addr, size)
         taken.update(range(addr, addr + size))
-        reserved = frozenset(used)
     promoted: dict[str, int] = {}
     for name, weight, size in _promotion_order(symbols, types, weights):
         addr = _first_free(taken, size)
@@ -258,12 +269,12 @@ def allocate_zp_globals(
         owned.add(name)
         sizes[name] = size
         promoted[name] = weight
-    reserved = frozenset(used)
+    reserved = frozenset(used) | param_bytes
     return ZpGlobals(
         addrs=addrs, reserved=reserved, owned=frozenset(owned),
         fixed=elsewhere, layout=layout, sizes=sizes,
         pinned=frozenset(name for name, _, _ in fixed), external=external,
-        promoted=promoted,
+        promoted=promoted, param_bytes=frozenset(param_bytes),
     )
 
 

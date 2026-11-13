@@ -71,6 +71,12 @@ A candidate inside a loop body is eligible for hoisting when:
   * A, N, and Z are dead at the header, where the hoisted `LDA`
     now runs, and dead just after the candidate, which no longer
     sets them. A load or store leaves C and V alone.
+  * For shape (3), the copy isn't DPTR staging from a pointer that's
+    already in zero page (a name in `zp_cells` below `$100`).
+    [Memory value propagation](../docs/optimizations/memory_value_propagation.md)
+    turns `(DPTR),Y` after such a staging into `(ptr),Y`, which
+    needs no staging at all, but only while the staging is in the
+    loop with the access.
   * For shape (3) and any Mov pair: neither half of the pair
     can carry `is_volatile=True`. A volatile Mov must remain at
     its source-order position so the access is observable on
@@ -104,23 +110,28 @@ from passes.asm_dead_store import _reads, mem_dead_after
 from passes.asm_liveness import a_dead_at, flags_dead_at
 
 
-def apply_licm(prog: asm_ast.Program) -> asm_ast.Program:
+def apply_licm(
+    prog: asm_ast.Program, zp_cells: dict[str, int] | None = None,
+) -> asm_ast.Program:
     """Run loop-invariant constant-store hoisting on every Function
     top-level. Iterates to fixed point per function so nested loops
-    can compose."""
+    can compose. `zp_cells` maps the compiler's zero-page slot
+    symbols and the zero-page globals to their addresses."""
     new_top: list[asm_ast.Type_top_level] = []
     for tl in prog.top_level:
         if isinstance(tl, asm_ast.Function):
-            new_top.append(_rewrite_function(tl))
+            new_top.append(_rewrite_function(tl, zp_cells or {}))
         else:
             new_top.append(tl)
     return asm_ast.Program(top_level=new_top)
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _rewrite_function(
+    fn: asm_ast.Function, zp_cells: dict[str, int] | None = None,
+) -> asm_ast.Function:
     instrs = list(fn.instructions)
     while True:
-        new_instrs = _one_pass(instrs, fn.name)
+        new_instrs = _one_pass(instrs, fn.name, zp_cells or {})
         if new_instrs is instrs:
             break
         instrs = new_instrs
@@ -130,9 +141,21 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     )
 
 
+def _zp_pointer_staging(src, dst, zp_cells: dict[str, int]) -> bool:
+    """True iff a copy from `src` to `dst` stages a byte of a pointer
+    already in zero page into DPTR."""
+    if not (isinstance(dst, asm_ast.Data) and dst.name == "DPTR"):
+        return False
+    if isinstance(src, asm_ast.ZP):
+        return True
+    return (isinstance(src, asm_ast.Data)
+            and zp_cells.get(src.name, 0x100) + src.offset < 0x100)
+
+
 def _one_pass(
     instrs: list[asm_ast.Type_instruction],
     fn_name: str = "",
+    zp_cells: dict[str, int] | None = None,
 ) -> list[asm_ast.Type_instruction]:
     """Find one hoistable Mov in the deepest available loop and
     perform the hoist. Returns a new instruction list, or `instrs`
@@ -159,7 +182,7 @@ def _one_pass(
     for header_idx, back_edge_idx, header_name in back_edges:
         hoisted = _try_hoist_one(
             instrs, header_idx, back_edge_idx, header_name, label_idx,
-            fn_name,
+            fn_name, zp_cells or {},
         )
         if hoisted is not None:
             return hoisted
@@ -173,6 +196,7 @@ def _try_hoist_one(
     header_name: str,
     label_idx: dict[str, int],
     fn_name: str = "",
+    zp_cells: dict[str, int] | None = None,
 ) -> list[asm_ast.Type_instruction] | None:
     """Try to find one hoistable Mov in `[header_idx, back_edge_idx]`.
     Returns a new instruction list with the hoist applied, or None
@@ -207,6 +231,10 @@ def _try_hoist_one(
         # src cell must not be written anywhere in the body. Otherwise
         # the loaded value isn't loop-invariant.
         if src_key is not None and write_count.get(src_key, 0) != 0:
+            continue
+        if src_key is not None and _zp_pointer_staging(
+            instrs[k].src, instrs[k + span_len - 1].dst, zp_cells or {},
+        ):
             continue
         # A store through a pointer or with an index register can
         # write the same cell under another name. `g = 5; out = g;

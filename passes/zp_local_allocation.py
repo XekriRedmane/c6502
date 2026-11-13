@@ -86,6 +86,12 @@ The members of one cycle aren't each other's ancestors here, so
 their pools may overlap: every call between them saves the caller's
 live values first.
 
+A pool also avoids the bytes of every `SlotShare`
+(`passes/slot_sharing.py`) with a function that can be on the call
+stack with the pool's function. A share's holder keeps a value there
+across calls, so the pools of the functions it calls must stay off it
+even though the share's members are their siblings.
+
 Descendants are NOT in the forbidden set when allocating an
 ancestor's pool (descendants haven't been allocated yet). The
 topological order guarantees that when each descendant is
@@ -196,6 +202,7 @@ def allocate_function_locals(
     spill_end: int = _DEFAULT_SPILL_END,
     reserved: frozenset[int] = frozenset(),
     window: range | None = None,
+    shares=(),
 ) -> dict[str, list[int]]:
     """Allocate per-function body-local ZP pools. Returns
     `dict[fn_name, list[int]]` for every eligible function; the
@@ -204,7 +211,9 @@ def allocate_function_locals(
     should fall back to the conservative caller/callee
     partition). `reserved` is a set of bytes no pool may use, the
     zero-page globals' bytes (passes/zp_globals.py). `window` is the
-    zero-page range the pools come from, as for `allocate_zp_slots`."""
+    zero-page range the pools come from, as for `allocate_zp_slots`.
+    `shares` are the `SlotShare`s `allocate_zp_slots` placed, whose
+    addresses are in `abi`."""
     if pool is None:
         pool = Pool()
     zp_window = window if window is not None else pool.caller_saved()
@@ -228,10 +237,19 @@ def allocate_function_locals(
     # coexist on the call stack, even if `G` itself isn't
     # eligible for the private-pool model.
     zp_param_addrs: dict[str, frozenset[int]] = {
-        n: frozenset(layout.addrs)
+        n: frozenset(a for a in layout.addrs if a is not None)
         for n, layout in abi.items()
         if isinstance(layout, ZpLayout)
     }
+    from passes.slot_sharing import reach_sets, share_conflicts
+    reach = reach_sets(prog)
+    slot_addr = {
+        sym: addr
+        for layout in abi.values() if isinstance(layout, ZpLayout)
+        for sym, addr in zip(layout.slot_symbols, layout.addrs)
+        if addr is not None
+    }
+    shares = list(shares)
 
     local_pools: dict[str, list[int]] = {}
     for fn in order:
@@ -259,6 +277,10 @@ def allocate_function_locals(
             forbidden.update(zp_param_addrs.get(other, ()))
         # The function's own param slots (if zp_abi).
         forbidden.update(zp_param_addrs.get(fn, ()))
+        for share in share_conflicts(fn, shares, reach):
+            forbidden.update(
+                slot_addr[s] for s in share.slots() if s in slot_addr
+            )
 
         addrs = _find_free_range(forbidden, size, zp_start, zp_end)
         if addrs is None:

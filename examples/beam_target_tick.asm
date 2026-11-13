@@ -4,10 +4,6 @@ HARGS	EQU	$04
 DPTR	EQU	$24
 __zpabi_beam_target_tick__beam_tick	EQU	$80
 __zpabi_beam_target_tick__beam_seed_floor	EQU	$81
-__zpabi_snd_delay_down__pitch	EQU	$82
-__zpabi_snd_delay_up__pitch	EQU	$82
-__zpabi_snd_delay_down__clicks	EQU	$83
-__zpabi_snd_delay_up__clicks	EQU	$83
 
 ; @zp-link-meta-begin
 ; def beam_target_tick params=__zpabi_beam_target_tick__beam_tick,__zpabi_beam_target_tick__beam_seed_floor locals=__local_beam_target_tick__0 indirect=false in_cycle=false

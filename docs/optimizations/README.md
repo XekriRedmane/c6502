@@ -48,6 +48,7 @@ a user variable.
 - [Combining added constants](reassoc_const.md). Rewrites `(v + C2) + C1` as `v + (C1+C2)`, removing one add.
 - [Common subexpression elimination](cse.md). Replaces a repeated pure computation or load with a Copy of the first.
 - [Commuted ADC, AND, and ORA](adc_commute.md). Reads memory directly in ADC, AND, or ORA instead of reloading it after a spill.
+- [Compare and subtract of the same operands](compare_subtract.md). Lowers `t = a - b` next to the `a < b` that guards it as one subtraction and a branch on its flags.
 - [Compare without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`.
 - [Comparison and jump fold](cmp_zero_jump_fold.md). Fuses a comparison and the jump on its result into one conditional jump.
 - [Const-static fold](const_static_fold.md). Replaces reads of a static const scalar with immediates and drops its storage.
@@ -167,9 +168,10 @@ them whenever a pass is added or moved.
       18. [Sinking an AND past a bit test](sink_and_past_branch.md)
       19. [Narrowing widened arithmetic](narrow_widened_arith.md)
    5. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
-   6. SSA destruction.
-   7. [Copy folding](copy_folding.md), once more.
-   8. *Fixed point*: [branching directly on `&&` and
+   6. [Compare and subtract of the same operands](compare_subtract.md)
+   7. SSA destruction.
+   8. [Copy folding](copy_folding.md), once more.
+   9. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    over the whole program.

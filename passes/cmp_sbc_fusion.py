@@ -3,7 +3,7 @@ moving the `SEC; SBC` ahead of the branch and dropping the `CMP`.
 
 # Pattern
 
-Six consecutive instructions:
+Six consecutive instructions (or five, without the label):
 
     [a]   Mov(<X>, Reg(A))      # LDA M (or any other A-load)
     [a+1] Compare(Reg(A), N)    # CMP N
@@ -111,23 +111,26 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     out: list[asm_ast.Type_instruction] = []
     i = 0
     while i < len(instrs):
-        if (i + 5 < len(instrs)
+        # The fall-through label is optional.
+        j = i + 3
+        if (j < len(instrs) and isinstance(instrs[j], asm_ast.Label)
+                and instrs[j].name not in branch_targets):
+            j += 1
+        if (j + 1 < len(instrs)
                 and _writes_a_with_flag_effect(instrs[i])
                 and _is_cmp_against(instrs[i + 1])
                 and _is_eligible_branch(instrs[i + 2])
-                and isinstance(instrs[i + 3], asm_ast.Label)
-                and instrs[i + 3].name not in branch_targets
-                and isinstance(instrs[i + 4], asm_ast.SetCarry)
-                and _is_sub_against(instrs[i + 5])
-                and _operands_equal(instrs[i + 1].right, instrs[i + 5].src)
+                and isinstance(instrs[j], asm_ast.SetCarry)
+                and _is_sub_against(instrs[j + 1])
+                and _operands_equal(instrs[i + 1].right, instrs[j + 1].src)
                 and _taken_path_safe(instrs, labels, instrs[i + 2].target)):
             # Emit: LDA, SEC, SBC, Branch, Label.
             out.append(instrs[i])
-            out.append(instrs[i + 4])     # SEC
-            out.append(instrs[i + 5])     # SBC N
+            out.append(instrs[j])         # SEC
+            out.append(instrs[j + 1])     # SBC N
             out.append(instrs[i + 2])     # Branch
-            out.append(instrs[i + 3])     # Label
-            i += 6
+            out.extend(instrs[i + 3:j])   # Label
+            i = j + 2
             continue
         out.append(instrs[i])
         i += 1

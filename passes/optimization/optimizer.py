@@ -107,6 +107,7 @@ from passes.optimization.sink_and_past_branch import SinkAndPastBranch
 from passes.optimization.narrow_widened_arith import NarrowWidenedArith
 from passes.optimization.recognize_indirect_indexed import RecognizeIndirectIndexed
 from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
+from passes.optimization.compare_subtract import HoistSubtractToCompare
 
 
 # Module-level driver instance, reused across all optimize_function calls.
@@ -181,6 +182,11 @@ _DRIVER = PhaseDriver(
         # runtime-pointer cases (zp_abi params, address-taken pointer
         # locals) remain for the (zp),Y lowering.
         RecognizeIndirectIndexed(),
+        # `t = a - b` next to the `a < b` (or `>=`, ...) that decides
+        # whether it runs, so tac_to_asm branches on its flags instead
+        # of comparing too. After the fixed-point loop, whose sinking
+        # passes would move it back.
+        HoistSubtractToCompare(),
     ],
     post_destruction=[
         # Post-from_ssa copy folding. SSA destruction emits a Copy at

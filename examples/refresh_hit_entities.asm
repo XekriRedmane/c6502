@@ -38,10 +38,9 @@ refresh_hit_entities:
    LDX   __zpabi_refresh_hit_entities__hit_max
 .loop@0_start:
    LDA   entity_hit_y,X
-   CMP   __zpabi_refresh_hit_entities__player_y
-   BCC   .if_end@0
    SEC
    SBC   __zpabi_refresh_hit_entities__player_y
+   BCC   .if_end@0
    STA   __local_refresh_hit_entities__1
    CMP   #$2F
    BCS   .if_end@1

@@ -57,10 +57,11 @@ __zpabi_inc_sector_and_write__buffer_1	EQU	$F6
 __local_instr_save__pages	EQU	$F7
 __local_do_rwts_on_sector__command	EQU	$F8
 __local_please_insert_save_diskette__n	EQU	$F8
-__local_do_rwts_on_sector__sector_1	EQU	$F9
+__local_do_rwts_on_sector__0	EQU	$F9
 __local_please_insert_save_diskette__0	EQU	$F9
-__local_do_rwts_on_sector__sector_0	EQU	$FA
+__local_do_rwts_on_sector__sector_1	EQU	$FA
 __local_get_prompted_number_from_user__key	EQU	$FA
+__local_do_rwts_on_sector__sector_0	EQU	$FB
 __local_get_prompted_number_from_user__0	EQU	$FB
 __local_get_prompted_number_from_user__which	EQU	$FC
 __local_get_prompted_number_from_user__1	EQU	$FD
@@ -84,7 +85,7 @@ COUT1	EQU	$FDF0
 ; @zp-link-meta-begin
 ; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A,,
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A,,
 ; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__0,__local_get_prompted_number_from_user__which,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
 ; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false
 ; def instr_save params= locals=__local_instr_save__pages indirect=false in_cycle=false
@@ -208,19 +209,14 @@ do_rwts_on_sector:
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
    SBC   __local_do_rwts_on_sector__command
+   STA   __local_do_rwts_on_sector__0
    LDA   __local_do_rwts_on_sector__sector_1
    SBC   #$00
+   STA   __local_do_rwts_on_sector__sector_1
    BCC   .loop@0_break
-   LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__command
-   LDA   __local_do_rwts_on_sector__sector_0
-   SEC
-   SBC   __local_do_rwts_on_sector__command
-   STA   __local_do_rwts_on_sector__sector_0
-   BCS   .carry_inc@0
-   DEC   __local_do_rwts_on_sector__sector_1
-.carry_inc@0:
    INC   iob+4
+   LDA   __local_do_rwts_on_sector__0
+   STA   __local_do_rwts_on_sector__sector_0
    JMP   .loop@0_continue
 .loop@0_break:
    LDA   __local_do_rwts_on_sector__sector_0

@@ -217,6 +217,15 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper
   absolute,X form.
+- `compare_subtract.py` — `hoist_subtract_to_compare`
+  (`HoistSubtractToCompare`, PostFixedpointPass). Moves `t = a - b`
+  from a successor (whose only predecessor is the compare's block) to
+  just before the ordering `JumpIfCmp` that compares `a` with `b`,
+  for operands of 2 bytes or more; `tac_to_asm._fused_subtract` then
+  branches on the subtraction's flags instead of comparing. An
+  operand may be a second read of the same memory as the compare's
+  (`ZeroExtend(g)` in both blocks), which it replaces with the
+  compare's. 1-byte operands are left to the asm `cmp_sbc_fusion`.
 - `short_circuit_jump_fold.py` — `fold_short_circuit_jump`
   (`FoldShortCircuitJump`, raw PostDestructionFixedpointPass — multi-
   block retarget map with transitive closure). Post-destruction fixedpoint.
@@ -259,6 +268,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → fold_truncate_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
+   → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)
    → from_ssa                      (owned by PhaseDriver)
    → fold_copies                   (PostDestructionPass, one-shot)
    → fold_short_circuit_jump*      (PostDestructionFixedpointPass)

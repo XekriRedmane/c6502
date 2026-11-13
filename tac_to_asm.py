@@ -1084,6 +1084,9 @@ class Translator:
         pinned_copies: dict[str, set[str]] | None = None,
     ) -> None:
         self._label_counter = 0
+        # The TAC instruction before the one being translated, for
+        # `_fused_subtract`.
+        self._prev_tac = None
         # Per function, the `zeropage(addr)` parameters it copies into
         # a local as it starts (`slot_sharing.pinned_param_copies`).
         self._pinned_copies = pinned_copies or {}
@@ -1402,6 +1405,7 @@ class Translator:
                         fn, self._recursion_saves[name], self._symbols,
                     )
                 for i, instr in enumerate(instrs):
+                    self._prev_tac = instrs[i - 1] if i else None
                     if plan is not None:
                         out.extend(self._push_saved(plan.push_before.get(i, ())))
                     if plan is None or i not in plan.skip:
@@ -1410,6 +1414,7 @@ class Translator:
                         out.extend(self._pop_saved(plan.pop_after.get(i, ())))
                         out.extend(self._push_saved(plan.push_after.get(i, ())))
                 self._current_fn_name = prior_fn
+                self._prev_tac = None
                 if renames:
                     out = _rename_pseudos(out, renames)
                 # Mark Movs whose src or dst Pseudo names a
@@ -3590,6 +3595,13 @@ class Translator:
             self._is_pointer_val(src1) or self._is_pointer_val(src2)
         )
         fp = self._is_fp_val(src1) or self._is_fp_val(src2)
+        if not fp:
+            fused = self._fused_subtract(
+                op, src1, src2, target, size,
+                unsigned=unsigned_cmp or pointer_cmp,
+            )
+            if fused is not None:
+                return fused
         match op:
             case tac_ast.Equal():
                 return self._jcmp_equality(
@@ -3651,6 +3663,58 @@ class Translator:
                     src2_op, src1_op, size, asm_ast.PL(), target,
                 )
         raise TypeError(f"unsupported JumpIfCmp op: {op!r}")
+
+    def _fused_subtract(
+        self, op, src1, src2, target: str, size: int, *, unsigned: bool,
+    ) -> list[asm_ast.Type_instruction] | None:
+        """The branch for an ordering `JumpIfCmp` right after
+        `Binary(Subtract, a, b, t)` of the difference it compares
+        (`compare_subtract.compared_difference`), or None. The
+        subtract's last `SBC` leaves the flags the compare would set:
+        an unsigned compare branches on C (`BCC` for `<`, `BCS` for
+        `>=`), and a signed one on the sign of `t`'s top byte, corrected
+        for overflow as `_jcmp_signed_ordering` does. `t` mustn't be
+        one of the operands, since the compare reads them after the
+        subtract. `passes/optimization/compare_subtract.py` puts the
+        subtract there."""
+        from passes.optimization.compare_subtract import (
+            compared_difference,
+        )
+        if not isinstance(op, (
+            tac_ast.LessThan, tac_ast.GreaterOrEqual,
+            tac_ast.GreaterThan, tac_ast.LessOrEqual,
+        )):
+            return None
+        prev = self._prev_tac
+        a, b = compared_difference(op, src1, src2)
+        if not (isinstance(prev, tac_ast.Binary)
+                and isinstance(prev.op, tac_ast.Subtract)
+                and prev.src1 == a and prev.src2 == b
+                and isinstance(prev.dst, tac_ast.Var)
+                and prev.dst != a and prev.dst != b
+                and self._size_of(prev.dst) == size):
+            return None
+        less = isinstance(op, (tac_ast.LessThan, tac_ast.GreaterThan))
+        if unsigned:
+            return [asm_ast.Branch(
+                cond=asm_ast.CC() if less else asm_ast.CS(), target=target,
+            )]
+        # Signed: SBC sets V, and LDA leaves it, so the top byte is
+        # reloaded in case anything between used A.
+        novf_label = self.make_label("jcmp_novf")
+        return [
+            asm_ast.Mov(
+                src=_byte_at(translate_val(prev.dst), size - 1), dst=_REG_A,
+            ),
+            asm_ast.Branch(cond=asm_ast.VC(), target=novf_label),
+            asm_ast.Xor(
+                src1=_REG_A, src2=asm_ast.Imm(value=0x80), dst=_REG_A,
+            ),
+            asm_ast.Label(name=novf_label),
+            asm_ast.Branch(
+                cond=asm_ast.MI() if less else asm_ast.PL(), target=target,
+            ),
+        ]
 
     def _jcmp_fp_ordering(
         self,

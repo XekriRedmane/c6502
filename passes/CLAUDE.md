@@ -72,7 +72,10 @@ this directory:
   `Branch(cond, .ssa_split); Return; .ssa_split: Jump(.loop)`
   shape `tac_to_asm` emits for loop tails when the loop body's
   conditional exit straddles the Return.
-- `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole.
+- `cmp_sbc_fusion.py` — `apply_cmp_sbc_fusion` peephole. `LDA M; CMP
+  N; Bcc L; [label;] SEC; SBC N` → `LDA M; SEC; SBC N; Bcc L` when A
+  and V are dead at L: the 1-byte form of
+  `optimization/compare_subtract.py`.
 - `ir_check.py` — checks the IR between passes when
   `C6502_CHECK_IR=1` is set or `enable()` is called (the fuzzers do).
   `check_tac` runs after every TAC optimizer pass (from
@@ -1073,7 +1076,7 @@ document says whether it fires there.
   `apply_const_arith_fold`.
 - `apply_unreachable_drop` — drops code after a terminator with no
   label in front of it. Runs right after `apply_dead_label_drop`.
-- `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; ...; SBC` pattern
+- `apply_cmp_sbc_fusion` — fuses a `Compare; Branch; SEC; SBC` pattern
   where the SBC's effect duplicates the Compare's flag set.
 - `apply_dec_inc_branch_fold` — `Dec(M)/Inc(M); Mov(M, A);
   Branch(EQ|NE, _)` → `Dec(M)/Inc(M); Branch(EQ|NE, _)` — drops the

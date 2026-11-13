@@ -127,6 +127,48 @@ order of size:
   `examples/zork/instr_save/save.c` has one, against Zork's `INC
   SCRATCH2+1`.
 
+## Optimizations found by Zork's save instruction
+
+`examples/zork/instr_save` is 715 bytes of code against Zork's 627, and
+its first save takes 22,829 cycles against 19,561. Most of the cycles
+are in `do_rwts_on_sector`'s loop and most of the bytes in
+`get_prompted_number_from_user`. Roughly in order of payoff:
+
+- **A compare and a subtract of the same operands.** `while (s >= k)
+  s -= k;` subtracts once for the test and again for the update, each
+  time staging `k` through a temporary (see "Operands staged through a
+  temporary" above). One subtract whose borrow decides the branch does
+  both, as Zork's `SBC SECTORS_PER_TRACK; BCS` does. The same shape is
+  division and modulo by repeated subtraction.
+- **A 2-byte loop-carried value in A and X.** Zork keeps that loop's
+  16-bit sector number in A (low) and X (high) and does `DEX` on a
+  borrow, where the compiled loop keeps it in two zero-page bytes.
+- **Index arithmetic narrowed by the array's bounds.** `prompts[which]`
+  on `struct prompt prompts[3]` (16 bytes each) computes `which * 16`
+  as a 16-bit shift in memory and adds it to the address. A valid
+  index keeps every offset below 48, since indexing outside the array
+  is undefined, so the offset fits a byte: `ASL A` four times, `TAX`,
+  and `LDA prompts+15,X`, as Zork does.
+- **An address kept across calls.** `&prompts[which]` doesn't change
+  in `get_prompted_number_from_user`, but it's computed again after
+  each call instead of kept in the function's pool.
+- **Falling into a tail call.** `write_next_sector` ends in `JMP
+  inc_sector_and_write`. Placing a function just before the one it
+  tail-calls would drop the `JMP`, which is how Zork chains these
+  routines.
+- **A callee that leaves its parameter alone.** `instr_save` stores
+  `#$80` into `copy_data_to_buff`'s pointer again before the second
+  call, though `copy_data_to_buff` never writes it.
+  `memory_value_propagation` forgets everything at a `Call`, but a
+  callee's own parameter bytes survive when the callee doesn't change
+  them, which `slot_sharing` already works out.
+- **An immediate A already holds.** `LDA #$FF; STA SCRATCH1; LDA #$FF;
+  STA SCRATCH1+1` keeps the second `LDA`.
+- **A counted loop that tests at the top.** `please_insert_save_diskette`'s
+  `for (n = ...; n != 0; n--)` ends in a `JMP` back to its test, with
+  `n` in memory. Rotated (see "Rotate top-tested loops"), it would be
+  `DEC; BNE`, and `counter_to_index_reg` could put `n` in X.
+
 ## Volatile structs
 
 A `volatile struct s g;` object crashes `c99_to_tac` with a Python

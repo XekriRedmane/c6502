@@ -22,6 +22,15 @@ MPU until the boot stub's BRK fires.
   runtime's helper addresses prepended as `EQU`s) and loading the
   binary and symbols into the same simulator. `DASM` is None when
   dasm isn't on the path; tests that need it skip.
+- `apple2.py` — `Apple2`, a stand-in Apple II for running a whole
+  program: the Monitor's `HOME`, `CLREOL`, `VTAB`, `RDKEY`, `GETLN1`,
+  `COUT`, and `COUT1` over a 40-by-24 screen with its text window, a
+  printer at `$C100` (where CSW points when COUT should print), and
+  DOS 3.3's `RWTS` over `.dsk` images keyed by slot and drive. Keys and
+  lines come from a script. Every call is recorded in `calls`, so two
+  programs can be compared call for call, and `run` stops at a `BRK`,
+  a `JMP` to itself, or a line input with the script used up.
+  `tests/test_zork_interpreter.py` uses it.
 - `runtime.py` — runtime stub: zero-page reservations, boot stub,
   reset vector, and Python-implemented hooks for the 6502 helpers
   (`mul*` / `divmod*` / `asl*` / `asr*` / `lsr*`, plus FP slots). Each

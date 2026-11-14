@@ -53,6 +53,18 @@ instruction handlers. Its README compares it with Zork's code, and
 a small story file, with a transcript, and with a failing disk read,
 comparing it with Zork's own code when `ZORK_MAIN_BIN` is set.
 
+`zork/interpreter/` is all of `output/main.asm`, Zork's whole
+interpreter, in eleven C files and a shared header, linked by a linker
+script into a program that runs from `$0800` around DOS's RWTS and
+loads the story after itself. It reuses the two examples above, with
+values passed as arguments where they had to keep Zork's `SCRATCH`
+bytes. Its README compares it with Zork's code, and
+`tests/test_zork_interpreter.py` checks its outputs and, when
+`ZORK_DSK` names the game's disk image, plays two sessions on it and on
+Zork's own interpreter (read from the same image) and compares every
+Monitor and RWTS call. Each `.c` file's header quotes the lines of
+`main.asm` it translates.
+
 ## Translating Zork's code
 
 Zork's program counters are 24-bit byte addresses, and the multi-unit

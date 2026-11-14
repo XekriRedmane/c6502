@@ -125,6 +125,7 @@ class IndexedLoad(Type_instruction):
     index: Type_val
     dst: Type_val
     is_volatile: bool = False
+    offset: int = 0
 
 
 @dataclass(kw_only=True)
@@ -141,6 +142,7 @@ class IndexedSymbolStore(Type_instruction):
     index: Type_val
     src: Type_val
     is_volatile: bool = False
+    offset: int = 0
 
 
 @dataclass(kw_only=True)

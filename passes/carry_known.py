@@ -10,7 +10,9 @@ rotate, a call, and anything else not known to leave C alone) makes
 it unknown. Then:
 
   * A `SEC` where C is known set, or a `CLC` where it's known clear,
-    goes.
+    goes, and so does one whose carry nothing reads
+    (`asm_liveness.c_dead_at`), as when dead-code elimination has
+    removed the add it was for.
   * A `SEC` (or `CLC`) that starts a block, after its labels, moves in
     front of those labels when every path into the block other than
     the one falling into it already has C that way. Only the
@@ -45,6 +47,7 @@ fixed point this pass dropped the CLC first, leaving `TXA; ADC #1`.
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import c_dead_at
 
 # Instructions that leave C alone. Anything else is taken to change it.
 _KEEP_C = (
@@ -127,26 +130,63 @@ def _carry_states(instrs, labels):
     return before, incoming
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
-    instrs = fn.instructions
-    labels = {
+def _setter_value(ins) -> int | None:
+    if isinstance(ins, asm_ast.SetCarry):
+        return 1
+    if isinstance(ins, asm_ast.ClearCarry):
+        return 0
+    return None
+
+
+def _labels(instrs) -> dict[str, int]:
+    return {
         ins.name: k for k, ins in enumerate(instrs)
         if isinstance(ins, asm_ast.Label)
     }
-    before, incoming = _carry_states(instrs, labels)
+
+
+def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+    """Three steps, each on the result of the one before, since each
+    changes what the next sees: dropping the setters C already
+    matches (which changes no value of C), moving setters in front of
+    loops, and dropping the setters nothing reads. Done in one step,
+    `CLC; LDA x; CLC; ADC y` lost both: the first as dead, since the
+    second overwrites C, and the second as redundant after the
+    first."""
+    instrs = list(fn.instructions)
+    instrs = _drop_known(instrs)
+    instrs = _move_into_loops(instrs)
+    instrs = [
+        ins for i, ins in enumerate(instrs)
+        if _setter_value(ins) is None or not c_dead_at(instrs, i + 1)
+    ]
+    if instrs == fn.instructions:
+        return fn
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=instrs,
+    )
+
+
+def _drop_known(instrs):
+    """Without the SEC / CLC where C is known to have that value."""
+    before, _ = _carry_states(instrs, _labels(instrs))
+    return [
+        ins for i, ins in enumerate(instrs)
+        if _setter_value(ins) is None or before[i] is _UNSEEN
+        or before[i] != _setter_value(ins)
+    ]
+
+
+def _move_into_loops(instrs):
+    """Each SEC / CLC that starts a block moved in front of its labels
+    when every edge in but the fall-through already has C that way."""
+    before, incoming = _carry_states(instrs, _labels(instrs))
     drop: set[int] = set()
-    move: dict[int, int] = {}   # carry setter -> where it goes
+    move: dict[int, int] = {}   # where a setter goes -> the setter
     for i, ins in enumerate(instrs):
-        if isinstance(ins, asm_ast.SetCarry):
-            want = 1
-        elif isinstance(ins, asm_ast.ClearCarry):
-            want = 0
-        else:
-            continue
-        if before[i] is _UNSEEN:
-            continue
-        if before[i] == want:
-            drop.add(i)
+        want = _setter_value(ins)
+        if want is None or before[i] is _UNSEEN:
             continue
         p = i
         while p > 0 and isinstance(instrs[p - 1], asm_ast.Label):
@@ -168,14 +208,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
             drop.add(i)
             move[p] = i
     if not drop:
-        return fn
+        return instrs
     out: list[asm_ast.Type_instruction] = []
     for k, ins in enumerate(instrs):
         if k in move:
             out.append(instrs[move[k]])
         if k not in drop:
             out.append(ins)
-    return asm_ast.Function(
-        name=fn.name, is_global=fn.is_global,
-        params=list(fn.params), instructions=out,
-    )
+    return out

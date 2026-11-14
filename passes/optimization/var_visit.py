@@ -130,7 +130,10 @@ def rewrite_uses_in(
             nidx = mapper(idx)
             if nidx is idx:
                 return instr
-            return tac_ast.IndexedLoad(name=n, index=nidx, dst=d, is_volatile=v)
+            return tac_ast.IndexedLoad(
+                name=n, index=nidx, dst=d, is_volatile=v,
+                offset=instr.offset,
+            )
         case tac_ast.IndexedStore(address=a, index=idx, src=s, is_volatile=v):
             nidx = mapper(idx)
             ns = mapper(s)
@@ -146,6 +149,7 @@ def rewrite_uses_in(
                 return instr
             return tac_ast.IndexedSymbolStore(
                 name=n, index=nidx, src=ns, is_volatile=v,
+                offset=instr.offset,
             )
         case tac_ast.IndexedConstLoad(address=a, index=idx, dst=d, is_volatile=v):
             # IndexedConstLoad.address is an int constant — not a val.

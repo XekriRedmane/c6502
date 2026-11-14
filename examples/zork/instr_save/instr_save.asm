@@ -58,11 +58,9 @@ __local_instr_save__pages	EQU	$F7
 __local_please_insert_save_diskette__n	EQU	$F8
 __local_please_insert_save_diskette__0	EQU	$F9
 __local_get_prompted_number_from_user__key	EQU	$FA
-__local_get_prompted_number_from_user__0	EQU	$FB
-__local_get_prompted_number_from_user__which	EQU	$FC
-__local_get_prompted_number_from_user__1	EQU	$FD
-__local_print_ascii_string__count	EQU	$FE
-__local_print_ascii_string__i	EQU	$FF
+__local_get_prompted_number_from_user__1	EQU	$FB
+__local_print_ascii_string__count	EQU	$FC
+__local_print_ascii_string__i	EQU	$FD
 BUFF_AREA	EQU	$0200
 branch	EQU	$0BAA
 negated_branch	EQU	$0BB3
@@ -82,7 +80,7 @@ COUT1	EQU	$FDF0
 ; def copy_data_to_buff params=__zpabi_copy_data_to_buff__src_0,__zpabi_copy_data_to_buff__src_1,__zpabi_copy_data_to_buff__x,__zpabi_copy_data_to_buff__count locals= indirect=false in_cycle=false param_regs=,,X,Y
 ; def cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count locals= indirect=false in_cycle=false param_regs=,,X
 ; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals= indirect=false in_cycle=false param_regs=A,,
-; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__0,__local_get_prompted_number_from_user__which,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
+; def get_prompted_number_from_user params=__zpabi_get_prompted_number_from_user__which locals=__local_get_prompted_number_from_user__key,__local_get_prompted_number_from_user__1 indirect=false in_cycle=false param_regs=A
 ; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false
 ; def instr_save params= locals=__local_instr_save__pages indirect=false in_cycle=false
 ; def please_insert_save_diskette params= locals=__local_please_insert_save_diskette__n,__local_please_insert_save_diskette__0 indirect=false in_cycle=false
@@ -277,28 +275,20 @@ cout_string:
 get_prompted_number_from_user:
    SUBROUTINE
 
-   STA   __local_get_prompted_number_from_user__which
+   STA   __local_get_prompted_number_from_user__key
    JSR   dump_buffer_with_more
-   ASL   __local_get_prompted_number_from_user__which
-   LDA   #$00
+   LDA   __local_get_prompted_number_from_user__key
+   ASL
+   ASL
+   ASL
+   ASL
    STA   __local_get_prompted_number_from_user__1
-   ROL   __local_get_prompted_number_from_user__1
-   ASL   __local_get_prompted_number_from_user__which
-   ROL   __local_get_prompted_number_from_user__1
-   ASL   __local_get_prompted_number_from_user__which
-   ROL   __local_get_prompted_number_from_user__1
-   ASL   __local_get_prompted_number_from_user__which
-   ROL   __local_get_prompted_number_from_user__1
    LDA   #<prompts
    CLC
-   ADC   __local_get_prompted_number_from_user__which
-   STA   __local_get_prompted_number_from_user__0
-   LDA   #>prompts
    ADC   __local_get_prompted_number_from_user__1
-   STA   __local_get_prompted_number_from_user__key
-   LDA   __local_get_prompted_number_from_user__0
    STA   __zpabi_print_ascii_string__s_0
-   LDA   __local_get_prompted_number_from_user__key
+   LDA   #>prompts
+   ADC   #$00
    STA   __zpabi_print_ascii_string__s_1
    LDX   #$0F
    JSR   print_ascii_string
@@ -313,21 +303,12 @@ get_prompted_number_from_user:
    STA   __zpabi_cout_string__s_1
    LDX   #$0A
    JSR   cout_string
-   LDA   #<prompts
    CLC
-   ADC   __local_get_prompted_number_from_user__which
-   STA   __local_get_prompted_number_from_user__key
-   LDA   #>prompts
+   LDA   #<(prompts+15)
    ADC   __local_get_prompted_number_from_user__1
-   STA   __local_get_prompted_number_from_user__0
-   LDA   __local_get_prompted_number_from_user__key
-   CLC
-   ADC   #$0F
-   BCC   .carry_inc@0
-   INC   __local_get_prompted_number_from_user__0
-.carry_inc@0:
    STA   __zpabi_cout_string__s_0
-   LDA   __local_get_prompted_number_from_user__0
+   LDA   #>(prompts+15)
+   ADC   #$00
    STA   __zpabi_cout_string__s_1
    LDX   #$01
    JSR   cout_string
@@ -341,15 +322,8 @@ get_prompted_number_from_user:
    LDA   __local_get_prompted_number_from_user__key
    CMP   #$8D
    BNE   .if_end@0
-   LDA   #<prompts
-   CLC
-   ADC   __local_get_prompted_number_from_user__which
-   STA   __local_get_prompted_number_from_user__key
-   LDA   #>prompts
-   ADC   __local_get_prompted_number_from_user__1
-   STA   __local_get_prompted_number_from_user__0
-   LDY   #$0F
-   LDA   (__local_get_prompted_number_from_user__key),Y
+   LDX   __local_get_prompted_number_from_user__1
+   LDA   prompts+15,X
 .if_end@0:
    AND   #$7F
    RTS
@@ -432,9 +406,9 @@ please_insert_save_diskette:
    CLC
    ADC   #$40
    STA   SCRATCH1
-   BCC   .carry_inc@1
+   BCC   .carry_inc@0
    INC   SCRATCH1+1
-.carry_inc@1:
+.carry_inc@0:
    DEC   __local_please_insert_save_diskette__n
    JMP   .loop@6_start
 .loop@6_break:

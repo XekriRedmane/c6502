@@ -327,6 +327,44 @@ class TestBackwardCopyPropagation(unittest.TestCase):
         self.assertEqual(len(out.instructions), 2)
         self.assertEqual(out.instructions[0].dst, _stack(1))
 
+    def test_memory_to_memory_copy(self) -> None:
+        # `tac_to_asm` writes each byte of a zp_abi argument as one
+        # `Mov(P, slot)`, which emits as the same LDA / STA pair.
+        slot = _data("__zpabi_f__p_0", 0)
+        fn = _fn(
+            _mov(_A(), _ps("%p")),
+            _mov(_ps("%p"), slot),
+            asm_ast.Call(name="f", reg_args=[], preserves=[]),
+            _ret(save_a=False),
+        )
+        out = backward_copy_propagate(fn)
+        self.assertEqual(out.instructions[0], _mov(_A(), slot))
+        self.assertEqual(len(out.instructions), 3)
+
+    def test_memory_to_memory_copy_keeps_a_when_read(self) -> None:
+        # The copy leaves P's value in A, which the Return reads.
+        fn = _fn(
+            _mov(_A(), _ps("%p")),
+            _mov(_imm(3), _A()),
+            _mov(_ps("%p"), _data("g", 0)),
+            _ret(save_a=True),
+        )
+        out = backward_copy_propagate(fn)
+        self.assertEqual(out.instructions, fn.instructions)
+
+    def test_not_across_allocate_stack(self) -> None:
+        # A soft-stack call's argument store: SSP moves at the
+        # AllocateStack, so Stack(1) before it is a different byte.
+        fn = _fn(
+            _mov(_A(), _ps("%p")),
+            asm_ast.AllocateStack(bytes=1),
+            _mov(_ps("%p"), _stack(1)),
+            asm_ast.Call(name="f", reg_args=[], preserves=[]),
+            _ret(save_a=False),
+        )
+        out = backward_copy_propagate(fn)
+        self.assertEqual(out.instructions, fn.instructions)
+
 
 if __name__ == "__main__":
     unittest.main()

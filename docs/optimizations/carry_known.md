@@ -27,7 +27,15 @@ Then:
   so the `CLC` in front of the exit's `ADC SECTORS_PER_TRACK` goes.
 - A `SEC` or `CLC` that starts a block, after its labels, moves in
   front of those labels when every way into the block other than
-  falling into it already has C that way. The way in from above then
+  falling into it already has C that way.
+- A `SEC` or `CLC` whose carry nothing reads goes, as when dead-code
+  elimination has removed the add it was for
+  (`asm_liveness.c_dead_at`).
+
+These are three steps, each on the result of the one before, since
+each changes what the next sees. Decided together, `CLC; LDA x; CLC;
+ADC y` lost both: the first as dead, since the second overwrites C,
+and the second as redundant after the first. The way in from above then
   sets C, and the loop's back edge, which already had it, skips the
   instruction.
 

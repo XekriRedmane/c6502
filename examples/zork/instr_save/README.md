@@ -142,11 +142,11 @@ first save and the same 170 in the second, and leave the same state.
 | `print_ascii_string` | 20 | 20 |
 | `cout_string` | 14 | 14 |
 | `please_insert_save_diskette` | 167 | 168 |
-| `get_prompted_number_from_user` | 106 | 150 |
+| `get_prompted_number_from_user` | 106 | 103 |
 | `please_reinsert_game_diskette` | 70 | 70 |
 | `instr_save` | 141 | 152 |
 | `copy_data_to_buff` | 12 | 12 |
-| **Code** | **627** | **689** |
+| **Code** | **627** | **642** |
 
 The data is the same apart from where it sits: 17 bytes of IOB, 4 of
 DCT, the five strings, and 48 bytes of prompts. In Zork,
@@ -155,8 +155,8 @@ DCT, the five strings, and 48 bytes of prompts. In Zork,
 count each one to the next routine.
 
 **Speed.** Counting only the cycles spent in this code (the stand-ins
-take none), the first save takes 19,758 cycles against Zork's 19,561,
-and the second 13,168 against 13,012.
+take none), the first save takes 19,498 cycles against Zork's 19,561,
+and the second 12,983 against 13,012.
 
 **Where the difference comes from.** Looking at `instr_save.asm`:
 
@@ -165,9 +165,13 @@ and the second 13,168 against 13,012.
   `cout_string`, instruction for instruction.
 - `print_ascii_string` is the original's loop too, the same size, with
   its count and index in zero-page locals where Zork uses SCRATCH3.
-- `get_prompted_number_from_user` indexes the 16-byte prompt records,
-  and computes `which * 16` as a 16-bit shift, three times, where
-  Zork keeps a byte offset in `prompt_offset`.
+- `get_prompted_number_from_user` shifts `which` left four times in A
+  to get the byte offset of its prompt record, where Zork's callers
+  pass the offset in `prompt_offset`. The pointer arguments are each
+  one add straight into the callee's parameter bytes,
+  `#<(prompts+15)` plus the offset for the answer, and the default
+  answer is read with `LDA prompts+15,X`. It's 3 bytes shorter than
+  Zork's.
 - `do_rwts_on_sector`'s loop is Zork's: the sector number in A and
   X, `SBC SECTORS_PER_TRACK; BCS` when nothing is borrowed from the
   high byte, and `ADC SECTORS_PER_TRACK` after the loop to get the
@@ -259,3 +263,12 @@ Comparing its code with Zork's then led to:
   front of the loop when only the way in needs it
   ([carry_known.md](../../../docs/optimizations/carry_known.md)).
   That made the loop 15 cycles a pass, as Zork's is.
+- An index into an array object of at most 255 bytes is scaled at byte
+  width, `o[i].m` on a static array is read and written as `LDA
+  o+m,X` ([static_indexed_access.md](../../../docs/optimizations/static_indexed_access.md)),
+  a label's address plus a constant is one immediate
+  ([label_offset_fold.md](../../../docs/optimizations/label_offset_fold.md)),
+  and a value computed only to be passed is stored straight into the
+  callee's parameter bytes
+  ([backward_copy_propagation.md](../../../docs/optimizations/backward_copy_propagation.md)).
+  `get_prompted_number_from_user` went from 150 bytes to 103.

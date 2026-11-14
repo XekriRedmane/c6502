@@ -70,12 +70,14 @@ a user variable.
 - [Direct load into X or Y](direct_index_load.md). Fuses `LDA M; TAX` or `TAY` into LDX or LDY when A is dead.
 - [Direct member access](direct_member_access.md). Turns a load or store through `&obj + k` into direct byte access.
 - [Dispatch on a small pointer table](dispatch_pointer_array.md). Rewrites `arr[i][j]` on a small pointer table as a compare-and-branch on `i`.
+- [Indexed access to a static array of structs](static_indexed_access.md). Turns `o[i].m` on a static array into `LDA o+m,X`, and `(&o + i) + m` into `(&o + m) + i`.
 - [Indexed load from a fixed address](recognize_indexed_load.md). Turns a byte load through a constant address plus a byte index into `LDA C,X`.
 - [Indexed store to a fixed address](recognize_indexed_store.md). Turns a byte store through a constant address plus a byte index into `STA C,X`.
 - [Indirect-indexed access through a pointer](recognize_indirect_indexed.md). Turns a byte access through a pointer plus a byte index or constant into `(zp),Y`.
 - [INY and CPY for an incremented table byte](index_inc_cmp_y.md). Does table-byte plus or minus one and its compare in Y instead of a temporary.
 - [Load after read-modify-write](redundant_load_after_rmw.md). Deletes an unused load right after INC, DEC, or a shift of the same byte.
 - [Logical-not jump fold](lnot_jump_fold.md). Removes a `!` used only by a jump and flips the jump's sense.
+- [Link-time address arithmetic](label_offset_fold.md). Turns an add of a label's address and a constant into one immediate, `#<(name+k)`.
 - [Loop counter in X](loop_counter_to_x.md). Moves an index loop counter into X, moving other index loads to Y.
 - [Loop unrolling](unroll.md). Replaces a pragma-marked counted for loop with one body copy per iteration.
 - [Loop-carried value in A](promote_loop_carried_to_a.md). Keeps an incremented register parameter in A across its loop.
@@ -169,11 +171,12 @@ them whenever a pass is added or moved.
       17. [Sinking increments](sink_increment.md)
       18. [Sinking an AND past a bit test](sink_and_past_branch.md)
       19. [Narrowing widened arithmetic](narrow_widened_arith.md)
-   5. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
-   6. [Compare and subtract of the same operands](compare_subtract.md)
-   7. SSA destruction.
-   8. [Copy folding](copy_folding.md), once more.
-   9. *Fixed point*: [branching directly on `&&` and
+   5. [Indexed access to a static array of structs](static_indexed_access.md)
+   6. [Indirect-indexed access through a pointer](recognize_indirect_indexed.md)
+   7. [Compare and subtract of the same operands](compare_subtract.md)
+   8. SSA destruction.
+   9. [Copy folding](copy_folding.md), once more.
+   10. *Fixed point*: [branching directly on `&&` and
       `||`](short_circuit_jump_fold.md)
 3. [Dispatch on a small pointer table](dispatch_pointer_array.md),
    over the whole program.
@@ -252,27 +255,28 @@ reaching the cap raises an error.
 20. [Branch to next label](branch_to_next_drop.md)
 21. [Branch through jump](branch_through_jump.md)
 22. [Branch threading on a known flag](branch_thread.md)
-22. [DEX and DEY for a register counter](dec_register_peephole.md)
+23. [DEX and DEY for a register counter](dec_register_peephole.md)
 24. [TXA past a branch](transfer_past_branch.md)
 25. [INY and CPY for an incremented table byte](index_inc_cmp_y.md)
 26. [CMP for a discarded volatile read](volatile_void_read_cmp.md)
 27. [Y known zero after a DEY loop](dec_branch_indirect_y_fold.md)
 28. [Memory constant propagation](mem_const_prop.md)
 29. [Constant AND and ORA fold](const_arith_fold.md)
-30. [Carry-flag return peepholes](carry_return.md), which are three
+30. [Link-time address arithmetic](label_offset_fold.md)
+31. [Carry-flag return peepholes](carry_return.md), which are three
     passes run back to back.
-31. [Round-trip load drop](round_trip_load.md)
-32. [Sign-bit test without AND](and_sign_bit_branch.md)
-33. [Self-store drop](self_store_drop.md)
-34. [Redundant compare](redundant_compare.md)
-35. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-36. [Commuted ADC, AND, and ORA](adc_commute.md)
-37. [CMP and SBC fusion](cmp_sbc_fusion.md)
-38. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-39. [Tail call](tail_call.md)
-40. [Tail merge](tail_merge.md)
-41. [Store X or Y directly](via_a_store_fold.md)
-42. [Transfer plus or minus one](transfer_pm1_store.md)
+32. [Round-trip load drop](round_trip_load.md)
+33. [Sign-bit test without AND](and_sign_bit_branch.md)
+34. [Self-store drop](self_store_drop.md)
+35. [Redundant compare](redundant_compare.md)
+36. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+37. [Commuted ADC, AND, and ORA](adc_commute.md)
+38. [CMP and SBC fusion](cmp_sbc_fusion.md)
+39. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+40. [Tail call](tail_call.md)
+41. [Tail merge](tail_merge.md)
+42. [Store X or Y directly](via_a_store_fold.md)
+43. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `--optimize`
 

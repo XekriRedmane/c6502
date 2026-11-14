@@ -68,9 +68,11 @@ this directory:
   `branch_through_jump`.
 - `carry_known.py` — `apply_carry_known`. A forward dataflow of C
   (set / clear / unknown; `BCC` / `BCS` tell each edge) drops a `SEC`
-  or `CLC` where C already has that value, and moves one that starts a
+  or `CLC` where C already has that value, moves one that starts a
   block in front of its labels when every edge in but the
-  fall-through has C that way (a loop's back edges). Runs once after
+  fall-through has C that way (a loop's back edges), and drops one
+  whose carry nothing reads; three steps, each on the result of the
+  one before. Runs once after
   the third peephole fixed point, since `transfer_pm1_store` and
   `cmp_sbc_fusion` match a `SEC` / `CLC`.
 - `branch_through_jump.py` — `apply_branch_through_jump` peephole.
@@ -123,6 +125,11 @@ this directory:
   consume directly once `asm_emit._emit_compare` and the in-sim
   `_emit_compare` dispatch IndexedData (added alongside this pass).
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
+- `label_offset_fold.py` — `apply_label_offset_fold`. A 2-byte add of
+  a label's halves and a constant (`LDA #k; CLC; ADC #<r; STA d0;
+  LDA #k2; ADC #>r; STA d1`) becomes `LDA #<(r+K); STA d0; LDA
+  #>(r+K); STA d1` when C and V are dead after: `&r[2].a` on a static
+  array.
 - `constant_expression.py` — C99 §6.6 evaluator (integer-constant
   folding for case labels, static initializers, and, through the
   parser, array sizes and enumeration constants).
@@ -1062,6 +1069,9 @@ document says whether it fires there.
 - `apply_mem_const_prop` — per-block memory-cell value tracker
   (`Data(name, off)` / `ZP(addr, off)`); substitutes the known
   immediate at any downstream operand slot that accepts `Imm`.
+- `apply_label_offset_fold` — a label's address plus a constant as
+  one immediate, `#<(name+k)` / `#>(name+k)`. Runs right after
+  `apply_const_arith_fold`.
 - `apply_const_arith_fold` — folds `LDA #C1; ALU #C2` chains that
   produce a compile-time-known A value, replacing the sequence with
   `LDA #folded`. Most useful for the high-byte branch of an int-typed

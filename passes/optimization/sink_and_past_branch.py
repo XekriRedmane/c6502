@@ -526,6 +526,7 @@ def _rewrite_instr_uses(
             index=fix(instr.index),
             dst=instr.dst,
             is_volatile=instr.is_volatile,
+            offset=instr.offset,
         )
     if isinstance(instr, tac_ast.IndexedStore):
         return tac_ast.IndexedStore(
@@ -540,6 +541,7 @@ def _rewrite_instr_uses(
             index=fix(instr.index),
             src=fix(instr.src),
             is_volatile=instr.is_volatile,
+            offset=instr.offset,
         )
     if isinstance(instr, tac_ast.IndexedConstLoad):
         return tac_ast.IndexedConstLoad(

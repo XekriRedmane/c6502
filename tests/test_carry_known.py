@@ -88,6 +88,8 @@ class TestCarryKnown(unittest.TestCase):
         self.assertEqual(_run(list(instrs)), instrs)
 
     def test_stays_after_a_call(self):
+        # The first SEC is dead, since the call overwrites C; the
+        # second is needed, since C is unknown after the call.
         instrs = [
             asm_ast.SetCarry(),
             asm_ast.Call(name="g", reg_args=[], preserves=[]),
@@ -95,7 +97,24 @@ class TestCarryKnown(unittest.TestCase):
             asm_ast.Sub(src=_S, dst=_A),
             _ret(),
         ]
-        self.assertEqual(_run(list(instrs)), instrs)
+        self.assertEqual(_run(list(instrs)), instrs[1:])
+
+    def test_dead_and_redundant_together(self):
+        # A dead CLC followed by the one the ADC needs: only the dead
+        # one goes, though it made the second look redundant.
+        instrs = [
+            asm_ast.Call(name="g", reg_args=[], preserves=[]),
+            asm_ast.ClearCarry(),
+            asm_ast.Mov(src=_S, dst=_A),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=_S, dst=_A),
+            _ret(),
+        ]
+        out = _run(list(instrs))
+        self.assertEqual(out.count(asm_ast.ClearCarry()), 1)
+        self.assertLess(
+            out.index(asm_ast.ClearCarry()), out.index(asm_ast.Add(src=_S, dst=_A)),
+        )
 
 
 if __name__ == "__main__":

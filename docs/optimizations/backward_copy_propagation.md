@@ -68,8 +68,13 @@ front of the `RTS`.
 
 ## When it applies
 
-The pass matches `Mov(P, A); Mov(A, D)` at positions `i` and `i+1`
-and requires all of these.
+The pass matches `Mov(P, A); Mov(A, D)` at positions `i` and `i+1`,
+or a single memory-to-memory `Mov(P, D)` at `i`, which emits as the
+same `LDA P; STA D`. `tac_to_asm` writes each byte of a zp_abi
+argument that way, so a pointer computed only to be passed, such as
+`print_ascii_string(prompts[which].text, 15)` in
+`examples/zork/instr_save/prompts.c`, is stored straight into the
+callee's parameter bytes. It requires all of these.
 
 - Neither `Mov` is volatile, and neither is the `Mov(A, P)` that
   defines `P`.
@@ -83,11 +88,13 @@ and requires all of these.
 - Exactly one `Mov` before `i` writes `P`, and its source is A.
 - `D` is a `Data` or `Stack` operand.
 - Between the definition and the pair there is no `Label`, `Jump`,
-  `Branch`, `Ret`, `Return`, or `Call`, and no operand that can name
-  `D`'s byte. `Data` and `Stack` operands match by name and offset,
+  `Branch`, `Ret`, `Return`, `Call`, `AllocateStack`, or
+  `FunctionPrologue` (the last two move SSP, so a `Stack(k)` before
+  one names a different byte than after it), and no operand that can
+  name `D`'s byte. `Data` and `Stack` operands match by name and offset,
   `ZP` by address, an `Indirect` matches DPTR, and an `IndirectZp`
   matches its two pointer bytes.
-- A and the N and Z flags are dead after the pair, since the deleted
+- A and the N and Z flags are dead after the copy, since the deleted
   `LDA P` would have set both.
 
 The definition then becomes `Mov(A, D)` and the pair is deleted.
@@ -102,10 +109,9 @@ The definition then becomes `Mov(A, D)` and the pair is deleted.
   one location is the job of [move coalescing](coalescing.md).
 - A definition and copy in different basic blocks, or with a call
   between them, since the call can change `D`.
-- Soft-stack arguments. `tac_to_asm` writes each one as a single
-  memory-to-memory `Mov(P, Stack(k))` with no load into A, so the
-  pair never matches. Stores to zp_abi argument slots have the same
-  shape.
+- Soft-stack arguments whose value was computed before the call's
+  `AllocateStack`, since `Stack(k)` names a different byte once SSP
+  has moved.
 
 ## Related
 

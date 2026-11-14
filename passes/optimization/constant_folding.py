@@ -258,6 +258,8 @@ def _fold(
             # erase the access. Skip folding.
             if is_vol:
                 return instr
+            if instr.offset:
+                c = type(c)(value=c.value + instr.offset)
             res = _fold_indexed_load(name, c, dst, symbols)
             if res is not None:
                 return res

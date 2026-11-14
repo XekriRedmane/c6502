@@ -224,7 +224,7 @@ def _find_one_chain(
         ptr_def = instrs[ptr_def_idx]
         if not isinstance(ptr_def, tac_ast.IndexedLoad):
             continue
-        if ptr_def.is_volatile:
+        if ptr_def.is_volatile or ptr_def.offset:
             continue
         arr_name = ptr_def.name
         if arr_name not in pointer_arrays:

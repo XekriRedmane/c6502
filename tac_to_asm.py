@@ -1644,18 +1644,18 @@ class Translator:
             case tac_ast.Store(src=src, dst_ptr=dst_ptr, is_volatile=v):
                 return self._translate_store(src, dst_ptr, v)
             case tac_ast.IndexedLoad(
-                name=name, index=index, dst=dst, is_volatile=v,
+                name=name, index=index, dst=dst, is_volatile=v, offset=o,
             ):
-                return self._translate_indexed_load(name, index, dst, v)
+                return self._translate_indexed_load(name, index, dst, v, o)
             case tac_ast.IndexedStore(
                 address=addr, index=index, src=src, is_volatile=v,
             ):
                 return self._translate_indexed_store(addr, index, src, v)
             case tac_ast.IndexedSymbolStore(
-                name=name, index=index, src=src, is_volatile=v,
+                name=name, index=index, src=src, is_volatile=v, offset=o,
             ):
                 return self._translate_indexed_symbol_store(
-                    name, index, src, v,
+                    name, index, src, v, o,
                 )
             case tac_ast.IndexedConstLoad(
                 address=addr, index=index, dst=dst, is_volatile=v,
@@ -2657,6 +2657,7 @@ class Translator:
         index: tac_ast.Type_val,
         dst: tac_ast.Type_val,
         is_volatile: bool = False,
+        offset: int = 0,
     ) -> list[asm_ast.Type_instruction]:
         """Static-array indexed load: stage `index` into X, then read
         N consecutive bytes from `name+0..N-1,X` (absolute,X on the
@@ -2679,12 +2680,15 @@ class Translator:
         goes through A as a volatile `LDA` and an ordinary `STA`, so
         the store into `dst` can be dropped when nothing reads it,
         as in `while (!(KBD & 0x80)) ;`. A single memory-to-memory
-        Mov would carry the volatile bit to the store as well."""
+        Mov would carry the volatile bit to the store as well.
+
+        `offset` is the node's constant offset, added to every byte's
+        address: `LDA name+offset+k,X`."""
         index_op = translate_val(index)
         dst_op = translate_val(dst)
         n = self._size_of(dst)
         if isinstance(index_op, asm_ast.Imm) and is_volatile:
-            base = index_op.value & 0xFF
+            base = (index_op.value & 0xFF) + offset
             out = []
             for k in range(n):
                 out.append(asm_ast.Mov(
@@ -2694,7 +2698,7 @@ class Translator:
                 out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
             return out
         if isinstance(index_op, asm_ast.Imm):
-            base = index_op.value & 0xFF
+            base = (index_op.value & 0xFF) + offset
             return [
                 asm_ast.Mov(
                     src=self._named_byte(name, base + k),
@@ -2710,7 +2714,7 @@ class Translator:
         for k in range(n):
             out.append(asm_ast.Mov(
                 src=asm_ast.IndexedData(
-                    name=name, offset=k, index=asm_ast.X(),
+                    name=name, offset=offset + k, index=asm_ast.X(),
                 ),
                 dst=_byte_at(dst_op, k),
                 is_volatile=is_volatile,
@@ -2755,6 +2759,7 @@ class Translator:
         index: tac_ast.Type_val,
         src: tac_ast.Type_val,
         is_volatile: bool = False,
+        offset: int = 0,
     ) -> list[asm_ast.Type_instruction]:
         """Static-array indexed store: stage `index` into X, then
         write N consecutive bytes from `src` to `name+0..N-1,X`
@@ -2778,7 +2783,7 @@ class Translator:
         src_op = translate_val(src)
         n = self._size_of(src)
         if isinstance(index_op, asm_ast.Imm):
-            base = index_op.value & 0xFF
+            base = (index_op.value & 0xFF) + offset
             out = []
             for k in range(n):
                 out.append(asm_ast.Mov(src=_byte_at(src_op, k), dst=_REG_A))
@@ -2799,7 +2804,7 @@ class Translator:
             out.append(asm_ast.Mov(
                 src=_REG_A,
                 dst=asm_ast.IndexedData(
-                    name=name, offset=k, index=asm_ast.X(),
+                    name=name, offset=offset + k, index=asm_ast.X(),
                 ),
                 is_volatile=is_volatile,
             ))

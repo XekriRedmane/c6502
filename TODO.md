@@ -125,20 +125,19 @@ order of size:
 
 ## Optimizations found by Zork's save instruction
 
-`examples/zork/instr_save` is 689 bytes of code against Zork's 627, and
-its first save takes 19,758 cycles against 19,561.
-`get_prompted_number_from_user` accounts for most of what's left of
-both, 44 bytes and 273 cycles. Roughly in order of payoff:
+`examples/zork/instr_save` is 642 bytes of code against Zork's 627,
+and both saves now take fewer cycles than Zork's (19,498 against
+19,561, and 12,983 against 13,012). `instr_save` is 11 bytes longer
+and the two write routines 7, while `do_rwts_on_sector` and
+`get_prompted_number_from_user` are 4 shorter. Roughly in order of
+payoff:
 
-- **Index arithmetic narrowed by the array's bounds.** `prompts[which]`
-  on `struct prompt prompts[3]` (16 bytes each) computes `which * 16`
-  as a 16-bit shift in memory and adds it to the address. A valid
-  index keeps every offset below 48, since indexing outside the array
-  is undefined, so the offset fits a byte: `ASL A` four times, `TAX`,
-  and `LDA prompts+15,X`, as Zork does.
-- **An address kept across calls.** `&prompts[which]` doesn't change
-  in `get_prompted_number_from_user`, but it's computed again after
-  each call instead of kept in the function's pool.
+- **A phi kept in A across a join.** In `floor_enemy_draw`, each case
+  of a dispatch now stores its value to a zero-page byte, where they
+  used to leave it in A for one store after the join (6 bytes, no
+  cycles). It appeared when backward copy propagation started storing
+  a value computed only to be passed straight into the callee's
+  parameter bytes.
 - **Falling into a tail call.** `write_next_sector` ends in `JMP
   inc_sector_and_write`. Placing a function just before the one it
   tail-calls would drop the `JMP`, which is how Zork chains these

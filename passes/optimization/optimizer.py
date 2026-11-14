@@ -108,6 +108,7 @@ from passes.optimization.narrow_widened_arith import NarrowWidenedArith
 from passes.optimization.recognize_indirect_indexed import RecognizeIndirectIndexed
 from passes.optimization.short_circuit_jump_fold import FoldShortCircuitJump
 from passes.optimization.compare_subtract import HoistSubtractToCompare
+from passes.optimization.static_indexed_access import StaticIndexedAccess
 
 
 # Module-level driver instance, reused across all optimize_function calls.
@@ -171,6 +172,11 @@ _DRIVER = PhaseDriver(
         NarrowWidenedArith(),
     ],
     post_fixedpoint=[
+        # `o[i].m` on a static array as `IndexedLoad(o, i, offset=m)`
+        # (abs,X), and `(&o + i) + m` as `(&o + m) + i`. Before the
+        # indirect-indexed recognizer, which would otherwise take the
+        # access as `(zp),Y` through a pointer.
+        StaticIndexedAccess(),
         # Run the indirect-indexed recognizer AFTER the fixed-point
         # loop has converged on constant folding. If we ran it inside
         # the loop, it could prematurely lock in an IndirectIndexed

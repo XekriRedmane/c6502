@@ -235,7 +235,11 @@ Mapping:
                                  through Copy / Binary / Ret.
   C99 Subscript(arr, idx)     -> reuses translate_pointer_arithmetic:
                                  compute `arr_val + idx*sizeof(elem)`
-                                 into a Pointer-typed temp, then
+                                 into a Pointer-typed temp (the
+                                 index scaled at byte width when
+                                 `arr` is an array object of at most
+                                 255 bytes; see
+                                 `_translate_subscript_address`), then
                                  Load(src_ptr=addr, dst=fresh_elem)
                                  in rvalue context. The lvalue path
                                  (Assignment with Subscript lval)
@@ -1179,6 +1183,29 @@ def _pointee_size(t: c99_ast.Type_data_type, types=None) -> int:
     before this point."""
     assert isinstance(t, c99_ast.Pointer), f"not a pointer: {t!r}"
     return _sizeof(t.referenced_type, types)
+
+
+def _byte_offset_scale(array: c99_ast.Type_exp, types=None) -> int | None:
+    """The element size of `array` when it's the implicit decay of an
+    array object of at least two elements that spans at most 255
+    bytes, so that the byte offset of any index C defines fits in a
+    byte (see `_translate_subscript_address`); else None. `&arr`
+    written out is a pointer to the whole array, not a decay, and a
+    pointer operand isn't an array object."""
+    if not isinstance(array, c99_ast.AddressOf):
+        return None
+    arr_t = _strip_quals_c99(array.exp.data_type)
+    ptr_t = _strip_quals_c99(array.data_type)
+    if not (isinstance(arr_t, c99_ast.Array)
+            and isinstance(ptr_t, c99_ast.Pointer)
+            and ptr_t.referenced_type == arr_t.element_type):
+        return None
+    if arr_t.size < 2:
+        return None
+    elem = _sizeof(arr_t.element_type, types)
+    if elem < 1 or arr_t.size * elem > 255:
+        return None
+    return elem
 
 
 def _is_char_element(t: c99_ast.Type_data_type) -> bool:
@@ -3469,9 +3496,48 @@ class Translator:
         returned val is a Pointer-typed (so 2-byte, the 6502's
         address width) temp holding the byte address; both the
         rvalue path (Load through it) and the lvalue path (Store
-        through it) consume it the same way."""
+        through it) consume it the same way.
+
+        When `array` is an array object (the implicit decay of one,
+        not a pointer) whose elements end within 255 bytes of its
+        start, every index that C defines lands on one of those bytes
+        (C99 §6.5.6.8: anything else is undefined), so the offset fits
+        a byte: the index is truncated to a byte, scaled there, and
+        zero-extended. `prompts[which]` on a `struct prompt
+        prompts[3]` of 16-byte records shifts `which` left 4 in A
+        instead of shifting a 16-bit value. An array of one element
+        is left alone, since a struct's last `[1]` member is often
+        indexed past its end."""
         arr_val = self.translate_exp(array, instrs)
         idx_val = self.translate_exp(index, instrs)
+        scale = _byte_offset_scale(array, self._types)
+        if scale is not None and not isinstance(idx_val, tac_ast.Constant):
+            byte = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.UChar()),
+            )
+            instrs.append(tac_ast.Truncate(src=idx_val, dst=byte))
+            if scale != 1:
+                scaled = tac_ast.Var(
+                    name=self.make_temporary_variable_name(c99_ast.UChar()),
+                )
+                instrs.append(tac_ast.Binary(
+                    op=tac_ast.Multiply(), src1=byte,
+                    src2=_tac_const_val(c99_ast.UChar(), scale), dst=scaled,
+                ))
+                byte = scaled
+            offset = tac_ast.Var(
+                name=self.make_temporary_variable_name(c99_ast.UInt()),
+            )
+            instrs.append(tac_ast.ZeroExtend(src=byte, dst=offset))
+            dst = tac_ast.Var(
+                name=self.make_temporary_variable_name(
+                    _strip_quals_c99(array.data_type),
+                ),
+            )
+            instrs.append(tac_ast.Binary(
+                op=tac_ast.Add(), src1=arr_val, src2=offset, dst=dst,
+            ))
+            return dst
         return self.translate_pointer_arithmetic(
             op=c99_ast.Add(),
             src1=arr_val, src2=idx_val,

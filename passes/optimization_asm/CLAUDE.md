@@ -37,7 +37,10 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
 - `copy_propagation.py` — forward copy propagation on the asm-SSA
   form.
 - `backward_copy_propagation.py` — backward copy propagation; the
-  pass explicitly defers Pseudo-to-Pseudo coalescing to regalloc.
+  pass explicitly defers Pseudo-to-Pseudo coalescing to regalloc. A
+  copy is `Mov(P, A); Mov(A, D)` or one memory-to-memory `Mov(P, D)`
+  (each byte of a zp_abi argument), and the relocation stops at an
+  `AllocateStack` / `FunctionPrologue`, which move SSP.
 - `byte_dce.py` — byte-granular dead-code elimination.
 - `regalloc.py` — byte-granular register allocation. Colors 1-byte
   SSA names to ZP from `Pool(start=0x80)` (default split: caller-

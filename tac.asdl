@@ -55,7 +55,13 @@ module TAC {
         -- `Load` / `Store` — set when the access derives from a
         -- volatile-qualified lvalue, suppresses elimination /
         -- coalescing in downstream passes.
-        | IndexedLoad(identifier name, val index, val dst, bool is_volatile)
+        --
+        -- `offset` is a constant added to the address, so the bytes
+        -- read start at `name + offset + index`: `r[i].m` on a static
+        -- array of structs reads `name+m,Y`
+        -- (`passes/optimization/static_indexed_access.py`). Every pass
+        -- that rebuilds the node keeps it.
+        | IndexedLoad(identifier name, val index, val dst, bool is_volatile, int offset)
         -- Indexed store to a 16-bit absolute address. `address` is a
         -- compile-time integer base; `index` is a 1-byte (UChar) val
         -- that the codegen stages into X; `src` is a 1-byte (UChar /
@@ -90,7 +96,8 @@ module TAC {
         -- where the optimizer folded a static-pointer base into a
         -- compile-time constant; `IndexedSymbolStore` covers the
         -- direct named-array case.
-        | IndexedSymbolStore(identifier name, val index, val src, bool is_volatile)
+        -- `offset` is as for IndexedLoad.
+        | IndexedSymbolStore(identifier name, val index, val src, bool is_volatile, int offset)
         -- Indexed load from a 16-bit absolute address. Mirror of
         -- IndexedStore: `address` is a compile-time integer base,
         -- `index` is a 1-byte (UChar) val staged into X, `dst`

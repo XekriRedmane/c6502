@@ -270,6 +270,7 @@ def _rewrite(
         case tac_ast.IndexedLoad(name=n, index=i, dst=d, is_volatile=v):
             return tac_ast.IndexedLoad(
                 name=n, index=sub(i), dst=d, is_volatile=v,
+                offset=instr.offset,
             )
         case tac_ast.IndexedStore(address=a, index=i, src=s, is_volatile=v):
             return tac_ast.IndexedStore(
@@ -278,6 +279,7 @@ def _rewrite(
         case tac_ast.IndexedSymbolStore(name=n, index=i, src=s, is_volatile=v):
             return tac_ast.IndexedSymbolStore(
                 name=n, index=sub(i), src=sub(s), is_volatile=v,
+                offset=instr.offset,
             )
         case tac_ast.JumpIfTrue(condition=c, target=t):
             return tac_ast.JumpIfTrue(condition=sub(c), target=t)

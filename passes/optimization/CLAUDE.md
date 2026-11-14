@@ -217,6 +217,19 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper
   absolute,X form.
+- `static_indexed_access.py` — `static_indexed_access`
+  (`StaticIndexedAccess`, PostFixedpointPass, before
+  `recognize_indirect_indexed`). A `Load` / `Store` (or an
+  `IndirectIndexed*` with a constant index) through `GetAddress(o) +
+  ZeroExtend(b) [+ k]`, with `o` static and `b` one byte, becomes
+  `IndexedLoad(o, b, offset=k)` / `IndexedSymbolStore(o, b, src,
+  offset=k)` (`LDA o+k,X`); a pointer value `(GetAddress(o) + z) + k`
+  becomes `(GetAddress(o) + k) + z`, whose constant part
+  `label_offset_fold` makes one immediate. `c99_to_tac` scales an
+  index into an array object of at most 255 bytes at byte width
+  (`_byte_offset_scale`), which is what makes `b` a byte for
+  `o[i].m`. The `offset` field of `IndexedLoad` / `IndexedSymbolStore`
+  is kept by every pass that rebuilds one.
 - `compare_subtract.py` — `hoist_subtract_to_compare`
   (`HoistSubtractToCompare`, PostFixedpointPass). Moves `t = a - b`
   from a successor (whose only predecessor is the compare's block) to
@@ -272,6 +285,7 @@ fn → rotate_signed_countdown_loops (PreSsaPass, one-shot)
       → recognize_indexed_store → recognize_indexed_load
       → fold_truncate_extend → sink_increments
       → sink_and_past_branch → narrow_widened_arith]*   (FixedpointPass loop)
+   → static_indexed_access         (PostFixedpointPass, one-shot)
    → recognize_indirect_indexed    (PostFixedpointPass, one-shot)
    → hoist_subtract_to_compare     (PostFixedpointPass, one-shot)
    → from_ssa                      (owned by PhaseDriver)

@@ -555,7 +555,9 @@ class Simulator:
                 idx_val, _ = self._read(frame, i)
                 w = self._dst_width(d)
                 self._write(
-                    frame, d, self.memory.load(base + (idx_val & 0xFF), w),
+                    frame, d, self.memory.load(
+                        base + ins.offset + (idx_val & 0xFF), w,
+                    ),
                 )
 
             case tac_ast.IndexedSymbolStore(name=name, index=i, src=s):
@@ -575,7 +577,7 @@ class Simulator:
                     )
                 idx_val, _ = self._read(frame, i)
                 v, (_, w, _) = self._read(frame, s)
-                self.memory.store(base + (idx_val & 0xFF), v, w)
+                self.memory.store(base + ins.offset + (idx_val & 0xFF), v, w)
 
             case tac_ast.IndexedStore(address=addr, index=i, src=s):
                 idx, _ = self._read(frame, i)

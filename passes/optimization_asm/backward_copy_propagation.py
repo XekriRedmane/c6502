@@ -16,7 +16,12 @@ shows up as the consecutive pair
 
 This pass treats that pair as a logical `Copy(P, D)`. When `P` has
 exactly one such use and its def is `Mov(Reg(A), P)`, the pair can
-be eliminated and the def's destination redirected to `D`.
+be eliminated and the def's destination redirected to `D`. A single
+memory-to-memory `Mov(P, D)`, which emits as the same `LDA P; STA D`,
+counts too: `tac_to_asm` writes each byte of a zp_abi argument that
+way, so a pointer computed only to be passed, such as
+`print_ascii_string(prompts[which].text, 15)`, is stored straight
+into the callee's parameter bytes.
 
 Concretely, rewrites the pattern
 
@@ -112,28 +117,30 @@ def _one_pass(
     use_counts = _compute_use_counts(fn)
     instrs = fn.instructions
 
-    rewrites: list[tuple[int, int, asm_ast.Type_operand]] = []
+    rewrites: list[tuple[int, int, asm_ast.Type_operand, int]] = []
     claimed: set[int] = set()
-    for i in range(len(instrs) - 1):
-        if i in claimed or (i + 1) in claimed:
+    for i in range(len(instrs)):
+        if i in claimed:
             continue
         match = _try_match_at(instrs, i, excluded, use_counts)
         if match is None:
             continue
-        def_idx, new_dst = match
-        if def_idx in claimed:
+        def_idx, new_dst, length = match
+        if def_idx in claimed or any(
+            k in claimed for k in range(i, i + length)
+        ):
             continue
-        rewrites.append((def_idx, i, new_dst))
-        claimed.update({def_idx, i, i + 1})
+        rewrites.append((def_idx, i, new_dst, length))
+        claimed.update({def_idx, *range(i, i + length)})
 
     if not rewrites:
         return fn
 
     delete: set[int] = set()
     rewrite_def: dict[int, asm_ast.Type_operand] = {}
-    for def_idx, pair_idx, new_dst in rewrites:
+    for def_idx, pair_idx, new_dst, length in rewrites:
         rewrite_def[def_idx] = new_dst
-        delete.update({pair_idx, pair_idx + 1})
+        delete.update(range(pair_idx, pair_idx + length))
 
     new_instrs: list[asm_ast.Type_instruction] = []
     for idx, instr in enumerate(instrs):
@@ -154,35 +161,41 @@ def _try_match_at(
     instrs: list[asm_ast.Type_instruction], i: int,
     excluded: set[str],
     use_counts: dict[ByteVar, int],
-) -> tuple[int, asm_ast.Type_operand] | None:
-    """Test whether `instrs[i:i+2]` is a virtual-copy pair `P → D`
-    that can be safely collapsed. Returns `(def_idx, D)` on
-    success."""
+) -> tuple[int, asm_ast.Type_operand, int] | None:
+    """Test whether `instrs[i:i+2]` is a virtual-copy pair `P → D`,
+    or `instrs[i]` a memory-to-memory `Mov(P, D)`, that can be safely
+    collapsed. Returns `(def_idx, D, length)` on success, where
+    `length` is the number of instructions the copy takes."""
     first = instrs[i]
     if not isinstance(first, asm_ast.Mov):
         return None
     # A volatile load of P is its own observable side effect — even
     # though we could relocate the def, doing so would erase the
-    # `LDA P` from the output. Refuse.
+    # `LDA P` from the output. Refuse. (A volatile STA into D must
+    # survive the rewrite as well.)
     if first.is_volatile:
         return None
     if not isinstance(first.src, asm_ast.Pseudo):
         return None
-    if not _is_reg_a(first.dst):
-        return None
-    second = instrs[i + 1]
-    if not isinstance(second, asm_ast.Mov):
-        return None
-    # Similarly a volatile STA into D must survive the rewrite.
-    if second.is_volatile:
-        return None
-    if not _is_reg_a(second.src):
-        return None
-    if not _is_memory_dst(second.dst):
-        return None
+    if _is_memory_dst(first.dst):
+        length = 1
+        D = first.dst
+    else:
+        if not _is_reg_a(first.dst) or i + 1 >= len(instrs):
+            return None
+        second = instrs[i + 1]
+        if not isinstance(second, asm_ast.Mov):
+            return None
+        if second.is_volatile:
+            return None
+        if not _is_reg_a(second.src):
+            return None
+        if not _is_memory_dst(second.dst):
+            return None
+        length = 2
+        D = second.dst
 
     P = first.src
-    D = second.dst
     if P.name in excluded:
         return None
     if use_counts.get((P.name, P.offset), 0) != 1:
@@ -200,12 +213,12 @@ def _try_match_at(
 
     if not _safe_relocation_range(instrs, def_idx + 1, i, D):
         return None
-    if not _a_dead_at(instrs, i + 2):
+    if not _a_dead_at(instrs, i + length):
         return None
-    if not _flags_dead_at(instrs, i + 2):
+    if not _flags_dead_at(instrs, i + length):
         return None
 
-    return def_idx, D
+    return def_idx, D, length
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +265,10 @@ def _safe_relocation_range(
         cover what executes between them.
       * Any `Call` — Calls may clobber `D` (HARGS, statics) and
         their full memory-write set is unknown.
+      * Any `AllocateStack` or `FunctionPrologue`, which move SSP, so
+        that a `Stack(k)` before one isn't the byte `Stack(k)` names
+        after it. A soft-stack call writes its arguments to `Stack`
+        bytes just after its `AllocateStack`.
       * Any operand of any intermediate instruction that aliases
         `D`'s storage cell."""
     for idx in range(lo, hi):
@@ -259,6 +276,7 @@ def _safe_relocation_range(
         if isinstance(instr, (
             asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
             asm_ast.Ret, asm_ast.Return, asm_ast.Call,
+            asm_ast.AllocateStack, asm_ast.FunctionPrologue,
         )):
             return False
         for op in _all_operands(instr):

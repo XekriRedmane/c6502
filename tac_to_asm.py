@@ -195,6 +195,12 @@ fill. A count of 1, or of a multiple of 8, is always inlined (see
 shift runs in A (`LDA src; ASL A` ...; `STA dst`), which is 3 cycles
 a step faster than `ASL` on a zero-page byte.
 
+A left shift by a constant of a value with one significant byte (a
+widened byte, or one masked to a byte; `passes/significant_bytes.py`)
+is always inlined, as two byte shifts in A whatever the count
+(`_inline_left_shift_byte`): `(unsigned int)c << 6` is `LDA c; LSR A;
+LSR A; STA hi; LDA c; ROR A; ROR A; ROR A; AND #$C0`.
+
 An `IndexedLoad` or `IndexedSymbolStore` with a constant index needs
 no X. It reads or writes `name+k` with absolute addressing.
 
@@ -844,6 +850,85 @@ def _inline_left_shift_const(
     return out
 
 
+def _inline_left_shift_byte(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    size: int,
+    count: int,
+) -> list[asm_ast.Type_instruction]:
+    """LeftShift by the constant `count = 8q + r` (0 < r, count <
+    size*8) of a value whose bytes above the low one are zero
+    (`passes/significant_bytes.py`), such as `(unsigned int)c << 5`.
+    Only two bytes of the result can be nonzero: byte q, `lo = b <<
+    r`, and byte q + 1, `hi = b >> (8 - r)`, with `b` the source's low
+    byte. Each is computed in A from `b`, by the shorter of two ways:
+
+    - `lo`: `ASL A` r times, or `ROR A` 9 - r times and `AND` with
+      the r low bits clear (the rotates go round through C, so `b`'s
+      low bits arrive at the top).
+    - `hi`: `LSR A` 8 - r times, or `ROL A` r + 1 times and `AND`
+      with the r low bits set.
+
+    For r = 1 the carry the `ASL` shifts out is `hi`: `LDA b; ASL A;
+    STA lo; LDA #0; ROL A; STA hi`, and r = 2 adds `ASL lo; ROL hi`,
+    which `shift_in_a` turns into `...; LDA #0; ROL A; ASL lo; ROL A;
+    STA hi` (2 bytes and 2 cycles less than the two-part form). For
+    r = 7 the `LSR` shifts out `lo`'s one bit: `LDA b; LSR A; STA hi;
+    LDA #0; ROR A; STA lo`. The others compute `hi` and then `lo`,
+    which leaves `lo` in A for an add or subtract: 13 or 14 bytes and
+    21 to 25 cycles with `b` in zero page, where `asl16` loops once
+    per bit, and the 16-bit shift by 3 or 4 this replaces took 15 or
+    18 bytes and 29 or 36 cycles. When byte q is the top byte there's
+    no `hi`. The zero bytes are stored last. `src` and `dst` are
+    different variables, so the regalloc keeps their bytes apart while
+    `b` is still to be read."""
+    q, r = divmod(count, 8)
+    b = _byte_at(src_op, 0)
+    lo = _byte_at(dst_op, q)
+    hi = _byte_at(dst_op, q + 1) if q + 1 < size else None
+    a = _REG_A
+
+    def lo_steps() -> list[asm_ast.Type_instruction]:
+        if r <= 10 - r:
+            return [asm_ast.ArithmeticShiftLeft(dst=a)] * r
+        return [asm_ast.RotateRight(dst=a)] * (9 - r) + [
+            asm_ast.And(src=asm_ast.Imm(value=(0xFF << r) & 0xFF), dst=a),
+        ]
+
+    def hi_steps() -> list[asm_ast.Type_instruction]:
+        if 8 - r <= r + 2:
+            return [asm_ast.LogicalShiftRight(dst=a)] * (8 - r)
+        return [asm_ast.RotateLeft(dst=a)] * (r + 1) + [
+            asm_ast.And(src=asm_ast.Imm(value=(1 << r) - 1), dst=a),
+        ]
+
+    zero = asm_ast.Imm(value=0)
+    if hi is None:
+        out = _shift_byte_in_a(b, lo, lo_steps())
+        nonzero = {q}
+    elif r <= 2:
+        out = _shift_byte_in_a(b, lo, [asm_ast.ArithmeticShiftLeft(dst=a)])
+        out += _shift_byte_in_a(zero, hi, [asm_ast.RotateLeft(dst=a)])
+        if r == 2:
+            out += [asm_ast.ArithmeticShiftLeft(dst=lo),
+                    asm_ast.RotateLeft(dst=hi)]
+        nonzero = {q, q + 1}
+    elif r == 7:
+        out = _shift_byte_in_a(b, hi, [asm_ast.LogicalShiftRight(dst=a)])
+        out += _shift_byte_in_a(zero, lo, [asm_ast.RotateRight(dst=a)])
+        nonzero = {q, q + 1}
+    else:
+        # `lo` last, so it's in A for what reads it first: the low
+        # byte of an add or subtract.
+        out = (_shift_byte_in_a(b, hi, hi_steps())
+               + _shift_byte_in_a(b, lo, lo_steps()))
+        nonzero = {q, q + 1}
+    for k in range(size):
+        if k not in nonzero:
+            out.append(asm_ast.Mov(src=zero, dst=_byte_at(dst_op, k)))
+    return out
+
+
 def _inline_right_shift_const(
     src_op: asm_ast.Type_operand,
     dst_op: asm_ast.Type_operand,
@@ -1087,6 +1172,10 @@ class Translator:
         # The TAC instruction before the one being translated, for
         # `_fused_subtract`.
         self._prev_tac = None
+        # Per local of the function being translated, how many low
+        # bytes can be nonzero, when fewer than its size
+        # (passes/significant_bytes.py).
+        self._significant: dict[str, int] = {}
         # Per function, the `zeropage(addr)` parameters it copies into
         # a local as it starts (`slot_sharing.pinned_param_copies`).
         self._pinned_copies = pinned_copies or {}
@@ -1404,6 +1493,10 @@ class Translator:
                     plan = plan_saves(
                         fn, self._recursion_saves[name], self._symbols,
                     )
+                from passes.significant_bytes import significant_bytes
+                self._significant = significant_bytes(
+                    fn, self._symbols, self._size_of, self._is_unsigned_val,
+                )
                 for i, instr in enumerate(instrs):
                     self._prev_tac = instrs[i - 1] if i else None
                     if plan is not None:
@@ -3145,6 +3238,18 @@ class Translator:
                 # UB per C99 §6.5.7.4, so the helper-call fallback is
                 # fine for them.
                 cnt = _shift_count_const_value(src2)
+                # A value whose bytes above the low one are zero, such
+                # as a widened byte, shifts as one byte
+                # (passes/significant_bytes.py).
+                if (cnt is not None and size > 1 and 0 < cnt < size * 8
+                        and cnt % 8
+                        and isinstance(src1, tac_ast.Var)
+                        and isinstance(dst, tac_ast.Var)
+                        and src1.name != dst.name
+                        and self._significant.get(src1.name) == 1):
+                    return _inline_left_shift_byte(
+                        src1_op, dst_op, size, cnt,
+                    )
                 if cnt is not None and inline_shift_ok(size, cnt):
                     return _inline_left_shift_const(
                         src1_op, dst_op, size, cnt,

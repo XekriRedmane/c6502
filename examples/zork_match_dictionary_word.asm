@@ -4,24 +4,24 @@ HARGS	EQU	$04
 DPTR	EQU	$24
 __local_main__0	EQU	$80
 __local_main__i	EQU	$81
+__local_main__1	EQU	$82
 __local_main__2	EQU	$83
 __local_main__3	EQU	$84
-__local_main__4	EQU	$85
-__local_match_dictionary_word__0	EQU	$86
-__local_match_dictionary_word__entry_index_0	EQU	$88
-__local_match_dictionary_word__entry_index_1	EQU	$89
-__local_match_dictionary_word__2	EQU	$8A
-__local_match_dictionary_word__3	EQU	$8B
-__local_match_dictionary_word__entry_0	EQU	$8C
-__local_match_dictionary_word__entry_1	EQU	$8D
-__local_get_dictionary_addr__0	EQU	$8E
-__local_get_dictionary_addr__1	EQU	$8F
+__local_match_dictionary_word__0	EQU	$85
+__local_match_dictionary_word__entry_index_0	EQU	$87
+__local_match_dictionary_word__entry_index_1	EQU	$88
+__local_match_dictionary_word__2	EQU	$89
+__local_match_dictionary_word__3	EQU	$8A
+__local_match_dictionary_word__entry_0	EQU	$8B
+__local_match_dictionary_word__entry_1	EQU	$8C
+__local_get_dictionary_addr__0	EQU	$8D
+__local_get_dictionary_addr__1	EQU	$8E
 z_header_addr	EQU	$BA
 zchar_scratch2	EQU	$DA
 
 ; @zp-link-meta-begin
 ; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
-; def main params= locals=__local_main__0,__local_main__i,__local_main__1,__local_main__2,__local_main__3,__local_main__4 indirect=false in_cycle=false
+; def main params= locals=__local_main__0,__local_main__i,__local_main__1,__local_main__2,__local_main__3 indirect=false in_cycle=false
 ; def match_dictionary_word params= locals=__local_match_dictionary_word__0,__local_match_dictionary_word__1,__local_match_dictionary_word__entry_index_0,__local_match_dictionary_word__entry_index_1,__local_match_dictionary_word__2,__local_match_dictionary_word__3,__local_match_dictionary_word__entry_0,__local_match_dictionary_word__entry_1 indirect=false in_cycle=false
 ; call main -> match_dictionary_word
 ; call match_dictionary_word -> get_dictionary_addr
@@ -215,36 +215,38 @@ main:
    CMP   #$14
    BCS   .loop@2_break
    ADC   #$01
-   STA   __local_main__4
+   STA   __local_main__3
    ASL
    ASL
    CLC
-   ADC   __local_main__4
-   STA   __local_main__3
-   LDA   #$00
+   ADC   __local_main__3
    STA   __local_main__2
    LDA   __local_main__i
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_main__1
+   LDA   __local_main__i
    ASL
-   ROL   __local_main__2
    ASL
-   ROL   __local_main__2
    ASL
-   ROL   __local_main__2
    SEC
    SBC   __local_main__i
    BCS   .carry_inc@8
-   DEC   __local_main__2
+   DEC   __local_main__1
 .carry_inc@8:
    CLC
    ADC   #<story
    STA   __local_main__0
-   LDA   __local_main__2
+   LDA   __local_main__1
    ADC   #>story
    STA   __local_main__i
-   LDA   __local_main__3
+   LDA   __local_main__2
    LDY   #$4A
    STA   (__local_main__0),Y
-   LDA   __local_main__4
+   LDA   __local_main__3
    STA   __local_main__i
    JMP   .loop@2_start
 .loop@2_break:

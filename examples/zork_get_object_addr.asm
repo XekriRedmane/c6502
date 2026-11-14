@@ -6,12 +6,12 @@ __zpabi_get_object_addr__obj	EQU	$80
 __local_main__0	EQU	$81
 __local_get_object_addr__0	EQU	$83
 __local_get_object_addr__1	EQU	$84
+__local_get_object_addr__2	EQU	$85
 __local_get_object_addr__3	EQU	$86
-__local_get_object_addr__4	EQU	$87
 z_header_addr	EQU	$BA
 
 ; @zp-link-meta-begin
-; def get_object_addr params=__zpabi_get_object_addr__obj locals=__local_get_object_addr__0,__local_get_object_addr__1,__local_get_object_addr__2,__local_get_object_addr__3,__local_get_object_addr__4 indirect=false in_cycle=false
+; def get_object_addr params=__zpabi_get_object_addr__obj locals=__local_get_object_addr__0,__local_get_object_addr__1,__local_get_object_addr__2,__local_get_object_addr__3 indirect=false in_cycle=false
 ; def main params= locals=__local_main__0,__local_main__1 indirect=false in_cycle=false
 ; call main -> get_object_addr
 ; item get_object_addr section=.text local=false zero=false
@@ -37,28 +37,30 @@ get_object_addr:
    STA   __local_get_object_addr__1
    LDA   z_header_addr+1
    ADC   __local_get_object_addr__0
-   STA   __local_get_object_addr__4
-   LDA   #$00
    STA   __local_get_object_addr__3
    LDA   __zpabi_get_object_addr__obj
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_get_object_addr__2
+   LDA   __zpabi_get_object_addr__obj
    ASL
-   ROL   __local_get_object_addr__3
    ASL
-   ROL   __local_get_object_addr__3
    ASL
-   ROL   __local_get_object_addr__3
    CLC
    ADC   __zpabi_get_object_addr__obj
    STA   __local_get_object_addr__0
    BCC   .carry_inc@0
-   INC   __local_get_object_addr__3
+   INC   __local_get_object_addr__2
 .carry_inc@0:
    LDA   __local_get_object_addr__1
    CLC
    ADC   __local_get_object_addr__0
    STA   __local_get_object_addr__1
-   LDA   __local_get_object_addr__4
-   ADC   __local_get_object_addr__3
+   LDA   __local_get_object_addr__3
+   ADC   __local_get_object_addr__2
    STA   __local_get_object_addr__0
    LDA   __local_get_object_addr__1
    CLC

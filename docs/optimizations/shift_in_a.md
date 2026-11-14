@@ -65,41 +65,38 @@ two `LSR A`s, 2 bytes and 4 cycles.
 
 ### A widened byte
 
-`out = (unsigned int)c << 3` shifts the two bytes of the widened
-value together, with the zero high byte stored between the first
-shift and the rest:
+`out = (unsigned int)c << 2` is lowered by `tac_to_asm` as the low
+byte shifted once in A, the bit it shifts out rotated into a zero,
+and then one more shift of both bytes in memory:
 
 ```
    LDA   c
    ASL
    STA   out
    LDA   #$00
+   ROL
    STA   out+1
-   ROL   out+1
-   ASL   out
-   ROL   out+1
    ASL   out
    ROL   out+1
 ```
 
-The `ROL`s of the high byte leave A alone and stay where they are,
-each reading the carry the shift before it set, and the store of the
-zero moves up in front of the code that loaded A:
+The `ASL out` of the other byte stays where it is, and the `ROL` of
+the high byte moves to A, with the store after it:
 
 ```
-   LDA   #$00
-   STA   out+1
    LDA   c
    ASL
-   ROL   out+1
-   ASL
-   ROL   out+1
-   ASL
    STA   out
-   ROL   out+1
+   LDA   #$00
+   ROL
+   ASL   out
+   ROL
+   STA   out+1
 ```
 
-That's 17 bytes and 32 cycles instead of 19 and 38.
+That's 17 bytes and 26 cycles instead of 19 and 30. A shift of a
+widened byte by 3 or more doesn't get here: `tac_to_asm` lowers it as
+two byte shifts in A (see [strength reduction](strength_reduction.md)).
 
 ## When it applies
 
@@ -125,8 +122,6 @@ That's 17 bytes and 32 cycles instead of 19 and 38.
   A.
 - A shift with anything other than shifts of other bytes, or the
   constant stores above, between it and the store.
-- A widened byte shifted by 5 or more, which `tac_to_asm` lowers as a
-  call to `asl16`, since it doesn't know the high byte is zero.
 - A shift of a byte that wasn't just stored from A, such as an
   in-place `w <<= 1`, which is already one instruction per byte.
 

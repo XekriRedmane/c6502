@@ -131,9 +131,7 @@ void please_insert_save_diskette(void) {
         print_ascii_string(sReturnToBegin, 35);
         dump_buffer_line();
     } while (RDKEY() != 0x8D);
-    SCRATCH1 = 0xFFFF;
-    for (uint8_t n = prompts[PROMPT_POSITION].answer & 0x07; n != 0; n--)
-        SCRATCH1 += 64;
+    SCRATCH1 = (64 * (prompts[PROMPT_POSITION].answer & 0x07)) - 1;
     dump_buffer_with_more();
 }
 

@@ -299,6 +299,14 @@ this directory:
   1)` and one bit back) instead of by an `asl*` / `lsr*` / `asr*`
   call. `tac_to_asm` and the two-term
   multiply rule in `optimization/strength_reduction.py` both use it.
+- `significant_bytes.py` — `significant_bytes`: for each local of a
+  TAC function, how many low bytes can be nonzero, from its
+  definitions (`ZeroExtend`, `Copy`, `Truncate`, `&`, `|`, `^`, a
+  constant right shift, `Phi`); parameters, statics, and locals whose
+  address is taken count every byte. `tac_to_asm` lowers a left shift
+  by a constant of a value with one significant byte as two byte
+  shifts in A, whatever the count (`_inline_left_shift_byte`), so
+  `(unsigned int)c << 6` doesn't call `asl16`.
 - `slot_sharing.py` — `find_shares`: values kept in a callee's
   parameter bytes across calls. A parameter passed on unchanged
   aliases the callee's slot (a share *member*), and a local a caller

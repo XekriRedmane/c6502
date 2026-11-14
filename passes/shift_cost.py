@@ -23,6 +23,10 @@ back the other way: an `ASL` (or `LSR`) of one byte followed by an
 `LDA` / `ROL A` / `STA` (or `ROR A`) of each remaining byte. For a
 16-bit `w >> 7` that's 8 instructions.
 
+A left shift of a value with one significant byte, such as a widened
+byte, doesn't come here: `tac_to_asm` always inlines it, as two byte
+shifts (`passes/significant_bytes.py`).
+
 The helper call costs about 8 instructions of argument and result
 staging plus the JSR, and the helper loops once per bit, so up to 8
 inline shift instructions is about the same size and always faster.

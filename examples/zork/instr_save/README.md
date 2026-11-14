@@ -141,12 +141,12 @@ first save and the same 170 in the second, and leave the same state.
 | `inc_sector_and_write` | 38 | 42 |
 | `print_ascii_string` | 20 | 20 |
 | `cout_string` | 14 | 14 |
-| `please_insert_save_diskette` | 167 | 166 |
+| `please_insert_save_diskette` | 167 | 162 |
 | `get_prompted_number_from_user` | 106 | 103 |
 | `please_reinsert_game_diskette` | 70 | 70 |
 | `instr_save` | 141 | 142 |
 | `copy_data_to_buff` | 12 | 12 |
-| **Code** | **627** | **630** |
+| **Code** | **627** | **626** |
 
 The data is the same apart from where it sits: 17 bytes of IOB, 4 of
 DCT, the five strings, and 48 bytes of prompts. In Zork,
@@ -155,8 +155,8 @@ DCT, the five strings, and 48 bytes of prompts. In Zork,
 count each one to the next routine.
 
 **Speed.** Counting only the cycles spent in this code (the stand-ins
-take none), the first save takes 19,449 cycles against Zork's 19,561,
-and the second 12,963 against 13,012.
+take none), the first save takes 19,386 cycles against Zork's 19,561,
+and the second 12,982 against 13,012.
 
 **Where the difference comes from.** Looking at `instr_save.asm`:
 
@@ -281,3 +281,10 @@ Comparing its code with Zork's then led to:
   `SCRATCH1 = 0xFFFF` is `LDA #$FF; STA SCRATCH1; STA SCRATCH1+1`
   ([redundant_load.md](../../../docs/optimizations/redundant_load.md)).
   `please_insert_save_diskette` went from 168 bytes to 166.
+- A left shift of a value with one significant byte, such as `64 *
+  (answer & 0x07)`, is two shifts of that byte in A instead of a call
+  to `asl16`
+  ([strength_reduction.md](../../../docs/optimizations/strength_reduction.md)).
+  `please_insert_save_diskette` sets `SCRATCH1` to `64 * position -
+  1` in one statement, where it used to add 64 in a loop: 162 bytes,
+  and a constant 47 cycles where the loop took 23 plus 26 a position.

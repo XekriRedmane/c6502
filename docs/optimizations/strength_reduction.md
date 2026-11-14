@@ -123,6 +123,37 @@ int x`, `x * 64` becomes `x << 6`, which `tac_to_asm` lowers to a
 instructions inline. That still replaces a multiply loop with a shift
 loop, which is the cheaper helper.
 
+When only the low byte of `x` can be nonzero, as for a widened byte
+or a value masked to one (`passes/significant_bytes.py`), `tac_to_asm`
+inlines the shift whatever the count, as two shifts of that byte in
+A: one for each byte of the result. In Zork's
+`please_insert_save_diskette`, `SCRATCH1 = (64 * (answer & 0x07)) -
+1;` becomes:
+
+```
+   LDA   prompts+47
+   AND   #$07
+   STA   __local_please_insert_save_diskette__0
+   LSR
+   LSR
+   STA   __local_please_insert_save_diskette__1
+   LDA   __local_please_insert_save_diskette__0
+   ROR
+   ROR
+   ROR
+   AND   #$C0
+   SEC
+   SBC   #$01
+   STA   SCRATCH1
+   LDA   __local_please_insert_save_diskette__1
+   SBC   #$00
+   STA   SCRATCH1+1
+```
+
+The high byte is `x >> 2`. The low byte is `x << 6`, done as three
+rotates through the carry and a mask, a step shorter than six
+shifts.
+
 ## Related
 
 [Constant folding](constant_folding.md) evaluates the cases with two

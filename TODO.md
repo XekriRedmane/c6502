@@ -103,23 +103,16 @@ call that recurses (`#pragma c6502 call save(hardware_stack)`,
 `passes/recursion_saves.py`) took off another 180, leaving
 print_zstring at 277 bytes against Zork's 216. Shifting single bytes
 in A instead of in a slot (`narrow_widened_arith` on a wide operand,
-and `passes/shift_in_a.py`) took off 11 more. What's left, roughly in
-order of size:
-- **A widened byte shifted far.** `(unsigned int)c << 5` calls `asl16`,
-  since `tac_to_asm` only inlines a 16-bit shift of up to 4 places and
-  doesn't know the high byte is zero. Shifted in A with the high byte
-  rotated in (`shift_in_a`), it would be `11 + 7n` cycles; as two byte
-  shifts, `c << n` for the low byte and `c >> (8 - n)` for the high,
-  about 28 for any `n`.
+and `passes/shift_in_a.py`) took off 11 more.
 
 ## Optimizations found by Zork's save instruction
 
-`examples/zork/instr_save` is 630 bytes of code against Zork's 627,
-and both saves take fewer cycles than Zork's (19,449 against 19,561,
-and 12,963 against 13,012). The two write routines are 7 bytes longer
+`examples/zork/instr_save` is 626 bytes of code against Zork's 627,
+and both saves take fewer cycles than Zork's (19,386 against 19,561,
+and 12,982 against 13,012). The two write routines are 7 bytes longer
 and `instr_save` 1, while `do_rwts_on_sector`,
 `get_prompted_number_from_user`, and `please_insert_save_diskette` are
-5 shorter. Roughly in order of payoff:
+9 shorter. Roughly in order of payoff:
 
 - **Falling into a tail call.** `write_next_sector` ends in `JMP
   inc_sector_and_write`. Placing a function just before the one it
@@ -131,10 +124,6 @@ and `instr_save` 1, while `do_rwts_on_sector`,
   `memory_value_propagation` forgets everything at a `Call`, but a
   callee's own parameter bytes survive when the callee doesn't change
   them, which `slot_sharing` already works out.
-- **A counted loop that tests at the top.** `please_insert_save_diskette`'s
-  `for (n = ...; n != 0; n--)` ends in a `JMP` back to its test, with
-  `n` in memory. Rotated (see "Rotate top-tested loops"), it would be
-  `DEC; BNE`, and `counter_to_index_reg` could put `n` in X.
 
 ## Volatile structs
 

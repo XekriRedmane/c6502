@@ -93,6 +93,46 @@ class TestShiftInA(unittest.TestCase):
             _mov(_M, _A, volatile=True), _RTS_A,
         ])
 
+    def test_widened_byte_shift(self) -> None:
+        # `(unsigned int)c << 3`: the zero high byte's store moves up
+        # in front of the load of c, and the high byte's ROLs stay
+        # between the shifts, now of A.
+        c = asm_ast.ZP(address=0x90, offset=0)
+        out = _run([
+            _mov(c, _A),
+            asm_ast.ArithmeticShiftLeft(dst=_A),
+            _mov(_A, _M),
+            _mov(asm_ast.Imm(value=0), _N),
+            asm_ast.RotateLeft(dst=_N),
+            asm_ast.ArithmeticShiftLeft(dst=_M),
+            asm_ast.RotateLeft(dst=_N),
+            _RTS,
+        ])
+        self.assertEqual(out, [
+            _mov(asm_ast.Imm(value=0), _N),
+            _mov(c, _A),
+            asm_ast.ArithmeticShiftLeft(dst=_A),
+            asm_ast.RotateLeft(dst=_N),
+            asm_ast.ArithmeticShiftLeft(dst=_A),
+            _mov(_A, _M),
+            asm_ast.RotateLeft(dst=_N),
+            _RTS,
+        ])
+
+    def test_constant_store_stays_when_a_chain_reads_it(self) -> None:
+        # The code that computed A reads N, so the store to N can't
+        # move above it.
+        instrs = [
+            _mov(_N, _A),
+            asm_ast.ArithmeticShiftLeft(dst=_A),
+            _mov(_A, _M),
+            _mov(asm_ast.Imm(value=0), _N),
+            asm_ast.RotateLeft(dst=_N),
+            asm_ast.ArithmeticShiftLeft(dst=_M),
+            _RTS,
+        ]
+        self.assertEqual(_run(list(instrs)), instrs)
+
     def test_left_alone(self) -> None:
         for name, instrs in (
             ("volatile store", [

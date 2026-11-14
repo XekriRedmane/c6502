@@ -117,10 +117,10 @@ class TestAsmSimChapters(unittest.TestCase):
     also surfaced as subTests with `skipTest` so they show up in the
     runner output with their category as the skip reason."""
 
-    def test_expected_returns(self) -> None:
+    def _check(self, shard: int) -> None:
         cases = _expected_returns_in_int_range()
         self.assertGreater(len(cases), 0, "no in-range chapter cases found")
-        for rel_path, expected in cases.items():
+        for rel_path, expected in list(cases.items())[shard::_SHARDS]:
             with self.subTest(file=rel_path):
                 if rel_path in SKIPS:
                     self.skipTest(SKIPS[rel_path])
@@ -142,6 +142,15 @@ class TestAsmSimChapters(unittest.TestCase):
                         f"cycles={result.cycles})"
                     ),
                 )
+
+
+
+# The files split into shards, one test method each, so a parallel run
+# (`pytest -n auto`) spreads them over its workers.
+_SHARDS = 4
+for _k in range(_SHARDS):
+    setattr(TestAsmSimChapters, f"test_expected_returns_{_k}",
+            lambda self, k=_k: self._check(k))
 
 
 if __name__ == "__main__":

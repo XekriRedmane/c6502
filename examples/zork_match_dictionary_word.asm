@@ -4,7 +4,6 @@ HARGS	EQU	$04
 DPTR	EQU	$24
 __local_main__0	EQU	$80
 __local_main__i	EQU	$81
-__local_main__1	EQU	$82
 __local_main__2	EQU	$83
 __local_main__3	EQU	$84
 __local_main__4	EQU	$85
@@ -222,17 +221,15 @@ main:
    CLC
    ADC   __local_main__4
    STA   __local_main__3
-   LDA   __local_main__i
-   ASL
-   STA   __local_main__1
    LDA   #$00
    STA   __local_main__2
+   LDA   __local_main__i
+   ASL
    ROL   __local_main__2
-   ASL   __local_main__1
+   ASL
    ROL   __local_main__2
-   ASL   __local_main__1
+   ASL
    ROL   __local_main__2
-   LDA   __local_main__1
    SEC
    SBC   __local_main__i
    BCS   .carry_inc@8

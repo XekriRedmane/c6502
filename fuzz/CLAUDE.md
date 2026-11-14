@@ -9,6 +9,7 @@ changing a pass, the ABI selection, or the register allocator.
 Run everything from the repo root, as modules:
 
 ```sh
+uv run python -m fuzz.exprs --start 0 --count 300 -j 12   # in 12 processes
 uv run python -m fuzz.exprs --start 0 --count 300   # expression semantics
 uv run python -m fuzz.calls --start 0 --count 300   # calling conventions
 uv run python -m fuzz.stmts --start 0 --count 300   # control flow, storage
@@ -21,6 +22,11 @@ uv run python -m fuzz.tac_passes fuzz_out/stmts/stmts1549.c  # guilty TAC pass
 Failing programs land in `fuzz_out/<tool>/` (ignored by git). A seed
 always generates the same program, so `--start 534 --count 1`
 reproduces seed 534.
+
+`-j N` runs the seeds in N processes (`fuzz_main`, a `spawn` pool;
+each worker imports `runner.py`, which turns the IR checks on), with
+the output in seed order. `-j 12` on a 12-thread machine is about 5
+times faster than one process.
 
 ## IR checks
 

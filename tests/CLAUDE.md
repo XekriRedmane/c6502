@@ -13,6 +13,19 @@ C6502_CHECK_IR=1 uv run python -m unittest                         # with IR che
 asm stage boundaries (`passes/ir_check.py`). It adds about 3% to the
 run. The fuzzers always run with it.
 
+In parallel, with pytest and pytest-xdist (dev dependencies; `uv
+sync` installs them):
+
+```sh
+C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q
+```
+
+That's about 70 seconds against about 4 minutes in one process. Work
+stealing matters: with the default `--dist load` the run takes about
+2 minutes. The slowest tests are split into shards, one test method
+each, so the workers can share them: `test_op_matrix_sim` (8 per
+pipeline), `test_sim_differential` and `test_sim_asm` (4 each).
+
 Every harness class is `@unittest.skipUnless(shutil.which("pcpp"),
 …)`.
 

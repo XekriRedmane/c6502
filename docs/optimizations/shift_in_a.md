@@ -63,24 +63,70 @@ The temporary isn't read again, so its store is gone too. The four
 instructions that shifted through it, 8 bytes and 16 cycles, become
 two `LSR A`s, 2 bytes and 4 cycles.
 
+### A widened byte
+
+`out = (unsigned int)c << 3` shifts the two bytes of the widened
+value together, with the zero high byte stored between the first
+shift and the rest:
+
+```
+   LDA   c
+   ASL
+   STA   out
+   LDA   #$00
+   STA   out+1
+   ROL   out+1
+   ASL   out
+   ROL   out+1
+   ASL   out
+   ROL   out+1
+```
+
+The `ROL`s of the high byte leave A alone and stay where they are,
+each reading the carry the shift before it set, and the store of the
+zero moves up in front of the code that loaded A:
+
+```
+   LDA   #$00
+   STA   out+1
+   LDA   c
+   ASL
+   ROL   out+1
+   ASL
+   ROL   out+1
+   ASL
+   STA   out
+   ROL   out+1
+```
+
+That's 17 bytes and 32 cycles instead of 19 and 38.
+
 ## When it applies
 
 - An `STA M` stores A to a zero-page or absolute byte, and isn't
   volatile.
-- Right after it come one or more `ASL`, `LSR`, `ROL`, or `ROR` of
-  `M`, with nothing in between.
-- After them comes `LDA M`, not volatile, which the rewrite deletes.
-  Without it, A must be dead after the shifts, since the rewrite
-  leaves the shifted value in A, not the value that was stored.
+- After it come shifts (`ASL`, `LSR`, `ROL`, `ROR`) of `M`, which
+  move to A, mixed with shifts of other zero-page or absolute bytes
+  of the same kind as `M` and known to differ from it, which stay.
+  Shifts of other bytes after the last shift of `M` aren't part of
+  the run.
+- Constant stores right after the `STA` (`LDA #k; STA H`, or one
+  `Mov(#k, H)`) move up in front of the code that computed A for the
+  `STA`: a load into A followed only by operations on A, none of which
+  reads `H`. If there's no such code, nothing changes.
+- After the run comes `LDA M`, not volatile, which the rewrite
+  deletes. Without it, A must be dead after the shifts, since the
+  rewrite leaves the shifted value in A, not the value that was
+  stored.
 
 ## What it leaves alone
 
 - `INC` and `DEC`. The NMOS 6502 has no form of them that works on
   A.
-- A shift with something between it and the store, such as the
-  `LDA #0; STA hi` that a byte widened and shifted (`(int)c << 3`)
-  puts between the first `ASL lo` and the `ROL hi`. Only the first
-  shift, the one right after the store, moves to A there.
+- A shift with anything other than shifts of other bytes, or the
+  constant stores above, between it and the store.
+- A widened byte shifted by 5 or more, which `tac_to_asm` lowers as a
+  call to `asl16`, since it doesn't know the high byte is zero.
 - A shift of a byte that wasn't just stored from A, such as an
   in-place `w <<= 1`, which is already one instruction per byte.
 

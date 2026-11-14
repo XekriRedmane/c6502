@@ -21,6 +21,8 @@ otherwise the paths must agree with each other.
 from __future__ import annotations
 
 import argparse
+import functools
+import multiprocessing
 import re
 import sys
 from pathlib import Path
@@ -125,13 +127,24 @@ def fuzz_main(make_program, prog: str, argv: list[str] | None) -> int:
         "--out", type=Path, default=Path("fuzz_out") / prog,
         help="directory for failing programs (default fuzz_out/<name>)",
     )
+    ap.add_argument(
+        "-j", "--jobs", type=int, default=1,
+        help="processes to run seeds in (default 1)",
+    )
     args = ap.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     wrong = rejected = 0
-    for seed in range(args.start, args.start + args.count):
-        src, expected = make_program(seed)
-        res = run_all(src)
-        bad = disagreements(res, expected)
+    seeds = range(args.start, args.start + args.count)
+    check = functools.partial(_check_seed, make_program)
+    if args.jobs > 1:
+        # Each worker imports this module, which turns the IR checks
+        # on there too. `imap` keeps the seeds in order.
+        pool = multiprocessing.get_context("spawn").Pool(args.jobs)
+        results = pool.imap(check, seeds, chunksize=2)
+    else:
+        pool = None
+        results = map(check, seeds)
+    for seed, (src, res, bad) in zip(seeds, results):
         if (
             bad and "tac" not in bad
             and all(is_backend_limit(res[m]) for m in bad)
@@ -145,8 +158,18 @@ def fuzz_main(make_program, prog: str, argv: list[str] | None) -> int:
             path.write_text(src, newline="\n")
             print(f"seed {seed}: WRONG {format_result(res)} -> {path}",
                   flush=True)
+    if pool is not None:
+        pool.close()
+        pool.join()
     print(f"{wrong} wrong, {rejected} rejected, of {args.count} programs")
     return 1 if wrong else 0
+
+
+def _check_seed(make_program, seed: int):
+    """`(source, results, disagreeing paths)` for one seed."""
+    src, expected = make_program(seed)
+    res = run_all(src)
+    return src, res, disagreements(res, expected)
 
 
 def _expected_of(src: str) -> int | None:

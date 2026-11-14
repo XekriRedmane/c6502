@@ -105,14 +105,12 @@ print_zstring at 277 bytes against Zork's 216. Shifting single bytes
 in A instead of in a slot (`narrow_widened_arith` on a wide operand,
 and `passes/shift_in_a.py`) took off 11 more. What's left, roughly in
 order of size:
-- **A widened byte shifted through memory.** `(int)c << 3` is `LDA c;
-  STA lo; ASL lo; LDA #0; STA hi; ROL hi; ASL lo; ROL hi; ...; LDA
-  lo`, where `LDA #0; STA hi; LDA c; ASL A; ROL hi; ASL A; ROL hi;
-  ...` keeps the low byte in A, about 7 bytes and 9 cycles less.
-  `shift_in_a` only moves the first `ASL` to A, because the `LDA #0;
-  STA hi` that comes between it and the rest has to move first.
-  Doing it in `tac_to_asm` instead would make an in-place `w <<= 1`
-  longer.
+- **A widened byte shifted far.** `(unsigned int)c << 5` calls `asl16`,
+  since `tac_to_asm` only inlines a 16-bit shift of up to 4 places and
+  doesn't know the high byte is zero. Shifted in A with the high byte
+  rotated in (`shift_in_a`), it would be `11 + 7n` cycles; as two byte
+  shifts, `c << n` for the low byte and `c >> (8 - n)` for the high,
+  about 28 for any `n`.
 - **Carry chains across statements.** load_packed_address computes
   three bytes of `2 * SCRATCH2` with one `ASL` / `ROL` / `ROL` chain
   in the original. In C those are three expressions, and each one

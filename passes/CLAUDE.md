@@ -281,7 +281,11 @@ this directory:
 - `shift_in_a.py` — `apply_shift_in_a`. Rewrites `STA M; <ASL / LSR /
   ROL / ROR M>+; LDA M` as the shifts on A followed by `STA M`, and
   does the same without the `LDA` when A is dead after the shifts.
-  `asm_dead_store` then drops the `STA` if M isn't read again.
+  `asm_dead_store` then drops the `STA` if M isn't read again. Shifts
+  of other bytes may be mixed in (they stay), and constant stores
+  right after the `STA` move up in front of the load that computed A,
+  so a widened byte's `(unsigned int)c << 3` shifts its low byte in A
+  and rotates the high byte in memory.
 - `shift_cost.py` — `inline_shift_ok(size, count, signed_right=)`,
   the rule for when a constant shift is lowered inline (at most 8
   one-bit shift instructions after the byte moves, or any count of

@@ -10,3 +10,12 @@ dependencies = [
     "pcpp>=1.30",
     "py65>=1.2.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-xdist>=3.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

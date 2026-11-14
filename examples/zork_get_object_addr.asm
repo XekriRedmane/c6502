@@ -6,7 +6,6 @@ __zpabi_get_object_addr__obj	EQU	$80
 __local_main__0	EQU	$81
 __local_get_object_addr__0	EQU	$83
 __local_get_object_addr__1	EQU	$84
-__local_get_object_addr__2	EQU	$85
 __local_get_object_addr__3	EQU	$86
 __local_get_object_addr__4	EQU	$87
 z_header_addr	EQU	$BA
@@ -39,17 +38,15 @@ get_object_addr:
    LDA   z_header_addr+1
    ADC   __local_get_object_addr__0
    STA   __local_get_object_addr__4
-   LDA   __zpabi_get_object_addr__obj
-   ASL
-   STA   __local_get_object_addr__2
    LDA   #$00
    STA   __local_get_object_addr__3
+   LDA   __zpabi_get_object_addr__obj
+   ASL
    ROL   __local_get_object_addr__3
-   ASL   __local_get_object_addr__2
+   ASL
    ROL   __local_get_object_addr__3
-   ASL   __local_get_object_addr__2
+   ASL
    ROL   __local_get_object_addr__3
-   LDA   __local_get_object_addr__2
    CLC
    ADC   __zpabi_get_object_addr__obj
    STA   __local_get_object_addr__0

@@ -187,6 +187,7 @@ Two key runtime conventions:
 uv sync                                         # create/update the project venv
 uv run python -m unittest                       # run all tests
 C6502_CHECK_IR=1 uv run python -m unittest      # with IR checks after every pass
+C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
 uv run python -m unittest tests.test_asm_emit   # run one module
 uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one test
 

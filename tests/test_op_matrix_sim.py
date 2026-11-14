@@ -301,9 +301,11 @@ def _programs():
 @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
 class TestOperatorMatrix(unittest.TestCase):
 
-    def _check(self, optimize: bool) -> None:
+    def _check(self, optimize: bool, shard: int) -> None:
         failures: list[str] = []
-        for src, cases in _programs():
+        for k, (src, cases) in enumerate(_programs()):
+            if k % _SHARDS != shard:
+                continue
             try:
                 sim = build_sim(src, optimize=optimize)
                 sim.run()
@@ -324,11 +326,16 @@ class TestOperatorMatrix(unittest.TestCase):
                     )
         self.assertEqual(failures, [], msg="\n" + "\n".join(failures[:40]))
 
-    def test_unoptimized(self) -> None:
-        self._check(optimize=False)
 
-    def test_optimized(self) -> None:
-        self._check(optimize=True)
+
+# The programs split into shards, one test method each, so a parallel
+# run (`pytest -n auto`) spreads them over its workers.
+_SHARDS = 8
+for _k in range(_SHARDS):
+    setattr(TestOperatorMatrix, f"test_unoptimized_{_k}",
+            lambda self, k=_k: self._check(optimize=False, shard=k))
+    setattr(TestOperatorMatrix, f"test_optimized_{_k}",
+            lambda self, k=_k: self._check(optimize=True, shard=k))
 
 
 if __name__ == "__main__":

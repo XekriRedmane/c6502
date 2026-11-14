@@ -147,9 +147,10 @@ class TestOptUnoptDifferential(unittest.TestCase):
     """Differential check: every chapter program must produce the
     same HARGS bytes under both optimize=False and optimize=True."""
 
-    def test_opt_unopt_agree(self) -> None:
+    def _check(self, shard: int) -> None:
         cases = sorted(EXPECTED_RETURNS.keys())
         self.assertGreater(len(cases), 0, "no chapters in scope")
+        cases = cases[shard::_SHARDS]
         skipped_count = 0
         for rel_path in cases:
             with self.subTest(file=rel_path):
@@ -209,6 +210,15 @@ class TestOptUnoptDifferential(unittest.TestCase):
                         f"({unopt.cycles} → {opt.cycles})"
                     ),
                 )
+
+
+
+# The files split into shards, one test method each, so a parallel run
+# (`pytest -n auto`) spreads them over its workers.
+_SHARDS = 4
+for _k in range(_SHARDS):
+    setattr(TestOptUnoptDifferential, f"test_opt_unopt_agree_{_k}",
+            lambda self, k=_k: self._check(k))
 
 
 if __name__ == "__main__":

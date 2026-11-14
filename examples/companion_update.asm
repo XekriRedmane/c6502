@@ -29,7 +29,6 @@ __zpabi_entity_proximity__screen_x	EQU	$8A
 __local_active_neg_step__0	EQU	$8B
 __local_active_pos_step__0	EQU	$8B
 __local_compute_screen_x__0	EQU	$8B
-__local_drift_step__pos_0	EQU	$8B
 __local_player_catch__0	EQU	$8B
 __zpabi_entity_proximity__hit_max	EQU	$8B
 __zpabi_find_active_entity__hit_max	EQU	$8B
@@ -297,7 +296,6 @@ smc_body_draw:
    LDA   companion_neg_hi_tbl+1,X
    STA   __local_smc_body_draw__1
    LDA   (__local_smc_body_draw__0),Y
-   STA   __local_smc_body_draw__hi
    JMP   .if_end@18
 .if_else@19:
    LDA   __local_smc_body_draw__hi
@@ -315,12 +313,10 @@ smc_body_draw:
    LDA   companion_pos_hi_tbl+1,X
    STA   __local_smc_body_draw__1
    LDA   (__local_smc_body_draw__0),Y
-   STA   __local_smc_body_draw__hi
 .if_end@18:
+   STA   __zpabi_draw_sprite__tile_src_1
    LDA   __local_smc_body_draw__lo
    STA   __zpabi_draw_sprite__tile_src_0
-   LDA   __local_smc_body_draw__hi
-   STA   __zpabi_draw_sprite__tile_src_1
    LDA   #$03
    STA   __zpabi_draw_sprite__width
    LDA   #$08
@@ -472,11 +468,9 @@ drift_step:
    LDA   #$01
    STA   companion_state,X
    LDA   companion_pos_hi,X
-   STA   __local_drift_step__pos_0
+   STA   __local_drift_step__pos_1
    LDA   companion_pos_lo,X
    STA   __local_drift_step__0
-   LDA   __local_drift_step__pos_0
-   STA   __local_drift_step__pos_1
    LDA   companion_dir,X
    BPL   .if_else@40
    LDA   __local_drift_step__0

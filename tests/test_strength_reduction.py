@@ -22,6 +22,7 @@ import unittest
 
 import tac_ast
 import c99_ast
+from passes import ir_check
 from passes.optimization.strength_reduction import reduce_strength
 from passes.type_checking import (
     LocalAttr, Symbol, SymbolTable,
@@ -308,6 +309,30 @@ class TestEndToEndShifts(unittest.TestCase):
         no_opt = run_c_program(src).return_int_signed()
         opt = build_sim(src, optimize=True).run().return_int_signed()
         return no_opt, opt
+
+    def test_two_multiplies_into_one_global(self):
+        # A global keeps its name in SSA form, so each multiply's
+        # temporaries need names of their own (fuzzer stmts22250).
+        src = """
+        unsigned long z __attribute__((zeropage)) = 128;
+        int main(void) {
+            unsigned char w;
+            z *= 3;
+            w = 0;
+            do {
+                if (w & 1) z *= 129;
+            } while (++w < 4);
+            return (int)(z & 0x7FFF);
+        }
+        """
+        was = ir_check.enabled()
+        ir_check.enable()
+        try:
+            a, b = self._both_paths(src)
+        finally:
+            ir_check.enable(was)
+        want = (128 * 3 * 129 * 129) & 0x7FFF
+        self.assertEqual((a, b), (want, want))
 
     def test_unsigned_multiply_by_2(self):
         src = (

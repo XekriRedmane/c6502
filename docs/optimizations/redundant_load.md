@@ -18,7 +18,7 @@ computed over the function's control-flow graph, so a register's
 list at the start of a block keeps an operand when every path into
 that block leaves the operand's value in the register.
 
-The pass has two more rewrites that use the same lists.
+The pass has four more rewrites that use the same lists.
 
 - A transfer between registers (`TAX`, `TAY`, `TXA`, `TYA`) goes
   when both registers already hold the same value. In `LDX state;
@@ -30,6 +30,34 @@ The pass has two more rewrites that use the same lists.
   zero-page operand, and 2 bytes and 2 cycles for an absolute one.
   A then holds M too, so `apply_via_a_store_fold` can turn a
   following `TXA; STA N` into `STX N` when A is dead.
+- A store through A, `Mov(M, D)`, which emits as `LDA M; STA D`,
+  becomes `STA D` alone when A already holds M. With `SCRATCH1 =
+  0xFFFF;`, `LDA #$FF; STA SCRATCH1; LDA #$FF; STA SCRATCH1+1` loses
+  its second `LDA`, as in Zork's `please_insert_save_diskette`. (The
+  first `Mov(#$FF, SCRATCH1)` now leaves both `SCRATCH1` and `#$FF`
+  in A's list.)
+- `LDA X; STA D1; LDA M; STA D2`, with A already holding M, becomes
+  `STA D2; LDA X; STA D1`, when neither store writes what the other
+  pair reads or stores (D1 against M and D2, D2 against X) and A
+  and N/Z are dead after. Every case of `floor_enemy_draw`'s second
+  dispatch leaves the high byte of the sprite pointer in A, and the
+  join stored the low byte to `draw_sprite`'s parameter first:
+
+  ```
+  .dispatch@1@end:                      .dispatch@1@end:
+     LDA   __local_floor_enemy_draw__1     STA   __zpabi_draw_sprite__tile_src_1
+     STA   __zpabi_draw_sprite__tile_src_0 LDA   __local_floor_enemy_draw__1
+     LDA   __local_floor_enemy_draw__0     STA   __zpabi_draw_sprite__tile_src_0
+     STA   __zpabi_draw_sprite__tile_src_1
+  ```
+
+  The cases' stores of the high byte to `__local_floor_enemy_draw__0`
+  are then dead, and `asm_dead_store` drops them.
+
+These two change what A or Z holds at the end of a block, which would
+make the lists a later block starts with wrong. So they're a phase of
+their own: the pass applies them (keeping the swapped `LDA M`),
+computes the lists again on the result, and only then drops loads.
 
 ## Example
 

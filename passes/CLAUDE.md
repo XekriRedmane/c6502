@@ -1040,8 +1040,11 @@ document says whether it fires there.
   `TXA` (or `TYA`) when A doesn't mirror M but X (or Y) does —
   saves 1-2 bytes / 2-3 cycles per occurrence and leaves A
   mirroring M too, so a subsequent `STA N` folds to `STX N` /
-  `STY N` via `apply_via_a_store_fold`. Heaviest after loop
-  unrolling.
+  `STY N` via `apply_via_a_store_fold`. In a first phase, after
+  which the analysis runs again, it turns a store through A,
+  `Mov(M, D)`, into `STA D` when A holds M, and swaps `LDA X; STA
+  D1; LDA M; STA D2` to `LDA M; STA D2; LDA X; STA D1` when A holds
+  M (a phi left in A at a join). Heaviest after loop unrolling.
 - `apply_redundant_store_elimination` — drops STAs whose written cell
   is overwritten before any read. Memory-to-memory transfer redundancy
   (e.g. the unrolled DPTR-staging sequences `redundant_load`'s A-

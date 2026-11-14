@@ -118,9 +118,9 @@ def _two_term_multiply(
     becomes `(x << 3) + x`, which is 6 shift instructions and a
     16-bit add instead of a `JSR mul16`.
 
-    The temporaries are named after `dst` and registered with its
-    type, and are added to `ctx.ssa_dsts` so later passes treat them
-    like any other SSA name."""
+    The temporaries are named after `dst` (`_fresh_name`) and
+    registered with its type, and are added to `ctx.ssa_dsts` so later
+    passes treat them like any other SSA name."""
     c = const_side.const if isinstance(const_side, tac_ast.Constant) else None
     if not isinstance(c, _INT_CONST_TYPES) or c.value <= 0:
         return None
@@ -139,7 +139,7 @@ def _two_term_multiply(
     shifts = [a] if b == 0 else [b, a - b]
     if not all(inline_shift_ok(size, k) for k in shifts):
         return None
-    t = tac_ast.Var(name=f"{dst.name}.sr0")
+    t = tac_ast.Var(name=_fresh_name(ctx, dst.name))
     _register_temp(ctx, dst.name, t.name)
     out = [tac_ast.Binary(
         op=tac_ast.LeftShift(), src1=x,
@@ -148,7 +148,7 @@ def _two_term_multiply(
     if b == 0:
         out.append(tac_ast.Binary(op=op, src1=t, src2=x, dst=dst))
         return out
-    u = tac_ast.Var(name=f"{dst.name}.sr1")
+    u = tac_ast.Var(name=_fresh_name(ctx, dst.name))
     _register_temp(ctx, dst.name, u.name)
     out.append(tac_ast.Binary(
         op=tac_ast.LeftShift(), src1=t,
@@ -184,6 +184,16 @@ def _scalar_int_size(t) -> int | None:
     if isinstance(t, (c99_ast.LongLong, c99_ast.ULongLong)):
         return 8
     return None
+
+
+def _fresh_name(ctx: PassContext, base: str) -> str:
+    """`<base>.sr<k>` for the first k no symbol has. A global keeps its
+    name in SSA form, so two multiplies into it would otherwise mint
+    the same temporary."""
+    k = 0
+    while f"{base}.sr{k}" in ctx.symbols:
+        k += 1
+    return f"{base}.sr{k}"
 
 
 def _register_temp(ctx: PassContext, like: str, name: str) -> None:

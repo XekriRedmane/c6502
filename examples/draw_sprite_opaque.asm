@@ -9,7 +9,6 @@ __zpabi_draw_sprite_opaque__sprite_y	EQU	$83
 __zpabi_draw_sprite_opaque__tile_src_0	EQU	$84
 __zpabi_draw_sprite_opaque__tile_src_1	EQU	$85
 __zpabi_draw_sprite_opaque__page_flag	EQU	$86
-__local_draw_sprite_opaque__0	EQU	$87
 __local_draw_sprite_opaque__x	EQU	$88
 __local_draw_sprite_opaque__row_remain	EQU	$89
 __local_draw_sprite_opaque__1	EQU	$8A
@@ -55,11 +54,9 @@ draw_sprite_opaque:
    TXA
    TAY
    LDA   (__local_draw_sprite_opaque__3),Y
-   STA   __local_draw_sprite_opaque__0
+   STA   __local_draw_sprite_opaque__2
    LDA   screen_row_addr_lo,X
    STA   __local_draw_sprite_opaque__1
-   LDA   __local_draw_sprite_opaque__0
-   STA   __local_draw_sprite_opaque__2
    LDA   __zpabi_draw_sprite_opaque__width
    STA   __local_draw_sprite_opaque__row_remain
    LDA   __zpabi_draw_sprite_opaque__sprite_x

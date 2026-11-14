@@ -361,17 +361,11 @@ get_next_code_byte2:
    BNE   .if_else@12
    LDA   Z_PC2_H
    CMP   NUM_IMAGE_PAGES
-   BCS   .lb_skip@0
-   JMP   .if_end@11
-.lb_skip@0:
+   BCC   .if_end@11
 .if_else@12:
    LDA   Z_PC2_H
-   STA   __local_get_next_code_byte2__page
-   LDA   Z_PC2_HH
-   STA   __local_get_next_code_byte2__found_1
-   LDA   __local_get_next_code_byte2__page
    STA   SCRATCH2
-   LDA   __local_get_next_code_byte2__found_1
+   LDA   Z_PC2_HH
    STA   SCRATCH2+1
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
@@ -391,12 +385,8 @@ get_next_code_byte2:
    ADC   __local_get_next_code_byte2__found_1
    STA   SCRATCH2+1
    LDA   Z_PC2_H
-   STA   __local_get_next_code_byte2__page
-   LDA   Z_PC2_HH
-   STA   __local_get_next_code_byte2__found_1
-   LDA   __local_get_next_code_byte2__page
    STA   SCRATCH1
-   LDA   __local_get_next_code_byte2__found_1
+   LDA   Z_PC2_HH
    STA   SCRATCH1+1
    JSR   read_from_sector
    BCC   .if_end@15
@@ -771,7 +761,6 @@ print_zstring:
 
    LDA   #$00
    STA   LOCKED_ALPHABET
-   LDA   #$00
    STA   ZDECOMPRESS_STATE
    LDA   #$FF
    STA   SHIFT_ALPHABET

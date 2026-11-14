@@ -314,7 +314,6 @@ please_insert_save_diskette:
    BNE   .loop@5_start
    LDA   #$FF
    STA   SCRATCH1
-   LDA   #$FF
    STA   SCRATCH1+1
    LDA   prompts+47
    AND   #$07

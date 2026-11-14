@@ -141,12 +141,12 @@ first save and the same 170 in the second, and leave the same state.
 | `inc_sector_and_write` | 38 | 42 |
 | `print_ascii_string` | 20 | 20 |
 | `cout_string` | 14 | 14 |
-| `please_insert_save_diskette` | 167 | 168 |
+| `please_insert_save_diskette` | 167 | 166 |
 | `get_prompted_number_from_user` | 106 | 103 |
 | `please_reinsert_game_diskette` | 70 | 70 |
 | `instr_save` | 141 | 142 |
 | `copy_data_to_buff` | 12 | 12 |
-| **Code** | **627** | **632** |
+| **Code** | **627** | **630** |
 
 The data is the same apart from where it sits: 17 bytes of IOB, 4 of
 DCT, the five strings, and 48 bytes of prompts. In Zork,
@@ -155,8 +155,8 @@ DCT, the five strings, and 48 bytes of prompts. In Zork,
 count each one to the next routine.
 
 **Speed.** Counting only the cycles spent in this code (the stand-ins
-take none), the first save takes 19,451 cycles against Zork's 19,561,
-and the second 12,965 against 13,012.
+take none), the first save takes 19,449 cycles against Zork's 19,561,
+and the second 12,963 against 13,012.
 
 **Where the difference comes from.** Looking at `instr_save.asm`:
 
@@ -277,3 +277,7 @@ Comparing its code with Zork's then led to:
   load and shift that only set C to what it already holds goes
   ([carry_recompute.md](../../../docs/optimizations/carry_recompute.md)).
   `instr_save` went from 152 bytes to 142.
+- A store of an immediate A already holds is the `STA` alone, so
+  `SCRATCH1 = 0xFFFF` is `LDA #$FF; STA SCRATCH1; STA SCRATCH1+1`
+  ([redundant_load.md](../../../docs/optimizations/redundant_load.md)).
+  `please_insert_save_diskette` went from 168 bytes to 166.

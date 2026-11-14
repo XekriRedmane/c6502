@@ -60,7 +60,6 @@ clear_page1:
    STA   $2428,X
    STA   $2828,X
    STX   __zpabi_interlace_fill_p1__col
-   LDA   #$00
    STA   __zpabi_interlace_fill_p1__paint
    JSR   interlace_fill_p1
    LDA   __local_clear_page1__x

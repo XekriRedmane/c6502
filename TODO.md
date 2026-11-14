@@ -114,19 +114,13 @@ order of size:
 
 ## Optimizations found by Zork's save instruction
 
-`examples/zork/instr_save` is 632 bytes of code against Zork's 627,
-and both saves take fewer cycles than Zork's (19,451 against 19,561,
-and 12,965 against 13,012). The two write routines are 7 bytes longer
-and `instr_save` 1, while `do_rwts_on_sector` and
-`get_prompted_number_from_user` are 4 shorter. Roughly in order of
-payoff:
+`examples/zork/instr_save` is 630 bytes of code against Zork's 627,
+and both saves take fewer cycles than Zork's (19,449 against 19,561,
+and 12,963 against 13,012). The two write routines are 7 bytes longer
+and `instr_save` 1, while `do_rwts_on_sector`,
+`get_prompted_number_from_user`, and `please_insert_save_diskette` are
+5 shorter. Roughly in order of payoff:
 
-- **A phi kept in A across a join.** In `floor_enemy_draw`, each case
-  of a dispatch now stores its value to a zero-page byte, where they
-  used to leave it in A for one store after the join (6 bytes, no
-  cycles). It appeared when backward copy propagation started storing
-  a value computed only to be passed straight into the callee's
-  parameter bytes.
 - **Falling into a tail call.** `write_next_sector` ends in `JMP
   inc_sector_and_write`. Placing a function just before the one it
   tail-calls would drop the `JMP`, which is how Zork chains these
@@ -137,8 +131,6 @@ payoff:
   `memory_value_propagation` forgets everything at a `Call`, but a
   callee's own parameter bytes survive when the callee doesn't change
   them, which `slot_sharing` already works out.
-- **An immediate A already holds.** `LDA #$FF; STA SCRATCH1; LDA #$FF;
-  STA SCRATCH1+1` keeps the second `LDA`.
 - **A counted loop that tests at the top.** `please_insert_save_diskette`'s
   `for (n = ...; n != 0; n--)` ends in a `JMP` back to its test, with
   `n` in memory. Rotated (see "Rotate top-tested loops"), it would be

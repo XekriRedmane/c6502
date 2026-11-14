@@ -251,10 +251,9 @@ main:
    LDA   #$00
    STA   zchar_scratch2
    STA   zchar_scratch2+1
+   STA   zchar_scratch2+3
    LDA   #$55
    STA   zchar_scratch2+2
-   LDA   #$00
-   STA   zchar_scratch2+3
    JMP   match_dictionary_word
 
 story:

@@ -84,7 +84,6 @@ beam_target_draw:
    BCC   .loop@0_continue
    LDA   #$00
    STA   enemy_flag,Y
-   LDA   #$00
    STA   beam_state
    LDA   #$0A
    STA   beam_snd_ctr

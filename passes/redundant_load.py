@@ -124,6 +124,7 @@ from dataclasses import dataclass, field
 
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
+from passes.asm_liveness import a_dead_at as _a_dead_at
 from passes.asm_liveness import call_preserves as _call_preserves
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 from passes.optimization_asm.cfg import (
@@ -194,7 +195,9 @@ class _RegState:
         self.z_tracks_a = False
 
 
-def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
+def _rewrite_function(
+    fn: asm_ast.Function, reorder: bool = True,
+) -> asm_ast.Function:
     """CFG-based forward must-availability dataflow.
 
     Two-phase: (1) iterate IN / OUT register-equivalence states
@@ -207,6 +210,11 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     from ENTRY to B's entry leaves that equivalence intact. So a
     load whose dst register's IN-state list contains the load's
     src is genuinely redundant.
+
+    Rewrites that change what a register or Z holds at the end of a
+    block (`_swap_pairs_ok`, `_store_from_a`) would make IN of a
+    later block wrong, so they're a phase of their own: when one
+    applies, the analysis starts again on the rewritten code.
     """
     if not fn.instructions:
         return fn
@@ -272,6 +280,10 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                     worklist.append(sid)
                     in_worklist.add(sid)
 
+    if reorder:
+        reordered = _reorder_with_in_states(fn, cfg, in_state)
+        if reordered is not None:
+            return _rewrite_function(reordered, reorder=False)
     return _rewrite_with_in_states(fn, cfg, in_state)
 
 
@@ -399,6 +411,72 @@ def _rewrite_with_in_states(
         out.append(instr)
         _update_state(instr, state)
 
+    return asm_ast.Function(
+        name=fn.name, is_global=fn.is_global,
+        params=list(fn.params), instructions=out,
+    )
+
+
+def _reorder_with_in_states(
+    fn: asm_ast.Function, cfg: CFG,
+    in_state: dict[int, _RegState | None],
+) -> asm_ast.Function | None:
+    """The first phase: walk as `_rewrite_with_in_states` does, but
+    only to swap load-store pairs (`_swap_pairs_ok`), keeping the
+    `LDA M` for the second phase to drop, and to turn a store through
+    A of a value A holds into the `STA` alone (`_store_from_a`).
+    Returns None when neither applies anywhere."""
+    pos_to_block: dict[int, int] = {}
+    pos = 0
+    for bid in cfg.block_order:
+        for _ in cfg.blocks[bid].instructions:
+            pos_to_block[pos] = bid
+            pos += 1
+    instrs = fn.instructions
+    state = _RegState()
+    last_block: int | None = None
+    out: list[asm_ast.Type_instruction] = []
+    changed = False
+    i = 0
+    while i < len(instrs):
+        instr = instrs[i]
+        cur_block = pos_to_block.get(i)
+        if cur_block != last_block:
+            block_in = (
+                in_state.get(cur_block) if cur_block is not None
+                else None
+            )
+            state = _clone_state(block_in) if block_in is not None else _RegState()
+            last_block = cur_block
+        if isinstance(instr, (asm_ast.Label, asm_ast.Jump, asm_ast.Branch,
+                              asm_ast.Ret, asm_ast.Return)):
+            out.append(instr)
+            i += 1
+            continue
+        if _swap_pairs_ok(instrs, i, state):
+            # `LDA X; STA D1; LDA M; STA D2` with A already holding
+            # M: `LDA M; STA D2; LDA X; STA D1`, whose `LDA M` the
+            # second phase drops.
+            for k in (i + 2, i + 3, i, i + 1):
+                out.append(instrs[k])
+                _update_state(instrs[k], state)
+            changed = True
+            i += 4
+            continue
+        stored = _store_from_a(instr, state)
+        if stored is not None and _flags_redundant_at(instrs, i, state):
+            # `Mov(M, D)` emits as `LDA M; STA D`; with A already
+            # holding M, the `STA D` alone does it.
+            out.append(stored)
+            _update_state(stored, state)
+            changed = True
+            i += 1
+            continue
+        out.append(instr)
+        _update_state(instr, state)
+        i += 1
+    if not changed:
+        return None
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=out,
@@ -564,6 +642,73 @@ def _is_redundant_load(
         )
     cur = _get_reg(state, instr.dst.reg)
     return any(_operands_equal(c, instr.src) for c in cur)
+
+
+def _swap_pairs_ok(
+    instrs: list[asm_ast.Type_instruction], i: int, state: _RegState,
+) -> bool:
+    """Whether `instrs[i:i+4]` is `LDA X; STA D1; LDA M; STA D2` with A
+    already mirroring M, and the pairs can trade places: `STA D2; LDA
+    X; STA D1` does the same.
+
+    Neither store may change what the other pair reads or writes
+    (`D1` against `M` and `D2`, `D2` against `X`), and A and N/Z,
+    which end up holding X instead of M, must be dead after.
+
+    That's the join of `floor_enemy_draw`'s dispatch: every case
+    leaves the high byte of a pointer in A, and the join stores the
+    low byte to a parameter first."""
+    if i + 4 > len(instrs):
+        return False
+    load_x, store_1, load_m, store_2 = instrs[i:i + 4]
+    a = asm_ast.Reg(reg=asm_ast.A())
+    for ins, is_load in ((load_x, True), (store_1, False),
+                         (load_m, True), (store_2, False)):
+        if not isinstance(ins, asm_ast.Mov) or ins.is_volatile:
+            return False
+        if is_load and (ins.dst != a or isinstance(ins.src, asm_ast.Reg)):
+            return False
+        if not is_load and (
+            ins.src != a or isinstance(ins.dst, asm_ast.Reg)
+        ):
+            return False
+    if not any(_operands_equal(c, load_m.src) for c in state.a):
+        return False
+    if any(_operands_equal(c, load_x.src) for c in state.a):
+        return False
+    d1, d2, x, m = store_1.dst, store_2.dst, load_x.src, load_m.src
+    if _may_alias(d1, m) or _may_alias(d1, d2) or _may_alias(d2, x):
+        return False
+    return _a_dead_at(instrs, i + 4) and _flags_dead_at(instrs, i + 4)
+
+
+def _store_from_a(
+    instr: asm_ast.Type_instruction, state: _RegState,
+) -> asm_ast.Mov | None:
+    """When `instr` is a store through A, `Mov(M, D)` with M memory or
+    an immediate (emitted as `LDA M; STA D`), and A already mirrors M,
+    return `Mov(Reg(A), D)`, the `STA D` alone. Otherwise None. The
+    caller checks that the `LDA`'s N/Z effect isn't needed.
+
+    That's the second store of `LDA #$FF; STA S; LDA #$FF; STA S+1`.
+    A volatile `Mov` qualifies only with an immediate source, since
+    the flag doesn't say which side is volatile."""
+    if not isinstance(instr, asm_ast.Mov):
+        return None
+    if isinstance(instr.src, asm_ast.Reg) or isinstance(
+        instr.dst, asm_ast.Reg,
+    ):
+        return None
+    if _operands_equal(instr.src, instr.dst):
+        return None
+    if instr.is_volatile and not _immediates([instr.src]):
+        return None
+    if not any(_operands_equal(c, instr.src) for c in state.a):
+        return None
+    return asm_ast.Mov(
+        src=asm_ast.Reg(reg=asm_ast.A()), dst=instr.dst,
+        is_volatile=instr.is_volatile,
+    )
 
 
 def _redirect_lda_to_transfer(
@@ -986,13 +1131,12 @@ def _update_for_mov(mov: asm_ast.Mov, state: _RegState) -> None:
     _invalidate_aliasing(state, mov.dst)
     _invalidate_z_aliasing(state, mov.dst)
     # The emitted `LDA src` sets N/Z from the moved value, so Z now
-    # reflects dst (and nothing older).
-    if isinstance(mov.dst, _STABLE_MEM_TYPES):
-        state.a = [mov.dst]
-        state.z_reflects = [mov.dst]
-    else:
-        state.a = []
-        state.z_reflects = []
+    # reflects dst (and nothing older). A constant source still
+    # equals A too, whatever the store wrote.
+    known = [op for op in (mov.dst,) if isinstance(op, _STABLE_MEM_TYPES)]
+    known += _immediates([mov.src])
+    state.a = list(known)
+    state.z_reflects = list(known)
 
 
 def _get_reg(state: _RegState, reg: asm_ast.Type_reg) -> list[asm_ast.Type_operand]:

@@ -1136,5 +1136,89 @@ int main(void) { unsigned char r = f(0); return g * 100 + r; }
         )
 
 
+def _d(name: str, offset: int = 0) -> asm_ast.Data:
+    return asm_ast.Data(name=name, offset=offset)
+
+
+class TestStoreFromA(unittest.TestCase):
+    """A store through A, `Mov(#k, D)`, of a value A already holds
+    becomes the `STA D` alone."""
+
+    def test_second_immediate_store(self):
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=255), dst=_d("S")),
+            asm_ast.Mov(src=asm_ast.Imm(value=255), dst=_d("S", 1)),
+            asm_ast.Mov(src=_d("g"), dst=_REG_A),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(instrs), [
+            instrs[0],
+            asm_ast.Mov(src=_REG_A, dst=_d("S", 1)),
+            *instrs[2:],
+        ])
+
+    def test_kept_when_the_flags_are_read(self):
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_d("S")),
+            asm_ast.Compare(left=_REG_A, right=asm_ast.Imm(value=5)),
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_d("S", 1)),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".l"),
+            asm_ast.Label(name=".l"),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs)
+
+    def test_kept_for_another_value(self):
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_d("S")),
+            asm_ast.Mov(src=asm_ast.Imm(value=2), dst=_d("S", 1)),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs)
+
+
+class TestSwapPairs(unittest.TestCase):
+    """`LDA X; STA D1; LDA M; STA D2` with A already holding M becomes
+    `STA D2; LDA X; STA D1`, as at the join of `floor_enemy_draw`'s
+    dispatch."""
+
+    def _join(self, d1, m, d2, after=None):
+        return [
+            asm_ast.Mov(src=_d("hi"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_d("t")),
+            asm_ast.Mov(src=_d("lo"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=d1),
+            asm_ast.Mov(src=m, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=d2),
+            *(after or [asm_ast.Mov(src=asm_ast.Imm(value=1), dst=_REG_A)]),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_swapped(self):
+        instrs = self._join(_d("p0"), _d("t"), _d("p1"))
+        self.assertEqual(_rewritten(list(instrs)), [
+            *instrs[:2], instrs[5], instrs[2], instrs[3], *instrs[6:],
+        ])
+
+    def test_kept_when_the_first_store_writes_m(self):
+        # `LDA t` right after `STA t` goes anyway, but `STA p1` stays
+        # after it.
+        instrs = self._join(_d("t"), _d("t"), _d("p1"))
+        self.assertEqual(
+            _rewritten(list(instrs)), instrs[:4] + instrs[5:],
+        )
+
+    def test_kept_when_the_second_store_writes_x(self):
+        instrs = self._join(_d("p0"), _d("t"), _d("lo"))
+        self.assertEqual(_rewritten(list(instrs)), instrs)
+
+    def test_kept_when_a_is_read_after(self):
+        instrs = self._join(
+            _d("p0"), _d("t"), _d("p1"),
+            after=[asm_ast.Mov(src=_REG_A, dst=_d("q"))],
+        )
+        self.assertEqual(_rewritten(list(instrs)), instrs)
+
+
 if __name__ == "__main__":
     unittest.main()

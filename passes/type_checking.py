@@ -1248,6 +1248,28 @@ def _check_register_object(t: Type, *, max_bytes: int, where: str) -> None:
         )
 
 
+def _check_named_register_param(t: Type, regs: str, *, where: str) -> None:
+    """Validate a parameter with an `in_*` attribute naming the
+    registers `regs` ("Y", "YA", ...): an integer or a pointer with one
+    byte for each register. A function the compiler compiles copies a
+    pointer into a zero-page pair of its pool on entry, and a routine
+    with a fixed address has no body, so a pointer is as good as any
+    other 2-byte value here. Raises TypeCheckError otherwise."""
+    attr = "in_" + regs.lower()
+    if not (_is_pointer_type(t) or _is_integer_type(_strip_quals(t))):
+        raise TypeCheckError(
+            f"{where}: `{attr}` passes an integer or a pointer, one byte "
+            f"in each register it names"
+        )
+    n = _sizeof(t)
+    if n != len(regs):
+        raise TypeCheckError(
+            f"{where} is {n} byte{'s' if n != 1 else ''}, but `{attr}` "
+            f"names {len(regs)} register{'s' if len(regs) != 1 else ''}; "
+            f"name one register for each byte, low byte first"
+        )
+
+
 def _check_well_formed_type(t: Type, *, where: str, types: "TypeTable | None" = None, require_complete: bool = False, tag_visible=None, auto_introduce=None) -> None:
     """Walk `t` and raise TypeCheckError if any nested Array has an
     incomplete element type (Void or another array of incomplete
@@ -2337,11 +2359,16 @@ class TypeChecker:
                 # "@addr" is a `zeropage(addr)` parameter, which isn't
                 # `register`.
                 p_reg = "" if p_reg.startswith("@") else p_reg
-                if p_reg:
+                if p_reg == "auto":
                     _check_register_object(
                         p_type, max_bytes=2,
                         where=f"register parameter "
                               f"{_display_name(p_name)!r}",
+                    )
+                elif p_reg:
+                    _check_named_register_param(
+                        p_type, p_reg,
+                        where=f"parameter {_display_name(p_name)!r}",
                     )
                 self.symbols[p_name] = Symbol(
                     type=p_type,

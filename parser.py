@@ -754,13 +754,13 @@ def _register_marker(specs, is_register: bool) -> str:
     `register`, "auto" for `register` alone (A, then X, by position),
     or the register letters an `in_*` attribute names, such as "Y" for
     `__attribute__((in_y))` or "AY" for `in_ay` (low byte in A, high
-    byte in Y). A parameter that isn't `register` and has
-    `__attribute__((zeropage(addr)))` gets "@" and the address in
-    decimal ("@230" for `zeropage(0xE6)`): it arrives in zero page at
-    that address. Raises ParserError for any other attribute, for an
-    `in_*` attribute without `register`, for `zeropage` with
-    `register` or without an address, and for a register named
-    twice."""
+    byte in Y). An `in_*` attribute makes the parameter a register
+    parameter whether or not it's declared `register`. A parameter
+    that isn't `register` and has `__attribute__((zeropage(addr)))`
+    gets "@" and the address in decimal ("@230" for `zeropage(0xE6)`):
+    it arrives in zero page at that address. Raises ParserError for any
+    other attribute, for `zeropage` with `register` or without an
+    address, and for a register named twice."""
     if not specs:
         return "auto" if is_register else ""
     if len(specs) != 1:
@@ -800,11 +800,6 @@ def _register_marker(specs, is_register: bool) -> str:
         raise ParserError(
             f"`{name}` names {regs[0]} twice; each byte of a parameter "
             f"needs its own register"
-        )
-    if not is_register:
-        raise ParserError(
-            f"`__attribute__(({name}))` needs the parameter declared "
-            f"`register`"
         )
     return regs
 

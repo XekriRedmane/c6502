@@ -114,11 +114,10 @@ extern struct dct dct;
 extern struct iob iob;
 
 /* DOS's disk routine. It takes the address of its parameter block
- * with the high byte in A and the low byte in Y, and sets the carry
+ * with the low byte in Y and the high byte in A, and sets the carry
  * when the operation failed. */
 __attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
-bool RWTS(register uint8_t iob_hi __attribute__((in_a)),
-          register uint8_t iob_lo __attribute__((in_y)));
+bool RWTS(struct iob *iob __attribute__((in_ya)));
 
 /* ---- Zork's routines outside this example ----------------------------- */
 

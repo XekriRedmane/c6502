@@ -74,7 +74,7 @@ static bool do_rwts_on_sector(register uint8_t command,
         iob.track++;
     }
     iob.sector = (uint8_t)sector;
-    return RWTS((uint8_t)((uint16_t)&iob >> 8), (uint8_t)(uint16_t)&iob);
+    return RWTS(&iob);
 }
 
 /* Writes the sector after SCRATCH1 from `buffer`, with the motor's

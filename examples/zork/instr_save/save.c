@@ -82,8 +82,8 @@
  * last byte first, and returns the index after them. A count of 0
  * copies 256. */
 static uint8_t copy_data_to_buff(
-    const uint8_t *const src, register uint8_t x __attribute__((in_x)),
-    register uint8_t count __attribute__((in_y))) {
+    const uint8_t *const src, uint8_t x __attribute__((in_x)),
+    uint8_t count __attribute__((in_y))) {
     do {
         count--;
         BUFF_AREA[x] = src[count];

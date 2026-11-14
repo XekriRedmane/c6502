@@ -61,7 +61,7 @@ struct prompt prompts[3] = {
 /* Adds the `count` characters at `s` to the line buffer. A count of 0
  * adds 256. */
 static void print_ascii_string(
-    const char *const s, register uint8_t count __attribute__((in_x))) {
+    const char *const s, uint8_t count __attribute__((in_x))) {
     uint8_t i = 0;
     do {
         buffer_char(s[i]);
@@ -72,7 +72,7 @@ static void print_ascii_string(
 /* Prints the `count` characters at `s` straight to the screen, with
  * their high bits set. A count of 0 prints 256. */
 static void cout_string(
-    const char *const s, register uint8_t count __attribute__((in_x))) {
+    const char *const s, uint8_t count __attribute__((in_x))) {
     uint8_t i = 0;
     do {
         COUT1(s[i] | 0x80);

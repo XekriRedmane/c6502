@@ -1,8 +1,10 @@
 """Tests for naming the register a parameter arrives in:
-`register uint8_t lo __attribute__((in_y))`, and for a 2-byte parameter
-a pair such as `in_xy` (low byte in X, high byte in Y). A `register`
-parameter without the attribute keeps the positional rule (A, then X),
-skipping the registers the named ones take.
+`uint8_t lo __attribute__((in_y))`, and for a 2-byte parameter a pair
+such as `in_xy` (low byte in X, high byte in Y). `register` is
+optional with the attribute, and the parameter may be any integer or
+pointer with one byte for each register named. A `register` parameter
+without the attribute keeps the positional rule (A, then X), skipping
+the registers the named ones take, and can't be a pointer.
 """
 from __future__ import annotations
 
@@ -42,10 +44,14 @@ class TestParse(unittest.TestCase):
             "       register unsigned char d);"
         ), ["Y", "", "XA", "auto"])
 
+    def test_register_is_optional(self):
+        self.assertEqual(self._markers(
+            "void f(unsigned char a __attribute__((in_y)),\n"
+            "       unsigned char *p __attribute__((in_xa)));"
+        ), ["Y", "XA"])
+
     def test_rejected(self):
         bad = {
-            "not register": ("void f(unsigned char a __attribute__((in_y)));",
-                             "needs the parameter declared `register`"),
             "unknown": ("void f(register unsigned char a "
                         "__attribute__((in_z)));", "unknown parameter attribute"),
             "argument": ("void f(register unsigned char a "
@@ -66,7 +72,8 @@ class TestAbiErrors(unittest.TestCase):
 
     _CASES = {
         "wrong width": (
-            "void f(register unsigned int a __attribute__((in_y))) {}\n"
+            "__attribute__((zp_abi, address(0xD000)))\n"
+            "void f(unsigned int a __attribute__((in_y)));\n"
             "int main(void) { f(1); return 0; }\n",
             "is 2 bytes, but `in_y` names 1 register",
         ),
@@ -86,7 +93,7 @@ class TestAbiErrors(unittest.TestCase):
             "void f(register unsigned char a __attribute__((in_y)));\n"
             "void f(register unsigned char a) {}\n"
             "int main(void) { f(1); return 0; }\n",
-            "`register a in_y` against `register a`",
+            "`a in_y` against `register a`",
         ),
     }
 
@@ -96,14 +103,35 @@ class TestAbiErrors(unittest.TestCase):
                 with self.assertRaisesRegex(AbiSelectionError, needle):
                     _codegen(src)
 
-    def test_pointer(self):
+    def test_pointer_needs_named_registers(self):
+        # A pointer takes `in_*`; a plain `register` one is an error.
         with self.assertRaisesRegex(
                 TypeCheckError, "register parameter 'p': a pointer"):
             _codegen(
-                "void f(register unsigned char *p "
-                "__attribute__((in_xy))) {}\n"
+                "void f(register unsigned char *p) {}\n"
                 "int main(void) { f(0); return 0; }\n"
             )
+
+    def test_type_errors(self):
+        cases = {
+            "wrong width": (
+                "void f(unsigned int a __attribute__((in_y))) {}\n",
+                "parameter 'a' is 2 bytes, but `in_y` names 1 register",
+            ),
+            "pointer in one register": (
+                "void f(unsigned char *p __attribute__((in_y))) {}\n",
+                "parameter 'p' is 2 bytes, but `in_y` names 1 register",
+            ),
+            "struct": (
+                "struct s { unsigned char a, b; };\n"
+                "void f(struct s v __attribute__((in_xy))) {}\n",
+                "integer or a pointer",
+            ),
+        }
+        for label, (src, needle) in cases.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(TypeCheckError, needle):
+                    _codegen(src + "int main(void) { return 0; }\n")
 
     def test_one_line_error(self):
         err = io.StringIO()
@@ -179,6 +207,41 @@ class TestSim(unittest.TestCase):
         )
         self._check(src, (20 + 6) + (1 + 40), standin=self._ROM_CODE)
 
+    def test_pointer_parameters(self):
+        # `second` and `sum` read through pointers that arrive in
+        # registers, without `register`.
+        src = (
+            "struct blk { unsigned char a, b, c; };\n"
+            "struct blk blk = {1, 2, 3};\n"
+            "unsigned char tab[4] = {10, 20, 30, 40};\n"
+            "unsigned char second(const unsigned char *p "
+            "__attribute__((in_ya))) {\n"
+            "    return p[1];\n"
+            "}\n"
+            "unsigned char sum(struct blk *b __attribute__((in_xy)),\n"
+            "                  unsigned char k __attribute__((in_a))) {\n"
+            "    return b->a + b->c + k;\n"
+            "}\n"
+            "int main(void) { return second(tab) + sum(&blk, 100); }\n"
+        )
+        self._check(src, 20 + 1 + 3 + 100)
+
+    # A routine at $D100 that returns the byte after the one its
+    # pointer argument, low byte in Y and high byte in A, points at:
+    # `STY $F0; STA $F1; LDY #1; LDA ($F0),Y; RTS`.
+    _NEXT_CODE = (0xD100, bytes([0x84, 0xF0, 0x85, 0xF1, 0xA0, 0x01,
+                                 0xB1, 0xF0, 0x60]))
+
+    def test_fixed_address_routine_with_a_pointer(self):
+        src = (
+            "struct blk { unsigned char a, b, c; };\n"
+            "struct blk blk = {7, 9, 11};\n"
+            "__attribute__((zp_abi, address(0xD100)))\n"
+            "unsigned char next(struct blk *p __attribute__((in_ya)));\n"
+            "int main(void) { return next(&blk); }\n"
+        )
+        self._check(src, 9, standin=self._NEXT_CODE)
+
     def test_a_argument_from_a_frame_slot(self):
         # Without --optimize, `a` and `b` live on the soft stack, and
         # loading `a` into A is `LDY #off; LDA (FP),Y`, which would
@@ -211,6 +274,18 @@ class TestShape(unittest.TestCase):
         self.assertEqual(_body(asm, "put").split(),
                          ["STA", "out", "STY", "out+1", "RTS"])
         self.assertIn("LDY   g", asm.split("\nmain:")[1])
+
+    def test_pointer_goes_straight_to_registers(self):
+        # Zork's RWTS takes the address of its block in Y and A.
+        asm = _codegen(
+            "struct iob { unsigned char t[17]; };\n"
+            "struct iob iob;\n"
+            "__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))\n"
+            "_Bool RWTS(struct iob *p __attribute__((in_ya)));\n"
+            "int main(void) { return RWTS(&iob); }\n"
+        )
+        main = asm.split("\nmain:")[1]
+        self.assertIn("LDA   #>iob\n   LDY   #<iob\n   JSR   RWTS", main)
 
     def test_address_bytes_go_straight_to_registers(self):
         # The shape of Zork's RWTS call: `LDA #>iob; LDY #<iob`.

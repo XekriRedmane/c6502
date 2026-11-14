@@ -445,11 +445,13 @@ the body allows. `twice`
 loads both arguments and jumps to `add`, since nothing is left to do
 after the call.
 
-A `register` parameter can also name the register it arrives in, with
+A parameter can also name the register it arrives in, with
 `__attribute__((in_a))`, `in_x`, or `in_y` after its name, or for a
-2-byte parameter a pair such as `in_xy`, low byte first. That's the
-only way to pass an argument in Y, so it's how to declare a ROM or DOS
-routine that takes one there. A `register` parameter without the
+2-byte parameter a pair such as `in_xy`, low byte first. That makes it
+a register parameter, with or without `register`, and it may be any
+integer or pointer with a byte for each register. That's the only way
+to pass an argument in Y, so it's how to declare a ROM or DOS routine
+that takes one there. A `register` parameter without the
 attribute still goes in A, then X, skipping a register another
 parameter names, so a function can take up to three bytes in
 registers.
@@ -462,8 +464,8 @@ lists the mistakes it reports.
 unsigned char out[2];
 unsigned char g;
 
-void put(register unsigned char hi __attribute__((in_a)),
-         register unsigned char lo __attribute__((in_y))) {
+void put(unsigned char hi __attribute__((in_a)),
+         unsigned char lo __attribute__((in_y))) {
     out[0] = hi;
     out[1] = lo;
 }
@@ -494,10 +496,10 @@ or bytes at a fixed address, they're loaded with `LDX` / `LDY`
 directly, nothing in between touches A, and a peephole drops the
 `PHA` / `PLA`.
 
-A pointer can't be a `register` parameter. The 6502 reaches memory
-through a pointer only with `(zp),Y` addressing, which reads the
-pointer's two bytes from consecutive zero-page addresses, so a
-pointer is only usable once it's in zero page. One that arrived in A
+A pointer can't be a `register` parameter by position. The 6502
+reaches memory through a pointer only with `(zp),Y` addressing, which
+reads the pointer's two bytes from consecutive zero-page addresses, so
+a pointer is only usable once it's in zero page. One that arrived in A
 and X would have to be stored to zero page before its first use. A
 pointer parameter's own zero-page bytes already serve as that base,
 with no extra step.
@@ -515,6 +517,13 @@ first:
 
 The caller stores the pointer's two bytes in `__zpabi_first__p_0` and
 `__zpabi_first__p_1`, and `first` reads through them directly.
+
+A pointer can still name its registers, which is how a routine that
+takes one in registers is declared: DOS's RWTS takes its parameter
+block's address in Y and A, as `struct iob *iob __attribute__((in_ya))`.
+A function the compiler compiles that takes a pointer this way stores
+the two registers into adjacent bytes of its pool as it starts, and
+reads through those.
 
 A parameter can also name its zero-page address, with
 `__attribute__((zeropage(addr)))` after its name, so that assembly code

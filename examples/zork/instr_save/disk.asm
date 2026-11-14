@@ -72,7 +72,7 @@ COUT1	EQU	$FDF0
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
 ; ext HOME params=
 ; ext RDKEY params=
-; ext RWTS params=__zpabi_RWTS__iob_hi,__zpabi_RWTS__iob_lo param_regs=A,Y
+; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext branch params=
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A

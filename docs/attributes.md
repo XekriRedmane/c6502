@@ -43,7 +43,7 @@ error that names the declaration.
 | `zeropage(addr)` | an object with static storage | Places the object in zero page at `addr`. |
 | `address(addr)` | a function, or an `extern` object | Names code or memory that's already at `addr`. |
 | `preserves_x`, `preserves_y` | a function with `address` | Says the routine leaves X (Y) as it found it. |
-| `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a `register` parameter | Names the register (or two, low byte first) the parameter arrives in. |
+| `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` | a parameter | Names the register (or two, low byte first) the parameter arrives in. |
 | `zeropage(addr)` | a parameter that isn't `register` | Passes the argument in zero page at `addr`. |
 | `packed` | an enum's definition | Makes the enum one byte when its values fit. |
 | `section("name")` | a function, or an object with static storage | Puts it in a section of that name, for a linker script to place. |
@@ -60,8 +60,9 @@ A `zp_abi` function takes its arguments in zero page instead, and its
 byte goes in A and the second in X, so `register uint8_t a, register
 uint8_t b` puts `a` in A and `b` in X, and `register uint16_t v` puts
 the low byte in A and the high byte in X. A parameter can name its
-register instead, with `in_a`, `in_x`, or `in_y` (see below), and a
-pointer can't be a `register` parameter.
+register instead, with `in_a`, `in_x`, or `in_y` (see below). A
+pointer can't be a `register` parameter by position, but it can name
+its registers.
 
 The return value doesn't depend on the attribute. A `char`-sized
 result comes back in A, and an `int`-sized one comes back with its low
@@ -78,21 +79,20 @@ conventions in detail.
 
 ### `in_a`, `in_x`, and `in_y`
 
-These go on a `register` parameter, after its name, and say which
-register it arrives in. A 2-byte parameter names two, low byte first:
-`in_xy` puts the low byte in X and the high byte in Y. The pairs are
-`in_ax`, `in_ay`, `in_xa`, `in_xy`, `in_ya`, and `in_yx`.
+These go on a parameter, after its name, and say which register it
+arrives in. A 2-byte parameter names two, low byte first: `in_xy`
+puts the low byte in X and the high byte in Y. The pairs are `in_ax`,
+`in_ay`, `in_xa`, `in_xy`, `in_ya`, and `in_yx`. The parameter is then
+a register parameter, so `register` is optional, and it can be any
+integer or pointer with one byte for each register named.
 
 ```c
-// DOS's RWTS takes its parameter block's address with the high byte
-// in A and the low byte in Y.
+// DOS's RWTS takes its parameter block's address with the low byte
+// in Y and the high byte in A.
 __attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
-bool RWTS(register uint8_t iob_hi __attribute__((in_a)),
-          register uint8_t iob_lo __attribute__((in_y)));
+bool RWTS(struct iob *iob __attribute__((in_ya)));
 
-bool read_sector(void) {
-    return RWTS((uint8_t)((uint16_t)&iob >> 8), (uint8_t)(uint16_t)&iob);
-}
+bool read_sector(void) { return RWTS(&iob); }
 ```
 
 ```
@@ -109,7 +109,9 @@ next to an `in_xy` parameter arrives in A. A function the compiler
 compiles can take parameters this way too. It copies each one into a
 local as it starts, which stays in the register when the body allows
 and is in its zero-page pool otherwise, so a register parameter takes
-no zero-page byte of its own.
+no zero-page byte of its own. A pointer always goes in the pool, as
+two adjacent bytes, since the 6502 reads through a pointer only in
+zero page.
 
 ### `zeropage(addr)` on a parameter
 
@@ -121,7 +123,7 @@ whose address is in `SCRATCH2`, at `$E6`. On a parameter,
 ```c
 __attribute__((zp_abi, address(0x1D34)))
 void cout_string(const char *s __attribute__((zeropage(0xE6))),
-                 register uint8_t count __attribute__((in_x)));
+                 uint8_t count __attribute__((in_x)));
 
 void show(void) { cout_string("DEFAULT = ", 10); }
 ```
@@ -142,7 +144,7 @@ so the program needs no global for it. The compiler keeps its own
 zero-page bytes, and the runtime's block, off the bytes such
 parameters use. Two functions may take parameters at the same bytes,
 and a zero-page object may cover them too. The attribute goes on a
-parameter that isn't `register`. On a routine with `address` the
+parameter that isn't `register` and doesn't name a register. On a routine with `address` the
 routine has to be `zp_abi`, as with `register` parameters.
 
 A function you define can take a parameter this way too, and then
@@ -152,7 +154,7 @@ declared `preserves_x, preserves_y` it compiles to Zork's own code:
 
 ```c
 void cout_string(const char *s __attribute__((zeropage(0xE6))),
-                 register uint8_t count __attribute__((in_x))) {
+                 uint8_t count __attribute__((in_x))) {
     uint8_t i = 0;
     do { COUT1(s[i] | 0x80); i++; } while (--count != 0);
 }
@@ -687,13 +689,14 @@ rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte
 | Two `address` objects that overlap | The optimizer assumes different names are different memory. |
 | Reserved zero-page bytes that leave no room below `$80` for the runtime's block | The runtime needs `HARGS` and three 2-byte pointers in zero page, and the compiler's own pools use `$80`-`$FF`. |
 | A `register` parameter on a function with `address` but no `zp_abi` | Without `zp_abi`, arguments go on the soft stack, which the ROM routine doesn't read. |
-| A `zp_abi` routine with `address` and a parameter that's neither `register` nor `zeropage(addr)` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
+| A `zp_abi` routine with `address` and a parameter that has neither `register`, `in_*`, nor `zeropage(addr)` | That parameter would go in a zero-page byte the compiler picks per program, and that address isn't in the routine's code. |
 | A `zeropage(addr)` parameter on a function that can't use `zp_abi` with `--optimize`, such as a recursive one | Only `zp_abi` passes arguments in zero page. |
 | Declarations of a function that give a parameter different addresses, or `zeropage(addr)` on only some of them | A caller would store the argument where the function doesn't read it. `--link` checks this across source files too. |
 | `zeropage(addr)` on a `register` parameter, without an address, or past `$FF` | The parameter arrives either in a register or in zero page, at one address. |
-| `in_a`, `in_x`, or `in_y` on a parameter that isn't `register` | The attribute only says which register a `register` parameter uses. |
 | Two parameters that name the same register | A register holds one value. |
 | A pair on a 1-byte parameter, or one register on a 2-byte one | Each byte needs its own register. |
+| `in_*` on a struct, a union, or an array | Only an integer or a pointer is passed in registers. |
+| A pointer declared `register` without `in_*` | A `register` parameter by position takes A, then X, for numbers; name the registers for a pointer. |
 | A `zp_abi` routine with `address` that returns a pointer, or more than 2 bytes | Those come back in `HARGS`, where the routine doesn't put them. Declare a pointer result as `uint16_t`. |
 | Taking the address of a `zp_abi` routine with `address` | A call through a pointer passes its arguments on the soft stack. |
 | `preserves_x` or `preserves_y` on a function without `address`, or on a function definition | The compiler can't check that code it compiles keeps the promise. |

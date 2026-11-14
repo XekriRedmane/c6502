@@ -105,13 +105,6 @@ extern volatile uint8_t SLOT1_SCRATCH __attribute__((address(0x0779)));
 /* Restarts the interpreter. It doesn't return. */
 void restart(void);
 
-/* DOS's disk routine. It takes the address of its parameter block
- * with the high byte in A and the low byte in Y, and sets the carry
- * when the operation failed. */
-__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
-bool RWTS(register uint8_t iob_hi __attribute__((in_a)),
-          register uint8_t iob_lo __attribute__((in_y)));
-
 /* ---- Disk ------------------------------------------------------------ */
 
 /* The device characteristics table for a Disk II. */
@@ -147,6 +140,12 @@ struct iob iob = {
     0x00, 0x00, 0x60, 0x01,
 };
 
+/* DOS's disk routine. It takes the address of its parameter block
+ * with the low byte in Y and the high byte in A, and sets the carry
+ * when the operation failed. */
+__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
+bool RWTS(struct iob *iob __attribute__((in_ya)));
+
 /* Reads or writes (`command`) the 256-byte sector numbered SCRATCH1,
  * counting from the start of track 3, to or from the buffer at
  * SCRATCH2. Returns true if the operation failed. */
@@ -161,7 +160,7 @@ bool do_rwts_on_sector(register uint8_t command) {
         iob.track++;
     }
     iob.sector = (uint8_t)sector;
-    return RWTS((uint8_t)((uint16_t)&iob >> 8), (uint8_t)(uint16_t)&iob);
+    return RWTS(&iob);
 }
 
 __attribute__((return_bool_in_carry)) bool read_from_sector(void) {
@@ -309,7 +308,7 @@ void dump_buffer_line(void) {
 
 /* Prints `count` characters from SCRATCH2 with COUT1, in normal text
  * unless INVFLG says otherwise. */
-void cout_string(register uint8_t count __attribute__((in_x))) {
+void cout_string(uint8_t count __attribute__((in_x))) {
     uint8_t *s = (uint8_t *)SCRATCH2;
     uint8_t y = 0;
     do {

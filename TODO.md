@@ -91,20 +91,6 @@ callers do with the result, so it has to be decided before
 `tac_to_asm` lowers any call to it, and the multi-TU linker would need
 the choice in its metadata.
 
-## Optimizations found by the Zork string printer
-
-`examples/zork_print_string_literal.c` first compiled to 1984 bytes of
-code, about twice the 980 bytes of Zork's own code for the same
-routines. Inline lowering of 16-bit shifts by 7 and 15, and direct
-access to struct members at constant offsets
-(`passes/optimization/direct_member_access.py`), brought that to
-1510. Saving the decoder's state on the hardware stack around the
-call that recurses (`#pragma c6502 call save(hardware_stack)`,
-`passes/recursion_saves.py`) took off another 180, leaving
-print_zstring at 277 bytes against Zork's 216. Shifting single bytes
-in A instead of in a slot (`narrow_widened_arith` on a wide operand,
-and `passes/shift_in_a.py`) took off 11 more.
-
 ## Optimizations found by Zork's save instruction
 
 `examples/zork/instr_save` is 626 bytes of code against Zork's 627,
@@ -136,41 +122,6 @@ Volatile". Both should compile, with every access to a volatile
 member kept and in order, which `direct_member_access` already
 preserves through the `is_volatile` bit. Until then, the crash should
 at least be a one-line error.
-
-## Looser rules for `in_*` parameters
-
-Two changes to the parameter attributes `in_a`, `in_x`, `in_y`, and
-the pairs such as `in_ay` (`parser._register_marker`,
-`abi_selection._assign_param_registers`, docs/attributes.md):
-
-- **`register` is optional.** An `in_*` attribute already says the
-  parameter arrives in a register, so a parameter with one is taken to
-  be `register` whether it says so or not. Today the attribute without
-  `register` is an error. A plain `register` parameter, without an
-  attribute, keeps the positional rule (A, then X).
-- **Any type of the right size.** A parameter with an `in_*` attribute
-  is accepted whenever its size matches the number of registers named:
-  1 byte for one, 2 for a pair. That includes pointers, which today
-  can't be `register` parameters at all, so DOS's RWTS can be declared
-  as it's called:
-
-  ```c
-  __attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
-  bool RWTS(struct iob *iob __attribute__((in_ya)));
-
-  bool read_sector(void) { return RWTS(&iob); }
-  ```
-
-  instead of taking the address's high and low bytes as two `uint8_t`
-  parameters and splitting `(uint16_t)&iob` at every call. The rule
-  against pointers is there because a function the compiler compiles
-  can only use a pointer from a zero-page pair, so it would store the
-  registers there first, which is what passing it in its slot already
-  does. A routine with a fixed address has no body the compiler
-  compiles, so the rule doesn't apply. A compiled function with a
-  pointer `in_*` parameter copies it into a zero-page pair of its pool
-  on entry. The `RWTS` declaration in `examples/zork/instr_save/zork.h`
-  and its call in `disk.c` change to match.
 
 ## More system-software headers
 

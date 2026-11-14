@@ -150,13 +150,17 @@ Two key runtime conventions:
   (so `foo(register uint8_t a, register uint8_t b)` puts `a` in A
   and `b` in X; `foo(register uint16_t a)` spreads `a`'s low byte
   to A and high byte to X). `__attribute__((in_a))` / `in_x` / `in_y`
-  after a `register` parameter names its register instead, and a pair
-  (`in_xy`, low byte first) covers a 2-byte one, so Y is available to
-  parameters that ask for it; the positional rule skips registers the
-  named ones take. `param_registers` on the c99 function_decl holds
-  "" / "auto" / the letters. A `register` local uses **Y** only —
-  exactly one byte. **Pointers
-  may never be placed in registers.** Return values are type-driven
+  after a parameter names its register instead, and a pair (`in_xy`,
+  low byte first) covers a 2-byte one, so Y is available to parameters
+  that ask for it; the positional rule skips registers the named ones
+  take. Such a parameter is a register parameter with or without
+  `register`, and may be any integer or pointer with one byte per
+  register (`type_checking._check_named_register_param`), so DOS's
+  RWTS is `bool RWTS(struct iob *iob __attribute__((in_ya)))`.
+  `param_registers` on the c99 function_decl holds "" / "auto" / the
+  letters. A `register` local uses **Y** only — exactly one byte. **A
+  positional `register` parameter or local can't be a pointer.**
+  Return values are type-driven
   (no keyword): any non-pointer return of ≤2 bytes comes back low
   byte in A, high byte in X; pointer / wider returns ride HARGS.
   Requires zp_abi eligibility (no IndirectCall, no recursion, address

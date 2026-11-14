@@ -303,11 +303,12 @@ def _assign_param_registers(
     bytes (the `slot_symbols` order — low byte of param 0 first), each
     entry "A" / "X" or None.
 
-    Raises `AbiSelectionError` if a `register` param is a pointer, is
-    wider than 2 bytes, names a register for each of a different
-    number of bytes than it has, or names a register another
-    parameter has, or if the positional params need more than the
-    free arg registers. `where` is a short label for error messages
+    Raises `AbiSelectionError` if a positional `register` param is a
+    pointer or wider than 2 bytes, if an `in_*` param (any integer or
+    pointer, `register` or not) names a register for each of a
+    different number of bytes than it has, or names a register
+    another parameter has, or if the positional params need more than
+    the free arg registers. `where` is a short label for error messages
     (e.g. the function name)."""
     fun_type = fn_decl.data_type
     markers = list(fn_decl.param_registers)
@@ -339,12 +340,12 @@ def _assign_param_registers(
             if isinstance(fun_type, c99_ast.FunType) else None
         )
         pname = fn_decl.params[i] if i < len(fn_decl.params) else f"#{i}"
-        if isinstance(param_t, c99_ast.Pointer):
+        if marker == "auto" and isinstance(param_t, c99_ast.Pointer):
             raise AbiSelectionError(
                 f"function `{where}` parameter `{pname}` is a pointer "
                 f"and can't be passed in a register"
             )
-        if n_bytes > 2:
+        if marker == "auto" and n_bytes > 2:
             raise AbiSelectionError(
                 f"function `{where}` parameter `{pname}` is {n_bytes} "
                 f"bytes — a `register` parameter must fit in at most 2 "
@@ -390,7 +391,7 @@ def _describe_markers(fn, markers: list[str]) -> str:
         elif m == "auto":
             out.append(f"`register {pname}`")
         else:
-            out.append(f"`register {pname} in_{m.lower()}`")
+            out.append(f"`{pname} in_{m.lower()}`")
     return ", ".join(out)
 
 

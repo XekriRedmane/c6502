@@ -207,12 +207,7 @@ instr_save:
 .loop@1_start:
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
-   LDA   __zpabi_inc_sector_and_write__buffer_0
-   ADC   #$00
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   __zpabi_inc_sector_and_write__buffer_1
-   ADC   #$01
-   STA   __zpabi_inc_sector_and_write__buffer_1
+   INC   __zpabi_inc_sector_and_write__buffer_1
    DEC   __local_instr_save__pages
    BNE   .loop@1_start
    JSR   inc_sector_and_write

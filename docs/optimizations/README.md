@@ -44,6 +44,7 @@ a user variable.
 - [Byte-granular register allocation](regalloc.md). Puts each SSA byte value in a zero-page byte, X, or Y.
 - [Carry already known](carry_known.md). Drops a SEC or CLC where C already has that value, or moves it in front of a loop whose back edges have it.
 - [Carry INC](carry_inc.md). Turns in-place `ADC #0` carry bytes into BCC/INC chains and `SBC #0` into BCS/DEC.
+- [Carry set again by a shift](carry_recompute.md). Deletes a load and shift that only set C to the value it already holds.
 - [Carry-flag return peepholes](carry_return.md). Turns carry-flag returns into SEC/CLC and carry captures into BCC/BCS.
 - [CMP and SBC fusion](cmp_sbc_fusion.md). Moves `SEC; SBC N` ahead of a branch so it replaces `CMP N`.
 - [CMP for a discarded volatile read](volatile_void_read_cmp.md). Turns a discarded volatile pointer load into CMP, so A keeps its value.
@@ -263,20 +264,21 @@ reaching the cap raises an error.
 28. [Memory constant propagation](mem_const_prop.md)
 29. [Constant AND and ORA fold](const_arith_fold.md)
 30. [Link-time address arithmetic](label_offset_fold.md)
-31. [Carry-flag return peepholes](carry_return.md), which are three
+31. [Carry set again by a shift](carry_recompute.md)
+32. [Carry-flag return peepholes](carry_return.md), which are three
     passes run back to back.
-32. [Round-trip load drop](round_trip_load.md)
-33. [Sign-bit test without AND](and_sign_bit_branch.md)
-34. [Self-store drop](self_store_drop.md)
-35. [Redundant compare](redundant_compare.md)
-36. [Operands without a staging temporary](cmp_through_tmp_fold.md)
-37. [Commuted ADC, AND, and ORA](adc_commute.md)
-38. [CMP and SBC fusion](cmp_sbc_fusion.md)
-39. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
-40. [Tail call](tail_call.md)
-41. [Tail merge](tail_merge.md)
-42. [Store X or Y directly](via_a_store_fold.md)
-43. [Transfer plus or minus one](transfer_pm1_store.md)
+33. [Round-trip load drop](round_trip_load.md)
+34. [Sign-bit test without AND](and_sign_bit_branch.md)
+35. [Self-store drop](self_store_drop.md)
+36. [Redundant compare](redundant_compare.md)
+37. [Operands without a staging temporary](cmp_through_tmp_fold.md)
+38. [Commuted ADC, AND, and ORA](adc_commute.md)
+39. [CMP and SBC fusion](cmp_sbc_fusion.md)
+40. [Branch on INC or DEC flags](dec_inc_branch_fold.md)
+41. [Tail call](tail_call.md)
+42. [Tail merge](tail_merge.md)
+43. [Store X or Y directly](via_a_store_fold.md)
+44. [Transfer plus or minus one](transfer_pm1_store.md)
 
 ### Without `--optimize`
 

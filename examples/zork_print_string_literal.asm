@@ -441,13 +441,9 @@ load_packed_address:
    LDA   SCRATCH2
    ASL
    STA   Z_PC2_L
-   LDA   SCRATCH2
-   ASL
    LDA   SCRATCH2+1
    ROL
    STA   Z_PC2_H
-   LDA   SCRATCH2+1
-   ASL
    LDA   #$00
    ROL
    STA   Z_PC2_HH

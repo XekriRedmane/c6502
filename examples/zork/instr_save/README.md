@@ -144,9 +144,9 @@ first save and the same 170 in the second, and leave the same state.
 | `please_insert_save_diskette` | 167 | 168 |
 | `get_prompted_number_from_user` | 106 | 103 |
 | `please_reinsert_game_diskette` | 70 | 70 |
-| `instr_save` | 141 | 152 |
+| `instr_save` | 141 | 142 |
 | `copy_data_to_buff` | 12 | 12 |
-| **Code** | **627** | **642** |
+| **Code** | **627** | **632** |
 
 The data is the same apart from where it sits: 17 bytes of IOB, 4 of
 DCT, the five strings, and 48 bytes of prompts. In Zork,
@@ -155,8 +155,8 @@ DCT, the five strings, and 48 bytes of prompts. In Zork,
 count each one to the next routine.
 
 **Speed.** Counting only the cycles spent in this code (the stand-ins
-take none), the first save takes 19,498 cycles against Zork's 19,561,
-and the second 12,983 against 13,012.
+take none), the first save takes 19,451 cycles against Zork's 19,561,
+and the second 12,965 against 13,012.
 
 **Where the difference comes from.** Looking at `instr_save.asm`:
 
@@ -180,9 +180,9 @@ and the second 12,983 against 13,012.
   carry as the loop's test needs it, so it's a little faster
   (1,666 cycles in the first save against 1,729). It ends in `JMP
   RWTS`, which Zork could have used too.
-- `instr_save`'s `page += 0x100` is a 16-bit add where Zork has
-  `INC SCRATCH2+1`, though it adds in the parameter's bytes where
-  Zork does.
+- `instr_save`'s `page += 0x100` is `INC` of the pointer's high byte,
+  as Zork's `INC SCRATCH2+1` is, in the parameter's bytes where Zork
+  has it.
 - `inc_sector_and_write` saves and restores the motor count through
   locals where Zork pushes it, which is the whole difference.
 
@@ -272,3 +272,8 @@ Comparing its code with Zork's then led to:
   callee's parameter bytes
   ([backward_copy_propagation.md](../../../docs/optimizations/backward_copy_propagation.md)).
   `get_prompted_number_from_user` went from 150 bytes to 103.
+- An add or subtract of a constant copies the bytes where the
+  constant's byte is zero, so `page += 0x100` is `INC page+1`, and a
+  load and shift that only set C to what it already holds goes
+  ([carry_recompute.md](../../../docs/optimizations/carry_recompute.md)).
+  `instr_save` went from 152 bytes to 142.

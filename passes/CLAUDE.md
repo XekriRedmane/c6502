@@ -125,6 +125,12 @@ this directory:
   consume directly once `asm_emit._emit_compare` and the in-sim
   `_emit_compare` dispatch IndexedData (added alongside this pass).
 - `const_arith_fold.py` — `apply_const_arith_fold` peephole.
+- `carry_recompute.py` — `apply_carry_recompute_drop`. Within a basic
+  block, follows what C holds (bit 7 of a byte after `LDA M` and `ASL`
+  / `ROL A`, bit 0 after `LSR` / `ROR A`) and deletes a later `LDA M`
+  and shift that would set C the same way, when A and N/Z are dead
+  after it: three statements taking three bytes of one shifted value
+  (`load_packed_address`) become one `ASL` / `ROL` / `ROL` chain.
 - `label_offset_fold.py` — `apply_label_offset_fold`. A 2-byte add of
   a label's halves and a constant (`LDA #k; CLC; ADC #<r; STA d0;
   LDA #k2; ADC #>r; STA d1`) becomes `LDA #<(r+K); STA d0; LDA
@@ -1076,6 +1082,9 @@ document says whether it fires there.
 - `apply_label_offset_fold` — a label's address plus a constant as
   one immediate, `#<(name+k)` / `#>(name+k)`. Runs right after
   `apply_const_arith_fold`.
+- `apply_carry_recompute_drop` — deletes `LDA M; ASL A` (or `ROL`,
+  `LSR`, `ROR`) when C already holds the bit it would set and A and
+  N/Z are dead. Runs right after `apply_label_offset_fold`.
 - `apply_const_arith_fold` — folds `LDA #C1; ALU #C2` chains that
   produce a compile-time-known A value, replacing the sequence with
   `LDA #folded`. Most useful for the high-byte branch of an int-typed

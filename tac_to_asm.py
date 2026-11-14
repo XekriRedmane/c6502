@@ -3306,11 +3306,37 @@ class Translator:
     ) -> list[asm_ast.Type_instruction]:
         """Add/Sub templated by size. Carry setup runs once before
         the low byte; the high byte's ADC/SBC reuses the carry
-        produced by the low op (LDA only affects N/Z)."""
+        produced by the low op (LDA only affects N/Z).
+
+        The low bytes of a constant that are zero leave the other
+        operand's bytes as they are and carry (or borrow) nothing, so
+        they're copies, and the carry setup goes in front of the first
+        nonzero byte. `p += 0x100` in place is then just `LDA p+1;
+        CLC; ADC #1; STA p+1`, which `inc_peephole` makes `INC p+1`
+        (and `p -= 0x100` becomes `DEC p+1`). For an add, the constant
+        may be either operand. A constant that's all zero keeps the
+        whole chain, so the carry still comes out set as a branch on it
+        (`_fused_subtract`) expects."""
         out: list[asm_ast.Type_instruction] = []
-        for k in range(size):
+        skip = 0
+        while skip < size and _byte_at(src2_op, skip) == asm_ast.Imm(value=0):
+            skip += 1
+        if (skip == 0 and op_cls is asm_ast.Add
+                and isinstance(src1_op, asm_ast.Imm)):
+            while (skip < size
+                   and _byte_at(src1_op, skip) == asm_ast.Imm(value=0)):
+                skip += 1
+            if skip:
+                src1_op, src2_op = src2_op, src1_op
+        if not isinstance(src2_op, asm_ast.Imm) or skip == size:
+            skip = 0
+        for k in range(skip):
+            src, dst = _byte_at(src1_op, k), _byte_at(dst_op, k)
+            if src != dst:
+                out.append(asm_ast.Mov(src=src, dst=dst))
+        for k in range(skip, size):
             out.append(asm_ast.Mov(src=_byte_at(src1_op, k), dst=_REG_A))
-            if k == 0:
+            if k == skip:
                 out.append(setup)
             out.append(op_cls(src=_byte_at(src2_op, k), dst=_REG_A))
             out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))

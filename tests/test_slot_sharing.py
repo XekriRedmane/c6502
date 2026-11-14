@@ -115,7 +115,8 @@ class TestShares(unittest.TestCase):
         # copy through a temporary) updates it in place.
         loop = asm.split(".loop@2_start:")[1].split("RTS")[0]
         self.assertNotRegex(loop, r"__local_main__p\b")
-        self.assertIn("STA   __zpabi_forward__p_1", loop)
+        # The high byte of `p += 0x100` is an `INC`.
+        self.assertIn("INC   __zpabi_forward__p_1", loop)
         self._check_runs(_PAGES, _PAGES_SUM)
 
     def test_other_argument_while_live(self) -> None:

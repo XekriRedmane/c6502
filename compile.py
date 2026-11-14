@@ -139,6 +139,7 @@ from passes.branch_through_jump import apply_branch_through_jump
 from passes.branch_thread import apply_branch_thread
 from passes.carry_known import apply_carry_known
 from passes.label_offset_fold import apply_label_offset_fold
+from passes.carry_recompute import apply_carry_recompute_drop
 from passes.dec_branch_indirect_y_fold import apply_dec_branch_indirect_y_fold
 from passes.dec_register_peephole import apply_dec_register_peephole
 from passes.promote_loop_carried_to_a import apply_promote_loop_carried_to_a
@@ -258,6 +259,7 @@ def _peephole_fixedpoint(
         new_prog = apply_mem_const_prop(new_prog)
         new_prog = apply_const_arith_fold(new_prog)
         new_prog = apply_label_offset_fold(new_prog)
+        new_prog = apply_carry_recompute_drop(new_prog)
         new_prog = apply_carry_return_tails(new_prog)
         new_prog = apply_carry_const_fold(new_prog)
         new_prog = apply_carry_branch_fold(

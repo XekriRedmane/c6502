@@ -51,6 +51,16 @@ the `ADC` form. For `return ++hits;` with a `static unsigned char
 hits`, the pass replaces `LDA hits; CLC; ADC #$01; STA hits` with
 `INC hits; LDA hits`.
 
+Adding a whole number of pages, `p += 0x100`, gets here too.
+`tac_to_asm` copies the bytes of an add or subtract where the
+constant's byte is zero, since they carry nothing, and starts the
+`CLC; ADC` at the first nonzero byte (`_translate_add_sub`). In place,
+the low byte's copy is a store of a byte to itself, which goes, so
+`p += 0x100` is `LDA p+1; CLC; ADC #1; STA p+1`, and this pass makes it
+`INC p+1`. `p -= 0x100` becomes `DEC p+1` the same way, through
+[DEC](dec_peephole.md). That's `instr_save`'s page step in
+`examples/zork/instr_save/save.c`, as Zork's `INC SCRATCH2+1`.
+
 ## When it applies
 
 The pass matches a `CLC; ADC #1` on the first byte followed by an

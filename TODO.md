@@ -111,22 +111,13 @@ order of size:
   rotated in (`shift_in_a`), it would be `11 + 7n` cycles; as two byte
   shifts, `c << n` for the low byte and `c >> (8 - n)` for the high,
   about 28 for any `n`.
-- **Carry chains across statements.** load_packed_address computes
-  three bytes of `2 * SCRATCH2` with one `ASL` / `ROL` / `ROL` chain
-  in the original. In C those are three expressions, and each one
-  recomputes the shift.
-- **Adding `0x100`.** `p += 0x100` on a 2-byte value in memory is
-  `LDA p; CLC; ADC #0; STA p; LDA p+1; ADC #1; STA p+1`, where `INC
-  p+1` does the same. instr_save's page loop in
-  `examples/zork/instr_save/save.c` has one, against Zork's `INC
-  SCRATCH2+1`.
 
 ## Optimizations found by Zork's save instruction
 
-`examples/zork/instr_save` is 642 bytes of code against Zork's 627,
-and both saves now take fewer cycles than Zork's (19,498 against
-19,561, and 12,983 against 13,012). `instr_save` is 11 bytes longer
-and the two write routines 7, while `do_rwts_on_sector` and
+`examples/zork/instr_save` is 632 bytes of code against Zork's 627,
+and both saves take fewer cycles than Zork's (19,451 against 19,561,
+and 12,965 against 13,012). The two write routines are 7 bytes longer
+and `instr_save` 1, while `do_rwts_on_sector` and
 `get_prompted_number_from_user` are 4 shorter. Roughly in order of
 payoff:
 

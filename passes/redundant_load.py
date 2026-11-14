@@ -144,6 +144,11 @@ _STABLE_MEM_TYPES = (
 )
 
 
+# How many times `_rewrite_function` runs its first phase again after
+# a rewrite, at most.
+_REORDER_ROUNDS = 64
+
+
 def apply_redundant_load_elimination(
     prog: asm_ast.Program,
 ) -> asm_ast.Program:
@@ -198,7 +203,7 @@ class _RegState:
 
 
 def _rewrite_function(
-    fn: asm_ast.Function, reorder: bool = True,
+    fn: asm_ast.Function, reorder: int = _REORDER_ROUNDS,
 ) -> asm_ast.Function:
     """CFG-based forward must-availability dataflow.
 
@@ -214,9 +219,13 @@ def _rewrite_function(
     src is genuinely redundant.
 
     Rewrites that change what a register or Z holds at the end of a
-    block (`_swap_pairs_ok`, `_store_from_a`) would make IN of a
-    later block wrong, so they're a phase of their own: when one
-    applies, the analysis starts again on the rewritten code.
+    block (`_swap_pairs_ok`, `_store_from_a`,
+    `_store_const_via_index`) would make IN of a later block wrong,
+    so they're a phase of their own, which stops at the end of the
+    block where it first rewrites something. Then the analysis starts
+    again on the rewritten code, at most `reorder` times more. A swap
+    at the join before `for (i = 0; ...)` once left A holding another
+    value where the next block's `i = 0` had become `STA i`.
     """
     if not fn.instructions:
         return fn
@@ -285,7 +294,10 @@ def _rewrite_function(
     if reorder:
         reordered = _reorder_with_in_states(fn, cfg, in_state)
         if reordered is not None:
-            return _rewrite_function(reordered, reorder=False)
+            # The phase stops at the end of the block it rewrote, so
+            # it runs again on the rest with states that see the
+            # rewrite.
+            return _rewrite_function(reordered, reorder=reorder - 1)
     return _rewrite_with_in_states(fn, cfg, in_state)
 
 
@@ -457,6 +469,10 @@ def _reorder_with_in_states(
     while i < len(instrs):
         instr = instrs[i]
         cur_block = pos_to_block.get(i)
+        if cur_block != last_block and changed:
+            # IN of this block may no longer hold after the rewrite.
+            out.extend(instrs[i:])
+            break
         if cur_block != last_block:
             block_in = (
                 in_state.get(cur_block) if cur_block is not None

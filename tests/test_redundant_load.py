@@ -1234,6 +1234,30 @@ class TestSwapPairs(unittest.TestCase):
         )
         self.assertEqual(_rewritten(list(instrs)), instrs)
 
+    def test_next_block_sees_the_swap(self):
+        # Both ways into `.join` leave 0 in A, until the swap leaves
+        # `x` there on one of them. `i = 0` after the join stays a
+        # load of 0 (fuzz.stmts seed 27540, whose loop counter started
+        # at another value).
+        zero = asm_ast.Imm(value=0)
+        instrs = [
+            asm_ast.Mov(src=zero, dst=_REG_A),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".join"),
+            asm_ast.Mov(src=_d("x"), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_d("p0")),
+            asm_ast.Mov(src=zero, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=_d("p1")),
+            asm_ast.Label(name=".join"),
+            asm_ast.Mov(src=zero, dst=_d("i")),
+            asm_ast.Return(save_a=False),
+        ]
+        out = _rewritten(list(instrs))
+        self.assertEqual(
+            [ins for ins in out
+             if isinstance(ins, asm_ast.Mov) and ins.dst == _d("i")],
+            [asm_ast.Mov(src=zero, dst=_d("i"))],
+        )
+
 
 class TestStoreConstViaIndex(unittest.TestCase):
     """`LDA #k; STA M` goes through Y when A holds a value that's

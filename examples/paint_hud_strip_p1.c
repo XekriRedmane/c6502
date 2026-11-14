@@ -27,7 +27,7 @@ static uint8_t* const HUD_STRIP_SRC = 0xA30Du;
 
 #define HUD_COL_BASE 0x0C    /* hi-res byte column $0C..$1B = middle 16 of 40 */
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void paint_hud_strip_p1(void) {
     uint8_t y = 0;                          /* monotonic, NOT reset per column */
     for (int8_t x = 0x0F; x >= 0; x--) {       /* right-to-left, 16 columns */

@@ -1,5 +1,5 @@
 """Tests for naming the register a parameter arrives in:
-`uint8_t lo __attribute__((in_y))`, and for a 2-byte parameter a pair
+`uint8_t lo [[c6502::in_y]]`, and for a 2-byte parameter a pair
 such as `in_xy` (low byte in X, high byte in Y). `register` is
 optional with the attribute, and the parameter may be any integer or
 pointer with one byte for each register named. A `register` parameter
@@ -38,28 +38,28 @@ class TestParse(unittest.TestCase):
 
     def test_markers(self):
         self.assertEqual(self._markers(
-            "void f(register unsigned char a __attribute__((in_y)),\n"
+            "void f(register unsigned char a [[c6502::in_y]],\n"
             "       unsigned char b,\n"
-            "       register unsigned int c __attribute__((in_xa)),\n"
+            "       register unsigned int c [[c6502::in_xa]],\n"
             "       register unsigned char d);"
         ), ["Y", "", "XA", "auto"])
 
     def test_register_is_optional(self):
         self.assertEqual(self._markers(
-            "void f(unsigned char a __attribute__((in_y)),\n"
-            "       unsigned char *p __attribute__((in_xa)));"
+            "void f(unsigned char a [[c6502::in_y]],\n"
+            "       unsigned char *p [[c6502::in_xa]]);"
         ), ["Y", "XA"])
 
     def test_rejected(self):
         bad = {
             "unknown": ("void f(register unsigned char a "
-                        "__attribute__((in_z)));", "unknown parameter attribute"),
+                        "[[c6502::in_z]]);", "doesn't apply to a parameter"),
             "argument": ("void f(register unsigned char a "
-                         "__attribute__((in_y(1))));", "unknown parameter attribute"),
+                         "[[c6502::in_y(1)]]);", "doesn't take an argument"),
             "twice": ("void f(register unsigned int a "
-                      "__attribute__((in_aa)));", "names A twice"),
+                      "[[c6502::in_aa]]);", "names A twice"),
             "two attributes": ("void f(register unsigned char a "
-                               "__attribute__((in_x, in_y)));", "one attribute"),
+                               "[[c6502::in_x, c6502::in_y]]);", "one attribute"),
         }
         for label, (src, needle) in bad.items():
             with self.subTest(label):
@@ -72,25 +72,25 @@ class TestAbiErrors(unittest.TestCase):
 
     _CASES = {
         "wrong width": (
-            "__attribute__((zp_abi, address(0xD000)))\n"
-            "void f(unsigned int a __attribute__((in_y)));\n"
+            "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
+            "void f(unsigned int a [[c6502::in_y]]);\n"
             "int main(void) { f(1); return 0; }\n",
             "is 2 bytes, but `in_y` names 1 register",
         ),
         "shared register": (
-            "void f(register unsigned char a __attribute__((in_y)),\n"
-            "       register unsigned char b __attribute__((in_y))) {}\n"
+            "void f(register unsigned char a [[c6502::in_y]],\n"
+            "       register unsigned char b [[c6502::in_y]]) {}\n"
             "int main(void) { f(1, 2); return 0; }\n",
             "both arrive in Y",
         ),
         "positional overflow": (
-            "void f(register unsigned char a __attribute__((in_a)),\n"
+            "void f(register unsigned char a [[c6502::in_a]],\n"
             "       register unsigned int b) {}\n"
             "int main(void) { f(1, 2); return 0; }\n",
             "the free ones here are: X",
         ),
         "declarations disagree": (
-            "void f(register unsigned char a __attribute__((in_y)));\n"
+            "void f(register unsigned char a [[c6502::in_y]]);\n"
             "void f(register unsigned char a) {}\n"
             "int main(void) { f(1); return 0; }\n",
             "`a in_y` against `register a`",
@@ -115,16 +115,16 @@ class TestAbiErrors(unittest.TestCase):
     def test_type_errors(self):
         cases = {
             "wrong width": (
-                "void f(unsigned int a __attribute__((in_y))) {}\n",
+                "void f(unsigned int a [[c6502::in_y]]) {}\n",
                 "parameter 'a' is 2 bytes, but `in_y` names 1 register",
             ),
             "pointer in one register": (
-                "void f(unsigned char *p __attribute__((in_y))) {}\n",
+                "void f(unsigned char *p [[c6502::in_y]]) {}\n",
                 "parameter 'p' is 2 bytes, but `in_y` names 1 register",
             ),
             "struct": (
                 "struct s { unsigned char a, b; };\n"
-                "void f(struct s v __attribute__((in_xy))) {}\n",
+                "void f(struct s v [[c6502::in_xy]]) {}\n",
                 "integer or a pointer",
             ),
         }
@@ -161,8 +161,8 @@ class TestSim(unittest.TestCase):
         src = (
             "unsigned char out[2];\n"
             "unsigned char g = 9;\n"
-            "void put(register unsigned char hi __attribute__((in_a)),\n"
-            "         register unsigned char lo __attribute__((in_y))) {\n"
+            "void put(register unsigned char hi [[c6502::in_a]],\n"
+            "         register unsigned char lo [[c6502::in_y]]) {\n"
             "    out[0] = hi; out[1] = lo;\n"
             "}\n"
             "int main(void) {\n"
@@ -176,11 +176,11 @@ class TestSim(unittest.TestCase):
     def test_pair_and_positional(self):
         # `w` takes X and Y, so `k`, declared plain `register`, gets A.
         src = (
-            "unsigned int sum(register unsigned int w __attribute__((in_xy)),\n"
+            "unsigned int sum(register unsigned int w [[c6502::in_xy]],\n"
             "                 register unsigned char k) {\n"
             "    return w + k;\n"
             "}\n"
-            "unsigned int swap(register unsigned int w __attribute__((in_ya))) {\n"
+            "unsigned int swap(register unsigned int w [[c6502::in_ya]]) {\n"
             "    return (w << 8) | (w >> 8);\n"
             "}\n"
             "int main(void) {\n"
@@ -193,9 +193,9 @@ class TestSim(unittest.TestCase):
     # A routine at $D000 that returns A + 2 * Y, as `STY $3100; ASL
     # $3100; CLC; ADC $3100; RTS`.
     _ROM = (
-        "__attribute__((zp_abi, address(0xD000)))\n"
-        "unsigned char rom(register unsigned char a __attribute__((in_a)),\n"
-        "                  register unsigned char y __attribute__((in_y)));\n"
+        "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
+        "unsigned char rom(register unsigned char a [[c6502::in_a]],\n"
+        "                  register unsigned char y [[c6502::in_y]]);\n"
     )
     _ROM_CODE = (0xD000, bytes([0x8C, 0x00, 0x31, 0x0E, 0x00, 0x31, 0x18,
                                 0x6D, 0x00, 0x31, 0x60]))
@@ -215,11 +215,11 @@ class TestSim(unittest.TestCase):
             "struct blk blk = {1, 2, 3};\n"
             "unsigned char tab[4] = {10, 20, 30, 40};\n"
             "unsigned char second(const unsigned char *p "
-            "__attribute__((in_ya))) {\n"
+            "[[c6502::in_ya]]) {\n"
             "    return p[1];\n"
             "}\n"
-            "unsigned char sum(struct blk *b __attribute__((in_xy)),\n"
-            "                  unsigned char k __attribute__((in_a))) {\n"
+            "unsigned char sum(struct blk *b [[c6502::in_xy]],\n"
+            "                  unsigned char k [[c6502::in_a]]) {\n"
             "    return b->a + b->c + k;\n"
             "}\n"
             "int main(void) { return second(tab) + sum(&blk, 100); }\n"
@@ -236,8 +236,8 @@ class TestSim(unittest.TestCase):
         src = (
             "struct blk { unsigned char a, b, c; };\n"
             "struct blk blk = {7, 9, 11};\n"
-            "__attribute__((zp_abi, address(0xD100)))\n"
-            "unsigned char next(struct blk *p __attribute__((in_ya)));\n"
+            "[[c6502::zp_abi, c6502::address(0xD100)]]\n"
+            "unsigned char next(struct blk *p [[c6502::in_ya]]);\n"
             "int main(void) { return next(&blk); }\n"
         )
         self._check(src, 9, standin=self._NEXT_CODE)
@@ -265,8 +265,8 @@ class TestShape(unittest.TestCase):
         asm = _codegen(
             "unsigned char out[2];\n"
             "unsigned char g;\n"
-            "void put(register unsigned char hi __attribute__((in_a)),\n"
-            "         register unsigned char lo __attribute__((in_y))) {\n"
+            "void put(register unsigned char hi [[c6502::in_a]],\n"
+            "         register unsigned char lo [[c6502::in_y]]) {\n"
             "    out[0] = hi; out[1] = lo;\n"
             "}\n"
             "int main(void) { put(1, g); return 0; }\n"
@@ -280,8 +280,8 @@ class TestShape(unittest.TestCase):
         asm = _codegen(
             "struct iob { unsigned char t[17]; };\n"
             "struct iob iob;\n"
-            "__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))\n"
-            "_Bool RWTS(struct iob *p __attribute__((in_ya)));\n"
+            "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]\n"
+            "_Bool RWTS(struct iob *p [[c6502::in_ya]]);\n"
             "int main(void) { return RWTS(&iob); }\n"
         )
         main = asm.split("\nmain:")[1]
@@ -291,9 +291,9 @@ class TestShape(unittest.TestCase):
         # The shape of Zork's RWTS call: `LDA #>iob; LDY #<iob`.
         asm = _codegen(
             "unsigned char iob[17];\n"
-            "__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))\n"
-            "_Bool RWTS(register unsigned char hi __attribute__((in_a)),\n"
-            "                   register unsigned char lo __attribute__((in_y)));\n"
+            "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]\n"
+            "_Bool RWTS(register unsigned char hi [[c6502::in_a]],\n"
+            "                   register unsigned char lo [[c6502::in_y]]);\n"
             "int main(void) {\n"
             "    return RWTS((unsigned char)((unsigned int)iob >> 8),\n"
             "                (unsigned char)(unsigned int)iob);\n"

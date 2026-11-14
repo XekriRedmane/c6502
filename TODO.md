@@ -36,7 +36,7 @@ through a pointer, and an `extern` that isn't zp_abi (such as a ROM
 routine declared without `zp_abi`). One of these demotes every
 function that can reach it, and a demoted function loses zp_abi
 parameters and its private pool. A function marked
-`__attribute__((zp_abi))` or using `register` can't be demoted, so
+`[[c6502::zp_abi]]` or using `register` can't be demoted, so
 calling one makes it fail to compile instead.
 
 Possible approaches, roughly in order of effort:
@@ -79,7 +79,7 @@ across a call into a different calling convention.
 
 ## Return a boolean in the carry flag without an annotation
 
-`__attribute__((return_bool_in_carry))` (README, "Returning a bool in
+`[[c6502::return_bool_in_carry]]` (README, "Returning a bool in
 the carry flag") gives a function the convention explicitly. The
 other way to opt in was **under zp_abi, for a `bool` return**: every
 caller of a zp_abi function is known and compiled with it, so the

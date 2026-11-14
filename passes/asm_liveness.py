@@ -363,7 +363,7 @@ def reads_x(instr: asm_ast.Type_instruction) -> bool:
 
 def call_preserves(instr: asm_ast.Type_instruction, reg: str) -> bool:
     """True iff `instr` is a call to a routine declared to leave `reg`
-    ("X" or "Y") unchanged (`__attribute__((preserves_x))` /
+    ("X" or "Y") unchanged (`[[c6502::preserves_x]]` /
     `preserves_y`). Every pass that keeps a value in X or Y across a
     call has to agree on this, so they all ask here."""
     return isinstance(instr, asm_ast.Call) and reg in instr.preserves

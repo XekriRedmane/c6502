@@ -18,10 +18,10 @@ extern const uint8_t floor_thresh[];          /* per-floor row anchor */
 extern const uint8_t perspective_xoff_lo[256];
 extern const uint8_t perspective_xoff_hi[256];
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern uint8_t prng(void);
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern void draw_sprite(uint8_t width, uint8_t height,
                         uint8_t sprite_x, uint8_t sprite_y,
                         const uint8_t *tile_src,
@@ -116,7 +116,7 @@ static uint8_t neg_walk_next = 0;
 
 /* Perspective transform: world-X -> 16-bit screen-X.  Caller checks the
 * hi byte for off-screen (non-zero = off the left/right of the playfield). */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static uint16_t compute_screen_x(uint8_t slot, uint8_t player_y, uint8_t sprite_xref)
 {
     uint16_t xoff =
@@ -129,7 +129,7 @@ static uint16_t compute_screen_x(uint8_t slot, uint8_t player_y, uint8_t sprite_
 
 /* Scan the hit-entity table top-down for the first positive (active)
 * state slot; on success returns true with *out_row = ENTITY_HIT_ROW - 8. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static bool find_active_entity(uint8_t hit_max, uint8_t *out_row)
 {
     for (int8_t i = (int8_t)hit_max; i >= 0; i--) {
@@ -146,7 +146,7 @@ static bool find_active_entity(uint8_t hit_max, uint8_t *out_row)
 * drift (state := $FF, row += 4).  Outside the centre, the
 * direction-specific deactivation window ([$30,$38) for +dir,
 * [$50,$58) for -dir) sets state := 0. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void entity_proximity(uint8_t slot, uint8_t screen_x, uint8_t hit_max)
 {
     uint8_t entity_row;
@@ -170,7 +170,7 @@ static void entity_proximity(uint8_t slot, uint8_t screen_x, uint8_t hit_max)
 * by entity_proximity this frame) draws POSE1 without advancing the
 * walk cycle; non-zero state both draws the current pose and advances
 * the cycle to the next. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void smc_body_draw(uint8_t slot,
                         uint8_t sprite_x, uint8_t sprite_y,
                         uint8_t frame_idx, uint8_t state,
@@ -200,7 +200,7 @@ static void smc_body_draw(uint8_t slot,
 /* Player-catch hit-box: writes $FF to hit_flag if the companion is in
 * the screen-X band [$40,$50) and its row lies in
 * (player_col - $08, player_col + $12]. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void player_catch(uint8_t slot, uint8_t screen_x, uint8_t player_col)
 {
     if (screen_x < 0x40 || screen_x >= 0x50) return;
@@ -215,7 +215,7 @@ static void player_catch(uint8_t slot, uint8_t screen_x, uint8_t player_col)
 * when pos crosses hi==3 && lo>=$52: flip to -dir, reseat row to the
 * player's current floor threshold + $0B.  Returns true if the slot
 * should continue to draw, false if it re-armed (skip to next slot). */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static bool active_pos_step(uint8_t slot, uint8_t player_floor)
 {
     if (prng() < 0x05) {
@@ -237,7 +237,7 @@ static bool active_pos_step(uint8_t slot, uint8_t player_floor)
 
 /* -dir active step: mirror of active_pos_step.  Re-arms when pos
 * crosses hi==0 && lo<$3E. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static bool active_neg_step(uint8_t slot, uint8_t player_floor)
 {
     if (prng() < 0x05) {
@@ -263,7 +263,7 @@ static bool active_neg_step(uint8_t slot, uint8_t player_floor)
 * direction.  Writes the sprite Y for this frame's draw to *out_sprite_y
 * -- on the rearm transition the sprite is drawn one row back from the
 * anchor while companion_row stays parked on the anchor itself. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void drift_step(uint8_t slot, uint8_t *out_sprite_y)
 {
     uint8_t row = companion_row[slot];
@@ -331,7 +331,7 @@ static void drift_step(uint8_t slot, uint8_t *out_sprite_y)
 * @param page_flag     Bit 7 selects the hidden hi-res draw page;
 *                      forwarded unchanged to draw_sprite.
 */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void companion_update(uint8_t gate,
                     uint8_t player_y,
                     uint8_t sprite_xref,

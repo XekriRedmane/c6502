@@ -2,7 +2,7 @@
 `compile.py --link -T script` (passes/link_script.py, passes/linker.py).
 
 Every function and every static-storage object the output defines is
-an *item* in a section. `__attribute__((section("name")))` names the
+an *item* in a section. `[[c6502::section("name")]]` names the
 section. Without it, the item goes in the section GCC would use:
 
 | Item | Section |

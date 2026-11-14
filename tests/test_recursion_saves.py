@@ -341,7 +341,7 @@ int main(void) { return (int)(acc(5) & 0x7FFF); }
 """,
     "carry flag": """
 #include <stdbool.h>
-__attribute__((return_bool_in_carry))
+[[c6502::return_bool_in_carry]]
 bool any_bit(unsigned char n, unsigned char mask) {
     unsigned char h = n & mask;
     if (n == 0) return 0;

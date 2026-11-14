@@ -30,7 +30,7 @@ const uint8_t hit_spr_neg_hi[7] = { 0x7A, 0x7A, 0x7B, 0x7B, 0x7B, 0x7B, 0x7B };
 uint8_t call_count;
 uint8_t last_sprite_x;
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void draw_sprite_opaque(uint8_t width, uint8_t height,
                         uint8_t sprite_x, uint8_t sprite_y,
                         const uint8_t *tile_src) {
@@ -38,7 +38,7 @@ void draw_sprite_opaque(uint8_t width, uint8_t height,
     last_sprite_x = sprite_x;
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void refresh_hit_entities(uint8_t hit_max, uint8_t player_y, uint8_t sprite_xref) {
     uint8_t x = hit_max;
     do {

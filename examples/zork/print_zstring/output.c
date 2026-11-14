@@ -280,8 +280,8 @@ void dump_buffer_with_more(void) {
 /* Prints the `count` characters at `s` straight to the screen, with
  * their high bits set, in normal text unless INVFLG says otherwise. A
  * count of 0 prints 256. Zork's other routines pass `s` in SCRATCH2. */
-void cout_string(const uint8_t *s __attribute__((zeropage(0xE6))),
-                 uint8_t count __attribute__((in_x))) {
+void cout_string(const uint8_t *s [[c6502::zeropage(0xE6)]],
+                 uint8_t count [[c6502::in_x]]) {
     uint8_t y = 0;
     do {
         COUT1(s[y] | 0x80);

@@ -1,4 +1,4 @@
-"""Tests for `__attribute__((preserves_x))` / `preserves_y`: parsing,
+"""Tests for `[[c6502::preserves_x]]` / `preserves_y`: parsing,
 the rules the type checker enforces, how calls carry the set to the
 asm passes, liveness, keeping a loop counter in X or Y across a call
 (`loop_counter_to_x` count-up loops, `counter_to_index_reg`), a
@@ -32,12 +32,12 @@ def _body(asm: str, fn: str) -> str:
 
 # A routine at $D000 that takes A, keeps X, and destroys Y.
 _KEEPS_X = (
-    "__attribute__((zp_abi, preserves_x, address(0xD000)))\n"
+    "[[c6502::zp_abi, c6502::preserves_x, c6502::address(0xD000)]]\n"
     "void put(register unsigned char c);\n"
 )
 # The same routine, declared without the promise.
 _PLAIN = (
-    "__attribute__((zp_abi, address(0xD000)))\n"
+    "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
     "void put(register unsigned char c);\n"
 )
 # `buf` is summed into `total` by the stand-in, one byte per call.
@@ -60,7 +60,7 @@ class TestParse(unittest.TestCase):
 
     def test_recorded(self) -> None:
         prog = parse(
-            "__attribute__((preserves_y, address(0x1000), preserves_x))\n"
+            "[[c6502::preserves_y, c6502::address(0x1000), c6502::preserves_x]]\n"
             "void f(void);\n"
         )
         self.assertEqual(prog.declaration[0].function_decl.preserves,
@@ -68,11 +68,11 @@ class TestParse(unittest.TestCase):
 
     def test_rejected(self) -> None:
         bad = {
-            "argument": "__attribute__((preserves_x(1), address(1))) "
+            "argument": "[[c6502::preserves_x(1), c6502::address(1)]] "
                         "void f(void);",
-            "definition": "__attribute__((preserves_x)) void f(void) {}",
+            "definition": "[[c6502::preserves_x]] void f(void) {}",
             "object": "extern unsigned char k "
-                      "__attribute__((preserves_x));",
+                      "[[c6502::preserves_x]];",
         }
         for label, src in bad.items():
             with self.subTest(label):
@@ -85,12 +85,12 @@ class TestTypeCheck(unittest.TestCase):
     def test_rejected(self) -> None:
         bad = {
             "no address":
-                "__attribute__((preserves_x)) void f(void);\n",
+                "[[c6502::preserves_x]] void f(void);\n",
             "int result in X":
-                "__attribute__((preserves_x, address(0x1000))) "
+                "[[c6502::preserves_x, c6502::address(0x1000)]] "
                 "int f(void);\n",
             "unsigned int result in X":
-                "__attribute__((preserves_x, address(0x1000))) "
+                "[[c6502::preserves_x, c6502::address(0x1000)]] "
                 "unsigned int f(void);\n",
         }
         for label, src in bad.items():
@@ -101,11 +101,11 @@ class TestTypeCheck(unittest.TestCase):
     def test_accepted(self) -> None:
         for label, src in {
             "Y with an int result":
-                "__attribute__((preserves_y, address(0x1000))) "
+                "[[c6502::preserves_y, c6502::address(0x1000)]] "
                 "int f(void);\n",
             "address declared first":
-                "__attribute__((address(0x1000))) void f(void);\n"
-                "__attribute__((preserves_x)) void f(void);\n",
+                "[[c6502::address(0x1000)]] void f(void);\n"
+                "[[c6502::preserves_x]] void f(void);\n",
         }.items():
             with self.subTest(label):
                 _codegen(src + "void g(void) { f(); }\n")
@@ -127,7 +127,7 @@ class TestCalls(unittest.TestCase):
 
     def test_call_carries_the_set(self) -> None:
         call = self._call(
-            "__attribute__((preserves_y, preserves_x, address(0x1000)))\n"
+            "[[c6502::preserves_y, c6502::preserves_x, c6502::address(0x1000)]]\n"
             "void f(void);\nvoid g(void) { f(); }\n"
         )
         self.assertEqual(call.preserves, ["X", "Y"])
@@ -136,7 +136,7 @@ class TestCalls(unittest.TestCase):
 
     def test_plain_call_clobbers(self) -> None:
         call = self._call(
-            "__attribute__((address(0x1000))) void f(void);\n"
+            "[[c6502::address(0x1000)]] void f(void);\n"
             "void g(void) { f(); }\n"
         )
         self.assertEqual(call.preserves, [])
@@ -208,7 +208,7 @@ class TestCountDownInY(unittest.TestCase):
 
     def test_counter_in_y(self) -> None:
         keeps_y = (
-            "__attribute__((zp_abi, preserves_y, address(0xD000)))\n"
+            "[[c6502::zp_abi, c6502::preserves_y, c6502::address(0xD000)]]\n"
             "void put(register unsigned char c);\n"
         )
         body = _body(_codegen(keeps_y + self._SRC), "tick")
@@ -233,7 +233,7 @@ class TestRegisterLocalInY(unittest.TestCase):
     in Y across a call that preserves Y."""
 
     _KEEPS_Y = (
-        "__attribute__((zp_abi, preserves_y, address(0xD000)))\n"
+        "[[c6502::zp_abi, c6502::preserves_y, c6502::address(0xD000)]]\n"
         "void put(register unsigned char c);\n"
     )
     _SRC = (
@@ -273,10 +273,10 @@ class TestImmediateInX(unittest.TestCase):
     memory equivalence, since the callee may write the memory."""
 
     _DECLS = (
-        "__attribute__((zp_abi, preserves_x, address(0xD000)))\n"
-        "void keep(register unsigned char c __attribute__((in_x)));\n"
-        "__attribute__((zp_abi, address(0xD000)))\n"
-        "void lose(register unsigned char c __attribute__((in_x)));\n"
+        "[[c6502::zp_abi, c6502::preserves_x, c6502::address(0xD000)]]\n"
+        "void keep(register unsigned char c [[c6502::in_x]]);\n"
+        "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
+        "void lose(register unsigned char c [[c6502::in_x]]);\n"
         "unsigned char g = 4;\n"
     )
     # TXA ; CLC ; ADC total ; STA total ; LDY #$FF ; RTS (keeps X)

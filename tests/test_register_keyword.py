@@ -1,6 +1,6 @@
 """Behavioral tests for the `register` storage-class keyword.
 
-`register` replaces the old `__attribute__((reg("..")))` extension as
+`register` replaces the old `[[c6502::reg("..")]]` extension as
 the way to request 6502-register placement for parameters, locals, and
 (type-driven) return values. Register assignment is POSITIONAL — the
 first register arg-byte goes in A, the second in X; a `register` local
@@ -14,7 +14,7 @@ Coverage:
   - A `register` local carries `storage_class == Register()` on its
     `Type_var_decl`.
   - `register` is rejected on a function declarator and (later) at file
-    scope; the old `__attribute__((reg(...)))` form is no longer
+    scope; the old `[[c6502::reg(...)]]` form is no longer
     accepted.
   - `zp_abi` (the surviving function-level attribute) still parses.
 """
@@ -80,7 +80,7 @@ class TestRegisterKeywordParsing(unittest.TestCase):
 
     def test_zp_abi_still_parses(self) -> None:
         decls = _function_decls(
-            "__attribute__((zp_abi)) char f(register char a);"
+            "[[c6502::zp_abi]] char f(register char a);"
         )
         self.assertEqual(decls[0].abi_annotation, "zp_abi")
         self.assertEqual(decls[0].param_registers, ["auto"])
@@ -91,9 +91,9 @@ class TestRegisterKeywordParsing(unittest.TestCase):
         self.assertIn("register", str(cm.exception))
 
     def test_old_reg_attribute_rejected(self) -> None:
-        # The `__attribute__((reg(...)))` extension is gone.
+        # The `[[c6502::reg(...)]]` extension is gone.
         with self.assertRaises(Exception):
-            parse('char f(char x __attribute__((reg("X"))));')
+            parse('char f(char x [[c6502::reg("X")]]);')
 
     def test_static_on_parameter_rejected(self) -> None:
         # `register` is the only storage class allowed on a parameter.
@@ -103,8 +103,8 @@ class TestRegisterKeywordParsing(unittest.TestCase):
 
     def test_unknown_attribute_rejected(self) -> None:
         with self.assertRaises(ParserError) as cm:
-            parse("__attribute__((funky)) char f(void);")
-        self.assertIn("unknown attribute name", str(cm.exception))
+            parse("[[c6502::funky]] char f(void);")
+        self.assertIn("unknown attribute `c6502::funky`", str(cm.exception))
 
 
 if __name__ == "__main__":

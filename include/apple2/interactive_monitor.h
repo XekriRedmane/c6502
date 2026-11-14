@@ -27,13 +27,13 @@
 
 #include <apple2/monitor_io.h>
 
-extern volatile uint8_t __monitor_loc[2]   __attribute__((address(0x00)));
-extern volatile uint8_t __monitor_length   __attribute__((address(0x2F)));
-extern volatile uint8_t __monitor_mode     __attribute__((address(0x31)));
-extern volatile uint8_t __monitor_ysav     __attribute__((address(0x34)));
-extern volatile uint16_t __monitor_pc      __attribute__((address(0x3A)));
-extern volatile uint8_t __monitor_a1_a5l[9] __attribute__((address(0x3C)));
-extern volatile uint8_t __monitor_xyreg[2] __attribute__((address(0x46)));
-extern volatile uint8_t __monitor_spnt     __attribute__((address(0x49)));
+extern volatile uint8_t __monitor_loc      [[c6502::address(0x00)]][2];
+extern volatile uint8_t __monitor_length   [[c6502::address(0x2F)]];
+extern volatile uint8_t __monitor_mode     [[c6502::address(0x31)]];
+extern volatile uint8_t __monitor_ysav     [[c6502::address(0x34)]];
+extern volatile uint16_t __monitor_pc      [[c6502::address(0x3A)]];
+extern volatile uint8_t __monitor_a1_a5l   [[c6502::address(0x3C)]][9];
+extern volatile uint8_t __monitor_xyreg    [[c6502::address(0x46)]][2];
+extern volatile uint8_t __monitor_spnt     [[c6502::address(0x49)]];
 
 #endif

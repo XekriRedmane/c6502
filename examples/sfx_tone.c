@@ -28,7 +28,7 @@ extern const volatile uint8_t *sfx_click_ptr;
 * @param duration  Outer click count.  0 is likewise treated as 256 by
 *                  the same wrap-around rule.
 */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void sfx_tone(uint8_t pitch, uint8_t duration)
 {
     do {

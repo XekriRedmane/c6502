@@ -92,11 +92,11 @@ Two key runtime conventions:
   below; user guide in
   [docs/calling_conventions.md](docs/calling_conventions.md).
   The bytes left below `$80` are for user globals marked
-  `__attribute__((zeropage))`, and under `--optimize` for busy scalar
+  `[[c6502::zeropage]]`, and under `--optimize` for busy scalar
   globals the compiler promotes there itself; `zeropage(addr)` may also pin one in
   `$80-$FF`, which removes those bytes from the compiler's pools. Their initial values are stored by a generated `__zp_init`,
   which the boot code calls before `main` (see `passes/zp_globals.py`).
-  `__attribute__((address(addr)))` binds a function (a ROM routine)
+  `[[c6502::address(addr)]]` binds a function (a ROM routine)
   or an `extern` object (an I/O register) to a fixed address. The
   name only gets an `EQU`, and it can't be defined. Below `$100` the
   object is an `extern` zero-page object. Such a function's calling
@@ -112,13 +112,13 @@ Two key runtime conventions:
   to the default caller/callee partition (`$80..$BF` / `$C0..$FF`).
   Eligible functions emit as bare body + RTS. Under `--optimize`
   every function defaults to zp_abi when eligible — the explicit
-  `__attribute__((zp_abi))` annotation is no longer required but
+  `[[c6502::zp_abi]]` annotation is no longer required but
   remains supported as a strict-mode opt-in: an annotated
   function hard-errors on ineligibility (recursion, address
   taken, etc.) instead of silently falling back. Details in
   [passes/CLAUDE.md](passes/CLAUDE.md) under "Call-graph-disjoint
   ZP allocation".
-- **`__attribute__((return_bool_in_carry))`** on a function
+- **`[[c6502::return_bool_in_carry]]`** on a function
   returning `bool` (`_Bool`, never `unsigned char` or `char`) makes
   it return `e != 0` in the carry flag. The callee ends in `CMP #1` (`SEC` / `CLC` for a
   constant, `PHP` / `PLP` around a frame teardown), and the caller
@@ -149,14 +149,14 @@ Two key runtime conventions:
   the first register arg-byte goes in **A**, the second in **X**
   (so `foo(register uint8_t a, register uint8_t b)` puts `a` in A
   and `b` in X; `foo(register uint16_t a)` spreads `a`'s low byte
-  to A and high byte to X). `__attribute__((in_a))` / `in_x` / `in_y`
+  to A and high byte to X). `[[c6502::in_a]]` / `in_x` / `in_y`
   after a parameter names its register instead, and a pair (`in_xy`,
   low byte first) covers a 2-byte one, so Y is available to parameters
   that ask for it; the positional rule skips registers the named ones
   take. Such a parameter is a register parameter with or without
   `register`, and may be any integer or pointer with one byte per
   register (`type_checking._check_named_register_param`), so DOS's
-  RWTS is `bool RWTS(struct iob *iob __attribute__((in_ya)))`.
+  RWTS is `bool RWTS(struct iob *iob [[c6502::in_ya]])`.
   `param_registers` on the c99 function_decl holds "" / "auto" / the
   letters. A `register` local uses **Y** only — exactly one byte. **A
   positional `register` parameter or local can't be a pointer.**
@@ -171,7 +171,7 @@ Two key runtime conventions:
   one into a local at entry (`tac_to_asm._register_param_locals`),
   which the regalloc keeps in the register when it can and in the
   function's pool otherwise, so a register parameter has no slot.
-  A parameter with `__attribute__((zeropage(addr)))` instead has its
+  A parameter with `[[c6502::zeropage(addr)]]` instead has its
   slot at that address, on any zp_abi function. A function defined
   here reads it there, or copies it into a local at entry when
   something it calls might store an argument at those bytes
@@ -253,7 +253,7 @@ and `--codegen`):
   Also enables the default zp_abi calling convention: every function
   that is eligible (no IndirectCall, not in a call-graph cycle,
   address not taken, params fit) gets zp_abi without needing the
-  explicit `__attribute__((zp_abi))` annotation. Ineligible
+  explicit `[[c6502::zp_abi]]` annotation. Ineligible
   functions silently fall back to soft-stack. Annotated functions
   keep today's strict contract: ineligibility is a hard error.
   The INC / DEC peepholes run in the unoptimized pipeline too
@@ -271,8 +271,8 @@ Linker mode:
   `passes/linker.py`.
   With `-T script.ld` (a GNU ld subset, `passes/link_script.py`) it
   also lays the program out in memory: each function and object is
-  an item in a section (`passes/sections.py`, `__attribute__((section
-  ("name")))`), and the output sections become dasm `SEG` / `ORG` /
+  an item in a section (`passes/sections.py`, `[[c6502::section
+  ("name")]]`), and the output sections become dasm `SEG` / `ORG` /
   `RORG` blocks with overflow checks (`passes/link_layout.py`). User
   guide: [docs/linker_scripts.md](docs/linker_scripts.md).
 
@@ -383,7 +383,7 @@ Integers:
   `bool` is a macro for it.
 
 An enumerated type is `Int()` (C99 §6.7.2.2.4 lets it be compatible
-with `int`), or with `__attribute__((packed))` `UChar()` / `SChar()`
+with `int`), or with `[[c6502::packed]]` `UChar()` / `SChar()`
 when its values fit, and an enumeration constant is an `int` constant. Neither
 reaches the AST; see "Enumerations" under Parser.
 
@@ -586,15 +586,44 @@ scopes. A value is folded like an array size (`_fold_integer_constant`)
 and must fit in an `int`.
 
 The specifier (`_EnumSpecifier`) resolves to `Int()`, or for an enum
-defined with GCC's `__attribute__((packed))` (after `enum` or after
-the `}`) to the smallest of `UChar()`, `SChar()`, and `Int()` that
-holds its values (`_packed_enum_type`). `_EnumHead` follows the
-tokens from `enum` to the list's `{`, so the lexer doesn't open a
+defined with `[[c6502::packed]]` (after `enum`) to the smallest of
+`UChar()`, `SChar()`, and `Int()` that holds its values
+(`_packed_enum_type`). `_TagHead` follows the tokens from `enum`,
+`struct`, or `union` to the body's `{`, so the lexer doesn't open a
 scope there. Enum tags live in `_Scope.enum_tags`, with their types,
 beside the struct/union tags, and `enum tag`
 must name an enum defined in an enclosing scope (C99 has no forward
 declaration of one). A declaration that only defines an enum leaves
 nothing in the AST.
+
+### Attributes
+
+Attributes are C23's (§6.7.13), and c6502's own carry its prefix:
+`[[c6502::zp_abi]]`, `uint8_t n [[c6502::in_x]]`. GCC's
+`__attribute__((...))` is gone; `parse` turns the syntax error a source
+using it gets into a `ParserError` that shows the C23 form. The lexer
+makes `[[` (with optional space between) one `ATTR_OPEN` token, since
+C23 allows two `[` in a row nowhere else, so `x [[...]]` and `x[3]`
+part on one token of lookahead; `]]` stays two tokens, and `::` is
+`COLONCOLON`.
+
+`attribute_specifier_seq` goes before a declaration, function
+definition, parameter, or member declaration; after the name in a
+`direct_declarator`; after `struct`, `union`, or `enum`; after an
+enumerator's name; and alone before `;` (`attribute_declaration`,
+for `[[fallthrough]];`). Its transformer builds an `_Attributes` with
+two `(name, arg)` lists: c6502's (prefix dropped, `__x__` spellings
+normalized) and the standard ones. Any other prefix's attributes, and
+unknown unprefixed names, are dropped; a c6502 name without the prefix
+or an unknown `c6502::` name is an error. Each declaration merges its
+leading attributes with those after its name (`_merge_attributes`,
+`_declarator_attributes`), and `_c6502_attributes(attrs, kind, where)`
+checks the standard ones against the kind of entity
+(`_STANDARD_ATTRIBUTES`) and hands the c6502 ones to the per-kind
+helpers: `_extract_function_attributes`, `_extract_object_placement`,
+`_extract_section`, `_register_marker` (parameters), and
+`_enum_is_packed`. Attributes after a parameter list, `*`, `]`, or the
+type specifiers (which C23 applies to a type) aren't in the grammar.
 
 ### Lexer & preprocessor
 

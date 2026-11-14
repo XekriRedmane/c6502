@@ -19,7 +19,7 @@ extern const uint8_t rescue_bobble[];          /* 7 signed step-Y deltas (bit 7 
 /* Apply a bobble-table delta to the slot's screen row.
 * Bit 7 set = descend (row += magnitude); bit 7 clear = ascend
 * (row -= magnitude).  Index is the post-decrement anim counter. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void apply_bobble(uint8_t slot, uint8_t bobble_idx)
 {
     uint8_t bobble    = rescue_bobble[bobble_idx];

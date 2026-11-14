@@ -348,8 +348,8 @@ class TestTypedefErrors(unittest.TestCase):
 
     def test_attribute_on_typedef(self) -> None:
         self._rejects(
-            "__attribute__((zp_abi)) typedef int F(void);",
-            "isn't supported on a typedef",
+            "[[c6502::zp_abi]] typedef int F(void);",
+            "doesn't apply to typedef 'F'",
         )
 
     def test_inner_tag_hides_typedef_tag(self) -> None:

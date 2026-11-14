@@ -16,12 +16,12 @@ extern const uint8_t floor_base_row[];         /* per-(floor_col) screen Y base 
 extern const uint8_t perspective_xoff_byte[]; /* byte-domain perspective X offsets */
 extern const uint8_t rescue_bobble[];          /* 7 signed step-Y deltas (bit 7 = sign) */
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern void apply_bobble(uint8_t slot, uint8_t bobble_idx);
 
 /* +dir step: anim_in is the pre-decrement anim counter (8 on the
 * fresh-step path, 7..1 on the mid-step path). */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void step_pos(uint8_t slot, uint8_t anim_in)
 {
     uint8_t new_anim = (uint8_t)(anim_in - 1);

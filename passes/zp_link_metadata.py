@@ -55,7 +55,7 @@ Format
 
 `def` lines describe in-TU function definitions (any function,
 not just zp_abi). `ext` lines describe zp_abi externs (functions
-declared `__attribute__((zp_abi))` but without a body in this
+declared `[[c6502::zp_abi]]` but without a body in this
 TU). `call` lines record every direct call edge from a defined
 function to any other named function — including calls to
 non-zp_abi externs (the linker uses these to detect when a TU's

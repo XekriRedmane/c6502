@@ -225,7 +225,7 @@ def _function(c: _Case) -> tuple[list[str], str]:
             obj = f"g_{c.name}"
         case "zp":
             decls.append(
-                f"{t} z_{c.name} __attribute__((zeropage)) = ({t})({init});"
+                f"{t} z_{c.name} [[c6502::zeropage]] = ({t})({init});"
             )
             obj = f"z_{c.name}"
         case "ptr":

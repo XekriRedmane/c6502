@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern void draw_sprite(uint8_t width,
                         uint8_t height,
                         uint8_t sprite_x,
@@ -62,7 +62,7 @@ static const uint8_t proj_screen_col[132] = {
 *                        (0 = page 1 at $2000, 1 = page 2 at $4000);
 *                        forwarded unchanged to draw_sprite.
 */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void special_inactive_draw(uint8_t special_row,
                             uint8_t special_pos_hi,
                             uint8_t page_flag)

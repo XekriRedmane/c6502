@@ -246,7 +246,7 @@ void set_page_first(register uint8_t slot) {
 /* Finds the cache slot holding story page SCRATCH2. If no slot holds
  * it, returns the least recently used slot, LAST_Z_PAGE, with
  * not_found set. */
-__attribute__((return_bool_in_carry))
+[[c6502::return_bool_in_carry]]
 struct page_slot find_index_of_page_table(void) {
     uint8_t lo = (uint8_t)SCRATCH2;
     uint8_t hi = (uint8_t)(SCRATCH2 >> 8);

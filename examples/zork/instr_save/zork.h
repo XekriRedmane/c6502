@@ -27,49 +27,49 @@
 */
 
 /* DOS 3.3's bytes in $26-$4F that monitor_io.h doesn't declare. */
-extern uint8_t __dos_zp_2f __attribute__((zeropage(0x2F)));
-extern uint8_t __dos_zp_31 __attribute__((zeropage(0x31)));
-extern uint8_t __dos_zp_34 __attribute__((zeropage(0x34)));
-extern uint8_t __dos_zp_3a[11] __attribute__((zeropage(0x3A)));
-extern uint8_t __dos_zp_46[2] __attribute__((zeropage(0x46)));
-extern uint8_t __dos_zp_49[5] __attribute__((zeropage(0x49)));
+extern uint8_t __dos_zp_2f [[c6502::zeropage(0x2F)]];
+extern uint8_t __dos_zp_31 [[c6502::zeropage(0x31)]];
+extern uint8_t __dos_zp_34 [[c6502::zeropage(0x34)]];
+extern uint8_t __dos_zp_3a [[c6502::zeropage(0x3A)]][11];
+extern uint8_t __dos_zp_46 [[c6502::zeropage(0x46)]][2];
+extern uint8_t __dos_zp_49 [[c6502::zeropage(0x49)]][5];
 
 /* DEBUG_JUMP, a JMP instruction, then a spare byte. */
-extern uint8_t __zork_zp_7c[3] __attribute__((zeropage(0x7C)));
-extern uint8_t SECTORS_PER_TRACK __attribute__((zeropage(0x7F)));
+extern uint8_t __zork_zp_7c [[c6502::zeropage(0x7C)]][3];
+extern uint8_t SECTORS_PER_TRACK [[c6502::zeropage(0x7F)]];
 /* CURR_OPCODE, OPERAND_COUNT, and OPERAND0-OPERAND3. */
-extern uint8_t __zork_zp_80[10] __attribute__((zeropage(0x80)));
+extern uint8_t __zork_zp_80 [[c6502::zeropage(0x80)]][10];
 /* The instruction reader's program counter: low, high, and top byte. */
-extern uint8_t Z_PC[3] __attribute__((zeropage(0x8A)));
+extern uint8_t Z_PC [[c6502::zeropage(0x8A)]][3];
 /* The page cache's and the string reader's state, and GLOBAL_ZVARS_ADDR. */
-extern uint8_t __zork_zp_8d[13] __attribute__((zeropage(0x8D)));
+extern uint8_t __zork_zp_8d [[c6502::zeropage(0x8D)]][13];
 /* The current routine's 15 local variables, two bytes each. */
-extern uint8_t LOCAL_ZVARS[30] __attribute__((zeropage(0x9A)));
+extern uint8_t LOCAL_ZVARS [[c6502::zeropage(0x9A)]][30];
 /* HIGH_MEM_ADDR. */
-extern uint8_t __zork_zp_b8[2] __attribute__((zeropage(0xB8)));
+extern uint8_t __zork_zp_b8 [[c6502::zeropage(0xB8)]][2];
 /* The story file, loaded at a page boundary. */
-extern uint8_t *Z_HEADER_ADDR __attribute__((zeropage(0xBA)));
+extern uint8_t *Z_HEADER_ADDR [[c6502::zeropage(0xBA)]];
 /* The page cache's tables. */
-extern uint8_t __zork_zp_bc[12] __attribute__((zeropage(0xBC)));
+extern uint8_t __zork_zp_bc [[c6502::zeropage(0xBC)]][12];
 /* STACK_COUNT, Z_SP, FRAME_Z_SP, and FRAME_STACK_COUNT, which a save
  * keeps together. */
-extern uint8_t STACK_STATE[6] __attribute__((zeropage(0xC8)));
+extern uint8_t STACK_STATE [[c6502::zeropage(0xC8)]][6];
 /* The z-string decoder's and the tokenizer's state. */
-extern uint8_t __zork_zp_ce[22] __attribute__((zeropage(0xCE)));
+extern uint8_t __zork_zp_ce [[c6502::zeropage(0xCE)]][22];
 /* Zork's scratch words. SCRATCH1 is a sector number while saving.
  * SCRATCH2 is where Zork's routines pass the address of the bytes to
  * copy, write, or print; this example passes it as an argument, but
  * Zork's other routines still use the bytes. */
-extern uint16_t SCRATCH1 __attribute__((zeropage(0xE4)));
-extern uint8_t __zork_zp_e6[2] __attribute__((zeropage(0xE6)));
+extern uint16_t SCRATCH1 [[c6502::zeropage(0xE4)]];
+extern uint8_t __zork_zp_e6 [[c6502::zeropage(0xE6)]][2];
 /* SCRATCH3 and SCRATCH3+1, SIGN_BIT, the line buffer's state,
  * PRINTER_CSW, and TMP_Z_PC. */
-extern uint8_t __zork_zp_e8[11] __attribute__((zeropage(0xE8)));
+extern uint8_t __zork_zp_e8 [[c6502::zeropage(0xE8)]][11];
 
 /* ---- Memory ---------------------------------------------------------- */
 
 /* Zork's line buffer, which a save also uses for its sectors. */
-extern uint8_t BUFF_AREA[256] __attribute__((address(0x0200)));
+extern uint8_t BUFF_AREA [[c6502::address(0x0200)]][256];
 /* The Z-machine's stack, $0280-$03E7, which grows down from $03E8. It
  * overlaps BUFF_AREA, so it's an address rather than an object: the
  * compiler takes two differently named objects to be different bytes,
@@ -116,8 +116,8 @@ extern struct iob iob;
 /* DOS's disk routine. It takes the address of its parameter block
  * with the low byte in Y and the high byte in A, and sets the carry
  * when the operation failed. */
-__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
-bool RWTS(struct iob *iob __attribute__((in_ya)));
+[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]
+bool RWTS(struct iob *iob [[c6502::in_ya]]);
 
 /* ---- Zork's routines outside this example ----------------------------- */
 
@@ -127,27 +127,27 @@ bool RWTS(struct iob *iob __attribute__((in_ya)));
  * puts this example's own parameters and locals. */
 
 /* Clears the screen and Zork's line count. */
-__attribute__((zp_abi, address(0x1CC9))) void home(void);
+[[c6502::zp_abi, c6502::address(0x1CC9)]] void home(void);
 /* Prints the line buffer and a carriage return, pausing with [MORE]
  * when the screen is full. */
-__attribute__((zp_abi, address(0x1C5B))) void dump_buffer_with_more(void);
+[[c6502::zp_abi, c6502::address(0x1C5B)]] void dump_buffer_with_more(void);
 /* Prints the line buffer without a carriage return. */
-__attribute__((zp_abi, address(0x1BE2))) void dump_buffer_line(void);
+[[c6502::zp_abi, c6502::address(0x1BE2)]] void dump_buffer_line(void);
 /* Adds a character to the line buffer. */
-__attribute__((zp_abi, address(0x1B90)))
+[[c6502::zp_abi, c6502::address(0x1B90)]]
 void buffer_char(register uint8_t c);
 /* The ends of an instruction that branches: branch takes the branch
  * when its condition holds, and negated_branch when it doesn't. */
-__attribute__((zp_abi, address(0x0BAA))) void branch(void);
-__attribute__((zp_abi, address(0x0BB3))) void negated_branch(void);
+[[c6502::zp_abi, c6502::address(0x0BAA)]] void branch(void);
+[[c6502::zp_abi, c6502::address(0x0BB3)]] void negated_branch(void);
 
 /* ---- This example's routines ------------------------------------------ */
 
 /* disk.c. inc_sector_and_write's parameter is `const`: it leaves the
  * pointer where it is, so instr_save can keep its page pointer there
  * across the call. */
-__attribute__((return_bool_in_carry)) bool write_next_sector(void);
-__attribute__((return_bool_in_carry))
+[[c6502::return_bool_in_carry]] bool write_next_sector(void);
+[[c6502::return_bool_in_carry]]
 bool inc_sector_and_write(uint8_t *const buffer);
 
 /* prompts.c */

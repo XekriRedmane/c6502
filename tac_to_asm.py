@@ -1838,8 +1838,8 @@ class Translator:
         return ft.ret if isinstance(ft, c99_ast.FunType) else None
 
     def _returns_carry(self, fn_name: str | None) -> bool:
-        """True iff `fn_name` carries `__attribute__((return_bool_in_
-        carry))`, so its result is the carry flag (set for true)."""
+        """True iff `fn_name` carries `[[c6502::return_bool_in_
+        carry]]`, so its result is the carry flag (set for true)."""
         if fn_name is None or self._symbols is None:
             return False
         sym = self._symbols.get(fn_name)
@@ -2741,7 +2741,7 @@ class Translator:
 
     def _preserved_registers(self, fn_name: str) -> list[str]:
         """The registers ("X", "Y") the function `fn_name` leaves
-        unchanged, from `__attribute__((preserves_x))` /
+        unchanged, from `[[c6502::preserves_x]]` /
         `preserves_y`."""
         if self._symbols is None:
             return []

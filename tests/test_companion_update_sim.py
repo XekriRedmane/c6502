@@ -83,7 +83,7 @@ const uint8_t perspective_xoff_hi[256] = {
 uint8_t prng_value;
 uint8_t prng_calls;
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 uint8_t prng(void) {
     prng_calls = (uint8_t)(prng_calls + 1);
     return prng_value;
@@ -91,7 +91,7 @@ uint8_t prng(void) {
 
 uint8_t draw_calls;
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void draw_sprite(uint8_t width, uint8_t height,
                  uint8_t sprite_x, uint8_t sprite_y,
                  const uint8_t *tile_src,
@@ -181,7 +181,7 @@ static uint8_t pos_walk_next = 0;
 static uint8_t neg_walk_next = 0;
 
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static uint16_t compute_screen_x(uint8_t slot, uint8_t player_y, uint8_t sprite_xref)
 {
     uint16_t xoff =
@@ -192,7 +192,7 @@ static uint16_t compute_screen_x(uint8_t slot, uint8_t player_y, uint8_t sprite_
     return (uint16_t)(pos - xoff);
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static bool find_active_entity(uint8_t hit_max, uint8_t *out_row)
 {
     for (int8_t i = (int8_t)hit_max; i >= 0; i--) {
@@ -204,7 +204,7 @@ static bool find_active_entity(uint8_t hit_max, uint8_t *out_row)
     return false;
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void entity_proximity(uint8_t slot, uint8_t screen_x, uint8_t hit_max)
 {
     uint8_t entity_row;
@@ -223,7 +223,7 @@ static void entity_proximity(uint8_t slot, uint8_t screen_x, uint8_t hit_max)
     }
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void smc_body_draw(uint8_t slot,
                         uint8_t sprite_x, uint8_t sprite_y,
                         uint8_t frame_idx, uint8_t state,
@@ -250,7 +250,7 @@ static void smc_body_draw(uint8_t slot,
     draw_sprite(0x03, 0x08, sprite_x, sprite_y, src, page_flag);
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void player_catch(uint8_t slot, uint8_t screen_x, uint8_t player_col)
 {
     if (screen_x < 0x40 || screen_x >= 0x50) return;
@@ -261,7 +261,7 @@ static void player_catch(uint8_t slot, uint8_t screen_x, uint8_t player_col)
     hit_flag = 0xFF;
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static bool active_pos_step(uint8_t slot, uint8_t player_floor)
 {
     if (prng() < 0x05) {
@@ -281,7 +281,7 @@ static bool active_pos_step(uint8_t slot, uint8_t player_floor)
     return true;
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static bool active_neg_step(uint8_t slot, uint8_t player_floor)
 {
     if (prng() < 0x05) {
@@ -301,7 +301,7 @@ static bool active_neg_step(uint8_t slot, uint8_t player_floor)
     return true;
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void drift_step(uint8_t slot, uint8_t *out_sprite_y)
 {
     uint8_t row = companion_row[slot];
@@ -325,7 +325,7 @@ static void drift_step(uint8_t slot, uint8_t *out_sprite_y)
 }
 
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void companion_update(uint8_t gate,
                     uint8_t player_y,
                     uint8_t sprite_xref,

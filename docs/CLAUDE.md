@@ -6,12 +6,13 @@ parsed by any tool.
 
 ## Long-form docs
 
-- `attributes.md` — user guide to c6502's `__attribute__`s
-  (`zp_abi`, `return_bool_in_carry`, `zeropage`, `address`, `section`)
+- `attributes.md` — user guide to c6502's C23 attributes
+  (`[[c6502::zp_abi]]`, `return_bool_in_carry`, `zeropage`, `address`,
+  `section`, ...), where they go, the standard attributes it accepts,
   and to declaring and calling ROM routines, with Apple II Monitor
   examples, the errors the compiler reports, and current limits.
 - `linker_scripts.md` — user guide to `compile.py --link -T`: sections
-  (the defaults and `__attribute__((section("name")))`), the GNU ld
+  (the defaults and `[[c6502::section("name")]]`), the GNU ld
   script subset, the section symbols, the startup copy and clear, and
   how the layout becomes dasm segments.
 - `pragmas.md` — user guide to the `#pragma c6502` directives:
@@ -36,7 +37,7 @@ parsed by any tool.
   "correct but slow" TAC into "correct and faster" TAC. Written for
   someone who has read the root CLAUDE.md but never touched the
   optimizer code.
-- `leaf_zp_abi.md` — design for `__attribute__((zp_abi))` and the
+- `leaf_zp_abi.md` — design for `[[c6502::zp_abi]]` and the
   call-graph-disjoint ZP allocator: leaf functions with bare-RTS
   prologue / epilogue when arg bytes fit in a private ZP slice.
 - `sim_findings.md` — bugs and gaps found by running the 6502

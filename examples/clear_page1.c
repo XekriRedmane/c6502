@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-__attribute__((zp_abi)) extern void          interlace_fill_p1(uint8_t col, uint8_t paint);
+[[c6502::zp_abi]] extern void          interlace_fill_p1(uint8_t col, uint8_t paint);
 
 uint8_t* const TEXT_STRIP_SRC = (uint8_t*)0x0300;   /* 40-byte dither source    */
 
@@ -36,7 +36,7 @@ static uint8_t* const TEXT_ROW[12] = {
       TEXT_STRIP_SRC[X] --- 40-byte ($28) bottom-text-row dither source
                             (column-indexed alternating $55/$2A).
 */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void clear_page1(uint8_t zp_clear_col, uint8_t zp_clear_col_end)
 {
     /* Phase 1: walk columns from zp_clear_col down to zp_clear_col_end

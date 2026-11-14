@@ -4,7 +4,7 @@
  * Including this header tells c6502 that the program calls the
  * Monitor's text, keyboard, line input, lo-res graphics, or delay
  * routines. Every zero-page byte those routines use is declared below
- * with `__attribute__((address(...)))`, so the compiler keeps its own
+ * with `[[c6502::address(...)]]`, so the compiler keeps its own
  * zero-page block (SSP, FP, HARGS, DPTR) and its zero-page globals
  * off them, and doesn't initialize them.
  *
@@ -61,58 +61,58 @@
 /* Clears the text window and puts the cursor at its top left.
  * Neither it nor the firmware it reaches writes X. It loads Y with
  * the firmware's function code. */
-__attribute__((zp_abi, preserves_x, address(0xFC58))) void HOME(void);
+[[c6502::zp_abi, c6502::preserves_x, c6502::address(0xFC58)]] void HOME(void);
 
 /* Clears the text window from the cursor to the end of the line.
  * Neither it nor the 80-column firmware it reaches writes X. Y ends
  * as WNDWDTH. */
-__attribute__((zp_abi, preserves_x, address(0xFC9C))) void CLREOL(void);
+[[c6502::zp_abi, c6502::preserves_x, c6502::address(0xFC9C)]] void CLREOL(void);
 
 /* Waits for a key and returns it, with the high bit set. RDKEY loads
  * Y from CH; KEYIN saves and restores X ($C294, $C2BC). */
-__attribute__((zp_abi, preserves_x, address(0xFD0C))) uint8_t RDKEY(void);
+[[c6502::zp_abi, c6502::preserves_x, c6502::address(0xFD0C)]] uint8_t RDKEY(void);
 
 /* Prints `c` through the output hook CSW (normally COUT1). What it
  * preserves depends on where CSW points, so it promises nothing. */
-__attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
+[[c6502::zp_abi, c6502::address(0xFDED)]] void COUT(register uint8_t c);
 
 /* Prints `c` on the screen, ignoring CSW. Characters $A0 and up are
  * ANDed with INVFLG first. No code it runs writes X; scrolling at
  * the bottom of the window goes through the firmware, which saves and
  * restores X ($CCA4, $CD1B). It saves Y in YSAV1 ($FDF6) and reloads
  * it before returning ($FDFD), on every path. */
-__attribute__((zp_abi, preserves_x, preserves_y, address(0xFDF0)))
+[[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFDF0)]]
 void COUT1(register uint8_t c);
 
 /* Waits for a time that grows with `a`. It writes neither X nor Y. */
-__attribute__((zp_abi, preserves_x, preserves_y, address(0xFCA8)))
+[[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFCA8)]]
 void WAIT(register uint8_t a);
 
 /* ---- Zero page ------------------------------------------------------ */
 
-extern volatile uint8_t __monitor_zp_1f   __attribute__((address(0x1F)));
+extern volatile uint8_t __monitor_zp_1f   [[c6502::address(0x1F)]];
 
-extern volatile uint8_t WNDLFT            __attribute__((address(0x20)));
-extern volatile uint8_t WNDWDTH           __attribute__((address(0x21)));
-extern volatile uint8_t WNDTOP            __attribute__((address(0x22)));
-extern volatile uint8_t WNDBTM            __attribute__((address(0x23)));
-extern volatile uint8_t CH                __attribute__((address(0x24)));
-extern volatile uint8_t CV                __attribute__((address(0x25)));
-extern volatile uint16_t GBAS             __attribute__((address(0x26)));
-extern volatile uint16_t BAS              __attribute__((address(0x28)));
-extern volatile uint16_t __monitor_bas2   __attribute__((address(0x2A)));
+extern volatile uint8_t WNDLFT            [[c6502::address(0x20)]];
+extern volatile uint8_t WNDWDTH           [[c6502::address(0x21)]];
+extern volatile uint8_t WNDTOP            [[c6502::address(0x22)]];
+extern volatile uint8_t WNDBTM            [[c6502::address(0x23)]];
+extern volatile uint8_t CH                [[c6502::address(0x24)]];
+extern volatile uint8_t CV                [[c6502::address(0x25)]];
+extern volatile uint16_t GBAS             [[c6502::address(0x26)]];
+extern volatile uint16_t BAS              [[c6502::address(0x28)]];
+extern volatile uint16_t __monitor_bas2   [[c6502::address(0x2A)]];
 
 /* $2C-$2E: H2, V2, MASK. */
-extern volatile uint8_t __monitor_zp_2c[3] __attribute__((address(0x2C)));
+extern volatile uint8_t __monitor_zp_2c [[c6502::address(0x2C)]][3];
 
-extern volatile uint8_t COLOR             __attribute__((address(0x30)));
-extern volatile uint8_t INVFLG            __attribute__((address(0x32)));
-extern volatile uint8_t PROMPT            __attribute__((address(0x33)));
-extern volatile uint8_t __monitor_ysav1   __attribute__((address(0x35)));
-extern volatile uint16_t CSW              __attribute__((address(0x36)));
-extern volatile uint16_t KSW              __attribute__((address(0x38)));
-extern volatile uint8_t __monitor_acc     __attribute__((address(0x45)));
-extern volatile uint8_t __monitor_status  __attribute__((address(0x48)));
-extern volatile uint16_t __monitor_rnd    __attribute__((address(0x4E)));
+extern volatile uint8_t COLOR             [[c6502::address(0x30)]];
+extern volatile uint8_t INVFLG            [[c6502::address(0x32)]];
+extern volatile uint8_t PROMPT            [[c6502::address(0x33)]];
+extern volatile uint8_t __monitor_ysav1   [[c6502::address(0x35)]];
+extern volatile uint16_t CSW              [[c6502::address(0x36)]];
+extern volatile uint16_t KSW              [[c6502::address(0x38)]];
+extern volatile uint8_t __monitor_acc     [[c6502::address(0x45)]];
+extern volatile uint8_t __monitor_status  [[c6502::address(0x48)]];
+extern volatile uint16_t __monitor_rnd    [[c6502::address(0x4E)]];
 
 #endif

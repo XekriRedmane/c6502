@@ -1,6 +1,6 @@
 """Peepholes for the carry-flag return of `return_bool_in_carry`.
 
-A function declared `__attribute__((return_bool_in_carry))` returns
+A function declared `[[c6502::return_bool_in_carry]]` returns
 its truth value in the carry flag. `tac_to_asm` lowers both sides of
 that convention plainly:
 

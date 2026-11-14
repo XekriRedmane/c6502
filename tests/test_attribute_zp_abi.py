@@ -1,4 +1,4 @@
-"""Behavioral tests for `__attribute__((zp_abi))` parsing.
+"""Behavioral tests for `[[c6502::zp_abi]]` parsing.
 
 Coverage:
   - Forward declaration with the annotation: `abi_annotation`
@@ -27,7 +27,7 @@ def _function_decls(src: str) -> list[c99_ast.Type_function_decl]:
 
 class TestAttributeZpAbiParsing(unittest.TestCase):
     def test_forward_decl_with_annotation(self) -> None:
-        decls = _function_decls("__attribute__((zp_abi)) int f(int x);")
+        decls = _function_decls("[[c6502::zp_abi]] int f(int x);")
         self.assertEqual(len(decls), 1)
         self.assertEqual(decls[0].name, "f")
         self.assertIsNone(decls[0].body)
@@ -35,7 +35,7 @@ class TestAttributeZpAbiParsing(unittest.TestCase):
 
     def test_function_definition_with_annotation(self) -> None:
         decls = _function_decls(
-            "__attribute__((zp_abi)) int g(int x) { return x + 1; }",
+            "[[c6502::zp_abi]] int g(int x) { return x + 1; }",
         )
         self.assertEqual(len(decls), 1)
         self.assertEqual(decls[0].name, "g")
@@ -48,19 +48,18 @@ class TestAttributeZpAbiParsing(unittest.TestCase):
 
     def test_unknown_attribute_name_rejected(self) -> None:
         with self.assertRaises(ParserError) as cm:
-            parse("__attribute__((wrong)) int f(int x);")
-        self.assertIn("unknown attribute name", str(cm.exception))
-        self.assertIn("wrong", str(cm.exception))
+            parse("[[c6502::wrong]] int f(int x);")
+        self.assertIn("unknown attribute `c6502::wrong`", str(cm.exception))
 
     def test_attribute_on_object_decl_rejected(self) -> None:
         with self.assertRaises(ParserError) as cm:
-            parse("__attribute__((zp_abi)) int x;")
+            parse("[[c6502::zp_abi]] int x;")
         self.assertIn("only valid on function declarations", str(cm.exception))
 
     def test_attribute_on_tag_only_decl_rejected(self) -> None:
         with self.assertRaises(ParserError) as cm:
-            parse("__attribute__((zp_abi)) struct foo;")
-        self.assertIn("only valid on function declarations", str(cm.exception))
+            parse("[[c6502::zp_abi]] struct foo;")
+        self.assertIn("need a declarator", str(cm.exception))
 
 
 if __name__ == "__main__":

@@ -23,30 +23,30 @@ class TestCliErrors(unittest.TestCase):
 
     _CASES = {
         "unknown attribute":
-            ("__attribute__((bogus)) void f(void);", "unknown attribute"),
+            ("[[c6502::bogus]] void f(void);", "unknown attribute"),
         "attribute twice":
-            ("__attribute__((zp_abi, zp_abi)) void f(void);",
-             "`zp_abi` is given twice"),
+            ("[[c6502::zp_abi, c6502::zp_abi]] void f(void);",
+             "`c6502::zp_abi` is given twice"),
         "preserves_x without address":
-            ("__attribute__((preserves_x)) void f(void);",
-             "has `preserves_x` but no `__attribute__((address(...)))`"),
+            ("[[c6502::preserves_x]] void f(void);",
+             "has `preserves_x` but no `[[c6502::address(...)]]`"),
         "preserves_x with an int result":
-            ("__attribute__((preserves_x, address(0x1000))) int f(void);",
+            ("[[c6502::preserves_x, c6502::address(0x1000)]] int f(void);",
              "whose high byte comes back in X"),
         "preserves on a definition":
-            ("__attribute__((preserves_y)) void f(void) {}",
+            ("[[c6502::preserves_y]] void f(void) {}",
              "can't have `preserves_x` or `preserves_y`"),
         "preserves_x with an int carry struct":
             ("struct s { int v; _Bool end; };\n"
-             "__attribute__((preserves_x, return_bool_in_carry, "
-             "address(0x1000))) struct s f(void);",
+             "[[c6502::preserves_x, c6502::return_bool_in_carry, c6502::"
+             "address(0x1000)]] struct s f(void);",
              "whose value member is 2 bytes"),
         "carry struct of the wrong shape":
             ("struct s { long v; _Bool end; };\n"
-             "__attribute__((return_bool_in_carry)) struct s f(void);",
+             "[[c6502::return_bool_in_carry]] struct s f(void);",
              "exactly two members"),
         "carry on an int":
-            ("__attribute__((return_bool_in_carry)) int f(void);",
+            ("[[c6502::return_bool_in_carry]] int f(void);",
              "a struct of a value and a `bool`, not `int`"),
         "call save on a call that can't recurse":
             ("int g(int x) { return x; }\nint f(int x) {\n"
@@ -58,17 +58,17 @@ class TestCliErrors(unittest.TestCase):
              "must come before an expression statement"),
         "zeropage on a local":
             ("int main(void) { unsigned char a "
-             "__attribute__((zeropage)); return a; }",
+             "[[c6502::zeropage]]; return a; }",
              "'a' is automatic"),
         "two addresses":
-            ("__attribute__((address(0x1000))) void f(void);\n"
-             "__attribute__((address(0x2000))) void f(void);",
+            ("[[c6502::address(0x1000)]] void f(void);\n"
+             "[[c6502::address(0x2000)]] void f(void);",
              "different addresses, $1000 and $2000"),
         "register parameter without zp_abi":
-            ("__attribute__((address(0x1000))) "
+            ("[[c6502::address(0x1000)]] "
              "void f(register unsigned char c);\n"
              "void g(void) { f(1); }",
-             "no `__attribute__((zp_abi))`"),
+             "no `[[c6502::zp_abi]]`"),
     }
 
     def test_frame_too_large(self) -> None:
@@ -95,7 +95,7 @@ class TestCliErrors(unittest.TestCase):
         # A block-scope object is renamed `@N.x` inside the compiler.
         rc, err = _compile(
             "int main(void) { static unsigned char x "
-            "__attribute__((address(0xC000))); return x; }",
+            "[[c6502::address(0xC000)]]; return x; }",
         )
         self.assertEqual(rc, 1)
         self.assertIn("'x'", err)

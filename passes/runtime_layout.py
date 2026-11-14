@@ -16,7 +16,7 @@ Code that runs alongside system software can't always use those
 bytes. On an Apple II, the Monitor keeps its text window in $20-$23
 and its cursor in $24-$25, right on top of HARGS and DPTR. A program
 says which bytes something else owns by declaring them, with
-`__attribute__((address(...)))` or `zeropage(addr)`, and
+`[[c6502::address(...)]]` or `zeropage(addr)`, and
 `choose_layout` moves the block out of their way:
 
   * If no reserved byte is in the classic layout, the classic layout

@@ -1,7 +1,7 @@
 # Zero-page promotion
 
 `--optimize` moves the busiest globals into zero page, where nobody
-declared them with `__attribute__((zeropage))`. The choice is made in
+declared them with `[[c6502::zeropage]]`. The choice is made in
 `plan_zero_page` and `_promotion_order` in
 [passes/zp_globals.py](../../passes/zp_globals.py), on the unoptimized
 TAC, before the TAC optimizer runs, so that every pass after it knows

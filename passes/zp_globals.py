@@ -1,14 +1,14 @@
-"""Zero-page globals: `__attribute__((zeropage))`.
+"""Zero-page globals: `[[c6502::zeropage]]`.
 
-A static-storage object declared with `__attribute__((zeropage))`
+A static-storage object declared with `[[c6502::zeropage]]`
 lives in zero page instead of the data segment, so every access is a
 2-byte zero-page instruction (`LDA zp`, 3 cycles) where an ordinary
 global takes a 3-byte absolute one (`LDA abs`, 4 cycles). A pointer
 in zero page can also serve directly as the base of an `(zp),Y`
 access, where an ordinary pointer global is first copied to DPTR.
 
-    uint8_t num_entries __attribute__((zeropage));            // $26
-    __attribute__((zeropage(0xBA))) uint8_t *z_header_addr;   // $BA-$BB
+    uint8_t num_entries [[c6502::zeropage]];            // $26
+    [[c6502::zeropage(0xBA)]] uint8_t *z_header_addr;   // $BA-$BB
 
 The address form puts the object's first (low) byte at that
 address, anywhere in `$00`-`$FF`, so code ported from hand-written
@@ -91,12 +91,12 @@ segment if the linked program has no room for it.
 
 # Fixed addresses outside zero page
 
-`__attribute__((address(addr)))` binds a function or an `extern`
+`[[c6502::address(addr)]]` binds a function or an `extern`
 object to an address something outside the program owns:
 
-    __attribute__((zp_abi, address(0xFDED)))
+    [[c6502::zp_abi, c6502::address(0xFDED)]]
     extern void COUT(register uint8_t c);              // ROM routine
-    extern volatile uint8_t KBD __attribute__((address(0xC000)));
+    extern volatile uint8_t KBD [[c6502::address(0xC000)]];
 
 An object at an address below $100 is a zero-page object like any
 other, reserved and not initialized. Every other name goes in

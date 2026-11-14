@@ -60,7 +60,7 @@
 #define HEADER_OBJECT_TABLE_ADDR 0x0A
 #define FIRST_OBJECT_OFFSET 53
 
-uint8_t *z_header_addr __attribute__((zeropage(0xBA)));
+uint8_t *z_header_addr [[c6502::zeropage(0xBA)]];
 
 uint8_t *get_object_addr(uint8_t obj) {
     uint16_t table = ((uint16_t)z_header_addr[HEADER_OBJECT_TABLE_ADDR] << 8)

@@ -361,7 +361,7 @@ _CASES: list[tuple[str, str, int]] = [
     # the counter in X held nothing anyone loaded. Found by fuzz.stmts
     # seed 1549.
     ("global_byte_as_loop_counter", """
-        unsigned long z4 __attribute__((zeropage)) = 2;
+        unsigned long z4 [[c6502::zeropage]] = 2;
         int f9(void) {
             unsigned char l14 = 6;
             unsigned char w16;

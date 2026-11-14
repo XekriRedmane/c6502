@@ -419,7 +419,7 @@ def link_files(
         meta = parse_metadata(text)
         zp_names = {z.name for z in meta.zp_objects}
         # The other EQUs bind user names. One at $100 or above is a
-        # function or object with `__attribute__((address(...)))`,
+        # function or object with `[[c6502::address(...)]]`,
         # which every unit binds to the same address, so it's kept.
         # A zero-page object is listed in the metadata, and is placed
         # again below.

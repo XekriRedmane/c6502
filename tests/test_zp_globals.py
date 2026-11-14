@@ -1,4 +1,4 @@
-"""Tests for zero-page globals (`__attribute__((zeropage))`,
+"""Tests for zero-page globals (`[[c6502::zeropage]]`,
 `passes/zp_globals.py`).
 
 Covers parsing of both forms in both positions, the static-storage
@@ -56,8 +56,8 @@ class TestParse(unittest.TestCase):
 
     def test_prefix_and_postfix_forms(self) -> None:
         got = _placements(
-            "__attribute__((zeropage)) unsigned char a;\n"
-            "unsigned char b __attribute__((zeropage(0xBA)));\n"
+            "[[c6502::zeropage]] unsigned char a;\n"
+            "unsigned char b [[c6502::zeropage(0xBA)]];\n"
             "unsigned char c;\n"
         )
         self.assertEqual(got["a"], c99_ast.ZeroPage(address=None))
@@ -65,19 +65,19 @@ class TestParse(unittest.TestCase):
         self.assertIsNone(got["c"])
 
     def test_prefix_applies_to_every_declarator(self) -> None:
-        got = _placements("__attribute__((zeropage)) unsigned char a, b;\n")
+        got = _placements("[[c6502::zeropage]] unsigned char a, b;\n")
         self.assertEqual(got["a"], c99_ast.ZeroPage(address=None))
         self.assertEqual(got["b"], c99_ast.ZeroPage(address=None))
 
     def test_rejected_forms(self) -> None:
         bad = [
-            "__attribute__((zeropage)) int f(void) { return 0; }\n",
-            "__attribute__((zp_abi)) unsigned char a;\n",
-            'unsigned char a __attribute__((zeropage("x")));\n',
-            "unsigned char a __attribute__((zeropage(0x100)));\n",
-            "__attribute__((zeropage)) unsigned char a "
-            "__attribute__((zeropage));\n",
-            "unsigned char a __attribute__((nonsense));\n",
+            "[[c6502::zeropage]] int f(void) { return 0; }\n",
+            "[[c6502::zp_abi]] unsigned char a;\n",
+            'unsigned char a [[c6502::zeropage("x")]];\n',
+            "unsigned char a [[c6502::zeropage(0x100)]];\n",
+            "[[c6502::zeropage]] unsigned char a "
+            "[[c6502::zeropage]];\n",
+            "unsigned char a [[c6502::nonsense]];\n",
         ]
         for src in bad:
             with self.subTest(src=src):
@@ -90,9 +90,9 @@ class TestPlacement(unittest.TestCase):
 
     def test_automatic_addresses_follow_fixed_ones(self) -> None:
         asm = _codegen(
-            "unsigned char a __attribute__((zeropage));\n"
-            "unsigned int b __attribute__((zeropage(0x27)));\n"
-            "unsigned char c[3] __attribute__((zeropage));\n"
+            "unsigned char a [[c6502::zeropage]];\n"
+            "unsigned int b [[c6502::zeropage(0x27)]];\n"
+            "unsigned char c [[c6502::zeropage]][3];\n"
             "int main(void) { return a + b + c[1]; }\n"
         )
         equ = _equ(asm)
@@ -105,8 +105,8 @@ class TestPlacement(unittest.TestCase):
     def test_static_storage_required(self) -> None:
         bad = [
             "int main(void) { unsigned char a "
-            "__attribute__((zeropage)); a = 1; return a; }\n",
-            "int main(void) { for (__attribute__((zeropage)) int i = 0; "
+            "[[c6502::zeropage]]; a = 1; return a; }\n",
+            "int main(void) { for ([[c6502::zeropage]] int i = 0; "
             "i < 2; i++) ; return 0; }\n",
         ]
         for src in bad:
@@ -116,13 +116,13 @@ class TestPlacement(unittest.TestCase):
 
     def test_placement_errors(self) -> None:
         bad = {
-            "overlap": "unsigned int a __attribute__((zeropage(0x40)));\n"
-                       "unsigned char b __attribute__((zeropage(0x41)));\n",
-            "past $FF": "unsigned int a __attribute__((zeropage(0xFF)));\n",
-            "full": "unsigned char a[91] __attribute__((zeropage));\n",
+            "overlap": "unsigned int a [[c6502::zeropage(0x40)]];\n"
+                       "unsigned char b [[c6502::zeropage(0x41)]];\n",
+            "past $FF": "unsigned int a [[c6502::zeropage(0xFF)]];\n",
+            "full": "unsigned char a [[c6502::zeropage]][91];\n",
             "two addresses":
-                "unsigned char a __attribute__((zeropage(0x40)));\n"
-                "unsigned char a __attribute__((zeropage(0x41)));\n",
+                "unsigned char a [[c6502::zeropage(0x40)]];\n"
+                "unsigned char a [[c6502::zeropage(0x41)]];\n",
         }
         for what, decls in bad.items():
             with self.subTest(what=what):
@@ -133,7 +133,7 @@ class TestPlacement(unittest.TestCase):
         # Another unit defines it; this one neither places nor
         # initializes it, and lists it for the linker.
         asm = _codegen(
-            "extern unsigned char a __attribute__((zeropage));\n"
+            "extern unsigned char a [[c6502::zeropage]];\n"
             "int main(void) { return a; }\n"
         )
         self.assertNotIn("a", _equ(asm))
@@ -143,13 +143,13 @@ class TestPlacement(unittest.TestCase):
     def test_errors_are_zp_global_errors(self) -> None:
         with self.assertRaises(ZpGlobalError):
             _codegen(
-                "unsigned char a[91] __attribute__((zeropage));\n"
+                "unsigned char a [[c6502::zeropage]][91];\n"
                 "int main(void) { return a[0]; }\n"
             )
 
     def test_extern_with_address_is_reserved_not_initialized(self) -> None:
         asm = _codegen(
-            "extern unsigned char k __attribute__((zeropage(0x90)));\n"
+            "extern unsigned char k [[c6502::zeropage(0x90)]];\n"
             "int main(void) { return k; }\n"
         )
         self.assertEqual(_equ(asm)["k"], 0x90)
@@ -157,7 +157,7 @@ class TestPlacement(unittest.TestCase):
 
     def test_redeclaration_accumulates(self) -> None:
         asm = _codegen(
-            "extern unsigned char a __attribute__((zeropage(0x50)));\n"
+            "extern unsigned char a [[c6502::zeropage(0x50)]];\n"
             "unsigned char a = 4;\n"
             "int main(void) { return a; }\n"
         )
@@ -171,7 +171,7 @@ class TestCodegen(unittest.TestCase):
     def test_pointer_is_indirect_base(self) -> None:
         asm = _codegen(
             "unsigned char buf[4] = {1, 2, 3, 4};\n"
-            "unsigned char *p __attribute__((zeropage));\n"
+            "unsigned char *p [[c6502::zeropage]];\n"
             "int main(void) { p = buf; return p[2]; }\n"
         )
         self.assertIn("(p),Y", asm)
@@ -179,8 +179,8 @@ class TestCodegen(unittest.TestCase):
 
     def test_init_routine(self) -> None:
         asm = _codegen(
-            "unsigned int w __attribute__((zeropage)) = 0x1234;\n"
-            "unsigned char z __attribute__((zeropage));\n"
+            "unsigned int w [[c6502::zeropage]] = 0x1234;\n"
+            "unsigned char z [[c6502::zeropage]];\n"
             "int main(void) { return w + z; }\n"
         )
         init = asm.split("__zp_init:")[1]
@@ -192,7 +192,7 @@ class TestCodegen(unittest.TestCase):
         # Pin $80-$8F, where zp_abi parameters and private pools
         # would start. None of the compiler's slots may land there.
         src = (
-            "unsigned char g[16] __attribute__((zeropage(0x80)));\n"
+            "unsigned char g [[c6502::zeropage(0x80)]][16];\n"
             "unsigned int f(unsigned int a, unsigned int b) {\n"
             "    unsigned int t = a * 3 + b;\n"
             "    return t ^ (a + 1);\n"
@@ -248,7 +248,7 @@ class TestPromotion(unittest.TestCase):
 
     def test_declared_objects_go_first(self) -> None:
         src = ("#include <stdint.h>\n"
-               "uint8_t fill[89] __attribute__((zeropage));\n" + _PROMOTE)
+               "uint8_t fill [[c6502::zeropage]][89];\n" + _PROMOTE)
         equ = _equ(_codegen(src))
         self.assertEqual(equ["fill"], 0x26)
         # One byte is left, and both candidates are 2 bytes.
@@ -278,12 +278,12 @@ class TestSim(unittest.TestCase):
     def test_initial_values(self) -> None:
         src = (
             "struct s { unsigned char a; unsigned int b; };\n"
-            "unsigned char tab[3] __attribute__((zeropage)) = {7, 8, 9};\n"
-            "struct s st __attribute__((zeropage)) = {1, 300};\n"
-            "unsigned long l __attribute__((zeropage)) = 70000;\n"
-            "unsigned char z __attribute__((zeropage));\n"
+            "unsigned char tab [[c6502::zeropage]][3] = {7, 8, 9};\n"
+            "struct s st [[c6502::zeropage]] = {1, 300};\n"
+            "unsigned long l [[c6502::zeropage]] = 70000;\n"
+            "unsigned char z [[c6502::zeropage]];\n"
             "unsigned char other = 5;\n"
-            "unsigned char *ptr __attribute__((zeropage)) = &other;\n"
+            "unsigned char *ptr [[c6502::zeropage]] = &other;\n"
             "int main(void) {\n"
             "    if (tab[0] + tab[1] + tab[2] != 24) return 1;\n"
             "    if (st.a != 1 || st.b != 300) return 2;\n"
@@ -299,8 +299,8 @@ class TestSim(unittest.TestCase):
         # `n` is written through a pointer, so a cached copy of it
         # can't be reused across the store.
         src = (
-            "unsigned char n __attribute__((zeropage(0xA0))) = 1;\n"
-            "unsigned char *p __attribute__((zeropage));\n"
+            "unsigned char n [[c6502::zeropage(0xA0)]] = 1;\n"
+            "unsigned char *p [[c6502::zeropage]];\n"
             "int main(void) {\n"
             "    unsigned char before = n;\n"
             "    p = &n;\n"
@@ -313,8 +313,8 @@ class TestSim(unittest.TestCase):
     def test_pointer_global_walks_buffer(self) -> None:
         src = (
             "unsigned char buf[6] = {1, 2, 3, 4, 5, 6};\n"
-            "unsigned char *p __attribute__((zeropage(0xBA)));\n"
-            "unsigned char sum __attribute__((zeropage));\n"
+            "unsigned char *p [[c6502::zeropage(0xBA)]];\n"
+            "unsigned char sum [[c6502::zeropage]];\n"
             "void add(unsigned char k) { sum += p[k]; }\n"
             "int main(void) {\n"
             "    p = buf;\n"
@@ -329,7 +329,7 @@ class TestSim(unittest.TestCase):
     def test_block_static_counter(self) -> None:
         src = (
             "unsigned char tick(void) {\n"
-            "    static unsigned char c __attribute__((zeropage)) = 10;\n"
+            "    static unsigned char c [[c6502::zeropage]] = 10;\n"
             "    return ++c;\n"
             "}\n"
             "int main(void) { tick(); tick(); return tick(); }\n"
@@ -340,7 +340,7 @@ class TestSim(unittest.TestCase):
         # The global sits where a function's locals would otherwise
         # go, and keeps its value across calls that use locals.
         src = (
-            "unsigned int keep __attribute__((zeropage(0x80))) = 0;\n"
+            "unsigned int keep [[c6502::zeropage(0x80)]] = 0;\n"
             "unsigned int f(unsigned int a) {\n"
             "    unsigned int x = a * 5, y = a + 7;\n"
             "    return x ^ y;\n"
@@ -356,23 +356,23 @@ class TestSim(unittest.TestCase):
 
 _HEADER = (
     "#include <stdint.h>\n"
-    "extern uint8_t *src __attribute__((zeropage));\n"
-    "extern uint8_t total __attribute__((zeropage));\n"
-    "extern uint16_t big __attribute__((zeropage(0x90)));\n"
+    "extern uint8_t *src [[c6502::zeropage]];\n"
+    "extern uint8_t total [[c6502::zeropage]];\n"
+    "extern uint16_t big [[c6502::zeropage(0x90)]];\n"
     "uint8_t sum(uint8_t n);\n"
 )
 # Defines `src`, `total`, and `big`, and calls `sum`.
 _UNIT_A = _HEADER + (
-    "uint8_t *src __attribute__((zeropage));\n"
-    "uint8_t total __attribute__((zeropage)) = 5;\n"
-    "uint16_t big __attribute__((zeropage(0x90))) = 1000;\n"
+    "uint8_t *src [[c6502::zeropage]];\n"
+    "uint8_t total [[c6502::zeropage]] = 5;\n"
+    "uint16_t big [[c6502::zeropage(0x90)]] = 1000;\n"
     "uint8_t buf[4] = {1, 2, 3, 4};\n"
     "int main(void) { src = buf; return sum(4) + big; }\n"
 )
 # Defines `count`, which it places at $26 on its own, where unit A
 # puts `src`; and reads and writes A's objects.
 _UNIT_B = _HEADER + (
-    "uint8_t count __attribute__((zeropage)) = 2;\n"
+    "uint8_t count [[c6502::zeropage]] = 2;\n"
     "uint8_t sum(uint8_t n) {\n"
     "    for (uint8_t i = 0; i < n; i++) total += src[i] * count;\n"
     "    big += total;\n"
@@ -442,7 +442,7 @@ class TestLink(unittest.TestCase):
     # 2-byte counters, so one goes back in the data segment.
     _FULL = (
         "#include <stdint.h>\n"
-        "uint8_t fill[86] __attribute__((zeropage));\n"
+        "uint8_t fill [[c6502::zeropage]][86];\n"
         "uint16_t count(void);\n"
         "int main(void) { fill[85] = 3; return count() + fill[85]; }\n"
     )
@@ -480,7 +480,7 @@ class TestLink(unittest.TestCase):
 
     def test_promoted_pointer_has_to_fit(self) -> None:
         # Both pointers are `(zp),Y` bases, and only one fits.
-        full = ("unsigned char fill[88] __attribute__((zeropage));\n"
+        full = ("unsigned char fill [[c6502::zeropage]][88];\n"
                 "unsigned char sum(void);\n"
                 "int main(void) { return sum(); }\n")
         pointers = (
@@ -500,32 +500,32 @@ class TestLink(unittest.TestCase):
         main = "int main(void) { return 0; }\n"
         cases = {
             "declared but not defined": (
-                "extern unsigned char g __attribute__((zeropage));\n"
+                "extern unsigned char g [[c6502::zeropage]];\n"
                 "unsigned char f(void) { return g; }\n" + main,
                 "no unit defines it",
             ),
             "defined twice": (
-                "unsigned char g __attribute__((zeropage));\n" + main,
+                "unsigned char g [[c6502::zeropage]];\n" + main,
                 "defined in 2 units",
-                "unsigned char g __attribute__((zeropage));\n"
+                "unsigned char g [[c6502::zeropage]];\n"
                 "unsigned char f(void) { return g; }\n",
             ),
             "sizes differ": (
-                "unsigned char g __attribute__((zeropage));\n" + main,
+                "unsigned char g [[c6502::zeropage]];\n" + main,
                 "different sizes",
-                "extern unsigned int g __attribute__((zeropage));\n"
+                "extern unsigned int g [[c6502::zeropage]];\n"
                 "unsigned int f(void) { return g; }\n",
             ),
             "addresses differ": (
-                "unsigned char g __attribute__((zeropage(0x40)));\n" + main,
+                "unsigned char g [[c6502::zeropage(0x40)]];\n" + main,
                 "different addresses",
-                "extern unsigned char g __attribute__((zeropage(0x41)));\n"
+                "extern unsigned char g [[c6502::zeropage(0x41)]];\n"
                 "unsigned char f(void) { return g; }\n",
             ),
             "fixed objects overlap": (
-                "unsigned int g __attribute__((zeropage(0x40)));\n" + main,
+                "unsigned int g [[c6502::zeropage(0x40)]];\n" + main,
                 "overlaps",
-                "unsigned char h __attribute__((zeropage(0x41)));\n"
+                "unsigned char h [[c6502::zeropage(0x41)]];\n"
                 "unsigned char f(void) { return h; }\n",
             ),
         }

@@ -315,15 +315,15 @@ class StaticAttr(IdAttr):
     or one of the deferred markers (Tentative, NoInitializer).
 
     `zeropage` is True when some declaration carried
-    `__attribute__((zeropage))`, and `zp_address` is the address it
+    `[[c6502::zeropage]]`, and `zp_address` is the address it
     gave, or None to let passes/zp_globals.py pick one.
 
-    `address` is the address from `__attribute__((address(...)))`,
+    `address` is the address from `[[c6502::address(...)]]`,
     or None. Such an object is memory the program doesn't own, so
     it's never defined. An address below $100 also sets `zeropage`
     and `zp_address`, which reserves the bytes the way an `extern`
     `zeropage(addr)` declaration does. `section` is the name from
-    `__attribute__((section("name")))`, or None for the default
+    `[[c6502::section("name")]]`, or None for the default
     (passes/sections.py)."""
     initial_value: InitialValue
     is_global: bool
@@ -339,21 +339,21 @@ class FunAttr(IdAttr):
     definition is seen for this name (a FunctionDecl whose body is
     non-None); a second definition raises. `is_global` is True iff
     the function has external linkage. `carry_return` is True when
-    the function carries `__attribute__((return_bool_in_carry))`,
+    the function carries `[[c6502::return_bool_in_carry]]`,
     so it returns its truth value in the carry flag instead of in A.
     Every declaration of the function has to agree on it.
 
-    `address` is the address from `__attribute__((address(...)))`,
+    `address` is the address from `[[c6502::address(...)]]`,
     or None. Such a function is code already at that address, so the
     program can't define it.
 
     `preserves` holds the registers ("X", "Y") that
-    `__attribute__((preserves_x))` / `preserves_y` say the function
+    `[[c6502::preserves_x]]` / `preserves_y` say the function
     leaves unchanged. Declarations add to it, and only a function with
     an address may have any.
 
     `param_zeropage` has one entry per parameter: the zero-page
-    address `__attribute__((zeropage(addr)))` gives it, which only a
+    address `[[c6502::zeropage(addr)]]` gives it, which only a
     function with an address may have, or None. Empty when no
     parameter has one."""
     defined: bool
@@ -966,13 +966,13 @@ def _check_unowned_object(
     name: str, initial: InitialValue, address: int | None,
 ) -> None:
     """Rejects a definition of an object placed with
-    `__attribute__((address(...)))`. Such an object is memory that
+    `[[c6502::address(...)]]`. Such an object is memory that
     something outside the program owns, such as an I/O register or a
     ROM table, so every declaration of it has to be `extern` without
     an initializer."""
     if address is not None and not isinstance(initial, NoInitializer):
         raise TypeCheckError(
-            f"{name!r} has `__attribute__((address(...)))`, which names "
+            f"{name!r} has `[[c6502::address(...)]]`, which names "
             f"memory the program doesn't own, so it can't be defined; "
             f"declare it `extern` without an initializer"
         )
@@ -992,7 +992,7 @@ def _check_preserves(
         regs = " / ".join(f"preserves_{r.lower()}" for r in sorted(preserves))
         raise TypeCheckError(
             f"function {name!r} has `{regs}` but no "
-            f"`__attribute__((address(...)))`; only a routine at a fixed "
+            f"`[[c6502::address(...)]]`; only a routine at a fixed "
             f"address, whose code the compiler doesn't compile, can "
             f"declare which registers it preserves"
         )
@@ -1065,7 +1065,7 @@ def _check_section(name: str, section, address, placement) -> None:
 
 
 def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
-    """Rejects `__attribute__((return_bool_in_carry))` on a function
+    """Rejects `[[c6502::return_bool_in_carry]]` on a function
     whose return type isn't a `bool` (`_Bool`) or a struct of a value
     and a `bool` (`carry_struct_value_bytes`)."""
     if isinstance(_strip_quals(ret), Bool):
@@ -1074,7 +1074,7 @@ def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
         if carry_struct_value_bytes(ret, types) is not None:
             return
         raise TypeCheckError(
-            f"`__attribute__((return_bool_in_carry))` on {name!r} "
+            f"`[[c6502::return_bool_in_carry]]` on {name!r} "
             f"returns `{_c_type(ret)}`, but a struct it returns has to "
             f"have exactly two members: first an integer value of 1 or "
             f"2 bytes (`char`, `unsigned char`, `_Bool`, `int`, or "
@@ -1083,7 +1083,7 @@ def _check_carry_return_type(name: str, ret: Type, types=None) -> None:
             f"carry flag"
         )
     raise TypeCheckError(
-        f"`__attribute__((return_bool_in_carry))` on {name!r} "
+        f"`[[c6502::return_bool_in_carry]]` on {name!r} "
         f"needs a `bool` (`_Bool`) return type, or a struct of a value "
         f"and a `bool`, not `{_c_type(ret)}`"
     )
@@ -2676,7 +2676,7 @@ class TypeChecker:
         if existing.attrs.carry_return != carry_return:
             raise TypeCheckError(
                 f"every declaration of {name!r} must agree on "
-                f"`__attribute__((return_bool_in_carry))`"
+                f"`[[c6502::return_bool_in_carry]]`"
             )
         # `address` accumulates across declarations, like `zeropage`.
         prior_addr = existing.attrs.address
@@ -2692,7 +2692,7 @@ class TypeChecker:
         new_defined = existing.attrs.defined or defined
         if address is not None and new_defined:
             raise TypeCheckError(
-                f"function {name!r} has `__attribute__((address(...)))`, "
+                f"function {name!r} has `[[c6502::address(...)]]`, "
                 f"which names code that's already at ${address:04X}, so "
                 f"it can't also be defined"
             )
@@ -2805,7 +2805,7 @@ class TypeChecker:
             return
         if isinstance(vd.placement, c99_ast.Absolute):
             raise TypeCheckError(
-                f"`__attribute__((address(...)))` needs an `extern` "
+                f"`[[c6502::address(...)]]` needs an `extern` "
                 f"declaration, since {_display_name(vd.name)!r} names "
                 f"memory the program doesn't own"
             )
@@ -2813,7 +2813,7 @@ class TypeChecker:
             vd.storage_class, c99_ast.Static,
         ):
             raise TypeCheckError(
-                f"`__attribute__((zeropage))` needs an object with "
+                f"`[[c6502::zeropage]]` needs an object with "
                 f"static storage; {_display_name(vd.name)!r} is "
                 f"automatic (declare it `static` or at file scope)"
             )
@@ -2821,7 +2821,7 @@ class TypeChecker:
             vd.storage_class, c99_ast.Static,
         ):
             raise TypeCheckError(
-                f"`__attribute__((section(...)))` needs an object with "
+                f"`[[c6502::section(...)]]` needs an object with "
                 f"static storage; {_display_name(vd.name)!r} is "
                 f"automatic (declare it `static` or at file scope)"
             )
@@ -3453,7 +3453,7 @@ class TypeChecker:
                 for vd in vds:
                     if vd.placement is not None or vd.section is not None:
                         raise TypeCheckError(
-                            f"`__attribute__((zeropage))` and "
+                            f"`[[c6502::zeropage]]` and "
                             f"`section` need an object with static "
                             f"storage; for-init {vd.name!r} is automatic"
                         )

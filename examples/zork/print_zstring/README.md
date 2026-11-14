@@ -70,7 +70,7 @@ keeps these routines, running to the start of the next: `$17DD` for
 for `disk.c`, its IOB and DCT first. Input descriptions name the
 file, `zstring.asm(.text .text.* .rodata .rodata.*)`, so each unit's
 code goes in its region. `print_string_literal` has
-`__attribute__((section(".text.literal")))`, which the script puts at
+`[[c6502::section(".text.literal")]]`, which the script puts at
 `$0C5B`. The C version of a region is larger than Zork's, so it runs
 over Zork's routines that this example leaves out, which don't exist
 here.
@@ -83,7 +83,7 @@ cycle the way the compile did.
 
 **Arguments in registers and in zero page.** `RWTS` takes its
 parameter block in Y and A, declared `struct iob *iob
-__attribute__((in_ya))`. `cout_string` takes its string at `SCRATCH2`,
+[[c6502::in_ya]]`. `cout_string` takes its string at `SCRATCH2`,
 `$E6`, as a `zeropage(0xE6)` parameter, so Zork's other routines can
 still call it.
 

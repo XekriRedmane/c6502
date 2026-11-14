@@ -1,4 +1,4 @@
-"""Tests for `__attribute__((return_bool_in_carry))`.
+"""Tests for `[[c6502::return_bool_in_carry]]`.
 
 A function with the attribute returns `e != 0` in the carry flag.
 The callee ends in `CMP #1` (or `SEC` / `CLC` once the value is
@@ -24,7 +24,7 @@ from passes.volatile_void_read_cmp import apply_volatile_void_read_cmp
 from sim.harness import build_sim
 
 _A = asm_ast.Reg(reg=asm_ast.A())
-_CARRY = "__attribute__((return_bool_in_carry)) "
+_CARRY = "[[c6502::return_bool_in_carry]] "
 _BOOL = "#include <stdbool.h>\n"
 
 
@@ -73,7 +73,7 @@ class TestFrontEnd(unittest.TestCase):
 
     def test_rejects_argument(self):
         with self.assertRaises(ParserError):
-            parse("__attribute__((return_bool_in_carry(1))) "
+            parse("[[c6502::return_bool_in_carry(1)]] "
                   "_Bool f(void) { return 1; }")
 
     def test_rejects_object(self):
@@ -554,8 +554,8 @@ class TestStructSim(unittest.TestCase):
     def test_fixed_address_routine(self):
         # A routine at $D000 that returns 42 in A with C set.
         src = _ZC + (
-            "__attribute__((zp_abi, return_bool_in_carry, "
-            "address(0xD000)))\n"
+            "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::"
+            "address(0xD000)]]\n"
             "struct zc rom(void);\n"
             "int main(void) { struct zc c = rom(); "
             "return c.v * 2 + c.end; }\n"

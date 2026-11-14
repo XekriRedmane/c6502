@@ -352,7 +352,7 @@ def build_sim(
     """Compile, assemble, install runtime, set up MPU. Doesn't run.
     `optimize=True` runs the optimizer pipeline (TAC fixed-point
     opts, asm-SSA round-trip, byte-granular regalloc, late prologue
-    synthesis, plus `__attribute__((zp_abi))` frame elimination)."""
+    synthesis, plus `[[c6502::zp_abi]]` frame elimination)."""
     asm_prog, _syms, _types, zp_slot_symbols = compile_to_asm(
         source, optimize=optimize,
     )

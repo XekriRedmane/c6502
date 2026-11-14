@@ -42,7 +42,7 @@ const uint8_t rescue_bobble[7] = {
     0x7F,  /* idx 6: ascend by 127 */
 };
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void apply_bobble(uint8_t slot, uint8_t bobble_idx)
 {
     uint8_t bobble    = rescue_bobble[bobble_idx];

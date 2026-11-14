@@ -54,7 +54,7 @@ mutually-exclusive flag:
 | `--optimize`     | modifier orthogonal to the stage flags. Runs the optimizer    |
 |                  | pipeline (TAC fixed-point opts → asm-level SSA round-trip with|
 |                  | byte-granular regalloc → late prologue synthesis) and enables |
-|                  | the `__attribute__((zp_abi))` + call-graph-disjoint local-pool|
+|                  | the `[[c6502::zp_abi]]` + call-graph-disjoint local-pool|
 |                  | allocator. See `docs/optimization.md` for the walk-through.   |
 
 ```sh
@@ -640,8 +640,7 @@ Distinguishing features:
   ZeroExtend defs.
 - **Call-graph-disjoint ZP allocation.** See dedicated section
   above. Under `--optimize`, every eligible function gets a
-  private range of ZP bytes for its params (`__attribute__
-  ((zp_abi))` only) and body locals, disjoint from every
+  private range of ZP bytes for its params (`[[c6502::zp_abi]]` only) and body locals, disjoint from every
   coexisting function. Eligible functions emit as bare body +
   RTS. Phase 2 will move the EQU emission into a separate
   `slots.inc` for cross-TU allocation.
@@ -1075,7 +1074,7 @@ reserves some of those bytes. The output binds the four names with
 same values.
 
 A program reserves zero-page bytes by declaring objects there with
-`__attribute__((address(addr)))` or `zeropage(addr)`, typically for
+`[[c6502::address(addr)]]` or `zeropage(addr)`, typically for
 system software it runs alongside. `#include <apple2/monitor_io.h>`
 declares every byte the Apple II Monitor's text, keyboard, graphics,
 and delay routines use, and `<apple2/interactive_monitor.h>` adds
@@ -1329,15 +1328,15 @@ the function runs.
 
 ### Zero-page globals
 
-`__attribute__((zeropage))` puts an object with static storage (a
+`[[c6502::zeropage]]` puts an object with static storage (a
 file-scope object, or a block-scope `static`) in zero page, where every
 access is a 2-byte zero-page instruction instead of a 3-byte absolute
 one, and a pointer can be the base of `(zp),Y` directly instead of
 being copied to `DPTR` first.
 
 ```c
-uint8_t num_entries __attribute__((zeropage));        /* $26-$7F */
-__attribute__((zeropage(0xBA))) uint8_t *z_header_addr;  /* $BA-$BB */
+uint8_t num_entries [[c6502::zeropage]];        /* $26-$7F */
+[[c6502::zeropage(0xBA)]] uint8_t *z_header_addr;  /* $BA-$BB */
 ```
 
 The bare form takes the lowest free bytes below `$80` that neither
@@ -1367,16 +1366,16 @@ attribute (docs/optimizations/zp_promotion.md).
 
 ### Fixed addresses
 
-`__attribute__((address(addr)))` binds a function or an `extern`
+`[[c6502::address(addr)]]` binds a function or an `extern`
 object to a fixed address that something outside the program owns,
 such as a ROM routine, an I/O register, or a Monitor variable. The
 name becomes an `EQU` in the output, and nothing is defined for it.
 
 ```c
-__attribute__((zp_abi, address(0xFDED)))
+[[c6502::zp_abi, c6502::address(0xFDED)]]
 extern void COUT(register uint8_t c);                  /* JSR COUT */
-extern volatile uint8_t KBD __attribute__((address(0xC000)));
-extern uint16_t CSW __attribute__((address(0x36)));    /* zero page */
+extern volatile uint8_t KBD [[c6502::address(0xC000)]];
+extern uint16_t CSW [[c6502::address(0x36)]];    /* zero page */
 ```
 
 A function with an address can't have a body anywhere in the
@@ -1412,11 +1411,11 @@ hardware stack.
 
 Hand-written 6502 code often returns a yes/no answer in the carry
 flag, and the caller branches on it right after the `JSR`.
-`__attribute__((return_bool_in_carry))` gives a C function that
+`[[c6502::return_bool_in_carry]]` gives a C function that
 convention.
 
 ```c
-__attribute__((return_bool_in_carry)) bool contains(uint8_t k) {
+[[c6502::return_bool_in_carry]] bool contains(uint8_t k) {
     for (uint8_t i = 0; i < 5; i++)
         if (tab[i] == k) return true;    /* SEC; RTS */
     return false;                        /* CLC; RTS */
@@ -1478,13 +1477,13 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   File-scope objects (incl. block-scope `static`) emit as
   `StaticVariable` top-levels; `extern` references use absolute
   addressing without a definition. See "Storage classes and
-  linkage". `__attribute__((zeropage))` / `zeropage(addr)` puts one
+  linkage". `[[c6502::zeropage]]` / `zeropage(addr)` puts one
   in zero page (see "Zero-page globals").
 - Multi-file programs: `compile.py --link` joins `--optimize`
   outputs, and `-T script.ld` lays the program out in memory with a
   GNU ld-style linker script (`MEMORY`, `SECTIONS`, `AT>`, `NOLOAD`,
   `ALIGN`), placing each section, including ones named with
-  `__attribute__((section("name")))`. See docs/linker_scripts.md.
+  `[[c6502::section("name")]]`. See docs/linker_scripts.md.
 - Integer / character / string / floating constants per their
   C99 §6.4.4 / §6.4.5 rules (string-literal concatenation,
   string lifting to file-scope `static char[N+1]`).
@@ -1544,7 +1543,7 @@ End-to-end through `compile.py --codegen` to runnable 6502 asm:
   struct members and typedefs. An enumerated type is `int`, and each
   enumeration constant is an `int` constant usable anywhere one is,
   including array sizes and `case` labels. An inner declaration of
-  the same name hides one. `__attribute__((packed))` on an enum's
+  the same name hides one. `[[c6502::packed]]` on an enum's
   definition makes its type the smallest that holds its values:
   `unsigned char` for 0..255, `signed char` for -128..127, else `int`.
 
@@ -1562,7 +1561,7 @@ End-to-end with `--optimize`:
   round-trip with byte-granular regalloc → late prologue
   synthesis. See `docs/optimization.md`.
 - Call-graph-disjoint ZP allocation for params (when
-  `__attribute__((zp_abi))`-annotated) AND body locals.
+  `[[c6502::zp_abi]]`-annotated) AND body locals.
   Eligible functions emit as bare body + RTS. See
   `docs/leaf_zp_abi.md`.
 

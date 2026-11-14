@@ -69,7 +69,7 @@ from passes.optimization_asm.liveness import Liveness, _defs_in
 
 class RegallocError(Exception):
     """Raised when the byte-granular allocator can't honor a hard
-    constraint — currently only `__attribute__((reg("X"|"Y")))` on
+    constraint — currently only `[[c6502::reg("X"|"Y")]]` on
     a c99 local, whose required-HwReg pinning fails (the IR's use
     of the value isn't compatible with the requested register, or
     two required pinnings conflict)."""
@@ -94,7 +94,7 @@ def color_graph(
     `blocked_addrs` is an optional set of ZP byte addresses that
     must NOT be assigned to any node. Used by the ZP-ABI path to
     reserve incoming-param slots: a function declared
-    `__attribute__((zp_abi))` has its parameters at fixed ZP
+    `[[c6502::zp_abi]]` has its parameters at fixed ZP
     addresses on entry, and body locals must avoid those colors
     so they don't clobber params mid-computation. Conservative —
     blocks the addresses for the entire function rather than only

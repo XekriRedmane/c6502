@@ -1955,7 +1955,7 @@ expose another). It catches the canonical Long-return pattern: a
 2-byte temp gets ZP-colored, then immediately loaded back to A and
 deposited in HARGS. After the rewrite, the adds compute directly
 into HARGS and the ZP slots aren't allocated at all. Combined with
-`__attribute__((zp_abi))`, a leaf function like `int add(int a,
+`[[c6502::zp_abi]]`, a leaf function like `int add(int a,
 int b) { return a + b; }` collapses to:
 
 ```
@@ -2112,7 +2112,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | 6a. Forward copy propagation (SSA-aware, byte-granular) | Done |
 | 6b. Backward copy propagation (Pseudo → Reg(A) → memory round-trip elision) | Done |
 | 7. Asm-level byte-granular regalloc | Done |
-| F1a. Parser support for `__attribute__((zp_abi))` | Done |
+| F1a. Parser support for `[[c6502::zp_abi]]` | Done |
 | F1b. `passes/abi_selection.py` — `ParamLayout` + validation | Done |
 | F2. `tac_to_asm` ZP-ABI call-site lowering | Done |
 | F3. `replace_pseudoregisters_bare_exit` resolves ZP-ABI params to ZP | Done |
@@ -2125,7 +2125,7 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | File | What it does |
 |------|--------------|
 | `passes/prologue_synthesis.py` | Inserts `FunctionPrologue` and rewrites `Return` → `Ret` based on per-function `FrameDims`; collapses no-frame functions to bare RTS. |
-| `passes/abi_selection.py` | Picks per-function `ParamLayout` from the `__attribute__((zp_abi))` annotation; validates leaf + not-address-taken + fits-in-window. |
+| `passes/abi_selection.py` | Picks per-function `ParamLayout` from the `[[c6502::zp_abi]]` annotation; validates leaf + not-address-taken + fits-in-window. |
 | `passes/optimization_asm/cfg.py` | Asm-level basic-block CFG, idom, dominance frontiers — same shape as the TAC version. |
 | `passes/optimization_asm/ssa_construction.py` | `to_ssa(fn, statics=...)` — byte-granular Phi placement + name versioning. |
 | `passes/optimization_asm/byte_dce.py` | Drops Movs / Phis whose Pseudo dst is unused. |
@@ -2138,10 +2138,10 @@ Pseudos, `ZP` address for renamed ones, `Reg` kind, etc.). A
 | `passes/optimization_asm/ssa_destruction.py` | `from_ssa(fn)` — critical-edge splitting + Phi → Mov + parallel-copy ordering by storage key. |
 | `passes/optimization_asm/optimizer.py` | Per-function driver; threads `to_ssa` → fixed-point of (`copy_propagate` → `backward_copy_propagate` → `byte_dce`) → regalloc → `apply_coloring` → `from_ssa`. Computes `blocked_addrs` from each function's own ParamLayout + every ZP-ABI callee's. |
 
-### Frame elimination via `__attribute__((zp_abi))`
+### Frame elimination via `[[c6502::zp_abi]]`
 
 A separate optimization layered on top of `--optimize`: any
-function declared with `__attribute__((zp_abi))` participates in
+function declared with `[[c6502::zp_abi]]` participates in
 the **per-function ZP-passing calling convention**. The function's
 parameters live at fixed zero-page addresses chosen by
 `passes/abi_selection.py`; the caller writes argument bytes
@@ -2167,11 +2167,11 @@ When validation fails, the compiler reports the specific check
 that failed with a clear error — the annotation has to be
 correct, no silent fallback.
 
-The annotation syntax is `__attribute__((zp_abi))` placed before
+The annotation syntax is `[[c6502::zp_abi]]` placed before
 the declaration specifiers:
 
 ```c
-__attribute__((zp_abi)) int add(int a, int b) {
+[[c6502::zp_abi]] int add(int a, int b) {
     return a + b;
 }
 ```

@@ -296,7 +296,7 @@ def render(p: Prog, expected: int) -> str:
             case "global":
                 lines.append(f"{c} {g.name} = {lit(g.init, g.t)};")
             case "zp":
-                lines.append(f"{c} {g.name} __attribute__((zeropage)) = "
+                lines.append(f"{c} {g.name} [[c6502::zeropage]] = "
                              f"{lit(g.init, g.t)};")
             case "array":
                 vals = ", ".join(lit(v, g.t) for v in g.init)

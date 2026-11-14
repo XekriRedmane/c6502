@@ -19,9 +19,9 @@ keeps its locals, and where the result comes back. c6502 has two.
 | without `--optimize` | any | soft stack |
 | with `--optimize` | qualifies for zp_abi (see "Which functions qualify") | zp_abi |
 | with `--optimize` | doesn't qualify | soft stack |
-| either way | declared with `__attribute__((address(...)))` | what its declaration says |
+| either way | declared with `[[c6502::address(...)]]` | what its declaration says |
 
-With `__attribute__((zp_abi))` on a function, the compiler reports an
+With `[[c6502::zp_abi]]` on a function, the compiler reports an
 error when the function doesn't qualify, instead of giving it the
 soft stack. A routine at a fixed address, such as a ROM routine,
 takes its convention from its declaration alone (see
@@ -446,7 +446,7 @@ loads both arguments and jumps to `add`, since nothing is left to do
 after the call.
 
 A parameter can also name the register it arrives in, with
-`__attribute__((in_a))`, `in_x`, or `in_y` after its name, or for a
+`[[c6502::in_a]]`, `in_x`, or `in_y` after its name, or for a
 2-byte parameter a pair such as `in_xy`, low byte first. That makes it
 a register parameter, with or without `register`, and it may be any
 integer or pointer with a byte for each register. That's the only way
@@ -464,8 +464,8 @@ lists the mistakes it reports.
 unsigned char out[2];
 unsigned char g;
 
-void put(unsigned char hi __attribute__((in_a)),
-         unsigned char lo __attribute__((in_y))) {
+void put(unsigned char hi [[c6502::in_a]],
+         unsigned char lo [[c6502::in_y]]) {
     out[0] = hi;
     out[1] = lo;
 }
@@ -520,13 +520,13 @@ The caller stores the pointer's two bytes in `__zpabi_first__p_0` and
 
 A pointer can still name its registers, which is how a routine that
 takes one in registers is declared: DOS's RWTS takes its parameter
-block's address in Y and A, as `struct iob *iob __attribute__((in_ya))`.
+block's address in Y and A, as `struct iob *iob [[c6502::in_ya]]`.
 A function the compiler compiles that takes a pointer this way stores
 the two registers into adjacent bytes of its pool as it starts, and
 reads through those.
 
 A parameter can also name its zero-page address, with
-`__attribute__((zeropage(addr)))` after its name, so that assembly code
+`[[c6502::zeropage(addr)]]` after its name, so that assembly code
 calling the function knows where to put the argument. The parameter's
 slot is then at that address. When something the function calls might
 store its own argument there, the function copies the parameter into a

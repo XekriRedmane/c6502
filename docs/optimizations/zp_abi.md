@@ -48,7 +48,7 @@ Not every parameter gets a slot:
   otherwise. The copies from A come first, and the local is never put
   in a register another parameter arrives in, so no copy overwrites a
   register another copy still reads (`optimizer._entry_register_limits`).
-- A parameter declared `__attribute__((zeropage(addr)))` is at that
+- A parameter declared `[[c6502::zeropage(addr)]]` is at that
   address. Its bytes are kept off everything else of the compiler's.
   A function defined here copies such a parameter into a local as it
   starts when something it calls might store an argument there: a
@@ -216,10 +216,10 @@ A function declared but not defined in the translation unit gets
 zp_abi under the parameter-size and return-type rules, since there's
 no body to check, unless its address is taken, which the same scan
 finds for declared functions too. A routine with
-`__attribute__((address(addr)))` takes its convention from its
+`[[c6502::address(addr)]]` takes its convention from its
 declaration alone.
 
-A function marked `__attribute__((zp_abi))`, or one with a `register`
+A function marked `[[c6502::zp_abi]]`, or one with a `register`
 parameter or local, gets a compile error in place of the fallback
 when it doesn't qualify.
 
@@ -246,7 +246,7 @@ still live.
   a recursive function without the pragma, a function that calls
   through a pointer, or a routine with a fixed address that's
   declared without `zp_abi`. With
-  `__attribute__((address(0xFDED))) void cout(unsigned char c);`, a
+  `[[c6502::address(0xFDED)]] void cout(unsigned char c);`, a
   function that calls `cout` gets a soft-stack prologue.
 
 ## Related

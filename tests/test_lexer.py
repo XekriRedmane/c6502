@@ -18,9 +18,21 @@ class TestKeywords(unittest.TestCase):
                 self.assertEqual(kinds_vals(kw), [(TokenKind.KEYWORD, kw)])
 
     def test_keyword_count(self):
-        # 37 standard C99 keywords + `__attribute__` (GCC-style
-        # extension used to attach ABI annotations).
-        self.assertEqual(len(KEYWORDS), 38)
+        # The 37 standard C99 keywords. Attributes are C23's `[[...]]`,
+        # which needs no keyword.
+        self.assertEqual(len(KEYWORDS), 37)
+
+    def test_attribute_tokens(self):
+        # `[[` is one token, with or without space between the
+        # brackets; `]]` stays two, since `a[b[i]]` needs them apart.
+        self.assertEqual(
+            kinds_vals("[[c6502::zp_abi]] [ [x]]"),
+            [(TokenKind.SYMBOL, "[["), (TokenKind.IDENTIFIER, "c6502"),
+             (TokenKind.SYMBOL, "::"), (TokenKind.IDENTIFIER, "zp_abi"),
+             (TokenKind.SYMBOL, "]"), (TokenKind.SYMBOL, "]"),
+             (TokenKind.SYMBOL, "[ ["), (TokenKind.IDENTIFIER, "x"),
+             (TokenKind.SYMBOL, "]"), (TokenKind.SYMBOL, "]")],
+        )
 
 
 class TestIdentifiers(unittest.TestCase):

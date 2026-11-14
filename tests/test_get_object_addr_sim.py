@@ -12,7 +12,7 @@ calls, against the original's 30 and 580, so the 5% comparisons are
 expected failures. The multiply is now `(x << 3) + x` inline, as in
 the original, and its high byte takes the carry with `BCC` / `INC`
 (`passes/carry_inc.py`). `z_header_addr` is placed in zero page at the
-original's $BA (`__attribute__((zeropage(0xBA)))`), so it's read as the
+original's $BA (`[[c6502::zeropage(0xBA)]]`), so it's read as the
 `(zp),Y` base directly. Most of what remains comes from two things.
 
 - The original relies on the header being page-aligned and adds only

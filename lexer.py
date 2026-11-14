@@ -18,13 +18,13 @@ KEYWORDS = frozenset({
     "signed", "sizeof", "static", "struct", "switch", "typedef", "union",
     "unsigned", "void", "volatile", "while",
     "_Bool", "_Complex", "_Imaginary",
-    "__attribute__",
 })
 
 # Punctuator string → Lark terminal name in c99.lark. Keep in sync with
 # the per-symbol terminal definitions in the grammar.
 _SYMBOL_TERMINAL = {
     "...": "ELLIPSIS",
+    "::": "COLONCOLON",
     "<<=": "LSHIFT_ASSIGN",
     ">>=": "RSHIFT_ASSIGN",
     "->": "ARROW",
@@ -115,7 +115,7 @@ _LARK = Lark.open(
 
 # Each keyword has its own terminal in c99.lark. Terminal names are the
 # keyword uppercased with leading AND trailing underscores stripped
-# (e.g. `_Bool` → `BOOL`, `__attribute__` → `ATTRIBUTE`). Derived here
+# (e.g. `_Bool` → `BOOL`). Derived here
 # so changes to KEYWORDS flow through automatically; c99.lark still
 # has to be edited by hand to match.
 def _keyword_terminal(kw: str) -> str:
@@ -125,6 +125,9 @@ def _keyword_terminal(kw: str) -> str:
 _TERMINAL_TO_KIND = {_keyword_terminal(kw): TokenKind.KEYWORD for kw in KEYWORDS}
 _TERMINAL_TO_KIND.update({name: TokenKind.SYMBOL for name in _SYMBOL_TERMINAL.values()})
 _TERMINAL_TO_KIND.update({
+    # C23's `[[`, which opens an attribute (a regex, since whitespace may
+    # separate the two brackets).
+    "ATTR_OPEN": TokenKind.SYMBOL,
     "IDENTIFIER": TokenKind.IDENTIFIER,
     "INTEGER_CONSTANT": TokenKind.CONSTANT,
     "LONG_INTEGER": TokenKind.CONSTANT,

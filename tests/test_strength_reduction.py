@@ -314,7 +314,7 @@ class TestEndToEndShifts(unittest.TestCase):
         # A global keeps its name in SSA form, so each multiply's
         # temporaries need names of their own (fuzzer stmts22250).
         src = """
-        unsigned long z __attribute__((zeropage)) = 128;
+        unsigned long z [[c6502::zeropage]] = 128;
         int main(void) {
             unsigned char w;
             z *= 3;

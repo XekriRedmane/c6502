@@ -1,7 +1,7 @@
 """End-to-end tests for the leaf ZP-passing ABI.
 
 Coverage:
-  - A `__attribute__((zp_abi))` leaf function called from a
+  - A `[[c6502::zp_abi]]` leaf function called from a
     `main` that uses the soft-stack convention. The leaf has no
     soft-stack frame (no FunctionPrologue, no Ret with non-zero
     arg_bytes / local_bytes).
@@ -53,7 +53,7 @@ class TestLeafZpAbi(unittest.TestCase):
         # FunctionPrologue / Ret in its asm; only a bare RTS at
         # exit (plus the arithmetic).
         src = (
-            "__attribute__((zp_abi)) int add(int a, int b) { "
+            "[[c6502::zp_abi]] int add(int a, int b) { "
             "    return a + b; "
             "} "
             "int main(void) { return add(3, 4); }"
@@ -76,7 +76,7 @@ class TestLeafZpAbi(unittest.TestCase):
     def test_zp_abi_leaf_correct_return_value(self) -> None:
         # Run the same program in the sim. Expect 3 + 4 = 7.
         src = (
-            "__attribute__((zp_abi)) int add(int a, int b) { "
+            "[[c6502::zp_abi]] int add(int a, int b) { "
             "    return a + b; "
             "} "
             "int main(void) { return add(3, 4); }"
@@ -87,7 +87,7 @@ class TestLeafZpAbi(unittest.TestCase):
         # Caller (main) emits Movs to ZP $80/$81 and ZP $82/$83
         # rather than AllocateStack(4) + Stack writes.
         src = (
-            "__attribute__((zp_abi)) int add(int a, int b) { "
+            "[[c6502::zp_abi]] int add(int a, int b) { "
             "    return a + b; "
             "} "
             "int main(void) { return add(3, 4); }"
@@ -112,7 +112,7 @@ class TestLeafZpAbi(unittest.TestCase):
         # exercises the "block outgoing-arg destinations" rule in
         # `_blocked_addrs_for`.
         src = (
-            "__attribute__((zp_abi)) int add(int a, int b) { "
+            "[[c6502::zp_abi]] int add(int a, int b) { "
             "    return a + b; "
             "} "
             "int main(int n) { "
@@ -131,7 +131,7 @@ class TestLeafZpAbi(unittest.TestCase):
         # param ZP slots disjoint from the caller's locals).
         src = (
             "int helper(int x) { return x + 1; } "
-            "__attribute__((zp_abi)) int wrap(int x) { return helper(x); } "
+            "[[c6502::zp_abi]] int wrap(int x) { return helper(x); } "
             "int main(void) { return wrap(3); }"
         )
         self.assertEqual(self._sim_return_int(src), 4)
@@ -140,7 +140,7 @@ class TestLeafZpAbi(unittest.TestCase):
         # End-to-end via compile_main: a zp_abi function on a call-
         # graph cycle is rejected.
         src = (
-            "__attribute__((zp_abi)) int rec(int x) { "
+            "[[c6502::zp_abi]] int rec(int x) { "
             "  return x ? rec(x - 1) : 0; "
             "} "
             "int main(void) { return rec(3); }"
@@ -155,12 +155,12 @@ class TestLeafZpAbi(unittest.TestCase):
         self.assertIn("rec", err.getvalue())
 
     def test_extern_zp_abi_call_site_uses_zp(self) -> None:
-        # Extern declaration with `__attribute__((zp_abi))`: call
+        # Extern declaration with `[[c6502::zp_abi]]`: call
         # sites should emit direct ZP writes (no AllocateStack / no
         # `(SSP),Y` arg writes) — the annotation propagates from
         # the declaration to the call site.
         src = (
-            "__attribute__((zp_abi)) extern int helper(int x); "
+            "[[c6502::zp_abi]] extern int helper(int x); "
             "int main(void) { return helper(7); }"
         )
         asm = self._codegen(src)
@@ -181,9 +181,9 @@ class TestLeafZpAbi(unittest.TestCase):
         # function's footprint, so no callee-save prologue is
         # needed. Headline win of the zp_local_allocation pass.
         src = (
-            "__attribute__((zp_abi)) "
+            "[[c6502::zp_abi]] "
             "void touch(unsigned char x) { (void)x; } "
-            "__attribute__((zp_abi)) "
+            "[[c6502::zp_abi]] "
             "unsigned char wrap(unsigned char a, unsigned char b) { "
             "  unsigned char x = a; "
             "  touch(b); "
@@ -213,9 +213,9 @@ class TestLeafZpAbi(unittest.TestCase):
         # by inspecting the EQU directives in the emitted asm
         # (allocation shape).
         src = (
-            "__attribute__((zp_abi)) "
+            "[[c6502::zp_abi]] "
             "void noop(int x, int y) { (void)x; (void)y; } "
-            "__attribute__((zp_abi)) "
+            "[[c6502::zp_abi]] "
             "int caller(int a, int b) { "
             "  noop(a + 100, 0); "
             "  return b; "

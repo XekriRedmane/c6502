@@ -48,7 +48,7 @@ there, M=0 and the function has no frame at all.
 
 **In:**
 - ABI is **chosen by the programmer** via
-  `__attribute__((zp_abi))` on the function declaration and/or
+  `[[c6502::zp_abi]]` on the function declaration and/or
   definition. Without the annotation, the function uses the
   soft-stack ABI (the existing convention). This makes the
   decision explicit, lets headers propagate the contract across
@@ -162,7 +162,7 @@ becomes ZP-ABI only when explicitly marked.
 | Function annotation | ParamLayout |
 |---|---|
 | (none) | `SoftStackLayout` |
-| `__attribute__((zp_abi))` | `ZpLayout` *(after validation)* |
+| `[[c6502::zp_abi]]` | `ZpLayout` *(after validation)* |
 
 When a function carries the `zp_abi` annotation, the compiler
 validates that:
@@ -176,7 +176,7 @@ validates that:
 
 Any violation is a compile-time error with a clear message
 naming the specific check that failed (e.g. *"function `foo`
-declared `__attribute__((zp_abi))` but its body contains a
+declared `[[c6502::zp_abi]]` but its body contains a
 call to `bar`"*).
 
 The "available ZP window" is configurable but defaults to the
@@ -454,8 +454,8 @@ c6502 currently compiles a single TU (the program is one
   as non-leaf (conservative): the abi dict gets
   `f → SoftStackLayout`.
 - A future c6502 with separate compilation will need an
-  attribute syntax. The reserved spelling is `__attribute__((softstack))`
-  / `__attribute__((zp_abi))`. The grammar / parser changes
+  attribute syntax. The reserved spelling is `[[c6502::softstack]]`
+  / `[[c6502::zp_abi]]`. The grammar / parser changes
   are not part of this design — the dict can carry forced
   layouts for any function whose layout was specified by
   annotation, with the auto-pick rule applying only to
@@ -468,26 +468,26 @@ c6502 currently compiles a single TU (the program is one
 Function declarations and definitions can carry the annotation:
 
 ```c
-__attribute__((zp_abi)) int g(int x);
+[[c6502::zp_abi]] int g(int x);
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 int g(int x) {
     return x + 1;
 }
 ```
 
-The annotation slot accepts the GCC syntax `__attribute__((<name>))`
-with `zp_abi` as the only currently-recognized name. Unknown
-attribute names are rejected at parse time (a stricter posture
-than GCC's "warn and ignore" — we'd rather catch typos than
-miscompile).
+The annotation is a C23 attribute with c6502's prefix,
+`[[c6502::zp_abi]]`. An unknown name with that prefix is rejected
+at parse time (stricter than C23's "ignore what you don't know" —
+we'd rather catch typos than miscompile); other prefixes' attributes
+are ignored.
 
 Position: the annotation may appear before the declaration
-specifiers (as shown above). Other GCC-supported positions
-(after the declarator, after the parameter list) are not
-parsed today; we can add them as needed.
+specifiers (as shown above) or right after the function's name
+(`int g [[c6502::zp_abi]] (int x);`). After the parameter list it
+would apply to the function's type, which c6502 doesn't parse.
 
-The declaration form (`__attribute__((zp_abi)) int g(int x);`)
+The declaration form (`[[c6502::zp_abi]] int g(int x);`)
 goes in headers shared between TUs. Including the header makes
 every TU's view of `g` a ZP-ABI function. The definition
 either repeats the annotation (recommended for clarity) or
@@ -503,16 +503,17 @@ step ends with a verification gate (chapter sim corpus + new
 focused tests). The chapter sim corpus is the primary backstop;
 each step must leave it green.
 
-### Step F1a: parser support for `__attribute__((zp_abi))`
+### Step F1a: parser support for `[[c6502::zp_abi]]`
 
 Extend the C99 grammar (`c99.lark`) to recognize the
-`__attribute__((<name>))` prefix on declarations. Add an
+attribute prefix on declarations (then GCC's `__attribute__((...))`,
+since replaced by C23's `[[c6502::<name>]]`). Add an
 `abi_annotation` field to `Type_function_decl` and
 `Type_var_decl` in `c99.asdl`. Regenerate `c99_ast.py`. Update
 the parser transformer to populate the field.
 
 Reject unknown attribute names at parse time (stricter than
-GCC's warn-and-ignore — typos shouldn't silently miscompile).
+warn-and-ignore — typos shouldn't silently miscompile).
 
 Verifiable: unit tests on synthetic C source with and without
 the annotation, asserting the parsed AST carries the field

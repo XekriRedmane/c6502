@@ -25,7 +25,7 @@ reduction, comparison-against-zero / jump fold, UCE, copy prop,
 DSE) followed by the asm-level SSA round-trip with byte-granular
 copy-prop / backward copy-prop / DCE, byte-granular regalloc, and
 late prologue / epilogue synthesis. Effective for `--tac` and
-`--codegen`. Also enables the `__attribute__((zp_abi))` calling-
+`--codegen`. Also enables the `[[c6502::zp_abi]]` calling-
 convention optimization (frame elimination on annotated leaves).
 
 Output goes to stdout by default, or to the file named by `-o`. With
@@ -722,7 +722,7 @@ def main(argv: list[str]) -> int:
              "byte-granular regalloc), then late prologue / epilogue "
              "synthesis. Also enables AST-level loop unrolling for "
              "`#pragma c6502 loop unroll(enable)` loops and the "
-             "`__attribute__((zp_abi))` calling-convention "
+             "`[[c6502::zp_abi]]` calling-convention "
              "optimization. Applies to --resolve, --tac, and "
              "--codegen.",
     )

@@ -98,7 +98,7 @@ static const uint8_t screen_row_addr_hi2[192] = {
  * tile_src - the data for the sprite.
  * page_flag - bit 7 indicates which page to draw on: 0 = page 1, 1 = page 2.
  */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void draw_sprite_opaque(uint8_t width,
                         uint8_t height,
                         uint8_t sprite_x,

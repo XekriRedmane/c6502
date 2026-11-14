@@ -4,7 +4,7 @@ extern uint8_t enemy_flag[4];
 extern uint8_t enemy_col[4];
 extern uint8_t enemy_y[4];
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern void draw_sprite(uint8_t width,
                         uint8_t height,
                         uint8_t sprite_x,
@@ -107,7 +107,7 @@ static const uint8_t *const floor_enemy_spr_hi[4] = {
 * @param page_flag  Bit 7 selects the draw target (0 = page 1 at $2000,
 *                   1 = page 2 at $4000); forwarded unchanged to draw_sprite.
 */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void floor_enemy_draw(uint8_t page_flag)
 {
     for (int8_t slot = 3; slot >= 0; slot--) {

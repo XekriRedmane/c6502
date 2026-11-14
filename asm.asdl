@@ -130,7 +130,7 @@ module ASM {
         -- arg via the ZP-slot convention (or take no args), and
         -- for the indirect-call trampoline / runtime helpers.
         -- `preserves` lists the registers ("X" / "Y") the callee
-        -- leaves unchanged, from `__attribute__((preserves_x))` /
+        -- leaves unchanged, from `[[c6502::preserves_x]]` /
         -- `preserves_y` on a routine with a fixed address. Empty means
         -- the call clobbers X and Y; `asm_liveness.call_preserves`
         -- reads it.

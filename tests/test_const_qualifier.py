@@ -472,7 +472,7 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
         src = (
             "#include <stdint.h>\n"
             "extern const volatile uint8_t *p;\n"
-            "__attribute__((zp_abi))\n"
+            "[[c6502::zp_abi]]\n"
             "void poke(void) { (void)*p; }\n"
         )
         asm = self._compile_optimized(src)
@@ -490,7 +490,7 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
         src = (
             "#include <stdint.h>\n"
             "extern const uint8_t *p;\n"
-            "__attribute__((zp_abi))\n"
+            "[[c6502::zp_abi]]\n"
             "void poke(void) { (void)*p; }\n"
         )
         asm = self._compile_optimized(src)
@@ -502,7 +502,7 @@ class TestVolatilePointerDerefSurvives(unittest.TestCase):
         src = (
             "#include <stdint.h>\n"
             "extern volatile uint8_t *p;\n"
-            "__attribute__((zp_abi))\n"
+            "[[c6502::zp_abi]]\n"
             "void poke(uint8_t v) { *p = v; }\n"
         )
         asm = self._compile_optimized(src)
@@ -539,7 +539,7 @@ class TestVolatileLocalSurvives(unittest.TestCase):
         # iteration.
         src = (
             "#include <stdint.h>\n"
-            "__attribute__((zp_abi))\n"
+            "[[c6502::zp_abi]]\n"
             "void delay(uint8_t n) {\n"
             "    volatile uint8_t y = n;\n"
             "    while (--y != 0) { }\n"
@@ -558,7 +558,7 @@ class TestVolatileLocalSurvives(unittest.TestCase):
         # RTS (the dead-pure-loop pass + DSE eat the function).
         src = (
             "#include <stdint.h>\n"
-            "__attribute__((zp_abi))\n"
+            "[[c6502::zp_abi]]\n"
             "void delay(uint8_t n) {\n"
             "    uint8_t y = n;\n"
             "    while (--y != 0) { }\n"

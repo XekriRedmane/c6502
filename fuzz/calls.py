@@ -14,7 +14,7 @@ only calls fj with j > i), plus extras chosen per seed:
     local (Y), on functions that will get zp_abi,
   * pointer parameters that receive the address of a caller's local,
   * calls inside loops, and globals updated across calls,
-  * functions marked `__attribute__((return_bool_in_carry))`, which
+  * functions marked `[[c6502::return_bool_in_carry]]`, which
     return `e != 0` in the carry flag, called for their value or as
     an `if` condition.
 Function bodies compute random integer expressions over parameters,
@@ -200,7 +200,7 @@ def make_program(seed: int) -> tuple[str, None]:
             dst = rng.choice([v for v in vars_ if v.startswith("l")])
             body.append(f"    {dst} += rec(3, (int)({_expr(rng, vars_, 1)}));")
         body.append(f"    return {_expr(rng, vars_)};")
-        attr = ("__attribute__((return_bool_in_carry)) "
+        attr = ("[[c6502::return_bool_in_carry]] "
                 if i in carry else "")
         ret = sigs[i][0]
         lines.append(f"{attr}{ret} f{i}({', '.join(decl) or 'void'}) {{")

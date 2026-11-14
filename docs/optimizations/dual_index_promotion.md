@@ -29,7 +29,7 @@ This is `examples/apply_bobble.c` without its comments.
 extern uint8_t entity_floor_pos[20];
 extern const uint8_t rescue_bobble[];
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void apply_bobble(uint8_t slot, uint8_t bobble_idx)
 {
     uint8_t bobble    = rescue_bobble[bobble_idx];

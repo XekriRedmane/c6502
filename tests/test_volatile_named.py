@@ -20,9 +20,9 @@ import unittest
 from sim.harness import build_sim
 
 _KBD = (
-    "extern volatile unsigned char KBD __attribute__((address(0xC000)));\n"
+    "extern volatile unsigned char KBD [[c6502::address(0xC000)]];\n"
     "extern volatile unsigned char KBDSTRB "
-    "__attribute__((address(0xC010)));\n"
+    "[[c6502::address(0xC010)]];\n"
 )
 
 
@@ -123,7 +123,7 @@ class TestWrites(unittest.TestCase):
 
     def test_zero_page_object(self) -> None:
         self._both(
-            "volatile unsigned char z __attribute__((zeropage)) = 3;\n"
+            "volatile unsigned char z [[c6502::zeropage]] = 3;\n"
             "int main(void) { z++; z *= 2; return z; }\n",
             8,
         )

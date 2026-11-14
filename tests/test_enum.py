@@ -96,13 +96,13 @@ class TestParse(unittest.TestCase):
 
     def test_packed_type(self) -> None:
         for src, expected in [
-            ("enum __attribute__((packed)) E { A, B = 255 }; enum E x;",
+            ("enum [[c6502::packed]] E { A, B = 255 }; enum E x;",
              c99_ast.UChar()),
-            ("enum E { A = -128, B = 127 } __attribute__((packed));"
+            ("enum [[c6502::packed]] E { A = -128, B = 127 };"
              " enum E x;", c99_ast.SChar()),
-            ("enum __attribute__((packed)) { A = -1, B = 200 } x;",
+            ("enum [[c6502::packed]] { A = -1, B = 200 } x;",
              c99_ast.Int()),
-            ("typedef enum __attribute__((packed)) { A } T; T x;",
+            ("typedef enum [[c6502::packed]] { A } T; T x;",
              c99_ast.UChar()),
         ]:
             with self.subTest(src=src):
@@ -112,23 +112,31 @@ class TestParse(unittest.TestCase):
 
     def test_packed_constants_are_int(self) -> None:
         self.assertEqual(_return_exp(
-            "enum __attribute__((packed)) { A = 7 };"
+            "enum [[c6502::packed]] { A = 7 };"
             "int main(void) { return A; }"
         ), _int(7))
 
     def test_packed_errors(self) -> None:
         for src, message in [
-            ("enum E { A }; enum __attribute__((packed)) E x;",
+            ("enum E { A }; enum [[c6502::packed]] E x;",
              "enum's definition"),
-            ("enum __attribute__((zeropage)) { A };", "expected 'packed'"),
-            ("enum __attribute__((packed, packed)) { A };", "twice"),
-            ("enum { A } __attribute__((packed(1)));", "argument"),
-            ("int x __attribute__((packed));", "unknown attribute"),
+            ("enum [[c6502::zeropage]] { A };", "takes `c6502::packed`"),
+            ("enum [[c6502::packed, c6502::packed]] { A };", "twice"),
+            ("enum [[c6502::packed(1)]] { A };", "argument"),
+            ("int x [[c6502::packed]];", "doesn't apply"),
+            ("enum [[packed]] { A };", "c6502's prefix"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaises(ParserError) as ctx:
                     parse(src)
                 self.assertIn(message, str(ctx.exception))
+
+    def test_packed_after_list_is_a_syntax_error(self) -> None:
+        # C23 has no place for attributes after an enum's `}`, where GCC
+        # also took them.
+        from lark.exceptions import UnexpectedInput
+        with self.assertRaises(UnexpectedInput):
+            parse("enum { A } [[c6502::packed]];")
 
     def test_inner_tag_hides_outer(self) -> None:
         parse("enum S { A }; void f(void) { struct S { int x; } s; }")
@@ -174,8 +182,8 @@ _PROGRAMS: list[tuple[str, str, int]] = [
         int main(void) { return (lo == -32768L) + (hi == 32767) * 2; }
     """, 3),
     ("enum_packed", """
-        typedef enum __attribute__((packed)) { IDLE, RUN, STOP = 250 } state;
-        enum __attribute__((packed)) dir { LEFT = -1, NONE, RIGHT };
+        typedef enum [[c6502::packed]] { IDLE, RUN, STOP = 250 } state;
+        enum [[c6502::packed]] dir { LEFT = -1, NONE, RIGHT };
         struct actor { state s; enum dir d; unsigned char x; };
         struct actor actors[3] = {
             { RUN, RIGHT, 10 }, { STOP, LEFT, 20 }, { IDLE, NONE, 30 },

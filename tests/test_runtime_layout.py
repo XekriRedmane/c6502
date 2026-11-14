@@ -44,8 +44,8 @@ def _layout_of(asm: str) -> RuntimeLayout:
 # The Monitor's zero-page bytes in the unenhanced Apple IIe F8 ROM,
 # $1F through $49 (one array, so they're reserved as one object).
 _MONITOR = (
-    "extern volatile unsigned char monitor_zp[0x2B] "
-    "__attribute__((address(0x1F)));\n"
+    "extern volatile unsigned char monitor_zp "
+    "[[c6502::address(0x1F)]][0x2B];\n"
 )
 
 
@@ -149,9 +149,9 @@ class TestCodegen(unittest.TestCase):
         # Declaring the Monitor's cursor moves DPTR off $24-$25, and a
         # zero-page global goes in the bytes left over.
         asm = _codegen(
-            "extern unsigned char CH __attribute__((address(0x24)));\n"
-            "extern unsigned char CV __attribute__((address(0x25)));\n"
-            "unsigned char g __attribute__((zeropage));\n"
+            "extern unsigned char CH [[c6502::address(0x24)]];\n"
+            "extern unsigned char CV [[c6502::address(0x25)]];\n"
+            "unsigned char g [[c6502::zeropage]];\n"
             "unsigned char peek(unsigned char *p) { return *p + CH + g; }\n",
             optimize=False,
         )
@@ -274,15 +274,15 @@ class TestMonitorHeaders(unittest.TestCase):
         # the interactive Monitor uses, such as $00 or $2F.
         asm = _codegen(
             "#include <apple2/monitor_io.h>\n"
-            "unsigned char g __attribute__((zeropage(0x2F)));\n"
-            "unsigned char h __attribute__((zeropage(0x00)));\n"
+            "unsigned char g [[c6502::zeropage(0x2F)]];\n"
+            "unsigned char h [[c6502::zeropage(0x00)]];\n"
             "int main(void) { return g + h; }\n",
         )
         self.assertEqual((_equ(asm)["g"], _equ(asm)["h"]), (0x2F, 0x00))
         with self.assertRaises(TypeCheckError):
             _codegen(
                 "#include <apple2/interactive_monitor.h>\n"
-                "unsigned char g __attribute__((zeropage(0x2F)));\n"
+                "unsigned char g [[c6502::zeropage(0x2F)]];\n"
                 "int main(void) { return g; }\n",
             )
 

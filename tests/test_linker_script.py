@@ -1,5 +1,5 @@
 """Tests for linker scripts (`compile.py --link -T`) and
-`__attribute__((section("name")))`.
+`[[c6502::section("name")]]`.
 
 Covers the script parser (passes/link_script.py), the attribute in the
 parser and type checker, each item's default section
@@ -83,13 +83,13 @@ SECTIONS
 # and `buf` .bss (an array, which promotion leaves alone); `vectors`
 # is at $BFFA.
 _UNIT_A = """
-__attribute__((section(".text.boot"))) int main(void);
+[[c6502::section(".text.boot")]] int main(void);
 const unsigned char table[4] = {10, 20, 30, 40};
-unsigned char squares[4] __attribute__((section(".page"))) = {0, 1, 4, 9};
+unsigned char squares [[c6502::section(".page")]][4] = {0, 1, 4, 9};
 unsigned char seed = 7;
 unsigned char buf[3];
 unsigned char pick(unsigned char i);
-__attribute__((section(".vectors")))
+[[c6502::section(".vectors")]]
 int (*const vectors[3])(void) = {main, main, main};
 int main(void) {
     return pick(2) + seed + squares[3] + buf[0] + buf[1] + buf[2];
@@ -177,9 +177,9 @@ class TestSectionAttribute(unittest.TestCase):
 
     def test_named_sections(self) -> None:
         items = self._items(
-            "__attribute__((section(\".text.boot\"))) int main(void);\n"
-            "unsigned char t[2] __attribute__((section(\".page\"))) = {1, 2};\n"
-            "int f(void) { static int n __attribute__((section(\".noinit\")));"
+            "[[c6502::section(\".text.boot\")]] int main(void);\n"
+            "unsigned char t [[c6502::section(\".page\")]][2] = {1, 2};\n"
+            "int f(void) { static int n [[c6502::section(\".noinit\")]];"
             " return ++n; }\n"
             "int main(void) { return t[0] + f(); }\n"
         )
@@ -190,16 +190,16 @@ class TestSectionAttribute(unittest.TestCase):
     def test_errors(self) -> None:
         main = "int main(void) { return 0; }\n"
         for src, error in [
-            ("int g __attribute__((section(1)));\n", ParserError),
-            ("int g __attribute__((section(\"1x\")));\n", ParserError),
-            ("int f(void) { int x __attribute__((section(\".d\"))) = 1;"
+            ("int g [[c6502::section(1)]];\n", ParserError),
+            ("int g [[c6502::section(\"1x\")]];\n", ParserError),
+            ("int f(void) { int x [[c6502::section(\".d\")]] = 1;"
              " return x; }\n", TypeCheckError),
-            ("unsigned char g __attribute__((zeropage, section(\".d\")));\n",
+            ("unsigned char g [[c6502::zeropage, c6502::section(\".d\")]];\n",
              TypeCheckError),
-            ("extern unsigned char g __attribute__((address(0xC000), "
-             "section(\".d\")));\n", TypeCheckError),
-            ("int g __attribute__((section(\".a\")));\n"
-             "int g __attribute__((section(\".b\")));\n", TypeCheckError),
+            ("extern unsigned char g [[c6502::address(0xC000), c6502::"
+             "section(\".d\")]];\n", TypeCheckError),
+            ("int g [[c6502::section(\".a\")]];\n"
+             "int g [[c6502::section(\".b\")]];\n", TypeCheckError),
         ]:
             with self.subTest(src=src):
                 with self.assertRaises(error):
@@ -207,8 +207,8 @@ class TestSectionAttribute(unittest.TestCase):
 
     def test_parsed_on_declarations(self) -> None:
         prog = parse(
-            "__attribute__((section(\".x\"))) void f(void) {}\n"
-            "int g __attribute__((section(\".y\")));\n"
+            "[[c6502::section(\".x\")]] void f(void) {}\n"
+            "int g [[c6502::section(\".y\")]];\n"
         )
         self.assertEqual(prog.declaration[0].function_decl.section, ".x")
         self.assertEqual(prog.declaration[1].var_decl.section, ".y")

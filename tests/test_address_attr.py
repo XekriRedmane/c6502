@@ -1,4 +1,4 @@
-"""Tests for `__attribute__((address(addr)))` on functions and
+"""Tests for `[[c6502::address(addr)]]` on functions and
 `extern` objects (`passes/zp_globals.py`, "Fixed addresses outside
 zero page").
 
@@ -61,10 +61,10 @@ class TestParse(unittest.TestCase):
 
     def test_function_and_object_forms(self) -> None:
         got = _decls(
-            "__attribute__((zp_abi, address(0xFDED)))\n"
+            "[[c6502::zp_abi, c6502::address(0xFDED)]]\n"
             "extern void COUT(register unsigned char c);\n"
-            "extern unsigned char KBD __attribute__((address(0xC000)));\n"
-            "__attribute__((address(0x36))) extern unsigned int CSW;\n"
+            "extern unsigned char KBD [[c6502::address(0xC000)]];\n"
+            "[[c6502::address(0x36)]] extern unsigned int CSW;\n"
         )
         self.assertEqual(got["COUT"].address, 0xFDED)
         self.assertEqual(got["COUT"].abi_annotation, "zp_abi")
@@ -78,21 +78,21 @@ class TestParse(unittest.TestCase):
     def test_rejected_forms(self) -> None:
         bad = {
             "no address":
-                "__attribute__((address)) void f(void);",
+                "[[c6502::address]] void f(void);",
             "string address":
-                '__attribute__((address("x"))) void f(void);',
+                '[[c6502::address("x")]] void f(void);',
             "past $FFFF":
-                "__attribute__((address(0x10000))) void f(void);",
+                "[[c6502::address(0x10000)]] void f(void);",
             "function definition":
-                "__attribute__((address(0x1000))) void f(void) {}",
+                "[[c6502::address(0x1000)]] void f(void) {}",
             "both placements":
                 "extern unsigned char x "
-                "__attribute__((zeropage(0x40), address(0x40)));",
+                "[[c6502::zeropage(0x40), c6502::address(0x40)]];",
             "placement in both positions":
-                "__attribute__((address(0xC000))) extern unsigned char x "
-                "__attribute__((address(0xC000)));",
+                "[[c6502::address(0xC000)]] extern unsigned char x "
+                "[[c6502::address(0xC000)]];",
             "duplicate":
-                "__attribute__((address(1), address(2))) void f(void);",
+                "[[c6502::address(1), c6502::address(2)]] void f(void);",
         }
         for label, src in bad.items():
             with self.subTest(label):
@@ -105,31 +105,31 @@ class TestTypeCheck(unittest.TestCase):
     def test_definitions_rejected(self) -> None:
         bad = {
             "tentative definition":
-                "unsigned char x __attribute__((address(0xC000)));\n",
+                "unsigned char x [[c6502::address(0xC000)]];\n",
             "initializer":
-                "extern unsigned char x __attribute__((address(0xC000)))"
+                "extern unsigned char x [[c6502::address(0xC000)]]"
                 " = 1;\n",
             "later definition":
-                "extern unsigned char x __attribute__((address(0xC000)));\n"
+                "extern unsigned char x [[c6502::address(0xC000)]];\n"
                 "unsigned char x = 3;\n",
             "function defined later":
-                "__attribute__((address(0x1000))) void f(void);\n"
+                "[[c6502::address(0x1000)]] void f(void);\n"
                 "void f(void) {}\n",
             "function defined earlier":
                 "void f(void) {}\n"
-                "__attribute__((address(0x1000))) void f(void);\n",
+                "[[c6502::address(0x1000)]] void f(void);\n",
             "conflicting function addresses":
-                "__attribute__((address(0x1000))) void f(void);\n"
-                "__attribute__((address(0x2000))) void f(void);\n",
+                "[[c6502::address(0x1000)]] void f(void);\n"
+                "[[c6502::address(0x2000)]] void f(void);\n",
             "conflicting object addresses":
-                "extern unsigned char x __attribute__((address(0xC000)));\n"
-                "extern unsigned char x __attribute__((address(0xC001)));\n",
+                "extern unsigned char x [[c6502::address(0xC000)]];\n"
+                "extern unsigned char x [[c6502::address(0xC001)]];\n",
             "block-scope static":
                 "int main(void) { static unsigned char x "
-                "__attribute__((address(0xC000))); return x; }\n",
+                "[[c6502::address(0xC000)]]; return x; }\n",
             "automatic":
                 "int main(void) { unsigned char x "
-                "__attribute__((address(0xC000))); return x; }\n",
+                "[[c6502::address(0xC000)]]; return x; }\n",
         }
         for label, src in bad.items():
             with self.subTest(label):
@@ -139,10 +139,10 @@ class TestTypeCheck(unittest.TestCase):
     def test_address_accumulates_across_declarations(self) -> None:
         symbols, _ = _symbols(
             "void f(void);\n"
-            "__attribute__((address(0x1000))) void f(void);\n"
+            "[[c6502::address(0x1000)]] void f(void);\n"
             "void f(void);\n"
             "extern unsigned char x;\n"
-            "extern unsigned char x __attribute__((address(0xC000)));\n"
+            "extern unsigned char x [[c6502::address(0xC000)]];\n"
         )
         self.assertEqual(symbols["f"].attrs.address, 0x1000)
         self.assertEqual(symbols["x"].attrs.address, 0xC000)
@@ -150,7 +150,7 @@ class TestTypeCheck(unittest.TestCase):
     def test_block_scope_extern(self) -> None:
         asm = _codegen(
             "int main(void) {\n"
-            "  extern unsigned char x __attribute__((address(0xC000)));\n"
+            "  extern unsigned char x [[c6502::address(0xC000)]];\n"
             "  return x;\n"
             "}\n"
         )
@@ -165,9 +165,9 @@ class TestPlacement(unittest.TestCase):
 
     def test_fixed_names(self) -> None:
         zp = self._zp(
-            "__attribute__((address(0xFDED))) void COUT(unsigned char c);\n"
-            "extern unsigned int w __attribute__((address(0xC010)));\n"
-            "extern unsigned char m __attribute__((address(0x90)));\n"
+            "[[c6502::address(0xFDED)]] void COUT(unsigned char c);\n"
+            "extern unsigned int w [[c6502::address(0xC010)]];\n"
+            "extern unsigned char m [[c6502::address(0x90)]];\n"
         )
         self.assertEqual(zp.fixed, {"COUT": 0xFDED, "w": 0xC010})
         # Below $100 the object is a zero-page object: addressed,
@@ -179,10 +179,10 @@ class TestPlacement(unittest.TestCase):
     def test_placement_errors(self) -> None:
         bad = {
             "overlap":
-                "extern unsigned int a __attribute__((address(0xC000)));\n"
-                "extern unsigned char b __attribute__((address(0xC001)));\n",
+                "extern unsigned int a [[c6502::address(0xC000)]];\n"
+                "extern unsigned char b [[c6502::address(0xC001)]];\n",
             "past $FFFF":
-                "extern unsigned int a __attribute__((address(0xFFFF)));\n",
+                "extern unsigned int a [[c6502::address(0xFFFF)]];\n",
         }
         for label, src in bad.items():
             with self.subTest(label):
@@ -194,10 +194,10 @@ class TestCodegen(unittest.TestCase):
 
     def test_equs_and_absolute_store(self) -> None:
         src = (
-            "__attribute__((zp_abi, address(0xFDED)))\n"
+            "[[c6502::zp_abi, c6502::address(0xFDED)]]\n"
             "extern void COUT(register unsigned char c);\n"
             "extern volatile unsigned char scratch "
-            "__attribute__((address(0x0779)));\n"
+            "[[c6502::address(0x0779)]];\n"
             "void f(void) { COUT(0xC1); scratch = 0x91; }\n"
         )
         for optimize in (False, True):
@@ -222,7 +222,7 @@ class TestCodegen(unittest.TestCase):
         # The default zp_abi promotion under --optimize doesn't
         # apply to a function with a fixed address.
         src = (
-            "__attribute__((address(0x1000))) void f(unsigned char c);\n"
+            "[[c6502::address(0x1000)]] void f(unsigned char c);\n"
             "void g(unsigned char c) { f(c); }\n"
         )
         for optimize in (False, True):
@@ -239,27 +239,27 @@ class TestConventionErrors(unittest.TestCase):
         from passes.abi_selection import AbiSelectionError
         bad = {
             "register without zp_abi": (
-                "__attribute__((address(0x1000)))\n"
+                "[[c6502::address(0x1000)]]\n"
                 "void f(register unsigned char c);\n"
                 "void g(void) { f(1); }\n"
             ),
             "parameter not in a register": (
-                "__attribute__((zp_abi, address(0x1000)))\n"
+                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
                 "void f(register unsigned char a, unsigned char b);\n"
                 "void g(void) { f(1, 2); }\n"
             ),
             "pointer result": (
-                "__attribute__((zp_abi, address(0x1000)))\n"
+                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
                 "unsigned char *f(void);\n"
                 "void g(void) { f(); }\n"
             ),
             "4-byte result": (
-                "__attribute__((zp_abi, address(0x1000)))\n"
+                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
                 "unsigned long f(void);\n"
                 "void g(void) { f(); }\n"
             ),
             "address taken": (
-                "__attribute__((zp_abi, address(0x1000)))\n"
+                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
                 "void f(register unsigned char c);\n"
                 "void g(void) { void (*p)(unsigned char) = f; p(1); }\n"
             ),
@@ -284,7 +284,7 @@ class TestSim(unittest.TestCase):
 
     def test_call_fixed_routine(self) -> None:
         src = (
-            "__attribute__((zp_abi, address(0xD000)))\n"
+            "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
             "extern unsigned char inc(register unsigned char c);\n"
             "int main(void) {\n"
             "  unsigned char t = 0;\n"
@@ -302,7 +302,7 @@ class TestSim(unittest.TestCase):
         # A routine that reports its result in the carry flag:
         #   CMP #5 ; RTS        C set iff A >= 5
         src = (
-            "__attribute__((zp_abi, return_bool_in_carry, address(0xD000)))\n"
+            "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0xD000)]]\n"
             "extern _Bool at_least_5(register unsigned char a);\n"
             "int main(void) {\n"
             "  int n = 0;\n"
@@ -319,7 +319,7 @@ class TestSim(unittest.TestCase):
 
     def test_two_byte_argument_and_result(self) -> None:
         src = (
-            "__attribute__((zp_abi, address(0xD000)))\n"
+            "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
             "extern unsigned int swap(register unsigned int v);\n"
             "unsigned int k = 0x1234;\n"
             "int main(void) { return swap(k) + 1; }\n"
@@ -333,9 +333,9 @@ class TestSim(unittest.TestCase):
     def test_fixed_objects(self) -> None:
         src = (
             "extern volatile unsigned char port "
-            "__attribute__((address(0xC800)));\n"
-            "extern unsigned int word __attribute__((address(0xC810)));\n"
-            "extern unsigned char tbl[4] __attribute__((address(0xC820)));\n"
+            "[[c6502::address(0xC800)]];\n"
+            "extern unsigned int word [[c6502::address(0xC810)]];\n"
+            "extern unsigned char tbl [[c6502::address(0xC820)]][4];\n"
             "int main(void) {\n"
             "  port = 5;\n"
             "  unsigned int t = word;\n"
@@ -362,9 +362,9 @@ class TestSim(unittest.TestCase):
         # inside a volatile `STA`.
         src = (
             "extern volatile unsigned char KBD "
-            "__attribute__((address(0xC000)));\n"
+            "[[c6502::address(0xC000)]];\n"
             "extern volatile unsigned char KBDSTRB "
-            "__attribute__((address(0xC010)));\n"
+            "[[c6502::address(0xC010)]];\n"
             "unsigned char poll_key(void) {\n"
             "  unsigned char k = KBD;\n"
             "  if (k & 0x80) KBDSTRB = 0;\n"
@@ -406,7 +406,7 @@ class TestSim(unittest.TestCase):
 
     def test_address_of_fixed_object(self) -> None:
         src = (
-            "extern unsigned char port __attribute__((address(0xC800)));\n"
+            "extern unsigned char port [[c6502::address(0xC800)]];\n"
             "int main(void) { return (int)&port; }\n"
         )
         for optimize in (False, True):
@@ -419,10 +419,10 @@ class TestSim(unittest.TestCase):
 class TestLink(unittest.TestCase):
 
     _ROM = (
-        "__attribute__((zp_abi, address(0xFDED)))\n"
+        "[[c6502::zp_abi, c6502::address(0xFDED)]]\n"
         "extern void COUT(register unsigned char c);\n"
         "extern volatile unsigned char KBD "
-        "__attribute__((address(0xC000)));\n"
+        "[[c6502::address(0xC000)]];\n"
     )
 
     def _compile(self, src: str, path: Path) -> None:
@@ -462,11 +462,11 @@ class TestLink(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o.asm"))
             self._compile(
-                "__attribute__((address(0xFDED))) void out(unsigned char c);\n"
+                "[[c6502::address(0xFDED)]] void out(unsigned char c);\n"
                 "void f(void) { out(1); }\n", a,
             )
             self._compile(
-                "__attribute__((address(0xFDF0))) void out(unsigned char c);\n"
+                "[[c6502::address(0xFDF0)]] void out(unsigned char c);\n"
                 "void g(void) { out(2); }\n", b,
             )
             rc, err = self._link([a, b], out)

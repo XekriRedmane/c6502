@@ -321,7 +321,7 @@ uint8_t get_alphabet(void) {
 
 /* Returns the next z-character of the string at Z_PC2, or `end` once
  * the word with the end bit has been used up. */
-__attribute__((return_bool_in_carry)) struct zchar get_next_zchar(void) {
+[[c6502::return_bool_in_carry]] struct zchar get_next_zchar(void) {
     uint8_t code;
     uint8_t state = ZDECOMPRESS_STATE;
     if (state & 0x80)
@@ -345,7 +345,7 @@ __attribute__((return_bool_in_carry)) struct zchar get_next_zchar(void) {
  * reader's page stays mapped as the string reader left it. Zork keeps
  * this with its instruction handlers, so it has a section of its own
  * for the linker script to place there. */
-__attribute__((section(".text.literal")))
+[[c6502::section(".text.literal")]]
 void print_string_literal(void) {
     Z_PC2_L = Z_PC[0];
     Z_PC2_H = Z_PC[1];

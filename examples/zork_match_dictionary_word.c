@@ -174,8 +174,8 @@
 
 #define HEADER_DICT_ADDR 0x08
 
-uint8_t *z_header_addr __attribute__((zeropage(0xBA)));
-uint8_t zchar_scratch2[6] __attribute__((zeropage(0xDA)));
+uint8_t *z_header_addr [[c6502::zeropage(0xBA)]];
+uint8_t zchar_scratch2 [[c6502::zeropage(0xDA)]][6];
 
 uint8_t *get_dictionary_addr(void) {
     uint16_t offset = ((uint16_t)z_header_addr[HEADER_DICT_ADDR] << 8)

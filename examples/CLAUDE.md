@@ -23,7 +23,7 @@ The matched `.c` / `.asm` pairs serve two purposes:
 
 The example corpus is biased toward Apple II / game-engine workloads:
 HUD strip painting, sprite blitting, audio tone generation, enemy AI
-advancement, hit-entity refresh. Many use `__attribute__((zp_abi))`
+advancement, hit-entity refresh. Many use `[[c6502::zp_abi]]`
 on the leaf helpers to exercise the call-graph-disjoint ZP allocator.
 
 Examples translated from the Zork I (r15) interpreter, as

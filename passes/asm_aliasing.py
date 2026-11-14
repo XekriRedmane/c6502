@@ -105,7 +105,7 @@ import asm_ast
 DEFAULT_POOL_LO = 0x80
 DEFAULT_POOL_HI = 0x100
 
-# User globals placed in zero page (`__attribute__((zeropage))`, see
+# User globals placed in zero page (`[[c6502::zeropage]]`, see
 # passes/zp_globals.py) for the compile in progress: name -> address,
 # and every byte they occupy. Such a global is a `Data(name)` operand
 # whose bytes may also appear as numeric `ZP(addr)` operands (the

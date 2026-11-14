@@ -5,14 +5,14 @@ Given a TAC program (for body inspection) and the c99 AST (for the
 `abi_annotation` field on each `FunctionDecl` / `VarDecl`), produce
 a `dict[str, ParamLayout]` mapping each function name to its calling
 convention. The ABI is **driven by the programmer's annotation** —
-without `__attribute__((zp_abi))` a function gets the soft-stack
+without `[[c6502::zp_abi]]` a function gets the soft-stack
 ABI; with the annotation, the function gets ZP-passing after
 validation.
 
 Functions defined in this TU and zp_abi-annotated externs both
 land in the returned dict. The extern case is the canonical
 cross-TU path: a header declares
-`__attribute__((zp_abi)) extern T fn(...)`, every TU that
+`[[c6502::zp_abi]] extern T fn(...)`, every TU that
 includes it sees the annotation, and call sites in this TU use
 ZP-passing for `fn` even though its body isn't visible.
 
@@ -70,7 +70,7 @@ address-taken set — used by the per-function validation step.
 
 # Functions with a fixed address
 
-A function declared with `__attribute__((address(addr)))` is code
+A function declared with `[[c6502::address(addr)]]` is code
 that's already at that address, typically a ROM routine, so its
 calling convention is whatever that code expects. That convention
 comes from the declaration alone, and it's the same in both
@@ -104,7 +104,7 @@ from passes.zp_slot_naming import param_slot_symbols
 
 
 class AbiSelectionError(Exception):
-    """Raised when a `__attribute__((zp_abi))` annotation can't be
+    """Raised when a `[[c6502::zp_abi]]` annotation can't be
     honored: the function makes an indirect call, sits on a cycle
     in the direct call graph (recursion), has its address taken,
     or has too many parameter bytes."""
@@ -165,7 +165,7 @@ class ZpLayout:
 
     `pinned` is parallel to `slot_symbols` too, or empty: the fixed
     zero-page address of each byte of a parameter declared
-    `__attribute__((zeropage(addr)))`, and None for the other bytes.
+    `[[c6502::zeropage(addr)]]`, and None for the other bytes.
     The allocator binds those slots to their addresses instead of
     choosing.
 
@@ -559,14 +559,14 @@ def _validate_zp_abi(
     ) and not fn_decl.carry_return):
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
-            f"`__attribute__((zp_abi))` but returns a struct / "
+            f"`[[c6502::zp_abi]]` but returns a struct / "
             f"union; the implicit sret-pointer parameter doesn't "
             f"fit the ZP-layout slot scheme",
         )
     if _has_indirect_call(fn):
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
-            f"`__attribute__((zp_abi))` but its body contains an "
+            f"`[[c6502::zp_abi]]` but its body contains an "
             f"indirect call; the callee's ABI can't be known at "
             f"the call site, so a ZP-passing function can't make "
             f"indirect calls",
@@ -574,7 +574,7 @@ def _validate_zp_abi(
     if _on_cycle(fn.name, callgraph):
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
-            f"`__attribute__((zp_abi))` but is reachable from "
+            f"`[[c6502::zp_abi]]` but is reachable from "
             f"itself through the static call graph (direct or "
             f"mutual recursion); a recursive call would clobber "
             f"the parameter ZP slots before the outer activation "
@@ -583,7 +583,7 @@ def _validate_zp_abi(
     if fn.name in address_taken:
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
-            f"`__attribute__((zp_abi))` but its address is taken "
+            f"`[[c6502::zp_abi]]` but its address is taken "
             f"somewhere in the program; ZP-passing functions "
             f"can't be reached through a function pointer",
         )
@@ -593,7 +593,7 @@ def _validate_zp_abi(
     if byte_count > available:
         raise AbiSelectionError(
             f"function `{fn.name}` declared "
-            f"`__attribute__((zp_abi))` has {byte_count} parameter "
+            f"`[[c6502::zp_abi]]` has {byte_count} parameter "
             f"bytes, exceeding the {available}-byte ZP window "
             f"(${window.start:02X}-${window.stop - 1:02X})",
         )
@@ -698,14 +698,14 @@ def _validate_zp_abi_extern(
     ) and not fn_decl.carry_return):
         raise AbiSelectionError(
             f"function `{name}` declared "
-            f"`__attribute__((zp_abi))` but returns a struct / "
+            f"`[[c6502::zp_abi]]` but returns a struct / "
             f"union; the implicit sret-pointer parameter doesn't "
             f"fit the ZP-layout slot scheme",
         )
     if name in address_taken:
         raise AbiSelectionError(
             f"function `{name}` declared "
-            f"`__attribute__((zp_abi))` but its address is taken "
+            f"`[[c6502::zp_abi]]` but its address is taken "
             f"somewhere in the program; ZP-passing functions "
             f"can't be reached through a function pointer",
         )
@@ -715,7 +715,7 @@ def _validate_zp_abi_extern(
     if byte_count > available:
         raise AbiSelectionError(
             f"function `{name}` declared "
-            f"`__attribute__((zp_abi))` has {byte_count} parameter "
+            f"`[[c6502::zp_abi]]` has {byte_count} parameter "
             f"bytes, exceeding the {available}-byte ZP window "
             f"(${window.start:02X}-${window.stop - 1:02X})",
         )
@@ -757,7 +757,7 @@ def _pinned_addrs(
 
 def _addressed_functions(c99_prog: c99_ast.Program) -> set[str]:
     """Names of the functions some declaration gives
-    `__attribute__((address(...)))`."""
+    `[[c6502::address(...)]]`."""
     return {
         d.function_decl.name for d in c99_prog.declaration
         if isinstance(d, c99_ast.FunctionDecl)
@@ -817,7 +817,7 @@ def fixed_address_layouts(
     pool: Pool | None = None,
 ) -> dict[str, ZpLayout]:
     """The `ZpLayout` of every `zp_abi` function with
-    `__attribute__((address(...)))` (see "Functions with a fixed
+    `[[c6502::address(...)]]` (see "Functions with a fixed
     address" above). A function with an address and no `zp_abi` gets
     no entry, so calls to it use the soft stack. Raises
     `AbiSelectionError` for a `register` parameter without `zp_abi`,
@@ -839,9 +839,9 @@ def fixed_address_layouts(
                 raise AbiSelectionError(
                     f"function `{name}` has a fixed address and a "
                     f"`register` or `zeropage(addr)` parameter but no "
-                    f"`__attribute__((zp_abi))`; without zp_abi its "
+                    f"`[[c6502::zp_abi]]`; without zp_abi its "
                     f"arguments go on the soft stack, so declare it "
-                    f"`__attribute__((zp_abi, address(...)))`"
+                    f"`[[c6502::zp_abi, c6502::address(...)]]`"
                 )
             continue
         if name in taken:
@@ -870,7 +870,7 @@ def fixed_address_layouts(
                 f"parameter `register` (A, then X), or name its "
                 f"register with `in_a`, `in_x`, or `in_y`, at most 3 "
                 f"bytes in all, or give it "
-                f"`__attribute__((zeropage(addr)))`"
+                f"`[[c6502::zeropage(addr)]]`"
             )
         out[name] = layout
     return out
@@ -890,7 +890,7 @@ def select_abi(
 ) -> dict[str, ParamLayout]:
     """Compute per-function ABI for every function in `prog`.
     Returns `dict[name, ParamLayout]`. Raises `AbiSelectionError`
-    if any explicit `__attribute__((zp_abi))` annotation can't be
+    if any explicit `[[c6502::zp_abi]]` annotation can't be
     honored.
 
     Under `--optimize`, every function defaults to zp_abi: an
@@ -926,7 +926,7 @@ def select_abi(
             if fn_decl is None:
                 raise AbiSelectionError(
                     f"function `{tl.name}` declared "
-                    f"`__attribute__((zp_abi))` but its c99 "
+                    f"`[[c6502::zp_abi]]` but its c99 "
                     f"declaration is missing — internal error",
                 )
             out[tl.name] = _validate_zp_abi(
@@ -1049,7 +1049,7 @@ def _demote_soft_stack_callers(
     """Rule 5 of the module docstring. Turns every zp_abi function
     defined here that calls (directly) a soft-stack function without
     a private pool into a soft-stack function, until no function
-    changes. A function that is annotated `__attribute__((zp_abi))`
+    changes. A function that is annotated `[[c6502::zp_abi]]`
     or uses `register` can't fall back, so it raises instead.
 
     Pool eligibility reads `out` only for `extern` functions, which
@@ -1075,7 +1075,7 @@ def _demote_soft_stack_callers(
             )
             if strict:
                 what = (
-                    "declared `__attribute__((zp_abi))`"
+                    "declared `[[c6502::zp_abi]]`"
                     if annotations.get(name) == "zp_abi"
                     else f"declares {_request_words(fn_decl)}"
                 )

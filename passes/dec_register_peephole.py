@@ -1,7 +1,7 @@
 """DEY / DEX folding for `--counter` where the counter is pinned
 to X or Y (including volatile pins).
 
-When a c99 local with `__attribute__((reg("X")))` or `reg("Y")`
+When a c99 local with `[[c6502::reg("X")]]` or `reg("Y")`
 gets `--counter` (or `counter -= 1; counter != 0`), `tac_to_asm`
 lowers the read-modify-write through A:
 
@@ -23,7 +23,7 @@ The fold:
     Branch(NE|EQ, …)
 
 Soundness for volatile:
-  * `volatile uint8_t y __attribute__((reg("Y")))` pins y to the
+  * `volatile uint8_t y [[c6502::reg("Y")]]` pins y to the
     Y register; the register IS the storage. A volatile access of
     y is a read-or-write of Y, which any DEY instruction performs.
   * Original lowering: one volatile read (TYA) and one volatile

@@ -77,12 +77,12 @@
 */
 
 /* Zork's own variables, which the rest of the interpreter owns. */
-extern uint8_t BUFF_END __attribute__((zeropage(0xEB)));
-extern uint16_t PRINTER_CSW __attribute__((zeropage(0xEE)));
-extern uint8_t BUFF_AREA[256] __attribute__((address(0x0200)));
+extern uint8_t BUFF_END [[c6502::zeropage(0xEB)]];
+extern uint16_t PRINTER_CSW [[c6502::zeropage(0xEE)]];
+extern uint8_t BUFF_AREA [[c6502::address(0x0200)]][256];
 
 /* Slot 1's scratchpad RAM, a screen hole. */
-extern volatile uint8_t SLOT1_SCRATCH __attribute__((address(0x0779)));
+extern volatile uint8_t SLOT1_SCRATCH [[c6502::address(0x0779)]];
 
 static uint8_t printer_card_initialized_flag;
 

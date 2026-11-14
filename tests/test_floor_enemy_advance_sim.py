@@ -54,7 +54,7 @@ uint8_t snd_calls;
 uint8_t snd_last_pitch;
 uint8_t snd_last_clicks;
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void snd_delay_down(uint8_t pitch, uint8_t clicks) {
     snd_calls = (uint8_t)(snd_calls + 1);
     snd_last_pitch = pitch;
@@ -73,7 +73,7 @@ static const uint8_t floor_enemy_spawn_sched[54] = {
 
 #define OPCODE_JSR 0x20
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void floor_enemy_advance(uint8_t move_dir, uint8_t player_col)
 {
     for (uint8_t slot = 3; (slot & 0x80) == 0; slot--) {

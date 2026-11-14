@@ -14,7 +14,7 @@ uint8_t jump_flag;
 extern uint8_t* const smc_move_left_op;
 
 /* Descending speaker-click helper. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern void snd_delay_down(uint8_t pitch, uint8_t clicks);
 
 /* Spawn-row seed table indexed by player_col (54 entries).
@@ -33,7 +33,7 @@ static const uint8_t floor_enemy_spawn_sched[54] = {
 
 #define OPCODE_JSR 0x20
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void floor_enemy_advance(uint8_t move_dir, uint8_t player_col)
 {
     /* LDX #$03 ... DEX / BPL .slot_body */

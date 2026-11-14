@@ -29,13 +29,13 @@ Every function and every object with static storage is placed in a
 | an object whose initial value is all zero, such as `int count;` | `.bss` |
 | any other object | `.data` |
 
-`__attribute__((section("name")))` puts a function or object in a
+`[[c6502::section("name")]]` puts a function or object in a
 section of your own:
 
 ```c
-__attribute__((section(".text.boot"))) void reset(void);
-const uint8_t font[768] __attribute__((section(".rodata.font"))) = { ... };
-uint8_t buffer[256] __attribute__((section(".page")));
+[[c6502::section(".text.boot")]] void reset(void);
+const uint8_t font [[c6502::section(".rodata.font")]][768] = { ... };
+uint8_t buffer [[c6502::section(".page")]][256];
 ```
 
 A section name is letters, digits, `_`, and `.`. Every declaration

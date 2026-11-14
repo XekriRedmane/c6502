@@ -236,7 +236,7 @@ def _is_ldy_from_slot(
     """Match `Mov(Data(slot, 0), Reg(Y))` — the `LDY slot` that
     spills the body-local into the inner-loop counter. The Mov
     may be volatile-marked when Y is pinned to a volatile C-level
-    local (e.g., `volatile uint8_t y __attribute__((reg("Y")))` in
+    local (e.g., `volatile uint8_t y [[c6502::reg("Y")]]` in
     snd_delay_up) — that flag carries from the source-level
     volatile of the dst register, not from the slot itself.
     Rewriting to TAY preserves the same volatile-of-Y semantics

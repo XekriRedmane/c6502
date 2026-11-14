@@ -51,7 +51,7 @@ const uint8_t special_peek_sprite[12] = {
     0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0,
 };
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void draw_sprite(uint8_t width,
                  uint8_t height,
                  uint8_t sprite_x,
@@ -87,7 +87,7 @@ static const uint8_t proj_screen_col[132] = {
     0x24, 0x24, 0x25, 0x25,
 };
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void special_inactive_draw(uint8_t special_row,
                            uint8_t special_pos_hi,
                            uint8_t page_flag)

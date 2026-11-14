@@ -16,13 +16,13 @@ const uint8_t hit_spr_pos_hi[7] = { 0x8A, 0x8A, 0x8B, 0x8B, 0x8B, 0x8B, 0x8B };
 const uint8_t hit_spr_neg_lo[7] = { 0xD4, 0xFC, 0x24, 0x4C, 0x74, 0x9C, 0xC4 };
 const uint8_t hit_spr_neg_hi[7] = { 0x7A, 0x7A, 0x7B, 0x7B, 0x7B, 0x7B, 0x7B };
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 extern void draw_sprite_opaque(
     uint8_t width, uint8_t height,
     uint8_t sprite_x, uint8_t sprite_y,
     const uint8_t *tile_src);
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void refresh_hit_entities(uint8_t hit_max,
                         uint8_t player_y,
                         uint8_t sprite_xref)

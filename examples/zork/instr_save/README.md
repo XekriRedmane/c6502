@@ -233,7 +233,7 @@ Passing pointers as arguments instead of in `SCRATCH2` led to more:
 - Loop-invariant store hoisting leaves a copy of a zero-page pointer
   into `DPTR` in its loop, where it becomes a `(zp),Y` access.
 - A function can take a parameter at a fixed zero-page address,
-  `__attribute__((zeropage(addr)))`, as Zork's own `cout_string` does
+  `[[c6502::zeropage(addr)]]`, as Zork's own `cout_string` does
   with `SCRATCH2`. This example doesn't need it, since its routines
   only call each other, but a C `cout_string` declared that way could
   be called from Zork's other code.

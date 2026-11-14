@@ -66,11 +66,11 @@ class TestLinkerHappyPath(unittest.TestCase):
         # Both are zp_abi-annotated. Linker re-allocates so the
         # symbols agree across TUs.
         tu_a = (
-            "__attribute__((zp_abi)) extern int helper(int x); "
+            "[[c6502::zp_abi]] extern int helper(int x); "
             "int main(void) { return helper(7); }"
         )
         tu_b = (
-            "__attribute__((zp_abi)) int helper(int x) { "
+            "[[c6502::zp_abi]] int helper(int x) { "
             "  return x + 1; "
             "}"
         )
@@ -145,19 +145,19 @@ class TestLinkerHappyPath(unittest.TestCase):
         # Two TUs that both declare the same extern. The linker
         # collapses them into one entry (no error).
         tu_a = (
-            "__attribute__((zp_abi)) extern int helper(int x); "
-            "__attribute__((zp_abi)) int caller_a(int n) { "
+            "[[c6502::zp_abi]] extern int helper(int x); "
+            "[[c6502::zp_abi]] int caller_a(int n) { "
             "  return helper(n); "
             "}"
         )
         tu_b = (
-            "__attribute__((zp_abi)) extern int helper(int x); "
-            "__attribute__((zp_abi)) int caller_b(int n) { "
+            "[[c6502::zp_abi]] extern int helper(int x); "
+            "[[c6502::zp_abi]] int caller_b(int n) { "
             "  return helper(n + 1); "
             "}"
         )
         tu_c = (
-            "__attribute__((zp_abi)) int helper(int x) { "
+            "[[c6502::zp_abi]] int helper(int x) { "
             "  return x + 100; "
             "}"
             "int main(void) { return 0; }"
@@ -181,12 +181,12 @@ class TestLinkerErrors(unittest.TestCase):
     def test_duplicate_definition_rejected(self) -> None:
         # Both TUs define `helper`. Link error.
         tu_a = (
-            "__attribute__((zp_abi)) int helper(int x) { "
+            "[[c6502::zp_abi]] int helper(int x) { "
             "  return x + 1; "
             "}"
         )
         tu_b = (
-            "__attribute__((zp_abi)) int helper(int x) { "
+            "[[c6502::zp_abi]] int helper(int x) { "
             "  return x + 2; "
             "}"
             "int main(void) { return helper(3); }"
@@ -328,7 +328,7 @@ class TestParameterNames(unittest.TestCase):
         # to crash `--optimize`, with or without the annotation.
         from compile import _run_stage
         from preprocessor import preprocess
-        for attr in ("", "__attribute__((zp_abi)) "):
+        for attr in ("", "[[c6502::zp_abi]] "):
             src = (attr + "unsigned char put(unsigned char);\n"
                    "int main(void) { return put(4); }\n")
             with self.subTest(attr=attr):

@@ -46,7 +46,7 @@ struct dct dct = { 0x00, 0x01, 0xD8EF };
 /* Reads or writes (`command`) the 256-byte sector numbered SCRATCH1,
  * counting from the start of track 3, to or from the buffer at
  * SCRATCH2. Returns true if the operation failed. */
-__attribute__((return_bool_in_carry))
+[[c6502::return_bool_in_carry]]
 bool do_rwts_on_sector(register uint8_t command) {
     iob.command = command;
     iob.buffer_addr = (uint8_t *)SCRATCH2;
@@ -60,6 +60,6 @@ bool do_rwts_on_sector(register uint8_t command) {
     return RWTS(&iob);
 }
 
-__attribute__((return_bool_in_carry)) bool read_from_sector(void) {
+[[c6502::return_bool_in_carry]] bool read_from_sector(void) {
     return do_rwts_on_sector(1);
 }

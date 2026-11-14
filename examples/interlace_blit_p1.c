@@ -25,7 +25,7 @@ static uint8_t* const HIRES_P1_ROW[35][3] = {
     { 0x2AA8, 0x2950, 0x2BD0 },
 };
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void interlace_blit_p1(uint8_t* zp_blit_src, uint8_t zp_blit_x_start, uint8_t zp_blit_x_end)
 {
     uint8_t y = 0;

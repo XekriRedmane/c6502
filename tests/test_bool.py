@@ -105,10 +105,10 @@ class TestTypeCheck(unittest.TestCase):
 
     def test_carry_return_accepts_bool(self) -> None:
         _check(
-            "__attribute__((return_bool_in_carry)) _Bool f(int x)"
+            "[[c6502::return_bool_in_carry]] _Bool f(int x)"
             " { return x; }"
             "struct r { unsigned char v; _Bool ok; };"
-            "__attribute__((return_bool_in_carry)) struct r g(void)"
+            "[[c6502::return_bool_in_carry]] struct r g(void)"
             " { return (struct r){ 1, 1 }; }"
         )
 
@@ -252,7 +252,7 @@ _PROGRAMS: list[tuple[str, str, int]] = [
      " return t + f * 2 + odd(3) * 4 + odd(4) * 8; }", 5),
     ("carry_return",
      "#include <stdbool.h>\n"
-     "__attribute__((return_bool_in_carry)) bool nz(int x) { return x; }"
+     "[[c6502::return_bool_in_carry]] bool nz(int x) { return x; }"
      "int main(void) { int n = 0; if (nz(512)) n++; if (nz(0)) n += 2;"
      " bool b = nz(-1); return n + b * 4; }", 5),
     ("static_initializers",

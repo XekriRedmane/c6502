@@ -1,7 +1,7 @@
 # Attributes, and how to call ROM routines
 
-c6502 accepts a few GCC-style attributes that tell the compiler
-things C itself has no way to say. These include where an object
+c6502 has a few attributes, written in C23's attribute syntax, that
+tell the compiler things C itself has no way to say. These include where an object
 lives, how a function takes its arguments, and how it returns its
 result. This document explains each attribute, and then shows how to
 use them together to call routines that are already in ROM, such as
@@ -12,26 +12,49 @@ from `<stdbool.h>`, where it's `_Bool`.
 
 ## Writing an attribute
 
-An attribute goes inside a double pair of parentheses after the
-keyword `__attribute__`. Several attributes can share one clause,
-separated by commas, and an attribute can take an integer argument.
+Attributes go inside double square brackets, as C23 writes them
+(§6.7.13). c6502's own carry the prefix `c6502::`, the way GCC's carry
+`gnu::`, so another compiler can tell they aren't its own. Several
+attributes can share one pair of brackets, separated by commas, and an
+attribute can take an integer or string argument in parentheses.
 
 ```c
-__attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
+[[c6502::zp_abi, c6502::address(0xFDED)]] void COUT(register uint8_t c);
 ```
 
-A function's attributes go at the front of its declaration. An
-object's attributes can go at the front, or right after its name.
+Attributes at the front of a declaration apply to every name it
+declares. Attributes right after a name apply to that name alone. The
+two places mean the same thing, and a declaration can use both.
 
 ```c
-__attribute__((zeropage)) uint8_t count;
-uint8_t count __attribute__((zeropage));
+[[c6502::zeropage]] uint8_t count;
+uint8_t count [[c6502::zeropage]];
+uint8_t table [[c6502::zeropage]][16];     // after the name, before [16]
+void f [[c6502::zp_abi]] (void);
 ```
 
-The compiler rejects a name it doesn't know, the same attribute
-twice in one declaration, and an attribute used where it doesn't
-apply, such as `zeropage` on a function. Each of these is a compile
-error that names the declaration.
+A parameter's attributes go after its name, or in front of the
+parameter: `uint8_t n [[c6502::in_x]]` and `[[c6502::in_x]] uint8_t n`
+are the same. An enum's `packed` goes right after `enum`.
+
+C23 also lets attributes follow a function's parameter list, a `*`, an
+array's `]`, or the type specifiers, where they apply to that type.
+c6502 doesn't accept them there, and reports a syntax error.
+
+The compiler rejects a `c6502::` name it doesn't know, the same
+attribute twice in one declaration, an attribute used where it doesn't
+apply, such as `zeropage` on a function, and a c6502 attribute written
+without its prefix. Each of these is a compile error that names the
+declaration. GCC's `__attribute__((...))` isn't accepted; the error
+for it shows the C23 form.
+
+C23's standard attributes are accepted where C23 allows them, and
+otherwise change nothing: `deprecated`, `maybe_unused`, `nodiscard`,
+`noreturn`, and `fallthrough`, the last as `[[fallthrough]];` in a
+switch. `unsequenced` and `reproducible` go after a parameter list,
+so c6502 rejects them. An attribute with any other prefix, such as
+`[[gnu::cold]]`, is ignored, as C23 says it should be, and so are its
+arguments. Those arguments can't contain braces.
 
 ## The attributes
 
@@ -89,8 +112,8 @@ integer or pointer with one byte for each register named.
 ```c
 // DOS's RWTS takes its parameter block's address with the low byte
 // in Y and the high byte in A.
-__attribute__((zp_abi, return_bool_in_carry, address(0x2900)))
-bool RWTS(struct iob *iob __attribute__((in_ya)));
+[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]
+bool RWTS(struct iob *iob [[c6502::in_ya]]);
 
 bool read_sector(void) { return RWTS(&iob); }
 ```
@@ -121,9 +144,9 @@ whose address is in `SCRATCH2`, at `$E6`. On a parameter,
 `zeropage(addr)` says the argument is passed there:
 
 ```c
-__attribute__((zp_abi, address(0x1D34)))
-void cout_string(const char *s __attribute__((zeropage(0xE6))),
-                 uint8_t count __attribute__((in_x)));
+[[c6502::zp_abi, c6502::address(0x1D34)]]
+void cout_string(const char *s [[c6502::zeropage(0xE6)]],
+                 uint8_t count [[c6502::in_x]]);
 
 void show(void) { cout_string("DEFAULT = ", 10); }
 ```
@@ -153,8 +176,8 @@ in C, Zork's `cout_string` keeps its convention, and with `COUT1`
 declared `preserves_x, preserves_y` it compiles to Zork's own code:
 
 ```c
-void cout_string(const char *s __attribute__((zeropage(0xE6))),
-                 uint8_t count __attribute__((in_x))) {
+void cout_string(const char *s [[c6502::zeropage(0xE6)]],
+                 uint8_t count [[c6502::in_x]]) {
     uint8_t i = 0;
     do { COUT1(s[i] | 0x80); i++; } while (--count != 0);
 }
@@ -209,7 +232,7 @@ result with `if`, the compiler branches on the flag with `BCC` or
 `BCS` instead of first turning it into a number.
 
 ```c
-__attribute__((return_bool_in_carry)) bool is_digit(uint8_t c) {
+[[c6502::return_bool_in_carry]] bool is_digit(uint8_t c) {
     return c >= '0' && c <= '9';
 }
 ```
@@ -232,7 +255,7 @@ still use `zp_abi`.
 ```c
 struct zchar { uint8_t code; bool end; };
 
-__attribute__((return_bool_in_carry)) struct zchar next_zchar(void) {
+[[c6502::return_bool_in_carry]] struct zchar next_zchar(void) {
     struct zchar r;
     r.code = buffer[pos++];
     r.end = r.code == 0xFF;
@@ -271,8 +294,8 @@ instead of a 3-byte one, and a pointer in zero page can be used
 directly in an `(zp),Y` access.
 
 ```c
-uint8_t num_entries __attribute__((zeropage));            // compiler picks, in $26-$7F
-__attribute__((zeropage(0xBA))) uint8_t *z_header_addr;   // $BA and $BB
+uint8_t num_entries [[c6502::zeropage]];            // compiler picks, in $26-$7F
+[[c6502::zeropage(0xBA)]] uint8_t *z_header_addr;   // $BA and $BB
 ```
 
 The bare form takes the lowest free bytes from `$26` to `$7F`. The
@@ -295,11 +318,11 @@ header and defines it in one file, as with any global:
 
 ```c
 // counters.h
-extern uint8_t hits __attribute__((zeropage));
+extern uint8_t hits [[c6502::zeropage]];
 
 // counters.c
 #include "counters.h"
-uint8_t hits __attribute__((zeropage)) = 0;
+uint8_t hits [[c6502::zeropage]] = 0;
 ```
 
 A file that only declares `hits` doesn't give it an address. `--link`
@@ -318,8 +341,8 @@ routine, or a piece of memory such as an I/O register, a Monitor
 variable, or a table in ROM.
 
 ```c
-__attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
-extern volatile uint8_t KBD __attribute__((address(0xC000)));
+[[c6502::zp_abi, c6502::address(0xFDED)]] void COUT(register uint8_t c);
+extern volatile uint8_t KBD [[c6502::address(0xC000)]];
 ```
 
 The compiler writes `COUT EQU $FDED` and `KBD EQU $C000` at the top of
@@ -343,7 +366,7 @@ it. Many ROM routines leave X or Y alone, though. `preserves_x` and
 register across the call.
 
 ```c
-__attribute__((zp_abi, preserves_x, preserves_y, address(0xFDF0)))
+[[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFDF0)]]
 void COUT1(register uint8_t c);
 ```
 
@@ -396,8 +419,9 @@ its result comes back in X.
 
 An enum's type is `int`, two bytes, which makes every variable,
 parameter, and struct member of that type cost two bytes and every
-operation on it two bytes' work. With `packed`, as GCC spells it, the
-type is the smallest that holds the enum's values:
+operation on it two bytes' work. With `packed`, which does what GCC's
+`packed` does on an enum, the type is the smallest that holds the
+enum's values:
 
 | Values | Type |
 |---|---|
@@ -406,14 +430,15 @@ type is the smallest that holds the enum's values:
 | anything else | `int` |
 
 ```c
-typedef enum __attribute__((packed)) { IDLE, RUN, STOP } state;
-enum dir { LEFT = -1, NONE, RIGHT } __attribute__((packed));
+typedef enum [[c6502::packed]] { IDLE, RUN, STOP } state;
+enum [[c6502::packed]] dir { LEFT = -1, NONE, RIGHT };
 
 struct actor { state s; enum dir d; uint8_t x; };   // 3 bytes
 ```
 
-The attribute goes after `enum` or after the closing `}` of the
-definition, not on a later `enum dir` that refers to it. The
+The attribute goes right after `enum` in the definition, not on a
+later `enum dir` that refers to it. GCC also took it after the closing
+`}`, but C23 has no place for an attribute there. The
 enumeration constants are still `int` constants, as C99 says, so
 `RUN + 1` is an `int`; storing one in a packed variable takes a
 byte.
@@ -426,8 +451,8 @@ named section instead of the one it would go in (`.text`, `.rodata`,
 then decides where the section goes in memory:
 
 ```c
-__attribute__((section(".text.boot"))) void reset(void);
-uint8_t buffer[256] __attribute__((section(".page")));
+[[c6502::section(".text.boot")]] void reset(void);
+uint8_t buffer [[c6502::section(".page")]][256];
 ```
 
 Every declaration that names a section has to name the same one, and
@@ -475,7 +500,7 @@ The character arrives in A, and nothing comes back, which gives
 this declaration.
 
 ```c
-__attribute__((zp_abi, address(0xFDED))) void COUT(register uint8_t c);
+[[c6502::zp_abi, c6502::address(0xFDED)]] void COUT(register uint8_t c);
 ```
 
 `register` puts `c` in A, `zp_abi` makes the compiler honor
@@ -545,7 +570,7 @@ byte read from disk, returns a struct of the value and the `bool`
 
 ```c
 // A routine at $6000 that sets the carry flag when it fails.
-__attribute__((zp_abi, return_bool_in_carry, address(0x6000)))
+[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x6000)]]
 bool disk_read(register uint8_t track, register uint8_t sector);
 void report_error(void);
 
@@ -561,9 +586,9 @@ Hardware registers and Monitor variables are `extern` objects with an
 address.
 
 ```c
-extern volatile uint8_t KBD     __attribute__((address(0xC000)));  // last key, high bit = new
-extern volatile uint8_t KBDSTRB __attribute__((address(0xC010)));  // any access clears the strobe
-extern uint16_t CSW             __attribute__((address(0x36)));    // output hook
+extern volatile uint8_t KBD     [[c6502::address(0xC000)]];  // last key, high bit = new
+extern volatile uint8_t KBDSTRB [[c6502::address(0xC010)]];  // any access clears the strobe
+extern uint16_t CSW             [[c6502::address(0x36)]];    // output hook
 
 uint8_t wait_key(void) {
     while (!(KBD & 0x80))       // wait for a key

@@ -1,4 +1,4 @@
-"""ZP slot allocation for `__attribute__((zp_abi))` functions.
+"""ZP slot allocation for `[[c6502::zp_abi]]` functions.
 
 Background
 ----------

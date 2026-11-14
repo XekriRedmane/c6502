@@ -49,7 +49,7 @@ _PROGRAM = r"""
  * setup). The test provides storage just below. */
 extern const volatile uint8_t *sfx_click_ptr;
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void sfx_tone(uint8_t pitch, uint8_t duration);
 
 /* Backing byte the speaker pointer points at. The volatile reads
@@ -110,7 +110,7 @@ int main(void) {
 }
 
 /* sfx_tone definition — verbatim from examples/sfx_tone.c. */
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void sfx_tone(uint8_t pitch, uint8_t duration)
 {
     do {

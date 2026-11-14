@@ -40,7 +40,7 @@ uint8_t bobble_calls;
 uint8_t bobble_last_slot;
 uint8_t bobble_last_idx;
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 void apply_bobble(uint8_t slot, uint8_t bobble_idx)
 {
     bobble_calls = (uint8_t)(bobble_calls + 1);
@@ -48,7 +48,7 @@ void apply_bobble(uint8_t slot, uint8_t bobble_idx)
     bobble_last_idx = bobble_idx;
 }
 
-__attribute__((zp_abi))
+[[c6502::zp_abi]]
 static void step_pos(uint8_t slot, uint8_t anim_in)
 {
     uint8_t new_anim = (uint8_t)(anim_in - 1);

@@ -55,7 +55,7 @@ def _compile_to_tac(src: str):
 
 class TestSelectAbi(unittest.TestCase):
     def test_no_annotation_eligible_defaults_to_zp_abi(self) -> None:
-        # Without `__attribute__((zp_abi))`, an eligible function
+        # Without `[[c6502::zp_abi]]`, an eligible function
         # (no indirect calls, no recursion, no address taken,
         # params fit the ZP window) defaults to zp_abi under
         # `select_abi` — this matches the `--optimize` policy of
@@ -70,7 +70,7 @@ class TestSelectAbi(unittest.TestCase):
 
     def test_zp_abi_leaf_with_int_param(self) -> None:
         tac, c99, types = _compile_to_tac(
-            "__attribute__((zp_abi)) int f(int x) { return x + 1; } "
+            "[[c6502::zp_abi]] int f(int x) { return x + 1; } "
             "int main(void) { return 0; }",
         )
         abi = select_abi(tac, c99, types)
@@ -80,7 +80,7 @@ class TestSelectAbi(unittest.TestCase):
 
     def test_zp_abi_two_int_params(self) -> None:
         tac, c99, types = _compile_to_tac(
-            "__attribute__((zp_abi)) int f(int a, int b) { return a + b; } "
+            "[[c6502::zp_abi]] int f(int a, int b) { return a + b; } "
             "int main(void) { return 0; }",
         )
         abi = select_abi(tac, c99, types)
@@ -92,7 +92,7 @@ class TestSelectAbi(unittest.TestCase):
         # policy it lands as ZpLayout, not SoftStack.
         tac, c99, types = _compile_to_tac(
             "int helper(int x) { return x + 1; } "
-            "__attribute__((zp_abi)) int f(int x) { return helper(x); } "
+            "[[c6502::zp_abi]] int f(int x) { return helper(x); } "
             "int main(void) { return 0; }",
         )
         abi = select_abi(tac, c99, types)
@@ -117,7 +117,7 @@ class TestSelectAbi(unittest.TestCase):
     def test_caller_of_pooled_soft_stack_function_keeps_zp_abi(self) -> None:
         # `g`'s address is taken, so it's on the soft stack, but it has
         # a private pool, so calling it can't overwrite `f`'s slots.
-        for ann in ("", "__attribute__((zp_abi)) "):
+        for ann in ("", "[[c6502::zp_abi]] "):
             with self.subTest(annotated=bool(ann)):
                 tac, c99, types = _compile_to_tac(
                     "int g(int x) { return x + 1; } "
@@ -151,7 +151,7 @@ class TestSelectAbi(unittest.TestCase):
     def test_zp_abi_direct_recursion_rejected(self) -> None:
         with self.assertRaises(AbiSelectionError) as cm:
             tac, c99, types = _compile_to_tac(
-                "__attribute__((zp_abi)) int f(int x) { "
+                "[[c6502::zp_abi]] int f(int x) { "
                 "  return x ? f(x - 1) : 0; "
                 "} "
                 "int main(void) { return 0; }",
@@ -165,7 +165,7 @@ class TestSelectAbi(unittest.TestCase):
         with self.assertRaises(AbiSelectionError) as cm:
             tac, c99, types = _compile_to_tac(
                 "int g(int x); "
-                "__attribute__((zp_abi)) int f(int x) { return g(x); } "
+                "[[c6502::zp_abi]] int f(int x) { return g(x); } "
                 "int g(int x) { return f(x); } "
                 "int main(void) { return 0; }",
             )
@@ -179,7 +179,7 @@ class TestSelectAbi(unittest.TestCase):
         with self.assertRaises(AbiSelectionError) as cm:
             tac, c99, types = _compile_to_tac(
                 "int helper(int x) { return x + 1; } "
-                "__attribute__((zp_abi)) int f(int x) { "
+                "[[c6502::zp_abi]] int f(int x) { "
                 "  int (*p)(int) = &helper; "
                 "  return p(x); "
                 "} "
@@ -195,7 +195,7 @@ class TestSelectAbi(unittest.TestCase):
         # yet; explicit `&f` is.)
         with self.assertRaises(AbiSelectionError) as cm:
             tac, c99, types = _compile_to_tac(
-                "__attribute__((zp_abi)) int f(int x) { return x + 1; } "
+                "[[c6502::zp_abi]] int f(int x) { return x + 1; } "
                 "int main(void) { return (int)&f; }",
             )
             select_abi(tac, c99, types)
@@ -207,7 +207,7 @@ class TestSelectAbi(unittest.TestCase):
         # params = 132 bytes, well over.
         params = ", ".join(f"long p{i}" for i in range(33))
         src = (
-            f"__attribute__((zp_abi)) int f({params}) {{ return 0; }} "
+            f"[[c6502::zp_abi]] int f({params}) {{ return 0; }} "
             f"int main(void) {{ return 0; }}"
         )
         with self.assertRaises(AbiSelectionError) as cm:
@@ -218,7 +218,7 @@ class TestSelectAbi(unittest.TestCase):
 
     def test_default_pool_window_used(self) -> None:
         tac, c99, types = _compile_to_tac(
-            "__attribute__((zp_abi)) int f(int x) { return x; } "
+            "[[c6502::zp_abi]] int f(int x) { return x; } "
             "int main(void) { return 0; }",
         )
         abi = select_abi(tac, c99, types)
@@ -226,7 +226,7 @@ class TestSelectAbi(unittest.TestCase):
 
     def test_custom_pool_start(self) -> None:
         tac, c99, types = _compile_to_tac(
-            "__attribute__((zp_abi)) int f(int x) { return x; } "
+            "[[c6502::zp_abi]] int f(int x) { return x; } "
             "int main(void) { return 0; }",
         )
         abi = select_abi(tac, c99, types, pool=Pool(start=0x90))

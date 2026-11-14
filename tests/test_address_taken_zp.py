@@ -83,9 +83,9 @@ class TestAddressTakenZp(unittest.TestCase):
         # soft-stack prologue/epilogue collapsed.
         src = r"""
         #include <stdint.h>
-        __attribute__((zp_abi))
+        [[c6502::zp_abi]]
         void writer(uint8_t *out) { *out = 0x42; }
-        __attribute__((zp_abi))
+        [[c6502::zp_abi]]
         void caller(void) {
             uint8_t x;
             writer(&x);
@@ -114,12 +114,12 @@ class TestAddressTakenZp(unittest.TestCase):
         #include <stdint.h>
         #include <stdbool.h>
         uint8_t target;
-        __attribute__((zp_abi))
+        [[c6502::zp_abi]]
         bool finder(uint8_t *out) {
             *out = target;
             return true;
         }
-        __attribute__((zp_abi))
+        [[c6502::zp_abi]]
         void caller(void) {
             uint8_t row;
             if (!finder(&row)) return;

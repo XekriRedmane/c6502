@@ -181,7 +181,7 @@ class TestPointerAwareRegallocSim(unittest.TestCase):
 
 
 class TestZpAbiPrologueCollapse(unittest.TestCase):
-    """A `__attribute__((zp_abi))` leaf function whose only frame
+    """A `[[c6502::zp_abi]]` leaf function whose only frame
     requirement was a 2-byte LoadAddress.dst slot now collapses to
     bare body + RTS."""
 
@@ -200,7 +200,7 @@ class TestZpAbiPrologueCollapse(unittest.TestCase):
             "#include <stdint.h>\n"
             "static uint8_t table[8] = {0,1,2,3,4,5,6,7};\n"
             "static uint8_t out[8];\n"
-            "__attribute__((zp_abi))\n"
+            "[[c6502::zp_abi]]\n"
             "void copy(uint8_t mask) {\n"
             "    for (int8_t i = 0; i < 8; i++)\n"
             "        out[i] = table[i] & mask;\n"

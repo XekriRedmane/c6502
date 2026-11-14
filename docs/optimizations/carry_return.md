@@ -2,7 +2,7 @@
 
 [passes/carry_return.py](../../passes/carry_return.py) contains three
 peepholes for functions declared
-`__attribute__((return_bool_in_carry))`, which return their result in
+`[[c6502::return_bool_in_carry]]`, which return their result in
 the carry flag ([attributes.md](../attributes.md) describes the
 attribute). `apply_carry_return_tails`, `apply_carry_const_fold`, and
 `apply_carry_branch_fold` run one after another in the peephole fixed
@@ -82,11 +82,11 @@ them, and [dead store elimination](asm_dead_store.md) the store.
 ```c
 #include <stdbool.h>
 #include <stdint.h>
-__attribute__((return_bool_in_carry)) bool is_three(uint8_t x)
+[[c6502::return_bool_in_carry]] bool is_three(uint8_t x)
 {
     return x == 3;
 }
-__attribute__((return_bool_in_carry)) bool is_three_too(uint8_t x)
+[[c6502::return_bool_in_carry]] bool is_three_too(uint8_t x)
 {
     return is_three(x);
 }

@@ -48,11 +48,11 @@ module C99 {
     -- Used by the leaf-ZP-ABI optimization. None when no such
     -- annotation was given.
     --
-    -- placement is set by `__attribute__((zeropage))` (address None:
+    -- placement is set by `[[c6502::zeropage]]` (address None:
     -- the compiler picks a byte in $26-$7F) or
-    -- `__attribute__((zeropage(0xBA)))` (that address). Only valid on
+    -- `[[c6502::zeropage(0xBA)]]` (that address). Only valid on
     -- an object with static storage; see passes/zp_globals.py.
-    -- `__attribute__((address(0xC000)))` gives `Absolute(0xC000)`: the
+    -- `[[c6502::address(0xC000)]]` gives `Absolute(0xC000)`: the
     -- object is memory that something outside the program owns (an
     -- I/O register, a ROM table, a Monitor variable), so only an
     -- `extern` declaration may carry it.
@@ -62,23 +62,23 @@ module C99 {
     -- "auto" for a `register` parameter whose register is assigned
     -- POSITIONALLY downstream (the first such byte goes in A, the
     -- second in X), and the register letters, low byte first, for one
-    -- whose `__attribute__((in_y))` / `in_ay` / ... names them ("Y",
+    -- whose `[[c6502::in_y]]` / `in_ay` / ... names them ("Y",
     -- "AY"). The list length always matches `params`. A `register`
     -- param must be a non-pointer type of at most 2 bytes, no two
     -- params may share a register, and the function must be
     -- zp_abi-eligible.
     -- carry_return is True when the declaration carries
-    -- `__attribute__((return_bool_in_carry))`: the function returns
+    -- `[[c6502::return_bool_in_carry]]`: the function returns
     -- its truth value in the carry flag instead of in A.
-    -- address is set by `__attribute__((address(0xFDED)))`: the
+    -- address is set by `[[c6502::address(0xFDED)]]`: the
     -- function is code at that address (a ROM routine, say), so it
     -- has no definition in the program.
     -- preserves lists the registers ("X", "Y") that
-    -- `__attribute__((preserves_x))` / `preserves_y` say the function
+    -- `[[c6502::preserves_x]]` / `preserves_y` say the function
     -- leaves unchanged. Only a function with an address may carry them.
     function_decl = (identifier name, identifier* params, block? body, data_type, storage_class?, string? abi_annotation, string* param_registers, bool carry_return, int? address, string* preserves, string? section)
     -- `section` (on both declarations) is the name from
-    -- `__attribute__((section("name")))`, or None. It only matters to
+    -- `[[c6502::section("name")]]`, or None. It only matters to
     -- `compile.py --link -T`, which places each section where the
     -- linker script says (passes/sections.py).
     -- Struct or union declaration. `is_union` distinguishes the two

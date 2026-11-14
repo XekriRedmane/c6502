@@ -23,7 +23,7 @@ which copy a shared return tail into each path that reaches it.
 ```c
 #include <stdbool.h>
 #include <stdint.h>
-__attribute__((return_bool_in_carry)) bool is_three(uint8_t x)
+[[c6502::return_bool_in_carry]] bool is_three(uint8_t x)
 {
     return x == 3;
 }

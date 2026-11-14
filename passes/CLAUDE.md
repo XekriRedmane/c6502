@@ -24,7 +24,7 @@ The peephole / control-flow / allocation passes that sit directly in
 this directory:
 
 - `abi_selection.py` — `select_abi`. Decides which functions are
-  `__attribute__((zp_abi))` and mints `__zpabi_<fn>_p<k>` slot symbols.
+  `[[c6502::zp_abi]]` and mints `__zpabi_<fn>_p<k>` slot symbols.
 - `and_sign_bit_branch.py` — `apply_and_sign_bit_branch` peephole.
 - `asm_aliasing.py` — asm-level aliasing helpers used by dead-store /
   liveness.
@@ -327,7 +327,7 @@ this directory:
   `preferred_symbols` tells `asm_emit` which symbol names a `(zp),Y`
   base in a holder. User guide: docs/optimizations/slot_sharing.md.
 - `sections.py` — `items`: the section of each function and object in
-  the finished asm (`__attribute__((section("name")))`, else `.text`,
+  the finished asm (`[[c6502::section("name")]]`, else `.text`,
   `.rodata` for `const` objects and string literals, `.bss` for
   all-zero objects, `.data`), for the link metadata's `item` lines.
 - `string_lifting.py` — pass 3 (see below).
@@ -410,7 +410,7 @@ this directory:
   `asm_emit` read `current()`. `check_hargs` verifies the final code
   fits the size.
 - `zp_globals.py` — `allocate_zp_globals` / `place_zp_globals`. Gives
-  each `__attribute__((zeropage))` object an address (its own, or the
+  each `[[c6502::zeropage]]` object an address (its own, or the
   lowest free run below `$80` after the runtime's block, which
   `choose_layout` places once the fixed objects are known;
   `plan_zero_page` sizes HARGS from a trial `tac_to_asm` of the
@@ -425,7 +425,7 @@ this directory:
   compile, and to the EQU block, but not into `zp_slot_symbols`: other
   passes treat a slot symbol in `$80`-`$FF` as scratch that's dead at
   return. It also collects every function and object with
-  `__attribute__((address(addr)))` at `$100` or above into
+  `[[c6502::address(addr)]]` at `$100` or above into
   `ZpGlobals.fixed`, which only adds `EQU` lines (`ZpGlobals.equs()`
   is both maps). An `address` object below `$100` is an ordinary
   `extern` zero-page object. An `extern` object with neither an
@@ -1413,7 +1413,7 @@ symbols. No `AllocateStack`, no Frame-resident param storage. Eligibility:
   so the call-site / callee IR is unchanged.
 
 Under `--optimize`, every function defaults to zp_abi when eligible.
-The explicit `__attribute__((zp_abi))` annotation is a strict-mode
+The explicit `[[c6502::zp_abi]]` annotation is a strict-mode
 opt-in: an annotated function hard-errors on ineligibility, an
 unannotated one silently falls back to soft-stack. Same eligibility
 rules apply either way.

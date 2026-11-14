@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lark import Lark, Token, Transformer, Tree
+from lark.exceptions import UnexpectedInput
 from lark.lexer import BasicLexer
 from lark.parsers.lalr_analysis import Shift
 from lark.visitors import v_args
@@ -246,7 +247,7 @@ class _ParseContext:
         # the `{` of its body, and the parameters go in this scope.
         self.body_scope: _Scope | None = None
         self.anonymous_tags = 0
-        self.enum_head = _EnumHead()
+        self.tag_head = _TagHead()
         # The latest token lexed, and the parser state it was lexed in.
         self.token: Token | None = None
         self.parser_state = None
@@ -350,36 +351,32 @@ class _ParseContext:
             self.scopes[-1].tags.add(tag)
 
 
-class _EnumHead:
-    """Follows the tokens from `enum` to the `{` of its list, if it
-    has one, so the lexer knows that `{` doesn't start a block. In
-    between there may be an attribute clause and a tag, as in `enum
-    __attribute__((packed)) e {`."""
+class _TagHead:
+    """Follows the tokens from `struct`, `union`, or `enum` to the `{`
+    of its body, if it has one, so the lexer knows that `{` doesn't
+    start a block. In between there may be attributes and a tag, as in
+    `enum [[c6502::packed]] e {`."""
 
     def __init__(self):
         self.active = False
-        self.depth = 0  # of the attribute clause's parentheses
-        self.in_attribute = False
+        self.depth = 0  # of the attributes' square brackets
         self.tagged = False
 
     def step(self, kind: str) -> bool:
-        """Take the next token; True if it's the `{` of an enum's
-        list."""
-        if kind == "ENUM":
-            self.active, self.in_attribute, self.tagged = True, False, False
+        """Take the next token; True if it's the `{` of a struct's,
+        union's, or enum's body."""
+        if kind in ("STRUCT", "UNION", "ENUM"):
+            self.active, self.depth, self.tagged = True, 0, False
             return False
         if not self.active:
             return False
-        if self.in_attribute:
-            if kind == "LPAREN":
+        if self.depth or kind == "ATTR_OPEN":
+            if kind == "ATTR_OPEN":
+                self.depth += 2
+            elif kind == "LBRACKET":
                 self.depth += 1
-            elif kind == "RPAREN":
+            elif kind == "RBRACKET":
                 self.depth -= 1
-                if self.depth == 0:
-                    self.in_attribute = False
-            return False
-        if kind == "ATTRIBUTE":
-            self.in_attribute, self.depth = True, 0
             return False
         if kind == "IDENTIFIER" and not self.tagged:
             self.tagged = True
@@ -699,49 +696,87 @@ def _consume_specifiers(items, start):
     return decl_specs.specs, start + 1
 
 
-# Recognized `__attribute__` spec shapes. Each entry maps the spec
-# name to either None (bare-identifier form, no argument expected) or
-# a frozenset of valid string-literal arguments (arg-form, must match
-# one). The attribute_spec transformer checks against this table.
+# C23 attributes (§6.7.13). c6502's own are written with its prefix,
+# `[[c6502::zp_abi]]`:
 #
-# `zp_abi` — bare-identifier; opts a function into the leaf-ZP-ABI
-#            calling convention. Valid only as a function-level prefix.
+# `zp_abi` — opts a function into the leaf-ZP-ABI calling convention.
 #
-# `return_bool_in_carry` — bare-identifier; the function returns its
-#            truth value in the carry flag (set for true) instead of in
-#            A. Valid only on a function returning `bool`.
+# `return_bool_in_carry` — the function returns its truth value in the
+#            carry flag (set for true) instead of in A. Valid only on a
+#            function returning `bool`.
 #
 # `zeropage` — places a static-storage object in zero page, at a byte
 #            the compiler picks (bare) or at a given address
-#            (`zeropage(0xBA)`). Valid on objects, in the prefix or
-#            the declarator-postfix position. See passes/zp_globals.py.
+#            (`zeropage(0xBA)`). On a parameter, the address it arrives
+#            at. See passes/zp_globals.py.
 #
 # `address` — binds a name to a fixed address (`address(0xFDED)`): a
 #            function that's code at that address, such as a ROM
 #            routine, or an `extern` object that's memory something
 #            outside the program owns. The name gets an `EQU`, and
-#            nothing is defined. Valid in the prefix position, and in
-#            the postfix position on an object.
+#            nothing is defined.
 #
-# `preserves_x` / `preserves_y` — bare-identifier; the function leaves
-#            X (Y) as it found it. Valid only on a function with
-#            `address`, since the compiler can't check code it doesn't
-#            compile.
+# `preserves_x` / `preserves_y` — the function leaves X (Y) as it
+#            found it. Valid only on a function with `address`, since
+#            the compiler can't check code it doesn't compile.
 #
-# Register pinning of params / locals / return values is NOT an
-# attribute — it uses the C `register` storage-class keyword.
-_KNOWN_ATTRIBUTES: dict[str, frozenset[str] | None] = {
-    "section": None,
-    "zp_abi": None,
-    "return_bool_in_carry": None,
-    "zeropage": None,
-    "address": None,
-    "preserves_x": None,
-    "preserves_y": None,
-}
+# `section` — the linker section a function or object goes in
+#            (`section(".text.boot")`).
+#
+# `packed` — on an enum's definition, the smallest type that holds its
+#            values.
+#
+# `in_a`, `in_x`, `in_y`, and pairs such as `in_ay` — the registers a
+#            parameter arrives in (`_register_marker`).
+#
+# Which ones a declaration may carry is checked where it's built.
+# Register pinning of locals is NOT an attribute — it uses the C
+# `register` storage-class keyword.
+_C6502_PREFIX = "c6502"
+_C6502_ATTRIBUTES = frozenset({
+    "section", "zp_abi", "return_bool_in_carry", "zeropage", "address",
+    "preserves_x", "preserves_y", "packed",
+})
 
 # The register each `preserves_*` attribute names.
 _PRESERVES = {"preserves_x": "X", "preserves_y": "Y"}
+
+
+def _is_c6502_attribute(name: str) -> bool:
+    return name in _C6502_ATTRIBUTES or name.startswith("in_")
+
+
+# What a standard attribute may apply to, and whether it takes a
+# string literal (`[[deprecated("use g")]]`). c6502 accepts them where
+# C23 allows them and otherwise ignores them. `unsequenced` and
+# `reproducible` apply to a function's type, after its parameter list,
+# where c6502 doesn't accept attributes.
+_DECLARED = frozenset({
+    "object", "function", "parameter", "typedef", "tag", "member",
+    "enumerator",
+})
+_STANDARD_ATTRIBUTES: dict[str, tuple[frozenset[str], bool]] = {
+    "deprecated": (_DECLARED, True),
+    "maybe_unused": (_DECLARED, False),
+    "nodiscard": (frozenset({"function", "tag"}), True),
+    "noreturn": (frozenset({"function"}), False),
+    "_Noreturn": (frozenset({"function"}), False),
+    "fallthrough": (frozenset({"attribute declaration"}), False),
+    "unsequenced": (frozenset(), False),
+    "reproducible": (frozenset(), False),
+}
+
+# How each kind of entity reads in a message.
+_KIND_NAMES = {
+    "object": "an object",
+    "function": "a function",
+    "parameter": "a parameter",
+    "typedef": "a typedef name",
+    "tag": "a struct, union, or enum",
+    "member": "a member",
+    "enumerator": "an enumeration constant",
+    "attribute declaration": "an attribute declaration",
+}
 
 
 # The registers an `in_*` parameter attribute may name, one letter per
@@ -753,33 +788,34 @@ def _register_marker(specs, is_register: bool) -> str:
     """The `param_registers` entry for one parameter: "" without
     `register`, "auto" for `register` alone (A, then X, by position),
     or the register letters an `in_*` attribute names, such as "Y" for
-    `__attribute__((in_y))` or "AY" for `in_ay` (low byte in A, high
-    byte in Y). An `in_*` attribute makes the parameter a register
-    parameter whether or not it's declared `register`. A parameter
-    that isn't `register` and has `__attribute__((zeropage(addr)))`
-    gets "@" and the address in decimal ("@230" for `zeropage(0xE6)`):
-    it arrives in zero page at that address. Raises ParserError for any
-    other attribute, for `zeropage` with `register` or without an
-    address, and for a register named twice."""
+    `[[c6502::in_y]]` or "AY" for `in_ay` (low byte in A, high byte in
+    Y). An `in_*` attribute makes the parameter a register parameter
+    whether or not it's declared `register`. A parameter that isn't
+    `register` and has `[[c6502::zeropage(addr)]]` gets "@" and the
+    address in decimal ("@230" for `zeropage(0xE6)`): it arrives in
+    zero page at that address. Raises ParserError for any other
+    attribute, for `zeropage` with `register` or without an address,
+    and for a register named twice."""
     if not specs:
         return "auto" if is_register else ""
     if len(specs) != 1:
         raise ParserError(
-            "a parameter takes one attribute: `in_a`, `in_x`, `in_y`, "
-            "or a pair such as `in_ay`, naming the register it arrives "
-            "in, or `zeropage(addr)`, naming its zero-page address"
+            "a parameter takes one attribute: `c6502::in_a`, "
+            "`c6502::in_x`, `c6502::in_y`, or a pair such as "
+            "`c6502::in_ay`, naming the register it arrives in, or "
+            "`c6502::zeropage(addr)`, naming its zero-page address"
         )
     name, arg = specs[0]
     if name == "zeropage":
         if is_register:
             raise ParserError(
                 "a `register` parameter arrives in a register, so it "
-                "can't also have `__attribute__((zeropage(...)))`"
+                "can't also have `[[c6502::zeropage(...)]]`"
             )
         if arg is None or isinstance(arg, str):
             raise ParserError(
-                "`__attribute__((zeropage(...)))` on a parameter takes "
-                "the integer zero-page address it arrives at"
+                "`[[c6502::zeropage(...)]]` on a parameter takes the "
+                "integer zero-page address it arrives at"
             )
         if not 0 <= arg <= 0xFF:
             raise ParserError(
@@ -788,53 +824,157 @@ def _register_marker(specs, is_register: bool) -> str:
             )
         return f"@{arg}"
     regs = name[3:].upper() if name.startswith("in_") else ""
-    if (arg is not None or not 1 <= len(regs) <= 2
-            or not set(regs) <= _PARAM_REGISTERS):
+    if not 1 <= len(regs) <= 2 or not set(regs) <= _PARAM_REGISTERS:
         raise ParserError(
-            f"unknown parameter attribute `{name}`; a parameter takes "
-            f"`in_a`, `in_x`, or `in_y`, or for a 2-byte parameter a "
-            f"pair such as `in_ay` (low byte in A, high byte in Y), or "
-            f"`zeropage(addr)`"
+            f"`c6502::{name}` doesn't apply to a parameter; a parameter "
+            f"takes `c6502::in_a`, `c6502::in_x`, or `c6502::in_y`, or "
+            f"for a 2-byte parameter a pair such as `c6502::in_ay` (low "
+            f"byte in A, high byte in Y), or `c6502::zeropage(addr)`"
         )
+    if arg is not None:
+        raise ParserError(f"`c6502::{name}` doesn't take an argument")
     if len(set(regs)) != len(regs):
         raise ParserError(
-            f"`{name}` names {regs[0]} twice; each byte of a parameter "
-            f"needs its own register"
+            f"`c6502::{name}` names {regs[0]} twice; each byte of a "
+            f"parameter needs its own register"
         )
     return regs
 
 
 @dataclass
-class _AttributeClause:
-    """Sentinel wrapper around a parsed `__attribute__((...))` clause.
-    Holds the list of `(name, arg_or_None)` specs the clause carries.
-    A dedicated class (rather than a bare list) lets
-    `_consume_attribute_clause` distinguish it from `parameter_type_list`
-    results (also lists) sharing item positions."""
-    specs: list[tuple[str, str | None]]
+class _Attributes:
+    """The attributes of an attribute-specifier sequence that mean
+    something to c6502, as `(name, arg)` pairs: its own, written
+    `c6502::name` (`c6502`), and the standard ones (`standard`). `arg`
+    is None without arguments, else the one integer constant or string
+    literal they hold. Attributes with any other prefix, and unprefixed
+    names C23 doesn't define, are dropped as they're parsed, since C23
+    says an implementation ignores attributes it doesn't know."""
+    c6502: list[tuple[str, int | str | None]]
+    standard: list[tuple[str, str | None]]
 
 
-def _consume_attribute_clause(items, start):
-    """If `items[start]` is a transformed attribute_clause result
-    (an `_AttributeClause`), return `(specs, start+1)`. Otherwise the
-    optional `attribute_clause?` in the grammar didn't fire and we
-    return `(None, start)`. `specs` is a list of `(name, arg_or_None)`
-    tuples — the validator helper (`_extract_function_attributes`)
-    splits it into the relevant fields."""
-    if start < len(items) and isinstance(items[start], _AttributeClause):
-        return items[start].specs, start + 1
+@dataclass
+class _AttributeArgs:
+    """The tokens between the parentheses of an attribute's arguments,
+    produced by the `attribute_args` transformer."""
+    tokens: list
+
+
+def _normalized_attribute_name(name: str) -> str:
+    """C23 §6.7.13.2 lets `__name__` spell a standard attribute `name`,
+    and implementations do the same for their prefixes and attributes,
+    so `[[__c6502__::__zp_abi__]]` is `[[c6502::zp_abi]]`."""
+    if len(name) > 4 and name.startswith("__") and name.endswith("__"):
+        return name[2:-2]
+    return name
+
+
+def _attribute_argument(spelled: str, args: _AttributeArgs | None):
+    """The argument of the c6502 or standard attribute spelled
+    `spelled`: None without parentheses, an int for one integer
+    constant, a str for one string literal. Raises ParserError for
+    anything else, which none of them take."""
+    if args is None:
+        return None
+    tokens = args.tokens
+    if len(tokens) == 1 and tokens[0].type in (
+        "INTEGER_CONSTANT", "UINT_INTEGER", "LONG_INTEGER", "ULONG_INTEGER",
+    ):
+        value, _, _ = _parse_integer_token(tokens[0].value)
+        return value
+    if len(tokens) == 1 and tokens[0].type == "STRING_LITERAL":
+        lit = tokens[0].value
+        # The `L"..."` wide-char prefix isn't meaningful for an
+        # attribute argument; drop it.
+        if lit.startswith("L"):
+            lit = lit[1:]
+        return lit[1:-1]
+    raise ParserError(
+        f"the argument of `{spelled}` has to be one integer constant or "
+        f"one string literal"
+        if tokens else
+        f"`{spelled}()` has empty parentheses; leave them off"
+    )
+
+
+def _c6502_attributes(attrs: _Attributes | None, kind: str, where: str):
+    """Checks that each standard attribute in `attrs` may apply to
+    `kind` of entity (a key of `_KIND_NAMES`), and returns the list of
+    c6502 attributes, or None when there are none. `where` names the
+    declaration in messages."""
+    if attrs is None:
+        return None
+    for name, _arg in attrs.standard:
+        kinds, _takes_string = _STANDARD_ATTRIBUTES[name]
+        if kind not in kinds:
+            if name in ("unsequenced", "reproducible"):
+                raise ParserError(
+                    f"`[[{name}]]` applies to a function's type, after "
+                    f"its parameter list, where c6502 doesn't accept "
+                    f"attributes; saw it on {where}"
+                )
+            raise ParserError(
+                f"the standard attribute `{name}` can't apply to "
+                f"{_KIND_NAMES[kind]}; saw it on {where}"
+            )
+    return attrs.c6502 or None
+
+
+def _no_c6502_attributes(attrs: _Attributes | None, kind: str, where: str):
+    """Checks `attrs` for `kind` of entity, which none of c6502's
+    attributes apply to."""
+    specs = _c6502_attributes(attrs, kind, where)
+    if specs is not None:
+        raise ParserError(
+            f"`c6502::{specs[0][0]}` doesn't apply to {where}"
+        )
+
+
+def _merge_attributes(*seqs: _Attributes | None) -> _Attributes | None:
+    """One `_Attributes` holding those of each of `seqs` that isn't
+    None, or None when all are, as for a declaration's leading
+    attributes and those after a declarator's name, which C23 combines."""
+    present = [a for a in seqs if a is not None]
+    if not present:
+        return None
+    return _Attributes(
+        c6502=[x for a in present for x in a.c6502],
+        standard=[x for a in present for x in a.standard],
+    )
+
+
+def _consume_attributes(items, start):
+    """If `items[start]` is a transformed attribute_specifier_seq (an
+    `_Attributes`), return `(it, start+1)`. Otherwise the optional
+    `attribute_specifier_seq?` in the grammar didn't fire, and this
+    returns `(None, start)`."""
+    if start < len(items) and isinstance(items[start], _Attributes):
+        return items[start], start + 1
     return None, start
 
 
+def _declarator_attributes(decl_tree) -> _Attributes | None:
+    """The attributes after the name in a `declarator` parse tree,
+    which apply to the entity it declares, or None."""
+    dd = decl_tree.children[-1]
+    while True:
+        first = dd.children[0]
+        if _is_token(first, "IDENTIFIER"):
+            return dd.children[1] if len(dd.children) > 1 else None
+        if _is_token(first, "LPAREN"):
+            dd = dd.children[1].children[-1]
+        else:
+            dd = first
+
+
 def _fixed_address(arg, where: str) -> int:
-    """The address given to `__attribute__((address(...)))` on
-    `where`, checked to be an integer in the 6502's 16-bit address
-    space."""
+    """The address given to `[[c6502::address(...)]]` on `where`,
+    checked to be an integer in the 6502's 16-bit address space."""
     if arg is None or isinstance(arg, str):
         raise ParserError(
-            f"`__attribute__((address(...)))` takes an integer "
-            f"address; saw {'none' if arg is None else 'a string'} on "
-            f"{where}"
+            f"`[[c6502::address(...)]]` takes an integer address; saw "
+            f"{'none' if arg is None else 'a string'} on {where}"
         )
     if not 0 <= arg <= 0xFFFF:
         raise ParserError(
@@ -846,91 +986,75 @@ def _fixed_address(arg, where: str) -> int:
 def _extract_function_attributes(
     specs, where: str,
 ) -> tuple[str | None, bool, int | None, list[str]]:
-    """Reduce a list of `(name, arg_or_None)` specs to the
+    """Reduce a list of `(name, arg_or_None)` c6502 attributes to the
     `(abi_annotation, carry_return, address, preserves)` values carried
-    on a function_decl. `specs` may be None (no attribute clause). `where`
-    is a short label ("function declaration" / "extern function
-    declaration") used in error messages.
+    on a function_decl. `specs` may be None (no attributes). `where`
+    is a short label ("function declaration 'f'") used in error
+    messages.
 
-    Rejects any spec name that isn't a function attribute, any
-    duplicate spec, an argument on `zp_abi` or
-    `return_bool_in_carry`, and an `address` without an integer
-    address. `abi_annotation` is "zp_abi" or None, `carry_return` is
-    True when `return_bool_in_carry` is present, `address` is the
-    address `address(...)` gave, or None, and `preserves` lists the
-    registers ("X", "Y") that `preserves_x` / `preserves_y` name."""
+    Rejects any attribute that doesn't apply to a function, any
+    duplicate, an argument on `zp_abi`, `return_bool_in_carry`, or
+    `preserves_*`, and an `address` without an integer address.
+    `abi_annotation` is "zp_abi" or None, `carry_return` is True when
+    `return_bool_in_carry` is present, `address` is the address
+    `address(...)` gave, or None, and `preserves` lists the registers
+    ("X", "Y") that `preserves_x` / `preserves_y` name."""
     abi_annotation = None
     carry_return = False
     address = None
     preserves: list[str] = []
     seen: set[str] = set()
     for name, arg in specs or []:
-        if name not in _KNOWN_ATTRIBUTES:
-            raise ParserError(
-                f"unknown attribute name {name!r} on {where}; expected "
-                f"one of {sorted(_KNOWN_ATTRIBUTES)}"
-            )
         if name in seen:
             raise ParserError(
-                f"`{name}` is given twice on {where}"
+                f"`c6502::{name}` is given twice on {where}"
             )
         seen.add(name)
         if name == "section":
             continue
         if name == "zeropage":
             raise ParserError(
-                f"`__attribute__((zeropage))` places an object, not a "
+                f"`[[c6502::zeropage]]` places an object, not a "
                 f"function; saw it on {where}"
             )
+        if name in ("zp_abi", "return_bool_in_carry", *_PRESERVES):
+            if arg is not None:
+                raise ParserError(
+                    f"`c6502::{name}` doesn't take an argument"
+                )
         if name == "zp_abi":
-            if arg is not None:
-                raise ParserError(
-                    "`__attribute__((zp_abi))` doesn't take an "
-                    "argument"
-                )
             abi_annotation = "zp_abi"
-        if name == "return_bool_in_carry":
-            if arg is not None:
-                raise ParserError(
-                    "`__attribute__((return_bool_in_carry))` doesn't "
-                    "take an argument"
-                )
+        elif name == "return_bool_in_carry":
             carry_return = True
-        if name == "address":
+        elif name == "address":
             address = _fixed_address(arg, where)
-        if name in _PRESERVES:
-            if arg is not None:
-                raise ParserError(
-                    f"`__attribute__(({name}))` doesn't take an argument"
-                )
+        elif name in _PRESERVES:
             preserves.append(_PRESERVES[name])
+        else:
+            raise ParserError(
+                f"`c6502::{name}` doesn't apply to {where}"
+            )
     return abi_annotation, carry_return, address, sorted(preserves)
 
 
 def _extract_object_placement(
     specs, name: str,
 ) -> c99_ast.Type_placement | None:
-    """Reduce the attribute specs on an object declaration to its
+    """Reduce the c6502 attributes on an object declaration to its
     `placement`. `zeropage` gives `ZeroPage(None)`, `zeropage(addr)`
     gives `ZeroPage(addr)`, and `address(addr)` gives
-    `Absolute(addr)`. Rejects `zp_abi` (a function attribute),
-    unknown and duplicate names, both placements at once, and a
-    string or out-of-range address. Whether the object can be placed
-    there at all (storage class, size, collisions) is decided later,
-    in the type checker and passes/zp_globals.py."""
+    `Absolute(addr)`. Rejects function attributes such as `zp_abi`,
+    duplicates, both placements at once, and a string or out-of-range
+    address. Whether the object can be placed there at all (storage
+    class, size, collisions) is decided later, in the type checker and
+    passes/zp_globals.py."""
     placement = None
     seen: set[str] = set()
     for spec_name, arg in specs or []:
-        if spec_name not in _KNOWN_ATTRIBUTES:
-            raise ParserError(
-                f"unknown attribute name {spec_name!r} on object "
-                f"declaration `{name}`; expected one of "
-                f"{sorted(_KNOWN_ATTRIBUTES)}"
-            )
         if spec_name in seen:
             raise ParserError(
-                f"`{spec_name}` is given twice on object declaration "
-                f"`{name}`"
+                f"`c6502::{spec_name}` is given twice on object "
+                f"declaration `{name}`"
             )
         seen.add(spec_name)
         if spec_name == "section":
@@ -939,14 +1063,18 @@ def _extract_object_placement(
             "zp_abi", "return_bool_in_carry", "preserves_x", "preserves_y",
         ):
             raise ParserError(
-                f"`__attribute__(({spec_name}))` is only valid on "
-                f"function declarations; saw it on object declaration "
-                f"`{name}`"
+                f"`[[c6502::{spec_name}]]` is only valid on function "
+                f"declarations; saw it on object declaration `{name}`"
+            )
+        if spec_name not in ("zeropage", "address"):
+            raise ParserError(
+                f"`c6502::{spec_name}` doesn't apply to object "
+                f"declaration `{name}`"
             )
         if placement is not None:
             raise ParserError(
-                f"`__attribute__((zeropage))` and "
-                f"`__attribute__((address(...)))` both given on `{name}`"
+                f"`[[c6502::zeropage]]` and `[[c6502::address(...)]]` "
+                f"both given on `{name}`"
             )
         if spec_name == "address":
             placement = c99_ast.Absolute(
@@ -955,8 +1083,8 @@ def _extract_object_placement(
             continue
         if isinstance(arg, str):
             raise ParserError(
-                f"`__attribute__((zeropage(...)))` takes an integer "
-                f"address; got a string on `{name}`"
+                f"`[[c6502::zeropage(...)]]` takes an integer address; "
+                f"got a string on `{name}`"
             )
         if arg is not None and not 0 <= arg <= 0xFF:
             raise ParserError(
@@ -973,17 +1101,17 @@ _SECTION_NAME = re.compile(r"[A-Za-z_.][A-Za-z0-9_.]*")
 
 
 def _extract_section(specs, where: str) -> str | None:
-    """The name `__attribute__((section("name")))` gives in `specs`, or
-    None. Raises ParserError when the argument isn't a string or isn't
-    a section name."""
+    """The name `[[c6502::section("name")]]` gives in `specs`, or None.
+    Raises ParserError when the argument isn't a string or isn't a
+    section name."""
     for name, arg in specs or []:
         if name != "section":
             continue
         if not isinstance(arg, str):
             raise ParserError(
-                f"`__attribute__((section(...)))` takes the section's "
-                f"name as a string, such as `section(\".text.boot\")`; "
-                f"saw {arg!r} on {where}"
+                f"`[[c6502::section(...)]]` takes the section's name as "
+                f"a string, such as `section(\".text.boot\")`; saw "
+                f"{arg!r} on {where}"
             )
         if not _SECTION_NAME.fullmatch(arg):
             raise ParserError(
@@ -992,17 +1120,6 @@ def _extract_section(specs, where: str) -> str | None:
             )
         return arg
     return None
-
-
-def _merge_placement(prefix, postfix, name: str):
-    """The placement from a declaration's prefix attribute clause and
-    its declarator's postfix clause. Giving it in both is an error."""
-    if prefix is not None and postfix is not None:
-        raise ParserError(
-            f"a placement attribute (`zeropage` or `address`) is "
-            f"given twice on `{name}`"
-        )
-    return prefix if prefix is not None else postfix
 
 
 _HW_STACK_SAVE = "`#pragma c6502 call save(hardware_stack)`"
@@ -1041,8 +1158,7 @@ def _consume_pragma_clause(items, start):
     plain string — the canonical annotation name, e.g. "unroll"),
     return `(annotation, start+1)`. Otherwise the optional
     `pragma_clause?` in the grammar didn't fire, return `(None,
-    start)`. Same Token-vs-str distinction as
-    `_consume_attribute_clause`."""
+    start)`."""
     if (
         start < len(items)
         and isinstance(items[start], str)
@@ -1443,7 +1559,7 @@ def _storage_name(storage) -> str:
     return type(storage).__name__.lower()
 
 
-def _typedef_declaration(prefix_specs, init_decls, struct_decls):
+def _typedef_declaration(prefix_attrs, init_decls, struct_decls):
     """The AST declarations a typedef declaration leaves behind. The
     typedef names were declared as their declarators ended (see
     `_ASTBuilder.init_declarator`), and the parser puts their types in
@@ -1456,23 +1572,18 @@ def _typedef_declaration(prefix_specs, init_decls, struct_decls):
     declaration of a tag already declared in the same scope changes
     nothing, so the parser doesn't need to know which tags were new.
     """
-    if prefix_specs is not None:
-        raise ParserError(
-            "`__attribute__((...))` isn't supported on a typedef"
-        )
     declared = {sd.struct_decl.tag for sd in struct_decls}
     out = []
-    for decl_tree, init, postfix_specs, forward_tags in init_decls:
+    for decl_tree, init, name_attrs, forward_tags in init_decls:
         name = _declarator_name(decl_tree)
         if init is not None:
             raise ParserError(
                 f"typedef {name!r} can't have an initializer"
             )
-        if postfix_specs is not None:
-            raise ParserError(
-                f"`__attribute__((...))` isn't supported on typedef "
-                f"{name!r}"
-            )
+        _no_c6502_attributes(
+            _merge_attributes(prefix_attrs, name_attrs),
+            "typedef", f"typedef {name!r}",
+        )
         for tag, is_union in forward_tags:
             if tag not in declared:
                 declared.add(tag)
@@ -1533,8 +1644,9 @@ def _apply_direct_declarator(dd_tree, base_type):
     (its suffix has already been parsed at parse time), and inner
     direct_declarators are deeper recursions."""
     children = dd_tree.children
-    # 1) IDENTIFIER alone — base case.
-    if len(children) == 1 and _is_token(children[0], "IDENTIFIER"):
+    # 1) IDENTIFIER, with any attributes after it — base case. The
+    #    attributes are read by `_declarator_attributes`.
+    if _is_token(children[0], "IDENTIFIER"):
         return str(children[0]), base_type, None, None
     # 2) `LPAREN declarator RPAREN` — recurse into the inner
     #    declarator with the same base_type.
@@ -1674,29 +1786,28 @@ def _adjust_param_type(t):
     return t
 
 
-def _enum_is_packed(clauses, defines: bool) -> bool:
-    """Whether an enum specifier's attribute clauses make it packed.
-    `packed`, with no argument, is the only attribute an enum takes,
-    and only where it's defined."""
+def _enum_is_packed(attrs: _Attributes | None, defines: bool) -> bool:
+    """Whether an enum specifier's attributes make it packed. `packed`,
+    with no argument, is the only c6502 attribute an enum takes, and
+    only where it's defined."""
     packed = False
-    for clause in clauses:
-        for name, arg in clause.specs:
-            if name != "packed":
-                raise ParserError(
-                    f"unknown attribute name {name!r} on an enum; "
-                    f"expected 'packed'"
-                )
-            if arg is not None:
-                raise ParserError(
-                    "`__attribute__((packed))` doesn't take an argument"
-                )
-            if packed:
-                raise ParserError("`packed` is given twice on an enum")
-            packed = True
+    for name, arg in _c6502_attributes(attrs, "tag", "an enum") or []:
+        if name != "packed":
+            raise ParserError(
+                f"`c6502::{name}` doesn't apply to an enum; it takes "
+                f"`c6502::packed`"
+            )
+        if arg is not None:
+            raise ParserError(
+                "`[[c6502::packed]]` doesn't take an argument"
+            )
+        if packed:
+            raise ParserError("`c6502::packed` is given twice on an enum")
+        packed = True
     if packed and not defines:
         raise ParserError(
-            "`__attribute__((packed))` goes on an enum's definition, "
-            "the one with the list of constants"
+            "`[[c6502::packed]]` goes on an enum's definition, the one "
+            "with the list of constants"
         )
     return packed
 
@@ -2047,11 +2158,16 @@ class _ASTBuilder(Transformer):
 
     @staticmethod
     def _make_tag_specifier(items, *, is_union):
-        # items: [STRUCT/UNION token, IDENTIFIER token?, (LBRACE,
-        # member_list_items..., RBRACE)?]. The IDENTIFIER is missing
-        # only with a body: `struct { ... }` gets a tag of its own
-        # that no source tag can spell, so it's a distinct type.
+        # items: [STRUCT/UNION token, attributes?, IDENTIFIER token?,
+        # (LBRACE, member_list_items..., RBRACE)?]. The IDENTIFIER is
+        # missing only with a body: `struct { ... }` gets a tag of its
+        # own that no source tag can spell, so it's a distinct type.
         kw_token = items[0]
+        attrs, i = _consume_attributes(items, 1)
+        _no_c6502_attributes(
+            attrs, "tag", "a union" if is_union else "a struct",
+        )
+        items = [kw_token] + items[i:]
         if _is_token(items[1], "IDENTIFIER"):
             tag = str(items[1])
             body_items = items[2:]
@@ -2106,15 +2222,15 @@ class _ASTBuilder(Transformer):
         )
 
     def enum_specifier(self, items):
-        # items: [ENUM, attribute_clause?, IDENTIFIER?, (LBRACE,
-        # enumerator_list, COMMA?, RBRACE, attribute_clause?)?].
-        # `enumerator_list` has already declared the constants and
-        # returns `(last, lowest, highest)`.
-        clauses = [it for it in items if isinstance(it, _AttributeClause)]
-        items = [it for it in items if not isinstance(it, _AttributeClause)]
+        # items: [ENUM, attributes?, IDENTIFIER?, (LBRACE,
+        # enumerator_list, COMMA?, RBRACE)?]. `enumerator_list` has
+        # already declared the constants and returns `(last, lowest,
+        # highest)`.
+        attrs, i = _consume_attributes(items, 1)
+        items = [items[0]] + items[i:]
         tag = str(items[1]) if _is_token(items[1], "IDENTIFIER") else None
         defines = _is_token(items[-1], "RBRACE")
-        packed = _enum_is_packed(clauses, defines)
+        packed = _enum_is_packed(attrs, defines)
         data_type = c99_ast.Int()
         if defines:
             _last, lowest, highest = next(
@@ -2184,8 +2300,13 @@ class _ASTBuilder(Transformer):
         return (value, min(prev[1], value), max(prev[2], value))
 
     def enumerator(self, items):
-        # `enumerator: IDENTIFIER (ASSIGN constant_exp)?`.
-        return (items[0], items[2] if len(items) == 3 else None)
+        # `enumerator: IDENTIFIER attribute_specifier_seq? (ASSIGN
+        # constant_exp)?`.
+        attrs, i = _consume_attributes(items, 1)
+        _no_c6502_attributes(
+            attrs, "enumerator", f"enumeration constant {str(items[0])!r}",
+        )
+        return (items[0], items[i + 1] if len(items) > i else None)
 
     def specifier_qualifier_list(self, items):
         # `_specqual_list`. Returns a list of type-specifier leaves
@@ -2208,10 +2329,17 @@ class _ASTBuilder(Transformer):
         return [it for it in items if not _is_token(it, "COMMA")]
 
     def struct_declaration(self, items):
-        # `specifier_qualifier_list struct_declarator_list SEMICOLON`.
-        # Returns a list of (member_name, member_type) tuples.
-        leaf_items = items[0]
-        decl_trees = items[1]
+        # `attribute_specifier_seq? specifier_qualifier_list
+        # struct_declarator_list SEMICOLON`. Returns a list of
+        # (member_name, member_type) tuples.
+        attrs, i = _consume_attributes(items, 0)
+        leaf_items = items[i]
+        decl_trees = items[i + 1]
+        for tree in decl_trees:
+            _no_c6502_attributes(
+                _merge_attributes(attrs, _declarator_attributes(tree)),
+                "member", f"member {_declarator_name(tree)!r}",
+            )
         # Split type-specifiers from type-qualifiers within the
         # specifier-qualifier list (the `specifier_qualifier_list`
         # transformer keeps them intermixed).
@@ -2272,24 +2400,29 @@ class _ASTBuilder(Transformer):
         return c99_ast.Arrow(operand=operand, member=str(identifier))
 
     def parameter_declaration(self, items):
-        # `parameter_declaration: specifier+ declarator attribute_clause?
-        #                       | specifier+ abstract_declarator?`
+        # `parameter_declaration: attribute_specifier_seq? specifier+
+        #                           declarator
+        #                       | attribute_specifier_seq? specifier+
+        #                           abstract_declarator?`
         # Returns `(name_or_None, data_type, register_marker)`, where
         # the marker is "" for a parameter without `register`, "auto"
         # for a `register` parameter whose register follows from its
         # position (A, then X), and the register letters, low byte
-        # first, for one with `__attribute__((in_y))` and the like. An
+        # first, for one with `[[c6502::in_y]]` and the like. An
         # unnamed parameter — `int foo(int *)` — gives `name=None`.
         # C99 §6.7.5.3.2 permits only one storage class on a parameter
         # — `register` — which routes the arg through a 6502 register.
-        specs, i = _consume_specifiers(items, 0)
-        rest = []
-        attr_clause: _AttributeClause | None = None
-        for it in items[i:]:
-            if isinstance(it, _AttributeClause):
-                attr_clause = it
-            else:
-                rest.append(it)
+        attrs, i = _consume_attributes(items, 0)
+        specs, i = _consume_specifiers(items, i)
+        rest = items[i:]
+        if rest and rest[0].data == "declarator":
+            attrs = _merge_attributes(
+                attrs, _declarator_attributes(rest[0]),
+            )
+            where = f"parameter {_declarator_name(rest[0])!r}"
+        else:
+            where = "a parameter"
+        param_specs = _c6502_attributes(attrs, "parameter", where)
         # Inline struct/union *definitions* in a parameter declaration
         # are legal C99 but obscure (the tag's scope would be the
         # enclosing function-prototype scope only). c6502 rejects.
@@ -2310,10 +2443,7 @@ class _ASTBuilder(Transformer):
                 f"on a function parameter (C99 §6.7.5.3.2 — only "
                 f"register)"
             )
-        marker = _register_marker(
-            attr_clause.specs if attr_clause is not None else None,
-            is_register,
-        )
+        marker = _register_marker(param_specs, is_register)
         if not rest:
             return (None, _adjust_param_type(base), marker)
         decl_tree = rest[0]
@@ -2402,58 +2532,90 @@ class _ASTBuilder(Transformer):
         # for the body, then the VarDecl for `x`.
         return child
 
-    def attr_name_only(self, items):
-        # `attribute_spec: IDENTIFIER -> attr_name_only`. Returns
-        # the bare attribute name, paired with `None` for the
-        # missing argument slot, as a `(name, None)` tuple.
-        return (items[0].value, None)
+    def attribute_specifier_seq(self, items):
+        # `attribute_specifier+`: one `_Attributes` for them all.
+        return _merge_attributes(*items)
 
-    def attr_name_arg(self, items):
-        # `attribute_spec: IDENTIFIER LPAREN STRING_LITERAL RPAREN
-        # -> attr_name_arg`. items[0] = IDENTIFIER, items[2] =
-        # STRING_LITERAL. Strip the surrounding double-quotes from
-        # the literal to produce a plain Python string. Returns a
-        # `(name, arg)` tuple. Validation of which (name, arg)
-        # combinations are legal happens in the caller (the per-
-        # context `_extract_*` helpers).
-        name = items[0].value
-        lit = items[2].value
-        # STRING_LITERAL grammar: optional `L` prefix + `"..."`. The
-        # `L"..."` wide-char prefix isn't meaningful for an attribute
-        # arg — strip it if present.
-        if lit.startswith("L"):
-            lit = lit[1:]
-        if not (lit.startswith('"') and lit.endswith('"')):
+    def attribute_specifier(self, items):
+        # `ATTR_OPEN attribute? (COMMA attribute?)* RBRACKET RBRACKET`.
+        # Each `attribute` is `(kind, name, arg)`, with kind "c6502" or
+        # "standard", or None for one c6502 ignores. C23 lets a
+        # standard attribute appear only once in an attribute list.
+        attrs = _Attributes(c6502=[], standard=[])
+        for it in items:
+            if not isinstance(it, tuple):
+                continue
+            kind, name, arg = it
+            if kind == "standard":
+                if any(n == name for n, _a in attrs.standard):
+                    raise ParserError(
+                        f"`{name}` appears twice in one attribute list"
+                    )
+                attrs.standard.append((name, arg))
+            else:
+                attrs.c6502.append((name, arg))
+        return attrs
+
+    def attribute_plain(self, items):
+        # `IDENTIFIER attribute_args?`: a standard attribute, or one
+        # C23 reserves, which c6502 ignores. A name that's one of
+        # c6502's own needs the prefix.
+        name = _normalized_attribute_name(items[0].value)
+        args = items[1] if len(items) > 1 else None
+        if name in _STANDARD_ATTRIBUTES:
+            arg = _attribute_argument(name, args)
+            _kinds, takes_string = _STANDARD_ATTRIBUTES[name]
+            if arg is not None and not (takes_string and isinstance(arg, str)):
+                raise ParserError(
+                    f"`{name}` takes a string literal, such as "
+                    f"`[[{name}(\"reason\")]]`, or nothing"
+                    if takes_string else
+                    f"`{name}` doesn't take an argument"
+                )
+            return ("standard", name, arg)
+        if _is_c6502_attribute(name):
             raise ParserError(
-                f"expected double-quoted string literal in attribute "
-                f"argument; got {items[2].value!r}"
+                f"`{name}` is a c6502 attribute, so it needs c6502's "
+                f"prefix: `[[c6502::{name}]]`"
             )
-        return (name, lit[1:-1])
+        return None
 
-    def attr_name_int(self, items):
-        # `attribute_spec: IDENTIFIER LPAREN attribute_int RPAREN
-        # -> attr_name_int`. items[2] is the integer literal's token
-        # (passed through by `attribute_int`). Returns `(name, value)`.
-        value, _, _ = _parse_integer_token(items[2].value)
-        return (items[0].value, value)
+    def attribute_prefixed(self, items):
+        # `IDENTIFIER COLONCOLON IDENTIFIER attribute_args?`: c6502's
+        # own with the prefix `c6502`, and any other prefix's, which
+        # c6502 ignores.
+        prefix = _normalized_attribute_name(items[0].value)
+        name = _normalized_attribute_name(items[2].value)
+        if prefix != _C6502_PREFIX:
+            return None
+        if not _is_c6502_attribute(name):
+            raise ParserError(
+                f"unknown attribute `c6502::{name}`; c6502's attributes "
+                f"are {', '.join(sorted(_C6502_ATTRIBUTES))}, and the "
+                f"parameter registers `in_a`, `in_x`, `in_y`, `in_ay`, "
+                f"and so on"
+            )
+        args = items[3] if len(items) > 3 else None
+        return ("c6502", name, _attribute_argument(f"c6502::{name}", args))
 
-    def attribute_int(self, items):
-        return items[0]
+    def attribute_args(self, items):
+        # `LPAREN _balanced_token* RPAREN`: the tokens between.
+        return _AttributeArgs(tokens=list(items[1:-1]))
 
-    def attribute_clause(self, items):
-        # `attribute_clause: ATTRIBUTE LPAREN LPAREN attribute_spec
-        # (COMMA attribute_spec)* RPAREN RPAREN`. Drop the punctuation
-        # and gather the transformed `(name, arg)` tuples. Wrap the
-        # list in `_AttributeClause` so `_consume_attribute_clause`
-        # can identify it positionally (other rules also produce
-        # lists). The validators in the calling rules (`var_decl` /
-        # `function_decl` / `init_declarator` / `parameter_declaration`)
-        # decide which attribute names are legal in each context.
-        specs: list[tuple[str, str | None]] = [
-            it for it in items
-            if isinstance(it, tuple)
-        ]
-        return _AttributeClause(specs=specs)
+    def attribute_declaration(self, items):
+        # `attribute_specifier_seq SEMICOLON`, which declares nothing.
+        # `[[fallthrough]];` is the only standard one, and belongs in a
+        # switch statement.
+        attrs = items[0]
+        _no_c6502_attributes(
+            attrs, "attribute declaration", "an attribute declaration",
+        )
+        if attrs.standard and len(_CTX.scopes) == 1:
+            raise ParserError(
+                "`[[fallthrough]];` belongs in a switch statement, not "
+                "at file scope"
+            )
+        return []
 
     # `initializer` rule alternatives. `init_exp` is `assignment_exp`
     # (a single scalar initializer); the inner exp passes through
@@ -2522,24 +2684,20 @@ class _ASTBuilder(Transformer):
         return c99_ast.CompoundLiteral(target_type=target, init=init)
 
     def init_declarator(self, items):
-        # `init_declarator: declarator attribute_clause?
-        #                    (ASSIGN initializer)?`. Returns a
-        # `(declarator_tree, init_or_None, postfix_specs_or_None,
-        # forward_tags)` tuple so var_decl can iterate the list emitted by
-        # `init_declarator (COMMA init_declarator)*`. The only
-        # attribute valid in the postfix position is `zeropage`
-        # (`uint8_t n __attribute__((zeropage));`), which var_decl
-        # validates. Register pinning of a local uses the `register`
-        # storage-class keyword (parsed with the leading specifiers).
+        # `init_declarator: declarator (ASSIGN initializer)?`. Returns
+        # a `(declarator_tree, init_or_None, name_attrs_or_None,
+        # forward_tags)` tuple so var_decl can iterate the list emitted
+        # by `init_declarator (COMMA init_declarator)*`. `name_attrs`
+        # are the attributes after the declarator's name (`uint8_t n
+        # [[c6502::zeropage]];`), which var_decl combines with the
+        # declaration's leading ones. Register pinning of a local uses
+        # the `register` storage-class keyword (parsed with the leading
+        # specifiers).
         decl_tree = items[0]
-        i = 1
-        postfix = None
-        if i < len(items) and isinstance(items[i], _AttributeClause):
-            postfix = items[i].specs
-            i += 1
+        postfix = _declarator_attributes(decl_tree)
         init = None
-        if i < len(items) and _is_token(items[i], "ASSIGN"):
-            init = items[i + 1]
+        if len(items) > 1 and _is_token(items[1], "ASSIGN"):
+            init = items[2]
         # Declare the name now, so the lexer knows it from the next
         # token on: a typedef name, or a name that hides one. A
         # typedef also lists the tags of its type that live in this
@@ -2560,8 +2718,8 @@ class _ASTBuilder(Transformer):
         return (decl_tree, init, postfix, forward_tags)
 
     def var_decl(self, items):
-        # `var_decl: attribute_clause? specifier+ init_declarator
-        # (COMMA init_declarator)* SEMICOLON`. The specifiers give the
+        # `var_decl: attribute_specifier_seq? specifier+
+        # init_declarator (COMMA init_declarator)* SEMICOLON`. The specifiers give the
         # BASE type; each init_declarator wraps it with pointer /
         # array / function modifiers and names the identifier. If a
         # declarator's composed type is FunType, that init-declarator
@@ -2573,13 +2731,14 @@ class _ASTBuilder(Transformer):
         # struct/union bodies in the specifier run (`struct foo {int
         # a;} x;`) come FIRST in the returned list, followed by one
         # node per init-declarator in source order.
-        prefix_specs, i = _consume_attribute_clause(items, 0)
+        prefix_attrs, i = _consume_attributes(items, 0)
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
-        # The prefix attribute clause is reduced per init-declarator
-        # below, once the composed type says whether it names a
-        # function (zp_abi) or an object (zeropage).
+        # The leading attributes apply to each declarator, with those
+        # after its name. They're checked below, once the composed
+        # type says whether it names a function (zp_abi) or an object
+        # (zeropage).
         # Remaining items are init_declarator results (tuples) and
         # COMMA / SEMICOLON tokens. Pick out the tuples in order.
         init_decls = [
@@ -2588,28 +2747,23 @@ class _ASTBuilder(Transformer):
         ]
         if isinstance(storage_class, _TypedefStorage):
             return struct_decls + _typedef_declaration(
-                prefix_specs, init_decls, struct_decls,
+                prefix_attrs, init_decls, struct_decls,
             )
         tails: list = []
-        for decl_tree, init, postfix_specs, _tags in init_decls:
+        for decl_tree, init, name_attrs, _tags in init_decls:
             name, composed, outer_param_names, outer_param_regs = (
                 _apply_declarator(decl_tree, base_type)
             )
+            attrs = _merge_attributes(prefix_attrs, name_attrs)
             if isinstance(composed, c99_ast.FunType):
                 if init is not None:
                     raise ParserError(
                         "function declaration cannot have an initializer"
                     )
-                if postfix_specs is not None:
-                    raise ParserError(
-                        f"`__attribute__` after the declarator isn't "
-                        f"supported on function declaration {name!r}; "
-                        f"put it before the declaration"
-                    )
+                where = f"function declaration {name!r}"
+                attr_specs = _c6502_attributes(attrs, "function", where)
                 prefix_abi, carry_return, address, preserves = (
-                    _extract_function_attributes(
-                        prefix_specs, where=f"function declaration {name!r}",
-                    )
+                    _extract_function_attributes(attr_specs, where=where)
                 )
                 if isinstance(storage_class, c99_ast.Register):
                     raise ParserError(
@@ -2634,53 +2788,45 @@ class _ASTBuilder(Transformer):
                         carry_return=carry_return,
                         address=address,
                         preserves=preserves,
-                        section=_extract_section(
-                            prefix_specs, f"function declaration {name!r}",
-                        ),
+                        section=_extract_section(attr_specs, where),
                     )
                 ))
             else:
-                placement = _merge_placement(
-                    _extract_object_placement(prefix_specs, name),
-                    _extract_object_placement(postfix_specs, name),
-                    name,
+                attr_specs = _c6502_attributes(
+                    attrs, "object", f"object declaration `{name}`",
                 )
-                prefix_section = _extract_section(prefix_specs, f"`{name}`")
-                postfix_section = _extract_section(postfix_specs, f"`{name}`")
-                if prefix_section is not None and postfix_section is not None:
-                    raise ParserError(
-                        f"`__attribute__((section(...)))` is given twice "
-                        f"on `{name}`"
-                    )
                 tails.append(c99_ast.VarDecl(
                     var_decl=c99_ast.Type_var_decl(
                         name=name,
                         init=init,
                         data_type=composed,
                         storage_class=storage_class,
-                        placement=placement,
-                        section=prefix_section or postfix_section,
+                        placement=_extract_object_placement(
+                            attr_specs, name,
+                        ),
+                        section=_extract_section(attr_specs, f"`{name}`"),
                     )
                 ))
         return struct_decls + tails
 
     def tag_only_decl(self, items):
-        # `var_decl: attribute_clause? specifier+ SEMICOLON ->
+        # `var_decl: attribute_specifier_seq? specifier+ SEMICOLON ->
         # tag_only_decl`. Used for struct/union forward declarations
         # (`struct foo;`) and struct/union definitions with no
         # declarator (`struct foo { int a; };`). Storage classes
         # aren't legal here — `static struct foo;` is meaningless.
-        # Attribute clauses are also not legal here — there's no
-        # function declaration to attach them to. Returns a list of
+        # Leading attributes aren't legal here (C23 §6.7.2 needs a
+        # declarator after them); a struct's go after `struct`.
+        # Returns a list of
         # Type_declaration nodes (the StructDecl for the body, plus
         # any *nested* struct definitions encountered while parsing
         # the body).
-        prefix_specs, i = _consume_attribute_clause(items, 0)
-        if prefix_specs is not None:
+        prefix_attrs, i = _consume_attributes(items, 0)
+        if prefix_attrs is not None:
             raise ParserError(
-                "`__attribute__((...))` is only valid on function "
-                "declarations; saw it on a struct/union declaration "
-                "without a declarator"
+                "attributes before a declaration need a declarator to "
+                "apply to; a struct's, union's, or enum's go after its "
+                "keyword, as in `struct [[deprecated]] s { ... };`"
             )
         specs, i = _consume_specifiers(items, i)
         # The semicolon is the last item; nothing else.
@@ -2736,8 +2882,8 @@ class _ASTBuilder(Transformer):
         return struct_decls + [forward]
 
     def function_decl(self, items):
-        # `function_decl: attribute_clause? specifier+ declarator
-        # block` — function *definition* path (body present). Forward
+        # `function_decl: attribute_specifier_seq? specifier+
+        # declarator block` — function *definition* path (body present). Forward
         # declarations land in `var_decl` above (the grammar lets
         # `int foo(int);` parse as var_decl with a function-typed
         # declarator, since both rules share the `specifier+ declarator`
@@ -2751,18 +2897,21 @@ class _ASTBuilder(Transformer):
         # Returns a list of Type_declaration AST nodes (typically one
         # FunctionDecl, plus any inline struct definitions that
         # appeared in the return-type specifier).
-        prefix_specs, i = _consume_attribute_clause(items, 0)
-        prefix_abi, carry_return, address, preserves = (
-            _extract_function_attributes(
-                prefix_specs, where="function definition",
-            )
-        )
+        prefix_attrs, i = _consume_attributes(items, 0)
         specs, i = _consume_specifiers(items, i)
         struct_decls = _drain_inline_struct_bodies(specs)
         base_type, storage_class = _split_specifiers(specs)
         decl_tree = items[i]
         name, composed, outer_param_names, outer_param_regs = (
             _apply_declarator(decl_tree, base_type)
+        )
+        where = f"function definition {name!r}"
+        attr_specs = _c6502_attributes(
+            _merge_attributes(prefix_attrs, _declarator_attributes(decl_tree)),
+            "function", where,
+        )
+        prefix_abi, carry_return, address, preserves = (
+            _extract_function_attributes(attr_specs, where=where)
         )
         block = items[i + 1]
         if not isinstance(composed, c99_ast.FunType):
@@ -2784,7 +2933,7 @@ class _ASTBuilder(Transformer):
         _CTX.declare(name, _ORDINARY, _CTX.scopes[0])
         if address is not None:
             raise ParserError(
-                f"function {name!r} has `__attribute__((address(...)))`, "
+                f"function {name!r} has `[[c6502::address(...)]]`, "
                 f"which names code that's already at that address, so it "
                 f"can't have a body"
             )
@@ -2793,7 +2942,7 @@ class _ASTBuilder(Transformer):
                 f"function {name!r} is defined here, so it can't have "
                 f"`preserves_x` or `preserves_y`. Those describe a "
                 f"routine at a fixed address "
-                f"(`__attribute__((address(...)))`), whose code the "
+                f"(`[[c6502::address(...)]]`), whose code the "
                 f"compiler doesn't compile and so can't check"
             )
         param_names = outer_param_names
@@ -2807,9 +2956,7 @@ class _ASTBuilder(Transformer):
             abi_annotation=prefix_abi,
             param_registers=list(param_regs),
             carry_return=carry_return,
-            section=_extract_section(
-                prefix_specs, f"function definition {name!r}",
-            ),
+            section=_extract_section(attr_specs, where),
         ))
         return struct_decls + [tail]
 
@@ -3395,12 +3542,9 @@ class _TypedefLexer(BasicLexer):
         ctx = _CTX
         ctx.body_scope = None
         kind = token.type
-        enum_body = ctx.enum_head.step(kind)
+        tag_body = ctx.tag_head.step(kind)
         if kind == "LBRACE":
-            before, last = ctx.recent
-            if enum_body or last in ("STRUCT", "UNION") or (
-                last == "IDENTIFIER" and before in ("STRUCT", "UNION")
-            ):
+            if tag_body:
                 ctx.brace_scopes.append(None)
             else:
                 scope = ctx.push_scope()
@@ -3452,4 +3596,13 @@ _LARK = Lark.open(
 def parse(source: str) -> c99_ast.Type_program:
     global _CTX
     _CTX = _ParseContext()
-    return _LARK.parse(source, start="start")
+    try:
+        return _LARK.parse(source, start="start")
+    except UnexpectedInput as e:
+        if "__attribute__" not in source:
+            raise
+        raise ParserError(
+            f"{e}\nc6502 doesn't take GCC's `__attribute__((...))`; it "
+            f"takes C23 attributes, such as `[[c6502::zp_abi]]` before a "
+            f"declaration or `uint8_t n [[c6502::in_x]]` after a name"
+        ) from None

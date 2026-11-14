@@ -335,9 +335,9 @@ class TestMetadata(unittest.TestCase):
 # A routine at $D000 that returns the sum of the X bytes at ($E6),Y:
 # LDY #0; LDA #0; loop: CLC; ADC ($E6),Y; INY; DEX; BNE loop; RTS.
 _TOTAL = """
-__attribute__((zp_abi, address(0xD000)))
-unsigned char total(const unsigned char *p __attribute__((zeropage(0xE6))),
-                    register unsigned char n __attribute__((in_x)));
+[[c6502::zp_abi, c6502::address(0xD000)]]
+unsigned char total(const unsigned char *p [[c6502::zeropage(0xE6)]],
+                    register unsigned char n [[c6502::in_x]]);
 """
 _TOTAL_CODE = (0xD000, bytes([
     0xA0, 0x00, 0xA9, 0x00, 0x18, 0x71, 0xE6, 0xC8, 0xCA, 0xD0, 0xF9, 0x60,
@@ -346,16 +346,16 @@ _TOTAL_CODE = (0xD000, bytes([
 
 # A C function that sums the n bytes at p, taking p at $30 and n in X.
 _SUM = """
-unsigned char sum(const unsigned char *p __attribute__((zeropage(0x30))),
-                  register unsigned char n __attribute__((in_x))) {
+unsigned char sum(const unsigned char *p [[c6502::zeropage(0x30)]],
+                  register unsigned char n [[c6502::in_x]]) {
     unsigned char s = 0, i = 0;
     do { s += p[i]; i++; } while (--n != 0);
     return s;
 }
 """
 _SUM_DECL = """
-unsigned char sum(const unsigned char *p __attribute__((zeropage(0x30))),
-                  register unsigned char n __attribute__((in_x)));
+unsigned char sum(const unsigned char *p [[c6502::zeropage(0x30)]],
+                  register unsigned char n [[c6502::in_x]]);
 """
 _SUM_MAIN = """
 unsigned char data[4] = {1, 2, 3, 4};
@@ -368,18 +368,18 @@ class TestPinnedParams(unittest.TestCase):
 
     def test_marker(self) -> None:
         fd = parse(
-            "void f(const char *s __attribute__((zeropage(0xE6))), "
-            "register unsigned char n __attribute__((in_x)));"
+            "void f(const char *s [[c6502::zeropage(0xE6)]], "
+            "register unsigned char n [[c6502::in_x]]);"
         ).declaration[0].function_decl
         self.assertEqual(fd.param_registers, ["@230", "X"])
 
     def test_parse_errors(self) -> None:
         for src, needle in [
-            ("void f(register char *s __attribute__((zeropage(0xE6))));",
+            ("void f(register char *s [[c6502::zeropage(0xE6)]]);",
              "arrives in a register"),
-            ("void f(char *s __attribute__((zeropage)));",
+            ("void f(char *s [[c6502::zeropage]]);",
              "takes the integer zero-page address"),
-            ("void f(char *s __attribute__((zeropage(0x100))));",
+            ("void f(char *s [[c6502::zeropage(0x100)]]);",
              "outside"),
         ]:
             with self.subTest(src):
@@ -404,11 +404,11 @@ class TestPinnedParams(unittest.TestCase):
         # and `both` reads `q` after calling it.
         src = """
         unsigned char first(
-            const unsigned char *p __attribute__((zeropage(0xE6)))) {
+            const unsigned char *p [[c6502::zeropage(0xE6)]]) {
             return p[0];
         }
         unsigned char both(
-            const unsigned char *q __attribute__((zeropage(0xE6))),
+            const unsigned char *q [[c6502::zeropage(0xE6)]],
             const unsigned char *r) {
             unsigned char s = first(r);
             return s + q[1];
@@ -435,7 +435,7 @@ class TestPinnedParams(unittest.TestCase):
         asm = _codegen("""
         void elsewhere(void);
         unsigned char f(
-            const unsigned char *p __attribute__((zeropage(0x30)))) {
+            const unsigned char *p [[c6502::zeropage(0x30)]]) {
             elsewhere();
             return *p;
         }
@@ -444,7 +444,7 @@ class TestPinnedParams(unittest.TestCase):
 
     def test_needs_zp_abi(self) -> None:
         src = """
-        unsigned char f(const char *s __attribute__((zeropage(0xE6)))) {
+        unsigned char f(const char *s [[c6502::zeropage(0xE6)]]) {
             return *s ? f(s + 1) + 1 : 0;
         }
         int main(void) { return f("abc"); }
@@ -460,7 +460,7 @@ class TestPinnedParams(unittest.TestCase):
     def test_declarations_agree(self) -> None:
         with self.assertRaisesRegex(AbiSelectionError, "disagree"):
             _codegen("""
-            void f(const char *s __attribute__((zeropage(0xE6))));
+            void f(const char *s [[c6502::zeropage(0xE6)]]);
             void f(const char *s) { (void)s; }
             int main(void) { f("a"); return 0; }
             """)
@@ -501,8 +501,8 @@ class TestPinnedParams(unittest.TestCase):
 
     def test_runtime_block_moves_off_it(self) -> None:
         src = """
-        __attribute__((zp_abi, address(0xD000)))
-        void put(const unsigned char *p __attribute__((zeropage(0x04))));
+        [[c6502::zp_abi, c6502::address(0xD000)]]
+        void put(const unsigned char *p [[c6502::zeropage(0x04)]]);
         unsigned char data[1];
         int main(void) { put(data); return 0; }
         """
@@ -528,7 +528,7 @@ class TestRegisterParams(unittest.TestCase):
     def test_no_slot(self) -> None:
         asm = _codegen("""
         unsigned char out;
-        void put(register unsigned char k __attribute__((in_a)),
+        void put(register unsigned char k [[c6502::in_a]],
                  unsigned char *p) { *p = k; }
         int main(void) { put(5, &out); return out; }
         """)

@@ -26,7 +26,8 @@ Two flavors of fold, depending on the comparison shape:
     JumpIfCmp always means "jump if op is true".
 
     Operand narrowing through ZeroExtend: when one operand is the
-    single-use dst of a `ZeroExtend(narrow_var)` upstream and
+    dst of a `ZeroExtend(narrow_var)` upstream (SSA-renamed, or else
+    with no other use; see `_narrowable_use`) and
     `narrow_var` has a 1-byte unsigned type (Char / UChar), and the
     other operand either traces to the same kind of narrow Var or is
     an integer constant whose value fits in 0..255, both operands
@@ -35,7 +36,7 @@ Two flavors of fold, depending on the comparison shape:
     JumpIfFalse sense — instead of the 16-bit SBC chain.
 
     Operand narrowing through SignExtend: for ordering against zero
-    (`>= 0` / `< 0` only), if one operand is the single-use dst of a
+    (`>= 0` / `< 0` only), if one operand is the dst of a
     `SignExtend(narrow_var)` whose source is a 1-byte signed type
     (`SChar`) and the other operand is a literal zero, both narrow
     to 1 byte. The transformation is sound because SignExtend
@@ -199,6 +200,22 @@ _GE_LT_OPS: tuple[type, ...] = (
 )
 
 
+def _narrowable_use(
+    val: tac_ast.Var,
+    use_count: dict[str, int],
+    ssa_dsts: set[str] | None,
+) -> bool:
+    """Whether a compare's read of the extend dst `val` may be
+    replaced by a read of the extend's source. An SSA-renamed dst
+    has one definition, so `var_def_idx` finds the extend that gives
+    every use its value, and the extend stays for the other uses
+    (DSE drops it once none are left). Without SSA names, the dst
+    must have this one use."""
+    if ssa_dsts is not None and val.name in ssa_dsts:
+        return True
+    return use_count.get(val.name, 0) == 1
+
+
 def _try_narrow_through_zero_extend(
     val: tac_ast.Type_val,
     instrs: list[tac_ast.Type_instruction],
@@ -208,13 +225,14 @@ def _try_narrow_through_zero_extend(
     use_idx: int,
     ssa_dsts: set[str] | None,
 ) -> tuple[tac_ast.Type_val, object] | None:
-    """If `val` is a Var that's the single-use dst of a ZeroExtend
-    upstream, the source has a c99 type, and the source holds the
-    same value at `instrs[use_idx]` as at the extend, return
-    (source, type). Otherwise None."""
+    """If `val` is a Var that's the dst of a ZeroExtend upstream, the
+    source has a c99 type, and the source holds the same value at
+    `instrs[use_idx]` as at the extend, return (source, type).
+    Otherwise None. The dst may have other uses (`_narrowable_use`),
+    as a switch's controlling value has one per case."""
     if not isinstance(val, tac_ast.Var):
         return None
-    if use_count.get(val.name, 0) != 1:
+    if not _narrowable_use(val, use_count, ssa_dsts):
         return None
     def_idx = var_def_idx.get(val.name)
     if def_idx is None:
@@ -268,7 +286,7 @@ def _try_narrow_through_sign_extend(
     `_try_narrow_through_zero_extend` for the signed case."""
     if not isinstance(val, tac_ast.Var):
         return None
-    if use_count.get(val.name, 0) != 1:
+    if not _narrowable_use(val, use_count, ssa_dsts):
         return None
     def_idx = var_def_idx.get(val.name)
     if def_idx is None:
@@ -422,7 +440,7 @@ def _trace_through_zero_extend(
     source. Loops to handle chained ZeroExtends, and otherwise
     returns `x` unchanged."""
     while isinstance(x, tac_ast.Var):
-        if use_count.get(x.name, 0) != 1:
+        if not _narrowable_use(x, use_count, ssa_dsts):
             break
         def_idx = var_def_idx.get(x.name)
         if def_idx is None:

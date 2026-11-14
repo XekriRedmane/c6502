@@ -77,17 +77,25 @@ so the `JumpIfCmp` always jumps when its operator holds.
 Within a fold, the operands narrow in three ways.
 
 - For `==` or `!=` against an integer constant zero, the other
-  operand is followed back through any chain of `ZeroExtend`s whose
-  results each have one use, and the jump tests the narrowest source.
-- Both operands narrow to one byte when one of them is the
-  single-use result of a `ZeroExtend` from a `char` or `unsigned
-  char` variable, and the other is either the same kind of value or
-  an integer constant from 0 to 255. The constant becomes a
-  `ConstUChar`.
+  operand is followed back through any chain of `ZeroExtend`s, and
+  the jump tests the narrowest source.
+- Both operands narrow to one byte when one of them is the result
+  of a `ZeroExtend` from a `char` or `unsigned char` variable, and
+  the other is either the same kind of value or an integer constant
+  from 0 to 255. The constant becomes a `ConstUChar`.
 - For `>=` or `<` only, both operands narrow to one byte when one of
-  them is the single-use result of a `SignExtend` from a `signed
-  char` variable and the other is a constant zero. Both comparisons
-  test only the sign bit, which `SignExtend` keeps.
+  them is the result of a `SignExtend` from a `signed char` variable
+  and the other is a constant zero. Both comparisons test only the
+  sign bit, which `SignExtend` keeps.
+
+An extend's result that is SSA-renamed may have other uses. The
+narrowed compare reads the source, and the extend stays for the other
+uses until dead-store elimination finds none left. A `switch` on an
+`unsigned char` compares its one extended value with every case, so
+each case becomes `CMP #k; BEQ`. Without SSA names, as when the pass
+runs on its own in a unit test, the extend's result must have only
+the compare's use, because the pass finds the extend as the last
+write of that name.
 
 Each narrowing reads the extend's source variable at the compare in
 place of the extend's result, so the source must hold the same value

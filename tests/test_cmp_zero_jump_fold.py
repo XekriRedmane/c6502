@@ -833,5 +833,82 @@ class TestStaleExtendSource(unittest.TestCase):
             self.assertEqual(r.return_int(), 31, f"optimize={optimize}")
 
 
+class TestMultiUseSsaExtend(unittest.TestCase):
+    """A switch on a byte compares the one extended value with every
+    case. When that value is SSA-renamed, each compare narrows to the
+    byte, and the extend stays for any other use."""
+
+    def test_narrows_each_compare(self):
+        from passes.optimization.cmp_zero_jump_fold import CMP_ZERO_RULE
+        from passes.optimization.framework import PassContext, RuleSet
+        fn = _fn(
+            tac_ast.ZeroExtend(src=_var("n.1"), dst=_var("%w.2")),
+            tac_ast.Binary(
+                op=tac_ast.Equal(),
+                src1=_var("%w.2"), src2=_const_int(3), dst=_var("%c.3"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c.3"), target=".a"),
+            tac_ast.Binary(
+                op=tac_ast.Equal(),
+                src1=_var("%w.2"), src2=_const_int(7), dst=_var("%c.4"),
+            ),
+            tac_ast.JumpIfTrue(condition=_var("%c.4"), target=".b"),
+            tac_ast.Copy(src=_var("%w.2"), dst=_var("%keep.5")),
+        )
+        symbols = _symbols(
+            ("n.1", c99_ast.UChar()), ("%w.2", c99_ast.Int()),
+            ("%c.3", c99_ast.Int()), ("%c.4", c99_ast.Int()),
+            ("%keep.5", c99_ast.Int()),
+        )
+        ctx = PassContext(
+            symbols=symbols,
+            ssa_dsts={"n.1", "%w.2", "%c.3", "%c.4", "%keep.5"},
+        )
+        out = RuleSet(CMP_ZERO_RULE).run(fn, ctx)
+        jumps = [i for i in out.instructions
+                 if isinstance(i, tac_ast.JumpIfCmp)]
+        self.assertEqual(len(jumps), 2)
+        for j in jumps:
+            self.assertEqual(j.src1, _var("n.1"))
+            self.assertIsInstance(j.src2.const, tac_ast.ConstUChar)
+        self.assertIsInstance(out.instructions[0], tac_ast.ZeroExtend)
+
+    _SWITCH = (
+        "#include <stdint.h>\n"
+        "uint8_t pick(uint8_t n) {\n"
+        "    switch (n) {\n"
+        "    case 0: return 10;\n"
+        "    case 1: return 11;\n"
+        "    case 2: return 12;\n"
+        "    case 7: return 17;\n"
+        "    case 200: return 99;\n"
+        "    case 300: return 1;\n"
+        "    default: return 50;\n"
+        "    }\n"
+        "}\n"
+        "int main(void) {\n"
+        "    return pick(0) + pick(1) + pick(2) + pick(7) + pick(200)\n"
+        "        + pick(44);\n"
+        "}\n"
+    )
+
+    def test_switch_on_byte_compares_bytes(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SWITCH), optimize=True)
+        body = asm[asm.index("pick:"):asm.index("main:")]
+        # No compare of the promoted value's zero high byte.
+        self.assertNotIn("CMP   #$00", body)
+        self.assertIn("CMP   #$C8", body)
+
+    def test_switch_on_byte_runs(self):
+        for optimize in (False, True):
+            r = build_sim(self._SWITCH, optimize=optimize).run()
+            self.assertEqual(
+                r.return_int(), 10 + 11 + 12 + 17 + 99 + 50,
+                f"optimize={optimize}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

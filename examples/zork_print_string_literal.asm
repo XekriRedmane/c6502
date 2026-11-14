@@ -49,7 +49,6 @@ ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
 __local_dump_buffer_with_more__0	EQU	$98
 __local_set_page_first__0	EQU	$98
-__local_do_rwts_on_sector__command	EQU	$99
 __local_dump_buffer_with_more__end	EQU	$99
 __local_set_page_first__prev_first	EQU	$99
 __local_do_rwts_on_sector__0	EQU	$9A
@@ -241,11 +240,9 @@ do_rwts_on_sector:
    LDA   SCRATCH1+1
    STA   __local_do_rwts_on_sector__sector_1
 .loop@0_continue:
-   LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
-   SBC   __local_do_rwts_on_sector__command
+   SBC   SECTORS_PER_TRACK
    STA   __local_do_rwts_on_sector__0
    LDA   __local_do_rwts_on_sector__sector_1
    SBC   #$00
@@ -372,9 +369,7 @@ get_next_code_byte2:
    BNE   .if_else@12
    LDA   Z_PC2_H
    CMP   NUM_IMAGE_PAGES
-   BCS   .if_else@12
-   STA   __local_get_next_code_byte2__page
-   JMP   .if_end@11
+   BCC   .if_end@11
 .if_else@12:
    LDA   Z_PC2_H
    STA   __local_get_next_code_byte2__page
@@ -425,13 +420,9 @@ get_next_code_byte2:
    LDA   PAGE_TABLE_INDEX2
    CLC
    ADC   NUM_IMAGE_PAGES
-   STA   __local_get_next_code_byte2__page
 .if_end@11:
-   LDA   Z_HEADER_ADDR+1
-   STA   __local_get_next_code_byte2__found_1
-   LDA   __local_get_next_code_byte2__page
    CLC
-   ADC   __local_get_next_code_byte2__found_1
+   ADC   Z_HEADER_ADDR+1
    STA   ZCODE_PAGE_ADDR2+1
    LDA   #$00
    STA   ZCODE_PAGE_ADDR2
@@ -676,9 +667,7 @@ buffer_char:
 .loop@6_start:
    LDA   BUFF_AREA,X
    CMP   #$A0
-   BNE   .if_end@27
-   JMP   .loop@6_break
-.if_end@27:
+   BEQ   .loop@6_break
    DEX
    BNE   .loop@6_start
    LDX   WNDWDTH

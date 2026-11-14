@@ -49,7 +49,6 @@ a user variable.
 - [Common subexpression elimination](cse.md). Replaces a repeated pure computation or load with a Copy of the first.
 - [Commuted ADC, AND, and ORA](adc_commute.md). Reads memory directly in ADC, AND, or ORA instead of reloading it after a spill.
 - [Compare and subtract of the same operands](compare_subtract.md). Lowers `t = a - b` next to the `a < b` that guards it as one subtraction and a branch on its flags.
-- [Compare without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`.
 - [Comparison and jump fold](cmp_zero_jump_fold.md). Fuses a comparison and the jump on its result into one conditional jump.
 - [Const-static fold](const_static_fold.md). Replaces reads of a static const scalar with immediates and drops its storage.
 - [Constant AND and ORA fold](const_arith_fold.md). Folds `LDA #k` with `AND`/`ORA #k`, and deletes `ORA #0` and `AND #$FF`.
@@ -87,6 +86,7 @@ a user variable.
 - [Moving a constant out of an offset](reassoc_offset.md). Rewrites `p + (x + k)` as `(p + x) + k` so subscripts share `p + x`.
 - [Multi-byte INC](inc_peephole.md). Rewrites an in-place add of 1 to memory as an INC and BNE chain.
 - [Narrowing widened arithmetic](narrow_widened_arith.md). Does promoted byte arithmetic at one byte when only the low byte is used.
+- [Operands without a staging temporary](cmp_through_tmp_fold.md). Rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP src`, and the same for `ADC`, `SBC`, `AND`, `ORA`, and `EOR`.
 - [OR-with-zero absorb](or_zero_absorb.md). Rewrites `LDA #0; ORA x` as `LDA x` before move coalescing.
 - [PHA and PLA removal](dead_pha_pla.md). Drops a PHA/PLA pair around instructions that leave A untouched.
 - [Private local pools](zp_local_pools.md). Gives each eligible function body-local zero-page bytes that no coexisting function uses.
@@ -261,7 +261,7 @@ reaching the cap raises an error.
 31. [Sign-bit test without AND](and_sign_bit_branch.md)
 32. [Self-store drop](self_store_drop.md)
 33. [Redundant compare](redundant_compare.md)
-34. [Compare without a staging temporary](cmp_through_tmp_fold.md)
+34. [Operands without a staging temporary](cmp_through_tmp_fold.md)
 35. [Commuted ADC, AND, and ORA](adc_commute.md)
 36. [CMP and SBC fusion](cmp_sbc_fusion.md)
 37. [Branch on INC or DEC flags](dec_inc_branch_fold.md)

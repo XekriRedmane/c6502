@@ -534,3 +534,24 @@ class TestRegisterParams(unittest.TestCase):
         equs = _equs(asm)
         self.assertNotIn("__zpabi_put__k", equs)
         self.assertEqual(equs["__zpabi_put__p_0"], 0x80)
+
+    def test_kept_in_its_register_sets_no_flags(self) -> None:
+        # From the calls fuzzer: `p1`'s local stays in X, where it
+        # arrives, and its entry copy `Mov(X, X)` was taken for an
+        # `LDX`, so the `TXA` before the sign test of `p1` went and
+        # the `BMI` tested `p0`, left in the flags by the caller.
+        src = """
+        unsigned char g0 = 104;
+        unsigned long g2 = 132;
+        int f0(register signed char p0, register signed char p1) {
+            signed char l0 = ((p1 % (g2 | 1)) & (p0 % (g0 | 1)));
+            return l0;
+        }
+        int main(void) {
+            long r = (long)f0(215, 72);
+            return (int)(r ^ (r >> 16));
+        }
+        """
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(_run(src, optimize), 64)

@@ -45,6 +45,68 @@ class TestCmpThroughTmpFold(unittest.TestCase):
         out = _instrs(apply_cmp_through_tmp_fold(prog))
         self.assertEqual(out, [_lda(other), _cmp(src)])
 
+    def test_sbc_after_sec(self):
+        # do_rwts_on_sector's `sector - SECTORS_PER_TRACK`.
+        src = asm_ast.Data(name="SECTORS_PER_TRACK", offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="sector", offset=0)
+        prog = _wrap([
+            _lda(src), _sta(tmp), _lda(other), asm_ast.SetCarry(),
+            asm_ast.Sub(src=tmp, dst=_A), asm_ast.Return(save_a=True),
+        ])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        self.assertEqual(out, [
+            _lda(other), asm_ast.SetCarry(), asm_ast.Sub(src=src, dst=_A),
+            asm_ast.Return(save_a=True),
+        ])
+
+    def test_logic_and_add(self):
+        src = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        for op in (
+            asm_ast.And(src=tmp, dst=_A),
+            asm_ast.Or(src=tmp, dst=_A),
+            asm_ast.Xor(src1=_A, src2=tmp, dst=_A),
+        ):
+            with self.subTest(op=type(op).__name__):
+                prog = _wrap([_lda(src), _sta(tmp), _lda(other), op])
+                out = _instrs(apply_cmp_through_tmp_fold(prog))
+                self.assertEqual(out[0], _lda(other))
+                self.assertEqual(len(out), 2)
+                self.assertNotIn(tmp, vars(out[1]).values())
+        prog = _wrap([
+            _lda(src), _sta(tmp), _lda(other), asm_ast.ClearCarry(),
+            asm_ast.Add(src=tmp, dst=_A),
+        ])
+        self.assertEqual(_instrs(apply_cmp_through_tmp_fold(prog)), [
+            _lda(other), asm_ast.ClearCarry(), asm_ast.Add(src=src, dst=_A),
+        ])
+
+    def test_alu_needs_an_addressable_source(self):
+        # SBC has no `(zp)` form without Y, which IndirectZp loads.
+        src = asm_ast.IndirectZp(address=0x90, offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        prog = _wrap([
+            _lda(src), _sta(tmp), _lda(other), asm_ast.SetCarry(),
+            asm_ast.Sub(src=tmp, dst=_A),
+        ])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        self.assertEqual(len(out), 5)
+
+    def test_tmp_read_later_blocks_alu(self):
+        src = asm_ast.Data(name="S", offset=0)
+        tmp = asm_ast.Data(name="T", offset=0)
+        other = asm_ast.Data(name="O", offset=0)
+        prog = _wrap([
+            _lda(src), _sta(tmp), _lda(other), asm_ast.SetCarry(),
+            asm_ast.Sub(src=tmp, dst=_A), _lda(tmp),
+            asm_ast.Return(save_a=True),
+        ])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        self.assertEqual(len(out), 7)
+
     def test_data_src(self):
         src = asm_ast.Data(name="S", offset=0)
         tmp = asm_ast.Data(name="T", offset=0)

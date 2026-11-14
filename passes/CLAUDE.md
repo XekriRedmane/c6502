@@ -1064,8 +1064,12 @@ document says whether it fires there.
   `IndexedData` like `floor_y_table,X` once Compare-emit dispatches
   it, and `(zp),Y` / `(DPTR),Y`). A candidate folds when `tmp` is
   dead after the CMP on every path (`asm_dead_store.mem_dead_after`),
-  or when every read of `tmp` is a candidate. See module docstring
-  for the eligibility / aliasing rules.
+  or when every read of `tmp` is a candidate. The last instruction may
+  instead be an `Add` / `Sub` / `And` / `Or` / `Xor` of `tmp` into A,
+  after an optional `SetCarry` / `ClearCarry`, when `src` is an
+  immediate, `Data` / `ZP`, or `IndexedData` (`SBC SECTORS_PER_TRACK`
+  in Zork's `do_rwts_on_sector`). See module docstring for the
+  eligibility / aliasing rules.
 - `apply_redundant_compare` — drops the second of two identical
   compares when the only way to it is a branch right after the first.
 - `apply_tail_merge` — branches to one shared copy of a repeated

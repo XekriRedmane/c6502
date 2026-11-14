@@ -445,3 +445,48 @@ class TestPrivateSlotNotReadThroughPointer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTailCallKeepsAddressTakenLocals(unittest.TestCase):
+    """A `JMP` to another function (a tail call) leaves the
+    function's own `__local_*` bytes dead, except one whose address
+    the function takes: the callee may have been given it. Before
+    this, `return sum(a, 3);` with a local array `a` lost the stores
+    that fill `a`, and `sum` read whatever was there."""
+
+    def test_stores_to_a_passed_local_stay(self):
+        slot = _data("__local_wrap__a", 0)
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(4), dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=slot),
+            asm_ast.Mov(
+                src=asm_ast.ImmLabelLow(name="__local_wrap__a", offset=0),
+                dst=_REG_A,
+            ),
+            asm_ast.Mov(src=_REG_A, dst=_data("__zpabi_sum__a_0", 0)),
+            asm_ast.Jump(target="sum"),
+        ]
+        out = apply_asm_dead_store(asm_ast.Program(top_level=[
+            asm_ast.Function(name="wrap", is_global=True, params=[],
+                             instructions=instrs),
+        ]), zp_slot_symbols={"__local_wrap__a": 0x84}).top_level[0].instructions
+        self.assertIn(asm_ast.Mov(src=_REG_A, dst=slot), out)
+
+    def test_runs(self):
+        import shutil
+        if not shutil.which("pcpp"):
+            self.skipTest("pcpp CLI not available")
+        from sim.harness import build_sim
+        src = (
+            "unsigned char sum(unsigned char *a, unsigned char n) {\n"
+            "    unsigned char s = 0; while (n--) s += a[n]; return s; }\n"
+            "unsigned char wrap(void) {\n"
+            "    unsigned char a[3]; a[0] = 4; a[1] = 5; a[2] = 6;\n"
+            "    return sum(a, 3); }\n"
+            "int main(void) { return wrap(); }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(
+                    build_sim(src, optimize=optimize).run().return_int(), 15,
+                )

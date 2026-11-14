@@ -58,6 +58,14 @@ useless `LDA M; STA M` pair. SSA destruction emits self-Movs
 when a Phi src and dst land at the same byte after coalescing;
 without this drop, splitting would un-do the emit-time win.
 
+A register self-Mov, `Mov(X, X)`, goes too. The regalloc leaves one
+when it keeps a register parameter's local in the register the
+parameter arrives in. It emits nothing, but a pass that took it for
+an `LDX` would think it set the flags: `dead_a_arith` dropped the
+`TXA` of `STA p0; Mov(X, X); TXA; BMI` as a repeat of it, and the
+`BMI` tested `p0`. (`asm_liveness.sets_flags` doesn't count one
+either.)
+
 # Volatile skip
 
 `Mov(src_mem, dst_mem, is_volatile=True)` is NOT split. The
@@ -126,6 +134,15 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
     out: list[asm_ast.Type_instruction] = []
     changed = False
     for instr in fn.instructions:
+        if (isinstance(instr, asm_ast.Mov)
+                and isinstance(instr.dst, asm_ast.Reg)
+                and instr.src == instr.dst):
+            # `Mov(X, X)`, as the regalloc leaves for a register
+            # parameter kept in the register it arrives in: it emits
+            # nothing, and a pass that took it for an `LDX` would think
+            # it set the flags.
+            changed = True
+            continue
         if (isinstance(instr, asm_ast.Mov)
                 and not instr.is_volatile
                 and _is_mem(instr.src)

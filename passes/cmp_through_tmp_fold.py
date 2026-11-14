@@ -1,4 +1,5 @@
-"""Fold `LDA src; STA tmp; LDA other; CMP tmp` to `LDA other; CMP src`.
+"""Fold `LDA src; STA tmp; LDA other; CMP tmp` to `LDA other; CMP src`,
+and the same with `ADC`, `SBC`, `AND`, `ORA`, or `EOR` for `CMP`.
 
 # Pattern
 
@@ -8,6 +9,23 @@ Four consecutive instructions:
     Mov(Reg(A),        <tmp>)    # STA tmp
     Mov(<other>,       Reg(A))   # LDA other
     Compare(Reg(A),    <tmp>)    # CMP tmp
+
+The last may instead be `Add` / `Sub` / `And` / `Or` of `tmp` into A,
+or `Xor` of A and `tmp`, with an optional `SetCarry` / `ClearCarry`
+in front of it (five instructions), which becomes `LDA other; [SEC;]
+SBC src`. `do_rwts_on_sector` in `examples/zork/instr_save/disk.c`
+subtracts a zero-extended global that way:
+
+    LDA   SECTORS_PER_TRACK
+    STA   __local_do_rwts_on_sector__command
+    LDA   __local_do_rwts_on_sector__sector_0
+    SEC
+    SBC   __local_do_rwts_on_sector__command
+
+becomes `LDA __local_do_rwts_on_sector__sector_0; SEC; SBC
+SECTORS_PER_TRACK`. For these the source must be one the
+instruction can address: an immediate, `Data` / `ZP`, or `abs,X` /
+`abs,Y` (`asm_emit._emit_acc_arith_src`).
 
 The middle pair stages `src`'s value through a memory temporary so
 the final CMP can compare A (= other) against the staged copy. But
@@ -231,11 +249,50 @@ def _reads_tmp(instr, tmp) -> bool:
     return any(_operands_equal(op, tmp) for op in _read_operands(instr))
 
 
+_ALU = (asm_ast.Add, asm_ast.Sub, asm_ast.And, asm_ast.Or)
+
+
+def _tmp_read(d):
+    """The memory operand the last instruction of the pattern reads
+    into A or compares A with, or None."""
+    if isinstance(d, asm_ast.Compare) and _is_reg_a(d.left):
+        return d.right
+    if isinstance(d, _ALU) and _is_reg_a(d.dst):
+        return d.src
+    if isinstance(d, asm_ast.Xor) and _is_reg_a(d.dst):
+        if _is_reg_a(d.src1):
+            return d.src2
+        if _is_reg_a(d.src2):
+            return d.src1
+    return None
+
+
+def _with_src(d, src):
+    """`d` reading `src` where it read the temporary."""
+    if isinstance(d, asm_ast.Compare):
+        return asm_ast.Compare(left=d.left, right=src)
+    if isinstance(d, asm_ast.Xor):
+        if _is_reg_a(d.src1):
+            return asm_ast.Xor(src1=d.src1, src2=src, dst=d.dst)
+        return asm_ast.Xor(src1=src, src2=d.src2, dst=d.dst)
+    return type(d)(src=src, dst=d.dst)
+
+
+def _alu_src_eligible(src) -> bool:
+    """A source `ADC` / `SBC` / `AND` / `ORA` / `EOR` can address
+    (`asm_emit._emit_acc_arith_src`, less the soft-stack modes)."""
+    return isinstance(src, (
+        asm_ast.Imm, asm_ast.ImmLabelLow, asm_ast.ImmLabelHigh,
+        asm_ast.Data, asm_ast.ZP, asm_ast.IndexedData,
+    ))
+
+
 def _matches_pattern(a, b, c, d) -> tuple[
     asm_ast.Type_operand, asm_ast.Type_operand
 ] | None:
-    """If (a, b, c, d) is `LDA src; STA tmp; LDA other; CMP tmp`
+    """If (a, b, c, d) is `LDA src; STA tmp; LDA other; <op> tmp`
     eligible for folding, return (src, other). Otherwise None."""
+    tmp_cmp = _tmp_read(d)
     if not (
         isinstance(a, asm_ast.Mov) and not a.is_volatile
         and _is_reg_a(a.dst)
@@ -243,17 +300,17 @@ def _matches_pattern(a, b, c, d) -> tuple[
         and _is_reg_a(b.src) and _is_stable_mem(b.dst)
         and isinstance(c, asm_ast.Mov) and not c.is_volatile
         and _is_reg_a(c.dst)
-        and isinstance(d, asm_ast.Compare)
-        and _is_reg_a(d.left) and _is_stable_mem(d.right)
+        and tmp_cmp is not None and _is_stable_mem(tmp_cmp)
     ):
         return None
     src = a.src
     tmp_sta = b.dst
     other = c.src
-    tmp_cmp = d.right
     if not _operands_equal(tmp_sta, tmp_cmp):
         return None
     if not _src_eligible(src):
+        return None
+    if not isinstance(d, asm_ast.Compare) and not _alu_src_eligible(src):
         return None
     # A src that reads Y: forbid `other` shapes that emit LDY.
     reads_y = (
@@ -284,21 +341,27 @@ def _rewrite_function(
     from passes.asm_dead_store import mem_dead_after
     instrs = fn.instructions
 
-    # Pass 1: enumerate every candidate 4-atom window. A candidate
-    # is a (start_index, src, other, tmp) tuple; the matched CMP
-    # sits at start_index + 3.
+    # Pass 1: enumerate every candidate window. A candidate is a
+    # (start_index, src, other, tmp, op_index) tuple; the matched CMP
+    # (or ALU op) sits at op_index, start_index + 3, or + 4 after a
+    # SEC / CLC.
     candidates: list[tuple[int, asm_ast.Type_operand,
                            asm_ast.Type_operand,
-                           asm_ast.Type_operand]] = []
+                           asm_ast.Type_operand, int]] = []
     for i in range(len(instrs) - 3):
+        j = i + 3
+        if (isinstance(instrs[j], (asm_ast.SetCarry, asm_ast.ClearCarry))
+                and j + 1 < len(instrs)
+                and not isinstance(instrs[j + 1], asm_ast.Compare)):
+            j += 1
         matched = _matches_pattern(
-            instrs[i], instrs[i + 1], instrs[i + 2], instrs[i + 3],
+            instrs[i], instrs[i + 1], instrs[i + 2], instrs[j],
         )
         if matched is None:
             continue
         src, other = matched
         tmp = instrs[i + 1].dst
-        candidates.append((i, src, other, tmp))
+        candidates.append((i, src, other, tmp, j))
 
     # Pass 2: group candidates by tmp. For each group, every read of
     # tmp in the function must be "owned" by some candidate in the
@@ -308,9 +371,9 @@ def _rewrite_function(
     # NO candidate in the group is safe to fold.
     owned_cmp_idxs_by_key: dict[tuple, set[int]] = {}
     tmp_by_key: dict[tuple, asm_ast.Type_operand] = {}
-    for i, _src, _other, tmp in candidates:
+    for i, _src, _other, tmp, j in candidates:
         key = _tmp_key(tmp)
-        owned_cmp_idxs_by_key.setdefault(key, set()).add(i + 3)
+        owned_cmp_idxs_by_key.setdefault(key, set()).add(j)
         tmp_by_key[key] = tmp
 
     foldable_keys: set[tuple] = set()
@@ -323,11 +386,11 @@ def _rewrite_function(
             foldable_keys.add(key)
 
     cand_by_start = {
-        i: (src, other, tmp)
-        for i, src, other, tmp in candidates
+        i: (src, other, tmp, j)
+        for i, src, other, tmp, j in candidates
         if _tmp_key(tmp) in foldable_keys
         or mem_dead_after(
-            instrs, i + 3, tmp,
+            instrs, j, tmp,
             fn_name=fn.name, zp_slot_symbols=zp_slot_symbols,
         )
     }
@@ -338,16 +401,14 @@ def _rewrite_function(
     i = 0
     while i < len(instrs):
         if i in cand_by_start:
-            _src, other, _tmp = cand_by_start[i]
-            src = cand_by_start[i][0]
+            src, other, _tmp, j = cand_by_start[i]
             out.append(asm_ast.Mov(
                 src=other, dst=asm_ast.Reg(reg=asm_ast.A()),
                 is_volatile=False,
             ))
-            out.append(asm_ast.Compare(
-                left=asm_ast.Reg(reg=asm_ast.A()), right=src,
-            ))
-            i += 4
+            out.extend(instrs[i + 3:j])   # SEC / CLC
+            out.append(_with_src(instrs[j], src))
+            i = j + 1
             continue
         out.append(instrs[i])
         i += 1

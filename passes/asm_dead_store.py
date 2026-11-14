@@ -380,7 +380,10 @@ def _is_dead_at_exit(
     return False
 
 
-def _is_dead_at_tail_call(target: asm_ast.Type_operand) -> bool:
+def _is_dead_at_tail_call(
+    target: asm_ast.Type_operand,
+    address_taken_names: frozenset[str] | None = None,
+) -> bool:
     """True iff `target` is known dead at a tail-call edge (a
     `Jump` to an external label that leaves this function).
 
@@ -392,9 +395,13 @@ def _is_dead_at_tail_call(target: asm_ast.Type_operand) -> bool:
     from every transitively-reachable callee's read set — gives us
     a precise narrower rule: only `__local_<...>__*` Data names are
     safely dead across a tail-call. Numeric ZP, user statics, and
-    `__zpabi_<callee>__*` arg slots are all conservatively live."""
+    `__zpabi_<callee>__*` arg slots are all conservatively live, and
+    so is a local whose address this function takes
+    (`address_taken_names`): the callee may have been given it, as
+    `sum((int[]){1, 2, 3, 4}, 4)` gives `sum` a compound literal's."""
     if isinstance(target, asm_ast.Data):
-        return target.name.startswith("__local_")
+        return (target.name.startswith("__local_")
+                and target.name not in (address_taken_names or ()))
     return False
 
 
@@ -506,7 +513,7 @@ def _is_dead_cfg(
         # don't.
         if (isinstance(nxt, asm_ast.Jump)
                 and nxt.target not in label_to_index):
-            if not _is_dead_at_tail_call(target):
+            if not _is_dead_at_tail_call(target, address_taken_names):
                 return False
             continue
         # Function exit: dead iff `target` is dead-at-exit.

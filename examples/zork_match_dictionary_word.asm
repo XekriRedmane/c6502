@@ -260,8 +260,7 @@ main:
    STA   zchar_scratch2+2
    LDA   #$00
    STA   zchar_scratch2+3
-   JSR   match_dictionary_word
-   RTS
+   JMP   match_dictionary_word
 
 story:
    DS.B  512

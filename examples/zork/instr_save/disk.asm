@@ -48,7 +48,6 @@ __zpabi_do_rwts_on_sector__buffer_1	EQU	$F4
 __zpabi_inc_sector_and_write__buffer_1	EQU	$F4
 __local_inc_sector_and_write__1	EQU	$F7
 __local_inc_sector_and_write__2	EQU	$F8
-__local_do_rwts_on_sector__command	EQU	$F9
 __local_do_rwts_on_sector__0	EQU	$FA
 __local_do_rwts_on_sector__sector_1	EQU	$FB
 __local_do_rwts_on_sector__sector_0	EQU	$FC
@@ -154,11 +153,9 @@ do_rwts_on_sector:
    LDA   SCRATCH1+1
    STA   __local_do_rwts_on_sector__sector_1
 .loop@0_continue:
-   LDA   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__command
    LDA   __local_do_rwts_on_sector__sector_0
    SEC
-   SBC   __local_do_rwts_on_sector__command
+   SBC   SECTORS_PER_TRACK
    STA   __local_do_rwts_on_sector__0
    LDA   __local_do_rwts_on_sector__sector_1
    SBC   #$00

@@ -1,12 +1,14 @@
-# Compare without a staging temporary
+# Operands without a staging temporary
 
 `apply_cmp_through_tmp_fold` in
 [passes/cmp_through_tmp_fold.py](../../passes/cmp_through_tmp_fold.py)
 rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP
-src`. It runs in the peephole fixed point, which both pipelines run,
-but no program in the test corpus makes it fire in the unoptimized
-pipeline, where the staging temporary is a soft-stack slot and the
-pass accepts only a `Data` or `ZP` one.
+src`, and does the same when the last instruction is an `ADC`, `SBC`,
+`AND`, `ORA`, or `EOR` of `tmp`, after an optional `CLC` or `SEC`. It
+runs in the peephole fixed point, which both pipelines run, but no
+program in the test corpus makes it fire in the unoptimized pipeline,
+where the staging temporary is a soft-stack slot and the pass accepts
+only a `Data` or `ZP` one.
 
 When the right-hand side of a comparison is computed first, the
 lowering parks it in a temporary, loads the left-hand side, and
@@ -69,11 +71,43 @@ the pass turns `LDY #$00; LDA ($80),Y; STA __local_band__0; LDA
 __zpabi_band__y; CMP __local_band__0` into `LDA __zpabi_band__y; LDY
 #$00; CMP ($80),Y`, where `$80` is the zero-page slot that holds `p`.
 
+### Arithmetic
+
+The same staging happens for the right operand of an addition or a
+subtraction, such as a global widened to 16 bits. In
+`do_rwts_on_sector` (`examples/zork/instr_save/disk.c`), `sector -
+SECTORS_PER_TRACK` subtracted a copy:
+
+```
+   LDA   SECTORS_PER_TRACK
+   STA   __local_do_rwts_on_sector__command
+   LDA   __local_do_rwts_on_sector__sector_0
+   SEC
+   SBC   __local_do_rwts_on_sector__command
+```
+
+and now subtracts the global itself:
+
+```
+   LDA   __local_do_rwts_on_sector__sector_0
+   SEC
+   SBC   SECTORS_PER_TRACK
+```
+
+That takes a pass through the loop from 42 cycles to 36. An
+operand that reaches the temporary from a table or a global does the
+same in `s += arr[i]`, which becomes `CLC; ADC arr,X` with the sum
+kept in A.
+
 ## When it applies
 
-- The four instructions are adjacent and none is volatile.
-- `tmp` is a `Data` or `ZP` operand, and the `STA` and the `CMP` name
-  the same one.
+- The four instructions are adjacent, except for a `CLC` or `SEC`
+  before an `ADC` or `SBC`, and none is volatile.
+- `tmp` is a `Data` or `ZP` operand, and the `STA` and the `CMP` (or
+  arithmetic instruction) name the same one.
+- For `ADC`, `SBC`, `AND`, `ORA`, and `EOR`, `src` is an immediate, a
+  `Data` or `ZP` operand, or an `abs,X` or `abs,Y` table read, the
+  modes `asm_emit` gives those instructions.
 - `src` is an immediate, a `Data` or `ZP` operand, an `abs,X` or
   `abs,Y` table read, or a read through a pointer with Y (`(zp),Y`,
   either with its own `LDY` setup or with Y already loaded). When
@@ -108,6 +142,8 @@ __zpabi_band__y; CMP __local_band__0` into `LDA __zpabi_band__y; LDY
   still holds the staged value, by any instruction, a `BIT` included.
 - A temporary on the soft stack, and any window with a volatile
   access.
+- Arithmetic on a byte read through a pointer, which the emitter
+  doesn't give `ADC` and the others.
 
 ## Related
 

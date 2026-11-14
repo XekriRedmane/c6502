@@ -682,6 +682,11 @@ def sets_flags(instr: asm_ast.Type_instruction) -> bool:
         # sets N/Z from the offset, even ahead of a plain `STA`.
         return True
     if isinstance(instr, asm_ast.Mov):
+        # Mov(r, r) of a register emits nothing, so it leaves the
+        # flags alone. The regalloc leaves one when it puts a register
+        # parameter's local in the register it arrives in.
+        if isinstance(instr.dst, asm_ast.Reg) and instr.src == instr.dst:
+            return False
         # Mov(_, Reg(A|X|Y)) → LD* sets flags.
         if isinstance(instr.dst, asm_ast.Reg):
             return True

@@ -113,10 +113,6 @@ order of size:
   STA hi` that comes between it and the rest has to move first.
   Doing it in `tac_to_asm` instead would make an in-place `w <<= 1`
   longer.
-- **Operands staged through a temporary.** `sector >=
-  SECTORS_PER_TRACK` copies `SECTORS_PER_TRACK` into a slot and
-  subtracts the slot, where `SBC SECTORS_PER_TRACK` reads it in
-  place.
 - **Carry chains across statements.** load_packed_address computes
   three bytes of `2 * SCRATCH2` with one `ASL` / `ROL` / `ROL` chain
   in the original. In C those are three expressions, and each one
@@ -134,12 +130,11 @@ its first save takes 22,829 cycles against 19,561. Most of the cycles
 are in `do_rwts_on_sector`'s loop and most of the bytes in
 `get_prompted_number_from_user`. Roughly in order of payoff:
 
-- **A compare and a subtract of the same operands.** `while (s >= k)
-  s -= k;` subtracts once for the test and again for the update, each
-  time staging `k` through a temporary (see "Operands staged through a
-  temporary" above). One subtract whose borrow decides the branch does
-  both, as Zork's `SBC SECTORS_PER_TRACK; BCS` does. The same shape is
-  division and modulo by repeated subtraction.
+- **The old value on a loop's exit.** `do_rwts_on_sector`'s `while
+  (sector >= SECTORS_PER_TRACK) sector -= SECTORS_PER_TRACK;` stores
+  the difference's low byte in a temporary and copies it back each
+  pass, because the loop's exit reads the old `sector`. Zork keeps the
+  low byte in A and adds `SECTORS_PER_TRACK` back on exit.
 - **A 2-byte loop-carried value in A and X.** Zork keeps that loop's
   16-bit sector number in A (low) and X (high) and does `DEX` on a
   borrow, where the compiled loop keeps it in two zero-page bytes.

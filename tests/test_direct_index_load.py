@@ -255,8 +255,9 @@ class TestDirectIndexLoadAsmShape(unittest.TestCase):
         asm = self._compile(src)
         # Direct absolute,X read, with the loop counter living in X
         # (incremented in place via INX) — no `LDA <i>; TAX` setup
-        # pair feeding the indexed load.
-        self.assertIn("LDA   arr,X", asm)
+        # pair feeding the indexed load. The read is the `ADC arr,X`
+        # of `s += arr[i]` (cmp_through_tmp_fold).
+        self.assertIn("ADC   arr,X", asm)
         self.assertIn("INX", asm)
         # The only register transfer into X is the return-value
         # staging (`TYA; TAX` for the 2-byte int return's high byte),

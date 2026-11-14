@@ -258,7 +258,7 @@ def _tmp_dead_after(
         if isinstance(nxt, _OPAQUE_TYPES):
             return False
         if isinstance(nxt, asm_ast.Jump) and nxt.target not in labels:
-            if not _is_dead_at_tail_call(tmp):
+            if not _is_dead_at_tail_call(tmp, taken):
                 return False
             continue
         if isinstance(nxt, (asm_ast.Ret, asm_ast.Return)):

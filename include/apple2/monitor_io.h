@@ -84,6 +84,18 @@
 [[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFDF0)]]
 void COUT1(register uint8_t c);
 
+/* Points BASL/BASH at the start of line CV in the text window. It
+ * makes no promise about X or Y, since the listings weren't checked
+ * for them. */
+[[c6502::zp_abi, c6502::address(0xFC22)]] void VTAB(void);
+
+/* Reads a line from the keyboard into the input buffer at $0200,
+ * echoing it, without printing PROMPT first. Each character has its
+ * high bit set, and the carriage return that ends the line ($8D) is
+ * stored after them. The ROM returns the line's length in X, which C
+ * can't read, so a caller finds the length by looking for the $8D. */
+[[c6502::zp_abi, c6502::address(0xFD6F)]] void GETLN1(void);
+
 /* Waits for a time that grows with `a`. It writes neither X nor Y. */
 [[c6502::zp_abi, c6502::preserves_x, c6502::preserves_y, c6502::address(0xFCA8)]]
 void WAIT(register uint8_t a);
@@ -113,6 +125,7 @@ extern volatile uint16_t CSW              [[c6502::address(0x36)]];
 extern volatile uint16_t KSW              [[c6502::address(0x38)]];
 extern volatile uint8_t __monitor_acc     [[c6502::address(0x45)]];
 extern volatile uint8_t __monitor_status  [[c6502::address(0x48)]];
-extern volatile uint16_t __monitor_rnd    [[c6502::address(0x4E)]];
+/* RNDL and RNDH, which KEYIN counts up while it waits for a key. */
+extern volatile uint16_t RND              [[c6502::address(0x4E)]];
 
 #endif

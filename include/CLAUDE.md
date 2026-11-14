@@ -21,9 +21,12 @@ automatically; no `-I` flag needed.
   `__bool_true_false_are_defined`. `bool` is a macro for `_Bool`,
   as C99 §7.16.2 specifies.
 - `apple2/monitor_io.h` — the Apple II Monitor ROM routines a program
-  calls: `HOME`, `RDKEY`, `COUT`, `COUT1`, `WAIT` as `zp_abi` routines
-  with `address`, each with the `preserves_x` / `preserves_y` the ROM
-  and 80-column firmware listings support, and the zero-page bytes
+  calls: `HOME`, `CLREOL`, `RDKEY`, `COUT`, `COUT1`, `WAIT`, `VTAB`,
+  and `GETLN1` as `zp_abi` routines with `address`, each but the last
+  two with the `preserves_x` / `preserves_y` the ROM and 80-column
+  firmware listings support (GETLN1 returns its length in X, which C
+  can't read, so a caller looks for the `$8D` it stores after the
+  line), and the zero-page bytes
   those listings show its text, keyboard, line-input, lo-res
   graphics, and delay routines, the IRQ entry, INIT, and the
   firmware's KEYIN using (`$1F`-`$2E`, `$30`, `$32`-`$33`,
@@ -31,7 +34,7 @@ automatically; no `-I` flag needed.
   `address`, so a program that includes it keeps the runtime's
   zero-page block off them (`passes/runtime_layout.py`). Zero-page
   objects can't overlap, so the bytes are split into named objects
-  (`CH`, `CV`, `CSW`, ...) and `__monitor_*` objects. User guide:
+  (`CH`, `CV`, `CSW`, `RND`, ...) and `__monitor_*` objects. User guide:
   `docs/attributes.md`.
 - `apple2/interactive_monitor.h` — includes `monitor_io.h` and adds
   the bytes only the Monitor's interactive part uses (command loop

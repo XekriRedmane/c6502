@@ -21,7 +21,7 @@ CSW	EQU	$36
 KSW	EQU	$38
 __monitor_acc	EQU	$45
 __monitor_status	EQU	$48
-__monitor_rnd	EQU	$4E
+RND	EQU	$4E
 __local_dump_buffer_to_printer__x	EQU	$81
 __local_dump_buffer_to_printer__1	EQU	$82
 __local_dump_buffer_to_printer__2	EQU	$83
@@ -29,10 +29,12 @@ BUFF_END	EQU	$EB
 PRINTER_CSW	EQU	$EE
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
+VTAB	EQU	$FC22
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 RDKEY	EQU	$FD0C
+GETLN1	EQU	$FD6F
 COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
@@ -42,8 +44,10 @@ COUT1	EQU	$FDF0
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
+; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
+; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; call dump_buffer_to_printer -> COUT
 ; call dump_buffer_to_screen -> COUT1
@@ -69,7 +73,7 @@ COUT1	EQU	$FDF0
 ; zp KSW size=2 at=$38 def=false init=
 ; zp __monitor_acc size=1 at=$45 def=false init=
 ; zp __monitor_status size=1 at=$48 def=false init=
-; zp __monitor_rnd size=2 at=$4E def=false init=
+; zp RND size=2 at=$4E def=false init=
 ; zp BUFF_END size=1 at=$EB def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
 ; runtime hargs_size=1 hargs_need=0

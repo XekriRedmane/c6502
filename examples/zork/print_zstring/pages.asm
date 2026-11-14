@@ -27,7 +27,7 @@ __monitor_acc	EQU	$45
 __dos_zp_46	EQU	$46
 __monitor_status	EQU	$48
 __dos_zp_49	EQU	$49
-__monitor_rnd	EQU	$4E
+RND	EQU	$4E
 __zork_zp_7c	EQU	$7C
 SECTORS_PER_TRACK	EQU	$7F
 __zork_zp_80	EQU	$80
@@ -80,10 +80,12 @@ BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
 RWTS	EQU	$2900
+VTAB	EQU	$FC22
 HOME	EQU	$FC58
 CLREOL	EQU	$FC9C
 WAIT	EQU	$FCA8
 RDKEY	EQU	$FD0C
+GETLN1	EQU	$FD6F
 COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
@@ -98,9 +100,11 @@ COUT1	EQU	$FDF0
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
 ; ext COUT1 params=__zpabi_COUT1__c param_regs=A
+; ext GETLN1 params=
 ; ext HOME params=
 ; ext RDKEY params=
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
+; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X pinned=$E6,$E7,
@@ -152,7 +156,7 @@ COUT1	EQU	$FDF0
 ; zp __dos_zp_46 size=2 at=$46 def=false init=
 ; zp __monitor_status size=1 at=$48 def=false init=
 ; zp __dos_zp_49 size=5 at=$49 def=false init=
-; zp __monitor_rnd size=2 at=$4E def=false init=
+; zp RND size=2 at=$4E def=false init=
 ; zp __zork_zp_7c size=3 at=$7C def=false init=
 ; zp SECTORS_PER_TRACK size=1 at=$7F def=false init=
 ; zp __zork_zp_80 size=10 at=$80 def=false init=

@@ -12,6 +12,10 @@
 
     Departures from the original:
 
+    - Z_PC and Z_PC2 are uint24_t, so print_string_literal copies each
+      to the other in one assignment, and print_zstring saves Z_PC2 in
+      one local. Z_PC2's bytes are in Z_PC's order, low byte first,
+      not Zork's (see zork.h).
     - get_next_zchar returns its z-character in A and "end of string"
       in the carry. It returns a struct of the value and a bool,
       declared return_bool_in_carry, which uses the same registers.
@@ -260,16 +264,12 @@ void print_zstring(void) {
             uint8_t locked = LOCKED_ALPHABET;
             uint8_t state = ZDECOMPRESS_STATE;
             uint16_t zchars = ZCHARS;
-            uint8_t pc_l = Z_PC2_L;
-            uint8_t pc_h = Z_PC2_H;
-            uint8_t pc_hh = Z_PC2_HH;
+            uint24_t pc = Z_PC2;
             load_packed_address();
             /* Abbreviations don't nest, so this goes two deep. */
 #pragma c6502 call save(hardware_stack)
             print_zstring();
-            Z_PC2_HH = pc_hh;
-            Z_PC2_H = pc_h;
-            Z_PC2_L = pc_l;
+            Z_PC2 = pc;
             ZCODE_PAGE_VALID2 = 0;
             ZCHARS = zchars;
             ZDECOMPRESS_STATE = state;
@@ -347,14 +347,10 @@ uint8_t get_alphabet(void) {
  * for the linker script to place there. */
 [[c6502::section(".text.literal")]]
 void print_string_literal(void) {
-    Z_PC2_L = Z_PC[0];
-    Z_PC2_H = Z_PC[1];
-    Z_PC2_HH = Z_PC[2];
+    Z_PC2 = Z_PC;
     ZCODE_PAGE_VALID2 = 0;
     print_zstring();
-    Z_PC[0] = Z_PC2_L;
-    Z_PC[1] = Z_PC2_H;
-    Z_PC[2] = Z_PC2_HH;
+    Z_PC = Z_PC2;
     ZCODE_PAGE_VALID = ZCODE_PAGE_VALID2;
     ZCODE_PAGE_ADDR = ZCODE_PAGE_ADDR2;
 }

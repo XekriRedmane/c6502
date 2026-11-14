@@ -35,9 +35,7 @@ Z_PC	EQU	$8A
 ZCODE_PAGE_ADDR	EQU	$8D
 ZCODE_PAGE_VALID	EQU	$8F
 PAGE_TABLE_INDEX	EQU	$90
-Z_PC2_H	EQU	$91
-Z_PC2_HH	EQU	$92
-Z_PC2_L	EQU	$93
+Z_PC2	EQU	$91
 ZCODE_PAGE_ADDR2	EQU	$94
 ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
@@ -160,9 +158,7 @@ COUT1	EQU	$FDF0
 ; zp ZCODE_PAGE_ADDR size=2 at=$8D def=false init=
 ; zp ZCODE_PAGE_VALID size=1 at=$8F def=false init=
 ; zp PAGE_TABLE_INDEX size=1 at=$90 def=false init=
-; zp Z_PC2_H size=1 at=$91 def=false init=
-; zp Z_PC2_HH size=1 at=$92 def=false init=
-; zp Z_PC2_L size=1 at=$93 def=false init=
+; zp Z_PC2 size=3 at=$91 def=false init=
 ; zp ZCODE_PAGE_ADDR2 size=2 at=$94 def=false init=
 ; zp ZCODE_PAGE_VALID2 size=1 at=$96 def=false init=
 ; zp PAGE_TABLE_INDEX2 size=1 at=$97 def=false init=
@@ -243,20 +239,20 @@ print_zstring:
    PHA
    LDA   ZCHARS+1
    PHA
-   LDA   Z_PC2_L
+   LDA   Z_PC2
    PHA
-   LDA   Z_PC2_H
+   LDA   Z_PC2+1
    PHA
-   LDA   Z_PC2_HH
+   LDA   Z_PC2+2
    PHA
    JSR   load_packed_address
    JSR   print_zstring
    PLA
-   STA   Z_PC2_HH
+   STA   Z_PC2+2
    PLA
-   STA   Z_PC2_H
+   STA   Z_PC2+1
    PLA
-   STA   Z_PC2_L
+   STA   Z_PC2
    PLA
    STA   ZCHARS+1
    PLA
@@ -421,19 +417,19 @@ print_string_literal:
    SUBROUTINE
 
    LDA   Z_PC
-   STA   Z_PC2_L
+   STA   Z_PC2
    LDA   Z_PC+1
-   STA   Z_PC2_H
+   STA   Z_PC2+1
    LDA   Z_PC+2
-   STA   Z_PC2_HH
+   STA   Z_PC2+2
    LDA   #$00
    STA   ZCODE_PAGE_VALID2
    JSR   print_zstring
-   LDA   Z_PC2_L
+   LDA   Z_PC2
    STA   Z_PC
-   LDA   Z_PC2_H
+   LDA   Z_PC2+1
    STA   Z_PC+1
-   LDA   Z_PC2_HH
+   LDA   Z_PC2+2
    STA   Z_PC+2
    LDA   ZCODE_PAGE_VALID2
    STA   ZCODE_PAGE_VALID

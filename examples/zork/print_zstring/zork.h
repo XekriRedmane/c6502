@@ -2,7 +2,8 @@
     zork.h -- what the units of the print_zstring example share: Zork's
     zero page, the memory it owns, the routines outside this example,
     and each unit's routines, at the addresses they have in Zork I
-    (r15).
+    (r15). The exception is Z_PC2, whose bytes are in another order;
+    see its declaration.
 
     Every address comes from assembling output/main.asm of
     https://github.com/XekriRedmane/zorki-r15-reveng with dasm, which
@@ -16,6 +17,14 @@
 #include <apple2/monitor_io.h>
 
 /* ---- Zero page ------------------------------------------------------- */
+
+/* A 24-bit unsigned integer, low byte first: the low 16 bits, then the
+ * top 8. Zork's program counters are byte addresses into a story file
+ * of up to 128K. */
+typedef struct {
+    uint16_t lo;
+    uint8_t hi;
+} uint24_t;
 
 /*
     The compiler places its own zero-page bytes (the runtime's block, the
@@ -40,18 +49,20 @@ extern uint8_t __zork_zp_7c [[c6502::zeropage(0x7C)]][3];
 extern uint8_t SECTORS_PER_TRACK [[c6502::zeropage(0x7F)]];
 /* CURR_OPCODE, OPERAND_COUNT, and OPERAND0-OPERAND3. */
 extern uint8_t __zork_zp_80 [[c6502::zeropage(0x80)]][10];
-/* The instruction reader's program counter: low, high, and top byte. */
-extern uint8_t Z_PC [[c6502::zeropage(0x8A)]][3];
+/* The instruction reader's program counter. */
+extern uint24_t Z_PC [[c6502::zeropage(0x8A)]];
 /* The instruction reader's page: its address, whether it's mapped, and
  * its cache slot. */
 extern uint8_t *ZCODE_PAGE_ADDR [[c6502::zeropage(0x8D)]];
 extern uint8_t ZCODE_PAGE_VALID [[c6502::zeropage(0x8F)]];
 extern uint8_t PAGE_TABLE_INDEX [[c6502::zeropage(0x90)]];
-/* The string reader's program counter, kept high byte first, and its
- * page. */
-extern uint8_t Z_PC2_H [[c6502::zeropage(0x91)]];
-extern uint8_t Z_PC2_HH [[c6502::zeropage(0x92)]];
-extern uint8_t Z_PC2_L [[c6502::zeropage(0x93)]];
+/* The string reader's program counter, and its page. Zork keeps
+ * Z_PC2 high byte first, $91 the high byte, $92 the top byte, and $93
+ * the low byte. Here it's a uint24_t like Z_PC, low byte first. Zork's
+ * own code reads and writes the three bytes by name, so it works with
+ * this order once its EQUs are changed, but Zork's binary as it is
+ * doesn't. A save file doesn't hold Z_PC2. */
+extern uint24_t Z_PC2 [[c6502::zeropage(0x91)]];
 extern uint8_t *ZCODE_PAGE_ADDR2 [[c6502::zeropage(0x94)]];
 extern uint8_t ZCODE_PAGE_VALID2 [[c6502::zeropage(0x96)]];
 extern uint8_t PAGE_TABLE_INDEX2 [[c6502::zeropage(0x97)]];

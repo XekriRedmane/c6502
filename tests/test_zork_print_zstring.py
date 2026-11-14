@@ -28,7 +28,9 @@ When the environment variable ZORK_MAIN_BIN names Zork's main.bin
 (https://github.com/XekriRedmane/zorki-r15-reveng, loaded at $0800),
 `test_matches_original` runs Zork's own print_string_literal in the
 same scenarios and compares what each prints and the state it leaves.
-The binary isn't part of this repository.
+The binary isn't part of this repository. Zork keeps Z_PC2's bytes at
+$91-$93 high byte first and the example low byte first, so the state
+holds Z_PC2 as a number.
 """
 from __future__ import annotations
 
@@ -198,8 +200,9 @@ class _Machine:
     hooks for the ROM routines, RWTS, and Zork's `main`."""
 
     def __init__(self, mpu: MPU, *, transcript: bool = False,
-                 read_fails: bool = False) -> None:
+                 read_fails: bool = False, original: bool = False) -> None:
         self.mpu = mpu
+        self.original = original
         self.read_fails = read_fails
         self.screen: list[int] = []
         self.printer: list[int] = []
@@ -306,13 +309,17 @@ class _Machine:
         its scratch bytes, which this version uses less."""
         m = self.mpu.memory
         zp = {a: m[a] for a in (
-            0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x91, 0x92, 0x93,
+            0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F,
             0x94, 0x95, 0x96, 0x97, 0xBE, 0xBF, 0xCE, 0xCF, 0xD0,
             0xD1, 0xD2, 0xE4, 0xE5, 0xEB, 0xEC, 0xED, 0xEE, 0xEF,
             0x24, 0x32, 0x36, 0x37,
         )}
+        # Low, high, and top byte.
+        lo, hi, top = (0x93, 0x91, 0x92) if self.original else (
+            0x91, 0x92, 0x93)
         return {
             "zp": zp,
+            "z_pc2": m[lo] | m[hi] << 8 | m[top] << 16,
             "tables": bytes(m[_TABLES:_TABLES + 64]),
             "cache": bytes(m[_IMAGE + 0x200:_IMAGE + 0x400]),
             "buffer": bytes(m[0x0200:0x0200 + m[0xEB]]),
@@ -370,7 +377,7 @@ def _run_original(path: str, **scenario) -> _Machine:
     ])
     mpu.pc = 0x0300
     mpu.sp = 0xFF
-    machine = _Machine(mpu, **scenario)
+    machine = _Machine(mpu, original=True, **scenario)
     machine.run()
     return machine
 

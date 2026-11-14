@@ -97,7 +97,7 @@ void instr_save(void) {
     uint8_t x = 0;
     BUFF_AREA[x] = Z_HEADER_ADDR[HEADER_VERSION];
     x++;
-    x = copy_data_to_buff(Z_PC, x, 3);
+    x = copy_data_to_buff((const uint8_t *)&Z_PC, x, sizeof Z_PC);
     x = copy_data_to_buff(LOCAL_ZVARS, x, 30);
     copy_data_to_buff(STACK_STATE, x, 6);
     if (write_next_sector())

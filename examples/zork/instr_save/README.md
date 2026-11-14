@@ -30,7 +30,7 @@ around Zork as well as Zork itself:
 
 | File | What's in it | Original |
 |---|---|---|
-| `zork.h` | Zork's zero page and memory, the IOB and DCT structures, and the routines outside this example, at their addresses | |
+| `zork.h` | Zork's zero page and memory, `uint24_t` (the type of `Z_PC`), the IOB and DCT structures, and the routines outside this example, at their addresses | |
 | `disk.c` | The IOB and DCT, `do_rwts_on_sector`, `write_next_sector`, `inc_sector_and_write` | lines 3359-3448 |
 | `prompts.c` | `print_ascii_string`, `cout_string`, `please_insert_save_diskette`, `get_prompted_number_from_user`, `please_reinsert_game_diskette`, and their strings | lines 3452-3632, and 3282-3292 for `cout_string` |
 | `save.c` | `instr_save` and `copy_data_to_buff` | lines 3634-3699 |

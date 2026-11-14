@@ -29,7 +29,7 @@ It's a different test of the compiler from `../instr_save`:
 
 | File | What's in it | Original |
 |---|---|---|
-| `zork.h` | Zork's zero page and memory, the IOB and DCT structures, `RWTS` and Zork's `main`, and each unit's routines | |
+| `zork.h` | Zork's zero page and memory, `uint24_t`, the IOB and DCT structures, `RWTS` and Zork's `main`, and each unit's routines | |
 | `disk.c` | The IOB and DCT, `do_rwts_on_sector`, `read_from_sector` | lines 3359-3431 |
 | `pages.c` | `invalidate_zcode_page2`, `load_packed_address`, `get_next_code_word`, `get_next_code_byte2`, `set_page_first`, `find_index_of_page_table` | lines 2431-2597 |
 | `output.c` | `buffer_char`, `dump_buffer_line`, `dump_buffer_to_printer`, `dump_buffer_to_screen`, `dump_buffer_with_more`, `cout_string`, and `[MORE]` | lines 3050-3227 and 3282-3294 |
@@ -63,6 +63,20 @@ outputs above against fresh compiles.
 Zork and DOS own as an `extern` `zeropage(addr)` object, by name where
 these routines use it and as a reservation otherwise, so the compiler
 keeps its own bytes in `$00`-`$1E`, `$50`-`$7B`, and `$F3`-`$FF`.
+
+**The program counters.** `Z_PC` and the string reader's `Z_PC2`
+are 24-bit byte addresses, and `zork.h` declares both as `uint24_t`,
+`struct { uint16_t lo; uint8_t hi; }`, so that `print_string_literal`
+copies one to the other in one assignment and `get_next_code_byte2`
+steps `Z_PC2` with `Z_PC2.lo++`. `Z_PC`'s bytes are in Zork's order.
+`Z_PC2`'s aren't: Zork keeps it high byte first, `Z_PC2_H` at `$91`,
+`Z_PC2_HH` at `$92`, and `Z_PC2_L` at `$93`, and here it's low byte
+first at `$91`. Zork's own code reads and writes the three bytes by
+name, so it would work with this order once its `EQU`s were changed,
+but Zork's binary as it is wouldn't, and the test compares `Z_PC2`
+with Zork's as a number. A save file doesn't hold `Z_PC2`.
+[../../CLAUDE.md](../../CLAUDE.md) maps each of Zork's byte names to
+the struct, for translating more of Zork.
 
 **Placement.** `print_zstring.ld` has a region at each place Zork
 keeps these routines, running to the start of the next: `$17DD` for
@@ -108,7 +122,7 @@ interpreter state in every scenario.
 | `invalidate_zcode_page2` | 5 | 5 |
 | `load_packed_address` | 18 | 18 |
 | `get_next_code_word` | 13 | 15 |
-| `get_next_code_byte2` | 127 | 126 |
+| `get_next_code_byte2` | 127 | 135 |
 | `set_page_first` | 53 | 58 |
 | `find_index_of_page_table` | 29 | 37 |
 | `print_zstring` | 216 | 242 |
@@ -123,16 +137,16 @@ interpreter state in every scenario.
 | `cout_string` | 14 | 14 |
 | `do_rwts_on_sector` | 51 | 50 |
 | `read_from_sector` | 6 | 5 |
-| **Code** | **981** | **1042** |
+| **Code** | **981** | **1051** |
 
 Zork's `buffer_char` counts its `buffer_char_set_buffer_end` label,
 which `dump_buffer_with_more` jumps to. The data is the same: the IOB
 and DCT, the printer flag, `[MORE]`, and alphabet 2's 24 characters.
 
 **Speed.** Counting the cycles from the call to `print_string_literal`
-to its return (the stand-ins take none), the string takes 41,567
-cycles against Zork's 39,980, 4.0% more; with a transcript, 46,022
-against 43,687; and to the failed read, 2,373 against 2,283. When the
+to its return (the stand-ins take none), the string takes 41,639
+cycles against Zork's 39,980, 4.1% more; with a transcript, 46,094
+against 43,687; and to the failed read, 2,392 against 2,283. When the
 example was first linked, the string took 55,570 cycles, 39% more than
 Zork's, and the code was 1,122 bytes.
 
@@ -141,15 +155,17 @@ scenario:
 
 - `get_alphabet`, `get_next_zchar`, `get_next_code_word`, `A_mod_3`,
   `dump_buffer_to_screen`, `cout_string`, and the disk routines take
-  as many cycles as Zork's or fewer. `get_alphabet` and
-  `get_next_code_byte2`'s path for a byte in the current page are
-  Zork's own code.
-- `print_zstring` takes 1,427 more, about 3 per z-character. Its
+  as many cycles as Zork's or fewer. `get_alphabet` is Zork's own
+  code, and `get_next_code_byte2`'s path for a byte in the current
+  page is Zork's but for one branch: `LDY Z_PC2; INC Z_PC2; BNE`
+  branches past the code for a new page, where Zork falls through
+  and puts that code out of line, a cycle per byte.
+- `print_zstring` takes 1,430 more, about 3 per z-character. Its
   `if` / `else if` chain branches past each case that doesn't match,
   where Zork falls through to the next test and puts the rare cases
   out of line, and a letter jumps to the shared `JSR buffer_char`
   that Zork places right after it.
-- `buffer_char` takes 258 more and `get_next_code_byte2` 116 more,
+- `buffer_char` takes 258 more and `get_next_code_byte2` 185 more,
   in the code that wraps a line and that maps a new page.
 
 ## Compiler changes this example led to
@@ -184,8 +200,9 @@ many cycles each saved:
   Z after it ([transfer_pm1_store.md](../../../docs/optimizations/transfer_pm1_store.md)),
   and a constant store goes through Y when A holds a value that's
   loaded again after it ([redundant_load.md](../../../docs/optimizations/redundant_load.md)),
-  which made `get_next_code_byte2`'s fast path and `get_alphabet`
-  Zork's own code.
+  which made `get_alphabet` Zork's own code, and
+  `get_next_code_byte2`'s fast path too while `Z_PC2` was three
+  separate bytes.
 - A reload of a value A already holds, kept for a branch on its flags,
   is `ORA #$00` ([redundant_load.md](../../../docs/optimizations/redundant_load.md),
   [round_trip_load.md](../../../docs/optimizations/round_trip_load.md)),
@@ -196,6 +213,20 @@ many cycles each saved:
   ([cmp_through_tmp_fold.md](../../../docs/optimizations/cmp_through_tmp_fold.md)),
   which made `dump_buffer_with_more`'s `++CURR_LINE >= WNDBTM` Zork's
   `INC CURR_LINE; LDA CURR_LINE; CMP WNDBTM`.
+
+Declaring `Z_PC` and `Z_PC2` as `uint24_t` cost 3,100 cycles at
+first, since `Z_PC2.lo++` loaded the member into temporaries, added,
+and stored it back. Two changes brought the struct version to within
+72 cycles of the byte version:
+
+- A value stored into a member of a static struct is computed in the
+  member's bytes, and `s.m++` adds in place, which the INC peephole
+  turns into `INC`
+  ([in_place_member_update.md](../../../docs/optimizations/in_place_member_update.md)).
+  That also made `load_packed_address`'s 16-bit store Zork's code.
+- A test of the low byte just incremented by an INC chain goes in
+  the chain's first branch
+  ([inc_low_byte_test.md](../../../docs/optimizations/inc_low_byte_test.md)).
 
 The fuzzers then found that rematerialization took a constant store
 for something that leaves A alone, which these changes exposed

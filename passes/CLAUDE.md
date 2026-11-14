@@ -129,8 +129,8 @@ this directory:
   block, follows what C holds (bit 7 of a byte after `LDA M` and `ASL`
   / `ROL A`, bit 0 after `LSR` / `ROR A`) and deletes a later `LDA M`
   and shift that would set C the same way, when A and N/Z are dead
-  after it: three statements taking three bytes of one shifted value
-  (`load_packed_address`) become one `ASL` / `ROL` / `ROL` chain.
+  after it: statements taking bytes of one shifted value
+  (`load_packed_address`) share one `ASL` / `ROL` / `ROL` chain.
 - `label_offset_fold.py` — `apply_label_offset_fold`. A 2-byte add of
   a label's halves and a constant (`LDA #k; CLC; ADC #<r; STA d0;
   LDA #k2; ADC #>r; STA d1`) becomes `LDA #<(r+K); STA d0; LDA
@@ -192,6 +192,24 @@ this directory:
   #1` (one carry function returning another's result).
 - `identifier_resolution.py` — pass 2 (see below).
 - `inc_peephole.py` — multi-byte INC peephole (see below).
+- `inc_low_byte_test.py` — `apply_inc_low_byte_test`. After an INC
+  chain `INC M0; BNE done; INC M1; ...; done:`, a test of the low byte
+  `LDA M0; BNE T` / `BEQ T` is decided on every path into `done`: the
+  first `BNE` goes to T (or past the `BEQ`) when A is dead there, and
+  the test after `done` is dropped (or the `BEQ` becomes a `JMP`).
+  `x++; if ((uint8_t)x == 0)` on a 16-bit member, as in Zork's
+  `get_next_code_byte2`, is `INC x; BNE`.
+- `in_place_member_update.py` — `plan_in_place_updates`, which
+  `tac_to_asm._in_place_members` applies. A value stored by an
+  `IndexedSymbolStore` with a constant index right after the
+  instruction that computes it is computed in the static object's
+  bytes (`tac_to_asm` renames it to `Data(obj, k)` and skips the
+  store), when it's a single-use local and the instruction doesn't
+  read the object. For `s.m++` (`IndexedLoad` into `t`, `t + c`,
+  store) the loaded `t` is renamed too and the load skipped, when
+  nothing between the load and the add writes memory or branches and
+  `t` isn't read after the add, so the add is in place and becomes
+  `INC`.
 - `memory_value_propagation.py` —
   `apply_memory_value_propagation`. CFG-aware forward dataflow
   that tracks ZP-cell → recomputable-source equivalences and
@@ -959,6 +977,9 @@ Always-on (runs in both optimized AND unoptimized pipelines):
 
 - `apply_inc_peephole` — multi-byte ADC-#1 chains on stable memory →
   `INC + BNE` chains. See "Multi-byte INC peephole" below.
+- `apply_inc_low_byte_test` — a test of an INC chain's low byte
+  right after it, `LDA M0; BNE T`, folded into the chain's first
+  `BNE`. See the module docstring in `inc_low_byte_test.py`.
 - `apply_carry_inc_peephole` — the carry bytes of any add in place,
   `LDA M; ADC #0; STA M`, → `BCC done; INC M; ...` chains, and a
   subtract's top `SBC #0` byte → `BCS skip; DEC M`. See the module

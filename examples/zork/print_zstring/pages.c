@@ -10,6 +10,13 @@
 
     Departures from the original:
 
+    - Z_PC2 is a uint24_t, low byte first at $91, where the original
+      keeps Z_PC2_H at $91, Z_PC2_HH at $92, and Z_PC2_L at $93 (see
+      zork.h). Z_PC2_L is (uint8_t)Z_PC2.lo, Z_PC2_H is
+      (uint8_t)(Z_PC2.lo >> 8), and Z_PC2_HH is Z_PC2.hi.
+    - get_next_code_byte2 reads the byte after stepping Z_PC2, from
+      the index it saved, since unmapping the page leaves
+      ZCODE_PAGE_ADDR2 as it is.
     - find_index_of_page_table returns a slot in A and "not found" in
       the carry. It returns a struct of the value and a bool, declared
       return_bool_in_carry, which uses the same registers.
@@ -169,9 +176,8 @@ void invalidate_zcode_page2(void) {
 /* Sets Z_PC2 to the byte address of the packed (word) address in
  * SCRATCH2, and unmaps the string reader's page. */
 void load_packed_address(void) {
-    Z_PC2_L = (uint8_t)(SCRATCH2 << 1);
-    Z_PC2_H = (uint8_t)(SCRATCH2 >> 7);
-    Z_PC2_HH = (uint8_t)(SCRATCH2 >> 15);
+    Z_PC2.lo = SCRATCH2 << 1;
+    Z_PC2.hi = (uint8_t)(SCRATCH2 >> 15);
     invalidate_zcode_page2();
 }
 
@@ -188,19 +194,23 @@ void get_next_code_word(void) {
 uint8_t get_next_code_byte2(void) {
     for (;;) {
         if (ZCODE_PAGE_VALID2) {
-            uint8_t b = ZCODE_PAGE_ADDR2[Z_PC2_L];
-            if (++Z_PC2_L == 0) {
+            uint8_t i = (uint8_t)Z_PC2.lo;
+            Z_PC2.lo++;
+            if ((uint8_t)Z_PC2.lo == 0) {
                 ZCODE_PAGE_VALID2 = 0;
-                if (++Z_PC2_H == 0)
-                    Z_PC2_HH++;
+                if (Z_PC2.lo == 0)
+                    Z_PC2.hi++;
             }
-            return b;
+            /* Unmapping the page leaves ZCODE_PAGE_ADDR2 pointing at it. */
+            return ZCODE_PAGE_ADDR2[i];
         }
-        uint8_t page;
-        if (Z_PC2_HH == 0 && Z_PC2_H < NUM_IMAGE_PAGES) {
-            page = Z_PC2_H;
+        /* The story page Z_PC2 is in, and its low byte. */
+        uint16_t story_page = (Z_PC2.lo >> 8) | ((uint16_t)Z_PC2.hi << 8);
+        uint8_t page = (uint8_t)story_page;
+        if (Z_PC2.hi == 0 && page < NUM_IMAGE_PAGES) {
+            /* A resident page: the story's page `page`. */
         } else {
-            SCRATCH2 = Z_PC2_H | ((uint16_t)Z_PC2_HH << 8);
+            SCRATCH2 = story_page;
             struct page_slot found = find_index_of_page_table();
             PAGE_TABLE_INDEX2 = found.slot;
             if (found.not_found) {
@@ -209,11 +219,11 @@ uint8_t get_next_code_byte2(void) {
                     ZCODE_PAGE_VALID = 0;
                 SCRATCH2 = HIGH_MEM_ADDR
                     + ((uint16_t)PAGE_TABLE_INDEX2 << 8);
-                SCRATCH1 = Z_PC2_H | ((uint16_t)Z_PC2_HH << 8);
+                SCRATCH1 = story_page;
                 if (read_from_sector())
                     restart();
-                PAGE_L_TABLE[PAGE_TABLE_INDEX2] = Z_PC2_H;
-                PAGE_H_TABLE[PAGE_TABLE_INDEX2] = Z_PC2_HH;
+                PAGE_L_TABLE[PAGE_TABLE_INDEX2] = (uint8_t)story_page;
+                PAGE_H_TABLE[PAGE_TABLE_INDEX2] = Z_PC2.hi;
             }
             set_page_first(PAGE_TABLE_INDEX2);
             page = PAGE_TABLE_INDEX2 + NUM_IMAGE_PAGES;

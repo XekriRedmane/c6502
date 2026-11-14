@@ -16,6 +16,14 @@
 
 /* ---- Zero page ------------------------------------------------------- */
 
+/* A 24-bit unsigned integer, low byte first: the low 16 bits, then the
+ * top 8. Zork's program counters are byte addresses into a story file
+ * of up to 128K. */
+typedef struct {
+    uint16_t lo;
+    uint8_t hi;
+} uint24_t;
+
 /*
     The compiler places its own zero-page bytes (the runtime's block, the
     zp_abi parameter and local slots, and globals it promotes) around
@@ -39,8 +47,8 @@ extern uint8_t __zork_zp_7c [[c6502::zeropage(0x7C)]][3];
 extern uint8_t SECTORS_PER_TRACK [[c6502::zeropage(0x7F)]];
 /* CURR_OPCODE, OPERAND_COUNT, and OPERAND0-OPERAND3. */
 extern uint8_t __zork_zp_80 [[c6502::zeropage(0x80)]][10];
-/* The instruction reader's program counter: low, high, and top byte. */
-extern uint8_t Z_PC [[c6502::zeropage(0x8A)]][3];
+/* The instruction reader's program counter. */
+extern uint24_t Z_PC [[c6502::zeropage(0x8A)]];
 /* The page cache's and the string reader's state, and GLOBAL_ZVARS_ADDR. */
 extern uint8_t __zork_zp_8d [[c6502::zeropage(0x8D)]][13];
 /* The current routine's 15 local variables, two bytes each. */

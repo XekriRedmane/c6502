@@ -35,9 +35,7 @@ Z_PC	EQU	$8A
 ZCODE_PAGE_ADDR	EQU	$8D
 ZCODE_PAGE_VALID	EQU	$8F
 PAGE_TABLE_INDEX	EQU	$90
-Z_PC2_H	EQU	$91
-Z_PC2_HH	EQU	$92
-Z_PC2_L	EQU	$93
+Z_PC2	EQU	$91
 ZCODE_PAGE_ADDR2	EQU	$94
 ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
@@ -72,10 +70,12 @@ PRINTER_CSW	EQU	$EE
 __zork_zp_f0	EQU	$F0
 __local_get_next_code_word__1	EQU	$F4
 __local_get_next_code_byte2__found_1	EQU	$F5
-__local_set_page_first__0	EQU	$F7
-__local_set_page_first__prev_first	EQU	$F8
-__local_find_index_of_page_table__0	EQU	$F9
-__local_find_index_of_page_table__1	EQU	$FA
+__local_get_next_code_byte2__page	EQU	$F6
+__local_get_next_code_byte2__0	EQU	$F8
+__local_set_page_first__0	EQU	$F9
+__local_set_page_first__prev_first	EQU	$FA
+__local_find_index_of_page_table__0	EQU	$FB
+__local_find_index_of_page_table__1	EQU	$FC
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -89,10 +89,10 @@ COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
 ; def find_index_of_page_table params= locals=__local_find_index_of_page_table__compound_literal_1,__local_find_index_of_page_table__compound_literal_0,__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false
-; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page indirect=false in_cycle=false
+; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page,__local_get_next_code_byte2__found_0,__local_get_next_code_byte2__0 indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__0,__local_get_next_code_word__1 indirect=false in_cycle=false
 ; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
-; def load_packed_address params= locals=__local_load_packed_address__0 indirect=false in_cycle=false
+; def load_packed_address params= locals= indirect=false in_cycle=false
 ; def set_page_first params=__zpabi_set_page_first__slot locals=__local_set_page_first__0,__local_set_page_first__prev_first indirect=false in_cycle=false param_regs=A
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -160,9 +160,7 @@ COUT1	EQU	$FDF0
 ; zp ZCODE_PAGE_ADDR size=2 at=$8D def=false init=
 ; zp ZCODE_PAGE_VALID size=1 at=$8F def=false init=
 ; zp PAGE_TABLE_INDEX size=1 at=$90 def=false init=
-; zp Z_PC2_H size=1 at=$91 def=false init=
-; zp Z_PC2_HH size=1 at=$92 def=false init=
-; zp Z_PC2_L size=1 at=$93 def=false init=
+; zp Z_PC2 size=3 at=$91 def=false init=
 ; zp ZCODE_PAGE_ADDR2 size=2 at=$94 def=false init=
 ; zp ZCODE_PAGE_VALID2 size=1 at=$96 def=false init=
 ; zp PAGE_TABLE_INDEX2 size=1 at=$97 def=false init=
@@ -208,13 +206,13 @@ load_packed_address:
 
    LDA   SCRATCH2
    ASL
-   STA   Z_PC2_L
+   STA   Z_PC2
    LDA   SCRATCH2+1
    ROL
-   STA   Z_PC2_H
+   STA   Z_PC2+1
    LDA   #$00
    ROL
-   STA   Z_PC2_HH
+   STA   Z_PC2+2
    JMP   invalidate_zcode_page2
 
 get_next_code_word:
@@ -234,29 +232,33 @@ get_next_code_byte2:
 .loop@0_start:
    LDA   ZCODE_PAGE_VALID2
    BEQ   .if_end@0
-   LDY   Z_PC2_L
-   LDA   (ZCODE_PAGE_ADDR2),Y
-   INY
-   STY   Z_PC2_L
+   LDY   Z_PC2
+   INC   Z_PC2
    BNE   .if_end@1
-   LDY   #$00
-   STY   ZCODE_PAGE_VALID2
-   INC   Z_PC2_H
+   INC   Z_PC2+1
+   LDA   Z_PC2
+   LDX   #$00
+   STX   ZCODE_PAGE_VALID2
+   ORA   Z_PC2+1
    BNE   .if_end@2
-   INC   Z_PC2_HH
+   INC   Z_PC2+2
 .if_end@2:
 .if_end@1:
+   LDA   (ZCODE_PAGE_ADDR2),Y
    RTS
 .if_end@0:
-   LDA   Z_PC2_HH
+   LDA   Z_PC2+1
+   STA   __local_get_next_code_byte2__page
+   LDA   Z_PC2+2
+   STA   __local_get_next_code_byte2__0
    BNE   .if_else@6
-   LDA   Z_PC2_H
+   LDA   __local_get_next_code_byte2__page
    CMP   NUM_IMAGE_PAGES
    BCC   .if_end@5
 .if_else@6:
-   LDA   Z_PC2_H
+   LDA   __local_get_next_code_byte2__page
    STA   SCRATCH2
-   LDA   Z_PC2_HH
+   LDA   __local_get_next_code_byte2__0
    STA   SCRATCH2+1
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
@@ -274,18 +276,18 @@ get_next_code_byte2:
    LDA   HIGH_MEM_ADDR+1
    ADC   __local_get_next_code_byte2__found_1
    STA   SCRATCH2+1
-   LDA   Z_PC2_H
+   LDA   __local_get_next_code_byte2__page
    STA   SCRATCH1
-   LDA   Z_PC2_HH
+   LDA   __local_get_next_code_byte2__0
    STA   SCRATCH1+1
    JSR   read_from_sector
    BCC   .if_end@9
    JSR   restart
 .if_end@9:
-   LDA   Z_PC2_H
+   LDA   __local_get_next_code_byte2__page
    LDY   PAGE_TABLE_INDEX2
    STA   (PAGE_L_TABLE),Y
-   LDA   Z_PC2_HH
+   LDA   Z_PC2+2
    LDY   PAGE_TABLE_INDEX2
    STA   (PAGE_H_TABLE),Y
 .if_end@7:

@@ -1549,11 +1549,14 @@ class Translator:
                 self._low_byte_only = low_byte_only(
                     fn, self._symbols, self._size_of,
                 )
+                in_place = self._in_place_members(fn, renames)
                 for i, instr in enumerate(instrs):
                     self._prev_tac = instrs[i - 1] if i else None
                     if plan is not None:
                         out.extend(self._push_saved(plan.push_before.get(i, ())))
-                    if plan is None or i not in plan.skip:
+                    if i in in_place:
+                        pass
+                    elif plan is None or i not in plan.skip:
                         out.extend(self.translate_instruction(instr))
                     if plan is not None:
                         out.extend(self._pop_saved(plan.pop_after.get(i, ())))
@@ -1583,6 +1586,41 @@ class Translator:
                     instructions=out,
                 )
         raise TypeError(f"unexpected function node: {fn!r}")
+
+    def _in_place_members(
+        self, fn: tac_ast.Function, renames: dict,
+    ) -> set[int]:
+        """Plans the members of static objects that `fn` computes in
+        place (`passes/in_place_member_update.py`), adds the renames
+        that name each planned local by the member's bytes to
+        `renames`, and returns the indexes of the loads and stores to
+        leave out."""
+        from passes.in_place_member_update import plan_in_place_updates
+
+        def is_local(name: str) -> bool:
+            sym = self._symbols.get(name) if self._symbols else None
+            return sym is not None and not isinstance(
+                sym.attrs, (StaticAttr, FunAttr),
+            )
+
+        skip: set[int] = set()
+        for up in plan_in_place_updates(
+            fn.instructions, fn.params, is_local, self._size_of,
+        ):
+            t, u, obj = up.t, up.u, up.obj
+            n = self._size_of(fn.instructions[up.store].src)
+            if (obj in renames or t in renames or u in renames
+                    or isinstance(self._named_byte(obj, 0), asm_ast.Pseudo)
+                    or self._significant.get(u, n) < n
+                    or u in self._low_byte_only):
+                continue
+            member = [self._named_byte(obj, up.base + k) for k in range(n)]
+            renames[u] = member
+            skip.add(up.store)
+            if t is not None:
+                renames[t] = member
+                skip.add(up.load)
+        return skip
 
     def _register_param_locals(
         self, params: list[str], layout, out: list,

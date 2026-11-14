@@ -51,8 +51,8 @@ The rewrite is sound iff at the boundary after STA M:
      sequence, and DEX leaves them stale. N and Z come out the same:
      DEX sets them from `X-1`, the value the SBC left in A. So a
      branch on N or Z may follow, as in `get_next_code_byte2`'s
-     `if (++Z_PC2_L == 0)` (examples/zork/print_zstring/pages.c),
-     which becomes `INY; STY Z_PC2_L; BNE`.
+     `if (++Z_PC2_L == 0)` when examples/zork/print_zstring/pages.c
+     kept Z_PC2 in three bytes, which became `INY; STY Z_PC2_L; BNE`.
 
 For the +1 form (`CLC; ADC #1`) the C/V mutation by the original
 ADC is also lost; the gate is the same.

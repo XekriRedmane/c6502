@@ -7,22 +7,22 @@ already holds. It runs in the peephole fixed point, which both
 pipelines run.
 
 `tac_to_asm` lowers `x >> 7` on a 16-bit `x` as the high byte of `x <<
-1`, and `x >> 15` as the bit shifted out of the top. Three statements
-that take three bytes of one shifted value each start by putting the
-bit shifted out of the byte below into C again, where Zork's code
-runs one `ASL` / `ROL` / `ROL` chain. The pass follows what C holds,
-bit 7 of a byte `M` after `LDA M` and `ASL A` or `ROL A`, or bit 0
-after `LSR A` or `ROR A`, and deletes a later `LDA M` and shift that
-would set C the same way.
+1`, and `x >> 15` as the bit shifted out of the top. Statements that
+take bytes of one shifted value each start by putting the bit shifted
+out of the byte below into C again, where Zork's code runs one `ASL` /
+`ROL` / `ROL` chain. The pass follows what C holds, bit 7 of a byte
+`M` after `LDA M` and `ASL A` or `ROL A`, or bit 0 after `LSR A` or
+`ROR A`, and deletes a later `LDA M` and shift that would set C the
+same way.
 
 ## Example
 
-From `load_packed_address` in `examples/zork/print_zstring/pages.c`:
+From `load_packed_address` in `examples/zork/print_zstring/pages.c`,
+which sets the 24-bit `Z_PC2` to twice `SCRATCH2`:
 
 ```c
-Z_PC2_L = (uint8_t)(SCRATCH2 << 1);
-Z_PC2_H = (uint8_t)(SCRATCH2 >> 7);
-Z_PC2_HH = (uint8_t)(SCRATCH2 >> 15);
+Z_PC2.lo = SCRATCH2 << 1;
+Z_PC2.hi = (uint8_t)(SCRATCH2 >> 15);
 ```
 
 ### Before
@@ -30,17 +30,15 @@ Z_PC2_HH = (uint8_t)(SCRATCH2 >> 15);
 ```
    LDA   SCRATCH2
    ASL
-   STA   Z_PC2_L
-   LDA   SCRATCH2
-   ASL
+   STA   Z_PC2
    LDA   SCRATCH2+1
    ROL
-   STA   Z_PC2_H
+   STA   Z_PC2+1
    LDA   SCRATCH2+1
    ASL
    LDA   #$00
    ROL
-   STA   Z_PC2_HH
+   STA   Z_PC2+2
 ```
 
 ### After
@@ -48,16 +46,19 @@ Z_PC2_HH = (uint8_t)(SCRATCH2 >> 15);
 ```
    LDA   SCRATCH2
    ASL
-   STA   Z_PC2_L
+   STA   Z_PC2
    LDA   SCRATCH2+1
    ROL
-   STA   Z_PC2_H
+   STA   Z_PC2+1
    LDA   #$00
    ROL
-   STA   Z_PC2_HH
+   STA   Z_PC2+2
 ```
 
-That's Zork's own code.
+That's Zork's own code, which keeps the bytes in another order. When
+the function stored the three bytes in three statements, as
+`(uint8_t)(SCRATCH2 << 1)`, `(uint8_t)(SCRATCH2 >> 7)`, and
+`(uint8_t)(SCRATCH2 >> 15)`, the pass deleted two such pairs.
 
 ## When it applies
 

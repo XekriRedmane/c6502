@@ -2,45 +2,44 @@
 
 # Pattern
 
-`load_packed_address` in `examples/zork/print_zstring/pages.c` takes
-three bytes of `SCRATCH2 << 1` in three statements:
+`load_packed_address` in `examples/zork/print_zstring/pages.c` sets
+the 24-bit `Z_PC2` to twice `SCRATCH2`:
 
-    Z_PC2_L = (uint8_t)(SCRATCH2 << 1);
-    Z_PC2_H = (uint8_t)(SCRATCH2 >> 7);
-    Z_PC2_HH = (uint8_t)(SCRATCH2 >> 15);
+    Z_PC2.lo = SCRATCH2 << 1;
+    Z_PC2.hi = (uint8_t)(SCRATCH2 >> 15);
 
-`tac_to_asm` lowers `x >> 7` as the high byte of `x << 1`, so each
-statement starts by putting the bit shifted out of the byte below
-into C again:
+`tac_to_asm` lowers `x >> 15` as the bit shifted out of `x << 1`, so
+the second statement starts by putting the bit shifted out of the
+byte below into C again:
 
     LDA   SCRATCH2
-    ASL                     ; C = bit 7 of SCRATCH2
-    STA   Z_PC2_L
-    LDA   SCRATCH2          ; C = bit 7 of SCRATCH2, again
     ASL
+    STA   Z_PC2
     LDA   SCRATCH2+1
     ROL                     ; C = bit 7 of SCRATCH2+1
-    STA   Z_PC2_H
+    STA   Z_PC2+1
     LDA   SCRATCH2+1        ; C = bit 7 of SCRATCH2+1, again
     ASL
     LDA   #$00
     ROL
-    STA   Z_PC2_HH
+    STA   Z_PC2+2
 
-The pass tracks what C holds: bit 7 of a byte `M` after `LDA M` and
-`ASL A` or `ROL A`, bit 0 after `LSR A` or `ROR A`. A later `LDA M;
-ASL A` (or `ROL A`, `LSR A`, `ROR A`) that would set C the same way,
-with A and N/Z dead after it, goes, leaving Zork's own chain:
+(`x >> 7` is likewise the high byte of `x << 1`, so taking the three
+bytes in three statements recomputed C twice.) The pass tracks what C
+holds: bit 7 of a byte `M` after `LDA M` and `ASL A` or `ROL A`, bit 0
+after `LSR A` or `ROR A`. A later `LDA M; ASL A` (or `ROL A`, `LSR
+A`, `ROR A`) that would set C the same way, with A and N/Z dead after
+it, goes, leaving Zork's own chain:
 
     LDA   SCRATCH2
     ASL
-    STA   Z_PC2_L
+    STA   Z_PC2
     LDA   SCRATCH2+1
     ROL
-    STA   Z_PC2_H
+    STA   Z_PC2+1
     LDA   #$00
     ROL
-    STA   Z_PC2_HH
+    STA   Z_PC2+2
 
 # What it tracks
 

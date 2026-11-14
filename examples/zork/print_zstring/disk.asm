@@ -35,9 +35,7 @@ Z_PC	EQU	$8A
 ZCODE_PAGE_ADDR	EQU	$8D
 ZCODE_PAGE_VALID	EQU	$8F
 PAGE_TABLE_INDEX	EQU	$90
-Z_PC2_H	EQU	$91
-Z_PC2_HH	EQU	$92
-Z_PC2_L	EQU	$93
+Z_PC2	EQU	$91
 ZCODE_PAGE_ADDR2	EQU	$94
 ZCODE_PAGE_VALID2	EQU	$96
 PAGE_TABLE_INDEX2	EQU	$97
@@ -148,9 +146,7 @@ COUT1	EQU	$FDF0
 ; zp ZCODE_PAGE_ADDR size=2 at=$8D def=false init=
 ; zp ZCODE_PAGE_VALID size=1 at=$8F def=false init=
 ; zp PAGE_TABLE_INDEX size=1 at=$90 def=false init=
-; zp Z_PC2_H size=1 at=$91 def=false init=
-; zp Z_PC2_HH size=1 at=$92 def=false init=
-; zp Z_PC2_L size=1 at=$93 def=false init=
+; zp Z_PC2 size=3 at=$91 def=false init=
 ; zp ZCODE_PAGE_ADDR2 size=2 at=$94 def=false init=
 ; zp ZCODE_PAGE_VALID2 size=1 at=$96 def=false init=
 ; zp PAGE_TABLE_INDEX2 size=1 at=$97 def=false init=

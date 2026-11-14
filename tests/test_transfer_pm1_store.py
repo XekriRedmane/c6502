@@ -244,7 +244,8 @@ class TestCascade(unittest.TestCase):
 
 class TestBranchOnResult(unittest.TestCase):
     """N/Z may be read after the store: INY sets them as the ADC did.
-    `get_next_code_byte2`'s `if (++Z_PC2_L == 0)`."""
+    `get_next_code_byte2`'s `if (++Z_PC2_L == 0)`, from when Zork's
+    print_zstring example kept Z_PC2 in three bytes."""
 
     def test_iny_sty_bne(self):
         m = asm_ast.Data(name="Z_PC2_L", offset=0)

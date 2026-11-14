@@ -81,10 +81,12 @@ STA next` into `INX; STX next`.
   dead (it now holds the new value), and C and V are dead (`c_dead_at`,
   `v_dead_at`). `DEX` and `INX` leave C and V as they were, where the
   `SBC` or `ADC` set them, but set N and Z from the new value just as
-  the `SBC` or `ADC` did, so a branch on N or Z may follow. That's
+  the `SBC` or `ADC` did, so a branch on N or Z may follow. That was
   `get_next_code_byte2`'s `if (++Z_PC2_L == 0)` in
   examples/zork/print_zstring/pages.c, which became `INY; STY
-  Z_PC2_L; BNE`, so the byte it read stays in A.
+  Z_PC2_L; BNE`, so the byte it read stayed in A. (Z_PC2 is now a
+  24-bit struct, whose increment is `INC`; see [members computed in
+  place](in_place_member_update.md).)
 
 ## What it leaves alone
 

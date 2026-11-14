@@ -95,9 +95,13 @@ zero.
   spelled `org`, `o`, `len`, `l`. The attributes are ignored.
 - Output sections, `name [address] [(NOLOAD)] : [AT(address)]
   [ALIGN(n)] { ... } [> region] [AT> region]`.
-- Inside one: `*(pattern ...)`, `KEEP(*(pattern ...))` (the same,
+- Inside one: `file(pattern ...)`, `KEEP(file(pattern ...))` (the same,
   since nothing is discarded), symbol assignments, and `. = expr`,
-  `. += n` to skip ahead. Patterns use `*`, `?`, and `[...]`.
+  `. += n` to skip ahead. Patterns use `*`, `?`, and `[...]`. `file`
+  is `*` for every input, or a pattern matched against an input
+  file's name without its directory, so `zstring.asm(.text)` takes
+  only that unit's code. examples/zork/print_zstring/print_zstring.ld
+  places each unit where Zork keeps the original routines this way.
 - Symbol assignments `sym = expr;` and `PROVIDE(sym = expr);`, inside
   output sections or between them.
 - Expressions: numbers (`0x` hex, decimal, `K` and `M` suffixes),
@@ -106,8 +110,8 @@ zero.
   `ADDR(section)`, `LOADADDR(section)`, and `SIZEOF(section)`.
 - Comments `/* ... */` and `//`.
 
-`ENTRY`, `INCLUDE`, `/DISCARD/`, `FILL`, `BYTE`, `SORT`, file names in
-input descriptions, and `. =` between output sections are errors.
+`ENTRY`, `INCLUDE`, `/DISCARD/`, `FILL`, `BYTE`, `SORT`, and `. =`
+between output sections are errors.
 
 ## Symbols
 

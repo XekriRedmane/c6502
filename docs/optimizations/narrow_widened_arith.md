@@ -116,5 +116,14 @@ held in memory across it.
 
 ## Related
 
+A right shift isn't narrowed here, since high bytes shift down into
+the low one. `tac_to_asm` handles the common case itself: when a
+constant right shift's result is read only through a `Truncate` to
+one byte (`significant_bytes.low_byte_only`), it computes just that
+byte from the two source bytes it comes from. `(uint8_t)(ZCHARS >>
+5)` is `LDA ZCHARS; LSR` five times; `STA t; LDA ZCHARS+1; ASL` three
+times; `ORA t`, where it called `lsr16`, and a shift by 1 or 7 is four
+instructions (`LDA hi; LSR; LDA lo; ROR`).
+
 [Truncate of an extend](truncate_extend_fold.md) is the case with no
 operation in between.

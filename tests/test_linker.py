@@ -348,5 +348,65 @@ class TestParameterNames(unittest.TestCase):
                 )
 
 
+class TestRecursionWithSaves(unittest.TestCase):
+    """A cycle whose every call is under `#pragma c6502 call
+    save(hardware_stack)` links, as Zork's print_zstring does; one
+    without the pragma doesn't."""
+
+    _SAVED = """
+    unsigned char depth;
+    unsigned char out;
+    void walk(unsigned char n) {
+        unsigned char here = n;
+        if (n == 0) return;
+    #pragma c6502 call save(hardware_stack)
+        walk(n - 1);
+        out = out * 3 + here;
+    }
+    """
+
+    def _link_one(self, src: str) -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            p = tmp / "a.asm"
+            out = tmp / "linked.asm"
+            self.assertEqual(_compile_to_asm(src, p), 0)
+            rc, err = _link_capture_stderr([p], out)
+            text = out.read_text() if rc == 0 else ""
+        return rc, err, text
+
+    def test_saved_cycle_links(self):
+        rc, err, text = self._link_one(
+            self._SAVED + "int main(void) { walk(3); return out; }\n",
+        )
+        self.assertEqual(rc, 0, err)
+        self.assertIn("JSR   walk", text)
+
+    @unittest.skipUnless(shutil.which("dasm"), "dasm not installed")
+    def test_saved_cycle_runs(self):
+        from sim.linked import build_linked_sim
+        rc, err, text = self._link_one(
+            self._SAVED + "int main(void) { walk(3); return out; }\n",
+        )
+        self.assertEqual(rc, 0, err)
+        # out = ((0 * 3 + 1) * 3 + 2) * 3 + 3
+        self.assertEqual(build_linked_sim(text).run().return_int(), 18)
+
+    def test_cycle_without_saves_rejected(self):
+        src = (
+            "unsigned char out;\n"
+            "void walk(unsigned char n) { if (n) { walk(n - 1); out++; } }\n"
+            "int main(void) { walk(3); return out; }\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            p = tmp / "a.asm"
+            # Without the pragma the compile itself falls back to the
+            # soft stack, which the linker can't re-allocate.
+            if _compile_to_asm(src, p) != 0:
+                return
+            rc, err = _link_capture_stderr([p], tmp / "linked.asm")
+            self.assertNotEqual(rc, 0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -248,7 +248,24 @@ def _find_a_producer(
             if (isinstance(instr.dst, asm_ast.Reg)
                     and isinstance(instr.dst.reg, asm_ast.A)):
                 return k
-            continue
+            src_reg = isinstance(instr.src, asm_ast.Reg)
+            if src_reg or isinstance(instr.dst, asm_ast.Reg):
+                # `TXA` / `TYA` in front of a soft-stack or indirect
+                # store writes A.
+                if (src_reg and not isinstance(instr.src.reg, asm_ast.A)
+                        and not isinstance(
+                            instr.dst, (asm_ast.Data, asm_ast.ZP),
+                        )):
+                    return None
+                continue
+            if instr.src == instr.dst:
+                continue                # a self-Mov emits nothing
+            # A store of a constant or a memory byte, `Mov(#k, M)` or
+            # `Mov(M, N)`, emits as `LDA src; STA dst`, so A ends up
+            # holding `src`. Taking it for an earlier load made
+            # `Mov(#$80, l19); STA t` rematerialize `t` as the `#$FF`
+            # loaded before it (fuzz.stmts seed 25347).
+            return k
         # Any other instruction that writes A blocks the search.
         if _writes_a(instr):
             return None

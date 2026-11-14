@@ -79,7 +79,7 @@ checked there.
 
 - A `BVC` or `BVS`, since `SBC` sets V and `CMP` doesn't.
 - A branch whose target reads A or V, such as `A_mod_3` in
-  `examples/zork_print_string_literal.c`, whose loop exit returns the
+  `examples/zork/print_zstring/zstring.c`, whose loop exit returns the
   value it compared, still in A.
 - A label between the branch and the `SEC` that some other branch or
   jump targets, since a path arriving there would skip the moved

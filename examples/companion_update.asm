@@ -36,7 +36,6 @@ __zpabi_smc_body_draw__slot	EQU	$8B
 __local_active_neg_step__1	EQU	$8C
 __local_active_pos_step__1	EQU	$8C
 __local_drift_step__pos_1	EQU	$8C
-__local_entity_proximity__0	EQU	$8C
 __local_player_catch__1	EQU	$8C
 __zpabi_smc_body_draw__sprite_x	EQU	$8C
 __local_compute_screen_x__2	EQU	$8D
@@ -178,8 +177,7 @@ entity_proximity:
    LDA   #>__local_entity_proximity__entity_row
    STA   __zpabi_find_active_entity__out_row_1
    JSR   find_active_entity
-   STA   __local_entity_proximity__0
-   LDA   __local_entity_proximity__0
+   ORA   #$00
    BNE   .if_end@1
    RTS
 .if_end@1:
@@ -258,8 +256,8 @@ smc_body_draw:
 .cond_else@16:
    LDA   #<pos_walk_next
    STA   __local_smc_body_draw__0
-   LDA   #>pos_walk_next
-   STA   __local_smc_body_draw__1
+   LDY   #>pos_walk_next
+   STY   __local_smc_body_draw__1
 .cond_end@17:
    LDY   #$00
    LDA   (__local_smc_body_draw__0),Y
@@ -567,16 +565,14 @@ companion_update:
    LDA   __zpabi_companion_update__player_floor
    STA   __zpabi_active_neg_step__player_floor
    JSR   active_neg_step
-   STA   __local_companion_update__0
    JMP   .cond_end@46
 .cond_else@45:
    STX   __zpabi_active_pos_step__slot
    LDA   __zpabi_companion_update__player_floor
    STA   __zpabi_active_pos_step__player_floor
    JSR   active_pos_step
-   STA   __local_companion_update__0
 .cond_end@46:
-   LDA   __local_companion_update__0
+   ORA   #$00
    BNE   .lb_skip@1
    JMP   .loop@1_continue
 .lb_skip@1:

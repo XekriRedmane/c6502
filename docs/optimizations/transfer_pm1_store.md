@@ -78,9 +78,13 @@ STA next` into `INX; STX next`.
   `STX` and `STY` have no `(zp),Y` mode, and the pass doesn't use
   their indexed modes.
 - After the store, A is dead, the register that was transferred is
-  dead (it now holds the new value), and all four flags are dead, by
-  `all_flags_dead_at`. `DEX` and `INX` leave C and V as they were,
-  where the `SBC` or `ADC` set them.
+  dead (it now holds the new value), and C and V are dead (`c_dead_at`,
+  `v_dead_at`). `DEX` and `INX` leave C and V as they were, where the
+  `SBC` or `ADC` set them, but set N and Z from the new value just as
+  the `SBC` or `ADC` did, so a branch on N or Z may follow. That's
+  `get_next_code_byte2`'s `if (++Z_PC2_L == 0)` in
+  examples/zork/print_zstring/pages.c, which became `INY; STY
+  Z_PC2_L; BNE`, so the byte it read stays in A.
 
 ## What it leaves alone
 

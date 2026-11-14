@@ -138,5 +138,32 @@ class TestMemToMemRewrite(unittest.TestCase):
         self.assertEqual(after[2].src, m)
 
 
+class TestFlagsFromA(unittest.TestCase):
+    """Pattern C: after a call, `STA t; LDA t` is there for the flags,
+    which `ORA #$00` sets from A."""
+
+    def test_ora_when_flags_are_read(self):
+        t = asm_ast.Data(name="t", offset=0)
+        out = _instrs(apply_round_trip_load_drop(_prog([
+            asm_ast.Call(name="g", reg_args=[]),
+            asm_ast.Mov(src=A, dst=t, is_volatile=False),
+            asm_ast.Mov(src=t, dst=A, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".l"),
+            asm_ast.Label(name=".l"),
+            asm_ast.Return(save_a=True),
+        ])))
+        self.assertEqual(out[2], asm_ast.Or(src=asm_ast.Imm(value=0), dst=A))
+
+    def test_dropped_when_flags_are_dead(self):
+        t = asm_ast.Data(name="t", offset=0)
+        out = _instrs(apply_round_trip_load_drop(_prog([
+            asm_ast.Call(name="g", reg_args=[]),
+            asm_ast.Mov(src=A, dst=t, is_volatile=False),
+            asm_ast.Mov(src=t, dst=A, is_volatile=False),
+            asm_ast.ArithmeticShiftLeft(dst=A),
+            asm_ast.Return(save_a=True),
+        ])))
+        self.assertEqual(out[2], asm_ast.ArithmeticShiftLeft(dst=A))
+
 if __name__ == "__main__":
     unittest.main()

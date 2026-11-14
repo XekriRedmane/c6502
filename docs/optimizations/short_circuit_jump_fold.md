@@ -91,6 +91,21 @@ Otherwise the jumps to `branch` go to a new label
 `.<function>@scfold@N`, and the six instructions become
 `Jump(T)` followed by that label.
 
+`Copy`s may sit between `end` and the consumer when they neither
+read nor write `%t`. SSA destruction puts a phi's copies there when
+the consumer skips an assignment: `if (c >= 0x60 && c < 0x80) c -=
+0x20;` in `buffer_char` (examples/zork/print_zstring/output.c) has
+`Copy(@0.c, @0.c.2)` between `.and_end` and the test. The copies run
+on every path through the consumer, so they stay on both: in place
+for the path that falls through, and for the chain, in a stub
+`Label; <copies>; Jump(T)` after the function's last instruction,
+which has to be a `Ret` or a `Jump`. In the flipped case they go
+before the `Jump(T)` and again after the new label. The asm optimizer
+gives a phi's names one location, so the copy emits nothing and the
+stub is a bare `JMP`, which branch threading removes. `buffer_char`'s
+test became `CMP #$60; BCC; CMP #$80; BCS; SEC; SBC #$20`, with `c`
+kept in A, as in Zork's code.
+
 Any number of jumps may target `branch`, since those are the chain.
 A nested expression such as `(a && b) || c` produces two tails. One
 retargets its chain to the other's `branch` label, which is itself
@@ -104,8 +119,8 @@ that stays.
   `h`, so the 0 or 1 has to exist.
 - A value that isn't tested by a jump right after the tail, such as
   `return a && b;`.
-- A tail with anything between its instructions, or between it and
-  the jump.
+- A tail with anything between its instructions, or anything but
+  copies that don't touch `%t` between it and the jump.
 - Constants of another type than `int`, since the `c99_to_tac`
   lowering always uses `int` 0 and 1.
 

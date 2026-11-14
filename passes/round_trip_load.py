@@ -36,6 +36,25 @@ emitted an `LDA M; STA dst` pair where the `LDA M` set N/Z =
 N/Z(M) = N/Z(A) (because A == M after [i]) — same flag state at
 the rewrite's exit as before.
 
+# Pattern C — flags from A
+
+When what comes before the `STA M` didn't set N/Z from A (a `JSR`,
+say), the `LDA M` is there for its flags. `ORA #$00` sets the same
+N/Z from A, which equals M, and like the load leaves C and V alone,
+in 2 cycles where the load takes 3 or 4:
+
+    Mov(Reg(A), <mem M>)    # STA M
+    Mov(<mem M>, Reg(A))    # LDA M
+→
+    Mov(Reg(A), <mem M>)    # STA M
+    Or(Imm(0), Reg(A))      # ORA #$00
+
+`print_zstring` (examples/zork/print_zstring/zstring.c) tests the
+alphabet `get_alphabet` returns this way, `JSR get_alphabet; ORA
+#$00; BNE`, as Zork's code does; the store is then dead, and
+`asm_dead_store` drops it. When nothing reads the flags, the load
+goes with no `ORA`. A volatile M is left alone.
+
 # Soundness
 
 After [i-1], A = some value V, N = bit7(V), Z = (V==0).
@@ -88,6 +107,7 @@ Inside the asm-peephole fixed-point loop, before the
 from __future__ import annotations
 
 import asm_ast
+from passes.asm_liveness import flags_dead_at
 
 
 def apply_round_trip_load_drop(prog: asm_ast.Program) -> asm_ast.Program:
@@ -130,6 +150,18 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
                 ))
                 i += 3
                 continue
+        if (i + 1 < len(instrs) and _is_sta(instrs[i])
+                and _is_lda_same_addr(instrs[i + 1], instrs[i])):
+            # Pattern C: the load is only there for its flags, if
+            # anything reads them.
+            out.append(instrs[i])
+            if not flags_dead_at(instrs, i + 2):
+                out.append(asm_ast.Or(
+                    src=asm_ast.Imm(value=0),
+                    dst=asm_ast.Reg(reg=asm_ast.A()),
+                ))
+            i += 2
+            continue
         out.append(instrs[i])
         i += 1
     return asm_ast.Function(

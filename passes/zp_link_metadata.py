@@ -46,7 +46,7 @@ Format
 ; @zp-link-meta-begin
 ; def <fn> param_bytes=<N> local_bytes=<M> indirect=<bool> in_cycle=<bool>
 ; ext <fn> param_bytes=<N>
-; call <caller> -> <callee>
+; call <caller> -> <callee> [saved]
 ; item <name> section=<name> local=<bool> zero=<bool>
 ; zp <name> size=<N> at=<$XX|auto> def=<bool> init=<byte,...> [weight=<N>] [local=true]
 ; runtime hargs_size=<N> [hargs_need=<N>]
@@ -59,7 +59,10 @@ declared `__attribute__((zp_abi))` but without a body in this
 TU). `call` lines record every direct call edge from a defined
 function to any other named function — including calls to
 non-zp_abi externs (the linker uses these to detect when a TU's
-function calls something that can't be globally bounded). `zp`
+function calls something that can't be globally bounded). `saved`
+marks an edge whose every call is under `#pragma c6502 call
+save(hardware_stack)`, so the linker can take a cycle of such calls
+as the compile did (`passes/recursion_saves.py`). `zp`
 lines describe zero-page objects; each `init` byte is written as the
 operand of an `LDA #` (`$05`, `<buf`, `>(buf+2)`), and `weight`
 marks an object `--optimize` promoted, which the linker may put back
@@ -180,6 +183,9 @@ class LinkMetadata:
     defs: list[FunctionMeta] = field(default_factory=list)
     externs: list[ExternMeta] = field(default_factory=list)
     calls: list[tuple[str, str]] = field(default_factory=list)
+    # The edges in `calls` whose every call saves the caller's values
+    # on the hardware stack.
+    saved_calls: list[tuple[str, str]] = field(default_factory=list)
     zp_objects: list[ZpObjectMeta] = field(default_factory=list)
     hargs_size: int | None = None
     hargs_need: int | None = None
@@ -219,6 +225,9 @@ def build_metadata(
     # cycle is itself enough to disqualify the function.
     callgraph: dict[str, set[str]] = {n: set() for n in in_tu_names}
     indirect_per_fn: dict[str, bool] = {n: False for n in in_tu_names}
+    # Whether every call along each edge is marked to save on the
+    # hardware stack.
+    saved: dict[tuple[str, str], bool] = {}
     for tl in prog.top_level:
         if not isinstance(tl, tac_ast.Function):
             continue
@@ -227,6 +236,8 @@ def build_metadata(
                 indirect_per_fn[tl.name] = True
             elif isinstance(instr, tac_ast.FunctionCall):
                 callgraph[tl.name].add(instr.name)
+                edge = (tl.name, instr.name)
+                saved[edge] = saved.get(edge, True) and instr.hw_stack_save
     in_cycle = _cycle_members_in(callgraph)
 
     out = LinkMetadata()
@@ -282,7 +293,10 @@ def build_metadata(
                 continue
             seen_calls.add(edge)
             out.calls.append(edge)
+            if saved.get(edge):
+                out.saved_calls.append(edge)
     out.calls.sort()
+    out.saved_calls.sort()
     return out
 
 
@@ -378,8 +392,10 @@ def format_metadata(meta: LinkMetadata) -> list[str]:
         if any(a is not None for a in e.pinned):
             parts.append(f"pinned={_format_pinned(e.pinned)}")
         lines.append(" ".join(parts))
+    saved_calls = set(meta.saved_calls)
     for caller, callee in meta.calls:
-        lines.append(f"; call {caller} -> {callee}")
+        mark = " saved" if (caller, callee) in saved_calls else ""
+        lines.append(f"; call {caller} -> {callee}{mark}")
     for share in meta.shares:
         tokens = [f"member={f}:{','.join(syms)}" for f, syms in share.members]
         tokens += [f"holder={h}" for h in share.holders]
@@ -538,10 +554,13 @@ def _parse_record(record: str, out: LinkMetadata) -> None:
         if "hargs_need" in kvs:
             out.hargs_need = int(kvs["hargs_need"])
     elif kind == "call":
-        # Format: `call <caller> -> <callee>`
-        if len(parts) != 4 or parts[2] != "->":
+        # Format: `call <caller> -> <callee> [saved]`
+        if (len(parts) not in (4, 5) or parts[2] != "->"
+                or parts[4:] not in ([], ["saved"])):
             raise ValueError(f"malformed call record: {record!r}")
         out.calls.append((parts[1], parts[3]))
+        if parts[4:]:
+            out.saved_calls.append((parts[1], parts[3]))
     else:
         raise ValueError(f"unknown record kind {kind!r}: {record!r}")
 

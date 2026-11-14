@@ -67,6 +67,15 @@ every path, as `asm_liveness.a_dead_at` checks. A return that hands
 back A counts as a read. No check of the flags is required, since the compare
 overwrites N, Z, and C in both forms and neither form changes V.
 
+The pass also takes the shape where the right operand is staged in
+a temporary: `LDA M; STA t; CPX t` (or `CPY`) becomes `CPX M` when M
+is an immediate, `Data`, or `ZP` operand, `t` is a `Data` or `ZP`
+byte nothing reads after the compare (`asm_dead_store.mem_dead_after`),
+and A is dead after it. A volatile M is fine, since `CPX M` reads it
+once, where the load did. `buffer_char`'s `x < WNDWDTH`
+(examples/zork/print_zstring/output.c, with `WNDWDTH` the Monitor's
+volatile window width) became `CPX WNDWDTH`.
+
 ## What it leaves alone
 
 - A right side on the soft stack or behind a pointer (`Frame`,

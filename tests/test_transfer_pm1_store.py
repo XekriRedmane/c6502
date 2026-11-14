@@ -242,5 +242,39 @@ class TestCascade(unittest.TestCase):
         self.assertEqual(out[dex_idx + 1].dst, m)
 
 
+class TestBranchOnResult(unittest.TestCase):
+    """N/Z may be read after the store: INY sets them as the ADC did.
+    `get_next_code_byte2`'s `if (++Z_PC2_L == 0)`."""
+
+    def test_iny_sty_bne(self):
+        m = asm_ast.Data(name="Z_PC2_L", offset=0)
+        out = _run([
+            asm_ast.Mov(src=Y, dst=A, is_volatile=False),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=A),
+            asm_ast.Mov(src=A, dst=m, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".l"),
+            asm_ast.Label(name=".l"),
+            asm_ast.Return(save_a=False),
+        ])
+        self.assertEqual(out[:3], [
+            asm_ast.Inc(dst=Y),
+            asm_ast.Mov(src=Y, dst=m, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.NE(), target=".l"),
+        ])
+
+    def test_kept_when_carry_is_read(self):
+        m = asm_ast.Data(name="lo", offset=0)
+        instrs = [
+            asm_ast.Mov(src=Y, dst=A, is_volatile=False),
+            asm_ast.ClearCarry(),
+            asm_ast.Add(src=asm_ast.Imm(value=1), dst=A),
+            asm_ast.Mov(src=A, dst=m, is_volatile=False),
+            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
+            asm_ast.Label(name=".l"),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_run(list(instrs)), instrs)
+
 if __name__ == "__main__":
     unittest.main()

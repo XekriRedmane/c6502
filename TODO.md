@@ -91,6 +91,41 @@ callers do with the result, so it has to be decided before
 `tac_to_asm` lowers any call to it, and the multi-TU linker would need
 the choice in its metadata.
 
+## Optimizations found by Zork's string printer
+
+`examples/zork/print_zstring` is 1,042 bytes of code against Zork's
+981, and printing its test string takes 41,567 cycles against Zork's
+39,980 (4.0% more). Roughly in order of payoff:
+
+- **Branch layout in an `if` / `else if` chain.** `print_zstring`
+  takes about 3 more cycles per z-character than Zork's, 1,427 in all.
+  `c99_to_tac` lowers each test as a jump past its case, so a letter,
+  the common case, takes four branches (`BNE`, `BNE`, `BCS`, `BCS`)
+  past the space, abbreviation, and shift cases, where Zork branches
+  to those cases and falls through. Laying out a chain with the
+  final `else` first would need some sense of which case is common.
+- **A short shared tail copied instead of jumped to.** Each letter
+  case ends `JMP .if_end`, which falls into `JSR buffer_char; JMP
+  .loop`. Copying those 6 bytes over the 3-byte `JMP` saves 3 cycles
+  a character, as Zork's layout does.
+- **Value ranges across a call.** `get_next_zchar().code` is at most
+  31, so in `print_zstring` `Z_ABBREV_TABLE[i + 1]` with `i = code <<
+  1` could be `INY; LDA (Z_ABBREV_TABLE),Y` where it computes a
+  pointer, and `get_alphabet() + 2 + z` (at most 2 + 2 + 3) needs no
+  second `CLC`. Both need the callee's result range, which `& 0x1F`
+  in `get_next_zchar` gives.
+- **A global copied to a local before a loop that doesn't write it.**
+  `find_index_of_page_table` copies `SCRATCH2`'s bytes into locals
+  and compares against those, where Zork reads `SCRATCH2` in the loop
+  (8 bytes, 59 cycles in the test).
+- **`buffer_char`'s word wrap.** The loop that moves the next word to
+  the start of the buffer keeps `++BUFF_LINE_LEN` in a local and
+  computes `BUFF_AREA[BUFF_END++]` through A, where Zork does `INC
+  BUFF_LINE_LEN; LDX BUFF_LINE_LEN` and `LDX BUFF_END; STA
+  BUFF_AREA,X; INC BUFF_END` (6 bytes).
+- **Not yet looked at.** `dump_buffer_to_printer` is 10 bytes longer
+  than Zork's, `set_page_first` 5, and `dump_buffer_with_more` 7.
+
 ## Optimizations found by Zork's save instruction
 
 `examples/zork/instr_save` is 626 bytes of code against Zork's 627,

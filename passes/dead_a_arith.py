@@ -95,6 +95,7 @@ from __future__ import annotations
 import asm_ast
 from passes.asm_liveness import (
     a_dead_at, all_flags_dead_at, flags_dead_at, is_reg_a,
+    x_dead_at, y_dead_at,
     sets_flags,
 )
 
@@ -124,6 +125,9 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         prev_len = len(instrs)
         drop: list[bool] = [False] * len(instrs)
         for i, instr in enumerate(instrs):
+            if _is_dead_index_load(instrs, i):
+                drop[i] = True
+                continue
             if not _writes_only_a_and_flags(instr):
                 continue
             after = i + 1
@@ -161,6 +165,25 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=instrs,
     )
+
+
+def _is_dead_index_load(
+    instrs: list[asm_ast.Type_instruction], i: int,
+) -> bool:
+    """Whether `instrs[i]` is a load into X or Y (`LDX` / `LDY` of an
+    immediate or a non-volatile `Data` / `ZP` byte) whose value and
+    N/Z nothing reads. Such a load is left when a constant store
+    through Y (`redundant_load._store_const_via_index`) loses its
+    store to a later pass."""
+    ins = instrs[i]
+    if not (isinstance(ins, asm_ast.Mov) and not ins.is_volatile
+            and _is_xy_reg(ins.dst)
+            and isinstance(ins.src, (asm_ast.Imm, asm_ast.ImmLabelLow,
+                                     asm_ast.ImmLabelHigh, asm_ast.Data,
+                                     asm_ast.ZP))):
+        return False
+    dead = x_dead_at if isinstance(ins.dst.reg, asm_ast.X) else y_dead_at
+    return dead(instrs, i + 1) and flags_dead_at(instrs, i + 1)
 
 
 def _writes_only_a_and_flags(instr: asm_ast.Type_instruction) -> bool:

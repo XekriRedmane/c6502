@@ -25,6 +25,11 @@ The same shape works for `And` / `Or` — both commutative,
 flag-preserving in the same way. Not `Sub` (SBC isn't commutative)
 or `Xor` (3-operand IR form, different shape).
 
+The final `STA mem` is optional: without it the result in A is the
+same, and the rewrite still drops the load. `print_zstring`'s
+`get_alphabet() + z` (examples/zork/print_zstring/zstring.c) was
+`STA t; LDA z; CLC; ADC t` and becomes `CLC; ADC z`.
+
 # What the rewrite does
 
   - Drops the `LDA mem` (the load disappears — A already has V).
@@ -215,15 +220,14 @@ def _try_match(
     if not _is_comm_op_with_temp(op, temp):
         return None
 
-    # The matching STA mem must be immediately next.
-    sta_mem_idx = k + 1
-    if sta_mem_idx >= n:
-        return None
-    sta_mem = instrs[sta_mem_idx]
-    if not _is_sta_compat(sta_mem):
-        return None
-    if not _operands_equal(sta_mem.dst, mem):
-        return None
+    # A store of the result back to `mem`, as `mem += v` makes, ends
+    # the window when it's there; the result is the same without it,
+    # as in `print_zstring`'s `get_alphabet() + z`.
+    sta_mem_idx = k
+    if k + 1 < n and _is_sta_compat(instrs[k + 1]) and _operands_equal(
+        instrs[k + 1].dst, mem,
+    ):
+        sta_mem_idx = k + 1
 
     return (i, j, k, sta_mem_idx, mem)
 

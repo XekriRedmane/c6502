@@ -20,7 +20,13 @@ A local's count is the largest over its definitions:
 - Anything else: every byte.
 
 A constant counts the bytes its value needs, a negative one every
-byte of its type. A parameter, a static, a local whose address is
+byte of its type.
+
+`low_byte_only` answers the converse question, which bytes of a value
+are read: the locals defined once whose every read is a `Truncate` to
+one byte. `(uint8_t)(zchars >> 5)` in Zork's `get_next_zchar` is
+`t = zchars >> 5; Truncate(t)`, so `tac_to_asm` computes only `t`'s
+low byte (`_inline_right_shift_to_byte`) where it called `lsr16`. A parameter, a static, a local whose address is
 taken (a store through a pointer could write it), and anything not
 defined in the function counts every byte. The counts start at 0 and
 only grow, so the loop that recomputes them ends.
@@ -30,7 +36,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import tac_ast
-from passes.optimization.var_visit import defs_in
+from passes.optimization.var_visit import defs_in, uses_in
 
 
 def significant_bytes(
@@ -113,3 +119,43 @@ def significant_bytes(
         name: n for name, n in tracked.items()
         if n < size_of(tac_ast.Var(name=name))
     }
+
+
+def low_byte_only(
+    fn: tac_ast.Function,
+    symbols,
+    size_of: Callable[[tac_ast.Type_val], int],
+) -> set[str]:
+    """The locals of `fn` defined by one instruction whose every read
+    is a `Truncate` to a 1-byte value, so only their low byte is ever
+    read."""
+    from passes.type_checking import LocalAttr
+
+    defs: dict[str, int] = {}
+    for ins in fn.instructions:
+        for d in defs_in(ins):
+            defs[d.name] = defs.get(d.name, 0) + 1
+    params = set(fn.params)
+    addressed = {
+        ins.operand.name for ins in fn.instructions
+        if isinstance(ins, tac_ast.GetAddress)
+        and isinstance(ins.operand, tac_ast.Var)
+    }
+    ok = {
+        name for name, n in defs.items()
+        if n == 1 and name not in params and name not in addressed
+        and symbols is not None
+        and isinstance(getattr(symbols.get(name), "attrs", None), LocalAttr)
+    }
+    read = set()
+    for ins in fn.instructions:
+        for v in uses_in(ins):
+            if v.name not in ok:
+                continue
+            read.add(v.name)
+            if not (isinstance(ins, tac_ast.Truncate)
+                    and isinstance(ins.src, tac_ast.Var)
+                    and ins.src.name == v.name
+                    and size_of(ins.dst) == 1):
+                ok.discard(v.name)
+    return ok & read

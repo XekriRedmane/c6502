@@ -228,7 +228,9 @@ this directory:
 - `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
   `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
-  `LOADADDR` / `SIZEOF`).
+  `LOADADDR` / `SIZEOF`). An input description's file part
+  (`Input.file`) is `*` or a pattern for a unit's file name without
+  its directory (`zstring.asm(.text)`), which `link_layout` matches.
 - `link_layout.py` — `item_chunks` (splits a unit's body into its
   items), `rename_locals`, `layout_lines` (each output section as a
   dasm `SEG` / `SEG.U` with `ORG`, `RORG` for a load address,
@@ -306,7 +308,11 @@ this directory:
   address is taken count every byte. `tac_to_asm` lowers a left shift
   by a constant of a value with one significant byte as two byte
   shifts in A, whatever the count (`_inline_left_shift_byte`), so
-  `(unsigned int)c << 6` doesn't call `asl16`.
+  `(unsigned int)c << 6` doesn't call `asl16`. `low_byte_only` gives
+  the locals read only through a `Truncate` to one byte, and
+  `tac_to_asm` computes just the low byte of a constant right shift
+  into one of them (`_inline_right_shift_to_byte`), so
+  `(uint8_t)(w >> 5)` doesn't call `lsr16`.
 - `slot_sharing.py` — `find_shares`: values kept in a callee's
   parameter bytes across calls. A parameter passed on unchanged
   aliases the callee's slot (a share *member*), and a local a caller
@@ -361,7 +367,8 @@ this directory:
   the 4-atom `Mov(Reg(R), Reg(A)); SetCarry; Sub(Imm(1), Reg(A));
   Mov(Reg(A), Data|ZP)` chain to `Dec(Reg(R)); Mov(Reg(R),
   Data|ZP)` (TXA;SEC;SBC #1;STA M → DEX;STX M) when R is X or Y
-  and A / X / N-Z-C-V are all dead at the boundary. Same shape
+  and A, X, C, and V are dead at the boundary (N/Z come out the same,
+  so a branch on them may follow). Same shape
   for the +1 form (`ClearCarry; Add(Imm(1), …)` → `Inc(Reg(R));
   …`) and the Y mirror. Direct win is 3 bytes / 4 cycles; the
   bigger payoff is the cascade — once A is no longer clobbered
@@ -975,7 +982,9 @@ Always-on (runs in both optimized AND unoptimized pipelines):
   flag-preserving `LDY idx`.
 - `apply_cpx_cpy_peephole` — `Mov(X|Y, A); Compare(A, imm)` →
   `Compare(X|Y, imm)` (`CPX` / `CPY`) when the compare's left is
-  already in X or Y. Loop-induction-variable test shape.
+  already in X or Y. Loop-induction-variable test shape. Also `LDA M;
+  STA t; CPX t` → `CPX M` when `t` and A are dead after (M may be
+  volatile; it's still read once).
 - `apply_memory_value_propagation` — CFG-aware forward dataflow
   tracking ZP-cell → recomputable-source equivalences. Two
   rewrite families: (1) `Indirect` / `IndirectY` operands rewrite
@@ -1076,6 +1085,7 @@ document says whether it fires there.
   observable effect is a write to `Reg(A)` and the N/Z/C/V flags, when
   both A and the flags are dead afterward. That includes `ASL` / `LSR`
   / `ROL` / `ROR A`, which need every flag dead since they write C.
+  Also a dead `LDX` / `LDY` of an immediate or a `Data` / `ZP` byte.
 - `apply_branch_invert` — `Branch(cond, L); Jump(target); L:` →
   `Branch(inverted_cond, target)` when L is the immediate next
   instruction.
@@ -1102,7 +1112,9 @@ document says whether it fires there.
   AND of a uchar value (`(uchar & 0x80)` after promotion).
 - `apply_round_trip_load_drop` — drops `STA M; LDA M` where the LDA's
   only observable side effect is re-loading A with A's already-current
-  value.
+  value. After an instruction that doesn't set N/Z from A (a `JSR`),
+  the `LDA M` becomes `ORA #$00` when the flags are read, and goes
+  when they aren't.
 - `apply_and_sign_bit_branch` — `Mov(M, A); And(Imm(0x80), A);
   Branch(EQ|NE, _)` → `BitTest(M); Branch(PL|MI, _)` when M is BIT-
   addressable (`Data` / `ZP`) AND A is dead after. Pays 1 byte / 3+
@@ -1459,8 +1471,12 @@ to their cycles. Then:
   the plan fails loudly rather than miscompile.
 
 Parameters stay on the soft stack (these functions aren't zp_abi).
-The unoptimized pipeline ignores the pragma. The linker still
-rejects recursion.
+The unoptimized pipeline ignores the pragma. The linker accepts a
+cycle within one unit whose every call is marked: the metadata's
+`call` lines carry `saved` for such edges (`LinkMetadata.saved_calls`),
+`linker._synthesize` puts `hw_stack_save` on the synthetic calls, and
+`_validate_eligibility` lets `hw_stack_cycles` members through. Any
+other recursion is a link error.
 
 ### Register parameters, pinned parameters, and shared slots
 

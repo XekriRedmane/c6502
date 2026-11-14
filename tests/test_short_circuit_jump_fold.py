@@ -460,5 +460,58 @@ class TestAsmShape(unittest.TestCase):
         return "\n".join(out)
 
 
+class TestCopiesBeforeConsumer(unittest.TestCase):
+    """A phi's copy between the tail and the consumer, as SSA
+    destruction leaves `if (c >= 0x60 && c < 0x80) c -= 0x20;`."""
+
+    def test_natural_case_gets_a_stub(self):
+        copy = tac_ast.Copy(src=_var("c"), dst=_var("c.2"))
+        fn = _fn(
+            tac_ast.JumpIfFalse(condition=_var("a"), target=".and_false"),
+            *_and_tail("t", ".and_false", ".and_end"),
+            copy,
+            tac_ast.JumpIfFalse(condition=_var("t"), target=".if_end"),
+            tac_ast.Copy(src=_cint(9), dst=_var("c.2")),
+            tac_ast.Label(name=".if_end"),
+            tac_ast.Ret(val=_var("c.2")),
+        )
+        out = fold_short_circuit_jump(fn).instructions
+        # The chain goes to a stub that does the copy, then .if_end.
+        stub = out[0].target
+        self.assertNotEqual(stub, ".and_false")
+        k = out.index(tac_ast.Label(name=stub))
+        self.assertEqual(out[k + 1:], [copy, tac_ast.Jump(target=".if_end")])
+        # The path that falls through does the copy too.
+        self.assertEqual(out[1], copy)
+        self.assertNotIn(tac_ast.Label(name=".and_end"), out)
+
+    def test_copy_of_the_temporary_blocks(self):
+        fn = _fn(
+            tac_ast.JumpIfFalse(condition=_var("a"), target=".and_false"),
+            *_and_tail("t", ".and_false", ".and_end"),
+            tac_ast.Copy(src=_var("t"), dst=_var("u")),
+            tac_ast.JumpIfFalse(condition=_var("t"), target=".if_end"),
+            tac_ast.Label(name=".if_end"),
+            tac_ast.Ret(val=_var("u")),
+        )
+        self.assertIs(fold_short_circuit_jump(fn), fn)
+
+    def test_runs(self):
+        # buffer_char's case conversion, in both pipelines.
+        src = """
+        unsigned char up(unsigned char c) {
+            if (c >= 0x60 && c < 0x80) c -= 0x20;
+            return c | 0x80;
+        }
+        int main(void) {
+            return up('a') + up('Z') * 2 + up(0x90) * 4;
+        }
+        """
+        want = (ord("A") | 0x80) + (ord("Z") | 0x80) * 2 + 0x90 * 4
+        self.assertEqual(run_c_program(src).return_int(), want)
+        self.assertEqual(
+            build_sim(src, optimize=True).run().return_int(), want,
+        )
+
 if __name__ == "__main__":
     unittest.main()

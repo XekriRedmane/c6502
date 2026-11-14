@@ -459,3 +459,26 @@ class TestDeadAArithRedundantFlag(unittest.TestCase):
         self.assertEqual(
             out[3], asm_ast.Mov(src=_REG_X, dst=_REG_A),
         )
+
+
+class TestDeadIndexLoad(unittest.TestCase):
+    """A load into X or Y that nothing reads, with its flags dead."""
+
+    def test_dropped(self):
+        out = _rewritten([
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_Y),
+            asm_ast.Mov(src=asm_ast.Data(name="g", offset=0), dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=asm_ast.Data(name="g", offset=0), dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ])
+
+    def test_kept_when_y_is_read(self):
+        instrs = [
+            asm_ast.Mov(src=asm_ast.Imm(value=0), dst=_REG_Y),
+            asm_ast.Mov(src=_REG_Y, dst=asm_ast.Data(name="g", offset=0)),
+            asm_ast.Return(save_a=False),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs)

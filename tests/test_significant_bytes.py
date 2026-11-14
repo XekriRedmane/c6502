@@ -158,5 +158,63 @@ class TestScratchClosedForm(unittest.TestCase):
                 self.assertEqual(result.return_int(), 0)
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestTruncatedRightShift(unittest.TestCase):
+    """`(uint8_t)(w >> k)` computes only the low byte, from two bytes
+    of `w`, for every count that needs two (16 and 32 bits),
+    against the shift by a variable count."""
+
+    def _program(self, c_type, counts):
+        lines = [
+            f"static unsigned char ref({c_type} w, unsigned char k) "
+            "{ return (unsigned char)(w >> k); }",
+        ]
+        for i, k in enumerate(counts):
+            lines += [
+                f"static unsigned char s{k}({c_type} w) "
+                f"{{ return (unsigned char)(w >> {k}); }}",
+                f"static int check{k}(void) {{",
+                "    unsigned char i = 0;",
+                "    do {",
+                f"        {c_type} w = ({c_type})i * 0x01010101UL ^ 0x5AC3E10FUL;",
+                f"        if (s{k}(w) != ref(w, {k})) return {1000 * (i + 1)} + i;",
+                "    } while (++i != 0);",
+                "    return 0;",
+                "}",
+            ]
+        lines += ["int main(void) {", "    int r;"]
+        lines += [f"    if ((r = check{k}()) != 0) return r;" for k in counts]
+        lines += ["    return 0;", "}"]
+        return "\n".join(lines)
+
+    def _check(self, src):
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                result = build_sim(src, optimize=optimize).run(
+                    max_cycles=50_000_000,
+                )
+                self.assertFalse(result.timed_out)
+                self.assertEqual(result.return_int(), 0)
+
+    def test_16_bit(self):
+        self._check(self._program("unsigned int", list(range(1, 8))))
+
+    def test_signed_16_bit(self):
+        self._check(self._program("int", list(range(1, 8))))
+
+    def test_32_bit(self):
+        self._check(self._program(
+            "unsigned long", [k for k in range(1, 24) if k % 8],
+        ))
+
+    def test_no_helper_call(self):
+        src = """
+        unsigned int z;
+        unsigned char o;
+        void f(void) { o = (unsigned char)(z >> 5) & 0x1F; }
+        """
+        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        self.assertNotIn("lsr16", asm)
+
 if __name__ == "__main__":
     unittest.main()

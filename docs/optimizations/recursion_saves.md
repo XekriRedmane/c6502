@@ -174,7 +174,7 @@ definition is in an earlier block, so it's pushed from its pool byte.
 After the call it's pulled straight into `level`. `descend` goes from
 111 bytes to 44.
 
-In `examples/zork_print_string_literal.c`, `print_zstring` saves the
+In `examples/zork/print_zstring/zstring.c`, `print_zstring` saves the
 string decoder's state in locals before the call that prints an
 abbreviation, and restores it after. With the pragma the locals
 disappear, and the code is the same as the original Zork's: `LDA g;
@@ -193,6 +193,13 @@ PHA` for each byte before the call, and `PLA; STA g` after it.
 - The functions on the cycle are otherwise eligible for [private
   local pools](zp_local_pools.md): no call through a pointer, and
   every other function they call has a pool too.
+
+The cycle has to be within one source file, since each file's compile
+plans its own saves. `--link` takes such a cycle as the compile did:
+the link metadata marks each call edge whose calls are all under the
+pragma (`; call f -> f saved`), and the linker's allocators see the
+cycle through those marks (`hw_stack_cycles`). Any other cycle is a
+link error.
 
 A value is saved when it's live across the call and could be in the
 function's pool. Globals, statics, parameters (which are in the

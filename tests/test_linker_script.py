@@ -123,6 +123,17 @@ class TestScriptParser(unittest.TestCase):
         )
         self.assertEqual(script.regions["r"].length, 2048)
 
+    def test_file_patterns(self) -> None:
+        script = parse_script(
+            "SECTIONS { .a : { zstring.asm(.text) } "
+            ".b : { *disk.asm(.text .data) } .c : { *(.text) } }\n"
+        )
+        secs = {s.name: s for s in script.output_sections()}
+        self.assertEqual(secs[".a"].contents[0].file, "zstring.asm")
+        self.assertEqual(secs[".b"].contents[0].file, "*disk.asm")
+        self.assertEqual(secs[".b"].contents[0].patterns, [".text", ".data"])
+        self.assertEqual(secs[".c"].contents[0].file, "*")
+
     def test_errors(self) -> None:
         for src, message in [
             ("ENTRY(main)", "isn't supported"),
@@ -130,7 +141,7 @@ class TestScriptParser(unittest.TestCase):
             ("MEMORY { r : ORIGIN = 0, LENGTH = 1 }\n"
              "SECTIONS { .b (NOLOAD) : { *(.bss) } AT> r }", "NOLOAD"),
             ("SECTIONS { . = 0x1000; }", "outside an output section"),
-            ("SECTIONS { .text : { foo.o(.text) } }", "file part"),
+            ("SECTIONS { .text : { (.text) } }", "file it takes"),
             ("SECTIONS { .t : { *(.a) } .t : { *(.b) } }", "listed twice"),
         ]:
             with self.subTest(src=src):
@@ -216,6 +227,18 @@ class TestScriptedLink(unittest.TestCase):
         self.assertIn("   ORG   $BFFA\n", text)
         # `main`, from .text.boot, comes before `pick`.
         self.assertLess(text.index("\nmain:"), text.index("\npick:"))
+
+    def test_sections_by_file(self) -> None:
+        # The second unit's code goes first, by its file's name.
+        script = _ROM_SCRIPT.replace(
+            ".text : { *(.text.boot) *(.text .text.*) } > rom",
+            ".first : { u1.asm(.text .text.*) } > rom\n"
+            "    .text : { *(.text.boot) *(.text .text.*) } > rom",
+        )
+        rc, text, err = _link([_UNIT_A, _UNIT_B], script)
+        self.assertEqual(rc, 0, err)
+        self.assertLess(text.index("\npick:"), text.index("\nmain:"))
+        self.assertIn("   SEG   first\n   ORG   $8000\n", text)
 
     @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
     def test_runs_with_data_copied_and_bss_cleared(self) -> None:

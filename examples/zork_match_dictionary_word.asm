@@ -15,7 +15,6 @@ __local_match_dictionary_word__3	EQU	$8A
 __local_match_dictionary_word__entry_0	EQU	$8B
 __local_match_dictionary_word__entry_1	EQU	$8C
 __local_get_dictionary_addr__0	EQU	$8D
-__local_get_dictionary_addr__1	EQU	$8E
 z_header_addr	EQU	$BA
 zchar_scratch2	EQU	$DA
 
@@ -43,10 +42,8 @@ get_dictionary_addr:
    STA   __local_get_dictionary_addr__0
    INY
    LDA   (z_header_addr),Y
-   STA   __local_get_dictionary_addr__1
-   LDA   z_header_addr
    CLC
-   ADC   __local_get_dictionary_addr__1
+   ADC   z_header_addr
    STA   HARGS
    LDA   z_header_addr+1
    ADC   __local_get_dictionary_addr__0
@@ -63,10 +60,8 @@ match_dictionary_word:
    STA   __local_match_dictionary_word__entry_1
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
-   STA   __local_match_dictionary_word__0
-   LDA   HARGS
    CLC
-   ADC   __local_match_dictionary_word__0
+   ADC   HARGS
    STA   __local_match_dictionary_word__entry_0
    BCC   .carry_inc@0
    INC   __local_match_dictionary_word__entry_1
@@ -253,9 +248,9 @@ main:
    LDA   #$00
    STA   zchar_scratch2
    STA   zchar_scratch2+1
+   LDY   #$55
+   STY   zchar_scratch2+2
    STA   zchar_scratch2+3
-   LDA   #$55
-   STA   zchar_scratch2+2
    JMP   match_dictionary_word
 
 story:

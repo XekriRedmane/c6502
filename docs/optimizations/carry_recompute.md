@@ -17,7 +17,7 @@ would set C the same way.
 
 ## Example
 
-From `load_packed_address` in `examples/zork_print_string_literal.c`:
+From `load_packed_address` in `examples/zork/print_zstring/pages.c`:
 
 ```c
 Z_PC2_L = (uint8_t)(SCRATCH2 << 1);

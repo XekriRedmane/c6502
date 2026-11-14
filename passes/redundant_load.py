@@ -125,6 +125,8 @@ from dataclasses import dataclass, field
 import asm_ast
 from passes.asm_aliasing import may_alias as _may_alias
 from passes.asm_liveness import a_dead_at as _a_dead_at
+from passes.asm_liveness import x_dead_at as _x_dead_at
+from passes.asm_liveness import y_dead_at as _y_dead_at
 from passes.asm_liveness import call_preserves as _call_preserves
 from passes.asm_liveness import flags_dead_at as _flags_dead_at
 from passes.optimization_asm.cfg import (
@@ -396,6 +398,18 @@ def _rewrite_with_in_states(
             #   - No reachable Branch reads Z before another
             #     instruction overwrites it (`_flags_dead_at`).
             continue
+        if (_is_redundant_load(instr, state)
+                and isinstance(instr.dst.reg, asm_ast.A)
+                and not isinstance(instr.src, asm_ast.Reg)):
+            # A holds M, but a branch reads the flags the `LDA M`
+            # sets: `ORA #$00` sets them from A, which equals M, and
+            # is never slower (`print_zstring`'s `STA c; BCC .l; RTS;
+            # .l: LDA c; BNE` becomes `... .l: ORA #$00; BNE`). A is
+            # unchanged, so every operand it mirrors is still there,
+            # and Z now reflects all of them.
+            out.append(asm_ast.Or(src=asm_ast.Imm(value=0), dst=instr.dst))
+            state.z_reflects = list(state.a)
+            continue
         redirected = _redirect_lda_to_transfer(instr, state)
         if redirected is not None:
             # Rewrite `LDA M` to `TXA` / `TYA` when X or Y already
@@ -423,8 +437,10 @@ def _reorder_with_in_states(
 ) -> asm_ast.Function | None:
     """The first phase: walk as `_rewrite_with_in_states` does, but
     only to swap load-store pairs (`_swap_pairs_ok`), keeping the
-    `LDA M` for the second phase to drop, and to turn a store through
-    A of a value A holds into the `STA` alone (`_store_from_a`).
+    `LDA M` for the second phase to drop, to turn a store through
+    A of a value A holds into the `STA` alone (`_store_from_a`), and
+    to store a constant through Y or X when A holds a value worth
+    keeping (`_store_const_via_index`).
     Returns None when neither applies anywhere."""
     pos_to_block: dict[int, int] = {}
     pos = 0
@@ -452,6 +468,18 @@ def _reorder_with_in_states(
                               asm_ast.Ret, asm_ast.Return)):
             out.append(instr)
             i += 1
+            continue
+        via = _store_const_via_index(instrs, i, state)
+        if via is not None:
+            # `LDA #k; STA M` with A holding a value from memory:
+            # `LDY #k; STY M` keeps it, for the second phase to drop
+            # its reload.
+            replacement, consumed = via
+            for ins in replacement:
+                out.append(ins)
+                _update_state(ins, state)
+            changed = True
+            i += consumed
             continue
         if _swap_pairs_ok(instrs, i, state):
             # `LDA X; STA D1; LDA M; STA D2` with A already holding
@@ -642,6 +670,92 @@ def _is_redundant_load(
         )
     cur = _get_reg(state, instr.dst.reg)
     return any(_operands_equal(c, instr.src) for c in cur)
+
+
+def _store_const_via_index(
+    instrs: list[asm_ast.Type_instruction], i: int, state: _RegState,
+) -> tuple[list[asm_ast.Type_instruction], int] | None:
+    """When `instrs[i:i+2]` is `LDA #k; STA M` (or `instrs[i]` the
+    one atom `Mov(#k, M)`), A holds a value from
+    memory (its list has a `Data` or `ZP` byte, say), nothing reads
+    the `k` in A afterwards, and Y (or else X) is dead, return `LDY #k;
+    STY M` (`LDX #k; STX M`), which leaves A alone, and how many
+    instructions it replaces. Otherwise None.
+
+    `get_alphabet` in examples/zork/print_zstring/zstring.c returns
+    the alphabet it loaded after `SHIFT_ALPHABET = 0xFF`, which then
+    needs no copy of it in a local: `LDY #$FF; STY SHIFT_ALPHABET`, as
+    in Zork's code. The two forms are the same size and speed, so
+    the rewrite costs nothing when no reload goes."""
+    a = asm_ast.Reg(reg=asm_ast.A())
+    first = instrs[i]
+    if (isinstance(first, asm_ast.Mov) and _immediates([first.src])
+            and isinstance(first.dst, (asm_ast.Data, asm_ast.ZP))):
+        # The one-atom form, `Mov(#k, M)`, which emits as the pair.
+        load = asm_ast.Mov(src=first.src, dst=a, is_volatile=False)
+        store = asm_ast.Mov(src=a, dst=first.dst,
+                            is_volatile=first.is_volatile)
+        after = i + 1
+    elif i + 2 <= len(instrs):
+        load, store = instrs[i], instrs[i + 1]
+        after = i + 2
+    else:
+        return None
+    if not (isinstance(load, asm_ast.Mov) and load.dst == a
+            and not load.is_volatile and _immediates([load.src])):
+        return None
+    if not (isinstance(store, asm_ast.Mov) and store.src == a
+            and isinstance(store.dst, (asm_ast.Data, asm_ast.ZP))):
+        return None
+    if not any(isinstance(op, (asm_ast.Data, asm_ast.ZP)) for op in state.a):
+        return None
+    if not _a_dead_at(instrs, after):
+        return None
+    if not _reloads_a(instrs, after, state.a, store.dst):
+        return None
+    for reg_cls, dead in ((asm_ast.Y, _y_dead_at), (asm_ast.X, _x_dead_at)):
+        if dead(instrs, i):
+            reg = asm_ast.Reg(reg=reg_cls())
+            return [
+                asm_ast.Mov(src=load.src, dst=reg, is_volatile=False),
+                asm_ast.Mov(src=reg, dst=store.dst,
+                            is_volatile=store.is_volatile),
+            ], after - i
+    return None
+
+
+def _reloads_a(
+    instrs: list[asm_ast.Type_instruction], start: int,
+    held: list[asm_ast.Type_operand], stored: asm_ast.Type_operand,
+) -> bool:
+    """Whether the next instruction from `start` along the fall-through
+    path that reads or writes A loads it from one of `held`, the
+    operands A mirrors, unchanged since (and not `stored`). Branches and
+    labels are passed over, so this is a guess at a reload the second
+    phase can drop, not a proof; `_store_const_via_index` is sound
+    either way."""
+    written: list[asm_ast.Type_operand] = [stored]
+    for ins in instrs[start:]:
+        if isinstance(ins, (asm_ast.Label, asm_ast.Branch)):
+            continue
+        if isinstance(ins, asm_ast.Mov) and ins.dst == asm_ast.Reg(
+            reg=asm_ast.A(),
+        ):
+            return (not ins.is_volatile
+                    and any(_operands_equal(h, ins.src) for h in held)
+                    and not any(_may_alias(w, ins.src) for w in written))
+        if isinstance(ins, (asm_ast.Inc, asm_ast.Dec)) and not isinstance(
+            ins.dst, asm_ast.Reg,
+        ):
+            written.append(ins.dst)
+            continue
+        if isinstance(ins, asm_ast.Mov) and isinstance(
+            ins.src, asm_ast.Reg,
+        ) and not isinstance(ins.src.reg, asm_ast.A):
+            written.append(ins.dst)
+            continue
+        return False
+    return False
 
 
 def _swap_pairs_ok(

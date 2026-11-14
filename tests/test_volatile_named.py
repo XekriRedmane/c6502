@@ -33,8 +33,11 @@ def _codegen(src: str, optimize: bool) -> str:
 
 
 def _reads(asm: str, name: str) -> int:
-    """How many instructions read `name` (LDA, CMP, or BIT)."""
-    return len(re.findall(rf"(?m)^\s+(LDA|CMP|BIT)\s+{name}$", asm))
+    """How many instructions read `name` (LDA, CMP, BIT, or an ALU
+    instruction such as `ADC g`, which reads it in place)."""
+    return len(re.findall(
+        rf"(?m)^\s+(LDA|CMP|BIT|ADC|SBC|AND|ORA|EOR)\s+{name}$", asm,
+    ))
 
 
 def _run(src: str, optimize: bool, mem=None, max_cycles=None):

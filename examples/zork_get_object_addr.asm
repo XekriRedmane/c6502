@@ -30,10 +30,8 @@ get_object_addr:
    STA   __local_get_object_addr__0
    INY
    LDA   (z_header_addr),Y
-   STA   __local_get_object_addr__1
-   LDA   z_header_addr
    CLC
-   ADC   __local_get_object_addr__1
+   ADC   z_header_addr
    STA   __local_get_object_addr__1
    LDA   z_header_addr+1
    ADC   __local_get_object_addr__0

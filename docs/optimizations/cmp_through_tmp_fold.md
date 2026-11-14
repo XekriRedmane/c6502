@@ -102,7 +102,13 @@ kept in A.
 ## When it applies
 
 - The four instructions are adjacent, except for a `CLC` or `SEC`
-  before an `ADC` or `SBC`, and none is volatile.
+  before an `ADC` or `SBC`. Only the first load may be volatile: the
+  `CMP` (or arithmetic instruction) then reads that byte once, after
+  the load of `other`, which mustn't be volatile too.
+  `dump_buffer_with_more`'s `++CURR_LINE >= WNDBTM`
+  (examples/zork/print_zstring/output.c), with the Monitor's volatile
+  `WNDBTM`, became Zork's own `INC CURR_LINE; LDA CURR_LINE; CMP
+  WNDBTM`.
 - `tmp` is a `Data` or `ZP` operand, and the `STA` and the `CMP` (or
   arithmetic instruction) name the same one.
 - For `ADC`, `SBC`, `AND`, `ORA`, and `EOR`, `src` is an immediate, a
@@ -141,7 +147,7 @@ kept in A.
 - A temporary that is read somewhere else in the function while it
   still holds the staged value, by any instruction, a `BIT` included.
 - A temporary on the soft stack, and any window with a volatile
-  access.
+  access other than the first load.
 - Arithmetic on a byte read through a pointer, which the emitter
   doesn't give `ADC` and the others.
 

@@ -293,8 +293,14 @@ def _matches_pattern(a, b, c, d) -> tuple[
     """If (a, b, c, d) is `LDA src; STA tmp; LDA other; <op> tmp`
     eligible for folding, return (src, other). Otherwise None."""
     tmp_cmp = _tmp_read(d)
+    # A volatile `src` is still read once, by the CMP (or ALU op); it
+    # moves past the load of `other`, so that one mustn't be volatile
+    # too. `dump_buffer_with_more`'s `++CURR_LINE >= WNDBTM`, with the
+    # Monitor's volatile WNDBTM, becomes `CMP WNDBTM`.
     if not (
-        isinstance(a, asm_ast.Mov) and not a.is_volatile
+        isinstance(a, asm_ast.Mov)
+        and (not a.is_volatile
+             or (isinstance(c, asm_ast.Mov) and not c.is_volatile))
         and _is_reg_a(a.dst)
         and isinstance(b, asm_ast.Mov) and not b.is_volatile
         and _is_reg_a(b.src) and _is_stable_mem(b.dst)

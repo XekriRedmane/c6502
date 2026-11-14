@@ -46,6 +46,22 @@ addressing — `Imm` / `Data` / `ZP` operands all work. `Stack` /
 which CPX / CPY don't have; those cases must stay routed through
 `CMP` via Reg(A).
 
+# Through a temporary
+
+The other shape stages the right operand instead, when the regalloc
+gave the compared value's copy a byte of its own:
+
+    Mov(M, Reg(A))              ; LDA WNDWDTH
+    Mov(Reg(A), t)              ; STA t
+    Compare(Reg(X), t)          ; CPX t
+
+That becomes `Compare(Reg(X), M)` (`CPX WNDWDTH`) when `M` is an
+immediate, `Data`, or `ZP` operand (a volatile one is still read once,
+by the compare, where the load was), `t` is a
+`Data` or `ZP` byte that nothing reads after the compare
+(`asm_dead_store.mem_dead_after`), and A is dead after it. That's
+`buffer_char`'s `x < WNDWDTH` in examples/zork/print_zstring/output.c.
+
 # Where to run
 
 After `replace_pseudoregisters` (so operands are concrete) and
@@ -70,14 +86,22 @@ def apply_cpx_cpy_peephole(prog: asm_ast.Program) -> asm_ast.Program:
 
 
 def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
-    """Two-pass: pass 1 records the fusion at the second
-    instruction's index (the Compare); pass 2 rebuilds, dropping
-    the first instruction (the TXA / TYA) and replacing the
-    Compare."""
+    """Two-pass: pass 1 records the fusion at the Compare's index;
+    pass 2 rebuilds, dropping the instructions before it that the
+    fusion replaces (the TXA / TYA, or the load and store of a
+    temporary) and replacing the Compare."""
     instrs = fn.instructions
     rewrites: dict[int, asm_ast.Type_instruction] = {}
     drop_first: set[int] = set()
     for i in range(len(instrs) - 1):
+        if i in drop_first or i in rewrites:
+            continue
+        if i + 2 < len(instrs):
+            fused = _try_fuse_through_tmp(fn, instrs, i)
+            if fused is not None:
+                drop_first.update({i, i + 1})
+                rewrites[i + 2] = fused
+                continue
         first = instrs[i]
         second = instrs[i + 1]
         fused = _try_fuse(first, second, instrs, i + 2)
@@ -122,6 +146,37 @@ def _try_fuse(
     if not a_dead_at(instrs, after_idx):
         return None
     return asm_ast.Compare(left=first.src, right=second.right)
+
+
+def _try_fuse_through_tmp(
+    fn: asm_ast.Function,
+    instrs: list[asm_ast.Type_instruction],
+    i: int,
+) -> asm_ast.Type_instruction | None:
+    """If `instrs[i:i+3]` is `Mov(M, Reg(A)); Mov(Reg(A), t);
+    Compare(Reg(X|Y), t)` and the conditions in "Through a
+    temporary" hold, return `Compare(Reg(X|Y), M)`. Otherwise None."""
+    from passes.asm_dead_store import mem_dead_after
+    load, store, cmp = instrs[i:i + 3]
+    # A volatile `M` is still read once, where the compare is.
+    if not (isinstance(load, asm_ast.Mov) and is_reg_a(load.dst)
+            and isinstance(load.src, (asm_ast.Imm, asm_ast.Data,
+                                      asm_ast.ZP))):
+        return None
+    if not (isinstance(store, asm_ast.Mov) and is_reg_a(store.src)
+            and not store.is_volatile
+            and isinstance(store.dst, (asm_ast.Data, asm_ast.ZP))):
+        return None
+    if not (isinstance(cmp, asm_ast.Compare) and _is_reg_x_or_y(cmp.left)
+            and cmp.right == store.dst):
+        return None
+    if load.src == store.dst:
+        return None
+    if not a_dead_at(instrs, i + 3):
+        return None
+    if not mem_dead_after(instrs, i + 2, store.dst, fn_name=fn.name):
+        return None
+    return asm_ast.Compare(left=cmp.left, right=load.src)
 
 
 def _is_reg_x_or_y(op: asm_ast.Type_operand) -> bool:

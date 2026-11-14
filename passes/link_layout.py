@@ -270,6 +270,9 @@ def layout_lines(
                 continue
             assert isinstance(c, Input)
             for k, unit in enumerate(units):
+                name = unit.path.replace("\\", "/").rsplit("/", 1)[-1]
+                if not fnmatch.fnmatchcase(name, c.file):
+                    continue
                 for it in unit.items:
                     if (k, it.name) in placed:
                         continue

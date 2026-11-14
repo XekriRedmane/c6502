@@ -104,7 +104,7 @@ compiles to
 ```
 
 and the function no longer saves anything when it starts or ends. In
-`examples/zork_print_string_literal.c` this makes `print_zstring` 180
+`examples/zork/print_zstring/zstring.c` this makes `print_zstring` 180
 bytes smaller, and faster on every call.
 
 ### Where it goes
@@ -132,6 +132,11 @@ through a function pointer.
 
 Parameters, and locals whose address is taken, stay on the soft
 stack, where each call has its own copy. They aren't pushed.
+
+The calls have to be in one source file. `compile.py --link` accepts
+such a cycle, which the link metadata marks call by call, and reports
+any other recursion as an error. examples/zork/print_zstring links
+`print_zstring` this way.
 
 ### Cautions
 

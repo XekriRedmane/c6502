@@ -217,12 +217,15 @@ def _merge(metadatas: list[LinkMetadata]) -> LinkMetadata:
                         f"same calling convention"
                     )
     seen_edges: set[tuple[str, str]] = set()
+    saved_edges: set[tuple[str, str]] = set()
     for m in metadatas:
         seen_edges.update(m.calls)
+        saved_edges.update(m.saved_calls)
     merged = LinkMetadata(
         defs=sorted(defs_by_name.values(), key=lambda d: d.name),
         externs=sorted(externs_by_name.values(), key=lambda e: e.name),
         calls=sorted(seen_edges),
+        saved_calls=sorted(saved_edges),
         shares=[s for m in metadatas for s in m.shares],
     )
     if duplicate_defs:
@@ -268,15 +271,24 @@ def _validate_eligibility(merged: LinkMetadata) -> None:
             f"linked under the private-pool model: "
             f"{sorted(indirect_fns)}",
         )
-    # Cycle members from any TU's local view. Cross-TU cycles
+    # Cycle members from any TU's local view, except a cycle whose
+    # every call saves its caller's values on the hardware stack
+    # (`#pragma c6502 call save(hardware_stack)`), which the TU's
+    # compile gave pools as the allocators here do. Cross-TU cycles
     # are detected as a side effect of `allocate_zp_slots` /
     # `allocate_function_locals` (they raise their own errors).
-    locally_cyclic = [d.name for d in merged.defs if d.in_cycle]
+    from passes.recursion_saves import hw_stack_cycles
+    saved_cycles = hw_stack_cycles(_synthesize(merged)[0])
+    locally_cyclic = [
+        d.name for d in merged.defs
+        if d.in_cycle and d.name not in saved_cycles
+    ]
     if locally_cyclic:
         raise LinkError(
             f"function(s) on a cycle in their own TU's call "
-            f"graph (recursion isn't supported under the "
-            f"private-pool model): {sorted(locally_cyclic)}",
+            f"graph (recursion is supported only when every call "
+            f"in the cycle is under `#pragma c6502 call "
+            f"save(hardware_stack)`): {sorted(locally_cyclic)}",
         )
     # Call edges to names that are neither defined nor declared
     # zp_abi extern — these are non-zp_abi externs (e.g. a regular
@@ -317,6 +329,7 @@ def _synthesize(
     for caller, callee in merged.calls:
         if caller in callees_of:
             callees_of[caller].append(callee)
+    saved = set(merged.saved_calls)
     # Synthesize one tac_ast.Function per def.
     top_level: list[tac_ast.Type_top_level] = []
     for d in merged.defs:
@@ -324,6 +337,7 @@ def _synthesize(
         for callee in callees_of.get(d.name, ()):
             instrs.append(tac_ast.FunctionCall(
                 name=callee, args=[], dst=None,
+                hw_stack_save=(d.name, callee) in saved,
             ))
         top_level.append(tac_ast.Function(
             name=d.name, is_global=True, params=[],

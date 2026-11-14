@@ -104,11 +104,9 @@ main:
    LDA   #$01
    STA   __zpabi_find_index_of_page_table__page_1
    JSR   find_index_of_page_table
-   STA   __local_main__0
    STX   __local_main__1
-   LDA   __local_main__3
    CLC
-   ADC   __local_main__0
+   ADC   __local_main__3
    STA   __local_main__0
    LDA   __local_main__2
    ADC   __local_main__1

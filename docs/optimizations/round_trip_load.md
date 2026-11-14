@@ -88,12 +88,17 @@ The pass looks at three consecutive instructions.
    deleted. In the second form it's a non-volatile `Mov(M, D)` with a
    memory destination, which becomes `STA D`.
 
+When the instruction before the store doesn't set the flags from A,
+such as a `JSR`, the `LDA M` is there for its flags. It becomes `ORA
+#$00`, which sets N and Z from A, equal to M, leaves C and V alone
+like the load, and takes 2 cycles where the load takes 3 or 4. When
+nothing reads the flags it goes with no `ORA`. In `print_zstring`
+(examples/zork/print_zstring/zstring.c), `JSR get_alphabet; STA t;
+LDA t; BNE` became `JSR get_alphabet; ORA #$00; BNE`, as in Zork's
+code, once `asm_dead_store` dropped the store.
+
 ## What it leaves alone
 
-- A store after an instruction whose flags don't come from A. A
-  `JSR` is the common case, as in `x = sample(); if (x == 0) ...`,
-  which keeps its `STA x; LDA x; BNE`. A `CMP`, an `INC` or `DEC` of
-  memory, and `CLC` or `SEC` don't qualify either.
 - A volatile load or store, because the access has to happen.
 - An `M` on the soft stack or behind a pointer, since the pass
   compares only `Data` and `ZP` operands for equality.

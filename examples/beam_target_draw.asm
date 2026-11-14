@@ -37,18 +37,15 @@ beam_target_draw:
    LDA   floor_y_table,X
    SEC
    SBC   beam_y
-   STA   __local_beam_target_draw__state
    BNE   .if_end@1
    RTS
 .if_end@1:
    CMP   #$05
    BCC   .cond_end@3
    LDA   #$04
-   STA   __local_beam_target_draw__state
 .cond_end@3:
-   LDA   #$02
-   STA   __zpabi_draw_sprite__width
-   LDA   __local_beam_target_draw__state
+   LDY   #$02
+   STY   __zpabi_draw_sprite__width
    STA   __zpabi_draw_sprite__height
    LDA   #$24
    STA   __zpabi_draw_sprite__sprite_x

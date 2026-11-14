@@ -45,6 +45,29 @@ class TestCmpThroughTmpFold(unittest.TestCase):
         out = _instrs(apply_cmp_through_tmp_fold(prog))
         self.assertEqual(out, [_lda(other), _cmp(src)])
 
+    def test_volatile_src(self):
+        # `++CURR_LINE >= WNDBTM`, with the Monitor's volatile WNDBTM:
+        # the CMP still reads it once.
+        src = asm_ast.Data(name="WNDBTM", offset=0)
+        tmp = asm_ast.Data(name="tmp", offset=0)
+        other = asm_ast.Data(name="line", offset=0)
+        load = asm_ast.Mov(src=src, dst=_A, is_volatile=True)
+        prog = _wrap([load, _sta(tmp), _lda(other), _cmp(tmp)])
+        out = _instrs(apply_cmp_through_tmp_fold(prog))
+        self.assertEqual(out, [_lda(other), _cmp(src)])
+
+    def test_two_volatile_loads_kept(self):
+        # Folding would read the second volatile byte first.
+        src = asm_ast.Data(name="WNDBTM", offset=0)
+        tmp = asm_ast.Data(name="tmp", offset=0)
+        other = asm_ast.Data(name="KBD", offset=0)
+        instrs = [
+            asm_ast.Mov(src=src, dst=_A, is_volatile=True), _sta(tmp),
+            asm_ast.Mov(src=other, dst=_A, is_volatile=True), _cmp(tmp),
+        ]
+        out = _instrs(apply_cmp_through_tmp_fold(_wrap(list(instrs))))
+        self.assertEqual(out, instrs)
+
     def test_sbc_after_sec(self):
         # do_rwts_on_sector's `sector - SECTORS_PER_TRACK`.
         src = asm_ast.Data(name="SECTORS_PER_TRACK", offset=0)
@@ -185,14 +208,16 @@ class TestCmpThroughTmpFold(unittest.TestCase):
         out = _instrs(apply_cmp_through_tmp_fold(prog))
         self.assertEqual(len(out), 4)
 
-    def test_volatile_rejected(self):
-        # Any volatile mov in the pattern bails.
+    def test_volatile_store_rejected(self):
+        # A volatile store to the temporary has to happen. (A volatile
+        # first load alone folds; see test_volatile_src.)
         src = asm_ast.Data(name="S", offset=0)
         tmp = asm_ast.Data(name="T", offset=0)
         other = asm_ast.Data(name="O", offset=0)
         prog = _wrap([
-            asm_ast.Mov(src=src, dst=_A, is_volatile=True),
-            _sta(tmp), _lda(other), _cmp(tmp),
+            _lda(src),
+            asm_ast.Mov(src=_A, dst=tmp, is_volatile=True),
+            _lda(other), _cmp(tmp),
         ])
         out = _instrs(apply_cmp_through_tmp_fold(prog))
         self.assertEqual(len(out), 4)

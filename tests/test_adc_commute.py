@@ -276,9 +276,9 @@ class TestAdcCommuteRejections(unittest.TestCase):
         out = _instrs(apply_adc_commute(prog))
         self.assertEqual(out, prog.top_level[0].instructions)
 
-    def test_lda_and_sta_different_mem_rejected(self):
-        # LDA reads one mem; STA writes a different mem. The
-        # rewrite would change the read address — unsound.
+    def test_result_stored_elsewhere(self):
+        # LDA reads one mem; STA writes a different one. `ADC M`
+        # reads the byte the load did, so the sum is the same.
         prog = _wrap([
             _sta(_zp(0x80)),
             _lda(_data("M")),
@@ -286,7 +286,9 @@ class TestAdcCommuteRejections(unittest.TestCase):
             _sta(_data("N")),
         ])
         out = _instrs(apply_adc_commute(prog))
-        self.assertEqual(out, prog.top_level[0].instructions)
+        self.assertEqual(out, [
+            _sta(_zp(0x80)), _adc(_data("M")), _sta(_data("N")),
+        ])
 
     def test_block_boundary_in_intervening_aborts(self):
         # A Label in the intervening means we'd need cross-block
@@ -347,6 +349,23 @@ class TestAdcCommuteMultipleMatches(unittest.TestCase):
             _sta(_data("N")),
         ])
 
+
+class TestNoStoreBack(unittest.TestCase):
+
+    def test_folds_without_a_store_of_the_result(self):
+        # `print_zstring`'s `get_alphabet() + z`.
+        prog = _wrap([
+            _sta(_zp(0x80)),
+            _lda(_data("z")),
+            asm_ast.ClearCarry(),
+            _adc(_zp(0x80)),
+            asm_ast.Return(save_a=True),
+        ])
+        out = _instrs(apply_adc_commute(prog))
+        self.assertEqual(out, [
+            _sta(_zp(0x80)), asm_ast.ClearCarry(), _adc(_data("z")),
+            asm_ast.Return(save_a=True),
+        ])
 
 if __name__ == "__main__":
     unittest.main()

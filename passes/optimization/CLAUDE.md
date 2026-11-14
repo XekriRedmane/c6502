@@ -69,7 +69,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   computational helpers and exposes a standalone `fold_*` entry point
   as a one-rule `RuleSet`; `optimizer.py` runs all three as a single
   merged `RuleSet` (`fold_producer_jumps`) in the fixedpoint. See
-  "RuleSet" in [framework/CLAUDE.md](framework/CLAUDE.md).
+  "RuleSet" in [framework/CLAUDE.md](framework/CLAUDE.md). The AND
+  rule also takes a wide operand whose mask falls in one byte `k`
+  (`x & 0x8000`), testing byte `k` through new `>> 8k` and `Truncate`
+  temporaries (`_try_wide_byte`).
   - `fold_cmp_zero_jump` (`CMP_ZERO_RULE`): fuses `Binary(cmp, ...);
     JumpIf*` to direct conditional jumps. `== 0` / `!= 0` traces through
     ZeroExtend; ordering ops emit `JumpIfCmp(op, src1, src2)` for the
@@ -247,8 +250,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
 - `short_circuit_jump_fold.py` — `fold_short_circuit_jump`
   (`FoldShortCircuitJump`, raw PostDestructionFixedpointPass — multi-
   block retarget map with transitive closure). Post-destruction fixedpoint.
-  Rewrites the canonical `&&` / `||` 0-or-1-materialize tail + adjacent
-  `JumpIf{True,False}` consumer into direct conditional branches: the
+  Rewrites the canonical `&&` / `||` 0-or-1-materialize tail + a
+  `JumpIf{True,False}` consumer (with phi copies that don't touch the
+  temporary allowed in between, kept on both paths, the chain's
+  through a stub after the last instruction) into direct conditional
+  branches: the
   chain's short-circuit jumps retarget to the consumer's destination, the
   5-instruction tail and 1-instruction consumer are deleted, and the
   "flipped" sub-case emits `Jump(T); Label(.<fn>@scfold@<N>)` to

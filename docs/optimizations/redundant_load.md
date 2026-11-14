@@ -18,7 +18,7 @@ computed over the function's control-flow graph, so a register's
 list at the start of a block keeps an operand when every path into
 that block leaves the operand's value in the register.
 
-The pass has four more rewrites that use the same lists.
+The pass has five more rewrites that use the same lists.
 
 - A transfer between registers (`TAX`, `TAY`, `TXA`, `TYA`) goes
   when both registers already hold the same value. In `LDX state;
@@ -54,10 +54,24 @@ The pass has four more rewrites that use the same lists.
   The cases' stores of the high byte to `__local_floor_enemy_draw__0`
   are then dead, and `asm_dead_store` drops them.
 
-These two change what A or Z holds at the end of a block, which would
+- `LDA #k; STA M`, or the one atom `Mov(#k, M)`, becomes `LDY #k;
+  STY M` (or `LDX` / `STX`) when A holds a value from memory that's
+  loaded again after the store, `k` isn't read afterwards, and Y (or
+  X) is dead. The reload then goes in the second phase. `get_alphabet`
+  (examples/zork/print_zstring/zstring.c) returns the alphabet it
+  loaded after `SHIFT_ALPHABET = 0xFF`, and became Zork's own `LDY
+  #$FF; STY SHIFT_ALPHABET; RTS` with no copy in a local.
+
+These three change what A or Z holds at the end of a block, which would
 make the lists a later block starts with wrong. So they're a phase of
 their own: the pass applies them (keeping the swapped `LDA M`),
 computes the lists again on the result, and only then drops loads.
+
+A load into A of a value A already holds, kept because a branch
+reads the flags it sets, becomes `ORA #$00`: the same N and Z from A,
+which equals the operand, in 2 cycles instead of 3 or 4.
+`print_zstring`'s `STA c; BCC .l; RTS; .l: LDA c; BNE` became `...
+.l: ORA #$00; BNE`.
 
 ## Example
 

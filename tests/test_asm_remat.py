@@ -71,6 +71,28 @@ class TestApplyRemat(unittest.TestCase):
         self.assertEqual(out[-1].src, _indexed("arr"))
         self.assertEqual(out[-1].dst, _A())
 
+    def test_constant_store_is_the_producer(self):
+        # `Mov(#$80, l19)` emits as `LDA #$80; STA l19`, so the local
+        # stored after it holds $80, not the $FF loaded before
+        # (fuzz.stmts seed 25347).
+        other = _data("__local_f__1")
+        prog = _wrap([
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_A(),
+                        is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=other, is_volatile=False),
+            asm_ast.Mov(src=asm_ast.Imm(value=0x80), dst=_data("l19"),
+                        is_volatile=False),
+            asm_ast.Mov(src=_A(), dst=_data(), is_volatile=False),
+            asm_ast.Mov(src=_data(), dst=_A(), is_volatile=False),
+        ], slot_symbols={"__local_f__0": 0x80, "__local_f__1": 0x81})
+        out = _instrs(prog)
+        self.assertNotIn(
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_A(),
+                        is_volatile=False),
+            out[3:],
+        )
+        self.assertEqual(out[-1].src, asm_ast.Imm(value=0x80))
+
     def test_two_atom_blocked_by_x_write(self):
         # If X is written between the producer and the use, the
         # IndexedData(arr, X) recompute is unsound. Use is left alone.

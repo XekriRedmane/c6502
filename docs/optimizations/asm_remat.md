@@ -124,6 +124,12 @@ map, so a slot that forms one byte of a pointer pair for an
 anywhere in the function, by an `ImmLabelLow`, an `ImmLabelHigh`, or a
 `LoadAddress`, is kept, since a pointer can read it without naming it.
 
+A `Mov` of a constant or a memory byte into memory, `Mov(#k, M)` or
+`Mov(M, N)`, emits as `LDA src; STA dst`, so it counts as the
+producer of A, with `src` its value. The search used to pass over it
+and take an earlier load for A's value, which rematerialized
+`Mov(#$80, l19); STA t` as `#$FF` (fuzz.stmts seed 25347).
+
 ## What it leaves alone
 
 - A slot updated in place after the store. `glyph[i] + 1` compiles to

@@ -70,6 +70,24 @@ source is 1 byte unsigned), so a mask bit above bit 7 contributes
 nothing. The pass requires `0 <= C <= 0xFF` so the mask matches
 the narrowed AND's byte width exactly.
 
+# A wide value with a mask in one byte
+
+`if (zchars & 0x8000)` on a 16-bit `zchars` has no extend to trace.
+When the mask's set bits all fall in one byte `k` of the value (here
+`0x80 << 8`), only that byte of the AND can be nonzero, so the test
+is of that byte:
+
+    Binary(RightShift, zchars, 8 * k, %s)   # the byte moved down
+    Truncate(%s, %b)                         # and taken alone
+    JumpIfMasked(%b, mask=0x80, ...)
+
+`tac_to_asm` lowers the shift by a whole byte as a byte move, and the
+asm peepholes leave `LDA zchars+1; BPL` (or `BIT zchars+1; BPL`)
+where the 16-bit AND stored both bytes and ORed them together. The
+value may be any integer variable of 2 or more bytes, signed or not:
+byte `k` is the same either way. `%s` and `%b` are new temporaries,
+named after the AND's result.
+
 # Where it runs
 
 In the SSA-bracketed fixed-point loop, alongside
@@ -127,7 +145,15 @@ def _build_narrow_and_jump(
             use_idx, ctx.ssa_dsts,
         )
     if narrow_arg is None:
-        return None
+        wide = _try_wide_byte(binop, ctx)
+        if wide is None:
+            return None
+        return wide + [tac_ast.JumpIfMasked(
+            val=wide[-1].dst,
+            mask=_one_byte_mask(binop)[2],
+            jump_when_nonzero=isinstance(jmp, tac_ast.JumpIfTrue),
+            target=jmp.target,
+        )]
     narrow_val, mask = narrow_arg
     return [tac_ast.JumpIfMasked(
         val=narrow_val,
@@ -162,6 +188,71 @@ def fold_narrow_and_jump(
     if symbols is None:
         return fn
     return RuleSet(AND_ZERO_RULE).run(fn, PassContext(symbols=symbols))
+
+
+_INT_CONSTS = (
+    tac_ast.ConstInt, tac_ast.ConstUInt, tac_ast.ConstLong,
+    tac_ast.ConstULong, tac_ast.ConstLongLong, tac_ast.ConstULongLong,
+)
+
+
+def _one_byte_mask(binop):
+    """`(value, k, mask_byte)` when one operand of the AND is a Var
+    and the other an integer constant whose set bits all fall in byte
+    `k`, else None."""
+    for val, const in ((binop.src1, binop.src2), (binop.src2, binop.src1)):
+        if not (isinstance(val, tac_ast.Var)
+                and isinstance(const, tac_ast.Constant)
+                and isinstance(const.const, _INT_CONSTS)):
+            continue
+        c = const.const.value
+        if c <= 0:
+            continue
+        k = (c.bit_length() - 1) // 8
+        if c >> (8 * k) > 0xFF or c & ((1 << (8 * k)) - 1):
+            continue
+        return val, k, c >> (8 * k)
+    return None
+
+
+def _try_wide_byte(binop, ctx: PassContext) -> list | None:
+    """The instructions that put byte `k` of the AND's wide operand in
+    a 1-byte temporary, for "A wide value with a mask in one byte",
+    or None. The last one's dst is the temporary."""
+    from passes.type_checking import LocalAttr, Symbol
+    found = _one_byte_mask(binop)
+    if found is None or ctx.symbols is None:
+        return None
+    val, k, _mask = found
+    sym = ctx.symbols.get(val.name)
+    if sym is None or not isinstance(
+        sym.type, (c99_ast.Int, c99_ast.UInt, c99_ast.Long, c99_ast.ULong,
+                   c99_ast.LongLong, c99_ast.ULongLong),
+    ):
+        return None
+    size = {c99_ast.Int: 2, c99_ast.UInt: 2, c99_ast.Long: 4,
+            c99_ast.ULong: 4, c99_ast.LongLong: 8,
+            c99_ast.ULongLong: 8}[type(sym.type)]
+    if k >= size:
+        return None
+    base = binop.dst.name
+    out: list = []
+    src = val
+    if k:
+        shifted = tac_ast.Var(name=f"{base}.byte")
+        ctx.symbols[shifted.name] = Symbol(type=sym.type, attrs=LocalAttr())
+        out.append(tac_ast.Binary(
+            op=tac_ast.RightShift(), src1=val,
+            src2=tac_ast.Constant(const=tac_ast.ConstInt(value=8 * k)),
+            dst=shifted,
+        ))
+        src = shifted
+    byte = tac_ast.Var(name=f"{base}.b")
+    ctx.symbols[byte.name] = Symbol(type=c99_ast.UChar(), attrs=LocalAttr())
+    out.append(tac_ast.Truncate(src=src, dst=byte))
+    if ctx.ssa_dsts is not None:
+        ctx.ssa_dsts.update(i.dst.name for i in out)
+    return out
 
 
 def _try_narrow_pair(

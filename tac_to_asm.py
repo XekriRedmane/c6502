@@ -929,6 +929,50 @@ def _inline_left_shift_byte(
     return out
 
 
+def _inline_right_shift_to_byte(
+    src_op: asm_ast.Type_operand,
+    dst_op: asm_ast.Type_operand,
+    count: int,
+) -> list[asm_ast.Type_instruction]:
+    """The low byte of a RightShift by the constant `count = 8q + r`
+    (0 < r), when nothing reads the result's other bytes
+    (`passes/significant_bytes.low_byte_only`). It's `(b[q] >> r) |
+    (b[q+1] << (8 - r))` of the source's bytes `b`, whatever the
+    shift's signedness, so it's written to `dst`'s byte 0 alone:
+
+    - r = 1: `LDA b[q+1]; LSR A; LDA b[q]; ROR A`, the bit the `LSR`
+      shifts out going in at the top.
+    - r = 7: `LDA b[q]; ASL A; LDA b[q+1]; ROL A`, the other way.
+    - Otherwise `LDA b[q]; LSR A` r times; `STA d`; `LDA b[q+1];
+      ASL A` 8 - r times; `ORA d`, with `d` the result's byte.
+
+    `(uint8_t)(zchars >> 5)` is 16 bytes and 28 cycles this way with
+    `zchars` in zero page, where it called `lsr16`."""
+    q, r = divmod(count, 8)
+    lo, hi = _byte_at(src_op, q), _byte_at(src_op, q + 1)
+    d = _byte_at(dst_op, 0)
+    a = _REG_A
+    if r == 1:
+        return [
+            asm_ast.Mov(src=hi, dst=a), asm_ast.LogicalShiftRight(dst=a),
+            asm_ast.Mov(src=lo, dst=a), asm_ast.RotateRight(dst=a),
+            asm_ast.Mov(src=a, dst=d),
+        ]
+    if r == 7:
+        return [
+            asm_ast.Mov(src=lo, dst=a), asm_ast.ArithmeticShiftLeft(dst=a),
+            asm_ast.Mov(src=hi, dst=a), asm_ast.RotateLeft(dst=a),
+            asm_ast.Mov(src=a, dst=d),
+        ]
+    return (
+        [asm_ast.Mov(src=lo, dst=a)]
+        + [asm_ast.LogicalShiftRight(dst=a)] * r
+        + [asm_ast.Mov(src=a, dst=d), asm_ast.Mov(src=hi, dst=a)]
+        + [asm_ast.ArithmeticShiftLeft(dst=a)] * (8 - r)
+        + [asm_ast.Or(src=d, dst=a), asm_ast.Mov(src=a, dst=d)]
+    )
+
+
 def _inline_right_shift_const(
     src_op: asm_ast.Type_operand,
     dst_op: asm_ast.Type_operand,
@@ -1176,6 +1220,9 @@ class Translator:
         # bytes can be nonzero, when fewer than its size
         # (passes/significant_bytes.py).
         self._significant: dict[str, int] = {}
+        # The locals only read through a `Truncate` to one byte
+        # (`significant_bytes.low_byte_only`).
+        self._low_byte_only: set[str] = set()
         # Per function, the `zeropage(addr)` parameters it copies into
         # a local as it starts (`slot_sharing.pinned_param_copies`).
         self._pinned_copies = pinned_copies or {}
@@ -1493,9 +1540,14 @@ class Translator:
                     plan = plan_saves(
                         fn, self._recursion_saves[name], self._symbols,
                     )
-                from passes.significant_bytes import significant_bytes
+                from passes.significant_bytes import (
+                    low_byte_only, significant_bytes,
+                )
                 self._significant = significant_bytes(
                     fn, self._symbols, self._size_of, self._is_unsigned_val,
+                )
+                self._low_byte_only = low_byte_only(
+                    fn, self._symbols, self._size_of,
                 )
                 for i, instr in enumerate(instrs):
                     self._prev_tac = instrs[i - 1] if i else None
@@ -3302,6 +3354,18 @@ class Translator:
                 # ROR chain.
                 cnt = _shift_count_const_value(src2)
                 signed_shift = not self._is_unsigned_val(src1)
+                # Only the low byte of the result is read, and it
+                # comes from two bytes of the source, whatever the
+                # signedness (passes/significant_bytes.py).
+                if (cnt is not None and cnt % 8
+                        and cnt // 8 + 1 < size
+                        and isinstance(src1, tac_ast.Var)
+                        and isinstance(dst, tac_ast.Var)
+                        and src1.name != dst.name
+                        and dst.name in self._low_byte_only):
+                    return _inline_right_shift_to_byte(
+                        src1_op, dst_op, cnt,
+                    )
                 if cnt is not None and inline_shift_ok(
                     size, cnt, signed_right=signed_shift,
                 ):

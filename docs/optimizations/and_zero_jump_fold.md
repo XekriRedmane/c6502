@@ -79,10 +79,21 @@ For `if (!(flags & 0x80))`, the logical-not fold first removes the
 - A symbol table is present, since the pass reads the source's type
   from it. The optimizer always passes one.
 
+A wide operand needs no extend when the mask's set bits all fall in
+one byte `k` of it: `if (zchars & 0x8000)` on a 16-bit `zchars`.
+Only that byte of the AND can be nonzero, so the pass puts byte `k`
+in a new 1-byte temporary (`Binary(>>, zchars, 8k)` and a `Truncate`,
+which `tac_to_asm` lowers as a byte move) and tests it with
+`JumpIfMasked`. The operand may be any `int`, `unsigned int`, `long`,
+`unsigned long`, or `long long` type, signed or not, since byte `k`
+is the same either way. `get_next_zchar`'s `(ZCHARS & 0x8000) ? 0xFF
+: 0x00` (examples/zork/print_zstring/zstring.c) went from two ANDs,
+two stores, and an `ORA` to `LDA ZCHARS+1; BPL`.
+
 ## What it leaves alone
 
-- An `int` operand with no `ZeroExtend` in front of it. A run on
-  `int flags` with `flags & 0x40` reports 0 changes.
+- An `int` operand with no `ZeroExtend` in front of it whose mask
+  spans more than one byte, such as `flags & 0x0140`.
 - A `signed char` operand, which C99 promotes with a `SignExtend`.
   A run on `signed char flags` reports 0 changes, and the final code
   keeps the sign-extension branch, two `AND`s, and an `ORA`.

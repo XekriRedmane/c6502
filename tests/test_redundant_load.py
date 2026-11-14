@@ -164,14 +164,16 @@ class TestRedundantLoadAliasing(unittest.TestCase):
         data_h = asm_ast.Data(name="h", offset=0)
         instrs = [
             asm_ast.Mov(src=data_g, dst=_REG_A),
-            asm_ast.Mov(src=asm_ast.Imm(value=7), dst=_REG_A),  # kill A
+            asm_ast.Mov(src=asm_ast.Data(name="k", offset=0),
+                        dst=_REG_A),  # kill A
             asm_ast.Mov(src=_REG_A, dst=data_h),  # disjoint symbol
             asm_ast.Mov(src=data_g, dst=_REG_A),  # NOT redundant
             asm_ast.Return(save_a=False),
         ]
         # `g` is only tracked while A holds it. The intermediate
-        # `Mov(Imm(7), A)` clears A, so when we reach the second
-        # `Mov(g, A)`, A is None — load is necessary.
+        # `Mov(k, A)` replaces it, so when we reach the second
+        # `Mov(g, A)`, A holds `k` and `h` — load is necessary. (A
+        # constant would go through Y instead, keeping `g` in A.)
         out = _rewritten(instrs)
         self.assertEqual(len(out), 5)
 
@@ -478,6 +480,9 @@ class TestRedundantLoadRegisterClobbers(unittest.TestCase):
             ),
             asm_ast.Label(name=".end"),
             asm_ast.Mov(src=kbd, dst=_REG_A),
+            # X and Y are read, so the store can't go through either.
+            asm_ast.Mov(src=_REG_X, dst=k),
+            asm_ast.Mov(src=_REG_Y, dst=k),
             asm_ast.Return(save_a=True),
         ]
         out = _rewritten(instrs)
@@ -992,8 +997,9 @@ class TestRedundantLoadLdySetup(unittest.TestCase):
 
     def test_load_before_branch_kept_after_frame_store(self) -> None:
         # Sign extension of a signed char at Frame(4): the store into
-        # Frame(5) is `LDY #5; STA (FP),Y`, so the second `LDA
-        # Frame(4)` must stay to set N from the value before BMI.
+        # Frame(5) is `LDY #5; STA (FP),Y`, whose `LDY` sets N, so N
+        # has to be set from the value again before BMI. A still
+        # holds it, so that's `ORA #$00`.
         f4 = asm_ast.Frame(offset=4)
         f5 = asm_ast.Frame(offset=5)
         instrs = [
@@ -1005,7 +1011,11 @@ class TestRedundantLoadLdySetup(unittest.TestCase):
             asm_ast.Label(name=".neg"),
             asm_ast.Return(save_a=True),
         ]
-        self.assertEqual(_rewritten(instrs), instrs)
+        self.assertEqual(_rewritten(list(instrs)), [
+            *instrs[:2],
+            asm_ast.Or(src=asm_ast.Imm(value=0), dst=_REG_A),
+            *instrs[3:],
+        ])
 
     def test_y_forgotten_after_frame_access(self) -> None:
         # `LDY M` ... frame access (LDY #3 setup) ... `LDY M` again:
@@ -1055,7 +1065,10 @@ class TestZTracksA(unittest.TestCase):
         ] + self._tail()
         out = self._run(instrs)
         i = out.index(asm_ast.Branch(cond=asm_ast.EQ(), target="L"))
-        self.assertEqual(out[i - 1], self._mov(g1, self._A))
+        # The flags are set from A again, which holds g1.
+        self.assertEqual(
+            out[i - 1], asm_ast.Or(src=asm_ast.Imm(value=0), dst=self._A),
+        )
 
     def test_load_kept_after_call(self):
         # A callee returns its value in A, but its last flag-setter
@@ -1066,7 +1079,9 @@ class TestZTracksA(unittest.TestCase):
             self._mov(self._A, t), self._mov(t, self._A),
         ] + self._tail()
         out = self._run(instrs)
-        self.assertIn(self._mov(t, self._A), out)
+        self.assertIn(
+            asm_ast.Or(src=asm_ast.Imm(value=0), dst=self._A), out,
+        )
 
     def test_load_dropped_when_z_set_from_a(self):
         # `LDA #5; STA g; LDA g; BEQ`: Z is set from A, which g now
@@ -1219,6 +1234,38 @@ class TestSwapPairs(unittest.TestCase):
         )
         self.assertEqual(_rewritten(list(instrs)), instrs)
 
+
+class TestStoreConstViaIndex(unittest.TestCase):
+    """`LDA #k; STA M` goes through Y when A holds a value that's
+    reloaded after it, as `get_alphabet` returns the alphabet it
+    loaded after `SHIFT_ALPHABET = 0xFF`."""
+
+    def test_reload_dropped(self):
+        g, t, shift = _d("g"), _d("t"), _d("SHIFT")
+        out = _rewritten([
+            asm_ast.Mov(src=g, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=t),
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=shift),
+            asm_ast.Mov(src=t, dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ])
+        self.assertEqual(out, [
+            asm_ast.Mov(src=g, dst=_REG_A),
+            asm_ast.Mov(src=_REG_A, dst=t),
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=_REG_Y),
+            asm_ast.Mov(src=_REG_Y, dst=shift),
+            asm_ast.Return(save_a=True),
+        ])
+
+    def test_not_without_a_reload(self):
+        g, shift = _d("g"), _d("SHIFT")
+        instrs = [
+            asm_ast.Mov(src=g, dst=_REG_A),
+            asm_ast.Mov(src=asm_ast.Imm(value=0xFF), dst=shift),
+            asm_ast.Mov(src=_d("h"), dst=_REG_A),
+            asm_ast.Return(save_a=True),
+        ]
+        self.assertEqual(_rewritten(list(instrs)), instrs)
 
 if __name__ == "__main__":
     unittest.main()

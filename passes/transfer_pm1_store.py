@@ -47,11 +47,15 @@ off `X-1` from DEX (C and V untouched).
 The rewrite is sound iff at the boundary after STA M:
   1. A is dead (we no longer leave `X-1` in A).
   2. X is dead (X now holds `X-1` instead of the original X).
-  3. All flags (N/Z/C/V) are dead — C and V were set by the SBC
-     in the original sequence, and DEX leaves them stale.
+  3. C and V are dead — they were set by the SBC in the original
+     sequence, and DEX leaves them stale. N and Z come out the same:
+     DEX sets them from `X-1`, the value the SBC left in A. So a
+     branch on N or Z may follow, as in `get_next_code_byte2`'s
+     `if (++Z_PC2_L == 0)` (examples/zork/print_zstring/pages.c),
+     which becomes `INY; STY Z_PC2_L; BNE`.
 
 For the +1 form (`CLC; ADC #1`) the C/V mutation by the original
-ADC is also lost; the gate is the same `all_flags_dead_at`.
+ADC is also lost; the gate is the same.
 
 # Destination operand restriction
 
@@ -77,7 +81,7 @@ from __future__ import annotations
 
 import asm_ast
 from passes.asm_liveness import (
-    a_dead_at, all_flags_dead_at, x_dead_at, y_dead_at,
+    a_dead_at, c_dead_at, v_dead_at, x_dead_at, y_dead_at,
 )
 
 
@@ -182,6 +186,6 @@ def _match_pattern(
     reg_dead = x_dead_at if reg_cls is asm_ast.X else y_dead_at
     if not reg_dead(instrs, after):
         return None
-    if not all_flags_dead_at(instrs, after):
+    if not (c_dead_at(instrs, after) and v_dead_at(instrs, after)):
         return None
     return reg_cls, is_decrement, d.dst

@@ -66,8 +66,11 @@ The final output is `JSR sample; CLC; ADC total; STA total; RTS`.
   up an indexed `mem`.
 - Next is a non-volatile `LDA mem`, where `mem` is a `Data`, `ZP`, or
   `abs,X` / `abs,Y` operand, optionally followed by `CLC` or `SEC`.
-- Then comes an `ADC`, `AND`, or `ORA` of `temp` into A, and right
-  after it a non-volatile `STA mem` to the same operand as the load.
+- Then comes an `ADC`, `AND`, or `ORA` of `temp` into A. A store of
+  the result back to `mem`, as `mem += v` makes, may follow, but
+  needn't: in `print_zstring` (examples/zork/print_zstring/zstring.c),
+  `get_alphabet() + z` was `STA t; LDA z; CLC; ADC t` and is `CLC;
+  ADC z`.
 
 The rewrite keeps `v` in A through the band, so an instruction
 counts as writing A when it's emitted through A. That's a `Mov` into
@@ -96,8 +99,7 @@ __local_accumulate__0; STA total`.
 - An `EOR`, whose asm atom has a different shape.
 - A band holding a call, a push or pull, a branch, a label, or any
   other instruction outside the list above.
-- A store after the operation that goes somewhere other than `mem`,
-  and any volatile load or store in the window.
+- Any volatile load or store in the window.
 
 ## Related
 

@@ -2,7 +2,7 @@
 
 # Pattern
 
-`load_packed_address` in `examples/zork_print_string_literal.c` takes
+`load_packed_address` in `examples/zork/print_zstring/pages.c` takes
 three bytes of `SCRATCH2 << 1` in three statements:
 
     Z_PC2_L = (uint8_t)(SCRATCH2 << 1);

@@ -94,7 +94,29 @@ depends on `%t`'s width.
   - `end_label` is jumped to exactly once (by the in-tail Jump).
     Any other reference would dangle after the deletion.
   - The consumer is `JumpIfTrue(%t, T)` or `JumpIfFalse(%t, T)`
-    directly on `%t` (no Cast, no intervening op).
+    directly on `%t` (no Cast, no intervening op), apart from
+    `Copy`s between `end_label` and the consumer that neither read nor
+    write `%t` (see "Copies before the consumer").
+
+# Copies before the consumer
+
+SSA destruction puts a phi's copies at the end of its predecessor
+block, which is where the consumer is when the consumer's branch
+skips an assignment. `if (c >= 0x60 && c < 0x80) c -= 0x20;` leaves
+
+    Label(.and_end@3)
+    Copy(@0.c, @0.c.2)          ; the phi's copy for the skipped arm
+    JumpIfFalse(%4.3, .if_end@4)
+
+The copies run on every path through the consumer, so the rewrite
+keeps them on both: in place for the path that falls through, and for
+the path the chain takes, in a stub `Label(L); <copies>; Jump(D_sc)`
+appended after the function's last instruction (which has to be a
+`Ret` or a `Jump`, so nothing falls into the stub). In the flipped
+case the copies go before the synthetic `Jump(T)` and again after the
+new label. Once the asm optimizer coalesces a phi's names, such a
+copy is nothing, the stub is a bare `JMP`, and branch threading sends
+the chain straight to `D_sc`.
 
 `branch_label` is allowed to have any number of jump references —
 those ARE the chain we're folding. Retargeting them is sound for
@@ -142,29 +164,53 @@ def fold_short_circuit_jump(
     }
     label_counter = 0
 
+    def fresh_label() -> str:
+        nonlocal label_counter
+        while True:
+            new_label = f".{fn.name}@scfold@{label_counter}"
+            label_counter += 1
+            if new_label not in existing_labels:
+                existing_labels.add(new_label)
+                return new_label
+
+    # A stub can go after the last instruction only if nothing falls
+    # off the end into it.
+    ends_in_terminator = bool(fn.instructions) and isinstance(
+        fn.instructions[-1], (tac_ast.Ret, tac_ast.Jump),
+    )
     retarget_map: dict[str, str] = {}
     new_instrs: list[tac_ast.Type_instruction] = []
+    stubs: list[tac_ast.Type_instruction] = []
     i = 0
     while i < len(fn.instructions):
         fold = _try_fold(fn, i, use_count, jump_target_count)
+        if fold is not None and fold[3] and fold[0] == "natural" \
+                and not ends_in_terminator:
+            fold = None
         if fold is None:
             new_instrs.append(fn.instructions[i])
             i += 1
             continue
-        kind, branch_label, target = fold
+        kind, branch_label, target, copies = fold
         if kind == "natural":
-            retarget_map[branch_label] = target
+            if copies:
+                stub = fresh_label()
+                stubs.append(tac_ast.Label(name=stub))
+                stubs.extend(copies)
+                stubs.append(tac_ast.Jump(target=target))
+                retarget_map[branch_label] = stub
+                new_instrs.extend(copies)
+            else:
+                retarget_map[branch_label] = target
         else:
-            while True:
-                new_label = f".{fn.name}@scfold@{label_counter}"
-                label_counter += 1
-                if new_label not in existing_labels:
-                    existing_labels.add(new_label)
-                    break
+            new_label = fresh_label()
             retarget_map[branch_label] = new_label
+            new_instrs.extend(copies)
             new_instrs.append(tac_ast.Jump(target=target))
             new_instrs.append(tac_ast.Label(name=new_label))
-        i += 6  # consume tail (5) + consumer (1)
+            new_instrs.extend(copies)
+        i += 6 + len(copies)  # tail (5), copies, consumer (1)
+    new_instrs.extend(stubs)
 
     if not retarget_map:
         return fn
@@ -201,8 +247,9 @@ def _try_fold(
     jump_target_count: dict[str, int],
 ) -> tuple[str, str, str] | None:
     """If `fn.instructions[i:i+6]` is `Copy / Jump / Label / Copy /
-    Label / JumpIf{True,False}` in the short-circuit shape, return
-    `(kind, branch_label, T)` where `kind` is `"natural"` or
+    Label / JumpIf{True,False}` in the short-circuit shape, with
+    `Copy`s that don't touch `%t` allowed before the consumer, return
+    `(kind, branch_label, T, copies)` where `kind` is `"natural"` or
     `"flipped"`. Otherwise None."""
     instrs = fn.instructions
     if i + 5 >= len(instrs):
@@ -212,7 +259,13 @@ def _try_fold(
     label_branch = instrs[i + 2]
     cp_sc = instrs[i + 3]
     label_end = instrs[i + 4]
-    consumer = instrs[i + 5]
+    j = i + 5
+    while j < len(instrs) and isinstance(instrs[j], tac_ast.Copy):
+        j += 1
+    if j >= len(instrs):
+        return None
+    copies = list(instrs[i + 5:j])
+    consumer = instrs[j]
 
     if not isinstance(cp_ft, tac_ast.Copy):
         return None
@@ -251,6 +304,10 @@ def _try_fold(
         return None
     if consumer.condition.name != t_name:
         return None
+    for cp in copies:
+        if any(isinstance(v, tac_ast.Var) and v.name == t_name
+               for v in (cp.src, cp.dst)):
+            return None
 
     if use_count.get(t_name, 0) != 1:
         return None
@@ -262,8 +319,8 @@ def _try_fold(
     )
     target = consumer.target
     if c_sc == consumer_branch_value:
-        return ("natural", branch_label, target)
-    return ("flipped", branch_label, target)
+        return ("natural", branch_label, target, copies)
+    return ("flipped", branch_label, target, copies)
 
 
 def _retarget_instruction(

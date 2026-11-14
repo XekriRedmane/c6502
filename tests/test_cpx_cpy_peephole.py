@@ -210,3 +210,33 @@ class TestCpxCpyCfg(unittest.TestCase):
         ]
         out = _rewritten(instrs)
         self.assertEqual(out, instrs)
+
+
+class TestThroughTemporary(unittest.TestCase):
+    """`LDA M; STA t; CPX t` becomes `CPX M`."""
+
+    def _shape(self, m, *, after=None):
+        t = asm_ast.Data(name="__local_f__0", offset=0)
+        return [
+            asm_ast.Mov(src=m, dst=_REG_A, is_volatile=True),
+            asm_ast.Mov(src=_REG_A, dst=t, is_volatile=False),
+            asm_ast.Compare(left=_REG_X, right=t),
+            asm_ast.Branch(cond=asm_ast.CS(), target=".l"),
+            *(after or []),
+            asm_ast.Label(name=".l"),
+            asm_ast.Return(save_a=False),
+        ]
+
+    def test_folds_even_for_a_volatile_operand(self):
+        m = asm_ast.Data(name="WNDWDTH", offset=0)
+        out = _rewritten(self._shape(m))
+        self.assertEqual(out[0], asm_ast.Compare(left=_REG_X, right=m))
+        self.assertEqual(len(out), 4)
+
+    def test_kept_when_a_is_read(self):
+        m = asm_ast.Data(name="WNDWDTH", offset=0)
+        instrs = self._shape(m, after=[
+            asm_ast.Mov(src=_REG_A, dst=asm_ast.Data(name="q", offset=0),
+                        is_volatile=False),
+        ])
+        self.assertEqual(_rewritten(list(instrs)), instrs)

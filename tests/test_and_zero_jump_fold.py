@@ -284,5 +284,44 @@ class TestSimIntegration(unittest.TestCase):
         self.assertEqual(self._run(src), 1)
 
 
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestWideMaskInOneByte(unittest.TestCase):
+    """A mask on a wide value whose set bits fall in one byte tests
+    that byte: `if (zchars & 0x8000)` is `LDA zchars+1; BPL`."""
+
+    _SRC = """
+    unsigned int w;
+    int s;
+    unsigned long l;
+    unsigned char hi(void) { return (w & 0x8000) ? 0xFF : 0; }
+    unsigned char mid(void) { return (w & 0x0400) != 0; }
+    unsigned char neg(void) { return (s & 0x8000) != 0; }
+    unsigned char top(void) { return (l & 0x00800000UL) != 0; }
+    int main(void) {
+        int r = 0;
+        w = 0x8400; r += hi() + mid();
+        w = 0x7BFF; r += hi() * 3 + mid() * 5;
+        s = -2; r += neg() * 7;
+        l = 0x00812345UL; r += top() * 11;
+        l = 0x007FFFFFUL; r += top() * 13;
+        return r;
+    }
+    """
+
+    def test_runs(self):
+        want = 0xFF + 1 + 0 + 0 + 7 + 11
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                got = build_sim(self._SRC, optimize=optimize).run().return_int()
+                self.assertEqual(got, want)
+
+    def test_byte_tested(self):
+        from compile import _run_stage
+        from preprocessor import preprocess
+        asm = _run_stage("codegen", preprocess(self._SRC), optimize=True)
+        body = asm.split("\nhi:\n")[1].split("RTS")[0]
+        self.assertIn("LDA   w+1", body)
+        self.assertNotIn("ORA", body)
+
 if __name__ == "__main__":
     unittest.main()

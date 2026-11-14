@@ -101,6 +101,13 @@ function ends up as `LDA s; EOR #$FF; CLC; ADC #$01; STA s; RTS`.
   the same register. In `LDX m; TXA; BMI L` the `LDX` already set N
   and Z from X, so `LDX m; BMI L` branches the same way.
 
+The pass also drops a load into X or Y (`LDX` / `LDY` of an
+immediate or a non-volatile `Data` or `ZP` byte) when the register
+and N/Z are dead after it (`x_dead_at` / `y_dead_at`,
+`flags_dead_at`). Such a load is left when a constant stored through
+Y by [redundant load elimination](redundant_load.md) loses its store
+to a later pass.
+
 The sweep repeats inside one call because another pass in the same
 round, such as [volatile read to CMP](volatile_void_read_cmp.md), can
 make A live across an instruction this pass would otherwise have
@@ -120,7 +127,8 @@ removed on its next call.
 - An `ADC` or `SBC` whose carry feeds the next byte of a multi-byte
   add or subtract, as in `g = a + 1;` with an `int g`, where
   `LDA #$00; ADC #$00; STA g+1` stays.
-- Instructions that write X, Y, or memory.
+- Instructions that write memory, and ones that write X or Y other
+  than the loads above.
 
 ## Related
 

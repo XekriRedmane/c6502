@@ -33,7 +33,8 @@ the program out from it. The subset:
   `KEEP(*(pattern ...))` (every section is kept, since the linker
   doesn't discard anything), symbol assignments, `. = ALIGN(n);`, and
   `. = . + n;` or `. += n;` to skip `n` bytes. Patterns use `*`, `?`,
-  and `[...]` as in GNU ld. Only `*` is accepted as the file part.
+  and `[...]` as in GNU ld. The file part is `*`, or a pattern for an
+  input file's name without its directory, as in `zstring.asm(.text)`.
 * Symbol assignments `sym = expr;` and `PROVIDE(sym = expr);`, inside
   or after the output sections.
 * Expressions: numbers (decimal, `0x` hex, and a `K` or `M` suffix),
@@ -44,8 +45,7 @@ the program out from it. The subset:
 * Comments `/* ... */` and `//` to the end of the line.
 
 Anything else (`ENTRY`, `INCLUDE`, `/DISCARD/`, `FILL`, `BYTE`,
-`SORT`, file names in input descriptions, `.` assigned outside an
-output section) is a `ScriptError`.
+`SORT`, `.` assigned outside an output section) is a `ScriptError`.
 """
 from __future__ import annotations
 
@@ -118,8 +118,11 @@ class Assign:
 
 @dataclass
 class Input:
-    """`*(pattern ...)`, or `KEEP(*(pattern ...))`."""
+    """`file(pattern ...)`, or `KEEP(file(pattern ...))`. `file` is
+    `*` for every input file, or a pattern for the input file's name
+    without its directory, such as `zstring.asm`."""
     patterns: list[str]
+    file: str = "*"
 
 
 @dataclass
@@ -328,10 +331,14 @@ class _Parser:
             self.take()
             self.take("(")
         files = self.take()
-        if files != "*":
+        # `*zstring.asm` comes as `*` and `zstring.asm`.
+        if files == "*" and self.peek() not in ("(", None):
+            files += self.take()
+        if files in ("(", ")", "{", "}", ";", ":", "="):
             raise ScriptError(
-                f"in {where}: only `*` is supported as the file part of "
-                f"an input section description, not {files!r}"
+                f"in {where}: an input section description starts with "
+                f"the file it takes sections from, such as `*` or "
+                f"`zstring.asm`, not {files!r}"
             )
         self.take("(")
         patterns = []
@@ -343,7 +350,7 @@ class _Parser:
         self.take(")")
         if keep:
             self.take(")")
-        return Input(patterns=patterns)
+        return Input(patterns=patterns, file=files)
 
     # Expressions, by precedence from loosest to tightest.
     _LEVELS = [("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"),

@@ -129,6 +129,7 @@ def allocate_zp_slots(
     spill_end: int = _DEFAULT_SPILL_END,
     reserved: frozenset[int] = frozenset(),
     window: range | None = None,
+    fallback: range | None = None,
     shares=(),
 ) -> tuple[dict[str, ParamLayout], dict[str, int]]:
     """Assign concrete ZP (or spill-region) addresses to every
@@ -147,7 +148,9 @@ def allocate_zp_slots(
     range the slots come from, the pool's caller-saved half unless
     given (the linker gives the whole pool, since a linked program
     has no soft-stack function that keeps values in the other
-    half). `shares` are the `SlotShare`s whose slots get one address
+    half). `fallback` is a zero-page range tried when the window has
+    no room, before the spill region; bytes of it in `reserved` are
+    skipped as in the window. `shares` are the `SlotShare`s whose slots get one address
     (see "Shared slots"). A register byte gets no address (None in
     `addrs`, and no entry in `sym_to_addr`), and a pinned one its
     own."""
@@ -182,6 +185,10 @@ def allocate_zp_slots(
 
     def range_for(what: str, forbidden: set[int], n: int) -> list[int]:
         addrs = _find_free_range(forbidden, n, zp_start, zp_end)
+        if addrs is None and fallback is not None:
+            addrs = _find_free_range(
+                forbidden, n, fallback.start, fallback.stop,
+            )
         if addrs is None:
             addrs = _find_free_range(forbidden, n, spill_start, spill_end)
         if addrs is None:

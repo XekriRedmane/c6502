@@ -154,8 +154,12 @@ The linker lays out zero page for the whole program too. It puts the
 runtime's block (`SSP`, `FP`, `HARGS`, `DPTR`) around every file's
 fixed zero-page objects, with `HARGS` as large as the largest any file
 needs, then the zero-page globals, then the functions' parameter and
-local bytes, which may use any free byte from `$80` up. A parameter or
-local that doesn't fit goes in `__spill`, a block in `.bss`, which the
+local bytes, which may use any free byte from `$80` up, and then any
+free byte below `$80`, around the runtime's block and every
+zero-page object. A program whose headers reserve most of `$80`-`$FF`,
+as examples/zork/interpreter's does for Zork's own zero page, keeps
+its parameters and locals in zero page that way. A parameter or
+local that doesn't fit in either goes in `__spill`, a block in `.bss`, which the
 script places with the rest of the data. Without a script it goes at
 `$0200` up instead. A local byte that no file's code names any more
 (the peepholes emptied it after the file sized its pool) gets no

@@ -202,6 +202,7 @@ def allocate_function_locals(
     spill_end: int = _DEFAULT_SPILL_END,
     reserved: frozenset[int] = frozenset(),
     window: range | None = None,
+    fallback: range | None = None,
     shares=(),
 ) -> dict[str, list[int]]:
     """Allocate per-function body-local ZP pools. Returns
@@ -211,7 +212,8 @@ def allocate_function_locals(
     should fall back to the conservative caller/callee
     partition). `reserved` is a set of bytes no pool may use, the
     zero-page globals' bytes (passes/zp_globals.py). `window` is the
-    zero-page range the pools come from, as for `allocate_zp_slots`.
+    zero-page range the pools come from, and `fallback` the range
+    tried when it has no room, as for `allocate_zp_slots`.
     `shares` are the `SlotShare`s `allocate_zp_slots` placed, whose
     addresses are in `abi`."""
     if pool is None:
@@ -283,6 +285,10 @@ def allocate_function_locals(
             )
 
         addrs = _find_free_range(forbidden, size, zp_start, zp_end)
+        if addrs is None and fallback is not None:
+            addrs = _find_free_range(
+                forbidden, size, fallback.start, fallback.stop,
+            )
         if addrs is None:
             addrs = _find_free_range(
                 forbidden, size, spill_start, spill_end,

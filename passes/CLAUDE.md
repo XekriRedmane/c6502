@@ -232,7 +232,9 @@ this directory:
   block for the program (`choose_layout` over every unit's fixed
   zero-page bytes and the largest `hargs_need`), and the slots come
   from the whole pool, `$80`-`$FF` (the allocators' `window`), since
-  every linked function has a private pool. With `-T`, `_scripted_body`
+  every linked function has a private pool, and then from the free
+  bytes below `$80` (their `fallback`, around the runtime's block,
+  `_runtime_bytes`, and the zero-page objects) before any spill. With `-T`, `_scripted_body`
   lays the program out by the script, and a slot that spills goes in
   a `__spill` block in `.bss` instead of at `$0200`. `sim/linked.py` runs a linked
   program by assembling it with dasm. `_link_shares` joins every
@@ -457,9 +459,12 @@ this directory:
 - `zp_local_allocation.py` — `allocate_function_locals`. Hands each
   eligible function a private body-local ZP range disjoint from
   coexisting footprints, and from the `shares` of functions that can
-  be on the call stack with it.
+  be on the call stack with it. Like `allocate_zp_slots`, it tries the
+  `window`, then the `fallback`, then the spill region.
 - `zp_slot_allocation.py` — `allocate_zp_slots`. Binds zp_abi slot
-  symbols to ZP addresses via call-graph topological order. Register
+  symbols to ZP addresses via call-graph topological order, from the
+  `window`, then the `fallback` range (the linker's free bytes below
+  `$80`), then the spill region. Register
   bytes get no address, `zeropage(addr)` bytes (`ZpLayout.pinned`)
   their own, and each `SlotShare` one run at the turn of its last
   member.

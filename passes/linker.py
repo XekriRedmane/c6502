@@ -533,6 +533,12 @@ def link_files(
     # a call, and the slots can come from the whole pool.
     pool = Pool()
     window = range(pool.start, 0x100)
+    # The free bytes below the pool, around the runtime's block, the
+    # zero-page objects, and the bytes a program's headers reserve
+    # for its ROM and DOS, take what doesn't fit in the pool before
+    # anything spills out of zero page.
+    fallback = range(0, pool.start)
+    low_reserved = zp_bytes | _runtime_bytes(layout)
     # With a script, a slot that doesn't fit in zero page goes in
     # `__spill`, laid out with the program's data: it gets a stand-in
     # address here, rebased below.
@@ -541,12 +547,12 @@ def link_files(
         if script is not None else {}
     )
     abi, zp_sym_to_addr = allocate_zp_slots(
-        prog, abi, reserved=zp_bytes, window=window,
-        shares=merged.shares, **spill,
+        prog, abi, reserved=low_reserved, window=window,
+        fallback=fallback, shares=merged.shares, **spill,
     )
     local_pools = allocate_function_locals(
-        prog, abi, local_bytes, reserved=zp_bytes, window=window,
-        shares=merged.shares, **spill,
+        prog, abi, local_bytes, reserved=low_reserved, window=window,
+        fallback=fallback, shares=merged.shares, **spill,
     )
     # Slot names round-trip through the per-TU metadata block;
     # reuse them verbatim so the body text doesn't need rewriting.
@@ -595,7 +601,10 @@ def link_files(
             script, input_paths, unit_items, bodies, merged, objects,
             demoted, (layout or {}).get("HARGS size"), spill_size,
         ))
-    Path(output_path).write_text("\n".join(out_lines) + "\n")
+    # LF on every platform, as compile.py writes.
+    Path(output_path).write_text(
+        "\n".join(out_lines) + "\n", encoding="utf-8", newline="\n",
+    )
 
 
 # Spilled slots get addresses from here up while allocating, which
@@ -652,6 +661,21 @@ def _scripted_body(
         return layout_lines(script, units, _instr_line)
     except LayoutError as e:
         raise LinkError(str(e)) from e
+
+
+def _runtime_bytes(layout: dict[str, int] | None) -> frozenset[int]:
+    """The bytes of the runtime's block (SSP, FP, DPTR, and HARGS)
+    in `layout`, as `_choose_layout` returns it, or the classic block's
+    when there's no layout."""
+    from passes.runtime_layout import CLASSIC
+    if not layout:
+        return CLASSIC.bytes()
+    size = layout.get("HARGS size", CLASSIC.hargs_size)
+    out: set[int] = set()
+    for name, n in (("SSP", 2), ("FP", 2), ("DPTR", 2), ("HARGS", size)):
+        if name in layout:
+            out.update(range(layout[name], layout[name] + n))
+    return frozenset(out)
 
 
 def _choose_layout(

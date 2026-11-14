@@ -410,3 +410,46 @@ class TestRecursionWithSaves(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestLowZeroPageFallback(unittest.TestCase):
+    """When the pool, $80-$FF, has no room left, slots go in the free
+    bytes below it, around the runtime's block, before they spill out
+    of zero page."""
+
+    _A = (
+        "#include <stdint.h>\n"
+        "extern uint8_t busy [[c6502::zeropage(0x80)]][124];\n"
+        "uint16_t add3(uint16_t a, uint16_t b, uint16_t c);\n"
+        "int main(void) { return add3(1000, 200, 30) == 1230; }\n"
+    )
+    _B = (
+        "#include <stdint.h>\n"
+        "uint16_t add3(uint16_t a, uint16_t b, uint16_t c) {\n"
+        "    return a + b + c;\n"
+        "}\n"
+    )
+
+    def test_parameters_go_below_the_pool(self) -> None:
+        from passes.runtime_layout import CLASSIC
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a.asm", Path(tmp) / "b.asm"
+            self.assertEqual(_compile_to_asm(self._A, a), 0)
+            self.assertEqual(_compile_to_asm(self._B, b), 0)
+            out = Path(tmp) / "out.asm"
+            self.assertEqual(_link([a, b], out), 0)
+            text = out.read_text()
+        equs = _equs(text)
+        params = {k: v for k, v in equs.items()
+                  if k.startswith("__zpabi_add3_")}
+        self.assertEqual(len(params), 6, params)
+        runtime = CLASSIC.bytes()
+        for name, addr in params.items():
+            self.assertLess(addr, 0x80, name)
+            self.assertNotIn(addr, runtime, name)
+        if shutil.which("dasm"):
+            from sim.linked import build_linked_sim
+            sim = build_linked_sim(text)
+            result = sim.run()
+            self.assertEqual(result.return_int(), 1)

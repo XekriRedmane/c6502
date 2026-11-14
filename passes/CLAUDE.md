@@ -61,6 +61,18 @@ this directory:
   by fall-through across a label count as live. The signed-compare
   lowering relies on this, because its `EOR #$80` sits just before
   `.cmp_novf:` and the `BMI` / `BPL` after the label reads it.
+- `branch_thread.py` — `apply_branch_thread`. A branch whose target
+  is (after labels) a branch on the same flag goes to that branch's
+  target when the conditions match, and past it (to a `.thread@N`
+  label it adds if needed) when they're opposite. Runs after
+  `branch_through_jump`.
+- `carry_known.py` — `apply_carry_known`. A forward dataflow of C
+  (set / clear / unknown; `BCC` / `BCS` tell each edge) drops a `SEC`
+  or `CLC` where C already has that value, and moves one that starts a
+  block in front of its labels when every edge in but the
+  fall-through has C that way (a loop's back edges). Runs once after
+  the third peephole fixed point, since `transfer_pm1_store` and
+  `cmp_sbc_fusion` match a `SEC` / `CLC`.
 - `branch_through_jump.py` — `apply_branch_through_jump` peephole.
   Rewrites `Branch(cond, L); X; L: Jump(T)` → `Branch(cond, T); X`
   (and the same for an unconditional `Jump(L)`) when L is an
@@ -151,7 +163,10 @@ this directory:
   borrow byte `LDA M; SBC #0; STA M` to `BCS skip; DEC M; skip:`,
   when A and every flag are dead after. Move coalescing's carry-byte
   pairs (`optimization_asm/coalescing.py`) put both ends of such a
-  byte in one slot.
+  byte in one slot. A one-byte run in X or Y may have C read after
+  it: `TXA; SBC #0; TAX` becomes `BCS skip; CPX #1; DEX` and `TXA;
+  ADC #0; TAX` becomes `BCC skip; INX; BEQ skip; CLC`, which leave C
+  as the ADC / SBC did.
 - `carry_return.py` — peepholes for `return_bool_in_carry`, whose
   callee returns `e != 0` in C. `apply_carry_return_tails` copies a
   `CMP #c; RTS` return tail into each `LDA #k; JMP tail` and in front
@@ -1036,6 +1051,8 @@ document says whether it fires there.
 - `apply_branch_invert` — `Branch(cond, L); Jump(target); L:` →
   `Branch(inverted_cond, target)` when L is the immediate next
   instruction.
+- `apply_branch_thread` — a branch to a branch on the same flag goes
+  to that one's target, or past it for the opposite condition.
 - `apply_branch_to_next_drop` — `Branch(_, L); Label(L)` →
   (both dropped if L is only referenced here, else just the
   Branch). Closes the residual diamond left by `branch_invert`

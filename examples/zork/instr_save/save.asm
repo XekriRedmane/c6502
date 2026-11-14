@@ -202,14 +202,12 @@ instr_save:
    STA   __zpabi_inc_sector_and_write__buffer_1
    LDY   #$0E
    LDA   (Z_HEADER_ADDR),Y
-   CLC
    ADC   #$01
    STA   __local_instr_save__pages
 .loop@1_start:
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
    LDA   __zpabi_inc_sector_and_write__buffer_0
-   CLC
    ADC   #$00
    STA   __zpabi_inc_sector_and_write__buffer_0
    LDA   __zpabi_inc_sector_and_write__buffer_1

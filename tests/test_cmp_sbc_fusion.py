@@ -70,6 +70,43 @@ class TestCmpSbcFusion(unittest.TestCase):
             asm_ast.Return(save_a=False),
         ])
 
+    def test_bcc_without_sec(self):
+        # carry_known drops the SEC after a BCC, whose fall-through
+        # has C set; the moved SBC gets it back.
+        N = asm_ast.Data(name="N", offset=0)
+        T = asm_ast.Data(name="T", offset=0)
+        prog = _wrap([
+            asm_ast.Mov(src=asm_ast.Data(name="M", offset=0), dst=_A),
+            asm_ast.Compare(left=_A, right=N),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".skip"),
+            asm_ast.Sub(src=N, dst=_A),
+            asm_ast.Mov(src=_A, dst=T),
+            asm_ast.Label(name=".skip"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_cmp_sbc_fusion(prog))
+        self.assertEqual(out[:4], [
+            asm_ast.Mov(src=asm_ast.Data(name="M", offset=0), dst=_A),
+            asm_ast.SetCarry(),
+            asm_ast.Sub(src=N, dst=_A),
+            asm_ast.Branch(cond=asm_ast.CC(), target=".skip"),
+        ])
+
+    def test_bcs_without_sec_left_alone(self):
+        # After BCS the fall-through has C clear, so the SBC there
+        # subtracts one more; it isn't the compare's subtraction.
+        N = asm_ast.Data(name="N", offset=0)
+        prog = _wrap([
+            asm_ast.Mov(src=asm_ast.Data(name="M", offset=0), dst=_A),
+            asm_ast.Compare(left=_A, right=N),
+            asm_ast.Branch(cond=asm_ast.CS(), target=".skip"),
+            asm_ast.Sub(src=N, dst=_A),
+            asm_ast.Label(name=".skip"),
+            asm_ast.Return(save_a=False),
+        ])
+        out = _instrs(apply_cmp_sbc_fusion(prog))
+        self.assertIsInstance(out[1], asm_ast.Compare)
+
     def test_a_live_at_the_target_blocks_fusion(self):
         # `.skip` returns A, which the CMP left as M.
         N = asm_ast.Imm(value=3)

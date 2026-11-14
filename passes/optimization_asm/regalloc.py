@@ -408,6 +408,30 @@ def _try_hwreg_assign(
             continue
         _try_pin_with_fallback(name, preferred="Y")
 
+    # The upper bytes of adds and subtracts of a byte, last, so they
+    # only get a register no index wanted (see "Carry hint" in
+    # hwreg_eligibility). The value before the add and the one after
+    # share a register or get none: with only one in X, the other
+    # would be copied in or out of X and the rewrite would save
+    # nothing.
+    pairs = sorted(
+        {pq for pq in eligibility.carry_pairs
+         if pq[0] in eligibility.hints_carry
+         and pq[1] in eligibility.hints_carry},
+        key=lambda pq: (_priority(pq[0]), _priority(pq[1])),
+    )
+    for p, q in pairs:
+        if p in hwreg_assignments or q in hwreg_assignments:
+            continue
+        for reg in ("X", "Y"):
+            if not _can_pin(p, reg):
+                continue
+            hwreg_assignments[p] = reg
+            if p == q or _can_pin(q, reg):
+                hwreg_assignments[q] = reg
+                break
+            del hwreg_assignments[p]
+
 
 # Operands the emitter reaches with `LDY #offset`.
 _LDY_OPERANDS = (

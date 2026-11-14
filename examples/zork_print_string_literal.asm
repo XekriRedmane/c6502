@@ -51,11 +51,8 @@ __local_dump_buffer_with_more__0	EQU	$98
 __local_set_page_first__0	EQU	$98
 __local_dump_buffer_with_more__end	EQU	$99
 __local_set_page_first__prev_first	EQU	$99
-__local_do_rwts_on_sector__0	EQU	$9A
 __local_find_index_of_page_table__0	EQU	$9A
-__local_do_rwts_on_sector__sector_1	EQU	$9B
 __local_find_index_of_page_table__1	EQU	$9B
-__local_do_rwts_on_sector__sector_0	EQU	$9C
 __local_dump_buffer_to_printer__x	EQU	$9D
 __local_dump_buffer_to_printer__1	EQU	$9E
 __local_dump_buffer_to_printer__2	EQU	$9F
@@ -94,7 +91,7 @@ COUT1	EQU	$FDF0
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals=__local_A_mod_3__a indirect=false in_cycle=false param_regs=A
 ; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__c,__local_buffer_char__0,__local_buffer_char__1 indirect=false in_cycle=false param_regs=A
 ; def cout_string params=__zpabi_cout_string__count locals=__local_cout_string__0,__local_cout_string__s,__local_cout_string__1 indirect=false in_cycle=false param_regs=X
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector indirect=false in_cycle=false param_regs=A
 ; def dump_buffer_line params= locals=__local_dump_buffer_line__0 indirect=false in_cycle=false
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__0,__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
 ; def dump_buffer_to_screen params= locals=__local_dump_buffer_to_screen__0 indirect=false in_cycle=false
@@ -236,24 +233,19 @@ do_rwts_on_sector:
    LDA   #$03
    STA   iob+4
    LDA   SCRATCH1
-   STA   __local_do_rwts_on_sector__sector_0
-   LDA   SCRATCH1+1
-   STA   __local_do_rwts_on_sector__sector_1
-.loop@0_continue:
-   LDA   __local_do_rwts_on_sector__sector_0
+   LDX   SCRATCH1+1
    SEC
+.loop@0_continue:
    SBC   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__0
-   LDA   __local_do_rwts_on_sector__sector_1
-   SBC   #$00
-   STA   __local_do_rwts_on_sector__sector_1
+   BCS   .thread@0
+   CPX   #$01
+   DEX
    BCC   .loop@0_break
+.thread@0:
    INC   iob+4
-   LDA   __local_do_rwts_on_sector__0
-   STA   __local_do_rwts_on_sector__sector_0
    JMP   .loop@0_continue
 .loop@0_break:
-   LDA   __local_do_rwts_on_sector__sector_0
+   ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #>iob
    LDY   #<iob
@@ -369,7 +361,9 @@ get_next_code_byte2:
    BNE   .if_else@12
    LDA   Z_PC2_H
    CMP   NUM_IMAGE_PAGES
-   BCC   .if_end@11
+   BCS   .lb_skip@0
+   JMP   .if_end@11
+.lb_skip@0:
 .if_else@12:
    LDA   Z_PC2_H
    STA   __local_get_next_code_byte2__page
@@ -420,8 +414,8 @@ get_next_code_byte2:
    LDA   PAGE_TABLE_INDEX2
    CLC
    ADC   NUM_IMAGE_PAGES
-.if_end@11:
    CLC
+.if_end@11:
    ADC   Z_HEADER_ADDR+1
    STA   ZCODE_PAGE_ADDR2+1
    LDA   #$00
@@ -757,7 +751,6 @@ A_mod_3:
 .loop@8_continue:
    CMP   #$03
    BCC   .loop@8_break
-   SEC
    SBC   #$03
    JMP   .loop@8_continue
 .loop@8_break:

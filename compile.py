@@ -136,6 +136,8 @@ from passes.optimization.dispatch_pointer_array import (
 )
 from passes.optimization_asm import optimizer as asm_opt
 from passes.branch_through_jump import apply_branch_through_jump
+from passes.branch_thread import apply_branch_thread
+from passes.carry_known import apply_carry_known
 from passes.dec_branch_indirect_y_fold import apply_dec_branch_indirect_y_fold
 from passes.dec_register_peephole import apply_dec_register_peephole
 from passes.promote_loop_carried_to_a import apply_promote_loop_carried_to_a
@@ -246,6 +248,7 @@ def _peephole_fixedpoint(
         new_prog = apply_branch_invert(new_prog)
         new_prog = apply_branch_to_next_drop(new_prog)
         new_prog = apply_branch_through_jump(new_prog)
+        new_prog = apply_branch_thread(new_prog)
         new_prog = apply_dec_register_peephole(new_prog)
         new_prog = apply_transfer_past_branch(new_prog)
         new_prog = apply_index_inc_cmp_y(new_prog)
@@ -552,6 +555,10 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
         asm3, zp_slot_symbols=all_slot_symbols,
         zp_global_symbols=zp.addrs,
     )
+    # Drop a SEC or CLC where C already has that value, or move one in
+    # front of a loop whose back edges have it (passes/carry_known.py).
+    # After the peepholes, several of which match a SEC or CLC.
+    asm3 = apply_carry_known(asm3)
     # Keep a loop-invariant compare key in A across its loop
     # (see passes/loop_invariant_a.py). Runs after the
     # peepholes have settled the layout it inspects.

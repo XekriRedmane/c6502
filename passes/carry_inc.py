@@ -49,6 +49,21 @@ all of these to be dead after the store:
   * N, Z, and V. They come from the ADC in one form, and from the
     INC or the low byte's ADC in the other.
 
+A carry byte in X or Y (`hwreg_eligibility`'s carry hint) may also
+have C read after it, as `while (s >= k) s -= k;` reads the borrow
+out of its 16-bit `s` with `BCC`. The rewrite then keeps C as the
+ADC / SBC form leaves it:
+
+    TXA; SBC #0; TAX    ->   BCS skip; CPX #1; DEX; skip:
+    TXA; ADC #0; TAX    ->   BCC skip; INX; BEQ skip; CLC; skip:
+
+With C set coming in, nothing is borrowed (or carried) and the
+branch skips with C as it was. Otherwise `CPX #1` sets C exactly
+when X isn't zero, which is when the decrement doesn't borrow, and
+`DEX` leaves C alone; an `INX` that wraps X to zero carries out,
+and any other leaves C clear. That's Zork's `BCS .inc_track; DEX`
+in `do_rwts_on_sector`.
+
 `asm_liveness.a_dead_at` and `flags_dead_at` (N and Z) check those
 conditions along every path from the store, and `c_dead_at` and
 `v_dead_at` check C and V the same way, each on its own. A `BEQ` after the `LDA`/`ORA`
@@ -115,10 +130,21 @@ def _rewrite_function(
             out.append(instrs[i])
             i += 1
             continue
-        mems, is_add = match
+        mems, is_add, keep_c = match
         skip = f".carry_inc@{counter}"
         counter += 1
-        if is_add:
+        if keep_c and is_add:
+            out.append(asm_ast.Branch(cond=asm_ast.CC(), target=skip))
+            out.append(asm_ast.Inc(dst=mems[0]))
+            out.append(asm_ast.Branch(cond=asm_ast.EQ(), target=skip))
+            out.append(asm_ast.ClearCarry())
+        elif keep_c:
+            out.append(asm_ast.Branch(cond=asm_ast.CS(), target=skip))
+            out.append(asm_ast.Compare(
+                left=mems[0], right=asm_ast.Imm(value=1),
+            ))
+            out.append(asm_ast.Dec(dst=mems[0]))
+        elif is_add:
             out.append(asm_ast.Branch(cond=asm_ast.CC(), target=skip))
             for k, mem in enumerate(mems):
                 if k:
@@ -142,12 +168,13 @@ def _rewrite_function(
 
 def _match(
     instrs: list[asm_ast.Type_instruction], i: int,
-) -> tuple[list[asm_ast.Type_operand], bool] | None:
-    """Returns `([M1, ...], is_add)` for the run of in-place carry
-    bytes starting at `instrs[i]`, with A and every flag dead after
-    the run. An add's run takes every carry byte in a row, and a
-    subtract's run is one byte. Returns None when there's no such
-    run."""
+) -> tuple[list[asm_ast.Type_operand], bool, bool] | None:
+    """Returns `([M1, ...], is_add, keep_c)` for the run of in-place
+    carry bytes starting at `instrs[i]`, with A and every flag dead
+    after the run, or every flag but C when the run is one byte in X
+    or Y (`keep_c`). An add's run takes every carry byte in a row,
+    and a subtract's run is one byte. Returns None when there's no
+    such run."""
     first = _carry_byte(instrs, i)
     if first is None:
         return None
@@ -164,11 +191,13 @@ def _match(
         return None
     if not flags_dead_at(instrs, end):
         return None
-    if not c_dead_at(instrs, end):
-        return None
     if not v_dead_at(instrs, end):
         return None
-    return mems, is_add
+    if c_dead_at(instrs, end):
+        return mems, is_add, False
+    if len(mems) == 1 and isinstance(mems[0], asm_ast.Reg):
+        return mems, is_add, True
+    return None
 
 
 def _carry_byte(

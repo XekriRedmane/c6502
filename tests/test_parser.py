@@ -2413,9 +2413,11 @@ class TestPointerEquality(unittest.TestCase):
             "  return p == q;\n"
             "}\n"
         )
-        # Two CMPs (one per byte) and the BNE short-circuit landmark.
+        # Two CMPs (one per byte) and the BNE short-circuit out of the
+        # high byte's compare, which branch threading sends past the
+        # low byte's BEQ (`.thread@N`).
         self.assertEqual(text.count("CMP   (FP),Y"), 2)
-        self.assertIn(".cmp_differ@", text)
+        self.assertRegex(text, r"BNE   \.(cmp_differ|thread)@")
 
     def test_not_equal_same_pointer_type(self):
         text = self._codegen(

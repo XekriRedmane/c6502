@@ -226,6 +226,11 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   operand may be a second read of the same memory as the compare's
   (`ZeroExtend(g)` in both blocks), which it replaces with the
   compare's. 1-byte operands are left to the asm `cmp_sbc_fusion`.
+  When `a` is a Phi of the compare's block (the value a loop carries)
+  and only the other successor reads it after the compare, that
+  successor gets `a.exit = t + b` instead (re-reading `b` from memory
+  when it's a read of a global), so `a` dies at the subtract and the
+  loop updates it in place.
 - `short_circuit_jump_fold.py` — `fold_short_circuit_jump`
   (`FoldShortCircuitJump`, raw PostDestructionFixedpointPass — multi-
   block retarget map with transitive closure). Post-destruction fixedpoint.

@@ -48,9 +48,6 @@ __zpabi_do_rwts_on_sector__buffer_1	EQU	$F4
 __zpabi_inc_sector_and_write__buffer_1	EQU	$F4
 __local_inc_sector_and_write__1	EQU	$F7
 __local_inc_sector_and_write__2	EQU	$F8
-__local_do_rwts_on_sector__0	EQU	$FA
-__local_do_rwts_on_sector__sector_1	EQU	$FB
-__local_do_rwts_on_sector__sector_0	EQU	$FC
 BUFF_AREA	EQU	$0200
 branch	EQU	$0BAA
 negated_branch	EQU	$0BB3
@@ -67,7 +64,7 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__0,__local_do_rwts_on_sector__sector_1,__local_do_rwts_on_sector__sector_0 indirect=false in_cycle=false param_regs=A,,
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector indirect=false in_cycle=false param_regs=A,,
 ; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__0,__local_inc_sector_and_write__1,__local_inc_sector_and_write__2 indirect=false in_cycle=false
 ; def write_next_sector params= locals=__local_write_next_sector__0 indirect=false in_cycle=false
 ; ext CLREOL params=
@@ -149,24 +146,19 @@ do_rwts_on_sector:
    LDA   #$03
    STA   iob+4
    LDA   SCRATCH1
-   STA   __local_do_rwts_on_sector__sector_0
-   LDA   SCRATCH1+1
-   STA   __local_do_rwts_on_sector__sector_1
-.loop@0_continue:
-   LDA   __local_do_rwts_on_sector__sector_0
+   LDX   SCRATCH1+1
    SEC
+.loop@0_continue:
    SBC   SECTORS_PER_TRACK
-   STA   __local_do_rwts_on_sector__0
-   LDA   __local_do_rwts_on_sector__sector_1
-   SBC   #$00
-   STA   __local_do_rwts_on_sector__sector_1
+   BCS   .thread@0
+   CPX   #$01
+   DEX
    BCC   .loop@0_break
+.thread@0:
    INC   iob+4
-   LDA   __local_do_rwts_on_sector__0
-   STA   __local_do_rwts_on_sector__sector_0
    JMP   .loop@0_continue
 .loop@0_break:
-   LDA   __local_do_rwts_on_sector__sector_0
+   ADC   SECTORS_PER_TRACK
    STA   iob+5
    LDA   #>iob
    LDY   #<iob

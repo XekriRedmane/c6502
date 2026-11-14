@@ -3,7 +3,9 @@ moving the `SEC; SBC` ahead of the branch and dropping the `CMP`.
 
 # Pattern
 
-Six consecutive instructions (or five, without the label):
+Six consecutive instructions (or five, without the label, and
+without the `SEC` after a `BCC`, whose fall-through has C set, as
+`carry_known` leaves it):
 
     [a]   Mov(<X>, Reg(A))      # LDA M (or any other A-load)
     [a+1] Compare(Reg(A), N)    # CMP N
@@ -116,21 +118,30 @@ def _rewrite_function(fn: asm_ast.Function) -> asm_ast.Function:
         if (j < len(instrs) and isinstance(instrs[j], asm_ast.Label)
                 and instrs[j].name not in branch_targets):
             j += 1
-        if (j + 1 < len(instrs)
+        # After `BCC`, C is set on the fall-through, so `carry_known`
+        # may have dropped the SEC; the moved SBC needs it back.
+        sec = j < len(instrs) and isinstance(instrs[j], asm_ast.SetCarry)
+        if not sec and not (
+            i + 2 < len(instrs)
+            and isinstance(instrs[i + 2], asm_ast.Branch)
+            and isinstance(instrs[i + 2].cond, asm_ast.CC)
+        ):
+            j = len(instrs)
+        sub = j + 1 if sec else j
+        if (sub < len(instrs)
                 and _writes_a_with_flag_effect(instrs[i])
                 and _is_cmp_against(instrs[i + 1])
                 and _is_eligible_branch(instrs[i + 2])
-                and isinstance(instrs[j], asm_ast.SetCarry)
-                and _is_sub_against(instrs[j + 1])
-                and _operands_equal(instrs[i + 1].right, instrs[j + 1].src)
+                and _is_sub_against(instrs[sub])
+                and _operands_equal(instrs[i + 1].right, instrs[sub].src)
                 and _taken_path_safe(instrs, labels, instrs[i + 2].target)):
             # Emit: LDA, SEC, SBC, Branch, Label.
             out.append(instrs[i])
-            out.append(instrs[j])         # SEC
-            out.append(instrs[j + 1])     # SBC N
+            out.append(asm_ast.SetCarry())
+            out.append(instrs[sub])       # SBC N
             out.append(instrs[i + 2])     # Branch
             out.extend(instrs[i + 3:j])   # Label
-            i = j + 2
+            i = sub + 1
             continue
         out.append(instrs[i])
         i += 1

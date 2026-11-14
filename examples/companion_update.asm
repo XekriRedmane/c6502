@@ -198,7 +198,6 @@ entity_proximity:
    LDA   #$FF
    STA   companion_state,X
    LDA   companion_row,X
-   CLC
    ADC   #$04
    STA   companion_row,X
    RTS
@@ -234,10 +233,9 @@ smc_body_draw:
    STA   __local_smc_body_draw__lo
    LDA   #$00
    CMP   #$00
-   BNE   .cmp_differ@2
+   BNE   .cmp_true@0
    LDA   __local_smc_body_draw__lo
    CMP   #$00
-.cmp_differ@2:
    BNE   .cmp_true@0
    LDA   #$00
    JMP   .cmp_end@1
@@ -358,7 +356,6 @@ player_catch:
    BCC   .if_end@23
    RTS
 .if_end@23:
-   CLC
    ADC   #$1A
    CMP   __local_player_catch__1
    BCS   .if_end@24
@@ -446,7 +443,6 @@ active_neg_step:
    STA   companion_dir,X
    LDX   __zpabi_active_neg_step__player_floor
    LDA   floor_thresh,X
-   CLC
    ADC   #$0B
    LDX   __zpabi_active_neg_step__slot
    STA   companion_row,X

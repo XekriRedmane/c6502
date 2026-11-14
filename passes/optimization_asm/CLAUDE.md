@@ -27,7 +27,11 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
   Eligibility is per-HwReg (separate `eligible_x` and `eligible_y`
   sets) — `Mov(IndexedData(...,X), P)` makes P Y-eligible only (via
   `LDY abs,X`, since `LDX abs,X` doesn't exist), and vice versa for
-  `IndexedData(...,Y)`.
+  `IndexedData(...,Y)`. Besides the index hints, `hints_carry` /
+  `carry_pairs` mark the loop-carried upper byte of an add or subtract
+  of a byte (`Mov(P, A); ADC|SBC #0; Mov(A, Q)` with P a Phi), which
+  `regalloc` pins, P and Q together, to X or else Y after every other
+  hint; `carry_inc` then makes it `BCS skip; DEX`.
 - `coalescing.py` — `coalesce_moves`. Aggressive (Chaitin-style) move
   coalescing. See "Move coalescing" below.
 - `copy_propagation.py` — forward copy propagation on the asm-SSA

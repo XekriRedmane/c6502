@@ -79,6 +79,24 @@ have to be index-setup'd for both X and Y in the same function),
 but if they do, the coloring pass picks whichever HwReg is still
 free.
 
+  * **Carry hint** (`hints_carry`): P and Q in `Mov(P, Reg(A));
+    Add|Sub(Imm(0), Reg(A)); Mov(Reg(A), Q)`, the upper byte of a
+    multi-byte add or subtract of a byte. In X it's `TXA; SBC #0;
+    TAX`, which `carry_inc` turns into `BCS +; DEX` (or, when the
+    carry is read after, `BCS +; CPX #1; DEX`), where a zero-page
+    byte is `LDA M; SBC #0; STA M`. The regalloc tries these after
+    the index hints, so they never take a register an index wanted,
+    and pins P and Q to one register or neither (`carry_pairs`):
+    with only Q in X, P would have to be loaded into X first and the
+    rewrite saves nothing. P must be a Phi, a value a loop carries
+    round, since that's where keeping it in a register pays: in
+    straight-line code the byte P comes from is usually in memory
+    already, where `carry_inc` updates it in place, and moving it into
+    X or Y costs a transfer each way.
+    The high byte of `do_rwts_on_sector`'s 16-bit `sector` in
+    `examples/zork/instr_save/disk.c` lives in X this way, as in
+    Zork's own code.
+
 # Output
 
 `scan_function(fn)` returns a `HwRegEligibility` with:
@@ -137,6 +155,12 @@ class HwRegEligibility:
     # kept for symmetry but stays empty under the `register` keyword.
     required_x: set[str] = field(default_factory=set)
     required_y: set[str] = field(default_factory=set)
+    # The upper bytes of adds and subtracts of a byte (see "Carry
+    # hint"), tried for X, then Y, after `hints_x` and `hints_y`;
+    # `carry_pairs` holds each (P, Q), which share a register or
+    # get none.
+    hints_carry: set[str] = field(default_factory=set)
+    carry_pairs: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def eligible(self) -> set[str]:
@@ -187,9 +211,16 @@ def scan_function(
     disqualified_y: set[str] = set()
     hints_x: set[str] = set()
     hints_y: set[str] = set()
+    hints_carry: set[str] = set()
+    carry_pairs: list[tuple[str, str]] = []
     use_count: dict[str, int] = {}
 
     instrs = fn.instructions
+    phi_dsts = {
+        ins.dst.name for ins in instrs
+        if isinstance(ins, asm_ast.Phi)
+        and isinstance(ins.dst, asm_ast.Pseudo)
+    }
     # Address-taken names (`LoadAddress.src`) never get a regalloc
     # color. `replace_pseudoregisters` gives each a Frame slot, or a
     # zero-page byte from the function's private pool when one fits,
@@ -214,6 +245,26 @@ def scan_function(
                 disqualified_x.add(op.name)
             if not y_ok:
                 disqualified_y.add(op.name)
+        # The upper byte of an add or subtract of a byte:
+        #   instrs[i-1] = Mov(P, Reg(A))
+        #   instrs[i  ] = Add|Sub(Imm(0), Reg(A))
+        #   instrs[i+1] = Mov(Reg(A), Q)
+        if (0 < i < len(instrs) - 1
+                and isinstance(instr, (asm_ast.Add, asm_ast.Sub))
+                and isinstance(instr.src, asm_ast.Imm)
+                and instr.src.value == 0
+                and _is_a(instr.dst)):
+            prev, nxt = instrs[i - 1], instrs[i + 1]
+            if (isinstance(prev, asm_ast.Mov) and _is_a(prev.dst)
+                    and isinstance(prev.src, asm_ast.Pseudo)
+                    and prev.src.offset == 0
+                    and prev.src.name in phi_dsts
+                    and isinstance(nxt, asm_ast.Mov) and _is_a(nxt.src)
+                    and isinstance(nxt.dst, asm_ast.Pseudo)
+                    and nxt.dst.offset == 0):
+                hints_carry.add(prev.src.name)
+                hints_carry.add(nxt.dst.name)
+                carry_pairs.append((prev.src.name, nxt.dst.name))
         # Detect the index-setup chain at this instruction position:
         #   instrs[i-1] = Mov(P, Reg(A))
         #   instrs[i  ] = Mov(Reg(A), Reg(X|Y))
@@ -249,6 +300,7 @@ def scan_function(
     eligible_any = eligible_x | eligible_y
     hints_x &= eligible_any
     hints_y &= eligible_any
+    hints_carry &= eligible_any
     required_x: set[str] = set()
     required_y: set[str] = set()
     # Each base name (e.g. `@2.y`) may have many SSA-renamed
@@ -279,7 +331,12 @@ def scan_function(
         hints_x=hints_x, hints_y=hints_y,
         use_count=use_count,
         required_x=required_x, required_y=required_y,
+        hints_carry=hints_carry, carry_pairs=carry_pairs,
     )
+
+
+def _is_a(op) -> bool:
+    return isinstance(op, asm_ast.Reg) and isinstance(op.reg, asm_ast.A)
 
 
 def _ssa_base(name: str) -> str:

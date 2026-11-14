@@ -82,10 +82,53 @@ iob.sector = (uint8_t)sector;
 ```
 
 A pass through the loop takes 42 cycles instead of 50, and the
-routine is 7 bytes shorter. The low byte of the difference still goes
-through a temporary, since the loop's exit reads the old `sector`, and
-`SECTORS_PER_TRACK` is still copied into a temporary before it's
-subtracted.
+routine is 7 bytes shorter. That's the compare and the subtract alone.
+The low byte of the difference goes through a temporary, since the
+loop's exit reads the old `sector`; the next section removes that.
+
+## The old value on the loop's exit
+
+When the minuend `a` is the value the loop carries round (a Phi in
+the compare's block) and only the loop's exit reads it after the
+compare, the pass gives the exit `a` as `t + b` instead, the way
+Zork's code adds `SECTORS_PER_TRACK` back after its loop:
+
+```
+.loop@0_break:
+    Binary(Add, %11.1, %8.1.exit, @9.sector.2.exit)
+    Truncate(@9.sector.2.exit, %16.1)
+```
+
+`a` then dies at the subtract, so the loop updates it in place. When
+`b` is a read of a variable in memory, as `ZeroExtend(SECTORS_PER_TRACK)`
+is, and nothing after it in the compare's block writes memory, the
+exit reads the variable again into a new temporary (`%8.1.exit`),
+rather than keeping the loop's copy alive past the loop.
+
+With [operands read in place](cmp_through_tmp_fold.md), the register
+allocator's [carry hint](regalloc.md), [carry INC](carry_inc.md),
+[branch threading](branch_thread.md), and [carry already
+known](carry_known.md), the loop ends up as Zork wrote it, with the
+low byte in A and the high byte in X:
+
+```
+   LDA   SCRATCH1
+   LDX   SCRATCH1+1
+   SEC
+.loop@0_continue:
+   SBC   SECTORS_PER_TRACK
+   BCS   .thread@0
+   CPX   #$01
+   DEX
+   BCC   .loop@0_break
+.thread@0:
+   INC   iob+4
+   JMP   .loop@0_continue
+.loop@0_break:
+   ADC   SECTORS_PER_TRACK
+```
+
+A pass that borrows nothing from the high byte is 15 cycles.
 
 ## When it applies
 
@@ -118,5 +161,9 @@ compare reads after it.
 - A signed `char` compare: the compare is of the operands widened to
   `int`, and the subtraction is narrowed back to a byte.
 - The side of the branch that doesn't use the difference still
-  computes and stores it. In `do_rwts_on_sector` that's two stores
-  when the loop ends, 6 cycles on a call where the loop doesn't run.
+  computes it. In `do_rwts_on_sector` that costs the exit an `ADC`
+  to get the old value back, 3 cycles on a call where the loop
+  doesn't run.
+- An exit that isn't reached only from the compare, or a minuend read
+  anywhere else after the compare, for the exit's recompute. The
+  subtract still moves.

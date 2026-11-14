@@ -419,6 +419,10 @@ def _optimize_function(
                     n for n in s
                     if reg in entry_limits.get(_ssa_base(n), ())
                 }
+        raw_eligibility.hints_carry -= {
+            n for n in raw_eligibility.hints_carry
+            if entry_limits.get(_ssa_base(n))
+        }
     rep_eligibility = _project_eligibility(
         raw_eligibility, coalesce_result, all_names=_all_pseudo_names(fn),
     )
@@ -556,6 +560,7 @@ def _project_eligibility(
     rep_eligible_y: set[str] = set()
     rep_hints_x: set[str] = set()
     rep_hints_y: set[str] = set()
+    rep_hints_carry: set[str] = set()
     rep_required_x: set[str] = set()
     rep_required_y: set[str] = set()
     rep_use_count: dict[str, int] = {}
@@ -568,6 +573,8 @@ def _project_eligibility(
             rep_hints_x.add(rep)
         if any(m in raw.hints_y for m in members):
             rep_hints_y.add(rep)
+        if any(m in raw.hints_carry for m in members):
+            rep_hints_carry.add(rep)
         # Required transfers if ANY member is required — coalescing
         # is symmetric, so a rep that swallows a pinned member is
         # itself pinned. The regalloc will check that the rep is in
@@ -586,6 +593,11 @@ def _project_eligibility(
     rep_eligible_any = rep_eligible_x | rep_eligible_y
     rep_hints_x &= rep_eligible_any
     rep_hints_y &= rep_eligible_any
+    rep_hints_carry &= rep_eligible_any
+    rep_carry_pairs = [
+        (coalesce_result.resolve(p), coalesce_result.resolve(q))
+        for p, q in raw.carry_pairs
+    ]
     return HwRegEligibility(
         eligible_x=rep_eligible_x,
         eligible_y=rep_eligible_y,
@@ -594,4 +606,6 @@ def _project_eligibility(
         use_count=rep_use_count,
         required_x=rep_required_x,
         required_y=rep_required_y,
+        hints_carry=rep_hints_carry,
+        carry_pairs=rep_carry_pairs,
     )

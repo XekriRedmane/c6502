@@ -92,6 +92,42 @@ class TestCompareSubtract(unittest.TestCase):
                 self.assertEqual(body.count("SBC"), _width(fn), body)
 
 
+@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+class TestLoopInRegisters(unittest.TestCase):
+    """`while (s >= k) s -= k;` on a 16-bit `s`, as Zork's
+    `do_rwts_on_sector` does: `s` stays in A (low) and X (high), the
+    exit adds `k` back, and a pass through the loop is `SBC; BCS` when
+    nothing is borrowed from the high byte."""
+
+    def test_shape(self) -> None:
+        src = """
+        unsigned char k;
+        unsigned char n;
+        unsigned char f(unsigned int s) {
+            while (s >= k) { s -= k; n++; }
+            return (unsigned char)s;
+        }
+        int main(void) { k = 16; return f(1000) + n; }
+        """
+        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        body = asm.split("\nf:\n")[1].split("\nmain:\n")[0]
+        loop = body.split(".loop@0_continue:")[1].split(".loop@0_break:")[0]
+        lines = [" ".join(line.split()) for line in loop.splitlines()
+                 if line.strip()]
+        self.assertEqual(lines, [
+            "SBC k", "BCS .thread@0", "CPX #$01", "DEX",
+            "BCC .loop@0_break", ".thread@0:", "INC n",
+            "JMP .loop@0_continue",
+        ])
+        self.assertIn("ADC   k", body.split(".loop@0_break:")[1])
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                self.assertEqual(
+                    build_sim(src, optimize=optimize).run().return_int(),
+                    1000 % 16 + 1000 // 16,
+                )
+
+
 def _width(fn: str) -> int:
     """How many bytes the function's operands have."""
     if "long" in fn:

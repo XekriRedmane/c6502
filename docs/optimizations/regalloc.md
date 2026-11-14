@@ -116,6 +116,20 @@ when all its members are.
    `register` parameter passed in X gets an X hint, and if the hint
    fails the parameter stays in its zp_abi slot. Within each group,
    names with more references go first.
+3. Last, a name with a carry hint goes in X, or else Y: the upper byte
+   of an add or subtract of a byte, `Mov(P, A); ADC|SBC #0; Mov(A,
+   Q)` (`hints_carry`), where P is a Phi, a value a loop carries
+   round. P and Q go in the same register or neither does
+   (`carry_pairs`); with one in memory, the byte would be copied in
+   or out of the register and the rewrite would save nothing. In
+   straight-line code the byte is usually in memory already, where
+   carry INC updates it in place, which is why P has to be a Phi. In X that's `TXA; SBC #0; TAX`, which [carry
+   INC](carry_inc.md) turns into `BCS skip; DEX`, where a zero-page
+   byte is `LDA M; SBC #0; STA M`. Coming after the index hints, a
+   carry byte never takes a register an index wanted. The high byte
+   of the 16-bit sector number in `do_rwts_on_sector`
+   (`examples/zork/instr_save/disk.c`) lives in X this way, as in
+   Zork's code.
 
 The allocator makes no attempt to pin an eligible name with no hint
 and no `register` keyword, and the name takes a byte like any other. A

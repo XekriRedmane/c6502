@@ -125,19 +125,11 @@ order of size:
 
 ## Optimizations found by Zork's save instruction
 
-`examples/zork/instr_save` is 715 bytes of code against Zork's 627, and
-its first save takes 22,829 cycles against 19,561. Most of the cycles
-are in `do_rwts_on_sector`'s loop and most of the bytes in
-`get_prompted_number_from_user`. Roughly in order of payoff:
+`examples/zork/instr_save` is 689 bytes of code against Zork's 627, and
+its first save takes 19,758 cycles against 19,561.
+`get_prompted_number_from_user` accounts for most of what's left of
+both, 44 bytes and 273 cycles. Roughly in order of payoff:
 
-- **The old value on a loop's exit.** `do_rwts_on_sector`'s `while
-  (sector >= SECTORS_PER_TRACK) sector -= SECTORS_PER_TRACK;` stores
-  the difference's low byte in a temporary and copies it back each
-  pass, because the loop's exit reads the old `sector`. Zork keeps the
-  low byte in A and adds `SECTORS_PER_TRACK` back on exit.
-- **A 2-byte loop-carried value in A and X.** Zork keeps that loop's
-  16-bit sector number in A (low) and X (high) and does `DEX` on a
-  borrow, where the compiled loop keeps it in two zero-page bytes.
 - **Index arithmetic narrowed by the array's bounds.** `prompts[which]`
   on `struct prompt prompts[3]` (16 bytes each) computes `which * 16`
   as a 16-bit shift in memory and adds it to the address. A valid

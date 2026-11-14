@@ -106,6 +106,32 @@ class TestCarryIncUnit(unittest.TestCase):
         ]
         self.assertEqual(_run(instrs), instrs)
 
+    def test_register_keeps_the_carry_when_it_is_read(self) -> None:
+        # do_rwts_on_sector's high byte in X, with the loop's BCC
+        # after it.
+        x = asm_ast.Reg(reg=asm_ast.X())
+        tail = [
+            asm_ast.Branch(cond=asm_ast.CC(), target=".done"),
+            _ret(),
+            asm_ast.Label(name=".done"),
+            _ret(),
+        ]
+        out = _run(_carry_byte(x, x, sub=True) + tail)
+        self.assertEqual(out[:4], [
+            asm_ast.Branch(cond=asm_ast.CS(), target=".carry_inc@0"),
+            asm_ast.Compare(left=x, right=asm_ast.Imm(value=1)),
+            asm_ast.Dec(dst=x),
+            asm_ast.Label(name=".carry_inc@0"),
+        ])
+        out = _run(_carry_byte(x, x) + tail)
+        self.assertEqual(out[:5], [
+            asm_ast.Branch(cond=asm_ast.CC(), target=".carry_inc@0"),
+            asm_ast.Inc(dst=x),
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".carry_inc@0"),
+            asm_ast.ClearCarry(),
+            asm_ast.Label(name=".carry_inc@0"),
+        ])
+
     def test_add_run_becomes_inc_chain(self) -> None:
         b1, b2, b3 = _zp(0x81), _zp(0x82), _zp(0x83)
         instrs = (

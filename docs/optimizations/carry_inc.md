@@ -84,6 +84,27 @@ is the low byte of the sum. The `ADC` form
 sets C from the carry out of M, while the `INC` form passes the
 incoming C through.
 
+A carry byte in X or Y may have C read after it. The register
+allocator puts such bytes there ([carry hint](regalloc.md)), and a
+`while (s >= k) s -= k;` on a 16-bit `s` branches on the borrow out
+of the high byte. The rewrite then keeps C as the `ADC` / `SBC` form
+leaves it:
+
+```
+TXA; SBC #0; TAX    ->   BCS skip; CPX #1; DEX; skip:
+TXA; ADC #0; TAX    ->   BCC skip; INX; BEQ skip; CLC; skip:
+```
+
+With C set coming in, nothing is borrowed and the branch skips with
+C still set. Otherwise `CPX #1` sets C exactly when X isn't zero,
+which is when the decrement borrows nothing, and `DEX` leaves C
+alone. An `INX` that wraps X to zero carries out, and any other
+leaves C clear. In `do_rwts_on_sector`
+(`examples/zork/instr_save/disk.c`) that's the `BCS; CPX #$01; DEX`
+in front of the loop's `BCC`, which a pass with no borrow skips with
+one taken branch, as Zork's `BCS .inc_track` does. A, N, Z, and V
+must still be dead.
+
 An add takes every carry byte in a row as one run. A subtract only
 has its top byte rewritten. A byte that `DEC` wraps to `$FF` is the
 one that borrows from the next, and one branch after the `DEC` can't
@@ -102,8 +123,9 @@ shape already.
   pass reports 0 changes.
 - A byte on the soft stack or behind a pointer, because `INC` has no
   `(zp),Y` mode.
-- A carry byte followed by a read of A, C, or V, or by a branch on
-  N or Z. A carry byte in the middle of a subtract is one case.
+- A carry byte followed by a read of A or V, or by a branch on N or
+  Z, and one in memory followed by a read of C. A carry byte in the
+  middle of a subtract is one case.
 - The unoptimized pipeline's adds. There, the zero high byte of the
   widened operand sits in a soft-stack temporary, so the high byte is
   an `ADC (FP),Y`, which the pass doesn't match. For `total += c` with an

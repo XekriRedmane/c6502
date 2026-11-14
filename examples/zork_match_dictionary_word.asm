@@ -153,7 +153,6 @@ match_dictionary_word:
    BCC   .tail@0
    BNE   .if_end@10
    LDA   __local_match_dictionary_word__entry_0
-   SEC
    SBC   z_header_addr
    STA   __local_match_dictionary_word__0
    LDA   __local_match_dictionary_word__entry_1
@@ -216,7 +215,6 @@ main:
 .loop@2_start:
    CMP   #$14
    BCS   .loop@2_break
-   CLC
    ADC   #$01
    STA   __local_main__4
    ASL

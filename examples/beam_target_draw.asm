@@ -79,7 +79,6 @@ beam_target_draw:
    LDA   beam_y
    CMP   __local_beam_target_draw__0
    BCS   .loop@0_continue
-   CLC
    ADC   #$03
    CMP   __local_beam_target_draw__0
    BCC   .loop@0_continue

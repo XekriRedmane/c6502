@@ -136,7 +136,7 @@ first save and the same 170 in the second, and leave the same state.
 
 | Routine | Zork | C |
 |---|---:|---:|
-| `do_rwts_on_sector` | 51 | 63 |
+| `do_rwts_on_sector` | 51 | 50 |
 | `write_next_sector` | 8 | 11 |
 | `inc_sector_and_write` | 38 | 42 |
 | `print_ascii_string` | 20 | 20 |
@@ -144,9 +144,9 @@ first save and the same 170 in the second, and leave the same state.
 | `please_insert_save_diskette` | 167 | 168 |
 | `get_prompted_number_from_user` | 106 | 150 |
 | `please_reinsert_game_diskette` | 70 | 70 |
-| `instr_save` | 141 | 154 |
+| `instr_save` | 141 | 152 |
 | `copy_data_to_buff` | 12 | 12 |
-| **Code** | **627** | **704** |
+| **Code** | **627** | **689** |
 
 The data is the same apart from where it sits: 17 bytes of IOB, 4 of
 DCT, the five strings, and 48 bytes of prompts. In Zork,
@@ -155,8 +155,8 @@ DCT, the five strings, and 48 bytes of prompts. In Zork,
 count each one to the next routine.
 
 **Speed.** Counting only the cycles spent in this code (the stand-ins
-take none), the first save takes 21,630 cycles against Zork's 19,561,
-and the second 13,242 against 13,012.
+take none), the first save takes 19,758 cycles against Zork's 19,561,
+and the second 13,168 against 13,012.
 
 **Where the difference comes from.** Looking at `instr_save.asm`:
 
@@ -168,12 +168,14 @@ and the second 13,242 against 13,012.
 - `get_prompted_number_from_user` indexes the 16-byte prompt records,
   and computes `which * 16` as a 16-bit shift, three times, where
   Zork keeps a byte offset in `prompt_offset`.
-- `do_rwts_on_sector`'s loop subtracts `SECTORS_PER_TRACK` once and
-  branches on the borrow, as Zork's does, but it keeps the 16-bit
-  sector number in zero page where Zork keeps it in A and X, and
-  stores the difference's low byte in a temporary, since the loop's
-  exit reads the old value. It ends in `JMP RWTS`, which Zork could
-  have used too.
+- `do_rwts_on_sector`'s loop is Zork's: the sector number in A and
+  X, `SBC SECTORS_PER_TRACK; BCS` when nothing is borrowed from the
+  high byte, and `ADC SECTORS_PER_TRACK` after the loop to get the
+  last value back. Where Zork does `DEX; BMI` on a borrow and then
+  sets the carry again, it does `CPX #$01; DEX`, which leaves the
+  carry as the loop's test needs it, so it's a little faster
+  (1,666 cycles in the first save against 1,729). It ends in `JMP
+  RWTS`, which Zork could have used too.
 - `instr_save`'s `page += 0x100` is a 16-bit add where Zork has
   `INC SCRATCH2+1`, though it adds in the parameter's bytes where
   Zork does.
@@ -242,3 +244,18 @@ Comparing its code with Zork's then led to:
   is instead of from a copy
   ([cmp_through_tmp_fold.md](../../../docs/optimizations/cmp_through_tmp_fold.md)),
   which made it 36: `SBC SECTORS_PER_TRACK`.
+- The loop's exit gets the old value as `t + b` instead of keeping it
+  alive across the loop
+  ([compare_subtract.md](../../../docs/optimizations/compare_subtract.md)),
+  so the loop updates the sector number in place.
+- The upper byte of an add or subtract of a byte that a loop carries
+  round goes in X or Y ([regalloc.md](../../../docs/optimizations/regalloc.md)),
+  where [carry_inc.md](../../../docs/optimizations/carry_inc.md) makes
+  its borrow `BCS; CPX #$01; DEX`, keeping the carry for the loop's
+  `BCC`. The low byte then stays in A by itself.
+- A branch to a branch on the same flag goes where that one goes
+  ([branch_thread.md](../../../docs/optimizations/branch_thread.md)),
+  and a `SEC` or `CLC` the carry already matches goes, or moves in
+  front of the loop when only the way in needs it
+  ([carry_known.md](../../../docs/optimizations/carry_known.md)).
+  That made the loop 15 cycles a pass, as Zork's is.

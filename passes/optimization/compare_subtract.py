@@ -59,9 +59,11 @@ from __future__ import annotations
 import c99_ast
 import tac_ast
 from passes.optimization.cfg import (
-    ENTRY_ID, EXIT_ID, build_cfg, cfg_to_function,
+    ENTRY_ID, EXIT_ID, build_cfg, cfg_to_function, immediate_dominators,
 )
 from passes.optimization.framework import PostFixedpointPass
+from passes.optimization.var_visit import rewrite_uses_in, uses_in
+from passes.type_checking import Symbol
 
 # Reads of one variable in memory, which match when the variable
 # isn't written between them.
@@ -176,6 +178,7 @@ def hoist_subtract_to_compare(fn: tac_ast.Function, ctx) -> tac_ast.Function:
 
     cfg = build_cfg(fn)
     changed = False
+    hoisted = []
     for bid in cfg.block_order:
         block = cfg.blocks[bid]
         last = block.instructions[-1]
@@ -196,10 +199,148 @@ def hoist_subtract_to_compare(fn: tac_ast.Function, ctx) -> tac_ast.Function:
                 continue
             if _hoist_from(body, block.instructions, a, b, t):
                 changed = True
+                hoisted.append((bid, succ, a, block.instructions[-2]))
                 break
     if not changed:
         return fn
+    for bid, succ, a, sub in hoisted:
+        _recompute_on_exit(cfg, bid, succ, a, sub, ctx, writes_memory)
     return cfg_to_function(fn, cfg)
+
+
+def _recompute_on_exit(cfg, bid, succ, a, sub, ctx, writes_memory) -> bool:
+    """After the subtract `sub` (`t = a - b`) has moved up to the
+    compare ending block `bid`, gives the compare's other successor
+    `a` as `t + b` when `a` is the value a loop carries round (a Phi
+    in `bid`) and only that successor reads it after the compare.
+    Then `a` dies at the subtract, the loop can update it in place, and
+    the exit adds `b` back, as Zork's `do_rwts_on_sector` does with
+    `ADC SECTORS_PER_TRACK`. When `b` is a read of a variable in
+    memory in `bid` (`ZeroExtend(SECTORS_PER_TRACK)`), the exit reads
+    it again rather than keeping the first read for it, since nothing
+    after the read in `bid` writes memory. Returns whether it did."""
+    ssa = ctx.ssa_dsts
+    block = cfg.blocks[bid]
+    if not (isinstance(a, tac_ast.Var) and a.name in ssa):
+        return False
+    if not any(isinstance(i, tac_ast.Phi) and i.dst == a
+               for i in block.instructions):
+        return False
+    others = [s for s in block.successors if s != succ]
+    if len(others) != 1 or others[0] in (ENTRY_ID, EXIT_ID):
+        return False
+    exit_id = others[0]
+    if cfg.blocks[exit_id].predecessors != [bid]:
+        return False
+    idom = immediate_dominators(cfg)
+
+    def under_exit(x) -> bool:
+        while True:
+            if x == exit_id:
+                return True
+            up = idom.get(x)
+            if up is None or up == x:
+                return False
+            x = up
+
+    label_block = {
+        cfg.blocks[k].instructions[0].name: k
+        for k in cfg.block_order
+        if cfg.blocks[k].instructions
+        and isinstance(cfg.blocks[k].instructions[0], tac_ast.Label)
+    }
+
+    def phi_arg_side(arg_pred: str) -> bool:
+        pred = label_block.get(arg_pred)
+        return pred is not None and under_exit(pred)
+
+    exit_reads = False
+    for k in cfg.block_order:
+        for ins in cfg.blocks[k].instructions:
+            if isinstance(ins, tac_ast.Phi):
+                for arg in ins.args:
+                    if arg.source == a:
+                        if not phi_arg_side(arg.pred_label):
+                            return False
+                        exit_reads = True
+            elif a in uses_in(ins):
+                if under_exit(k):
+                    exit_reads = True
+                elif k != bid:
+                    return False
+    if not exit_reads:
+        return False
+    sym = ctx.symbols.get(a.name)
+    if sym is None:
+        return False
+    name = f"{a.name}.exit"
+    n = 0
+    while name in ctx.symbols:
+        n += 1
+        name = f"{a.name}.exit{n}"
+    old = tac_ast.Var(name=name)
+    ctx.symbols[name] = Symbol(type=sym.type, attrs=sym.attrs)
+    ssa.add(name)
+
+    def mapper(v):
+        return old if v == a else v
+
+    for k in cfg.block_order:
+        instrs = cfg.blocks[k].instructions
+        for j, ins in enumerate(instrs):
+            if isinstance(ins, tac_ast.Phi):
+                instrs[j] = tac_ast.Phi(dst=ins.dst, args=[
+                    tac_ast.PhiArg(
+                        pred_label=arg.pred_label,
+                        source=old if (arg.source == a and phi_arg_side(
+                            arg.pred_label)) else arg.source,
+                    )
+                    for arg in ins.args
+                ])
+            elif under_exit(k):
+                instrs[j] = rewrite_uses_in(ins, mapper)
+    instrs = cfg.blocks[exit_id].instructions
+    at = 0
+    while at < len(instrs) and isinstance(
+        instrs[at], (tac_ast.Label, tac_ast.Phi),
+    ):
+        at += 1
+    b = sub.src2
+    reread = _reread(b, block.instructions, ctx, writes_memory)
+    if reread is not None:
+        b = reread.dst
+        instrs.insert(at, reread)
+        at += 1
+    instrs.insert(at, tac_ast.Binary(
+        op=tac_ast.Add(), src1=sub.dst, src2=b, dst=old,
+    ))
+    return True
+
+
+def _reread(b, head, ctx, writes_memory):
+    """A copy of the instruction in `head` that defines `b` by reading
+    a non-volatile variable in memory, into a fresh SSA temporary,
+    when nothing after it in `head` writes memory; else None."""
+    if not (isinstance(b, tac_ast.Var) and b.name in ctx.ssa_dsts):
+        return None
+    for k, ins in enumerate(head):
+        if not (isinstance(ins, _READS) and ins.dst == b):
+            continue
+        src = ins.src
+        if (not isinstance(src, tac_ast.Var) or src.name in ctx.ssa_dsts
+                or _volatile(ctx.symbols.get(src.name))
+                or any(writes_memory(i) for i in head[k + 1:])):
+            return None
+        name = f"{b.name}.exit"
+        n = 0
+        while name in ctx.symbols:
+            n += 1
+            name = f"{b.name}.exit{n}"
+        sym = ctx.symbols[b.name]
+        ctx.symbols[name] = Symbol(type=sym.type, attrs=sym.attrs)
+        ctx.ssa_dsts.add(name)
+        return type(ins)(src=src, dst=tac_ast.Var(name=name))
+    return None
 
 
 def _volatile(sym) -> bool:

@@ -21,6 +21,35 @@ from tests.test_sim_chapters import _run_program as _run_tac
 
 # (name, C source, expected int return of main)
 _CASES: list[tuple[str, str, int]] = [
+    # from_ssa placed the copies for a conditional jump's taken edge
+    # after the jump, on the fall-through, when the fall-through edge
+    # had copies too: the first edge's copies went after the jump,
+    # and the second edge took the last of them for the block's
+    # terminator. Found in Zork's get_next_prop.
+    ("ssa_copies_on_both_edges_of_a_jump", """
+        unsigned char tab[8] = { 9, 7, 5, 3, 1, 0, 0, 0 };
+        unsigned char want;
+        unsigned char start(void) { return 1; }
+        unsigned char next(unsigned char y) { return y + 1; }
+        unsigned char g(void) {
+            unsigned char y = start();
+            if (want != 0) {
+                for (;;) {
+                    unsigned char num = tab[y];
+                    if (num == want) { y = next(y); break; }
+                    if (num < want) return 0;
+                    y = next(y);
+                }
+            }
+            return tab[y];
+        }
+        int main(void) {
+            unsigned char a, b;
+            want = 0; a = g();
+            want = 5; b = g();
+            return a * 10 + b;
+        }
+    """, 73),
     # flags_dead_at treated a label as the end of flag liveness, so
     # dead_a_arith dropped the signed compare's `EOR #$80` overflow
     # correction just before `.cmp_novf:`.

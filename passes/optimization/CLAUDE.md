@@ -344,7 +344,10 @@ stage:
    if the other edge has copies too (a do/while's bottom test feeds
    both the header's and the exit's Phis). Then they go on the edge:
    after the jump for the fall-through successor, or in a new
-   `.<fn>@ssa_split@N` block the jump is retargeted to.
+   `.<fn>@ssa_split@N` block the jump is retargeted to. Each edge
+   finds its predecessor's jump by the index the jump had before any
+   copies went in, since the fall-through edge's copies follow the
+   jump once they're placed.
 
 7. **Post-destruction folds**.
    - **`fold_copies`** (`copy_folding.py`) — fuses the Copy round

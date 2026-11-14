@@ -111,17 +111,26 @@ def from_ssa(
                 )
 
     split_counter = 0
+    # The index of each block's last instruction before any copies go
+    # in. A block whose fall-through edge gets its copies after its
+    # conditional jump no longer ends in the jump, and the copies for
+    # its other edge have to see the jump.
+    last_index = {
+        bid: len(blk.instructions) - 1 for bid, blk in cfg.blocks.items()
+    }
     for (pid, sid), copies in edge_copies.items():
         pred_blk = cfg.blocks[pid]
         ordered = _order_parallel_copies(
             copies, fn_name=fn.name,
             cycle_counter=cycle_counter, symbols=symbols,
         )
-        last = pred_blk.instructions[-1] if pred_blk.instructions else None
+        k = last_index[pid]
+        last = pred_blk.instructions[k] if k >= 0 else None
         if not _needs_split(pid, sid, copies, last, cfg, edge_copies, live_in):
-            insert_pos = len(pred_blk.instructions)
+            insert_pos = k + 1
             if isinstance(last, _TERMINATOR_TYPES):
-                insert_pos -= 1
+                insert_pos = k
+                last_index[pid] = k + len(ordered)
             pred_blk.instructions[insert_pos:insert_pos] = ordered
             continue
         succ_label = cfg.blocks[sid].instructions[0].name
@@ -135,7 +144,7 @@ def from_ssa(
         # new block that runs the copies and jumps on.
         split_counter += 1
         split_label = f".{fn.name}@ssa_split@{split_counter}"
-        pred_blk.instructions[-1] = dataclasses.replace(last, target=split_label)
+        pred_blk.instructions[k] = dataclasses.replace(last, target=split_label)
         new_id = max(cfg.blocks) + 1
         cfg.blocks[new_id] = BasicBlock(
             id=new_id,

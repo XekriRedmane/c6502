@@ -7,7 +7,9 @@ parser and type checker, each item's default section
 linked programs laid out by a script (passes/link_layout.py): run
 through dasm when it's installed, with `.data` copied from ROM, a
 NOLOAD `.bss` cleared, a section at a fixed address, page alignment,
-and dasm stopping on a region that overflows.
+and dasm stopping on a region that overflows. It also covers functions
+that end by jumping to another falling into it instead
+(`link_layout.fall_through`), and `(NOREORDER)`.
 """
 from __future__ import annotations
 
@@ -134,6 +136,17 @@ class TestScriptParser(unittest.TestCase):
         self.assertEqual(secs[".b"].contents[0].patterns, [".text", ".data"])
         self.assertEqual(secs[".c"].contents[0].file, "*")
 
+    def test_noreorder(self) -> None:
+        script = parse_script(
+            "SECTIONS { .a (NOREORDER) : { *(.text) } .b : { *(.data) } "
+            ".c (0x100) : { *(.rodata) } }\n"
+        )
+        secs = {s.name: s for s in script.output_sections()}
+        self.assertFalse(secs[".a"].reorder)
+        self.assertFalse(secs[".a"].noload)
+        self.assertTrue(secs[".b"].reorder)
+        self.assertEqual(secs[".c"].address.value, 0x100)
+
     def test_errors(self) -> None:
         for src, message in [
             ("ENTRY(main)", "isn't supported"),
@@ -143,6 +156,7 @@ class TestScriptParser(unittest.TestCase):
             ("SECTIONS { . = 0x1000; }", "outside an output section"),
             ("SECTIONS { .text : { (.text) } }", "file it takes"),
             ("SECTIONS { .t : { *(.a) } .t : { *(.b) } }", "listed twice"),
+            ("SECTIONS { .t 0x100 (KEEP) : { *(.a) } }", "has type 'KEEP'"),
         ]:
             with self.subTest(src=src):
                 with self.assertRaisesRegex(ScriptError, message):
@@ -286,6 +300,121 @@ class TestScriptedLink(unittest.TestCase):
         rc, _, err = _link([_UNIT_B], "SECTIONS { .text : { *(.text) } > r }")
         self.assertEqual(rc, 1)
         self.assertIn("doesn't define", err)
+
+
+def _function(name: str, *body: str) -> list[str]:
+    """An item's lines as asm_emit writes a function."""
+    return [f"{name}:", "   SUBROUTINE", "", *(f"   {b}" for b in body)]
+
+
+class TestFallThrough(unittest.TestCase):
+    """`link_layout.fall_through` on items written out by hand."""
+
+    _G = _function("g", "RTS")
+    _DATA = ["d:", "   DC.B  $01"]
+
+    def _run(self, items, reorder=True) -> list[list[str]]:
+        from passes.link_layout import fall_through
+        return fall_through(items, reorder=reorder)
+
+    def test_moves_target_after_jump(self) -> None:
+        f = _function("f", "LDA   #$01", "JMP   g")
+        out = self._run([f, self._DATA, self._G])
+        self.assertEqual(out, [f[:-1], self._G, self._DATA])
+
+    def test_first_jumper_wins(self) -> None:
+        h = _function("h", "JMP   g")
+        f = _function("f", "LDA   #$01", "JMP   g")
+        out = self._run([h, f, self._G])
+        self.assertEqual(out, [h[:-1], self._G, f])
+
+    def test_chain(self) -> None:
+        # e falls into f, which falls into g, all at e's place.
+        g = _function("g", "RTS")
+        f = _function("f", "JMP   g")
+        e = _function("e", "JMP   f")
+        out = self._run([g, f, self._DATA, e])
+        self.assertEqual(out, [self._DATA, e[:-1], f[:-1], g])
+
+    def test_cycle_keeps_one_jump(self) -> None:
+        a = _function("a", "BEQ   .x", "RTS", ".x:", "JMP   b")
+        b = _function("b", "JMP   a")
+        out = self._run([a, b])
+        self.assertEqual(out, [a[:-1], b])
+        # The label in front of the dropped jump stays, at b's address.
+        self.assertEqual(out[0][-1], "   .x:")
+
+    def test_left_alone(self) -> None:
+        # A jump to an object, to a name outside the items, through a
+        # pointer, or to itself, and a jump that isn't last.
+        items = [
+            _function("p", "JMP   d"),
+            _function("q", "JMP   elsewhere"),
+            _function("r", "JMP   (vector)"),
+            _function("s", "JMP   s"),
+            _function("t", "JMP   g", "RTS"),
+            self._DATA, self._G,
+        ]
+        self.assertEqual(self._run(items), items)
+
+    def test_noreorder(self) -> None:
+        f = _function("f", "JMP   g")
+        apart = [f, self._DATA, self._G]
+        self.assertEqual(self._run(apart, reorder=False), apart)
+        self.assertEqual(self._run([f, self._G], reorder=False),
+                         [f[:-1], self._G])
+
+
+@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+class TestFallThroughLink(unittest.TestCase):
+    """A function of one unit that ends by calling one of another's
+    falls into it once linked."""
+
+    _MAIN = ("unsigned char step(unsigned char x);\n"
+             "unsigned char finish(unsigned char x);\n"
+             "unsigned char other(void);\n"
+             "int main(void) { return finish(1) + step(2) + other(); }\n"
+             "unsigned char step(unsigned char x) {\n"
+             "    return finish(x + 3);\n"
+             "}\n")
+    # `other` comes between `step` and `finish` in the script's order.
+    _FINISH = ("unsigned char other(void) { return 5; }\n"
+               "unsigned char finish(unsigned char x) {\n"
+               "    return x * 2 + 1;\n"
+               "}\n")
+    _SCRIPT = """
+MEMORY { ram (rwx) : ORIGIN = 0x0800, LENGTH = 0x5800 }
+SECTIONS
+{
+    .text%s : { *(.text .text.*) } > ram
+    .rodata : { *(.rodata .rodata.*) } > ram
+    .data : { *(.data .data.*) } > ram
+    .bss : { *(.bss .bss.*) } > ram
+}
+"""
+
+    def test_falls_into_other_unit(self) -> None:
+        rc, text, err = _link([self._MAIN, self._FINISH], self._SCRIPT % "")
+        self.assertEqual(rc, 0, err)
+        self.assertNotIn("JMP   finish", text)
+        step = text.index("\nstep:")
+        finish = text.index("\nfinish:")
+        self.assertLess(step, finish)
+        self.assertNotIn("RTS", text[step:finish])
+
+    def test_noreorder_keeps_jump(self) -> None:
+        rc, text, err = _link([self._MAIN, self._FINISH],
+                              self._SCRIPT % " (NOREORDER)")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("JMP   finish", text)
+
+    @unittest.skipUnless(_HAVE_DASM, "dasm not installed")
+    def test_runs(self) -> None:
+        from sim.linked import build_linked_sim
+        rc, text, err = _link([self._MAIN, self._FINISH], self._SCRIPT % "")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(build_linked_sim(text).run().return_int(),
+                         3 + 11 + 5)
 
 
 @unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")

@@ -120,7 +120,7 @@ interpreter state in every scenario.
 |---|---:|---:|
 | `print_string_literal` | 44 | 44 |
 | `invalidate_zcode_page2` | 5 | 5 |
-| `load_packed_address` | 18 | 18 |
+| `load_packed_address` | 18 | 15 |
 | `get_next_code_word` | 13 | 15 |
 | `get_next_code_byte2` | 127 | 135 |
 | `set_page_first` | 53 | 58 |
@@ -130,23 +130,23 @@ interpreter state in every scenario.
 | `get_alphabet` | 12 | 12 |
 | `get_next_zchar` | 76 | 78 |
 | `buffer_char` | 82 | 88 |
-| `dump_buffer_line` | 15 | 14 |
+| `dump_buffer_line` | 15 | 11 |
 | `dump_buffer_to_printer` | 78 | 88 |
 | `dump_buffer_to_screen` | 21 | 21 |
 | `dump_buffer_with_more` | 110 | 117 |
 | `cout_string` | 14 | 14 |
 | `do_rwts_on_sector` | 51 | 50 |
-| `read_from_sector` | 6 | 5 |
-| **Code** | **981** | **1051** |
+| `read_from_sector` | 6 | 2 |
+| **Code** | **981** | **1042** |
 
 Zork's `buffer_char` counts its `buffer_char_set_buffer_end` label,
 which `dump_buffer_with_more` jumps to. The data is the same: the IOB
 and DCT, the printer flag, `[MORE]`, and alphabet 2's 24 characters.
 
 **Speed.** Counting the cycles from the call to `print_string_literal`
-to its return (the stand-ins take none), the string takes 41,639
-cycles against Zork's 39,980, 4.1% more; with a transcript, 46,094
-against 43,687; and to the failed read, 2,392 against 2,283. When the
+to its return (the stand-ins take none), the string takes 41,602
+cycles against Zork's 39,980, 4.1% more; with a transcript, 46,057
+against 43,687; and to the failed read, 2,386 against 2,283. When the
 example was first linked, the string took 55,570 cycles, 39% more than
 Zork's, and the code was 1,122 bytes.
 

@@ -29,6 +29,10 @@ the program out from it. The subset:
 * In `SECTIONS`, output sections and symbol assignments. An output
   section is `name [address] [(NOLOAD)] : [AT(lma)] [ALIGN(n)]
   { ... } [> region] [AT> region]`, with an optional `;` after it.
+  `(NOREORDER)` in place of `(NOLOAD)` isn't GNU's. It keeps the
+  section's functions in the order the script gives them, where the
+  linker would otherwise move a function to follow one that ends by
+  jumping to it (passes/link_layout.py).
   Inside the braces: input section descriptions `*(pattern ...)` and
   `KEEP(*(pattern ...))` (every section is kept, since the linker
   doesn't discard anything), symbol assignments, `. = ALIGN(n);`, and
@@ -125,11 +129,19 @@ class Input:
     file: str = "*"
 
 
+# The types an output section may give in parentheses after its name.
+_SECTION_TYPES = ("NOLOAD", "NOREORDER")
+
+
 @dataclass
 class OutputSection:
+    """An output section. `reorder` is false for `(NOREORDER)`, which
+    keeps its functions in the script's order (see `link_layout`'s
+    fall-through chains)."""
     name: str
     address: object | None = None
     noload: bool = False
+    reorder: bool = True
     at: object | None = None
     align: object | None = None
     contents: list = field(default_factory=list)
@@ -284,13 +296,21 @@ class _Parser:
         sec = OutputSection(name=self.take())
         if self.peek() not in (":", "("):
             sec.address = self.expr()
-        elif self.peek() == "(" and self.peek(1) != "NOLOAD":
+        elif self.peek() == "(" and self.peek(1) not in _SECTION_TYPES:
             sec.address = self.expr()
         if self.peek() == "(":
             self.take()
-            self.take("NOLOAD")
+            kind = self.take()
+            if kind not in _SECTION_TYPES:
+                raise ScriptError(
+                    f"output section {sec.name!r} has type {kind!r}; the "
+                    f"types are {', '.join(_SECTION_TYPES)}"
+                )
             self.take(")")
-            sec.noload = True
+            if kind == "NOLOAD":
+                sec.noload = True
+            else:
+                sec.reorder = False
         self.take(":")
         while self.peek() in ("AT", "ALIGN"):
             word = self.take()

@@ -284,13 +284,6 @@ __literal_load	EQU	__literal_start
    ORG   $17DD
 __pages_start:
 
-invalidate_zcode_page2:
-   SUBROUTINE
-
-   LDA   #$00
-   STA   ZCODE_PAGE_VALID2
-   RTS
-
 load_packed_address:
    SUBROUTINE
 
@@ -303,7 +296,13 @@ load_packed_address:
    LDA   #$00
    ROL
    STA   Z_PC2+2
-   JMP   invalidate_zcode_page2
+
+invalidate_zcode_page2:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   RTS
 
 get_next_code_word:
    SUBROUTINE
@@ -775,7 +774,22 @@ dump_buffer_line:
    BEQ   .if_end@9
    JSR   dump_buffer_to_printer
 .if_end@9:
-   JMP   dump_buffer_to_screen
+
+dump_buffer_to_screen:
+   SUBROUTINE
+
+   LDX   #$00
+.loop@3_start:
+   CPX   BUFF_END
+   BEQ   .loop@3_break
+   LDA   BUFF_AREA,X
+   JSR   COUT1
+   INX
+   JMP   .loop@3_start
+.loop@3_break:
+   LDA   #$00
+   STA   BUFF_END
+   RTS
 
 dump_buffer_to_printer:
    SUBROUTINE
@@ -822,22 +836,6 @@ dump_buffer_to_printer:
    STA   CSW
    LDA   __local_dump_buffer_to_printer__1
    STA   CSW+1
-   RTS
-
-dump_buffer_to_screen:
-   SUBROUTINE
-
-   LDX   #$00
-.loop@3_start:
-   CPX   BUFF_END
-   BEQ   .loop@3_break
-   LDA   BUFF_AREA,X
-   JSR   COUT1
-   INX
-   JMP   .loop@3_start
-.loop@3_break:
-   LDA   #$00
-   STA   BUFF_END
    RTS
 
 dump_buffer_with_more:
@@ -948,6 +946,11 @@ dct:
    DC.B  $01
    DC.W  $D8EF
 
+read_from_sector:
+   SUBROUTINE
+
+   LDA   #$01
+
 do_rwts_on_sector:
    SUBROUTINE
 
@@ -976,12 +979,6 @@ do_rwts_on_sector:
    LDA   #>iob
    LDY   #<iob
    JMP   RWTS
-
-read_from_sector:
-   SUBROUTINE
-
-   LDA   #$01
-   JMP   do_rwts_on_sector
 __disk_end:
 __disk_load	EQU	__disk_start
    IF    __disk_end > $2200

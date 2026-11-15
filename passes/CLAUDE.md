@@ -248,11 +248,16 @@ this directory:
 - `link_script.py` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
   `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
-  `LOADADDR` / `SIZEOF`). An input description's file part
-  (`Input.file`) is `*` or a pattern for a unit's file name without
+  `LOADADDR` / `SIZEOF`), and `(NOREORDER)`, which isn't GNU's. An
+  input description's file part (`Input.file`) is `*` or a pattern
+  for a unit's file name without
   its directory (`zstring.asm(.text)`), which `link_layout` matches.
 - `link_layout.py` — `item_chunks` (splits a unit's body into its
-  items), `rename_locals`, `layout_lines` (each output section as a
+  items), `rename_locals`, `fall_through` (a function ending in `JMP
+  g` goes right before `g` in its output section and loses the `JMP`;
+  the first such function in script order wins, no cycles, nothing
+  crosses an assignment, and only adjacent pairs under `(NOREORDER)`),
+  `layout_lines` (each output section as a
   dasm `SEG` / `SEG.U` with `ORG`, `RORG` for a load address,
   `__name_start` / `_end` / `_load` symbols, and `IF` / `ERR`
   overflow checks; addresses are dasm expressions since sizes are

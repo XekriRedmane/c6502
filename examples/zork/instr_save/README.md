@@ -137,7 +137,7 @@ first save and the same 170 in the second, and leave the same state.
 | Routine | Zork | C |
 |---|---:|---:|
 | `do_rwts_on_sector` | 51 | 50 |
-| `write_next_sector` | 8 | 11 |
+| `write_next_sector` | 8 | 8 |
 | `inc_sector_and_write` | 38 | 42 |
 | `print_ascii_string` | 20 | 20 |
 | `cout_string` | 14 | 14 |
@@ -146,17 +146,18 @@ first save and the same 170 in the second, and leave the same state.
 | `please_reinsert_game_diskette` | 70 | 70 |
 | `instr_save` | 141 | 142 |
 | `copy_data_to_buff` | 12 | 12 |
-| **Code** | **627** | **626** |
+| **Code** | **627** | **623** |
 
 The data is the same apart from where it sits: 17 bytes of IOB, 4 of
-DCT, the five strings, and 48 bytes of prompts. In Zork,
-`write_next_sector` falls into `inc_sector_and_write`, and
-`inc_sector_and_write` into the code that writes; the sizes above
-count each one to the next routine.
+DCT, the five strings, and 48 bytes of prompts. In both,
+`write_next_sector` falls into `inc_sector_and_write`, which the
+linker places right after it, and in Zork `inc_sector_and_write`
+falls into the code that writes. The sizes above count each routine
+to the next one.
 
 **Speed.** Counting only the cycles spent in this code (the stand-ins
-take none), the first save takes 19,386 cycles against Zork's 19,561,
-and the second 12,982 against 13,012.
+take none), the first save takes 19,379 cycles against Zork's 19,561,
+and the second 12,974 against 13,012.
 
 **Where the difference comes from.** Looking at `instr_save.asm`:
 

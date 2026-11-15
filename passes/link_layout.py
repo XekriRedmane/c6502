@@ -11,7 +11,8 @@ script order, each one a dasm segment:
 __text_load:                    ; only with AT> or AT(...)
     RORG <run address>
 __text_start:
-    <the items whose section matches, unit by unit, in order>
+    <the items whose section matches, unit by unit, in order,
+     but for fall-through chains>
 __text_end:
     REND
 __text_load_end:
@@ -27,6 +28,14 @@ the dots turned into underscores (`.text.boot` gives
 refer to them. `. = expr` inside a section skips to `expr` with a
 `DS.B`, which works the same in a relocated and an uninitialized
 segment.
+
+Inside a section, a function that ends with a `JMP` to another of its
+functions goes right before that one, and the `JMP` is dropped
+(`fall_through`), as hand-written 6502 code falls from one routine
+into the next. A section marked `(NOREORDER)` keeps its order, and
+only a function already in front of its target loses the `JMP`.
+Nothing moves across an assignment in the section, since one marks
+an address.
 
 After each section, an `IF ... ERR` block makes dasm stop when the
 section runs past the end of its region, or its load bytes past the
@@ -145,6 +154,87 @@ def rename_locals(units: list[tuple], taken: set[str]) -> list[tuple]:
     return out
 
 
+# A function's last instruction when it's a jump to a label, as
+# asm_emit writes it.
+_TAIL_JUMP = re.compile(rf"^\s+JMP\s+([A-Za-z_][{_LABEL_CHARS}]*)\s*$")
+
+
+def _is_function(lines: list[str]) -> bool:
+    """True iff the item's lines are a function's. asm_emit starts
+    every function with its label and `SUBROUTINE`, and no object."""
+    return any(line.strip() == "SUBROUTINE" for line in lines[1:3])
+
+
+def _tail_jump(lines: list[str]) -> tuple[int, str] | None:
+    """The index of the function's last instruction and the label it
+    jumps to, when that instruction is a `JMP` to a label, else
+    None."""
+    for i in range(len(lines) - 1, 0, -1):
+        text = lines[i].strip()
+        if not text or text.startswith(";"):
+            continue
+        m = _TAIL_JUMP.match(lines[i])
+        return (i, m.group(1)) if m else None
+    return None
+
+
+def fall_through(
+    items: list[list[str]], reorder: bool = True,
+) -> list[list[str]]:
+    """Puts each function that ends by jumping to another function of
+    `items` (each item's lines, in the script's order) right before
+    it, and drops the jump, so the first runs into the second.
+
+    A function is the target of at most one such pair, the first of
+    the functions jumping to it in `items`, and a pair that would
+    close a cycle is left out. Each chain of pairs is laid down where
+    its first function is, and every other item keeps its place. With
+    `reorder` false, only a function already right before its target
+    loses its jump, and nothing moves.
+
+    Dropping the jump keeps any label in front of it, which then names
+    the target's first instruction, the address the jump went to."""
+    index = {
+        lines[0][:-1]: i for i, lines in enumerate(items)
+        if _is_function(lines)
+    }
+    jumps: dict[int, tuple[int, int]] = {}
+    for i, lines in enumerate(items):
+        tail = _tail_jump(lines) if _is_function(lines) else None
+        if tail is None:
+            continue
+        j = index.get(tail[1])
+        if j is None or j == i or (not reorder and j != i + 1):
+            continue
+        jumps[i] = (j, tail[0])
+    after: dict[int, int] = {}
+    before: dict[int, int] = {}
+    for i in sorted(jumps):
+        j = jumps[i][0]
+        if j in before:
+            continue
+        end = j
+        while end in after:
+            end = after[end]
+        if end == i:
+            continue
+        after[i] = j
+        before[j] = i
+    out: list[list[str]] = []
+    for i in range(len(items)):
+        if i in before:
+            continue
+        n: int | None = i
+        while n is not None:
+            lines = items[n]
+            if n in after:
+                cut = jumps[n][1]
+                lines = lines[:cut] + lines[cut + 1:]
+            out.append(lines)
+            n = after.get(n)
+    return out
+
+
 def _sym(section: str) -> str:
     """The part of a section's symbols named after it."""
     return re.sub(r"[^A-Za-z0-9_]", "_", section.lstrip("."))
@@ -256,8 +346,20 @@ def layout_lines(
             out.append(f"__{s}_load:")
             out.append(instr_line("RORG", vma))
         out.append(f"__{s}_start:")
+        # The items since the last assignment, which may be put in
+        # fall-through chains among themselves. An assignment marks an
+        # address, so nothing moves across one.
+        run: list[list[str]] = []
+
+        def flush_run() -> None:
+            for lines in fall_through(run, reorder=sec.reorder):
+                out.append("")
+                out.extend(lines)
+            run.clear()
+
         for c in sec.contents:
             if isinstance(c, Assign):
+                flush_run()
                 if c.symbol == ".":
                     target = _expr(c.expr, script, ".")
                     out.append(instr_line("DS.B", f"[{target} - .]"))
@@ -287,8 +389,8 @@ def layout_lines(
                             f"hold it"
                         )
                     placed.add((k, it.name))
-                    out.append("")
-                    out.extend(unit.chunks[it.name])
+                    run.append(unit.chunks[it.name])
+        flush_run()
         out.append(f"__{s}_end:")
         if relocated:
             out.append(instr_line("REND"))

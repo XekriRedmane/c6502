@@ -1152,6 +1152,22 @@ pop:
    LDX   __local_pop__2
    RTS
 
+var_get:
+   SUBROUTINE
+
+   ORA   #$00
+   BNE   .if_end@4
+   JSR   pop
+   STA   __local_var_get__0
+   STX   __local_var_get__var
+   STA   __zpabi_push__value_0
+   STX   __zpabi_push__value_1
+   JSR   push
+   LDX   __local_var_get__var
+   LDA   __local_var_get__0
+   RTS
+.if_end@4:
+
 get_nonstack_var:
    SUBROUTINE
 
@@ -1189,6 +1205,25 @@ get_nonstack_var:
    LDA   (__local_get_nonstack_var__1),Y
    LDX   __local_get_nonstack_var__0
    RTS
+
+var_put:
+   SUBROUTINE
+
+   STA   __local_var_put__var
+   ORA   #$00
+   BNE   .if_end@5
+   JSR   pop
+   LDA   __zpabi_var_put__value_0
+   STA   __zpabi_push__value_0
+   LDA   __zpabi_var_put__value_1
+   STA   __zpabi_push__value_1
+   JMP   push
+.if_end@5:
+   LDA   __zpabi_var_put__value_0
+   STA   __zpabi_set_nonstack_var__value_0
+   LDA   __zpabi_var_put__value_1
+   STA   __zpabi_set_nonstack_var__value_1
+   LDA   __local_var_put__var
 
 set_nonstack_var:
    SUBROUTINE
@@ -1233,66 +1268,6 @@ set_nonstack_var:
    LDA   __zpabi_set_nonstack_var__value_0
    INY
    STA   (DPTR),Y
-   RTS
-
-var_get:
-   SUBROUTINE
-
-   ORA   #$00
-   BNE   .if_end@4
-   JSR   pop
-   STA   __local_var_get__0
-   STX   __local_var_get__var
-   STA   __zpabi_push__value_0
-   STX   __zpabi_push__value_1
-   JSR   push
-   LDX   __local_var_get__var
-   LDA   __local_var_get__0
-   RTS
-.if_end@4:
-   JMP   get_nonstack_var
-
-var_put:
-   SUBROUTINE
-
-   STA   __local_var_put__var
-   ORA   #$00
-   BNE   .if_end@5
-   JSR   pop
-   LDA   __zpabi_var_put__value_0
-   STA   __zpabi_push__value_0
-   LDA   __zpabi_var_put__value_1
-   STA   __zpabi_push__value_1
-   JMP   push
-.if_end@5:
-   LDA   __zpabi_var_put__value_0
-   STA   __zpabi_set_nonstack_var__value_0
-   LDA   __zpabi_var_put__value_1
-   STA   __zpabi_set_nonstack_var__value_1
-   LDA   __local_var_put__var
-   JMP   set_nonstack_var
-
-store_result:
-   SUBROUTINE
-
-   JSR   get_next_code_byte
-   STA   __local_store_result__0
-   ORA   #$00
-   BNE   .if_else@7
-   LDA   __zpabi_store_result__value_0
-   STA   __zpabi_push__value_0
-   LDA   __zpabi_store_result__value_1
-   STA   __zpabi_push__value_1
-   JSR   push
-   JMP   .if_end@6
-.if_else@7:
-   LDA   __zpabi_store_result__value_0
-   STA   __zpabi_set_nonstack_var__value_0
-   LDA   __zpabi_store_result__value_1
-   STA   __zpabi_set_nonstack_var__value_1
-   LDA   __local_store_result__0
-   JSR   set_nonstack_var
-.if_end@6:
    RTS
 
 get_const_word:
@@ -1367,155 +1342,29 @@ return_value:
    STA   __zpabi_store_result__value_0
    LDA   __zpabi_return_value__value_1
    STA   __zpabi_store_result__value_1
-   JMP   store_result
 
-branch_to_offset:
+store_result:
    SUBROUTINE
 
-   LDA   __zpabi_branch_to_offset__offset_1
-   BMI   .lb_skip@0
-   JMP   .branch_to_offset@asm_ssa_split@0
-.lb_skip@0:
-   LDA   #$00
-   CLC
-   ADC   #$01
-   STA   __local_branch_to_offset__pages_1
-   LDA   __zpabi_branch_to_offset__offset_1
-   STA   __local_branch_to_offset__pages_0
-.if_end@10:
-   LDA   Z_PC
-   STA   __local_branch_to_offset__0
-   CLC
-   ADC   __zpabi_branch_to_offset__offset_0
-   STA   __local_branch_to_offset__2
-   CMP   __local_branch_to_offset__0
-   BCS   .if_end@11
-   INC   __local_branch_to_offset__pages_0
-   BNE   .inc_done@0
-   INC   __local_branch_to_offset__pages_1
-.inc_done@0:
-.if_end@11:
-   LDA   __local_branch_to_offset__pages_0
-   ORA   __local_branch_to_offset__pages_1
-   BNE   .if_end@12
-   LDA   Z_PC
-   STA   __local_branch_to_offset__pages_0
-   LDA   Z_PC+1
-   STA   __local_branch_to_offset__0
-   LDA   __local_branch_to_offset__pages_0
-   AND   #$00
-   ORA   __local_branch_to_offset__2
-   STA   Z_PC
-   LDA   __local_branch_to_offset__0
-   STA   Z_PC+1
-   RTS
-.if_end@12:
-   LDA   Z_PC+1
-   STA   __local_branch_to_offset__0
-   LDA   Z_PC+2
-   STA   __local_branch_to_offset__1
-   LDA   __local_branch_to_offset__0
-   CLC
-   ADC   __local_branch_to_offset__pages_0
-   STA   __local_branch_to_offset__pages_0
-   LDA   __local_branch_to_offset__1
-   ADC   __local_branch_to_offset__pages_1
-   STA   __local_branch_to_offset__0
-   LDA   __local_branch_to_offset__2
-   STA   Z_PC
-   LDA   __local_branch_to_offset__pages_0
-   STA   Z_PC+1
-   LDA   __local_branch_to_offset__0
-   AND   #$01
-   STA   Z_PC+2
-   LDA   #$00
-   STA   ZCODE_PAGE_VALID
-   RTS
-.branch_to_offset@asm_ssa_split@0:
-   STA   __local_branch_to_offset__pages_0
-   LDA   #$00
-   STA   __local_branch_to_offset__pages_1
-   JMP   .if_end@10
-
-branch:
-   SUBROUTINE
-
-   STA   __local_branch__condition
    JSR   get_next_code_byte
-   STA   __local_branch__0
-   AND   #$80
-   STA   __local_branch__offset_0
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   __local_branch__offset_0
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   #$00
-   JMP   .cmp_end@1
-.cmp_true@0:
-   LDA   #$01
-.cmp_end@1:
-   CMP   __local_branch__condition
-   BEQ   .if_end@13
-   LDA   __local_branch__0
-   AND   #$40
-   BNE   .if_end@14
-   JSR   get_next_code_byte
-.if_end@14:
+   STA   __local_store_result__0
+   ORA   #$00
+   BNE   .if_else@7
+   LDA   __zpabi_store_result__value_0
+   STA   __zpabi_push__value_0
+   LDA   __zpabi_store_result__value_1
+   STA   __zpabi_push__value_1
+   JSR   push
+   JMP   .if_end@6
+.if_else@7:
+   LDA   __zpabi_store_result__value_0
+   STA   __zpabi_set_nonstack_var__value_0
+   LDA   __zpabi_store_result__value_1
+   STA   __zpabi_set_nonstack_var__value_1
+   LDA   __local_store_result__0
+   JSR   set_nonstack_var
+.if_end@6:
    RTS
-.if_end@13:
-   LDA   __local_branch__0
-   AND   #$40
-   BEQ   .if_else@16
-   LDA   __local_branch__0
-   AND   #$3F
-   STA   __local_branch__offset_0
-   LDA   #$00
-   STA   __local_branch__offset_1
-   JMP   .if_end@15
-.if_else@16:
-   LDA   __local_branch__0
-   AND   #$3F
-   STA   __local_branch__offset_1
-   JSR   get_next_code_byte
-   STA   __local_branch__offset_0
-   LDA   __local_branch__offset_1
-   AND   #$20
-   BEQ   .if_end@17
-   LDA   __local_branch__offset_1
-   ORA   #$C0
-   STA   __local_branch__offset_1
-.if_end@17:
-.if_end@15:
-   LDA   __local_branch__offset_0
-   ORA   __local_branch__offset_1
-   BNE   .if_end@18
-   LDA   #$00
-   STA   __zpabi_return_value__value_0
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
-.if_end@18:
-   LDA   __local_branch__offset_1
-   CMP   #$00
-   BNE   .if_end@19
-   LDA   __local_branch__offset_0
-   CMP   #$01
-   BNE   .if_end@19
-   LDA   #$01
-   STA   __zpabi_return_value__value_0
-   LDA   #$00
-   STA   __zpabi_return_value__value_1
-   JMP   return_value
-.if_end@19:
-   LDA   __local_branch__offset_0
-   SEC
-   SBC   #$02
-   STA   __zpabi_branch_to_offset__offset_0
-   LDA   __local_branch__offset_1
-   SBC   #$00
-   STA   __zpabi_branch_to_offset__offset_1
-   JMP   branch_to_offset
 
 instr_call:
    SUBROUTINE
@@ -2832,6 +2681,541 @@ get_next_code_byte2:
    STA   ZCODE_PAGE_VALID2
    JMP   .loop@2_start
 
+A_mod_3:
+   SUBROUTINE
+
+.loop@1_continue:
+   CMP   #$03
+   BCC   .loop@1_break
+   SBC   #$03
+   JMP   .loop@1_continue
+.loop@1_break:
+   RTS
+
+get_alphabet:
+   SUBROUTINE
+
+   LDA   SHIFT_ALPHABET
+   BPL   .if_end@17
+   LDA   LOCKED_ALPHABET
+   RTS
+.if_end@17:
+   LDY   #$FF
+   STY   SHIFT_ALPHABET
+   RTS
+
+get_next_zchar:
+   SUBROUTINE
+
+   LDA   ZDECOMPRESS_STATE
+   BPL   .if_end@18
+   SEC
+   RTS
+.if_end@18:
+   BNE   .if_else@20
+   LDA   #$01
+   STA   ZDECOMPRESS_STATE
+   JSR   get_next_code_word
+   STA   ZCHARS
+   STX   ZCHARS+1
+   TXA
+   LSR
+   LSR
+   AND   #$1F
+   JMP   .if_end@19
+.if_else@20:
+   CMP   #$01
+   BNE   .if_else@22
+   LDA   #$02
+   STA   ZDECOMPRESS_STATE
+   LDA   ZCHARS
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_get_next_zchar__compound_literal_1
+   LDA   ZCHARS+1
+   ASL
+   ASL
+   ASL
+   ORA   __local_get_next_zchar__compound_literal_1
+   AND   #$1F
+   JMP   .if_end@21
+.if_else@22:
+   LDA   ZCHARS+1
+   BPL   .cond_else@23
+   LDA   #$FF
+   JMP   .cond_end@24
+.cond_else@23:
+   LDA   #$00
+.cond_end@24:
+   STA   ZDECOMPRESS_STATE
+   LDA   ZCHARS
+   AND   #$1F
+.if_end@21:
+.if_end@19:
+   CLC
+   RTS
+
+print_string_literal:
+   SUBROUTINE
+
+   LDA   Z_PC
+   STA   Z_PC2
+   LDA   Z_PC+1
+   STA   Z_PC2+1
+   LDA   Z_PC+2
+   STA   Z_PC2+2
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
+   JSR   print_zstring
+   LDA   Z_PC2
+   STA   Z_PC
+   LDA   Z_PC2+1
+   STA   Z_PC+1
+   LDA   Z_PC2+2
+   STA   Z_PC+2
+   LDA   ZCODE_PAGE_VALID2
+   STA   ZCODE_PAGE_VALID
+   LDA   ZCODE_PAGE_ADDR2
+   STA   ZCODE_PAGE_ADDR
+   LDA   ZCODE_PAGE_ADDR2+1
+   STA   ZCODE_PAGE_ADDR+1
+   RTS
+
+dump_buffer_line:
+   SUBROUTINE
+
+   LDY   #$11
+   LDA   (Z_HEADER_ADDR),Y
+   AND   #$01
+   BEQ   .if_end@9
+   JSR   dump_buffer_to_printer
+.if_end@9:
+
+dump_buffer_to_screen:
+   SUBROUTINE
+
+   LDX   #$00
+.loop@3_start:
+   CPX   BUFF_END
+   BEQ   .loop@3_break
+   LDA   BUFF_AREA,X
+   JSR   COUT1
+   INX
+   JMP   .loop@3_start
+.loop@3_break:
+   LDA   #$00
+   STA   BUFF_END
+   RTS
+
+dump_buffer_to_printer:
+   SUBROUTINE
+
+   LDA   CSW
+   STA   __local_dump_buffer_to_printer__2
+   LDA   CSW+1
+   STA   __local_dump_buffer_to_printer__1
+   LDA   PRINTER_CSW
+   STA   CSW
+   LDA   PRINTER_CSW+1
+   STA   CSW+1
+   LDA   printer_card_initialized_flag
+   BNE   .if_end@10
+   LDA   #$01
+   STA   printer_card_initialized_flag
+   LDA   #$09
+   JSR   COUT
+   LDA   #$91
+   STA   SLOT1_SCRATCH
+   LDA   #$B8
+   JSR   COUT
+   LDA   #$B0
+   JSR   COUT
+   LDA   #$CE
+   JSR   COUT
+.if_end@10:
+   LDX   #$00
+.loop@2_start:
+   CPX   BUFF_END
+   BEQ   .loop@2_break
+   LDA   BUFF_AREA,X
+   STX   __local_dump_buffer_to_printer__x
+   JSR   COUT
+   LDX   __local_dump_buffer_to_printer__x
+   INX
+   JMP   .loop@2_start
+.loop@2_break:
+   LDA   CSW
+   STA   PRINTER_CSW
+   LDA   CSW+1
+   STA   PRINTER_CSW+1
+   LDA   __local_dump_buffer_to_printer__2
+   STA   CSW
+   LDA   __local_dump_buffer_to_printer__1
+   STA   CSW+1
+   RTS
+
+dump_buffer_with_more:
+   SUBROUTINE
+
+   INC   CURR_LINE
+   LDA   CURR_LINE
+   CMP   WNDBTM
+   BCC   .if_end@11
+   LDA   #$3F
+   STA   INVFLG
+   LDA   #<string_more
+   STA   __zpabi_cout_string__s_0
+   LDA   #>string_more
+   STA   __zpabi_cout_string__s_1
+   LDX   #$06
+   JSR   cout_string
+   LDA   #$FF
+   STA   INVFLG
+   JSR   RDKEY
+   LDA   CH
+   SEC
+   SBC   #$06
+   STA   CH
+   JSR   CLREOL
+   LDA   WNDTOP
+   CLC
+   ADC   #$01
+   STA   CURR_LINE
+.if_end@11:
+   LDA   BUFF_END
+   STA   __local_dump_buffer_with_more__end
+   JSR   dump_buffer_line
+   LDA   __local_dump_buffer_with_more__end
+   CMP   WNDWDTH
+   BEQ   .if_end@12
+   LDA   #$8D
+   JSR   COUT1
+.if_end@12:
+   LDY   #$11
+   LDA   (Z_HEADER_ADDR),Y
+   AND   #$01
+   BEQ   .if_end@13
+   LDA   CSW
+   STA   __local_dump_buffer_with_more__end
+   LDA   CSW+1
+   STA   __local_dump_buffer_with_more__0
+   LDA   PRINTER_CSW
+   STA   CSW
+   LDA   PRINTER_CSW+1
+   STA   CSW+1
+   LDA   #$8D
+   JSR   COUT
+   LDA   CSW
+   STA   PRINTER_CSW
+   LDA   CSW+1
+   STA   PRINTER_CSW+1
+   LDA   __local_dump_buffer_with_more__end
+   STA   CSW
+   LDA   __local_dump_buffer_with_more__0
+   STA   CSW+1
+.if_end@13:
+   LDA   #$00
+   STA   BUFF_END
+   RTS
+
+new_line:
+   SUBROUTINE
+
+   LDA   #$0D
+   JSR   buffer_char
+   LDA   #$0A
+
+buffer_char:
+   SUBROUTINE
+
+   LDX   BUFF_END
+   CMP   #$0D
+   BNE   .if_end@0
+   JMP   dump_buffer_with_more
+.if_end@0:
+   CMP   #$20
+   BCS   .if_end@1
+   RTS
+.if_end@1:
+   CMP   #$60
+   BCC   .if_end@4
+   CMP   #$80
+   BCS   .if_end@4
+   SEC
+   SBC   #$20
+.if_end@4:
+   ORA   #$80
+   STA   BUFF_AREA,X
+   CPX   WNDWDTH
+   BCS   .if_end@5
+   INX
+   STX   BUFF_END
+   RTS
+.if_end@5:
+.loop@0_start:
+   LDA   BUFF_AREA,X
+   CMP   #$A0
+   BEQ   .loop@0_break
+   DEX
+   BNE   .loop@0_start
+   LDX   WNDWDTH
+.loop@0_break:
+   STX   BUFF_LINE_LEN
+   STX   BUFF_END
+   JSR   dump_buffer_with_more
+.loop@1_start:
+   LDA   BUFF_LINE_LEN
+   CLC
+   ADC   #$01
+   STA   __local_buffer_char__0
+   STA   BUFF_LINE_LEN
+   LDA   WNDWDTH
+   CMP   __local_buffer_char__0
+   BCS   .if_end@8
+   RTS
+.if_end@8:
+   LDX   __local_buffer_char__0
+   LDA   BUFF_AREA,X
+   LDX   BUFF_END
+   INC   BUFF_END
+   STA   BUFF_AREA,X
+   JMP   .loop@1_start
+
+cout_string:
+   SUBROUTINE
+
+   LDY   #$00
+.loop@4_start:
+   LDA   (__zpabi_cout_string__s_0),Y
+   ORA   #$80
+   JSR   COUT1
+   INY
+   DEX
+   BNE   .loop@4_start
+   RTS
+
+print_ascii_string:
+   SUBROUTINE
+
+   STX   __local_print_ascii_string__count
+   LDA   #$00
+   STA   __local_print_ascii_string__i
+.loop@5_start:
+   LDY   __local_print_ascii_string__i
+   LDA   (__zpabi_print_ascii_string__s_0),Y
+   JSR   buffer_char
+   INC   __local_print_ascii_string__i
+   DEC   __local_print_ascii_string__count
+   BNE   .loop@5_start
+   RTS
+
+reset_window:
+   SUBROUTINE
+
+   LDA   #$01
+   STA   WNDTOP
+   LDA   #$00
+   STA   WNDLFT
+   LDA   #$28
+   STA   WNDWDTH
+   LDA   #$18
+   STA   WNDBTM
+   LDA   #$3E
+   STA   PROMPT
+   LDA   #$FF
+   STA   INVFLG
+
+home:
+   SUBROUTINE
+
+   JSR   HOME
+   LDA   WNDTOP
+   STA   CURR_LINE
+   RTS
+
+get_object_addr:
+   SUBROUTINE
+
+   STA   __local_get_object_addr__obj
+   LDY   #$0A
+   LDA   (Z_HEADER_ADDR),Y
+   STA   __local_get_object_addr__0
+   INY
+   LDA   (Z_HEADER_ADDR),Y
+   CLC
+   ADC   Z_HEADER_ADDR
+   STA   __local_get_object_addr__3
+   LDA   Z_HEADER_ADDR+1
+   ADC   __local_get_object_addr__0
+   STA   __local_get_object_addr__2
+   LDA   __local_get_object_addr__obj
+   LSR
+   LSR
+   LSR
+   LSR
+   LSR
+   STA   __local_get_object_addr__1
+   LDA   __local_get_object_addr__obj
+   ASL
+   ASL
+   ASL
+   CLC
+   ADC   __local_get_object_addr__3
+   STA   __local_get_object_addr__0
+   LDA   __local_get_object_addr__2
+   ADC   __local_get_object_addr__1
+   STA   __local_get_object_addr__1
+   LDA   __local_get_object_addr__0
+   CLC
+   ADC   __local_get_object_addr__obj
+   BCC   .carry_inc@0
+   INC   __local_get_object_addr__1
+   CLC
+.carry_inc@0:
+   ADC   #$35
+   STA   HARGS
+   LDA   __local_get_object_addr__1
+   ADC   #$00
+   STA   HARGS+1
+   RTS
+
+instr_remove_obj:
+   SUBROUTINE
+
+
+remove_obj:
+   SUBROUTINE
+
+   LDA   OPERANDS
+   STA   __local_remove_obj__6
+   JSR   get_object_addr
+   LDA   HARGS
+   STA   __local_remove_obj__4
+   LDA   HARGS+1
+   STA   __local_remove_obj__5
+   LDA   HARGS
+   CLC
+   ADC   #$04
+   STA   __local_remove_obj__2
+   LDA   HARGS+1
+   ADC   #$00
+   STA   __local_remove_obj__3
+   LDY   #$00
+   LDA   (__local_remove_obj__2),Y
+   BNE   .if_end@0
+   RTS
+.if_end@0:
+   JSR   get_object_addr
+   LDA   HARGS+1
+   STA   __local_remove_obj__1
+   LDA   HARGS
+   CLC
+   ADC   #$06
+   STA   __local_remove_obj__0
+   BCC   .carry_inc@1
+   INC   __local_remove_obj__1
+.carry_inc@1:
+   LDY   #$00
+   LDA   (__local_remove_obj__0),Y
+   CMP   __local_remove_obj__6
+   BNE   .if_else@2
+   LDY   #$05
+   LDA   (__local_remove_obj__4),Y
+   LDY   #$00
+   STA   (__local_remove_obj__0),Y
+   JMP   .if_end@1
+.if_else@2:
+.loop@0_start:
+   JSR   get_object_addr
+   LDA   HARGS+1
+   STA   __local_remove_obj__1
+   LDA   HARGS
+   CLC
+   ADC   #$05
+   STA   __local_remove_obj__0
+   BCC   .carry_inc@2
+   INC   __local_remove_obj__1
+.carry_inc@2:
+   LDY   #$00
+   LDA   (__local_remove_obj__0),Y
+   CMP   __local_remove_obj__6
+   BNE   .loop@0_start
+   LDY   #$05
+   LDA   (__local_remove_obj__4),Y
+   LDY   #$00
+   STA   (__local_remove_obj__0),Y
+.if_end@1:
+   LDA   #$00
+   LDY   #$00
+   STA   (__local_remove_obj__2),Y
+   LDY   #$05
+   STA   (__local_remove_obj__4),Y
+   RTS
+
+instr_insert_obj:
+   SUBROUTINE
+
+   JSR   remove_obj
+   LDA   OPERANDS
+   STA   __local_instr_insert_obj__5
+   LDA   OPERANDS+2
+   STA   __local_instr_insert_obj__0
+   LDA   OPERANDS
+   JSR   get_object_addr
+   LDA   HARGS
+   STA   __local_instr_insert_obj__3
+   LDA   HARGS+1
+   STA   __local_instr_insert_obj__4
+   LDA   __local_instr_insert_obj__0
+   LDY   #$04
+   STA   (__local_instr_insert_obj__3),Y
+   LDA   __local_instr_insert_obj__0
+   JSR   get_object_addr
+   LDA   HARGS+1
+   STA   __local_instr_insert_obj__2
+   LDA   HARGS
+   CLC
+   ADC   #$06
+   STA   __local_instr_insert_obj__1
+   BCC   .carry_inc@3
+   INC   __local_instr_insert_obj__2
+.carry_inc@3:
+   LDY   #$00
+   LDA   (__local_instr_insert_obj__1),Y
+   STA   __local_instr_insert_obj__0
+   LDA   __local_instr_insert_obj__5
+   STA   (__local_instr_insert_obj__1),Y
+   LDA   __local_instr_insert_obj__0
+   BEQ   .if_end@3
+   LDY   #$05
+   STA   (__local_instr_insert_obj__3),Y
+.if_end@3:
+   RTS
+
+print_obj:
+   SUBROUTINE
+
+   JSR   get_object_addr
+   LDA   HARGS
+   STA   __local_print_obj__0
+   LDA   HARGS+1
+   STA   __local_print_obj__1
+   LDY   #$07
+   LDA   (__local_print_obj__0),Y
+   STA   __local_print_obj__obj
+   INY
+   LDA   (__local_print_obj__0),Y
+   CLC
+   ADC   #$01
+   STA   __zpabi_load_address__addr_0
+   LDA   __local_print_obj__obj
+   ADC   #$00
+   STA   __zpabi_load_address__addr_1
+   JSR   load_address
+
 print_zstring:
    SUBROUTINE
 
@@ -2975,545 +3359,17 @@ print_zstring:
    JSR   buffer_char
    JMP   .loop@0_start
 
-A_mod_3:
-   SUBROUTINE
-
-.loop@1_continue:
-   CMP   #$03
-   BCC   .loop@1_break
-   SBC   #$03
-   JMP   .loop@1_continue
-.loop@1_break:
-   RTS
-
-get_alphabet:
-   SUBROUTINE
-
-   LDA   SHIFT_ALPHABET
-   BPL   .if_end@17
-   LDA   LOCKED_ALPHABET
-   RTS
-.if_end@17:
-   LDY   #$FF
-   STY   SHIFT_ALPHABET
-   RTS
-
-get_next_zchar:
-   SUBROUTINE
-
-   LDA   ZDECOMPRESS_STATE
-   BPL   .if_end@18
-   SEC
-   RTS
-.if_end@18:
-   BNE   .if_else@20
-   LDA   #$01
-   STA   ZDECOMPRESS_STATE
-   JSR   get_next_code_word
-   STA   ZCHARS
-   STX   ZCHARS+1
-   TXA
-   LSR
-   LSR
-   AND   #$1F
-   JMP   .if_end@19
-.if_else@20:
-   CMP   #$01
-   BNE   .if_else@22
-   LDA   #$02
-   STA   ZDECOMPRESS_STATE
-   LDA   ZCHARS
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
-   STA   __local_get_next_zchar__compound_literal_1
-   LDA   ZCHARS+1
-   ASL
-   ASL
-   ASL
-   ORA   __local_get_next_zchar__compound_literal_1
-   AND   #$1F
-   JMP   .if_end@21
-.if_else@22:
-   LDA   ZCHARS+1
-   BPL   .cond_else@23
-   LDA   #$FF
-   JMP   .cond_end@24
-.cond_else@23:
-   LDA   #$00
-.cond_end@24:
-   STA   ZDECOMPRESS_STATE
-   LDA   ZCHARS
-   AND   #$1F
-.if_end@21:
-.if_end@19:
-   CLC
-   RTS
-
-print_string_literal:
-   SUBROUTINE
-
-   LDA   Z_PC
-   STA   Z_PC2
-   LDA   Z_PC+1
-   STA   Z_PC2+1
-   LDA   Z_PC+2
-   STA   Z_PC2+2
-   LDA   #$00
-   STA   ZCODE_PAGE_VALID2
-   JSR   print_zstring
-   LDA   Z_PC2
-   STA   Z_PC
-   LDA   Z_PC2+1
-   STA   Z_PC+1
-   LDA   Z_PC2+2
-   STA   Z_PC+2
-   LDA   ZCODE_PAGE_VALID2
-   STA   ZCODE_PAGE_VALID
-   LDA   ZCODE_PAGE_ADDR2
-   STA   ZCODE_PAGE_ADDR
-   LDA   ZCODE_PAGE_ADDR2+1
-   STA   ZCODE_PAGE_ADDR+1
-   RTS
-
-buffer_char:
-   SUBROUTINE
-
-   LDX   BUFF_END
-   CMP   #$0D
-   BNE   .if_end@0
-   JMP   dump_buffer_with_more
-.if_end@0:
-   CMP   #$20
-   BCS   .if_end@1
-   RTS
-.if_end@1:
-   CMP   #$60
-   BCC   .if_end@4
-   CMP   #$80
-   BCS   .if_end@4
-   SEC
-   SBC   #$20
-.if_end@4:
-   ORA   #$80
-   STA   BUFF_AREA,X
-   CPX   WNDWDTH
-   BCS   .if_end@5
-   INX
-   STX   BUFF_END
-   RTS
-.if_end@5:
-.loop@0_start:
-   LDA   BUFF_AREA,X
-   CMP   #$A0
-   BEQ   .loop@0_break
-   DEX
-   BNE   .loop@0_start
-   LDX   WNDWDTH
-.loop@0_break:
-   STX   BUFF_LINE_LEN
-   STX   BUFF_END
-   JSR   dump_buffer_with_more
-.loop@1_start:
-   LDA   BUFF_LINE_LEN
-   CLC
-   ADC   #$01
-   STA   __local_buffer_char__0
-   STA   BUFF_LINE_LEN
-   LDA   WNDWDTH
-   CMP   __local_buffer_char__0
-   BCS   .if_end@8
-   RTS
-.if_end@8:
-   LDX   __local_buffer_char__0
-   LDA   BUFF_AREA,X
-   LDX   BUFF_END
-   INC   BUFF_END
-   STA   BUFF_AREA,X
-   JMP   .loop@1_start
-
-dump_buffer_line:
-   SUBROUTINE
-
-   LDY   #$11
-   LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@9
-   JSR   dump_buffer_to_printer
-.if_end@9:
-   JMP   dump_buffer_to_screen
-
-dump_buffer_to_printer:
-   SUBROUTINE
-
-   LDA   CSW
-   STA   __local_dump_buffer_to_printer__2
-   LDA   CSW+1
-   STA   __local_dump_buffer_to_printer__1
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
-   LDA   printer_card_initialized_flag
-   BNE   .if_end@10
-   LDA   #$01
-   STA   printer_card_initialized_flag
-   LDA   #$09
-   JSR   COUT
-   LDA   #$91
-   STA   SLOT1_SCRATCH
-   LDA   #$B8
-   JSR   COUT
-   LDA   #$B0
-   JSR   COUT
-   LDA   #$CE
-   JSR   COUT
-.if_end@10:
-   LDX   #$00
-.loop@2_start:
-   CPX   BUFF_END
-   BEQ   .loop@2_break
-   LDA   BUFF_AREA,X
-   STX   __local_dump_buffer_to_printer__x
-   JSR   COUT
-   LDX   __local_dump_buffer_to_printer__x
-   INX
-   JMP   .loop@2_start
-.loop@2_break:
-   LDA   CSW
-   STA   PRINTER_CSW
-   LDA   CSW+1
-   STA   PRINTER_CSW+1
-   LDA   __local_dump_buffer_to_printer__2
-   STA   CSW
-   LDA   __local_dump_buffer_to_printer__1
-   STA   CSW+1
-   RTS
-
-dump_buffer_to_screen:
-   SUBROUTINE
-
-   LDX   #$00
-.loop@3_start:
-   CPX   BUFF_END
-   BEQ   .loop@3_break
-   LDA   BUFF_AREA,X
-   JSR   COUT1
-   INX
-   JMP   .loop@3_start
-.loop@3_break:
-   LDA   #$00
-   STA   BUFF_END
-   RTS
-
-dump_buffer_with_more:
-   SUBROUTINE
-
-   INC   CURR_LINE
-   LDA   CURR_LINE
-   CMP   WNDBTM
-   BCC   .if_end@11
-   LDA   #$3F
-   STA   INVFLG
-   LDA   #<string_more
-   STA   __zpabi_cout_string__s_0
-   LDA   #>string_more
-   STA   __zpabi_cout_string__s_1
-   LDX   #$06
-   JSR   cout_string
-   LDA   #$FF
-   STA   INVFLG
-   JSR   RDKEY
-   LDA   CH
-   SEC
-   SBC   #$06
-   STA   CH
-   JSR   CLREOL
-   LDA   WNDTOP
-   CLC
-   ADC   #$01
-   STA   CURR_LINE
-.if_end@11:
-   LDA   BUFF_END
-   STA   __local_dump_buffer_with_more__end
-   JSR   dump_buffer_line
-   LDA   __local_dump_buffer_with_more__end
-   CMP   WNDWDTH
-   BEQ   .if_end@12
-   LDA   #$8D
-   JSR   COUT1
-.if_end@12:
-   LDY   #$11
-   LDA   (Z_HEADER_ADDR),Y
-   AND   #$01
-   BEQ   .if_end@13
-   LDA   CSW
-   STA   __local_dump_buffer_with_more__end
-   LDA   CSW+1
-   STA   __local_dump_buffer_with_more__0
-   LDA   PRINTER_CSW
-   STA   CSW
-   LDA   PRINTER_CSW+1
-   STA   CSW+1
-   LDA   #$8D
-   JSR   COUT
-   LDA   CSW
-   STA   PRINTER_CSW
-   LDA   CSW+1
-   STA   PRINTER_CSW+1
-   LDA   __local_dump_buffer_with_more__end
-   STA   CSW
-   LDA   __local_dump_buffer_with_more__0
-   STA   CSW+1
-.if_end@13:
-   LDA   #$00
-   STA   BUFF_END
-   RTS
-
-new_line:
-   SUBROUTINE
-
-   LDA   #$0D
-   JSR   buffer_char
-   LDA   #$0A
-   JMP   buffer_char
-
-cout_string:
-   SUBROUTINE
-
-   LDY   #$00
-.loop@4_start:
-   LDA   (__zpabi_cout_string__s_0),Y
-   ORA   #$80
-   JSR   COUT1
-   INY
-   DEX
-   BNE   .loop@4_start
-   RTS
-
-print_ascii_string:
-   SUBROUTINE
-
-   STX   __local_print_ascii_string__count
-   LDA   #$00
-   STA   __local_print_ascii_string__i
-.loop@5_start:
-   LDY   __local_print_ascii_string__i
-   LDA   (__zpabi_print_ascii_string__s_0),Y
-   JSR   buffer_char
-   INC   __local_print_ascii_string__i
-   DEC   __local_print_ascii_string__count
-   BNE   .loop@5_start
-   RTS
-
-home:
-   SUBROUTINE
-
-   JSR   HOME
-   LDA   WNDTOP
-   STA   CURR_LINE
-   RTS
-
-reset_window:
-   SUBROUTINE
-
-   LDA   #$01
-   STA   WNDTOP
-   LDA   #$00
-   STA   WNDLFT
-   LDA   #$28
-   STA   WNDWDTH
-   LDA   #$18
-   STA   WNDBTM
-   LDA   #$3E
-   STA   PROMPT
-   LDA   #$FF
-   STA   INVFLG
-   JMP   home
-
-get_object_addr:
-   SUBROUTINE
-
-   STA   __local_get_object_addr__obj
-   LDY   #$0A
-   LDA   (Z_HEADER_ADDR),Y
-   STA   __local_get_object_addr__0
-   INY
-   LDA   (Z_HEADER_ADDR),Y
-   CLC
-   ADC   Z_HEADER_ADDR
-   STA   __local_get_object_addr__3
-   LDA   Z_HEADER_ADDR+1
-   ADC   __local_get_object_addr__0
-   STA   __local_get_object_addr__2
-   LDA   __local_get_object_addr__obj
-   LSR
-   LSR
-   LSR
-   LSR
-   LSR
-   STA   __local_get_object_addr__1
-   LDA   __local_get_object_addr__obj
-   ASL
-   ASL
-   ASL
-   CLC
-   ADC   __local_get_object_addr__3
-   STA   __local_get_object_addr__0
-   LDA   __local_get_object_addr__2
-   ADC   __local_get_object_addr__1
-   STA   __local_get_object_addr__1
-   LDA   __local_get_object_addr__0
-   CLC
-   ADC   __local_get_object_addr__obj
-   BCC   .carry_inc@0
-   INC   __local_get_object_addr__1
-   CLC
-.carry_inc@0:
-   ADC   #$35
-   STA   HARGS
-   LDA   __local_get_object_addr__1
-   ADC   #$00
-   STA   HARGS+1
-   RTS
-
-remove_obj:
+instr_get_sibling:
    SUBROUTINE
 
    LDA   OPERANDS
-   STA   __local_remove_obj__6
    JSR   get_object_addr
    LDA   HARGS
-   STA   __local_remove_obj__4
+   STA   __local_instr_get_sibling__0
    LDA   HARGS+1
-   STA   __local_remove_obj__5
-   LDA   HARGS
-   CLC
-   ADC   #$04
-   STA   __local_remove_obj__2
-   LDA   HARGS+1
-   ADC   #$00
-   STA   __local_remove_obj__3
-   LDY   #$00
-   LDA   (__local_remove_obj__2),Y
-   BNE   .if_end@0
-   RTS
-.if_end@0:
-   JSR   get_object_addr
-   LDA   HARGS+1
-   STA   __local_remove_obj__1
-   LDA   HARGS
-   CLC
-   ADC   #$06
-   STA   __local_remove_obj__0
-   BCC   .carry_inc@1
-   INC   __local_remove_obj__1
-.carry_inc@1:
-   LDY   #$00
-   LDA   (__local_remove_obj__0),Y
-   CMP   __local_remove_obj__6
-   BNE   .if_else@2
+   STA   __local_instr_get_sibling__1
    LDY   #$05
-   LDA   (__local_remove_obj__4),Y
-   LDY   #$00
-   STA   (__local_remove_obj__0),Y
-   JMP   .if_end@1
-.if_else@2:
-.loop@0_start:
-   JSR   get_object_addr
-   LDA   HARGS+1
-   STA   __local_remove_obj__1
-   LDA   HARGS
-   CLC
-   ADC   #$05
-   STA   __local_remove_obj__0
-   BCC   .carry_inc@2
-   INC   __local_remove_obj__1
-.carry_inc@2:
-   LDY   #$00
-   LDA   (__local_remove_obj__0),Y
-   CMP   __local_remove_obj__6
-   BNE   .loop@0_start
-   LDY   #$05
-   LDA   (__local_remove_obj__4),Y
-   LDY   #$00
-   STA   (__local_remove_obj__0),Y
-.if_end@1:
-   LDA   #$00
-   LDY   #$00
-   STA   (__local_remove_obj__2),Y
-   LDY   #$05
-   STA   (__local_remove_obj__4),Y
-   RTS
-
-instr_remove_obj:
-   SUBROUTINE
-
-   JMP   remove_obj
-
-instr_insert_obj:
-   SUBROUTINE
-
-   JSR   remove_obj
-   LDA   OPERANDS
-   STA   __local_instr_insert_obj__5
-   LDA   OPERANDS+2
-   STA   __local_instr_insert_obj__0
-   LDA   OPERANDS
-   JSR   get_object_addr
-   LDA   HARGS
-   STA   __local_instr_insert_obj__3
-   LDA   HARGS+1
-   STA   __local_instr_insert_obj__4
-   LDA   __local_instr_insert_obj__0
-   LDY   #$04
-   STA   (__local_instr_insert_obj__3),Y
-   LDA   __local_instr_insert_obj__0
-   JSR   get_object_addr
-   LDA   HARGS+1
-   STA   __local_instr_insert_obj__2
-   LDA   HARGS
-   CLC
-   ADC   #$06
-   STA   __local_instr_insert_obj__1
-   BCC   .carry_inc@3
-   INC   __local_instr_insert_obj__2
-.carry_inc@3:
-   LDY   #$00
-   LDA   (__local_instr_insert_obj__1),Y
-   STA   __local_instr_insert_obj__0
-   LDA   __local_instr_insert_obj__5
-   STA   (__local_instr_insert_obj__1),Y
-   LDA   __local_instr_insert_obj__0
-   BEQ   .if_end@3
-   LDY   #$05
-   STA   (__local_instr_insert_obj__3),Y
-.if_end@3:
-   RTS
-
-print_obj:
-   SUBROUTINE
-
-   JSR   get_object_addr
-   LDA   HARGS
-   STA   __local_print_obj__0
-   LDA   HARGS+1
-   STA   __local_print_obj__1
-   LDY   #$07
-   LDA   (__local_print_obj__0),Y
-   STA   __local_print_obj__obj
-   INY
-   LDA   (__local_print_obj__0),Y
-   CLC
-   ADC   #$01
-   STA   __zpabi_load_address__addr_0
-   LDA   __local_print_obj__obj
-   ADC   #$00
-   STA   __zpabi_load_address__addr_1
-   JSR   load_address
-   JMP   print_zstring
+   LDA   (__local_instr_get_sibling__0),Y
 
 store_and_branch_on:
    SUBROUTINE
@@ -3534,20 +3390,153 @@ store_and_branch_on:
 .cmp_true@0:
    LDA   #$01
 .cmp_end@1:
-   JMP   branch
 
-instr_get_sibling:
+branch:
    SUBROUTINE
 
-   LDA   OPERANDS
-   JSR   get_object_addr
-   LDA   HARGS
-   STA   __local_instr_get_sibling__0
-   LDA   HARGS+1
-   STA   __local_instr_get_sibling__1
-   LDY   #$05
-   LDA   (__local_instr_get_sibling__0),Y
-   JMP   store_and_branch_on
+   STA   __local_branch__condition
+   JSR   get_next_code_byte
+   STA   __local_branch__0
+   AND   #$80
+   STA   __local_branch__offset_0
+   LDA   #$00
+   CMP   #$00
+   BNE   .cmp_true@0
+   LDA   __local_branch__offset_0
+   CMP   #$00
+   BNE   .cmp_true@0
+   LDA   #$00
+   JMP   .cmp_end@1
+.cmp_true@0:
+   LDA   #$01
+.cmp_end@1:
+   CMP   __local_branch__condition
+   BEQ   .if_end@13
+   LDA   __local_branch__0
+   AND   #$40
+   BNE   .if_end@14
+   JSR   get_next_code_byte
+.if_end@14:
+   RTS
+.if_end@13:
+   LDA   __local_branch__0
+   AND   #$40
+   BEQ   .if_else@16
+   LDA   __local_branch__0
+   AND   #$3F
+   STA   __local_branch__offset_0
+   LDA   #$00
+   STA   __local_branch__offset_1
+   JMP   .if_end@15
+.if_else@16:
+   LDA   __local_branch__0
+   AND   #$3F
+   STA   __local_branch__offset_1
+   JSR   get_next_code_byte
+   STA   __local_branch__offset_0
+   LDA   __local_branch__offset_1
+   AND   #$20
+   BEQ   .if_end@17
+   LDA   __local_branch__offset_1
+   ORA   #$C0
+   STA   __local_branch__offset_1
+.if_end@17:
+.if_end@15:
+   LDA   __local_branch__offset_0
+   ORA   __local_branch__offset_1
+   BNE   .if_end@18
+   LDA   #$00
+   STA   __zpabi_return_value__value_0
+   STA   __zpabi_return_value__value_1
+   JMP   return_value
+.if_end@18:
+   LDA   __local_branch__offset_1
+   CMP   #$00
+   BNE   .if_end@19
+   LDA   __local_branch__offset_0
+   CMP   #$01
+   BNE   .if_end@19
+   LDA   #$01
+   STA   __zpabi_return_value__value_0
+   LDA   #$00
+   STA   __zpabi_return_value__value_1
+   JMP   return_value
+.if_end@19:
+   LDA   __local_branch__offset_0
+   SEC
+   SBC   #$02
+   STA   __zpabi_branch_to_offset__offset_0
+   LDA   __local_branch__offset_1
+   SBC   #$00
+   STA   __zpabi_branch_to_offset__offset_1
+
+branch_to_offset:
+   SUBROUTINE
+
+   LDA   __zpabi_branch_to_offset__offset_1
+   BMI   .lb_skip@0
+   JMP   .branch_to_offset@asm_ssa_split@0
+.lb_skip@0:
+   LDA   #$00
+   CLC
+   ADC   #$01
+   STA   __local_branch_to_offset__pages_1
+   LDA   __zpabi_branch_to_offset__offset_1
+   STA   __local_branch_to_offset__pages_0
+.if_end@10:
+   LDA   Z_PC
+   STA   __local_branch_to_offset__0
+   CLC
+   ADC   __zpabi_branch_to_offset__offset_0
+   STA   __local_branch_to_offset__2
+   CMP   __local_branch_to_offset__0
+   BCS   .if_end@11
+   INC   __local_branch_to_offset__pages_0
+   BNE   .inc_done@0
+   INC   __local_branch_to_offset__pages_1
+.inc_done@0:
+.if_end@11:
+   LDA   __local_branch_to_offset__pages_0
+   ORA   __local_branch_to_offset__pages_1
+   BNE   .if_end@12
+   LDA   Z_PC
+   STA   __local_branch_to_offset__pages_0
+   LDA   Z_PC+1
+   STA   __local_branch_to_offset__0
+   LDA   __local_branch_to_offset__pages_0
+   AND   #$00
+   ORA   __local_branch_to_offset__2
+   STA   Z_PC
+   LDA   __local_branch_to_offset__0
+   STA   Z_PC+1
+   RTS
+.if_end@12:
+   LDA   Z_PC+1
+   STA   __local_branch_to_offset__0
+   LDA   Z_PC+2
+   STA   __local_branch_to_offset__1
+   LDA   __local_branch_to_offset__0
+   CLC
+   ADC   __local_branch_to_offset__pages_0
+   STA   __local_branch_to_offset__pages_0
+   LDA   __local_branch_to_offset__1
+   ADC   __local_branch_to_offset__pages_1
+   STA   __local_branch_to_offset__0
+   LDA   __local_branch_to_offset__2
+   STA   Z_PC
+   LDA   __local_branch_to_offset__pages_0
+   STA   Z_PC+1
+   LDA   __local_branch_to_offset__0
+   AND   #$01
+   STA   Z_PC+2
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID
+   RTS
+.branch_to_offset@asm_ssa_split@0:
+   STA   __local_branch_to_offset__pages_0
+   LDA   #$00
+   STA   __local_branch_to_offset__pages_1
+   JMP   .if_end@10
 
 instr_get_child:
    SUBROUTINE
@@ -3657,17 +3646,6 @@ attr_ptr_and_mask:
    LDX   __local_attr_ptr_and_mask__mask_1
    RTS
 
-set_attr_word:
-   SUBROUTINE
-
-   LDA   __zpabi_set_attr_word__word_0
-   LDY   #$01
-   STA   (attr_ptr),Y
-   LDA   __zpabi_set_attr_word__word_1
-   DEY
-   STA   (attr_ptr),Y
-   RTS
-
 instr_test_attr:
    SUBROUTINE
 
@@ -3697,7 +3675,17 @@ instr_set_attr:
    TXA
    ORA   attr_mask+1
    STA   __zpabi_set_attr_word__word_1
-   JMP   set_attr_word
+
+set_attr_word:
+   SUBROUTINE
+
+   LDA   __zpabi_set_attr_word__word_0
+   LDY   #$01
+   STA   (attr_ptr),Y
+   LDA   __zpabi_set_attr_word__word_1
+   DEY
+   STA   (attr_ptr),Y
+   RTS
 
 instr_clear_attr:
    SUBROUTINE
@@ -4202,31 +4190,6 @@ check_sign:
    LDX   __zpabi_check_sign__a_1
    JMP   .if_end@2
 
-store_with_sign:
-   SUBROUTINE
-
-   LDA   sign_bit
-   AND   #$01
-   BEQ   .store_with_sign@asm_ssa_split@0
-   LDA   __zpabi_store_with_sign__n_0
-   EOR   #$FF
-   CLC
-   ADC   #$01
-   STA   __local_store_with_sign__n_0
-   LDA   __zpabi_store_with_sign__n_1
-   EOR   #$FF
-   ADC   #$00
-.if_end@4:
-   STA   __zpabi_store_result__value_1
-   LDA   __local_store_with_sign__n_0
-   STA   __zpabi_store_result__value_0
-   JMP   store_result
-.store_with_sign@asm_ssa_split@0:
-   LDA   __zpabi_store_with_sign__n_0
-   STA   __local_store_with_sign__n_0
-   LDA   __zpabi_store_with_sign__n_1
-   JMP   .if_end@4
-
 instr_mul:
    SUBROUTINE
 
@@ -4279,7 +4242,31 @@ instr_mul:
    STA   __zpabi_store_with_sign__n_0
    LDA   __local_instr_mul__0
    STA   __zpabi_store_with_sign__n_1
-   JMP   store_with_sign
+
+store_with_sign:
+   SUBROUTINE
+
+   LDA   sign_bit
+   AND   #$01
+   BEQ   .store_with_sign@asm_ssa_split@0
+   LDA   __zpabi_store_with_sign__n_0
+   EOR   #$FF
+   CLC
+   ADC   #$01
+   STA   __local_store_with_sign__n_0
+   LDA   __zpabi_store_with_sign__n_1
+   EOR   #$FF
+   ADC   #$00
+.if_end@4:
+   STA   __zpabi_store_result__value_1
+   LDA   __local_store_with_sign__n_0
+   STA   __zpabi_store_result__value_0
+   JMP   store_result
+.store_with_sign@asm_ssa_split@0:
+   LDA   __zpabi_store_with_sign__n_0
+   STA   __local_store_with_sign__n_0
+   LDA   __zpabi_store_with_sign__n_1
+   JMP   .if_end@4
 
 instr_div:
    SUBROUTINE
@@ -4813,62 +4800,6 @@ search_nonalpha_table:
    LDX   __local_search_nonalpha_table__0
    JMP   .loop@5_start
 
-z_compress:
-   SUBROUTINE
-
-   LDA   ZCHAR_SCRATCH2
-   ASL
-   ASL
-   STA   __local_z_compress__3
-   LDA   ZCHAR_SCRATCH2+1
-   STA   __local_z_compress__1
-   LSR
-   LSR
-   LSR
-   STA   __local_z_compress__0
-   LDA   __local_z_compress__1
-   ASL
-   ASL
-   ASL
-   ASL
-   ASL
-   STA   __local_z_compress__2
-   LDA   __local_z_compress__3
-   ORA   __local_z_compress__0
-   STA   __local_z_compress__1
-   LDA   __local_z_compress__2
-   ORA   ZCHAR_SCRATCH2+2
-   STA   ZCHAR_SCRATCH2
-   LDA   __local_z_compress__1
-   STA   ZCHAR_SCRATCH2+1
-   LDA   ZCHAR_SCRATCH2+3
-   ASL
-   ASL
-   STA   __local_z_compress__2
-   LDA   ZCHAR_SCRATCH2+4
-   STA   __local_z_compress__1
-   LSR
-   LSR
-   LSR
-   STA   __local_z_compress__0
-   LDA   __local_z_compress__1
-   ASL
-   ASL
-   ASL
-   ASL
-   ASL
-   STA   __local_z_compress__1
-   LDA   __local_z_compress__2
-   ORA   __local_z_compress__0
-   STA   __local_z_compress__2
-   LDA   __local_z_compress__1
-   ORA   ZCHAR_SCRATCH2+5
-   STA   ZCHAR_SCRATCH2+2
-   LDA   __local_z_compress__2
-   ORA   #$80
-   STA   ZCHAR_SCRATCH2+3
-   RTS
-
 ascii_to_zchar:
    SUBROUTINE
 
@@ -4998,7 +4929,62 @@ ascii_to_zchar:
    JMP   .loop@7_start
 .lb_skip@0:
 .loop@7_break:
-   JMP   z_compress
+
+z_compress:
+   SUBROUTINE
+
+   LDA   ZCHAR_SCRATCH2
+   ASL
+   ASL
+   STA   __local_z_compress__3
+   LDA   ZCHAR_SCRATCH2+1
+   STA   __local_z_compress__1
+   LSR
+   LSR
+   LSR
+   STA   __local_z_compress__0
+   LDA   __local_z_compress__1
+   ASL
+   ASL
+   ASL
+   ASL
+   ASL
+   STA   __local_z_compress__2
+   LDA   __local_z_compress__3
+   ORA   __local_z_compress__0
+   STA   __local_z_compress__1
+   LDA   __local_z_compress__2
+   ORA   ZCHAR_SCRATCH2+2
+   STA   ZCHAR_SCRATCH2
+   LDA   __local_z_compress__1
+   STA   ZCHAR_SCRATCH2+1
+   LDA   ZCHAR_SCRATCH2+3
+   ASL
+   ASL
+   STA   __local_z_compress__2
+   LDA   ZCHAR_SCRATCH2+4
+   STA   __local_z_compress__1
+   LSR
+   LSR
+   LSR
+   STA   __local_z_compress__0
+   LDA   __local_z_compress__1
+   ASL
+   ASL
+   ASL
+   ASL
+   ASL
+   STA   __local_z_compress__1
+   LDA   __local_z_compress__2
+   ORA   __local_z_compress__0
+   STA   __local_z_compress__2
+   LDA   __local_z_compress__1
+   ORA   ZCHAR_SCRATCH2+5
+   STA   ZCHAR_SCRATCH2+2
+   LDA   __local_z_compress__2
+   ORA   #$80
+   STA   ZCHAR_SCRATCH2+3
+   RTS
 
 match_dictionary_word:
    SUBROUTINE
@@ -5329,6 +5315,27 @@ instr_sread:
    STA   char_count
    JMP   .loop@10_start
 
+read_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   disk_buffer
+   LDA   #>BUFF_AREA
+   STA   disk_buffer+1
+
+inc_sector_and_read:
+   SUBROUTINE
+
+   INC   disk_sector
+   BNE   .inc_done@0
+   INC   disk_sector+1
+.inc_done@0:
+
+read_from_sector:
+   SUBROUTINE
+
+   LDA   #$01
+
 do_rwts_on_sector:
    SUBROUTINE
 
@@ -5358,29 +5365,21 @@ do_rwts_on_sector:
    LDY   #<iob
    JMP   RWTS
 
-read_from_sector:
-   SUBROUTINE
-
-   LDA   #$01
-   JMP   do_rwts_on_sector
-
-inc_sector_and_read:
-   SUBROUTINE
-
-   INC   disk_sector
-   BNE   .inc_done@0
-   INC   disk_sector+1
-.inc_done@0:
-   JMP   read_from_sector
-
-read_next_sector:
+write_next_sector:
    SUBROUTINE
 
    LDA   #<BUFF_AREA
    STA   disk_buffer
    LDA   #>BUFF_AREA
    STA   disk_buffer+1
-   JMP   inc_sector_and_read
+
+inc_sector_and_write:
+   SUBROUTINE
+
+   INC   disk_sector
+   BNE   .inc_done@1
+   INC   disk_sector+1
+.inc_done@1:
 
 write_to_sector:
    SUBROUTINE
@@ -5400,24 +5399,6 @@ write_to_sector:
    LDA   __local_write_to_sector__1
    STA   dct+3
    RTS
-
-inc_sector_and_write:
-   SUBROUTINE
-
-   INC   disk_sector
-   BNE   .inc_done@1
-   INC   disk_sector+1
-.inc_done@1:
-   JMP   write_to_sector
-
-write_next_sector:
-   SUBROUTINE
-
-   LDA   #<BUFF_AREA
-   STA   disk_buffer
-   LDA   #>BUFF_AREA
-   STA   disk_buffer+1
-   JMP   inc_sector_and_write
 
 get_prompted_number_from_user:
    SUBROUTINE

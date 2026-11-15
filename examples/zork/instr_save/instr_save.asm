@@ -216,6 +216,14 @@ do_rwts_on_sector:
    LDY   #<iob
    JMP   RWTS
 
+write_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   __zpabi_inc_sector_and_write__buffer_0
+   LDA   #>BUFF_AREA
+   STA   __zpabi_inc_sector_and_write__buffer_1
+
 inc_sector_and_write:
    SUBROUTINE
 
@@ -238,15 +246,6 @@ inc_sector_and_write:
    LDA   __local_inc_sector_and_write__1
    STA   dct+3
    RTS
-
-write_next_sector:
-   SUBROUTINE
-
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_1
-   JMP   inc_sector_and_write
 
 print_ascii_string:
    SUBROUTINE

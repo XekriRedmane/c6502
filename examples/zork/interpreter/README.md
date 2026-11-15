@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1F5C`. The other units, the constants,
+on every instruction, up to `$1F35`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -155,28 +155,29 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 484 |
-| `decode.c` | 1859 | 2569 |
-| `objects.c` | 788 | 1156 |
-| `numbers.c` | 436 | 704 |
-| `input.c` | 1018 | 1313 |
+| `decode.c` | 1859 | 2557 |
+| `objects.c` | 788 | 1141 |
+| `numbers.c` | 436 | 701 |
+| `input.c` | 1018 | 1310 |
 | `pages.c` | 384 | 411 |
 | `zstring.c` | 383 | 407 |
-| `output.c` | 387 | 414 |
-| `disk.c` | 138 | 152 |
+| `output.c` | 387 | 405 |
+| `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **8482** |
+| **Total** | **6643** | **8425** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
 generates to clear the globals in zero page. The boot loader doesn't
 run it, and the interpreter writes each of those globals before it
-reads it. Twelve of the 14 bytes `disk.c` has over Zork's are
-`JMP`s. Zork's `read_next_sector` falls into `inc_sector_and_read`,
-which falls into `read_from_sector`, and its write routines work the
-same way, where each C routine ends with a 3-byte `JMP` to the next.
-Zork's boot loader reads 26 sectors, `$0800`-`$21FF`, so
-on an Apple II this program would take a loader that also reads
+reads it. A function that ends by jumping to another is placed
+right before that one and falls into it, as in Zork. The linker does
+that for 19 functions, which saves a 3-byte `JMP` in each. Each
+function is counted with the file that defines it, wherever the
+linker places it. Zork's boot loader reads 26 sectors,
+`$0800`-`$21FF`, so on an Apple II this program would take a loader
+that also reads
 `$2C00`-`$37FF`, from sectors that Zork's diskette doesn't have free.
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
@@ -188,9 +189,9 @@ take 126 bytes and the handlers are counted with their own files.
 260 against 190. `mulu16` is 59 against 69, since it computes only
 the low 16 bits of the product.
 
-**Speed.** The first session takes 39,356,327 cycles against Zork's
-38,490,260, 2.3% more, and the second 7,565,090 against 7,434,428,
-1.8% more. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 39,277,151 cycles against Zork's
+38,490,260, 2.0% more, and the second 7,549,505 against 7,434,428,
+1.5% more. The stand-ins for the Monitor and RWTS take no cycles.
 
 ## Compiler changes this needed
 
@@ -209,5 +210,10 @@ the low 16 bits of the product.
   can't spill ([linker_scripts.md](../../../docs/linker_scripts.md)).
 - The linker writes its output with LF line endings on every
   platform, as `compile.py` does.
+- A function that ends with a `JMP` to another function of its output
+  section goes right before that one, and the `JMP` is dropped, so
+  `return_value` falls into `store_result` and `branch` into
+  `branch_to_offset`, as Zork's routines fall into each other
+  ([linker_scripts.md](../../../docs/linker_scripts.md)).
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

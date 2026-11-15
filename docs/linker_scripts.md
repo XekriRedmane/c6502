@@ -89,12 +89,52 @@ the first address. `(NOLOAD)` puts no bytes in the program; such a
 section can only hold `.bss`-style items, whose initial value is all
 zero.
 
+## Functions that fall into each other
+
+Hand-written 6502 code often ends one routine where the next begins,
+so that the first runs into the second without a `JMP`. Zork's
+`read_next_sector` sets the buffer and runs into
+`inc_sector_and_read`, which steps the sector and runs into
+`read_from_sector`. In C each one is a function that ends by calling
+the next, `return inc_sector_and_read();`, which the compiler turns
+into `JMP inc_sector_and_read`.
+
+Within an output section, the linker puts each function that ends
+with a `JMP` to another function of the section right before that
+one, and drops the `JMP`. When several functions end by jumping to
+the same one, the first of them in the section's order is the one
+placed in front of it, and the others keep their `JMP`s. A chain of
+such functions is laid down where its first function would have
+been, and everything else keeps the script's order. A function
+whose jump would close a loop, such as two functions that each end
+by jumping to the other, keeps its `JMP`. No item moves across an
+assignment inside the section (`. = ...` or `sym = .;`), since an
+assignment marks an address.
+
+In Zork's interpreter (examples/zork/interpreter) this removes 19
+`JMP`s, 57 bytes. Two of the pairs are functions of different units:
+`print_obj` in `objects.c` falls into `print_zstring` in `zstring.c`,
+and `store_and_branch_on` in `objects.c` into `branch` in
+`decode.c`.
+
+Moving a function changes its address. For a section whose order
+matters, `(NOREORDER)` after the section's name keeps the order, and
+then only a function already right before the one it jumps to loses
+its `JMP`:
+
+```
+.text (NOREORDER) : { *(.text .text.*) } > rom
+```
+
+`(NOREORDER)` isn't part of GNU ld's script language.
+
 ## What's supported
 
 - `MEMORY` regions, `name [(attrs)] : ORIGIN = n, LENGTH = n`, also
   spelled `org`, `o`, `len`, `l`. The attributes are ignored.
 - Output sections, `name [address] [(NOLOAD)] : [AT(address)]
-  [ALIGN(n)] { ... } [> region] [AT> region]`.
+  [ALIGN(n)] { ... } [> region] [AT> region]`, with `(NOREORDER)` in
+  place of `(NOLOAD)` to keep the order of its functions.
 - Inside one: `file(pattern ...)`, `KEEP(file(pattern ...))` (the same,
   since nothing is discarded), symbol assignments, and `. = expr`,
   `. += n` to skip ahead. Patterns use `*`, `?`, and `[...]`. `file`

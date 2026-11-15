@@ -95,6 +95,12 @@ become dead; single-use Extend dsts are dropped eagerly via
 Rewrite(drop_defs=...) and SSA-DCE collects any remaining
 orphaned instructions on the next iteration.
 
+# Comparisons
+
+`Truncate(Binary(cmp, a, b))` for a comparison `cmp` becomes
+`Binary(cmp, a, b)` into the Truncate's dst, since a comparison is 0
+or 1 at any width (`_narrow_compare`). Its operands stay wide.
+
 # Iteration
 
 Runs inside the TAC fixed-point loop. Composes with
@@ -122,6 +128,17 @@ _SAFE_OPS = (
     tac_ast.BitwiseAnd,
     tac_ast.BitwiseOr,
     tac_ast.BitwiseXor,
+)
+
+
+# Comparisons, whose 0 / 1 result fits any width (`_narrow_compare`).
+_COMPARE_OPS = (
+    tac_ast.Equal,
+    tac_ast.NotEqual,
+    tac_ast.LessThan,
+    tac_ast.LessOrEqual,
+    tac_ast.GreaterThan,
+    tac_ast.GreaterOrEqual,
 )
 
 
@@ -159,6 +176,8 @@ class NarrowWidenedArith(DefUsePass):
         bin_instr = env.def_of(trunc_src)
         if not isinstance(bin_instr, tac_ast.Binary):
             return None
+        if isinstance(bin_instr.op, _COMPARE_OPS):
+            return _narrow_compare(bin_instr, m, env, ctx)
         is_shift = isinstance(bin_instr.op, tac_ast.LeftShift)
         if not (isinstance(bin_instr.op, _SAFE_OPS) or is_shift):
             return None
@@ -252,6 +271,45 @@ class NarrowWidenedArith(DefUsePass):
 
         _count_new_uses(use_counts, replacement)
         return Rewrite(replacement=replacement, drop_defs=tuple(drop_vars))
+
+
+def _narrow_compare(
+    bin_instr: tac_ast.Binary, m: MatchResult, env: DefUseEnv,
+    ctx: PassContext,
+) -> Rewrite | None:
+    """`Truncate(a op b)` for a comparison `op` as `a op b` into the
+    Truncate's dst. A comparison is 0 or 1 at any width, so only its
+    result narrows, and its operands stay as they are. `bool on =
+    (b & 0x80) != 0;` is an `int` compare truncated to one byte, and
+    a 1-byte compare with 0 lowers to `BEQ end; LDA #1; end:`
+    (`tac_to_asm._translate_zero_test`) where an `int` one selects 0
+    or 1 in each arm. Only when the Truncate is the compare's one
+    reader, and each Var operand still holds at the Truncate the
+    value the compare read."""
+    trunc_src, dst_var = m.bindings['trunc_src'], m.bindings['dst']
+    if not isinstance(bin_instr.dst, tac_ast.Var):
+        return None
+    dst_width = _byte_width(dst_var, ctx.symbols)
+    bin_width = _byte_width(bin_instr.dst, ctx.symbols)
+    if dst_width is None or bin_width is None or dst_width >= bin_width:
+        return None
+    if env.extra.get(bin_instr.dst.name, 0) != 1:
+        return None
+    trunc_idx = env.def_idx.get(dst_var.name)
+    bin_idx = env.def_idx.get(trunc_src.name)
+    if trunc_idx is None or bin_idx is None:
+        return None
+    for operand in (bin_instr.src1, bin_instr.src2):
+        if isinstance(operand, tac_ast.Var) and not _unchanged(
+            operand, bin_idx, trunc_idx, env, ctx,
+        ):
+            return None
+    narrow = tac_ast.Binary(
+        op=bin_instr.op, src1=bin_instr.src1, src2=bin_instr.src2,
+        dst=dst_var,
+    )
+    _count_new_uses(env.extra, narrow)
+    return Rewrite(replacement=narrow, drop_defs=(bin_instr.dst,))
 
 
 def _count_new_uses(use_counts, replacement) -> None:

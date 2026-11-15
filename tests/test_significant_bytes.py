@@ -1,6 +1,8 @@
 """Tests for `passes.significant_bytes` and the shift of a value with
-one significant byte (`tac_to_asm._inline_left_shift_byte`), and the
-closed form of the loop in Zork's `please_insert_save_diskette`."""
+one significant byte (`tac_to_asm._inline_left_shift_byte`), the
+closed form of the loop in Zork's `please_insert_save_diskette`, and
+`==` / `!=` comparing only significant bytes
+(`tac_to_asm._equality_bytes`)."""
 
 import shutil
 import unittest
@@ -215,6 +217,69 @@ class TestTruncatedRightShift(unittest.TestCase):
         """
         asm = _run_stage("codegen", preprocess(src), optimize=True)
         self.assertNotIn("lsr16", asm)
+
+@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+class TestEqualityBytes(unittest.TestCase):
+    """`==` and `!=` compare only the low bytes either operand can
+    have nonzero (`tac_to_asm._equality_bytes`), as a value and as a
+    branch, checked against Python over every byte."""
+
+    _PROGRAM = """
+    #include <stdbool.h>
+    unsigned char k = 3;
+    int main(void) {
+        unsigned int sum = 0;
+        unsigned char x = 0;
+        do {
+            bool a = (x & 0x80) != 0;
+            bool b = ((x & 0x0F) | 0x100) == 0x103;
+            bool c = (x & 0x7F) == k;
+            bool d = (unsigned)x + 0x100 != 0x1FF;
+            if ((x & 0x3F) == 0) sum += 1;
+            if (((unsigned)x | 0x200) == 0x2C0) sum += 7;
+            sum += a + 2 * b + 4 * c + 8 * d;
+        } while (++x != 0);
+        return sum;
+    }
+    """
+
+    @staticmethod
+    def _expected() -> int:
+        total = 0
+        for x in range(256):
+            total += (x & 0x3F) == 0
+            total += 7 * ((x | 0x200) == 0x2C0)
+            total += ((x & 0x80) != 0) + 2 * (((x & 0x0F) | 0x100) == 0x103)
+            total += 4 * ((x & 0x7F) == 3) + 8 * (x + 0x100 != 0x1FF)
+        return total
+
+    def test_values(self):
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                result = build_sim(self._PROGRAM, optimize=optimize).run(
+                    max_cycles=50_000_000,
+                )
+                self.assertFalse(result.timed_out)
+                self.assertEqual(result.return_int() & 0xFFFF,
+                                 self._expected())
+
+    def test_one_byte(self):
+        # A widened byte masked to its top bit, compared with 0, tests
+        # one byte, and a known-0 high byte isn't compared with 0.
+        src = """
+        #include <stdbool.h>
+        unsigned char get(void);
+        bool f(void) { bool on = (get() & 0x80) != 0; return on; }
+        """
+        asm = _run_stage("codegen", preprocess(src), optimize=True)
+        lines = [ln.split() for ln in asm.splitlines() if ln.strip()]
+        self.assertNotIn(
+            (["LDA", "#$00"], ["CMP", "#$00"]),
+            list(zip(lines, lines[1:])),
+        )
+        self.assertIn((["AND", "#$80"], ["BEQ"]),
+                      [(a, b[:1]) for a, b in zip(lines, lines[1:])])
+
 
 if __name__ == "__main__":
     unittest.main()

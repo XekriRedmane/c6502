@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1F35`. The other units, the constants,
+on every instruction, up to `$1EE4`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -155,9 +155,9 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 484 |
-| `decode.c` | 1859 | 2557 |
-| `objects.c` | 788 | 1141 |
-| `numbers.c` | 436 | 701 |
+| `decode.c` | 1859 | 2525 |
+| `objects.c` | 788 | 1103 |
+| `numbers.c` | 436 | 690 |
 | `input.c` | 1018 | 1310 |
 | `pages.c` | 384 | 411 |
 | `zstring.c` | 383 | 407 |
@@ -165,7 +165,7 @@ file and the original code it translates:
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **8425** |
+| **Total** | **6643** | **8344** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -182,16 +182,16 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 1,384 bytes with the handlers written
-into their cases (`do_2op` alone is 700), where Zork's four tables
+The four dispatch switches take 1,355 bytes with the handlers written
+into their cases (`do_2op` alone is 688), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
-`divu16` is 128 bytes against Zork's 78, and `match_dictionary_word`
+`divu16` is 117 bytes against Zork's 78, and `match_dictionary_word`
 260 against 190. `mulu16` is 59 against 69, since it computes only
 the low 16 bits of the product.
 
-**Speed.** The first session takes 39,277,151 cycles against Zork's
-38,490,260, 2.0% more, and the second 7,549,505 against 7,434,428,
-1.5% more. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 38,872,640 cycles against Zork's
+38,490,260, 1.0% more, and the second 7,484,785 against 7,434,428,
+0.7% more. The stand-ins for the Monitor and RWTS take no cycles.
 
 ## Compiler changes this needed
 
@@ -215,5 +215,10 @@ the low 16 bits of the product.
   `return_value` falls into `store_result` and `branch` into
   `branch_to_offset`, as Zork's routines fall into each other
   ([linker_scripts.md](../../../docs/linker_scripts.md)).
+- `==` and `!=` compare only the low bytes either operand can have
+  nonzero, and a comparison truncated to a byte, as in `bool on_true
+  = (b & 0x80) != 0;`, has a 1-byte result
+  ([narrow_widened_arith.md](../../../docs/optimizations/narrow_widened_arith.md)).
+  `branch` had compared a high byte known to be 0 with 0.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

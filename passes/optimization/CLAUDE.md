@@ -207,6 +207,9 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   strict 4-instr trio (`ZE; AND; Trunc; JumpIfMasked`) wouldn't match
   the narrow form this pass produces, and the AND result would spill
   across the branch (apply_bobble regression observed at +1 instr).
+  A `Truncate` of a comparison becomes the comparison with the narrow
+  dst and its operands unchanged (`_narrow_compare`), since its result
+  is 0 or 1, so `bool b = (x & 0x80) != 0;` gets a 1-byte result.
 - `recognize_indirect_indexed.py` — post-fixedpoint one-shot
   (`RecognizeIndirectIndexed`, PostFixedpointPass wrapping an internal
   `DefUsePass`, on `recognize_extend_add_chain`). Collapses

@@ -397,16 +397,10 @@ divu16:
    STA   __local_divu16__1
    LDA   __local_divu16__quotient_1
    AND   #$80
-   CMP   #$00
-   BNE   .cmp_true@2
-   LDA   __local_divu16__1
-   CMP   #$00
-   BNE   .cmp_true@2
-   LDA   #$00
-   JMP   .cmp_end@3
-.cmp_true@2:
+   ORA   __local_divu16__1
+   BEQ   .cmp_end@2
    LDA   #$01
-.cmp_end@3:
+.cmp_end@2:
    STA   __local_divu16__0
    ASL   __local_divu16__quotient_0
    ROL   __local_divu16__quotient_1

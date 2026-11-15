@@ -215,7 +215,10 @@ the 6502's CMP / SBC + branch atoms cover these):
     true); LDA #0; Jump(end); Label(true); LDA #1; Label(end); Mov(
     A, dst)`. For multi-byte operands: walk bytes high→low, BNE
     short-circuits to a "differ" label on each except the lowest;
-    the final low-byte CMP's Z is the answer. A comparison with 0
+    the final low-byte CMP's Z is the answer. Only the low bytes
+    either operand can have nonzero are compared
+    (`_equality_bytes`, from passes/significant_bytes.py), here and
+    in the compare-and-branch lowering. A comparison with 0
     whose dst is 1 byte (a conversion to `_Bool`) ORs the bytes
     instead (`AND #$7F` on a floating value's high byte first) and,
     for NotEqual, ends `BEQ end; LDA #1; end:`.
@@ -3464,13 +3467,15 @@ class Translator:
                 )
             case tac_ast.Equal():
                 return self._translate_equality(
-                    src1_op, src2_op, dst_op, size, asm_ast.EQ(), dst_size,
-                    fp=fp,
+                    src1_op, src2_op, dst_op,
+                    self._equality_bytes(src1, src2, size, fp),
+                    asm_ast.EQ(), dst_size, fp=fp,
                 )
             case tac_ast.NotEqual():
                 return self._translate_equality(
-                    src1_op, src2_op, dst_op, size, asm_ast.NE(), dst_size,
-                    fp=fp,
+                    src1_op, src2_op, dst_op,
+                    self._equality_bytes(src1, src2, size, fp),
+                    asm_ast.NE(), dst_size, fp=fp,
                 )
             case tac_ast.LessThan():
                 # src1 < src2: compute src1 - src2, branch on MI
@@ -3615,6 +3620,30 @@ class Translator:
             ))
             out.append(asm_ast.Mov(src=_REG_A, dst=_byte_at(dst_op, k)))
         return out
+
+    def _equality_bytes(
+        self, src1: tac_ast.Type_val, src2: tac_ast.Type_val, size: int,
+        fp: bool,
+    ) -> int:
+        """How many low bytes of `src1 == src2` (or `!=`) to compare:
+        those that either operand can have nonzero, at least one, since
+        the bytes above them are zero in both
+        (passes/significant_bytes.py). `(int)b & 0x80` against 0 is
+        one byte. A floating-point compare uses every byte."""
+        if fp:
+            return size
+
+        def count(val: tac_ast.Type_val) -> int:
+            if isinstance(val, tac_ast.Constant):
+                v = getattr(val.const, "value", None)
+                if not isinstance(v, int) or v < 0:
+                    return size
+                return (v.bit_length() + 7) // 8
+            if isinstance(val, tac_ast.Var):
+                return self._significant.get(val.name, size)
+            return size
+
+        return max(1, min(size, max(count(src1), count(src2))))
 
     def _translate_equality(
         self,
@@ -3874,11 +3903,15 @@ class Translator:
         match op:
             case tac_ast.Equal():
                 return self._jcmp_equality(
-                    src1_op, src2_op, size, target, branch_on_eq=True,
+                    src1_op, src2_op,
+                    self._equality_bytes(src1, src2, size, fp), target,
+                    branch_on_eq=True,
                 )
             case tac_ast.NotEqual():
                 return self._jcmp_equality(
-                    src1_op, src2_op, size, target, branch_on_eq=False,
+                    src1_op, src2_op,
+                    self._equality_bytes(src1, src2, size, fp), target,
+                    branch_on_eq=False,
                 )
             case tac_ast.LessThan():
                 if fp:

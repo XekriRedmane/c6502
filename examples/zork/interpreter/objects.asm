@@ -96,7 +96,6 @@ __local_instr_get_prop_addr__0	EQU	$E4
 __local_instr_get_prop_len__0	EQU	$E4
 __local_instr_get_sibling__0	EQU	$E4
 __local_instr_insert_obj__0	EQU	$E4
-__local_instr_jin__0	EQU	$E4
 __local_instr_put_prop__0	EQU	$E4
 __local_print_obj__obj	EQU	$E4
 __local_instr_clear_attr__1	EQU	$E5
@@ -107,7 +106,6 @@ __local_instr_get_prop_addr__y	EQU	$E5
 __local_instr_get_prop_len__1	EQU	$E5
 __local_instr_get_sibling__1	EQU	$E5
 __local_instr_insert_obj__1	EQU	$E5
-__local_instr_jin__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
 __local_print_obj__0	EQU	$E5
 __local_instr_get_next_prop__1	EQU	$E6
@@ -580,17 +578,10 @@ store_and_branch_on:
    LDA   #$00
    STA   __zpabi_store_result__value_1
    JSR   store_result
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_true@0
    LDA   __local_store_and_branch_on__related
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   #$00
-   JMP   .cmp_end@1
-.cmp_true@0:
+   BEQ   .cmp_end@0
    LDA   #$01
-.cmp_end@1:
+.cmp_end@0:
    JMP   branch
 
 instr_get_sibling:
@@ -644,23 +635,15 @@ instr_jin:
    STA   __local_instr_jin__2
    LDA   HARGS+1
    STA   __local_instr_jin__3
-   LDA   OPERANDS+2
-   STA   __local_instr_jin__1
    LDY   #$04
-   LDA   (__local_instr_jin__2),Y
-   STA   __local_instr_jin__0
+   LDA   OPERANDS+2
+   CMP   (__local_instr_jin__2),Y
+   BEQ   .cmp_true@1
    LDA   #$00
-   CMP   #$00
-   BNE   .thread@0
-   LDA   __local_instr_jin__1
-   CMP   __local_instr_jin__0
-   BEQ   .cmp_true@3
-.thread@0:
-   LDA   #$00
-   JMP   .cmp_end@4
-.cmp_true@3:
+   JMP   .cmp_end@2
+.cmp_true@1:
    LDA   #$01
-.cmp_end@4:
+.cmp_end@2:
    JMP   branch
 
 attr_ptr_and_mask:
@@ -733,16 +716,10 @@ instr_test_attr:
    STA   __local_instr_test_attr__1
    TXA
    AND   attr_mask+1
-   CMP   #$00
-   BNE   .cmp_true@6
-   LDA   __local_instr_test_attr__1
-   CMP   #$00
-   BNE   .cmp_true@6
-   LDA   #$00
-   JMP   .cmp_end@7
-.cmp_true@6:
+   ORA   __local_instr_test_attr__1
+   BEQ   .cmp_end@3
    LDA   #$01
-.cmp_end@7:
+.cmp_end@3:
    JMP   branch
 
 instr_set_attr:

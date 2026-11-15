@@ -122,33 +122,32 @@ __local_do_2op__4	EQU	$FB
 __local_instr_call__1	EQU	$FB
 __local_do_2op__5	EQU	$FC
 __local_instr_call__2	EQU	$FC
+__local_branch__offset_1	EQU	$FD
 __local_dec_var__0	EQU	$FD
 __local_inc_var__0	EQU	$FD
 __local_instr_call__i	EQU	$FD
+__local_branch__offset_0	EQU	$FE
 __local_dec_var__1	EQU	$FE
 __local_inc_var__1	EQU	$FE
 __local_instr_call__args	EQU	$FE
+__local_branch__condition	EQU	$FF
 __local_dec_var__2	EQU	$FF
 __local_inc_var__2	EQU	$FF
 __local_instr_call__3	EQU	$FF
 BUFF_AREA	EQU	$0200
-__local_branch__offset_1	EQU	$0200
-__local_branch__offset_0	EQU	$0201
-__local_branch__0	EQU	$0202
-__local_branch__condition	EQU	$0203
-__local_branch_to_offset__0	EQU	$0204
-__local_return_value__0	EQU	$0204
-__local_branch_to_offset__pages_0	EQU	$0205
-__local_return_value__1	EQU	$0205
-__local_branch_to_offset__1	EQU	$0206
-__local_return_value__x	EQU	$0206
-__local_branch_to_offset__pages_1	EQU	$0207
-__local_return_value__count	EQU	$0207
-__local_branch_to_offset__2	EQU	$0208
-__local_store_result__0	EQU	$0208
-__local_set_nonstack_var__var	EQU	$0209
-__local_set_nonstack_var__0	EQU	$020A
-__local_set_nonstack_var__1	EQU	$020B
+__local_branch_to_offset__0	EQU	$0200
+__local_return_value__0	EQU	$0200
+__local_branch_to_offset__pages_0	EQU	$0201
+__local_return_value__1	EQU	$0201
+__local_branch_to_offset__1	EQU	$0202
+__local_return_value__x	EQU	$0202
+__local_branch_to_offset__pages_1	EQU	$0203
+__local_return_value__count	EQU	$0203
+__local_branch_to_offset__2	EQU	$0204
+__local_store_result__0	EQU	$0204
+__local_set_nonstack_var__var	EQU	$0205
+__local_set_nonstack_var__0	EQU	$0206
+__local_set_nonstack_var__1	EQU	$0207
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
 RWTS	EQU	$2900
@@ -162,7 +161,7 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__0,__local_branch__condition indirect=false in_cycle=false param_regs=A
+; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__condition indirect=false in_cycle=false param_regs=A
 ; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false
 ; def dec_var params= locals=__local_dec_var__0,__local_dec_var__1,__local_dec_var__2 indirect=false in_cycle=false
 ; def do_0op params=__zpabi_do_0op__n locals=__local_do_0op__n indirect=false in_cycle=false param_regs=A
@@ -773,40 +772,31 @@ branch:
 
    STA   __local_branch__condition
    JSR   get_next_code_byte
-   STA   __local_branch__0
-   AND   #$80
    STA   __local_branch__offset_0
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   __local_branch__offset_0
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   #$00
-   JMP   .cmp_end@1
-.cmp_true@0:
+   AND   #$80
+   BEQ   .cmp_end@0
    LDA   #$01
-.cmp_end@1:
+.cmp_end@0:
    CMP   __local_branch__condition
    BEQ   .if_end@13
-   LDA   __local_branch__0
+   LDA   __local_branch__offset_0
    AND   #$40
    BNE   .if_end@14
    JSR   get_next_code_byte
 .if_end@14:
    RTS
 .if_end@13:
-   LDA   __local_branch__0
+   LDA   __local_branch__offset_0
    AND   #$40
    BEQ   .if_else@16
-   LDA   __local_branch__0
+   LDA   __local_branch__offset_0
    AND   #$3F
    STA   __local_branch__offset_0
    LDA   #$00
    STA   __local_branch__offset_1
    JMP   .if_end@15
 .if_else@16:
-   LDA   __local_branch__0
+   LDA   __local_branch__offset_0
    AND   #$3F
    STA   __local_branch__offset_1
    JSR   get_next_code_byte
@@ -1116,17 +1106,11 @@ do_1op:
    CMP   #$07
    BEQ   .case@25
    CMP   #$09
-   BNE   .lb_skip@8
-   JMP   .case@26
-.lb_skip@8:
+   BEQ   .case@26
    CMP   #$0A
-   BNE   .lb_skip@7
-   JMP   .case@27
-.lb_skip@7:
+   BEQ   .case@27
    CMP   #$0B
-   BNE   .lb_skip@6
-   JMP   .case@28
-.lb_skip@6:
+   BEQ   .case@28
    CMP   #$0C
    BNE   .lb_skip@5
    JMP   .case@29
@@ -1146,17 +1130,13 @@ do_1op:
    JMP   .default@33
 .case@18:
    LDA   __local_do_1op__0
-   CMP   #$00
-   BNE   .thread@0
-   LDA   __local_do_1op__1
-   CMP   #$00
-   BEQ   .cmp_true@3
-.thread@0:
+   ORA   __local_do_1op__1
+   BEQ   .cmp_true@2
    LDA   #$00
-   JMP   .cmp_end@4
-.cmp_true@3:
+   JMP   .cmp_end@1
+.cmp_true@2:
    LDA   #$01
-.cmp_end@4:
+.cmp_end@1:
    JSR   branch
    JMP   .switch@17_break
 .case@19:
@@ -1252,101 +1232,101 @@ do_2op:
    STA   __local_do_2op__3
    LDA   __local_do_2op__equal
    CMP   #$01
-   BNE   .lb_skip@32
-   JMP   .case@35
-.lb_skip@32:
-   CMP   #$02
-   BNE   .lb_skip@31
-   JMP   .case@36
-.lb_skip@31:
-   CMP   #$03
-   BNE   .lb_skip@30
-   JMP   .case@37
-.lb_skip@30:
-   CMP   #$04
    BNE   .lb_skip@29
-   JMP   .case@38
+   JMP   .case@35
 .lb_skip@29:
-   CMP   #$05
+   CMP   #$02
    BNE   .lb_skip@28
-   JMP   .case@39
+   JMP   .case@36
 .lb_skip@28:
-   CMP   #$06
+   CMP   #$03
    BNE   .lb_skip@27
-   JMP   .case@40
+   JMP   .case@37
 .lb_skip@27:
-   CMP   #$07
+   CMP   #$04
    BNE   .lb_skip@26
-   JMP   .case@41
+   JMP   .case@38
 .lb_skip@26:
-   CMP   #$08
+   CMP   #$05
    BNE   .lb_skip@25
-   JMP   .case@42
+   JMP   .case@39
 .lb_skip@25:
-   CMP   #$09
+   CMP   #$06
    BNE   .lb_skip@24
-   JMP   .case@43
+   JMP   .case@40
 .lb_skip@24:
-   CMP   #$0A
+   CMP   #$07
    BNE   .lb_skip@23
-   JMP   .case@44
+   JMP   .case@41
 .lb_skip@23:
-   CMP   #$0B
+   CMP   #$08
    BNE   .lb_skip@22
-   JMP   .case@45
+   JMP   .case@42
 .lb_skip@22:
-   CMP   #$0C
+   CMP   #$09
    BNE   .lb_skip@21
-   JMP   .case@46
+   JMP   .case@43
 .lb_skip@21:
-   CMP   #$0D
+   CMP   #$0A
    BNE   .lb_skip@20
-   JMP   .case@47
+   JMP   .case@44
 .lb_skip@20:
-   CMP   #$0E
+   CMP   #$0B
    BNE   .lb_skip@19
-   JMP   .case@48
+   JMP   .case@45
 .lb_skip@19:
-   CMP   #$0F
+   CMP   #$0C
    BNE   .lb_skip@18
-   JMP   .case@49
+   JMP   .case@46
 .lb_skip@18:
-   CMP   #$10
+   CMP   #$0D
    BNE   .lb_skip@17
-   JMP   .case@50
+   JMP   .case@47
 .lb_skip@17:
-   CMP   #$11
+   CMP   #$0E
    BNE   .lb_skip@16
-   JMP   .case@51
+   JMP   .case@48
 .lb_skip@16:
-   CMP   #$12
+   CMP   #$0F
    BNE   .lb_skip@15
-   JMP   .case@52
+   JMP   .case@49
 .lb_skip@15:
-   CMP   #$13
+   CMP   #$10
    BNE   .lb_skip@14
-   JMP   .case@53
+   JMP   .case@50
 .lb_skip@14:
-   CMP   #$14
+   CMP   #$11
    BNE   .lb_skip@13
-   JMP   .case@54
+   JMP   .case@51
 .lb_skip@13:
-   CMP   #$15
+   CMP   #$12
    BNE   .lb_skip@12
-   JMP   .case@55
+   JMP   .case@52
 .lb_skip@12:
-   CMP   #$16
+   CMP   #$13
    BNE   .lb_skip@11
-   JMP   .case@56
+   JMP   .case@53
 .lb_skip@11:
-   CMP   #$17
+   CMP   #$14
    BNE   .lb_skip@10
-   JMP   .case@57
+   JMP   .case@54
 .lb_skip@10:
-   CMP   #$18
+   CMP   #$15
    BNE   .lb_skip@9
-   JMP   .case@58
+   JMP   .case@55
 .lb_skip@9:
+   CMP   #$16
+   BNE   .lb_skip@8
+   JMP   .case@56
+.lb_skip@8:
+   CMP   #$17
+   BNE   .lb_skip@7
+   JMP   .case@57
+.lb_skip@7:
+   CMP   #$18
+   BNE   .lb_skip@6
+   JMP   .case@58
+.lb_skip@6:
    JMP   .default@59
 .case@35:
    LDA   OPERAND_COUNT
@@ -1358,16 +1338,16 @@ do_2op:
 .if_end@22:
    LDA   __local_do_2op__4
    CMP   __local_do_2op__3
-   BNE   .thread@1
+   BNE   .thread@0
    LDA   __local_do_2op__5
    CMP   __local_do_2op__2
-   BEQ   .cmp_true@6
-.thread@1:
+   BEQ   .cmp_true@3
+.thread@0:
    LDA   #$00
-   JMP   .cmp_end@7
-.cmp_true@6:
+   JMP   .cmp_end@4
+.cmp_true@3:
    LDA   #$01
-.cmp_end@7:
+.cmp_end@4:
    STA   __local_do_2op__equal
    ORA   #$00
    BNE   .and_false@23
@@ -1384,16 +1364,16 @@ do_2op:
    STA   __local_do_2op__0
    LDA   __local_do_2op__4
    CMP   OPERANDS+5
-   BNE   .thread@2
+   BNE   .thread@1
    LDA   __local_do_2op__5
    CMP   __local_do_2op__0
-   BEQ   .cmp_true@9
-.thread@2:
+   BEQ   .cmp_true@6
+.thread@1:
    LDA   #$00
-   JMP   .cmp_end@10
-.cmp_true@9:
+   JMP   .cmp_end@7
+.cmp_true@6:
    LDA   #$01
-.cmp_end@10:
+.cmp_end@7:
    STA   __local_do_2op__equal
    ORA   #$00
    BNE   .if_end@28
@@ -1405,16 +1385,16 @@ do_2op:
    STA   __local_do_2op__0
    LDA   __local_do_2op__4
    CMP   OPERANDS+7
-   BNE   .thread@3
+   BNE   .thread@2
    LDA   __local_do_2op__5
    CMP   __local_do_2op__0
-   BEQ   .cmp_true@12
-.thread@3:
+   BEQ   .cmp_true@9
+.thread@2:
    LDA   #$00
-   JMP   .cmp_end@13
-.cmp_true@12:
+   JMP   .cmp_end@10
+.cmp_true@9:
    LDA   #$01
-.cmp_end@13:
+.cmp_end@10:
    STA   __local_do_2op__equal
 .if_end@28:
 .if_end@25:
@@ -1427,6 +1407,23 @@ do_2op:
    SBC   __local_do_2op__2
    LDA   __local_do_2op__4
    SBC   __local_do_2op__3
+   BVC   .cmp_novf@12
+   EOR   #$80
+.cmp_novf@12:
+   BMI   .cmp_true@13
+   LDA   #$00
+   JMP   .cmp_end@14
+.cmp_true@13:
+   LDA   #$01
+.cmp_end@14:
+   JSR   branch
+   JMP   .switch@34_break
+.case@37:
+   LDA   __local_do_2op__2
+   SEC
+   SBC   __local_do_2op__5
+   LDA   __local_do_2op__3
+   SBC   __local_do_2op__4
    BVC   .cmp_novf@15
    EOR   #$80
 .cmp_novf@15:
@@ -1438,12 +1435,12 @@ do_2op:
 .cmp_end@17:
    JSR   branch
    JMP   .switch@34_break
-.case@37:
-   LDA   __local_do_2op__2
+.case@38:
+   JSR   dec_var
    SEC
-   SBC   __local_do_2op__5
-   LDA   __local_do_2op__3
-   SBC   __local_do_2op__4
+   SBC   __local_do_2op__2
+   TXA
+   SBC   __local_do_2op__3
    BVC   .cmp_novf@18
    EOR   #$80
 .cmp_novf@18:
@@ -1455,23 +1452,6 @@ do_2op:
 .cmp_end@20:
    JSR   branch
    JMP   .switch@34_break
-.case@38:
-   JSR   dec_var
-   SEC
-   SBC   __local_do_2op__2
-   TXA
-   SBC   __local_do_2op__3
-   BVC   .cmp_novf@21
-   EOR   #$80
-.cmp_novf@21:
-   BMI   .cmp_true@22
-   LDA   #$00
-   JMP   .cmp_end@23
-.cmp_true@22:
-   LDA   #$01
-.cmp_end@23:
-   JSR   branch
-   JMP   .switch@34_break
 .case@39:
    JSR   inc_var
    STA   __local_do_2op__0
@@ -1481,15 +1461,15 @@ do_2op:
    SBC   __local_do_2op__0
    LDA   __local_do_2op__3
    SBC   __local_do_2op__equal
-   BVC   .cmp_novf@24
+   BVC   .cmp_novf@21
    EOR   #$80
-.cmp_novf@24:
-   BMI   .cmp_true@25
+.cmp_novf@21:
+   BMI   .cmp_true@22
    LDA   #$00
-   JMP   .cmp_end@26
-.cmp_true@25:
+   JMP   .cmp_end@23
+.cmp_true@22:
    LDA   #$01
-.cmp_end@26:
+.cmp_end@23:
    JSR   branch
    JMP   .switch@34_break
 .case@40:
@@ -1502,16 +1482,16 @@ do_2op:
    LDA   __local_do_2op__4
    AND   __local_do_2op__3
    CMP   __local_do_2op__3
-   BNE   .thread@4
+   BNE   .thread@3
    LDA   __local_do_2op__0
    CMP   __local_do_2op__2
-   BEQ   .cmp_true@27
-.thread@4:
+   BEQ   .cmp_true@24
+.thread@3:
    LDA   #$00
-   JMP   .cmp_end@28
-.cmp_true@27:
+   JMP   .cmp_end@25
+.cmp_true@24:
    LDA   #$01
-.cmp_end@28:
+.cmp_end@25:
    JSR   branch
    JMP   .switch@34_break
 .case@42:
@@ -1639,37 +1619,37 @@ do_var:
    CMP   #$01
    BEQ   .case@62
    CMP   #$02
-   BNE   .lb_skip@40
-   JMP   .case@63
-.lb_skip@40:
-   CMP   #$03
-   BNE   .lb_skip@39
-   JMP   .case@64
-.lb_skip@39:
-   CMP   #$04
-   BNE   .lb_skip@38
-   JMP   .case@65
-.lb_skip@38:
-   CMP   #$05
    BNE   .lb_skip@37
-   JMP   .case@66
+   JMP   .case@63
 .lb_skip@37:
-   CMP   #$06
+   CMP   #$03
    BNE   .lb_skip@36
-   JMP   .case@67
+   JMP   .case@64
 .lb_skip@36:
-   CMP   #$07
+   CMP   #$04
    BNE   .lb_skip@35
-   JMP   .case@68
+   JMP   .case@65
 .lb_skip@35:
-   CMP   #$08
+   CMP   #$05
    BNE   .lb_skip@34
-   JMP   .case@69
+   JMP   .case@66
 .lb_skip@34:
-   CMP   #$09
+   CMP   #$06
    BNE   .lb_skip@33
-   JMP   .case@70
+   JMP   .case@67
 .lb_skip@33:
+   CMP   #$07
+   BNE   .lb_skip@32
+   JMP   .case@68
+.lb_skip@32:
+   CMP   #$08
+   BNE   .lb_skip@31
+   JMP   .case@69
+.lb_skip@31:
+   CMP   #$09
+   BNE   .lb_skip@30
+   JMP   .case@70
+.lb_skip@30:
    JMP   .default@71
 .case@61:
    JSR   instr_call

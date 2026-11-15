@@ -59,6 +59,17 @@ A constant shift narrows the same way. For `return len << 4;` with a
 `Truncate` into `Binary(<<, @2.len, 4uc, %6.1)`, which lowers to four
 `ASL A`. Without it, the shift goes through a zero-page byte.
 
+A comparison's result is 0 or 1, so a `Truncate` of one is the same
+comparison with a narrow result, and its operands stay as they are.
+Zork's `branch` starts `bool on_true = (b & 0x80) != 0;`, which C
+computes as an `int` and converts to `bool` with a `Truncate`. With
+the comparison's result in one byte, `tac_to_asm` lowers the test
+against 0 as `AND #$80; BEQ end; LDA #1; end:`
+(`_translate_zero_test`), where the `int` result took `BNE true; LDA
+#0; JMP end; true: LDA #1; end:`. This needs the truncate to be the
+comparison's only reader, and each variable operand to hold at the
+truncate the value the comparison read, as below.
+
 ## When it applies
 
 - The `Truncate` reads an SSA-renamed variable defined by a
@@ -124,6 +135,15 @@ byte from the two source bytes it comes from. `(uint8_t)(ZCHARS >>
 5)` is `LDA ZCHARS; LSR` five times; `STA t; LDA ZCHARS+1; ASL` three
 times; `ORA t`, where it called `lsr16`, and a shift by 1 or 7 is four
 instructions (`LDA hi; LSR; LDA lo; ROR`).
+
+`tac_to_asm` also compares only the low bytes of `==` and `!=` that
+either operand can have nonzero (`significant_bytes`), since the bytes
+above them are 0 in both. In `(b & 0x80) != 0` the `int` operand has
+one such byte and 0 has none, so the comparison is one byte. Before
+this, the high bytes, which the asm already knew were 0, took `LDA
+#$00; CMP #$00; BNE`. Zork's `instr_jin` compares two bytes, which
+C promotes to `int`, and now `LDA OPERANDS+2; CMP (p),Y; BEQ` does
+it.
 
 [Truncate of an extend](truncate_extend_fold.md) is the case with no
 operation in between.

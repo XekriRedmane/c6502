@@ -227,18 +227,9 @@ smc_body_draw:
    LDX   __zpabi_smc_body_draw__slot
    LDA   companion_dir,X
    AND   #$80
-   STA   __local_smc_body_draw__lo
-   LDA   #$00
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   __local_smc_body_draw__lo
-   CMP   #$00
-   BNE   .cmp_true@0
-   LDA   #$00
-   JMP   .cmp_end@1
-.cmp_true@0:
+   BEQ   .cmp_end@0
    LDA   #$01
-.cmp_end@1:
+.cmp_end@0:
    STA   __local_smc_body_draw__2
    LDA   __zpabi_smc_body_draw__state
    BNE   .if_else@15
@@ -382,10 +373,6 @@ active_pos_step:
    STA   companion_pos_lo,X
    LDA   __local_active_pos_step__1
    STA   companion_pos_hi,X
-   LDA   #$00
-   CMP   #$00
-   BNE   .if_end@28
-   LDA   __local_active_pos_step__1
    CMP   #$03
    BNE   .if_end@28
    LDA   __local_active_pos_step__0

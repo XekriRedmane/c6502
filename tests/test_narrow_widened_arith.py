@@ -6,8 +6,9 @@ the wraparound-safe ops (Add / Subtract / Multiply / BitwiseAnd /
 BitwiseOr / BitwiseXor), the soundness gates that exclude
 non-wraparound-safe ops (Divide / Modulo / RightShift, and LeftShift
 by anything but a constant below the narrow width) and non-SSA-renamed
-names, and the constant-narrowing logic that
-masks Constants modulo the target width.
+names, the constant-narrowing logic that
+masks Constants modulo the target width, and a truncated comparison
+narrowing to its 1-byte result.
 """
 
 import unittest
@@ -513,6 +514,50 @@ class TestNarrowWidenedArith(unittest.TestCase):
             with self.subTest(type(between[0]).__name__):
                 out = self._wide_global_shift(between)
                 self.assertIsInstance(out[-1], tac_ast.Truncate)
+
+    def _compare_trunc(self, between=(), extra_use=False):
+        """`r = (int)t != 0; d = (uchar)r`, with `between` before the
+        Truncate and, with `extra_use`, a second reader of `r`."""
+        instrs = [
+            tac_ast.Binary(
+                op=tac_ast.NotEqual(), src1=_var("t"),
+                src2=_const_int(0), dst=_var("r"),
+            ),
+            *between,
+            tac_ast.Truncate(src=_var("r"), dst=_var("d")),
+        ]
+        if extra_use:
+            instrs.append(tac_ast.Copy(src=_var("r"), dst=_var("g")))
+        symbols = {
+            "t": _static(c99_ast.Int()),
+            "r": _local(c99_ast.Int()),
+            "d": _local(c99_ast.UChar()),
+            "g": _static(c99_ast.Int()),
+        }
+        return narrow_widened_arith(
+            _fn(instrs), symbols=symbols, ssa_dsts={"r", "d"},
+        ).instructions
+
+    def test_compare_result_narrowed(self):
+        # The comparison writes the 1-byte dst, and its operands stay
+        # 2 bytes wide.
+        out = self._compare_trunc()
+        self.assertEqual(out, [tac_ast.Binary(
+            op=tac_ast.NotEqual(), src1=_var("t"), src2=_const_int(0),
+            dst=_var("d"),
+        )])
+
+    def test_compare_with_other_reader_left_alone(self):
+        out = self._compare_trunc(extra_use=True)
+        self.assertIsInstance(out[1], tac_ast.Truncate)
+
+    def test_compare_operand_changed_left_alone(self):
+        # A call between the comparison and the Truncate may change the
+        # global `t` the comparison read.
+        out = self._compare_trunc(
+            between=[tac_ast.FunctionCall(name="h", args=[], dst=None)],
+        )
+        self.assertIsInstance(out[-1], tac_ast.Truncate)
 
     def test_volatile_wide_global_not_narrowed(self):
         out = self._wide_global_shift([], volatile=True)

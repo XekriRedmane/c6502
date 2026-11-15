@@ -1034,7 +1034,7 @@ static void branch_to_offset(uint16_t offset) {
  * is the byte's low six bits or fourteen bits, sign-extended, from it
  * and the byte after. An offset of 0 returns false from the routine,
  * 1 returns true, and any other moves Z_PC. */
-void branch(bool condition) {
+void branch(register bool condition) {
     uint8_t b = get_next_code_byte();
     bool on_true = (b & 0x80) != 0;
     if (on_true != condition) {

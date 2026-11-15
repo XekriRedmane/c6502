@@ -14,7 +14,12 @@ bytes of a callee's parameter instead of in the caller's own pool:
   keeps the local in the callee's bytes, so it doesn't copy it there
   before each call. A local that a copy links to it, and that's never
   live at the same time, goes there too, so `p += 0x100` in a loop
-  updates the bytes in place.
+  updates the bytes in place. So does a local that a step links to it,
+  `t = v + k` or `t = v - k` with `v` dead after the step, and a value
+  a call returns into one of them. `sector = start(); write(++sector);
+  write(++sector);` keeps every value of `sector` in `write`'s bytes:
+  `start`'s result is stored there, and each `++sector` is an add in
+  place.
 
 This is what Zork's code does by hand with its global `SCRATCH2`: the
 routines it calls read the pointer there and leave it alone, so a
@@ -24,7 +29,13 @@ the same arrangement, and checks that it's safe.
 
 `tac_to_asm` writes each such variable as the slot's `Data` operand,
 so the argument store before a call becomes a store of a byte to
-itself, which it drops. The allocators then give each set of shared
+itself, which it drops. It drops the store too when the variable's
+slot and the callee's are two members of one share, whose symbols
+are spelled differently but get one address
+(`slot_sharing.slot_aliases`). A function's parameter passed on
+unchanged joins its callee's bytes before any caller is made a holder,
+so a caller that passes its value to both functions keeps it in one
+set of bytes. The allocators then give each set of shared
 slots one address, kept off the bytes of every function that can be
 on the call stack with any function using it.
 

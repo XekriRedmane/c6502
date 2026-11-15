@@ -2,32 +2,28 @@ HARGS	EQU	$00
 SSP	EQU	$02
 FP	EQU	$04
 DPTR	EQU	$06
-input_ptr	EQU	$08
-char_count	EQU	$09
-input_count	EQU	$0A
-token_idx	EQU	$0B
-parse	EQU	$0C
-text	EQU	$0E
-props	EQU	$10
-sign_bit	EQU	$12
-remainder	EQU	$13
-save_sector	EQU	$15
-attr_ptr	EQU	$17
-__local_do_var__n	EQU	$19
-__local_instr_get_prop__0	EQU	$19
-__local_instr_jin__0	EQU	$19
-__local_do_var__0	EQU	$1A
-__local_instr_get_prop__1	EQU	$1A
-__local_instr_jin__1	EQU	$1A
-__local_do_var__1	EQU	$1B
-__local_instr_get_prop__y	EQU	$1B
-__local_instr_jin__2	EQU	$1B
-__local_do_var__2	EQU	$1C
-__local_instr_get_prop__2	EQU	$1C
-__local_instr_jin__3	EQU	$1C
-__local_do_var__3	EQU	$1D
-__local_instr_get_prop__3	EQU	$1D
-__local_store_result__0	EQU	$1E
+disk_buffer	EQU	$08
+disk_sector	EQU	$0A
+input_ptr	EQU	$0C
+char_count	EQU	$0D
+input_count	EQU	$0E
+token_idx	EQU	$0F
+parse	EQU	$10
+text	EQU	$12
+props	EQU	$14
+sign_bit	EQU	$16
+remainder	EQU	$17
+attr_ptr	EQU	$19
+__local_branch__offset_1	EQU	$1B
+__local_instr_get_prop_len__0	EQU	$1B
+__local_instr_sread__0	EQU	$1B
+__local_branch__offset_0	EQU	$1C
+__local_instr_get_prop_len__1	EQU	$1C
+__local_instr_sread__1	EQU	$1C
+__local_branch__0	EQU	$1D
+__local_instr_get_prop_len__2	EQU	$1D
+__local_instr_sread__2	EQU	$1D
+__local_branch__condition	EQU	$1E
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -74,65 +70,77 @@ __local_do_2op__2	EQU	$53
 __local_instr_call__i	EQU	$53
 __local_match_dictionary_word__2	EQU	$53
 __local_print_number__0	EQU	$53
+__local_print_zstring__ch	EQU	$53
 __local_ascii_to_zchar__1	EQU	$54
 __local_do_2op__3	EQU	$54
 __local_instr_call__args	EQU	$54
 __local_match_dictionary_word__3	EQU	$54
 __local_print_number__1	EQU	$54
+__local_print_zstring__c_0	EQU	$54
 __local_ascii_to_zchar__2	EQU	$55
 __local_do_2op__4	EQU	$55
 __local_instr_call__3	EQU	$55
 __local_match_dictionary_word__4	EQU	$55
 __local_print_number__count	EQU	$55
+__local_print_zstring__0	EQU	$55
 __local_ascii_to_zchar__index	EQU	$56
 __local_do_2op__5	EQU	$56
 __local_match_dictionary_word__5	EQU	$56
 __local_print_number__2	EQU	$56
-__local_branch__offset_1	EQU	$57
-__local_get_next_code_byte2__found_1	EQU	$57
+__local_branch_to_offset__0	EQU	$57
 __local_match_dictionary_word__count_1	EQU	$57
+__local_mulu16__b_0	EQU	$57
 __local_print_number__n_1	EQU	$57
 __local_remove_obj__0	EQU	$57
-__local_branch__offset_0	EQU	$58
-__local_get_next_code_byte2__page	EQU	$58
+__local_return_value__0	EQU	$57
+__local_branch_to_offset__pages_0	EQU	$58
 __local_match_dictionary_word__6	EQU	$58
+__local_mulu16__b_1	EQU	$58
 __local_print_number__n_0	EQU	$58
 __local_remove_obj__1	EQU	$58
-__local_branch__0	EQU	$59
+__local_return_value__1	EQU	$58
+__local_branch_to_offset__1	EQU	$59
 __local_match_dictionary_word__entry_0	EQU	$59
+__local_mulu16__a_0	EQU	$59
 __local_print_number__digits	EQU	$59
 __local_remove_obj__2	EQU	$59
+__local_return_value__x	EQU	$59
+__local_branch_to_offset__pages_1	EQU	$5A
 __local_match_dictionary_word__entry_1	EQU	$5A
+__local_mulu16__a_1	EQU	$5A
 __local_print_number__4	EQU	$5A
 __local_remove_obj__3	EQU	$5A
-__local_return_value__0	EQU	$5A
+__local_return_value__count	EQU	$5A
+__local_branch_to_offset__2	EQU	$5B
+__local_mulu16__product	EQU	$5B
 __local_print_number__5	EQU	$5B
 __local_remove_obj__4	EQU	$5B
-__local_return_value__1	EQU	$5B
+__local_store_result__0	EQU	$5B
+__local_print_ascii_string__count	EQU	$5C
 __local_print_number__6	EQU	$5C
 __local_remove_obj__5	EQU	$5C
-__local_return_value__x	EQU	$5C
+__local_print_ascii_string__i	EQU	$5D
 __local_print_number__7	EQU	$5D
 __local_remove_obj__6	EQU	$5D
-__local_return_value__count	EQU	$5D
+__local_buffer_char__0	EQU	$5E
 __local_divu16__partial_0	EQU	$5E
-__local_get_next_code_byte__found_1	EQU	$5E
-__local_print_ascii_string__count	EQU	$5E
+__local_get_object_addr__0	EQU	$5E
 __local_divu16__partial_1	EQU	$5F
-__local_get_next_code_byte__page	EQU	$5F
-__local_print_ascii_string__i	EQU	$5F
-__local_buffer_char__0	EQU	$60
+__local_dump_buffer_with_more__0	EQU	$5F
+__local_get_object_addr__1	EQU	$5F
 __local_divu16__quotient_0	EQU	$60
+__local_dump_buffer_with_more__end	EQU	$60
+__local_get_object_addr__2	EQU	$60
 __local_divu16__quotient_1	EQU	$61
-__local_dump_buffer_with_more__0	EQU	$61
+__local_dump_buffer_to_printer__x	EQU	$61
+__local_get_object_addr__3	EQU	$61
 __local_divu16__0	EQU	$62
-__local_dump_buffer_with_more__end	EQU	$62
+__local_dump_buffer_to_printer__1	EQU	$62
+__local_get_object_addr__obj	EQU	$62
 __local_divu16__1	EQU	$63
-__local_dump_buffer_to_printer__x	EQU	$63
+__local_dump_buffer_to_printer__2	EQU	$63
 __local_divu16__2	EQU	$64
-__local_dump_buffer_to_printer__1	EQU	$64
 __local_divu16__i	EQU	$65
-__local_dump_buffer_to_printer__2	EQU	$65
 SECTORS_PER_TRACK	EQU	$7F
 CURR_OPCODE	EQU	$80
 OPERAND_COUNT	EQU	$81
@@ -176,7 +184,7 @@ __local_is_dict_separator__1	EQU	$E0
 __local_please_insert_save_diskette__0	EQU	$E0
 __local_var_get__var	EQU	$E0
 __local_write_to_sector__1	EQU	$E0
-__zpabi_branch__condition	EQU	$E0
+__zpabi_branch_to_offset__offset_0	EQU	$E0
 __zpabi_check_sign__a_0	EQU	$E0
 __zpabi_copy_data_from_buff__dest_0	EQU	$E0
 __zpabi_copy_data_to_buff__src_0	EQU	$E0
@@ -185,6 +193,7 @@ __zpabi_is_std_separator__c	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_number__n_0	EQU	$E0
+__zpabi_return_value__value_0	EQU	$E0
 __zpabi_search_nonalpha_table__c	EQU	$E0
 __zpabi_set_attr_word__word_0	EQU	$E0
 __zpabi_store_with_sign__n_0	EQU	$E0
@@ -193,19 +202,19 @@ __local_get_next_code_word__1	EQU	$E1
 __local_instr_get_next_prop__1	EQU	$E1
 __local_instr_get_parent__1	EQU	$E1
 __local_instr_random__1	EQU	$E1
-__local_instr_test_attr__1	EQU	$E1
 __local_is_dict_separator__2	EQU	$E1
 __local_please_insert_save_diskette__1	EQU	$E1
 __local_search_nonalpha_table__0	EQU	$E1
-__local_store_and_branch_on__related	EQU	$E1
 __local_var_get__0	EQU	$E1
 __local_write_to_sector__2	EQU	$E1
+__zpabi_branch_to_offset__offset_1	EQU	$E1
 __zpabi_check_sign__a_1	EQU	$E1
 __zpabi_copy_data_from_buff__dest_1	EQU	$E1
 __zpabi_copy_data_to_buff__src_1	EQU	$E1
 __zpabi_load_address__addr_1	EQU	$E1
 __zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_number__n_1	EQU	$E1
+__zpabi_return_value__value_1	EQU	$E1
 __zpabi_set_attr_word__word_1	EQU	$E1
 __zpabi_store_with_sign__n_1	EQU	$E1
 __zpabi_var_put__value_1	EQU	$E1
@@ -214,15 +223,14 @@ __local_dec_var__0	EQU	$E4
 __local_inc_var__0	EQU	$E4
 __local_instr_clear_attr__0	EQU	$E4
 __local_instr_get_child__0	EQU	$E4
-__local_instr_get_prop_addr__0	EQU	$E4
-__local_instr_get_prop_len__0	EQU	$E4
 __local_instr_get_sibling__0	EQU	$E4
 __local_instr_insert_obj__0	EQU	$E4
 __local_instr_put_prop__0	EQU	$E4
+__local_instr_restore__pages	EQU	$E4
+__local_instr_save__pages	EQU	$E4
+__local_instr_test_attr__1	EQU	$E4
 __local_locate_last_ram_page__1	EQU	$E4
 __zpabi_check_sign__b_0	EQU	$E4
-__zpabi_inc_sector_and_read__buffer_0	EQU	$E4
-__zpabi_inc_sector_and_write__buffer_0	EQU	$E4
 __zpabi_is_dict_separator__c	EQU	$E4
 __zpabi_is_separator__c	EQU	$E4
 __local_dec_var__1	EQU	$E5
@@ -230,36 +238,29 @@ __local_get_dictionary_addr__0	EQU	$E5
 __local_inc_var__1	EQU	$E5
 __local_instr_clear_attr__1	EQU	$E5
 __local_instr_get_child__1	EQU	$E5
-__local_instr_get_prop_addr__y	EQU	$E5
-__local_instr_get_prop_len__1	EQU	$E5
 __local_instr_get_sibling__1	EQU	$E5
 __local_instr_insert_obj__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
+__local_instr_restore__1	EQU	$E5
 __local_locate_last_ram_page__2	EQU	$E5
 __local_print_obj__obj	EQU	$E5
 __local_read_line__c	EQU	$E5
 __local_z_compress__0	EQU	$E5
 __zpabi_check_sign__b_1	EQU	$E5
-__zpabi_inc_sector_and_read__buffer_1	EQU	$E5
-__zpabi_inc_sector_and_write__buffer_1	EQU	$E5
 __local_check_sign__a	EQU	$E6
 __local_dec_var__2	EQU	$E6
 __local_get_prompted_number_from_user__key	EQU	$E6
 __local_inc_var__2	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E6
-__local_instr_get_prop_addr__1	EQU	$E6
-__local_instr_get_prop_len__2	EQU	$E6
 __local_instr_insert_obj__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
 __local_locate_last_ram_page__3	EQU	$E6
 __local_print_obj__0	EQU	$E6
 __local_read_line__left	EQU	$E6
-__local_store_with_sign__n_0	EQU	$E6
 __local_z_compress__1	EQU	$E6
-__zpabi_branch_to_offset__offset_0	EQU	$E6
 __zpabi_divu16__dividend_0	EQU	$E6
 __zpabi_mulu16__a_0	EQU	$E6
-__zpabi_return_value__value_0	EQU	$E6
+__zpabi_store_result__value_0	EQU	$E6
 __local_attr_ptr_and_mask__attr	EQU	$E7
 __local_get_nonstack_var__var	EQU	$E7
 __local_get_prompted_number_from_user__1	EQU	$E7
@@ -270,100 +271,84 @@ __local_print_obj__1	EQU	$E7
 __local_read_line__n	EQU	$E7
 __local_var_put__var	EQU	$E7
 __local_z_compress__2	EQU	$E7
-__zpabi_branch_to_offset__offset_1	EQU	$E7
 __zpabi_divu16__dividend_1	EQU	$E7
 __zpabi_mulu16__a_1	EQU	$E7
-__zpabi_return_value__value_1	EQU	$E7
+__zpabi_store_result__value_1	EQU	$E7
 __local_attr_ptr_and_mask__mask_1	EQU	$E8
 __local_get_nonstack_var__0	EQU	$E8
 __local_get_property_ptr__0	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
 __local_next_property__y	EQU	$E8
 __local_pop__1	EQU	$E8
-__local_print_zstring__ch	EQU	$E8
 __local_z_compress__3	EQU	$E8
 __zpabi_divu16__divisor_0	EQU	$E8
+__zpabi_find_index_of_page_table__page_0	EQU	$E8
 __zpabi_mulu16__b_0	EQU	$E8
-__zpabi_store_result__value_0	EQU	$E8
+__zpabi_push__value_0	EQU	$E8
+__zpabi_set_nonstack_var__value_0	EQU	$E8
 __local_attr_ptr_and_mask__n	EQU	$E9
 __local_get_nonstack_var__1	EQU	$E9
 __local_get_property_len__0	EQU	$E9
 __local_get_property_ptr__1	EQU	$E9
 __local_instr_insert_obj__5	EQU	$E9
 __local_pop__2	EQU	$E9
-__local_print_zstring__c_0	EQU	$E9
 __zpabi_divu16__divisor_1	EQU	$E9
+__zpabi_find_index_of_page_table__page_1	EQU	$E9
 __zpabi_mulu16__b_1	EQU	$E9
-__zpabi_store_result__value_1	EQU	$E9
+__zpabi_push__value_1	EQU	$E9
+__zpabi_set_nonstack_var__value_1	EQU	$E9
 __local_get_nonstack_var__2	EQU	$EA
 __local_get_property_ptr__2	EQU	$EA
-__local_instr_save__pages	EQU	$EA
-__local_print_zstring__0	EQU	$EA
+__local_store_and_branch_on__related	EQU	$EA
+__local_store_with_sign__n_0	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
-__local_branch_to_offset__0	EQU	$F0
-__local_get_object_addr__0	EQU	$F0
-__local_mulu16__b_0	EQU	$F0
-__zpabi_find_index_of_page_table__page_0	EQU	$F0
-__zpabi_push__value_0	EQU	$F0
-__zpabi_set_nonstack_var__value_0	EQU	$F0
-__local_branch_to_offset__pages_0	EQU	$F1
-__local_get_object_addr__1	EQU	$F1
-__local_mulu16__b_1	EQU	$F1
-__zpabi_find_index_of_page_table__page_1	EQU	$F1
-__zpabi_push__value_1	EQU	$F1
-__zpabi_set_nonstack_var__value_1	EQU	$F1
-__local_branch_to_offset__1	EQU	$F2
-__local_get_object_addr__2	EQU	$F2
-__local_mulu16__a_0	EQU	$F2
-__local_set_nonstack_var__var	EQU	$F2
+__local_get_next_code_byte2__found_1	EQU	$F0
+__local_get_next_code_byte__found_1	EQU	$F0
+__local_set_nonstack_var__var	EQU	$F0
+__zpabi_print_ascii_string__s_0	EQU	$F0
+__local_get_next_code_byte2__page	EQU	$F1
+__local_get_next_code_byte__page	EQU	$F1
+__local_set_nonstack_var__0	EQU	$F1
+__zpabi_print_ascii_string__s_1	EQU	$F1
+__local_set_nonstack_var__1	EQU	$F2
 __local_set_page_first__0	EQU	$F2
-__zpabi_do_rwts_on_sector__sector_0	EQU	$F2
-__zpabi_print_ascii_string__s_0	EQU	$F2
-__zpabi_read_from_sector__sector_0	EQU	$F2
-__zpabi_write_to_sector__sector_0	EQU	$F2
-__local_branch_to_offset__pages_1	EQU	$F3
-__local_get_object_addr__3	EQU	$F3
-__local_mulu16__a_1	EQU	$F3
-__local_set_nonstack_var__0	EQU	$F3
+__zpabi_cout_string__s_0	EQU	$F2
 __local_set_page_first__prev_first	EQU	$F3
-__zpabi_do_rwts_on_sector__sector_1	EQU	$F3
-__zpabi_print_ascii_string__s_1	EQU	$F3
-__zpabi_read_from_sector__sector_1	EQU	$F3
-__zpabi_write_to_sector__sector_1	EQU	$F3
-__local_branch_to_offset__2	EQU	$F4
-__local_get_object_addr__obj	EQU	$F4
-__local_mulu16__product	EQU	$F4
-__local_set_nonstack_var__1	EQU	$F4
-__zpabi_cout_string__s_0	EQU	$F4
-__zpabi_do_rwts_on_sector__buffer_0	EQU	$F4
-__zpabi_read_from_sector__buffer_0	EQU	$F4
-__zpabi_write_to_sector__buffer_0	EQU	$F4
-__zpabi_cout_string__s_1	EQU	$F5
-__zpabi_do_rwts_on_sector__buffer_1	EQU	$F5
-__zpabi_read_from_sector__buffer_1	EQU	$F5
-__zpabi_write_to_sector__buffer_1	EQU	$F5
-__local_main__0	EQU	$F6
-__local_main__sector	EQU	$F7
-__local_do_instruction__v_1	EQU	$F8
-__local_do_instruction__0	EQU	$F9
-__local_do_instruction__v_0	EQU	$FA
-__local_do_instruction__forms	EQU	$FB
-__local_do_instruction__1	EQU	$FC
-__local_do_1op__0	EQU	$FD
-__local_instr_div__quotient	EQU	$FD
-__local_instr_mul__product	EQU	$FD
-__local_instr_restore__pages	EQU	$FD
-__local_instr_sread__0	EQU	$FD
-__local_do_1op__1	EQU	$FE
-__local_instr_div__0	EQU	$FE
-__local_instr_mul__0	EQU	$FE
-__local_instr_restore__1	EQU	$FE
-__local_instr_sread__1	EQU	$FE
-__local_do_1op__n	EQU	$FF
-__local_instr_sread__2	EQU	$FF
+__zpabi_cout_string__s_1	EQU	$F3
+__local_main__0	EQU	$F4
+__local_main__sector	EQU	$F5
+__local_do_instruction__v_1	EQU	$F6
+__local_do_instruction__0	EQU	$F7
+__local_do_instruction__v_0	EQU	$F8
+__local_do_instruction__forms	EQU	$F9
+__local_do_instruction__1	EQU	$FA
+__local_do_1op__0	EQU	$FB
+__local_do_var__n	EQU	$FB
+__local_instr_div__quotient	EQU	$FB
+__local_instr_get_prop__0	EQU	$FB
+__local_instr_get_prop_addr__0	EQU	$FB
+__local_instr_jin__0	EQU	$FB
+__local_instr_mul__product	EQU	$FB
+__local_do_1op__1	EQU	$FC
+__local_do_var__0	EQU	$FC
+__local_instr_div__0	EQU	$FC
+__local_instr_get_prop__1	EQU	$FC
+__local_instr_get_prop_addr__y	EQU	$FC
+__local_instr_jin__1	EQU	$FC
+__local_instr_mul__0	EQU	$FC
+__local_do_1op__n	EQU	$FD
+__local_do_var__1	EQU	$FD
+__local_instr_get_prop__y	EQU	$FD
+__local_instr_get_prop_addr__1	EQU	$FD
+__local_instr_jin__2	EQU	$FD
+__local_do_var__2	EQU	$FE
+__local_instr_get_prop__2	EQU	$FE
+__local_instr_jin__3	EQU	$FE
+__local_do_var__3	EQU	$FF
+__local_instr_get_prop__3	EQU	$FF
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -381,7 +366,7 @@ COUT1	EQU	$FDF0
 ; def A_mod_3 params=__zpabi_A_mod_3__a locals= indirect=false in_cycle=false param_regs=A
 ; def ascii_to_zchar params= locals=__local_ascii_to_zchar__z,__local_ascii_to_zchar__dest,__local_ascii_to_zchar__left,__local_ascii_to_zchar__0,__local_ascii_to_zchar__1,__local_ascii_to_zchar__2,__local_ascii_to_zchar__index indirect=false in_cycle=false
 ; def attr_ptr_and_mask params= locals=__local_attr_ptr_and_mask__attr,__local_attr_ptr_and_mask__mask_1,__local_attr_ptr_and_mask__n indirect=false in_cycle=false
-; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__0 indirect=false in_cycle=false
+; def branch params=__zpabi_branch__condition locals=__local_branch__offset_1,__local_branch__offset_0,__local_branch__0,__local_branch__condition indirect=false in_cycle=false param_regs=A
 ; def branch_to_offset params=__zpabi_branch_to_offset__offset_0,__zpabi_branch_to_offset__offset_1 locals=__local_branch_to_offset__0,__local_branch_to_offset__pages_0,__local_branch_to_offset__1,__local_branch_to_offset__pages_1,__local_branch_to_offset__2 indirect=false in_cycle=false
 ; def buffer_char params=__zpabi_buffer_char__c locals=__local_buffer_char__0 indirect=false in_cycle=false param_regs=A
 ; def check_sign params=__zpabi_check_sign__a_0,__zpabi_check_sign__a_1,__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 locals=__local_check_sign__a indirect=false in_cycle=false
@@ -394,7 +379,7 @@ COUT1	EQU	$FDF0
 ; def do_1op params=__zpabi_do_1op__n locals=__local_do_1op__0,__local_do_1op__1,__local_do_1op__n indirect=false in_cycle=false param_regs=A
 ; def do_2op params=__zpabi_do_2op__n locals=__local_do_2op__equal,__local_do_2op__0,__local_do_2op__left,__local_do_2op__2,__local_do_2op__3,__local_do_2op__4,__local_do_2op__5 indirect=false in_cycle=false param_regs=A
 ; def do_instruction params= locals=__local_do_instruction__v_1,__local_do_instruction__0,__local_do_instruction__v_0,__local_do_instruction__forms,__local_do_instruction__1 indirect=false in_cycle=false
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__sector_0,__zpabi_do_rwts_on_sector__sector_1,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals= indirect=false in_cycle=false param_regs=A,,,,
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals= indirect=false in_cycle=false param_regs=A
 ; def do_var params=__zpabi_do_var__n locals=__local_do_var__n,__local_do_var__0,__local_do_var__1,__local_do_var__2,__local_do_var__3 indirect=false in_cycle=false param_regs=A
 ; def dump_buffer_line params= locals= indirect=false in_cycle=false
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
@@ -417,8 +402,8 @@ COUT1	EQU	$FDF0
 ; def get_property_ptr params= locals=__local_get_property_ptr__0,__local_get_property_ptr__1,__local_get_property_ptr__2 indirect=false in_cycle=false
 ; def get_var_content params= locals= indirect=false in_cycle=false
 ; def home params= locals= indirect=false in_cycle=false
-; def inc_sector_and_read params=__zpabi_inc_sector_and_read__buffer_0,__zpabi_inc_sector_and_read__buffer_1 locals= indirect=false in_cycle=false
-; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals= indirect=false in_cycle=false
+; def inc_sector_and_read params= locals= indirect=false in_cycle=false
+; def inc_sector_and_write params= locals= indirect=false in_cycle=false
 ; def inc_var params= locals=__local_inc_var__0,__local_inc_var__1,__local_inc_var__2 indirect=false in_cycle=false
 ; def instr_call params= locals=__local_instr_call__0,__local_instr_call__1,__local_instr_call__2,__local_instr_call__i,__local_instr_call__args,__local_instr_call__3 indirect=false in_cycle=false
 ; def instr_clear_attr params= locals=__local_instr_clear_attr__0,__local_instr_clear_attr__1,__local_instr_clear_attr__3 indirect=false in_cycle=false
@@ -466,7 +451,7 @@ COUT1	EQU	$FDF0
 ; def print_string_literal params= locals= indirect=false in_cycle=false
 ; def print_zstring params= locals=__local_print_zstring__ch,__local_print_zstring__c_0,__local_print_zstring__0 indirect=false in_cycle=true
 ; def push params=__zpabi_push__value_0,__zpabi_push__value_1 locals= indirect=false in_cycle=false
-; def read_from_sector params=__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1,__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1 locals= indirect=false in_cycle=false
+; def read_from_sector params= locals= indirect=false in_cycle=false
 ; def read_line params= locals=__local_read_line__c,__local_read_line__left,__local_read_line__n indirect=false in_cycle=false
 ; def read_next_sector params= locals= indirect=false in_cycle=false
 ; def remove_obj params= locals=__local_remove_obj__0,__local_remove_obj__1,__local_remove_obj__2,__local_remove_obj__3,__local_remove_obj__4,__local_remove_obj__5,__local_remove_obj__6 indirect=false in_cycle=false
@@ -483,7 +468,7 @@ COUT1	EQU	$FDF0
 ; def var_get params=__zpabi_var_get__var locals=__local_var_get__var,__local_var_get__0 indirect=false in_cycle=false param_regs=A
 ; def var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 locals=__local_var_put__var indirect=false in_cycle=false param_regs=A,,
 ; def write_next_sector params= locals= indirect=false in_cycle=false
-; def write_to_sector params=__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1,__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1 locals=__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false
+; def write_to_sector params= locals=__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false
 ; def z_compress params= locals=__local_z_compress__0,__local_z_compress__1,__local_z_compress__2,__local_z_compress__3 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
@@ -495,7 +480,7 @@ COUT1	EQU	$FDF0
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext branch params=__zpabi_branch__condition
+; ext branch params=__zpabi_branch__condition param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
 ; ext do_instruction params=
@@ -510,6 +495,8 @@ COUT1	EQU	$FDF0
 ; ext get_next_zchar params=
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
+; ext inc_sector_and_read params=
+; ext inc_sector_and_write params=
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -547,14 +534,16 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1,__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1
+; ext read_from_sector params=
+; ext read_next_sector params=
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_to_sector params=__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1,__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1
+; ext write_next_sector params=
+; ext write_to_sector params=
 ; call ascii_to_zchar -> A_mod_3
 ; call ascii_to_zchar -> get_alphabet_for_char
 ; call ascii_to_zchar -> search_nonalpha_table
@@ -818,21 +807,18 @@ COUT1	EQU	$FDF0
 ; share member=check_sign:__zpabi_check_sign__b_0,__zpabi_check_sign__b_1 holder=instr_div holder=instr_mod holder=instr_mul live=instr_div:check_sign live=instr_mod:check_sign live=instr_mul:check_sign forward=instr_div>check_sign forward=instr_mod>check_sign forward=instr_mul>check_sign writer=instr_div writer=instr_mod writer=instr_mul
 ; share member=is_dict_separator:__zpabi_is_dict_separator__c member=is_separator:__zpabi_is_separator__c holder=instr_sread live=instr_sread:is_dict_separator live=is_separator:is_dict_separator forward=instr_sread>is_dict_separator forward=is_separator>is_dict_separator writer=instr_sread
 ; share member=find_index_of_page_table:__zpabi_find_index_of_page_table__page_0,__zpabi_find_index_of_page_table__page_1 holder=get_next_code_byte holder=get_next_code_byte2 live=get_next_code_byte:find_index_of_page_table live=get_next_code_byte2:find_index_of_page_table forward=get_next_code_byte>find_index_of_page_table forward=get_next_code_byte2>find_index_of_page_table writer=get_next_code_byte writer=get_next_code_byte2
-; share member=do_rwts_on_sector:__zpabi_do_rwts_on_sector__sector_0,__zpabi_do_rwts_on_sector__sector_1 member=read_from_sector:__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1 member=write_to_sector:__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1 forward=read_from_sector>do_rwts_on_sector forward=write_to_sector>do_rwts_on_sector
-; share member=do_rwts_on_sector:__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 member=read_from_sector:__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1 member=write_to_sector:__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1 forward=read_from_sector>do_rwts_on_sector forward=write_to_sector>do_rwts_on_sector
-; share member=inc_sector_and_read:__zpabi_inc_sector_and_read__buffer_0,__zpabi_inc_sector_and_read__buffer_1 holder=instr_restore live=instr_restore:inc_sector_and_read forward=instr_restore>inc_sector_and_read writer=instr_restore
-; share member=inc_sector_and_write:__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 holder=instr_save live=instr_save:inc_sector_and_write forward=instr_save>inc_sector_and_write writer=instr_save
-; zp input_ptr size=1 at=$08 def=true init=$00
-; zp char_count size=1 at=$09 def=true init=$00
-; zp input_count size=1 at=$0A def=true init=$00
-; zp token_idx size=1 at=$0B def=true init=$00
-; zp parse size=2 at=$0C def=true init=$00,$00
-; zp text size=2 at=$0E def=true init=$00,$00
-; zp props size=2 at=$10 def=true init=$00,$00
-; zp sign_bit size=1 at=$12 def=true init=$00
-; zp remainder size=2 at=$13 def=true init=$00,$00
-; zp save_sector size=2 at=$15 def=true init=$00,$00
-; zp attr_ptr size=2 at=$17 def=true init=$00,$00
+; zp disk_buffer size=2 at=$08 def=true init=$00,$00
+; zp disk_sector size=2 at=$0A def=true init=$00,$00
+; zp input_ptr size=1 at=$0C def=true init=$00
+; zp char_count size=1 at=$0D def=true init=$00
+; zp input_count size=1 at=$0E def=true init=$00
+; zp token_idx size=1 at=$0F def=true init=$00
+; zp parse size=2 at=$10 def=true init=$00,$00
+; zp text size=2 at=$12 def=true init=$00,$00
+; zp props size=2 at=$14 def=true init=$00,$00
+; zp sign_bit size=1 at=$16 def=true init=$00
+; zp remainder size=2 at=$17 def=true init=$00,$00
+; zp attr_ptr size=2 at=$19 def=true init=$00,$00
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -988,12 +974,12 @@ main:
    STA   Z_HEADER_ADDR+1
    JSR   reset_window
    LDA   #$00
-   STA   __zpabi_read_from_sector__sector_0
-   STA   __zpabi_read_from_sector__sector_1
+   STA   disk_sector
+   STA   disk_sector+1
    LDA   Z_HEADER_ADDR
-   STA   __zpabi_read_from_sector__buffer_0
+   STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
-   STA   __zpabi_read_from_sector__buffer_1
+   STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@2
    JSR   restart
@@ -1012,17 +998,16 @@ main:
    LDA   __local_main__sector
    CMP   NUM_IMAGE_PAGES
    BEQ   .loop@3_break
+   STA   disk_sector
+   LDA   #$00
+   STA   disk_sector+1
    LDA   Z_HEADER_ADDR
    CLC
    ADC   #$00
-   STA   __zpabi_read_from_sector__buffer_0
+   STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__sector
-   STA   __zpabi_read_from_sector__buffer_1
-   LDA   __local_main__sector
-   STA   __zpabi_read_from_sector__sector_0
-   LDA   #$00
-   STA   __zpabi_read_from_sector__sector_1
+   STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@3
    JSR   restart
@@ -1455,6 +1440,7 @@ branch_to_offset:
 branch:
    SUBROUTINE
 
+   STA   __local_branch__condition
    JSR   get_next_code_byte
    STA   __local_branch__0
    AND   #$80
@@ -1470,7 +1456,7 @@ branch:
 .cmp_true@0:
    LDA   #$01
 .cmp_end@1:
-   CMP   __zpabi_branch__condition
+   CMP   __local_branch__condition
    BEQ   .if_end@13
    LDA   __local_branch__0
    AND   #$40
@@ -1840,7 +1826,6 @@ do_1op:
 .cmp_true@3:
    LDA   #$01
 .cmp_end@4:
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@17_break
 .case@19:
@@ -2103,7 +2088,6 @@ do_2op:
 .if_end@28:
 .if_end@25:
    LDA   __local_do_2op__equal
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@34_break
 .case@36:
@@ -2121,7 +2105,6 @@ do_2op:
 .cmp_true@16:
    LDA   #$01
 .cmp_end@17:
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@34_break
 .case@37:
@@ -2139,7 +2122,6 @@ do_2op:
 .cmp_true@19:
    LDA   #$01
 .cmp_end@20:
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@34_break
 .case@38:
@@ -2157,7 +2139,6 @@ do_2op:
 .cmp_true@22:
    LDA   #$01
 .cmp_end@23:
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@34_break
 .case@39:
@@ -2178,7 +2159,6 @@ do_2op:
 .cmp_true@25:
    LDA   #$01
 .cmp_end@26:
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@34_break
 .case@40:
@@ -2201,7 +2181,6 @@ do_2op:
 .cmp_true@27:
    LDA   #$01
 .cmp_end@28:
-   STA   __zpabi_branch__condition
    JSR   branch
    JMP   .switch@34_break
 .case@42:
@@ -2692,21 +2671,22 @@ get_next_code_byte:
    BCC   .if_end@13
    CMP   PAGE_TABLE_INDEX2
    BNE   .if_end@14
-   LDY   #$00
-   STY   ZCODE_PAGE_VALID2
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID2
 .if_end@14:
+   LDA   __zpabi_find_index_of_page_table__page_0
+   STA   disk_sector
+   LDA   __zpabi_find_index_of_page_table__page_1
+   STA   disk_sector+1
+   LDA   PAGE_TABLE_INDEX
    STA   __local_get_next_code_byte__found_1
    LDA   HIGH_MEM_ADDR
    CLC
    ADC   #$00
-   STA   __zpabi_read_from_sector__buffer_0
+   STA   disk_buffer
    LDA   HIGH_MEM_ADDR+1
    ADC   __local_get_next_code_byte__found_1
-   STA   __zpabi_read_from_sector__buffer_1
-   LDA   __zpabi_find_index_of_page_table__page_0
-   STA   __zpabi_read_from_sector__sector_0
-   LDA   __zpabi_find_index_of_page_table__page_1
-   STA   __zpabi_read_from_sector__sector_1
+   STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@15
    JSR   restart
@@ -2810,21 +2790,22 @@ get_next_code_byte2:
    BCC   .if_end@23
    CMP   PAGE_TABLE_INDEX
    BNE   .if_end@24
-   LDY   #$00
-   STY   ZCODE_PAGE_VALID
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID
 .if_end@24:
+   LDA   __zpabi_find_index_of_page_table__page_0
+   STA   disk_sector
+   LDA   __zpabi_find_index_of_page_table__page_1
+   STA   disk_sector+1
+   LDA   PAGE_TABLE_INDEX2
    STA   __local_get_next_code_byte2__found_1
    LDA   HIGH_MEM_ADDR
    CLC
    ADC   #$00
-   STA   __zpabi_read_from_sector__buffer_0
+   STA   disk_buffer
    LDA   HIGH_MEM_ADDR+1
    ADC   __local_get_next_code_byte2__found_1
-   STA   __zpabi_read_from_sector__buffer_1
-   LDA   __zpabi_find_index_of_page_table__page_0
-   STA   __zpabi_read_from_sector__sector_0
-   LDA   __zpabi_find_index_of_page_table__page_1
-   STA   __zpabi_read_from_sector__sector_1
+   STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@25
    JSR   restart
@@ -3553,7 +3534,6 @@ store_and_branch_on:
 .cmp_true@0:
    LDA   #$01
 .cmp_end@1:
-   STA   __zpabi_branch__condition
    JMP   branch
 
 instr_get_sibling:
@@ -3624,7 +3604,6 @@ instr_jin:
 .cmp_true@3:
    LDA   #$01
 .cmp_end@4:
-   STA   __zpabi_branch__condition
    JMP   branch
 
 attr_ptr_and_mask:
@@ -3707,7 +3686,6 @@ instr_test_attr:
 .cmp_true@6:
    LDA   #$01
 .cmp_end@7:
-   STA   __zpabi_branch__condition
    JMP   branch
 
 instr_set_attr:
@@ -5355,14 +5333,14 @@ do_rwts_on_sector:
    SUBROUTINE
 
    STA   iob+12
-   LDA   __zpabi_do_rwts_on_sector__buffer_0
+   LDA   disk_buffer
    STA   iob+8
-   LDA   __zpabi_do_rwts_on_sector__buffer_1
+   LDA   disk_buffer+1
    STA   iob+9
    LDA   #$03
    STA   iob+4
-   LDA   __zpabi_do_rwts_on_sector__sector_0
-   LDX   __zpabi_do_rwts_on_sector__sector_1
+   LDA   disk_sector
+   LDX   disk_sector+1
    SEC
 .loop@0_continue:
    SBC   SECTORS_PER_TRACK
@@ -5386,6 +5364,24 @@ read_from_sector:
    LDA   #$01
    JMP   do_rwts_on_sector
 
+inc_sector_and_read:
+   SUBROUTINE
+
+   INC   disk_sector
+   BNE   .inc_done@0
+   INC   disk_sector+1
+.inc_done@0:
+   JMP   read_from_sector
+
+read_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   disk_buffer
+   LDA   #>BUFF_AREA
+   STA   disk_buffer+1
+   JMP   inc_sector_and_read
+
 write_to_sector:
    SUBROUTINE
 
@@ -5404,6 +5400,24 @@ write_to_sector:
    LDA   __local_write_to_sector__1
    STA   dct+3
    RTS
+
+inc_sector_and_write:
+   SUBROUTINE
+
+   INC   disk_sector
+   BNE   .inc_done@1
+   INC   disk_sector+1
+.inc_done@1:
+   JMP   write_to_sector
+
+write_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   disk_buffer
+   LDA   #>BUFF_AREA
+   STA   disk_buffer+1
+   JMP   inc_sector_and_write
 
 get_prompted_number_from_user:
    SUBROUTINE
@@ -5583,58 +5597,6 @@ please_reinsert_game_diskette:
    STA   iob+2
    RTS
 
-inc_sector_and_write:
-   SUBROUTINE
-
-   INC   save_sector
-   BNE   .inc_done@0
-   INC   save_sector+1
-.inc_done@0:
-   LDA   save_sector
-   STA   __zpabi_write_to_sector__sector_0
-   LDA   save_sector+1
-   STA   __zpabi_write_to_sector__sector_1
-   LDA   __zpabi_inc_sector_and_write__buffer_0
-   STA   __zpabi_write_to_sector__buffer_0
-   LDA   __zpabi_inc_sector_and_write__buffer_1
-   STA   __zpabi_write_to_sector__buffer_1
-   JMP   write_to_sector
-
-inc_sector_and_read:
-   SUBROUTINE
-
-   INC   save_sector
-   BNE   .inc_done@1
-   INC   save_sector+1
-.inc_done@1:
-   LDA   save_sector
-   STA   __zpabi_read_from_sector__sector_0
-   LDA   save_sector+1
-   STA   __zpabi_read_from_sector__sector_1
-   LDA   __zpabi_inc_sector_and_read__buffer_0
-   STA   __zpabi_read_from_sector__buffer_0
-   LDA   __zpabi_inc_sector_and_read__buffer_1
-   STA   __zpabi_read_from_sector__buffer_1
-   JMP   read_from_sector
-
-write_next_sector:
-   SUBROUTINE
-
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_1
-   JMP   inc_sector_and_write
-
-read_next_sector:
-   SUBROUTINE
-
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_1
-   JMP   inc_sector_and_read
-
 copy_data_to_buff:
    SUBROUTINE
 
@@ -5665,8 +5627,8 @@ instr_save:
    SUBROUTINE
 
    JSR   please_insert_save_diskette
-   STA   save_sector
-   STX   save_sector+1
+   STA   disk_sector
+   STX   disk_sector+1
    LDY   #$00
    LDA   (Z_HEADER_ADDR),Y
    STA   BUFF_AREA
@@ -5712,9 +5674,9 @@ instr_save:
    JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   Z_HEADER_ADDR
-   STA   __zpabi_inc_sector_and_write__buffer_0
+   STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
-   STA   __zpabi_inc_sector_and_write__buffer_1
+   STA   disk_buffer+1
    LDY   #$0E
    LDA   (Z_HEADER_ADDR),Y
    ADC   #$01
@@ -5722,27 +5684,25 @@ instr_save:
 .loop@2_start:
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
-   INC   __zpabi_inc_sector_and_write__buffer_1
+   INC   disk_buffer+1
    DEC   __local_instr_save__pages
    BNE   .loop@2_start
    JSR   inc_sector_and_write
    BCS   .instr_save@fail
    JSR   please_reinsert_game_diskette
    LDA   #$01
-   STA   __zpabi_branch__condition
    JMP   branch
 .instr_save@fail:
    JSR   please_reinsert_game_diskette
    LDA   #$00
-   STA   __zpabi_branch__condition
    JMP   branch
 
 instr_restore:
    SUBROUTINE
 
    JSR   please_insert_save_diskette
-   STA   save_sector
-   STX   save_sector+1
+   STA   disk_sector
+   STX   disk_sector+1
    JSR   read_next_sector
    BCC   .lb_skip@1
    JMP   .instr_restore@fail
@@ -5798,9 +5758,9 @@ instr_restore:
    LDY   #$68
    JSR   copy_data_from_buff
    LDA   Z_HEADER_ADDR
-   STA   __zpabi_inc_sector_and_read__buffer_0
+   STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
-   STA   __zpabi_inc_sector_and_read__buffer_1
+   STA   disk_buffer+1
    LDY   #$0E
    LDA   (Z_HEADER_ADDR),Y
    CLC
@@ -5809,7 +5769,7 @@ instr_restore:
 .loop@3_start:
    JSR   inc_sector_and_read
    BCS   .instr_restore@fail
-   INC   __zpabi_inc_sector_and_read__buffer_1
+   INC   disk_buffer+1
    DEC   __local_instr_restore__pages
    BNE   .loop@3_start
    LDA   __local_instr_restore__1
@@ -5817,18 +5777,20 @@ instr_restore:
    STA   (Z_HEADER_ADDR),Y
    JSR   please_reinsert_game_diskette
    LDA   #$01
-   STA   __zpabi_branch__condition
    JMP   branch
 .instr_restore@fail:
    JSR   please_reinsert_game_diskette
    LDA   #$00
-   STA   __zpabi_branch__condition
    JMP   branch
 
 __zp_init:
    SUBROUTINE
 
    LDA   #$00
+   STA   disk_buffer
+   STA   disk_buffer+1
+   STA   disk_sector
+   STA   disk_sector+1
    STA   input_ptr
    STA   char_count
    STA   input_count
@@ -5842,8 +5804,6 @@ __zp_init:
    STA   sign_bit
    STA   remainder
    STA   remainder+1
-   STA   save_sector
-   STA   save_sector+1
    STA   attr_ptr
    STA   attr_ptr+1
    RTS
@@ -5956,7 +5916,7 @@ __bss_load	EQU	__bss_start
    ENDIF
 
    SEG   tables
-   ORG   __bss_end
+   ORG   [[__bss_end + 255] & $FF00]
 __tables_start:
 
 page_tables:

@@ -5,8 +5,10 @@
     every instruction follows it, up to $21FF, the end of the space
     Zork's own interpreter has. The rest of the program, its data, and
     the page tables go from $2C00, and the story file is loaded at the
-    first page after them, __story. dasm stops with a message if a
-    region overflows.
+    first page after them, __story. The page tables start on a page,
+    as Zork's do, so that none of the four 128-byte tables crosses a
+    page and an indexed read of one never takes the extra cycle for
+    crossing. dasm stops with a message if a region overflows.
 */
 MEMORY
 {
@@ -29,6 +31,6 @@ SECTIONS
     .rodata : { *(.rodata .rodata.*) } > high
     .data : { *(.data .data.*) } > high
     .bss : { *(.bss .bss.*) } > high
-    .tables : { *(.tables) } > high
+    .tables ALIGN(256) : { *(.tables) } > high
     __story = ALIGN(., 256);
 }

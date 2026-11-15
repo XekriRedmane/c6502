@@ -30,7 +30,10 @@ Two kinds of value qualify:
   slot for `q`: it's a *holder* of the bytes. A local that a copy
   links to `v` (out of SSA, `page += 0x100` in a loop is `t = page +
   256; ...; page = t`) goes there too when the two are never live at
-  once, so the copy goes.
+  once, so the copy goes. So does a local that a step links to it,
+  `t = s + k` or `t = s - k` with `s` dead after the step, so each
+  `++sector` of `write(++sector)` is an add in place, and a value a
+  call returns into one of them, which isn't live across that call.
 - A parameter `p` of a zp_abi function `F` passed on as parameter `q`
   of `G`. `F`'s slot for `p` gets the same address as `G`'s slot for
   `q`, so `F`'s callers write the value where `G` reads it and `F`
@@ -38,7 +41,12 @@ Two kinds of value qualify:
   is.
 
 A set of such slots and holders is a `SlotShare`. The value goes in
-one set of bytes for every function in it. `tac_to_asm` writes each
+one set of bytes for every function in it. Members join before any
+holder is placed, so that a caller holding its value in two members'
+bytes doesn't keep the members apart. `slot_aliases` gives
+`tac_to_asm` one spelling for each byte of a share, so it doesn't copy
+an argument that's already in the callee's bytes under another
+member's symbol. `tac_to_asm` writes each
 bound variable as the slot's `Data` operand (`bindings` says which), so
 the copy before the call is a store of a byte to itself, which goes.
 
@@ -265,15 +273,30 @@ def find_shares(
                     alias = False
                 cands.append(_Binding(fname, v, g, j, alias))
                 bound.add((fname, v))
-    for b in list(cands):
-        if b.alias:
+    # Each local candidate's copy group shares its home. A later
+    # candidate of the same function in that group joins it rather than
+    # taking a home of its own, as each value of `write(++sector)` does.
+    locals_ = [b for b in cands if not b.alias]
+    grouped: set[tuple[str, str]] = set()
+    for b in locals_:
+        if (b.fn, b.var) in grouped:
             continue
+        grouped.add((b.fn, b.var))
+        joinable = {
+            (c.fn, c.var) for c in locals_
+            if c.fn == b.fn and (c.fn, c.var) not in grouped
+        }
         group = _copy_group(
-            fns[b.fn], b.var, live[b.fn], symbols, types, bound,
+            fns[b.fn], b.var, live[b.fn], symbols, types, bound - joinable,
         )
         for t in sorted(group - {b.var}):
+            cands = [
+                c for c in cands
+                if c.alias or (c.fn, c.var) != (b.fn, t)
+            ]
             cands.append(_Binding(b.fn, t, b.owner, b.index, False, b.var))
             bound.add((b.fn, t))
+            grouped.add((b.fn, t))
 
     def group_of(b: _Binding) -> set[str]:
         primary = b.primary or b.var
@@ -301,7 +324,13 @@ def find_shares(
             for i, instr in enumerate(fns[b.fn].instructions):
                 if not isinstance(instr, tac_ast.FunctionCall):
                     continue
-                v_live = b.var in live[b.fn][i]
+                # A value the call returns isn't live across it: the
+                # callee has returned before the value is stored.
+                defined_here = (
+                    isinstance(instr.dst, tac_ast.Var)
+                    and instr.dst.name == b.var
+                )
+                v_live = b.var in live[b.fn][i] and not defined_here
                 passed = tac_ast.Var(name=b.var) in instr.args
                 for j in indexes.get(instr.name, ()):
                     arg = instr.args[j] if j < len(instr.args) else None
@@ -341,6 +370,20 @@ def find_shares(
     return out, bindings
 
 
+def slot_aliases(shares) -> dict[str, str]:
+    """Each slot symbol in one of `shares` mapped to one spelling for
+    its byte, the first member's. The allocators and the linker give a
+    share's slots one address, so a store from one of them to another
+    of the same byte is a store of the byte to itself."""
+    out: dict[str, str] = {}
+    for share in shares:
+        canon = share.members[0][1]
+        for _, syms in share.members:
+            for k, sym in enumerate(syms):
+                out[sym] = canon[k]
+    return out
+
+
 def _with_link_records(
     share: SlotShare, mine, fns, live, slots, bindings, writers,
 ) -> SlotShare:
@@ -350,7 +393,9 @@ def _with_link_records(
     for b in mine:
         for i, instr in enumerate(fns[b.fn].instructions):
             if (isinstance(instr, tac_ast.FunctionCall)
-                    and b.var in live[b.fn][i]):
+                    and b.var in live[b.fn][i]
+                    and not (isinstance(instr.dst, tac_ast.Var)
+                             and instr.dst.name == b.var)):
                 across.setdefault(b.fn, set()).add(instr.name)
     indexes = _member_indexes(share, slots)
     forwards = set()
@@ -406,7 +451,11 @@ def _classes(cands, slots, params):
         )
 
     kept: list = []
-    for b in cands:
+    # Members first, so that a holder of one member's bytes doesn't
+    # keep two members from joining: a function's parameter passed on
+    # unchanged joins its callee's bytes whatever its callers keep
+    # there.
+    for b in sorted(cands, key=lambda c: not c.alias):
         if b.primary is not None:
             continue
         target = find((b.owner, b.index))
@@ -480,20 +529,45 @@ def _writers(fns, cands, by_binding, shares, slots) -> dict[int, set[str]]:
     return out
 
 
+def _step_source(instr) -> str | None:
+    """The variable `instr` adds a constant to or subtracts one from,
+    when it's `t = s + k`, `t = k + s`, or `t = s - k` with an integer
+    constant `k`."""
+    if not isinstance(instr, tac_ast.Binary):
+        return None
+    a, b = instr.src1, instr.src2
+    if isinstance(instr.op, tac_ast.Add):
+        if isinstance(a, tac_ast.Constant):
+            a, b = b, a
+    elif not isinstance(instr.op, tac_ast.Subtract):
+        return None
+    if isinstance(a, tac_ast.Var) and isinstance(b, tac_ast.Constant):
+        return a.name
+    return None
+
+
 def _copy_group(
     fn: tac_ast.Function, var: str, live: list[set[str]], symbols, types,
     bound: set[tuple[str, str]],
 ) -> set[str]:
-    """`var` and the locals of `fn` linked to it by copies (`a = b`)
-    that can share its home: of its size, plain (see `_plain_local`),
-    not bound elsewhere, and never live where another of them is
-    defined, other than by a copy between them."""
+    """`var` and the locals of `fn` linked to it by copies (`a = b`) and
+    by steps (`a = b + k`, `a = b - k`) that can share its home: of its
+    size, plain (see `_plain_local`), not bound elsewhere, and never
+    live where another of them is defined, other than by a copy between
+    them or by a step after which the stepped variable is dead. A
+    sector number stepped before each call that takes it,
+    `write(++sector)`, is a chain of such steps, and in one home each
+    step is an add in place."""
     in_memory = _in_memory(fn)
     size = _size(var, symbols, types)
     copies = [
         (i.src.name, i.dst.name) for i in fn.instructions
         if isinstance(i, tac_ast.Copy) and isinstance(i.src, tac_ast.Var)
         and isinstance(i.dst, tac_ast.Var)
+    ]
+    copies += [
+        (src, i.dst.name) for i in fn.instructions
+        if (src := _step_source(i)) is not None
     ]
 
     def interferes(t: str, group: set[str]) -> bool:
@@ -504,6 +578,10 @@ def _copy_group(
                     and instr.src.name in names
                     and isinstance(instr.dst, tac_ast.Var)
                     and instr.dst.name in names):
+                continue
+            src = _step_source(instr)
+            if (src in names and instr.dst.name in names
+                    and src not in live[k]):
                 continue
             defined = {d.name for d in defs_in(instr)}
             if t in defined and live[k] & group:

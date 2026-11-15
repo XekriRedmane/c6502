@@ -14,11 +14,13 @@
     - Z_PC and Z_PC2 are uint24_t, and Z_PC2 is low byte first at $91,
       where the original keeps Z_PC2_H at $91, Z_PC2_HH at $92, and
       Z_PC2_L at $93 (see zork.h).
-    - The routines take the address to read from, the page to look
-      for, and the sector and buffer to read as arguments, and
-      get_next_code_word returns its word, where the original passes
-      all of these in SCRATCH1 and SCRATCH2. set_page_first keeps the
-      slot's neighbors in locals where the original uses SCRATCH2.
+    - The routines take the address to read from and the page to look
+      for as arguments, and get_next_code_word returns its word, where
+      the original passes these in SCRATCH1 and SCRATCH2. The sector
+      and buffer to read are in disk_sector and disk_buffer, which
+      stand in for SCRATCH1 and SCRATCH2 (see disk.c).
+      set_page_first keeps the slot's neighbors in locals where the
+      original uses SCRATCH2.
     - Each reader reads its byte after stepping its program counter,
       from the index it saved, since unmapping the page leaves the
       page pointer as it is.
@@ -305,8 +307,9 @@ uint8_t get_next_code_byte(void) {
                 /* The string reader's page is about to go. */
                 if (found.slot == PAGE_TABLE_INDEX2)
                     ZCODE_PAGE_VALID2 = 0;
-                if (read_from_sector(story_page, HIGH_MEM_ADDR
-                        + ((uint16_t)PAGE_TABLE_INDEX << 8)))
+                disk_sector = story_page;
+                disk_buffer = HIGH_MEM_ADDR + ((uint16_t)PAGE_TABLE_INDEX << 8);
+                if (read_from_sector())
                     restart();
                 PAGE_L_TABLE[PAGE_TABLE_INDEX] = (uint8_t)story_page;
                 PAGE_H_TABLE[PAGE_TABLE_INDEX] = Z_PC.hi;
@@ -368,8 +371,9 @@ uint8_t get_next_code_byte2(void) {
                 /* The instruction reader's page is about to go. */
                 if (found.slot == PAGE_TABLE_INDEX)
                     ZCODE_PAGE_VALID = 0;
-                if (read_from_sector(story_page, HIGH_MEM_ADDR
-                        + ((uint16_t)PAGE_TABLE_INDEX2 << 8)))
+                disk_sector = story_page;
+                disk_buffer = HIGH_MEM_ADDR + ((uint16_t)PAGE_TABLE_INDEX2 << 8);
+                if (read_from_sector())
                     restart();
                 PAGE_L_TABLE[PAGE_TABLE_INDEX2] = (uint8_t)story_page;
                 PAGE_H_TABLE[PAGE_TABLE_INDEX2] = Z_PC2.hi;

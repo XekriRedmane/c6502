@@ -129,6 +129,7 @@ from passes.optimization.pool import Pool
 import tac_ast
 from passes.slot_sharing import (
     changed_param_slots, check_shares, find_shares, pinned_param_copies,
+    slot_aliases,
     preferred_symbols,
 )
 from passes.optimization import optimize_program as optimize_tac
@@ -406,7 +407,7 @@ def optimized_asm(prog, symbols, types, zp, tac, statics) -> OptimizedAsm:
     asm0 = translate_to_asm(
         tac, symbols, types, bare_exit=True, abi=abi,
         recursion_saves=recursion, bindings=bindings,
-        pinned_copies=pinned_copies,
+        pinned_copies=pinned_copies, slot_aliases=slot_aliases(shares),
     )
     ir_check.check_asm(asm0, after="tac_to_asm", pseudos=True)
     # Preliminary optimizer pass with the default

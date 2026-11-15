@@ -19,10 +19,10 @@
       zero page, `main` sets each byte of the interpreter's state that
       is read before it's written, since the compiler keeps its own
       bytes in that range too.
-    - The page tables are page_tables, wherever the linker script puts
-      it, where the original's are at $2200-$23FF, and the story is
-      loaded at __story, the first page after the program, where the
-      original loads it at $2C00.
+    - The page tables are page_tables, on the first page after the
+      program's data, where the original's are at $2200-$23FF, and the
+      story is loaded at __story, the first page after the tables,
+      where the original loads it at $2C00.
     - The original's internal errors execute BRK, which drops into the
       Monitor. C can't execute BRK, so internal_error prints the
       message the original keeps but doesn't use, "ZORK INTERNAL
@@ -210,6 +210,10 @@
 */
 #include "zork.h"
 
+/* The four tables of the page cache, PAGE_L_TABLE, PAGE_H_TABLE,
+ * NEXT_PAGE_TABLE, and PREV_PAGE_TABLE, 128 bytes each. The linker
+ * script starts them on a page, so that indexing one never crosses a
+ * page. */
 uint8_t page_tables [[c6502::section(".tables")]][512];
 
 static const char sEndOfSession[20] = "-- END OF SESSION --";
@@ -272,12 +276,16 @@ int main(void) {
 
     /* The header says how many pages to load: through the start of
      * high memory. */
-    if (read_from_sector(0, Z_HEADER_ADDR))
+    disk_sector = 0;
+    disk_buffer = Z_HEADER_ADDR;
+    if (read_from_sector())
         restart();
     Z_HEADER_ADDR[HEADER_HIMEM_BASE + 1] = 0xFF;
     NUM_IMAGE_PAGES = Z_HEADER_ADDR[HEADER_HIMEM_BASE] + 1;
     for (uint8_t sector = 1; sector != NUM_IMAGE_PAGES; sector++) {
-        if (read_from_sector(sector, Z_HEADER_ADDR + ((uint16_t)sector << 8)))
+        disk_sector = sector;
+        disk_buffer = Z_HEADER_ADDR + ((uint16_t)sector << 8);
+        if (read_from_sector())
             restart();
     }
     /* Bit 0 of the first flags byte is set only in a story the

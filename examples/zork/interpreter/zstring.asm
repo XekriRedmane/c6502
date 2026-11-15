@@ -63,7 +63,6 @@ ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
 __local_get_next_zchar__compound_literal_1	EQU	$E0
-__zpabi_branch__condition	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
@@ -84,16 +83,8 @@ __zpabi_store_result__value_1	EQU	$E1
 __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
 __local_print_zstring__ch	EQU	$E4
-__zpabi_read_from_sector__sector_0	EQU	$E4
-__zpabi_write_to_sector__sector_0	EQU	$E4
 __local_print_zstring__c_0	EQU	$E5
-__zpabi_read_from_sector__sector_1	EQU	$E5
-__zpabi_write_to_sector__sector_1	EQU	$E5
 __local_print_zstring__0	EQU	$E6
-__zpabi_read_from_sector__buffer_0	EQU	$E6
-__zpabi_write_to_sector__buffer_0	EQU	$E6
-__zpabi_read_from_sector__buffer_1	EQU	$E7
-__zpabi_write_to_sector__buffer_1	EQU	$E7
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -126,7 +117,7 @@ COUT1	EQU	$FDF0
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext branch params=__zpabi_branch__condition
+; ext branch params=__zpabi_branch__condition param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
 ; ext do_instruction params=
@@ -139,6 +130,8 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_word params=
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
+; ext inc_sector_and_read params=
+; ext inc_sector_and_write params=
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -174,14 +167,16 @@ COUT1	EQU	$FDF0
 ; ext print_obj params=__zpabi_print_obj__obj param_regs=A
 ; ext print_status_line params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1,__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1
+; ext read_from_sector params=
+; ext read_next_sector params=
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_to_sector params=__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1,__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1
+; ext write_next_sector params=
+; ext write_to_sector params=
 ; call get_next_zchar -> get_next_code_word
 ; call print_string_literal -> print_zstring
 ; call print_zstring -> A_mod_3
@@ -261,6 +256,8 @@ COUT1	EQU	$FDF0
 ; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
 ; zp CURR_LINE size=1 at=$ED def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
+; zp disk_buffer size=2 at=auto def=false init=
+; zp disk_sector size=2 at=auto def=false init=
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 

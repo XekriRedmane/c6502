@@ -119,6 +119,48 @@ class TestShares(unittest.TestCase):
         self.assertIn("INC   __zpabi_forward__p_1", loop)
         self._check_runs(_PAGES, _PAGES_SUM)
 
+    _STEPPED = """
+#include <stdint.h>
+uint16_t sum;
+static void take(const uint16_t s) { sum += s; }
+static void take_next(const uint16_t s) { take(s); }
+static uint16_t first(void) { return 40; }
+int main(void) {
+    uint16_t s = first();
+    take_next(++s);
+    take_next(++s);
+    take(++s);
+    take(++s);
+    return sum;
+}
+"""
+
+    def test_stepped_counter(self) -> None:
+        # Each `++s` is a new value, `t = s + 1` with `s` dead after,
+        # and all of them, and `first`'s result, share one home: the
+        # bytes `take_next` passes on to `take`. The call's result is
+        # stored there, each step is an add in place, and nothing is
+        # copied into `take`'s spelling of the bytes.
+        asm = _codegen(self._STEPPED)
+        shares = _shares(asm)
+        self.assertEqual(len(shares), 1, shares)
+        self.assertIn("member=take:", shares[0])
+        self.assertIn("member=take_next:", shares[0])
+        self.assertIn("holder=main", shares[0])
+        self.assertEqual(_body(asm, "take_next"), ["JMP take"])
+        main = _body(asm, "main")
+        self.assertEqual(main[:3], [
+            "JSR first", "STA __zpabi_take_next__s_0",
+            "STX __zpabi_take_next__s_1",
+        ])
+        self.assertFalse(
+            [line for line in main if "__zpabi_take__s" in line], main,
+        )
+        self.assertFalse(
+            [line for line in main if "__local_main__" in line], main,
+        )
+        self._check_runs(self._STEPPED, 41 + 42 + 43 + 44)
+
     def test_other_argument_while_live(self) -> None:
         # `p` is still needed after `first(b)`, which writes the bytes.
         src = _FIRST + """

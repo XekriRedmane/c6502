@@ -2,6 +2,8 @@ HARGS	EQU	$00
 SSP	EQU	$01
 FP	EQU	$03
 DPTR	EQU	$05
+disk_sector	EQU	$07
+disk_buffer	EQU	$09
 __monitor_zp_1f	EQU	$1F
 WNDLFT	EQU	$20
 WNDWDTH	EQU	$21
@@ -62,40 +64,27 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__zpabi_branch__condition	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
-__zpabi_do_rwts_on_sector__sector_0	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
 __zpabi_print_ascii_string__s_0	EQU	$E0
 __zpabi_print_number__n_0	EQU	$E0
 __zpabi_push__value_0	EQU	$E0
-__zpabi_read_from_sector__sector_0	EQU	$E0
 __zpabi_return_value__value_0	EQU	$E0
 __zpabi_store_result__value_0	EQU	$E0
 __zpabi_var_put__value_0	EQU	$E0
-__zpabi_write_to_sector__sector_0	EQU	$E0
 __zpabi_cout_string__s_1	EQU	$E1
-__zpabi_do_rwts_on_sector__sector_1	EQU	$E1
 __zpabi_load_address__addr_1	EQU	$E1
 __zpabi_load_packed_address__addr_1	EQU	$E1
 __zpabi_print_ascii_string__s_1	EQU	$E1
 __zpabi_print_number__n_1	EQU	$E1
 __zpabi_push__value_1	EQU	$E1
-__zpabi_read_from_sector__sector_1	EQU	$E1
 __zpabi_return_value__value_1	EQU	$E1
 __zpabi_store_result__value_1	EQU	$E1
 __zpabi_var_put__value_1	EQU	$E1
-__zpabi_write_to_sector__sector_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__zpabi_do_rwts_on_sector__buffer_0	EQU	$E4
-__zpabi_read_from_sector__buffer_0	EQU	$E4
-__zpabi_write_to_sector__buffer_0	EQU	$E4
-__zpabi_do_rwts_on_sector__buffer_1	EQU	$E5
-__zpabi_read_from_sector__buffer_1	EQU	$E5
-__zpabi_write_to_sector__buffer_1	EQU	$E5
-__local_write_to_sector__1	EQU	$E7
-__local_write_to_sector__2	EQU	$E8
+__local_write_to_sector__1	EQU	$E5
+__local_write_to_sector__2	EQU	$E6
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -114,9 +103,13 @@ COUT	EQU	$FDED
 COUT1	EQU	$FDF0
 
 ; @zp-link-meta-begin
-; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command,__zpabi_do_rwts_on_sector__sector_0,__zpabi_do_rwts_on_sector__sector_1,__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__sector indirect=false in_cycle=false param_regs=A,,,,
-; def read_from_sector params=__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1,__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1 locals=__local_read_from_sector__0 indirect=false in_cycle=false
-; def write_to_sector params=__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1,__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1 locals=__local_write_to_sector__0,__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false
+; def do_rwts_on_sector params=__zpabi_do_rwts_on_sector__command locals=__local_do_rwts_on_sector__command,__local_do_rwts_on_sector__s indirect=false in_cycle=false param_regs=A
+; def inc_sector_and_read params= locals=__local_inc_sector_and_read__0 indirect=false in_cycle=false
+; def inc_sector_and_write params= locals=__local_inc_sector_and_write__0 indirect=false in_cycle=false
+; def read_from_sector params= locals=__local_read_from_sector__0 indirect=false in_cycle=false
+; def read_next_sector params= locals=__local_read_next_sector__0 indirect=false in_cycle=false
+; def write_next_sector params= locals=__local_write_next_sector__0 indirect=false in_cycle=false
+; def write_to_sector params= locals=__local_write_to_sector__0,__local_write_to_sector__1,__local_write_to_sector__2 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -127,7 +120,7 @@ COUT1	EQU	$FDF0
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext branch params=__zpabi_branch__condition
+; ext branch params=__zpabi_branch__condition param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
 ; ext do_instruction params=
@@ -186,15 +179,24 @@ COUT1	EQU	$FDF0
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
 ; call do_rwts_on_sector -> RWTS
+; call inc_sector_and_read -> read_from_sector
+; call inc_sector_and_write -> write_to_sector
 ; call read_from_sector -> do_rwts_on_sector
+; call read_next_sector -> inc_sector_and_read
+; call write_next_sector -> inc_sector_and_write
 ; call write_to_sector -> do_rwts_on_sector
-; share member=do_rwts_on_sector:__zpabi_do_rwts_on_sector__sector_0,__zpabi_do_rwts_on_sector__sector_1 member=read_from_sector:__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1 member=write_to_sector:__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1 forward=read_from_sector>do_rwts_on_sector forward=write_to_sector>do_rwts_on_sector
-; share member=do_rwts_on_sector:__zpabi_do_rwts_on_sector__buffer_0,__zpabi_do_rwts_on_sector__buffer_1 member=read_from_sector:__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1 member=write_to_sector:__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1 forward=read_from_sector>do_rwts_on_sector forward=write_to_sector>do_rwts_on_sector
 ; item do_rwts_on_sector section=.text local=true zero=false
 ; item read_from_sector section=.text local=false zero=false
+; item inc_sector_and_read section=.text local=false zero=false
+; item read_next_sector section=.text local=false zero=false
 ; item write_to_sector section=.text local=false zero=false
+; item inc_sector_and_write section=.text local=false zero=false
+; item write_next_sector section=.text local=false zero=false
 ; item iob section=.data local=false zero=false
 ; item dct section=.data local=false zero=false
+; item __zp_init section=.text local=false zero=false
+; zp disk_sector size=2 at=auto def=true init=$00,$00
+; zp disk_buffer size=2 at=auto def=true init=$00,$00
 ; zp __monitor_zp_1f size=1 at=$1F def=false init=
 ; zp WNDLFT size=1 at=$20 def=false init=
 ; zp WNDWDTH size=1 at=$21 def=false init=
@@ -267,14 +269,14 @@ do_rwts_on_sector:
    SUBROUTINE
 
    STA   iob+12
-   LDA   __zpabi_do_rwts_on_sector__buffer_0
+   LDA   disk_buffer
    STA   iob+8
-   LDA   __zpabi_do_rwts_on_sector__buffer_1
+   LDA   disk_buffer+1
    STA   iob+9
    LDA   #$03
    STA   iob+4
-   LDA   __zpabi_do_rwts_on_sector__sector_0
-   LDX   __zpabi_do_rwts_on_sector__sector_1
+   LDA   disk_sector
+   LDX   disk_sector+1
    SEC
 .loop@0_continue:
    SBC   SECTORS_PER_TRACK
@@ -298,6 +300,24 @@ read_from_sector:
    LDA   #$01
    JMP   do_rwts_on_sector
 
+inc_sector_and_read:
+   SUBROUTINE
+
+   INC   disk_sector
+   BNE   .inc_done@0
+   INC   disk_sector+1
+.inc_done@0:
+   JMP   read_from_sector
+
+read_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   disk_buffer
+   LDA   #>BUFF_AREA
+   STA   disk_buffer+1
+   JMP   inc_sector_and_read
+
 write_to_sector:
    SUBROUTINE
 
@@ -317,6 +337,24 @@ write_to_sector:
    STA   dct+3
    RTS
 
+inc_sector_and_write:
+   SUBROUTINE
+
+   INC   disk_sector
+   BNE   .inc_done@1
+   INC   disk_sector+1
+.inc_done@1:
+   JMP   write_to_sector
+
+write_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   disk_buffer
+   LDA   #>BUFF_AREA
+   STA   disk_buffer+1
+   JMP   inc_sector_and_write
+
 iob:
    DC.B  $01
    DC.B  $60
@@ -331,3 +369,13 @@ dct:
    DS.B  1
    DC.B  $01
    DC.W  $D8EF
+
+__zp_init:
+   SUBROUTINE
+
+   LDA   #$00
+   STA   disk_sector
+   STA   disk_sector+1
+   STA   disk_buffer
+   STA   disk_buffer+1
+   RTS

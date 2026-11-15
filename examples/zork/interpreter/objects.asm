@@ -64,7 +64,6 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__zpabi_branch__condition	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
@@ -75,6 +74,7 @@ __zpabi_return_value__value_0	EQU	$E0
 __zpabi_set_attr_word__word_0	EQU	$E0
 __zpabi_store_result__value_0	EQU	$E0
 __zpabi_var_put__value_0	EQU	$E0
+__local_instr_test_attr__1	EQU	$E1
 __local_next_property__y	EQU	$E1
 __zpabi_cout_string__s_1	EQU	$E1
 __zpabi_load_address__addr_1	EQU	$E1
@@ -99,8 +99,6 @@ __local_instr_insert_obj__0	EQU	$E4
 __local_instr_jin__0	EQU	$E4
 __local_instr_put_prop__0	EQU	$E4
 __local_print_obj__obj	EQU	$E4
-__zpabi_read_from_sector__sector_0	EQU	$E4
-__zpabi_write_to_sector__sector_0	EQU	$E4
 __local_instr_clear_attr__1	EQU	$E5
 __local_instr_get_child__1	EQU	$E5
 __local_instr_get_parent__1	EQU	$E5
@@ -111,10 +109,7 @@ __local_instr_get_sibling__1	EQU	$E5
 __local_instr_insert_obj__1	EQU	$E5
 __local_instr_jin__1	EQU	$E5
 __local_instr_put_prop__y	EQU	$E5
-__local_instr_test_attr__1	EQU	$E5
 __local_print_obj__0	EQU	$E5
-__zpabi_read_from_sector__sector_1	EQU	$E5
-__zpabi_write_to_sector__sector_1	EQU	$E5
 __local_instr_get_next_prop__1	EQU	$E6
 __local_instr_get_prop__y	EQU	$E6
 __local_instr_get_prop_addr__1	EQU	$E6
@@ -124,15 +119,11 @@ __local_instr_jin__2	EQU	$E6
 __local_instr_put_prop__1	EQU	$E6
 __local_print_obj__1	EQU	$E6
 __local_store_and_branch_on__related	EQU	$E6
-__zpabi_read_from_sector__buffer_0	EQU	$E6
-__zpabi_write_to_sector__buffer_0	EQU	$E6
 __local_instr_clear_attr__3	EQU	$E7
 __local_instr_get_prop__2	EQU	$E7
 __local_instr_insert_obj__3	EQU	$E7
 __local_instr_jin__3	EQU	$E7
 __local_instr_put_prop__2	EQU	$E7
-__zpabi_read_from_sector__buffer_1	EQU	$E7
-__zpabi_write_to_sector__buffer_1	EQU	$E7
 __local_attr_ptr_and_mask__attr	EQU	$E8
 __local_instr_get_prop__3	EQU	$E8
 __local_instr_insert_obj__4	EQU	$E8
@@ -207,7 +198,7 @@ COUT1	EQU	$FDF0
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext branch params=__zpabi_branch__condition
+; ext branch params=__zpabi_branch__condition param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
 ; ext do_instruction params=
@@ -221,6 +212,8 @@ COUT1	EQU	$FDF0
 ; ext get_next_code_word params=
 ; ext get_next_zchar params=
 ; ext home params=
+; ext inc_sector_and_read params=
+; ext inc_sector_and_write params=
 ; ext instr_div params=
 ; ext instr_mod params=
 ; ext instr_mul params=
@@ -243,14 +236,16 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1,__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1
+; ext read_from_sector params=
+; ext read_next_sector params=
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_to_sector params=__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1,__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1
+; ext write_next_sector params=
+; ext write_to_sector params=
 ; call attr_ptr_and_mask -> get_object_addr
 ; call get_property_ptr -> get_object_addr
 ; call instr_clear_attr -> attr_ptr_and_mask
@@ -390,6 +385,8 @@ COUT1	EQU	$FDF0
 ; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
 ; zp CURR_LINE size=1 at=$ED def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
+; zp disk_buffer size=2 at=auto def=false init=
+; zp disk_sector size=2 at=auto def=false init=
 ; runtime hargs_size=5 hargs_need=2
 ; @zp-link-meta-end
 
@@ -594,7 +591,6 @@ store_and_branch_on:
 .cmp_true@0:
    LDA   #$01
 .cmp_end@1:
-   STA   __zpabi_branch__condition
    JMP   branch
 
 instr_get_sibling:
@@ -665,7 +661,6 @@ instr_jin:
 .cmp_true@3:
    LDA   #$01
 .cmp_end@4:
-   STA   __zpabi_branch__condition
    JMP   branch
 
 attr_ptr_and_mask:
@@ -748,7 +743,6 @@ instr_test_attr:
 .cmp_true@6:
    LDA   #$01
 .cmp_end@7:
-   STA   __zpabi_branch__condition
    JMP   branch
 
 instr_set_attr:

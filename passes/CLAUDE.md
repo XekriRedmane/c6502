@@ -337,7 +337,10 @@ this directory:
   parameter bytes across calls. A parameter passed on unchanged
   aliases the callee's slot (a share *member*), and a local a caller
   still needs after the call lives in the callee's slot (a *holder*),
-  along with the locals copies link to it. Returns the `SlotShare`s
+  along with the locals copies and `+ k` / `- k` steps link to it and
+  the value a call returns into one of them. `slot_aliases` maps each
+  share's slot symbols to one spelling per byte, so `tac_to_asm`
+  doesn't copy an argument already in the callee's bytes. Returns the `SlotShare`s
   (for the allocators and the link metadata) and per-function
   `bindings` (variable → slot symbols), which `tac_to_asm` turns into
   `Data` operands. A callee in another unit qualifies when its

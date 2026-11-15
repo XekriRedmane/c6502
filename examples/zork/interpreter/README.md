@@ -18,7 +18,13 @@ reads (see "Size").
 code. This example starts from their `print_zstring`, page cache, line
 buffer, prompts, and `instr_save`, and passes values as arguments
 where those pieces had to keep Zork's `SCRATCH1` and `SCRATCH2`,
-since here no assembly code calls them.
+since here no assembly code calls them. The disk routines are the
+exception. They read the sector and the buffer from two globals,
+`disk_sector` and `disk_buffer`, as Zork's read them from `SCRATCH1`
+and `SCRATCH2`, so that `save` and `restore` step the sector inside
+`inc_sector_and_read` and `inc_sector_and_write` as Zork does, where
+a sector number passed as an argument has to be stepped at each
+call.
 
 ## Files
 
@@ -71,12 +77,15 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1F6C`. The other units, the constants,
-the data, and the page tables go from `$2C00` to `$3811`. The script
-defines `__story`, the first page after them, `$3900`, and `main`
-loads the story there. The screen at `$0400`-`$07FF` and the line
-buffer at `$0200`, which is the Monitor's input buffer, are where the
-Monitor keeps them.
+on every instruction, up to `$1F5C`. The other units, the constants,
+the data, and the page tables go from `$2C00` to `$37FF`. The page
+tables start on a page, `$3600`, as Zork's do, because
+`find_index_of_page_table` reads them with `(zp),Y` on every page
+lookup, and a read that crosses a page takes an extra cycle. The
+script defines `__story`, the first page after them, `$3800`, and
+`main` loads the story there. The screen at `$0400`-`$07FF` and the
+line buffer at `$0200`, which is the Monitor's input buffer, are
+where the Monitor keeps them.
 
 **Zero page.** `zork.h` declares the interpreter's state at Zork's
 addresses in `$7F`-`$EF`, so that a save holds the same bytes as
@@ -85,10 +94,10 @@ stack's state. It leaves out the bytes Zork uses only for scratch
 (`SCRATCH1`-`SCRATCH3`, `SIGN_BIT`, `TOKEN_IDX`, `INPUT_PTR`,
 `TMP_Z_PC`) and `DEBUG_JUMP`. `<apple2/monitor_io.h>` and the `__dos_zp_*`
 reservations in `zork.h` cover the bytes the Monitor and RWTS use. The
-linker puts the runtime's block at `$00`-`$07`, the globals it
-promotes into zero page at `$08`-`$18`, and the functions' parameters
-and locals in what's left of `$80`-`$FF` and then at `$19`-`$1E` and
-`$50`-`$65`.
+linker puts the runtime's block at `$00`-`$07`, `disk.c`'s two
+zero-page globals and the globals it promotes into zero page at
+`$08`-`$1A`, and the functions' parameters and locals in what's left
+of `$80`-`$FF` and then at `$1B`-`$1E` and `$50`-`$65`.
 
 **The program counters.** `Z_PC` and the string reader's `Z_PC2` are
 `uint24_t`, `struct { uint16_t lo; uint8_t hi; }`. `Z_PC` keeps Zork's
@@ -145,31 +154,32 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 486 |
-| `decode.c` | 1859 | 2581 |
-| `objects.c` | 788 | 1162 |
+| `main.c` | 391 | 484 |
+| `decode.c` | 1859 | 2569 |
+| `objects.c` | 788 | 1156 |
 | `numbers.c` | 436 | 704 |
 | `input.c` | 1018 | 1313 |
-| `pages.c` | 384 | 407 |
+| `pages.c` | 384 | 411 |
 | `zstring.c` | 383 | 407 |
 | `output.c` | 387 | 414 |
-| `disk.c` | 138 | 112 |
+| `disk.c` | 138 | 152 |
 | `prompts.c` | 534 | 528 |
-| `save.c` | 325 | 424 |
-| **Total** | **6643** | **8538** |
+| `save.c` | 325 | 344 |
+| **Total** | **6643** | **8482** |
 
 The counts include each file's constants and data, and leave out the
-page tables and `__zp_init`, 37 bytes of startup code the linker
-generates to clear the globals it promoted into zero page. The boot
-loader doesn't run it, and the interpreter writes each of those
-globals before it reads it. `save.c`'s count includes the four
-routines that step the save's sector number, 72 bytes. Zork keeps its
-versions of them, 28 bytes, with its disk routines, in `disk.c`'s
-row. Zork's boot loader reads 26 sectors, `$0800`-`$21FF`, so
+page tables and `__zp_init`, 41 bytes of startup code the linker
+generates to clear the globals in zero page. The boot loader doesn't
+run it, and the interpreter writes each of those globals before it
+reads it. Twelve of the 14 bytes `disk.c` has over Zork's are
+`JMP`s. Zork's `read_next_sector` falls into `inc_sector_and_read`,
+which falls into `read_from_sector`, and its write routines work the
+same way, where each C routine ends with a 3-byte `JMP` to the next.
+Zork's boot loader reads 26 sectors, `$0800`-`$21FF`, so
 on an Apple II this program would take a loader that also reads
-`$2C00`-`$3811`, from sectors that Zork's diskette doesn't have free.
-The story starts 13 pages higher than Zork's, which leaves the page
-cache 63 slots in 48K where Zork has 76.
+`$2C00`-`$37FF`, from sectors that Zork's diskette doesn't have free.
+The story starts 12 pages higher than Zork's, which leaves the page
+cache 64 slots in 48K where Zork has 76.
 
 The four dispatch switches take 1,384 bytes with the handlers written
 into their cases (`do_2op` alone is 700), where Zork's four tables
@@ -178,9 +188,9 @@ take 126 bytes and the handlers are counted with their own files.
 260 against 190. `mulu16` is 59 against 69, since it computes only
 the low 16 bits of the product.
 
-**Speed.** The first session takes 39,259,692 cycles against Zork's
-38,490,260, 2.0% more, and the second 7,538,694 against 7,434,428,
-1.4% more. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 39,356,327 cycles against Zork's
+38,490,260, 2.3% more, and the second 7,565,090 against 7,434,428,
+1.8% more. The stand-ins for the Monitor and RWTS take no cycles.
 
 ## Compiler changes this needed
 

@@ -1211,8 +1211,16 @@ class Translator:
         recursion_saves: dict[str, frozenset[str]] | None = None,
         bindings: dict[str, dict[str, tuple[str, ...]]] | None = None,
         pinned_copies: dict[str, set[str]] | None = None,
+        slot_aliases: dict[str, str] | None = None,
     ) -> None:
         self._label_counter = 0
+        # Each slot symbol in a share, mapped to one spelling for its
+        # byte: two symbols that map to one spelling have one address.
+        self._slot_aliases = slot_aliases or {}
+        # The bindings of the function being translated, whose
+        # variables become their slots' `Data` operands once it's
+        # translated.
+        self._current_bindings: dict[str, tuple[str, ...]] = {}
         # The TAC instruction before the one being translated, for
         # `_fused_subtract`.
         self._prev_tac = None
@@ -1378,6 +1386,25 @@ class Translator:
                 ))
         return False
 
+    def _same_slot(self, src: asm_ast.Type_operand, sym: str) -> bool:
+        """Whether `src` is the byte of slot symbol `sym`, under another
+        spelling of the same share. A bound variable is still a
+        `Pseudo` here, and becomes its slot's `Data` operand once the
+        function is translated."""
+        if isinstance(src, asm_ast.Pseudo):
+            slots = self._current_bindings.get(src.name)
+            if slots is None or src.offset >= len(slots):
+                return False
+            name = slots[src.offset]
+        elif isinstance(src, asm_ast.Data) and src.offset == 0:
+            name = src.name
+        else:
+            return False
+        if name == sym:
+            return True
+        canon = self._slot_aliases.get(sym)
+        return canon is not None and self._slot_aliases.get(name) == canon
+
     def _size_of(self, val: tac_ast.Type_val) -> int:
         """Byte width of a TAC val. Integer types: 1 for Char / SChar
         / UChar, 2 for Int / UInt, 4 for Long / ULong, 8 for LongLong
@@ -1530,7 +1557,8 @@ class Translator:
                         params, own_layout, out,
                         self._pinned_copies.get(name, ()),
                     ))
-                for var, slots in self._bindings.get(name, {}).items():
+                self._current_bindings = self._bindings.get(name, {})
+                for var, slots in self._current_bindings.items():
                     renames[var] = [
                         asm_ast.Data(name=s, offset=0) for s in slots
                     ]
@@ -2598,6 +2626,9 @@ class Translator:
                 src = _byte_at(arg_op, k)
                 if target_reg is None:
                     sym = layout.slot_symbols[flat_idx + k]
+                    if self._same_slot(src, sym):
+                        # The argument is already in the callee's bytes.
+                        continue
                     slot_movs.append(asm_ast.Mov(
                         src=src,
                         dst=asm_ast.Data(name=sym, offset=0),
@@ -4368,6 +4399,7 @@ def translate_program(
     recursion_saves: dict[str, frozenset[str]] | None = None,
     bindings: dict[str, dict[str, tuple[str, ...]]] | None = None,
     pinned_copies: dict[str, set[str]] | None = None,
+    slot_aliases: dict[str, str] | None = None,
 ) -> asm_ast.Type_program:
     """Convenience wrapper. The optional `symbols` table is the one
     `c99_to_tac` produced — the Translator consults it via
@@ -4405,11 +4437,14 @@ def translate_program(
     each of those to the slots' symbols, low byte first.
     `pinned_copies` names the `zeropage(addr)` parameters each function
     copies into a local as it starts
-    (`passes.slot_sharing.pinned_param_copies`)."""
+    (`passes.slot_sharing.pinned_param_copies`). `slot_aliases` maps
+    each slot symbol in a share to one spelling for its byte
+    (`passes.slot_sharing.slot_aliases`), so that an argument already
+    in the callee's bytes isn't copied there."""
     return Translator(
         symbols, types, bare_exit=bare_exit, abi=abi,
         recursion_saves=recursion_saves, bindings=bindings,
-        pinned_copies=pinned_copies,
+        pinned_copies=pinned_copies, slot_aliases=slot_aliases,
     ).translate_program(prog)
 
 

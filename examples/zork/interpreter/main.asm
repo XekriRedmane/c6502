@@ -62,7 +62,6 @@ ZDECOMPRESS_STATE	EQU	$D0
 ZCHARS	EQU	$D1
 ZCHAR_SCRATCH1	EQU	$D3
 ZCHAR_SCRATCH2	EQU	$DA
-__zpabi_branch__condition	EQU	$E0
 __zpabi_cout_string__s_0	EQU	$E0
 __zpabi_load_address__addr_0	EQU	$E0
 __zpabi_load_packed_address__addr_0	EQU	$E0
@@ -82,24 +81,16 @@ __zpabi_return_value__value_1	EQU	$E1
 __zpabi_store_result__value_1	EQU	$E1
 __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__zpabi_read_from_sector__sector_0	EQU	$E4
-__zpabi_write_to_sector__sector_0	EQU	$E4
-__zpabi_read_from_sector__sector_1	EQU	$E5
-__zpabi_write_to_sector__sector_1	EQU	$E5
-__zpabi_read_from_sector__buffer_0	EQU	$E6
-__zpabi_write_to_sector__buffer_0	EQU	$E6
-__zpabi_read_from_sector__buffer_1	EQU	$E7
-__zpabi_write_to_sector__buffer_1	EQU	$E7
-__local_main__0	EQU	$E8
-__local_main__sector	EQU	$E9
+__local_main__0	EQU	$E4
+__local_main__sector	EQU	$E5
+__local_locate_last_ram_page__1	EQU	$E7
+__local_locate_last_ram_page__2	EQU	$E8
+__local_locate_last_ram_page__3	EQU	$E9
+__local_locate_last_ram_page__page	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
-__local_locate_last_ram_page__1	EQU	$F1
-__local_locate_last_ram_page__2	EQU	$F2
-__local_locate_last_ram_page__3	EQU	$F3
-__local_locate_last_ram_page__page	EQU	$F4
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -129,7 +120,7 @@ COUT1	EQU	$FDF0
 ; ext RWTS params=__zpabi_RWTS__iob_0,__zpabi_RWTS__iob_1 param_regs=Y,A
 ; ext VTAB params=
 ; ext WAIT params=__zpabi_WAIT__a param_regs=A
-; ext branch params=__zpabi_branch__condition
+; ext branch params=__zpabi_branch__condition param_regs=A
 ; ext buffer_char params=__zpabi_buffer_char__c param_regs=A
 ; ext cout_string params=__zpabi_cout_string__s_0,__zpabi_cout_string__s_1,__zpabi_cout_string__count param_regs=,,X
 ; ext do_instruction params=
@@ -144,6 +135,8 @@ COUT1	EQU	$FDF0
 ; ext get_next_zchar params=
 ; ext get_object_addr params=__zpabi_get_object_addr__obj param_regs=A
 ; ext home params=
+; ext inc_sector_and_read params=
+; ext inc_sector_and_write params=
 ; ext instr_clear_attr params=
 ; ext instr_div params=
 ; ext instr_get_child params=
@@ -178,14 +171,16 @@ COUT1	EQU	$FDF0
 ; ext print_string_literal params=
 ; ext print_zstring params=
 ; ext push params=__zpabi_push__value_0,__zpabi_push__value_1
-; ext read_from_sector params=__zpabi_read_from_sector__sector_0,__zpabi_read_from_sector__sector_1,__zpabi_read_from_sector__buffer_0,__zpabi_read_from_sector__buffer_1
+; ext read_from_sector params=
+; ext read_next_sector params=
 ; ext reset_window params=
 ; ext restart params=
 ; ext return_value params=__zpabi_return_value__value_0,__zpabi_return_value__value_1
 ; ext store_result params=__zpabi_store_result__value_0,__zpabi_store_result__value_1
 ; ext var_get params=__zpabi_var_get__var param_regs=A
 ; ext var_put params=__zpabi_var_put__var,__zpabi_var_put__value_0,__zpabi_var_put__value_1 param_regs=A,,
-; ext write_to_sector params=__zpabi_write_to_sector__sector_0,__zpabi_write_to_sector__sector_1,__zpabi_write_to_sector__buffer_0,__zpabi_write_to_sector__buffer_1
+; ext write_next_sector params=
+; ext write_to_sector params=
 ; call instr_quit -> dump_buffer_with_more
 ; call instr_quit -> print_ascii_string
 ; call instr_restart -> dump_buffer_with_more
@@ -271,6 +266,8 @@ COUT1	EQU	$FDF0
 ; zp BUFF_LINE_LEN size=1 at=$EC def=false init=
 ; zp CURR_LINE size=1 at=$ED def=false init=
 ; zp PRINTER_CSW size=2 at=$EE def=false init=
+; zp disk_buffer size=2 at=auto def=false init=
+; zp disk_sector size=2 at=auto def=false init=
 ; runtime hargs_size=1 hargs_need=0
 ; @zp-link-meta-end
 
@@ -382,12 +379,12 @@ main:
    STA   Z_HEADER_ADDR+1
    JSR   reset_window
    LDA   #$00
-   STA   __zpabi_read_from_sector__sector_0
-   STA   __zpabi_read_from_sector__sector_1
+   STA   disk_sector
+   STA   disk_sector+1
    LDA   Z_HEADER_ADDR
-   STA   __zpabi_read_from_sector__buffer_0
+   STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
-   STA   __zpabi_read_from_sector__buffer_1
+   STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@2
    JSR   restart
@@ -406,17 +403,16 @@ main:
    LDA   __local_main__sector
    CMP   NUM_IMAGE_PAGES
    BEQ   .loop@3_break
+   STA   disk_sector
+   LDA   #$00
+   STA   disk_sector+1
    LDA   Z_HEADER_ADDR
    CLC
    ADC   #$00
-   STA   __zpabi_read_from_sector__buffer_0
+   STA   disk_buffer
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__sector
-   STA   __zpabi_read_from_sector__buffer_1
-   LDA   __local_main__sector
-   STA   __zpabi_read_from_sector__sector_0
-   LDA   #$00
-   STA   __zpabi_read_from_sector__sector_1
+   STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@3
    JSR   restart

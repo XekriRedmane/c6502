@@ -213,3 +213,27 @@ programs of 40 to stay clear of it.
 margin below `SSP_INIT`, and the runtime could also trap a store
 below the image's end through `SSP` or `FP`. The first check is
 cheap and would have pointed at the problem immediately.
+
+## Return a byte in X or Y when every caller moves it there
+
+A function returning one byte leaves it in A. When the value is
+already in X at the return and every caller either moves it to X
+with `TAX` or ignores it, returning it in X would remove the `TXA`
+before each `RTS` and the `TAX` after each call. Y works the same
+way. In Zork's interpreter (`examples/zork/interpreter/save.c`),
+`copy_data_to_buff` and `copy_data_from_buff` end in `TXA; RTS`, and
+two of each one's five calls are followed by `TAX`, so this would
+save 6 bytes there.
+
+The compiler could do it in a pass over the whole unit after the
+peepholes, for a function that has internal linkage, whose address
+isn't taken, and which returns one byte, since every call to it is
+then in the unit. The pass checks that after each call A is dead or
+is moved to X (or Y) and then dead, switches the function's returns
+to leave the value in X, and deletes the `TAX` at each call. The asm
+`Ret` already has a `save_x` flag that marks X live at a return, for
+the high byte of a 2-byte value, so the liveness passes would keep X
+live there. A function called from other units would need the choice
+recorded in the link metadata, and the linker would have to rewrite
+callers it can't see when compiling the callee, so that case is
+probably not worth it.

@@ -9,15 +9,9 @@
 
     Departures from the original:
 
-    - The sector number is save_sector, where the original keeps it in
-      SCRATCH1. The routines that step it to the next sector,
-      read_next_sector, inc_sector_and_read, write_next_sector, and
-      inc_sector_and_write, are here, where the original keeps them
-      with the disk routines (disk.c quotes them). inc_sector_and_read
-      and inc_sector_and_write take the buffer as an argument, where
-      the original passes it in SCRATCH2. read_next_sector and
-      write_next_sector pass BUFF_AREA to them, where the original's
-      set SCRATCH2 to BUFF_AREA and fall into them.
+    - The sector number and the page pointer of the dynamic memory's
+      loop are disk.c's disk_sector and disk_buffer, where the
+      original keeps them in SCRATCH1 and SCRATCH2.
     - The copy routines take the address of the bytes as an argument
       and return the index after the bytes they copied, where the
       original passes the address in SCRATCH2 and leaves the index in
@@ -156,39 +150,6 @@
 */
 #include "zork.h"
 
-/* The save's sector last read or written. */
-static uint16_t save_sector;
-
-/* Writes the next sector of the save from `buffer`. Returns true if
- * the write failed. */
-[[c6502::return_bool_in_carry]]
-static bool inc_sector_and_write(uint8_t *const buffer) {
-    save_sector++;
-    return write_to_sector(save_sector, buffer);
-}
-
-/* Reads the next sector of the save into `buffer`. Returns true if
- * the read failed. */
-[[c6502::return_bool_in_carry]]
-static bool inc_sector_and_read(uint8_t *const buffer) {
-    save_sector++;
-    return read_from_sector(save_sector, buffer);
-}
-
-/* Writes the next sector of the save from the line buffer. Returns
- * true if the write failed. */
-[[c6502::return_bool_in_carry]]
-static bool write_next_sector(void) {
-    return inc_sector_and_write(BUFF_AREA);
-}
-
-/* Reads the next sector of the save into the line buffer. Returns
- * true if the read failed. */
-[[c6502::return_bool_in_carry]]
-static bool read_next_sector(void) {
-    return inc_sector_and_read(BUFF_AREA);
-}
-
 /* Copies the `count` bytes at `src` into BUFF_AREA from index `x` on,
  * last byte first, and returns the index after them. A count of 0
  * copies 256. */
@@ -218,7 +179,7 @@ static uint8_t copy_data_from_buff(
 }
 
 void instr_save(void) {
-    save_sector = please_insert_save_diskette();
+    disk_sector = please_insert_save_diskette();
     uint8_t x = 0;
     BUFF_AREA[x] = Z_HEADER_ADDR[HEADER_VERSION];
     x++;
@@ -234,14 +195,14 @@ void instr_save(void) {
     if (write_next_sector())
         goto fail;
     /* One page more than restore reads back. */
-    uint8_t *page = Z_HEADER_ADDR;
+    disk_buffer = Z_HEADER_ADDR;
     uint8_t pages = Z_HEADER_ADDR[HEADER_STATIC_MEM_BASE] + 1;
     do {
-        if (inc_sector_and_write(page))
+        if (inc_sector_and_write())
             goto fail;
-        page += 0x100;
+        disk_buffer += 0x100;
     } while (--pages != 0);
-    if (inc_sector_and_write(page))
+    if (inc_sector_and_write())
         goto fail;
     please_reinsert_game_diskette();
     branch(true);
@@ -252,7 +213,7 @@ fail:
 }
 
 void instr_restore(void) {
-    save_sector = please_insert_save_diskette();
+    disk_sector = please_insert_save_diskette();
     if (read_next_sector())
         goto fail;
     uint8_t x = 0;
@@ -271,12 +232,12 @@ void instr_restore(void) {
     if (read_next_sector())
         goto fail;
     copy_data_from_buff(Z_STACK + 0x100, 0, 0x68);
-    uint8_t *page = Z_HEADER_ADDR;
+    disk_buffer = Z_HEADER_ADDR;
     uint8_t pages = Z_HEADER_ADDR[HEADER_STATIC_MEM_BASE] + 1;
     do {
-        if (inc_sector_and_read(page))
+        if (inc_sector_and_read())
             goto fail;
-        page += 0x100;
+        disk_buffer += 0x100;
     } while (--pages != 0);
     Z_HEADER_ADDR[HEADER_FLAGS2 + 1] = flags2;
     please_reinsert_game_diskette();

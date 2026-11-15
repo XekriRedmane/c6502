@@ -242,7 +242,7 @@ void var_put(register uint8_t var, uint16_t value);
 void store_result(uint16_t value);
 void push(uint16_t value);
 uint16_t pop(void);
-void branch(bool condition);
+void branch(register bool condition);
 void return_value(uint16_t value);
 uint8_t get_next_code_byte(void);
 
@@ -313,10 +313,32 @@ void reset_window(void);
 
 extern struct iob iob;
 extern struct dct dct;
+
+/* The sector the disk routines read or write next, counted from the
+ * start of track 3, and the 256 bytes they read it into or write it
+ * from. They stand in for Zork's SCRATCH1 and SCRATCH2. Neither
+ * routine changes disk_buffer, and only the inc_sector_and_* routines
+ * change disk_sector, so the save code sets them once and steps them
+ * from sector to sector. */
+extern uint16_t disk_sector [[c6502::zeropage]];
+extern uint8_t *disk_buffer [[c6502::zeropage]];
+
+/* Each returns true if the read or write failed. read_next_sector and
+ * write_next_sector use BUFF_AREA as the buffer, and they and the
+ * inc_sector_and_* routines step disk_sector before reading or
+ * writing. */
 [[c6502::return_bool_in_carry]]
-bool read_from_sector(uint16_t sector, uint8_t *buffer);
+bool read_from_sector(void);
 [[c6502::return_bool_in_carry]]
-bool write_to_sector(uint16_t sector, uint8_t *buffer);
+bool inc_sector_and_read(void);
+[[c6502::return_bool_in_carry]]
+bool read_next_sector(void);
+[[c6502::return_bool_in_carry]]
+bool write_to_sector(void);
+[[c6502::return_bool_in_carry]]
+bool inc_sector_and_write(void);
+[[c6502::return_bool_in_carry]]
+bool write_next_sector(void);
 
 /* ---- prompts.c ------------------------------------------------------- */
 

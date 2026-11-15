@@ -7,12 +7,14 @@
 
     Departures from the original:
 
-    - The routines take the sector and the buffer as arguments, where
-      the original passes them in SCRATCH1 and SCRATCH2.
-    - read_next_sector, inc_sector_and_read, write_next_sector, and
-      inc_sector_and_write, which step the save's sector number, are
-      in save.c with the code that keeps that number. They're quoted
-      here, where the original has them.
+    - The sector and the buffer are in disk_sector and disk_buffer,
+      where the original keeps them in SCRATCH1 and SCRATCH2. Those
+      are scratch bytes that other routines use too, and these two
+      hold only the disk routines' arguments. do_rwts_on_sector counts
+      the tracks in a local where the original subtracts from A and X.
+    - The original's read_next_sector falls into inc_sector_and_read,
+      which falls into read_from_sector, and its write routines work
+      the same way. Here each ends by jumping to the next.
     - The original's write path, from the label .write_next_sector, is
       write_to_sector, which writes one sector.
 
@@ -98,34 +100,61 @@ struct iob iob = {
     0x00, 0x00, 0x60, 0x01,
 };
 
-/* Reads or writes (`command`) sector `sector` to or from `buffer`.
- * Returns true if the operation failed. */
+uint16_t disk_sector [[c6502::zeropage]];
+uint8_t *disk_buffer [[c6502::zeropage]];
+
+/* Reads or writes (`command`, 1 or 2) sector disk_sector to or from
+ * disk_buffer. Returns true if the operation failed. */
 [[c6502::return_bool_in_carry]]
-static bool do_rwts_on_sector(register uint8_t command, uint16_t sector,
-                              uint8_t *const buffer) {
+static bool do_rwts_on_sector(register uint8_t command) {
     iob.command = command;
-    iob.buffer_addr = buffer;
+    iob.buffer_addr = disk_buffer;
     iob.track = 3;
-    while (sector >= SECTORS_PER_TRACK) {
-        sector -= SECTORS_PER_TRACK;
+    uint16_t s = disk_sector;
+    while (s >= SECTORS_PER_TRACK) {
+        s -= SECTORS_PER_TRACK;
         iob.track++;
     }
-    iob.sector = (uint8_t)sector;
+    iob.sector = (uint8_t)s;
     return RWTS(&iob);
 }
 
 [[c6502::return_bool_in_carry]]
-bool read_from_sector(uint16_t sector, uint8_t *buffer) {
-    return do_rwts_on_sector(1, sector, buffer);
+bool read_from_sector(void) {
+    return do_rwts_on_sector(1);
 }
 
-/* Writes sector `sector` from `buffer`, with the motor's spin-up time
- * set for a write. Returns true if the write failed. */
 [[c6502::return_bool_in_carry]]
-bool write_to_sector(uint16_t sector, uint8_t *buffer) {
+bool inc_sector_and_read(void) {
+    disk_sector++;
+    return read_from_sector();
+}
+
+[[c6502::return_bool_in_carry]]
+bool read_next_sector(void) {
+    disk_buffer = BUFF_AREA;
+    return inc_sector_and_read();
+}
+
+/* Writes sector disk_sector from disk_buffer, with the motor's spin-up
+ * time set for a write. Returns true if the write failed. */
+[[c6502::return_bool_in_carry]]
+bool write_to_sector(void) {
     uint16_t motor = dct.motor_on_time_count;
     dct.motor_on_time_count = 0xD8EF;
-    bool failed = do_rwts_on_sector(2, sector, buffer);
+    bool failed = do_rwts_on_sector(2);
     dct.motor_on_time_count = motor;
     return failed;
+}
+
+[[c6502::return_bool_in_carry]]
+bool inc_sector_and_write(void) {
+    disk_sector++;
+    return write_to_sector();
+}
+
+[[c6502::return_bool_in_carry]]
+bool write_next_sector(void) {
+    disk_buffer = BUFF_AREA;
+    return inc_sector_and_write();
 }

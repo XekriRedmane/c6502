@@ -60,14 +60,25 @@ STA (__zpabi_put10__p_0),Y`.
 ## When it applies
 
 The pass starts at a `Load` or `Store` whose address is an
-SSA-renamed `%addr` that only the access reads, defined by an `Add`.
-It accepts one of two shapes for the `Add`.
+SSA-renamed `%addr` defined by an `Add`. It accepts one of two shapes
+for the `Add`.
 
 - A variable `p` plus `%ext`, where `%ext` is an SSA-renamed
   `ZeroExtend` of a one-byte variable `i`, possibly
   reached through up to four `Copy` instructions. The index is `i`.
 - A non-constant `p` plus an integer constant from 0 to 255. The
   index is that constant as an `unsigned char`.
+
+With the first shape, the access must be the only reader of `%addr`.
+With the second, `%addr` may have other readers when each one is a
+one-byte load from it or store to it, and `p` holds the same value
+at each of them. `p[1]++` loads from `p + 1` and stores to it, and
+both become `LDY #1` accesses. An SSA-renamed `p` always holds the
+same value. Any other `p`, such as a global, must not be volatile,
+and the `Add` must be in the access's block with no call, store, or
+assignment to `p` between them. Zork's `parse[1]++` in
+examples/zork/interpreter/input.c went from 24 bytes, which built
+`parse + 1` in a zero-page pair, to 12.
 
 These must also be true.
 
@@ -79,8 +90,11 @@ These must also be true.
 The pass doesn't check the C type of `p`. A pointer to a type wider
 than a byte scales the index with a shift or multiply first, and
 that doesn't match the shape. The pass drops the `Add`, and drops the
-extend too unless something else reads it. The volatile bit of the
-access carries over.
+extend too unless something else reads it. An `Add` that several
+accesses read stays until the asm byte DCE removes it, since each
+access is rewritten on its own and the later ones find the
+`Add` through the address. The volatile bit of the access carries
+over.
 
 ## What it leaves alone
 
@@ -93,6 +107,8 @@ access carries over.
 - A value wider than a byte. For a `const uint16_t *p`, `p[i]`
   shifts `i` left before the add, and the load stays a pointer load.
 - A constant offset above 255, such as `p[300]`.
+- An address with a constant offset that something besides one-byte
+  loads and stores reads, such as `q = p + 1;` next to `*q = 0;`.
 - An index wider than a byte, such as a `uint16_t i`.
 - A constant base, which the fixed point has already handed to the
   absolute,X recognizers.

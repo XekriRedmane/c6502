@@ -95,42 +95,39 @@ __zpabi_is_dict_separator__c	EQU	$E4
 __zpabi_is_separator__c	EQU	$E4
 __local_instr_sread__0	EQU	$E5
 __local_instr_sread__1	EQU	$E6
-__local_instr_sread__2	EQU	$E7
+__local_print_status_line__0	EQU	$E7
+__local_read_line__c	EQU	$E7
+__local_z_compress__0	EQU	$E7
+__local_get_dictionary_addr__0	EQU	$E8
+__local_print_status_line__1	EQU	$E8
+__local_read_line__left	EQU	$E8
+__local_z_compress__1	EQU	$E8
+__local_print_status_line__2	EQU	$E9
+__local_read_line__n	EQU	$E9
+__local_z_compress__2	EQU	$E9
+__local_z_compress__3	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
 PRINTER_CSW	EQU	$EE
 __local_ascii_to_zchar__z	EQU	$F0
 __local_match_dictionary_word__0	EQU	$F0
-__local_print_status_line__0	EQU	$F0
-__local_read_line__c	EQU	$F0
 __local_ascii_to_zchar__dest	EQU	$F1
 __local_match_dictionary_word__1	EQU	$F1
-__local_print_status_line__1	EQU	$F1
-__local_read_line__left	EQU	$F1
 __local_ascii_to_zchar__left	EQU	$F2
 __local_is_dict_separator__1	EQU	$F2
 __local_match_dictionary_word__count_0	EQU	$F2
-__local_print_status_line__2	EQU	$F2
-__local_read_line__n	EQU	$F2
 __local_ascii_to_zchar__0	EQU	$F3
 __local_is_dict_separator__2	EQU	$F3
 __local_match_dictionary_word__2	EQU	$F3
 __local_ascii_to_zchar__1	EQU	$F4
 __local_match_dictionary_word__3	EQU	$F4
 __local_ascii_to_zchar__2	EQU	$F5
-__local_match_dictionary_word__4	EQU	$F5
 __local_ascii_to_zchar__index	EQU	$F6
-__local_match_dictionary_word__5	EQU	$F6
 __local_match_dictionary_word__count_1	EQU	$F7
-__local_z_compress__0	EQU	$F7
 __local_match_dictionary_word__6	EQU	$F8
-__local_z_compress__1	EQU	$F8
 __local_match_dictionary_word__entry_0	EQU	$F9
-__local_z_compress__2	EQU	$F9
 __local_match_dictionary_word__entry_1	EQU	$FA
-__local_z_compress__3	EQU	$FA
-__local_get_dictionary_addr__0	EQU	$FB
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -148,7 +145,7 @@ COUT1	EQU	$FDF0
 ; def ascii_to_zchar params= locals=__local_ascii_to_zchar__z,__local_ascii_to_zchar__dest,__local_ascii_to_zchar__left,__local_ascii_to_zchar__0,__local_ascii_to_zchar__1,__local_ascii_to_zchar__2,__local_ascii_to_zchar__index indirect=false in_cycle=false
 ; def get_alphabet_for_char params=__zpabi_get_alphabet_for_char__c locals= indirect=false in_cycle=false
 ; def get_dictionary_addr params= locals=__local_get_dictionary_addr__0,__local_get_dictionary_addr__1 indirect=false in_cycle=false
-; def instr_sread params= locals=__local_instr_sread__0,__local_instr_sread__1,__local_instr_sread__2,__local_instr_sread__3 indirect=false in_cycle=false
+; def instr_sread params= locals=__local_instr_sread__0,__local_instr_sread__1 indirect=false in_cycle=false
 ; def is_dict_separator params=__zpabi_is_dict_separator__c locals=__local_is_dict_separator__0,__local_is_dict_separator__n,__local_is_dict_separator__1,__local_is_dict_separator__2 indirect=false in_cycle=false
 ; def is_separator params=__zpabi_is_separator__c locals=__local_is_separator__0 indirect=false in_cycle=false
 ; def is_std_separator params=__zpabi_is_std_separator__c locals=__local_is_std_separator__0 indirect=false in_cycle=false
@@ -640,12 +637,11 @@ z_compress:
    ASL
    STA   __local_z_compress__3
    LDA   ZCHAR_SCRATCH2+1
-   STA   __local_z_compress__1
    LSR
    LSR
    LSR
    STA   __local_z_compress__0
-   LDA   __local_z_compress__1
+   LDA   ZCHAR_SCRATCH2+1
    ASL
    ASL
    ASL
@@ -665,12 +661,11 @@ z_compress:
    ASL
    STA   __local_z_compress__2
    LDA   ZCHAR_SCRATCH2+4
-   STA   __local_z_compress__1
    LSR
    LSR
    LSR
    STA   __local_z_compress__0
-   LDA   __local_z_compress__1
+   LDA   ZCHAR_SCRATCH2+4
    ASL
    ASL
    ASL
@@ -862,8 +857,6 @@ match_dictionary_word:
    BCC   .carry_inc@0
    INC   __local_match_dictionary_word__entry_1
 .carry_inc@0:
-   LDA   ZCHAR_SCRATCH2+1
-   STA   __local_match_dictionary_word__1
 .loop@8_start:
    LDA   __local_match_dictionary_word__entry_0
    CLC
@@ -883,7 +876,7 @@ match_dictionary_word:
    BMI   .loop@8_break
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
-   CMP   __local_match_dictionary_word__1
+   CMP   ZCHAR_SCRATCH2+1
    BCC   .loop@8_start
 .loop@8_break:
    LDA   __local_match_dictionary_word__entry_0
@@ -900,14 +893,6 @@ match_dictionary_word:
    BCC   .carry_inc@4
    INC   __local_match_dictionary_word__count_1
 .carry_inc@4:
-   LDA   ZCHAR_SCRATCH2
-   STA   __local_match_dictionary_word__5
-   LDA   ZCHAR_SCRATCH2+1
-   STA   __local_match_dictionary_word__4
-   LDA   ZCHAR_SCRATCH2+2
-   STA   __local_match_dictionary_word__3
-   LDA   ZCHAR_SCRATCH2+3
-   STA   __local_match_dictionary_word__2
 .loop@9_start:
    LDY   #$00
    LDA   (__local_match_dictionary_word__entry_0),Y
@@ -915,16 +900,16 @@ match_dictionary_word:
    INY
    LDA   (__local_match_dictionary_word__entry_0),Y
    STA   __local_match_dictionary_word__1
-   LDA   __local_match_dictionary_word__5
+   LDA   ZCHAR_SCRATCH2
    SEC
    SBC   __local_match_dictionary_word__1
-   LDA   __local_match_dictionary_word__4
+   LDA   ZCHAR_SCRATCH2+1
    SBC   __local_match_dictionary_word__0
    BCC   .tail@0
-   LDA   __local_match_dictionary_word__4
+   LDA   ZCHAR_SCRATCH2+1
    CMP   __local_match_dictionary_word__0
    BNE   .if_end@42
-   LDA   __local_match_dictionary_word__5
+   LDA   ZCHAR_SCRATCH2
    CMP   __local_match_dictionary_word__1
    BNE   .if_end@42
    INY
@@ -933,16 +918,16 @@ match_dictionary_word:
    INY
    LDA   (__local_match_dictionary_word__entry_0),Y
    STA   __local_match_dictionary_word__1
-   LDA   __local_match_dictionary_word__3
+   LDA   ZCHAR_SCRATCH2+2
    SEC
    SBC   __local_match_dictionary_word__1
-   LDA   __local_match_dictionary_word__2
+   LDA   ZCHAR_SCRATCH2+3
    SBC   __local_match_dictionary_word__0
    BCC   .tail@0
-   LDA   __local_match_dictionary_word__2
+   LDA   ZCHAR_SCRATCH2+3
    CMP   __local_match_dictionary_word__0
    BNE   .if_end@44
-   LDA   __local_match_dictionary_word__3
+   LDA   ZCHAR_SCRATCH2+2
    CMP   __local_match_dictionary_word__1
    BNE   .if_end@44
    LDA   __local_match_dictionary_word__entry_0
@@ -983,27 +968,19 @@ instr_sread:
    SUBROUTINE
 
    JSR   print_status_line
-   LDA   OPERANDS
-   STA   __local_instr_sread__1
-   LDA   OPERANDS+1
-   STA   __local_instr_sread__0
    LDA   Z_HEADER_ADDR
    CLC
-   ADC   __local_instr_sread__1
+   ADC   OPERANDS
    STA   text
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_instr_sread__0
+   ADC   OPERANDS+1
    STA   text+1
-   LDA   OPERANDS+2
-   STA   __local_instr_sread__1
-   LDA   OPERANDS+3
-   STA   __local_instr_sread__0
    LDA   Z_HEADER_ADDR
    CLC
-   ADC   __local_instr_sread__1
+   ADC   OPERANDS+2
    STA   parse
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_instr_sread__0
+   ADC   OPERANDS+3
    STA   parse+1
    JSR   read_line
    STA   input_count
@@ -1045,16 +1022,12 @@ instr_sread:
    INX
    JMP   .loop@11_start
 .loop@11_break:
-   LDA   parse
+   LDA   token_idx
    CLC
-   ADC   token_idx
-   STA   __local_instr_sread__0
-   LDA   parse+1
-   ADC   #$00
-   STA   __local_instr_sread__1
+   ADC   #$03
+   TAY
    LDA   input_ptr
-   LDY   #$03
-   STA   (__local_instr_sread__0),Y
+   STA   (parse),Y
    LDY   input_ptr
    LDA   (text),Y
    STA   __zpabi_is_dict_separator__c
@@ -1101,49 +1074,34 @@ instr_sread:
    BNE   .lb_skip@2
    JMP   .loop@10_start
 .lb_skip@2:
-   LDA   parse
+   LDA   token_idx
    CLC
-   ADC   token_idx
-   STA   __local_instr_sread__0
-   LDA   parse+1
-   ADC   #$00
-   STA   __local_instr_sread__1
+   ADC   #$02
+   TAY
    LDA   char_count
-   LDY   #$02
-   STA   (__local_instr_sread__0),Y
+   STA   (parse),Y
    JSR   ascii_to_zchar
    JSR   match_dictionary_word
-   STA   __local_instr_sread__2
+   STA   __local_instr_sread__1
    TXA
    LDY   token_idx
    STA   (parse),Y
-   LDA   parse
+   LDA   token_idx
    CLC
-   ADC   token_idx
-   STA   __local_instr_sread__0
-   LDA   parse+1
-   ADC   #$00
-   STA   __local_instr_sread__1
-   LDA   __local_instr_sread__2
-   LDY   #$01
-   STA   (__local_instr_sread__0),Y
+   ADC   #$01
+   TAY
+   LDA   __local_instr_sread__1
+   STA   (parse),Y
    LDA   token_idx
    CLC
    ADC   #$04
    STA   token_idx
-   LDA   parse
-   CLC
-   ADC   #$01
-   STA   __local_instr_sread__1
-   LDA   parse+1
-   ADC   #$00
-   STA   __local_instr_sread__2
-   DEY
-   LDA   (__local_instr_sread__1),Y
+   LDY   #$01
+   LDA   (parse),Y
    STA   __local_instr_sread__0
    INC   __local_instr_sread__0
    LDA   __local_instr_sread__0
-   STA   (__local_instr_sread__1),Y
+   STA   (parse),Y
    LDA   #$00
    STA   char_count
    JMP   .loop@10_start

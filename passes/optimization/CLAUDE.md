@@ -219,6 +219,10 @@ peephole catalog lives in [../CLAUDE.md](../CLAUDE.md).
   k)` with `0 <= k <= 255` feeding the Load / Store, becomes the same
   node with index `ConstUChar(k)`, which lowers to `LDY #k` (the
   shape of `p[10]` and of a byte struct member through a pointer).
+  Such an address may have several readers when every one is a
+  1-byte Load or Store and `p` is unchanged at each
+  (`_all_byte_accesses`, with `narrow_widened_arith.var_unchanged`),
+  as in `p[1]++`; the Add is then left for the asm byte DCE.
   Deliberately runs LAST so any pointer that's going to fold to a Constant (via the const-static
   fold path) has already done so — otherwise this pass would prematurely
   lock in (zp),Y for a chain that would have qualified for the cheaper

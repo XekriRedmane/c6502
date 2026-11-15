@@ -458,14 +458,12 @@ main:
    LDA   Z_HEADER_ADDR+1
    ADC   __local_main__0
    STA   Z_ABBREV_TABLE+1
-   LDA   NUM_IMAGE_PAGES
-   STA   __local_main__0
    LDA   Z_HEADER_ADDR
    CLC
    ADC   #$00
    STA   HIGH_MEM_ADDR
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_main__0
+   ADC   NUM_IMAGE_PAGES
    STA   HIGH_MEM_ADDR+1
    STA   __local_main__sector
    JSR   locate_last_ram_page

@@ -122,9 +122,9 @@ interpreter state in every scenario.
 | `invalidate_zcode_page2` | 5 | 5 |
 | `load_packed_address` | 18 | 15 |
 | `get_next_code_word` | 13 | 15 |
-| `get_next_code_byte2` | 127 | 135 |
+| `get_next_code_byte2` | 127 | 133 |
 | `set_page_first` | 53 | 58 |
-| `find_index_of_page_table` | 29 | 37 |
+| `find_index_of_page_table` | 29 | 29 |
 | `print_zstring` | 216 | 242 |
 | `A_mod_3` | 11 | 10 |
 | `get_alphabet` | 12 | 12 |
@@ -137,16 +137,16 @@ interpreter state in every scenario.
 | `cout_string` | 14 | 14 |
 | `do_rwts_on_sector` | 51 | 50 |
 | `read_from_sector` | 6 | 2 |
-| **Code** | **981** | **1042** |
+| **Code** | **981** | **1032** |
 
 Zork's `buffer_char` counts its `buffer_char_set_buffer_end` label,
 which `dump_buffer_with_more` jumps to. The data is the same: the IOB
 and DCT, the printer flag, `[MORE]`, and alphabet 2's 24 characters.
 
 **Speed.** Counting the cycles from the call to `print_string_literal`
-to its return (the stand-ins take none), the string takes 41,602
-cycles against Zork's 39,980, 4.1% more; with a transcript, 46,057
-against 43,687; and to the failed read, 2,386 against 2,283. When the
+to its return (the stand-ins take none), the string takes 41,543
+cycles against Zork's 39,980, 3.9% more; with a transcript, 45,998
+against 43,687; and to the failed read, 2,376 against 2,283. When the
 example was first linked, the string took 55,570 cycles, 39% more than
 Zork's, and the code was 1,122 bytes.
 
@@ -154,18 +154,21 @@ Zork's, and the code was 1,122 bytes.
 scenario:
 
 - `get_alphabet`, `get_next_zchar`, `get_next_code_word`, `A_mod_3`,
-  `dump_buffer_to_screen`, `cout_string`, and the disk routines take
-  as many cycles as Zork's or fewer. `get_alphabet` is Zork's own
+  `find_index_of_page_table`, `cout_string`, and the disk routines
+  take as many cycles as Zork's or fewer. `dump_buffer_to_screen` is
+  Zork's code and takes 8 more, one each time its loop ends, because
+  the `BEQ` at `$1BF7` that leaves the loop goes to `$1C03`, across
+  a page. `get_alphabet` is Zork's own
   code, and `get_next_code_byte2`'s path for a byte in the current
   page is Zork's but for one branch: `LDY Z_PC2; INC Z_PC2; BNE`
   branches past the code for a new page, where Zork falls through
   and puts that code out of line, a cycle per byte.
-- `print_zstring` takes 1,430 more, about 3 per z-character. Its
+- `print_zstring` takes 1,427 more, about 3 per z-character. Its
   `if` / `else if` chain branches past each case that doesn't match,
   where Zork falls through to the next test and puts the rare cases
   out of line, and a letter jumps to the shared `JSR buffer_char`
   that Zork places right after it.
-- `buffer_char` takes 258 more and `get_next_code_byte2` 185 more,
+- `buffer_char` takes 258 more and `get_next_code_byte2` 173 more,
   in the code that wraps a line and that maps a new page.
 
 ## Compiler changes this example led to

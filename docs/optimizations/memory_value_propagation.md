@@ -16,7 +16,7 @@ another zero-page byte, an immediate, the low or high byte of a
 label's address, a byte of a static that the function never writes,
 or an element of such a static indexed by an X or Y that hasn't
 changed since. A join keeps only the facts that are the same at
-the end of every predecessor. The pass then makes two kinds of rewrite.
+the end of every predecessor. The pass then makes three kinds of rewrite.
 
 1. When both bytes of `DPTR` are known to equal a pair of adjacent
    zero-page bytes at `N` and `N+1`, an access through `(DPTR),Y`
@@ -31,6 +31,13 @@ the end of every predecessor. The pass then makes two kinds of rewrite.
    push. When every read of the byte has been rewritten, the store
    that filled it is dead, and later peepholes delete it along with
    the load in front of it.
+3. A read of one of the function's own `__local_*` slots that's known
+   to equal another zero-page byte becomes a read of that byte, when
+   the byte's symbol keeps its address when linked (a fixed
+   zero-page object, a zero-page global, or one of the runtime's
+   bytes) and every read that the slot's stores reach is rewritten
+   too. The two reads cost the same, and the gain is the store into
+   the slot, which is then dead, and often the load in front of it.
 
 ## Example
 
@@ -124,11 +131,57 @@ read costs over the zero-page one. With `table[i]` in place of
 `table[3]`, the read becomes `LDA table,X`, since X still holds `i`
 at the join.
 
+The third rewrite is what turns Zork's `text = Z_HEADER_ADDR +
+OPERANDS[0];` (in examples/zork/interpreter/input.c) from
+
+```
+   LDA   OPERANDS
+   STA   __local_instr_sread__1
+   LDA   OPERANDS+1
+   STA   __local_instr_sread__0
+   LDA   Z_HEADER_ADDR
+   CLC
+   ADC   __local_instr_sread__1
+   STA   text
+   LDA   Z_HEADER_ADDR+1
+   ADC   __local_instr_sread__0
+   STA   text+1
+```
+
+into
+
+```
+   LDA   Z_HEADER_ADDR
+   CLC
+   ADC   OPERANDS
+   STA   text
+   LDA   Z_HEADER_ADDR+1
+   ADC   OPERANDS+1
+   STA   text+1
+```
+
+`OPERANDS` is at a fixed address, `$82`. Across Zork's interpreter
+the rewrite saves 110 bytes, and 405,570 of the first test session's
+38,872,640 cycles.
+
+A slot's copy of another slot isn't rewritten, because the fact is
+about an address. In one unit two slots can share a byte that they
+don't share once the linker places them, and the rewritten read
+would then read the wrong byte. A rewrite of only some of a web's
+reads gains nothing, since the store stays, and it can cost bytes.
+In Zork's `get_next_code_byte2`, `LDA page` read the slot on one path
+into a join where `redundant_load` knew that A held `page` on every
+path. Rewritten to `LDA Z_PC2+1`, it left A's value unknown to that
+pass at the join, so the slot had to be stored and loaded again
+there, 2 bytes more. A web is a slot byte's stores and the reads they
+reach, found by reaching definitions over the control-flow graph.
+
 ## When it applies
 
-- The function's jumps and branches all go to its own labels. A
-  function holding a tail call (`JMP other_function`) is left
-  unchanged, because the control-flow graph can't be built.
+- A tail call, a `JMP` to another function, ends the facts like a
+  return does. The pass builds the control-flow graph with a block
+  ending in a return for each such target (as `redundant_load`
+  does), and its output has only the function's own instructions.
 - A byte counts as zero page when it's a `ZP` operand, or a `Data`
   operand whose symbol has an address below `$100`. The symbols with
   known addresses are the runtime's (`DPTR`, `HARGS`, and the rest),
@@ -146,9 +199,12 @@ at the join.
 
 ## What it leaves alone
 
-- A read of a byte that's known to equal another zero-page byte.
-  Both reads cost the same, so the pass makes no change, except for
-  the `DPTR` pair.
+- A read of a byte that's known to equal another zero-page byte,
+  except for the `DPTR` pair and the third rewrite above. Both reads
+  cost the same.
+- The third rewrite in a function with a soft-stack frame, whose
+  prologue and epilogue save and restore zero-page bytes, and in a
+  function that reads a `__local_*` array with an index.
 - Anything after a store through a pointer, a soft-stack store, an
   indexed store, a call, a prologue, or a `LoadAddress`. Each of
   these clears every fact. A loop that stores through `p`, such as

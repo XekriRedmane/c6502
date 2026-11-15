@@ -131,12 +131,12 @@ class TestTacPasses(unittest.TestCase):
         # since the extend read it turned off, it reads g after h()
         # changed it.
         import passes.optimization.narrow_widened_arith as n
-        saved = n._unchanged
-        n._unchanged = lambda *a, **k: True
+        saved = n.var_unchanged
+        n.var_unchanged = lambda *a, **k: True
         try:
             res = first_changing_pass(self._SRC)
         finally:
-            n._unchanged = saved
+            n.var_unchanged = saved
         self.assertEqual(res, ("main", "NarrowWidenedArith", 12, 79))
 
 

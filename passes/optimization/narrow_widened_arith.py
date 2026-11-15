@@ -300,7 +300,7 @@ def _narrow_compare(
     if trunc_idx is None or bin_idx is None:
         return None
     for operand in (bin_instr.src1, bin_instr.src2):
-        if isinstance(operand, tac_ast.Var) and not _unchanged(
+        if isinstance(operand, tac_ast.Var) and not var_unchanged(
             operand, bin_idx, trunc_idx, env, ctx,
         ):
             return None
@@ -379,14 +379,14 @@ def _narrow_operand(
             and isinstance(cast.src, tac_ast.Var)
             and _byte_width(cast.src, symbols) == target_width
         ):
-            if not _unchanged(cast.src, cast_idx, trunc_idx, env, ctx):
+            if not var_unchanged(cast.src, cast_idx, trunc_idx, env, ctx):
                 return None
             return cast.src
     width = _byte_width(operand, symbols)
     if (
         width is None or width <= target_width
         or _is_unsigned(operand, symbols) is None
-        or not _unchanged(operand, bin_idx, trunc_idx, env, ctx)
+        or not var_unchanged(operand, bin_idx, trunc_idx, env, ctx)
     ):
         return None
     tmp = tac_ast.Var(name=tmp_name)
@@ -407,7 +407,7 @@ _ENDS_BLOCK = (
 )
 
 
-def _unchanged(
+def var_unchanged(
     var: tac_ast.Var, start: int, end: int, env: DefUseEnv,
     ctx: PassContext,
 ) -> bool:

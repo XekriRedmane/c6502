@@ -141,13 +141,11 @@ __local_remove_obj__1	EQU	$F2
 __local_remove_obj__2	EQU	$F3
 __local_remove_obj__3	EQU	$F4
 __local_remove_obj__4	EQU	$F5
-__local_remove_obj__5	EQU	$F6
-__local_remove_obj__6	EQU	$F7
-__local_get_object_addr__0	EQU	$F8
-__local_get_object_addr__1	EQU	$F9
-__local_get_object_addr__2	EQU	$FA
-__local_get_object_addr__3	EQU	$FB
-__local_get_object_addr__obj	EQU	$FC
+__local_get_object_addr__0	EQU	$F6
+__local_get_object_addr__1	EQU	$F7
+__local_get_object_addr__2	EQU	$F8
+__local_get_object_addr__3	EQU	$F9
+__local_get_object_addr__obj	EQU	$FA
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -183,7 +181,7 @@ COUT1	EQU	$FDF0
 ; def instr_test_attr params= locals=__local_instr_test_attr__0,__local_instr_test_attr__1 indirect=false in_cycle=false
 ; def next_property params=__zpabi_next_property__y locals=__local_next_property__0,__local_next_property__y indirect=false in_cycle=false param_regs=A
 ; def print_obj params=__zpabi_print_obj__obj locals=__local_print_obj__obj,__local_print_obj__0,__local_print_obj__1 indirect=false in_cycle=false param_regs=A
-; def remove_obj params= locals=__local_remove_obj__child,__local_remove_obj__0,__local_remove_obj__1,__local_remove_obj__2,__local_remove_obj__3,__local_remove_obj__4,__local_remove_obj__5,__local_remove_obj__6 indirect=false in_cycle=false
+; def remove_obj params= locals=__local_remove_obj__child,__local_remove_obj__0,__local_remove_obj__1,__local_remove_obj__2,__local_remove_obj__3,__local_remove_obj__4 indirect=false in_cycle=false
 ; def set_attr_word params=__zpabi_set_attr_word__word_0,__zpabi_set_attr_word__word_1 locals= indirect=false in_cycle=false
 ; def store_and_branch_on params=__zpabi_store_and_branch_on__related locals=__local_store_and_branch_on__related indirect=false in_cycle=false param_regs=A
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
@@ -438,69 +436,55 @@ remove_obj:
    SUBROUTINE
 
    LDA   OPERANDS
-   STA   __local_remove_obj__6
+   STA   __local_remove_obj__4
    JSR   get_object_addr
    LDA   HARGS
-   STA   __local_remove_obj__4
+   STA   __local_remove_obj__2
    LDA   HARGS+1
-   STA   __local_remove_obj__5
+   STA   __local_remove_obj__3
    LDA   HARGS
    CLC
    ADC   #$04
-   STA   __local_remove_obj__2
    LDA   HARGS+1
    ADC   #$00
-   STA   __local_remove_obj__3
-   LDY   #$00
+   LDY   #$04
    LDA   (__local_remove_obj__2),Y
    BNE   .if_end@0
    RTS
 .if_end@0:
    JSR   get_object_addr
+   LDA   HARGS
+   STA   __local_remove_obj__0
    LDA   HARGS+1
    STA   __local_remove_obj__1
-   LDA   HARGS
-   CLC
-   ADC   #$06
-   STA   __local_remove_obj__0
-   BCC   .carry_inc@1
-   INC   __local_remove_obj__1
-.carry_inc@1:
-   LDY   #$00
+   LDY   #$06
    LDA   (__local_remove_obj__0),Y
-   CMP   __local_remove_obj__6
+   CMP   __local_remove_obj__4
    BNE   .if_else@2
-   LDY   #$05
-   LDA   (__local_remove_obj__4),Y
-   LDY   #$00
+   DEY
+   LDA   (__local_remove_obj__2),Y
+   INY
    STA   (__local_remove_obj__0),Y
    JMP   .if_end@1
 .if_else@2:
 .loop@0_start:
    JSR   get_object_addr
+   LDA   HARGS
+   STA   __local_remove_obj__0
    LDA   HARGS+1
    STA   __local_remove_obj__1
-   LDA   HARGS
-   CLC
-   ADC   #$05
-   STA   __local_remove_obj__0
-   BCC   .carry_inc@2
-   INC   __local_remove_obj__1
-.carry_inc@2:
-   LDY   #$00
-   LDA   (__local_remove_obj__0),Y
-   CMP   __local_remove_obj__6
-   BNE   .loop@0_start
    LDY   #$05
-   LDA   (__local_remove_obj__4),Y
-   LDY   #$00
+   LDA   (__local_remove_obj__0),Y
+   CMP   __local_remove_obj__4
+   BNE   .loop@0_start
+   LDA   (__local_remove_obj__2),Y
    STA   (__local_remove_obj__0),Y
 .if_end@1:
    LDA   #$00
-   LDY   #$00
+   LDY   #$04
    STA   (__local_remove_obj__2),Y
-   LDY   #$05
-   STA   (__local_remove_obj__4),Y
+   INY
+   STA   (__local_remove_obj__2),Y
    RTS
 
 instr_remove_obj:
@@ -527,23 +511,23 @@ instr_insert_obj:
    STA   (__local_instr_insert_obj__3),Y
    LDA   __local_instr_insert_obj__0
    JSR   get_object_addr
+   LDA   HARGS
+   STA   __local_instr_insert_obj__1
    LDA   HARGS+1
    STA   __local_instr_insert_obj__2
    LDA   HARGS
    CLC
    ADC   #$06
-   STA   __local_instr_insert_obj__1
-   BCC   .carry_inc@3
-   INC   __local_instr_insert_obj__2
-.carry_inc@3:
-   LDY   #$00
+   LDA   HARGS+1
+   ADC   #$00
+   LDY   #$06
    LDA   (__local_instr_insert_obj__1),Y
    STA   __local_instr_insert_obj__0
    LDA   __local_instr_insert_obj__5
    STA   (__local_instr_insert_obj__1),Y
    LDA   __local_instr_insert_obj__0
    BEQ   .if_end@3
-   LDY   #$05
+   DEY
    STA   (__local_instr_insert_obj__3),Y
 .if_end@3:
    RTS
@@ -665,9 +649,9 @@ attr_ptr_and_mask:
    CLC
    ADC   #$02
    STA   attr_ptr
-   BCC   .carry_inc@4
+   BCC   .carry_inc@1
    INC   attr_ptr+1
-.carry_inc@4:
+.carry_inc@1:
 .if_end@4:
    LDA   #$0F
    SEC
@@ -988,24 +972,20 @@ instr_get_next_prop:
 instr_get_prop_len:
    SUBROUTINE
 
-   LDA   OPERANDS
-   STA   __local_instr_get_prop_len__1
-   LDA   OPERANDS+1
-   STA   __local_instr_get_prop_len__0
    LDA   Z_HEADER_ADDR
    CLC
-   ADC   __local_instr_get_prop_len__1
+   ADC   OPERANDS
    STA   __local_instr_get_prop_len__2
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_instr_get_prop_len__0
+   ADC   OPERANDS+1
    STA   __local_instr_get_prop_len__1
    LDA   __local_instr_get_prop_len__2
    SEC
    SBC   #$01
    STA   __local_instr_get_prop_len__0
-   BCS   .carry_inc@5
+   BCS   .carry_inc@2
    DEC   __local_instr_get_prop_len__1
-.carry_inc@5:
+.carry_inc@2:
    LDY   #$00
    LDA   (__local_instr_get_prop_len__0),Y
    LSR
@@ -1052,8 +1032,6 @@ instr_put_prop:
    INC   __local_instr_put_prop__y
    LDA   OPERANDS+4
    STA   __local_instr_put_prop__1
-   LDA   OPERANDS+5
-   STA   __local_instr_put_prop__0
    LDA   __local_instr_put_prop__2
    BNE   .if_else@19
    LDA   __local_instr_put_prop__1
@@ -1063,7 +1041,7 @@ instr_put_prop:
 .if_else@19:
    CMP   #$01
    BNE   .if_else@21
-   LDA   __local_instr_put_prop__0
+   LDA   OPERANDS+5
    LDY   __local_instr_put_prop__y
    STA   (props),Y
    LDA   props

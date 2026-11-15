@@ -29,7 +29,9 @@ A constant offset `Binary(Add, ptr, k)` with `0 <= k <= 255` feeding
 the Load / Store is recognized too (`_const_offset_chain`), with the
 index a `ConstUChar(k)`. That is the shape of `p[10]` and of a
 byte-sized struct member read through a pointer, and it lowers to
-`LDY #k; LDA (DPTR),Y`. The pattern recognizer doesn't need to know whether ptr
+`LDY #k; LDA (DPTR),Y`. Its address may be read by several 1-byte
+Loads and Stores (`_all_byte_accesses`), as in `p[1]++`, and each is
+rewritten. The pattern recognizer doesn't need to know whether ptr
 will end up in ZP — that decision happens in tac_to_asm and asm
 regalloc.
 
@@ -170,7 +172,11 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
             if const_chain is None:
                 return None
             ptr_var, idx_var = const_chain
-            drop = (m.bindings['addr_var'],)
+            # With several readers, the Add stays for the ones not yet
+            # rewritten, which find their chain through it. Once all of
+            # them are, nothing reads it, and the asm byte DCE drops it.
+            addr = m.bindings['addr_var']
+            drop = (addr,) if env.extra.get(addr.name, 0) == 1 else ()
         # (zp),Y needs a pointer Var base — a Constant base is the
         # absolute,X case handled by recognize_indexed_store/load.
         if not isinstance(ptr_var, tac_ast.Var):
@@ -204,18 +210,20 @@ class _RecognizeIndirectIndexedDefUse(DefUsePass):
 def _const_offset_chain(
     addr_var: tac_ast.Var, env: DefUseEnv, ctx: PassContext,
 ) -> tuple[tac_ast.Type_val, tac_ast.Constant] | None:
-    """`(ptr, Constant(k))` when `addr_var` is a single-use SSA name
-    defined by `Binary(Add, ptr, k)` (either operand order) with an
-    integer constant `0 <= k <= 255`, else None. The access then
-    lowers as `LDY #k; LDA (DPTR),Y`, because `(zp),Y` adds Y to the
-    pointer with a carry into the high byte, which is the same 16-bit
-    sum the Add computed. The index comes back as a `ConstUChar` so
-    it satisfies the 1-byte index contract of the indexed nodes."""
+    """`(ptr, Constant(k))` when `addr_var` is an SSA name defined by
+    `Binary(Add, ptr, k)` (either operand order) with an integer
+    constant `0 <= k <= 255`, else None. The access then lowers as
+    `LDY #k; LDA (DPTR),Y`, because `(zp),Y` adds Y to the pointer
+    with a carry into the high byte, which is the same 16-bit sum the
+    Add computed. The index comes back as a `ConstUChar` so it
+    satisfies the 1-byte index contract of the indexed nodes.
+
+    `addr_var` may have several readers when each one is a 1-byte
+    `Load` from it or `Store` to it (`_all_byte_accesses`), since each
+    is rewritten the same way. `p[1]++` reads and writes `p + 1`."""
     if ctx.symbols is None or ctx.ssa_dsts is None:
         return None
     if addr_var.name not in ctx.ssa_dsts:
-        return None
-    if env.extra.get(addr_var.name, 0) != 1:
         return None
     binary = env.def_of(addr_var)
     if not isinstance(binary, tac_ast.Binary) or not isinstance(
@@ -232,9 +240,53 @@ def _const_offset_chain(
             k.const, (tac_ast.ConstFloat, tac_ast.ConstDouble),
         ):
             continue
-        if 0 <= value <= 0xFF:
-            return ptr, tac_ast.Constant(const=tac_ast.ConstUChar(value=value))
+        if not 0 <= value <= 0xFF:
+            continue
+        if env.extra.get(addr_var.name, 0) != 1 and not _all_byte_accesses(
+            addr_var, ptr, env, ctx,
+        ):
+            return None
+        return ptr, tac_ast.Constant(const=tac_ast.ConstUChar(value=value))
     return None
+
+
+def _all_byte_accesses(
+    addr_var: tac_ast.Var, ptr: tac_ast.Type_val, env: DefUseEnv,
+    ctx: PassContext,
+) -> bool:
+    """True iff every read of `addr_var` is the pointer of a `Load`
+    into a 1-byte Var or of a `Store` of a 1-byte value, and `ptr`
+    still holds at each one the value the Add read. Then every reader
+    becomes an indexed access, and nothing reads the Add. A non-SSA `ptr`, such
+    as a global, must be unchanged from the Add to each access
+    (`narrow_widened_arith.var_unchanged`)."""
+    from passes.optimization.narrow_widened_arith import var_unchanged
+    from passes.optimization.var_visit import uses_in
+    add_idx = env.def_idx.get(addr_var.name)
+    if add_idx is None:
+        return False
+    seen = 0
+    for i, instr in enumerate(env.instructions):
+        reads = sum(1 for u in uses_in(instr) if u.name == addr_var.name)
+        if not reads:
+            continue
+        if isinstance(instr, tac_ast.Load) and instr.src_ptr == addr_var:
+            ok = is_1_byte_var(instr.dst, ctx.symbols)
+        elif isinstance(instr, tac_ast.Store) and instr.dst_ptr == addr_var:
+            ok = (instr.src != addr_var
+                  and is_1_byte_val(instr.src, ctx.symbols))
+        else:
+            ok = False
+        if not ok or reads != 1:
+            return False
+        if isinstance(ptr, tac_ast.Var) and not var_unchanged(
+            ptr, add_idx, i, env, ctx,
+        ):
+            return False
+        seen += 1
+    # `env.instructions` holds the rewrites made so far in this run,
+    # so an access already rewritten no longer reads `addr_var`.
+    return seen > 0
 
 
 _IMPL = _RecognizeIndirectIndexedDefUse()

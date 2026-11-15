@@ -237,3 +237,56 @@ live there. A function called from other units would need the choice
 recorded in the link metadata, and the linker would have to rewrite
 callers it can't see when compiling the callee, so that case is
 probably not worth it.
+
+## Make Zork's input.c smaller
+
+`examples/zork/interpreter/input.c` is 1,231 bytes, where Zork's
+code for it is 1,018. These are the differences found in its
+compiled code, with the bytes each one costs in the linked
+interpreter. Most of them recur elsewhere in the program.
+
+- **Loops tested at the top.** Thirteen loops end with a `JMP` back
+  to their test, such as the 6-byte clear in `instr_sread` (`LDX #0;
+  loop: CPX #6; BEQ done; LDA #0; STA ZCHAR_SCRATCH1,X; INX; JMP
+  loop`) and the search in `is_std_separator`. When the start value
+  passes the test, as a constant start and bound show, the loop can
+  test at the bottom, which saves the `JMP`, 3 bytes and 3 cycles a
+  pass. `loop_rotate.py` rotates only signed count-down loops, and
+  rotating more loops exposed the bugs recorded in "Rotate
+  top-tested loops" above.
+- **Pointer returns.** A function returning a pointer leaves it in
+  `HARGS`, and each caller copies it out with `LDA HARGS; STA p; LDA
+  HARGS+1; STA p+1`. Zork has 11 such calls, including both of
+  `get_dictionary_addr`. Returning a pointer in A and X, as a 2-byte
+  integer is, would save about 4 bytes a call, but it changes the
+  calling convention.
+- **Bool results.** Nine calls are followed by `ORA #$00` to set the
+  flags from a `bool` result in A. Declaring the separator tests
+  `return_bool_in_carry` in the C would remove those. `is_separator`
+  returns `is_dict_separator(c) || is_std_separator(c)` by building 0
+  or 1, where it could return 1 when the first is true and otherwise
+  end with `JMP is_std_separator`.
+- **An index in X for a `(zp),Y` store.** Twice a store indexed by a
+  value in X goes through `LDA v; PHA; TXA; TAY; PLA; STA (p),Y`,
+  as in `read_line`. When `v` is in memory and unchanged, `TXA; TAY;
+  LDA v; STA (p),Y` does the same and saves 2 bytes.
+- **An index one more than Y.** `parse[(uint8_t)(token_idx + 1)]`
+  right after `LDY token_idx; STA (parse),Y` computes `LDA
+  token_idx; CLC; ADC #$01; TAY`, where Y already holds `token_idx`
+  and `INY` would do, 4 bytes less.
+- **An increment through a slot.** `parse[1]++` is `LDA (parse),Y;
+  STA t; INC t; LDA t; STA (parse),Y`. With C dead, `CLC; ADC #1` in
+  A would do, 3 bytes less.
+
+## Keep hot branches from crossing pages
+
+A taken branch that crosses a page takes a cycle more, so where the
+linker places a hot function changes its cycle count. Shrinking
+`objects.c` in Zork's interpreter moved `branch` and `print_zstring`,
+which the linker places after functions of `objects.c` that fall into
+them, and that cost 16,534 cycles in the first test session, more
+than the change had saved. The cycles don't show in a function's own
+code. The linker could place hot functions, or pad in front of a hot
+loop, so that their branches stay within a page, at the cost of a
+few bytes. It would need to know which branches are hot, from a
+profile or from loop depth.

@@ -101,6 +101,14 @@ ZP byte address of an operand is determined by:
     resolves to a ZP byte (`<= $FF`).
   - Anything else → None (not a tracked ZP cell).
 
+# Reads of a slot that copies a fixed byte
+
+A read of one of the function's `__local_*` slots whose fact is a
+`ZPRef` to a byte named by a symbol the linker doesn't move reads
+that byte instead (`_fixed_source`), when every read reached by the
+slot's stores can (`_allowed_slot_reads`), so the stores go. A first
+walk of the rewriter only records the candidates.
+
 # Where to run
 
 After `replace_pseudoregisters_bare_exit` (operands concrete) and
@@ -127,8 +135,13 @@ from passes.optimization_asm.cfg import (
 @dataclass(frozen=True)
 class ZPRef:
     """The byte value currently at ZP address `addr`. Invalidated
-    when `addr` is written."""
+    when `addr` is written. `name` and `offset` spell the operand the
+    value was read through, `Data(name, offset)`, or `name` is None
+    for a `ZP` operand. They don't take part in comparisons, since
+    the fact is about the address."""
     addr: int
+    name: Optional[str] = field(default=None, compare=False)
+    offset: int = field(default=0, compare=False)
 
 
 @dataclass(frozen=True)
@@ -258,17 +271,14 @@ def apply_memory_value_propagation(
 def _rewrite_function(
     fn: asm_ast.Function, zp_addrs: dict[str, int],
 ) -> asm_ast.Function:
-    # `build_cfg` raises if any `Jump` / `Branch` targets a label
-    # name not present in this function — `apply_tail_call`'s
-    # JSR-then-RTS → JMP rewrite produces exactly this shape (the
-    # JMP target is another function's name, not a local label).
-    # When that happens, bail and leave the function unchanged.
-    # Functions with tail calls are rare; the optimization gain from
-    # rewriting around them is small.
-    try:
-        cfg = build_cfg(fn)
-    except KeyError:
-        return fn
+    # A tail call is a `JMP` to another function's name, which isn't
+    # a label of this one. The tolerant build gives each such target
+    # a block of its own ending in a return, which ends the facts
+    # there as a return does, and the rewrite below keeps only the
+    # function's own instructions. Zork's interpreter has 32
+    # functions that end in a tail call.
+    from passes.redundant_load import _build_cfg_tolerant
+    cfg = _build_cfg_tolerant(fn)
     # Precompute the set of `Data(name)` symbols this function
     # writes anywhere. A DataExpr fact about an unmutated name is
     # safe to recompute at any program point (modulo the kill rules
@@ -288,7 +298,14 @@ def _rewrite_function(
         x_tokens=x_tokens, y_tokens=y_tokens,
     )
     in_states = _solve(cfg, ctx)
-    new_instrs = _rewrite(cfg, in_states, ctx)
+    # Find which slot reads could read a fixed source instead, then
+    # keep only those whose store goes away (`_allowed_slot_reads`).
+    ctx.probe = set()
+    _rewrite(cfg, in_states, ctx)
+    ctx.allowed = _allowed_slot_reads(cfg, ctx)
+    ctx.probe = None
+    # One instruction out for each one in, the synthetic tail last.
+    new_instrs = _rewrite(cfg, in_states, ctx)[:len(fn.instructions)]
     return asm_ast.Function(
         name=fn.name, is_global=fn.is_global,
         params=list(fn.params), instructions=new_instrs,
@@ -304,6 +321,13 @@ class _Ctx:
     writable: frozenset[str]
     x_tokens: dict[int, int]
     y_tokens: dict[int, int]
+    # The rewrite of slot reads to fixed sources (`_fixed_source`).
+    # While `probe` is a set, each read that could be rewritten is
+    # added to it as (instruction index, slot address), and nothing
+    # is rewritten. Then only the reads in `allowed` are.
+    probe: Optional[set[tuple[int, int]]] = None
+    allowed: frozenset[tuple[int, int]] = frozenset()
+    index: int = 0
 
 
 def _index_register_tokens(
@@ -654,7 +678,7 @@ def _src_expr(
     if isinstance(src, asm_ast.Data):
         zp = _zp_addr(src, ctx.zp_addrs)
         if zp is not None:
-            return ZPRef(addr=zp)
+            return ZPRef(addr=zp, name=src.name, offset=src.offset)
         if src.name in ctx.writable:
             return None
         return DataExpr(name=src.name, offset=src.offset)
@@ -792,6 +816,7 @@ def _rewrite(
         bin = in_states.get(bid) or State()
         state = bin.copy()
         for instr in block.instructions:
+            ctx.index = len(out)
             out.append(_rewrite_instr(instr, state, ctx))
             _transfer(instr, state, ctx)
     return out
@@ -906,9 +931,7 @@ def _rewrite_src(
     if fact is None:
         return op
     if isinstance(fact, ZPRef):
-        # Don't substitute a ZP cell with another ZP cell — both are
-        # zp addressing at the same cycle cost; chains add noise.
-        return op
+        return _fixed_source(op, fact, addr, ctx)
     if isinstance(fact, ImmExpr):
         return asm_ast.Imm(value=fact.value)
     if isinstance(fact, ImmLabelLowExpr):
@@ -935,6 +958,164 @@ def _rewrite_src(
             name=fact.name, offset=fact.offset, index=idx_reg,
         )
     return op
+
+
+# The compiler's own zero-page slots. The linker gives them new
+# addresses, so two of them that share a byte in one unit needn't
+# share it in the program.
+_SLOT_PREFIXES = ("__local_", "__zpabi_")
+
+
+def _fixed_source(
+    op: asm_ast.Type_operand, fact: ZPRef, addr: int, ctx: "_Ctx",
+) -> asm_ast.Type_operand:
+    """A read of one of the function's `__local_*` slots that holds a
+    copy of another zero-page byte reads that byte instead, so the
+    store into the slot can go. `LDA OPERANDS; STA t; ...; ADC t`
+    becomes `...; ADC OPERANDS`.
+
+    Only when the other byte is named by a symbol whose address the
+    linker keeps: a fixed zero-page object, a zero-page global, or
+    one of the runtime's bytes. The fact is about an address, and a
+    slot's address in this unit isn't the one it gets when linked.
+    And only when every read the slot's stores reach is rewritten
+    (`_allowed_slot_reads`). A read of one zero-page byte costs what
+    a read of another does, so a rewrite that leaves a store in place
+    gains nothing, and it can cost bytes, since `redundant_load` then
+    no longer sees that A holds the slot where two paths join."""
+    if not (isinstance(op, asm_ast.Data) and op.name.startswith("__local_")):
+        return op
+    if fact.name is None or fact.name.startswith(_SLOT_PREFIXES):
+        return op
+    key = (ctx.index, addr)
+    if ctx.probe is not None:
+        ctx.probe.add(key)
+        return op
+    if key not in ctx.allowed:
+        return op
+    return asm_ast.Data(name=fact.name, offset=fact.offset)
+
+
+def _allowed_slot_reads(cfg: CFG, ctx: "_Ctx") -> frozenset[tuple[int, int]]:
+    """The probed slot reads (`ctx.probe`) that may be rewritten:
+    those in a web, a slot's stores and the reads they reach, whose
+    every read was probed, so that no read of the slot is left for
+    the web's stores. Reaching definitions over the CFG, for each
+    byte a probed read names. Nothing in a function with a soft-stack
+    frame, whose prologue and epilogue save and restore zero-page
+    bytes."""
+    probe = ctx.probe or set()
+    if not probe:
+        return frozenset()
+    instrs: list[asm_ast.Type_instruction] = []
+    block_span: dict[int, tuple[int, int]] = {}
+    for bid in cfg.block_order:
+        start = len(instrs)
+        instrs.extend(cfg.blocks[bid].instructions)
+        block_span[bid] = (start, len(instrs))
+    if any(isinstance(i, (asm_ast.FunctionPrologue, asm_ast.Ret))
+           for i in instrs):
+        return frozenset()
+    slots = {addr for _, addr in probe}
+    reads: list[set[int]] = []
+    writes: list[set[int]] = []
+    for instr in instrs:
+        r, w = _slot_accesses(instr, ctx.zp_addrs)
+        if r is None:
+            return frozenset()
+        reads.append(r & slots)
+        writes.append(w & slots)
+
+    # Reaching definitions: for each slot byte, the indexes of the
+    # instructions whose write to it may reach a point.
+    def transfer(bid, state):
+        state = dict(state)
+        lo, hi = block_span[bid]
+        for i in range(lo, hi):
+            for a in writes[i]:
+                state[a] = frozenset((i,))
+        return state
+
+    in_defs = {bid: {} for bid in cfg.blocks}
+    out_defs = {}
+    changed = True
+    while changed:
+        changed = False
+        for bid in cfg.block_order:
+            merged = {}
+            for p in cfg.blocks[bid].predecessors:
+                for a, ds in out_defs.get(p, {}).items():
+                    merged[a] = merged.get(a, frozenset()) | ds
+            in_defs[bid] = merged
+            new = transfer(bid, merged)
+            if new != out_defs.get(bid):
+                out_defs[bid] = new
+                changed = True
+
+    # Union the definitions that reach a common read into webs, and
+    # mark a web bad when one of its reads can't be rewritten.
+    parent = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    read_webs = []
+    for bid in cfg.block_order:
+        lo, hi = block_span[bid]
+        state = dict(in_defs[bid])
+        for i in range(lo, hi):
+            for a in reads[i]:
+                ds = sorted(state.get(a, frozenset()))
+                if not ds:
+                    read_webs.append(((i, a), None))
+                    continue
+                root = find((ds[0], a))
+                for d in ds[1:]:
+                    parent[find((d, a))] = root
+                read_webs.append(((i, a), (ds[0], a)))
+            for a in writes[i]:
+                state[a] = frozenset((i,))
+    bad = set()
+    for key, web in read_webs:
+        if web is not None and key not in probe:
+            bad.add(find(web))
+    return frozenset(
+        key for key, web in read_webs
+        if key in probe and web is not None and find(web) not in bad
+    )
+
+
+def _slot_accesses(
+    instr: asm_ast.Type_instruction, zp_addrs: dict[str, int],
+) -> tuple[set[int] | None, set[int]]:
+    """The zero-page bytes `instr` reads and writes, or None for the
+    reads when it may read a byte it doesn't name: an indexed read of
+    a `__local_*` array. A pointer's two bytes count as read by an
+    indirect access through it."""
+    from passes.asm_dead_store import _ptr_source_reads, _read_operands
+    ops = list(_read_operands(instr))
+    for op in list(ops):
+        ops.extend(_ptr_source_reads(op))
+    read: set[int] = set()
+    for op in ops:
+        if isinstance(op, asm_ast.IndexedData) and op.name.startswith("__local_"):
+            return None, set()
+        a = _zp_addr(op, zp_addrs)
+        if a is not None:
+            read.add(a)
+    written: set[int] = set()
+    dst = instr.dst if isinstance(instr, asm_ast.LoadAddress) \
+        else _instr_write_dst(instr)
+    if dst is not None:
+        a = _zp_addr(dst, zp_addrs)
+        if a is not None:
+            written.add(a)
+            if isinstance(instr, asm_ast.LoadAddress):
+                written.add(a + 1)
+    return read, written
 
 
 def _dptr_base(state: State) -> Optional[int]:

@@ -95,9 +95,6 @@ __local_get_nonstack_var__2	EQU	$E7
 __local_pop__2	EQU	$E7
 __zpabi_push__value_1	EQU	$E7
 __zpabi_set_nonstack_var__value_1	EQU	$E7
-__local_do_1op__0	EQU	$E8
-__local_do_1op__1	EQU	$E9
-__local_do_1op__n	EQU	$EA
 BUFF_END	EQU	$EB
 BUFF_LINE_LEN	EQU	$EC
 CURR_LINE	EQU	$ED
@@ -849,10 +846,10 @@ instr_call:
    STA   __zpabi_store_result__value_1
    JMP   store_result
 .if_end@20:
-   LDA   Z_PC
-   STA   __zpabi_push__value_1
    LDA   FRAME_STACK_COUNT
    STA   __zpabi_push__value_0
+   LDA   Z_PC
+   STA   __zpabi_push__value_1
    JSR   push
    LDA   FRAME_Z_SP
    STA   __zpabi_push__value_0
@@ -1084,12 +1081,7 @@ do_0op:
 do_1op:
    SUBROUTINE
 
-   STA   __local_do_1op__n
-   LDA   OPERANDS
-   STA   __local_do_1op__1
-   LDA   OPERANDS+1
-   STA   __local_do_1op__0
-   LDA   __local_do_1op__n
+   ORA   #$00
    BEQ   .case@18
    CMP   #$01
    BEQ   .case@19
@@ -1129,8 +1121,8 @@ do_1op:
 .lb_skip@2:
    JMP   .default@33
 .case@18:
-   LDA   __local_do_1op__0
-   ORA   __local_do_1op__1
+   LDA   OPERANDS+1
+   ORA   OPERANDS
    BEQ   .cmp_true@2
    LDA   #$00
    JMP   .cmp_end@1
@@ -1158,9 +1150,9 @@ do_1op:
    JSR   dec_var
    JMP   .switch@17_break
 .case@25:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    STA   __zpabi_load_address__addr_0
-   LDA   __local_do_1op__0
+   LDA   OPERANDS+1
    STA   __zpabi_load_address__addr_1
    JSR   load_address
    JSR   print_zstring
@@ -1169,46 +1161,46 @@ do_1op:
    JSR   instr_remove_obj
    JMP   .switch@17_break
 .case@27:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    JSR   print_obj
    JMP   .switch@17_break
 .case@28:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    STA   __zpabi_return_value__value_0
-   LDA   __local_do_1op__0
+   LDA   OPERANDS+1
    STA   __zpabi_return_value__value_1
    JSR   return_value
    JMP   .switch@17_break
 .case@29:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    SEC
    SBC   #$02
    STA   __zpabi_branch_to_offset__offset_0
-   LDA   __local_do_1op__0
+   LDA   OPERANDS+1
    SBC   #$00
    STA   __zpabi_branch_to_offset__offset_1
    JSR   branch_to_offset
    JMP   .switch@17_break
 .case@30:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    STA   __zpabi_load_packed_address__addr_0
-   LDA   __local_do_1op__0
+   LDA   OPERANDS+1
    STA   __zpabi_load_packed_address__addr_1
    JSR   load_packed_address
    JSR   print_zstring
    JMP   .switch@17_break
 .case@31:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    JSR   var_get
    STA   __zpabi_store_result__value_0
    STX   __zpabi_store_result__value_1
    JSR   store_result
    JMP   .switch@17_break
 .case@32:
-   LDA   __local_do_1op__1
+   LDA   OPERANDS
    EOR   #$FF
    STA   __zpabi_store_result__value_0
-   LDA   __local_do_1op__0
+   LDA   OPERANDS+1
    EOR   #$FF
    STA   __zpabi_store_result__value_1
    JSR   store_result
@@ -1360,13 +1352,11 @@ do_2op:
 .and_end@24:
    ORA   #$00
    BEQ   .if_end@25
-   LDA   OPERANDS+4
-   STA   __local_do_2op__0
    LDA   __local_do_2op__4
    CMP   OPERANDS+5
    BNE   .thread@1
    LDA   __local_do_2op__5
-   CMP   __local_do_2op__0
+   CMP   OPERANDS+4
    BEQ   .cmp_true@6
 .thread@1:
    LDA   #$00
@@ -1381,13 +1371,11 @@ do_2op:
    SEC
    SBC   #$01
    BEQ   .if_end@28
-   LDA   OPERANDS+6
-   STA   __local_do_2op__0
    LDA   __local_do_2op__4
    CMP   OPERANDS+7
    BNE   .thread@2
    LDA   __local_do_2op__5
-   CMP   __local_do_2op__0
+   CMP   OPERANDS+6
    BEQ   .cmp_true@9
 .thread@2:
    LDA   #$00
@@ -1612,8 +1600,6 @@ do_var:
    STA   __local_do_var__n
    LDA   OPERANDS
    STA   __local_do_var__3
-   LDA   OPERANDS+1
-   STA   __local_do_var__1
    LDA   __local_do_var__n
    BEQ   .case@61
    CMP   #$01
@@ -1660,7 +1646,7 @@ do_var:
    ADC   __local_do_var__3
    STA   __local_do_var__0
    LDA   Z_HEADER_ADDR+1
-   ADC   __local_do_var__1
+   ADC   OPERANDS+1
    STA   __local_do_var__n
    LDA   OPERANDS+2
    STA   __local_do_var__2
@@ -1683,16 +1669,12 @@ do_var:
    STA   (__local_do_var__0),Y
    JMP   .switch@60_break
 .case@63:
-   LDA   OPERANDS+2
-   STA   __local_do_var__n
-   LDA   OPERANDS+3
-   STA   __local_do_var__0
    LDA   __local_do_var__3
    CLC
-   ADC   __local_do_var__n
+   ADC   OPERANDS+2
    STA   __local_do_var__n
-   LDA   __local_do_var__1
-   ADC   __local_do_var__0
+   LDA   OPERANDS+1
+   ADC   OPERANDS+3
    STA   __local_do_var__1
    LDA   Z_HEADER_ADDR
    CLC
@@ -1718,7 +1700,7 @@ do_var:
 .case@67:
    LDA   __local_do_var__3
    STA   __zpabi_print_number__n_0
-   LDA   __local_do_var__1
+   LDA   OPERANDS+1
    STA   __zpabi_print_number__n_1
    JSR   print_number
    JMP   .switch@60_break
@@ -1728,7 +1710,7 @@ do_var:
 .case@69:
    LDA   __local_do_var__3
    STA   __zpabi_push__value_0
-   LDA   __local_do_var__1
+   LDA   OPERANDS+1
    STA   __zpabi_push__value_1
    JSR   push
    JMP   .switch@60_break

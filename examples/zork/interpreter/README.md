@@ -10,7 +10,7 @@ lines from 249 to 3796 is translated in one of the files below.
 It plays Zork. On two test sessions it makes the same calls to the
 Monitor and to DOS's RWTS as Zork's own interpreter, with the same
 characters at the same cursor positions, and writes the same sectors
-(see "Compared with Zork's own code"). It is 29% larger than the
+(see "Compared with Zork's own code"). It is 23% larger than the
 original, so it doesn't fit in the 26 sectors that Zork's boot loader
 reads (see "Size").
 
@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1EE4`. The other units, the constants,
+on every instruction, up to `$1E86`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -154,18 +154,18 @@ file and the original code it translates:
 
 | File | Zork | C |
 |---|---:|---:|
-| `main.c` | 391 | 484 |
-| `decode.c` | 1859 | 2525 |
-| `objects.c` | 788 | 1103 |
+| `main.c` | 391 | 480 |
+| `decode.c` | 1859 | 2495 |
+| `objects.c` | 788 | 1067 |
 | `numbers.c` | 436 | 690 |
-| `input.c` | 1018 | 1310 |
-| `pages.c` | 384 | 411 |
+| `input.c` | 1018 | 1231 |
+| `pages.c` | 384 | 387 |
 | `zstring.c` | 383 | 407 |
 | `output.c` | 387 | 405 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **8344** |
+| **Total** | **6643** | **8171** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -182,16 +182,22 @@ that also reads
 The story starts 12 pages higher than Zork's, which leaves the page
 cache 64 slots in 48K where Zork has 76.
 
-The four dispatch switches take 1,355 bytes with the handlers written
-into their cases (`do_2op` alone is 688), where Zork's four tables
+The four dispatch switches take 1,325 bytes with the handlers written
+into their cases (`do_2op` alone is 680), where Zork's four tables
 take 126 bytes and the handlers are counted with their own files.
 `divu16` is 117 bytes against Zork's 78, and `match_dictionary_word`
-260 against 190. `mulu16` is 59 against 69, since it computes only
+240 against 190. `mulu16` is 59 against 69, since it computes only
 the low 16 bits of the product.
 
-**Speed.** The first session takes 38,872,640 cycles against Zork's
-38,490,260, 1.0% more, and the second 7,484,785 against 7,434,428,
-0.7% more. The stand-ins for the Monitor and RWTS take no cycles.
+**Speed.** The first session takes 38,476,066 cycles against Zork's
+38,490,260, less than 0.1% fewer, and the second 7,411,525 against
+7,434,428, 0.3% fewer. The stand-ins for the Monitor and RWTS take no
+cycles. Where a function is placed matters to these counts, since a
+taken branch that crosses a page takes a cycle more. Shrinking
+`objects.c` moved `branch` and `print_zstring`, which the linker
+places after functions of `objects.c` that fall into them, and that
+cost the first session 16,534 cycles in the two, more than the
+smaller code of `objects.c` and `input.c` saved.
 
 ## Compiler changes this needed
 
@@ -220,5 +226,16 @@ the low 16 bits of the product.
   = (b & 0x80) != 0;`, has a 1-byte result
   ([narrow_widened_arith.md](../../../docs/optimizations/narrow_widened_arith.md)).
   `branch` had compared a high byte known to be 0 with 0.
+- A read of a slot that holds a copy of a zero-page byte at a fixed
+  address reads that byte, when the slot's store then goes, and the
+  pass that does it runs on functions that end in a tail call
+  ([memory_value_propagation.md](../../../docs/optimizations/memory_value_propagation.md)).
+  `text = Z_HEADER_ADDR + OPERANDS[0];` had copied `OPERANDS` into
+  two slots first.
+- A pointer plus a constant byte offset that several 1-byte loads
+  and stores read is a `(p),Y` access in each of them
+  ([recognize_indirect_indexed.md](../../../docs/optimizations/recognize_indirect_indexed.md)).
+  `parse[1]++` in `instr_sread` had built `parse + 1` in a
+  zero-page pair.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

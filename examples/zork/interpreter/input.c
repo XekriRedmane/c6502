@@ -864,7 +864,9 @@ void instr_sread(void) {
             /* The start of a word. */
             for (uint8_t i = 0; i != 6; i++)
                 ZCHAR_SCRATCH1[i] = 0;
-            parse[token_idx + 3] = input_ptr;
+            /* The original indexes the parse buffer with Y, so an
+             * offset wraps at 256, as the casts make it here. */
+            parse[(uint8_t)(token_idx + 3)] = input_ptr;
             uint8_t c = text[input_ptr];
             if (is_dict_separator(c)) {
                 ZCHAR_SCRATCH1[0] = c;
@@ -889,11 +891,11 @@ void instr_sread(void) {
     search:
         if (char_count == 0)
             continue;
-        parse[token_idx + 2] = char_count;
+        parse[(uint8_t)(token_idx + 2)] = char_count;
         ascii_to_zchar();
         uint16_t entry = match_dictionary_word();
         parse[token_idx] = (uint8_t)(entry >> 8);
-        parse[token_idx + 1] = (uint8_t)entry;
+        parse[(uint8_t)(token_idx + 1)] = (uint8_t)entry;
         token_idx += 4;
         parse[1]++;
         char_count = 0;

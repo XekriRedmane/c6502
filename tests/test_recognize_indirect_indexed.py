@@ -333,6 +333,104 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
             ),
         ])
 
+    def _increment(self, ptr: str, between=()) -> list[tac_ast.Type_instruction]:
+        """`ptr[1]++`: one address read by a Load and a Store, with
+        `between` after the Load."""
+        return [
+            tac_ast.Binary(
+                op=tac_ast.Add(), src1=_var(ptr),
+                src2=tac_ast.Constant(const=tac_ast.ConstInt(value=1)),
+                dst=_var("%addr"),
+            ),
+            tac_ast.Load(src_ptr=_var("%addr"), dst=_var("b"),
+                         is_volatile=False),
+            *between,
+            tac_ast.Binary(
+                op=tac_ast.Add(), src1=_var("b"),
+                src2=tac_ast.Constant(const=tac_ast.ConstUChar(value=1)),
+                dst=_var("value"),
+            ),
+            tac_ast.Store(src=_var("value"), dst_ptr=_var("%addr"),
+                          is_volatile=False),
+        ]
+
+    def _symbols_with_global(self) -> SymbolTable:
+        from passes.type_checking import StaticAttr
+        table = _canonical_symbols()
+        table["gp"] = Symbol(
+            type=c99_ast.Pointer(referenced_type=c99_ast.UChar()),
+            attrs=StaticAttr(initial_value=None, is_global=True),
+        )
+        return table
+
+    def _accesses(self, instrs):
+        return [i for i in instrs if isinstance(
+            i, (tac_ast.Load, tac_ast.Store, tac_ast.IndirectIndexedLoad,
+                tac_ast.IndirectIndexedStore),
+        )]
+
+    def test_read_and_write_of_one_offset_fold(self) -> None:
+        # Both accesses fold. The Add is left for the asm byte DCE,
+        # since nothing reads it once they have.
+        for ptr in ("p", "gp"):
+            with self.subTest(ptr=ptr):
+                out = recognize_indirect_indexed(
+                    _fn(self._increment(ptr)),
+                    symbols=self._symbols_with_global(),
+                )
+                one = tac_ast.Constant(const=tac_ast.ConstUChar(value=1))
+                self.assertEqual(self._accesses(out.instructions), [
+                    tac_ast.IndirectIndexedLoad(
+                        ptr=_var(ptr), index=one, dst=_var("b"),
+                        is_volatile=False,
+                    ),
+                    tac_ast.IndirectIndexedStore(
+                        ptr=_var(ptr), index=one, src=_var("value"),
+                        is_volatile=False,
+                    ),
+                ])
+
+    def test_other_reader_of_offset_does_not_fold(self) -> None:
+        instrs = self._increment("p", between=[
+            tac_ast.Copy(src=_var("%addr"), dst=_var("q")),
+        ])
+        out = recognize_indirect_indexed(
+            _fn(instrs), symbols=self._symbols_with_global(),
+        )
+        self.assertEqual(out.instructions, instrs)
+
+    def test_global_pointer_changed_does_not_fold(self) -> None:
+        # A call between the accesses may change `gp`, so the Store's
+        # address isn't `gp + 1` read again, and neither access folds.
+        instrs = self._increment("gp", between=[
+            tac_ast.FunctionCall(name="h", args=[], dst=None),
+        ])
+        out = recognize_indirect_indexed(
+            _fn(instrs), symbols=self._symbols_with_global(),
+        )
+        self.assertEqual(out.instructions, instrs)
+
+    def test_offset_read_and_write_end_to_end(self) -> None:
+        src = (
+            "#include <stdint.h>\n"
+            "static uint8_t data[4] = {1, 2, 3, 4};\n"
+            "uint8_t *gp;\n"
+            "void f(uint8_t *p) { p[1]++; p[2] += 3; gp[3]--; }\n"
+            "int main(void) {\n"
+            "    gp = data;\n"
+            "    f(data);\n"
+            "    return data[0] + 10 * data[1] + 100 * data[2]\n"
+            "        + 1000 * data[3];\n"
+            "}\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                out = build_sim(src, optimize=optimize).run(
+                    max_cycles=5_000_000,
+                )
+                self.assertFalse(out.timed_out)
+                self.assertEqual(out.return_int(), 1 + 30 + 600 + 3000)
+
     def test_offset_access_end_to_end(self) -> None:
         # Loads at offsets 0 and 255, and a store of a negative
         # `signed char` constant, which must be stored as its 2's

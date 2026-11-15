@@ -216,6 +216,11 @@ this directory:
   rewrites reads at use sites. Subsumes the former
   `indirect_base_prop` (DPTR-stage rewrite, now CFG-wide) and
   overlaps with `apply_remat` for Imm / Data / ImmLabel sources.
+  A read of a `__local_*` slot holding a copy of a zero-page byte the
+  linker doesn't move (not a `__zpabi_*` or `__local_*` slot) reads
+  that byte, when every read of the slot's web can, so the store
+  goes (`_fixed_source`, `_allowed_slot_reads`). A tail call is an
+  exit of the CFG (`redundant_load._build_cfg_tolerant`).
 - `label_resolution.py` — pass 4 (see below).
 - `linker.py` — `compile.py --link` driver; multi-TU re-allocates
   `__zpabi_*` and `__local_*` symbols across per-TU outputs. A

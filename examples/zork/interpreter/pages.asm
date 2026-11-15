@@ -83,10 +83,8 @@ __zpabi_return_value__value_1	EQU	$E1
 __zpabi_store_result__value_1	EQU	$E1
 __zpabi_var_put__value_1	EQU	$E1
 Z_ABBREV_TABLE	EQU	$E2
-__local_get_next_code_byte__found_1	EQU	$E4
 __local_get_next_code_byte__page	EQU	$E5
 __local_get_next_code_word__1	EQU	$E5
-__local_get_next_code_byte2__found_1	EQU	$E6
 __local_get_next_code_byte2__page	EQU	$E7
 __local_set_page_first__0	EQU	$E9
 __local_set_page_first__prev_first	EQU	$EA
@@ -358,13 +356,9 @@ get_next_code_byte:
    RTS
 .if_end@6:
    LDA   Z_PC+1
-   STA   __local_get_next_code_byte__page
-   LDA   Z_PC+2
-   STA   __local_get_next_code_byte__found_1
-   LDA   __local_get_next_code_byte__page
    STA   __zpabi_find_index_of_page_table__page_0
    STA   __local_get_next_code_byte__page
-   LDA   __local_get_next_code_byte__found_1
+   LDA   Z_PC+2
    STA   __zpabi_find_index_of_page_table__page_1
    BNE   .if_else@12
    LDA   __local_get_next_code_byte__page
@@ -383,14 +377,12 @@ get_next_code_byte:
    STA   disk_sector
    LDA   __zpabi_find_index_of_page_table__page_1
    STA   disk_sector+1
-   LDA   PAGE_TABLE_INDEX
-   STA   __local_get_next_code_byte__found_1
    LDA   HIGH_MEM_ADDR
    CLC
    ADC   #$00
    STA   disk_buffer
    LDA   HIGH_MEM_ADDR+1
-   ADC   __local_get_next_code_byte__found_1
+   ADC   PAGE_TABLE_INDEX
    STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@15
@@ -477,13 +469,9 @@ get_next_code_byte2:
    RTS
 .if_end@16:
    LDA   Z_PC2+1
-   STA   __local_get_next_code_byte2__page
-   LDA   Z_PC2+2
-   STA   __local_get_next_code_byte2__found_1
-   LDA   __local_get_next_code_byte2__page
    STA   __zpabi_find_index_of_page_table__page_0
    STA   __local_get_next_code_byte2__page
-   LDA   __local_get_next_code_byte2__found_1
+   LDA   Z_PC2+2
    STA   __zpabi_find_index_of_page_table__page_1
    BNE   .if_else@22
    LDA   __local_get_next_code_byte2__page
@@ -502,14 +490,12 @@ get_next_code_byte2:
    STA   disk_sector
    LDA   __zpabi_find_index_of_page_table__page_1
    STA   disk_sector+1
-   LDA   PAGE_TABLE_INDEX2
-   STA   __local_get_next_code_byte2__found_1
    LDA   HIGH_MEM_ADDR
    CLC
    ADC   #$00
    STA   disk_buffer
    LDA   HIGH_MEM_ADDR+1
-   ADC   __local_get_next_code_byte2__found_1
+   ADC   PAGE_TABLE_INDEX2
    STA   disk_buffer+1
    JSR   read_from_sector
    BCC   .if_end@25

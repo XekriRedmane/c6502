@@ -324,5 +324,86 @@ class TestYSetupInvalidates(unittest.TestCase):
         self.assertEqual(out[3].src, _zp(0x84))
 
 
+def _data(name, off=0):
+    return asm_ast.Data(name=name, offset=off)
+
+
+# A fixed zero-page object, a slot of this function, and a parameter
+# slot of another, as a unit's symbol table gives them.
+_SLOT_ADDRS = {"OPS": 0x82, "__local_f__t": 0x90, "__zpabi_g__p": 0x92}
+
+
+def _run_slots(instrs):
+    fn = asm_ast.Function(
+        name="f", is_global=True, params=[], instructions=instrs,
+    )
+    return _instrs(apply_memory_value_propagation(
+        asm_ast.Program(top_level=[fn]), zp_symbol_addrs=_SLOT_ADDRS,
+    ))
+
+
+def _load(src):
+    return asm_ast.Mov(src=src, dst=_A(), is_volatile=False)
+
+
+def _store(dst):
+    return asm_ast.Mov(src=_A(), dst=dst, is_volatile=False)
+
+
+class TestSlotReadsFixedSource(unittest.TestCase):
+    """A read of a `__local_*` slot that holds a copy of a zero-page
+    byte the linker doesn't move reads that byte, when every read the
+    slot's stores reach can, so the store can go."""
+
+    def _copy_then_add(self, src, tail):
+        # LDA src; STA t; LDA #1; CLC; ADC t; STA OPS+1; <tail>
+        return [
+            _load(src), _store(_data("__local_f__t")),
+            _load(asm_ast.Imm(value=1)), asm_ast.ClearCarry(),
+            asm_ast.Add(src=_data("__local_f__t"), dst=_A()),
+            _store(_data("OPS", 1)), tail,
+        ]
+
+    def test_read_of_fixed_source(self):
+        out = _run_slots(self._copy_then_add(
+            _data("OPS"), asm_ast.Return(),
+        ))
+        self.assertEqual(out[4].src, _data("OPS"))
+
+    def test_read_after_tail_call_function(self):
+        # A function that ends in a JMP to another function is
+        # rewritten too.
+        out = _run_slots(self._copy_then_add(
+            _data("OPS"), asm_ast.Jump(target="g"),
+        ))
+        self.assertEqual(out[4].src, _data("OPS"))
+
+    def test_copy_of_slot_left_alone(self):
+        # Another function's parameter slot may get another address
+        # when linked, so a copy of it isn't read through it.
+        out = _run_slots(self._copy_then_add(
+            _data("__zpabi_g__p"), asm_ast.Return(),
+        ))
+        self.assertEqual(out[4].src, _data("__local_f__t"))
+
+    def test_web_with_other_store_left_alone(self):
+        # t is OPS on one path and 5 on the other. The read after the
+        # join can't be rewritten, so the read on the first path
+        # isn't either, since its store stays for the join.
+        out = _run_slots([
+            asm_ast.Branch(cond=asm_ast.EQ(), target=".b"),
+            _load(_data("OPS")), _store(_data("__local_f__t")),
+            asm_ast.Add(src=_data("__local_f__t"), dst=_A()),
+            asm_ast.Jump(target=".join"),
+            asm_ast.Label(name=".b"),
+            _load(asm_ast.Imm(value=5)), _store(_data("__local_f__t")),
+            asm_ast.Label(name=".join"),
+            _load(_data("__local_f__t")),
+            asm_ast.Return(save_a=True),
+        ])
+        self.assertEqual(out[3].src, _data("__local_f__t"))
+        self.assertEqual(out[9].src, _data("__local_f__t"))
+
+
 if __name__ == "__main__":
     unittest.main()

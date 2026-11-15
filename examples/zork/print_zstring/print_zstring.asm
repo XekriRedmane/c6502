@@ -76,16 +76,13 @@ __local_get_next_zchar__compound_literal_1	EQU	$F6
 __local_dump_buffer_with_more__0	EQU	$F7
 __local_get_next_code_word__1	EQU	$F7
 __local_dump_buffer_with_more__end	EQU	$F8
-__local_get_next_code_byte2__found_1	EQU	$F8
+__local_get_next_code_byte2__page	EQU	$F8
 __local_dump_buffer_to_printer__x	EQU	$F9
-__local_get_next_code_byte2__page	EQU	$F9
+__local_get_next_code_byte2__0	EQU	$F9
 __local_dump_buffer_to_printer__1	EQU	$FA
-__local_get_next_code_byte2__0	EQU	$FA
+__local_set_page_first__0	EQU	$FA
 __local_dump_buffer_to_printer__2	EQU	$FB
-__local_find_index_of_page_table__0	EQU	$FB
-__local_set_page_first__0	EQU	$FB
-__local_find_index_of_page_table__1	EQU	$FC
-__local_set_page_first__prev_first	EQU	$FC
+__local_set_page_first__prev_first	EQU	$FB
 BUFF_AREA	EQU	$0200
 SLOT1_SCRATCH	EQU	$0779
 restart	EQU	$0800
@@ -108,9 +105,9 @@ COUT1	EQU	$FDF0
 ; def dump_buffer_to_printer params= locals=__local_dump_buffer_to_printer__x,__local_dump_buffer_to_printer__1,__local_dump_buffer_to_printer__2 indirect=false in_cycle=false
 ; def dump_buffer_to_screen params= locals= indirect=false in_cycle=false
 ; def dump_buffer_with_more params= locals=__local_dump_buffer_with_more__0,__local_dump_buffer_with_more__end indirect=false in_cycle=false
-; def find_index_of_page_table params= locals=__local_find_index_of_page_table__0,__local_find_index_of_page_table__1 indirect=false in_cycle=false
+; def find_index_of_page_table params= locals= indirect=false in_cycle=false
 ; def get_alphabet params= locals= indirect=false in_cycle=false
-; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__found_1,__local_get_next_code_byte2__page,__local_get_next_code_byte2__0 indirect=false in_cycle=false
+; def get_next_code_byte2 params= locals=__local_get_next_code_byte2__page,__local_get_next_code_byte2__0 indirect=false in_cycle=false
 ; def get_next_code_word params= locals=__local_get_next_code_word__1 indirect=false in_cycle=false
 ; def get_next_zchar params= locals=__local_get_next_zchar__compound_literal_1 indirect=false in_cycle=false
 ; def invalidate_zcode_page2 params= locals= indirect=false in_cycle=false
@@ -354,16 +351,15 @@ get_next_code_byte2:
    BCC   .if_end@7
    CMP   PAGE_TABLE_INDEX
    BNE   .if_end@8
-   LDY   #$00
-   STY   ZCODE_PAGE_VALID
+   LDA   #$00
+   STA   ZCODE_PAGE_VALID
 .if_end@8:
-   STA   __local_get_next_code_byte2__found_1
    LDA   HIGH_MEM_ADDR
    CLC
    ADC   #$00
    STA   SCRATCH2
    LDA   HIGH_MEM_ADDR+1
-   ADC   __local_get_next_code_byte2__found_1
+   ADC   PAGE_TABLE_INDEX2
    STA   SCRATCH2+1
    LDA   __local_get_next_code_byte2__page
    STA   SCRATCH1
@@ -438,24 +434,20 @@ set_page_first:
 find_index_of_page_table:
    SUBROUTINE
 
-   LDA   SCRATCH2
-   STA   __local_find_index_of_page_table__1
-   LDA   SCRATCH2+1
-   STA   __local_find_index_of_page_table__0
    LDX   NUM_PAGE_TABLE_ENTRIES
    LDY   #$00
-   LDA   __local_find_index_of_page_table__1
+   LDA   SCRATCH2
 .loop@1_start:
    CMP   (PAGE_L_TABLE),Y
    BNE   .if_end@15
    LDA   (PAGE_H_TABLE),Y
-   CMP   __local_find_index_of_page_table__0
+   CMP   SCRATCH2+1
    BNE   .find_index_of_page_table@lia@1
    CLC
    TYA
    RTS
 .find_index_of_page_table@lia@1:
-   LDA   __local_find_index_of_page_table__1
+   LDA   SCRATCH2
 .if_end@15:
    INY
    DEX

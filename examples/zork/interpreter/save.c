@@ -10,10 +10,14 @@
     Departures from the original:
 
     - The sector number is save_sector, where the original keeps it in
-      SCRATCH1, and the routines that step it to the next sector,
+      SCRATCH1. The routines that step it to the next sector,
       read_next_sector, inc_sector_and_read, write_next_sector, and
-      inc_sector_and_write, are here. They take the buffer as an
-      argument, where the original passes it in SCRATCH2.
+      inc_sector_and_write, are here, where the original keeps them
+      with the disk routines (disk.c quotes them). inc_sector_and_read
+      and inc_sector_and_write take the buffer as an argument, where
+      the original passes it in SCRATCH2. read_next_sector and
+      write_next_sector pass BUFF_AREA to them, where the original's
+      set SCRATCH2 to BUFF_AREA and fall into them.
     - The copy routines take the address of the bytes as an argument
       and return the index after the bytes they copied, where the
       original passes the address in SCRATCH2 and leaves the index in
@@ -171,6 +175,20 @@ static bool inc_sector_and_read(uint8_t *const buffer) {
     return read_from_sector(save_sector, buffer);
 }
 
+/* Writes the next sector of the save from the line buffer. Returns
+ * true if the write failed. */
+[[c6502::return_bool_in_carry]]
+static bool write_next_sector(void) {
+    return inc_sector_and_write(BUFF_AREA);
+}
+
+/* Reads the next sector of the save into the line buffer. Returns
+ * true if the read failed. */
+[[c6502::return_bool_in_carry]]
+static bool read_next_sector(void) {
+    return inc_sector_and_read(BUFF_AREA);
+}
+
 /* Copies the `count` bytes at `src` into BUFF_AREA from index `x` on,
  * last byte first, and returns the index after them. A count of 0
  * copies 256. */
@@ -207,13 +225,13 @@ void instr_save(void) {
     x = copy_data_to_buff((const uint8_t *)&Z_PC, x, sizeof Z_PC);
     x = copy_data_to_buff(LOCAL_ZVARS, x, 30);
     copy_data_to_buff(STACK_STATE, x, 6);
-    if (inc_sector_and_write(BUFF_AREA))
+    if (write_next_sector())
         goto fail;
     copy_data_to_buff(Z_STACK, 0, 0);
-    if (inc_sector_and_write(BUFF_AREA))
+    if (write_next_sector())
         goto fail;
     copy_data_to_buff(Z_STACK + 0x100, 0, 0x68);
-    if (inc_sector_and_write(BUFF_AREA))
+    if (write_next_sector())
         goto fail;
     /* One page more than restore reads back. */
     uint8_t *page = Z_HEADER_ADDR;
@@ -235,7 +253,7 @@ fail:
 
 void instr_restore(void) {
     save_sector = please_insert_save_diskette();
-    if (inc_sector_and_read(BUFF_AREA))
+    if (read_next_sector())
         goto fail;
     uint8_t x = 0;
     if (Z_HEADER_ADDR[HEADER_VERSION] != BUFF_AREA[x])
@@ -247,10 +265,10 @@ void instr_restore(void) {
     ZCODE_PAGE_VALID = 0;
     x = copy_data_from_buff(LOCAL_ZVARS, x, 30);
     copy_data_from_buff(STACK_STATE, x, 6);
-    if (inc_sector_and_read(BUFF_AREA))
+    if (read_next_sector())
         goto fail;
     copy_data_from_buff(Z_STACK, 0, 0);
-    if (inc_sector_and_read(BUFF_AREA))
+    if (read_next_sector())
         goto fail;
     copy_data_from_buff(Z_STACK + 0x100, 0, 0x68);
     uint8_t *page = Z_HEADER_ADDR;

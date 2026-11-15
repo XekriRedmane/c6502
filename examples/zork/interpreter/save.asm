@@ -126,6 +126,8 @@ COUT1	EQU	$FDF0
 ; def inc_sector_and_write params=__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 locals=__local_inc_sector_and_write__0 indirect=false in_cycle=false
 ; def instr_restore params= locals=__local_instr_restore__0,__local_instr_restore__pages,__local_instr_restore__1 indirect=false in_cycle=false
 ; def instr_save params= locals=__local_instr_save__0,__local_instr_save__pages indirect=false in_cycle=false
+; def read_next_sector params= locals=__local_read_next_sector__0 indirect=false in_cycle=false
+; def write_next_sector params= locals=__local_write_next_sector__0 indirect=false in_cycle=false
 ; ext A_mod_3 params=__zpabi_A_mod_3__a param_regs=A
 ; ext CLREOL params=
 ; ext COUT params=__zpabi_COUT__c param_regs=A
@@ -201,15 +203,21 @@ COUT1	EQU	$FDF0
 ; call instr_restore -> inc_sector_and_read
 ; call instr_restore -> please_insert_save_diskette
 ; call instr_restore -> please_reinsert_game_diskette
+; call instr_restore -> read_next_sector
 ; call instr_save -> branch
 ; call instr_save -> copy_data_to_buff
 ; call instr_save -> inc_sector_and_write
 ; call instr_save -> please_insert_save_diskette
 ; call instr_save -> please_reinsert_game_diskette
-; share member=inc_sector_and_read:__zpabi_inc_sector_and_read__buffer_0,__zpabi_inc_sector_and_read__buffer_1 holder=instr_restore live=instr_restore:inc_sector_and_read writer=instr_restore
-; share member=inc_sector_and_write:__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 holder=instr_save live=instr_save:inc_sector_and_write writer=instr_save
+; call instr_save -> write_next_sector
+; call read_next_sector -> inc_sector_and_read
+; call write_next_sector -> inc_sector_and_write
+; share member=inc_sector_and_read:__zpabi_inc_sector_and_read__buffer_0,__zpabi_inc_sector_and_read__buffer_1 holder=instr_restore live=instr_restore:inc_sector_and_read forward=instr_restore>inc_sector_and_read writer=instr_restore
+; share member=inc_sector_and_write:__zpabi_inc_sector_and_write__buffer_0,__zpabi_inc_sector_and_write__buffer_1 holder=instr_save live=instr_save:inc_sector_and_write forward=instr_save>inc_sector_and_write writer=instr_save
 ; item inc_sector_and_write section=.text local=true zero=false
 ; item inc_sector_and_read section=.text local=true zero=false
+; item write_next_sector section=.text local=true zero=false
+; item read_next_sector section=.text local=true zero=false
 ; item copy_data_to_buff section=.text local=true zero=false
 ; item copy_data_from_buff section=.text local=true zero=false
 ; item instr_save section=.text local=false zero=false
@@ -318,6 +326,24 @@ inc_sector_and_read:
    STA   __zpabi_read_from_sector__buffer_1
    JMP   read_from_sector
 
+write_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   __zpabi_inc_sector_and_write__buffer_0
+   LDA   #>BUFF_AREA
+   STA   __zpabi_inc_sector_and_write__buffer_1
+   JMP   inc_sector_and_write
+
+read_next_sector:
+   SUBROUTINE
+
+   LDA   #<BUFF_AREA
+   STA   __zpabi_inc_sector_and_read__buffer_0
+   LDA   #>BUFF_AREA
+   STA   __zpabi_inc_sector_and_read__buffer_1
+   JMP   inc_sector_and_read
+
 copy_data_to_buff:
    SUBROUTINE
 
@@ -374,11 +400,7 @@ instr_save:
    STA   __zpabi_copy_data_to_buff__src_1
    LDY   #$06
    JSR   copy_data_to_buff
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_1
-   JSR   inc_sector_and_write
+   JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   #$80
    STA   __zpabi_copy_data_to_buff__src_0
@@ -387,11 +409,7 @@ instr_save:
    LDX   #$00
    LDY   #$00
    JSR   copy_data_to_buff
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_1
-   JSR   inc_sector_and_write
+   JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   #$80
    STA   __zpabi_copy_data_to_buff__src_0
@@ -400,11 +418,7 @@ instr_save:
    LDX   #$00
    LDY   #$68
    JSR   copy_data_to_buff
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_write__buffer_1
-   JSR   inc_sector_and_write
+   JSR   write_next_sector
    BCS   .instr_save@fail
    LDA   Z_HEADER_ADDR
    STA   __zpabi_inc_sector_and_write__buffer_0
@@ -438,11 +452,7 @@ instr_restore:
    JSR   please_insert_save_diskette
    STA   save_sector
    STX   save_sector+1
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_1
-   JSR   inc_sector_and_read
+   JSR   read_next_sector
    BCC   .lb_skip@1
    JMP   .instr_restore@fail
 .lb_skip@1:
@@ -478,11 +488,7 @@ instr_restore:
    STA   __zpabi_copy_data_from_buff__dest_1
    LDY   #$06
    JSR   copy_data_from_buff
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_1
-   JSR   inc_sector_and_read
+   JSR   read_next_sector
    BCS   .instr_restore@fail
    LDA   #$80
    STA   __zpabi_copy_data_from_buff__dest_0
@@ -491,11 +497,7 @@ instr_restore:
    LDX   #$00
    LDY   #$00
    JSR   copy_data_from_buff
-   LDA   #<BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_0
-   LDA   #>BUFF_AREA
-   STA   __zpabi_inc_sector_and_read__buffer_1
-   JSR   inc_sector_and_read
+   JSR   read_next_sector
    BCS   .instr_restore@fail
    LDA   #$80
    STA   __zpabi_copy_data_from_buff__dest_0

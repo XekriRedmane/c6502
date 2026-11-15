@@ -9,6 +9,30 @@
     ZCODE_PAGE_ADDR2, so that reading a string or a table doesn't
     disturb the instruction reader.
 
+    Departures from the original:
+
+    - Z_PC and Z_PC2 are uint24_t, and Z_PC2 is low byte first at $91,
+      where the original keeps Z_PC2_H at $91, Z_PC2_HH at $92, and
+      Z_PC2_L at $93 (see zork.h).
+    - The routines take the address to read from, the page to look
+      for, and the sector and buffer to read as arguments, and
+      get_next_code_word returns its word, where the original passes
+      all of these in SCRATCH1 and SCRATCH2. set_page_first keeps the
+      slot's neighbors in locals where the original uses SCRATCH2.
+    - Each reader reads its byte after stepping its program counter,
+      from the index it saved, since unmapping the page leaves the
+      page pointer as it is.
+    - find_index_of_page_table returns a slot in A and "not found" in
+      the carry, as a struct of the value and a bool, declared
+      return_bool_in_carry, which uses the same registers.
+    - When a page can't be read, the original jumps to `main`, which
+      restarts the interpreter. Here that's a call to restart(), which
+      doesn't return.
+    - load_address and load_packed_address clear ZCODE_PAGE_VALID2
+      themselves, where the original's fall into or jump to
+      invalidate_zcode_page2. Nothing else calls that routine, so it's
+      left out.
+
     Zork I (r15), output/main.asm lines 2358-2597:
 
     get_next_code_byte:

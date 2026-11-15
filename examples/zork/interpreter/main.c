@@ -11,12 +11,14 @@
     Departures from the original:
 
     - The original starts with CLD, clears $80-$FF, and sets the 6502's
-      stack pointer to $FF. C can do none of the three. The boot loader
-      leaves decimal mode off, and nothing in the interpreter returns
-      from `main`, so the stack's bytes below where it starts aren't
-      read. Instead of clearing zero page, `main` sets each byte of the
-      interpreter's state that's read before it's written, since the
-      compiler keeps its own bytes in that range too.
+      stack pointer to $FF. C can do none of the three. The Monitor's
+      reset routine clears decimal mode, and nothing after it sets it.
+      `main` never returns, so a restart from inside a call leaves a
+      few return addresses on the 6502's stack, which nothing reads,
+      and the stack pointer wraps within its page. Instead of clearing
+      zero page, `main` sets each byte of the interpreter's state that
+      is read before it's written, since the compiler keeps its own
+      bytes in that range too.
     - The page tables are page_tables, wherever the linker script puts
       it, where the original's are at $2200-$23FF, and the story is
       loaded at __story, the first page after the program, where the

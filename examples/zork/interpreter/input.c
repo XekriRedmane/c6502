@@ -36,8 +36,9 @@
     - search_nonalpha_table looks for a character among alphabet 2's 24
       characters. The original's loop starts at index $24, so it also
       compares the 13 bytes after a2_table, which are get_alphabet's
-      code, and a character equal to one of them ($03, $10, and '`'
-      can be typed) encodes as a z-character above 31.
+      code. Two of those bytes, $03 and $10, can be typed, as
+      control-C and control-P, and either encodes as a z-character
+      above 31.
 
     Zork I (r15), output/main.asm lines 1741-2019, 2810-3024,
     3234-3281, 3295-3347:

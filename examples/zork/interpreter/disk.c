@@ -8,12 +8,13 @@
     Departures from the original:
 
     - The routines take the sector and the buffer as arguments, where
-      the original passes them in SCRATCH1 and SCRATCH2. The save and
-      restore code steps its own sector number (save.c), where the
-      original's read_next_sector and write_next_sector step SCRATCH1,
-      so those two, and the entry points inc_sector_and_read and
-      inc_sector_and_write, are save.c's business here. What's left
-      writes one sector, write_to_sector.
+      the original passes them in SCRATCH1 and SCRATCH2.
+    - read_next_sector, inc_sector_and_read, write_next_sector, and
+      inc_sector_and_write, which step the save's sector number, are
+      in save.c with the code that keeps that number. They're quoted
+      here, where the original has them.
+    - The original's write path, from the label .write_next_sector, is
+      write_to_sector, which writes one sector.
 
     Zork I (r15), output/main.asm lines 3359-3448:
 

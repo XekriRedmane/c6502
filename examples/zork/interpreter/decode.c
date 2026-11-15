@@ -46,8 +46,9 @@
       original, on a mismatch in the low byte of the fourth operand,
       goes back to compare the second again, which fails again and
       ends at the same place.
-    - instr_loadw doubles OPERAND1 in place. Here the doubled value is
-      only used.
+    - instr_loadw doubles OPERAND1 in place, and instr_storew shifts
+      OPERAND1's high byte in place. Here the operands are left as
+      they are.
 
     Zork I (r15), output/main.asm lines 404-907, 922-963, 1019-1057,
     1126-1227, 1238-1269, 1310-1318, 1341-1359, 1464-1473, 1538-1703,

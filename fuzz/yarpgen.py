@@ -75,4 +75,9 @@ def make_program(seed: int) -> tuple[str, None]:
 
 
 if __name__ == "__main__":
+    # Checked here as well as in `make_program`, which runs in the
+    # worker processes under `-j`, where its `sys.exit` ends the worker
+    # and leaves the pool waiting for it forever.
+    if not binary().exists():
+        sys.exit(f"{binary()} not found; run python -m fuzz.build_yarpgen")
     sys.exit(fuzz_main(make_program, "yarpgen", sys.argv[1:]))

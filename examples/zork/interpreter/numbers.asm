@@ -425,24 +425,20 @@ instr_mul:
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
    LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@5
+   BNE   .if_else@7
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
-   BNE   .if_else@5
+   BNE   .vthread@0
+.xjump@0:
    ASL   __zpabi_store_with_sign__n_0
    ROL   __zpabi_store_with_sign__n_1
    JMP   .if_end@4
-.if_else@5:
-   LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@7
-   LDA   __zpabi_check_sign__b_0
+.vthread@0:
    CMP   #$04
    BNE   .if_else@7
    ASL   __zpabi_store_with_sign__n_0
    ROL   __zpabi_store_with_sign__n_1
-   ASL   __zpabi_store_with_sign__n_0
-   ROL   __zpabi_store_with_sign__n_1
-   JMP   .if_end@6
+   JMP   .xjump@0
 .if_else@7:
    LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_mulu16__a_0
@@ -454,7 +450,6 @@ instr_mul:
    JSR   mulu16
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
-.if_end@6:
 .if_end@4:
    JMP   store_with_sign
 
@@ -473,24 +468,20 @@ instr_div:
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
    LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@9
+   BNE   .if_else@11
    LDA   __zpabi_check_sign__b_0
    CMP   #$02
-   BNE   .if_else@9
+   BNE   .vthread@1
+.xjump@1:
    LSR   __zpabi_store_with_sign__n_1
    ROR   __zpabi_store_with_sign__n_0
    JMP   .if_end@8
-.if_else@9:
-   LDA   __zpabi_check_sign__b_1
-   BNE   .if_else@11
-   LDA   __zpabi_check_sign__b_0
+.vthread@1:
    CMP   #$04
    BNE   .if_else@11
    LSR   __zpabi_store_with_sign__n_1
    ROR   __zpabi_store_with_sign__n_0
-   LSR   __zpabi_store_with_sign__n_1
-   ROR   __zpabi_store_with_sign__n_0
-   JMP   .if_end@10
+   JMP   .xjump@1
 .if_else@11:
    LDA   __zpabi_store_with_sign__n_0
    STA   __zpabi_divu16__dividend_0
@@ -502,7 +493,6 @@ instr_div:
    JSR   divu16
    STA   __zpabi_store_with_sign__n_0
    STX   __zpabi_store_with_sign__n_1
-.if_end@10:
 .if_end@8:
    JMP   store_with_sign
 

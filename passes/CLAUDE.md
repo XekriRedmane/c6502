@@ -68,6 +68,17 @@ this directory:
   target when the conditions match, and past it (to a `.thread@N`
   label it adds if needed) when they're opposite. Runs after
   `branch_through_jump`.
+- `branch_value_thread.py` — `apply_branch_value_thread`. A branch or
+  `JMP` goes past the code at its target that its edge has decided:
+  a scan of the straight-line code before it follows what A holds,
+  what N/Z were set from (a load, or a `CMP #k` of a byte), and what
+  the branches it passed decided about bytes (equal or not equal to
+  a constant), and from the target it simulates loads into A, `CMP
+  #k`, and the branches it can decide. The edge goes to the furthest
+  point where A, N/Z, and C are as on the edge or dead (a
+  `.vthread@N` label if needed). `if (b == 2) ... else if (b == 4)`
+  on a 2-byte `b` tests the high byte once. Runs after
+  `branch_thread`.
 - `carry_known.py` — `apply_carry_known`. A forward dataflow of C
   (set / clear / unknown; `BCC` / `BCS` tell each edge) drops a `SEC`
   or `CLC` where C already has that value, moves one that starts a
@@ -122,6 +133,13 @@ this directory:
   label `T`, and the branch is within estimated reach. A branch or
   jump to a label in front of another copy of a tail goes to `T`
   first (`_retarget_function`), so that copy's label can go.
+- `cross_jump.py` — `apply_cross_jump`. Two `JMP`s to the same place
+  (labels naming one instruction, or one tail-called function with
+  the same register arguments) after the same run of instructions
+  (no label, branch, jump, or return in it): the later run and its
+  `JMP` become a `JMP` to the earlier run (a `.xjump@N` label if
+  needed), longest run first, until none is left. Runs after
+  `tail_merge`.
 - `cmp_through_tmp_fold.py` — `apply_cmp_through_tmp_fold`. Folds
   the 4-instr `Mov(src, A); Mov(A, tmp); Mov(other, A); Compare(A,
   tmp)` shape (LDA src; STA tmp; LDA other; CMP tmp) to the 2-instr
@@ -1206,6 +1224,8 @@ document says whether it fires there.
   instruction.
 - `apply_branch_thread` — a branch to a branch on the same flag goes
   to that one's target, or past it for the opposite condition.
+- `apply_branch_value_thread` — a branch goes past the loads,
+  compares, and branches at its target that its path has decided.
 - `apply_branch_to_next_drop` — `Branch(_, L); Label(L)` →
   (both dropped if L is only referenced here, else just the
   Branch). Closes the residual diamond left by `branch_invert`
@@ -1256,6 +1276,9 @@ document says whether it fires there.
   instruction that set N and Z from the register, when C is dead.
 - `apply_tail_merge` — branches to one shared copy of a repeated
   return tail instead of branching over each copy.
+- `apply_cross_jump` — the later of two blocks that end in the same
+  instructions and a jump to the same place jumps into the earlier
+  one's copy.
 - `apply_carry_return_tails`, `apply_carry_const_fold`,
   `apply_carry_branch_fold` (`carry_return.py`) — the
   `return_bool_in_carry` peepholes, run right after

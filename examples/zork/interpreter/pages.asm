@@ -361,7 +361,7 @@ get_next_code_byte:
    BNE   .if_else@12
    LDA   __local_get_next_code_byte__page
    CMP   NUM_IMAGE_PAGES
-   BCC   .if_end@11
+   BCC   .vthread@0
 .if_else@12:
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX
@@ -399,7 +399,7 @@ get_next_code_byte:
    CLC
    ADC   NUM_IMAGE_PAGES
    CLC
-.if_end@11:
+.vthread@0:
    ADC   Z_HEADER_ADDR+1
    STA   ZCODE_PAGE_ADDR+1
    LDA   #$00
@@ -474,7 +474,7 @@ get_next_code_byte2:
    BNE   .if_else@22
    LDA   __local_get_next_code_byte2__page
    CMP   NUM_IMAGE_PAGES
-   BCC   .if_end@21
+   BCC   .vthread@1
 .if_else@22:
    JSR   find_index_of_page_table
    STA   PAGE_TABLE_INDEX2
@@ -512,7 +512,7 @@ get_next_code_byte2:
    CLC
    ADC   NUM_IMAGE_PAGES
    CLC
-.if_end@21:
+.vthread@1:
    ADC   Z_HEADER_ADDR+1
    STA   ZCODE_PAGE_ADDR2+1
    LDA   #$00

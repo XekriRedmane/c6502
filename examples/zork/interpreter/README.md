@@ -77,7 +77,7 @@ original fills `$0800`-`$21FF`, keeps its page tables at `$2200`-`$23FF`,
 and loads the story from `$2C00`. `interpreter.ld` has two regions.
 `main` goes first at `$0800`, since the boot loader jumps there and
 Zork goes back there to start over, followed by the six units that run
-on every instruction, up to `$1D7B`. The other units, the constants,
+on every instruction, up to `$1D37`. The other units, the constants,
 the data, and the page tables go from `$2C00` to `$37FF`. The page
 tables start on a page, `$3600`, as Zork's do, because
 `find_index_of_page_table` reads them with `(zp),Y` on every page
@@ -155,17 +155,17 @@ file and the original code it translates:
 | File | Zork | C |
 |---|---:|---:|
 | `main.c` | 391 | 472 |
-| `decode.c` | 1859 | 2487 |
+| `decode.c` | 1859 | 2442 |
 | `objects.c` | 788 | 996 |
-| `numbers.c` | 436 | 509 |
+| `numbers.c` | 436 | 489 |
 | `input.c` | 1018 | 1109 |
 | `pages.c` | 384 | 385 |
-| `zstring.c` | 383 | 407 |
+| `zstring.c` | 383 | 404 |
 | `output.c` | 387 | 403 |
 | `disk.c` | 138 | 137 |
 | `prompts.c` | 534 | 528 |
 | `save.c` | 325 | 344 |
-| **Total** | **6643** | **7777** |
+| **Total** | **6643** | **7709** |
 
 The counts include each file's constants and data, and leave out the
 page tables and `__zp_init`, 41 bytes of startup code the linker
@@ -189,8 +189,8 @@ take 126 bytes and the handlers are counted with their own files.
 against 190, and `mulu16` 42 against 69, since it computes only the
 low 16 bits of the product.
 
-**Speed.** The first session takes 37,864,127 cycles against Zork's
-38,490,260, 1.6% fewer, and the second 7,315,984 against 7,434,428,
+**Speed.** The first session takes 37,878,672 cycles against Zork's
+38,490,260, 1.6% fewer, and the second 7,318,614 against 7,434,428,
 1.6% fewer. The stand-ins for the Monitor and RWTS take no cycles.
 Where a function is placed matters to these counts, since a taken
 branch that crosses a page takes a cycle more. When `objects.c`
@@ -353,5 +353,16 @@ the smaller code saved.
   it had been a 2-byte subtract with the overflow correction
   (`tests/test_sign_test_lowering.py`). The `bool` is still 4 bytes
   longer than keeping the high byte, so `sign_bit` is an `int8_t`.
+- A branch goes past the tests at its target that its path has
+  already decided
+  ([branch_value_thread.md](../../../docs/optimizations/branch_value_thread.md)),
+  so `instr_mul` and `instr_div` test `b`'s high byte once, as Zork's
+  do, where the `b == 4` test had loaded and tested it again. Two
+  blocks that end in the same two or more instructions and a jump to
+  the same place share one copy
+  ([cross_jump.md](../../../docs/optimizations/cross_jump.md)), so
+  the `* 4` and `/ 4` paths shift once and join the `* 2` and `/ 2`
+  ones, as Zork's fall into them. `do_0op`, `do_2op`, and
+  `do_instruction` get shorter the same way.
 - `<apple2/monitor_io.h>` declares `VTAB` and `GETLN1`, and names the
   random seed at `$4E` `RND`.

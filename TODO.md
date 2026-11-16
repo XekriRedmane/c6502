@@ -245,15 +245,14 @@ Zork's 190. The separator tests, `is_dict_separator`,
 
 ## Make Zork's numbers.c smaller
 
-`examples/zork/interpreter/numbers.c` is 509 bytes, where Zork's code
+`examples/zork/interpreter/numbers.c` is 489 bytes, where Zork's code
 for it is 436. `divu16` (64 against 78) and `mulu16` (42 against 69)
 are already smaller. What's left:
 
-- `instr_mul` is 82 bytes against 53 and `instr_div` 85 against 50.
-  Zork tests `b`'s high byte once, compares the low byte with 2 and
-  then 4, and lets the `* 4` path fall into the `* 2` one. The C tests
-  the high byte again for `b == 4`, and each path ends in a `JMP` to
-  the join.
+- `instr_mul` is 72 bytes against 53 and `instr_div` 75 against 50.
+  They test `b` as Zork's do, and the `* 4` path shares the `* 2`
+  path's shift, but with a `JMP` where Zork's falls into it, since
+  `cross_jump` doesn't move blocks.
 - `check_sign` and `store_with_sign` each negate inline, where Zork's
   call one `negate`.
 - The register allocator gives `instr_mul`'s result of `check_sign`

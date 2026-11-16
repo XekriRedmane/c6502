@@ -255,7 +255,7 @@ get_next_code_byte2:
    BNE   .if_else@6
    LDA   __local_get_next_code_byte2__page
    CMP   NUM_IMAGE_PAGES
-   BCC   .if_end@5
+   BCC   .vthread@0
 .if_else@6:
    LDA   __local_get_next_code_byte2__page
    STA   SCRATCH2
@@ -297,7 +297,7 @@ get_next_code_byte2:
    CLC
    ADC   NUM_IMAGE_PAGES
    CLC
-.if_end@5:
+.vthread@0:
    ADC   Z_HEADER_ADDR+1
    STA   ZCODE_PAGE_ADDR2+1
    LDA   #$00

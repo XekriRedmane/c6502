@@ -340,7 +340,7 @@ get_next_code_byte2:
    BNE   .if_else@6
    LDA   __local_get_next_code_byte2__page
    CMP   NUM_IMAGE_PAGES
-   BCC   .if_end@5
+   BCC   .vthread@0
 .if_else@6:
    LDA   __local_get_next_code_byte2__page
    STA   SCRATCH2
@@ -382,7 +382,7 @@ get_next_code_byte2:
    CLC
    ADC   NUM_IMAGE_PAGES
    CLC
-.if_end@5:
+.vthread@0:
    ADC   Z_HEADER_ADDR+1
    STA   ZCODE_PAGE_ADDR2+1
    LDA   #$00
@@ -563,6 +563,7 @@ print_zstring:
    ORA   #$00
    BNE   .if_else@10
    LDA   #$5B
+.xjump@0:
    CLC
    ADC   __local_print_zstring__c_0
    JMP   .if_end@9
@@ -570,9 +571,7 @@ print_zstring:
    CMP   #$01
    BNE   .if_else@12
    LDA   #$3B
-   CLC
-   ADC   __local_print_zstring__c_0
-   JMP   .if_end@11
+   JMP   .xjump@0
 .if_else@12:
    LDA   __local_print_zstring__c_0
    CMP   #$06
@@ -601,7 +600,6 @@ print_zstring:
    LDA   a2_table,X
 .if_end@15:
 .if_end@13:
-.if_end@11:
 .if_end@9:
 .if_end@1:
    JSR   buffer_char

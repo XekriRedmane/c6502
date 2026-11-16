@@ -360,6 +360,7 @@ print_zstring:
    ORA   #$00
    BNE   .if_else@10
    LDA   #$5B
+.xjump@0:
    CLC
    ADC   __local_print_zstring__c_0
    JMP   .if_end@9
@@ -367,9 +368,7 @@ print_zstring:
    CMP   #$01
    BNE   .if_else@12
    LDA   #$3B
-   CLC
-   ADC   __local_print_zstring__c_0
-   JMP   .if_end@11
+   JMP   .xjump@0
 .if_else@12:
    LDA   __local_print_zstring__c_0
    CMP   #$06
@@ -398,7 +397,6 @@ print_zstring:
    LDA   a2_table,X
 .if_end@15:
 .if_end@13:
-.if_end@11:
 .if_end@9:
 .if_end@1:
    JSR   buffer_char

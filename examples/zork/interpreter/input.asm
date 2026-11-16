@@ -556,7 +556,7 @@ get_alphabet_for_char:
 
    LDA   __zpabi_get_alphabet_for_char__c
    CMP   #$61
-   BCC   .if_end@15
+   BCC   .vthread@0
    LDA   #$7A
    CMP   __zpabi_get_alphabet_for_char__c
    BCC   .if_end@15
@@ -564,6 +564,7 @@ get_alphabet_for_char:
    RTS
 .if_end@15:
    LDA   __zpabi_get_alphabet_for_char__c
+.vthread@0:
    CMP   #$41
    BCC   .if_end@18
    LDA   #$5A
@@ -573,11 +574,11 @@ get_alphabet_for_char:
    RTS
 .if_end@18:
    LDA   __zpabi_get_alphabet_for_char__c
-   BEQ   .get_alphabet_for_char@scfold@0
+   BEQ   .vthread@1
    AND   #$80
    BEQ   .if_end@21
-.get_alphabet_for_char@scfold@0:
    LDA   __zpabi_get_alphabet_for_char__c
+.vthread@1:
    RTS
 .if_end@21:
    LDA   #$02
@@ -951,10 +952,11 @@ instr_sread:
    LDA   input_count
    BNE   .if_end@48
    LDA   char_count
-   BNE   .if_end@48
+   BNE   .vthread@2
    RTS
 .if_end@48:
    LDA   char_count
+.vthread@2:
    CMP   #$06
    BNE   .if_end@49
    JSR   skip_separators
